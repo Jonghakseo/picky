@@ -2,7 +2,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { BuiltPrompt } from "../prompt-builder.js";
 import type { MainAgentRuntimeMode, ModelCycleDirection, OpenAIRealtimeAuthConfig, PickyContextPacket, PickyQueueMode } from "../protocol.js";
 
-export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 export type RuntimeSlashCommandSource = "extension" | "prompt" | "skill" | "builtin";
 export interface RuntimeSlashCommand {
   name: string;

@@ -1454,10 +1454,10 @@ describe("PiSdkRuntime", () => {
       }) as never,
     });
 
-    runtime.setThinkingLevel("xhigh");
+    runtime.setThinkingLevel("max");
     await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky" });
 
-    expect(createSessionFromServices).toHaveBeenCalledWith(expect.objectContaining({ thinkingLevel: "xhigh" }));
+    expect(createSessionFromServices).toHaveBeenCalledWith(expect.objectContaining({ thinkingLevel: "max" }));
   });
 
   it("passes an explicit thinking level override to Pi session creation", async () => {

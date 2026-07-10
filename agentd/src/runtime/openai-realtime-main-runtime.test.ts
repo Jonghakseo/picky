@@ -143,6 +143,27 @@ describe("OpenAI Realtime provider connection builders", () => {
 });
 
 describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
+  it("clamps Pi max thinking to the highest supported Realtime effort", async () => {
+    const socket = new FakeRealtimeSocket();
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: fakeToolHandlers(),
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => socket,
+    });
+    runtime.setThinkingLevel("max");
+
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-max", context: context() });
+
+    const sent = socket.sent.map((raw) => JSON.parse(raw) as Record<string, any>);
+    const sessionUpdate = sent.find((event) => event.type === "session.update")!;
+    expect(sessionUpdate.session.reasoning.effort).toBe("xhigh");
+  });
+
   it("exposes skill lookup tools and omits the pointer overlay tool", async () => {
     const socket = new FakeRealtimeSocket();
     const runtime = new OpenAIRealtimeMainRuntime({

@@ -254,6 +254,6 @@ export function readThinkingLevel(session: AgentSession): ThinkingLevel | undefi
 }
 
 function parseThinkingLevel(value: unknown): ThinkingLevel | undefined {
-  if (value === "off" || value === "minimal" || value === "low" || value === "medium" || value === "high" || value === "xhigh") return value;
+  if (value === "off" || value === "minimal" || value === "low" || value === "medium" || value === "high" || value === "xhigh" || value === "max") return value;
   return undefined;
 }

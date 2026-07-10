@@ -244,7 +244,7 @@ describe("protocol contract fixtures", () => {
           createdAt: "2026-05-05T00:00:00.000Z",
           originatedBy: "main_agent",
           text: "Done",
-          assistantRun: { model: "anthropic/claude-opus-4-7", thinkingLevel: "xhigh" },
+          assistantRun: { model: "openai-codex/gpt-5.6", thinkingLevel: "max" },
         },
         seq: 1,
       }),

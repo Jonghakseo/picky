@@ -155,12 +155,23 @@ When bumping pi (`agentd/package.json` `@earendil-works/pi-coding-agent`):
 
 ### 0.75.1 -> 0.78.0
 
-- Current `agentd/package.json` pins Pi packages to `0.78.0`. Treat the old
-  bump notes above as historical context, not the current dependency version.
+- This bump pinned Pi packages to `0.78.0` at the time. Treat the older bump
+  notes above as historical context, not the current dependency version.
 - `pi-capabilities.ts` also sniffs active-tool refresh support via
   `tryRefreshSystemPromptFromActiveTools`, backed by `getActiveToolNames` /
   `setActiveToolsByName` when present. Keep this T2 capability non-fatal and
   update warn-only contract coverage if the upstream surface changes.
+
+### 0.80.3 -> 0.80.6
+
+- Pi 0.80.6 adds the opt-in `max` thinking level across the SDK and model
+  selection. Picky now preserves `max` through daemon schemas, session event
+  normalization, Swift protocol decoding, and Pi/Pickle settings.
+- OpenAI Realtime's Picky-owned protocol still supports efforts through
+  `xhigh`, so selecting `max` while that runtime is active explicitly clamps
+  to `xhigh` instead of emitting an unsupported payload.
+- No changelog entry in 0.80.4-0.80.6 removes or changes Picky's T1-T4
+  `AgentSession`, extension UI, tool definition, or event surfaces.
 
 ## Backward-compatibility policy
 

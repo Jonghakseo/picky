@@ -119,7 +119,7 @@ export const PickyMainAgentStateSchema = z.object({
 });
 export type PickyMainAgentState = z.infer<typeof PickyMainAgentStateSchema>;
 
-export const ThinkingLevelSchema = z.enum(["off", "minimal", "low", "medium", "high", "xhigh"]);
+export const ThinkingLevelSchema = z.enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 export type ThinkingLevel = z.infer<typeof ThinkingLevelSchema>;
 export const MainAgentRuntimeModeSchema = z.enum(["pi", "openai-realtime"]);
 export type MainAgentRuntimeMode = z.infer<typeof MainAgentRuntimeModeSchema>;

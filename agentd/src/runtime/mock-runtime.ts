@@ -42,7 +42,7 @@ export class MockRuntimeSession implements RuntimeSessionHandle {
   private modelIndex = 0;
   private thinkingIndex = 3;
   private readonly models = ["mock/gpt-5.5", "mock/opus-4-7"];
-  private readonly thinkingLevels: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
+  private readonly thinkingLevels: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
   steeringMode: PickyQueueMode = "one-at-a-time";
   followUpMode: PickyQueueMode = "one-at-a-time";
   isStreaming = false;

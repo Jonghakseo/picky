@@ -437,7 +437,7 @@ struct ProtocolContractTests {
             "createdAt":"2026-05-05T00:00:00.000Z",
             "originatedBy":"main_agent",
             "text":"Done",
-            "assistantRun":{"model":"anthropic/claude-opus-4-7","thinkingLevel":"xhigh"}
+            "assistantRun":{"model":"openai-codex/gpt-5.6","thinkingLevel":"max"}
           },
           "seq":7
         }
@@ -453,7 +453,7 @@ struct ProtocolContractTests {
         #expect(message.kind == .agentText)
         #expect(message.originatedBy == .mainAgent)
         #expect(message.text == "Done")
-        #expect(message.assistantRun?.displayText == "opus-4-7 xhigh")
+        #expect(message.assistantRun?.displayText == "gpt-5.6 max")
         #expect(seq == 7)
     }
 

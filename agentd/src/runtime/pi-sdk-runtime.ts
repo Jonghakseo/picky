@@ -1408,7 +1408,7 @@ function currentThinkingLevel(session: AgentSession): ThinkingLevel | undefined 
 }
 
 function parseThinkingLevel(value: unknown): ThinkingLevel | undefined {
-  if (value === "off" || value === "minimal" || value === "low" || value === "medium" || value === "high" || value === "xhigh") return value;
+  if (value === "off" || value === "minimal" || value === "low" || value === "medium" || value === "high" || value === "xhigh" || value === "max") return value;
   return undefined;
 }
 

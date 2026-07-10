@@ -110,11 +110,11 @@ struct PickySettingsPolishTests {
         var settings = PickySettings.defaults(appSupportRoot: root)
         settings.defaultCwd = project.path
         settings.worktreeParent = project.path
-        settings.mainAgentThinkingLevel = .high
+        settings.mainAgentThinkingLevel = .max
 
         try store.save(settings)
 
-        #expect(store.load().mainAgentThinkingLevel == .high)
+        #expect(store.load().mainAgentThinkingLevel == .max)
     }
 
     @Test func restartRequirementDetectsRuntimeModeChanges() throws {

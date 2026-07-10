@@ -82,6 +82,7 @@ enum PickyMainAgentThinkingLevel: String, Codable, CaseIterable, Identifiable {
     case medium
     case high
     case xhigh
+    case max
 
     var id: String { rawValue }
 
@@ -93,6 +94,7 @@ enum PickyMainAgentThinkingLevel: String, Codable, CaseIterable, Identifiable {
         case .medium: L10n.t("enum.thinking.medium")
         case .high: L10n.t("enum.thinking.high")
         case .xhigh: L10n.t("enum.thinking.xhigh")
+        case .max: L10n.t("enum.thinking.max")
         }
     }
 }
@@ -105,6 +107,7 @@ enum PickyPickleAgentThinkingLevel: String, Codable, CaseIterable, Identifiable 
     case medium
     case high
     case xhigh
+    case max
 
     var id: String { rawValue }
 
@@ -117,13 +120,14 @@ enum PickyPickleAgentThinkingLevel: String, Codable, CaseIterable, Identifiable 
         case .medium: L10n.t("enum.thinking.medium")
         case .high: L10n.t("enum.thinking.high")
         case .xhigh: L10n.t("enum.thinking.xhigh")
+        case .max: L10n.t("enum.thinking.max")
         }
     }
 
     var agentdValue: String? {
         switch self {
         case .automatic: nil
-        case .off, .minimal, .low, .medium, .high, .xhigh: rawValue
+        case .off, .minimal, .low, .medium, .high, .xhigh, .max: rawValue
         }
     }
 }

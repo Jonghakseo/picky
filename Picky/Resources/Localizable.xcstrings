@@ -3478,6 +3478,22 @@
         }
       }
     },
+    "enum.thinking.max": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maximum"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최대"
+          }
+        }
+      }
+    },
     "enum.thinking.pickleAuto": {
       "localizations": {
         "en": {

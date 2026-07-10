@@ -1702,6 +1702,7 @@ function mapReasoningEffort(level: ThinkingLevel, fallback: OpenAIRealtimeAuthCo
     case "low":
       return "low";
     case "xhigh":
+    case "max":
       return "xhigh";
     case "high":
       return "high";

@@ -720,7 +720,7 @@ Use **Change**, then **Save** or **Cancel**. Conflicts are rejected. **Reset to 
 | PI_CODING_AGENT_DIR | Optional Pi coding-agent directory for Pi sessions and extension/skill installs. Leave empty to use the launch environment's `PI_CODING_AGENT_DIR`, then fallback to `~/.pi/agent`. Must be an existing directory when set. Extension/skill installs pick it up immediately; running Picky/Pi sessions apply it after restarting Picky. |
 | Runtime | Pi or OpenAI Realtime, when realtime opt-in is enabled. |
 | Pi model | Automatic or a pinned model pattern. |
-| Reasoning level | Off, Minimal, Low, Medium, High, Extra High. |
+| Reasoning level | Off, Minimal, Low, Medium, High, Extra High, Maximum. Maximum appears only for Pi models that support it. |
 | Screen context | All screens or Focused screen only. Default is **Focused screen only** so Picky captures only the display the cursor is on. |
 | Armed Pickle delivery | Follow-up (default) or Steer. Controls how Push-to-Talk and Quick Input are delivered when a Pickle is explicitly armed as the screen-context target. Follow-up waits until the Pickle is idle; Steer interrupts the current turn at the next steering point. |
 | Send screenshots only when drawn | Off (default) or On. When **On**, Picky attaches a screenshot to the model turn only if you marked the screen with click and drag during Push-to-Talk or Quick Input. Screen capture still runs locally so the ink overlay can render on top, but the screenshot is omitted from what the model sees. Off keeps the always-attach behavior. |
@@ -771,7 +771,7 @@ Realtime-specific settings, when enabled:
 | --- | --- |
 | Default cwd | Default working directory for new Pickles. Must be an existing directory. |
 | Pickle model | Automatic or pinned initial model for newly-created Pickles. |
-| Reasoning level | Automatic, Off, Minimal, Low, Medium, High, Extra High. Applies as initial setting for new Pickles. |
+| Reasoning level | Automatic, Off, Minimal, Low, Medium, High, Extra High, Maximum. Applies as the initial setting for new Pickles; Maximum requires a Pi model that supports it. |
 | Dock size | S, M, L. |
 | Git chip actions | Optional command bound to the diff and branch chips on each Pickle card. Each slot picks a kind (Pi or shell) and a command string; empty commands leave the chip unconfigured. |
 | Archived sessions | Footer disclosure (hidden when empty). Expands to the same restore/delete list available from the HUD, so you can manage archives without leaving Settings. |

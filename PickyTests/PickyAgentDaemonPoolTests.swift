@@ -95,6 +95,16 @@ private func tempRoot() -> URL {
 }
 
 @MainActor
+private func waitUntil(timeout: TimeInterval = 2, _ predicate: @escaping @MainActor () -> Bool) async throws {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if predicate() { return }
+        try await Task.sleep(nanoseconds: 5_000_000)
+    }
+    Issue.record("Timed out waiting for daemon pool condition")
+}
+
+@MainActor
 struct PickyAgentDaemonPoolTests {
     @Test func parsesBoundPortFromStdoutReadyLine() {
         #expect(PickyAgentDaemonPool.parseBoundPort(from: "picky-agentd listening on 127.0.0.1:58942") == 58942)
@@ -343,8 +353,9 @@ struct PickyAgentDaemonPoolTests {
         #expect(pool.endpoint(for: "pickle-post") != nil)
 
         runner.crash(code: 11)
-        // Allow the observer Task to react.
-        try await Task.sleep(nanoseconds: 100_000_000)
+        try await waitUntil {
+            pool.endpoint(for: "pickle-post") == nil && exited.count == 1
+        }
         #expect(pool.endpoint(for: "pickle-post") == nil)
         #expect(!pool.activeChildSessionIds.contains("pickle-post"))
         #expect(exited.count == 1)

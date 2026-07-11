@@ -59,6 +59,9 @@ struct PickyConversationComposerView: View {
     @State private var attachmentViewportWidth: CGFloat = 0
     @State private var selectedSlashCommandIndex: Int = 0
     @State private var isSlashCommandAutocompleteDismissed: Bool = false
+    @State private var acceptedSlashCommandDraft: String?
+    @State private var composerCursorLocation: Int?
+    @State private var composerSelectionOverride: NSRange?
     @State private var selectedFileMentionIndex: Int = 0
     @State private var isFileMentionAutocompleteDismissed: Bool = false
     @State private var fileMentionSuggestions: [PickyFileMentionAutocompletePolicy.Suggestion] = []
@@ -357,6 +360,8 @@ struct PickyConversationComposerView: View {
                 font: composerNSFont,
                 textColor: isComposerInputDisabled ? .secondaryLabelColor : .labelColor,
                 textContainerInsetHeight: Self.editorTextInsetHeight,
+                selectionOverride: $composerSelectionOverride,
+                onSelectionChange: { composerCursorLocation = $0.location },
                 onMeasuredContentHeight: { measuredEditorContentHeight = $0 },
                 onReturn: handleComposerReturnKey,
                 onUpArrow: handleComposerUpArrowKey,
@@ -368,7 +373,14 @@ struct PickyConversationComposerView: View {
             .frame(height: editorHeight)
             .onChange(of: draft) { _, newValue in
                 selectedSlashCommandIndex = 0
-                isSlashCommandAutocompleteDismissed = false
+                let shouldResetSlashCommandDismissal = Self.shouldResetSlashCommandDismissal(
+                    newDraft: newValue,
+                    acceptedDraft: acceptedSlashCommandDraft
+                )
+                acceptedSlashCommandDraft = nil
+                if shouldResetSlashCommandDismissal {
+                    isSlashCommandAutocompleteDismissed = false
+                }
                 selectedFileMentionIndex = 0
                 isFileMentionAutocompleteDismissed = false
                 viewModel.updateComposerDraft(newValue, sessionID: session.id)
@@ -563,12 +575,18 @@ struct PickyConversationComposerView: View {
     }
 
     var slashCommandAutocompleteIsVisible: Bool {
-        !isComposerInputDisabled && PickySlashCommandAutocompletePolicy.query(in: draft) != nil && !isSlashCommandAutocompleteDismissed
+        !isComposerInputDisabled
+            && PickySlashCommandAutocompletePolicy.query(in: draft, cursorLocation: composerCursorLocation) != nil
+            && !isSlashCommandAutocompleteDismissed
     }
 
     var slashCommandSuggestions: [PickySlashCommand] {
-        guard PickySlashCommandAutocompletePolicy.query(in: draft) != nil else { return [] }
-        return viewModel.slashCommandSuggestions(for: draft, sessionID: session.id)
+        guard PickySlashCommandAutocompletePolicy.query(in: draft, cursorLocation: composerCursorLocation) != nil else { return [] }
+        return viewModel.slashCommandSuggestions(
+            for: draft,
+            cursorLocation: composerCursorLocation,
+            sessionID: session.id
+        )
     }
 
     var fileMentionAutocompleteIsVisible: Bool {
@@ -602,7 +620,14 @@ struct PickyConversationComposerView: View {
     }
 
     private func acceptSlashCommand(_ command: PickySlashCommand) {
-        draft = PickySlashCommandAutocompletePolicy.completionText(for: command)
+        let completion = PickySlashCommandAutocompletePolicy.completedText(
+            in: draft,
+            cursorLocation: composerCursorLocation,
+            command: command
+        )
+        acceptedSlashCommandDraft = completion.text
+        draft = completion.text
+        composerSelectionOverride = NSRange(location: completion.cursorLocation, length: 0)
         selectedSlashCommandIndex = 0
         isSlashCommandAutocompleteDismissed = true
     }
@@ -914,6 +939,10 @@ struct PickyConversationComposerView: View {
             return draft + droppedText
         }
         return "\(draft)\n\(droppedText)"
+    }
+
+    static func shouldResetSlashCommandDismissal(newDraft: String, acceptedDraft: String?) -> Bool {
+        newDraft != acceptedDraft
     }
 
     static func submissionText(draft: String, attachmentPaths: [String]) -> String {

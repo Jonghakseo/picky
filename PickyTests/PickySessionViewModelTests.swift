@@ -4000,6 +4000,65 @@ struct PickySessionViewModelTests {
         #expect(client.sentCommands.filter { $0.type == .listSlashCommands }.count == 1)
     }
 
+    @Test func slashCommandAutocompleteUsesCursorPositionWithinLeadingCommandToken() {
+        #expect(PickySlashCommandAutocompletePolicy.query(in: "/plafix bug", cursorLocation: 4) == "pla")
+        #expect(PickySlashCommandAutocompletePolicy.query(in: "/deploy now", cursorLocation: 7) == "deploy")
+        #expect(PickySlashCommandAutocompletePolicy.query(in: "/deploy now", cursorLocation: nil) == nil)
+        #expect(PickySlashCommandAutocompletePolicy.query(in: "/", cursorLocation: 1) == "")
+        #expect(PickySlashCommandAutocompletePolicy.query(in: "/hello world", cursorLocation: 1) == "")
+        #expect(PickySlashCommandAutocompletePolicy.query(in: "/pla\nrest", cursorLocation: 4) == "pla")
+        #expect(PickySlashCommandAutocompletePolicy.query(in: "/pla한글 뒤", cursorLocation: 6) == "pla한글")
+        #expect(PickySlashCommandAutocompletePolicy.query(in: "/pla😀 뒤", cursorLocation: 5) == nil)
+        #expect(PickySlashCommandAutocompletePolicy.query(in: "/pla😀 뒤", cursorLocation: 6) == "pla😀")
+        #expect(PickySlashCommandAutocompletePolicy.query(in: "/deploy", cursorLocation: 0) == nil)
+        #expect(PickySlashCommandAutocompletePolicy.query(in: "/deploy", cursorLocation: 99) == nil)
+    }
+
+    @Test func slashCommandCompletionPreservesTextAfterCursorAndReturnsInsertionPoint() {
+        let command = PickySlashCommand(name: "deploy", description: nil, source: .builtin)
+
+        let withoutLeadingSpace = PickySlashCommandAutocompletePolicy.completedText(
+            in: "/dehello world",
+            cursorLocation: 3,
+            command: command
+        )
+        #expect(withoutLeadingSpace.text == "/deploy hello world")
+        #expect(withoutLeadingSpace.cursorLocation == "/deploy ".utf16.count)
+
+        let withLeadingSpace = PickySlashCommandAutocompletePolicy.completedText(
+            in: "/deploy now",
+            cursorLocation: 7,
+            command: command
+        )
+        #expect(withLeadingSpace.text == "/deploy now")
+        #expect(withLeadingSpace.cursorLocation == "/deploy".utf16.count)
+
+        let emptyRemainder = PickySlashCommandAutocompletePolicy.completedText(
+            in: "/dep",
+            cursorLocation: nil,
+            command: command
+        )
+        #expect(emptyRemainder.text == "/deploy ")
+        #expect(emptyRemainder.cursorLocation == "/deploy ".utf16.count)
+    }
+
+    @Test func slashCommandAcceptanceKeepsDismissalUntilTheNextDraftChange() {
+        let acceptedDraft = "/deploy now"
+
+        #expect(!PickyConversationComposerView.shouldResetSlashCommandDismissal(
+            newDraft: acceptedDraft,
+            acceptedDraft: acceptedDraft
+        ))
+        #expect(PickyConversationComposerView.shouldResetSlashCommandDismissal(
+            newDraft: "/deploy now!",
+            acceptedDraft: nil
+        ))
+        #expect(PickyConversationComposerView.shouldResetSlashCommandDismissal(
+            newDraft: "/different",
+            acceptedDraft: acceptedDraft
+        ))
+    }
+
     @Test func slashCommandAutocompleteSelectionWrapsWithArrowNavigation() {
         #expect(PickySlashCommandAutocompletePolicy.clampedSelectionIndex(10, suggestionCount: 3) == 2)
         #expect(PickySlashCommandAutocompletePolicy.clampedSelectionIndex(-2, suggestionCount: 3) == 0)
@@ -4014,7 +4073,11 @@ struct PickySessionViewModelTests {
             PickySlashCommand(name: "command-\(index)", description: nil, source: .builtin)
         }
 
-        let suggestions = PickySlashCommandAutocompletePolicy.suggestions(for: "/command", commands: commands)
+        let suggestions = PickySlashCommandAutocompletePolicy.suggestions(
+            for: "/command",
+            cursorLocation: nil,
+            commands: commands
+        )
 
         #expect(suggestions.map(\.name) == commands.map(\.name))
         #expect(PickySlashCommandAutocompletePolicy.visibleRange(selectedIndex: 5, suggestionCount: suggestions.count, maxVisible: 4) == 3..<7)

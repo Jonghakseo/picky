@@ -792,11 +792,21 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
-    func slashCommandSuggestions(for text: String, sessionID: String, limit: Int = PickySlashCommandAutocompletePolicy.maxSuggestions) -> [PickySlashCommand] {
+    func slashCommandSuggestions(
+        for text: String,
+        cursorLocation: Int? = nil,
+        sessionID: String,
+        limit: Int = PickySlashCommandAutocompletePolicy.maxSuggestions
+    ) -> [PickySlashCommand] {
         let commands = slashCommandsIncludingRewindTreeCommand(slashCommandsBySessionID[sessionID] ?? [], sessionID: sessionID)
-        let queryLength = PickySlashCommandAutocompletePolicy.query(in: text)?.count ?? 0
+        let queryLength = PickySlashCommandAutocompletePolicy.query(in: text, cursorLocation: cursorLocation)?.count ?? 0
         let startedAt = Date()
-        let suggestions = PickySlashCommandAutocompletePolicy.suggestions(for: text, commands: commands, limit: limit)
+        let suggestions = PickySlashCommandAutocompletePolicy.suggestions(
+            for: text,
+            cursorLocation: cursorLocation,
+            commands: commands,
+            limit: limit
+        )
         let elapsed = Date().timeIntervalSince(startedAt)
         if elapsed >= slashCommandSuggestionSlowLogThreshold {
             pickySessionLog("slash command suggestions slow session=\(sessionID) queryChars=\(queryLength) commands=\(commands.count) suggestions=\(suggestions.count) durationMs=\(Self.milliseconds(elapsed))")

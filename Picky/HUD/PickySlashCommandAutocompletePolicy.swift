@@ -8,15 +8,24 @@ enum PickySlashCommandNavigationDirection {
 enum PickySlashCommandAutocompletePolicy {
     static let maxSuggestions = 20
 
-    static func query(in text: String) -> String? {
-        guard text.hasPrefix("/") else { return nil }
-        let query = String(text.dropFirst())
+    static func query(in text: String, cursorLocation: Int?) -> String? {
+        let utf16Count = text.utf16.count
+        let cursorLocation = cursorLocation ?? utf16Count
+        guard text.hasPrefix("/"), cursorLocation >= 1, cursorLocation <= utf16Count,
+              let queryStart = stringIndex(in: text, utf16Offset: 1),
+              let queryEnd = stringIndex(in: text, utf16Offset: cursorLocation) else { return nil }
+        let query = String(text[queryStart..<queryEnd])
         guard !query.contains(where: \.isWhitespace) else { return nil }
         return query
     }
 
-    static func suggestions(for text: String, commands: [PickySlashCommand], limit: Int = maxSuggestions) -> [PickySlashCommand] {
-        guard let query = query(in: text) else { return [] }
+    static func suggestions(
+        for text: String,
+        cursorLocation: Int?,
+        commands: [PickySlashCommand],
+        limit: Int = maxSuggestions
+    ) -> [PickySlashCommand] {
+        guard let query = query(in: text, cursorLocation: cursorLocation) else { return [] }
         let scored = commands.enumerated().compactMap { index, command -> (score: Int, index: Int, command: PickySlashCommand)? in
             guard let score = score(commandName: command.name, query: query) else { return nil }
             return (score, index, command)
@@ -32,6 +41,22 @@ enum PickySlashCommandAutocompletePolicy {
 
     static func completionText(for command: PickySlashCommand) -> String {
         "/\(command.name) "
+    }
+
+    static func completedText(
+        in text: String,
+        cursorLocation: Int?,
+        command: PickySlashCommand
+    ) -> (text: String, cursorLocation: Int) {
+        let remainder: String
+        if let cursorLocation,
+           let remainderStart = stringIndex(in: text, utf16Offset: cursorLocation) {
+            remainder = String(text[remainderStart...])
+        } else {
+            remainder = ""
+        }
+        let prefix = remainder.first?.isWhitespace == true ? "/\(command.name)" : completionText(for: command)
+        return (prefix + remainder, prefix.utf16.count)
     }
 
     static func clampedSelectionIndex(_ index: Int, suggestionCount: Int) -> Int {
@@ -57,6 +82,12 @@ enum PickySlashCommandAutocompletePolicy {
         let halfWindow = visibleCount / 2
         let lowerBound = min(max(clampedIndex - halfWindow, 0), suggestionCount - visibleCount)
         return lowerBound..<(lowerBound + visibleCount)
+    }
+
+    private static func stringIndex(in text: String, utf16Offset: Int) -> String.Index? {
+        guard utf16Offset >= 0, utf16Offset <= text.utf16.count else { return nil }
+        let utf16Index = text.utf16.index(text.utf16.startIndex, offsetBy: utf16Offset)
+        return utf16Index.samePosition(in: text)
     }
 
     private static func score(commandName: String, query: String) -> Int? {

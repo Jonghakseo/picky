@@ -22,6 +22,8 @@ struct PickyIMETextView: NSViewRepresentable {
     var textColor: NSColor
     var textContainerInsetHeight: CGFloat = 2
     var showsVerticalScroller: Bool = true
+    var selectionOverride: Binding<NSRange?>? = nil
+    var onSelectionChange: ((NSRange) -> Void)?
     var onMeasuredContentHeight: ((CGFloat) -> Void)?
     var onReturn: ((NSEvent.ModifierFlags) -> Bool)?
     var onUpArrow: ((NSEvent.ModifierFlags) -> Bool)?
@@ -31,7 +33,12 @@ struct PickyIMETextView: NSViewRepresentable {
     var onControlP: ((_ shiftPressed: Bool) -> Void)?
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text, isFocused: isFocused, onMeasuredContentHeight: onMeasuredContentHeight)
+        Coordinator(
+            text: $text,
+            isFocused: isFocused,
+            onSelectionChange: onSelectionChange,
+            onMeasuredContentHeight: onMeasuredContentHeight
+        )
     }
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -76,6 +83,7 @@ struct PickyIMETextView: NSViewRepresentable {
         guard let textView = scrollView.documentView as? PickyIMENSTextView else { return }
         context.coordinator.text = $text
         context.coordinator.isFocused = isFocused
+        context.coordinator.onSelectionChange = onSelectionChange
         context.coordinator.onMeasuredContentHeight = onMeasuredContentHeight
 
         if PickyIMETextSynchronization.shouldOverwriteNativeText(
@@ -84,6 +92,16 @@ struct PickyIMETextView: NSViewRepresentable {
             hasMarkedText: textView.hasMarkedText()
         ) {
             textView.string = text
+        }
+
+        if let selectionOverride, let override = selectionOverride.wrappedValue, !textView.hasMarkedText() {
+            let textLength = textView.string.utf16.count
+            let location = min(max(override.location, 0), textLength)
+            let length = min(max(override.length, 0), textLength - location)
+            textView.setSelectedRange(NSRange(location: location, length: length))
+            DispatchQueue.main.async {
+                selectionOverride.wrappedValue = nil
+            }
         }
 
         configureCallbacks(on: textView, context: context)
@@ -124,12 +142,19 @@ struct PickyIMETextView: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate {
         var text: Binding<String>
         var isFocused: Binding<Bool>?
+        var onSelectionChange: ((NSRange) -> Void)?
         var onMeasuredContentHeight: ((CGFloat) -> Void)?
         private var lastReportedContentHeight: CGFloat = 0
 
-        init(text: Binding<String>, isFocused: Binding<Bool>?, onMeasuredContentHeight: ((CGFloat) -> Void)?) {
+        init(
+            text: Binding<String>,
+            isFocused: Binding<Bool>?,
+            onSelectionChange: ((NSRange) -> Void)?,
+            onMeasuredContentHeight: ((CGFloat) -> Void)?
+        ) {
             self.text = text
             self.isFocused = isFocused
+            self.onSelectionChange = onSelectionChange
             self.onMeasuredContentHeight = onMeasuredContentHeight
         }
 
@@ -137,6 +162,15 @@ struct PickyIMETextView: NSViewRepresentable {
             guard let textView = notification.object as? NSTextView else { return }
             text.wrappedValue = textView.string
             measure(textView: textView)
+        }
+
+        func textViewDidChangeSelection(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView, !textView.hasMarkedText(),
+                  let onSelectionChange else { return }
+            let selectedRange = textView.selectedRange()
+            DispatchQueue.main.async {
+                onSelectionChange(selectedRange)
+            }
         }
 
         func textDidBeginEditing(_ notification: Notification) {

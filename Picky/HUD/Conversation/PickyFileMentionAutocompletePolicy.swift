@@ -5,13 +5,9 @@
 
 import Foundation
 
-enum PickyFileMentionAutocompletePolicy {
+nonisolated enum PickyFileMentionAutocompletePolicy {
     static let maxSuggestions = 20
-    private static let maxRecursiveScanEntries = 900
-    private static let maxRecursiveDepth = 6
-    private static let excludedRecursiveDirectoryNames: Set<String> = [
-        ".git", ".build", ".swiftpm", "DerivedData", "build", "node_modules",
-    ]
+    static let fdMaxResults = 100
 
     struct Query {
         let rawQuery: String
@@ -20,7 +16,13 @@ enum PickyFileMentionAutocompletePolicy {
         let replacementText: String
     }
 
-    struct Suggestion: Equatable {
+    struct ScopedQuery: Equatable {
+        let baseDirectory: String
+        let pattern: String
+        let displayBase: String
+    }
+
+    struct Suggestion: Equatable, Sendable {
         let label: String
         let displayPath: String
         let isDirectory: Bool
@@ -58,11 +60,6 @@ enum PickyFileMentionAutocompletePolicy {
         )
     }
 
-    static func suggestions(for text: String, cwd: String?, limit: Int = maxSuggestions, fileManager: FileManager = .default) -> [Suggestion] {
-        guard let query = query(in: text) else { return [] }
-        return suggestions(for: query, cwd: cwd, limit: limit, fileManager: fileManager)
-    }
-
     static func completedText(in text: String, with suggestion: Suggestion) -> String {
         guard let query = query(in: text) else { return text }
         var next = text
@@ -70,134 +67,128 @@ enum PickyFileMentionAutocompletePolicy {
         return next
     }
 
-    static func suggestions(for query: Query, cwd: String?, limit: Int = maxSuggestions, fileManager: FileManager = .default) -> [Suggestion] {
-        guard limit > 0,
-              let cwd = cwd?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !cwd.isEmpty
-        else { return [] }
+    static func scopedQuery(
+        for rawQuery: String,
+        cwd: String,
+        home: String = NSHomeDirectory(),
+        fileManager: FileManager = .default
+    ) -> ScopedQuery? {
+        let normalizedQuery = normalizedQuery(rawQuery)
+        guard let slashIndex = normalizedQuery.lastIndex(of: "/") else { return nil }
+
+        let displayBase = String(normalizedQuery[...slashIndex])
+        let pattern = String(normalizedQuery[normalizedQuery.index(after: slashIndex)...])
+        let baseDirectory: String
+        if displayBase.hasPrefix("~/") {
+            baseDirectory = URL(fileURLWithPath: home, isDirectory: true)
+                .appendingPathComponent(String(displayBase.dropFirst(2)), isDirectory: true)
+                .standardizedFileURL.path
+        } else if displayBase.hasPrefix("/") {
+            baseDirectory = displayBase
+        } else {
+            baseDirectory = URL(fileURLWithPath: cwd, isDirectory: true)
+                .appendingPathComponent(displayBase, isDirectory: true)
+                .standardizedFileURL.path
+        }
 
         var isDirectory: ObjCBool = false
-        guard fileManager.fileExists(atPath: cwd, isDirectory: &isDirectory), isDirectory.boolValue else { return [] }
-
-        let directoryPart = directoryPart(for: query.rawQuery)
-        guard isCwdRelativeDirectoryPart(directoryPart) else { return [] }
-        guard !containsGitDirectory(directoryPart) else { return [] }
-
-        let prefixSuggestions = prefixSuggestions(for: query, cwd: cwd, directoryPart: directoryPart, fileManager: fileManager)
-        if query.rawQuery.isEmpty || query.rawQuery.hasSuffix("/") {
-            return Array(prefixSuggestions.prefix(limit))
-        }
-
-        let prefixDisplayPaths = Set(prefixSuggestions.map(\.displayPath))
-        let fuzzySuggestions = recursiveFuzzySuggestions(for: query, cwd: cwd, fileManager: fileManager)
-            .filter { !prefixDisplayPaths.contains($0.displayPath) }
-            .sorted { lhs, rhs in
-                if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory }
-                let lhsScore = score(suggestion: lhs, query: query.rawQuery)
-                let rhsScore = score(suggestion: rhs, query: query.rawQuery)
-                if lhsScore != rhsScore { return lhsScore > rhsScore }
-                return lhs.displayPath.localizedStandardCompare(rhs.displayPath) == .orderedAscending
-            }
-
-        return Array((prefixSuggestions + fuzzySuggestions).prefix(limit))
+        guard fileManager.fileExists(atPath: baseDirectory, isDirectory: &isDirectory), isDirectory.boolValue else { return nil }
+        return ScopedQuery(baseDirectory: baseDirectory, pattern: pattern, displayBase: displayBase)
     }
 
-    private static func prefixSuggestions(for query: Query, cwd: String, directoryPart: String, fileManager: FileManager) -> [Suggestion] {
-        let searchDirectory = URL(fileURLWithPath: cwd, isDirectory: true).appendingPathComponent(directoryPart, isDirectory: true)
-        var searchDirectoryIsDirectory: ObjCBool = false
-        guard fileManager.fileExists(atPath: searchDirectory.path, isDirectory: &searchDirectoryIsDirectory),
-              searchDirectoryIsDirectory.boolValue
-        else { return [] }
+    static func fdPathQuery(_ query: String) -> String {
+        guard query.contains("/") else { return query }
+        let hasTrailingSeparator = query.hasSuffix("/")
+        let trimmed = query.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard !trimmed.isEmpty else { return query }
 
-        let leafPrefix = leafPrefix(for: query.rawQuery)
-        let entries: [URL]
-        do {
-            entries = try fileManager.contentsOfDirectory(
-                at: searchDirectory,
-                includingPropertiesForKeys: [.isDirectoryKey],
-                options: [.skipsPackageDescendants]
-            )
-        } catch {
-            return []
+        let separatorPattern = "[\\\\/]"
+        let segments = trimmed.split(separator: "/").map { regexEscaped(String($0)) }
+        guard !segments.isEmpty else { return query }
+        var pattern = segments.joined(separator: separatorPattern)
+        if hasTrailingSeparator {
+            pattern += separatorPattern
         }
+        return pattern
+    }
 
-        return entries.compactMap { url -> Suggestion? in
-            let name = url.lastPathComponent
-            guard !localizedCaseInsensitiveHasPrefix(name, prefix: ".git") else { return nil }
-            guard leafPrefix.isEmpty || localizedCaseInsensitiveHasPrefix(name, prefix: leafPrefix) else { return nil }
+    static func fdArguments(baseDirectory: String, pattern: String) -> [String] {
+        var arguments = [
+            "--base-directory", baseDirectory,
+            "--max-results", String(fdMaxResults),
+            "--type", "f",
+            "--type", "d",
+            "--follow",
+            "--hidden",
+            "--exclude", ".git",
+            "--exclude", ".git/*",
+            "--exclude", ".git/**",
+        ]
+        if pattern.contains("/") {
+            arguments.append("--full-path")
+        }
+        if !pattern.isEmpty {
+            arguments.append(fdPathQuery(pattern))
+        }
+        return arguments
+    }
 
-            let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-            let relativePath = relativePath(directoryPart: directoryPart, name: name, isDirectory: isDirectory)
-            return suggestion(relativePath: relativePath, name: name, isDirectory: isDirectory, query: query)
+    static func scoreEntry(path: String, query: String, isDirectory: Bool) -> Int {
+        let fileNamePath = isDirectory && path.hasSuffix("/") ? String(path.dropLast()) : path
+        let fileName = URL(fileURLWithPath: fileNamePath).lastPathComponent
+        let lowerFileName = fileName.lowercased()
+        let lowerQuery = query.lowercased()
+        let lowerPath = path.lowercased()
+        var score = 0
+
+        if lowerFileName == lowerQuery {
+            score = 100
+        } else if lowerFileName.hasPrefix(lowerQuery) {
+            score = 80
+        } else if lowerFileName.contains(lowerQuery) {
+            score = 50
+        } else if lowerPath.contains(lowerQuery) {
+            score = 30
+        }
+        if isDirectory && score > 0 {
+            score += 10
+        }
+        return score
+    }
+
+    static func suggestions(fromFdLines lines: [String], pattern: String, displayBase: String) -> [Suggestion] {
+        suggestions(fromFdLines: lines, pattern: pattern, displayBase: displayBase, isQuoted: false)
+    }
+
+    static func suggestions(
+        fromFdLines lines: [String],
+        pattern: String,
+        displayBase: String,
+        isQuoted: Bool
+    ) -> [Suggestion] {
+        let scored = lines.enumerated().compactMap { offset, line -> (Int, Int, String, Bool)? in
+            guard !line.isEmpty else { return nil }
+            let isDirectory = line.hasSuffix("/")
+            let path = isDirectory ? String(line.dropLast()) : line
+            guard path != ".git", !path.hasPrefix(".git/"), !path.contains("/.git/") else { return nil }
+            let score = pattern.isEmpty ? 1 : scoreEntry(path: line, query: pattern, isDirectory: isDirectory)
+            guard score > 0 else { return nil }
+            return (offset, score, path, isDirectory)
         }
         .sorted { lhs, rhs in
-            if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory }
-            return lhs.displayPath.localizedStandardCompare(rhs.displayPath) == .orderedAscending
+            lhs.1 == rhs.1 ? lhs.0 < rhs.0 : lhs.1 > rhs.1
         }
-    }
+        .prefix(maxSuggestions)
 
-    private static func recursiveFuzzySuggestions(for query: Query, cwd: String, fileManager: FileManager) -> [Suggestion] {
-        let normalizedQuery = normalizedQuery(query.rawQuery)
-        guard !normalizedQuery.isEmpty else { return [] }
-        let root = URL(fileURLWithPath: cwd, isDirectory: true)
-        var results: [Suggestion] = []
-        var scannedEntries = 0
-        scanDirectory(
-            root,
-            base: root,
-            depth: 0,
-            query: query,
-            normalizedQuery: normalizedQuery,
-            fileManager: fileManager,
-            scannedEntries: &scannedEntries,
-            results: &results
-        )
-        return results
-    }
-
-    private static func scanDirectory(
-        _ directory: URL,
-        base: URL,
-        depth: Int,
-        query: Query,
-        normalizedQuery: String,
-        fileManager: FileManager,
-        scannedEntries: inout Int,
-        results: inout [Suggestion]
-    ) {
-        guard depth <= maxRecursiveDepth, scannedEntries < maxRecursiveScanEntries else { return }
-        let entries: [URL]
-        do {
-            entries = try fileManager.contentsOfDirectory(
-                at: directory,
-                includingPropertiesForKeys: [.isDirectoryKey],
-                options: [.skipsPackageDescendants]
+        return scored.map { _, _, path, isDirectory in
+            let displayPath = scopedPathForDisplay(displayBase: displayBase, relativePath: path)
+            let completionPath = isDirectory ? "\(displayPath)/" : displayPath
+            return Suggestion(
+                label: URL(fileURLWithPath: path).lastPathComponent + (isDirectory ? "/" : ""),
+                displayPath: displayPath,
+                isDirectory: isDirectory,
+                completionText: completionText(for: completionPath, isDirectory: isDirectory, isQuoted: isQuoted)
             )
-        } catch {
-            return
-        }
-
-        for url in entries where scannedEntries < maxRecursiveScanEntries {
-            scannedEntries += 1
-            let name = url.lastPathComponent
-            guard !shouldExcludeFromRecursiveScan(name: name) else { continue }
-            let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-            let relativePath = relativePath(from: base, to: url, isDirectory: isDirectory)
-            if score(path: relativePath, name: name, query: normalizedQuery) > 0 {
-                results.append(suggestion(relativePath: relativePath, name: name, isDirectory: isDirectory, query: query))
-            }
-            if isDirectory {
-                scanDirectory(
-                    url,
-                    base: base,
-                    depth: depth + 1,
-                    query: query,
-                    normalizedQuery: normalizedQuery,
-                    fileManager: fileManager,
-                    scannedEntries: &scannedEntries,
-                    results: &results
-                )
-            }
         }
     }
 
@@ -216,103 +207,23 @@ enum PickyFileMentionAutocompletePolicy {
         return nil
     }
 
-    private static func directoryPart(for rawQuery: String) -> String {
-        let normalized = normalizedQuery(rawQuery)
-        guard let slashIndex = normalized.lastIndex(of: "/") else { return "" }
-        return String(normalized[..<slashIndex])
-    }
-
-    private static func leafPrefix(for rawQuery: String) -> String {
-        let normalized = normalizedQuery(rawQuery)
-        guard let slashIndex = normalized.lastIndex(of: "/") else { return normalized }
-        return String(normalized[normalized.index(after: slashIndex)...])
-    }
-
     private static func normalizedQuery(_ rawQuery: String) -> String {
         rawQuery.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
     }
 
-    private static func containsGitDirectory(_ relativeDirectory: String) -> Bool {
-        relativeDirectory.split(separator: "/").contains(".git")
+    private static func regexEscaped(_ value: String) -> String {
+        value.replacingOccurrences(of: #"([.*+?^${}()|\[\]\\])"#, with: #"\\$1"#, options: .regularExpression)
     }
 
-    private static func isCwdRelativeDirectoryPart(_ relativeDirectory: String) -> Bool {
-        !relativeDirectory.hasPrefix("/") && !relativeDirectory.split(separator: "/").contains("..")
+    private static func scopedPathForDisplay(displayBase: String, relativePath: String) -> String {
+        displayBase == "/" ? "/\(relativePath)" : "\(displayBase)\(relativePath)"
     }
 
-    private static func shouldExcludeFromRecursiveScan(name: String) -> Bool {
-        localizedCaseInsensitiveHasPrefix(name, prefix: ".git") || excludedRecursiveDirectoryNames.contains(name)
-    }
-
-    private static func localizedCaseInsensitiveHasPrefix(_ value: String, prefix: String) -> Bool {
-        value.range(of: prefix, options: [.anchored, .caseInsensitive], locale: .current) != nil
-    }
-
-    private static func relativePath(directoryPart: String, name: String, isDirectory: Bool) -> String {
-        let path = directoryPart.isEmpty ? name : "\(directoryPart)/\(name)"
-        return isDirectory ? "\(path)/" : path
-    }
-
-    private static func relativePath(from base: URL, to url: URL, isDirectory: Bool) -> String {
-        let basePath = base.standardizedFileURL.path
-        let path = url.standardizedFileURL.path
-        let relative: String
-        if path == basePath {
-            relative = ""
-        } else if path.hasPrefix(basePath + "/") {
-            relative = String(path.dropFirst(basePath.count + 1))
-        } else {
-            relative = url.lastPathComponent
-        }
-        return isDirectory && !relative.hasSuffix("/") ? "\(relative)/" : relative
-    }
-
-    private static func suggestion(relativePath: String, name: String, isDirectory: Bool, query: Query) -> Suggestion {
-        Suggestion(
-            label: isDirectory ? "\(name)/" : name,
-            displayPath: relativePath,
-            isDirectory: isDirectory,
-            completionText: completionText(for: relativePath, isDirectory: isDirectory, query: query)
-        )
-    }
-
-    private static func score(suggestion: Suggestion, query: String) -> Int {
-        score(path: suggestion.displayPath, name: suggestion.label.trimmingCharacters(in: CharacterSet(charactersIn: "/")), query: normalizedQuery(query))
-    }
-
-    private static func score(path: String, name: String, query: String) -> Int {
-        let lowerQuery = query.lowercased()
-        guard !lowerQuery.isEmpty else { return 1 }
-        let lowerName = name.lowercased()
-        let lowerPath = path.lowercased()
-
-        if lowerName == lowerQuery { return 1000 }
-        if lowerName.hasPrefix(lowerQuery) { return 900 - max(0, lowerName.count - lowerQuery.count) }
-        if lowerPath.hasPrefix(lowerQuery) { return 820 - max(0, lowerPath.count - lowerQuery.count) }
-        if lowerName.contains(lowerQuery) { return 700 - max(0, lowerName.count - lowerQuery.count) }
-        if lowerPath.contains(lowerQuery) { return 500 - max(0, lowerPath.count - lowerQuery.count) }
-        return fuzzySubsequenceScore(candidate: lowerPath, query: lowerQuery)
-    }
-
-    private static func fuzzySubsequenceScore(candidate: String, query: String) -> Int {
-        let haystack = Array(candidate)
-        let needle = Array(query)
-        guard !needle.isEmpty else { return 1 }
-        var searchStart = haystack.startIndex
-        var gapPenalty = 0
-        for character in needle {
-            guard let match = haystack[searchStart...].firstIndex(of: character) else { return 0 }
-            gapPenalty += haystack.distance(from: searchStart, to: match)
-            searchStart = haystack.index(after: match)
-        }
-        return max(1, 300 - gapPenalty - max(0, haystack.count - needle.count))
-    }
-
-    private static func completionText(for relativePath: String, isDirectory: Bool, query: Query) -> String {
-        let shouldQuote = query.isQuoted || relativePath.contains(where: \.isWhitespace)
+    private static func completionText(for path: String, isDirectory: Bool, isQuoted: Bool) -> String {
+        let shouldQuote = isQuoted || path.contains(where: \.isWhitespace)
         if isDirectory {
-            return shouldQuote ? "@\"\(relativePath)" : "@\(relativePath)"
+            return shouldQuote ? "@\"\(path)" : "@\(path)"
         }
-        return shouldQuote ? "@\"\(relativePath)\" " : "@\(relativePath) "
+        return shouldQuote ? "@\"\(path)\" " : "@\(path) "
     }
 }

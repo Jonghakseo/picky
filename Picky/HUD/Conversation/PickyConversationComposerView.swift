@@ -61,6 +61,7 @@ struct PickyConversationComposerView: View {
     @State private var isSlashCommandAutocompleteDismissed: Bool = false
     @State private var selectedFileMentionIndex: Int = 0
     @State private var isFileMentionAutocompleteDismissed: Bool = false
+    @State private var fileMentionSuggestions: [PickyFileMentionAutocompletePolicy.Suggestion] = []
     @State private var appliedComposerDraftRequestID: String?
     @State private var keyDownMonitor: Any?
     @State private var measuredEditorContentHeight: CGFloat = Self.minimumEditorHeight
@@ -155,12 +156,32 @@ struct PickyConversationComposerView: View {
                 viewModel.refreshSlashCommandsIfStillLoading(sessionID: session.id)
             }
         }
+        .task(id: FileMentionSearchKey(
+            draft: draft,
+            cwd: session.cwd,
+            isVisible: fileMentionAutocompleteIsVisible
+        )) {
+            guard fileMentionAutocompleteIsVisible,
+                  PickyFileMentionAutocompletePolicy.query(in: draft) != nil else {
+                fileMentionSuggestions = []
+                return
+            }
+            let suggestions = await PickyFileMentionSearchService.suggestions(for: draft, cwd: session.cwd)
+            guard !Task.isCancelled else { return }
+            fileMentionSuggestions = suggestions
+        }
     }
 
     private struct SlashCommandPollingKey: Equatable {
         let sessionID: String
         let isVisible: Bool
         let isLoaded: Bool
+    }
+
+    private struct FileMentionSearchKey: Equatable {
+        let draft: String
+        let cwd: String?
+        let isVisible: Bool
     }
 
     private var composerRow: some View {
@@ -523,7 +544,9 @@ struct PickyConversationComposerView: View {
 
     private var fileMentionStatusText: String {
         let cwd = session.cwd?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return cwd.isEmpty ? "No working directory for file mentions" : "No matching files"
+        if cwd.isEmpty { return "No working directory for file mentions" }
+        if !PickyFileMentionSearchService.isAvailable { return "File search requires fd (not installed)" }
+        return "No matching files"
     }
 
     private func autocompletePanelBackground(opacity: Double, strokeOpacity: Double) -> some View {
@@ -549,11 +572,6 @@ struct PickyConversationComposerView: View {
             && !isComposerInputDisabled
             && PickyFileMentionAutocompletePolicy.query(in: draft) != nil
             && !isFileMentionAutocompleteDismissed
-    }
-
-    var fileMentionSuggestions: [PickyFileMentionAutocompletePolicy.Suggestion] {
-        guard PickyFileMentionAutocompletePolicy.query(in: draft) != nil else { return [] }
-        return PickyFileMentionAutocompletePolicy.suggestions(for: draft, cwd: session.cwd)
     }
 
     private func selectedSlashCommandClampedIndex(for suggestions: [PickySlashCommand]) -> Int {

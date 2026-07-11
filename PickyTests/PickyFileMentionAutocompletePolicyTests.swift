@@ -85,131 +85,142 @@ struct PickyFileMentionAutocompletePolicyTests {
         #expect(PickyFileMentionAutocompletePolicy.completedText(in: "open @\"Some ", with: suggestion) == "open @\"Some File.swift\" ")
     }
 
-    @Test func suggestionsSearchCwdByPrefixWithDirectoriesFirst() throws {
-        let root = try makeTemporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: root) }
-        try createDirectory("Picky/HUD/Conversation", in: root)
-        try writeFile("Picky/App.swift", in: root)
-        try writeFile("Picky/Readme.md", in: root)
-        try createDirectory("PictureAssets", in: root)
-        try writeFile("Pico.txt", in: root)
-
-        let suggestions = PickyFileMentionAutocompletePolicy.suggestions(for: "@Pic", cwd: root.path)
-
-        #expect(Array(suggestions.map(\.displayPath).prefix(3)) == ["Picky/", "PictureAssets/", "Pico.txt"])
-        #expect(Array(suggestions.map(\.completionText).prefix(3)) == ["@Picky/", "@PictureAssets/", "@Pico.txt "])
+    @Test func fdPathQueryBuildsFullPathRegex() {
+        #expect(PickyFileMentionAutocompletePolicy.fdPathQuery("Composer") == "Composer")
+        #expect(PickyFileMentionAutocompletePolicy.fdPathQuery("a/b") == "a[\\\\/]b")
+        #expect(PickyFileMentionAutocompletePolicy.fdPathQuery("a.b/c") == "a\\.b[\\\\/]c")
+        #expect(PickyFileMentionAutocompletePolicy.fdPathQuery("a/b/") == "a[\\\\/]b[\\\\/]")
+        #expect(PickyFileMentionAutocompletePolicy.fdPathQuery("/") == "/")
     }
 
-    @Test func suggestionsCanFindNestedFilesWithFuzzyPathQuery() throws {
-        let root = try makeTemporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: root) }
-        try writeFile("Picky/HUD/Conversation/PickyConversationComposerView.swift", in: root)
-        try writeFile("Picky/HUD/Conversation/PickyConversationCardView.swift", in: root)
-        try writeFile("Picky/Context/PickyContextPacket.swift", in: root)
+    @Test func fdArgumentsMatchPiArguments() {
+        let expectedBase = [
+            "--base-directory", "/tmp/project",
+            "--max-results", "100",
+            "--type", "f",
+            "--type", "d",
+            "--follow",
+            "--hidden",
+            "--exclude", ".git",
+            "--exclude", ".git/*",
+            "--exclude", ".git/**",
+        ]
 
-        let suggestions = PickyFileMentionAutocompletePolicy.suggestions(for: "@composer", cwd: root.path)
-
-        #expect(suggestions.first?.displayPath == "Picky/HUD/Conversation/PickyConversationComposerView.swift")
-        #expect(suggestions.first?.completionText == "@Picky/HUD/Conversation/PickyConversationComposerView.swift ")
+        #expect(PickyFileMentionAutocompletePolicy.fdArguments(baseDirectory: "/tmp/project", pattern: "") == expectedBase)
+        #expect(PickyFileMentionAutocompletePolicy.fdArguments(baseDirectory: "/tmp/project", pattern: "Composer") == expectedBase + ["Composer"])
+        #expect(PickyFileMentionAutocompletePolicy.fdArguments(baseDirectory: "/tmp/project", pattern: "HUD/Composer") == expectedBase + ["--full-path", "HUD[\\\\/]Composer"])
     }
 
-    @Test func suggestionsCanFindNestedFilesWithSubsequenceQuery() throws {
+    @Test func scopedQueryResolvesRelativeDirectory() throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
-        try writeFile("Picky/HUD/Conversation/PickyConversationComposerView.swift", in: root)
-        try writeFile("Picky/HUD/Conversation/PickyConversationCardView.swift", in: root)
+        try createDirectory("Picky/HUD", in: root)
 
-        let suggestions = PickyFileMentionAutocompletePolicy.suggestions(for: "@pcv", cwd: root.path)
-
-        #expect(suggestions.map(\.displayPath).contains("Picky/HUD/Conversation/PickyConversationComposerView.swift"))
+        let scoped = try #require(PickyFileMentionAutocompletePolicy.scopedQuery(for: "Picky/HUD/Conv", cwd: root.path))
+        #expect(scoped.baseDirectory == root.appendingPathComponent("Picky/HUD").path)
+        #expect(scoped.pattern == "Conv")
+        #expect(scoped.displayBase == "Picky/HUD/")
+        #expect(PickyFileMentionAutocompletePolicy.scopedQuery(for: "Missing/Conv", cwd: root.path) == nil)
+        #expect(PickyFileMentionAutocompletePolicy.scopedQuery(for: "Composer", cwd: root.path) == nil)
     }
 
-    @Test func suggestionsSkipHeavyRecursiveDirectories() throws {
-        let root = try makeTemporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: root) }
-        try writeFile("node_modules/pkg/ComposerOnlyInNodeModules.swift", in: root)
-        try writeFile("Sources/App/ComposerVisible.swift", in: root)
-
-        let suggestions = PickyFileMentionAutocompletePolicy.suggestions(for: "@Composer", cwd: root.path)
-
-        #expect(suggestions.map(\.displayPath).contains("Sources/App/ComposerVisible.swift"))
-        #expect(!suggestions.map(\.displayPath).contains("node_modules/pkg/ComposerOnlyInNodeModules.swift"))
-    }
-
-    @Test func suggestionsSearchNestedDirectoryByLeafPrefix() throws {
-        let root = try makeTemporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: root) }
-        try createDirectory("Picky/HUD/Conversation", in: root)
-        try createDirectory("Picky/HUD/Controls", in: root)
-        try writeFile("Picky/HUD/ConversationCard.swift", in: root)
-        try writeFile("Picky/HUD/Other.swift", in: root)
-
-        let suggestions = PickyFileMentionAutocompletePolicy.suggestions(for: "@Picky/HUD/Conv", cwd: root.path)
-
-        #expect(suggestions.map(\.displayPath) == ["Picky/HUD/Conversation/", "Picky/HUD/ConversationCard.swift"])
-        #expect(suggestions.map(\.completionText) == ["@Picky/HUD/Conversation/", "@Picky/HUD/ConversationCard.swift "])
-    }
-
-    @Test func suggestionsExcludeDotGitAndDotGitContents() throws {
-        let root = try makeTemporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: root) }
-        try createDirectory(".git/objects", in: root)
-        try writeFile(".gitignore", in: root)
-        try writeFile(".git/config", in: root)
-        try writeFile("Visible.swift", in: root)
-
-        #expect(PickyFileMentionAutocompletePolicy.suggestions(for: "@.git", cwd: root.path).isEmpty)
-        #expect(PickyFileMentionAutocompletePolicy.suggestions(for: "@.git/config", cwd: root.path).isEmpty)
-        #expect(PickyFileMentionAutocompletePolicy.suggestions(for: "@Vis", cwd: root.path).map(\.displayPath) == ["Visible.swift"])
-    }
-
-    @Test func suggestionsDoNotEscapeWorkingDirectoryWithParentTraversal() throws {
+    @Test func scopedQueryExpandsHomeAndAllowsAbsoluteAndParentPaths() throws {
         let parent = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: parent) }
-        let root = parent.appendingPathComponent("project", isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        try createDirectory("src", in: root)
-        try createDirectory("sibling-secret", in: parent)
-        try writeFile("sibling-secret/Token.swift", in: parent)
+        let project = parent.appendingPathComponent("project", isDirectory: true)
+        let home = parent.appendingPathComponent("home", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        try createDirectory("Sources", in: home)
 
-        #expect(PickyFileMentionAutocompletePolicy.suggestions(for: "@../", cwd: root.path).isEmpty)
-        #expect(PickyFileMentionAutocompletePolicy.suggestions(for: "@../sibling-secret/T", cwd: root.path).isEmpty)
-        #expect(PickyFileMentionAutocompletePolicy.suggestions(for: "@src", cwd: root.path).map(\.displayPath) == ["src/"])
+        let homeScoped = try #require(PickyFileMentionAutocompletePolicy.scopedQuery(for: "~/Sources/Comp", cwd: project.path, home: home.path))
+        #expect(homeScoped.baseDirectory == home.appendingPathComponent("Sources").path)
+        #expect(homeScoped.displayBase == "~/Sources/")
+
+        let absoluteQuery = parent.path + "/"
+        let absoluteScoped = try #require(PickyFileMentionAutocompletePolicy.scopedQuery(for: absoluteQuery, cwd: project.path))
+        #expect(absoluteScoped.baseDirectory == absoluteQuery)
+        #expect(absoluteScoped.pattern.isEmpty)
+
+        let parentScoped = try #require(PickyFileMentionAutocompletePolicy.scopedQuery(for: "../", cwd: project.path))
+        #expect(parentScoped.baseDirectory == parent.path)
+        #expect(parentScoped.pattern.isEmpty)
     }
 
-    @Test func suggestionsLimitResultsAndReturnEmptyForInvalidCwd() throws {
-        let root = try makeTemporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: root) }
-        for index in 0..<25 {
-            try writeFile(String(format: "File%02d.swift", index), in: root)
-        }
-
-        #expect(PickyFileMentionAutocompletePolicy.suggestions(for: "@File", cwd: root.path).count == 20)
-        #expect(PickyFileMentionAutocompletePolicy.suggestions(for: "@File", cwd: nil).isEmpty)
-        #expect(PickyFileMentionAutocompletePolicy.suggestions(for: "@File", cwd: "").isEmpty)
-        #expect(PickyFileMentionAutocompletePolicy.suggestions(for: "@File", cwd: root.appendingPathComponent("missing").path).isEmpty)
+    @Test func scoreEntryMatchesPiBandsAndDirectoryBonus() {
+        #expect(PickyFileMentionAutocompletePolicy.scoreEntry(path: "Sources/Composer", query: "Composer", isDirectory: false) == 100)
+        #expect(PickyFileMentionAutocompletePolicy.scoreEntry(path: "Sources/ComposerView.swift", query: "Composer", isDirectory: false) == 80)
+        #expect(PickyFileMentionAutocompletePolicy.scoreEntry(path: "Sources/MyComposer.swift", query: "Composer", isDirectory: false) == 50)
+        #expect(PickyFileMentionAutocompletePolicy.scoreEntry(path: "Composer/Unrelated.swift", query: "Composer", isDirectory: false) == 30)
+        #expect(PickyFileMentionAutocompletePolicy.scoreEntry(path: "Sources/Other.swift", query: "Composer", isDirectory: false) == 0)
+        #expect(PickyFileMentionAutocompletePolicy.scoreEntry(path: "Sources/Composer", query: "Composer", isDirectory: true) == 110)
     }
 
-    @Test func suggestionsQuoteWhitespacePathCompletion() throws {
-        let root = try makeTemporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: root) }
-        try writeFile("Some File.swift", in: root)
+    @Test func directoryTrailingSlashParticipatesInPathScoringWithoutChangingFilenameBands() {
+        #expect(PickyFileMentionAutocompletePolicy.scoreEntry(path: "sub/deep/", query: "deep/", isDirectory: true) == 40)
+        #expect(PickyFileMentionAutocompletePolicy.scoreEntry(path: "sub/deep/", query: "deep", isDirectory: true) == 110)
 
-        let suggestions = PickyFileMentionAutocompletePolicy.suggestions(for: "@\"Some", cwd: root.path)
-
-        #expect(suggestions.map(\.displayPath) == ["Some File.swift"])
-        #expect(suggestions.map(\.completionText) == ["@\"Some File.swift\" "])
+        let suggestions = PickyFileMentionAutocompletePolicy.suggestions(
+            fromFdLines: ["sub/deep/"],
+            pattern: "deep/",
+            displayBase: ""
+        )
+        #expect(suggestions.map(\.displayPath) == ["sub/deep"])
     }
 
-    @Test func suggestionsQuoteWhitespaceDirectoryCompletionWithoutTrailingSpace() throws {
-        let root = try makeTemporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: root) }
-        try createDirectory("Some Directory", in: root)
+    @Test func suggestionsParseFilterAndRankFdOutput() {
+        let suggestions = PickyFileMentionAutocompletePolicy.suggestions(
+            fromFdLines: [
+                ".git/", ".git/config", "nested/.git/config", "Other/Composer/", "Composer.swift",
+                "MyComposer.swift", "Nested/Composer", "Composer/",
+            ],
+            pattern: "Composer",
+            displayBase: "Picky/HUD/"
+        )
 
-        let suggestions = PickyFileMentionAutocompletePolicy.suggestions(for: "@\"Some", cwd: root.path)
+        #expect(suggestions.map(\.displayPath) == [
+            "Picky/HUD/Other/Composer", "Picky/HUD/Composer", "Picky/HUD/Nested/Composer",
+            "Picky/HUD/Composer.swift", "Picky/HUD/MyComposer.swift",
+        ])
+        #expect(suggestions.map(\.label) == ["Composer/", "Composer/", "Composer", "Composer.swift", "MyComposer.swift"])
+        #expect(suggestions[1].isDirectory)
+        #expect(suggestions[1].completionText == "@Picky/HUD/Composer/")
+    }
 
-        #expect(suggestions.map(\.displayPath) == ["Some Directory/"])
-        #expect(suggestions.map(\.completionText) == ["@\"Some Directory/"])
+    @Test func suggestionsPreserveFdOrderForEqualScoresAndCapAtTwenty() {
+        let lines = (0..<25).map { "Composer\($0).swift" }
+        let suggestions = PickyFileMentionAutocompletePolicy.suggestions(fromFdLines: lines, pattern: "Composer", displayBase: "")
+
+        #expect(suggestions.count == 20)
+        #expect(suggestions.map(\.displayPath) == Array(lines.prefix(20)))
+    }
+
+    @Test func suggestionsWithEmptyPatternPreserveFdOrderAndRootDisplay() {
+        let suggestions = PickyFileMentionAutocompletePolicy.suggestions(
+            fromFdLines: ["z.swift", "Folder/", "a.swift"],
+            pattern: "",
+            displayBase: "/"
+        )
+
+        #expect(suggestions.map(\.displayPath) == ["/z.swift", "/Folder", "/a.swift"])
+        #expect(suggestions.map(\.completionText) == ["@/z.swift ", "@/Folder/", "@/a.swift "])
+    }
+
+    @Test func suggestionsQuoteWhitespaceCompletions() {
+        let suggestions = PickyFileMentionAutocompletePolicy.suggestions(
+            fromFdLines: ["Some File.swift", "Some Directory/", "Plain.swift"],
+            pattern: "Some",
+            displayBase: ""
+        )
+
+        #expect(suggestions.map(\.completionText) == ["@\"Some Directory/", "@\"Some File.swift\" "])
+
+        let quoted = PickyFileMentionAutocompletePolicy.suggestions(
+            fromFdLines: ["Plain.swift"],
+            pattern: "Plain",
+            displayBase: "",
+            isQuoted: true
+        )
+        #expect(quoted.first?.completionText == "@\"Plain.swift\" ")
     }
 
     private func makeTemporaryDirectory() throws -> URL {
@@ -224,11 +235,5 @@ struct PickyFileMentionAutocompletePolicyTests {
             at: root.appendingPathComponent(relativePath, isDirectory: true),
             withIntermediateDirectories: true
         )
-    }
-
-    private func writeFile(_ relativePath: String, in root: URL) throws {
-        let url = root.appendingPathComponent(relativePath, isDirectory: false)
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try "fixture".write(to: url, atomically: true, encoding: .utf8)
     }
 }

@@ -3,23 +3,14 @@
 //  Picky
 //
 
+import Darwin
 import Foundation
 
 nonisolated enum PickyFileMentionSearchService {
-    private static let fdPath: String? = {
-        let environment = ProcessInfo.processInfo.environment
-        let candidates = [
-            environment["PICKY_FD_PATH"],
-            NSHomeDirectory() + "/.pi/agent/bin/fd",
-            "/opt/homebrew/bin/fd",
-            "/usr/local/bin/fd",
-            "/usr/bin/fd",
-        ].compactMap { $0?.isEmpty == false ? $0 : nil }
-        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
-    }()
+    private static let fdResolver = FdPathResolver()
 
     static var isAvailable: Bool {
-        fdPath != nil
+        fdResolver.resolve() != nil
     }
 
     static func suggestions(
@@ -29,7 +20,7 @@ nonisolated enum PickyFileMentionSearchService {
         guard let query = PickyFileMentionAutocompletePolicy.query(in: draft),
               let cwd = cwd?.trimmingCharacters(in: .whitespacesAndNewlines),
               !cwd.isEmpty,
-              let fdPath
+              let fdPath = fdResolver.resolve()
         else { return [] }
 
         var isDirectory: ObjCBool = false
@@ -76,10 +67,12 @@ nonisolated enum PickyFileMentionSearchService {
                         continuation.resume(returning: nil)
                         return
                     }
-                    continuation.resume(returning: String(data: data, encoding: .utf8))
+                    continuation.resume(returning: String(decoding: data, as: UTF8.self))
                 }
 
                 state.set(process)
+                // Bound a stuck fd process so autocomplete cannot hang the GUI indefinitely.
+                state.startWatchdog()
                 do {
                     try process.run()
                     state.terminateIfCancelled()
@@ -91,6 +84,29 @@ nonisolated enum PickyFileMentionSearchService {
         } onCancel: {
             state.cancel()
         }
+    }
+}
+
+private final class FdPathResolver: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cachedPath: String?
+
+    func resolve() -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        if let cachedPath { return cachedPath }
+
+        let environment = ProcessInfo.processInfo.environment
+        let candidates = [
+            environment["PICKY_FD_PATH"],
+            NSHomeDirectory() + "/.pi/agent/bin/fd",
+            "/opt/homebrew/bin/fd",
+            "/usr/local/bin/fd",
+            "/usr/bin/fd",
+        ].compactMap { $0?.isEmpty == false ? $0 : nil }
+        let resolvedPath = candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+        cachedPath = resolvedPath
+        return resolvedPath
     }
 }
 
@@ -118,6 +134,7 @@ private final class ProcessState: @unchecked Sendable {
     private let lock = NSLock()
     private var process: Process?
     private var isCancelled = false
+    private var watchdogTask: Task<Void, Never>?
 
     func set(_ process: Process) {
         lock.lock()
@@ -125,10 +142,27 @@ private final class ProcessState: @unchecked Sendable {
         lock.unlock()
     }
 
+    func startWatchdog() {
+        let task = Task.detached { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: 10_000_000_000)
+            } catch {
+                return
+            }
+            self?.killIfRunning()
+        }
+        lock.lock()
+        watchdogTask = task
+        lock.unlock()
+    }
+
     func clear() {
         lock.lock()
         process = nil
+        let watchdogTask = watchdogTask
+        self.watchdogTask = nil
         lock.unlock()
+        watchdogTask?.cancel()
     }
 
     func cancel() {
@@ -136,13 +170,25 @@ private final class ProcessState: @unchecked Sendable {
         isCancelled = true
         let runningProcess = process?.isRunning == true ? process : nil
         lock.unlock()
-        runningProcess?.terminate()
+        Self.kill(runningProcess)
     }
 
     func terminateIfCancelled() {
         lock.lock()
         let runningProcess = isCancelled && process?.isRunning == true ? process : nil
         lock.unlock()
-        runningProcess?.terminate()
+        Self.kill(runningProcess)
+    }
+
+    private func killIfRunning() {
+        lock.lock()
+        let runningProcess = process?.isRunning == true ? process : nil
+        lock.unlock()
+        Self.kill(runningProcess)
+    }
+
+    private static func kill(_ process: Process?) {
+        guard let process, process.isRunning else { return }
+        Darwin.kill(process.processIdentifier, SIGKILL)
     }
 }

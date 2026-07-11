@@ -8,6 +8,33 @@ import Testing
 @testable import Picky
 
 struct PickyFileMentionAutocompletePolicyTests {
+    @Test func acceptDecisionConsumesPendingSearch() {
+        #expect(PickyFileMentionAutocompletePolicy.acceptDecision(
+            isVisible: true,
+            searchDraft: "inspect @Conf",
+            draft: "inspect @Confidential",
+            hasSuggestions: true
+        ) == .consume)
+    }
+
+    @Test func acceptDecisionAcceptsCurrentSuggestions() {
+        #expect(PickyFileMentionAutocompletePolicy.acceptDecision(
+            isVisible: true,
+            searchDraft: "inspect @Conf",
+            draft: "inspect @Conf",
+            hasSuggestions: true
+        ) == .accept)
+    }
+
+    @Test func acceptDecisionPassesThroughCompletedEmptySearch() {
+        #expect(PickyFileMentionAutocompletePolicy.acceptDecision(
+            isVisible: true,
+            searchDraft: "inspect @Missing",
+            draft: "inspect @Missing",
+            hasSuggestions: false
+        ) == .passthrough)
+    }
+
     @Test func queryParsesUnquotedMentionAtDraftEnd() throws {
         let query = try #require(PickyFileMentionAutocompletePolicy.query(in: "please inspect @Picky/HUD/Conv"))
 

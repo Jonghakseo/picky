@@ -62,6 +62,7 @@ struct PickyConversationComposerView: View {
     @State private var selectedFileMentionIndex: Int = 0
     @State private var isFileMentionAutocompleteDismissed: Bool = false
     @State private var fileMentionSuggestions: [PickyFileMentionAutocompletePolicy.Suggestion] = []
+    @State private var fileMentionSearchDraft: String?
     @State private var appliedComposerDraftRequestID: String?
     @State private var keyDownMonitor: Any?
     @State private var measuredEditorContentHeight: CGFloat = Self.minimumEditorHeight
@@ -161,14 +162,17 @@ struct PickyConversationComposerView: View {
             cwd: session.cwd,
             isVisible: fileMentionAutocompleteIsVisible
         )) {
+            let searchDraft = draft
             guard fileMentionAutocompleteIsVisible,
-                  PickyFileMentionAutocompletePolicy.query(in: draft) != nil else {
+                  PickyFileMentionAutocompletePolicy.query(in: searchDraft) != nil else {
                 fileMentionSuggestions = []
+                fileMentionSearchDraft = nil
                 return
             }
-            let suggestions = await PickyFileMentionSearchService.suggestions(for: draft, cwd: session.cwd)
+            let suggestions = await PickyFileMentionSearchService.suggestions(for: searchDraft, cwd: session.cwd)
             guard !Task.isCancelled else { return }
             fileMentionSuggestions = suggestions
+            fileMentionSearchDraft = searchDraft
         }
     }
 
@@ -626,9 +630,20 @@ struct PickyConversationComposerView: View {
     @discardableResult
     private func acceptSelectedFileMention() -> Bool {
         let suggestions = fileMentionSuggestions
-        guard fileMentionAutocompleteIsVisible, !suggestions.isEmpty else { return false }
-        acceptFileMention(suggestions[selectedFileMentionClampedIndex(for: suggestions)])
-        return true
+        switch PickyFileMentionAutocompletePolicy.acceptDecision(
+            isVisible: fileMentionAutocompleteIsVisible,
+            searchDraft: fileMentionSearchDraft,
+            draft: draft,
+            hasSuggestions: !suggestions.isEmpty
+        ) {
+        case .consume:
+            return true
+        case .accept:
+            acceptFileMention(suggestions[selectedFileMentionClampedIndex(for: suggestions)])
+            return true
+        case .passthrough:
+            return false
+        }
     }
 
     private func acceptFileMention(_ suggestion: PickyFileMentionAutocompletePolicy.Suggestion) {

@@ -29,6 +29,23 @@ nonisolated enum PickyFileMentionAutocompletePolicy {
         let completionText: String
     }
 
+    enum AcceptDecision: Equatable {
+        case consume
+        case accept
+        case passthrough
+    }
+
+    static func acceptDecision(
+        isVisible: Bool,
+        searchDraft: String?,
+        draft: String,
+        hasSuggestions: Bool
+    ) -> AcceptDecision {
+        guard isVisible else { return .passthrough }
+        guard searchDraft == draft else { return .consume }
+        return hasSuggestions ? .accept : .passthrough
+    }
+
     static func query(in text: String) -> Query? {
         guard !text.isEmpty else { return nil }
 

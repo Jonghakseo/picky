@@ -68,34 +68,11 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var mainAgentThinkingLevel: PickyMainAgentThinkingLevel?
     var mainAgentModelPattern: String?
     var direction: PickyModelCycleDirection?
-    var mode: String?
-    var provider: String?
-    var apiKey: String?
-    /// Realtime auth mode for `configureMainRealtimeAuth`. `apiKey` (default when
-    /// omitted) uses the Platform API key in `apiKey`. `codexOAuth` tells the
-    /// daemon to authenticate with the signed-in ChatGPT subscription token from
-    /// pi AuthStorage (`openai-codex` provider).
-    var authMode: String?
-    var modelOrDeployment: String?
-    var voice: String?
-    var reasoningEffort: String?
-    var transcriptionLanguage: String?
-    var azure: PickyOpenAIRealtimeAzureProtocolConfig?
-    var inputId: UUID?
-    var audioBase64: String?
-    var playedAudioMs: Double?
     var kind: PickyQueueClearKind?
     /// Pi message id observed when a Picky terminal overlay was opened. The daemon imports only
     /// active Pi transcript messages after this id when syncing the terminal session back.
     var baselinePiMessageId: String?
     var disabledBuiltinTools: [String]?
-    /// Identifies a single Realtime transcription stream (PTT cycle). Set on
-    /// every `beginTranscriptionStream` / `appendTranscriptionAudio` /
-    /// `endTranscriptionStream` / `cancelTranscriptionStream` envelope.
-    var streamId: String?
-    var language: String?
-    var model: String?
-    var keyterms: [String]?
     var action: PickyPushToTalkControlAction?
     var entryId: String?
 
@@ -124,25 +101,9 @@ struct PickyCommandEnvelope: Codable, Equatable {
         mainAgentThinkingLevel: PickyMainAgentThinkingLevel? = nil,
         mainAgentModelPattern: String? = nil,
         direction: PickyModelCycleDirection? = nil,
-        mode: String? = nil,
-        provider: String? = nil,
-        apiKey: String? = nil,
-        authMode: String? = nil,
-        modelOrDeployment: String? = nil,
-        voice: String? = nil,
-        reasoningEffort: String? = nil,
-        transcriptionLanguage: String? = nil,
-        azure: PickyOpenAIRealtimeAzureProtocolConfig? = nil,
-        inputId: UUID? = nil,
-        audioBase64: String? = nil,
-        playedAudioMs: Double? = nil,
         kind: PickyQueueClearKind? = nil,
         baselinePiMessageId: String? = nil,
         disabledBuiltinTools: [String]? = nil,
-        streamId: String? = nil,
-        language: String? = nil,
-        model: String? = nil,
-        keyterms: [String]? = nil,
         action: PickyPushToTalkControlAction? = nil,
         entryId: String? = nil
     ) {
@@ -171,34 +132,12 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.mainAgentThinkingLevel = mainAgentThinkingLevel
         self.mainAgentModelPattern = mainAgentModelPattern
         self.direction = direction
-        self.mode = mode
-        self.provider = provider
-        self.apiKey = apiKey
-        self.authMode = authMode
-        self.modelOrDeployment = modelOrDeployment
-        self.voice = voice
-        self.reasoningEffort = reasoningEffort
-        self.transcriptionLanguage = transcriptionLanguage
-        self.azure = azure
-        self.inputId = inputId
-        self.audioBase64 = audioBase64
-        self.playedAudioMs = playedAudioMs
         self.kind = kind
         self.baselinePiMessageId = baselinePiMessageId
-        self.streamId = streamId
-        self.language = language
-        self.model = model
-        self.keyterms = keyterms
         self.action = action
         self.entryId = entryId
         self.disabledBuiltinTools = disabledBuiltinTools
     }
-}
-
-struct PickyOpenAIRealtimeAzureProtocolConfig: Codable, Equatable {
-    var resourceEndpoint: String
-    var apiVersion: String?
-    var apiShape: String
 }
 
 enum PickyQueueClearKind: String, Codable, Equatable {
@@ -234,16 +173,6 @@ enum PickyCommandType: String, Codable, Equatable {
     case listMainAgentModels
     case setDefaultCwd
     case setMainAgentModel
-    case setMainAgentRuntimeMode
-    case configureMainRealtimeAuth
-    case beginMainRealtimeVoiceTurn
-    case appendMainRealtimeInputAudio
-    case commitMainRealtimeVoiceTurn
-    case cancelMainRealtimeVoiceTurn
-    case beginTranscriptionStream
-    case appendTranscriptionAudio
-    case endTranscriptionStream
-    case cancelTranscriptionStream
     case resetMainAgent
     case abortMainAgent
     case setMainAgentThinkingLevel
@@ -296,19 +225,6 @@ enum PickyEvent: Equatable {
     case mainMessageAppended(PickyMainAgentMessage)
     case mainAgentSessionInfoUpdated(sessionFilePath: String?, cwd: String?)
     case mainAgentModelsSnapshot([PickyMainAgentModelOption])
-    case mainRealtimeStateChanged(PickyMainRealtimeStateEvent)
-    case mainRealtimeInputTranscriptDelta(inputId: UUID, delta: String)
-    case mainRealtimeInputTranscriptCompleted(inputId: UUID, transcript: String)
-    case mainRealtimeOutputAudioDelta(inputId: UUID?, audioBase64: String)
-    case mainRealtimeOutputAudioDone(inputId: UUID?)
-    case mainRealtimeOutputTranscriptDelta(inputId: UUID?, delta: String)
-    case mainRealtimeOutputTranscriptCompleted(inputId: UUID?, transcript: String)
-    case mainRealtimeTurnDone(PickyMainRealtimeTurnDoneEvent)
-    case transcriptionStreamStarted(streamId: String)
-    case transcriptionDelta(streamId: String, delta: String)
-    case transcriptionCompleted(streamId: String, transcript: String)
-    case transcriptionStreamFailed(streamId: String, message: String)
-    case transcriptionStreamClosed(streamId: String)
     case sessionSnapshot([PickyAgentSession])
     case sessionUpdated(PickyAgentSession)
     /// Authoritative archive-flag change signaled by agentd. Picky's session
@@ -317,8 +233,7 @@ enum PickyEvent: Equatable {
     /// `archived` field on plain `sessionUpdated` to avoid mid-flight
     /// unarchive flicker when an unrelated update arrives while the user has
     /// just toggled archive locally. Fired by agentd whenever
-    /// `setSessionArchived` runs — from a Picky client command, from the
-    /// `picky_unarchive_pickle` realtime tool, etc.
+    /// `setSessionArchived` runs — from a Picky client command or tool.
     case sessionArchivedAuthoritative(sessionId: String, archived: Bool)
     case sessionResourcesReloaded(sessionId: String)
     case pluginsReloaded(PickyPluginsReloadedEvent)
@@ -352,8 +267,6 @@ enum PickyEvent: Equatable {
 
     init(type: String, decoder: Decoder) throws {
         if let event = try Self.decodeMainAgentEvent(type: type, decoder: decoder)
-            ?? Self.decodeRealtimeEvent(type: type, decoder: decoder)
-            ?? Self.decodeTranscriptionEvent(type: type, decoder: decoder)
             ?? Self.decodeSessionEvent(type: type, decoder: decoder)
             ?? Self.decodeBridgeEvent(type: type, decoder: decoder) {
             self = event
@@ -381,57 +294,6 @@ enum PickyEvent: Equatable {
             let payload = try PickyMainAgentModelsSnapshotPayload(from: decoder)
             return .mainAgentModelsSnapshot(payload.models)
         case "error": return .error(try PickyErrorEvent(from: decoder))
-        default: return nil
-        }
-    }
-
-    /// OpenAI Realtime voice-mode events.
-    private static func decodeRealtimeEvent(type: String, decoder: Decoder) throws -> PickyEvent? {
-        switch type {
-        case "mainRealtimeStateChanged":
-            return .mainRealtimeStateChanged(try PickyMainRealtimeStateEvent(from: decoder))
-        case "mainRealtimeInputTranscriptDelta":
-            let payload = try PickyMainRealtimeInputTranscriptDeltaPayload(from: decoder)
-            return .mainRealtimeInputTranscriptDelta(inputId: payload.inputId, delta: payload.delta)
-        case "mainRealtimeInputTranscriptCompleted":
-            let payload = try PickyMainRealtimeInputTranscriptCompletedPayload(from: decoder)
-            return .mainRealtimeInputTranscriptCompleted(inputId: payload.inputId, transcript: payload.transcript)
-        case "mainRealtimeOutputAudioDelta":
-            let payload = try PickyMainRealtimeOutputAudioDeltaPayload(from: decoder)
-            return .mainRealtimeOutputAudioDelta(inputId: payload.inputId, audioBase64: payload.audioBase64)
-        case "mainRealtimeOutputAudioDone":
-            let payload = try PickyMainRealtimeOutputAudioDonePayload(from: decoder)
-            return .mainRealtimeOutputAudioDone(inputId: payload.inputId)
-        case "mainRealtimeOutputTranscriptDelta":
-            let payload = try PickyMainRealtimeOutputTranscriptDeltaPayload(from: decoder)
-            return .mainRealtimeOutputTranscriptDelta(inputId: payload.inputId, delta: payload.delta)
-        case "mainRealtimeOutputTranscriptCompleted":
-            let payload = try PickyMainRealtimeOutputTranscriptCompletedPayload(from: decoder)
-            return .mainRealtimeOutputTranscriptCompleted(inputId: payload.inputId, transcript: payload.transcript)
-        case "mainRealtimeTurnDone":
-            return .mainRealtimeTurnDone(try PickyMainRealtimeTurnDoneEvent(from: decoder))
-        default: return nil
-        }
-    }
-
-    /// Streaming transcription bridge events.
-    private static func decodeTranscriptionEvent(type: String, decoder: Decoder) throws -> PickyEvent? {
-        switch type {
-        case "transcriptionStreamStarted":
-            let payload = try PickyTranscriptionStreamIdPayload(from: decoder)
-            return .transcriptionStreamStarted(streamId: payload.streamId)
-        case "transcriptionDelta":
-            let payload = try PickyTranscriptionDeltaPayload(from: decoder)
-            return .transcriptionDelta(streamId: payload.streamId, delta: payload.delta)
-        case "transcriptionCompleted":
-            let payload = try PickyTranscriptionCompletedPayload(from: decoder)
-            return .transcriptionCompleted(streamId: payload.streamId, transcript: payload.transcript)
-        case "transcriptionStreamFailed":
-            let payload = try PickyTranscriptionFailedPayload(from: decoder)
-            return .transcriptionStreamFailed(streamId: payload.streamId, message: payload.message)
-        case "transcriptionStreamClosed":
-            let payload = try PickyTranscriptionStreamIdPayload(from: decoder)
-            return .transcriptionStreamClosed(streamId: payload.streamId)
         default: return nil
         }
     }
@@ -533,16 +395,6 @@ private struct PickyMainMessagesSnapshotPayload: Decodable { let messages: [Pick
 private struct PickyMainMessageAppendedPayload: Decodable { let message: PickyMainAgentMessage }
 private struct PickyMainAgentSessionInfoUpdatedPayload: Decodable { let sessionFilePath: String?; let cwd: String? }
 private struct PickyMainAgentModelsSnapshotPayload: Decodable { let models: [PickyMainAgentModelOption] }
-private struct PickyMainRealtimeInputTranscriptDeltaPayload: Decodable { let inputId: UUID; let delta: String }
-private struct PickyMainRealtimeInputTranscriptCompletedPayload: Decodable { let inputId: UUID; let transcript: String }
-private struct PickyMainRealtimeOutputAudioDeltaPayload: Decodable { let inputId: UUID?; let audioBase64: String }
-private struct PickyMainRealtimeOutputAudioDonePayload: Decodable { let inputId: UUID? }
-private struct PickyMainRealtimeOutputTranscriptDeltaPayload: Decodable { let inputId: UUID?; let delta: String }
-private struct PickyMainRealtimeOutputTranscriptCompletedPayload: Decodable { let inputId: UUID?; let transcript: String }
-private struct PickyTranscriptionStreamIdPayload: Decodable { let streamId: String }
-private struct PickyTranscriptionDeltaPayload: Decodable { let streamId: String; let delta: String }
-private struct PickyTranscriptionCompletedPayload: Decodable { let streamId: String; let transcript: String }
-private struct PickyTranscriptionFailedPayload: Decodable { let streamId: String; let message: String }
 private struct PickySessionSnapshotPayload: Decodable { let sessions: [PickyAgentSession] }
 private struct PickySessionUpdatedPayload: Decodable { let session: PickyAgentSession }
 private struct PickySessionArchivedAuthoritativePayload: Decodable { let sessionId: String; let archived: Bool }
@@ -569,25 +421,6 @@ private struct PickySessionMessageReplacedPayload: Decodable { let sessionId: St
 private struct PickySessionMessageRemovedPayload: Decodable { let sessionId: String; let messageId: String; let seq: Int }
 private struct PickySessionQueueUpdatedPayload: Decodable { let sessionId: String; let steering: [PickyQueueItem]; let followUp: [PickyQueueItem]; let steeringMode: PickyQueueMode?; let followUpMode: PickyQueueMode?; let seq: Int }
 private struct PickySessionActivityUpdatedPayload: Decodable { let sessionId: String; let activitySummary: PickyActivitySummary; let seq: Int }
-
-enum PickyMainRealtimeState: String, Codable, Equatable {
-    case connecting, ready, listening, thinking, speaking, failed
-}
-
-struct PickyMainRealtimeStateEvent: Decodable, Equatable {
-    let state: PickyMainRealtimeState
-    let message: String?
-}
-
-enum PickyMainRealtimeTurnStatus: String, Codable, Equatable {
-    case completed, cancelled, failed, incomplete
-}
-
-struct PickyMainRealtimeTurnDoneEvent: Decodable, Equatable {
-    let inputId: UUID?
-    let status: PickyMainRealtimeTurnStatus
-    let finalTranscript: String?
-}
 
 struct PickyHelloEvent: Decodable, Equatable {
     let serverName: String

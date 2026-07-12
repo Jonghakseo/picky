@@ -2803,120 +2803,6 @@
         }
       }
     },
-    "settings.field.mainAgentRuntime": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Main agent runtime"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "메인 에이전트 런타임"
-          }
-        }
-      }
-    },
-    "settings.mainAgentRuntime.appliedNote": {
-      "comment": "Format: 'Currently applied: <runtime>. Changes take effect after restarting Picky.'. Arg is the applied runtime display name.",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Currently applied: %@. Changes take effect after restarting Picky."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "현재 적용됨: %@. 변경 사항은 Picky를 재시작한 뒤 적용돼요."
-          }
-        }
-      }
-    },
-    "settings.mainAgentRuntime.restartNotice": {
-      "comment": "Format: runtime will switch to <desired runtime>; current session keeps using <applied runtime>.",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Runtime will switch to %@ after you restart Picky. The current session keeps using %@."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Picky를 재시작하면 런타임이 %@로 전환돼요. 현재 세션은 계속 %@를 사용해요."
-          }
-        }
-      }
-    },
-    "settings.mainAgentRuntime.quitButton": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Restart Picky"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Picky 재시작"
-          }
-        }
-      }
-    },
-    "settings.mainAgentRuntime.quitButton.help": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Quit and reopen Picky now so the selected runtime is applied."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "선택한 런타임을 적용하도록 Picky를 종료한 뒤 바로 다시 열어요."
-          }
-        }
-      }
-    },
-    "settings.mainAgentRuntime.restartButton": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Restart Picky"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Picky 재시작"
-          }
-        }
-      }
-    },
-    "settings.mainAgentRuntime.restartButton.help": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Quit and reopen Picky now so the selected runtime is applied."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "선택한 런타임을 적용하도록 Picky를 종료한 뒤 바로 다시 열어요."
-          }
-        }
-      }
-    },
     "settings.field.piModel": {
       "localizations": {
         "en": {
@@ -3238,22 +3124,6 @@
         }
       }
     },
-    "settings.azure.realtimeUrlNote": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Paste the full Azure Realtime URL. Picky derives deployment, API version, and preview/GA shape from it."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Azure Realtime URL 전체를 붙여넣어주세요. Picky가 deployment, API 버전, preview/GA 형식을 자동으로 파악해요."
-          }
-        }
-      }
-    },
     "settings.azure.ttsUrlNote": {
       "localizations": {
         "en": {
@@ -3270,22 +3140,6 @@
         }
       }
     },
-    "settings.field.realtimeProvider": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Realtime provider"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Realtime 제공자"
-          }
-        }
-      }
-    },
     "settings.field.apiKey": {
       "localizations": {
         "en": {
@@ -3298,22 +3152,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "API 키"
-          }
-        }
-      }
-    },
-    "settings.field.azureRealtimeUrl": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Azure Realtime URL"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Azure Realtime URL"
           }
         }
       }
@@ -3346,22 +3184,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "음성"
-          }
-        }
-      }
-    },
-    "settings.field.realtimeEffort": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Realtime effort"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Realtime 수준"
           }
         }
       }
@@ -5379,22 +5201,6 @@
         }
       }
     },
-    "settings.field.runtime.realtimeNote": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Picky voice uses OpenAI/Azure Realtime audio. Pickle-hover voice follow-ups still go directly to Pickles."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Picky 음성은 OpenAI/Azure Realtime 오디오를 사용해요. Pickle 위에서의 음성 후속 입력은 여전히 Pickle로 직접 전달돼요."
-          }
-        }
-      }
-    },
     "settings.field.runtime.localNote": {
       "localizations": {
         "en": {
@@ -5439,22 +5245,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "새로 생성되는 Pickle의 초기 모델로만 사용돼요. 실행 중인 Pickle은 별도로 모델을 변경할 수 있어요."
-          }
-        }
-      }
-    },
-    "settings.realtime.apiKey.placeholder.azure": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Azure OpenAI API key"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Azure OpenAI API 키"
           }
         }
       }

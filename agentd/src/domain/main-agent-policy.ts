@@ -5,13 +5,6 @@ export type QuickReplyEvent = Extract<EventEnvelope, { type: "quickReply" }>;
 export type QuickReplyMetadata = Pick<QuickReplyEvent, "originSource" | "replyKind" | "sessionId" | "inputId">;
 
 export const MAIN_AGENT_MESSAGE_LIMIT = 100;
-// User-memory caps. Items are inlined into every Realtime session.update so
-// the instruction budget needs to stay bounded. 50 items × 500 chars = 25k
-// chars worst-case, but the total cap of 4k chars is the actual gate: once
-// that's hit the model is told to forget something before adding more.
-export const PICKY_USER_MEMORY_ITEM_LIMIT = 50;
-export const PICKY_USER_MEMORY_ITEM_CHAR_LIMIT = 500;
-export const PICKY_USER_MEMORY_TOTAL_CHAR_LIMIT = 4_000;
 export const MAIN_AGENT_ROLLOVER_TURN_LIMIT = 40;
 export const MAIN_AGENT_ROLLOVER_CONTEXT_PERCENT = 70;
 export const MAIN_AGENT_COMPACT_SUMMARY_LIMIT = 4_000;

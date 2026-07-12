@@ -4,19 +4,10 @@ import { SessionStore } from "./session-store.js";
 import { SessionSupervisor } from "./session-supervisor.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import { PiSdkRuntime } from "./runtime/pi-sdk-runtime.js";
-import { OpenAIRealtimeMainRuntime, type RealtimeReadFileToolResult, type RealtimeRunBashToolResult, type RealtimeWriteFileToolResult } from "./runtime/openai-realtime-main-runtime.js";
-import { executeRealtimeBash, executeRealtimeRead, executeRealtimeWrite } from "./application/realtime-fs-tools.js";
-import { RealtimeOutputSummarizer, DEFAULT_REALTIME_SUMMARIZER_MODEL } from "./runtime/realtime-output-summarizer.js";
-import { createPiAiCompleter } from "./runtime/realtime-summarizer-completer.js";
-import { loadCodexOAuth } from "./runtime/codex-oauth.js";
-import { mkdir, writeFile as fsWriteFile } from "node:fs/promises";
-import { join as joinPath } from "node:path";
-import { SelectableMainRuntime } from "./runtime/selectable-main-runtime.js";
 import { ConservativeMockTaskRouter } from "./task-router.js";
 import { createPickyAbortPickleTool, createPickyPickleSessionsTool, createPickyStartPickleTool, createPickySteerPickleTool, type PickyHandoffRequest, type PickyPickleAbortRequest, type PickyPickleSteerRequest } from "./application/handoff-tool.js";
 import { createPickyAskUserQuestionTool } from "./application/ask-user-question-tool.js";
 import { createReadPickyUserGuideTool, readPickyUserGuide } from "./application/user-guide-tool.js";
-import { PickySkillStore } from "./application/picky-skill-store.js";
 import { stabilizeProcessCwd, type ProcessCwdStabilizerResult } from "./process-cwd.js";
 import { ThinkingLevelSchema, type ThinkingLevel } from "./protocol.js";
 import type { AgentRuntime } from "./runtime/types.js";
@@ -35,7 +26,6 @@ export interface AgentdConfig {
   mainAgentModelPattern?: string;
   pickleThinkingLevel?: ThinkingLevel;
   pickleModelPattern?: string;
-  mainAgentRuntimeMode: "pi" | "openai-realtime";
   useMockRuntime: boolean;
   sessionId?: string;
   sessionCwd?: string;
@@ -107,7 +97,6 @@ export function parseAgentdConfig(env: NodeJS.ProcessEnv): AgentdConfig {
     mainAgentModelPattern: env.PICKY_MAIN_AGENT_MODEL?.trim() || undefined,
     pickleThinkingLevel: parseThinkingLevel(env.PICKY_PICKLE_THINKING_LEVEL, { label: "pickle" }),
     pickleModelPattern: env.PICKY_PICKLE_MODEL?.trim() || undefined,
-    mainAgentRuntimeMode: env.PICKY_MAIN_AGENT_RUNTIME === "openai-realtime" ? "openai-realtime" : "pi",
     useMockRuntime: env.PICKY_AGENTD_RUNTIME === "mock",
     sessionId: env.PICKY_AGENTD_SESSION_ID?.trim() || undefined,
     sessionCwd: env.PICKY_AGENTD_SESSION_CWD?.trim() || undefined,
@@ -260,22 +249,6 @@ function buildPrimaryMainRuntime(
     return { runtime: overridden, toolsBuilder: () => [] };
   }
 
-  // Picky-only skill catalog. Independent of Pi skills: each SKILL.md under
-  // ~/Library/Application Support/Picky/skills/ is a short behavior recipe
-  // the realtime main agent can discover via picky_skills and read via
-  // picky_read_file. The store seeds the directory with bundled templates on
-  // first boot so users have at least one example to copy from.
-  //
-  // Only seed when the active main runtime is the one that actually exposes
-  // the picky_skills tool. The Pi SDK runtime has its own skill catalog and
-  // never invokes picky_skills, so seeding picky-skills there would create a
-  // dormant directory the user has to keep in sync without any payoff.
-  const pickySkillStore = new PickySkillStore();
-  if (config.mainAgentRuntimeMode === "openai-realtime") {
-    void pickySkillStore.ensureSeeded().catch((error) => {
-      logAgentd("picky skill store seed failed", { error: error instanceof Error ? error.message : String(error) });
-    });
-  }
   const requireSupervisor = (): SessionSupervisor => {
     if (!supervisorRef.current) throw new Error("Supervisor not constructed yet");
     return supervisorRef.current;
@@ -346,221 +319,5 @@ function buildPrimaryMainRuntime(
     customTools: toolsBuilder(new Set()),
   });
 
-  // Summarizer used to compact long bash/read outputs before they reach the
-  // realtime model. Auth resolver lazily loads Codex OAuth on each call so a
-  // freshly minted access token is used (the realtime config rotates it).
-  const summarizer = new RealtimeOutputSummarizer({
-    completer: createPiAiCompleter({
-      resolveApiKey: async (provider) => {
-        if (provider !== "openai-codex") return undefined;
-        try {
-          const oauth = await loadCodexOAuth();
-          return oauth.accessToken;
-        } catch (error) {
-          logAgentd("realtime summarizer codex auth missing", { error: error instanceof Error ? error.message : String(error) });
-          return undefined;
-        }
-      },
-    }),
-    model: process.env.PICKY_REALTIME_SUMMARIZER_MODEL?.trim() || DEFAULT_REALTIME_SUMMARIZER_MODEL,
-  });
-
-  const spillRoot = joinPath(config.appSupportDir, "RealtimeToolOutputs");
-
-  async function writeBashSpill(callId: string, body: string): Promise<string | undefined> {
-    if (!body) return undefined;
-    try {
-      await mkdir(spillRoot, { recursive: true });
-      const safeCallId = callId.replace(/[^A-Za-z0-9_.-]/g, "_");
-      const path = joinPath(spillRoot, `${safeCallId}.log`);
-      await fsWriteFile(path, body, "utf8");
-      return path;
-    } catch (error) {
-      logAgentd("realtime bash spill failed", { error: error instanceof Error ? error.message : String(error) });
-      return undefined;
-    }
-  }
-
-  const realtimeMainRuntime = new OpenAIRealtimeMainRuntime({
-    toolHandlers: {
-      handoff: startPickleFromMainContext,
-      listPickleSessions,
-      steerPickleSession,
-      listPickySkills: () => pickySkillStore.list(),
-      readUserGuide: (request) => readPickyUserGuide(request),
-      // Long-term user memory CRUD. The runtime relays tool calls here; the
-      // supervisor owns picky.json and pushes a refreshed session.update via
-      // refreshUserMemoryInstructions after every mutation.
-      rememberUserFact: async ({ content }) => {
-        const result = await requireSupervisor().addUserMemory(content);
-        return result.ok ? { ok: true, memory: { id: result.memory.id, content: result.memory.content } } : result;
-      },
-      updateUserFact: async ({ id, content }) => {
-        const result = await requireSupervisor().updateUserMemory(id, content);
-        return result.ok ? { ok: true, memory: { id: result.memory.id, content: result.memory.content } } : result;
-      },
-      forgetUserFact: async ({ id }) => {
-        const result = await requireSupervisor().removeUserMemory(id);
-        return result.ok ? { ok: true, removed: { id: result.removed.id, content: result.removed.content } } : result;
-      },
-      listUserFacts: () => requireSupervisor().listUserMemories().map((m) => ({ id: m.id, content: m.content })),
-      // Pickle inspect/abort. The runtime relays the tool calls here;
-      // supervisor owns the session map, bootstrap owns the app-bridge calls
-      // that actually kill a child daemon for abort.
-      inspectPickleSession: ({ sessionId }) => requireSupervisor().inspectPickleSession(sessionId),
-      abortPickleSession: ({ sessionId }) => abortPickleSession({ sessionId }),
-      // Unarchive flips the supervisor's `archived` flag back to false so the
-      // dock card returns. We do NOT route through the app bridge here — the
-      // child daemon (if any) is left alone, only the metadata changes.
-      unarchivePickleSession: ({ sessionId }) => requireSupervisor().setSessionArchived(sessionId, false),
-
-      // -- Realtime filesystem / shell tools ---------------------------------
-      // Errors are wrapped into { ok: false, error } so the runtime always
-      // echoes back a parseable JSON payload to the model instead of throwing.
-      // Every entry / exit is logged via logAgentd so the user can grep the
-      // daemon stdout/stderr log to reconstruct exactly what the realtime
-      // model asked for and what it got back.
-      readFile: async (request): Promise<RealtimeReadFileToolResult> => {
-        const startedAt = Date.now();
-        logAgentd("realtime read_file start", { callId: request.callId, path: request.path, offset: request.offset, limit: request.limit, cwd: request.cwd });
-        try {
-          const result = await executeRealtimeRead({
-            path: request.path,
-            offset: request.offset,
-            limit: request.limit,
-            cwd: request.cwd,
-          });
-          let summary: string | undefined;
-          if (result.byteTruncated) {
-            logAgentd("realtime read_file summarize", { callId: request.callId, fullContentBytes: Buffer.byteLength(result.fullContent, "utf8") });
-            summary = await summarizer.summarize({
-              kind: "read",
-              path: result.resolvedPath,
-              rawOutput: result.fullContent,
-            });
-          }
-          logAgentd("realtime read_file done", {
-            callId: request.callId,
-            elapsedMs: Date.now() - startedAt,
-            resolvedPath: result.resolvedPath,
-            totalLines: result.totalLines,
-            totalBytes: result.totalBytes,
-            returnedChars: result.content.length,
-            truncated: result.truncated ? 1 : 0,
-            byteTruncated: result.byteTruncated ? 1 : 0,
-            summarized: summary ? 1 : 0,
-          });
-          return {
-            ok: true,
-            path: result.path,
-            resolvedPath: result.resolvedPath,
-            content: result.content,
-            totalLines: result.totalLines,
-            totalBytes: result.totalBytes,
-            offset: result.offset,
-            limit: result.limit,
-            truncated: result.truncated,
-            ...(summary ? { summary } : {}),
-          };
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          logAgentd("realtime read_file failed", { callId: request.callId, elapsedMs: Date.now() - startedAt, error: message });
-          return { ok: false, error: message };
-        }
-      },
-      runBash: async (request): Promise<RealtimeRunBashToolResult> => {
-        const startedAt = Date.now();
-        logAgentd("realtime run_bash start", { callId: request.callId, cwd: request.cwd, commandChars: request.command.length, command: request.command });
-        try {
-          const result = await executeRealtimeBash({
-            command: request.command,
-            cwd: request.cwd,
-          });
-          let logPath: string | undefined;
-          let summary: string | undefined;
-          if (result.truncated) {
-            logAgentd("realtime run_bash spill", { callId: request.callId, fullOutputBytes: Buffer.byteLength(result.fullOutput, "utf8") });
-            logPath = await writeBashSpill(request.callId, result.fullOutput);
-            summary = await summarizer.summarize({
-              kind: "bash",
-              command: result.command,
-              cwd: result.cwd,
-              exitCode: result.exitCode,
-              rawOutput: result.fullOutput,
-            });
-          }
-          logAgentd("realtime run_bash done", {
-            callId: request.callId,
-            elapsedMs: Date.now() - startedAt,
-            exitCode: result.exitCode,
-            signal: result.signal,
-            timedOut: result.timedOut ? 1 : 0,
-            durationMs: result.durationMs,
-            totalBytes: result.totalBytes,
-            returnedChars: result.output.length,
-            truncated: result.truncated ? 1 : 0,
-            logPath,
-            summarized: summary ? 1 : 0,
-          });
-          return {
-            ok: true,
-            command: result.command,
-            cwd: result.cwd,
-            exitCode: result.exitCode,
-            signal: result.signal,
-            output: result.output,
-            totalBytes: result.totalBytes,
-            durationMs: result.durationMs,
-            timedOut: result.timedOut,
-            truncated: result.truncated,
-            ...(logPath ? { logPath } : {}),
-            ...(summary ? { summary } : {}),
-          };
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          logAgentd("realtime run_bash failed", { callId: request.callId, elapsedMs: Date.now() - startedAt, error: message });
-          return { ok: false, error: message };
-        }
-      },
-      writeFile: async (request): Promise<RealtimeWriteFileToolResult> => {
-        const startedAt = Date.now();
-        // We deliberately do NOT log the body (it may be large; bodies are
-        // never echoed to the model either) — only the byte count and mode.
-        logAgentd("realtime write_file start", { callId: request.callId, path: request.path, mode: request.mode ?? "overwrite", contentBytes: Buffer.byteLength(request.content, "utf8"), cwd: request.cwd });
-        try {
-          const result = await executeRealtimeWrite({
-            path: request.path,
-            content: request.content,
-            mode: request.mode,
-            cwd: request.cwd,
-          });
-          logAgentd("realtime write_file done", {
-            callId: request.callId,
-            elapsedMs: Date.now() - startedAt,
-            resolvedPath: result.resolvedPath,
-            bytesWritten: result.bytesWritten,
-            mode: result.mode,
-          });
-          return {
-            ok: true,
-            path: result.path,
-            resolvedPath: result.resolvedPath,
-            bytesWritten: result.bytesWritten,
-            mode: result.mode,
-          };
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          logAgentd("realtime write_file failed", { callId: request.callId, elapsedMs: Date.now() - startedAt, error: message });
-          return { ok: false, error: message };
-        }
-      },
-    },
-  });
-
-  const runtime = new SelectableMainRuntime({
-    initialMode: config.mainAgentRuntimeMode,
-    piRuntime: piMainRuntime,
-    realtimeRuntime: realtimeMainRuntime,
-  });
-  return { runtime, toolsBuilder };
+  return { runtime: piMainRuntime, toolsBuilder };
 }

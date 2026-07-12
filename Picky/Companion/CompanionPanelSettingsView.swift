@@ -230,9 +230,7 @@ struct CompanionPanelSettingsView: View {
             let qi = settings.quickInputShortcut.summaryString
             return L10n.t("settings.summary.shortcuts", ptt, qi)
         case .mainAgent:
-            let runtime = settings.mainAgentRuntimeMode.displayName
-            let model = indexModelLabel(settings.mainAgentModelPattern)
-            return "\(runtime) \u{00B7} \(model)"
+            return indexModelLabel(settings.mainAgentModelPattern)
         case .pickle:
             let model = indexModelLabel(settings.pickleAgentModelPattern)
             let dock = settings.hudDockSizePreset.displayName
@@ -556,8 +554,6 @@ struct CompanionPanelSettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                mainAgentRuntimePicker
-
                 VStack(alignment: .leading, spacing: 6) {
                     fieldLabel("settings.field.piBinaryPath")
                     cwdField(
@@ -592,15 +588,7 @@ struct CompanionPanelSettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                if isMainAgentRuntimeRestartPending {
-                    runtimeRestartNotice
-                }
-
-                if viewModel.settings.mainAgentRuntimeMode == .openAIRealtime {
-                    realtimeSettingsFields
-                } else {
-                    piMainAgentModelPicker
-                }
+                piMainAgentModelPicker
 
                 VStack(alignment: .leading, spacing: 5) {
                     fieldLabel("settings.field.reasoningLevel")
@@ -684,90 +672,16 @@ struct CompanionPanelSettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                if appliedMainAgentRuntimeMode == .pi {
-                    VStack(alignment: .leading, spacing: 5) {
-                        fieldLabel("settings.field.agentsFile")
-                        Text("settings.field.agentsFile.note")
-                            .pickyFont(size: 11)
-                            .foregroundColor(DS.Colors.textTertiary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        openAgentsFileButton
-                    }
+                VStack(alignment: .leading, spacing: 5) {
+                    fieldLabel("settings.field.agentsFile")
+                    Text("settings.field.agentsFile.note")
+                        .pickyFont(size: 11)
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    openAgentsFileButton
                 }
             }
         }
-    }
-
-    private var appliedMainAgentRuntimeMode: PickyMainAgentRuntimeMode {
-        AppBundleConfiguration.effectiveRuntimeMode
-    }
-
-    private var isMainAgentRuntimeRestartPending: Bool {
-        viewModel.settings.mainAgentRuntimeMode != appliedMainAgentRuntimeMode
-    }
-
-    private var mainAgentRuntimePicker: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            fieldLabel("settings.field.mainAgentRuntime")
-            Picker("settings.field.mainAgentRuntime", selection: $viewModel.settings.mainAgentRuntimeMode) {
-                ForEach(PickyMainAgentRuntimeMode.allCases) { mode in
-                    Text(mode.displayName).tag(mode)
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .onChange(of: viewModel.settings.mainAgentRuntimeMode) { _, _ in
-                saveImmediately(for: .mainAgent)
-            }
-
-            Text(L10n.t("settings.mainAgentRuntime.appliedNote", appliedMainAgentRuntimeMode.displayName))
-                .pickyFont(size: 10.5, weight: .medium)
-                .foregroundColor(DS.Colors.textTertiary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    private var runtimeRestartNotice: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .top, spacing: 7) {
-                Image(systemName: "arrow.clockwise.circle.fill")
-                    .pickyFont(size: 12, weight: .semibold)
-                    .foregroundColor(DS.Colors.warningText)
-                Text(L10n.t("settings.mainAgentRuntime.restartNotice", viewModel.settings.mainAgentRuntimeMode.displayName, appliedMainAgentRuntimeMode.displayName))
-                    .pickyFont(size: 10.5, weight: .medium)
-                    .foregroundColor(DS.Colors.warningText)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Button(action: restartPickyForRuntimeSettings) {
-                HStack(spacing: 6) {
-                    Image(systemName: "arrow.clockwise")
-                        .pickyFont(size: 10, weight: .semibold)
-                    Text("settings.mainAgentRuntime.restartButton")
-                        .pickyFont(size: 11, weight: .semibold)
-                }
-                .foregroundColor(DS.Colors.textSecondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    Capsule()
-                        .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
-                )
-            }
-            .buttonStyle(.plain)
-            .pointerCursor()
-            .help(L10n.t("settings.mainAgentRuntime.restartButton.help"))
-        }
-        .padding(8)
-        .background(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(DS.Colors.warningText.opacity(0.10))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .stroke(DS.Colors.warningText.opacity(0.30), lineWidth: 0.5)
-                )
-        )
     }
 
     private var piMainAgentModelPicker: some View {
@@ -841,82 +755,6 @@ struct CompanionPanelSettingsView: View {
         let saved = viewModel.settings.pickleAgentModelPattern.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !saved.isEmpty else { return false }
         return !companionManager.mainAgentModelOptions.contains { $0.pattern == saved }
-    }
-
-    private var realtimeSettingsFields: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            VStack(alignment: .leading, spacing: 5) {
-                fieldLabel("settings.field.realtimeProvider")
-                Picker("settings.field.realtimeProvider", selection: $viewModel.settings.openAIRealtime.provider) {
-                    ForEach(PickyOpenAIRealtimeProvider.allCases) { provider in
-                        Text(provider.displayName).tag(provider)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .onChange(of: viewModel.settings.openAIRealtime.provider) { _, _ in saveImmediately(for: .mainAgent) }
-            }
-
-            VStack(alignment: .leading, spacing: 5) {
-                fieldLabel("settings.field.apiKey")
-                SecureField(viewModel.settings.openAIRealtime.provider == .azureOpenAI ? L10n.t("settings.realtime.apiKey.placeholder.azure") : "sk-…", text: $viewModel.settings.openAIRealtime.apiKey)
-                    .textFieldStyle(.roundedBorder)
-                    .pickyFont(size: 11, weight: .medium, design: .monospaced)
-                    .onSubmit { saveImmediately(for: .mainAgent) }
-                    .onChange(of: viewModel.settings.openAIRealtime.apiKey) { _, _ in saveImmediately(for: .mainAgent) }
-            }
-
-            if viewModel.settings.openAIRealtime.provider == .azureOpenAI {
-                VStack(alignment: .leading, spacing: 5) {
-                    fieldLabel("settings.field.azureRealtimeUrl")
-                    TextField("https://resource.openai.azure.com/openai/realtime?api-version=...&deployment=...", text: $viewModel.settings.openAIRealtime.azureRealtimeURL)
-                        .textFieldStyle(.roundedBorder)
-                        .pickyFont(size: 11, weight: .medium, design: .monospaced)
-                        .onSubmit { saveImmediately(for: .mainAgent) }
-                        .onChange(of: viewModel.settings.openAIRealtime.azureRealtimeURL) { _, _ in saveImmediately(for: .mainAgent) }
-                    Text("settings.azure.realtimeUrlNote")
-                        .pickyFont(size: 10.5, weight: .medium)
-                        .foregroundColor(DS.Colors.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            } else {
-                VStack(alignment: .leading, spacing: 5) {
-                    fieldLabel("settings.field.model")
-                    TextField("gpt-realtime-2", text: $viewModel.settings.openAIRealtime.modelOrDeployment)
-                        .textFieldStyle(.roundedBorder)
-                        .pickyFont(size: 11, weight: .medium, design: .monospaced)
-                        .onSubmit { saveImmediately(for: .mainAgent) }
-                        .onChange(of: viewModel.settings.openAIRealtime.modelOrDeployment) { _, _ in saveImmediately(for: .mainAgent) }
-                }
-
-                HStack(spacing: 8) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        fieldLabel("settings.field.voice")
-                        TextField("marin", text: $viewModel.settings.openAIRealtime.voice)
-                            .textFieldStyle(.roundedBorder)
-                            .pickyFont(size: 11, weight: .medium, design: .monospaced)
-                            .onSubmit { saveImmediately(for: .mainAgent) }
-                            .onChange(of: viewModel.settings.openAIRealtime.voice) { _, _ in saveImmediately(for: .mainAgent) }
-                    }
-                    VStack(alignment: .leading, spacing: 5) {
-                        fieldLabel("settings.field.realtimeEffort")
-                        Picker("settings.field.realtimeEffort", selection: $viewModel.settings.openAIRealtime.reasoningEffort) {
-                            ForEach(PickyOpenAIRealtimeReasoningEffort.allCases) { effort in
-                                Text(effort.displayName).tag(effort)
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .onChange(of: viewModel.settings.openAIRealtime.reasoningEffort) { _, _ in saveImmediately(for: .mainAgent) }
-                    }
-                }
-            }
-        }
-        .padding(8)
-        .background(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(DS.Colors.surface2.opacity(0.35))
-        )
     }
 
     private var shortcutsSection: some View {
@@ -1322,12 +1160,6 @@ struct CompanionPanelSettingsView: View {
             subtitle: L10n.t("settings.section.voice.subtitle")
         ) {
             VStack(alignment: .leading, spacing: 14) {
-                // When the launch-time runtime is OpenAI Realtime, agentd owns
-                // transcription through the Realtime session, so the dedicated
-                // STT provider section is suppressed for this process. Changing
-                // the desired runtime in Settings does not affect this until
-                // Picky is restarted.
-                if !AppBundleConfiguration.isRealtimeOnlyBuild {
                 // ─── STT group ───
                 VStack(alignment: .leading, spacing: 10) {
                     voiceSubgroupHeader("settings.voice.subgroup.stt")
@@ -1400,7 +1232,6 @@ struct CompanionPanelSettingsView: View {
                 }
 
                 voiceGroupDivider()
-                }
 
                 // ─── TTS group ───
                 VStack(alignment: .leading, spacing: 10) {
@@ -1414,16 +1245,6 @@ struct CompanionPanelSettingsView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
-                    // Realtime runtime: only the bundled system TTS (Apple
-                    // speech synthesizer) is available, and it is used solely
-                    // for onboarding narration. Hide the provider picker and
-                    // every external-API config block because Realtime owns
-                    // assistant audio playback for this process.
-                    if AppBundleConfiguration.isRealtimeOnlyBuild {
-                        if viewModel.settings.ttsEnabled {
-                            openMacOSSpeechSettingsButton
-                        }
-                    } else {
                     providerPicker(title: "settings.voice.provider.tts", capability: .speechPlayback, selection: $viewModel.settings.ttsProvider, isEnabled: viewModel.settings.ttsEnabled)
 
                     if viewModel.settings.ttsEnabled,
@@ -1503,7 +1324,6 @@ struct CompanionPanelSettingsView: View {
                             placeholder: L10n.t("settings.voice.elevenlabs.tts.baseUrl.placeholder"),
                             text: $elevenLabsTTSBaseURLDraft
                         )
-                    }
                     }
                 }
             }
@@ -1799,10 +1619,7 @@ struct CompanionPanelSettingsView: View {
         Button(action: {
             let cwd = viewModel.settings.mainAgentCwd
             guard !cwd.isEmpty else { return }
-            PickyWorkspaceSeeder.seed(
-                workspacePath: cwd,
-                mainAgentRuntimeMode: AppBundleConfiguration.effectiveRuntimeMode
-            )
+            PickyWorkspaceSeeder.seed(workspacePath: cwd)
             let url = URL(fileURLWithPath: cwd, isDirectory: true)
                 .appendingPathComponent(PickyWorkspaceSeeder.agentsMarkdownFilename, isDirectory: false)
             NSWorkspace.shared.open(url)
@@ -1912,10 +1729,6 @@ struct CompanionPanelSettingsView: View {
         } else {
             saveStatuses.markDirty(.onboarding)
         }
-    }
-
-    private func restartPickyForRuntimeSettings() {
-        PickyRelauncher.relaunchAndTerminate()
     }
 
     private func isMainAgentDraftDirty(

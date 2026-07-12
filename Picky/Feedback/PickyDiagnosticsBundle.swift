@@ -38,7 +38,6 @@ struct PickyDiagnosticsBundleMetadata {
     var appVersion: String
     var appBuild: String
     var osVersion: String
-    var runtimeMode: String
     var generatedAt: Date
 
     func renderText(scope: PickyDiagnosticsBundleScope, maxLogBytes: Int) -> String {
@@ -47,7 +46,6 @@ struct PickyDiagnosticsBundleMetadata {
         return [
             "Picky version:      \(appVersion) (build \(appBuild))",
             "macOS:              \(osVersion)",
-            "Runtime mode:       \(runtimeMode)",
             "Diagnostics scope:  \(scope.displayName)",
             "Log tail limit:     \(maxLogBytes) bytes for included stderr tail",
             "Privacy:           User chat, tool arguments, and tool results are excluded",

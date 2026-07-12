@@ -152,8 +152,8 @@ function createPickySteerPickleToolWithNames(
     execute: async (_toolCallId, params) => {
       await onSteer({ sessionId: params.sessionId, message: params.message });
       // `details` is required by AgentToolResult but intentionally empty:
-      // a session metadata snapshot here used to mislead the realtime
-      // voice agent when the live status happened to read as `completed`.
+      // a session metadata snapshot here used to mislead the main
+      // agent when the live status happened to read as `completed`.
       return {
         content: [{ type: "text", text: "Steering sent to Pickle" }],
         details: {},

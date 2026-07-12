@@ -657,17 +657,16 @@ Picky is local-first and keeps everything under one durable folder:
   Settings/settings.json    — every preference, including API keys (plain JSON)
   Workspace/                — main agent cwd, seeded AGENTS.md, optional .pi/*
   sessions/                 — Pickle session history (active + archived)
-  picky.json                — main agent runtime state (compaction summaries, user memories, etc.)
+  picky.json                — main agent runtime state (compaction summaries, etc.)
   skills/                   — Picky-only skill catalog (<name>/SKILL.md, seeded once,
                               freely hand-authored or deleted afterwards)
   GeneratedReports/         — Markdown copies of reports (swept after 30 days)
-  RealtimeToolOutputs/      — OpenAI Realtime bash spillover files
   Logs/                     — picky-agentd stdout/stderr logs
 ```
 
 Only **screenshots** are written outside this tree, to the per-user temporary directory (`FileManager.default.temporaryDirectory/Picky/Screenshots`), so capture bytes do not accumulate in the durable folder.
 
-**API keys typed into Settings are stored in plain JSON** inside `settings.json` (OpenAI/Azure/ElevenLabs keys, custom base URLs, Realtime credentials). When Picky needs a credential, it resolves it in this order: **(1) the matching `settings.json` field if non-empty, (2) the corresponding environment variable, (3) a consolidated Keychain entry at service `com.jonghakseo.picky.azure-openai` (account `AZURE_OPENAI_VOICE_CONFIG`)** — so env and Keychain are *fallbacks*, not overrides. If you want to keep secrets out of plain JSON, clear the Settings field first, then populate the env var or Keychain entry. Picky never writes to the Keychain itself; you populate the Azure entry by hand (for example with `security add-generic-password`). If you back up or share `settings.json`, scrub the secret fields first.
+**API keys typed into Settings are stored in plain JSON** inside `settings.json` (OpenAI/Azure/ElevenLabs keys, custom base URLs). When Picky needs a credential, it resolves it in this order: **(1) the matching `settings.json` field if non-empty, (2) the corresponding environment variable, (3) a consolidated Keychain entry at service `com.jonghakseo.picky.azure-openai` (account `AZURE_OPENAI_VOICE_CONFIG`)** — so env and Keychain are *fallbacks*, not overrides. If you want to keep secrets out of plain JSON, clear the Settings field first, then populate the env var or Keychain entry. Picky never writes to the Keychain itself; you populate the Azure entry by hand (for example with `security add-generic-password`). If you back up or share `settings.json`, scrub the secret fields first.
 
 **Reinstalling Picky.app keeps everything above.** macOS only replaces the bundle in `/Applications`; the Application Support tree and any Keychain entries you populated survive. The Alpha build's "reinstall the latest alpha package" notice does not touch your settings, sessions, or workspace.
 
@@ -722,7 +721,6 @@ Use **Change**, then **Save** or **Cancel**. Conflicts are rejected. **Reset to 
 | Picky cwd | Applies to captured Picky context and the next Picky session. Defaults to the seeded Picky workspace at `~/Library/Application Support/Picky/Workspace`. Must be an existing directory. See **Customizing the Picky workspace** below. |
 | Pi binary | Optional path to the `pi` executable. Leave empty to auto-discover via `PI_CODING_AGENT_DIR/bin/pi`, then `PATH` (`which pi`), then `~/.pi/agent/bin/pi`. Used when Picky runs `pi install/remove`; install/remove actions pick it up immediately. |
 | PI_CODING_AGENT_DIR | Optional Pi coding-agent directory for Pi sessions and extension/skill installs. Leave empty to use the launch environment's `PI_CODING_AGENT_DIR`, then fallback to `~/.pi/agent`. Must be an existing directory when set. Extension/skill installs pick it up immediately; running Picky/Pi sessions apply it after restarting Picky. |
-| Runtime | Pi or OpenAI Realtime, when realtime opt-in is enabled. |
 | Pi model | Automatic or a pinned model pattern. |
 | Reasoning level | Off, Minimal, Low, Medium, High, Extra High, Maximum. Maximum appears only for Pi models that support it. |
 | Screen context | All screens or Focused screen only. Default is **Focused screen only** so Picky captures only the display the cursor is on. |
@@ -731,7 +729,7 @@ Use **Change**, then **Save** or **Cancel**. Conflicts are rejected. **Reset to 
 | Screenshot quality | 1× 1280 px, 1.5× 1920 px, 2× 2560 px longest edge. Captured screenshots are written to the per-user temporary directory (`FileManager.default.temporaryDirectory/Picky/Screenshots`), not the durable Application Support tree. |
 | Additional instructions | Extra standing instructions baked into the Picky bootstrap; apply on next Picky session/relaunch. |
 
-When saved changes require a fresh process (currently **Runtime** or the effective `PI_CODING_AGENT_DIR` for running Picky/Pi sessions), the footer action changes from **Quit** to **Restart** so you can apply them without manually reopening Picky.
+When saved changes require a fresh process (currently the effective `PI_CODING_AGENT_DIR` for running Picky/Pi sessions), the footer action changes from **Quit** to **Restart** so you can apply them without manually reopening Picky.
 
 #### Customizing the Picky workspace
 
@@ -757,17 +755,6 @@ The seeded `AGENTS.md` instructs the main agent to keep itself in sync with how 
 In practice you can shape Picky just by talking to it ("always start Pickles for the picky repo from `~/Documents/picky` and follow the AGENTS guide there") and let Picky persist the rule. You can still hand-edit `AGENTS.md` whenever you want full control.
 
 To run Picky with a completely different persona or workflow set, change **Picky cwd** in Settings to any folder that contains its own `AGENTS.md` and `.pi/*` subdirectories.
-
-Realtime-specific settings, when enabled:
-
-| Setting | Notes |
-| --- | --- |
-| Realtime provider | OpenAI or Azure OpenAI. |
-| API key | Provider API key. |
-| Azure Realtime URL | Full Azure Realtime URL; Picky derives deployment/API version/shape. |
-| Model | OpenAI realtime model for direct OpenAI. |
-| Voice | Realtime voice for direct OpenAI. |
-| Realtime effort | Low, Medium, High. |
 
 ### 13.4 Pickle
 

@@ -167,9 +167,6 @@ When bumping pi (`agentd/package.json` `@earendil-works/pi-coding-agent`):
 - Pi 0.80.6 adds the opt-in `max` thinking level across the SDK and model
   selection. Picky now preserves `max` through daemon schemas, session event
   normalization, Swift protocol decoding, and Pi/Pickle settings.
-- OpenAI Realtime's Picky-owned protocol still supports efforts through
-  `xhigh`, so selecting `max` while that runtime is active explicitly clamps
-  to `xhigh` instead of emitting an unsupported payload.
 - No changelog entry in 0.80.4-0.80.6 removes or changes Picky's T1-T4
   `AgentSession`, extension UI, tool definition, or event surfaces.
 

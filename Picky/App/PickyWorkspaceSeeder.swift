@@ -38,12 +38,11 @@ enum PickyWorkspaceSeeder {
     @discardableResult
     static func seedDefaultWorkspace(
         appSupportRoot: URL = PickyAppSupport.defaultRoot(),
-        mainAgentRuntimeMode: PickyMainAgentRuntimeMode = .pi,
         fileManager: FileManager = .default,
         log: (String) -> Void = { print($0) }
     ) -> String {
         let path = defaultWorkspacePath(appSupportRoot: appSupportRoot)
-        seed(workspacePath: path, mainAgentRuntimeMode: mainAgentRuntimeMode, fileManager: fileManager, log: log)
+        seed(workspacePath: path, fileManager: fileManager, log: log)
         // Default workspace only — never delete files in user-chosen custom cwds.
         cleanupLegacyTellPlanExtension(
             workspaceURL: URL(fileURLWithPath: path, isDirectory: true),
@@ -56,15 +55,8 @@ enum PickyWorkspaceSeeder {
     /// Seed an arbitrary path. Splits out from `seedDefaultWorkspace` so
     /// migrations / tests can target a different root without hard-coding the
     /// AppSupport URL.
-    ///
-    /// `mainAgentRuntimeMode` gates the Pi-specific `AGENTS.md` payload. The
-    /// OpenAI Realtime runtime carries its own instructions in `session.update`
-    /// and never opens the workspace AGENTS.md, so the workspace directory
-    /// itself is still created (Pickle daemons may use it as a cwd) but no Pi
-    /// payload is written.
     static func seed(
         workspacePath: String,
-        mainAgentRuntimeMode: PickyMainAgentRuntimeMode = .pi,
         fileManager: FileManager = .default,
         log: (String) -> Void = { print($0) }
     ) {
@@ -75,7 +67,6 @@ enum PickyWorkspaceSeeder {
             log("⚠️ Picky: Failed to create workspace at \(workspaceURL.path): \(error.localizedDescription)")
             return
         }
-        guard mainAgentRuntimeMode == .pi else { return }
         let agentsURL = workspaceURL.appendingPathComponent(agentsMarkdownFilename, isDirectory: false)
         if !fileManager.fileExists(atPath: agentsURL.path) {
             do {

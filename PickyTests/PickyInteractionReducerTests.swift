@@ -192,64 +192,10 @@ struct PickyInteractionReducerTests {
         ])
     }
 
-    @Test func realtimeAckClearsWaitingForAgentByContextIDEvenWhenInputIDDiffers() {
-        // Regression for the Quick Input + Realtime turn-done wedge: when a
-        // text routeTask is reduced through .textSubmitted -> .textContextCaptured,
-        // state.output lands on .waitingForAgent with the CLIENT-side inputID.
-        // agentd's main_realtime_turn_done later emits a realtimeAck quickReply
-        // carrying its OWN realtime turn UUID. Cleanup must succeed on contextID
-        // alone - matching by inputID would always fail and leave the cursor
-        // parked on .processing (yellow).
-        var state = PickyInteractionState()
-        state.pendingTextInputs[inputA] = PickyTextInputState(text: "hello", source: .quickInput)
-        state.contextOwnership["ctx-quick"] = .quickInputText(inputID: inputA)
-        state.output = .waitingForAgent(inputID: inputA, contextID: "ctx-quick", promptPreview: "hello")
-        state.overlay = .visible(reason: [.waitingForVoiceResponse])
-
-        let agentdTurnUUID = UUID(uuidString: "40000000-0000-0000-0000-00000000000A")!
-        #expect(agentdTurnUUID != inputA, "test premise: agentd turn UUID is distinct from client input UUID")
-
-        let transition = reduce(
-            state,
-            .quickReply(contextID: "ctx-quick", text: "audio already delivered", originSource: .text, replyKind: .realtimeAck, sessionID: nil, inputID: agentdTurnUUID),
-            id: timerA
-        )
-
-        #expect(transition.state.output == .idle)
-        #expect(transition.state.pendingTextInputs[inputA] == nil)
-        #expect(transition.state.overlay == .hidden)
-        #expect(transition.effects.isEmpty, "realtimeAck must not schedule speech or text-reply display effects")
-        // The visible bubble (lastDisplayMessage) must NOT be replaced - the
-        // Realtime audio + transcript path already updated the UI.
-        #expect(transition.state.lastDisplayMessage == nil)
-        #expect(transition.journalRecords.first?.kind == .stateChanged)
-    }
-
-    @Test func realtimeAckLeavesUnrelatedWaitingForAgentAlone() {
-        // A late realtimeAck for a turn whose context already moved on (newer
-        // submission, terminal reply, etc.) must not clobber the current output.
-        var state = PickyInteractionState()
-        state.pendingTextInputs[inputB] = PickyTextInputState(text: "newer", source: .quickInput)
-        state.contextOwnership["ctx-newer"] = .quickInputText(inputID: inputB)
-        state.output = .waitingForAgent(inputID: inputB, contextID: "ctx-newer", promptPreview: "newer")
-
-        let transition = reduce(
-            state,
-            .quickReply(contextID: "ctx-stale", text: "", originSource: .text, replyKind: .realtimeAck, sessionID: nil, inputID: inputA),
-            id: timerA
-        )
-
-        #expect(transition.state.output == .waitingForAgent(inputID: inputB, contextID: "ctx-newer", promptPreview: "newer"))
-        #expect(transition.state.pendingTextInputs[inputB] != nil)
-        #expect(transition.effects.isEmpty)
-        #expect(transition.journalRecords.first?.kind == .accepted)
-    }
-
     @Test func quickReplyMainStillSpeaksOnQuickInputOwnership() {
-        // Companion guard for the realtimeAck path: a regular main reply on
-        // Quick Input ownership MUST still trigger TTS / speaking output.
-        // This pins the behaviour contract so a future change to the
-        // .realtimeAck branch can't accidentally short-circuit other replyKinds.
+        // A regular main reply on Quick Input ownership MUST still trigger
+        // TTS / speaking output. This pins the behaviour contract so a future
+        // change can't accidentally short-circuit other replyKinds.
         var state = PickyInteractionState()
         state.contextOwnership["ctx-quick"] = .quickInputText(inputID: inputA)
         state.output = .waitingForAgent(inputID: inputA, contextID: "ctx-quick", promptPreview: "hello")

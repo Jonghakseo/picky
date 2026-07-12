@@ -119,35 +119,6 @@ private final class FakeNSSpeechSynthesizer: PickyNSSpeechSynthesizing {
 }
 
 @MainActor
-private final class FakeRealtimeAudioPlaybackEngine: PickyRealtimeAudioPlaybacking {
-    var isPlaying = false
-    var playedAudioMs: Double = 0
-    var onPlaybackDrained: (() -> Void)?
-    private(set) var enqueuedAudio: [String] = []
-    private(set) var stopCount = 0
-
-    func enqueuePCM16Base64(_ audioBase64: String) {
-        enqueuedAudio.append(audioBase64)
-        isPlaying = true
-    }
-
-    func stopAndReturnPlayedAudioMs() -> Double {
-        stop()
-        return playedAudioMs
-    }
-
-    func stop() {
-        stopCount += 1
-        isPlaying = false
-    }
-
-    func finishPlayback() {
-        isPlaying = false
-        onPlaybackDrained?()
-    }
-}
-
-@MainActor
 struct PickyCompanionManagerTests {
     @Test func voiceTranscriptCreatesTaskWhenNoSessionIsSelected() async throws {
         let client = FakeVoiceClient()
@@ -214,35 +185,6 @@ struct PickyCompanionManagerTests {
         #expect(client.commands.first?.context?.id == "context-voice")
         #expect(client.submissions.isEmpty)
         #expect(selection.screenContextTargetSessionID == nil)
-    }
-
-    @Test func pickleHoverVoiceFollowUpNeverUsesRealtimeCommands() async throws {
-        let client = FakeVoiceClient()
-        let manager = CompanionManager(agentClient: client, selectionStore: FakeVoiceSelectionStore())
-        let context = context(source: "voice-follow-up")
-
-        _ = try await manager.routeVoiceTranscript(transcript: "pickle delta", contextPacket: context, voiceFollowUpSessionID: "pickle-session")
-
-        #expect(client.commands.map(\.type) == [.followUp])
-        let sentRealtimeCommand = client.commands.contains { command in
-            switch command.type {
-            case .beginMainRealtimeVoiceTurn, .appendMainRealtimeInputAudio, .commitMainRealtimeVoiceTurn, .cancelMainRealtimeVoiceTurn:
-                return true
-            default:
-                return false
-            }
-        }
-        #expect(sentRealtimeCommand == false)
-        #expect(client.submissions.isEmpty)
-    }
-
-    @Test @MainActor func realtimeCompanionSeedsDictationProviderForPickleHoverVoiceFollowUp() {
-        AppBundleConfiguration.$testRuntimeModeOverride.withValue(.openAIRealtime) {
-            let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
-
-            #expect(manager.buddyDictationManager.transcriptionProviderDisplayName == "OpenAI Realtime STT")
-            #expect(manager.buddyDictationManager.isTranscriptionProviderConfigured)
-        }
     }
 
     // Regression: between `stopPushToTalkFromKeyboardShortcut` and the eventual
@@ -417,207 +359,6 @@ struct PickyCompanionManagerTests {
         #expect(manager.latestAgentSessionSummary == "열어볼게요.")
         #expect(manager.voiceState == .responding)
         #expect(speechProvider.spokenUtterances == ["열어볼게요."])
-    }
-
-    @Test @MainActor func realtimePlaybackStopBeforeFirstAudioIsSafe() {
-        let engine = OpenAIRealtimeAudioPlaybackEngine()
-
-        #expect(engine.stopAndReturnPlayedAudioMs() == 0)
-        #expect(engine.playedAudioMs == 0)
-    }
-
-    @Test @MainActor func realtimePlaybackEnqueuePCM16DataIsSafe() {
-        let engine = OpenAIRealtimeAudioPlaybackEngine()
-
-        engine.enqueuePCM16Data(Data(repeating: 0, count: PickyRealtimePCM16Audio.bytesPerSample * 24))
-        engine.stop()
-    }
-
-    @Test func realtimePCM16AudioUsesFloatPlaybackBufferForAVAudioEngineCompatibility() {
-        let samples: [Int16] = [-32768, 0, 32767]
-        let data = Data(samples.flatMap { sample -> [UInt8] in
-            let value = UInt16(bitPattern: sample).littleEndian
-            return [UInt8(value & 0x00ff), UInt8((value & 0xff00) >> 8)]
-        })
-
-        let buffer = PickyRealtimePCM16Audio.makePlaybackBuffer(from: data)
-
-        #expect(buffer?.format.commonFormat == .pcmFormatFloat32)
-        #expect(buffer?.format.sampleRate == 24_000)
-        #expect(buffer?.format.channelCount == 1)
-        #expect(buffer?.frameLength == 3)
-        #expect(buffer?.floatChannelData?[0][0] == -1)
-        #expect(buffer?.floatChannelData?[0][1] == 0)
-        #expect(abs((buffer?.floatChannelData?[0][2] ?? 0) - 0.9999695) < 0.00001)
-    }
-
-    @Test func realtimeResponseStartHidesRecognizedPromptBeforeShowingReply() async throws {
-        let playback = FakeRealtimeAudioPlaybackEngine()
-        let manager = CompanionManager(
-            agentClient: FakeVoiceClient(),
-            selectionStore: FakeVoiceSelectionStore(),
-            realtimeAudioPlaybackEngine: playback
-        )
-        manager.beginAwaitingAgentResponse(recognizedTranscript: "마이크 테스트")
-
-        manager.applyAgentEvent(.mainRealtimeOutputAudioDelta(inputId: nil, audioBase64: "AAAA"))
-
-        #expect(manager.currentVoicePromptPreview == nil)
-        #expect(manager.voicePromptBubbleState == .hidden)
-        #expect(manager.voiceState == .responding)
-        #expect(playback.enqueuedAudio == ["AAAA"])
-    }
-
-    @Test func realtimeTranscriptCompletionResetsAccumulatorForFollowUpResponses() async throws {
-        let inputID = UUID()
-        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
-
-        manager.applyAgentEvent(.mainRealtimeOutputTranscriptDelta(inputId: inputID, delta: "조회 중"))
-        manager.applyAgentEvent(.mainRealtimeOutputTranscriptCompleted(inputId: inputID, transcript: "조회 중"))
-        manager.applyAgentEvent(.mainRealtimeOutputTranscriptDelta(inputId: inputID, delta: "완료"))
-
-        #expect(manager.latestAgentSessionSummary == "완료")
-    }
-
-    @Test func realtimePlaybackDrainClearsRespondingAfterTurnDone() async throws {
-        let playback = FakeRealtimeAudioPlaybackEngine()
-        let inputID = UUID()
-        let manager = CompanionManager(
-            agentClient: FakeVoiceClient(),
-            selectionStore: FakeVoiceSelectionStore(),
-            realtimeAudioPlaybackEngine: playback
-        )
-
-        manager.applyAgentEvent(.mainRealtimeOutputAudioDelta(inputId: inputID, audioBase64: "AAAA"))
-        #expect(manager.voiceState == .responding)
-
-        manager.applyAgentEvent(.mainRealtimeTurnDone(PickyMainRealtimeTurnDoneEvent(inputId: inputID, status: .completed, finalTranscript: "완료")))
-        #expect(manager.voiceState == .responding)
-
-        playback.finishPlayback()
-
-        #expect(manager.voiceState == .idle)
-    }
-
-    @Test func realtimeReadyAfterTurnDoneDoesNotCloseBubbleWhilePlaying() async throws {
-        // Regression: agentd emits `state: ready` immediately after response.done,
-        // but the local AVAudio queue is still draining the PCM chunks for several
-        // more seconds. The voice machine's `.ready` branch unconditionally calls
-        // clearToIdle whenever `activeSpeechID` is nil — and realtime never sets
-        // activeSpeechID — so forwarding `.ready` mid-playback would close the
-        // assistant bubble while the user is still hearing the answer. The ready
-        // transition must be held until the playback engine drains.
-        let playback = FakeRealtimeAudioPlaybackEngine()
-        let inputID = UUID()
-        let manager = CompanionManager(
-            agentClient: FakeVoiceClient(),
-            selectionStore: FakeVoiceSelectionStore(),
-            realtimeAudioPlaybackEngine: playback
-        )
-
-        manager.applyAgentEvent(.mainRealtimeOutputAudioDelta(inputId: inputID, audioBase64: "AAAA"))
-        manager.applyAgentEvent(.mainRealtimeTurnDone(PickyMainRealtimeTurnDoneEvent(inputId: inputID, status: .completed, finalTranscript: "완료")))
-        manager.applyAgentEvent(.mainRealtimeStateChanged(PickyMainRealtimeStateEvent(state: .ready, message: nil)))
-
-        #expect(manager.voiceState == .responding)
-
-        playback.finishPlayback()
-
-        #expect(manager.voiceState == .idle)
-    }
-
-    @Test func realtimePlaybackDrainClearsLoadingStateAfterLateThinkingEvent() async throws {
-        // Regression: Realtime completion-notification turns can receive a
-        // late `thinking` projection while local audio is still draining. The
-        // old drain handler only cleared `.responding`, so the cursor stayed
-        // yellow (`.processing`) even after playback had finished.
-        let playback = FakeRealtimeAudioPlaybackEngine()
-        let inputID = UUID()
-        let manager = CompanionManager(
-            agentClient: FakeVoiceClient(),
-            selectionStore: FakeVoiceSelectionStore(),
-            realtimeAudioPlaybackEngine: playback
-        )
-
-        manager.applyAgentEvent(.mainRealtimeOutputAudioDelta(inputId: inputID, audioBase64: "AAAA"))
-        manager.applyAgentEvent(.mainRealtimeStateChanged(PickyMainRealtimeStateEvent(state: .thinking, message: nil)))
-        manager.applyAgentEvent(.mainRealtimeTurnDone(PickyMainRealtimeTurnDoneEvent(inputId: inputID, status: .completed, finalTranscript: "완료")))
-
-        #expect(manager.voiceState == .processing)
-
-        playback.finishPlayback()
-
-        #expect(manager.voiceState == .idle)
-    }
-
-    @Test @MainActor func quickInputSubmissionCancelsOngoingRealtimeAudioBeforeAuthCheck() async throws {
-        // Regression: while the Realtime audio is still draining locally,
-        // typing a fresh Quick Input request used to queue the new response
-        // behind the stale spoken reply (and never told agentd to truncate the
-        // already-emitted assistant audio item). PTT release already calls
-        // cancelRealtimeMainVoiceTurn via interruptSpokenResponseForVoiceInput;
-        // sendDirectMessage now mirrors that cut-off before anything else so
-        // the local playback engine stops and agentd receives the cancel with
-        // the correct playedAudioMs - regardless of whether the new submission
-        // is later rejected by the realtime auth gate.
-        try await AppBundleConfiguration.$testRuntimeModeOverride.withValue(.openAIRealtime) {
-            let playback = FakeRealtimeAudioPlaybackEngine()
-            playback.isPlaying = true
-            playback.playedAudioMs = 2_500
-            let client = FakeVoiceClient()
-            let manager = CompanionManager(
-                agentClient: client,
-                selectionStore: FakeVoiceSelectionStore(),
-                realtimeAudioPlaybackEngine: playback
-            )
-
-            _ = await manager.sendDirectMessage("새 입력", source: .quickInput)
-
-            #expect(playback.stopCount > 0)
-            try await waitUntil { client.commands.contains { $0.type == .cancelMainRealtimeVoiceTurn } }
-            let cancelCommand = client.commands.first { $0.type == .cancelMainRealtimeVoiceTurn }
-            #expect(cancelCommand?.playedAudioMs == 2_500)
-        }
-    }
-
-    @Test @MainActor func sendDirectMessageDoesNotCancelPlaybackOutsideRealtimeMode() async throws {
-        // The Pi build (default) does not own a Realtime audio queue. Even if
-        // a fake playback engine reports isPlaying=true, sendDirectMessage
-        // must not synthesize a cancel command on that path; doing so would
-        // emit a no-op cancelMainRealtimeVoiceTurn on a daemon whose main
-        // runtime is not realtime.
-        try await AppBundleConfiguration.$testRuntimeModeOverride.withValue(.pi) {
-            let playback = FakeRealtimeAudioPlaybackEngine()
-            playback.isPlaying = true
-            let client = FakeVoiceClient()
-            let manager = CompanionManager(
-                agentClient: client,
-                selectionStore: FakeVoiceSelectionStore(),
-                voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(),
-                realtimeAudioPlaybackEngine: playback
-            )
-
-            _ = await manager.sendDirectMessage("새 입력", source: .quickInput)
-            try await settle()
-
-            #expect(playback.stopCount == 0)
-            #expect(client.commands.contains { $0.type == .cancelMainRealtimeVoiceTurn } == false)
-        }
-    }
-
-    @Test func realtimeTranscriptEventsDoNotTriggerExistingSpeechProvider() async throws {
-        let speechProvider = FakeSpeechPlaybackProvider()
-        let manager = CompanionManager(
-            agentClient: FakeVoiceClient(),
-            selectionStore: FakeVoiceSelectionStore(),
-            speechPlaybackProvider: speechProvider
-        )
-
-        manager.applyAgentEvent(.mainRealtimeOutputTranscriptCompleted(inputId: nil, transcript: "Realtime 응답"))
-        manager.applyAgentEvent(.mainRealtimeTurnDone(PickyMainRealtimeTurnDoneEvent(inputId: nil, status: .completed, finalTranscript: "Realtime 응답")))
-
-        #expect(manager.latestAgentSessionSummary == "Realtime 응답")
-        #expect(speechProvider.spokenUtterances.isEmpty)
     }
 
     @Test func injectedSpeechProviderControlsResponseLifecycle() async throws {
@@ -856,98 +597,69 @@ struct PickyCompanionManagerTests {
     }
 
     @Test func voiceInputInterruptSendsMainAgentAbortBeforeNextTranscriptRouting() async throws {
-        try await AppBundleConfiguration.$testRuntimeModeOverride.withValue(.pi) {
-            let client = FakeVoiceClient()
-            let selection = FakeVoiceSelectionStore()
-            selection.hoveredVoiceFollowUpSessionID = "changed-after-press"
-            let manager = CompanionManager(agentClient: client, selectionStore: selection)
+        let client = FakeVoiceClient()
+        let selection = FakeVoiceSelectionStore()
+        selection.hoveredVoiceFollowUpSessionID = "changed-after-press"
+        let manager = CompanionManager(agentClient: client, selectionStore: selection)
 
-            manager.interruptSpokenResponseForVoiceInput()
-            try await settle()
-            _ = try await manager.routeVoiceTranscript(transcript: "새 음성 입력", contextPacket: context(source: "voice-follow-up"), voiceFollowUpSessionID: "session-hovered")
+        manager.interruptSpokenResponseForVoiceInput()
+        try await settle()
+        _ = try await manager.routeVoiceTranscript(transcript: "새 음성 입력", contextPacket: context(source: "voice-follow-up"), voiceFollowUpSessionID: "session-hovered")
 
-            #expect(client.calls == ["send:abortMainAgent", "send:followUp"])
-            #expect(client.commands.map(\.type) == [.abortMainAgent, .followUp])
-            #expect(client.commands.first?.sessionId == nil)
-            #expect(client.commands.last?.sessionId == "session-hovered")
-            #expect(client.commands.last?.text == "새 음성 입력")
-        }
+        #expect(client.calls == ["send:abortMainAgent", "send:followUp"])
+        #expect(client.commands.map(\.type) == [.abortMainAgent, .followUp])
+        #expect(client.commands.first?.sessionId == nil)
+        #expect(client.commands.last?.sessionId == "session-hovered")
+        #expect(client.commands.last?.text == "새 음성 입력")
     }
 
     @Test func voiceInputAbortPrecedesNewTaskSubmission() async throws {
-        try await AppBundleConfiguration.$testRuntimeModeOverride.withValue(.pi) {
-            let client = FakeVoiceClient()
-            let manager = CompanionManager(agentClient: client, selectionStore: FakeVoiceSelectionStore())
+        let client = FakeVoiceClient()
+        let manager = CompanionManager(agentClient: client, selectionStore: FakeVoiceSelectionStore())
 
-            manager.interruptSpokenResponseForVoiceInput()
-            try await settle()
-            _ = try await manager.routeVoiceTranscript(transcript: "새 작업", contextPacket: context(source: "voice"))
+        manager.interruptSpokenResponseForVoiceInput()
+        try await settle()
+        _ = try await manager.routeVoiceTranscript(transcript: "새 작업", contextPacket: context(source: "voice"))
 
-            #expect(client.calls == ["send:abortMainAgent", "submit"])
-            #expect(client.commands.map(\.type) == [.abortMainAgent])
-            #expect(client.submissions.first?.transcript == "새 작업")
-        }
+        #expect(client.calls == ["send:abortMainAgent", "submit"])
+        #expect(client.commands.map(\.type) == [.abortMainAgent])
+        #expect(client.submissions.first?.transcript == "새 작업")
     }
 
     @Test func voiceInputAbortAlsoAbortsInFlightPickleFollowUpTarget() async throws {
-        try await AppBundleConfiguration.$testRuntimeModeOverride.withValue(.pi) {
-            let client = FakeVoiceClient()
-            let manager = CompanionManager(agentClient: client, selectionStore: FakeVoiceSelectionStore())
-            // Simulate a previous voice utterance routed to a Pickle while the
-            // response is still loading so the session-scoped abort must be
-            // dispatched alongside `abortMainAgent`.
-            manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-in-flight")
-            manager.beginAwaitingAgentResponse(recognizedTranscript: "이전 질문")
+        let client = FakeVoiceClient()
+        let manager = CompanionManager(agentClient: client, selectionStore: FakeVoiceSelectionStore())
+        // Simulate a previous voice utterance routed to a Pickle while the
+        // response is still loading so the session-scoped abort must be
+        // dispatched alongside `abortMainAgent`.
+        manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-in-flight")
+        manager.beginAwaitingAgentResponse(recognizedTranscript: "이전 질문")
 
-            manager.interruptSpokenResponseForVoiceInput()
-            // `abortMainAgentForVoiceInput` dispatches two detached
-            // `Task { agentClient.send(...) }` blocks; a fixed `settle()` sleep
-            // races them under load. Poll until both commands have been recorded.
-            try await waitUntil { Set(client.calls) == Set(["send:abortMainAgent", "send:abort"]) }
+        manager.interruptSpokenResponseForVoiceInput()
+        // `abortMainAgentForVoiceInput` dispatches two detached
+        // `Task { agentClient.send(...) }` blocks; a fixed `settle()` sleep
+        // races them under load. Poll until both commands have been recorded.
+        try await waitUntil { Set(client.calls) == Set(["send:abortMainAgent", "send:abort"]) }
 
-            let abortCommand = client.commands.first { $0.type == .abort }
-            #expect(abortCommand?.sessionId == "pickle-in-flight")
-        }
-    }
-
-    @Test func realtimeRuntimeTargetedPickleLoadingInterruptDoesNotCancelMainRealtimeTurn() async throws {
-        try await AppBundleConfiguration.$testRuntimeModeOverride.withValue(.openAIRealtime) {
-            let client = FakeVoiceClient()
-            let manager = CompanionManager(agentClient: client, selectionStore: FakeVoiceSelectionStore())
-            manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-in-flight")
-            manager.beginAwaitingAgentResponse(recognizedTranscript: "이전 질문")
-
-            manager.interruptSpokenResponseForVoiceInput()
-            try await waitUntil {
-                let calls = client.calls
-                return calls.contains("send:abortMainAgent") && calls.contains("send:abort")
-            }
-            try await settle()
-
-            #expect(client.commands.contains { $0.type == .abortMainAgent })
-            #expect(client.commands.contains { $0.type == .cancelMainRealtimeVoiceTurn } == false)
-            let abortCommand = client.commands.first { $0.type == .abort }
-            #expect(abortCommand?.sessionId == "pickle-in-flight")
-        }
+        let abortCommand = client.commands.first { $0.type == .abort }
+        #expect(abortCommand?.sessionId == "pickle-in-flight")
     }
 
     @Test func voiceInputAbortDoesNotTouchPickleWhenNoResponseIsInFlight() async throws {
-        try await AppBundleConfiguration.$testRuntimeModeOverride.withValue(.pi) {
-            // Regression guard: when the previous Pickle follow-up has already
-            // completed (no pending response, voiceState != .responding) the PTT
-            // interrupt must not send `.abort` for that stale session id, which
-            // would otherwise overwrite a `done` Pickle to `cancelled` on agentd.
-            let client = FakeVoiceClient()
-            let manager = CompanionManager(agentClient: client, selectionStore: FakeVoiceSelectionStore())
-            manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-already-done")
+        // Regression guard: when the previous Pickle follow-up has already
+        // completed (no pending response, voiceState != .responding) the PTT
+        // interrupt must not send `.abort` for that stale session id, which
+        // would otherwise overwrite a `done` Pickle to `cancelled` on agentd.
+        let client = FakeVoiceClient()
+        let manager = CompanionManager(agentClient: client, selectionStore: FakeVoiceSelectionStore())
+        manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-already-done")
 
-            manager.interruptSpokenResponseForVoiceInput()
-            // Wait for the fire-and-forget `abortMainAgent` Task to flush so the
-            // no-abort assertion below doesn't race the dispatch.
-            try await waitUntil { client.calls == ["send:abortMainAgent"] }
+        manager.interruptSpokenResponseForVoiceInput()
+        // Wait for the fire-and-forget `abortMainAgent` Task to flush so the
+        // no-abort assertion below doesn't race the dispatch.
+        try await waitUntil { client.calls == ["send:abortMainAgent"] }
 
-            #expect(client.commands.contains { $0.type == .abort } == false)
-        }
+        #expect(client.commands.contains { $0.type == .abort } == false)
     }
 
     @Test func voiceInputSuppressesQuickReplySpeechWithoutQueueing() async throws {

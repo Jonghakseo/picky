@@ -41,7 +41,6 @@ Adapters exist to translate external APIs into Picky's internal model:
 
 - WebSocket server/client
 - Pi SDK runtime
-- OpenAI Realtime runtime
 - AppKit/SwiftUI views
 - filesystem/keychain stores
 
@@ -87,7 +86,6 @@ Important clusters:
 - composer drafts and attachment paths;
 - inline/shell terminal attachment state;
 - voice input lifecycle;
-- realtime audio turn state;
 - pointer overlay presentation;
 - settings preferences;
 - secrets.

@@ -51,7 +51,6 @@ struct PickyAgentDaemonConfiguration: Equatable {
     var mainAgentModelPattern: String = ""
     var pickleAgentThinkingLevel: PickyPickleAgentThinkingLevel = .automatic
     var pickleAgentModelPattern: String = ""
-    var mainAgentRuntimeMode: PickyMainAgentRuntimeMode = .pi
     var piBinaryPath: String = ""
     var piCodingAgentDir: String = ""
     var runtime: String?
@@ -84,7 +83,6 @@ struct PickyAgentDaemonConfiguration: Equatable {
         mainAgentModelPattern: String = "",
         pickleAgentThinkingLevel: PickyPickleAgentThinkingLevel = .automatic,
         pickleAgentModelPattern: String = "",
-        mainAgentRuntimeMode: PickyMainAgentRuntimeMode = .pi,
         piBinaryPath: String = "",
         piCodingAgentDir: String = "",
         environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -107,7 +105,6 @@ struct PickyAgentDaemonConfiguration: Equatable {
             mainAgentModelPattern: mainAgentModelPattern,
             pickleAgentThinkingLevel: pickleAgentThinkingLevel,
             pickleAgentModelPattern: pickleAgentModelPattern,
-            mainAgentRuntimeMode: mainAgentRuntimeMode,
             piBinaryPath: piBinaryPath,
             piCodingAgentDir: piCodingAgentDir,
             runtime: environment["PICKY_AGENTD_RUNTIME"],
@@ -135,7 +132,6 @@ struct PickyAgentDaemonConfiguration: Equatable {
         mainAgentModelPattern: String,
         pickleAgentThinkingLevel: PickyPickleAgentThinkingLevel,
         pickleAgentModelPattern: String,
-        mainAgentRuntimeMode: PickyMainAgentRuntimeMode,
         piBinaryPath: String,
         piCodingAgentDir: String,
         runtime: String?,
@@ -170,7 +166,6 @@ struct PickyAgentDaemonConfiguration: Equatable {
                 mainAgentModelPattern: mainAgentModelPattern,
                 pickleAgentThinkingLevel: pickleAgentThinkingLevel,
                 pickleAgentModelPattern: pickleAgentModelPattern,
-                mainAgentRuntimeMode: mainAgentRuntimeMode,
                 piBinaryPath: piBinaryPath,
                 piCodingAgentDir: piCodingAgentDir,
                 runtime: runtime,
@@ -195,7 +190,6 @@ struct PickyAgentDaemonConfiguration: Equatable {
                 mainAgentModelPattern: mainAgentModelPattern,
                 pickleAgentThinkingLevel: pickleAgentThinkingLevel,
                 pickleAgentModelPattern: pickleAgentModelPattern,
-                mainAgentRuntimeMode: mainAgentRuntimeMode,
                 piBinaryPath: piBinaryPath,
                 piCodingAgentDir: piCodingAgentDir,
                 runtime: runtime,
@@ -221,7 +215,6 @@ struct PickyAgentDaemonConfiguration: Equatable {
                 mainAgentModelPattern: mainAgentModelPattern,
                 pickleAgentThinkingLevel: pickleAgentThinkingLevel,
                 pickleAgentModelPattern: pickleAgentModelPattern,
-                mainAgentRuntimeMode: mainAgentRuntimeMode,
                 piBinaryPath: piBinaryPath,
                 piCodingAgentDir: piCodingAgentDir,
                 runtime: runtime,
@@ -249,7 +242,6 @@ struct PickyAgentDaemonConfiguration: Equatable {
                 mainAgentModelPattern: mainAgentModelPattern,
                 pickleAgentThinkingLevel: pickleAgentThinkingLevel,
                 pickleAgentModelPattern: pickleAgentModelPattern,
-                mainAgentRuntimeMode: mainAgentRuntimeMode,
                 piBinaryPath: piBinaryPath,
                 piCodingAgentDir: piCodingAgentDir,
                 runtime: runtime,
@@ -302,7 +294,6 @@ struct PickyAgentDaemonConfiguration: Equatable {
             mainAgentModelPattern: "",
             pickleAgentThinkingLevel: pickleAgentThinkingLevel,
             pickleAgentModelPattern: pickleAgentModelPattern,
-            mainAgentRuntimeMode: .pi,
             piBinaryPath: piBinaryPath,
             piCodingAgentDir: piCodingAgentDir,
             runtime: environment["PICKY_AGENTD_RUNTIME"],
@@ -357,7 +348,6 @@ struct PickyAgentDaemonConfiguration: Equatable {
         env["PICKY_MAIN_AGENT_THINKING_LEVEL"] = mainAgentThinkingLevel.rawValue
         applyMainAgentModelEnvironment(to: &env)
         applyPickleAgentEnvironment(to: &env)
-        env["PICKY_MAIN_AGENT_RUNTIME"] = mainAgentRuntimeMode.agentdEnvironmentValue
         // Scrub any leaked child-only env so a primary never falls into child mode by
         // accident if the user's shell happened to export them.
         env.removeValue(forKey: "PICKY_AGENTD_SESSION_ID")
@@ -385,7 +375,6 @@ struct PickyAgentDaemonConfiguration: Equatable {
         env.removeValue(forKey: "PICKY_MAIN_AGENT_CWD")
         env.removeValue(forKey: "PICKY_MAIN_AGENT_THINKING_LEVEL")
         env.removeValue(forKey: "PICKY_MAIN_AGENT_MODEL")
-        env.removeValue(forKey: "PICKY_MAIN_AGENT_RUNTIME")
     }
 
     private func applyMainAgentModelEnvironment(to env: inout [String: String]) {
@@ -605,7 +594,6 @@ struct PickyNodePreflightSnapshot: Codable, Equatable {
     var requiredNodeVersion: String
     var nodePath: String?
     var nodeSource: String?
-    var mainAgentRuntimeMode: String?
     var agentdRuntimeOverride: String?
     var executablePath: String?
     var workingDirectory: String?
@@ -1185,7 +1173,6 @@ final class PickyAgentDaemonLauncher: ObservableObject {
             attempts: attempts,
             lastUpdatedAt: Self.iso8601Formatter.string(from: Date()),
             lastRunningAt: lastRunningAt.map(Self.iso8601Formatter.string(from:)),
-            mainAgentRuntimeMode: configuration.mainAgentRuntimeMode.agentdEnvironmentValue,
             agentdRuntimeOverride: configuration.runtime,
             nodeSource: nodeSourceDiagnosticsValue,
             executablePath: configuration.executableURL.path,
@@ -1236,7 +1223,6 @@ final class PickyAgentDaemonLauncher: ObservableObject {
             requiredNodeVersion: Self.minimumSupportedNodeVersion,
             nodePath: path,
             nodeSource: nodeSourceDiagnosticsValue,
-            mainAgentRuntimeMode: configuration.mainAgentRuntimeMode.agentdEnvironmentValue,
             agentdRuntimeOverride: configuration.runtime,
             executablePath: configuration.executableURL.path,
             workingDirectory: configuration.workingDirectory.path,
@@ -1263,7 +1249,6 @@ final class PickyAgentDaemonLauncher: ObservableObject {
             requiredNodeVersion: Self.minimumSupportedNodeVersion,
             nodePath: path,
             nodeSource: nodeSourceDiagnosticsValue,
-            mainAgentRuntimeMode: configuration.mainAgentRuntimeMode.agentdEnvironmentValue,
             agentdRuntimeOverride: configuration.runtime,
             executablePath: configuration.executableURL.path,
             workingDirectory: configuration.workingDirectory.path,

@@ -8,16 +8,15 @@ import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
 import { summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
 import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentPickleCompletionPrompt, buildPicklePrompt, buildSteerPrompt, type BuiltPrompt } from "./prompt-builder.js";
-import type { MainAgentRuntimeMode, ModelCycleDirection, OpenAIRealtimeAuthConfig, PickyActivitySummary, PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage, PickyUserMemory } from "./protocol.js";
+import type { ModelCycleDirection, PickyActivitySummary, PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-tool.js";
 import { readPiSessionInfoName, readPiTerminalSessionMessages } from "./application/pi-session-syncer.js";
 import { PiSessionTailWatcher, type PiSessionTailEntry } from "./application/pi-session-tail-watcher.js";
 import { inferTerminalStatusFromEntries } from "./application/terminal-tail-status.js";
 import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY, SessionStore } from "./session-store.js";
 import type { TaskRouter } from "./task-router.js";
-import { isMainRealtimeRuntime, type AgentRuntime, type RewindTarget, type RuntimeEvent, type RuntimeSessionHandle, type RuntimeSlashCommand, type RuntimeSteerResult, type ThinkingLevel } from "./runtime/types.js";
+import type { AgentRuntime, RewindTarget, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./runtime/types.js";
 import { listRewindTargets as rewindListTargets, rewindToEntry as runRewindToEntry, type RewindDeps } from "./application/session-rewind.js";
-import { OpenAIRealtimeTranscriptionSession } from "./runtime/openai-realtime-transcription.js";
 import { hasActivity, zeroActivitySummary } from "./domain/activity-summary.js";
 import { mergeArtifacts } from "./domain/artifacts.js";
 import { mergeChangedFiles } from "./domain/changed-files.js";
@@ -36,7 +35,7 @@ import { isNonSkillSlashCommand, isNoTurnStateRestoringSlashCommand, isReloadSla
 import { appendUniqueLog, hasPickleSessionMarkerLog, piSessionFilePathForSession, piSessionFilePathFromLogLine, withPiSessionFileFromLogs } from "./domain/pi-session-files.js";
 import { buildPinnedPickleSessionLogs, isPickyHandoffCommandMessage, lastTurns, PINNED_SOURCE_TURN_COUNT, piSessionFilePathFromHandoffTranscript, titleForEmptyPickleSession } from "./domain/pickle-handoff-context.js";
 import { extractPickyPromptUserInstruction, queueTextMatchesUserText } from "./domain/queue-policy.js";
-import { MAIN_AGENT_COMPACT_SUMMARY_LIMIT, MAIN_AGENT_MESSAGE_LIMIT, MAIN_AGENT_ROLLOVER_CONTEXT_PERCENT, MAIN_AGENT_ROLLOVER_TURN_LIMIT, MAIN_AGENT_SUMMARY_MESSAGE_LIMIT, MAIN_AGENT_SUMMARY_PICKLE_SESSION_LIMIT, normalizeMainAgentState, PICKY_USER_MEMORY_ITEM_CHAR_LIMIT, PICKY_USER_MEMORY_ITEM_LIMIT, PICKY_USER_MEMORY_TOTAL_CHAR_LIMIT, quickReplyOriginFromContextSource, truncateMainSummaryText, type QuickReplyMetadata } from "./domain/main-agent-policy.js";
+import { MAIN_AGENT_COMPACT_SUMMARY_LIMIT, MAIN_AGENT_MESSAGE_LIMIT, MAIN_AGENT_ROLLOVER_CONTEXT_PERCENT, MAIN_AGENT_ROLLOVER_TURN_LIMIT, MAIN_AGENT_SUMMARY_MESSAGE_LIMIT, MAIN_AGENT_SUMMARY_PICKLE_SESSION_LIMIT, normalizeMainAgentState, quickReplyOriginFromContextSource, truncateMainSummaryText, type QuickReplyMetadata } from "./domain/main-agent-policy.js";
 import type { ToolCategory } from "./domain/tool-categorizer.js";
 import { logAgentd } from "./local-log.js";
 import { SessionMessageBuilder } from "./session-message-builder.js";
@@ -85,8 +84,7 @@ export class SessionSupervisor extends EventEmitter {
   private sessions = new Map<string, PickyAgentSession>();
   private runtimeHandles = new Map<string, RuntimeSessionHandle>();
   private disabledBuiltinTools: Set<string> = new Set();
-  // Mirrors Picky's TTS setting for main-agent runtimes. Realtime uses this
-  // to switch response.create modalities between audio+text and text-only.
+  // Mirrors Picky's TTS setting for main-agent runtimes.
   // Defaults to true so fresh installs keep audio responses enabled.
   private ttsEnabled = true;
   private readonly ttsEnabledListeners = new Set<(enabled: boolean) => void>();
@@ -102,7 +100,6 @@ export class SessionSupervisor extends EventEmitter {
   private mainState: PickyMainAgentState = { messages: [] };
   private mainReplyContextId = "main";
   private mainIsProcessing = false;
-  private readonly transcriptionStreams = new Map<string, OpenAIRealtimeTranscriptionSession>();
   // Pi emits both `turn_end` and `agent_end` for a single agent run, both of which
   // normalize to `status:"completed"` (see pi-event-normalizer.ts). They arrive
   // back-to-back through the same fire-and-forget subscriber, and the first call's
@@ -133,7 +130,6 @@ export class SessionSupervisor extends EventEmitter {
   private mainTurnId = 0;
   private activeMainRuntimeInputId?: string;
   private interruptedMainInputIds = new Set<string>();
-  private activeMainRealtimeInputId?: string;
   private pickleSessionIds = new Set<string>();
   // Session ids that this supervisor does NOT host locally but that should still be tagged as
   // Pickle-completion contexts when the main agent's reply turn ends. Populated by
@@ -480,24 +476,7 @@ export class SessionSupervisor extends EventEmitter {
     let pickleAbortedCount = 0;
     let pickleDeferredCount = 0;
 
-    // 1) Main Picky (OpenAI Realtime). If a voice turn is in flight, cancel it
-    // so the user immediately sees a clean cutover; then re-snapshot Picky
-    // skills and resend session.update so the next turn sees the new plugins.
-    const mainRuntime = this.options.mainRuntime;
-    if (isMainRealtimeRuntime(mainRuntime)) {
-      try {
-        if (mainRuntime.isMainRealtimeSpeaking?.()) {
-          await mainRuntime.cancelMainRealtimeVoiceTurn();
-        }
-        await mainRuntime.refreshAfterPluginsChange?.();
-        pickyReloaded = true;
-        logAgentd("plugins reload main realtime refreshed", {});
-      } catch (error) {
-        logAgentd("plugins reload main realtime failed", { error: error instanceof Error ? error.message : String(error) });
-      }
-    }
-
-    // 2) Pickle sessions. Iterate a snapshot because abort() mutates session state.
+    // Pickle sessions. Iterate a snapshot because abort() mutates session state.
     const pickles = this.listPickleSessions();
     for (const session of pickles) {
       if (isTerminalStatus(session.status)) continue;
@@ -628,8 +607,7 @@ export class SessionSupervisor extends EventEmitter {
 
   /**
    * Update the TTS toggle. Idempotent: setting the same value does not fire
-   * change listeners again. Realtime translates this into response modality:
-   * TTS on means audio+text, TTS off means text-only.
+   * change listeners again.
    */
   setTTSEnabled(enabled: boolean): void {
     if (this.ttsEnabled === enabled) return;
@@ -651,134 +629,6 @@ export class SessionSupervisor extends EventEmitter {
     return () => this.ttsEnabledListeners.delete(listener);
   }
 
-  async setMainAgentRuntimeMode(mode: MainAgentRuntimeMode): Promise<void> {
-    const runtime = this.options.mainRuntime;
-    if (!runtime?.setMainAgentRuntimeMode) {
-      logAgentd("main runtime mode ignored", { mode, reason: "runtime does not support selection" });
-      return;
-    }
-    const changed = runtime.setMainAgentRuntimeMode(mode);
-    logAgentd("main runtime mode configured", { mode, changed: changed ? 1 : 0 });
-    if (!changed) return;
-    const currentHandle = this.mainHandle;
-    this.detachMainHandleForInterruption();
-    if (currentHandle) await this.abortResetMainHandle(currentHandle, "runtime-mode-switch");
-    await this.patchMainState({ sessionFilePath: undefined });
-  }
-
-  async configureMainRealtimeAuth(config: OpenAIRealtimeAuthConfig): Promise<void> {
-    if (!isMainRealtimeRuntime(this.options.mainRuntime)) {
-      logAgentd("main realtime config ignored", { reason: "main runtime is not realtime", provider: config.provider, modelOrDeployment: config.modelOrDeployment });
-      return;
-    }
-    // Re-arm the history provider every time auth is (re)configured so the
-    // runtime can replay text-only transcript when it opens a fresh WS (initial
-    // connect, 60-min rollover, transient drop). The provider closes over
-    // mainState.messages which is the in-memory source of truth on agentd.
-    this.options.mainRuntime.setMainRealtimeHistoryProvider?.(() => this.snapshotMainHistoryForRealtime());
-    this.options.mainRuntime.setMainRealtimeUserMemoryProvider?.(() => this.snapshotUserMemoriesForRealtime());
-    await this.options.mainRuntime.configureMainRealtimeAuth(config);
-    logAgentd("main realtime config applied", { provider: config.provider, modelOrDeployment: config.modelOrDeployment, voice: config.voice, keyPresent: config.apiKey ? 1 : 0 });
-    // Best-effort quota refresh immediately after auth changes so the HUD has
-    // a fresh snapshot before the first turn (no-op for apiKey provider).
-    void this.options.mainRuntime.refreshCodexQuota?.();
-  }
-
-  private snapshotMainHistoryForRealtime(): { role: "user" | "assistant"; text: string }[] {
-    return this.mainState.messages
-      .filter((m): m is typeof m & { role: "user" | "assistant" } => m.role === "user" || m.role === "assistant")
-      .map((m) => ({ role: m.role, text: m.text }));
-  }
-
-  private snapshotUserMemoriesForRealtime(): { id: string; content: string }[] {
-    return (this.mainState.userMemories ?? []).map((m) => ({ id: m.id, content: m.content }));
-  }
-
-  // ----- User memory CRUD -----
-  //
-  // Surfaced to the Realtime model through four tools (picky_remember,
-  // picky_list_memories, picky_update_memory, picky_forget) declared in
-  // openai-realtime-main-runtime.ts. The supervisor owns the storage layer
-  // because picky.json is already its responsibility (atomic writes,
-  // mainStateWriteChain serialisation). All four methods return the resulting
-  // memory list so the tool layer can echo it back to the model without an
-  // extra round-trip.
-
-  listUserMemories(): PickyUserMemory[] {
-    return [...(this.mainState.userMemories ?? [])];
-  }
-
-  async addUserMemory(rawContent: string): Promise<{ ok: true; memory: PickyUserMemory } | { ok: false; error: string }> {
-    const content = rawContent.trim();
-    if (!content) return { ok: false, error: "memory content cannot be empty" };
-    if (content.length > PICKY_USER_MEMORY_ITEM_CHAR_LIMIT) {
-      return { ok: false, error: `memory item too long (${content.length} chars, max ${PICKY_USER_MEMORY_ITEM_CHAR_LIMIT})` };
-    }
-    const existing = this.mainState.userMemories ?? [];
-    if (existing.length >= PICKY_USER_MEMORY_ITEM_LIMIT) {
-      return { ok: false, error: `already at memory item limit (${PICKY_USER_MEMORY_ITEM_LIMIT}); call picky_forget on an obsolete item first` };
-    }
-    const totalChars = existing.reduce((sum, m) => sum + m.content.length, 0) + content.length;
-    if (totalChars > PICKY_USER_MEMORY_TOTAL_CHAR_LIMIT) {
-      return { ok: false, error: `total memory budget exceeded (${totalChars}/${PICKY_USER_MEMORY_TOTAL_CHAR_LIMIT} chars); shorten or forget an existing item first` };
-    }
-    const now = new Date().toISOString();
-    const memory: PickyUserMemory = { id: this.generateUserMemoryId(), content, createdAt: now, updatedAt: now };
-    await this.patchMainState({ userMemories: [...existing, memory] });
-    this.notifyUserMemoryChanged("add", memory.id);
-    return { ok: true, memory };
-  }
-
-  async updateUserMemory(id: string, rawContent: string): Promise<{ ok: true; memory: PickyUserMemory } | { ok: false; error: string }> {
-    const content = rawContent.trim();
-    if (!content) return { ok: false, error: "memory content cannot be empty" };
-    if (content.length > PICKY_USER_MEMORY_ITEM_CHAR_LIMIT) {
-      return { ok: false, error: `memory item too long (${content.length} chars, max ${PICKY_USER_MEMORY_ITEM_CHAR_LIMIT})` };
-    }
-    const existing = this.mainState.userMemories ?? [];
-    const index = existing.findIndex((m) => m.id === id);
-    if (index === -1) return { ok: false, error: `no memory with id ${JSON.stringify(id)} (use picky_list_memories to look up valid ids)` };
-    const others = existing.filter((_, i) => i !== index).reduce((sum, m) => sum + m.content.length, 0);
-    if (others + content.length > PICKY_USER_MEMORY_TOTAL_CHAR_LIMIT) {
-      return { ok: false, error: `total memory budget would exceed limit (${others + content.length}/${PICKY_USER_MEMORY_TOTAL_CHAR_LIMIT} chars)` };
-    }
-    const now = new Date().toISOString();
-    const next: PickyUserMemory = { ...existing[index]!, content, updatedAt: now };
-    const updated = [...existing];
-    updated[index] = next;
-    await this.patchMainState({ userMemories: updated });
-    this.notifyUserMemoryChanged("update", id);
-    return { ok: true, memory: next };
-  }
-
-  async removeUserMemory(id: string): Promise<{ ok: true; removed: PickyUserMemory } | { ok: false; error: string }> {
-    const existing = this.mainState.userMemories ?? [];
-    const index = existing.findIndex((m) => m.id === id);
-    if (index === -1) return { ok: false, error: `no memory with id ${JSON.stringify(id)}` };
-    const removed = existing[index]!;
-    const updated = existing.filter((_, i) => i !== index);
-    await this.patchMainState({ userMemories: updated });
-    this.notifyUserMemoryChanged("remove", id);
-    return { ok: true, removed };
-  }
-
-  /** Ask the Realtime runtime to push a refreshed session.update so the new
-   * memory set lands in the model's instructions before the next turn. Safe
-   * to call when no runtime is realtime or when the runtime has no live
-   * socket; both fast-path to no-op. */
-  private notifyUserMemoryChanged(action: "add" | "update" | "remove", id: string): void {
-    logAgentd("main realtime user memory changed", { action, id, total: this.mainState.userMemories?.length ?? 0 });
-    const runtime = this.options.mainRuntime;
-    if (isMainRealtimeRuntime(runtime)) runtime.refreshUserMemoryInstructions?.();
-  }
-
-  /** 12-char base36 id from `crypto.randomUUID()`; short enough that the
-   * model can copy/paste it inside a follow-up tool call without burning
-   * tokens, unique enough to avoid collisions in the 50-item cap. */
-  private generateUserMemoryId(): string {
-    return randomUUID().replace(/-/g, "").slice(0, 12);
-  }
-
   // ----- Pickle inspection -----
   //
   // `picky_pickle_sessions` is a list. When the user asks "how's that pickle
@@ -790,100 +640,6 @@ export class SessionSupervisor extends EventEmitter {
 
   inspectPickleSession(sessionId: string): PickyAgentSession | undefined {
     return this.sessions.get(sessionId);
-  }
-
-  async beginMainRealtimeVoiceTurn(inputId: string, context: PickyContextPacket): Promise<void> {
-    const runtime = this.requireMainRealtimeRuntime();
-    await this.ensurePrewarmedMainHandle(context.cwd ?? process.cwd());
-    this.beginMainTurn(context.id);
-    this.mainContext = context;
-    this.activeMainRealtimeInputId = inputId;
-    this.mainIsProcessing = true;
-    await runtime.beginMainRealtimeVoiceTurn({ inputId, context });
-  }
-
-  async appendMainRealtimeInputAudio(inputId: string, audioBase64: string): Promise<void> {
-    const runtime = this.requireMainRealtimeRuntime();
-    await runtime.appendMainRealtimeInputAudio(inputId, audioBase64);
-  }
-
-  async commitMainRealtimeVoiceTurn(inputId: string, context?: PickyContextPacket): Promise<void> {
-    const runtime = this.requireMainRealtimeRuntime();
-    if (context) {
-      await this.ensurePrewarmedMainHandle(context.cwd ?? process.cwd());
-      this.beginMainTurn(context.id);
-      this.mainContext = context;
-      this.activeMainRealtimeInputId = inputId;
-    }
-    await runtime.commitMainRealtimeVoiceTurn(inputId, context);
-  }
-
-  async cancelMainRealtimeVoiceTurn(inputId?: string, playedAudioMs?: number): Promise<void> {
-    if (!isMainRealtimeRuntime(this.options.mainRuntime)) return;
-    await this.options.mainRuntime.cancelMainRealtimeVoiceTurn(inputId, playedAudioMs);
-    this.mainIsProcessing = false;
-  }
-
-  async beginTranscriptionStream(request: { streamId: string; language?: string; model?: string; keyterms?: string[] }): Promise<void> {
-    if (this.transcriptionStreams.has(request.streamId)) {
-      throw new Error(`Transcription stream already active: ${request.streamId}`);
-    }
-    const session = new OpenAIRealtimeTranscriptionSession({
-      streamId: request.streamId,
-      language: request.language,
-      model: request.model,
-    });
-    this.transcriptionStreams.set(request.streamId, session);
-    session.on("event", (event) => {
-      switch (event.type) {
-        case "started":
-          this.emit("transcriptionStreamStarted", request.streamId);
-          return;
-        case "delta":
-          this.emit("transcriptionDelta", request.streamId, event.delta);
-          return;
-        case "completed":
-          this.emit("transcriptionCompleted", request.streamId, event.transcript);
-          return;
-        case "failed":
-          this.emit("transcriptionStreamFailed", request.streamId, event.message);
-          return;
-        case "closed":
-          this.transcriptionStreams.delete(request.streamId);
-          this.emit("transcriptionStreamClosed", request.streamId);
-          return;
-      }
-    });
-    try {
-      await session.start();
-    } catch (error) {
-      // start() already emitted failed+closed before throwing.
-      this.transcriptionStreams.delete(request.streamId);
-      throw error;
-    }
-  }
-
-  async appendTranscriptionAudio(streamId: string, audioBase64: string): Promise<void> {
-    const session = this.transcriptionStreams.get(streamId);
-    if (!session) return;
-    session.appendAudio(audioBase64);
-  }
-
-  async endTranscriptionStream(streamId: string): Promise<void> {
-    const session = this.transcriptionStreams.get(streamId);
-    if (!session) return;
-    session.commit();
-  }
-
-  async cancelTranscriptionStream(streamId: string): Promise<void> {
-    const session = this.transcriptionStreams.get(streamId);
-    if (!session) return;
-    session.cancel();
-  }
-
-  private requireMainRealtimeRuntime() {
-    if (!isMainRealtimeRuntime(this.options.mainRuntime)) throw new Error("Main runtime is not configured for OpenAI Realtime");
-    return this.options.mainRuntime;
   }
 
   private detachMainHandleForInterruption(): void {
@@ -901,7 +657,6 @@ export class SessionSupervisor extends EventEmitter {
     this.mainTurnId += 1;
     this.activeMainRuntimeInputId = undefined;
     this.interruptedMainInputIds.clear();
-    this.activeMainRealtimeInputId = undefined;
     if (this.pendingPickleCompletions.length > 0) logAgentd("Picky pending Pickle completions cleared", { count: this.pendingPickleCompletions.length });
     this.pendingPickleCompletions = [];
   }
@@ -915,22 +670,6 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   announceMainHandoff(contextId: string, text: string): void {
-    // In Realtime mode the model produces its own natural follow-up ack after the
-    // `picky_start_pickle` tool result is returned (see `main_realtime_turn_done`
-    // -> `appendMainMessage`). Emitting the curated handoffAck here would race
-    // that follow-up: the Picky menu-bar would show two assistant bubbles for one
-    // user turn, the system TTS of the curated ack would compete with the
-    // Realtime audio stream (and play out of order), and the interaction
-    // reducer would receive a `quickReply replyKind=handoffAck` for the same
-    // inputId the Realtime turn is still owning, locking the cursor in
-    // `.processing`/`.responding`. Skip both side effects on Realtime; the
-    // non-Realtime (Pi SDK) path still needs the curated ack because
-    // `suppressNextMainReply` only fires from the `main_status` terminal
-    // handler, which Realtime does not reach.
-    if (isMainRealtimeRuntime(this.options.mainRuntime)) {
-      logAgentd("main handoff announced", { contextId, textChars: text.length, runtime: "realtime", suppressedAck: true });
-      return;
-    }
     logAgentd("main handoff announced", { contextId, textChars: text.length });
     this.suppressNextMainReply = true;
     void this.appendMainMessage("assistant", text);
@@ -1303,18 +1042,8 @@ export class SessionSupervisor extends EventEmitter {
     this.mainContext = context;
     const prompt = buildMainAgentPrompt(context);
     // Append the user message to mainState.messages AFTER deliverMainPrompt
-    // resolves. The realtime runtime calls ensureConnected() inside
-    // handle.followUp(), and when the websocket needs to be (re)opened
-    // (initial connect, 50-min rollover, transient drop) connect() calls
-    // replayHistory() which snapshots mainState.messages into a single
-    // narrative `[Picky context replay] ...` conversation.item. Pushing the
-    // new user message before that point caused the message to land in BOTH
-    // the replay narrative AND the immediately-following
-    // conversation.item.create that followUp itself emits - the model saw
-    // the same user turn twice in one round-trip, wasting tokens and
-    // confusing follow-up phrasing. finally{} guarantees the message is
-    // still recorded if deliver throws, so the next turn's context still
-    // has the user's earlier line.
+    // resolves. finally{} guarantees the message is still recorded if deliver
+    // throws, so the next turn's context still has the user's earlier line.
     const transcript = context.transcript?.trim();
     try {
       if (this.mainHandlePromise && !this.mainHandle) {
@@ -1342,7 +1071,6 @@ export class SessionSupervisor extends EventEmitter {
 
   private async maybeRolloverMainAgent(context: PickyContextPacket): Promise<void> {
     if (!this.options.mainRuntime || this.mainIsProcessing) return;
-    if (this.options.mainRuntime.getMainAgentRuntimeMode?.() === "openai-realtime") return;
     const reason = await this.mainRolloverReason();
     if (!reason) return;
 
@@ -1569,103 +1297,6 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   private async applyMainRuntimeEvent(event: RuntimeEvent): Promise<void> {
-    if (event.type === "main_realtime_state") {
-      if (["ready", "failed"].includes(event.state)) this.mainIsProcessing = false;
-      if (["listening", "thinking", "speaking"].includes(event.state)) this.mainIsProcessing = true;
-      this.emit("mainRealtimeStateChanged", event.state, event.message);
-      return;
-    }
-    if (event.type === "main_realtime_input_transcript_delta") {
-      this.emit("mainRealtimeInputTranscriptDelta", event.inputId, event.delta);
-      return;
-    }
-    if (event.type === "main_realtime_input_transcript_completed") {
-      this.emit("mainRealtimeInputTranscriptCompleted", event.inputId, event.transcript);
-      await this.appendMainMessage("user", event.transcript);
-      return;
-    }
-    if (event.type === "main_realtime_output_audio_delta") {
-      this.emit("mainRealtimeOutputAudioDelta", event.inputId, event.audioBase64);
-      return;
-    }
-    if (event.type === "main_realtime_output_audio_done") {
-      this.emit("mainRealtimeOutputAudioDone", event.inputId);
-      return;
-    }
-    // Stale filter only applies when the supervisor knows the active voice
-    // turn id (set by beginMainRealtimeVoiceTurn). Text-driven routeTask turns
-    // do not register an activeMainRealtimeInputId because the realtime
-    // runtime generates its own `text-<uuid>` id internally; without this
-    // bypass the assistant reply would be dropped (audio bypasses the gate,
-    // which is why the user heard speech but the typed reply errored out).
-    if (event.type === "main_realtime_output_transcript_delta") {
-      if (this.activeMainRealtimeInputId !== undefined && event.inputId !== this.activeMainRealtimeInputId) {
-        logAgentd("main realtime stale transcript delta ignored", { inputId: event.inputId, activeInputId: this.activeMainRealtimeInputId, deltaChars: event.delta.length });
-        return;
-      }
-      this.mainDraft += event.delta;
-      this.emit("mainRealtimeOutputTranscriptDelta", event.inputId, event.delta);
-      return;
-    }
-    if (event.type === "main_realtime_output_transcript_completed") {
-      if (this.activeMainRealtimeInputId !== undefined && event.inputId !== this.activeMainRealtimeInputId) {
-        logAgentd("main realtime stale transcript completion ignored", { inputId: event.inputId, activeInputId: this.activeMainRealtimeInputId, transcriptChars: event.transcript.length });
-        return;
-      }
-      this.mainDraft = event.transcript;
-      this.emit("mainRealtimeOutputTranscriptCompleted", event.inputId, event.transcript);
-      return;
-    }
-    if (event.type === "main_realtime_usage") {
-      this.emit("mainRealtimeUsage", { inputId: event.inputId, lastTurn: event.lastTurn, session: event.session });
-      return;
-    }
-    if (event.type === "main_realtime_quota") {
-      this.emit("mainRealtimeQuota", event.quota);
-      return;
-    }
-    if (event.type === "main_realtime_turn_done") {
-      if (this.activeMainRealtimeInputId !== undefined && event.inputId !== this.activeMainRealtimeInputId) {
-        logAgentd("main realtime stale turn done ignored", { inputId: event.inputId, activeInputId: this.activeMainRealtimeInputId, status: event.status });
-        return;
-      }
-      this.mainIsProcessing = false;
-      this.activeMainRealtimeInputId = undefined;
-      const finalTranscript = event.finalTranscript ?? this.mainDraft;
-      this.mainDraft = "";
-      if (finalTranscript?.trim()) await this.appendMainMessage("assistant", finalTranscript);
-      // Push the freshly-completed turn into `session.update.instructions` so
-      // the next realtime turn sees it at high (instructions-level) priority
-      // instead of relying on the bulk conversation-item replay that the model
-      // treats as background context. This is what keeps short-term recall
-      // ("내 이름", "이전 턴에 뭐", "우리 대화") working across turns.
-      const realtimeRuntime = this.options.mainRuntime;
-      if (isMainRealtimeRuntime(realtimeRuntime)) realtimeRuntime.refreshConversationInstructions?.();
-      // Emit a `realtimeAck` quickReply purely to release the Picky client's
-      // `.waitingForAgent` output so the cursor returns to idle. The audio
-      // reply (and its transcript) was already delivered by the OpenAI
-      // Realtime stream, so this kind must NOT trigger TTS or a new visible
-      // bubble - the client reducer has a dedicated branch that only cleans
-      // up state.output for the matching inputID/contextID. Without this
-      // signal, every realtime turn initiated from a Quick Input (or any
-      // source whose ownership uses cursor-response presentation, i.e.
-      // .quickInputText / .cli) leaves the cursor parked on yellow forever
-      // because voice-machine cleanup alone does not touch reducer
-      // state.output. The wedge becomes visible after a tool-call turn
-      // because the longer phase sequence outlives the brief voice-machine
-      // projection that was temporarily overriding the cursor color.
-      const replyContextId = this.mainReplyContextId;
-      if (replyContextId) {
-        this.emitQuickReply(replyContextId, finalTranscript?.trim() || " ", {
-          originSource: replyContextId === this.mainContext?.id ? quickReplyOriginFromContextSource(this.mainContext.source) : "system",
-          replyKind: "realtimeAck",
-          inputId: event.inputId,
-        });
-      }
-      this.emit("mainRealtimeTurnDone", event.inputId, event.status, finalTranscript);
-      this.schedulePickleCompletionDrain();
-      return;
-    }
     if (event.type === "log") {
       const sessionFilePath = piSessionFilePathFromLogLine(event.line);
       if (sessionFilePath) await this.patchMainState({ sessionFilePath });

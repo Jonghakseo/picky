@@ -22,29 +22,13 @@ struct PickySettingsStore {
     func load() -> PickySettings {
         let appSupportRoot = url.deletingLastPathComponent().deletingLastPathComponent()
         guard fileManager.fileExists(atPath: url.path) else {
-            let freshInstallRuntimeMode: PickyMainAgentRuntimeMode = AppBundleConfiguration.realtimeOptIn ? .openAIRealtime : .pi
-            return migrateRealtimeOptInRuntimeModeIfNeeded(
-                .defaults(appSupportRoot: appSupportRoot, mainAgentRuntimeMode: freshInstallRuntimeMode)
-            )
+            return .defaults(appSupportRoot: appSupportRoot)
         }
         guard let data = try? Data(contentsOf: url),
               let settings = try? JSONDecoder().decode(PickySettings.self, from: data) else {
             return .defaults(appSupportRoot: appSupportRoot)
         }
-        return migrateRealtimeOptInRuntimeModeIfNeeded(settings)
-    }
-
-    private func migrateRealtimeOptInRuntimeModeIfNeeded(_ settings: PickySettings) -> PickySettings {
-        guard AppBundleConfiguration.realtimeOptIn,
-              !settings.mainAgentRuntimeModeRealtimeOptInMigrationApplied else {
-            return settings
-        }
-
-        var migrated = settings
-        migrated.mainAgentRuntimeMode = .openAIRealtime
-        migrated.mainAgentRuntimeModeRealtimeOptInMigrationApplied = true
-        try? save(migrated)
-        return migrated
+        return settings
     }
 
     func save(_ settings: PickySettings) throws {

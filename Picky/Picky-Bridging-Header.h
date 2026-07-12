@@ -7,4 +7,4 @@
 //  target, which adds build time.
 //
 
-#import "Companion/Realtime/PickyObjCExceptionTrap.h"
+#import "Companion/PickyObjCExceptionTrap.h"

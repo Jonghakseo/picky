@@ -37,11 +37,6 @@ enum PickyComposerBashMode: Equatable {
     case `private`
 }
 
-enum PickyConversationComposerCopyStyle: Equatable {
-    case `default`
-    case fullscreenKorean
-}
-
 struct PickyConversationComposerView: View {
     let session: PickySessionListViewModel.SessionCard
     @ObservedObject var viewModel: PickySessionListViewModel
@@ -50,7 +45,6 @@ struct PickyConversationComposerView: View {
     let focusRequestID: Int
     let isExtendedTerminalOpen: Bool
     let isCommandShortcutHintVisible: Bool
-    let copyStyle: PickyConversationComposerCopyStyle
     var onToggleExtendedTerminal: () -> Void
     var onRequestRewind: () -> Void
     @State private var draft: String = ""
@@ -79,7 +73,6 @@ struct PickyConversationComposerView: View {
         focusRequestID: Int = 0,
         isExtendedTerminalOpen: Bool = false,
         isCommandShortcutHintVisible: Bool = false,
-        copyStyle: PickyConversationComposerCopyStyle = .default,
         onToggleExtendedTerminal: @escaping () -> Void = { },
         onRequestRewind: @escaping () -> Void = { }
     ) {
@@ -90,7 +83,6 @@ struct PickyConversationComposerView: View {
         self.focusRequestID = focusRequestID
         self.isExtendedTerminalOpen = isExtendedTerminalOpen
         self.isCommandShortcutHintVisible = isCommandShortcutHintVisible
-        self.copyStyle = copyStyle
         self.onToggleExtendedTerminal = onToggleExtendedTerminal
         self.onRequestRewind = onRequestRewind
     }
@@ -1104,15 +1096,6 @@ struct PickyConversationComposerView: View {
     }
 
     private var placeholder: String {
-        switch copyStyle {
-        case .default:
-            return defaultPlaceholder
-        case .fullscreenKorean:
-            return fullscreenKoreanPlaceholder
-        }
-    }
-
-    private var defaultPlaceholder: String {
         if session.isCompacting { return "Compacting…" }
         if isFileDropTargeted { return "Drop files or screenshots anywhere to insert paths" }
         switch session.status {
@@ -1127,31 +1110,7 @@ struct PickyConversationComposerView: View {
         }
     }
 
-    private var fullscreenKoreanPlaceholder: String {
-        if session.isCompacting { return "컨텍스트 정리 중…" }
-        if isFileDropTargeted { return "파일이나 스크린샷을 놓으면 경로가 추가됩니다" }
-        switch session.status {
-        case .running, .queued, .waiting_for_input:
-            return "작업 지시 입력 · ⌥↵ 후속 질문 · esc 중지"
-        case .completed, .blocked:
-            return "후속 메시지 보내기…"
-        case .cancelled:
-            return "작업 지시로 다시 시작…"
-        case .failed:
-            return "복구 지시를 보내거나 터미널을 여세요"
-        }
-    }
-
     var sendHelpText: String {
-        switch copyStyle {
-        case .default:
-            return defaultSendHelpText
-        case .fullscreenKorean:
-            return fullscreenKoreanSendHelpText
-        }
-    }
-
-    private var defaultSendHelpText: String {
         if isComposerSubmissionBlocked {
             return "Session is compacting"
         }
@@ -1175,34 +1134,6 @@ struct PickyConversationComposerView: View {
                 return "Send follow-up message"
             case nil:
                 return "This session cannot accept composer input"
-            }
-        }
-    }
-
-    private var fullscreenKoreanSendHelpText: String {
-        if isComposerSubmissionBlocked {
-            return "세션이 컨텍스트를 정리 중입니다"
-        }
-        guard defaultSubmitKind != nil else {
-            return "이 세션은 composer 입력을 받을 수 없습니다"
-        }
-        guard hasDraftText else {
-            return "보낼 메시지를 입력하세요"
-        }
-
-        switch effectiveBashMode {
-        case .visible:
-            return "bash 실행 · 출력이 Pi 컨텍스트에 추가됩니다"
-        case .private:
-            return "bash 실행 · 출력은 Pi 컨텍스트에서 제외됩니다"
-        case .none:
-            switch defaultSubmitKind {
-            case .steer:
-                return "작업 지시 보내기"
-            case .followUp:
-                return "후속 메시지 보내기"
-            case nil:
-                return "이 세션은 composer 입력을 받을 수 없습니다"
             }
         }
     }

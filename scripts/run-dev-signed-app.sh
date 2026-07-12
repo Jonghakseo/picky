@@ -193,7 +193,6 @@ PICKY_CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY}" \
 PICKY_DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM}" \
 PICKY_CREATE_ZIP="${CREATE_ZIP}" \
 PICKY_CLEAN="${CLEAN}" \
-PICKY_REALTIME_OPT_IN="${PICKY_REALTIME_OPT_IN:-0}" \
   "${ROOT_DIR}/scripts/package-signed-app.sh"
 
 if [[ "${SKIP_LAUNCH}" == "1" ]]; then
@@ -202,17 +201,7 @@ if [[ "${SKIP_LAUNCH}" == "1" ]]; then
 fi
 
 echo "🚀 Launching ${PACKAGED_APP}"
-# Forward opt-in feature gates from the caller's shell to the GUI app.
-# `open --env KEY=VALUE` is the supported macOS path for passing environment
-# variables to GUI apps (LaunchServices otherwise strips the parent shell env).
-# The fullscreen workspace UI is still being polished, so we no longer enable
-# it by default in dev launches. To preview it, prefix the call:
-#   PICKY_FULLSCREEN_ENABLED=1 ./scripts/run-dev-signed-app.sh
-OPEN_ENV_ARGS=()
-if [[ -n "${PICKY_FULLSCREEN_ENABLED:-}" ]]; then
-  OPEN_ENV_ARGS+=(--env "PICKY_FULLSCREEN_ENABLED=${PICKY_FULLSCREEN_ENABLED}")
-fi
-/usr/bin/open "${OPEN_ENV_ARGS[@]}" "${PACKAGED_APP}"
+/usr/bin/open "${PACKAGED_APP}"
 sleep 1
 
 if /usr/bin/pgrep -x "${APP_NAME}" >/dev/null 2>&1; then

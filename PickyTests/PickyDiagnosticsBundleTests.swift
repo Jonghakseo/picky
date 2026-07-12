@@ -22,7 +22,7 @@ struct PickyDiagnosticsBundleTests {
             let settings: [String: Any] = [
                 "azureOpenAIAPIKey": "super-secret-key",
                 "defaultCwd": "/tmp/work",
-                "openAIRealtime": ["apiKey": "another-secret", "voice": "marin"]
+                "voiceProvider": ["apiKey": "another-secret", "voice": "marin"]
             ]
             let data = try JSONSerialization.data(withJSONObject: settings)
             try data.write(to: settingsDir.appendingPathComponent("settings.json"))
@@ -36,7 +36,6 @@ struct PickyDiagnosticsBundleTests {
             appVersion: "0.3.2",
             appBuild: "412",
             osVersion: "15.1.0",
-            runtimeMode: "Pi",
             generatedAt: Date(timeIntervalSince1970: 1_715_500_000)
         )
     }

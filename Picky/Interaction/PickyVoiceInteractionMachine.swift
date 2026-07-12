@@ -15,11 +15,6 @@ enum PickyVoiceInteractionPhase: Equatable {
     case speaking
 }
 
-enum PickyVoiceInteractionMode: Equatable {
-    case standard
-    case realtime
-}
-
 struct PickyVoiceSpeechQueueItem: Equatable {
     let text: String
     let speechID: UUID
@@ -45,7 +40,6 @@ struct PickyVoiceInteractionContext: Equatable {
     var minimumDisplayUntil: Date?
     var isSpeechFinishPending = false
     var speechQueue: [PickyVoiceSpeechQueueItem] = []
-    var mode: PickyVoiceInteractionMode = .standard
 
     var isAbortable: Bool {
         switch (inputID, activeSpeechID, pendingSince, targetSessionID) {
@@ -93,21 +87,18 @@ struct PickyVoiceInteractionState: Equatable {
 }
 
 enum PickyVoiceInteractionEvent: Equatable {
-    case pttPressed(inputID: UUID, targetSessionID: String?, mode: PickyVoiceInteractionMode)
+    case pttPressed(inputID: UUID, targetSessionID: String?)
     case pttReleased(inputID: UUID)
     case sttPartial(inputID: UUID, text: String)
     case sttFinal(inputID: UUID, text: String, now: Date)
     case sttFailed(inputID: UUID, message: String)
-    case loadingStarted(inputID: UUID?, transcript: String?, targetSessionID: String?, mode: PickyVoiceInteractionMode, now: Date, promptBubbleVisibility: PickyVoicePromptBubbleVisibility)
+    case loadingStarted(inputID: UUID?, transcript: String?, targetSessionID: String?, now: Date, promptBubbleVisibility: PickyVoicePromptBubbleVisibility)
     case agentReply(text: String, shouldSpeak: Bool, speechID: UUID, timerID: UUID, inputID: UUID?, now: Date)
     case textReply(text: String)
     case speechFinished(speechID: UUID, now: Date)
     case speechFailed(speechID: UUID, now: Date)
     case minimumDisplayTimerFired(timerID: UUID, now: Date)
     case promptBubbleAutoHide
-    case realtimeStateChanged(PickyMainRealtimeState)
-    case realtimeAudioStarted
-    case realtimeTurnDone
     case abort
     case reset
 }
@@ -115,9 +106,6 @@ enum PickyVoiceInteractionEvent: Equatable {
 enum PickyVoiceInteractionEffect: Equatable {
     case startDictation(inputID: UUID)
     case stopDictation(inputID: UUID)
-    case startRealtimeTurn(inputID: UUID)
-    case commitRealtimeTurn(inputID: UUID)
-    case cancelRealtimeTurn(inputID: UUID?)
     case captureContext(inputID: UUID, transcript: String, targetSessionID: String?)
     case submitMain(inputID: UUID, transcript: String)
     case followUpPickle(inputID: UUID, sessionID: String, transcript: String)
@@ -162,8 +150,8 @@ private struct PickyVoiceInteractionReducing {
 
     mutating func apply(_ event: PickyVoiceInteractionEvent) {
         switch event {
-        case .pttPressed(let inputID, let targetSessionID, let mode):
-            beginInput(inputID: inputID, targetSessionID: targetSessionID, mode: mode)
+        case .pttPressed(let inputID, let targetSessionID):
+            beginInput(inputID: inputID, targetSessionID: targetSessionID)
         case .pttReleased(let inputID):
             applyPTTReleased(inputID: inputID)
         case .sttPartial(let inputID, let text):
@@ -172,12 +160,11 @@ private struct PickyVoiceInteractionReducing {
             applySTTFinal(inputID: inputID, text: text, now: now)
         case .sttFailed(let inputID, _):
             applySTTFailed(inputID: inputID)
-        case .loadingStarted(let inputID, let transcript, let targetSessionID, let mode, let now, let promptBubbleVisibility):
+        case .loadingStarted(let inputID, let transcript, let targetSessionID, let now, let promptBubbleVisibility):
             applyLoadingStarted(
                 inputID: inputID,
                 transcript: transcript,
                 targetSessionID: targetSessionID,
-                mode: mode,
                 now: now,
                 promptBubbleVisibility: promptBubbleVisibility
             )
@@ -191,12 +178,6 @@ private struct PickyVoiceInteractionReducing {
             applyMinimumDisplayTimerFired(timerID: timerID, now: now)
         case .promptBubbleAutoHide:
             state.context.promptBubbleText = nil
-        case .realtimeStateChanged(let realtimeState):
-            applyRealtimeStateChanged(realtimeState)
-        case .realtimeAudioStarted:
-            applyRealtimeAudioStarted()
-        case .realtimeTurnDone:
-            clearToIdle(scheduleHide: true)
         case .abort:
             applyAbort()
         case .reset:
@@ -209,11 +190,7 @@ private struct PickyVoiceInteractionReducing {
     private mutating func applyPTTReleased(inputID: UUID) {
         guard state.context.inputID == inputID else { return }
         state.phase = .loading
-        if state.context.mode == .realtime {
-            effects.append(.commitRealtimeTurn(inputID: inputID))
-        } else {
-            effects.append(.stopDictation(inputID: inputID))
-        }
+        effects.append(.stopDictation(inputID: inputID))
     }
 
     private mutating func applySTTPartial(inputID: UUID, text: String) {
@@ -246,7 +223,6 @@ private struct PickyVoiceInteractionReducing {
         inputID: UUID?,
         transcript: String?,
         targetSessionID: String?,
-        mode: PickyVoiceInteractionMode,
         now: Date,
         promptBubbleVisibility: PickyVoicePromptBubbleVisibility
     ) {
@@ -264,7 +240,6 @@ private struct PickyVoiceInteractionReducing {
         state.context.minimumDisplayUntil = nil
         state.context.isSpeechFinishPending = false
         state.context.speechQueue.removeAll()
-        state.context.mode = mode
         if promptBubbleVisibility == .visible, normalizedTranscript != nil {
             effects.append(.schedulePromptBubbleAutoHide)
         }
@@ -317,42 +292,11 @@ private struct PickyVoiceInteractionReducing {
         }
     }
 
-    private mutating func applyRealtimeStateChanged(_ realtimeState: PickyMainRealtimeState) {
-        switch realtimeState {
-        case .connecting, .thinking:
-            state.phase = .loading
-            state.context.pendingSince = state.context.pendingSince ?? Date()
-            state.context.mode = .realtime
-        case .ready:
-            if state.context.activeSpeechID == nil {
-                clearToIdle(scheduleHide: true)
-            }
-        case .listening:
-            state.phase = .pttInput
-            state.context.mode = .realtime
-        case .speaking:
-            state.phase = .speaking
-            state.context.mode = .realtime
-            state.context.promptBubbleText = nil
-        case .failed:
-            clearToIdle(scheduleHide: true)
-        }
-    }
-
-    private mutating func applyRealtimeAudioStarted() {
-        state.phase = .speaking
-        state.context.mode = .realtime
-        state.context.pendingSince = nil
-        state.context.promptBubbleText = nil
-    }
-
     private mutating func applyAbort() {
         if state.context.activeSpeechID != nil {
             effects.append(.stopSpeech(speechID: state.context.activeSpeechID))
         }
-        if state.context.mode == .realtime {
-            effects.append(.cancelRealtimeTurn(inputID: state.context.inputID))
-        } else if state.phase == .loading || state.phase == .speaking {
+        if state.phase == .loading || state.phase == .speaking {
             effects.append(.abortMainAgent)
         }
         if let targetSessionID = state.context.targetSessionID,
@@ -373,16 +317,12 @@ private struct PickyVoiceInteractionReducing {
         state.context.promptBubbleVisibility == .visible ? normalized(text) : nil
     }
 
-    private mutating func beginInput(inputID: UUID, targetSessionID: String?, mode: PickyVoiceInteractionMode) {
+    private mutating func beginInput(inputID: UUID, targetSessionID: String?) {
         if state.phase == .speaking || state.phase == .loading {
             if state.context.activeSpeechID != nil {
                 effects.append(.stopSpeech(speechID: state.context.activeSpeechID))
             }
-            if state.context.mode == .realtime {
-                effects.append(.cancelRealtimeTurn(inputID: state.context.inputID))
-            } else {
-                effects.append(.abortMainAgent)
-            }
+            effects.append(.abortMainAgent)
             if let previousTarget = state.context.targetSessionID {
                 effects.append(.abortPickle(sessionID: previousTarget))
             }
@@ -391,14 +331,9 @@ private struct PickyVoiceInteractionReducing {
         state.phase = .pttInput
         state.context = PickyVoiceInteractionContext(
             inputID: inputID,
-            targetSessionID: targetSessionID,
-            mode: mode
+            targetSessionID: targetSessionID
         )
-        if mode == .realtime {
-            effects.append(.startRealtimeTurn(inputID: inputID))
-        } else {
-            effects.append(.startDictation(inputID: inputID))
-        }
+        effects.append(.startDictation(inputID: inputID))
     }
 
     private mutating func clearToIdle(scheduleHide: Bool = false) {

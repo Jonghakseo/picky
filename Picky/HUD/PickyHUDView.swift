@@ -33,7 +33,6 @@ struct PickyHUDView: View {
     var onCardResizeDragEnded: () -> Void = { }
     var onCardResizeReset: () -> Void = { }
     var onArchiveUndoRequested: (_ sessionID: String, _ title: String) -> Void = { _, _ in }
-    var onOpenFullscreenSession: (String?) -> Void = { _ in }
     /// Persist this display's dock group collapse overrides. Wired by the
     /// overlay manager to store the map keyed by display ID so collapse state
     /// is independent per monitor and survives relaunch.
@@ -126,7 +125,7 @@ struct PickyHUDView: View {
 
     /// Session ids in dock render order. Used for ⌘N shortcut resolution
     /// (each slot's `visibleIndex` matches its position here) and for
-    /// `heldSession` / fullscreen target lookups.
+    /// `heldSession` lookups.
     private var visibleSessionIDs: [String] {
         dockProjection.slots.map(\.sessionID)
     }
@@ -142,14 +141,6 @@ struct PickyHUDView: View {
     private var openedSessionID: String? {
         if case let .open(sessionID) = heldSession { return sessionID }
         return nil
-    }
-
-    private var fullscreenTargetSessionID: String? {
-        PickyHUDDockLayout.fullscreenTargetSessionID(
-            visibleIDs: visibleSessionIDs,
-            held: heldSession,
-            hoverPreviewID: hoverPreviewSessionID
-        )
     }
 
     private var activeSession: PickySessionListViewModel.SessionCard? {
@@ -474,7 +465,6 @@ struct PickyHUDView: View {
                 activeSessionID: activeSession?.id,
                 openedSessionID: openedSessionID,
                 previewSessionID: hoverPreviewSessionID,
-                fullscreenTargetSessionID: fullscreenTargetSessionID,
                 screenContextTargetSessionID: viewModel.screenContextTargetSessionID,
                 dockSide: placement.dockSide,
                 isCommandShortcutHintVisible: isCommandShortcutHintVisible,
@@ -508,16 +498,14 @@ struct PickyHUDView: View {
                 onDoneFlashConsumed: viewModel.markDoneFlashConsumed(sessionID:),
                 onDockHandleDragChanged: onDockHandleDragChanged,
                 onDockHandleDragEnded: onDockHandleDragEnded,
-                onDockHandleDoubleClick: onDockHandleDoubleClick,
-                onOpenFullscreenSession: onOpenFullscreenSession
+                onDockHandleDoubleClick: onDockHandleDoubleClick
             )
             .frame(
                 width: placement.dockSide.orientation == .horizontal
                     ? PickyHUDDockLayout.horizontalDockRailLength(
                         sessionCount: visibleSessions.count,
                         isAddSlotExpanded: isDockAddSlotExpanded,
-                        metrics: dockMetrics,
-                        includesFullscreenControl: PickyFullscreenFeatureFlags.isEnabled
+                        metrics: dockMetrics
                     )
                     : dockMetrics.railWidth,
                 height: placement.dockSide.orientation == .horizontal

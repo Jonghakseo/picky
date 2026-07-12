@@ -24,25 +24,11 @@ enum PickySpeechPlaybackProviderFactory {
     @MainActor
     static func makeDefaultProvider(
         settings: PickySettings = PickySettingsStore().load(),
-        environment: [String: String] = ProcessInfo.processInfo.environment,
-        isRealtimeOnlyBuild: Bool? = nil
+        environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> any PickySpeechPlaybackProvider {
-        let isRealtimeRuntime = isRealtimeOnlyBuild
-            ?? (AppBundleConfiguration.effectiveRuntimeMode == .openAIRealtime)
         guard settings.ttsEnabled else {
             let provider = PickyMutedSpeechPlaybackProvider()
             print("🔇 TTS: spoken replies disabled")
-            return provider
-        }
-
-        // OpenAI Realtime runtime routes every assistant turn through the
-        // Realtime audio pipeline, so `speechPlaybackProvider` is only ever
-        // used for onboarding narration and the legacy `agentReply` safety
-        // net. Skip every external-API provider here and fall through to the
-        // bundled macOS synthesizer to keep this path keyless.
-        if isRealtimeRuntime {
-            let provider = PickySystemSpeechPlaybackProvider()
-            print("🔊 TTS: realtime runtime — using local provider \(provider.displayName)")
             return provider
         }
 
@@ -206,9 +192,6 @@ enum PickySpeechPlaybackProviderFactory {
             return "local"
         case .openai:
             return "openai"
-        case .openaiRealtime:
-            // Realtime is STT-only; speech playback falls back to local TTS.
-            return "local"
         case .azure:
             return "azure"
         case .elevenLabs:

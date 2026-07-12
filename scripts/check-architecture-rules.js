@@ -203,7 +203,6 @@ function checkFileSizeRatchet() {
     ["Picky/Overlay/BlueCursorView.swift", 1830],
     ["Picky/App/Settings/PickySettings.swift", 1550],
     ["agentd/src/session-supervisor.ts", 3283],
-    ["agentd/src/runtime/openai-realtime-main-runtime.ts", 2110],
   ]);
 
   const swiftFiles = walk("Picky", (file) => file.endsWith(".swift"));

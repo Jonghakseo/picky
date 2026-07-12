@@ -17,7 +17,7 @@ Artifact/report post-processing is intentionally out of scope.
 - Put custom logic in `picky-agentd`, not in Swift.
 - Do not add deterministic workflow routing in Picky or custom hooks. No `if URL is Sentry then run Sentry flow` style behavior.
 - Preserve local-first behavior. User modules run locally under the user's account.
-- Preserve existing Local/OpenAI/OpenAI Realtime/Azure/ElevenLabs providers. Custom TS is an opt-in provider/hook layer and must explicitly coexist with OpenAI Realtime, which is currently STT-only in the picker.
+- Preserve existing Local/OpenAI/Azure/ElevenLabs providers. Custom TS is an opt-in provider/hook layer.
 - Keep default behavior unchanged when no custom module is configured.
 - Treat privacy hooks differently from convenience hooks: if the user enables fail-closed context redaction, hook failure must not leak the original context into Pi prompts.
 
@@ -26,14 +26,14 @@ Artifact/report post-processing is intentionally out of scope.
 - No SaaS plugin registry.
 - No remote code loading.
 - No sandbox guarantee in v1. The module is local trusted code and should be labelled as such in Settings.
-- No realtime end-to-end voice override in v1. The module targets the existing Pi STT/TTS path first.
+- The module targets the existing Pi STT/TTS path first.
 - No custom artifact/report post-processor in this phase.
 
 ## Proposed user experience
 
 Settings → Voice (STT & TTS):
 
-- STT provider: `Apple Speech`, `OpenAI`, `OpenAI Realtime`, `Azure OpenAI`, `ElevenLabs`, `Custom TypeScript`
+- STT provider: `Apple Speech`, `OpenAI`, `Azure OpenAI`, `ElevenLabs`, `Custom TypeScript`
 - TTS provider: `macOS Speech`, `OpenAI`, `Azure OpenAI`, `ElevenLabs`, `Custom TypeScript`
 - Custom module path: default `~/Library/Application Support/Picky/custom-module.ts`
 - Hook toggles:
@@ -468,7 +468,7 @@ Add a `CustomModuleService.applyContextHooks(packet)` before building prompts fo
 - main agent prompt
 - steer/follow-up context where available
 
-Realtime main runtime is explicitly out of scope for v1 custom hooks. Do not wire context/prompt hooks into the Realtime path in this phase.
+The Pi SDK main runtime is the sole main runtime for custom hooks.
 
 Rules:
 
@@ -783,7 +783,7 @@ Decisions:
 1. Speech transform hooks run when `customSpeechTransformsEnabled` is true, even if STT/TTS providers are not custom.
 2. Use one shared module path for all hooks in v1.
 3. Context hooks are disabled by default and require `customContextHooksEnabled`; default failure policy is `safeFallback`.
-4. Custom hooks do not run for OpenAI Realtime main runtime in v1.
+4. Custom hooks run only against the Pi SDK main runtime.
 5. Prompt hooks support full prompt editing in v1. Users who only want append-only behavior receive the existing prompt and can append to it in their hook.
 6. The user template uses a local `custom-module.d.ts` with a relative `./custom-module` import, not a `picky-agentd/custom-module` package export.
 

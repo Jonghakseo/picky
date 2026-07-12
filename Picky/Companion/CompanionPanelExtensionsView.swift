@@ -346,7 +346,7 @@ struct CompanionPanelExtensionsView: View {
         // Picky side. The agentd reloadPlugins method differentiates the two
         // and aborts streaming vs deferring compacting sessions.
         let runningPickles = sessionListViewModel.sessions.filter { $0.status == .running }.count
-        // Realtime main is busy when the voice machine is past idle. .listening
+        // Main is busy when the voice machine is past idle. .listening
         // and .processing both involve in-flight work that a session.update
         // would interrupt; .responding is the audible speech the user wants to
         // cut off when they hit Reload.

@@ -43,10 +43,10 @@ export const PICKY_DEEP_LINK_ROUTES: ReadonlyArray<readonly [string, string]> = 
   ["picky://panel/settings", "Menu bar panel → Settings tab index (grouped: General / Agents / Surface)."],
   ["picky://settings/general", "Settings → General (language, appearance, shell command)."],
   ["picky://settings/shortcuts", "Settings → Shortcuts (Push-to-Talk, Quick Input)."],
-  ["picky://settings/mainAgent", "Settings → Picky main agent (runtime, model, screen context)."],
+  ["picky://settings/mainAgent", "Settings → Picky main agent (model, screen context)."],
   ["picky://settings/pickle", "Settings → Pickle agent (model, reasoning level, HUD dock size, archived sessions)."],
   ["picky://settings/tools", "Settings → Tools (built-in tools the agents can call)."],
-  ["picky://settings/voice", "Settings → Voice (STT/TTS provider, Realtime)."],
+  ["picky://settings/voice", "Settings → Voice (STT/TTS provider)."],
   ["picky://settings/overlayAndNotifications", "Settings → Overlay & Notifications (cursor, speech bubbles, macOS banners)."],
   ["picky://settings/onboarding", "Settings → Onboarding replay (hidden index entry)."],
 ] as const;

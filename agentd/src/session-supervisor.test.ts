@@ -2975,7 +2975,7 @@ describe("SessionSupervisor", () => {
     expect(replies).toEqual([{ contextId: "context-마이크 테스트", text: "바로 답변" }]);
   });
 
-  it("forwards TTS toggle changes to the main runtime so Realtime can switch response modality", async () => {
+  it("forwards TTS toggle changes to the main runtime", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-tts-"));
     const sideRuntime = new ManualRuntime();
     const mainRuntime = new ManualRuntime();
@@ -3202,9 +3202,8 @@ describe("SessionSupervisor", () => {
     ]);
   });
 
-  // Picky's TTS setting (Voice tab) propagates to agentd so Realtime can switch
-  // response.create modality. The supervisor stores the current value
-  // (defaults to true) and fires change listeners on real transitions.
+  // Picky's TTS setting (Voice tab) propagates to agentd. The supervisor stores
+  // the current value (defaults to true) and fires change listeners on real transitions.
   it("tracks ttsEnabled state and notifies listeners on every change", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const supervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
@@ -3988,46 +3987,6 @@ describe("SessionSupervisor", () => {
     expect(replies.filter((entry) => entry.contextId === pickleSession.id)).toEqual([]);
   });
 
-  // Regression for the double-ack bug seen in Realtime mode: the Realtime model
-  // itself produces a natural follow-up text after `picky_start_pickle` returns
-  // (via `main_realtime_turn_done` -> `appendMainMessage`). If `announceMainHandoff`
-  // also injects the curated handoffAck as both a `mainMessage` and a `quickReply`,
-  // the Messages tab ends up with two assistant bubbles for one user turn and the
-  // system TTS races (and reorders) against the Realtime audio stream. The
-  // interaction reducer also gets a `quickReply replyKind=handoffAck` for the same
-  // inputId the Realtime turn still owns, locking the cursor in `.processing`.
-  // The fix gates the curated-ack side effects on `isMainRealtimeRuntime`.
-  it("skips the curated handoffAck mainMessage and quickReply when the main runtime is Realtime", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
-    // Minimal stub that passes isMainRealtimeRuntime. We are not exercising the
-    // realtime turn surface here — only verifying that announceMainHandoff stays
-    // silent on this runtime.
-    const realtimeRuntime = {
-      async create(_prompt: BuiltPrompt, _options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> {
-        throw new Error("create not used in this test");
-      },
-      async configureMainRealtimeAuth() {},
-      async beginMainRealtimeVoiceTurn() {},
-      async appendMainRealtimeInputAudio() {},
-      async commitMainRealtimeVoiceTurn() {},
-      async cancelMainRealtimeVoiceTurn() {},
-    } as unknown as AgentRuntime;
-    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime: realtimeRuntime });
-    const replies: Array<{ contextId: string; text: string; replyKind?: string }> = [];
-    const mainMessages: Array<{ role: string; text: string }> = [];
-    supervisor.on("quickReply", (contextId, text, metadata = {}) => replies.push({ contextId, text, replyKind: metadata.replyKind }));
-    supervisor.on("mainMessage", (message) => mainMessages.push({ role: message.role, text: message.text }));
-
-    const userCtx = context("피클 띄워줘");
-    supervisor.announceMainHandoff(userCtx.id, "피클에 위임할게요");
-    await settle();
-
-    // Neither the curated ack bubble nor its TTS quickReply may fire on the
-    // Realtime path — the Realtime model's own follow-up will handle the ack.
-    expect(mainMessages.filter((message) => message.text === "피클에 위임할게요")).toHaveLength(0);
-    expect(replies.filter((reply) => reply.replyKind === "handoffAck")).toHaveLength(0);
-    expect(supervisor.listMainMessages()).toHaveLength(0);
-  });
 
   it("routes complex requests to the long-running runtime", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
@@ -5720,151 +5679,6 @@ describe("SessionSupervisor", () => {
     const session = await supervisor.create(context("cancel then follow"));
     await supervisor.abort(session.id);
     await expect(supervisor.followUp(session.id, "nope")).rejects.toThrow(/Cannot follow up/);
-  });
-
-  // ----- User memory CRUD -----
-
-  it("persists a new user memory and exposes it via listUserMemories + the supervisor snapshot", async () => {
-    const supervisor = await makeSupervisor();
-    const result = await supervisor.addUserMemory("GitHub handle is jonghakseo");
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.memory.content).toBe("GitHub handle is jonghakseo");
-    expect(result.memory.id).toMatch(/^[0-9a-f]{12}$/);
-
-    const all = supervisor.listUserMemories();
-    expect(all).toHaveLength(1);
-    expect(all[0]?.id).toBe(result.memory.id);
-  });
-
-  it("round-trips user memories through the on-disk picky.json", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
-    const supervisorA = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
-    await supervisorA.load();
-    const addResult = await supervisorA.addUserMemory("Treat \"이 페이지\" as the OpenAI Realtime guide");
-    expect(addResult.ok).toBe(true);
-    if (!addResult.ok) return;
-
-    // Fresh supervisor over the same store should see the persisted memory.
-    const supervisorB = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
-    await supervisorB.load();
-    expect(supervisorB.listUserMemories().map((m) => m.content)).toEqual([
-      "Treat \"이 페이지\" as the OpenAI Realtime guide",
-    ]);
-  });
-
-  it("rejects empty memory content", async () => {
-    const supervisor = await makeSupervisor();
-    const result = await supervisor.addUserMemory("   \n  ");
-    expect(result.ok).toBe(false);
-    expect(supervisor.listUserMemories()).toHaveLength(0);
-  });
-
-  it("rejects memories that exceed the per-item char limit", async () => {
-    const supervisor = await makeSupervisor();
-    const result = await supervisor.addUserMemory("x".repeat(501));
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error).toMatch(/max 500/);
-  });
-
-  it("rejects adds once the item-count cap is reached", async () => {
-    const supervisor = await makeSupervisor();
-    for (let i = 0; i < 50; i += 1) {
-      const result = await supervisor.addUserMemory(`memory ${i}`);
-      expect(result.ok).toBe(true);
-    }
-    const overflow = await supervisor.addUserMemory("one too many");
-    expect(overflow.ok).toBe(false);
-    if (overflow.ok) return;
-    expect(overflow.error).toMatch(/memory item limit/);
-  });
-
-  it("rejects adds once the total character budget would be exceeded", async () => {
-    const supervisor = await makeSupervisor();
-    // Each entry is 400 chars; 10 entries = 4000 chars (at the limit).
-    for (let i = 0; i < 10; i += 1) {
-      const result = await supervisor.addUserMemory("x".repeat(400));
-      expect(result.ok).toBe(true);
-    }
-    const overflow = await supervisor.addUserMemory("y".repeat(50));
-    expect(overflow.ok).toBe(false);
-    if (overflow.ok) return;
-    expect(overflow.error).toMatch(/budget/);
-  });
-
-  it("updates a memory in place, keeping the id and bumping updatedAt", async () => {
-    const supervisor = await makeSupervisor();
-    const added = await supervisor.addUserMemory("old content");
-    expect(added.ok).toBe(true);
-    if (!added.ok) return;
-    const originalCreatedAt = added.memory.createdAt;
-    await delay(5);
-    const updated = await supervisor.updateUserMemory(added.memory.id, "new content");
-    expect(updated.ok).toBe(true);
-    if (!updated.ok) return;
-    expect(updated.memory.id).toBe(added.memory.id);
-    expect(updated.memory.content).toBe("new content");
-    expect(updated.memory.createdAt).toBe(originalCreatedAt);
-    expect(updated.memory.updatedAt >= originalCreatedAt).toBe(true);
-    expect(supervisor.listUserMemories()).toHaveLength(1);
-  });
-
-  it("reports an error when updating an unknown memory id", async () => {
-    const supervisor = await makeSupervisor();
-    const result = await supervisor.updateUserMemory("missing", "hello");
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error).toMatch(/no memory with id/);
-  });
-
-  it("forgets a memory by id and returns the removed item", async () => {
-    const supervisor = await makeSupervisor();
-    const added = await supervisor.addUserMemory("remember me, but not for long");
-    expect(added.ok).toBe(true);
-    if (!added.ok) return;
-    const removed = await supervisor.removeUserMemory(added.memory.id);
-    expect(removed.ok).toBe(true);
-    if (!removed.ok) return;
-    expect(removed.removed.content).toBe("remember me, but not for long");
-    expect(supervisor.listUserMemories()).toHaveLength(0);
-  });
-
-  it("reports an error when forgetting an unknown memory id", async () => {
-    const supervisor = await makeSupervisor();
-    const result = await supervisor.removeUserMemory("missing");
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error).toMatch(/no memory with id/);
-  });
-
-  it("notifies the main runtime to refresh instructions on every CRUD mutation", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
-    // Minimal stub that passes isMainRealtimeRuntime so the supervisor's
-    // notifyUserMemoryChanged actually fires refreshUserMemoryInstructions.
-    // We don't exercise any other realtime surface here.
-    const refreshes: string[] = [];
-    const realtimeRuntime = {
-      async create(_prompt: BuiltPrompt, _options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> {
-        throw new Error("create not used in this test");
-      },
-      async configureMainRealtimeAuth() {},
-      async beginMainRealtimeVoiceTurn() {},
-      async appendMainRealtimeInputAudio() {},
-      async commitMainRealtimeVoiceTurn() {},
-      async cancelMainRealtimeVoiceTurn() {},
-      refreshUserMemoryInstructions() { refreshes.push("refresh"); },
-    } as unknown as AgentRuntime;
-    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime: realtimeRuntime });
-    await supervisor.load();
-
-    const added = await supervisor.addUserMemory("alpha");
-    expect(added.ok).toBe(true);
-    if (!added.ok) return;
-    await supervisor.updateUserMemory(added.memory.id, "alpha v2");
-    await supervisor.removeUserMemory(added.memory.id);
-
-    expect(refreshes).toHaveLength(3);
   });
 
   // ----- Pickle inspection -----

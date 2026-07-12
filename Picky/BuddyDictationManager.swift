@@ -13,6 +13,17 @@ import Combine
 import Foundation
 import Speech
 
+enum PickyVoiceInputError: LocalizedError {
+    case installTapFailed(reason: String)
+
+    var errorDescription: String? {
+        switch self {
+        case .installTapFailed(let reason):
+            "Microphone tap installation failed: \(reason)"
+        }
+    }
+}
+
 private enum BuddyDictationStartSource {
     case microphoneButton
     case keyboardShortcut
@@ -473,7 +484,7 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         audioEngine.prepare()
         let inputFormat = inputNode.inputFormat(forBus: 0)
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
-            throw PickyRealtimeVoiceInputError.installTapFailed(
+            throw PickyVoiceInputError.installTapFailed(
                 reason: "Input node reported an invalid format after prepare (sampleRate=\(inputFormat.sampleRate), channels=\(inputFormat.channelCount))."
             )
         }
@@ -488,7 +499,7 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         if !installed {
             let reason = trapError?.localizedDescription ?? "installTap raised an unknown NSException"
             print("❌ BuddyDictationManager: installTap failed: \(reason)")
-            throw PickyRealtimeVoiceInputError.installTapFailed(reason: reason)
+            throw PickyVoiceInputError.installTapFailed(reason: reason)
         }
 
         try audioEngine.start()

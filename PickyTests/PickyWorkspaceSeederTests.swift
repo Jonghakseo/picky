@@ -34,28 +34,6 @@ struct PickyWorkspaceSeederTests {
         #expect(body.contains("picky_start_pickle"))
     }
 
-    @Test func seedSkipsPiPayloadsUnderOpenAIRealtimeMode() throws {
-        // AGENTS.md is read exclusively by the Pi SDK runtime. The OpenAI
-        // Realtime runtime carries its own instructions inline via
-        // session.update, so only the workspace directory is created.
-        let root = scratchRoot()
-        defer { try? FileManager.default.removeItem(at: root) }
-
-        let workspacePath = PickyWorkspaceSeeder.seedDefaultWorkspace(
-            appSupportRoot: root,
-            mainAgentRuntimeMode: .openAIRealtime,
-            log: { _ in }
-        )
-
-        let workspaceURL = URL(fileURLWithPath: workspacePath, isDirectory: true)
-        let agentsURL = workspaceURL.appendingPathComponent(PickyWorkspaceSeeder.agentsMarkdownFilename)
-        var isDirectory: ObjCBool = false
-        #expect(FileManager.default.fileExists(atPath: workspaceURL.path, isDirectory: &isDirectory))
-        #expect(isDirectory.boolValue)
-        #expect(!FileManager.default.fileExists(atPath: agentsURL.path))
-    }
-
-
     @Test func seedRemovesLegacyPickyTellPlanExtensionWhenPresent() throws {
         let root = scratchRoot()
         defer { try? FileManager.default.removeItem(at: root) }

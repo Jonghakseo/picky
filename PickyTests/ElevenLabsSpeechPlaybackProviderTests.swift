@@ -61,8 +61,7 @@ struct ElevenLabsSpeechPlaybackProviderTests {
 
         let provider = PickySpeechPlaybackProviderFactory.makeDefaultProvider(
             settings: settings,
-            environment: [:],
-            isRealtimeOnlyBuild: false
+            environment: [:]
         )
 
         #expect(provider.displayName.contains("ElevenLabs") == true)

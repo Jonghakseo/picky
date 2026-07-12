@@ -139,8 +139,7 @@ struct OpenAIBaseURLOverrideTests {
 
         let provider = BuddyTranscriptionProviderFactory.makeDefaultProvider(
             settings: settings,
-            environment: [:],
-            isRealtimeOnlyBuild: false
+            environment: [:]
         )
         #expect(provider.displayName == "OpenAI Speech to Text")
         #expect(provider.isConfigured == true)

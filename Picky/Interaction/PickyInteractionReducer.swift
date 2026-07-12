@@ -363,10 +363,6 @@ private struct PickyInteractionReducing {
         inputID: UUID?
     ) {
         if let sessionID { state.pendingAgentRequestsBySession[sessionID] = nil }
-        if replyKind == .realtimeAck {
-            applyRealtimeAck(contextID: contextID)
-            return
-        }
         let timerID = envelope.id
         let deadline = envelope.occurredAt.addingTimeInterval(minimumDisplayDuration)
         let owner = state.contextOwnership[contextID] ?? ownerFromMetadata(originSource)
@@ -378,34 +374,6 @@ private struct PickyInteractionReducing {
             enqueueOrSpeakQuickReply(contextID: contextID, text: text, replyKind: replyKind, owner: owner, timerID: timerID, inputID: inputID)
         } else {
             showTextQuickReply(contextID: contextID, text: text, replyKind: replyKind, timerID: timerID, deadline: deadline, inputID: inputID)
-        }
-    }
-
-    /// Realtime ack: OpenAI Realtime already delivered the audio reply
-    /// (and its transcript via output_transcript). This signal exists
-    /// purely to release the reducer's `.waitingForAgent` output so the
-    /// cursor returns to idle. Do NOT replay the text through TTS and
-    /// do NOT replace the visible bubble - just clean up state for the
-    /// matching inputID/contextID, skipping the regular quick-reply body
-    /// (which would startSpeakingReply or set .showingTextReply).
-    private mutating func applyRealtimeAck(contextID: String) {
-        // Match by contextID only. The `inputID` in the quickReply is
-        // agentd's realtime turn ID (assigned to response.create),
-        // distinct from the client-side input UUID stored on
-        // `.waitingForAgent` when .textSubmitted was reduced. Both
-        // point to the same conversation turn via contextID, which is
-        // the stable cross-process identifier. Drop pendingTextInputs
-        // by waitingInputID (the real client input) so a follow-up
-        // submission does not race against a stale slot.
-        state.queuedSpeechReplies.removeAll()
-        state = state.removingOverlayReason(.waitingForVoiceResponse)
-        if case .waitingForAgent(let waitingInputID, let waitingContextID, _) = state.output,
-           waitingContextID == contextID {
-            if let waitingInputID { state.pendingTextInputs[waitingInputID] = nil }
-            state.output = .idle
-            record(.stateChanged, "Realtime ack received; cursor cleared")
-        } else {
-            record(.accepted, "Realtime ack received; output already moved on")
         }
     }
 

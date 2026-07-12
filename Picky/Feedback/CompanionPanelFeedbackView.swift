@@ -396,13 +396,8 @@ struct CompanionPanelFeedbackView: View {
         return "\(v.majorVersion).\(v.minorVersion).\(v.patchVersion)"
     }
 
-    private var runtimeModeLabel: String {
-        let mode = AppBundleConfiguration.effectiveRuntimeMode
-        return mode == .openAIRealtime ? "Realtime" : "Pi"
-    }
-
     private var metadataLine: String {
-        "Picky \(appVersion) (build \(appBuild)) · macOS \(osVersionString) · runtime: \(runtimeModeLabel)"
+        "Picky \(appVersion) (build \(appBuild)) · macOS \(osVersionString)"
     }
 
     private func chooseMediaAttachments() {
@@ -523,7 +518,6 @@ struct CompanionPanelFeedbackView: View {
             appVersion: appVersion,
             appBuild: appBuild,
             osVersion: osVersionString,
-            runtimeMode: runtimeModeLabel,
             sentAt: Date()
         )
         let scope = attachmentScope.bundleScope
@@ -574,7 +568,6 @@ struct CompanionPanelFeedbackView: View {
                 appVersion: payload.appVersion,
                 appBuild: payload.appBuild,
                 osVersion: payload.osVersion,
-                runtimeMode: payload.runtimeMode,
                 generatedAt: payload.sentAt
             )
             let bundle = try PickyDiagnosticsBundleBuilder.build(scope: scope, metadata: metadata)

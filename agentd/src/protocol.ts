@@ -85,22 +85,6 @@ const PickyMainAgentContextUsageSchema = z.object({
   contextWindow: z.number(),
   percent: z.number().nullable(),
 });
-/**
- * Long-term memory item the user has asked Picky to remember. Surfaced into
- * every Realtime `session.update.instructions` so the model can act on the
- * stored rule/fact without the user having to repeat it each session. Each
- * item is short (<=500 chars) and the full set is capped at 50 items / 4000
- * chars total to keep the instruction budget bounded — see
- * PICKY_USER_MEMORY_ITEM_LIMIT and friends in session-supervisor.ts.
- */
-export const PickyUserMemorySchema = z.object({
-  id: z.string().min(1),
-  content: z.string().min(1),
-  createdAt: isoTimestamp,
-  updatedAt: isoTimestamp,
-});
-export type PickyUserMemory = z.infer<typeof PickyUserMemorySchema>;
-
 export const PickyMainAgentStateSchema = z.object({
   sessionFilePath: z.string().optional(),
   cwd: z.string().optional(),
@@ -111,61 +95,11 @@ export const PickyMainAgentStateSchema = z.object({
   lastRolloverAt: isoTimestamp.optional(),
   lastRolloverReason: z.string().optional(),
   contextUsage: PickyMainAgentContextUsageSchema.optional(),
-  // Long-term user memories. `.optional()` (not `.default([])`) so existing
-  // call sites that construct partial states (e.g. supervisor's initial
-  // `{ messages: [] }`) keep compiling without forcing a literal `[]` at
-  // every literal. The supervisor coalesces with `?? []` when reading.
-  userMemories: z.array(PickyUserMemorySchema).optional(),
 });
 export type PickyMainAgentState = z.infer<typeof PickyMainAgentStateSchema>;
 
 export const ThinkingLevelSchema = z.enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 export type ThinkingLevel = z.infer<typeof ThinkingLevelSchema>;
-export const MainAgentRuntimeModeSchema = z.enum(["pi", "openai-realtime"]);
-export type MainAgentRuntimeMode = z.infer<typeof MainAgentRuntimeModeSchema>;
-const OpenAIRealtimeProviderSchema = z.enum(["openai", "azure_openai"]);
-const OpenAIRealtimeReasoningEffortSchema = z.enum(["low", "medium", "high", "xhigh"]);
-const AzureOpenAIRealtimeAPIShapeSchema = z.enum(["ga", "preview"]);
-export const OpenAIRealtimeAuthModeSchema = z.enum(["apiKey", "codexOAuth"]);
-export type OpenAIRealtimeAuthMode = z.infer<typeof OpenAIRealtimeAuthModeSchema>;
-const OpenAIRealtimeAuthConfigShape = {
-  provider: OpenAIRealtimeProviderSchema,
-  // `authMode` defaults to apiKey for backward compatibility with stored
-  // settings written before Codex OAuth support landed. New OpenAI provider
-  // sessions should send `codexOAuth` so the daemon authenticates with the
-  // signed-in ChatGPT account instead of a Platform API key.
-  authMode: OpenAIRealtimeAuthModeSchema.optional(),
-  apiKey: z.string().optional(),
-  modelOrDeployment: z.string().min(1),
-  voice: z.string().min(1),
-  reasoningEffort: OpenAIRealtimeReasoningEffortSchema.optional(),
-  transcriptionLanguage: z.string().optional(),
-  azure: z.object({
-    resourceEndpoint: z.string().min(1),
-    apiVersion: z.string().optional(),
-    apiShape: AzureOpenAIRealtimeAPIShapeSchema,
-  }).optional(),
-} satisfies z.ZodRawShape;
-const OpenAIRealtimeAuthConfigObjectSchema = z.object(OpenAIRealtimeAuthConfigShape);
-export const OpenAIRealtimeAuthConfigSchema = OpenAIRealtimeAuthConfigObjectSchema.superRefine((value, ctx) => {
-  const authMode = value.authMode ?? "apiKey";
-  if (authMode === "apiKey" && !value.apiKey?.trim()) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["apiKey"], message: "apiKey is required when authMode is apiKey" });
-  }
-  if (authMode === "codexOAuth" && value.provider !== "openai") {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["authMode"], message: "Codex OAuth login only supports the openai provider" });
-  }
-  if (value.provider === "azure_openai" && !value.azure) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["azure"], message: "Azure OpenAI realtime config is required for azure_openai provider" });
-  }
-  if (value.provider === "openai" && value.azure) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["azure"], message: "Azure OpenAI realtime config must be omitted for openai provider" });
-  }
-  if (value.azure?.apiShape === "preview" && !value.azure.apiVersion?.trim()) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["azure", "apiVersion"], message: "Azure OpenAI preview realtime API requires apiVersion" });
-  }
-});
-export type OpenAIRealtimeAuthConfig = z.infer<typeof OpenAIRealtimeAuthConfigSchema>;
 export const ModelCycleDirectionSchema = z.enum(["forward", "backward"]);
 export type ModelCycleDirection = z.infer<typeof ModelCycleDirectionSchema>;
 const PickySlashCommandSourceSchema = z.enum(["extension", "prompt", "skill", "builtin"]);
@@ -375,24 +309,8 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("listMainAgentModels") }),
   CommandBaseSchema.extend({ type: z.literal("setDefaultCwd"), defaultCwd: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("setMainAgentModel"), mainAgentModelPattern: z.string() }),
-  CommandBaseSchema.extend({ type: z.literal("setMainAgentRuntimeMode"), mode: MainAgentRuntimeModeSchema }),
   CommandBaseSchema.extend({ type: z.literal("setDisabledBuiltinTools"), disabledBuiltinTools: z.array(z.string()) }),
   CommandBaseSchema.extend({ type: z.literal("setMainAgentTTSEnabled"), enabled: z.boolean() }),
-  CommandBaseSchema.extend({ type: z.literal("configureMainRealtimeAuth"), ...OpenAIRealtimeAuthConfigShape }),
-  CommandBaseSchema.extend({ type: z.literal("beginMainRealtimeVoiceTurn"), inputId: z.string().min(1), context: PickyContextPacketSchema }),
-  CommandBaseSchema.extend({ type: z.literal("appendMainRealtimeInputAudio"), inputId: z.string().min(1), audioBase64: z.string().min(1) }),
-  CommandBaseSchema.extend({ type: z.literal("commitMainRealtimeVoiceTurn"), inputId: z.string().min(1), context: PickyContextPacketSchema.optional() }),
-  CommandBaseSchema.extend({ type: z.literal("cancelMainRealtimeVoiceTurn"), inputId: z.string().min(1).optional(), playedAudioMs: z.number().nonnegative().optional() }),
-  CommandBaseSchema.extend({
-    type: z.literal("beginTranscriptionStream"),
-    streamId: z.string().min(1),
-    language: z.string().min(1).optional(),
-    model: z.string().min(1).optional(),
-    keyterms: z.array(z.string()).optional(),
-  }),
-  CommandBaseSchema.extend({ type: z.literal("appendTranscriptionAudio"), streamId: z.string().min(1), audioBase64: z.string().min(1) }),
-  CommandBaseSchema.extend({ type: z.literal("endTranscriptionStream"), streamId: z.string().min(1) }),
-  CommandBaseSchema.extend({ type: z.literal("cancelTranscriptionStream"), streamId: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("resetMainAgent") }),
   CommandBaseSchema.extend({ type: z.literal("abortMainAgent") }),
   CommandBaseSchema.extend({ type: z.literal("setMainAgentThinkingLevel"), mainAgentThinkingLevel: ThinkingLevelSchema }),
@@ -407,42 +325,14 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
 type CommandEnvelope = z.infer<typeof CommandEnvelopeSchema>;
 
 const EventBaseSchema = z.object({ id: z.string(), protocolVersion: z.literal(PROTOCOL_VERSION), timestamp: isoTimestamp });
-const MainRealtimeStateSchema = z.enum(["connecting", "ready", "listening", "thinking", "speaking", "failed"]);
-const MainRealtimeTurnStatusSchema = z.enum(["completed", "cancelled", "failed", "incomplete"]);
-const MainRealtimeUsageSnapshotSchema = z.object({
-  totalTokens: z.number().nonnegative(),
-  inputTokens: z.number().nonnegative(),
-  outputTokens: z.number().nonnegative(),
-  cachedInputTokens: z.number().nonnegative(),
-  inputTextTokens: z.number().nonnegative(),
-  inputAudioTokens: z.number().nonnegative(),
-  outputTextTokens: z.number().nonnegative(),
-  outputAudioTokens: z.number().nonnegative(),
-});
-export type MainRealtimeUsageSnapshot = z.infer<typeof MainRealtimeUsageSnapshotSchema>;
-const MainRealtimeQuotaWindowSchema = z.object({
-  used: z.number().nonnegative(),
-  limit: z.number().nonnegative(),
-  remaining: z.number().nonnegative(),
-  windowLabel: z.string().optional(),
-  resetAt: z.string().optional(),
-});
-const MainRealtimeQuotaSnapshotSchema = z.object({
-  planType: z.string().optional(),
-  primary: MainRealtimeQuotaWindowSchema.optional(),
-  secondary: MainRealtimeQuotaWindowSchema.optional(),
-  fetchedAt: isoTimestamp,
-});
-export type MainRealtimeQuotaSnapshot = z.infer<typeof MainRealtimeQuotaSnapshotSchema>;
 const QuickReplyOriginSourceSchema = z.enum(["voice", "text", "voiceFollowUp", "textFollowUp", "system", "cli", "unknown"]);
 const QuickReplyKindSchema = z.preprocess((value) => {
   if (typeof value !== "string") return value;
   const normalized = value.trim().toLowerCase();
   if (["picklecompletion", "pickle-completion", "pickle_completion"].includes(normalized)) return "pickleCompletion";
   if (["handoffack", "handoff-ack", "handoff_ack"].includes(normalized)) return "handoffAck";
-  if (["realtimeack", "realtime-ack", "realtime_ack"].includes(normalized)) return "realtimeAck";
   return value;
-}, z.enum(["main", "pickleCompletion", "router", "handoffAck", "realtimeAck", "error", "unknown"]));
+}, z.enum(["main", "pickleCompletion", "router", "handoffAck", "error", "unknown"]));
 
 export const EventEnvelopeSchema = z.discriminatedUnion("type", [
   EventBaseSchema.extend({ type: z.literal("hello"), serverName: z.literal("picky-agentd"), supportedProtocolVersions: z.array(z.string()) }),
@@ -463,29 +353,6 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
     cwd: z.string().optional(),
   }),
   EventBaseSchema.extend({ type: z.literal("mainAgentModelsSnapshot"), models: z.array(PickyMainAgentModelOptionSchema) }),
-  EventBaseSchema.extend({ type: z.literal("mainRealtimeStateChanged"), state: MainRealtimeStateSchema, message: z.string().optional() }),
-  EventBaseSchema.extend({ type: z.literal("mainRealtimeInputTranscriptDelta"), inputId: z.string(), delta: z.string() }),
-  EventBaseSchema.extend({ type: z.literal("mainRealtimeInputTranscriptCompleted"), inputId: z.string(), transcript: z.string() }),
-  EventBaseSchema.extend({ type: z.literal("mainRealtimeOutputAudioDelta"), inputId: z.string().optional(), audioBase64: z.string() }),
-  EventBaseSchema.extend({ type: z.literal("mainRealtimeOutputAudioDone"), inputId: z.string().optional() }),
-  EventBaseSchema.extend({ type: z.literal("mainRealtimeOutputTranscriptDelta"), inputId: z.string().optional(), delta: z.string() }),
-  EventBaseSchema.extend({ type: z.literal("mainRealtimeOutputTranscriptCompleted"), inputId: z.string().optional(), transcript: z.string() }),
-  EventBaseSchema.extend({ type: z.literal("mainRealtimeTurnDone"), inputId: z.string().optional(), status: MainRealtimeTurnStatusSchema, finalTranscript: z.string().optional() }),
-  EventBaseSchema.extend({
-    type: z.literal("mainRealtimeUsage"),
-    inputId: z.string().optional(),
-    lastTurn: MainRealtimeUsageSnapshotSchema,
-    session: MainRealtimeUsageSnapshotSchema,
-  }),
-  EventBaseSchema.extend({
-    type: z.literal("mainRealtimeQuota"),
-    quota: MainRealtimeQuotaSnapshotSchema.optional(),
-  }),
-  EventBaseSchema.extend({ type: z.literal("transcriptionStreamStarted"), streamId: z.string() }),
-  EventBaseSchema.extend({ type: z.literal("transcriptionDelta"), streamId: z.string(), delta: z.string() }),
-  EventBaseSchema.extend({ type: z.literal("transcriptionCompleted"), streamId: z.string(), transcript: z.string() }),
-  EventBaseSchema.extend({ type: z.literal("transcriptionStreamFailed"), streamId: z.string(), message: z.string() }),
-  EventBaseSchema.extend({ type: z.literal("transcriptionStreamClosed"), streamId: z.string() }),
   EventBaseSchema.extend({ type: z.literal("sessionSnapshot"), sessions: z.array(PickyAgentSessionSchema) }),
   EventBaseSchema.extend({ type: z.literal("sessionUpdated"), session: PickyAgentSessionSchema }),
   // Explicit signal that a session's `archived` flag was just (un)set on the

@@ -235,7 +235,7 @@ struct PickyTests {
 
         let horizontalSessionsAndSlot = (3 * mediumMetrics.sessionTileWidth) + (2 * mediumMetrics.sessionSpacing) + 2 + mediumMetrics.collapsedAddSlotVisualHeight
         #expect(PickyHUDDockLayout.horizontalDockRailLength(sessionCount: 3, isAddSlotExpanded: false, metrics: mediumMetrics) ==
-            mediumMetrics.topPadding + mediumMetrics.handleAreaHeight + 2 + PickyHUDDockLayout.fullscreenDockControlLength(metrics: mediumMetrics) + horizontalSessionsAndSlot + mediumMetrics.topPadding
+            mediumMetrics.topPadding + mediumMetrics.handleAreaHeight + 2 + horizontalSessionsAndSlot + mediumMetrics.topPadding
         )
 
         #expect(PickyHUDDockLayout.contentSizeReservingAddSlotExpansion(

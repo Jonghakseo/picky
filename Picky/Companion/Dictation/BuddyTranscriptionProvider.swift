@@ -30,52 +30,11 @@ protocol BuddyTranscriptionProvider {
 }
 
 enum BuddyTranscriptionProviderFactory {
-    /// Optional weak reference Picky sets at boot so the realtime STT provider
-    /// can talk back through the same agentd command channel. Holds a weak
-    /// reference so the factory itself never extends the lifetime of
-    /// `PickyAgentClient`. Reads and writes happen on the main actor in
-    /// production (CompanionManager.reloadVoiceProvidersFromSettings), but the
-    /// stored property itself is left nonisolated so the existing factory
-    /// callers (including tests) can keep their synchronous signatures.
-    nonisolated(unsafe) static weak var sharedAgentClient: PickyAgentClient?
-
     static func makeDefaultProvider(
         settings: PickySettings = PickySettingsStore().load(),
-        environment: [String: String] = ProcessInfo.processInfo.environment,
-        isRealtimeOnlyBuild: Bool? = nil,
-        agentClient: PickyAgentClient? = BuddyTranscriptionProviderFactory.sharedAgentClient
+        environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> any BuddyTranscriptionProvider {
-        let isRealtimeRuntime = isRealtimeOnlyBuild
-            ?? (AppBundleConfiguration.effectiveRuntimeMode == .openAIRealtime)
-        // When the launch-time main agent runtime is OpenAI Realtime, force
-        // the Realtime transcription provider regardless of what is currently
-        // saved in settings.sttProvider. Existing settings files may still
-        // carry a legacy provider selection (e.g. "openai" or "azure");
-        // honouring that value would silently route voice through a separate
-        // key-input path instead of the active Realtime session.
-        if isRealtimeRuntime {
-            let language = settings.openAISTTPreferredLanguage
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .nilIfEmpty
-            let provider = OpenAIRealtimeTranscriptionProvider(
-                agentClient: agentClient,
-                preferredLanguage: language
-            )
-            print("🎙️ Transcription: realtime runtime — forced provider \(provider.displayName), language: \(language ?? "auto")")
-            return provider
-        }
-
         let requestedProvider = providerName(from: settings.sttProvider)
-
-        if requestedProvider == "openai-realtime" || requestedProvider == "openaiRealtime" {
-            let language = settings.openAISTTPreferredLanguage.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-            let provider = OpenAIRealtimeTranscriptionProvider(
-                agentClient: agentClient,
-                preferredLanguage: language
-            )
-            print("🎙️ Transcription: using provider \(provider.displayName), language: \(language ?? "auto")")
-            return provider
-        }
 
         if requestedProvider == "openai" {
             let language = settings.openAISTTPreferredLanguage.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
@@ -143,8 +102,6 @@ enum BuddyTranscriptionProviderFactory {
             return "local"
         case .openai:
             return "openai"
-        case .openaiRealtime:
-            return "openai-realtime"
         case .azure:
             return "azure"
         case .elevenLabs:

@@ -61,7 +61,6 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     let fontScaleStore: PickyAppFontScaleStore
     private lazy var daemonConfiguration: PickyAgentDaemonConfiguration = {
         let settings = settingsStore.load().normalizedPaths()
-        let effectiveRuntimeMode = AppBundleConfiguration.effectiveRuntimeMode
         return PickyAgentDaemonConfiguration.development(
             defaultCwd: settings.defaultCwd,
             mainAgentCwd: settings.mainAgentCwd,
@@ -69,7 +68,6 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             mainAgentModelPattern: settings.mainAgentModelPattern,
             pickleAgentThinkingLevel: settings.pickleAgentThinkingLevel,
             pickleAgentModelPattern: settings.pickleAgentModelPattern,
-            mainAgentRuntimeMode: effectiveRuntimeMode,
             piBinaryPath: settings.piBinaryPath,
             piCodingAgentDir: settings.piCodingAgentDir
         )
@@ -139,22 +137,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         viewModel: hudSessionViewModel,
         appearanceStore: appearanceStore,
         fontScaleStore: fontScaleStore,
-        settingsStore: settingsStore,
-        onOpenFullscreenSession: { [weak self] sessionID in
-            self?.openFullscreenSession(sessionID: sessionID)
-        }
-    )
-    private lazy var fullscreenCoordinator = PickyFullscreenCoordinator(
-        viewModel: hudSessionViewModel,
-        appearanceStore: appearanceStore,
-        fontScaleStore: fontScaleStore,
-        onDidClose: { [weak self] in
-            self?.restoreHUDAfterFullscreenClose()
-        }
-    )
-    private lazy var fullscreenModeController = PickyFullscreenModeController(
-        fullscreenCoordinator: fullscreenCoordinator,
-        hudVisibilityController: hudOverlayManager
+        settingsStore: settingsStore
     )
     /// Shared with the plugin manager UI. Subscribes to the agent client for
     /// `pluginsReloaded` broadcasts and exposes a single async `reload()` the
@@ -166,19 +149,6 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     /// the same instance.
     private let onboardingActivator: PickyOnboardingActivator
     private var onboardingFlowController: OnboardingFlowController?
-    /// PICKY_REALTIME_OPT_IN=1 builds need Realtime auth to do anything
-    /// useful. The gate surfaces a single boot-time / post-onboarding alert
-    /// when the user has not signed in yet. Opt-in=0 builds construct it too,
-    /// but `evaluate()` short-circuits on `.pi` runtime so the alert never
-    /// fires there. Created lazily so the closure that opens Settings can
-    /// capture `self.menuBarPanelManager` after it is wired up.
-    private lazy var realtimeAuthGate: PickyRealtimeAuthGate = PickyRealtimeAuthGate(
-        openSettings: { [weak self] in
-            self?.menuBarPanelManager?.present(
-                deepLink: PickyDeepLink(tab: .settings, settingsRoute: .mainAgent)
-            )
-        }
-    )
     /// Owned at the app delegate so its state survives panel teardown.
     /// `MenuBarPanelManager` reads/writes it, and `PickyDeepLinkDispatcher`
     /// routes `picky://` clicks through `present(deepLink:)`.
@@ -229,14 +199,6 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             // keeps the language in sync when the settings JSON is edited
             // externally (tests, debug tooling).
             LocaleManager.shared.apply(updated.appLanguage)
-            // PICKY_REALTIME_OPT_IN=1: settings save fires whenever
-            // onboarding marks completion or the user toggles auth fields.
-            // Re-evaluating the gate here means the same alert presenter
-            // handles "onboarding just finished, user still hasn't signed
-            // in" without needing a dedicated onboarding completion hook.
-            // No-op on opt-in=0 builds and de-duped per session inside the
-            // gate.
-            self.realtimeAuthGate.evaluate()
         }
 
         PickyAnalytics.configure()
@@ -251,9 +213,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             // starts so the always-on Picky main agent always has a valid cwd
             // (with our seed AGENTS.md) to load. Idempotent — never overwrites
             // user edits.
-            PickyWorkspaceSeeder.seedDefaultWorkspace(
-                mainAgentRuntimeMode: AppBundleConfiguration.effectiveRuntimeMode
-            )
+            PickyWorkspaceSeeder.seedDefaultWorkspace()
             // Bundled pi-extensions install is opt-in via the Status tab so
             // Picky never modifies `~/.pi/agent` on launch without consent.
             daemonLauncher.start()
@@ -325,19 +285,6 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             controller.start()
         }
         registerAsLoginItemIfNeeded()
-
-        // PICKY_REALTIME_OPT_IN=1 builds: if the user has not signed in to
-        // Codex/ChatGPT or pasted a Platform/Azure API key, agentd's connect
-        // will fail before any PTT or text turn can succeed. Surface a
-        // boot-time alert that opens Settings on click; the PTT and text
-        // entry guards inside CompanionManager still fail closed if the user
-        // dismisses this and tries to talk anyway, so the alert is purely an
-        // anti-confusion measure. Skip during onboarding because the demo
-        // never reaches the daemon; PickyRealtimeAuthGate runs again as soon
-        // as the onboarding controller marks completion.
-        if onboardingFlowController == nil && !Self.isRunningUnitTests {
-            realtimeAuthGate.evaluate()
-        }
     }
 
     /// Try to drop the `/usr/local/bin/picky` wrapper into place silently. We
@@ -346,14 +293,6 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     /// user can confirm the change. Anyone who explicitly uninstalled the
     /// command from Settings has `shellCommandAutoInstallOptedOut == true`
     /// and will be skipped here.
-    private func openFullscreenSession(sessionID: String?) {
-        fullscreenModeController.open(sessionID: sessionID)
-    }
-
-    private func restoreHUDAfterFullscreenClose() {
-        fullscreenModeController.fullscreenDidClose()
-    }
-
     private func autoInstallShellCommandIfPermitted() {
         let settings = settingsStore.load()
         guard !settings.shellCommandAutoInstallOptedOut else { return }

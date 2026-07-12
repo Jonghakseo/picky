@@ -101,12 +101,6 @@ enum PickyQuickReplyKind: String, Codable, Equatable {
     case pickleCompletion
     case router
     case handoffAck
-    /// Emitted by agentd at the end of a Realtime turn purely to release the
-    /// reducer's `.waitingForAgent` output. The audio reply has already been
-    /// delivered by OpenAI Realtime, so this kind must NOT trigger TTS or a
-    /// new visible text bubble - the reducer just collapses state.output to
-    /// .idle for the matching inputID/contextID.
-    case realtimeAck
     case error
     case unknown
 
@@ -127,7 +121,6 @@ enum PickyQuickReplyKind: String, Codable, Equatable {
         case "picklecompletion", "pickle-completion", "pickle_completion": .pickleCompletion
         case "router": .router
         case "handoffack", "handoff-ack", "handoff_ack": .handoffAck
-        case "realtimeack", "realtime-ack", "realtime_ack": .realtimeAck
         case "error": .error
         default: .unknown
         }

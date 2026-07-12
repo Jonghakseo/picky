@@ -3,7 +3,7 @@
 //  Picky
 //
 //  List of archived Pickles shown inside Settings → Pickle. Reaches the same
-//  code path as the in-toast Undo and the realtime `picky_unarchive_pickle`
+//  code path as the in-toast Undo and the `picky_unarchive_pickle`
 //  tool (`PickySessionListViewModel.unarchive`) for restore, and the new
 //  `deleteArchivedSession` for permanent purge.
 //

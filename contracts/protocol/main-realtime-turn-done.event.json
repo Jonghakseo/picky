@@ -1,9 +1,0 @@
-{
-  "id": "event-realtime-done",
-  "protocolVersion": "2026-05-09",
-  "timestamp": "2026-05-09T00:00:01.000Z",
-  "type": "mainRealtimeTurnDone",
-  "inputId": "00000000-0000-0000-0000-000000000001",
-  "status": "completed",
-  "finalTranscript": "완료했어요"
-}

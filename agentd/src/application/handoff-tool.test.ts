@@ -127,7 +127,7 @@ describe("handoff tools", () => {
     if (result.content[0]?.type !== "text") throw new Error("expected text content");
     // Bare success message — no session metadata, no status line. The
     // session snapshot used to leak via `result.details.session` and the
-    // text used to embed the live status, which the realtime voice agent
+    // text used to embed the live status, which the main agent
     // misread as a failure when the snapshot happened to be `completed`.
     expect(result.content[0].text).toBe("Steering sent to Pickle");
     expect(result.details).toEqual({});

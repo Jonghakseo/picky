@@ -4,7 +4,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import { isAuthorized } from "./auth.js";
 import { FOLLOWUP_PREFIX, HANDOFF_PREFIX, STEER_PREFIX } from "./domain/log-prefixes.js";
 import { sliceUtf16Safe } from "./domain/safe-truncate.js";
-import { PROTOCOL_VERSION, PickyAgentSessionSchema, parseCommand, type DockGroup, type EventEnvelope, type MainRealtimeQuotaSnapshot, type MainRealtimeUsageSnapshot, type PickyAgentSession, type PickyAgentSessionParsed, type PickyContextPacket, type PickyPushToTalkControlAction } from "./protocol.js";
+import { PROTOCOL_VERSION, PickyAgentSessionSchema, parseCommand, type DockGroup, type EventEnvelope, type PickyAgentSession, type PickyAgentSessionParsed, type PickyContextPacket, type PickyPushToTalkControlAction } from "./protocol.js";
 import type { SessionSupervisor } from "./session-supervisor.js";
 import { logAgentd } from "./local-log.js";
 
@@ -117,29 +117,7 @@ export class AgentdServer {
       ...(info.sessionFilePath ? { sessionFilePath: info.sessionFilePath } : {}),
       ...(info.cwd ? { cwd: info.cwd } : {}),
     }));
-    this.options.supervisor.on("mainRealtimeStateChanged", (state, message) => this.broadcast({ type: "mainRealtimeStateChanged", state, ...(message ? { message } : {}) }));
-    this.options.supervisor.on("mainRealtimeInputTranscriptDelta", (inputId, delta) => this.broadcast({ type: "mainRealtimeInputTranscriptDelta", inputId, delta }));
-    this.options.supervisor.on("mainRealtimeInputTranscriptCompleted", (inputId, transcript) => this.broadcast({ type: "mainRealtimeInputTranscriptCompleted", inputId, transcript }));
-    this.options.supervisor.on("mainRealtimeOutputAudioDelta", (inputId, audioBase64) => this.broadcast({ type: "mainRealtimeOutputAudioDelta", ...(inputId ? { inputId } : {}), audioBase64 }));
-    this.options.supervisor.on("mainRealtimeOutputAudioDone", (inputId) => this.broadcast({ type: "mainRealtimeOutputAudioDone", ...(inputId ? { inputId } : {}) }));
-    this.options.supervisor.on("mainRealtimeOutputTranscriptDelta", (inputId, delta) => this.broadcast({ type: "mainRealtimeOutputTranscriptDelta", ...(inputId ? { inputId } : {}), delta }));
-    this.options.supervisor.on("mainRealtimeOutputTranscriptCompleted", (inputId, transcript) => this.broadcast({ type: "mainRealtimeOutputTranscriptCompleted", ...(inputId ? { inputId } : {}), transcript }));
-    this.options.supervisor.on("mainRealtimeTurnDone", (inputId, status, finalTranscript) => this.broadcast({ type: "mainRealtimeTurnDone", ...(inputId ? { inputId } : {}), status, ...(finalTranscript ? { finalTranscript } : {}) }));
-    this.options.supervisor.on("mainRealtimeUsage", (payload: { inputId?: string; lastTurn: MainRealtimeUsageSnapshot; session: MainRealtimeUsageSnapshot }) => this.broadcast({
-      type: "mainRealtimeUsage",
-      ...(payload.inputId ? { inputId: payload.inputId } : {}),
-      lastTurn: payload.lastTurn,
-      session: payload.session,
-    }));
-    this.options.supervisor.on("mainRealtimeQuota", (quota: MainRealtimeQuotaSnapshot | undefined) => this.broadcast({
-      type: "mainRealtimeQuota",
-      ...(quota ? { quota } : {}),
-    }));
-    this.options.supervisor.on("transcriptionStreamStarted", (streamId: string) => this.broadcast({ type: "transcriptionStreamStarted", streamId }));
-    this.options.supervisor.on("transcriptionDelta", (streamId: string, delta: string) => this.broadcast({ type: "transcriptionDelta", streamId, delta }));
-    this.options.supervisor.on("transcriptionCompleted", (streamId: string, transcript: string) => this.broadcast({ type: "transcriptionCompleted", streamId, transcript }));
-    this.options.supervisor.on("transcriptionStreamFailed", (streamId: string, message: string) => this.broadcast({ type: "transcriptionStreamFailed", streamId, message }));
-    this.options.supervisor.on("transcriptionStreamClosed", (streamId: string) => this.broadcast({ type: "transcriptionStreamClosed", streamId }));
+
     this.options.supervisor.on("pointerOverlayRequested", (request) => this.broadcast({ type: "pointerOverlayRequested", request }));
     this.options.supervisor.on("artifact", (sessionId, artifact) => this.broadcast({ type: "artifactUpdated", sessionId, artifact }));
     this.options.supervisor.on("terminalSessionSyncOutcome", (sessionId, outcome) => this.broadcast({
@@ -282,23 +260,8 @@ export class AgentdServer {
       listMainAgentModels: async (cmd) => this.send(ws, { type: "mainAgentModelsSnapshot", models: await this.options.supervisor.listMainAgentModels() }),
       setDefaultCwd: (cmd) => this.options.setDefaultCwd?.(cmd.defaultCwd.trim()),
       setMainAgentModel: (cmd) => this.options.supervisor.setMainAgentModel(cmd.mainAgentModelPattern),
-      setMainAgentRuntimeMode: (cmd) => this.options.supervisor.setMainAgentRuntimeMode(cmd.mode),
       setDisabledBuiltinTools: (cmd) => this.options.supervisor.setDisabledBuiltinTools(cmd.disabledBuiltinTools),
       setMainAgentTTSEnabled: (cmd) => this.options.supervisor.setTTSEnabled(cmd.enabled),
-      configureMainRealtimeAuth: (cmd) => this.options.supervisor.configureMainRealtimeAuth(cmd),
-      beginMainRealtimeVoiceTurn: (cmd) => this.options.supervisor.beginMainRealtimeVoiceTurn(cmd.inputId, cmd.context),
-      appendMainRealtimeInputAudio: (cmd) => this.options.supervisor.appendMainRealtimeInputAudio(cmd.inputId, cmd.audioBase64),
-      commitMainRealtimeVoiceTurn: (cmd) => this.options.supervisor.commitMainRealtimeVoiceTurn(cmd.inputId, cmd.context),
-      cancelMainRealtimeVoiceTurn: (cmd) => this.options.supervisor.cancelMainRealtimeVoiceTurn(cmd.inputId, cmd.playedAudioMs),
-      beginTranscriptionStream: (cmd) => this.options.supervisor.beginTranscriptionStream({
-        streamId: cmd.streamId,
-        language: cmd.language,
-        model: cmd.model,
-        keyterms: cmd.keyterms,
-      }),
-      appendTranscriptionAudio: (cmd) => this.options.supervisor.appendTranscriptionAudio(cmd.streamId, cmd.audioBase64),
-      endTranscriptionStream: (cmd) => this.options.supervisor.endTranscriptionStream(cmd.streamId),
-      cancelTranscriptionStream: (cmd) => this.options.supervisor.cancelTranscriptionStream(cmd.streamId),
       resetMainAgent: async (cmd) => {
         await this.options.supervisor.resetMainAgent();
         this.broadcast({ type: "mainMessagesSnapshot", messages: this.options.supervisor.listMainMessages() });
@@ -782,32 +745,12 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, requestId: command.requestId };
     case "setDefaultCwd":
       return { commandId: command.id, type: command.type, cwdChars: command.defaultCwd.length };
-    case "setMainAgentRuntimeMode":
-      return { commandId: command.id, type: command.type, mode: command.mode };
     case "setMainAgentModel":
       return { commandId: command.id, type: command.type, modelPatternChars: command.mainAgentModelPattern.length };
     case "setDisabledBuiltinTools":
       return { commandId: command.id, type: command.type, count: command.disabledBuiltinTools.length };
     case "setMainAgentTTSEnabled":
       return { commandId: command.id, type: command.type, enabled: command.enabled ? 1 : 0 };
-    case "configureMainRealtimeAuth":
-      return { commandId: command.id, type: command.type, provider: command.provider, authMode: command.authMode ?? "apiKey", modelOrDeployment: command.modelOrDeployment, voice: command.voice, keyPresent: command.apiKey ? 1 : 0, endpointHost: endpointHostForLog(command.azure?.resourceEndpoint) };
-    case "beginMainRealtimeVoiceTurn":
-      return { commandId: command.id, type: command.type, inputId: command.inputId, contextId: command.context.id, source: command.context.source, screenshots: command.context.screenshots.length };
-    case "appendMainRealtimeInputAudio":
-      return { commandId: command.id, type: command.type, inputId: command.inputId, audioBytesBase64Chars: command.audioBase64.length };
-    case "commitMainRealtimeVoiceTurn":
-      return { commandId: command.id, type: command.type, inputId: command.inputId, contextId: command.context?.id, screenshots: command.context?.screenshots.length, inkMarks: command.context?.inkMarks.length };
-    case "cancelMainRealtimeVoiceTurn":
-      return { commandId: command.id, type: command.type, inputId: command.inputId, playedAudioMs: command.playedAudioMs };
-    case "beginTranscriptionStream":
-      return { commandId: command.id, type: command.type, streamId: command.streamId, model: command.model, language: command.language, keyterms: command.keyterms?.length };
-    case "appendTranscriptionAudio":
-      return { commandId: command.id, type: command.type, streamId: command.streamId, audioBytesBase64Chars: command.audioBase64.length };
-    case "endTranscriptionStream":
-      return { commandId: command.id, type: command.type, streamId: command.streamId };
-    case "cancelTranscriptionStream":
-      return { commandId: command.id, type: command.type, streamId: command.streamId };
     case "listSessions":
     case "listDockGroups":
     case "listMainMessages":
@@ -818,22 +761,6 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type };
     case "setMainAgentThinkingLevel":
       return { commandId: command.id, type: command.type, mainAgentThinkingLevel: command.mainAgentThinkingLevel };
-  }
-}
-
-function endpointHostForLog(endpoint: string | undefined): string | undefined {
-  if (!endpoint) return undefined;
-  const trimmed = endpoint.trim();
-  if (!trimmed) return undefined;
-  const candidate = /^wss?:\/\//i.test(trimmed)
-    ? trimmed.replace(/^wss:/i, "https:").replace(/^ws:/i, "http:")
-    : /^https?:\/\//i.test(trimmed)
-      ? trimmed
-      : `https://${trimmed}`;
-  try {
-    return new URL(candidate).host;
-  } catch {
-    return "<invalid>";
   }
 }
 
@@ -851,34 +778,6 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, models: event.models.length };
     case "mainAgentSessionInfoUpdated":
       return { eventId: event.id, type: event.type, hasSessionFile: event.sessionFilePath ? 1 : 0, hasCwd: event.cwd ? 1 : 0 };
-    case "mainRealtimeStateChanged":
-      return { eventId: event.id, type: event.type, state: event.state, messageChars: event.message?.length };
-    case "mainRealtimeInputTranscriptDelta":
-    case "mainRealtimeOutputTranscriptDelta":
-      return { eventId: event.id, type: event.type, inputId: event.inputId, deltaChars: event.delta.length };
-    case "mainRealtimeInputTranscriptCompleted":
-      return { eventId: event.id, type: event.type, inputId: event.inputId, transcriptChars: event.transcript.length };
-    case "mainRealtimeOutputTranscriptCompleted":
-      return { eventId: event.id, type: event.type, inputId: event.inputId, transcriptChars: event.transcript.length };
-    case "mainRealtimeOutputAudioDelta":
-      return { eventId: event.id, type: event.type, inputId: event.inputId, audioBase64Chars: event.audioBase64.length };
-    case "mainRealtimeOutputAudioDone":
-      return { eventId: event.id, type: event.type, inputId: event.inputId };
-    case "mainRealtimeTurnDone":
-      return { eventId: event.id, type: event.type, inputId: event.inputId, status: event.status, finalTranscriptChars: event.finalTranscript?.length };
-    case "mainRealtimeUsage":
-      return { eventId: event.id, type: event.type, inputId: event.inputId, sessionTotalTokens: event.session.totalTokens, turnTotalTokens: event.lastTurn.totalTokens };
-    case "mainRealtimeQuota":
-      return { eventId: event.id, type: event.type, planType: event.quota?.planType, primaryRemaining: event.quota?.primary?.remaining, primaryLimit: event.quota?.primary?.limit };
-    case "transcriptionStreamStarted":
-    case "transcriptionStreamClosed":
-      return { eventId: event.id, type: event.type, streamId: event.streamId };
-    case "transcriptionDelta":
-      return { eventId: event.id, type: event.type, streamId: event.streamId, deltaChars: event.delta.length };
-    case "transcriptionCompleted":
-      return { eventId: event.id, type: event.type, streamId: event.streamId, transcriptChars: event.transcript.length };
-    case "transcriptionStreamFailed":
-      return { eventId: event.id, type: event.type, streamId: event.streamId, messageChars: event.message.length };
     case "sessionSnapshot":
       return { eventId: event.id, type: event.type, sessions: event.sessions.length };
     case "sessionUpdated":

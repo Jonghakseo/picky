@@ -69,7 +69,6 @@ final class PickyHUDOverlayManager {
     private let appearanceStore: PickyAppearanceStore
     private let fontScaleStore: PickyAppFontScaleStore
     private let settingsStore: PickySettingsStore
-    private let onOpenFullscreenSession: (String?) -> Void
     private let collapsedHeight: CGFloat = 180
     private let minimumHeight: CGFloat = 48
 
@@ -93,7 +92,6 @@ final class PickyHUDOverlayManager {
 
     private var panelsByDisplayID: [CGDirectDisplayID: PanelEntry] = [:]
     private var archiveUndoToastsByDisplayID: [CGDirectDisplayID: ArchiveUndoToastEntry] = [:]
-    private var isHiddenForFullscreen = false
     private var screenParametersObserver: NSObjectProtocol?
     private var settingsObserver: NSObjectProtocol?
     private var currentDockSizePreset: PickyHUDDockSizePreset
@@ -115,14 +113,12 @@ final class PickyHUDOverlayManager {
         viewModel: PickySessionListViewModel,
         appearanceStore: PickyAppearanceStore,
         fontScaleStore: PickyAppFontScaleStore,
-        settingsStore: PickySettingsStore,
-        onOpenFullscreenSession: @escaping (String?) -> Void = { _ in }
+        settingsStore: PickySettingsStore
     ) {
         self.viewModel = viewModel
         self.appearanceStore = appearanceStore
         self.fontScaleStore = fontScaleStore
         self.settingsStore = settingsStore
-        self.onOpenFullscreenSession = onOpenFullscreenSession
         let settings = settingsStore.load()
         self.currentPositionsByDisplayID = settings.hudDockPositions
         self.currentDockSizePreset = settings.hudDockSizePreset
@@ -254,11 +250,6 @@ final class PickyHUDOverlayManager {
     // MARK: - Panel sync
 
     private func syncPanelsForCurrentScreens() {
-        guard !isHiddenForFullscreen else {
-            tearDownPanels()
-            return
-        }
-
         let screens = NSScreen.screens
         let liveDisplayIDs = Set(screens.compactMap(\.pickyDisplayID))
 
@@ -355,9 +346,6 @@ final class PickyHUDOverlayManager {
             },
             onArchiveUndoRequested: { [weak self] sessionID, title in
                 self?.showArchiveUndoToast(displayID: displayID, sessionID: sessionID, title: title)
-            },
-            onOpenFullscreenSession: { [weak self] sessionID in
-                self?.onOpenFullscreenSession(sessionID)
             },
             onDockGroupCollapseChanged: { [weak self] overrides in
                 self?.handleDockGroupCollapseChanged(displayID: displayID, overrides: overrides)
@@ -549,8 +537,7 @@ final class PickyHUDOverlayManager {
             let horizontalDockLength = PickyHUDDockLayout.horizontalDockRailLength(
                 sessionCount: projectedDockSessionCount(for: displayID),
                 isAddSlotExpanded: false,
-                metrics: dockMetrics,
-                includesFullscreenControl: PickyFullscreenFeatureFlags.isEnabled
+                metrics: dockMetrics
             )
             safeXOffset = PickyHUDDockLayout.clampedHorizontalXOffset(
                 pos.xOffset,
@@ -752,8 +739,7 @@ final class PickyHUDOverlayManager {
             let horizontalDockLength = PickyHUDDockLayout.horizontalDockRailLength(
                 sessionCount: projectedDockSessionCount(for: displayID),
                 isAddSlotExpanded: false,
-                metrics: dockMetrics,
-                includesFullscreenControl: PickyFullscreenFeatureFlags.isEnabled
+                metrics: dockMetrics
             )
             // -- X axis: along-axis position from screen center --
             pos.xOffset = PickyHUDDockLayout.clampedHorizontalXOffset(
@@ -987,22 +973,3 @@ private extension NSScreen {
     }
 }
 
-// MARK: - Fullscreen HUD visibility
-
-extension PickyHUDOverlayManager: PickyHUDVisibilityControlling {
-    var isHUDVisibleForFullscreen: Bool {
-        !isHiddenForFullscreen
-    }
-
-    func hideForFullscreen() {
-        guard !isHiddenForFullscreen else { return }
-        isHiddenForFullscreen = true
-        tearDownPanels()
-    }
-
-    func restoreAfterFullscreen() {
-        guard isHiddenForFullscreen else { return }
-        isHiddenForFullscreen = false
-        syncPanelsForCurrentScreens()
-    }
-}

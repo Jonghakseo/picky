@@ -1,6 +1,6 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { BuiltPrompt } from "../prompt-builder.js";
-import type { MainAgentRuntimeMode, ModelCycleDirection, OpenAIRealtimeAuthConfig, PickyContextPacket, PickyQueueMode } from "../protocol.js";
+import type { ModelCycleDirection, PickyQueueMode } from "../protocol.js";
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 export type RuntimeSlashCommandSource = "extension" | "prompt" | "skill" | "builtin";
@@ -43,8 +43,6 @@ export interface RuntimeModelOption {
   pattern: string;
 }
 
-export type MainRealtimeState = "connecting" | "ready" | "listening" | "thinking" | "speaking" | "failed";
-
 export type RuntimeEvent =
   | { type: "log"; line: string }
   | { type: "assistant_delta"; delta: string; inputId?: string }
@@ -65,43 +63,7 @@ export type RuntimeEvent =
   | { type: "extension_ui"; request: Record<string, unknown>; waitsForInput: boolean }
   | { type: "extension_ui_cancelled"; requestId: string }
   | { type: "session_info"; name: string }
-  | { type: "context_usage"; usage: { tokens: number | null; contextWindow: number; percent: number | null } | undefined }
-  | { type: "main_realtime_state"; state: MainRealtimeState; message?: string }
-  | { type: "main_realtime_input_transcript_delta"; inputId: string; delta: string }
-  | { type: "main_realtime_input_transcript_completed"; inputId: string; transcript: string }
-  | { type: "main_realtime_output_audio_delta"; inputId?: string; audioBase64: string }
-  | { type: "main_realtime_output_audio_done"; inputId?: string }
-  | { type: "main_realtime_output_transcript_delta"; inputId?: string; delta: string }
-  | { type: "main_realtime_output_transcript_completed"; inputId?: string; transcript: string }
-  | { type: "main_realtime_turn_done"; inputId?: string; status: "completed" | "cancelled" | "failed" | "incomplete"; finalTranscript?: string }
-  | { type: "main_realtime_usage"; inputId?: string; lastTurn: MainRealtimeUsageSnapshot; session: MainRealtimeUsageSnapshot }
-  | { type: "main_realtime_quota"; quota: MainRealtimeQuotaSnapshot | undefined };
-
-export interface MainRealtimeUsageSnapshot {
-  totalTokens: number;
-  inputTokens: number;
-  outputTokens: number;
-  cachedInputTokens: number;
-  inputTextTokens: number;
-  inputAudioTokens: number;
-  outputTextTokens: number;
-  outputAudioTokens: number;
-}
-
-export interface MainRealtimeQuotaSnapshot {
-  planType?: string;
-  primary?: MainRealtimeQuotaWindow;
-  secondary?: MainRealtimeQuotaWindow;
-  fetchedAt: string;
-}
-
-export interface MainRealtimeQuotaWindow {
-  used: number;
-  limit: number;
-  remaining: number;
-  windowLabel?: string;
-  resetAt?: string;
-}
+  | { type: "context_usage"; usage: { tokens: number | null; contextWindow: number; percent: number | null } | undefined };
 
 export interface RuntimeSteerResult {
   /**
@@ -193,107 +155,9 @@ export interface AgentRuntime {
   setModelPattern?(pattern?: string): boolean;
   setCustomTools?(tools: ToolDefinition[]): void;
   listAvailableModels?(options?: { cwd?: string }): Promise<RuntimeModelOption[]>;
-  setMainAgentRuntimeMode?(mode: MainAgentRuntimeMode): boolean;
-  getMainAgentRuntimeMode?(): MainAgentRuntimeMode;
   /**
-   * When the host disables TTS, runtimes that produce audio output (Realtime)
-   * should switch their output modality to text-only.
+   * When the host disables TTS, runtimes that produce audio output should
+   * switch their output modality to text-only.
    */
   setMainAgentTTSEnabled?(enabled: boolean): void;
-}
-
-export interface MainRealtimeHistoryMessage {
-  role: "user" | "assistant";
-  text: string;
-}
-
-export type MainRealtimeHistoryProvider = () => MainRealtimeHistoryMessage[];
-
-/**
- * Long-term user memory snapshot the runtime can embed in every Realtime
- * session.update.instructions. The provider returns the *current* memory
- * set each time the runtime needs to rebuild instructions — not a one-shot
- * snapshot — so a `picky_remember` tool call mid-session flushes immediately
- * when the runtime resends the session payload.
- */
-export interface MainRealtimeUserMemoryItem {
-  id: string;
-  content: string;
-}
-
-export type MainRealtimeUserMemoryProvider = () => MainRealtimeUserMemoryItem[];
-
-export interface MainRealtimeRuntime extends AgentRuntime {
-  configureMainRealtimeAuth(config: OpenAIRealtimeAuthConfig): Promise<void> | void;
-  beginMainRealtimeVoiceTurn(turn: { inputId: string; context: PickyContextPacket }): Promise<void>;
-  appendMainRealtimeInputAudio(inputId: string, audioBase64: string): Promise<void>;
-  commitMainRealtimeVoiceTurn(inputId: string, context?: PickyContextPacket): Promise<void>;
-  cancelMainRealtimeVoiceTurn(inputId?: string, playedAudioMs?: number): Promise<void>;
-  /**
-   * Source of truth for transcript history that should be re-injected when a
-   * new realtime WebSocket session is created (reconnect, 60-minute rollover,
-   * voice turn after a long idle). Realtime can only restore text turns, so
-   * the provider must already filter/cap whatever the supervisor wants to send.
-   */
-  setMainRealtimeHistoryProvider?(provider: MainRealtimeHistoryProvider | undefined): void;
-  /**
-   * Source of truth for long-term user memories the runtime should embed in
-   * every `session.update.instructions`. The supervisor swaps the provider in
-   * during `configureMainRealtimeAuth`; the runtime re-queries it on every
-   * connect, every session refresh, and immediately after a memory CRUD tool
-   * call so the model sees the latest set without waiting for a reconnect.
-   */
-  setMainRealtimeUserMemoryProvider?(provider: MainRealtimeUserMemoryProvider | undefined): void;
-  /**
-   * Ask the runtime to push a refreshed `session.update` so the latest user
-   * memory snapshot lands in the model's instructions before the next turn.
-   * Called by the supervisor after every memory CRUD tool call. Fast-path
-   * no-ops when the runtime has no live socket; the regular connect path
-   * will pick up the new set on its next session.update anyway.
-   */
-  refreshUserMemoryInstructions?(): void;
-  /**
-   * Ask the runtime to push a refreshed `session.update` so the most recent N
-   * turns of the Picky conversation land in the model's instructions before
-   * the next turn. Called by the supervisor at every realtime turn boundary
-   * so the model treats freshly-completed exchanges as its own memory
-   * (instructions-level weight) instead of relying solely on the bulk
-   * conversation-item replay that the model treats as background context.
-   * Fast-path no-ops when the runtime has no live socket; the next regular
-   * connect path's session.update picks up the new snapshot anyway.
-   */
-  refreshConversationInstructions?(): void;
-  /**
-   * Ask the runtime to re-snapshot the local Picky skills directory and push a
-   * refreshed `session.update` so newly-installed plugins land in the model's
-   * instructions and tool list immediately. Called by the supervisor after the
-   * Picky plugin manager applies an install/uninstall. Implementations that
-   * cache skill lists should invalidate them inside this call. Fast-path no-ops
-   * when the runtime has no live socket; the next connect picks up the change.
-   */
-  refreshAfterPluginsChange?(): Promise<void> | void;
-  /**
-   * True when the realtime runtime currently has an in-flight voice turn the
-   * supervisor's plugin-reload flow should consider cancelling. Optional; runtimes
-   * that cannot answer treat the supervisor's reload as best-effort and skip the
-   * cancel step.
-   */
-  isMainRealtimeSpeaking?(): boolean;
-  /**
-   * Trigger a best-effort Codex quota refresh. Errors are swallowed; the
-   * runtime emits a `main_realtime_quota` event on success or a quota=undefined
-   * event on failure.
-   */
-  refreshCodexQuota?(): Promise<void>;
-}
-
-export function isMainRealtimeRuntime(runtime: AgentRuntime | undefined): runtime is MainRealtimeRuntime {
-  return Boolean(
-    runtime
-      && typeof (runtime as Partial<MainRealtimeRuntime>).configureMainRealtimeAuth === "function"
-      && typeof (runtime as Partial<MainRealtimeRuntime>).beginMainRealtimeVoiceTurn === "function"
-      && typeof (runtime as Partial<MainRealtimeRuntime>).appendMainRealtimeInputAudio === "function"
-      && typeof (runtime as Partial<MainRealtimeRuntime>).commitMainRealtimeVoiceTurn === "function"
-      && typeof (runtime as Partial<MainRealtimeRuntime>).cancelMainRealtimeVoiceTurn === "function",
-  );
 }

@@ -10,7 +10,7 @@ import Testing
 @testable import Picky
 
 struct PickyHUDDockInteractionPolicyTests {
-    @Test func previewActiveAndFullscreenTargetsPreferHeldThenPreview() {
+    @Test func previewAndActiveTargetsPreferHeldThenPreview() {
         let visibleIDs = ["first", "opened", "hovered"]
 
         #expect(PickyHUDDockInteractionPolicy.previewSessionID(hoveredID: "hovered", heldID: "opened") == nil)
@@ -18,9 +18,6 @@ struct PickyHUDDockInteractionPolicyTests {
         #expect(PickyHUDDockInteractionPolicy.activeSessionID(visibleIDs: visibleIDs, held: .open("opened"), previewID: "hovered") == "opened")
         #expect(PickyHUDDockInteractionPolicy.activeSessionID(visibleIDs: visibleIDs, held: .open("missing"), previewID: "hovered") == "hovered")
         #expect(PickyHUDDockInteractionPolicy.activeSessionID(visibleIDs: visibleIDs, held: .open("missing"), previewID: nil) == nil)
-        #expect(PickyHUDDockInteractionPolicy.fullscreenTargetSessionID(visibleIDs: visibleIDs, held: .open("opened"), hoverPreviewID: "hovered") == "opened")
-        #expect(PickyHUDDockInteractionPolicy.fullscreenTargetSessionID(visibleIDs: visibleIDs, held: .open("missing"), hoverPreviewID: "hovered") == "hovered")
-        #expect(PickyHUDDockInteractionPolicy.fullscreenTargetSessionID(visibleIDs: visibleIDs, held: nil, hoverPreviewID: "missing") == nil)
     }
 
     @Test func hoverPreviewOpensImmediatelyAndClosesOnlyAfterDockLeave() {

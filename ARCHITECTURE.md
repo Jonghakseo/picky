@@ -91,7 +91,6 @@ Picky/
     PickyAnalytics.swift                 local logging/analytics shim
     PickyExtensionInstaller.swift        opt-in bundled Pi extension installer
     PickySkillInstaller.swift            opt-in bundled Picky skill installer
-    PickyRealtimeAuthGate.swift          realtime auth gating helpers
     WindowPositionManager.swift          accessibility/window positioning helpers
     Settings/                            settings model/store/view model/view
 
@@ -123,13 +122,6 @@ Picky/
     PickyArtifactReporter.swift          report generation helpers
     PickyReportViewer.swift              markdown report viewer
     PickyDiffPreview.swift               diff preview helpers
-
-  Fullscreen/
-    PickyFullscreenFeatureFlags.swift    `PICKY_FULLSCREEN_ENABLED` gate
-    PickyFullscreenModeController.swift  HUD/fullscreen mutual-exclusion state
-    PickyFullscreenCoordinator.swift     AppKit window lifecycle coordinator
-    Domain/                              selection, turn policy, snapshot/diff providers
-    Views/                               sidebar, conversation, composer host, `변경사항` panel
 
   Overlay/
     OverlayWindow.swift                  overlay NSWindow

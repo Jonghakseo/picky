@@ -62,7 +62,6 @@ struct PickyFeedbackSenderTests {
             appVersion: "0.3.2",
             appBuild: "412",
             osVersion: "15.1.0",
-            runtimeMode: "Pi",
             sentAt: Date(timeIntervalSince1970: 1_715_500_000)
         )
     }

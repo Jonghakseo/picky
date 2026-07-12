@@ -47,7 +47,6 @@ struct PickyFeedbackPayload: Equatable, Sendable {
     var appVersion: String
     var appBuild: String
     var osVersion: String
-    var runtimeMode: String
     var sentAt: Date
 }
 
@@ -298,7 +297,6 @@ struct PickyFeedbackSender {
         lines.append("")
         lines.append("────────────────────────")
         lines.append("• *macOS:* \(payload.osVersion)")
-        lines.append("• *Runtime:* \(payload.runtimeMode)")
         lines.append("• *Sent:* \(timestampFormatter.string(from: payload.sentAt))")
 
         let diagnostics = attachmentFilenames(for: attachments, kind: .diagnostics)

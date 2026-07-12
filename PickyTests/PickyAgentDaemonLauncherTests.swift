@@ -779,7 +779,6 @@ struct PickyAgentDaemonLauncherTests {
         let snapshot = try String(contentsOf: temp.appendingPathComponent("Logs/agentd.node-preflight.json"))
         #expect(snapshot.contains(#""status" : "deferredToAgentd""#))
         #expect(snapshot.contains(#""nodeSource" : "external""#))
-        #expect(snapshot.contains(#""mainAgentRuntimeMode" : "pi""#))
         #expect(snapshot.contains(#""executablePath" : "\/usr\/bin\/env""#))
         #expect(snapshot.contains("process.versions.node"))
     }
@@ -808,7 +807,6 @@ struct PickyAgentDaemonLauncherTests {
 
         let snapshot = try decodeStatus(at: logs.appendingPathComponent("agentd.status.json"))
         #expect(snapshot.state == "running")
-        #expect(snapshot.mainAgentRuntimeMode == "pi")
         #expect(snapshot.agentdRuntimeOverride == "mock")
         #expect(snapshot.nodeSource == "external")
         #expect(snapshot.executablePath == "/usr/bin/env")

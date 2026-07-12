@@ -59,8 +59,6 @@ struct PickyDaemonStatusSnapshot: Codable, Equatable {
     var lastUpdatedAt: String
     /// ISO-8601 timestamp of the most recent successful `.running` entry.
     var lastRunningAt: String?
-    /// Main-agent runtime mode requested for this launch (`pi`, `openai-realtime`, ...).
-    var mainAgentRuntimeMode: String?
     /// Optional PICKY_AGENTD_RUNTIME override (`mock`, etc.). Nil for the default runtime.
     var agentdRuntimeOverride: String?
     /// How Node was resolved for compiled/bundled launches.

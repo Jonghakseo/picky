@@ -11,13 +11,11 @@
 import Foundation
 
 struct PickyAppliedRestartSettingsSnapshot: Equatable {
-    var mainAgentRuntimeMode: PickyMainAgentRuntimeMode
     var piCodingAgentDirPath: String
 }
 
 struct PickyRestartRequirement: Equatable {
     enum Reason: Equatable {
-        case mainAgentRuntime(desired: PickyMainAgentRuntimeMode, applied: PickyMainAgentRuntimeMode)
         case piCodingAgentDir(desiredPath: String, appliedPath: String)
     }
 
@@ -33,8 +31,7 @@ enum PickyRestartRequirementDetector {
         from settings: PickySettings,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         homeURL: URL = FileManager.default.homeDirectoryForCurrentUser,
-        fileManager: FileManager = .default,
-        runtimeMode: PickyMainAgentRuntimeMode = AppBundleConfiguration.effectiveRuntimeMode
+        fileManager: FileManager = .default
     ) -> PickyAppliedRestartSettingsSnapshot {
         let normalized = settings.normalizedPaths()
         let resolved = PickyPiInstallation.resolve(
@@ -44,7 +41,6 @@ enum PickyRestartRequirementDetector {
             fileManager: fileManager
         )
         return PickyAppliedRestartSettingsSnapshot(
-            mainAgentRuntimeMode: runtimeMode,
             piCodingAgentDirPath: standardizedPath(resolved.codingAgentDirURL.path)
         )
     }
@@ -60,17 +56,9 @@ enum PickyRestartRequirementDetector {
             from: settings,
             environment: environment,
             homeURL: homeURL,
-            fileManager: fileManager,
-            runtimeMode: settings.mainAgentRuntimeMode
+            fileManager: fileManager
         )
         var reasons: [PickyRestartRequirement.Reason] = []
-
-        if desired.mainAgentRuntimeMode != snapshot.mainAgentRuntimeMode {
-            reasons.append(.mainAgentRuntime(
-                desired: desired.mainAgentRuntimeMode,
-                applied: snapshot.mainAgentRuntimeMode
-            ))
-        }
 
         if desired.piCodingAgentDirPath != snapshot.piCodingAgentDirPath {
             reasons.append(.piCodingAgentDir(

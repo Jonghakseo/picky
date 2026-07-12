@@ -114,8 +114,7 @@ struct ElevenLabsTranscriptionProviderTests {
 
         let provider = BuddyTranscriptionProviderFactory.makeDefaultProvider(
             settings: settings,
-            environment: [:],
-            isRealtimeOnlyBuild: false
+            environment: [:]
         )
         #expect(provider.displayName == "ElevenLabs Speech to Text")
     }
@@ -132,8 +131,7 @@ struct ElevenLabsTranscriptionProviderTests {
             environment: [
                 "PICKY_STT_PROVIDER": "elevenlabs",
                 "ELEVENLABS_API_KEY": "el-env"
-            ],
-            isRealtimeOnlyBuild: false
+            ]
         )
         #expect(provider.displayName == AppleSpeechTranscriptionProvider().displayName)
     }
@@ -145,8 +143,7 @@ struct ElevenLabsTranscriptionProviderTests {
 
         let provider = BuddyTranscriptionProviderFactory.makeDefaultProvider(
             settings: settings,
-            environment: [:],
-            isRealtimeOnlyBuild: false
+            environment: [:]
         )
         #expect(provider.displayName == "ElevenLabs Speech to Text")
         #expect(provider.isConfigured == false)
@@ -161,8 +158,7 @@ struct ElevenLabsTranscriptionProviderTests {
 
         let provider = BuddyTranscriptionProviderFactory.makeDefaultProvider(
             settings: settings,
-            environment: [:],
-            isRealtimeOnlyBuild: false
+            environment: [:]
         )
         #expect(provider.displayName == "OpenAI Speech to Text")
     }

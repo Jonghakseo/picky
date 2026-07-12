@@ -390,7 +390,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             guard let result = try await coordinator.captureContext(transcript: transcript, source: "cli") else {
                 throw PickyAgentClientRouterError.externalEntryProviderUnavailable
             }
-            self.companionManager.noteExternalSubmission(text: transcript, context: result.contextPacket)
+            self.companionManager.noteExternalSubmission(kind: request.kind, text: transcript, context: result.contextPacket)
             return result.contextPacket
         }
     }

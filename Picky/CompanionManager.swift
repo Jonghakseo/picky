@@ -2265,7 +2265,14 @@ final class CompanionManager: ObservableObject {
     /// what turns the cursor into the loading state while the daemon resolves the
     /// matching quickReply. Without this notification the CLI path would skip the
     /// processing cursor entirely and jump straight from idle to the response bubble.
-    func noteExternalSubmission(text: String, context: PickyContextPacket) {
+    ///
+    /// Only `submitMain` entries may flip the cursor: a `createPickle` entry delegates
+    /// the work to a Pickle whose progress is already visible on its dock icon, and no
+    /// main quickReply for the captured contextID arrives until the Pickle completes
+    /// (if ever) — so `.waitingForAgent` would park the cursor on the yellow loading
+    /// state for the whole Pickle run.
+    func noteExternalSubmission(kind: PickyExternalEntryKind, text: String, context: PickyContextPacket) {
+        guard kind == .submitMain else { return }
         let inputID = UUID()
         interactionCoordinator.accept(
             .externalContextCaptured(inputID: inputID, text: text, context: context),

@@ -1486,6 +1486,28 @@ struct PickyCompanionManagerTests {
         #expect(stripParentheticalsForSpeech(allParens) == allParens)
     }
 
+    // MARK: - External CLI submissions
+
+    @Test func externalSubmitMainFlipsCursorIntoWaitingForAgent() async throws {
+        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+
+        manager.noteExternalSubmission(kind: .submitMain, text: "hello from cli", context: context(source: "cli"))
+
+        try await waitUntil { manager.isWaitingForCursorResponse }
+    }
+
+    @Test func externalCreatePickleDoesNotFlipCursorIntoWaitingForAgent() async throws {
+        // `picky pickle-create` delegates work to a Pickle: no main quickReply for the
+        // captured contextID will arrive, so flipping into `.waitingForAgent` would park
+        // the cursor on the yellow loading state for the whole Pickle run.
+        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+
+        manager.noteExternalSubmission(kind: .createPickle, text: "", context: context(source: "cli"))
+
+        try await Task.sleep(nanoseconds: 200_000_000)
+        #expect(!manager.isWaitingForCursorResponse)
+    }
+
     private func fakeContextCaptureCoordinator(screenshots: [PickyScreenshotContext] = []) -> PickyVoiceContextCaptureCoordinator {
         PickyVoiceContextCaptureCoordinator(
             screenCapture: { _, _ in [] },

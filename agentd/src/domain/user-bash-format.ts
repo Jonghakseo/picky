@@ -44,7 +44,10 @@ function formatUserBashMessage(command: string, statusLine: string, output: stri
 export function appendLiveBashOutput(current: string, chunk: string): string {
   if (!chunk) return current;
   const next = current + chunk;
-  return next.length > LIVE_USER_BASH_OUTPUT_MAX_CHARS ? next.slice(-LIVE_USER_BASH_OUTPUT_MAX_CHARS) : next;
+  if (next.length <= LIVE_USER_BASH_OUTPUT_MAX_CHARS) return next;
+  const truncated = next.slice(-LIVE_USER_BASH_OUTPUT_MAX_CHARS);
+  const firstCodeUnit = truncated.charCodeAt(0);
+  return firstCodeUnit >= 0xdc00 && firstCodeUnit <= 0xdfff ? truncated.slice(1) : truncated;
 }
 
 export function userBashSummary(command: string, result: RuntimeBashExecutionResult): string {

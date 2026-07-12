@@ -114,7 +114,7 @@ nonisolated enum PickyFileMentionAutocompletePolicy {
     }
 
     static func fdPathQuery(_ query: String) -> String {
-        guard query.contains("/") else { return query }
+        guard query.contains("/") else { return regexEscaped(query) }
         let hasTrailingSeparator = query.hasSuffix("/")
         let trimmed = query.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard !trimmed.isEmpty else { return query }

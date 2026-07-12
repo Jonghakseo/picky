@@ -112,6 +112,12 @@ struct PickyFileMentionAutocompletePolicyTests {
         #expect(PickyFileMentionAutocompletePolicy.completedText(in: "open @\"Some ", with: suggestion) == "open @\"Some File.swift\" ")
     }
 
+    @Test func fdPathQueryEscapesSingleSegmentRegexMetacharacters() {
+        #expect(PickyFileMentionAutocompletePolicy.fdPathQuery("report.v1") == "report\\.v1")
+        #expect(PickyFileMentionAutocompletePolicy.fdPathQuery("file[1].txt") == "file\\[1\\]\\.txt")
+        #expect(PickyFileMentionAutocompletePolicy.fdPathQuery("Composer") == "Composer")
+    }
+
     @Test func fdPathQueryBuildsFullPathRegex() {
         #expect(PickyFileMentionAutocompletePolicy.fdPathQuery("Composer") == "Composer")
         #expect(PickyFileMentionAutocompletePolicy.fdPathQuery("a/b") == "a[\\\\/]b")

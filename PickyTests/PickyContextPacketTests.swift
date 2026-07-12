@@ -215,6 +215,65 @@ struct PickyContextPacketTests {
         #expect(packet.inkMarks.first?.opacity == 0.34)
     }
 
+    @Test func clipsInkStrokeAcrossDisplayBoundaries() async throws {
+        let screenshotsRoot = FileManager.default.temporaryDirectory.appendingPathComponent("picky-ink-context-\(UUID().uuidString)", isDirectory: true)
+        let captures = [
+            CompanionScreenCapture(
+                imageData: Data("jpeg".utf8),
+                label: "left display",
+                isCursorScreen: true,
+                displayWidthInPoints: 100,
+                displayHeightInPoints: 100,
+                displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100),
+                screenshotWidthInPixels: 200,
+                screenshotHeightInPixels: 200,
+                cursor: nil
+            ),
+            CompanionScreenCapture(
+                imageData: Data("jpeg".utf8),
+                label: "right display",
+                isCursorScreen: false,
+                displayWidthInPoints: 100,
+                displayHeightInPoints: 100,
+                displayFrame: CGRect(x: 100, y: 0, width: 100, height: 100),
+                screenshotWidthInPixels: 200,
+                screenshotHeightInPixels: 200,
+                cursor: nil
+            )
+        ]
+        let inkCapture = PickyInkCapture(
+            id: "ink-boundary-test",
+            source: .voice,
+            startedAt: Date(timeIntervalSince1970: 1_800_000_000),
+            endedAt: Date(timeIntervalSince1970: 1_800_000_001),
+            strokes: [
+                PickyInkCaptureStroke(
+                    id: "ink-boundary-test-stroke-1",
+                    source: .voice,
+                    points: [PickyCGPoint(x: 50, y: 50), PickyCGPoint(x: 150, y: 50)],
+                    strokeWidth: 8,
+                    opacity: 0.34
+                )
+            ]
+        )
+        let assembler = PickyContextPacketAssembler(
+            appProvider: FakeAppProvider(),
+            screenProvider: StaticPickyScreenContextProvider(captures: captures, inkCapture: inkCapture),
+            screenshotStore: PickyAppSupportScreenshotStore(screenshotsRoot: screenshotsRoot),
+            defaultCwd: nil,
+            idGenerator: { "context-ink-boundary-001" }
+        )
+
+        let packet = try await assembler.assemble(source: "voice", transcript: "경계선을 봐줘")
+
+        #expect(packet.inkMarks.count == 2)
+        #expect(packet.inkMarks.map(\.screenId) == ["screen1", "screen2"])
+        #expect(packet.inkMarks.map(\.points) == [
+            [PickyCGPoint(x: 100, y: 100), PickyCGPoint(x: 200, y: 100)],
+            [PickyCGPoint(x: 0, y: 100), PickyCGPoint(x: 100, y: 100)]
+        ])
+    }
+
     @Test func agentClientStubReturnsLocalReceiptWithoutRouting() async throws {
         let packet = PickyContextPacket(
             id: "context-test-001",

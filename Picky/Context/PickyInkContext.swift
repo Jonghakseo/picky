@@ -117,7 +117,7 @@ enum PickyInkMarkMapper {
         screenId: String
     ) -> [PickyInkMarkContext] {
         guard let capture, capture.hasVisibleInk else { return [] }
-        return capture.strokes.compactMap { stroke in
+        return capture.strokes.flatMap { stroke in
             map(stroke: stroke, to: screen, screenId: screenId)
         }
     }
@@ -126,30 +126,93 @@ enum PickyInkMarkMapper {
         stroke: PickyInkCaptureStroke,
         to screen: CompanionScreenCapture,
         screenId: String
-    ) -> PickyInkMarkContext? {
+    ) -> [PickyInkMarkContext] {
         let displayFrame = screen.displayFrame
         let screenshotSize = CGSize(width: screen.screenshotWidthInPixels, height: screen.screenshotHeightInPixels)
         guard displayFrame.width > 0, displayFrame.height > 0,
-              screenshotSize.width > 0, screenshotSize.height > 0 else { return nil }
+              screenshotSize.width > 0, screenshotSize.height > 0 else { return [] }
 
-        let screenshotPoints = stroke.points.compactMap { point -> CGPoint? in
-            let globalPoint = CGPoint(x: point.x, y: point.y)
-            guard displayFrame.insetBy(dx: -1, dy: -1).contains(globalPoint) else { return nil }
-            return screenshotPixel(for: globalPoint, displayFrame: displayFrame, screenshotSize: screenshotSize)
-        }
-        guard screenshotPoints.count >= 2 else { return nil }
-
-        let bounds = boundingRect(for: screenshotPoints)
+        let clippedPointLists = clippedPointLists(for: stroke.points, to: displayFrame)
         let averageScale = ((screenshotSize.width / displayFrame.width) + (screenshotSize.height / displayFrame.height)) / 2
-        return PickyInkMarkContext(
-            id: stroke.id,
-            source: stroke.source,
-            screenId: screenId,
-            points: screenshotPoints.map(PickyCGPoint.init),
-            bounds: PickyCGRect(bounds),
-            strokeWidth: max(1, stroke.strokeWidth * Double(averageScale)),
-            opacity: stroke.opacity
-        )
+        return clippedPointLists.enumerated().map { index, points in
+            let screenshotPoints = points.map {
+                screenshotPixel(for: $0, displayFrame: displayFrame, screenshotSize: screenshotSize)
+            }
+            return PickyInkMarkContext(
+                id: clippedPointLists.count == 1 ? stroke.id : "\(stroke.id)-\(index + 1)",
+                source: stroke.source,
+                screenId: screenId,
+                points: screenshotPoints.map(PickyCGPoint.init),
+                bounds: PickyCGRect(boundingRect(for: screenshotPoints)),
+                strokeWidth: max(1, stroke.strokeWidth * Double(averageScale)),
+                opacity: stroke.opacity
+            )
+        }
+    }
+
+    private static func clippedPointLists(for points: [PickyCGPoint], to rect: CGRect) -> [[CGPoint]] {
+        var clippedPointLists: [[CGPoint]] = []
+        var currentPointList: [CGPoint] = []
+
+        for (start, end) in zip(points, points.dropFirst()) {
+            guard let clippedSegment = clippedSegment(
+                from: CGPoint(x: start.x, y: start.y),
+                to: CGPoint(x: end.x, y: end.y),
+                to: rect
+            ) else {
+                if currentPointList.count >= 2 {
+                    clippedPointLists.append(currentPointList)
+                }
+                currentPointList = []
+                continue
+            }
+
+            if currentPointList.last == clippedSegment.start {
+                currentPointList.append(clippedSegment.end)
+            } else {
+                if currentPointList.count >= 2 {
+                    clippedPointLists.append(currentPointList)
+                }
+                currentPointList = [clippedSegment.start, clippedSegment.end]
+            }
+        }
+
+        if currentPointList.count >= 2 {
+            clippedPointLists.append(currentPointList)
+        }
+        return clippedPointLists
+    }
+
+    private static func clippedSegment(from start: CGPoint, to end: CGPoint, to rect: CGRect) -> (start: CGPoint, end: CGPoint)? {
+        let deltaX = end.x - start.x
+        let deltaY = end.y - start.y
+        var minimumT = 0.0
+        var maximumT = 1.0
+
+        for (p, q) in [
+            (-deltaX, start.x - rect.minX),
+            (deltaX, rect.maxX - start.x),
+            (-deltaY, start.y - rect.minY),
+            (deltaY, rect.maxY - start.y)
+        ] {
+            if p == 0 {
+                guard q >= 0 else { return nil }
+                continue
+            }
+
+            let t = q / p
+            if p < 0 {
+                minimumT = max(minimumT, t)
+            } else {
+                maximumT = min(maximumT, t)
+            }
+            guard minimumT <= maximumT else { return nil }
+        }
+
+        let clippedStart = CGPoint(x: start.x + minimumT * deltaX, y: start.y + minimumT * deltaY)
+        let clippedEnd = CGPoint(x: start.x + maximumT * deltaX, y: start.y + maximumT * deltaY)
+        guard clippedStart != clippedEnd else { return nil }
+        return (clippedStart, clippedEnd)
     }
 
     private static func screenshotPixel(

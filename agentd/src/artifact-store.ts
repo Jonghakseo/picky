@@ -128,12 +128,17 @@ function linearIssueKey(url: string): string | undefined {
 }
 
 function normalizeLinkUrl(rawUrl: string): string | undefined {
-  const trimmed = rawUrl.replace(/(?:&quot;|&#34;|&apos;|&#39;)+$/g, "").replace(/[.,;:!?]+$/g, "");
+  let trimmed = rawUrl.replace(/(?:&quot;|&#34;|&apos;|&#39;)+$/g, "").replace(/[.,;:!?]+$/g, "");
+  while (trimmed.endsWith(")") && countCharacter(trimmed, ")") > countCharacter(trimmed, "(")) trimmed = trimmed.slice(0, -1);
   const parsed = safeUrl(trimmed);
   if (!parsed) return undefined;
   parsed.search = "";
   parsed.hash = "";
   return parsed.toString();
+}
+
+function countCharacter(value: string, character: string): number {
+  return [...value].filter((valueCharacter) => valueCharacter === character).length;
 }
 
 function safeUrl(value: string): URL | undefined {

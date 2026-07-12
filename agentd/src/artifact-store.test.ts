@@ -107,6 +107,20 @@ describe("session link extraction", () => {
     ]);
   });
 
+  it("extracts markdown-wrapped links without their closing parentheses", () => {
+    expect(extractSessionLinks([
+      "PR [#123](https://github.com/creatrip/picky/pull/123)",
+      "Slack [thread](https://example.slack.com/archives/C012ZMHLPDW/p1777763920621249)",
+      "Sentry [issue](https://example.sentry.io/issues/1234567890/)",
+      "Notion [page](https://www.notion.so/foo(bar))",
+    ].join("\n"))).toEqual([
+      { kind: "github", title: "#123", url: "https://github.com/creatrip/picky/pull/123" },
+      { kind: "slack", title: "Slack", url: "https://example.slack.com/archives/C012ZMHLPDW/p1777763920621249" },
+      { kind: "sentry", title: "Sentry", url: "https://example.sentry.io/issues/1234567890/" },
+      { kind: "notion", title: "Notion", url: "https://www.notion.so/foo(bar)" },
+    ]);
+  });
+
   it("keeps URL-safe punctuation that can appear inside link paths", () => {
     expect(extractSessionLinks([
       "Notion https://www.notion.so/foo(bar)",

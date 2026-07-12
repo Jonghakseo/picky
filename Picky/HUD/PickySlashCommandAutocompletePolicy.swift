@@ -55,7 +55,15 @@ enum PickySlashCommandAutocompletePolicy {
         } else {
             remainder = ""
         }
-        let prefix = remainder.first?.isWhitespace == true ? "/\(command.name)" : completionText(for: command)
+        if let firstCharacter = remainder.first, firstCharacter.isWhitespace {
+            // Keep the existing whitespace to avoid a double space, but place the
+            // cursor after it so the accepted command reads "/name " with the caret
+            // ready to type arguments.
+            let namePart = "/\(command.name)"
+            let whitespaceLength = String(firstCharacter).utf16.count
+            return (namePart + remainder, namePart.utf16.count + whitespaceLength)
+        }
+        let prefix = completionText(for: command)
         return (prefix + remainder, prefix.utf16.count)
     }
 

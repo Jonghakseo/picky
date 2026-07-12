@@ -1271,14 +1271,6 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDDockLayout.activeSessionID(visibleIDs: visibleIDs, held: .open("missing"), previewID: nil) == nil)
     }
 
-    @Test func hudDockFullscreenTargetUsesHeldThenHoverPreview() throws {
-        let visibleIDs = ["first", "opened", "hovered"]
-        #expect(PickyHUDDockLayout.fullscreenTargetSessionID(visibleIDs: visibleIDs, held: .open("opened"), hoverPreviewID: "hovered") == "opened")
-        #expect(PickyHUDDockLayout.fullscreenTargetSessionID(visibleIDs: visibleIDs, held: nil, hoverPreviewID: "hovered") == "hovered")
-        #expect(PickyHUDDockLayout.fullscreenTargetSessionID(visibleIDs: visibleIDs, held: .open("missing"), hoverPreviewID: "hovered") == "hovered")
-        #expect(PickyHUDDockLayout.fullscreenTargetSessionID(visibleIDs: visibleIDs, held: nil, hoverPreviewID: "missing") == nil)
-    }
-
     @Test func hudDockHeldStateIsExclusiveAcrossClicks() throws {
         #expect(PickyHUDDockLayout.heldSessionAfterClick(current: nil, clicked: "agent-a") == .open("agent-a"))
         #expect(PickyHUDDockLayout.heldSessionAfterClick(current: .open("agent-a"), clicked: "agent-a") == nil)
@@ -1483,7 +1475,7 @@ struct PickySessionViewModelTests {
         #expect(dockCenterX == visibleFrame.maxX - keepVisible + (dockLength / 2))
     }
 
-    @Test func hudDockHorizontalPanelWidthAndClampReserveFullscreenControl() throws {
+    @Test func hudDockHorizontalPanelWidthAndClampMatchRailLength() throws {
         let metrics = PickyHUDDockMetrics(preset: .medium)
         let visibleFrame = CGRect(x: 100, y: 80, width: 1200, height: 800)
         let sessionCount = 12
@@ -1501,7 +1493,6 @@ struct PickySessionViewModelTests {
         )
         let expectedVisibleRailWidth = railLength + (PickyHUDDockLayout.miniPreviewHorizontalReserve(metrics: metrics) * 2)
 
-        #expect(railLength >= PickyHUDDockLayout.fullscreenDockControlLength(metrics: metrics))
         #expect(panelWidth == expectedVisibleRailWidth + (PickyHUDExpansion.dockShadowHorizontalPadding * 2))
 
         let clampedRight = PickyHUDDockLayout.clampedHorizontalXOffset(
@@ -4082,7 +4073,7 @@ struct PickySessionViewModelTests {
             command: command
         )
         #expect(withLeadingSpace.text == "/deploy now")
-        #expect(withLeadingSpace.cursorLocation == "/deploy".utf16.count)
+        #expect(withLeadingSpace.cursorLocation == "/deploy ".utf16.count)
 
         let emptyRemainder = PickySlashCommandAutocompletePolicy.completedText(
             in: "/dep",

@@ -62,8 +62,8 @@ export class AgentdServer {
   private wsServer?: WebSocketServer;
   private clients = new Set<WebSocket>();
   private appCapabilities = new WeakMap<WebSocket, Set<string>>();
-  private pendingPickleHandoffs = new Map<string, { resolve: (result: AppPickleHandoffResult) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
-  private pendingPickleBridgeRequests = new Map<string, { resolve: (result: AppPickleBridgeResult) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
+  private pendingPickleHandoffs = new Map<string, { resolve: (result: AppPickleHandoffResult) => void; reject: (error: Error) => void; timer: NodeJS.Timeout; app: WebSocket }>();
+  private pendingPickleBridgeRequests = new Map<string, { resolve: (result: AppPickleBridgeResult) => void; reject: (error: Error) => void; timer: NodeJS.Timeout; app: WebSocket }>();
   private pendingExternalEntries = new Map<string, ExternalEntryPending>();
   private pendingPushToTalkControls = new Map<string, PushToTalkControlPending>();
   private pendingDockGroupsRequests = new Map<string, DockGroupsPending>();
@@ -145,7 +145,7 @@ export class AgentdServer {
         this.pendingPickleHandoffs.delete(requestId);
         reject(new Error(APP_PICKLE_HANDOFF_TIMEOUT));
       }, timeoutMs);
-      this.pendingPickleHandoffs.set(requestId, { resolve, reject, timer });
+      this.pendingPickleHandoffs.set(requestId, { resolve, reject, timer, app: client });
       this.send(client, { type: "pickleHandoffRequested", requestId, ...request });
     });
   }
@@ -159,7 +159,7 @@ export class AgentdServer {
         this.pendingPickleBridgeRequests.delete(requestId);
         reject(new Error(APP_PICKLE_HANDOFF_TIMEOUT));
       }, timeoutMs);
-      this.pendingPickleBridgeRequests.set(requestId, { resolve, reject, timer });
+      this.pendingPickleBridgeRequests.set(requestId, { resolve, reject, timer, app: client });
       this.send(client, { type: "pickleBridgeRequested", requestId, ...request });
     });
   }
@@ -203,6 +203,18 @@ export class AgentdServer {
       this.clients.delete(ws);
       const lostCapabilities = this.appCapabilities.get(ws);
       this.appCapabilities.delete(ws);
+      for (const [requestId, pending] of this.pendingPickleHandoffs) {
+        if (pending.app !== ws) continue;
+        clearTimeout(pending.timer);
+        pending.reject(new Error(APP_PICKLE_HANDOFF_UNAVAILABLE));
+        this.pendingPickleHandoffs.delete(requestId);
+      }
+      for (const [requestId, pending] of this.pendingPickleBridgeRequests) {
+        if (pending.app !== ws) continue;
+        clearTimeout(pending.timer);
+        pending.reject(new Error(APP_PICKLE_HANDOFF_UNAVAILABLE));
+        this.pendingPickleBridgeRequests.delete(requestId);
+      }
       if (lostCapabilities?.has("externalEntry")) {
         for (const [requestId, pending] of this.pendingExternalEntries) {
           clearTimeout(pending.timer);

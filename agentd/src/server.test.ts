@@ -165,6 +165,42 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
+  it("rejects a pending app Pickle handoff when its recipient disconnects", async () => {
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({ id: "cmd-register-handoff-disconnect", protocolVersion: PROTOCOL_VERSION, type: "registerAppCapabilities", capabilities: ["pickleHandoff"] }));
+    await waitForRegisteredCapability("pickleHandoff");
+
+    const pending = server.requestPickleHandoffFromApp({ context: context("app handoff"), title: "App Handoff", instructions: "Do it", cwd: "/tmp/product" }, 5_000);
+    await waitForEvent(ws, "pickleHandoffRequested");
+    const rejection = pending.then(
+      () => { throw new Error("expected handoff to reject"); },
+      (error: Error) => error,
+    );
+    ws.close();
+
+    await expect(Promise.race([
+      rejection,
+      sleep(100).then(() => { throw new Error("handoff did not reject after recipient disconnect"); }),
+    ])).resolves.toMatchObject({ message: expect.stringMatching(/handoff unavailable/) });
+  });
+
+  it("keeps a pending app Pickle handoff alive when another client disconnects", async () => {
+    const { ws: appWs } = await connectWithHello();
+    appWs.send(JSON.stringify({ id: "cmd-register-handoff-primary", protocolVersion: PROTOCOL_VERSION, type: "registerAppCapabilities", capabilities: ["pickleHandoff"] }));
+    await waitForRegisteredCapability("pickleHandoff");
+    const { ws: otherWs } = await connectWithHello();
+
+    const pending = server.requestPickleHandoffFromApp({ context: context("app handoff"), title: "App Handoff", instructions: "Do it", cwd: "/tmp/product" });
+    const request = await waitForEvent(appWs, "pickleHandoffRequested");
+    if (request.type !== "pickleHandoffRequested") throw new Error("expected handoff request");
+    otherWs.close();
+    await sleep(50);
+    appWs.send(JSON.stringify({ id: "cmd-complete-handoff-primary", protocolVersion: PROTOCOL_VERSION, type: "completePickleHandoff", requestId: request.requestId, sessionId: "session-child", title: "App Handoff", cwd: "/tmp/product" }));
+
+    await expect(pending).resolves.toEqual({ sessionId: "session-child", title: "App Handoff", cwd: "/tmp/product" });
+    appWs.close();
+  });
+
   it("routes external push-to-talk control through a capable app client and acks the CLI", async () => {
     const ignored = await connectWithHello();
     const app = await connectWithHello();
@@ -212,6 +248,42 @@ describe("AgentdServer", () => {
 
     await expect(pending).resolves.toMatchObject({ sessions: [expect.objectContaining({ id: "child-pickle" })] });
     ws.close();
+  });
+
+  it("rejects a pending Pickle bridge request when its recipient disconnects", async () => {
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({ id: "cmd-register-bridge-disconnect", protocolVersion: PROTOCOL_VERSION, type: "registerAppCapabilities", capabilities: ["pickleBridge"] }));
+    await waitForRegisteredCapability("pickleBridge");
+
+    const pending = server.requestPickleBridgeFromApp({ operation: "listSessions" }, 5_000);
+    await waitForEvent(ws, "pickleBridgeRequested");
+    const rejection = pending.then(
+      () => { throw new Error("expected bridge request to reject"); },
+      (error: Error) => error,
+    );
+    ws.close();
+
+    await expect(Promise.race([
+      rejection,
+      sleep(100).then(() => { throw new Error("bridge request did not reject after recipient disconnect"); }),
+    ])).resolves.toMatchObject({ message: expect.stringMatching(/handoff unavailable/) });
+  });
+
+  it("keeps a pending Pickle bridge request alive when another client disconnects", async () => {
+    const { ws: appWs } = await connectWithHello();
+    appWs.send(JSON.stringify({ id: "cmd-register-bridge-primary", protocolVersion: PROTOCOL_VERSION, type: "registerAppCapabilities", capabilities: ["pickleBridge"] }));
+    await waitForRegisteredCapability("pickleBridge");
+    const { ws: otherWs } = await connectWithHello();
+
+    const pending = server.requestPickleBridgeFromApp({ operation: "listSessions" });
+    const request = await waitForEvent(appWs, "pickleBridgeRequested");
+    if (request.type !== "pickleBridgeRequested") throw new Error("expected bridge request");
+    otherWs.close();
+    await sleep(50);
+    appWs.send(JSON.stringify({ id: "cmd-complete-bridge-primary", protocolVersion: PROTOCOL_VERSION, type: "completePickleBridgeRequest", requestId: request.requestId, sessions: [] }));
+
+    await expect(pending).resolves.toEqual({ sessions: [] });
+    appWs.close();
   });
 
   it("clears a session queue through the supervisor", async () => {

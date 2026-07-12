@@ -10,14 +10,18 @@ import Testing
 private final class FakeProcessRunner: PickyProcessRunning {
     var terminationHandler: ((Int32) -> Void)?
     private(set) var launchedConfiguration: PickyAgentDaemonConfiguration?
+    private(set) var launchCount = 0
     private(set) var didTerminate = false
     var launchError: Error?
     private var stdout: ((Data) -> Void)?
     private var stderr: ((Data) -> Void)?
+    private var launchTerminationHandlers: [((Int32) -> Void)?] = []
 
     func launch(configuration: PickyAgentDaemonConfiguration, stdout: @escaping (Data) -> Void, stderr: @escaping (Data) -> Void) throws {
         if let launchError { throw launchError }
         launchedConfiguration = configuration
+        launchCount += 1
+        launchTerminationHandlers.append(terminationHandler)
         self.stdout = stdout
         self.stderr = stderr
     }
@@ -27,6 +31,7 @@ private final class FakeProcessRunner: PickyProcessRunning {
     func emitStdoutBytes(_ data: Data) { stdout?(data) }
     func emitStderr(_ text: String) { stderr?(Data(text.utf8)) }
     func crash(code: Int32) { terminationHandler?(code) }
+    func terminateLaunch(at index: Int, code: Int32) { launchTerminationHandlers[index]?(code) }
 }
 
 private struct FakeExecutableChecker: PickyExecutableChecking {
@@ -255,6 +260,140 @@ struct PickyAgentDaemonLauncherTests {
         try await Task.sleep(nanoseconds: 20_000_000)
 
         #expect(launcher.state == .restarting(attempt: 1, delay: 1))
+    }
+
+    @Test func repeatedImmediateCrashesIncreaseRestartBackoff() async throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        try makeAgentdPackage(at: temp)
+        let runner = FakeProcessRunner()
+        var currentTime = Date(timeIntervalSince1970: 1_000)
+        let configuration = PickyAgentDaemonConfiguration(
+            port: 19032,
+            token: "token-123",
+            appSupportRoot: temp,
+            defaultCwd: "/tmp",
+            runtime: nil,
+            workingDirectory: temp,
+            executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+            arguments: ["pnpm", "dev"]
+        )
+        let launcher = PickyAgentDaemonLauncher(
+            configuration: configuration,
+            runner: runner,
+            logDirectory: temp.appendingPathComponent("Logs"),
+            now: { currentTime }
+        )
+
+        launcher.start()
+        runner.crash(code: 9)
+        try await Task.sleep(nanoseconds: 20_000_000)
+        #expect(launcher.state == .restarting(attempt: 1, delay: 1))
+
+        try await Task.sleep(nanoseconds: 1_100_000_000)
+        runner.crash(code: 9)
+        try await Task.sleep(nanoseconds: 20_000_000)
+        #expect(launcher.state == .restarting(attempt: 2, delay: 2))
+
+        try await Task.sleep(nanoseconds: 2_100_000_000)
+        currentTime.addTimeInterval(30)
+        runner.crash(code: 9)
+        try await Task.sleep(nanoseconds: 20_000_000)
+        #expect(launcher.state == .restarting(attempt: 1, delay: 1))
+    }
+
+    @Test func explicitRestartResetsCrashBackoffAttempts() async throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        try makeAgentdPackage(at: temp)
+        let runner = FakeProcessRunner()
+        let configuration = PickyAgentDaemonConfiguration(
+            port: 19033,
+            token: "token-123",
+            appSupportRoot: temp,
+            defaultCwd: "/tmp",
+            runtime: nil,
+            workingDirectory: temp,
+            executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+            arguments: ["pnpm", "dev"]
+        )
+        let launcher = PickyAgentDaemonLauncher(
+            configuration: configuration,
+            runner: runner,
+            logDirectory: temp.appendingPathComponent("Logs")
+        )
+
+        launcher.start()
+        runner.crash(code: 9)
+        try await Task.sleep(nanoseconds: 20_000_000)
+        #expect(launcher.state == .restarting(attempt: 1, delay: 1))
+
+        launcher.stop()
+        launcher.start()
+        runner.crash(code: 9)
+        try await Task.sleep(nanoseconds: 20_000_000)
+
+        #expect(launcher.state == .restarting(attempt: 1, delay: 1))
+    }
+
+    @Test func delayedTerminationFromStoppedLaunchDoesNotAffectNewLaunch() async throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        try makeAgentdPackage(at: temp)
+        let runner = FakeProcessRunner()
+        let configuration = PickyAgentDaemonConfiguration(
+            port: 19034,
+            token: "token-123",
+            appSupportRoot: temp,
+            defaultCwd: "/tmp",
+            runtime: nil,
+            workingDirectory: temp,
+            executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+            arguments: ["pnpm", "dev"]
+        )
+        let launcher = PickyAgentDaemonLauncher(
+            configuration: configuration,
+            runner: runner,
+            logDirectory: temp.appendingPathComponent("Logs")
+        )
+
+        launcher.start()
+        launcher.stop()
+        launcher.start()
+        runner.terminateLaunch(at: 0, code: 15)
+        try await Task.sleep(nanoseconds: 20_000_000)
+
+        #expect(launcher.state == .running)
+        #expect(runner.launchCount == 2)
+    }
+
+    @Test func stalePreflightFailureDoesNotRestartAfterExplicitRelaunch() async throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        try makeAgentdPackage(at: temp)
+        let runner = FakeProcessRunner()
+        let configuration = PickyAgentDaemonConfiguration(
+            port: 19035,
+            token: "token-123",
+            appSupportRoot: temp,
+            defaultCwd: "/tmp",
+            runtime: nil,
+            workingDirectory: temp,
+            executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+            arguments: ["pnpm", "dev"]
+        )
+        let launcher = PickyAgentDaemonLauncher(
+            configuration: configuration,
+            runner: runner,
+            logDirectory: temp.appendingPathComponent("Logs")
+        )
+
+        launcher.start()
+        launcher.stop()
+        // The replacement launch fails preflight (package removed), so it must
+        // still invalidate the previous launch's pending termination callback.
+        try FileManager.default.removeItem(at: temp.appendingPathComponent("package.json"))
+        launcher.start()
+        runner.terminateLaunch(at: 0, code: 15)
+        try await Task.sleep(nanoseconds: 20_000_000)
+
+        #expect({ if case .failedToStart = launcher.state { return true }; return false }())
     }
 
     @Test func stopTerminatesWithoutRestart() throws {

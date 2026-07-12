@@ -721,7 +721,11 @@ final class FoundationPickyProcessRunner: PickyProcessRunning {
         stderrPipe.fileHandleForReading.readabilityHandler = { handle in stderr(handle.availableData) }
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
-        process.terminationHandler = { [weak self] process in self?.terminationHandler?(process.terminationStatus) }
+        // Capture the handler at launch time so a stale process's termination
+        // invokes the closure (and launch generation) that was current when it
+        // started, not whatever handler a later launch installed.
+        let handler = terminationHandler
+        process.terminationHandler = { process in handler?(process.terminationStatus) }
 
         try process.run()
         self.process = process
@@ -814,6 +818,12 @@ final class PickyAgentDaemonLauncher: ObservableObject {
     private static let minimumSupportedNodeVersion = "22.19.0"
     private static let unsupportedNodeToken = "PICKY_UNSUPPORTED_NODE"
     private static let stderrDiagnosticBufferLimit = 8_192
+    private static let restartBackoffResetUptime: TimeInterval = 30
+    private let now: () -> Date
+    /// Monotonic tag for each launch so a delayed termination callback from a
+    /// previously stopped/replaced process cannot mutate the current launch's
+    /// state (e.g. mark a freshly started daemon as crashed).
+    private var launchGeneration = 0
 
     init(
         configuration: PickyAgentDaemonConfiguration,
@@ -824,7 +834,8 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         clipboardWriter: PickyClipboardWriting = PickyPasteboardClipboardWriter(),
         stdoutLineObserver: ((String) -> Void)? = nil,
         maxLogFileSize: Int64 = PickyAgentDaemonLauncher.defaultMaxLogFileSize,
-        maxLogRotations: Int = PickyAgentDaemonLauncher.defaultMaxLogRotations
+        maxLogRotations: Int = PickyAgentDaemonLauncher.defaultMaxLogRotations,
+        now: @escaping () -> Date = Date.init
     ) {
         self.configuration = configuration
         self.runner = runner
@@ -835,14 +846,13 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         self.stdoutLineObserver = stdoutLineObserver
         self.maxLogFileSize = maxLogFileSize
         self.maxLogRotations = maxLogRotations
-        self.runner.terminationHandler = { [weak self] code in
-            Task { @MainActor in self?.processTerminated(exitCode: code) }
-        }
+        self.now = now
     }
 
     func start() {
         guard state == .stopped else { return }
         pickyDaemonLog("start requested port=\(configuration.port) cwd=\(configuration.defaultCwd)")
+        attempts = 0
         intentionallyStopped = false
         terminalLaunchFailureMessage = nil
         stderrDiagnosticBuffer = ""
@@ -865,6 +875,14 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         pickyDaemonLog("launching executable=\(configuration.executableURL.path) args=\(configuration.arguments.joined(separator: " "))")
         updateState(.starting)
         do {
+            // Advance the generation before any fallible preflight work so a
+            // replacement launch that fails preflight still invalidates a prior
+            // launch's pending termination callback.
+            launchGeneration += 1
+            let generation = launchGeneration
+            runner.terminationHandler = { [weak self] code in
+                Task { @MainActor in self?.processTerminated(exitCode: code, generation: generation) }
+            }
             try fileManager.createDirectory(at: logDirectory, withIntermediateDirectories: true)
             try preflightConfiguration()
             try runner.launch(
@@ -876,8 +894,7 @@ final class PickyAgentDaemonLauncher: ObservableObject {
                 updateState(.failedToStart(terminalLaunchFailureMessage))
                 return
             }
-            attempts = 0
-            lastRunningAt = Date()
+            lastRunningAt = now()
             updateState(.running)
             pickyDaemonLog("running pid=\(runner.processIdentifier.map(String.init) ?? "unknown") logDir=\(logDirectory.path)")
         } catch let error as PickyDaemonLaunchPreflightError {
@@ -959,7 +976,8 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         }
     }
 
-    private func processTerminated(exitCode: Int32) {
+    private func processTerminated(exitCode: Int32, generation: Int) {
+        guard generation == launchGeneration else { return }
         guard !intentionallyStopped else { return }
         pickyDaemonLog("terminated exitCode=\(exitCode)")
         if let terminalLaunchFailureMessage {
@@ -973,6 +991,9 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         // that the router doesn't know about. The pool itself surfaces the crash to callers
         // (and Phase 4 can grow an explicit retry policy on top of that).
         if case .child = configuration.role { return }
+        if let lastRunningAt, now().timeIntervalSince(lastRunningAt) >= Self.restartBackoffResetUptime {
+            attempts = 0
+        }
         scheduleRestart(afterExitCode: exitCode)
     }
 

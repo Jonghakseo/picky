@@ -22,11 +22,18 @@ private final class StubAgentClient: PickyAgentClient {
     /// called so the router's event forwarder gets a chance to observe the
     /// emitted error before the caller proceeds to await its rejection.
     var onSendInject: ((PickyCommandEnvelope) -> Void)?
+    /// Optional asynchronous hook for tests that must keep a send suspended
+    /// until another lifecycle action has completed.
+    var onSendSuspend: ((PickyCommandEnvelope) async -> Void)?
     /// Optional error the stub throws from `send`. Lets tests simulate
     /// transport failure (websocket disconnected, encoding error, etc.) so we
     /// can verify that `sendAwaitingError` propagates the throw to its caller
     /// instead of swallowing it as silent success.
     var sendShouldThrow: Error?
+    /// Error thrown after `onSendSuspend` returns. Kept separate from
+    /// `sendShouldThrow` so tests can model a transport that dies while a
+    /// send is suspended without changing the pre-send failure behavior.
+    var sendShouldThrowAfterSuspend: Error?
 
     init(id: String) {
         self.id = id
@@ -52,6 +59,10 @@ private final class StubAgentClient: PickyAgentClient {
             // synchronous.
             await Task.yield()
         }
+        if let onSendSuspend {
+            await onSendSuspend(command)
+        }
+        if let sendShouldThrowAfterSuspend { throw sendShouldThrowAfterSuspend }
     }
     func disconnect() { disconnectCalls += 1; continuation.yield(.disconnected) }
     func emit(_ event: PickyClientEvent) { continuation.yield(event) }
@@ -127,6 +138,7 @@ final class RouterPoolStubRunner: PickyProcessRunning {
     }
     func terminate() {}
     func emitReady(port: Int) { stdout?(Data("picky-agentd listening on 127.0.0.1:\(port)\n".utf8)) }
+    func emitTermination(exitCode: Int32) { terminationHandler?(exitCode) }
 }
 
 private struct RouterAlwaysExists: PickyExecutableChecking {
@@ -971,6 +983,179 @@ struct PickyAgentClientRouterTests {
         primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(operation: "steer", sessionId: "pickle-bridge", text: "delta")))
         try await waitUntil { clientFactory.madeClients.first?.client.sentCommands.contains(where: { $0.type == .steer && $0.text == "delta" }) == true }
         try await waitUntil { primary.sentCommands.filter { $0.type == .completePickleBridgeRequest }.count >= 2 }
+    }
+
+    @Test func queuedDrainReportsUnsentCommandWhenChildExitsDuringFirstSend() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let agentd = root.appendingPathComponent("agentd", isDirectory: true)
+        try makeStubAgentdPackage(at: agentd)
+        let primary = StubAgentClient(id: "primary")
+        let poolFactory = StubLauncherFactoryForRouter(agentdRoot: agentd)
+        let pool = PickyAgentDaemonPool(
+            configuration: PickyAgentDaemonPool.Configuration(
+                token: "tok",
+                appSupportRoot: root,
+                environment: ["PICKY_AGENTD_ROOT": agentd.path, "PATH": "/usr/bin"],
+                bundleResourceURL: nil
+            ),
+            factory: poolFactory
+        )
+        let clientFactory = StubClientFactory()
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: clientFactory)
+
+        async let spawned: PickyAgentClient = router.spawnChildClient(sessionId: "pickle-drain-exit", cwd: "/tmp/ws")
+        let runner = try await poolFactory.waitForRunner(sessionId: "pickle-drain-exit")
+        poolFactory.emitReady(for: "pickle-drain-exit")
+        let child = try #require(try await spawned as? StubAgentClient)
+        child.emit(.protocolEvent(makeSessionUpdatedEvent(id: "pickle-drain-exit", status: .queued)))
+        await Task.yield()
+
+        let first = PickyCommandEnvelope(id: "cmd-drain-first", type: .followUp, sessionId: "pickle-drain-exit", text: "first")
+        let second = PickyCommandEnvelope(id: "cmd-drain-second", type: .steer, sessionId: "pickle-drain-exit", text: "second")
+        child.onSendSuspend = { command in
+            guard command.id == first.id else { return }
+            runner.emitTermination(exitCode: 9)
+            // Keep the first send in flight until the child-exit callback
+            // has examined the drain. The first send was already accepted;
+            // later sends through the now-dead transport fail.
+            try? await waitUntil { child.disconnectCalls == 1 }
+            child.sendShouldThrow = PickyAgentClientError.disconnected
+        }
+
+        async let firstResult: PickyErrorEvent? = router.sendAwaitingError(first, timeout: 0.5)
+        await Task.yield()
+        async let secondResult: PickyErrorEvent? = router.sendAwaitingError(second, timeout: 0.5)
+        await Task.yield()
+        child.emit(.protocolEvent(makeSessionUpdatedEvent(id: "pickle-drain-exit", status: .running)))
+
+        let secondError = try await secondResult
+        let firstError = try await firstResult
+        #expect(secondError?.commandId == second.id)
+        #expect(secondError?.code == "child_unavailable")
+        #expect(firstError == nil)
+        #expect(child.sentCommands.filter { $0.id == first.id }.count == 1)
+        #expect(!child.sentCommands.contains { $0.id == second.id })
+    }
+
+    @Test func oldDrainCannotMutateRespawnedChildGeneration() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let agentd = root.appendingPathComponent("agentd", isDirectory: true)
+        try makeStubAgentdPackage(at: agentd)
+        let primary = StubAgentClient(id: "primary")
+        let poolFactory = StubLauncherFactoryForRouter(agentdRoot: agentd)
+        let pool = PickyAgentDaemonPool(
+            configuration: PickyAgentDaemonPool.Configuration(
+                token: "tok",
+                appSupportRoot: root,
+                environment: ["PICKY_AGENTD_ROOT": agentd.path, "PATH": "/usr/bin"],
+                bundleResourceURL: nil
+            ),
+            factory: poolFactory
+        )
+        let clientFactory = StubClientFactory()
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: clientFactory)
+        let sessionId = "pickle-generation-race"
+
+        async let initialSpawn: PickyAgentClient = router.spawnChildClient(sessionId: sessionId, cwd: "/tmp/ws")
+        let oldRunner = try await poolFactory.waitForRunner(sessionId: sessionId)
+        poolFactory.emitReady(for: sessionId)
+        let oldChild = try #require(try await initialSpawn as? StubAgentClient)
+        oldChild.emit(.protocolEvent(makeSessionUpdatedEvent(id: sessionId, status: .queued)))
+        await Task.yield()
+
+        let oldFirst = PickyCommandEnvelope(id: "old-drain-first", type: .followUp, sessionId: sessionId, text: "old first")
+        let oldSecond = PickyCommandEnvelope(id: "old-drain-second", type: .steer, sessionId: sessionId, text: "old second")
+        var allowOldSendToUnwind = false
+        oldChild.onSendSuspend = { command in
+            guard command.id == oldFirst.id else { return }
+            oldRunner.emitTermination(exitCode: 9)
+            try? await waitUntil { oldChild.disconnectCalls == 1 }
+            while !allowOldSendToUnwind { await Task.yield() }
+            oldChild.sendShouldThrowAfterSuspend = PickyAgentClientError.disconnected
+        }
+
+        async let oldFirstResult: PickyErrorEvent? = router.sendAwaitingError(oldFirst, timeout: 0.5)
+        await Task.yield()
+        async let oldSecondResult: PickyErrorEvent? = router.sendAwaitingError(oldSecond, timeout: 0.5)
+        await Task.yield()
+        oldChild.emit(.protocolEvent(makeSessionUpdatedEvent(id: sessionId, status: .running)))
+        try await waitUntil { oldChild.disconnectCalls == 1 }
+
+        async let respawn: PickyAgentClient = router.spawnChildClient(sessionId: sessionId, cwd: "/tmp/ws")
+        try await waitUntil {
+            poolFactory.runners[sessionId] !== oldRunner && (poolFactory.runners[sessionId]?.launchCount ?? 0) > 0
+        }
+        poolFactory.emitReady(for: sessionId)
+        let newChild = try #require(try await respawn as? StubAgentClient)
+        let newRunner = try #require(poolFactory.runners[sessionId])
+        newChild.emit(.protocolEvent(makeSessionUpdatedEvent(id: sessionId, status: .queued)))
+        await Task.yield()
+
+        let newFirst = PickyCommandEnvelope(id: "new-drain-first", type: .followUp, sessionId: sessionId, text: "new first")
+        let newSecond = PickyCommandEnvelope(id: "new-drain-second", type: .steer, sessionId: sessionId, text: "new second")
+        var allowNewSendToComplete = false
+        newChild.onSendSuspend = { command in
+            guard command.id == newFirst.id else { return }
+            while !allowNewSendToComplete { await Task.yield() }
+        }
+        async let newFirstResult: PickyErrorEvent? = router.sendAwaitingError(newFirst, timeout: 0.5)
+        await Task.yield()
+        async let newSecondResult: PickyErrorEvent? = router.sendAwaitingError(newSecond, timeout: 0.5)
+        await Task.yield()
+        newChild.emit(.protocolEvent(makeSessionUpdatedEvent(id: sessionId, status: .running)))
+        try await waitUntil { newChild.sentCommands.contains { $0.id == newFirst.id } }
+
+        // Let the old send throw only after the same session id owns a new,
+        // suspended drain. Its cleanup must neither requeue old commands nor
+        // erase the new drain's active remainder.
+        allowOldSendToUnwind = true
+        let oldFirstError = try await oldFirstResult
+        let oldSecondError = try await oldSecondResult
+        #expect(oldFirstError?.code == "child_unavailable")
+        #expect(oldSecondError?.code == "child_unavailable")
+        #expect(!newChild.sentCommands.contains { $0.id == oldFirst.id || $0.id == oldSecond.id })
+
+        newRunner.emitTermination(exitCode: 9)
+        let newSecondError = try await newSecondResult
+        #expect(newSecondError?.code == "child_unavailable")
+        #expect(newSecondError?.commandId == newSecond.id)
+
+        allowNewSendToComplete = true
+        _ = try await newFirstResult
+    }
+
+    @Test func queuedBootingChildCommandReportsErrorWhenChildExitsBeforeDispatch() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let agentd = root.appendingPathComponent("agentd", isDirectory: true)
+        try makeStubAgentdPackage(at: agentd)
+        let primary = StubAgentClient(id: "primary")
+        let poolFactory = StubLauncherFactoryForRouter(agentdRoot: agentd)
+        let pool = PickyAgentDaemonPool(
+            configuration: PickyAgentDaemonPool.Configuration(
+                token: "tok",
+                appSupportRoot: root,
+                environment: ["PICKY_AGENTD_ROOT": agentd.path, "PATH": "/usr/bin"],
+                bundleResourceURL: nil
+            ),
+            factory: poolFactory
+        )
+        let clientFactory = StubClientFactory()
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: clientFactory)
+
+        async let spawned: PickyAgentClient = router.spawnChildClient(sessionId: "pickle-exit", cwd: "/tmp/ws")
+        let runner = try await poolFactory.waitForRunner(sessionId: "pickle-exit")
+        poolFactory.emitReady(for: "pickle-exit")
+        let child = try #require(try await spawned as? StubAgentClient)
+
+        let command = PickyCommandEnvelope(id: "cmd-dropped-on-exit", type: .followUp, sessionId: "pickle-exit", text: "continue")
+        async let awaitingError: PickyErrorEvent? = router.sendAwaitingError(command, timeout: 0.5)
+        await Task.yield()
+        runner.emitTermination(exitCode: 9)
+
+        let error = try await awaitingError
+        #expect(error?.commandId == command.id)
+        #expect(error?.code == "child_unavailable")
+        #expect(!child.sentCommands.contains { $0.id == command.id })
     }
 
     @Test func sendAwaitingErrorReturnsRejectionWhenDaemonEmitsMatchingError() async throws {

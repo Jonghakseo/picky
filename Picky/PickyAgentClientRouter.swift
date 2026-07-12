@@ -55,6 +55,12 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     private var knownChildSessionIds = Set<String>()
     private var bootingChildSessionIds = Set<String>()
     private var retiredChildSessionIds = Set<String>()
+    /// A child session may be respawned with the same id while an old queued
+    /// command drain is still unwinding. Lifecycle state for that drain must
+    /// therefore be owned by a monotonically increasing child generation,
+    /// rather than the mutable session-level retired set.
+    private var childGenerations: [String: Int] = [:]
+    private var retiredChildGenerations = Set<ChildGeneration>()
     private var sessionCache: [String: PickyAgentSession] = [:]
     private var sessionOwnerKeys: [String: String] = [:]
     /// Commands typed against a freshly spawned Pickle before the child runtime has left
@@ -62,6 +68,11 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     /// `sessionUpdated`, avoiding early follow-up/steer sends while the Pi process is still
     /// bootstrapping.
     private var pendingChildCommands: [String: [PickyCommandEnvelope]] = [:]
+    /// Commands removed from `pendingChildCommands` by a currently running
+    /// drain. Keeping the not-yet-sent remainder here lets child termination
+    /// fail it immediately instead of letting the drain requeue it after the
+    /// child has already disappeared.
+    private var activeDrainingChildCommands: [String: ChildCommandDrain] = [:]
     /// Per-command rejection callbacks keyed by `PickyCommandEnvelope.id`.
     /// Populated by `sendAwaitingError`; invoked by the event forwarder when
     /// the daemon emits a `type="error"` event whose `commandId` matches a
@@ -87,6 +98,16 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     /// session/tool events past the subscription point are irrelevant by
     /// definition, and replaying them could double-process work.
     private var lastLifecycleEvent: PickyClientEvent?
+
+    private struct ChildGeneration: Hashable {
+        let sessionId: String
+        let value: Int
+    }
+
+    private struct ChildCommandDrain {
+        let generation: ChildGeneration
+        var commands: [PickyCommandEnvelope]
+    }
 
     /// Each access to `events` allocates a new subscriber stream, registered
     /// in `subscriberContinuations` for the lifetime of the for-await loop.
@@ -184,9 +205,10 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
             if let client = self.childClients.removeValue(forKey: sessionId) {
                 client.disconnect()
             }
-            self.pendingChildCommands.removeValue(forKey: sessionId)
+            let generation = self.currentChildGeneration(for: sessionId)
+            self.failPendingChildCommands(sessionId: sessionId, generation: generation)
             self.bootingChildSessionIds.remove(sessionId)
-            self.markChildSessionRetired(sessionId)
+            self.markChildSessionRetired(sessionId, generation: generation)
             self.onChildClientReleased?(sessionId, exitCode)
         }
     }
@@ -328,6 +350,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         primaryConnectStarted = false
         bootingChildSessionIds.removeAll()
         pendingChildCommands.removeAll()
+        activeDrainingChildCommands.removeAll()
         for client in childClients.values { client.disconnect() }
         childClients.removeAll()
         primaryClient.disconnect()
@@ -408,18 +431,50 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
 
     private func drainPendingChildCommands(sessionId: String) async {
         guard let commands = pendingChildCommands.removeValue(forKey: sessionId), !commands.isEmpty else { return }
+        let generation = currentChildGeneration(for: sessionId)
+        activeDrainingChildCommands[sessionId] = ChildCommandDrain(generation: generation, commands: commands)
         pickyAgentRouterLog("draining child commands session=\(sessionId) count=\(commands.count)")
         var sentCount = 0
+        var commandIsInFlight = false
         do {
             let client = try await connectedClient(for: sessionId)
             for command in commands {
+                // Remove the command from the exit-failable remainder only
+                // while it is actively being sent. A child exit during this
+                // suspension fails the later commands immediately; this
+                // command's send result remains authoritative.
+                updateActiveDrain(sessionId: sessionId, generation: generation, commands: Array(commands.dropFirst(sentCount + 1)))
+                commandIsInFlight = true
                 try await client.send(command)
+                commandIsInFlight = false
                 sentCount += 1
+
+                // A release may have happened while `send` was suspended.
+                // Check this drain's immutable generation: a same-id respawn
+                // must not make the old drain look transient again.
+                if isRetired(generation) || currentChildGeneration(for: sessionId) != generation {
+                    clearActiveDrain(sessionId: sessionId, generation: generation)
+                    return
+                }
             }
+            clearActiveDrain(sessionId: sessionId, generation: generation)
         } catch {
             let unsent = Array(commands.dropFirst(sentCount))
-            pendingChildCommands[sessionId, default: []].insert(contentsOf: unsent, at: 0)
-            broadcast(.recoverableError("Failed to send queued Pickle input: \(error.localizedDescription)"))
+            clearActiveDrain(sessionId: sessionId, generation: generation)
+            if isRetired(generation) || currentChildGeneration(for: sessionId) != generation {
+                // The exit callback has already failed the active remainder.
+                // Only an in-flight command was excluded from that remainder,
+                // so report it here without double-notifying commands that
+                // were still active when the child exited.
+                if commandIsInFlight, let failedCommand = unsent.first {
+                    failChildCommands([failedCommand])
+                }
+            } else {
+                // A live child can still recover from a transient transport
+                // failure, so preserve the original retry queue behavior.
+                pendingChildCommands[sessionId, default: []].insert(contentsOf: unsent, at: 0)
+                broadcast(.recoverableError("Failed to send queued Pickle input: \(error.localizedDescription)"))
+            }
         }
     }
 
@@ -427,8 +482,9 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     /// Subsequent calls for the same session id return the cached client without re-spawning.
     func spawnChildClient(sessionId: String, cwd: String, primaryUrl: String? = nil) async throws -> PickyAgentClient {
         knownChildSessionIds.insert(sessionId)
-        retiredChildSessionIds.remove(sessionId)
         if let existing = childClients[sessionId] { return existing }
+        advanceChildGeneration(for: sessionId)
+        retiredChildSessionIds.remove(sessionId)
         bootingChildSessionIds.insert(sessionId)
         let endpoint: PickyChildDaemonEndpoint
         do {
@@ -508,17 +564,74 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         if let client = childClients.removeValue(forKey: sessionId) {
             client.disconnect()
         }
-        pendingChildCommands.removeValue(forKey: sessionId)
+        let generation = currentChildGeneration(for: sessionId)
+        failPendingChildCommands(sessionId: sessionId, generation: generation)
         bootingChildSessionIds.remove(sessionId)
         if wasChildSession {
-            markChildSessionRetired(sessionId)
+            markChildSessionRetired(sessionId, generation: generation)
         }
         pool.terminateChild(sessionId: sessionId)
     }
 
-    private func markChildSessionRetired(_ sessionId: String) {
+    private func currentChildGeneration(for sessionId: String) -> ChildGeneration {
+        ChildGeneration(sessionId: sessionId, value: childGenerations[sessionId, default: 0])
+    }
+
+    private func advanceChildGeneration(for sessionId: String) {
+        childGenerations[sessionId, default: 0] += 1
+    }
+
+    private func isRetired(_ generation: ChildGeneration) -> Bool {
+        retiredChildGenerations.contains(generation)
+    }
+
+    private func updateActiveDrain(sessionId: String, generation: ChildGeneration, commands: [PickyCommandEnvelope]) {
+        guard activeDrainingChildCommands[sessionId]?.generation == generation else { return }
+        activeDrainingChildCommands[sessionId]?.commands = commands
+    }
+
+    private func clearActiveDrain(sessionId: String, generation: ChildGeneration) {
+        guard activeDrainingChildCommands[sessionId]?.generation == generation else { return }
+        activeDrainingChildCommands[sessionId] = nil
+    }
+
+    private func markChildSessionRetired(_ sessionId: String, generation: ChildGeneration) {
         knownChildSessionIds.remove(sessionId)
         retiredChildSessionIds.insert(sessionId)
+        retiredChildGenerations.insert(generation)
+    }
+
+    private func failPendingChildCommands(sessionId: String, generation: ChildGeneration) {
+        // Active commands were removed from the pending queue before the
+        // drain awaited its first send. They remain ordered ahead of commands
+        // that may still be pending, and must be failed through the same
+        // command-specific path when the child exits. Never remove an active
+        // drain owned by a same-id child that was spawned after this one.
+        let activeCommands: [PickyCommandEnvelope]
+        if activeDrainingChildCommands[sessionId]?.generation == generation {
+            activeCommands = activeDrainingChildCommands.removeValue(forKey: sessionId)?.commands ?? []
+        } else {
+            activeCommands = []
+        }
+        let pendingCommands = pendingChildCommands.removeValue(forKey: sessionId) ?? []
+        failChildCommands(activeCommands + pendingCommands)
+    }
+
+    private func failChildCommands(_ commands: [PickyCommandEnvelope]) {
+        for command in commands {
+            let error = PickyErrorEvent(
+                code: "child_unavailable",
+                message: "Pickle child runtime exited before queued input could be delivered.",
+                commandId: command.id
+            )
+            dispatchPendingErrorHandler(error)
+            broadcast(.protocolEvent(PickyEventEnvelope(
+                id: UUID().uuidString,
+                protocolVersion: pickyAgentProtocolVersion,
+                timestamp: Date(),
+                event: .error(error)
+            )))
+        }
     }
 
     private func handlePickleBridgeRequest(_ request: PickyPickleBridgeRequest, responseClient: PickyAgentClient) async {
@@ -610,10 +723,8 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                     // caller blocked on this commandId. The event still falls
                     // through to the regular fanout so subscribers (HUD viewModel)
                     // can also react if they want to.
-                    if case .error(let errorEvent) = envelope.event,
-                       let commandId = errorEvent.commandId,
-                       let handler = self.pendingErrorHandlers[commandId] {
-                        handler(errorEvent)
+                    if case .error(let errorEvent) = envelope.event {
+                        self.dispatchPendingErrorHandler(errorEvent)
                     }
                     if key == "primary" {
                         switch envelope.event {
@@ -651,6 +762,12 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                 self.broadcast(event)
             }
         }
+    }
+
+    private func dispatchPendingErrorHandler(_ error: PickyErrorEvent) {
+        guard let commandId = error.commandId,
+              let handler = pendingErrorHandlers[commandId] else { return }
+        handler(error)
     }
 
     private func registerAppCapabilities(on client: PickyAgentClient) async {

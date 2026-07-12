@@ -434,6 +434,8 @@ Safety behavior:
 
 Type `/` in the composer to show slash command suggestions. Picky also adds local HUD commands where useful; for example, `/tree` opens the Pickle message rewind picker instead of sending the text to Pi.
 
+Suggestions follow the caret: they appear whenever the caret sits inside the leading command token, even when more draft text follows. Accepting a suggestion replaces only the typed command part and keeps the rest of your draft, so you can place the caret at the start of an existing message and prepend a command without losing your text.
+
 Controls:
 
 - Up/Down: move selection.
@@ -443,6 +445,8 @@ Controls:
 ### 8.7 File mention autocomplete
 
 When file mention syntax is detected, Picky suggests files relative to the Pickle cwd.
+
+File search runs on the `fd` binary, resolved from `~/.pi/agent/bin/fd`, Homebrew, or system paths. If `fd` is not installed, the panel shows "File search requires fd (not installed)".
 
 Controls:
 

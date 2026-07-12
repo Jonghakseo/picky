@@ -130,6 +130,28 @@ struct BuddyPushToTalkShortcutSpecMatchingTests {
         #expect(released == .released)
     }
 
+    @Test func modifierComboWithKeyReleasesWhenRequiredModifierIsReleased() {
+        let spec = PickyShortcutSpec.modifierCombo(modifiers: [.control, .option], keyCode: 49) // space
+
+        let released = BuddyPushToTalkShortcut.shortcutTransition(
+            for: .flagsChanged,
+            keyCode: 59,
+            modifierFlagsRawValue: UInt64(NSEvent.ModifierFlags.option.rawValue),
+            wasShortcutPreviouslyPressed: true,
+            spec: spec
+        )
+        #expect(released == .released)
+
+        let unchanged = BuddyPushToTalkShortcut.shortcutTransition(
+            for: .flagsChanged,
+            keyCode: 59,
+            modifierFlagsRawValue: UInt64((NSEvent.ModifierFlags([.control, .option])).rawValue),
+            wasShortcutPreviouslyPressed: true,
+            spec: spec
+        )
+        #expect(unchanged == .none)
+    }
+
     @Test func doubleTapSpecNeverFiresInPushToTalkPath() {
         let spec = PickyShortcutSpec.doubleTapModifier(.control)
         let result = BuddyPushToTalkShortcut.shortcutTransition(

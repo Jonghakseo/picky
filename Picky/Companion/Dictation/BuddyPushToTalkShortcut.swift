@@ -168,6 +168,11 @@ enum BuddyPushToTalkShortcut {
             && wasShortcutPreviouslyPressed {
             return .released
         }
+        if eventType == .flagsChanged
+            && !modifiersHeld
+            && wasShortcutPreviouslyPressed {
+            return .released
+        }
         return .none
     }
 }

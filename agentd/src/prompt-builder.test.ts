@@ -131,6 +131,47 @@ describe("neutral prompt builder", () => {
     expect(prompt.text).not.toContain("points=");
   });
 
+  it("builds follow-up prompts with nonvisual grounding context", () => {
+    const context = PickyContextPacketSchema.parse({
+      id: "context-follow-up-browser",
+      source: "text-follow-up",
+      capturedAt: "2026-05-01T00:00:00.000Z",
+      transcript: "이 내용을 확인해줘",
+      browser: {
+        title: "Picky issue",
+        url: "https://github.com/creatrip/picky/issues/128",
+      },
+      selectedText: "The selected error details",
+      screenshots: [],
+      inkMarks: [],
+      warnings: [],
+    });
+
+    const prompt = buildFollowUpPrompt("이 내용을 확인해줘", context);
+
+    expect(prompt.text).toContain("# Picky follow-up");
+    expect(prompt.text).toContain("- Browser title: Picky issue");
+    expect(prompt.text).toContain("- Browser URL: https://github.com/creatrip/picky/issues/128");
+    expect(prompt.text).toContain("## Selected text\nThe selected error details");
+    expect(prompt.imagePaths).toEqual([]);
+  });
+
+  it("keeps follow-up text plain when context has no grounding", () => {
+    const context = PickyContextPacketSchema.parse({
+      id: "context-follow-up-empty",
+      source: "text-follow-up",
+      capturedAt: "2026-05-01T00:00:00.000Z",
+      transcript: "계속해줘",
+      screenshots: [],
+      inkMarks: [],
+      warnings: [],
+    });
+
+    const prompt = buildFollowUpPrompt("계속해줘", context);
+
+    expect(prompt).toEqual({ text: "계속해줘", imagePaths: [] });
+  });
+
   it("builds follow-up prompts with screen context and images", () => {
     const context = PickyContextPacketSchema.parse({
       ...readJson("context/plain-text.context.json"),

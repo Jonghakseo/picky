@@ -37,7 +37,7 @@ export function buildSteerPrompt(text: string, context?: PickyContextPacket): Bu
 }
 
 export function buildFollowUpPrompt(text: string, context?: PickyContextPacket): BuiltPrompt {
-  if (!context || !hasVisualAttachmentContext(context)) return { text, imagePaths: [] };
+  if (!context || !hasGroundingContext(context)) return { text, imagePaths: [] };
   const lines = ["# Picky follow-up", "", neutralInstruction, "", "## User follow-up", `- Source: ${context.source}`, "", text];
   appendContext(lines, context);
   return { text: lines.join("\n"), imagePaths: context.screenshots.map((s) => s.path) };
@@ -156,8 +156,14 @@ export function buildMainAgentBootstrapPair(
   return { user, assistant };
 }
 
-function hasVisualAttachmentContext(context: PickyContextPacket): boolean {
-  return context.screenshots.length > 0 || context.inkMarks.length > 0;
+function hasGroundingContext(context: PickyContextPacket): boolean {
+  return context.screenshots.length > 0
+    || context.inkMarks.length > 0
+    || Boolean(context.activeApp?.name)
+    || Boolean(context.activeWindow?.title)
+    || Boolean(context.browser?.title)
+    || Boolean(context.browser?.url)
+    || Boolean(context.selectedText);
 }
 
 function appendContext(lines: string[], context: PickyContextPacket): void {

@@ -2467,11 +2467,11 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   async steer(sessionId: string, text: string, context?: PickyContextPacket): Promise<PickyAgentSession> {
-    const userBash = parseUserBashInput(text);
-    if (userBash) return this.executeUserBash(sessionId, userBash, context);
-
     const session = this.mustGet(sessionId);
     if (session.archived === true) throw new Error("Cannot steer an archived session");
+
+    const userBash = parseUserBashInput(text);
+    if (userBash) return this.executeUserBash(sessionId, userBash, context);
     await this.preparePickleSessionForUserInput(sessionId);
     const awaitedPendingHandle = this.pendingRuntimeHandles.has(sessionId);
     const handle = await this.runtimeHandleForUserInput(session, "steer");

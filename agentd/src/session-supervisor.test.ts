@@ -76,6 +76,21 @@ describe("SessionSupervisor", () => {
     await expect(supervisor.abort(session.id)).rejects.toThrow(/Cannot abort an archived session/);
   });
 
+  it("rejects user bash steer input on an archived session before dispatching it", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-archived-bash-steer-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("archived bash steer"));
+    await supervisor.setSessionArchived(session.id, true);
+
+    await expect(supervisor.steer(session.id, "!echo x")).rejects.toThrow(/Cannot steer an archived session/);
+    await expect(supervisor.steer(session.id, "!!echo x")).rejects.toThrow(/Cannot steer an archived session/);
+
+    expect(runtime.handle!.userBashExecutions).toEqual([]);
+    expect((supervisor.get(session.id)?.messages ?? []).some((message) => message.kind === "system" && message.text?.includes("### 🖥️ echo x"))).toBe(false);
+  });
+
   it("keeps a session cancelled when abort happens while runtime create is pending", async () => {
     const runtime = new DeferredCreateRuntime();
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-pending-create-abort-"));

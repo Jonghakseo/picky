@@ -4000,6 +4000,57 @@ struct PickySessionViewModelTests {
         #expect(client.sentCommands.filter { $0.type == .listSlashCommands }.count == 1)
     }
 
+    @Test func slashCommandPublishedMirrorSyncsAfterSnapshotInvalidationAndPrune() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "keep-session", cwd: "/tmp/keep"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "remove-session", cwd: "/tmp/old"))))
+        try await settle()
+
+        viewModel.ensureSlashCommandsLoaded(sessionID: "keep-session")
+        viewModel.ensureSlashCommandsLoaded(sessionID: "remove-session")
+        try await wait { client.sentCommands.filter { $0.type == .listSlashCommands }.count == 2 }
+        let requests = client.sentCommands.filter { $0.type == .listSlashCommands }
+        let keepRequestID = requests.first { $0.sessionId == "keep-session" }!.id
+        let removeRequestID = requests.first { $0.sessionId == "remove-session" }!.id
+
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(
+            sessionId: "keep-session",
+            requestId: keepRequestID,
+            commandNames: ["keep-loaded"]
+        ))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(
+            sessionId: "remove-session",
+            requestId: removeRequestID,
+            commandNames: ["remove-loaded"]
+        ))))
+        #expect(viewModel.slashCommandsBySessionID["keep-session"]?.map(\.name) == ["keep-loaded"])
+        #expect(viewModel.slashCommandsBySessionID["remove-session"]?.map(\.name) == ["remove-loaded"])
+
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "remove-session",
+            updatedAt: "2026-05-01T00:00:05.000Z",
+            cwd: "/tmp/new"
+        ))))
+        #expect(viewModel.slashCommandsBySessionID["remove-session"] == nil)
+
+        viewModel.ensureSlashCommandsLoaded(sessionID: "remove-session")
+        try await wait { client.sentCommands.filter { $0.type == .listSlashCommands }.count == 3 }
+        let refreshedRemoveRequestID = client.sentCommands.filter { $0.type == .listSlashCommands }.last!.id
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(
+            sessionId: "remove-session",
+            requestId: refreshedRemoveRequestID,
+            commandNames: ["remove-reloaded"]
+        ))))
+        #expect(viewModel.slashCommandsBySessionID["remove-session"]?.map(\.name) == ["remove-reloaded"])
+
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionSnapshot(id: "keep-session"))))
+        #expect(viewModel.slashCommandsBySessionID["keep-session"]?.map(\.name) == ["keep-loaded"])
+        #expect(viewModel.slashCommandsBySessionID["remove-session"] == nil)
+        #expect(Set(viewModel.slashCommandsBySessionID.keys) == ["keep-session"])
+    }
+
     @Test func slashCommandAutocompleteUsesCursorPositionWithinLeadingCommandToken() {
         #expect(PickySlashCommandAutocompletePolicy.query(in: "/plafix bug", cursorLocation: 4) == "pla")
         #expect(PickySlashCommandAutocompletePolicy.query(in: "/deploy now", cursorLocation: 7) == "deploy")

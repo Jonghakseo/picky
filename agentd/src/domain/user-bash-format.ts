@@ -38,7 +38,9 @@ export function formatUserBashFailureSystemMessage(input: UserBashInput, errorMe
 }
 
 function formatUserBashMessage(command: string, statusLine: string, output: string, suffix = ""): string {
-  return `### 🖥️ ${command}\n\n${statusLine}\n\n\`\`\`console\n${output}\n\`\`\`${suffix}`;
+  const longestBacktickRun = Math.max(0, ...(output.match(/`+/g)?.map((run) => run.length) ?? []));
+  const fence = "`".repeat(Math.max(3, longestBacktickRun + 1));
+  return `### 🖥️ ${command}\n\n${statusLine}\n\n${fence}console\n${output}\n${fence}${suffix}`;
 }
 
 export function appendLiveBashOutput(current: string, chunk: string): string {

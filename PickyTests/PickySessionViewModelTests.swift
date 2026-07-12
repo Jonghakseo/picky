@@ -4227,6 +4227,20 @@ struct PickySessionViewModelTests {
         #expect(String(renderer.inlineAttributedString(for: "**Done**").characters) == "Done")
     }
 
+    @Test func markdownReportRendererKeepsShorterFenceInsideLongerCodeBlock() throws {
+        let markdown = """
+        ````console
+        before
+        ```
+        after
+        ````
+        """
+
+        #expect(PickyReportMarkdownRenderer().blocks(from: markdown) == [
+            .codeBlock("before\n```\nafter"),
+        ])
+    }
+
     @Test func markdownReportRendererParsesGithubStyleTables() throws {
         let markdown = """
         Before

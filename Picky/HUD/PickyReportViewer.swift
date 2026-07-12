@@ -44,7 +44,7 @@ struct PickyReportMarkdownRenderer {
         var blocks: [Block] = []
         var paragraphLines: [String] = []
         var codeLines: [String] = []
-        var inCodeBlock = false
+        var openingFenceLength: Int?
         let lines = markdown.components(separatedBy: .newlines)
         var index = 0
 
@@ -57,21 +57,22 @@ struct PickyReportMarkdownRenderer {
         while index < lines.count {
             let rawLine = lines[index]
             let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
-            if line.hasPrefix("```") {
-                if inCodeBlock {
+            if let requiredFenceLength = openingFenceLength {
+                if line.allSatisfy({ $0 == "`" }), line.count >= requiredFenceLength {
                     blocks.append(.codeBlock(codeLines.joined(separator: "\n")))
                     codeLines.removeAll()
-                    inCodeBlock = false
+                    openingFenceLength = nil
                 } else {
-                    flushParagraph()
-                    inCodeBlock = true
+                    codeLines.append(rawLine)
                 }
                 index += 1
                 continue
             }
 
-            if inCodeBlock {
-                codeLines.append(rawLine)
+            let fenceLength = line.prefix(while: { $0 == "`" }).count
+            if fenceLength >= 3 {
+                flushParagraph()
+                openingFenceLength = fenceLength
                 index += 1
                 continue
             }
@@ -107,7 +108,7 @@ struct PickyReportMarkdownRenderer {
             index += 1
         }
 
-        if inCodeBlock {
+        if openingFenceLength != nil {
             blocks.append(.codeBlock(codeLines.joined(separator: "\n")))
         }
         flushParagraph()

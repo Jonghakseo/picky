@@ -56,6 +56,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     private var bootingChildSessionIds = Set<String>()
     private var retiredChildSessionIds = Set<String>()
     private var sessionCache: [String: PickyAgentSession] = [:]
+    private var sessionOwnerKeys: [String: String] = [:]
     /// Commands typed against a freshly spawned Pickle before the child runtime has left
     /// `.queued`. They are drained in order once the child emits its first non-queued
     /// `sessionUpdated`, avoiding early follow-up/steer sends while the Pi process is still
@@ -604,7 +605,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                     }
                 }
                 if case .protocolEvent(let envelope) = event {
-                    self.rememberSessionEvent(envelope.event)
+                    self.rememberSessionEvent(envelope.event, ownerKey: key)
                     // Dispatch `type="error"` rejections to any `sendAwaitingError`
                     // caller blocked on this commandId. The event still falls
                     // through to the regular fanout so subscribers (HUD viewModel)
@@ -707,19 +708,28 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         }
     }
 
-    private func rememberSessionEvent(_ event: PickyEvent) {
+    private func rememberSessionEvent(_ event: PickyEvent, ownerKey: String) {
         switch event {
         case .sessionUpdated(let session):
-            rememberSession(session)
+            rememberSession(session, ownerKey: ownerKey)
         case .sessionSnapshot(let sessions):
-            for session in sessions { rememberSession(session) }
+            let snapshotSessionIds = Set(sessions.map(\.id))
+            let removedSessionIds = sessionOwnerKeys.compactMap { sessionId, sessionOwnerKey in
+                sessionOwnerKey == ownerKey && !snapshotSessionIds.contains(sessionId) ? sessionId : nil
+            }
+            for sessionId in removedSessionIds {
+                sessionCache[sessionId] = nil
+                sessionOwnerKeys[sessionId] = nil
+            }
+            for session in sessions { rememberSession(session, ownerKey: ownerKey) }
         default:
             break
         }
     }
 
-    private func rememberSession(_ session: PickyAgentSession) {
+    private func rememberSession(_ session: PickyAgentSession, ownerKey: String) {
         sessionCache[session.id] = session
+        sessionOwnerKeys[session.id] = ownerKey
         if session.status != .queued, isChildEndpointReadyOrNotBooting(sessionId: session.id) {
             bootingChildSessionIds.remove(session.id)
         }

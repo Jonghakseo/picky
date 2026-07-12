@@ -187,6 +187,15 @@ private func makeSessionSnapshotEvent(id: String, title: String = "Pickle", stat
     )
 }
 
+private func makeEmptySessionSnapshotEvent() -> PickyEventEnvelope {
+    PickyEventEnvelope(
+        id: "event-snapshot-empty",
+        protocolVersion: pickyAgentProtocolVersion,
+        timestamp: Date(),
+        event: .sessionSnapshot([])
+    )
+}
+
 private func makePickleBridgeRequestEvent(operation: String, sessionId: String? = nil, text: String? = nil, prompt: String? = nil, cwd: String? = nil) throws -> PickyEventEnvelope {
     var fields = "\"operation\": \"\(operation)\""
     if let sessionId { fields += ", \"sessionId\": \"\(sessionId)\"" }
@@ -876,6 +885,47 @@ struct PickyAgentClientRouterTests {
 
         primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(operation: "listSessions")))
         try await waitUntil { primary.sentCommands.contains(where: { $0.type == .completePickleBridgeRequest && $0.sessions?.first?.id == "legacy-pickle" }) }
+    }
+
+    @Test func pickleBridgeListEvictsOnlySessionsAbsentFromEmittingDaemonSnapshot() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let agentd = root.appendingPathComponent("agentd", isDirectory: true)
+        try makeStubAgentdPackage(at: agentd)
+        let primary = StubAgentClient(id: "primary")
+        let poolFactory = StubLauncherFactoryForRouter(agentdRoot: agentd)
+        let pool = PickyAgentDaemonPool(
+            configuration: PickyAgentDaemonPool.Configuration(
+                token: "tok",
+                appSupportRoot: root,
+                environment: ["PICKY_AGENTD_ROOT": agentd.path, "PATH": "/usr/bin"],
+                bundleResourceURL: nil
+            ),
+            factory: poolFactory
+        )
+        let clientFactory = StubClientFactory()
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: clientFactory)
+
+        await router.connect()
+        async let spawned: PickyAgentClient = router.spawnChildClient(sessionId: "child-session", cwd: "/tmp/ws")
+        _ = try await poolFactory.waitForRunner(sessionId: "child-session")
+        poolFactory.emitReady(for: "child-session")
+        _ = try await spawned
+        guard let child = clientFactory.madeClients.first?.client else {
+            Issue.record("Expected spawned child client")
+            return
+        }
+
+        primary.emit(.protocolEvent(makeSessionUpdatedEvent(id: "primary-session")))
+        child.emit(.protocolEvent(makeSessionUpdatedEvent(id: "child-session")))
+        primary.emit(.protocolEvent(makeEmptySessionSnapshotEvent()))
+        primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(operation: "listSessions")))
+
+        try await waitUntil {
+            primary.sentCommands.contains { $0.type == .completePickleBridgeRequest }
+        }
+        let sessions = try #require(primary.sentCommands.last { $0.type == .completePickleBridgeRequest }?.sessions)
+        #expect(!sessions.contains { $0.id == "primary-session" })
+        #expect(sessions.contains { $0.id == "child-session" })
     }
 
     @Test func handlesPickleBridgeListAndSteerThroughChildSessionCache() async throws {

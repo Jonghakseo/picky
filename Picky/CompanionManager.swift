@@ -1087,7 +1087,9 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    private func handleShortcutTransition(_ transition: BuddyPushToTalkShortcut.ShortcutTransition) {
+    // Internal so PickyCompanionManagerTests can exercise the production PTT
+    // transition through context capture and coordinator effect dispatch.
+    func handleShortcutTransition(_ transition: BuddyPushToTalkShortcut.ShortcutTransition) {
         // Defensive: even though GlobalPushToTalkShortcutMonitor short-circuits
         // its callback while paused, swallowing transitions here too keeps any
         // already-queued event from slipping through and dismissing the panel.
@@ -1193,7 +1195,9 @@ final class CompanionManager: ObservableObject {
     /// agent client. Phase 1 uses a local stub; later phases connect this
     /// abstraction to picky-agentd and Pi without changing the macOS capture
     /// pipeline.
-    private func submitTranscriptToPickyAgent(transcript: String) {
+    // Internal so PickyCompanionManagerTests can finalize a production PTT turn
+    // without depending on microphone transcription.
+    func submitTranscriptToPickyAgent(transcript: String) {
         currentResponseTask?.cancel()
         beginAwaitingAgentResponse(recognizedTranscript: transcript)
 
@@ -1653,8 +1657,18 @@ final class CompanionManager: ObservableObject {
             guard let self else { return }
             let isScreenContextTargetedInput = screenContextVoiceTargetByInputID.removeValue(forKey: inputID) == sessionID
             if isScreenContextTargetedInput {
+                let command: PickyCommandEnvelope
+                let source: String
+                switch armedPickleDispatchMode {
+                case .steer:
+                    command = PickyCommandEnvelope(type: .steer, context: context, sessionId: sessionID, text: transcript)
+                    source = "voice-steer"
+                case .followUp:
+                    command = PickyCommandEnvelope(type: .followUp, context: pickleFollowUpContext(context, sessionID: sessionID), sessionId: sessionID, text: transcript)
+                    source = "voice-follow-up"
+                }
                 do {
-                    try await agentClient.send(PickyCommandEnvelope(type: .steer, context: context, sessionId: sessionID, text: transcript))
+                    try await agentClient.send(command)
                     guard !Task.isCancelled else { return }
                     clearScreenContextTargetIfCurrent(sessionID)
                     let receipt = PickyAgentSubmissionReceipt(sessionID: sessionID, message: "")
@@ -1662,7 +1676,7 @@ final class CompanionManager: ObservableObject {
                         .agentSubmissionAccepted(contextID: context.id, sessionID: sessionID, inputID: inputID),
                         correlation: PickyInteractionCorrelation(inputID: inputID, contextID: context.id, sessionID: sessionID, source: .agent)
                     )
-                    handleAgentSubmissionAccepted(receipt: receipt, source: "voice-steer")
+                    handleAgentSubmissionAccepted(receipt: receipt, source: source)
                     finishVoiceSubmissionIfIdle(inputID: inputID)
                 } catch is CancellationError {
                     // User spoke again — response was interrupted.

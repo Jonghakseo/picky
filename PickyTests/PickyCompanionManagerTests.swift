@@ -187,6 +187,69 @@ struct PickyCompanionManagerTests {
         #expect(selection.screenContextTargetSessionID == nil)
     }
 
+    @Test func productionPTTWithScreenContextTargetSendsFollowUpWhenConfigured() async throws {
+        let client = FakeVoiceClient()
+        let selection = FakeVoiceSelectionStore()
+        selection.screenContextTargetSessionID = "pickle-target"
+        let manager = CompanionManager(
+            agentClient: client,
+            selectionStore: selection,
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(),
+            armedPickleDispatchMode: .followUp
+        )
+
+        manager.handleShortcutTransition(.pressed)
+        manager.submitTranscriptToPickyAgent(transcript: "계속 진행해줘")
+
+        try await waitUntil { client.commands.contains { $0.sessionId == "pickle-target" } }
+        let command = try #require(client.commands.first { $0.sessionId == "pickle-target" })
+        #expect(command.type == .followUp)
+        #expect(command.text == "계속 진행해줘")
+        manager.stop()
+    }
+
+    @Test func productionPTTWithScreenContextTargetSendsSteerWhenConfigured() async throws {
+        let client = FakeVoiceClient()
+        let selection = FakeVoiceSelectionStore()
+        selection.screenContextTargetSessionID = "pickle-target"
+        let manager = CompanionManager(
+            agentClient: client,
+            selectionStore: selection,
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(),
+            armedPickleDispatchMode: .steer
+        )
+
+        manager.handleShortcutTransition(.pressed)
+        manager.submitTranscriptToPickyAgent(transcript: "방향을 바꿔줘")
+
+        try await waitUntil { client.commands.contains { $0.sessionId == "pickle-target" } }
+        let command = try #require(client.commands.first { $0.sessionId == "pickle-target" })
+        #expect(command.type == .steer)
+        #expect(command.text == "방향을 바꿔줘")
+        manager.stop()
+    }
+
+    @Test func productionPTTWithoutScreenContextTargetKeepsFollowUpDispatch() async throws {
+        let client = FakeVoiceClient()
+        let selection = FakeVoiceSelectionStore()
+        selection.hoveredVoiceFollowUpSessionID = "pickle-hovered"
+        let manager = CompanionManager(
+            agentClient: client,
+            selectionStore: selection,
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(),
+            armedPickleDispatchMode: .steer
+        )
+
+        manager.handleShortcutTransition(.pressed)
+        manager.submitTranscriptToPickyAgent(transcript: "일반 후속 질문")
+
+        try await waitUntil { client.commands.contains { $0.sessionId == "pickle-hovered" } }
+        let command = try #require(client.commands.first { $0.sessionId == "pickle-hovered" })
+        #expect(command.type == .followUp)
+        #expect(command.text == "일반 후속 질문")
+        manager.stop()
+    }
+
     // Regression: between `stopPushToTalkFromKeyboardShortcut` and the eventual
     // `submitDraftText` -> `submitTranscriptToPickyAgent` callback, the dictation
     // publishers (isKeyboardRecording / isFinalizingTranscript / isPreparingToRecord)

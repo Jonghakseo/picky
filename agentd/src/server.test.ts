@@ -165,23 +165,34 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
-  it("rejects a pending app Pickle handoff when its recipient disconnects", async () => {
+  it("resolves a pending app Pickle handoff completed after its recipient reconnects", async () => {
     const { ws } = await connectWithHello();
-    ws.send(JSON.stringify({ id: "cmd-register-handoff-disconnect", protocolVersion: PROTOCOL_VERSION, type: "registerAppCapabilities", capabilities: ["pickleHandoff"] }));
+    ws.send(JSON.stringify({ id: "cmd-register-handoff-reconnect", protocolVersion: PROTOCOL_VERSION, type: "registerAppCapabilities", capabilities: ["pickleHandoff"] }));
     await waitForRegisteredCapability("pickleHandoff");
 
     const pending = server.requestPickleHandoffFromApp({ context: context("app handoff"), title: "App Handoff", instructions: "Do it", cwd: "/tmp/product" }, 5_000);
+    const request = await waitForEvent(ws, "pickleHandoffRequested");
+    if (request.type !== "pickleHandoffRequested") throw new Error("expected handoff request");
+    ws.close();
+    await sleep(50);
+
+    const { ws: reconnected } = await connectWithHello();
+    reconnected.send(JSON.stringify({ id: "cmd-complete-handoff-reconnect", protocolVersion: PROTOCOL_VERSION, type: "completePickleHandoff", requestId: request.requestId, sessionId: "session-child", title: "App Handoff", cwd: "/tmp/product" }));
+
+    await expect(pending).resolves.toEqual({ sessionId: "session-child", title: "App Handoff", cwd: "/tmp/product" });
+    reconnected.close();
+  });
+
+  it("times out a pending app Pickle handoff whose recipient disconnects and never completes", async () => {
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({ id: "cmd-register-handoff-timeout", protocolVersion: PROTOCOL_VERSION, type: "registerAppCapabilities", capabilities: ["pickleHandoff"] }));
+    await waitForRegisteredCapability("pickleHandoff");
+
+    const pending = server.requestPickleHandoffFromApp({ context: context("app handoff"), title: "App Handoff", instructions: "Do it", cwd: "/tmp/product" }, 200);
     await waitForEvent(ws, "pickleHandoffRequested");
-    const rejection = pending.then(
-      () => { throw new Error("expected handoff to reject"); },
-      (error: Error) => error,
-    );
     ws.close();
 
-    await expect(Promise.race([
-      rejection,
-      sleep(100).then(() => { throw new Error("handoff did not reject after recipient disconnect"); }),
-    ])).resolves.toMatchObject({ message: expect.stringMatching(/handoff unavailable/) });
+    await expect(pending).rejects.toThrow(/timed out/);
   });
 
   it("keeps a pending app Pickle handoff alive when another client disconnects", async () => {

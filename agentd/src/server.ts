@@ -62,7 +62,7 @@ export class AgentdServer {
   private wsServer?: WebSocketServer;
   private clients = new Set<WebSocket>();
   private appCapabilities = new WeakMap<WebSocket, Set<string>>();
-  private pendingPickleHandoffs = new Map<string, { resolve: (result: AppPickleHandoffResult) => void; reject: (error: Error) => void; timer: NodeJS.Timeout; app: WebSocket }>();
+  private pendingPickleHandoffs = new Map<string, { resolve: (result: AppPickleHandoffResult) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
   private pendingPickleBridgeRequests = new Map<string, { resolve: (result: AppPickleBridgeResult) => void; reject: (error: Error) => void; timer: NodeJS.Timeout; app: WebSocket }>();
   private pendingExternalEntries = new Map<string, ExternalEntryPending>();
   private pendingPushToTalkControls = new Map<string, PushToTalkControlPending>();
@@ -145,7 +145,7 @@ export class AgentdServer {
         this.pendingPickleHandoffs.delete(requestId);
         reject(new Error(APP_PICKLE_HANDOFF_TIMEOUT));
       }, timeoutMs);
-      this.pendingPickleHandoffs.set(requestId, { resolve, reject, timer, app: client });
+      this.pendingPickleHandoffs.set(requestId, { resolve, reject, timer });
       this.send(client, { type: "pickleHandoffRequested", requestId, ...request });
     });
   }
@@ -203,12 +203,10 @@ export class AgentdServer {
       this.clients.delete(ws);
       const lostCapabilities = this.appCapabilities.get(ws);
       this.appCapabilities.delete(ws);
-      for (const [requestId, pending] of this.pendingPickleHandoffs) {
-        if (pending.app !== ws) continue;
-        clearTimeout(pending.timer);
-        pending.reject(new Error(APP_PICKLE_HANDOFF_UNAVAILABLE));
-        this.pendingPickleHandoffs.delete(requestId);
-      }
+      // Pickle handoffs are intentionally NOT rejected on socket close: the app
+      // may be mid-creation across a transient ws drop, and its completion send
+      // waits for reconnect and arrives on the new socket (matched by requestId).
+      // The per-request timeout timer still bounds a recipient that never returns.
       for (const [requestId, pending] of this.pendingPickleBridgeRequests) {
         if (pending.app !== ws) continue;
         clearTimeout(pending.timer);

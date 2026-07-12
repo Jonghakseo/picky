@@ -1,9 +1,55 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import { BrowserMetadataSchema, CommandEnvelopeSchema, EventEnvelopeSchema } from "./protocol.js";
 
 const contractsRoot = join(process.cwd(), "..", "contracts", "protocol");
+
+type Fixture = Record<string, unknown>;
+
+function eventVariantSchema(fixture: Fixture) {
+  const schema = EventEnvelopeSchema.options.find((option) => option.shape.type.value === fixture.type);
+  if (!schema) throw new Error(`No event schema for fixture type ${String(fixture.type)}`);
+  return schema;
+}
+
+function unwrapSchema(schema: z.ZodTypeAny): z.ZodTypeAny {
+  while (true) {
+    if (
+      schema instanceof z.ZodOptional
+      || schema instanceof z.ZodNullable
+      || schema instanceof z.ZodDefault
+    ) {
+      schema = schema._def.innerType;
+      continue;
+    }
+    if (schema instanceof z.ZodEffects) {
+      schema = schema._def.schema;
+      continue;
+    }
+    return schema;
+  }
+}
+
+function unknownFixtureKeys(schema: z.ZodTypeAny, fixture: unknown, path = ""): string[] {
+  schema = unwrapSchema(schema);
+
+  if (schema instanceof z.ZodRecord) return [];
+
+  if (schema instanceof z.ZodArray) {
+    if (!Array.isArray(fixture)) return [];
+    return fixture.flatMap((item, index) => unknownFixtureKeys(schema.element, item, `${path}[${index}]`));
+  }
+
+  if (!(schema instanceof z.ZodObject) || !fixture || typeof fixture !== "object" || Array.isArray(fixture)) return [];
+
+  return Object.entries(fixture).flatMap(([key, value]) => {
+    const keyPath = path ? `${path}.${key}` : key;
+    const childSchema = schema.shape[key];
+    return childSchema ? unknownFixtureKeys(childSchema, value, keyPath) : [keyPath];
+  });
+}
 
 function contextFixture() {
   return {
@@ -31,6 +77,31 @@ describe("protocol contract fixtures", () => {
       expect(() => EventEnvelopeSchema.parse(fixture)).not.toThrow();
     });
   }
+
+  it("detects nested unknown keys in event fixtures", () => {
+    const fixture = {
+      id: "event-pointer-overlay",
+      protocolVersion: "2026-05-09",
+      timestamp: "2026-05-09T00:00:00.000Z",
+      type: "pointerOverlayRequested",
+      request: {
+        id: "pointer-001",
+        x: 640,
+        y: 360,
+        screenBounds: { x: 0, y: 0, width: 1728, height: 1117, staleNestedKey: true },
+        screenshotSize: { width: 1280, height: 827 },
+      },
+    };
+
+    expect(unknownFixtureKeys(eventVariantSchema(fixture), fixture)).toContain("request.screenBounds.staleNestedKey");
+  });
+
+  it("matches every event fixture exactly to its schema", () => {
+    for (const name of readdirSync(contractsRoot).filter((file) => file.endsWith(".event.json"))) {
+      const fixture = JSON.parse(readFileSync(join(contractsRoot, name), "utf8"));
+      expect(unknownFixtureKeys(eventVariantSchema(fixture), fixture)).toEqual([]);
+    }
+  });
 
   it("preserves optional browser selected text metadata", () => {
     expect(BrowserMetadataSchema.parse({ url: "https://example.com", title: "Example", selectedText: "highlight" })).toEqual({

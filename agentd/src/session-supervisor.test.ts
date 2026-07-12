@@ -4952,6 +4952,45 @@ describe("SessionSupervisor", () => {
     expect(runtime.handle?.followUps.map((prompt) => prompt.text)).toEqual(["after TUI follow-up"]);
   });
 
+  it("unsubscribes an invalidated terminal-sync handle before deleting its archived session", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-terminal-sync-delete-unsubscribe-"));
+    const store = new SessionStore(dir);
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, store);
+    await supervisor.load();
+    const session = await supervisor.create(context("terminal sync delete unsubscribe"));
+    const handle = runtime.handle!;
+    handle.emit({ type: "status", status: "completed", summary: "Completed" });
+    await waitUntil(() => supervisor.get(session.id)?.status === "completed");
+
+    (supervisor as unknown as {
+      invalidateRuntimeHandleAfterTerminalSync: (
+        sessionId: string,
+        outcome: { activeLastMessageId?: string; baselinePiMessageId?: string; importedMessageCount: number },
+      ) => void;
+    }).invalidateRuntimeHandleAfterTerminalSync(session.id, {
+      activeLastMessageId: "a2",
+      baselinePiMessageId: "a1",
+      importedMessageCount: 1,
+    });
+    await supervisor.setSessionArchived(session.id, true);
+    const unhandledRejections: unknown[] = [];
+    const onUnhandledRejection = (reason: unknown) => unhandledRejections.push(reason);
+    process.on("unhandledRejection", onUnhandledRejection);
+
+    try {
+      await supervisor.deleteSession(session.id);
+      handle.emit({ type: "status", status: "completed", summary: "Late completion" });
+      await settle();
+
+      expect(handle.aborts).toBe(0);
+      expect(unhandledRejections).toEqual([]);
+      expect((supervisor as unknown as { runtimeHandleUnsubscribes: Map<string, () => void> }).runtimeHandleUnsubscribes.has(session.id)).toBe(false);
+    } finally {
+      process.off("unhandledRejection", onUnhandledRejection);
+    }
+  });
+
   it("imports Pi terminal thinking and tool-call activity into canonical session messages", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-terminal-sync-activity-"));
     const piSessionFile = join(dir, "pi-session.jsonl");
@@ -5922,6 +5961,35 @@ describe("SessionSupervisor deleteSession", () => {
     expect(reloaded.find((s) => s.id === "delete-me")).toBeUndefined();
   });
 
+  it("deletes an archived terminal session with an attached idle runtime handle without accepting late events", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-delete-attached-terminal-test-"));
+    const store = new SessionStore(dir);
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, store);
+    await supervisor.load();
+    const session = await supervisor.create(context("attached terminal"));
+    const handle = runtime.handle!;
+    handle.emit({ type: "status", status: "completed", summary: "Completed" });
+    await waitUntil(() => supervisor.get(session.id)?.status === "completed");
+    await supervisor.setSessionArchived(session.id, true);
+    const unhandledRejections: unknown[] = [];
+    const onUnhandledRejection = (reason: unknown) => unhandledRejections.push(reason);
+    process.on("unhandledRejection", onUnhandledRejection);
+
+    try {
+      await supervisor.deleteSession(session.id);
+      handle.emit({ type: "status", status: "completed", summary: "Late completion" });
+      await settle();
+
+      expect(handle.aborts).toBe(1);
+      expect(unhandledRejections).toEqual([]);
+      expect(supervisor.get(session.id)).toBeUndefined();
+      expect((await store.loadAll()).find((entry) => entry.id === session.id)).toBeUndefined();
+    } finally {
+      process.off("unhandledRejection", onUnhandledRejection);
+    }
+  });
+
   it("is a no-op for unknown ids", async () => {
     const supervisor = await makeSupervisor();
     await expect(supervisor.deleteSession("never-existed")).resolves.toBeUndefined();
@@ -5939,22 +6007,16 @@ describe("SessionSupervisor deleteSession", () => {
   });
 
   it("refuses to delete a session that is not in a terminal state", async () => {
-    const supervisor = await makeSupervisor();
-    // Inject a running session directly into the in-memory map. We bypass
-    // store.save + load because load() rewrites archived+non-terminal sessions
-    // to `cancelled` for crash recovery, which would mask the running case we
-    // want to assert here.
-    (supervisor as unknown as { sessions: Map<string, PickyAgentSession> }).sessions.set(
-      "running",
-      baseDeleteSession({
-        id: "running",
-        status: "running",
-        archived: true,
-        archivedAt: "2026-01-02T00:00:00.000Z",
-      }),
-    );
-    await expect(supervisor.deleteSession("running")).rejects.toThrow(/terminal state/);
-    expect(supervisor.get("running")).toBeDefined();
+    const dir = await mkdtemp(join(tmpdir(), "picky-delete-running-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("running delete"));
+    await supervisor.setSessionArchived(session.id, true);
+
+    await expect(supervisor.deleteSession(session.id)).rejects.toThrow(/terminal state/);
+    expect(runtime.handle?.aborts).toBe(0);
+    expect(supervisor.get(session.id)).toBeDefined();
   });
 
   describe("reloadPlugins", () => {

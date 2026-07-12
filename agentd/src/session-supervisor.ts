@@ -83,6 +83,7 @@ const ARCHIVED_SESSION_RETENTION_MS = ARCHIVED_SESSION_RETENTION_DAYS * 24 * 60 
 export class SessionSupervisor extends EventEmitter {
   private sessions = new Map<string, PickyAgentSession>();
   private runtimeHandles = new Map<string, RuntimeSessionHandle>();
+  private runtimeHandleUnsubscribes = new Map<string, () => void>();
   private disabledBuiltinTools: Set<string> = new Set();
   // Mirrors Picky's TTS setting for main-agent runtimes.
   // Defaults to true so fresh installs keep audio responses enabled.
@@ -1591,15 +1592,13 @@ export class SessionSupervisor extends EventEmitter {
       logAgentd("deleteSession skipped: unknown session", { sessionId });
       return;
     }
-    if (this.runtimeHandles.has(sessionId)) {
-      throw new Error(`Cannot delete session with an attached runtime handle: ${sessionId}`);
-    }
     if (!isTerminalStatus(session.status)) {
       throw new Error(`Cannot delete a session that is not in a terminal state: ${sessionId} (${session.status})`);
     }
     if (session.archived !== true) {
       throw new Error(`Cannot delete a session that is not archived: ${sessionId}`);
     }
+    await this.detachRuntimeHandle(sessionId, true);
     await this.setTerminalSessionTailEnabled(sessionId, false);
     await this.store.deleteSession(sessionId);
     this.sessions.delete(sessionId);
@@ -1771,7 +1770,7 @@ export class SessionSupervisor extends EventEmitter {
    */
   private handleTerminalTailTruncation(sessionId: string, sessionFilePath: string): void {
     if (!this.runtimeHandles.has(sessionId)) return;
-    this.runtimeHandles.delete(sessionId);
+    void this.detachRuntimeHandle(sessionId);
     logAgentd("terminal tail invalidated runtime handle after pi session rewrite", { sessionId, sessionFilePath });
   }
 
@@ -1787,7 +1786,7 @@ export class SessionSupervisor extends EventEmitter {
       : outcome.importedMessageCount > 0;
     if (!activePathAdvanced) return;
     if (!this.runtimeHandles.has(sessionId)) return;
-    this.runtimeHandles.delete(sessionId);
+    void this.detachRuntimeHandle(sessionId);
     logAgentd("terminal session sync invalidated runtime handle after pi session advanced", {
       sessionId,
       activeLastMessageId,
@@ -2583,9 +2582,20 @@ export class SessionSupervisor extends EventEmitter {
     return this.mustGet(sessionId);
   }
 
+  private async detachRuntimeHandle(sessionId: string, abort = false): Promise<void> {
+    const handle = this.runtimeHandles.get(sessionId);
+    if (abort && handle) {
+      await handle.abort();
+      await this.waitForRuntimeEvents(sessionId);
+    }
+    this.runtimeHandleUnsubscribes.get(sessionId)?.();
+    this.runtimeHandleUnsubscribes.delete(sessionId);
+    this.runtimeHandles.delete(sessionId);
+  }
+
   private async attachRuntimeHandle(sessionId: string, handle: RuntimeSessionHandle): Promise<void> {
     this.runtimeHandles.set(sessionId, handle);
-    handle.subscribe((event) => void this.applyRuntimeEvent(sessionId, event));
+    this.runtimeHandleUnsubscribes.set(sessionId, handle.subscribe((event) => void this.applyRuntimeEvent(sessionId, event)));
     // Teach the runtime adapter what the host currently surfaces, so it can
     // skip a runtime-only "pending extension UI" signal that the supervisor
     // never accepted (e.g. Pi resume revived a stale request before the

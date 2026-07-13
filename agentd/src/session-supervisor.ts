@@ -145,6 +145,7 @@ export class SessionSupervisor extends EventEmitter {
   private sessionContexts = new Map<string, PickyContextPacket>();
   private pendingRuntimeHandles = new Map<string, Promise<RuntimeSessionHandle>>();
   private pendingRuntimeAbortControllers = new Map<string, AbortController>();
+  private pendingAbortOperations = new Map<string, Promise<PickyAgentSession>>();
   private sessionSeq = new Map<string, number>();
   private queueUpdateChains = new Map<string, Promise<void>>();
   private activityUpdateChains = new Map<string, Promise<void>>();
@@ -2466,6 +2467,11 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   async steer(sessionId: string, text: string, context?: PickyContextPacket): Promise<PickyAgentSession> {
+    const pendingAbort = this.pendingAbortOperations.get(sessionId);
+    if (pendingAbort) {
+      logAgentd("steer waiting for abort", { sessionId, textChars: text.length });
+      await pendingAbort;
+    }
     const session = this.mustGet(sessionId);
     if (session.archived === true) throw new Error("Cannot steer an archived session");
 
@@ -2541,6 +2547,19 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   async abort(sessionId: string): Promise<PickyAgentSession> {
+    const existing = this.pendingAbortOperations.get(sessionId);
+    if (existing) return existing;
+
+    const operation = this.performAbort(sessionId);
+    this.pendingAbortOperations.set(sessionId, operation);
+    try {
+      return await operation;
+    } finally {
+      if (this.pendingAbortOperations.get(sessionId) === operation) this.pendingAbortOperations.delete(sessionId);
+    }
+  }
+
+  private async performAbort(sessionId: string): Promise<PickyAgentSession> {
     const beforeAbort = this.mustGet(sessionId);
     if (beforeAbort.archived === true) throw new Error("Cannot abort an archived session");
     const handle = this.runtimeHandles.get(sessionId);

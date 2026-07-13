@@ -2503,6 +2503,37 @@ describe("SessionSupervisor", () => {
     expect(userTexts(supervisor.get(session.id))).not.toContain("late extension input");
   });
 
+  it("waits for an in-flight abort before delivering a new steer", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-steer-during-abort-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("steer during abort"));
+    const handle = runtime.handle!;
+    handle.isStreaming = true;
+    let releaseAbort!: () => void;
+    const abortGate = new Promise<void>((resolve) => { releaseAbort = resolve; });
+    handle.abort = async () => {
+      handle.aborts += 1;
+      await abortGate;
+      handle.isStreaming = false;
+    };
+
+    const aborting = supervisor.abort(session.id);
+    await waitUntil(() => handle.aborts === 1);
+    const steering = supervisor.steer(session.id, "resume after cancel");
+    await settle();
+
+    expect(handle.steers).toEqual([]);
+    releaseAbort();
+    await aborting;
+    await steering;
+
+    expect(handle.steers).toEqual(["resume after cancel"]);
+    expect(handle.queuedSteerTexts).toEqual([]);
+    expect(supervisor.get(session.id)?.status).toBe("running");
+  });
+
   it("clears a pending extension UI request when aborting", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-abort-pending-ui-"));
     const runtime = new ManualRuntime();

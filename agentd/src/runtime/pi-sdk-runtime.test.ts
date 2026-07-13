@@ -150,6 +150,16 @@ class FakeSession extends EventEmitter {
   }
 }
 
+class BlockingAbortSession extends FakeSession {
+  abortGate?: Promise<unknown>;
+
+  override async abort(): Promise<void> {
+    this.aborts += 1;
+    await this.abortGate;
+    this.isStreaming = false;
+  }
+}
+
 class SilentSlashCommandSession extends FakeSession {
   override async prompt(text: string, options?: unknown): Promise<void> {
     this.prompts.push(text);
@@ -923,10 +933,11 @@ describe("PiSdkRuntime", () => {
 
     const confirm = fakeSession.uiContext?.confirm as ((title: string, message: string) => Promise<boolean>) | undefined;
     expect(confirm).toBeTypeOf("function");
-    void confirm!("Stale confirmation", "Proceed?");
+    const staleConfirmation = confirm!("Stale confirmation", "Proceed?");
     expect(events.some((event) => typeof event === "object" && event && (event as { type?: string }).type === "extension_ui")).toBe(true);
 
     await (handle as unknown as { bindCurrentSession: () => Promise<void> }).bindCurrentSession();
+    await expect(staleConfirmation).resolves.toBe(false);
     fakeSession.emit("event", { type: "turn_end", message: { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "완료" }] }, toolResults: [] });
 
     expect(statusEvents(events).at(-1)?.status).toBe("completed");
@@ -988,6 +999,26 @@ describe("PiSdkRuntime", () => {
     expect(handle.id).toBe("picky");
     expect(fakeSession.bound).toBe(true);
     expect(fakeSession.prompts).toEqual([]);
+  });
+
+  it("cancels blocking extension dialogs before awaiting Pi abort", async () => {
+    const fakeSession = new BlockingAbortSession();
+    fakeSession.isStreaming = true;
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-abort-ui" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    const confirm = fakeSession.uiContext?.confirm as ((title: string, message: string) => Promise<boolean>) | undefined;
+    expect(confirm).toBeTypeOf("function");
+    const first = confirm!("Delete first?", "first");
+    const second = confirm!("Delete second?", "second");
+    fakeSession.abortGate = Promise.all([first, second]);
+
+    await expect(handle.abort()).resolves.toBeUndefined();
+    await expect(Promise.all([first, second])).resolves.toEqual([false, false]);
+    expect(fakeSession.aborts).toBe(1);
+    expect(statusEvents(events).at(-1)).toMatchObject({ status: "cancelled", summary: "Cancelled" });
   });
 
   it("does not send the delayed initial prompt after abort", async () => {

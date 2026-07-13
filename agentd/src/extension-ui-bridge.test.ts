@@ -30,6 +30,53 @@ describe("ExtensionUiBridge", () => {
     await expect(input).resolves.toBeUndefined();
   });
 
+  it("serializes concurrent blocking dialogs so each request remains answerable", async () => {
+    const bridge = new ExtensionUiBridge("session-serial");
+    const context = bridge.createContext();
+    const requests: Array<{ id: string; prompt?: string }> = [];
+    bridge.on("request", (request, waitsForInput) => {
+      if (waitsForInput) requests.push(request);
+    });
+
+    const first = context.confirm("Delete first?", "first");
+    const second = context.confirm("Delete second?", "second");
+    const third = context.confirm("Delete third?", "third");
+
+    expect(requests.map((request) => request.prompt)).toEqual(["first"]);
+    bridge.answer(requests[0].id, { confirmed: true });
+    await expect(first).resolves.toBe(true);
+    expect(requests.map((request) => request.prompt)).toEqual(["first", "second"]);
+
+    bridge.answer(requests[1].id, { confirmed: false });
+    await expect(second).resolves.toBe(false);
+    expect(requests.map((request) => request.prompt)).toEqual(["first", "second", "third"]);
+
+    bridge.answer(requests[2].id, { confirmed: true });
+    await expect(third).resolves.toBe(true);
+  });
+
+  it("cancels the active and queued dialogs without presenting queued requests", async () => {
+    const bridge = new ExtensionUiBridge("session-cancel-all");
+    const context = bridge.createContext();
+    const requests: Array<{ id: string }> = [];
+    const cancelled: string[] = [];
+    bridge.on("request", (request, waitsForInput) => {
+      if (waitsForInput) requests.push(request);
+    });
+    bridge.on("cancelled", (requestId) => cancelled.push(requestId));
+
+    const first = context.confirm("Delete first?", "first");
+    const second = context.confirm("Delete second?", "second");
+    const input = context.input("Name", "placeholder");
+
+    expect(requests).toHaveLength(1);
+    expect(bridge.cancelAll()).toBe(3);
+    await expect(Promise.all([first, second, input])).resolves.toEqual([false, false, undefined]);
+    expect(requests).toHaveLength(1);
+    expect(cancelled).toEqual([requests[0].id]);
+    expect(bridge.cancelAll()).toBe(0);
+  });
+
   it("resolves askUserQuestion form requests with radio checkbox and text answers", async () => {
     const bridge = new ExtensionUiBridge("session-1");
     const context = bridge.createContext() as ReturnType<ExtensionUiBridge["createContext"]> & { askUserQuestion: (request: unknown) => Promise<Record<string, unknown> | undefined> };

@@ -73,13 +73,18 @@ type DialogMethod = "select" | "confirm" | "input" | "editor" | "askUserQuestion
 
 interface PendingDialog {
   method: DialogMethod;
+  request: PickyExtensionUiRequest;
   resolve: (value: unknown) => void;
+  presented: boolean;
   timer?: NodeJS.Timeout;
   cleanup?: () => void;
 }
 
 export class ExtensionUiBridge extends EventEmitter {
   private pending = new Map<string, PendingDialog>();
+  private queuedDialogIds: string[] = [];
+  private activeDialogId: string | undefined;
+  private cancellingAll = false;
   private editorText = "";
 
   constructor(private readonly sessionId: string, private readonly options: { disableBlockingDialogs?: boolean } = {}) {
@@ -164,6 +169,26 @@ export class ExtensionUiBridge extends EventEmitter {
     return this.resolveDialog(requestId, answer);
   }
 
+  /**
+   * Cancel every blocking dialog owned by this bridge, including requests that
+   * are queued behind the currently visible dialog. This must run before Pi's
+   * session abort so tools blocked on ctx.ui.confirm/input can settle instead
+   * of deadlocking the abort itself.
+   */
+  cancelAll(): number {
+    const requestIds = [...this.pending.keys()];
+    if (requestIds.length === 0) return 0;
+    this.cancellingAll = true;
+    try {
+      for (const requestId of requestIds) this.resolveDialog(requestId, { cancelled: true });
+    } finally {
+      this.queuedDialogIds = [];
+      this.activeDialogId = undefined;
+      this.cancellingAll = false;
+    }
+    return requestIds.length;
+  }
+
   private dialog(method: DialogMethod, payload: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
     if (this.options.disableBlockingDialogs) {
       return Promise.reject(new Error(`Interactive user dialogs (${method}) are not available for Picky. Delegate to Pickle via picky_start_pickle if user input is required.`));
@@ -173,7 +198,7 @@ export class ExtensionUiBridge extends EventEmitter {
     const id = `ext-ui-${randomUUID()}`;
     const request = this.request(id, method, payload);
     return new Promise((resolve) => {
-      const pending: PendingDialog = { method, resolve };
+      const pending: PendingDialog = { method, request, resolve, presented: false };
       const timeout = typeof payload.timeout === "number" ? payload.timeout : undefined;
       if (timeout && timeout > 0) {
         pending.timer = setTimeout(() => this.resolveDialog(id, { cancelled: true }), timeout);
@@ -184,7 +209,11 @@ export class ExtensionUiBridge extends EventEmitter {
         signal.addEventListener("abort", abortListener, { once: true });
       }
       this.pending.set(id, pending);
-      this.emit("request", request, true);
+      if (this.activeDialogId) {
+        this.queuedDialogIds.push(id);
+      } else {
+        this.presentDialog(id);
+      }
     });
   }
 
@@ -194,9 +223,28 @@ export class ExtensionUiBridge extends EventEmitter {
     this.pending.delete(requestId);
     if (pending.timer) clearTimeout(pending.timer);
     pending.cleanup?.();
-    if (answer.cancelled) this.emit("cancelled", requestId);
+    if (this.activeDialogId === requestId) this.activeDialogId = undefined;
+    if (answer.cancelled && pending.presented) this.emit("cancelled", requestId);
     pending.resolve(this.mapAnswer(pending.method, answer));
+    if (!this.cancellingAll) this.presentNextDialog();
     return true;
+  }
+
+  private presentDialog(requestId: string): void {
+    const pending = this.pending.get(requestId);
+    if (!pending || this.activeDialogId) return;
+    pending.presented = true;
+    this.activeDialogId = requestId;
+    this.emit("request", pending.request, true);
+  }
+
+  private presentNextDialog(): void {
+    while (!this.activeDialogId) {
+      const requestId = this.queuedDialogIds.shift();
+      if (!requestId) return;
+      if (!this.pending.has(requestId)) continue;
+      this.presentDialog(requestId);
+    }
   }
 
   private fireAndForget(method: ExtensionUiMethod, payload: Record<string, unknown>): void {

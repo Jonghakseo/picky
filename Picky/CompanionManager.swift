@@ -62,6 +62,65 @@ private enum PickySpeechPollResult {
     case inactive
 }
 
+/// The subset of persisted settings that changes the live STT/TTS providers.
+/// Settings saves are global, so unrelated edits (for example the main model)
+/// must not rebuild the voice stack or interrupt an active cursor reply.
+private struct PickyVoiceProviderSettings: Equatable {
+    let sttProvider: PickyVoiceProviderSelection
+    let ttsProvider: PickyVoiceProviderSelection
+    let ttsEnabled: Bool
+    let azureOpenAIEndpoint: String
+    let azureOpenAIAPIKey: String
+    let azureOpenAITTSEndpoint: String
+    let azureOpenAITTSAPIKey: String
+    let azureOpenAITTSVoice: String
+    let azureSTTPreferredLanguage: String
+    let openAITTSAPIKey: String
+    let openAITTSVoice: String
+    let openAITTSModel: String
+    let openAISTTAPIKey: String
+    let openAISTTModel: String
+    let openAISTTPreferredLanguage: String
+    let openAITTSBaseURL: String
+    let openAISTTBaseURL: String
+    let elevenLabsTTSAPIKey: String
+    let elevenLabsTTSVoiceID: String
+    let elevenLabsTTSModel: String
+    let elevenLabsTTSOutputFormat: String
+    let elevenLabsTTSBaseURL: String
+    let elevenLabsSTTAPIKey: String
+    let elevenLabsSTTModel: String
+    let elevenLabsSTTLanguage: String
+
+    init(_ settings: PickySettings) {
+        sttProvider = settings.sttProvider
+        ttsProvider = settings.ttsProvider
+        ttsEnabled = settings.ttsEnabled
+        azureOpenAIEndpoint = settings.azureOpenAIEndpoint
+        azureOpenAIAPIKey = settings.azureOpenAIAPIKey
+        azureOpenAITTSEndpoint = settings.azureOpenAITTSEndpoint
+        azureOpenAITTSAPIKey = settings.azureOpenAITTSAPIKey
+        azureOpenAITTSVoice = settings.azureOpenAITTSVoice
+        azureSTTPreferredLanguage = settings.azureSTTPreferredLanguage
+        openAITTSAPIKey = settings.openAITTSAPIKey
+        openAITTSVoice = settings.openAITTSVoice
+        openAITTSModel = settings.openAITTSModel
+        openAISTTAPIKey = settings.openAISTTAPIKey
+        openAISTTModel = settings.openAISTTModel
+        openAISTTPreferredLanguage = settings.openAISTTPreferredLanguage
+        openAITTSBaseURL = settings.openAITTSBaseURL
+        openAISTTBaseURL = settings.openAISTTBaseURL
+        elevenLabsTTSAPIKey = settings.elevenLabsTTSAPIKey
+        elevenLabsTTSVoiceID = settings.elevenLabsTTSVoiceID
+        elevenLabsTTSModel = settings.elevenLabsTTSModel
+        elevenLabsTTSOutputFormat = settings.elevenLabsTTSOutputFormat
+        elevenLabsTTSBaseURL = settings.elevenLabsTTSBaseURL
+        elevenLabsSTTAPIKey = settings.elevenLabsSTTAPIKey
+        elevenLabsSTTModel = settings.elevenLabsSTTModel
+        elevenLabsSTTLanguage = settings.elevenLabsSTTLanguage
+    }
+}
+
 enum CompanionVoicePresentationReducer {
     static func reduce(
         currentVoiceState: CompanionVoiceState,
@@ -248,6 +307,7 @@ final class CompanionManager: ObservableObject {
     private let ownsAgentClientLifecycle: Bool
     private let selectionStore: PickySessionSelectionStoring
     private var speechPlaybackProvider: any PickySpeechPlaybackProvider
+    private var appliedVoiceProviderSettings: PickyVoiceProviderSettings
     private var ttsPlaybackEnabled: Bool
     private let speechWatchdogTimeoutOverride: TimeInterval?
     private let voiceContextCaptureCoordinator: PickyVoiceContextCaptureCoordinator
@@ -273,6 +333,7 @@ final class CompanionManager: ObservableObject {
             transcriptionProvider: BuddyTranscriptionProviderFactory.makeDefaultProvider(settings: initialSettings)
         )
         self.speechPlaybackProvider = speechPlaybackProvider ?? PickySpeechPlaybackProviderFactory.makeDefaultProvider(settings: initialSettings)
+        self.appliedVoiceProviderSettings = PickyVoiceProviderSettings(initialSettings)
         self.ttsPlaybackEnabled = speechPlaybackProvider == nil ? initialSettings.ttsEnabled : true
         self.speechWatchdogTimeoutOverride = speechWatchdogTimeout
         self.voiceContextCaptureCoordinator = voiceContextCaptureCoordinator ?? PickyVoiceContextCaptureCoordinator()
@@ -791,13 +852,24 @@ final class CompanionManager: ObservableObject {
         print("⌨️  Shortcuts applied — PTT: \(settings.pushToTalkShortcut), QuickInput: \(settings.quickInputShortcut)")
     }
 
-    private func reloadVoiceProvidersFromSettings(_ settings: PickySettings = PickySettingsStore().load()) {
+    func reloadVoiceProvidersFromSettings(_ settings: PickySettings = PickySettingsStore().load()) {
+        let updatedVoiceProviderSettings = PickyVoiceProviderSettings(settings)
+        guard updatedVoiceProviderSettings != appliedVoiceProviderSettings else { return }
+        appliedVoiceProviderSettings = updatedVoiceProviderSettings
+
         buddyDictationManager.updateTranscriptionProvider(
             BuddyTranscriptionProviderFactory.makeDefaultProvider(settings: settings)
         )
         ttsPlaybackEnabled = settings.ttsEnabled
         if speechPlaybackProvider.isSpeaking {
-            stopCurrentSpeech()
+            if let interactionSpeechID, isCurrentInteractionSpeechOutput(interactionSpeechID) {
+                // Provider replacement is a real interruption. Settle the canonical
+                // interaction state as well as the legacy voice presentation state so
+                // a later projection cannot resurrect this reply bubble.
+                stopCurrentInteractionSpeech(speechID: interactionSpeechID)
+            } else {
+                stopCurrentSpeech()
+            }
         }
         speechPlaybackProvider = PickySpeechPlaybackProviderFactory.makeDefaultProvider(settings: settings)
         print("🎛️ Voice settings applied — STT: \(settings.sttProvider.rawValue), TTS: \(settings.ttsEnabled ? settings.ttsProvider.rawValue : "off"), Azure STT language: \(settings.azureSTTPreferredLanguage.isEmpty ? "auto" : settings.azureSTTPreferredLanguage)")

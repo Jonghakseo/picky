@@ -954,6 +954,70 @@ struct PickyCompanionManagerTests {
         #expect(manager.voiceState != .responding)
     }
 
+    @Test func mainModelSettingsChangeDoesNotInterruptActiveReply() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider
+        )
+
+        manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
+            contextId: "context-model-change",
+            text: "모델 설정과 무관하게 계속 표시할 답변",
+            originSource: .cli,
+            replyKind: .main
+        )))
+        try await waitUntil { manager.voiceState == .responding && speechProvider.isSpeaking }
+        let stopCountBeforeSettingsChange = speechProvider.stopCount
+
+        var settings = PickySettingsStore().load()
+        settings.mainAgentModelPattern += "-changed"
+        manager.reloadVoiceProvidersFromSettings(settings)
+
+        #expect(speechProvider.stopCount == stopCountBeforeSettingsChange)
+        #expect(speechProvider.isSpeaking)
+        #expect(manager.voiceState == .responding)
+    }
+
+    @Test func voiceSettingsChangeSettlesInterruptedReplyBeforeLaterProjection() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider
+        )
+
+        manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
+            contextId: "context-voice-change",
+            text: "음성 설정 변경으로 중단될 답변",
+            originSource: .cli,
+            replyKind: .main
+        )))
+        try await waitUntil { manager.voiceState == .responding && speechProvider.isSpeaking }
+        try await sleepPast(PickyInteractionReducer.minimumDisplayDuration, margin: 0.05)
+
+        var settings = PickySettingsStore().load()
+        settings.ttsEnabled.toggle()
+        manager.reloadVoiceProvidersFromSettings(settings)
+
+        manager.applyAgentEvent(.pointerOverlayRequested(PickyPointerOverlayRequest(
+            id: "pointer-after-voice-settings",
+            contextId: "context-pointer",
+            screenId: "screen-1",
+            x: 20,
+            y: 20,
+            label: "Settings",
+            clamped: nil,
+            screenBounds: PickyCGRect(x: 0, y: 0, width: 100, height: 100),
+            screenshotSize: PickyPointerScreenshotSize(width: 100, height: 100)
+        )))
+        try await settle()
+
+        #expect(!speechProvider.isSpeaking)
+        #expect(manager.voiceState == .idle)
+    }
+
     @Test func pickleCompletionStaysRespondingWhileTtsIsActive() async throws {
         let speechProvider = FakeSpeechPlaybackProvider()
         let manager = CompanionManager(

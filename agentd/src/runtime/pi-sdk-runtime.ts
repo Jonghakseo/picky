@@ -253,7 +253,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     logAgentd("pi interrupt", { sessionId: this.id, wasStreaming: this.runtime.session.isStreaming, promptChars: prompt.text.length });
     try {
       if (this.runtime.session.isStreaming) {
-        this.cancelPendingExtensionUiDialogs();
+        this.uiBridge.cancelAll();
         await this.runtime.session.abort();
       }
       await this.promptWithOptions(prompt);
@@ -289,18 +289,10 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       clearTimeout(this.initialPromptTimer);
       this.initialPromptTimer = undefined;
     }
-    // Set before releasing blocked extension dialogs so a turn_end/agent_end that drains as
-    // their promises settle still sees the explicit-abort acknowledgement marker.
     this.pendingAbortAcknowledgements += 1;
-    this.cancelPendingExtensionUiDialogs();
+    this.uiBridge.cancelAll();
     await this.runtime.session.abort();
     this.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
-  }
-
-  private cancelPendingExtensionUiDialogs(): void {
-    const cancelled = this.uiBridge.cancelAll();
-    this.pendingExtensionUiRequestIds.clear();
-    if (cancelled > 0) logAgentd("pi extension ui dialogs cancelled", { sessionId: this.id, count: cancelled });
   }
 
   async executeUserBash(command: string, options: { excludeFromContext?: boolean; onOutputChunk?: (chunk: string) => void } = {}): Promise<RuntimeBashExecutionResult> {
@@ -694,7 +686,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     // to 2x the assistant text and producing a single full-doubled TTS playback that matches
     // the user-reported "풀로 두 번 발화" symptom.
     this.unsubscribe = undefined;
-    this.cancelPendingExtensionUiDialogs();
+    this.uiBridge.cancelAll();
     this.uiBridge = this.createBridge();
     const session = this.runtime.session;
     await session.bindExtensions({ uiContext: this.uiBridge.createContext(), onError: (error) => this.emit({ type: "log", line: `extension error: ${messageOf(error)}` }) });

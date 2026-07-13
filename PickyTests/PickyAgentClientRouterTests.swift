@@ -69,6 +69,22 @@ private final class StubAgentClient: PickyAgentClient {
 }
 
 @MainActor
+private final class RouterErrorRecorder {
+    private(set) var errorsByCommandId: [String: PickyErrorEvent] = [:]
+
+    func record(_ event: PickyClientEvent) {
+        guard case .protocolEvent(let envelope) = event,
+              case .error(let error) = envelope.event,
+              let commandId = error.commandId else { return }
+        errorsByCommandId[commandId] = error
+    }
+
+    func error(for commandId: String) -> PickyErrorEvent? {
+        errorsByCommandId[commandId]
+    }
+}
+
+@MainActor
 private final class StubClientFactory: PickyAgentClientFactoryProtocol {
     private(set) var madeClients: [(endpoint: URL, token: String, client: StubAgentClient)] = []
 
@@ -1057,6 +1073,13 @@ struct PickyAgentClientRouterTests {
         let clientFactory = StubClientFactory()
         let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: clientFactory)
         let sessionId = "pickle-generation-race"
+        let errorRecorder = RouterErrorRecorder()
+        let eventStream = router.events
+        let errorObserver = Task {
+            for await event in eventStream {
+                errorRecorder.record(event)
+            }
+        }
 
         async let initialSpawn: PickyAgentClient = router.spawnChildClient(sessionId: sessionId, cwd: "/tmp/ws")
         let oldRunner = try await poolFactory.waitForRunner(sessionId: sessionId)
@@ -1076,13 +1099,10 @@ struct PickyAgentClientRouterTests {
             oldChild.sendShouldThrowAfterSuspend = PickyAgentClientError.disconnected
         }
 
-        // Wide deadlines: both commands expect child_unavailable rejections,
-        // which resolve immediately; a short window misreads a slow main-actor
-        // hop as success and returns nil.
-        async let oldFirstResult: PickyErrorEvent? = router.sendAwaitingError(oldFirst, timeout: 5)
-        await Task.yield()
-        async let oldSecondResult: PickyErrorEvent? = router.sendAwaitingError(oldSecond, timeout: 5)
-        await Task.yield()
+        // Enqueue synchronously so the test does not depend on when an
+        // `async let` begins executing under full-suite load.
+        try await router.send(oldFirst)
+        try await router.send(oldSecond)
         oldChild.emit(.protocolEvent(makeSessionUpdatedEvent(id: sessionId, status: .running)))
         try await waitUntil { oldChild.disconnectCalls == 1 }
 
@@ -1103,10 +1123,8 @@ struct PickyAgentClientRouterTests {
             guard command.id == newFirst.id else { return }
             while !allowNewSendToComplete { await Task.yield() }
         }
-        async let newFirstResult: PickyErrorEvent? = router.sendAwaitingError(newFirst, timeout: 0.5)
-        await Task.yield()
-        async let newSecondResult: PickyErrorEvent? = router.sendAwaitingError(newSecond, timeout: 5)
-        await Task.yield()
+        try await router.send(newFirst)
+        try await router.send(newSecond)
         newChild.emit(.protocolEvent(makeSessionUpdatedEvent(id: sessionId, status: .running)))
         try await waitUntil { newChild.sentCommands.contains { $0.id == newFirst.id } }
 
@@ -1114,19 +1132,22 @@ struct PickyAgentClientRouterTests {
         // suspended drain. Its cleanup must neither requeue old commands nor
         // erase the new drain's active remainder.
         allowOldSendToUnwind = true
-        let oldFirstError = try await oldFirstResult
-        let oldSecondError = try await oldSecondResult
-        #expect(oldFirstError?.code == "child_unavailable")
-        #expect(oldSecondError?.code == "child_unavailable")
+        try await waitUntil {
+            errorRecorder.error(for: oldFirst.id) != nil && errorRecorder.error(for: oldSecond.id) != nil
+        }
+        #expect(errorRecorder.error(for: oldFirst.id)?.code == "child_unavailable")
+        #expect(errorRecorder.error(for: oldSecond.id)?.code == "child_unavailable")
         #expect(!newChild.sentCommands.contains { $0.id == oldFirst.id || $0.id == oldSecond.id })
 
         newRunner.emitTermination(exitCode: 9)
-        let newSecondError = try await newSecondResult
-        #expect(newSecondError?.code == "child_unavailable")
-        #expect(newSecondError?.commandId == newSecond.id)
+        try await waitUntil { errorRecorder.error(for: newSecond.id) != nil }
+        #expect(errorRecorder.error(for: newSecond.id)?.code == "child_unavailable")
+        #expect(errorRecorder.error(for: newSecond.id)?.commandId == newSecond.id)
 
         allowNewSendToComplete = true
-        _ = try await newFirstResult
+        await Task.yield()
+        router.disconnect()
+        await errorObserver.value
     }
 
     @Test func queuedBootingChildCommandReportsErrorWhenChildExitsBeforeDispatch() async throws {

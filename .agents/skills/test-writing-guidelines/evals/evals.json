@@ -1,0 +1,89 @@
+{
+  "skill_name": "test-writing-guidelines",
+  "evals": [
+    {
+      "id": "voice-follow-up-regression",
+      "prompt": "CompanionManager에서 PTT를 누른 뒤 hover 대상이 바뀌면 voice follow-up이 엉뚱한 Pickle로 가는 버그가 있어. 회귀 테스트 계획을 짜고 테스트 작성 위치와 실행 명령을 알려줘. 아직 파일은 수정하지 마.",
+      "expected_output": "Test Plan Card를 먼저 제시하고 press 시점 target snapshot을 계약으로 정의한다. routing policy 또는 Swift orchestration 계층을 선택하고 실제 마이크나 앱 실행 없이 fake selection store/client를 사용한다. PickyCompanionManagerTests의 targeted xcodebuild 명령을 제안하되 파일은 수정하지 않는다.",
+      "files": [],
+      "assertions": [
+        {
+          "text": "The response defines the press-time target snapshot as the regression contract and selects a focused Swift policy/orchestration test.",
+          "type": "qualitative"
+        },
+        {
+          "text": "The response avoids real microphone, TTS, app restart, and live Picky dependencies.",
+          "type": "qualitative"
+        },
+        {
+          "text": "The response does not edit files because the prompt requested a plan only.",
+          "type": "qualitative"
+        }
+      ]
+    },
+    {
+      "id": "cross-language-protocol-change",
+      "prompt": "새 sessionPaused protocol event를 Swift 앱과 agentd에 추가했어. 회귀 테스트도 작성해줘. 어떤 파일 세트를 같이 검증해야 하는지 먼저 판단해줘.",
+      "expected_output": "Cross-language contract를 필수로 선택하고 Swift model, TypeScript schema, shared fixture, Swift ProtocolContractTests, agentd protocol.test.ts를 하나의 변경 세트로 제시한다. optional/default/backward compatibility를 검토하고 양쪽 targeted contract 명령을 제시한다.",
+      "files": [],
+      "assertions": [
+        {
+          "text": "The response includes both Swift and TypeScript protocol implementations, shared fixtures, and both contract test suites.",
+          "type": "qualitative"
+        },
+        {
+          "text": "The response considers backward compatibility, optional/default behavior, or unknown/legacy payload handling.",
+          "type": "qualitative"
+        }
+      ]
+    },
+    {
+      "id": "agentd-abort-create-race",
+      "prompt": "SessionSupervisor에서 runtime create가 끝나기 전에 abort하면 늦은 completion이 cancelled 상태를 running으로 되돌리는 버그를 TDD로 막고 싶어. 테스트 레벨과 deterministic하게 race를 재현하는 방법을 정해줘.",
+      "expected_output": "agentd integration 계층을 선택하고 temporary SessionStore와 deferred/manual runtime continuation으로 create/abort/completion 순서를 제어한다. arbitrary sleep 대신 controlled promise와 bounded wait를 사용하고 targeted Vitest 명령을 제시한다.",
+      "files": [],
+      "assertions": [
+        {
+          "text": "The response chooses an agentd lifecycle integration test rather than a browser or Swift UI test.",
+          "type": "qualitative"
+        },
+        {
+          "text": "The race is controlled with a deferred/manual runtime or promise continuation, not a long arbitrary sleep.",
+          "type": "qualitative"
+        }
+      ]
+    },
+    {
+      "id": "hud-style-near-miss",
+      "prompt": "HUD 카드의 배경색만 바꿨어. 혹시 안전하게 XCUI 테스트를 하나 추가하고 실제 Picky 앱도 재시작해서 확인해줘.",
+      "expected_output": "단순 색상 변경에 XCUI를 자동 선택하지 않고 기존 visual/perf/harness 근거를 조사한다. 실행 중인 앱은 명시적 프로젝트 규칙 때문에 재시작하지 않는다. 필요한 경우 사용자에게 visual oracle과 수동 확인 범위를 질문한다.",
+      "files": [],
+      "assertions": [
+        {
+          "text": "The response does not restart the running Picky app and does not blindly add an XCUI test.",
+          "type": "qualitative"
+        },
+        {
+          "text": "The response distinguishes a visual change from a functional projection contract and identifies a rule gap or asks for the intended oracle when needed.",
+          "type": "qualitative"
+        }
+      ]
+    },
+    {
+      "id": "installer-filesystem-safety",
+      "prompt": "PickySkillInstaller가 unmanaged skill 폴더를 덮어쓰지 않는 테스트를 추가해줘. 내 ~/.pi에 테스트 폴더를 만들어도 돼.",
+      "expected_output": "실제 ~/.pi 사용을 거부하고 temporary home/bundle root를 주입한 Swift orchestration/filesystem test를 선택한다. conflict와 ownership marker 계약을 검증하고 PickySkillInstallerTests targeted command를 사용한다.",
+      "files": [],
+      "assertions": [
+        {
+          "text": "The response refuses to modify the real ~/.pi directory and uses an isolated temporary root.",
+          "type": "qualitative"
+        },
+        {
+          "text": "The response verifies unmanaged/conflict ownership behavior in PickySkillInstallerTests with a targeted Swift test command.",
+          "type": "qualitative"
+        }
+      ]
+    }
+  ]
+}

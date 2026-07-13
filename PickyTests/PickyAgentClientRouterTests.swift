@@ -1018,6 +1018,13 @@ struct PickyAgentClientRouterTests {
         )
         let clientFactory = StubClientFactory()
         let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: clientFactory)
+        let errorRecorder = RouterErrorRecorder()
+        let eventStream = router.events
+        let errorObserver = Task {
+            for await event in eventStream {
+                errorRecorder.record(event)
+            }
+        }
 
         async let spawned: PickyAgentClient = router.spawnChildClient(sessionId: "pickle-drain-exit", cwd: "/tmp/ws")
         let runner = try await poolFactory.waitForRunner(sessionId: "pickle-drain-exit")
@@ -1038,21 +1045,22 @@ struct PickyAgentClientRouterTests {
             child.sendShouldThrow = PickyAgentClientError.disconnected
         }
 
-        async let firstResult: PickyErrorEvent? = router.sendAwaitingError(first, timeout: 0.5)
-        await Task.yield()
-        // Wide deadline: the drain's child_unavailable rejection resolves this
-        // immediately; a short window misreads a slow main-actor hop as success.
-        async let secondResult: PickyErrorEvent? = router.sendAwaitingError(second, timeout: 5)
-        await Task.yield()
+        // Enqueue both commands synchronously. `Task.yield()` does not
+        // guarantee that an `async let` has entered `sendAwaitingError`, which
+        // made full-suite load occasionally drain only one command.
+        try await router.send(first)
+        try await router.send(second)
         child.emit(.protocolEvent(makeSessionUpdatedEvent(id: "pickle-drain-exit", status: .running)))
 
-        let secondError = try await secondResult
-        let firstError = try await firstResult
-        #expect(secondError?.commandId == second.id)
-        #expect(secondError?.code == "child_unavailable")
-        #expect(firstError == nil)
+        try await waitUntil { errorRecorder.error(for: second.id) != nil }
+        #expect(errorRecorder.error(for: second.id)?.commandId == second.id)
+        #expect(errorRecorder.error(for: second.id)?.code == "child_unavailable")
+        #expect(errorRecorder.error(for: first.id) == nil)
         #expect(child.sentCommands.filter { $0.id == first.id }.count == 1)
         #expect(!child.sentCommands.contains { $0.id == second.id })
+
+        router.disconnect()
+        await errorObserver.value
     }
 
     @Test func oldDrainCannotMutateRespawnedChildGeneration() async throws {

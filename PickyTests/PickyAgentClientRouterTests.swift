@@ -1024,7 +1024,9 @@ struct PickyAgentClientRouterTests {
 
         async let firstResult: PickyErrorEvent? = router.sendAwaitingError(first, timeout: 0.5)
         await Task.yield()
-        async let secondResult: PickyErrorEvent? = router.sendAwaitingError(second, timeout: 0.5)
+        // Wide deadline: the drain's child_unavailable rejection resolves this
+        // immediately; a short window misreads a slow main-actor hop as success.
+        async let secondResult: PickyErrorEvent? = router.sendAwaitingError(second, timeout: 5)
         await Task.yield()
         child.emit(.protocolEvent(makeSessionUpdatedEvent(id: "pickle-drain-exit", status: .running)))
 
@@ -1074,9 +1076,12 @@ struct PickyAgentClientRouterTests {
             oldChild.sendShouldThrowAfterSuspend = PickyAgentClientError.disconnected
         }
 
-        async let oldFirstResult: PickyErrorEvent? = router.sendAwaitingError(oldFirst, timeout: 0.5)
+        // Wide deadlines: both commands expect child_unavailable rejections,
+        // which resolve immediately; a short window misreads a slow main-actor
+        // hop as success and returns nil.
+        async let oldFirstResult: PickyErrorEvent? = router.sendAwaitingError(oldFirst, timeout: 5)
         await Task.yield()
-        async let oldSecondResult: PickyErrorEvent? = router.sendAwaitingError(oldSecond, timeout: 0.5)
+        async let oldSecondResult: PickyErrorEvent? = router.sendAwaitingError(oldSecond, timeout: 5)
         await Task.yield()
         oldChild.emit(.protocolEvent(makeSessionUpdatedEvent(id: sessionId, status: .running)))
         try await waitUntil { oldChild.disconnectCalls == 1 }
@@ -1100,7 +1105,7 @@ struct PickyAgentClientRouterTests {
         }
         async let newFirstResult: PickyErrorEvent? = router.sendAwaitingError(newFirst, timeout: 0.5)
         await Task.yield()
-        async let newSecondResult: PickyErrorEvent? = router.sendAwaitingError(newSecond, timeout: 0.5)
+        async let newSecondResult: PickyErrorEvent? = router.sendAwaitingError(newSecond, timeout: 5)
         await Task.yield()
         newChild.emit(.protocolEvent(makeSessionUpdatedEvent(id: sessionId, status: .running)))
         try await waitUntil { newChild.sentCommands.contains { $0.id == newFirst.id } }

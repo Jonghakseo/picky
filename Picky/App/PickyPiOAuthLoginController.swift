@@ -301,7 +301,7 @@ final class PickyPiOAuthLoginProcessRunner: PickyPiOAuthLoginRunning {
         return environment
     }
 
-    private static let nodeScript = #"""
+    nonisolated static let nodeScript = #"""
         import { execFileSync, spawn } from "node:child_process";
         import { existsSync, realpathSync } from "node:fs";
         import { dirname, join } from "node:path";
@@ -382,11 +382,22 @@ final class PickyPiOAuthLoginProcessRunner: PickyPiOAuthLoginRunning {
 
         await authStorage.login(providerId, {
           onAuth: ({ url }) => openBrowser(url),
+          onDeviceCode: ({ verificationUri, userCode }) => {
+            openBrowser(verificationUri);
+            console.error(`Enter device code: ${userCode}`);
+          },
           onProgress: (message) => {
             if (message) console.error(message);
           },
           onPrompt: async ({ message }) => {
             throw new Error(`${message}\nAutomatic browser callback did not complete. Run 'pi /login' and choose this provider for the manual paste fallback.`);
+          },
+          onSelect: async ({ options }) => {
+            const browserLogin = options.find((option) => option.id === "browser");
+            if (!browserLogin) {
+              throw new Error("Picky only supports browser-based OAuth login from Settings.");
+            }
+            return browserLogin.id;
           }
         });
 

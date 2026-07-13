@@ -50,4 +50,12 @@ struct PickyPiOAuthLoginControllerTests {
             _ = try PickyPiOAuthLoginProcessRunner.parseResult("hello")
         }
     }
+
+    @Test func oauthHelperSelectsBrowserLoginForProvidersWithMultipleMethods() {
+        let script = PickyPiOAuthLoginProcessRunner.nodeScript
+
+        #expect(script.contains("onDeviceCode: ({ verificationUri, userCode })"))
+        #expect(script.contains("onSelect: async ({ options })"))
+        #expect(script.contains("option.id === \"browser\""))
+    }
 }

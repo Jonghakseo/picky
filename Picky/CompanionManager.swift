@@ -101,7 +101,9 @@ enum CompanionVoicePresentationReducer {
 
 @MainActor
 final class CompanionManager: ObservableObject {
-    private static let minimumVoiceProcessingDisplayDuration: TimeInterval = 1.0
+    // Internal (not private) so tests can derive waits from the real value
+    // instead of hardcoding sleeps tuned to it.
+    static let minimumVoiceProcessingDisplayDuration: TimeInterval = 1.0
     /// How long the recognized-transcript bubble stays on screen after STT
     /// finishes. The agent may still be processing — the bubble auto-hides so
     /// it doesn't sit on the cursor for the entire response wait.

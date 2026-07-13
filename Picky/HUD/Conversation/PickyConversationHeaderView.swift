@@ -518,38 +518,12 @@ struct PickyConversationHeaderView: View {
         }
     }
 
-    var statusColorName: String {
-        switch session.status {
-        case .running:
-            return "blue"
-        case .completed:
-            return "green"
-        case .waiting_for_input:
-            return "amber"
-        case .failed:
-            return "red"
-        case .blocked:
-            return "warning"
-        case .queued, .cancelled:
-            return "tertiary"
-        }
+    var statusTone: PickyConversationStatusTone {
+        PickyConversationStatusTone(status: session.status)
     }
 
     private var statusColor: Color {
-        switch session.status {
-        case .running:
-            return DS.Colors.info
-        case .completed:
-            return DS.Colors.success
-        case .waiting_for_input:
-            return DS.Colors.warning
-        case .failed:
-            return DS.Colors.destructiveText
-        case .blocked:
-            return DS.Colors.warningText
-        case .queued, .cancelled:
-            return DS.Colors.textTertiary
-        }
+        statusTone.color
     }
 
     private func cycleThinkingLevel() {
@@ -558,6 +532,52 @@ struct PickyConversationHeaderView: View {
 
     private func cycleModel() {
         Task { try? await viewModel.cycleModel(sessionID: session.id) }
+    }
+}
+
+/// Semantic DS color token for a session status. Single switch shared by the
+/// header's `statusColor` and tests, so the status → color mapping asserted in
+/// tests is the one the badge actually renders with.
+enum PickyConversationStatusTone: Equatable {
+    case info
+    case success
+    case warning
+    case destructiveText
+    case warningText
+    case textTertiary
+
+    init(status: PickySessionStatus) {
+        switch status {
+        case .running:
+            self = .info
+        case .completed:
+            self = .success
+        case .waiting_for_input:
+            self = .warning
+        case .failed:
+            self = .destructiveText
+        case .blocked:
+            self = .warningText
+        case .queued, .cancelled:
+            self = .textTertiary
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .info:
+            return DS.Colors.info
+        case .success:
+            return DS.Colors.success
+        case .warning:
+            return DS.Colors.warning
+        case .destructiveText:
+            return DS.Colors.destructiveText
+        case .warningText:
+            return DS.Colors.warningText
+        case .textTertiary:
+            return DS.Colors.textTertiary
+        }
     }
 }
 

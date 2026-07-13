@@ -64,9 +64,7 @@ struct OpenAITranscriptionProviderTests {
             configuration: OpenAIAudioConfiguration(apiKey: "sk-test"),
             modelName: "  "
         )
-        // private이라 직접 검증 불가, 그러나 isConfigured/displayName으로 간접 확인
         #expect(provider.isConfigured == true)
-        #expect(provider.displayName == "OpenAI Speech to Text")
     }
 
     // 7) Factory: settings.sttProvider == .openai 이고 key 있으면 OpenAI provider 라우팅
@@ -79,7 +77,7 @@ struct OpenAITranscriptionProviderTests {
             settings: settings,
             environment: [:]
         )
-        #expect(provider.displayName == "OpenAI Speech to Text")
+        #expect(provider is OpenAITranscriptionProvider)
     }
 
     // 8) Factory: ENV provider routing no longer overrides the local default
@@ -95,7 +93,7 @@ struct OpenAITranscriptionProviderTests {
                 "OPENAI_API_KEY": "sk-env"
             ]
         )
-        #expect(provider.displayName == AppleSpeechTranscriptionProvider().displayName)
+        #expect(provider is AppleSpeechTranscriptionProvider)
     }
 
     // 9) Factory: .openai 선택했지만 키가 없으면 그대로 OpenAI provider를 만들고 unavailableExplanation으로 알림
@@ -108,7 +106,7 @@ struct OpenAITranscriptionProviderTests {
             settings: settings,
             environment: [:]
         )
-        #expect(provider.displayName == "OpenAI Speech to Text")
+        #expect(provider is OpenAITranscriptionProvider)
         #expect(provider.isConfigured == false)
         #expect(provider.unavailableExplanation != nil)
     }
@@ -124,7 +122,7 @@ struct OpenAITranscriptionProviderTests {
             settings: settings,
             environment: [:]
         )
-        #expect(provider.displayName == "Azure OpenAI Speech to Text")
+        #expect(provider is AzureOpenAITranscriptionProvider)
     }
 
     // 11) Factory: .local 명시 시 Apple Speech
@@ -136,6 +134,6 @@ struct OpenAITranscriptionProviderTests {
             settings: settings,
             environment: [:]
         )
-        #expect(provider.displayName == AppleSpeechTranscriptionProvider().displayName)
+        #expect(provider is AppleSpeechTranscriptionProvider)
     }
 }

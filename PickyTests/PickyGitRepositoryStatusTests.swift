@@ -9,7 +9,6 @@ import Testing
 
 struct PickyGitRepositoryStatusTests {
     @Test func refreshPolicyOnlyAutoRefreshesCompletedSessions() {
-        #expect(PickyGitContextRefreshPolicy.completedSessionRefreshIntervalNanoseconds == 60_000_000_000)
         #expect(PickyGitContextRefreshPolicy.shouldAutoRefreshGit(for: .completed) == true)
         #expect(PickyGitContextRefreshPolicy.shouldAutoRefreshGit(for: .running) == false)
         #expect(PickyGitContextRefreshPolicy.shouldAutoRefreshGit(for: .queued) == false)

@@ -65,7 +65,6 @@ struct ElevenLabsTranscriptionProviderTests {
             modelID: "  "
         )
         #expect(provider.isConfigured == true)
-        #expect(provider.displayName == "ElevenLabs Speech to Text")
     }
 
     // 7) configuration trim
@@ -116,7 +115,7 @@ struct ElevenLabsTranscriptionProviderTests {
             settings: settings,
             environment: [:]
         )
-        #expect(provider.displayName == "ElevenLabs Speech to Text")
+        #expect(provider is ElevenLabsTranscriptionProvider)
     }
 
     // 13) Factory: ENV provider routing no longer overrides the local default
@@ -133,7 +132,7 @@ struct ElevenLabsTranscriptionProviderTests {
                 "ELEVENLABS_API_KEY": "el-env"
             ]
         )
-        #expect(provider.displayName == AppleSpeechTranscriptionProvider().displayName)
+        #expect(provider is AppleSpeechTranscriptionProvider)
     }
 
     // 14) Factory: 키 없어도 ElevenLabs provider 만들고 unavailableExplanation 노출
@@ -145,7 +144,7 @@ struct ElevenLabsTranscriptionProviderTests {
             settings: settings,
             environment: [:]
         )
-        #expect(provider.displayName == "ElevenLabs Speech to Text")
+        #expect(provider is ElevenLabsTranscriptionProvider)
         #expect(provider.isConfigured == false)
         #expect(provider.unavailableExplanation != nil)
     }
@@ -160,6 +159,6 @@ struct ElevenLabsTranscriptionProviderTests {
             settings: settings,
             environment: [:]
         )
-        #expect(provider.displayName == "OpenAI Speech to Text")
+        #expect(provider is OpenAITranscriptionProvider)
     }
 }

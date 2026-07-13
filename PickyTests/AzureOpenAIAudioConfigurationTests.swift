@@ -90,7 +90,7 @@ struct AzureOpenAIAudioConfigurationTests {
             ]
         )
 
-        #expect(provider.displayName == "Azure OpenAI Speech to Text")
+        #expect(provider is AzureOpenAITranscriptionProvider)
         #expect(provider.isConfigured)
         #expect(provider.unavailableExplanation == nil)
     }
@@ -149,7 +149,7 @@ struct AzureOpenAIAudioConfigurationTests {
             ]
         )
 
-        #expect(provider.displayName == "Apple Speech")
+        #expect(provider is AppleSpeechTranscriptionProvider)
         #expect(provider.isConfigured)
     }
 

@@ -53,7 +53,7 @@ struct ElevenLabsSpeechPlaybackProviderTests {
     }
 
     @MainActor
-    @Test func factoryRoutesToElevenLabsWhenSelected() {
+    @Test func factoryRoutesToElevenLabsWhenSelected() throws {
         var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
         settings.ttsProvider = .elevenLabs
         settings.elevenLabsTTSAPIKey = "el-tts-key"
@@ -64,7 +64,8 @@ struct ElevenLabsSpeechPlaybackProviderTests {
             environment: [:]
         )
 
-        #expect(provider.displayName.contains("ElevenLabs") == true)
-        #expect(provider.displayName.contains("fallback") == true)
+        let wrapper = try #require(provider as? PickyFallbackSpeechPlaybackProvider)
+        #expect(wrapper.primary is ElevenLabsSpeechPlaybackProvider)
+        #expect(wrapper.fallback is PickySystemSpeechPlaybackProvider)
     }
 }

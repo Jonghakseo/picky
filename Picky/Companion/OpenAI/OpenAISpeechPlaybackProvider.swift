@@ -22,10 +22,12 @@ final class OpenAISpeechPlaybackProvider: NSObject, PickySpeechPlaybackProvider 
 
     private let configuration: OpenAIAudioConfiguration
     private let urlSession: URLSession
-    private let voice: String
+    // voice/modelName are internal (not private) so tests can assert
+    // empty-input normalization to the defaults.
+    let voice: String
     private let responseFormat: String
     private let instructions: String?
-    private let modelName: String
+    let modelName: String
 
     private var speechTask: Task<Void, Never>?
     private var audioPlayer: AVAudioPlayer?

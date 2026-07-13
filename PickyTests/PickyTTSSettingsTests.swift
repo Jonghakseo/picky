@@ -106,7 +106,7 @@ struct PickyTTSSettingsTests {
 
         let provider = PickySpeechPlaybackProviderFactory.makeDefaultProvider(settings: settings, environment: [:])
 
-        #expect(provider.displayName == "Off")
+        #expect(provider is PickyMutedSpeechPlaybackProvider)
         #expect(provider.isSpeaking == false)
 
         var didFinish: Bool?

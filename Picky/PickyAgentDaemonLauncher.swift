@@ -820,6 +820,10 @@ final class PickyAgentDaemonLauncher: ObservableObject {
     private static let stderrDiagnosticBufferLimit = 8_192
     private static let restartBackoffResetUptime: TimeInterval = 30
     private let now: () -> Date
+    /// Injection seam for the restart backoff wait so tests can fire a
+    /// scheduled restart without waiting wall-clock time. Defaults to
+    /// `Task.sleep` in production.
+    private let restartSleep: (TimeInterval) async -> Void
     /// Monotonic tag for each launch so a delayed termination callback from a
     /// previously stopped/replaced process cannot mutate the current launch's
     /// state (e.g. mark a freshly started daemon as crashed).
@@ -835,7 +839,10 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         stdoutLineObserver: ((String) -> Void)? = nil,
         maxLogFileSize: Int64 = PickyAgentDaemonLauncher.defaultMaxLogFileSize,
         maxLogRotations: Int = PickyAgentDaemonLauncher.defaultMaxLogRotations,
-        now: @escaping () -> Date = Date.init
+        now: @escaping () -> Date = Date.init,
+        restartSleep: @escaping (TimeInterval) async -> Void = { delay in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+        }
     ) {
         self.configuration = configuration
         self.runner = runner
@@ -847,6 +854,7 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         self.maxLogFileSize = maxLogFileSize
         self.maxLogRotations = maxLogRotations
         self.now = now
+        self.restartSleep = restartSleep
     }
 
     func start() {
@@ -1003,8 +1011,9 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         updateState(.restarting(attempt: attempts, delay: delay))
         pickyDaemonLog("restart scheduled attempt=\(attempts) delay=\(delay)")
         restartTask?.cancel()
+        let restartSleep = restartSleep
         restartTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            await restartSleep(delay)
             guard !Task.isCancelled else { return }
             await MainActor.run { self?.launch() }
         }

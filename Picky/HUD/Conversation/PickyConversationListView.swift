@@ -110,12 +110,13 @@ struct PickyConversationListView: View {
         )
     }
 
+    /// Test-facing aggregation of what `body` puts in the tree. Counts derive
+    /// from the same `PickyConversationBubbleKind` classification `messageView`
+    /// switches on, applied to the same turn groups the list renders, so they
+    /// cannot drift from the real render path. Collapsed-card state is runtime
+    /// UI state; counts represent each turn's expanded content.
     var renderSnapshot: PickyConversationListRenderSnapshot {
         var snapshot = PickyConversationListRenderSnapshot()
-        snapshot.showsActivitySummary = session.messages.contains { message in
-            guard message.kind == .agentActivity, let snapshot = message.activitySnapshot else { return false }
-            return !snapshot.visibleToolCallItems.isEmpty
-        }
         let followUps = visibleQueuedFollowUps
         let steers = visibleQueuedSteers
         snapshot.batchGroupCount += session.followUpMode == .all && !followUps.isEmpty ? 1 : 0
@@ -123,30 +124,37 @@ struct PickyConversationListView: View {
         snapshot.pendingBubbleCount += session.followUpMode == .all ? 0 : followUps.count
         snapshot.pendingBubbleCount += session.steeringMode == .all ? 0 : steers.count
 
-        for message in session.messages {
-            switch message.kind {
-            case .agentThinking:
-                snapshot.typingBubbleCount += 1
-            case .agentQuestion where message.question != nil:
-                snapshot.questionBubbleCount += 1
-            case .agentError:
-                snapshot.errorBubbleCount += 1
+        let groups = turnGroups
+        let renderedMessages = groups.flatMap { group in
+            [group.userMessage].compactMap { $0 } + group.bodyMessages + group.trailingCompactMessages
+        }
+        for message in renderedMessages {
+            switch PickyConversationBubbleKind(message: message) {
+            case .userText, .agentText, .questionFallback, .systemText, .hiddenActivity:
+                break
             case .commandReceipt:
                 snapshot.commandReceiptBubbleCount += 1
-            case .system where message.notifyType != nil:
-                snapshot.notifyBubbleCount += 1
-            case .agentActivity where message.activitySnapshot?.visibleToolCallItems.isEmpty == false:
+            case .typing:
+                snapshot.typingBubbleCount += 1
+            case .question:
+                snapshot.questionBubbleCount += 1
+            case .error:
+                snapshot.errorBubbleCount += 1
+            case .activitySummary:
                 snapshot.activitySummaryCount += 1
-            default:
-                break
+            case .compactCompletion:
+                snapshot.compactCompletionBubbleCount += 1
+            case .compactFailure:
+                snapshot.compactFailureBubbleCount += 1
+            case .notify:
+                snapshot.notifyBubbleCount += 1
             }
         }
+        snapshot.showsActivitySummary = snapshot.activitySummaryCount > 0
         if session.isCompacting {
             snapshot.compactingOverlayCount = 1
         }
-        snapshot.compactCompletionBubbleCount = visibleMessages.filter(\.isCompactCompletionMessage).count
-        snapshot.compactFailureBubbleCount = visibleMessages.filter(\.isCompactFailureMessage).count
-        snapshot.turnCardCount = turnGroups.filter { $0.hasUserMessage && !$0.bodyMessages.isEmpty }.count
+        snapshot.turnCardCount = groups.filter { shouldRenderTurnCard($0) }.count
         return snapshot
     }
 
@@ -168,12 +176,8 @@ struct PickyConversationListView: View {
         if let user = group.userMessage {
             leadingMessageView(user)
                 .id(user.id)
-            // Render the turn card whenever there are body messages, or when the
-            // current turn has an active/recent tool to surface — without this,
-            // tool-only turns (no thinking, no agent_text, agent_activity not
-            // committed yet) leave the user bubble dangling with nothing below it.
-            let liveTool = group.isCurrent ? liveToolForCurrentTurn(group) : nil
-            if !group.bodyMessages.isEmpty || liveTool != nil {
+            let liveTool = liveToolForCurrentTurn(group)
+            if shouldRenderTurnCard(group) {
                 PickyTurnCardView(
                     group: group,
                     activeTool: liveTool,
@@ -218,15 +222,8 @@ struct PickyConversationListView: View {
 
     @ViewBuilder
     private func messageView(_ message: PickySessionMessage, in group: PickyTurnGroup) -> some View {
-        switch message.kind {
-        case .userText:
-            PickyUserBubbleView(
-                message: message,
-                onOpenAsReport: openMessageReportAction(for: message),
-                onCopyText: { viewModel.copyMessageText($0) },
-                onEditText: { viewModel.replaceComposerDraftText($0, sessionID: session.id) }
-            )
-        case .commandReceipt:
+        switch PickyConversationBubbleKind(message: message) {
+        case .userText, .commandReceipt:
             PickyUserBubbleView(
                 message: message,
                 onOpenAsReport: openMessageReportAction(for: message),
@@ -241,9 +238,9 @@ struct PickyConversationListView: View {
                 isLatestAgentResponse: isLatestAgentResponse(message),
                 isLatestResponseShortcutHintVisible: shouldShowLatestResponseShortcutHint(for: message)
             )
-        case .agentThinking:
+        case .typing:
             PickyTypingBubbleView(message: message, initiallyCollapsed: viewModel.thinkingBlocksHidden(sessionID: session.id))
-        case .agentQuestion:
+        case .question:
             if let request = message.question {
                 PickyQuestionBubbleView(
                     request: request,
@@ -251,45 +248,43 @@ struct PickyConversationListView: View {
                     isActiveRequest: session.pendingExtensionUiRequest?.id == request.id,
                     viewModel: viewModel
                 )
-            } else {
-                PickyAgentBubbleView(
-                    message: message,
-                    onCopyText: { viewModel.copyMessageText($0) }
-                )
             }
-        case .agentError:
+        case .questionFallback:
+            PickyAgentBubbleView(
+                message: message,
+                onCopyText: { viewModel.copyMessageText($0) }
+            )
+        case .error:
             PickyErrorBubbleView(
                 message: message,
                 onOpenTerminal: { viewModel.openTerminalOverlay(sessionID: session.id) },
                 onRetry: retryRuntimeRaceAction(for: message)
             )
-        case .agentActivity:
+        case .activitySummary:
             // Every agentActivity message renders as the compact aggregate
             // chip regardless of turn state. "What's running right now" is
             // surfaced separately by the active-tool indicator pinned to the
             // current turn's body — see `PickyTurnCardView.expandedBody`.
-            if let snapshot = message.activitySnapshot, !snapshot.visibleToolCallItems.isEmpty {
+            if let snapshot = message.activitySnapshot {
                 PickyActivitySummaryView(summary: snapshot, onTap: { openToolHistory(forAgentActivityID: message.id) })
-            } else {
-                EmptyView()
             }
-        case .system:
-            if message.isCompactCompletionMessage {
-                PickyCompactCompletionBubbleView()
-            } else if message.isCompactFailureMessage {
-                PickyCompactFailureBubbleView(message: message)
-            } else if message.notifyType != nil {
-                PickyNotifyBubbleView(
-                    message: message,
-                    onOpenAsReport: openMessageReportAction(for: message)
-                )
-            } else {
-                PickyAgentBubbleView(
-                    message: message,
-                    onOpenAsReport: openMessageReportAction(for: message),
-                    onCopyText: { viewModel.copyMessageText($0) }
-                )
-            }
+        case .hiddenActivity:
+            EmptyView()
+        case .compactCompletion:
+            PickyCompactCompletionBubbleView()
+        case .compactFailure:
+            PickyCompactFailureBubbleView(message: message)
+        case .notify:
+            PickyNotifyBubbleView(
+                message: message,
+                onOpenAsReport: openMessageReportAction(for: message)
+            )
+        case .systemText:
+            PickyAgentBubbleView(
+                message: message,
+                onOpenAsReport: openMessageReportAction(for: message),
+                onCopyText: { viewModel.copyMessageText($0) }
+            )
         }
     }
 
@@ -328,12 +323,24 @@ struct PickyConversationListView: View {
         }
     }
 
+    /// Render the turn card whenever there are body messages, or when the
+    /// current turn has an active/recent tool to surface — without this,
+    /// tool-only turns (no thinking, no agent_text, agent_activity not
+    /// committed yet) leave the user bubble dangling with nothing below it.
+    /// Shared by `turnGroupView` and `renderSnapshot.turnCardCount`.
+    private func shouldRenderTurnCard(_ group: PickyTurnGroup) -> Bool {
+        guard group.hasUserMessage else { return false }
+        return !group.bodyMessages.isEmpty || liveToolForCurrentTurn(group) != nil
+    }
+
     /// Resolves the tool to surface in the active turn's live indicator.
-    /// Falls back from `activeTool` to the most recent tool started inside
-    /// the turn so the indicator does not blink off during the gap between
-    /// successive tool calls — the completion state is then conveyed by
-    /// the row's status indicator (pulsing dot → checkmark → failure dot).
+    /// Only the current turn shows one. Falls back from `activeTool` to the
+    /// most recent tool started inside the turn so the indicator does not
+    /// blink off during the gap between successive tool calls — the completion
+    /// state is then conveyed by the row's status indicator (pulsing dot →
+    /// checkmark → failure dot).
     private func liveToolForCurrentTurn(_ group: PickyTurnGroup) -> PickyToolActivity? {
+        guard group.isCurrent else { return nil }
         let turnStart = group.userMessage?.createdAt ?? group.bodyMessages.first?.createdAt ?? .distantPast
         return session.mostRecentTool(after: turnStart)
     }
@@ -594,6 +601,58 @@ struct PickyConversationBottomScrollTrigger: Equatable {
     let followUpMode: PickyQueueMode
     let lastRequestAt: Date?
     let pendingExtensionUiRequestID: String?
+}
+
+/// Single source of truth for the message → bubble mapping. The render path
+/// (`PickyConversationListView.messageView`) switches on this to pick the
+/// bubble view, and `renderSnapshot` aggregates the same classification, so
+/// tests exercise exactly the conditions the UI renders with.
+enum PickyConversationBubbleKind: Equatable {
+    case userText
+    case commandReceipt
+    case agentText
+    case typing
+    case question
+    /// `agentQuestion` without a decoded request falls back to a plain agent bubble.
+    case questionFallback
+    case error
+    case activitySummary
+    /// `agentActivity` whose snapshot has no visible tool calls renders nothing.
+    case hiddenActivity
+    case compactCompletion
+    case compactFailure
+    case notify
+    /// Plain `system` message rendered through the agent bubble surface.
+    case systemText
+
+    init(message: PickySessionMessage) {
+        switch message.kind {
+        case .userText:
+            self = .userText
+        case .commandReceipt:
+            self = .commandReceipt
+        case .agentText:
+            self = .agentText
+        case .agentThinking:
+            self = .typing
+        case .agentQuestion:
+            self = message.question != nil ? .question : .questionFallback
+        case .agentError:
+            self = .error
+        case .agentActivity:
+            self = message.activitySnapshot?.visibleToolCallItems.isEmpty == false ? .activitySummary : .hiddenActivity
+        case .system:
+            if message.isCompactCompletionMessage {
+                self = .compactCompletion
+            } else if message.isCompactFailureMessage {
+                self = .compactFailure
+            } else if message.notifyType != nil {
+                self = .notify
+            } else {
+                self = .systemText
+            }
+        }
+    }
 }
 
 struct PickyConversationListRenderSnapshot: Equatable {

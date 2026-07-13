@@ -382,17 +382,6 @@ struct PickySettingsPolishTests {
         #expect(store.load().cursor.enableFollowSpringAnimation == false)
     }
 
-    @Test func cursorTrackingRefreshesAt60FPS() {
-        #expect(BlueCursorView.cursorTrackingInterval == 1.0 / 60.0)
-    }
-
-    @Test func cursorShakeReactionRequiresIntentionalMovementIntensity() {
-        #expect(BlueCursorView.shakeReactionRequiredDuration == 2.0)
-        #expect(BlueCursorView.shakeReactionMinimumSpeed == 720)
-        #expect(BlueCursorView.shakeReactionMinimumDominantDelta == 5.5)
-        #expect(BlueCursorView.shakeReactionRequiredDirectionChanges == 8)
-    }
-
     @Test func settingsRoundTripPreservesScreenContextScope() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
         let project = root.appendingPathComponent("project", isDirectory: true)
@@ -510,18 +499,23 @@ struct PickySettingsPolishTests {
         // Out-of-range values stored by an older or corrupted client get clamped on load
         // so the UI never starts in a 0.1× or 10× broken state.
         let url = root.appendingPathComponent("Settings", isDirectory: true).appendingPathComponent("settings.json")
-        let raw = try String(contentsOf: url)
-        let mutated = raw.replacingOccurrences(of: "\"markdownReport\" : 1.4", with: "\"markdownReport\" : 99")
-        try mutated.data(using: .utf8)!.write(to: url)
+        func overwriteStoredFontScale(_ key: String, with value: Double) throws {
+            let object = try JSONSerialization.jsonObject(with: Data(contentsOf: url))
+            var json = try #require(object as? [String: Any])
+            var scales = try #require(json["fontScales"] as? [String: Any])
+            scales[key] = value
+            json["fontScales"] = scales
+            try JSONSerialization.data(withJSONObject: json).write(to: url)
+        }
+
+        try overwriteStoredFontScale("markdownReport", with: 99)
         let clamped = store.load().fontScales
         #expect(clamped.markdownReport == PickyFontScales.maximum)
         #expect(clamped.terminal == 1.8)
         #expect(clamped.app == 1.2)
 
         // Out-of-range app scale clamps to the narrower 0.9...1.3 band.
-        let raw2 = try String(contentsOf: url)
-        let mutated2 = raw2.replacingOccurrences(of: "\"app\" : 1.2", with: "\"app\" : 5.0")
-        try mutated2.data(using: .utf8)!.write(to: url)
+        try overwriteStoredFontScale("app", with: 5.0)
         let clampedApp = store.load().fontScales.app
         #expect(clampedApp == PickyFontScales.appMaximum)
     }

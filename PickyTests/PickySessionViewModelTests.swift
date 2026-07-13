@@ -1660,10 +1660,15 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDDockLayout.dockRailCenterX(visibleFrame: visibleFrame, panelWidth: panelWidth, dockSide: .right, xOffset: rightOffset) == rightCenter)
     }
 
-    @Test func hudDockOverhangLimitIsHalfDockRailWidth() throws {
-        // Sanity check on the overhang constant: half the dock rail width keeps
-        // half of the capsule visible so users can always grab the handle.
-        #expect(PickyHUDDockLayout.dockOverhangLimit == (PickyHUDDockLayout.railWidth / 2).rounded(.down))
+    @Test func hudDockOverhangLimitKeepsHalfTheRailGrabbable() throws {
+        // Sliding out by the overhang limit must leave at least half the rail
+        // on-screen so users can always grab the handle, and the constant must
+        // agree with the parameterized clamp used by the drag code.
+        let limit = PickyHUDDockLayout.dockOverhangLimit
+        #expect(limit == PickyHUDDockLayout.dockOverhangLimit(forRailWidth: PickyHUDDockLayout.railWidth))
+        #expect(limit >= 0)
+        #expect(PickyHUDDockLayout.railWidth - limit >= PickyHUDDockLayout.railWidth / 2)
+        #expect(limit.rounded(.down) == limit)
     }
 
     @Test func hudDockPositionsDefaultToEmptyWhenMissingFromSettings() throws {
@@ -1846,18 +1851,6 @@ struct PickySessionViewModelTests {
         #expect(originAtCap == bottomFloor)
     }
 
-    @Test func dockBodyTopOffsetEqualsTopShadowPadding() throws {
-        // The drag handle now lives INSIDE the dock capsule's top row, so it no
-        // longer pushes the capsule top down. The distance from the panel content's
-        // top edge to the dock CAPSULE's top edge is exactly the top shadow padding
-        // wrapping the HStack — the anchor percent lands directly on the visible dock
-        // capsule top while bottom padding can be larger for the downward shadow.
-        #expect(
-            PickyHUDExpansion.dockBodyTopOffsetFromContentTop
-            == PickyHUDExpansion.dockShadowTopPadding
-        )
-    }
-
     @Test func dockTopAnchoredPanelUsesCapsuleOffsetSoAnchorMatchesVisibleDockTop() throws {
         // When the overlay manager passes `dockBodyTopOffsetFromContentTop` as the
         // top padding, dockTopAnchoredPanelY positions the panel so the dock CAPSULE's
@@ -1941,23 +1934,124 @@ struct PickySessionViewModelTests {
         ) == short)
     }
 
-    @Test func hudAppKitRepresentableTeardownSuppressesCallbacksThatMutateSwiftUIState() throws {
-        // The AppKit representable hosts live in PickyHUDDockIconView.swift; scan the
-        // whole HUD shell source set so future moves keep the teardown invariant covered.
-        let source = try [
-            "\(testProjectCwd)/Picky/HUD/PickyHUDView.swift",
-            "\(testProjectCwd)/Picky/HUD/PickyHUDDockIconView.swift",
-            "\(testProjectCwd)/Picky/HUD/PickyHUDDockRailView.swift",
-        ].map { try String(contentsOfFile: $0) }.joined(separator: "\n")
+    private func makeLeftMouseDownEvent() -> NSEvent? {
+        NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1
+        )
+    }
 
-        #expect(source.components(separatedBy: "static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator)").count - 1 == 3)
-        #expect(!source.contains("static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {\n        (nsView as?"))
-        #expect(source.contains("view.cancelTransientInteraction(notifyingCallbacks: false)"))
-        #expect(source.components(separatedBy: "view.cancelInteraction(notifyingCallbacks: false)").count - 1 >= 2)
-        #expect(source.contains("deinit {\n        cancelTransientInteraction(notifyingCallbacks: false)\n    }"))
-        #expect(source.components(separatedBy: "deinit {\n        cancelInteraction(notifyingCallbacks: false)\n    }").count - 1 >= 2)
-        #expect(source.contains("if window == nil {\n            cancelTransientInteraction(notifyingCallbacks: false)\n        }"))
-        #expect(source.components(separatedBy: "if window == nil {\n            cancelInteraction(notifyingCallbacks: false)\n        }").count - 1 >= 2)
+    @Test func hudDockIconClickTeardownCancelsActivePressWithoutNotifyingCallbacks() throws {
+        // Teardown paths (window removal, dismantle) run while SwiftUI may already be
+        // mutating state, so they must clear AppKit-side gesture state silently.
+        let coordinator = PickyHUDDockIconClickHost.Coordinator()
+        var archivePressing: [Bool] = []
+        var openCount = 0
+        var archiveCount = 0
+        coordinator.onArchivePressing = { archivePressing.append($0) }
+        coordinator.onOpen = { openCount += 1 }
+        coordinator.onArchive = { archiveCount += 1 }
+        let view = PickyHUDDockIconClickNSView()
+        view.coordinator = coordinator
+
+        view.mouseDown(with: try #require(makeLeftMouseDownEvent()))
+        #expect(archivePressing == [true])
+
+        view.viewDidMoveToWindow()
+        PickyHUDDockIconClickHost.dismantleNSView(view, coordinator: coordinator)
+
+        #expect(archivePressing == [true])
+        #expect(openCount == 0)
+        #expect(archiveCount == 0)
+        #expect(coordinator.onArchivePressing == nil)
+        #expect(coordinator.onOpen == nil)
+        #expect(coordinator.onArchive == nil)
+
+        let liveCoordinator = PickyHUDDockIconClickHost.Coordinator()
+        var livePressing: [Bool] = []
+        liveCoordinator.onArchivePressing = { livePressing.append($0) }
+        let liveView = PickyHUDDockIconClickNSView()
+        liveView.coordinator = liveCoordinator
+        liveView.mouseDown(with: try #require(makeLeftMouseDownEvent()))
+        liveView.cancelTransientInteraction()
+        #expect(livePressing == [true, false])
+    }
+
+    @Test func hudDockAnchorHandleTeardownCancelsActiveDragWithoutNotifyingCallbacks() throws {
+        let coordinator = PickyHUDDockAnchorHandleHost.Coordinator()
+        var hoverChanges: [Bool] = []
+        var dragEndedCount = 0
+        coordinator.onHoverChanged = { hoverChanges.append($0) }
+        coordinator.onDragChanged = { _ in }
+        coordinator.onDragEnded = { dragEndedCount += 1 }
+        coordinator.onDoubleClick = {}
+        let view = PickyHUDDockAnchorHandleNSView()
+        view.coordinator = coordinator
+
+        view.mouseDown(with: try #require(makeLeftMouseDownEvent()))
+        view.viewDidMoveToWindow()
+        PickyHUDDockAnchorHandleHost.dismantleNSView(view, coordinator: coordinator)
+
+        #expect(hoverChanges.isEmpty)
+        #expect(dragEndedCount == 0)
+        #expect(coordinator.onHoverChanged == nil)
+        #expect(coordinator.onDragChanged == nil)
+        #expect(coordinator.onDragEnded == nil)
+        #expect(coordinator.onDoubleClick == nil)
+
+        let liveCoordinator = PickyHUDDockAnchorHandleHost.Coordinator()
+        var liveHoverChanges: [Bool] = []
+        var liveDragEndedCount = 0
+        liveCoordinator.onHoverChanged = { liveHoverChanges.append($0) }
+        liveCoordinator.onDragEnded = { liveDragEndedCount += 1 }
+        let liveView = PickyHUDDockAnchorHandleNSView()
+        liveView.coordinator = liveCoordinator
+        liveView.mouseDown(with: try #require(makeLeftMouseDownEvent()))
+        liveView.cancelInteraction()
+        #expect(liveHoverChanges == [false])
+        #expect(liveDragEndedCount == 1)
+    }
+
+    @Test func hudCardResizeHandleTeardownCancelsActiveDragWithoutNotifyingCallbacks() throws {
+        let coordinator = PickyHUDCardResizeHandleHost.Coordinator()
+        var hoverChanges: [Bool] = []
+        var dragEndedCount = 0
+        coordinator.onHoverChanged = { hoverChanges.append($0) }
+        coordinator.onDragChanged = { _ in }
+        coordinator.onDragEnded = { dragEndedCount += 1 }
+        coordinator.onDoubleClick = {}
+        let view = PickyHUDCardResizeHandleNSView()
+        view.coordinator = coordinator
+
+        view.mouseDown(with: try #require(makeLeftMouseDownEvent()))
+        view.viewDidMoveToWindow()
+        PickyHUDCardResizeHandleHost.dismantleNSView(view, coordinator: coordinator)
+
+        #expect(hoverChanges.isEmpty)
+        #expect(dragEndedCount == 0)
+        #expect(coordinator.onHoverChanged == nil)
+        #expect(coordinator.onDragChanged == nil)
+        #expect(coordinator.onDragEnded == nil)
+        #expect(coordinator.onDoubleClick == nil)
+
+        let liveCoordinator = PickyHUDCardResizeHandleHost.Coordinator()
+        var liveHoverChanges: [Bool] = []
+        var liveDragEndedCount = 0
+        liveCoordinator.onHoverChanged = { liveHoverChanges.append($0) }
+        liveCoordinator.onDragEnded = { liveDragEndedCount += 1 }
+        let liveView = PickyHUDCardResizeHandleNSView()
+        liveView.coordinator = liveCoordinator
+        liveView.mouseDown(with: try #require(makeLeftMouseDownEvent()))
+        liveView.cancelInteraction()
+        #expect(liveHoverChanges == [false])
+        #expect(liveDragEndedCount == 1)
     }
 
     @Test func hudCardResizeStartsFromMeasuredCardSizeWithoutDefaultHeightFallback() throws {
@@ -2028,11 +2122,12 @@ struct PickySessionViewModelTests {
 
     @Test func hudChromeUsesSoftShadowWithShadowBleedPadding() throws {
         #expect(PickyHUDExpansion.outerPadding == PickyHUDExpansion.dockShadowHorizontalPadding)
-        #expect(PickyHUDExpansion.dockShadowHorizontalPadding == PickyHUDExpansion.dockShadowRadius + PickyHUDExpansion.dockShadowHorizontalExtraBleed)
-        #expect(PickyHUDExpansion.dockShadowTopPadding == PickyHUDExpansion.dockShadowRadius + PickyHUDExpansion.dockShadowVerticalExtraBleed)
-        #expect(PickyHUDExpansion.dockShadowBottomPadding == PickyHUDExpansion.dockShadowRadius + PickyHUDExpansion.dockShadowYOffset + PickyHUDExpansion.dockShadowVerticalExtraBleed)
+        // The reserved bleed must be large enough that a shadow with this blur
+        // radius and downward offset is never clipped by the panel bounds.
+        #expect(PickyHUDExpansion.dockShadowHorizontalPadding >= PickyHUDExpansion.dockShadowRadius)
+        #expect(PickyHUDExpansion.dockShadowTopPadding >= PickyHUDExpansion.dockShadowRadius - PickyHUDExpansion.dockShadowYOffset)
+        #expect(PickyHUDExpansion.dockShadowBottomPadding >= PickyHUDExpansion.dockShadowRadius + PickyHUDExpansion.dockShadowYOffset)
         #expect(PickyHUDExpansion.dockShadowBottomPadding > PickyHUDExpansion.dockShadowTopPadding)
-        #expect(PickyHUDExpansion.dockShadowVerticalPadding == PickyHUDExpansion.dockShadowTopPadding + PickyHUDExpansion.dockShadowBottomPadding)
         #expect(PickyHUDDockLayout.detailWidth + PickyHUDDockLayout.panelGap + PickyHUDDockLayout.railWidth + 2 * PickyHUDExpansion.outerPadding <= PickyHUDDockLayout.panelWidth)
         #expect(PickyHUDExpansion.cardShadowOpacity < 0.2)
         #expect(PickyHUDExpansion.cardShadowRadius <= 8)

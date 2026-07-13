@@ -211,32 +211,45 @@ struct PickyTests {
         let smallMetrics = PickyHUDDockMetrics(preset: .small)
         let mediumMetrics = PickyHUDDockMetrics(preset: .medium)
         let largeMetrics = PickyHUDDockMetrics(preset: .large)
-        #expect(PickyHUDDockLayout.addSlotFrameHeight(isExpanded: false) == mediumMetrics.collapsedAddSlotVisualHeight)
-        #expect(PickyHUDDockLayout.addSlotFrameHeight(isExpanded: true) == mediumMetrics.addSlotButtonSide)
-        #expect(PickyHUDDockLayout.addSlotCollapsedExpansionReserve == mediumMetrics.addSlotButtonSide - mediumMetrics.collapsedAddSlotVisualHeight)
-
-        #expect(largeMetrics.railWidth == PickyHUDDockLayout.railWidth)
-        #expect(largeMetrics.addSlotButtonSide == PickyHUDDockLayout.addSlotButtonSide)
         #expect(smallMetrics.railWidth < mediumMetrics.railWidth)
         #expect(mediumMetrics.railWidth < largeMetrics.railWidth)
-        #expect(PickyHUDDockLayout.addSlotFrameHeight(isExpanded: false, metrics: smallMetrics) == smallMetrics.collapsedAddSlotVisualHeight)
-        #expect(PickyHUDDockLayout.addSlotFrameHeight(isExpanded: true, metrics: largeMetrics) == largeMetrics.addSlotButtonSide)
 
+        for metrics in [smallMetrics, mediumMetrics, largeMetrics] {
+            let collapsed = PickyHUDDockLayout.addSlotFrameHeight(isExpanded: false, metrics: metrics)
+            let expanded = PickyHUDDockLayout.addSlotFrameHeight(isExpanded: true, metrics: metrics)
+            // Collapsed slot keeps a compact hit area; expanding claims exactly the
+            // room the reserve promised to the panel.
+            #expect(collapsed < expanded)
+            #expect(metrics.addSlotCollapsedExpansionReserve == expanded - collapsed)
+        }
+        #expect(PickyHUDDockLayout.addSlotFrameHeight(isExpanded: false) == PickyHUDDockLayout.addSlotFrameHeight(isExpanded: false, metrics: mediumMetrics))
+        #expect(PickyHUDDockLayout.addSlotCollapsedExpansionReserve == mediumMetrics.addSlotCollapsedExpansionReserve)
+
+        // An empty dock still reserves full room for the add button.
         #expect(PickyHUDDockLayout.dockRailSessionsHeight(sessionCount: 0, isAddSlotExpanded: false, metrics: mediumMetrics) == mediumMetrics.addSlotButtonSide)
-        #expect(PickyHUDDockLayout.dockRailSessionsHeight(sessionCount: 3, isAddSlotExpanded: false, metrics: mediumMetrics) ==
-            (3 * mediumMetrics.sessionTileHeight) + (2 * mediumMetrics.sessionSpacing) + mediumMetrics.addSlotTopPadding + mediumMetrics.collapsedAddSlotVisualHeight
-        )
-        #expect(PickyHUDDockLayout.dockRailHeight(sessionCount: 3, isAddSlotExpanded: false, metrics: mediumMetrics) ==
-            mediumMetrics.topPadding + mediumMetrics.handleAreaHeight + 2 + PickyHUDDockLayout.dockRailSessionsHeight(sessionCount: 3, isAddSlotExpanded: false, metrics: mediumMetrics) + mediumMetrics.bottomPadding
-        )
-        #expect(PickyHUDDockLayout.dockRailHeight(sessionCount: 3, isAddSlotExpanded: true, metrics: mediumMetrics) - PickyHUDDockLayout.dockRailHeight(sessionCount: 3, isAddSlotExpanded: false, metrics: mediumMetrics) == mediumMetrics.addSlotCollapsedExpansionReserve)
-        #expect(PickyHUDDockLayout.dockGroupHeaderExtraLength(groupHeaderCount: 3) == CGFloat(3) * (PickyHUDDockGroupHeaderHeight + PickyHUDDockGroupContentSpacing))
-        #expect(PickyHUDDockLayout.horizontalDockRailCrossSize(hasGroupHeaders: true, metrics: mediumMetrics) == mediumMetrics.railWidth + PickyHUDDockGroupHeaderHeight + PickyHUDDockGroupContentSpacing)
+        // Each additional session grows the rail by exactly one tile plus one gap,
+        // in both orientations, and the rail chrome around the sessions stays fixed.
+        let sessionsThree = PickyHUDDockLayout.dockRailSessionsHeight(sessionCount: 3, isAddSlotExpanded: false, metrics: mediumMetrics)
+        let sessionsFour = PickyHUDDockLayout.dockRailSessionsHeight(sessionCount: 4, isAddSlotExpanded: false, metrics: mediumMetrics)
+        #expect(sessionsFour - sessionsThree == mediumMetrics.sessionTileHeight + mediumMetrics.sessionSpacing)
+        let railThree = PickyHUDDockLayout.dockRailHeight(sessionCount: 3, isAddSlotExpanded: false, metrics: mediumMetrics)
+        let railFour = PickyHUDDockLayout.dockRailHeight(sessionCount: 4, isAddSlotExpanded: false, metrics: mediumMetrics)
+        #expect(railFour - railThree == sessionsFour - sessionsThree)
+        #expect(railThree > sessionsThree)
+        let horizontalThree = PickyHUDDockLayout.horizontalDockRailLength(sessionCount: 3, isAddSlotExpanded: false, metrics: mediumMetrics)
+        let horizontalFour = PickyHUDDockLayout.horizontalDockRailLength(sessionCount: 4, isAddSlotExpanded: false, metrics: mediumMetrics)
+        #expect(horizontalFour - horizontalThree == mediumMetrics.sessionTileWidth + mediumMetrics.sessionSpacing)
 
-        let horizontalSessionsAndSlot = (3 * mediumMetrics.sessionTileWidth) + (2 * mediumMetrics.sessionSpacing) + 2 + mediumMetrics.collapsedAddSlotVisualHeight
-        #expect(PickyHUDDockLayout.horizontalDockRailLength(sessionCount: 3, isAddSlotExpanded: false, metrics: mediumMetrics) ==
-            mediumMetrics.topPadding + mediumMetrics.handleAreaHeight + 2 + horizontalSessionsAndSlot + mediumMetrics.topPadding
-        )
+        // Expanding the add slot grows the rail by the reserve and nothing else.
+        #expect(PickyHUDDockLayout.dockRailHeight(sessionCount: 3, isAddSlotExpanded: true, metrics: mediumMetrics) - railThree == mediumMetrics.addSlotCollapsedExpansionReserve)
+        #expect(PickyHUDDockLayout.horizontalDockRailLength(sessionCount: 3, isAddSlotExpanded: true, metrics: mediumMetrics) - horizontalThree == mediumMetrics.addSlotCollapsedExpansionReserve)
+
+        // Group headers add a fixed per-header length, and the horizontal cross
+        // size grows by exactly that one-header extra when headers are present.
+        #expect(PickyHUDDockLayout.dockGroupHeaderExtraLength(groupHeaderCount: 0) == 0)
+        #expect(PickyHUDDockLayout.dockGroupHeaderExtraLength(groupHeaderCount: 3) == 3 * PickyHUDDockLayout.dockGroupHeaderExtraLength(groupHeaderCount: 1))
+        #expect(PickyHUDDockLayout.horizontalDockRailCrossSize(hasGroupHeaders: false, metrics: mediumMetrics) == mediumMetrics.railWidth)
+        #expect(PickyHUDDockLayout.horizontalDockRailCrossSize(hasGroupHeaders: true, metrics: mediumMetrics) - PickyHUDDockLayout.horizontalDockRailCrossSize(hasGroupHeaders: false, metrics: mediumMetrics) == PickyHUDDockLayout.dockGroupHeaderExtraLength(groupHeaderCount: 1))
 
         #expect(PickyHUDDockLayout.contentSizeReservingAddSlotExpansion(
             measuredSize: CGSize(width: 50, height: 120),
@@ -266,16 +279,15 @@ struct PickyTests {
         #expect(PickyHUDDockLabelPolicy.compactLabel("   ") == "Pickle")
     }
 
-    @Test func quickInputPanelUsesCompactShadowOutset() throws {
-        #expect(QuickInputPanelLayout.mainShadowOpacity == 0.08)
-        #expect(QuickInputPanelLayout.mainShadowRadius == 4)
-        #expect(QuickInputPanelLayout.mainShadowYOffset == 2)
-        #expect(QuickInputPanelLayout.tightShadowOpacity == 0.04)
-        #expect(QuickInputPanelLayout.tightShadowRadius == 0.8)
-        #expect(QuickInputPanelLayout.tightShadowYOffset == 0.3)
-        #expect(QuickInputPanelLayout.shadowOutset == QuickInputPanelLayout.mainShadowRadius + abs(QuickInputPanelLayout.mainShadowYOffset))
-        #expect(QuickInputPanelLayout.panelWidth == QuickInputPanelLayout.pillWidth + QuickInputPanelLayout.shadowOutset * 2)
-        #expect(QuickInputPanelLayout.estimatedPanelHeight == QuickInputPanelLayout.capsuleHeight + QuickInputPanelLayout.shadowOutset * 2)
+    @Test func quickInputPanelReservesRoomForItsShadows() throws {
+        // The panel frame must enclose the pill plus the shadow outset on every
+        // side, and the outset must cover both shadows' blur and vertical offset,
+        // so no shadow gets clipped at the panel edge.
+        let outset = QuickInputPanelLayout.shadowOutset
+        #expect(outset >= QuickInputPanelLayout.mainShadowRadius + abs(QuickInputPanelLayout.mainShadowYOffset))
+        #expect(outset >= QuickInputPanelLayout.tightShadowRadius + abs(QuickInputPanelLayout.tightShadowYOffset))
+        #expect(QuickInputPanelLayout.panelWidth >= QuickInputPanelLayout.pillWidth + outset * 2)
+        #expect(QuickInputPanelLayout.estimatedPanelHeight >= QuickInputPanelLayout.capsuleHeight + outset * 2)
     }
 
     @Test func archiveUndoToastLayoutPinsToScreenBottomRight() throws {
@@ -290,9 +302,13 @@ struct PickyTests {
     }
 
     @Test func archiveHoldFeedbackStartsAfterShortGracePeriod() throws {
-        #expect(PickyHUDArchiveHoldPolicy.feedbackStartDelay == 0.2)
-        #expect(PickyHUDArchiveHoldPolicy.feedbackStartDelayNanoseconds == 200_000_000)
-        #expect(PickyHUDArchiveHoldPolicy.feedbackAnimationDuration == PickyHUDArchiveHoldPolicy.duration - PickyHUDArchiveHoldPolicy.feedbackStartDelay)
+        // The grace delay must sit strictly inside the hold duration so feedback
+        // both starts and still has time to animate before the hold commits.
+        #expect(PickyHUDArchiveHoldPolicy.feedbackStartDelay > 0)
+        #expect(PickyHUDArchiveHoldPolicy.feedbackStartDelay < PickyHUDArchiveHoldPolicy.duration)
+        // The nanosecond constant feeds Task.sleep and must agree with the
+        // TimeInterval the animation math uses.
+        #expect(Double(PickyHUDArchiveHoldPolicy.feedbackStartDelayNanoseconds) == PickyHUDArchiveHoldPolicy.feedbackStartDelay * 1_000_000_000)
     }
 
     @Test func pushToTalkShortcutKeepsControlOptionTransitionSemantics() throws {

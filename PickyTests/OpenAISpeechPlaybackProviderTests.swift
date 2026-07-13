@@ -97,13 +97,22 @@ struct OpenAISpeechPlaybackProviderTests {
             voice: "  ",
             modelName: "  "
         )
-        // private 필드라 직접 검증은 어렵지만 displayName은 항상 노출
+        #expect(provider.voice == OpenAISpeechPlaybackProvider.defaultVoice)
+        #expect(provider.modelName == OpenAISpeechPlaybackProvider.defaultModelName)
+    }
+
+    // 10-1) displayName 카피 고정 (설정 UI 노출 계약)
+    @MainActor
+    @Test func displayNameIsOpenAITextToSpeech() {
+        let provider = OpenAISpeechPlaybackProvider(
+            configuration: OpenAIAudioConfiguration(apiKey: "sk-test")
+        )
         #expect(provider.displayName == "OpenAI Text to Speech")
     }
 
     // 11) Factory: settings.ttsProvider == .openai 이고 OpenAI 키 있으면 OpenAI fallback wrapper로 라우팅
     @MainActor
-    @Test func factoryRoutesToOpenAIWhenSelected() {
+    @Test func factoryRoutesToOpenAIWhenSelected() throws {
         var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
         settings.ttsProvider = .openai
         settings.openAITTSAPIKey = "sk-test"
@@ -112,9 +121,9 @@ struct OpenAISpeechPlaybackProviderTests {
             settings: settings,
             environment: [:]
         )
-        // FallbackSpeechPlaybackProvider wraps "<primary> + macOS Speech fallback"
-        #expect(provider.displayName.contains("OpenAI") == true)
-        #expect(provider.displayName.contains("fallback") == true)
+        let wrapper = try #require(provider as? PickyFallbackSpeechPlaybackProvider)
+        #expect(wrapper.primary is OpenAISpeechPlaybackProvider)
+        #expect(wrapper.fallback is PickySystemSpeechPlaybackProvider)
     }
 
     // 12) Factory: ENV provider routing no longer overrides the local default
@@ -129,7 +138,7 @@ struct OpenAISpeechPlaybackProviderTests {
                 "OPENAI_API_KEY": "sk-env"
             ]
         )
-        #expect(provider.displayName == "macOS Speech")
+        #expect(provider is PickySystemSpeechPlaybackProvider)
     }
 
     // 13) Factory: TTS 비활성화 시 muted
@@ -144,7 +153,7 @@ struct OpenAISpeechPlaybackProviderTests {
             settings: settings,
             environment: [:]
         )
-        #expect(provider.displayName == "Off")
+        #expect(provider is PickyMutedSpeechPlaybackProvider)
     }
 
     // 14) UI placeholder 약속: openAITTSAPIKey 비어있으면 openAISTTAPIKey로 폴백

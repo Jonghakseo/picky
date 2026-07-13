@@ -72,6 +72,44 @@ private final class FakeDaemonClipboardWriter: PickyClipboardWriting {
     }
 }
 
+/// Deterministic stand-in for the launcher's restart backoff sleep. Each
+/// scheduled restart suspends until the test resumes it, so tests never wait
+/// wall-clock backoff time. `resumeNext()` is banked if it arrives before the
+/// restart task has started sleeping.
+@MainActor
+private final class ManualRestartDelayScheduler {
+    private(set) var requestedDelays: [TimeInterval] = []
+    private var pending: [CheckedContinuation<Void, Never>] = []
+    private var bankedResumes = 0
+
+    func sleep(for delay: TimeInterval) async {
+        requestedDelays.append(delay)
+        if bankedResumes > 0 {
+            bankedResumes -= 1
+            return
+        }
+        // A restart task cancelled before it reaches this sleep must not park a
+        // continuation that no test-side resume will ever release.
+        if Task.isCancelled { return }
+        await withCheckedContinuation { pending.append($0) }
+    }
+
+    func resumeNext() {
+        if pending.isEmpty {
+            bankedResumes += 1
+        } else {
+            pending.removeFirst().resume()
+        }
+    }
+
+    func resumeAll() {
+        bankedResumes = 0
+        let continuations = pending
+        pending = []
+        for continuation in continuations { continuation.resume() }
+    }
+}
+
 @MainActor
 struct PickyAgentDaemonLauncherTests {
     @Test func buildsDaemonEnvironmentAndCapturesLogs() throws {
@@ -253,13 +291,21 @@ struct PickyAgentDaemonLauncherTests {
             executableURL: URL(fileURLWithPath: "/usr/bin/env"),
             arguments: ["pnpm", "dev"]
         )
-        let launcher = PickyAgentDaemonLauncher(configuration: configuration, runner: runner, logDirectory: temp.appendingPathComponent("Logs"))
+        let scheduler = ManualRestartDelayScheduler()
+        let launcher = PickyAgentDaemonLauncher(
+            configuration: configuration,
+            runner: runner,
+            logDirectory: temp.appendingPathComponent("Logs"),
+            restartSleep: { await scheduler.sleep(for: $0) }
+        )
 
         launcher.start()
         runner.crash(code: 9)
-        try await Task.sleep(nanoseconds: 20_000_000)
+        try await waitForState(of: launcher, matching: isRestarting)
 
         #expect(launcher.state == .restarting(attempt: 1, delay: 1))
+        launcher.stop()
+        scheduler.resumeAll()
     }
 
     @Test func repeatedImmediateCrashesIncreaseRestartBackoff() async throws {
@@ -277,28 +323,34 @@ struct PickyAgentDaemonLauncherTests {
             executableURL: URL(fileURLWithPath: "/usr/bin/env"),
             arguments: ["pnpm", "dev"]
         )
+        let scheduler = ManualRestartDelayScheduler()
         let launcher = PickyAgentDaemonLauncher(
             configuration: configuration,
             runner: runner,
             logDirectory: temp.appendingPathComponent("Logs"),
-            now: { currentTime }
+            now: { currentTime },
+            restartSleep: { await scheduler.sleep(for: $0) }
         )
 
         launcher.start()
         runner.crash(code: 9)
-        try await Task.sleep(nanoseconds: 20_000_000)
+        try await waitForState(of: launcher, matching: isRestarting)
         #expect(launcher.state == .restarting(attempt: 1, delay: 1))
 
-        try await Task.sleep(nanoseconds: 1_100_000_000)
+        scheduler.resumeNext()
+        try await waitForState(of: launcher) { $0 == .running }
         runner.crash(code: 9)
-        try await Task.sleep(nanoseconds: 20_000_000)
+        try await waitForState(of: launcher, matching: isRestarting)
         #expect(launcher.state == .restarting(attempt: 2, delay: 2))
 
-        try await Task.sleep(nanoseconds: 2_100_000_000)
+        scheduler.resumeNext()
+        try await waitForState(of: launcher) { $0 == .running }
         currentTime.addTimeInterval(30)
         runner.crash(code: 9)
-        try await Task.sleep(nanoseconds: 20_000_000)
+        try await waitForState(of: launcher, matching: isRestarting)
         #expect(launcher.state == .restarting(attempt: 1, delay: 1))
+        launcher.stop()
+        scheduler.resumeAll()
     }
 
     @Test func explicitRestartResetsCrashBackoffAttempts() async throws {
@@ -315,23 +367,27 @@ struct PickyAgentDaemonLauncherTests {
             executableURL: URL(fileURLWithPath: "/usr/bin/env"),
             arguments: ["pnpm", "dev"]
         )
+        let scheduler = ManualRestartDelayScheduler()
         let launcher = PickyAgentDaemonLauncher(
             configuration: configuration,
             runner: runner,
-            logDirectory: temp.appendingPathComponent("Logs")
+            logDirectory: temp.appendingPathComponent("Logs"),
+            restartSleep: { await scheduler.sleep(for: $0) }
         )
 
         launcher.start()
         runner.crash(code: 9)
-        try await Task.sleep(nanoseconds: 20_000_000)
+        try await waitForState(of: launcher, matching: isRestarting)
         #expect(launcher.state == .restarting(attempt: 1, delay: 1))
 
         launcher.stop()
         launcher.start()
         runner.crash(code: 9)
-        try await Task.sleep(nanoseconds: 20_000_000)
+        try await waitForState(of: launcher, matching: isRestarting)
 
         #expect(launcher.state == .restarting(attempt: 1, delay: 1))
+        launcher.stop()
+        scheduler.resumeAll()
     }
 
     @Test func delayedTerminationFromStoppedLaunchDoesNotAffectNewLaunch() async throws {
@@ -358,7 +414,7 @@ struct PickyAgentDaemonLauncherTests {
         launcher.stop()
         launcher.start()
         runner.terminateLaunch(at: 0, code: 15)
-        try await Task.sleep(nanoseconds: 20_000_000)
+        await drainMainActorHops()
 
         #expect(launcher.state == .running)
         #expect(runner.launchCount == 2)
@@ -391,7 +447,7 @@ struct PickyAgentDaemonLauncherTests {
         try FileManager.default.removeItem(at: temp.appendingPathComponent("package.json"))
         launcher.start()
         runner.terminateLaunch(at: 0, code: 15)
-        try await Task.sleep(nanoseconds: 20_000_000)
+        await drainMainActorHops()
 
         #expect({ if case .failedToStart = launcher.state { return true }; return false }())
     }
@@ -915,11 +971,11 @@ struct PickyAgentDaemonLauncherTests {
 
         #expect(launcher.state == .running)
         #expect(runner.launchedConfiguration != nil)
-        let snapshot = try String(contentsOf: temp.appendingPathComponent("Logs/agentd.node-preflight.json"))
-        #expect(snapshot.contains(#""status" : "deferredToAgentd""#))
-        #expect(snapshot.contains(#""nodeSource" : "external""#))
-        #expect(snapshot.contains(#""executablePath" : "\/usr\/bin\/env""#))
-        #expect(snapshot.contains("process.versions.node"))
+        let snapshot = try decodeNodePreflight(at: temp.appendingPathComponent("Logs/agentd.node-preflight.json"))
+        #expect(snapshot.status == "deferredToAgentd")
+        #expect(snapshot.nodeSource == "external")
+        #expect(snapshot.executablePath == "/usr/bin/env")
+        #expect(snapshot.failureReason?.contains("process.versions.node") == true)
     }
 
     @Test func statusSnapshotRecordsRuntimeAndPortConflictClassification() throws {
@@ -980,7 +1036,7 @@ struct PickyAgentDaemonLauncherTests {
         launcher.start()
         runner.emitStderr("PICKY_UNSUPPORTED_NODE:18.12.1:required=22.19.0\n")
         runner.crash(code: 2)
-        try await Task.sleep(nanoseconds: 20_000_000)
+        await drainMainActorHops()
 
         if case .failedToStart(let message) = launcher.state {
             #expect(message.contains("Node 18.12.1 is too old"))
@@ -1101,9 +1157,9 @@ struct PickyAgentDaemonLauncherTests {
         launcher.start()
 
         #expect(launcher.state == .running)
-        let snapshot = try String(contentsOf: temp.appendingPathComponent("Logs/agentd.node-preflight.json"))
-        #expect(snapshot.contains(#""status" : "deferredToAgentd""#))
-        #expect(snapshot.contains(#""nodePath" : "\/fake\/bin\/node""#))
+        let snapshot = try decodeNodePreflight(at: temp.appendingPathComponent("Logs/agentd.node-preflight.json"))
+        #expect(snapshot.status == "deferredToAgentd")
+        #expect(snapshot.nodePath == "/fake/bin/node")
         #expect(runner.launchedConfiguration != nil)
     }
 
@@ -1132,9 +1188,10 @@ struct PickyAgentDaemonLauncherTests {
         launcher.start()
 
         #expect(launcher.state == .running)
-        let snapshot = try String(contentsOf: temp.appendingPathComponent("Logs/agentd.node-preflight.json"))
-        #expect(snapshot.contains(#""status" : "deferredToAgentd""#))
-        #expect(!snapshot.contains("shim failed"))
+        let snapshot = try decodeNodePreflight(at: temp.appendingPathComponent("Logs/agentd.node-preflight.json"))
+        #expect(snapshot.status == "deferredToAgentd")
+        #expect(snapshot.version == nil)
+        #expect(snapshot.outputPreview == nil)
         #expect(runner.launchedConfiguration != nil)
     }
 
@@ -1280,6 +1337,37 @@ struct PickyAgentDaemonLauncherTests {
     private func decodeStatus(at url: URL) throws -> PickyDaemonStatusSnapshot {
         let data = try Data(contentsOf: url)
         return try JSONDecoder().decode(PickyDaemonStatusSnapshot.self, from: data)
+    }
+
+    private func decodeNodePreflight(at url: URL) throws -> PickyNodePreflightSnapshot {
+        let data = try Data(contentsOf: url)
+        return try JSONDecoder().decode(PickyNodePreflightSnapshot.self, from: data)
+    }
+
+    private func isRestarting(_ state: PickyDaemonLifecycleState) -> Bool {
+        if case .restarting = state { return true }
+        return false
+    }
+
+    private func waitForState(
+        of launcher: PickyAgentDaemonLauncher,
+        timeout: TimeInterval = 10,
+        matching predicate: (PickyDaemonLifecycleState) -> Bool
+    ) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if predicate(launcher.state) { return }
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        Issue.record("Timed out waiting for launcher state; last=\(launcher.state)")
+    }
+
+    /// The launcher's termination handler hops to the MainActor via `Task`.
+    /// Yielding re-enqueues this test task behind hops that were already
+    /// queued, so "state did not change" assertions can run after the hop
+    /// without a fixed real-time sleep.
+    private func drainMainActorHops() async {
+        for _ in 0..<20 { await Task.yield() }
     }
 
     private func waitForStatus(

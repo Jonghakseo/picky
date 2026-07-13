@@ -504,7 +504,7 @@ struct PickyHUDDockIconView: View {
 
 // MARK: - Dock icon clicks (AppKit-backed for immediate single-click open)
 
-private struct PickyHUDDockIconClickHost: NSViewRepresentable {
+struct PickyHUDDockIconClickHost: NSViewRepresentable {
     var onHover: () -> Void
     var onOpen: () -> Void
     var isScreenContextArmed: Bool
@@ -603,7 +603,7 @@ private struct PickyHUDDockIconClickHost: NSViewRepresentable {
     }
 }
 
-private final class PickyHUDDockIconClickNSView: NSView {
+final class PickyHUDDockIconClickNSView: NSView {
     weak var coordinator: PickyHUDDockIconClickHost.Coordinator?
     private var trackingArea: NSTrackingArea?
     private var archiveWorkItem: DispatchWorkItem?
@@ -883,7 +883,7 @@ struct PickyHUDCardResizeHandleHost: NSViewRepresentable {
     }
 }
 
-private final class PickyHUDCardResizeHandleNSView: NSView {
+final class PickyHUDCardResizeHandleNSView: NSView {
     weak var coordinator: PickyHUDCardResizeHandleHost.Coordinator?
     private var dragStartScreenPoint: CGPoint?
     private var trackingArea: NSTrackingArea?
@@ -986,7 +986,7 @@ private final class PickyHUDCardResizeHandleNSView: NSView {
     override var acceptsFirstResponder: Bool { false }
 }
 
-private final class PickyHUDDockAnchorHandleNSView: NSView {
+final class PickyHUDDockAnchorHandleNSView: NSView {
     weak var coordinator: PickyHUDDockAnchorHandleHost.Coordinator?
     private var dragStartScreenPoint: CGPoint?
     private var trackingArea: NSTrackingArea?

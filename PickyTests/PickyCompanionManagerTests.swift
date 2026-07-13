@@ -378,7 +378,9 @@ struct PickyCompanionManagerTests {
         manager.applyAgentEvent(.sessionUpdated(session(id: "pickle-race", status: .cancelled)))
         #expect(manager.latestAgentSessionSummary == "Pickle · cancelled")
 
-        try await Task.sleep(nanoseconds: 1_100_000_000)
+        // Wait past the deferred-receipt window to prove the cancelled
+        // deferral never fires and overwrites the terminal summary.
+        try await sleepPast(CompanionManager.minimumVoiceProcessingDisplayDuration)
 
         #expect(manager.voiceState == .idle)
         #expect(manager.voicePromptBubbleState == .hidden)
@@ -814,7 +816,7 @@ struct PickyCompanionManagerTests {
 
         // Wait past the minimum-display window so .speechFinished routes
         // straight to .idle, and let the FakeSpeechProvider close cleanly.
-        try await Task.sleep(nanoseconds: 400_000_000)
+        try await sleepPast(PickyInteractionReducer.minimumDisplayDuration)
         speechProvider.finishSpeaking()
         try await waitUntil { manager.voiceState == .idle }
     }
@@ -973,7 +975,7 @@ struct PickyCompanionManagerTests {
         // with state.output still .speaking (timerID cleared, no finishPending).
         // The safety net must NOT mistake this for a stuck-state and clear
         // voiceState — projection.isSpeaking is still true.
-        try await Task.sleep(nanoseconds: 500_000_000)
+        try await sleepPast(PickyInteractionReducer.minimumDisplayDuration, margin: 0.15)
         #expect(manager.voiceState == .responding)
         #expect(speechProvider.isSpeaking)
     }
@@ -1279,7 +1281,9 @@ struct PickyCompanionManagerTests {
 
         manager.noteExternalSubmission(kind: .createPickle, text: "", context: context(source: "cli"))
 
-        try await Task.sleep(nanoseconds: 200_000_000)
+        // createPickle is rejected synchronously and schedules no timer, so a
+        // settle() beat is enough for any stray coordinator hop to surface.
+        try await settle()
         #expect(!manager.isWaitingForCursorResponse)
     }
 
@@ -1332,6 +1336,14 @@ struct PickyCompanionManagerTests {
 
     private func settle() async throws {
         try await Task.sleep(nanoseconds: 50_000_000)
+    }
+
+    /// Sleeps just past `interval` so production timers tuned to that constant
+    /// have definitely fired (or, for negative checks, definitely had their
+    /// chance to fire). Deriving the wait from the production constant keeps
+    /// these tests valid if the constant is retuned.
+    private func sleepPast(_ interval: TimeInterval, margin: TimeInterval = 0.1) async throws {
+        try await Task.sleep(nanoseconds: UInt64((interval + margin) * 1_000_000_000))
     }
 
     private func session(id: String, status: PickySessionStatus) -> PickyAgentSession {

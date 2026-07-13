@@ -520,7 +520,7 @@ struct PickyConversationCardViewTests {
         let composer = PickyConversationComposerView(session: session, viewModel: viewModel)
 
         #expect(snapshot.questionBubbleCount == 1)
-        #expect(header.statusColorName == "amber")
+        #expect(header.statusTone == .warning)
         #expect(composer.placeholderText.contains("Steer this agent"))
         #expect(composer.placeholderText.contains("esc Stop"))
     }
@@ -612,7 +612,7 @@ struct PickyConversationCardViewTests {
         #expect(!errorBubble.recoveryChipLabels.contains("↻ 다시 시도"))
         #expect(errorBubble.recoveryChipLabels == ["⌨ Open Terminal"])
         #expect(errorBubble.titleText == "Command failed")
-        #expect(header.statusColorName == "red")
+        #expect(header.statusTone == .destructiveText)
     }
 
     @Test func errorBubbleHidesRedundantRuntimeErrorTitle() {

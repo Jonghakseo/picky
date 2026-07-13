@@ -257,8 +257,9 @@ final class PickyFallbackSpeechPlaybackProvider: PickySpeechPlaybackProvider {
         primary.isSpeaking || fallback.isSpeaking
     }
 
-    private let primary: any PickySpeechPlaybackProvider
-    private let fallback: any PickySpeechPlaybackProvider
+    // Internal (not private) so factory routing tests can assert the wiring.
+    let primary: any PickySpeechPlaybackProvider
+    let fallback: any PickySpeechPlaybackProvider
     private var activeSpeechID: UUID?
 
     init(primary: any PickySpeechPlaybackProvider, fallback: any PickySpeechPlaybackProvider) {

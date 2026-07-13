@@ -320,6 +320,7 @@ private func waitUntil(timeout: TimeInterval = 10, _ predicate: @escaping @MainA
     Issue.record("Timed out waiting for condition")
 }
 
+@Suite(.serialized)
 @MainActor
 struct PickyAgentClientRouterTests {
     @Test func returnsPrimaryClientForNilSessionId() {

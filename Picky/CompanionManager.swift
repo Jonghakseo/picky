@@ -62,6 +62,23 @@ private enum PickySpeechPollResult {
     case inactive
 }
 
+@MainActor
+protocol PickyInteractionTimerScheduling: AnyObject {
+    func schedule(after delay: TimeInterval, operation: @escaping @MainActor () -> Void)
+}
+
+@MainActor
+private final class PickyTaskInteractionTimerScheduler: PickyInteractionTimerScheduling {
+    func schedule(after delay: TimeInterval, operation: @escaping @MainActor () -> Void) {
+        Task { @MainActor in
+            let nanoseconds = UInt64(max(0, delay) * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: nanoseconds)
+            guard !Task.isCancelled else { return }
+            operation()
+        }
+    }
+}
+
 /// The subset of persisted settings that changes the live STT/TTS providers.
 /// Settings saves are global, so unrelated edits (for example the main model)
 /// must not rebuild the voice stack or interrupt an active cursor reply.
@@ -306,6 +323,9 @@ final class CompanionManager: ObservableObject {
     /// default (`true`) so the existing teardown behavior is preserved.
     private let ownsAgentClientLifecycle: Bool
     private let selectionStore: PickySessionSelectionStoring
+    private let transcriptionProviderFactory: (PickySettings) -> any BuddyTranscriptionProvider
+    private let speechPlaybackProviderFactory: (PickySettings) -> any PickySpeechPlaybackProvider
+    private let interactionTimerScheduler: any PickyInteractionTimerScheduling
     private var speechPlaybackProvider: any PickySpeechPlaybackProvider
     private var appliedVoiceProviderSettings: PickyVoiceProviderSettings
     private var ttsPlaybackEnabled: Bool
@@ -319,25 +339,36 @@ final class CompanionManager: ObservableObject {
         selectionStore: PickySessionSelectionStoring = PickyUserDefaultsSessionSelectionStore.shared,
         buddyDictationManager: BuddyDictationManager? = nil,
         speechPlaybackProvider: (any PickySpeechPlaybackProvider)? = nil,
+        initialSettings: PickySettings? = nil,
+        transcriptionProviderFactory: ((PickySettings) -> any BuddyTranscriptionProvider)? = nil,
+        speechPlaybackProviderFactory: ((PickySettings) -> any PickySpeechPlaybackProvider)? = nil,
+        interactionTimerScheduler: (any PickyInteractionTimerScheduling)? = nil,
         voiceContextCaptureCoordinator: PickyVoiceContextCaptureCoordinator? = nil,
         inkCaptureCoordinator: any PickyInkCaptureCoordinating = PickyInkCaptureCenter.shared,
         appearanceStore: PickyAppearanceStore? = nil,
         speechWatchdogTimeout: TimeInterval? = nil,
         armedPickleDispatchMode: PickyArmedPickleDispatchMode? = nil
     ) {
-        let initialSettings = PickySettingsStore().load()
+        let resolvedInitialSettings = initialSettings ?? PickySettingsStore().load()
+        let resolvedTranscriptionProviderFactory = transcriptionProviderFactory
+            ?? { BuddyTranscriptionProviderFactory.makeDefaultProvider(settings: $0) }
+        let resolvedSpeechPlaybackProviderFactory = speechPlaybackProviderFactory
+            ?? { PickySpeechPlaybackProviderFactory.makeDefaultProvider(settings: $0) }
         self.agentClient = agentClient
         self.ownsAgentClientLifecycle = ownsAgentClientLifecycle
         self.selectionStore = selectionStore
+        self.transcriptionProviderFactory = resolvedTranscriptionProviderFactory
+        self.speechPlaybackProviderFactory = resolvedSpeechPlaybackProviderFactory
+        self.interactionTimerScheduler = interactionTimerScheduler ?? PickyTaskInteractionTimerScheduler()
         self.buddyDictationManager = buddyDictationManager ?? BuddyDictationManager(
-            transcriptionProvider: BuddyTranscriptionProviderFactory.makeDefaultProvider(settings: initialSettings)
+            transcriptionProvider: resolvedTranscriptionProviderFactory(resolvedInitialSettings)
         )
-        self.speechPlaybackProvider = speechPlaybackProvider ?? PickySpeechPlaybackProviderFactory.makeDefaultProvider(settings: initialSettings)
-        self.appliedVoiceProviderSettings = PickyVoiceProviderSettings(initialSettings)
-        self.ttsPlaybackEnabled = speechPlaybackProvider == nil ? initialSettings.ttsEnabled : true
+        self.speechPlaybackProvider = speechPlaybackProvider ?? resolvedSpeechPlaybackProviderFactory(resolvedInitialSettings)
+        self.appliedVoiceProviderSettings = PickyVoiceProviderSettings(resolvedInitialSettings)
+        self.ttsPlaybackEnabled = speechPlaybackProvider == nil ? resolvedInitialSettings.ttsEnabled : true
         self.speechWatchdogTimeoutOverride = speechWatchdogTimeout
         self.voiceContextCaptureCoordinator = voiceContextCaptureCoordinator ?? PickyVoiceContextCaptureCoordinator()
-        self.armedPickleDispatchMode = armedPickleDispatchMode ?? initialSettings.armedPickleDispatchMode
+        self.armedPickleDispatchMode = armedPickleDispatchMode ?? resolvedInitialSettings.armedPickleDispatchMode
         self.inkCaptureCoordinator = inkCaptureCoordinator
         self.quickInputPanelManager = QuickInputPanelManager(appearanceStore: appearanceStore)
         self.screenContextTargetSessionID = selectionStore.screenContextTargetSessionID
@@ -362,12 +393,15 @@ final class CompanionManager: ObservableObject {
     private let inkCaptureCoordinator: any PickyInkCaptureCoordinating
     private var pendingInkCapturesByInputID: [UUID: PickyInkCapture] = [:]
     private var screenContextVoiceTargetByInputID: [UUID: String] = [:]
+    /// Monotonic marker for observing when queued interaction events have published.
+    private(set) var interactionProjectionSequence: UInt64 = 0
     private lazy var interactionCoordinator: PickyInteractionCoordinator = {
         let coordinator = PickyInteractionCoordinator(
             envelopeMaker: PickyInteractionStaticEnvelopeMaker(),
             effectRunner: CompanionInteractionEffectRunner(manager: self)
         )
-        coordinator.onProjectionPublished = { [weak self] _, projection in
+        coordinator.onProjectionPublished = { [weak self] sequence, projection in
+            self?.interactionProjectionSequence = sequence
             self?.applyInteractionProjection(projection)
         }
         return coordinator
@@ -858,7 +892,7 @@ final class CompanionManager: ObservableObject {
         appliedVoiceProviderSettings = updatedVoiceProviderSettings
 
         buddyDictationManager.updateTranscriptionProvider(
-            BuddyTranscriptionProviderFactory.makeDefaultProvider(settings: settings)
+            transcriptionProviderFactory(settings)
         )
         ttsPlaybackEnabled = settings.ttsEnabled
         if speechPlaybackProvider.isSpeaking {
@@ -871,7 +905,7 @@ final class CompanionManager: ObservableObject {
                 stopCurrentSpeech()
             }
         }
-        speechPlaybackProvider = PickySpeechPlaybackProviderFactory.makeDefaultProvider(settings: settings)
+        speechPlaybackProvider = speechPlaybackProviderFactory(settings)
         print("🎛️ Voice settings applied — STT: \(settings.sttProvider.rawValue), TTS: \(settings.ttsEnabled ? settings.ttsProvider.rawValue : "off"), Azure STT language: \(settings.azureSTTPreferredLanguage.isEmpty ? "auto" : settings.azureSTTPreferredLanguage)")
     }
 
@@ -1814,9 +1848,7 @@ final class CompanionManager: ObservableObject {
     }
 
     fileprivate func runMinimumDisplayTimerEffect(timerID: UUID, speechID: UUID?, inputID: UUID?, delay: TimeInterval) {
-        Task { @MainActor [weak self] in
-            let nanoseconds = UInt64(max(0, delay) * 1_000_000_000)
-            try? await Task.sleep(nanoseconds: nanoseconds)
+        interactionTimerScheduler.schedule(after: delay) { [weak self] in
             self?.interactionCoordinator.effectCompleted(
                 .minimumDisplayTimerFired(timerID: timerID, speechID: speechID, inputID: inputID),
                 correlation: PickyInteractionCorrelation(inputID: inputID, speechID: speechID, source: .system)

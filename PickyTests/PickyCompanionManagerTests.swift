@@ -96,6 +96,64 @@ private final class FakeSpeechPlaybackProvider: PickySpeechPlaybackProvider {
     }
 }
 
+private enum FakeTranscriptionProviderError: Error {
+    case unsupported
+}
+
+private final class FakeTranscriptionProvider: BuddyTranscriptionProvider {
+    let displayName = "Fake Transcription"
+    let requiresSpeechRecognitionPermission = false
+    let isConfigured = true
+    let unavailableExplanation: String? = nil
+
+    func startStreamingSession(
+        keyterms: [String],
+        onTranscriptUpdate: @escaping (String) -> Void,
+        onFinalTranscriptReady: @escaping (String) -> Void,
+        onError: @escaping (Error) -> Void
+    ) async throws -> any BuddyStreamingTranscriptionSession {
+        throw FakeTranscriptionProviderError.unsupported
+    }
+}
+
+@MainActor
+private final class FakeVoiceProviderFactory {
+    private(set) var transcriptionSettings: [PickySettings] = []
+    private(set) var speechSettings: [PickySettings] = []
+    private(set) var speechProviders: [FakeSpeechPlaybackProvider] = []
+
+    func makeTranscriptionProvider(settings: PickySettings) -> any BuddyTranscriptionProvider {
+        transcriptionSettings.append(settings)
+        return FakeTranscriptionProvider()
+    }
+
+    func makeSpeechPlaybackProvider(settings: PickySettings) -> any PickySpeechPlaybackProvider {
+        speechSettings.append(settings)
+        let provider = FakeSpeechPlaybackProvider()
+        speechProviders.append(provider)
+        return provider
+    }
+}
+
+@MainActor
+private final class FakeInteractionTimerScheduler: PickyInteractionTimerScheduling {
+    private struct ScheduledOperation {
+        let delay: TimeInterval
+        let operation: @MainActor () -> Void
+    }
+
+    private var scheduledOperations: [ScheduledOperation] = []
+    var scheduledDelays: [TimeInterval] { scheduledOperations.map(\.delay) }
+
+    func schedule(after delay: TimeInterval, operation: @escaping @MainActor () -> Void) {
+        scheduledOperations.append(ScheduledOperation(delay: delay, operation: operation))
+    }
+
+    func fireNext() {
+        scheduledOperations.removeFirst().operation()
+    }
+}
+
 @MainActor
 private final class FakeNSSpeechSynthesizer: PickyNSSpeechSynthesizing {
     var delegate: NSSpeechSynthesizerDelegate?
@@ -955,12 +1013,18 @@ struct PickyCompanionManagerTests {
     }
 
     @Test func mainModelSettingsChangeDoesNotInterruptActiveReply() async throws {
-        let speechProvider = FakeSpeechPlaybackProvider()
+        let settings = deterministicVoiceSettings()
+        let providerFactory = FakeVoiceProviderFactory()
+        let timerScheduler = FakeInteractionTimerScheduler()
         let manager = CompanionManager(
             agentClient: FakeVoiceClient(),
             selectionStore: FakeVoiceSelectionStore(),
-            speechPlaybackProvider: speechProvider
+            initialSettings: settings,
+            transcriptionProviderFactory: { providerFactory.makeTranscriptionProvider(settings: $0) },
+            speechPlaybackProviderFactory: { providerFactory.makeSpeechPlaybackProvider(settings: $0) },
+            interactionTimerScheduler: timerScheduler
         )
+        let speechProvider = try #require(providerFactory.speechProviders.first)
 
         manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
             contextId: "context-model-change",
@@ -971,22 +1035,32 @@ struct PickyCompanionManagerTests {
         try await waitUntil { manager.voiceState == .responding && speechProvider.isSpeaking }
         let stopCountBeforeSettingsChange = speechProvider.stopCount
 
-        var settings = PickySettingsStore().load()
-        settings.mainAgentModelPattern += "-changed"
-        manager.reloadVoiceProvidersFromSettings(settings)
+        var updatedSettings = settings
+        updatedSettings.mainAgentModelPattern = "openai/gpt-model-change"
+        manager.reloadVoiceProvidersFromSettings(updatedSettings)
 
+        #expect(providerFactory.transcriptionSettings.count == 1)
+        #expect(providerFactory.speechSettings.count == 1)
+        #expect(providerFactory.speechProviders.count == 1)
+        #expect(providerFactory.speechProviders.first === speechProvider)
         #expect(speechProvider.stopCount == stopCountBeforeSettingsChange)
         #expect(speechProvider.isSpeaking)
         #expect(manager.voiceState == .responding)
     }
 
     @Test func voiceSettingsChangeSettlesInterruptedReplyBeforeLaterProjection() async throws {
-        let speechProvider = FakeSpeechPlaybackProvider()
+        let settings = deterministicVoiceSettings()
+        let providerFactory = FakeVoiceProviderFactory()
+        let timerScheduler = FakeInteractionTimerScheduler()
         let manager = CompanionManager(
             agentClient: FakeVoiceClient(),
             selectionStore: FakeVoiceSelectionStore(),
-            speechPlaybackProvider: speechProvider
+            initialSettings: settings,
+            transcriptionProviderFactory: { providerFactory.makeTranscriptionProvider(settings: $0) },
+            speechPlaybackProviderFactory: { providerFactory.makeSpeechPlaybackProvider(settings: $0) },
+            interactionTimerScheduler: timerScheduler
         )
+        let speechProvider = try #require(providerFactory.speechProviders.first)
 
         manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
             contextId: "context-voice-change",
@@ -995,12 +1069,27 @@ struct PickyCompanionManagerTests {
             replyKind: .main
         )))
         try await waitUntil { manager.voiceState == .responding && speechProvider.isSpeaking }
-        try await sleepPast(PickyInteractionReducer.minimumDisplayDuration, margin: 0.05)
+        #expect(timerScheduler.scheduledDelays == [PickyInteractionReducer.minimumDisplayDuration])
 
-        var settings = PickySettingsStore().load()
-        settings.ttsEnabled.toggle()
-        manager.reloadVoiceProvidersFromSettings(settings)
+        let sequenceBeforeTimer = manager.interactionProjectionSequence
+        timerScheduler.fireNext()
+        try await waitUntil { manager.interactionProjectionSequence > sequenceBeforeTimer }
+        #expect(timerScheduler.scheduledDelays.isEmpty)
 
+        var updatedSettings = settings
+        updatedSettings.ttsEnabled = false
+        let sequenceBeforeReload = manager.interactionProjectionSequence
+        manager.reloadVoiceProvidersFromSettings(updatedSettings)
+        try await waitUntil {
+            manager.interactionProjectionSequence > sequenceBeforeReload && manager.voiceState == .idle
+        }
+
+        #expect(providerFactory.transcriptionSettings == [settings, updatedSettings])
+        #expect(providerFactory.speechSettings == [settings, updatedSettings])
+        #expect(providerFactory.speechProviders.count == 2)
+        #expect(!speechProvider.isSpeaking)
+
+        let sequenceBeforePointer = manager.interactionProjectionSequence
         manager.applyAgentEvent(.pointerOverlayRequested(PickyPointerOverlayRequest(
             id: "pointer-after-voice-settings",
             contextId: "context-pointer",
@@ -1012,9 +1101,8 @@ struct PickyCompanionManagerTests {
             screenBounds: PickyCGRect(x: 0, y: 0, width: 100, height: 100),
             screenshotSize: PickyPointerScreenshotSize(width: 100, height: 100)
         )))
-        try await settle()
+        try await waitUntil { manager.interactionProjectionSequence > sequenceBeforePointer }
 
-        #expect(!speechProvider.isSpeaking)
         #expect(manager.voiceState == .idle)
     }
 
@@ -1396,6 +1484,12 @@ struct PickyCompanionManagerTests {
             screenshots: [],
             warnings: []
         )
+    }
+
+    private func deterministicVoiceSettings() -> PickySettings {
+        let appSupportRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("picky-companion-manager-tests", isDirectory: true)
+        return PickySettings.defaults(appSupportRoot: appSupportRoot, seedDefaultWorkspace: false)
     }
 
     private func settle() async throws {

@@ -188,13 +188,13 @@ struct PickyHUDDockIconView: View {
     /// set so every dock instance shows the same indicator.
     private var unreadDot: some View {
         Circle()
-            .fill(DS.Colors.accent)
+            .fill(DS.Colors.notification)
             .frame(width: 7, height: 7)
             .overlay(
                 Circle()
                     .stroke(DS.Colors.background, lineWidth: 1.2)
             )
-            .shadow(color: DS.Colors.accent.opacity(0.45), radius: 2.5, x: 0, y: 0)
+            .shadow(color: DS.Colors.notification.opacity(0.45), radius: 2.5, x: 0, y: 0)
             .accessibilityLabel("Unread")
             .accessibilityHint("This Pickle has updates you haven't seen yet.")
     }
@@ -494,7 +494,7 @@ struct PickyHUDDockIconView: View {
 
     private var tileScale: CGFloat {
         if isArchivePressing { return 0.92 }
-        return isHovered ? 1.03 : 1.0
+        return 1.0
     }
 
     /// Preview pops out on the side OPPOSITE the conversation card so it never

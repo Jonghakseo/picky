@@ -140,6 +140,13 @@ enum DS {
         /// Inline code text color — slightly brighter blue for monospace code snippets.
         static let codeText = Color(light: blue700, dark: Color(hex: "#9DC2FF"))           // Radix Blue 11 variant
 
+        // ── Notification / Unread ────────────────────────────────────
+
+        /// Unread / notification indicator (dock unread dot, unread count chip).
+        /// Kept distinct from Action Blue so "unread" reads as a status signal,
+        /// not a clickable/selected affordance. Always paired with a count or dot shape.
+        static let notification = Color(light: Color(hex: "#2563EB"), dark: Color(hex: "#60A5FA"))
+
         // ── Overlay Cursor ───────────────────────────────────────────
 
         /// The blue cursor/bubble color used in OverlayWindow.
@@ -185,6 +192,26 @@ enum DS {
         static var disabledText: Color {
             textPrimary.opacity(0.38)
         }
+    }
+
+    // MARK: - Group Accent Palette
+    // Solid accent colors for user-created dock groups (2px bar + header text).
+    // Values that coincide with an existing semantic token reference it directly
+    // so the two never drift; the remaining hues are group-only accents.
+
+    enum GroupAccent {
+        /// Coincides with `Colors.success` (emerald).
+        static let teal = Colors.success
+        /// Coincides with `Colors.warningText` amber tone.
+        static let amber = Colors.warningText
+        /// Coincides with `Colors.info` blue tone.
+        static let blue = Colors.info
+        /// Coincides with `Colors.destructiveText` red tone.
+        static let red = Colors.destructiveText
+        /// Group-only hues (no existing semantic role).
+        static let pink = Color(hex: "#EC4899")
+        static let purple = Color(hex: "#A78BFA")
+        static let gray = Color(hex: "#8C8C92")
     }
 
     // MARK: - Spacing (for reference, not enforced)
@@ -242,98 +269,6 @@ enum DS {
 }
 
 // MARK: - Button Styles
-
-/// Primary button — the main call-to-action per screen.
-/// Accent-colored background with white text. One per view maximum.
-/// Used for: "start"/"resume", "let's go", "continue", "verify completion".
-struct DSPrimaryButtonStyle: ButtonStyle {
-    var isFullWidth: Bool = true
-
-    @State private var isHovered = false
-
-    // Separate state for the scale expansion so it animates on a slower,
-    // more gradual timeline (0.6s) than the background color snap (0.15s).
-    @State private var isHoverScaleExpanded = false
-
-    // Whether the hover glow shadow is active. Builds up gradually (0.6s)
-    // on hover entry, fades out faster (0.3s) on exit.
-    @State private var isHoverGlowActive = false
-
-    // Continuously toggles while hovered to drive a gentle breathing pulse
-    // in the glow shadow. Creates a living, organic feel — like the button
-    // is softly glowing, not just statically lit.
-    @State private var isGlowBreathingIn = false
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 16, weight: .medium))
-            .foregroundColor(DS.Colors.textOnAccent)
-            .frame(maxWidth: isFullWidth ? .infinity : nil)
-            .padding(.vertical, 14)
-            .padding(.horizontal, isFullWidth ? 0 : 20)
-            .background(
-                Capsule()
-                    .fill(buttonBackgroundColor(isPressed: configuration.isPressed))
-            )
-            // Hover glow — builds up gradually, then gently breathes while hovered.
-            // The breathing oscillates opacity and radius on a slow 2.5s loop,
-            // creating a candle-flame-like "alive" quality rather than a static highlight.
-            .shadow(
-                color: DS.Colors.accent.opacity(
-                    isHoverGlowActive ? (isGlowBreathingIn ? 0.32 : 0.18) : 0
-                ),
-                radius: isHoverGlowActive ? (isGlowBreathingIn ? 16 : 10) : 0
-            )
-            // Hover: gradually expand to 1.03. Press: snap down to 0.97.
-            .scaleEffect(configuration.isPressed ? 0.97 : (isHoverScaleExpanded ? 1.03 : 1.0))
-            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
-            .onHover { hovering in
-                // Background color — fast snap so the button feels responsive
-                withAnimation(.easeOut(duration: 0.15)) {
-                    isHovered = hovering
-                }
-
-                // Scale — slow, gradual expansion (like the button is swelling)
-                withAnimation(.easeInOut(duration: hovering ? 0.6 : 0.3)) {
-                    isHoverScaleExpanded = hovering
-                }
-
-                // Glow — builds up gradually on entry, fades faster on exit
-                withAnimation(.easeInOut(duration: hovering ? 0.6 : 0.3)) {
-                    isHoverGlowActive = hovering
-                }
-
-                // Breathing glow loop — gentle pulse while hovered.
-                // The 2.5s cycle keeps it feeling organic, not mechanical.
-                if hovering {
-                    withAnimation(
-                        .easeInOut(duration: 2.5)
-                        .repeatForever(autoreverses: true)
-                    ) {
-                        isGlowBreathingIn = true
-                    }
-                } else {
-                    // Override the repeating animation with a finite one to stop cleanly
-                    withAnimation(.easeOut(duration: 0.3)) {
-                        isGlowBreathingIn = false
-                    }
-                }
-
-                if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-            }
-    }
-
-    private func buttonBackgroundColor(isPressed: Bool) -> Color {
-        if isPressed {
-            // Pressed: brighten slightly beyond hover
-            return DS.Colors.accentHover.blendedWithWhite(fraction: DS.StateLayer.pressed)
-        } else if isHovered {
-            return DS.Colors.accentHover
-        } else {
-            return DS.Colors.accent
-        }
-    }
-}
 
 /// Secondary button — supporting actions, less visual weight than primary.
 /// Surface-colored background with primary text. Used for: action buttons
@@ -703,11 +638,6 @@ struct DSIconButtonStyle: ButtonStyle {
 // MARK: - Convenience View Extensions
 
 extension View {
-    /// Applies the primary button style (accent-colored CTA).
-    func dsPrimaryButtonStyle(isFullWidth: Bool = true) -> some View {
-        self.buttonStyle(DSPrimaryButtonStyle(isFullWidth: isFullWidth))
-    }
-
     /// Applies the secondary button style (surface-colored supporting action).
     func dsSecondaryButtonStyle(isFullWidth: Bool = true) -> some View {
         self.buttonStyle(DSSecondaryButtonStyle(isFullWidth: isFullWidth))

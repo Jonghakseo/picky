@@ -470,14 +470,14 @@ struct PickyHUDDockCollapsedGroupBadge: View {
                     .padding(.vertical, 0.5)
                     .background(
                         Capsule(style: .continuous)
-                            .fill(DS.Colors.accent)
+                            .fill(DS.Colors.notification)
                     )
                     .foregroundColor(.white)
                     .overlay(
                         Capsule(style: .continuous)
                             .stroke(DS.Colors.background, lineWidth: 0.8)
                     )
-                    .shadow(color: DS.Colors.accent.opacity(0.45), radius: 2.5, x: 0, y: 0)
+                    .shadow(color: DS.Colors.notification.opacity(0.45), radius: 2.5, x: 0, y: 0)
                     .offset(x: 4, y: -4)
                     .opacity(isCommandShortcutHintVisible ? 0 : 1)
                     .allowsHitTesting(false)
@@ -492,7 +492,7 @@ struct PickyHUDDockCollapsedGroupBadge: View {
                     .transition(.scale(scale: 0.88, anchor: .topTrailing).combined(with: .opacity))
             }
         }
-        .scaleEffect(isHovered ? 1.04 : 1.0)
+        .brightness(isHovered ? 0.04 : 0)
         .contentShape(RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous))
         .onHover { hovering in
             withAnimation(.easeOut(duration: 0.12)) { isHovered = hovering }

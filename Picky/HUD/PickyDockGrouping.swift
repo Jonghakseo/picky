@@ -44,13 +44,13 @@ enum PickyDockGroupColor: Int, Codable, CaseIterable, Identifiable {
     /// Solid accent color used for the 2px bar and group header text.
     var accent: Color {
         switch self {
-        case .teal:   Color(hex: "#34D399")
-        case .amber:  Color(hex: "#F1A10D")
-        case .blue:   Color(hex: "#70B8FF")
-        case .pink:   Color(hex: "#EC4899")
-        case .purple: Color(hex: "#A78BFA")
-        case .red:    Color(hex: "#FF6369")
-        case .gray:   Color(hex: "#8C8C92")
+        case .teal:   DS.GroupAccent.teal
+        case .amber:  DS.GroupAccent.amber
+        case .blue:   DS.GroupAccent.blue
+        case .pink:   DS.GroupAccent.pink
+        case .purple: DS.GroupAccent.purple
+        case .red:    DS.GroupAccent.red
+        case .gray:   DS.GroupAccent.gray
         }
     }
 

@@ -59,6 +59,14 @@ private struct PickyCuratedPlugin: Identifiable {
         source: "npm:@ryan_nookpi/pi-extension-delayed-action"
     )
 
+    static let todoWriteOverlay = PickyCuratedPlugin(
+        id: "todo-write-overlay",
+        titleKey: "extensions.curated.todoWriteOverlay.title",
+        descriptionKey: "extensions.curated.todoWriteOverlay.description",
+        commandName: "todo_write",
+        source: "npm:@ryan_nookpi/pi-extension-todo-write-overlay"
+    )
+
     static let clipboard = PickyCuratedPlugin(
         id: "clipboard",
         titleKey: "extensions.curated.clipboard.title",
@@ -97,6 +105,7 @@ private struct PickyCuratedPlugin: Identifiable {
         .generativeUI,
         .autoName,
         .delayedAction,
+        .todoWriteOverlay,
         .clipboard,
         .claudeMcpBridge,
         .crossAgent,

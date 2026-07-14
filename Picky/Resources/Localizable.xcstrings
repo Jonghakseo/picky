@@ -4671,6 +4671,38 @@
         }
       }
     },
+    "extensions.curated.todoWriteOverlay.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todo write overlay"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todo write 오버레이"
+          }
+        }
+      }
+    },
+    "extensions.curated.todoWriteOverlay.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create and update structured session todos with the `todo_write` tool and track progress in a passive top-right overlay."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "`todo_write` 도구로 세션별 구조화된 할 일을 만들고 갱신하며 진행 상황을 우측 상단 오버레이로 확인할 수 있어요."
+          }
+        }
+      }
+    },
     "extensions.curated.clipboard.title": {
       "localizations": {
         "en": {

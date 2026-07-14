@@ -1,0 +1,57 @@
+{
+  "skill_name": "picky-design-guide",
+  "evals": [
+    {
+      "id": "composer-design-proposal",
+      "prompt": "Picky Conversation Composer를 더 Apple답게 정리하고 싶어. 입력창, 전송 버튼, bash 모드, 파일 드롭 상태를 전부 다시 디자인해서 구현해줘. 먼저 어떤 기준으로 바꿀지 보여줘.",
+      "expected_output": "canonical Picky 디자인 문서를 읽고 구현 전에 Design Decision Card를 제시한다. Apple 웹 외형을 복제하지 않고 Activity-first, Action Blue와 semantic status 분리, Composer의 focus/disabled/bash/drop/autocomplete 상태, macOS keyboard와 accessibility, 기존 IME와 follow-up 동작 보존을 포함한다. 큰 변경이므로 승인 전에 코드를 수정하지 않는다.",
+      "files": [],
+      "assertions": [
+        {
+          "text": "The response presents a Design Decision Card before implementation and waits for approval for the substantial redesign.",
+          "type": "qualitative"
+        },
+        {
+          "text": "The response covers focus, disabled, bash, file drop, autocomplete or attachment states and preserves IME and follow-up behavior.",
+          "type": "qualitative"
+        },
+        {
+          "text": "The response distinguishes Action Blue from semantic session/status colors instead of copying Apple web styling literally.",
+          "type": "qualitative"
+        }
+      ]
+    },
+    {
+      "id": "hud-visual-audit",
+      "prompt": "HUD Dock과 Conversation Card의 shadow, glow, material, corner radius가 제각각인 것 같아. 코드는 바꾸지 말고 전체적으로 디자인 검수해줘.",
+      "expected_output": "AUDIT.md의 rubric과 P0-P3 severity를 사용해 코드 근거가 있는 Design Audit Report를 작성한다. 실제 floating layer와 장식 shadow를 구분하고 유지할 점과 변경 순서를 함께 제시한다. 리뷰 전용 요청이므로 파일을 수정하거나 앱을 재시작하지 않는다.",
+      "files": [],
+      "assertions": [
+        {
+          "text": "The response uses evidence-backed audit findings with severity and the documented scoring dimensions.",
+          "type": "qualitative"
+        },
+        {
+          "text": "The response distinguishes structural elevation for Dock/Card from decorative glow and includes both keep and change recommendations.",
+          "type": "qualitative"
+        },
+        {
+          "text": "The response does not edit files or restart Picky because the request is audit-only.",
+          "type": "qualitative"
+        }
+      ]
+    },
+    {
+      "id": "backend-near-miss",
+      "prompt": "agentd WebSocket reconnect 시 session epoch이 꼬이는 버그를 고치고 테스트해줘. UI 변경은 없어.",
+      "expected_output": "UI projection 변경이 없는 backend-only near miss로 분류해 Picky 디자인 규칙을 억지로 적용하지 않는다. 관련 daemon debugging/testing workflow를 사용하고 디자인 문서나 시각 토큰 변경을 제안하지 않는다.",
+      "files": [],
+      "assertions": [
+        {
+          "text": "The response recognizes the task as backend-only and does not force a visual design workflow or token changes.",
+          "type": "qualitative"
+        }
+      ]
+    }
+  ]
+}

@@ -495,15 +495,9 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     };
   }
 
-  getActiveBranchTranscript(): RewindBranchMessage[] {
-    // sessionManager.getBranch() already returns the active path in root->leaf (oldest->newest)
-    // order. Do NOT reverse it here; the supervisor reconcile anchors on the last (newest) entry.
-    return branchTranscriptFromEntries(this.runtime.session.sessionManager.getBranch());
-  }
-
-  getTodoStateResolution() {
-    return resolveTodoStateFromPiSessionEntries(this.runtime.session.sessionManager.getBranch());
-  }
+  // Pi returns root->leaf; never reverse because supervisor reconciliation anchors on the newest last entry.
+  getActiveBranchTranscript(): RewindBranchMessage[] { return branchTranscriptFromEntries(this.runtime.session.sessionManager.getBranch()); }
+  getTodoStateResolution() { return resolveTodoStateFromPiSessionEntries(this.runtime.session.sessionManager.getBranch()); }
 
   getSteeringMessages(): readonly string[] {
     return this.runtime.session.getSteeringMessages().map((entry) => this.translateQueueEntry(entry));

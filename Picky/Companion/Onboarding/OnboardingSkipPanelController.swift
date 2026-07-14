@@ -176,7 +176,7 @@ private struct OnboardingSkipButtonView: View {
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1.5)
                     .background(
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
                             .fill(Color.white.opacity(0.18))
                     )
                     .foregroundColor(.white.opacity(0.85))

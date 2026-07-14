@@ -171,10 +171,10 @@ struct CompanionPanelStatusView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .background(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                     .fill(DS.Colors.warning.opacity(0.10))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                             .stroke(DS.Colors.warning.opacity(0.45), lineWidth: 0.6)
                     )
             )

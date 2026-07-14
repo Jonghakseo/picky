@@ -172,10 +172,10 @@ private struct OnboardingHighlightViewerView: View {
         }
         .padding(14)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: DS.CornerRadius.panel, style: .continuous)
                 .fill(Color.black.opacity(0.78))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.panel, style: .continuous)
                         .stroke(Color.white.opacity(0.18), lineWidth: 1)
                 )
                 .shadow(color: Color.black.opacity(0.4), radius: 18, x: 0, y: 8)

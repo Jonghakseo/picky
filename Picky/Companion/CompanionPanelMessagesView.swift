@@ -375,7 +375,7 @@ private struct CompanionPanelMarkdownText: View {
                 }
             }
             .padding(8)
-            .background(DS.Colors.surface2, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .background(DS.Colors.surface2, in: RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous))
         case .codeBlock(let text):
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(text.isEmpty ? " " : text)
@@ -384,9 +384,9 @@ private struct CompanionPanelMarkdownText: View {
                     .padding(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .background(DS.Colors.surface2, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .background(DS.Colors.surface2, in: RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                     .stroke(DS.Colors.borderSubtle, lineWidth: 0.8)
             )
         }

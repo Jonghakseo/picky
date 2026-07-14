@@ -794,10 +794,10 @@ struct CompanionPanelSettingsView: View {
                     .padding(.vertical, 7)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                             .fill(DS.Colors.surface1.opacity(0.55))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                                     .stroke(DS.Colors.borderSubtle.opacity(0.4), lineWidth: 0.5)
                             )
                     )
@@ -1043,10 +1043,10 @@ struct CompanionPanelSettingsView: View {
                 .padding(.vertical, 7)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                         .fill(DS.Colors.surface1.opacity(0.55))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                                 .stroke(DS.Colors.borderSubtle.opacity(0.4), lineWidth: 0.5)
                         )
                 )
@@ -1139,10 +1139,10 @@ struct CompanionPanelSettingsView: View {
                     .padding(.vertical, 7)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                             .fill(DS.Colors.surface1.opacity(0.55))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                                     .stroke(DS.Colors.borderSubtle.opacity(0.4), lineWidth: 0.5)
                             )
                     )
@@ -1411,7 +1411,7 @@ struct CompanionPanelSettingsView: View {
                 .padding(.horizontal, 9)
                 .padding(.vertical, 7)
                 .background(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                         .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
                 )
                 .onChange(of: text.wrappedValue) { _, _ in
@@ -1431,7 +1431,7 @@ struct CompanionPanelSettingsView: View {
                 .padding(.horizontal, 9)
                 .padding(.vertical, 7)
                 .background(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                         .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
                 )
                 .onChange(of: text.wrappedValue) { _, _ in
@@ -1472,7 +1472,7 @@ struct CompanionPanelSettingsView: View {
                 .padding(.horizontal, 9)
                 .padding(.vertical, 7)
                 .background(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                         .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
                 )
                 .onChange(of: text.wrappedValue) { _, _ in
@@ -1492,7 +1492,7 @@ struct CompanionPanelSettingsView: View {
                 .padding(.horizontal, 9)
                 .padding(.vertical, 7)
                 .background(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                         .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
                 )
                 .onChange(of: text.wrappedValue) { _, _ in
@@ -1568,7 +1568,7 @@ struct CompanionPanelSettingsView: View {
                 .padding(.horizontal, 9)
                 .padding(.vertical, 7)
                 .background(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                         .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
                 )
                 .onChange(of: text.wrappedValue) { _, newValue in onChange(newValue) }

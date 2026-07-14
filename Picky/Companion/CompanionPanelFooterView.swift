@@ -87,7 +87,7 @@ struct CompanionPanelFeedbackGlyphButton: View {
                 .foregroundColor(isHovering ? DS.Colors.textPrimary : DS.Colors.textTertiary)
                 .frame(width: 18, height: 18)
                 .background(
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
                         .fill(isHovering ? DS.Colors.textPrimary.opacity(0.06) : Color.clear)
                 )
                 .contentShape(Rectangle())

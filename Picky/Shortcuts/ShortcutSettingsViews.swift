@@ -90,10 +90,10 @@ struct ShortcutSettingsRow: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .background(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                     .fill(DS.Colors.surface1.opacity(0.55))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                             .stroke(DS.Colors.borderSubtle.opacity(0.4), lineWidth: 0.5)
                     )
             )
@@ -162,7 +162,7 @@ struct ShortcutChipButtonStyle: ButtonStyle {
             .padding(.horizontal, 12)
             .padding(.vertical, 5)
             .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                     .fill(backgroundColor(for: configuration))
             )
             .opacity(configuration.isPressed ? 0.85 : 1.0)

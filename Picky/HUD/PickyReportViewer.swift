@@ -309,9 +309,9 @@ struct PickyMarkdownReportView: View {
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .background(DS.Colors.surface2, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .background(DS.Colors.surface2, in: RoundedRectangle(cornerRadius: DS.CornerRadius.large, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.CornerRadius.large, style: .continuous)
                     .stroke(DS.Colors.borderSubtle, lineWidth: 1)
             )
         }
@@ -326,12 +326,12 @@ struct PickyMarkdownReportView: View {
                     tableRow(row, widths: widths, isHeader: false)
                 }
             }
-            .background(DS.Colors.surface1, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .background(DS.Colors.surface1, in: RoundedRectangle(cornerRadius: DS.CornerRadius.large, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.CornerRadius.large, style: .continuous)
                     .stroke(DS.Colors.borderSubtle, lineWidth: 1)
             )
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.large, style: .continuous))
         }
     }
 

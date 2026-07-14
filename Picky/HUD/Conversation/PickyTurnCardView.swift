@@ -384,7 +384,7 @@ struct PickyTurnCardView<MessageContent: View>: View {
         // opacity transition leaves ghost rows drawn at their original Y while
         // the sibling user bubble of the next turn slides up through them —
         // see the implicit-animation-scope memo in project memory.
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous))
         // Scope the toggle animation to this card only. Previously a
         // `withAnimation` block in the header tap captured every downstream
         // layout change (next turn's user bubble, the following card,
@@ -468,12 +468,12 @@ struct PickyTurnCardView<MessageContent: View>: View {
     }
 
     private var turnCardBackground: some View {
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
+        RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous)
             .fill(group.isCurrent ? Color.clear : DS.Colors.surface2.opacity(0.18))
             .overlay(
                 // `strokeBorder` draws inside the path so the outline is not
                 // cropped by the body's `.clipShape` with the same shape.
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous)
                     .strokeBorder(DS.Colors.borderSubtle.opacity(0.4), lineWidth: 0.5)
             )
     }

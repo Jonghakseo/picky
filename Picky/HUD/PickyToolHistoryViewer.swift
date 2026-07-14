@@ -294,10 +294,10 @@ struct PickyToolHistoryEntryView: View {
         }
         .background(DS.Colors.surface1)
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: DS.CornerRadius.medium)
                 .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.medium))
         .onAppear { isResultExpanded = entry.status == .failed && entry.category == .other }
     }
 
@@ -441,7 +441,7 @@ struct PickyToolHistoryEntryView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(8)
             .background(DS.Colors.surface2.opacity(0.7))
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.small))
     }
 
     private func outputBlock(_ text: String) -> some View {
@@ -455,7 +455,7 @@ struct PickyToolHistoryEntryView: View {
         }
         .frame(maxHeight: 180)
         .background(DS.Colors.surface3.opacity(0.6))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.small))
     }
 
     private func diffBlock(_ change: PickyToolHistoryEditChange) -> some View {
@@ -467,8 +467,8 @@ struct PickyToolHistoryEntryView: View {
                 diffLine(prefix: "+", text: change.newText, color: DS.Colors.success, background: DS.Colors.success.opacity(0.10))
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5))
+        .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.small))
+        .overlay(RoundedRectangle(cornerRadius: DS.CornerRadius.small).stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5))
     }
 
     private func diffLine(prefix: String, text: String, color: Color, background: Color) -> some View {
@@ -507,8 +507,8 @@ struct PickyToolHistoryEntryView: View {
                 .padding(.vertical, 6)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(DS.Colors.surface2.opacity(0.5))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5))
+                .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.small))
+                .overlay(RoundedRectangle(cornerRadius: DS.CornerRadius.small).stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5))
             }
             .buttonStyle(.plain)
             if isResultExpanded {

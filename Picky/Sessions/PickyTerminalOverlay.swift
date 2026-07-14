@@ -488,9 +488,9 @@ struct PickyTerminalOverlayView: View {
             .padding(.top, 14)
 
             PickySwiftTermViewRepresentable(model: model)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous)
                         .stroke(DS.Colors.borderSubtle, lineWidth: 1)
                 )
                 .padding(.horizontal, 12)

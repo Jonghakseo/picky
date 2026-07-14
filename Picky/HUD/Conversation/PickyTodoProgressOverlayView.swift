@@ -97,10 +97,10 @@ struct PickyTodoProgressOverlayView: View {
             }
         }
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous)
                 .fill(DS.Colors.surface1.opacity(0.98))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous)
                         .stroke(DS.Colors.borderSubtle.opacity(0.75), lineWidth: 0.8)
                 )
                 .shadow(color: .black.opacity(0.15), radius: 12, y: 5)

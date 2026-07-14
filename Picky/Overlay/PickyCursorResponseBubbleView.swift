@@ -19,7 +19,7 @@ struct PickyCursorResponseBubbleLayout {
         static let maxTextWidth: CGFloat = 302
         static let horizontalPadding: CGFloat = 9
         static let verticalPadding: CGFloat = 6
-        static let cornerRadius: CGFloat = 8
+        static let cornerRadius: CGFloat = DS.CornerRadius.medium
 
         static var font: NSFont {
             .systemFont(ofSize: fontSize, weight: .medium)

@@ -244,13 +244,13 @@ private struct PickyInlineTerminalSessionView: View {
             }
             .padding(14)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(DS.Colors.surface2.opacity(0.55)))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(DS.Colors.borderSubtle, lineWidth: 1))
+            .background(RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous).fill(DS.Colors.surface2.opacity(0.55)))
+            .overlay(RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous).stroke(DS.Colors.borderSubtle, lineWidth: 1))
         } else {
             PickyInlineSwiftTermViewRepresentable(terminalSession: terminalSession)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous)
                         .stroke(DS.Colors.borderSubtle, lineWidth: 1)
                 )
         }
@@ -277,8 +277,8 @@ private struct PickyInlineTerminalSessionView: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(DS.Colors.surface2.opacity(0.55)))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(DS.Colors.borderSubtle, lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous).fill(DS.Colors.surface2.opacity(0.55)))
+        .overlay(RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous).stroke(DS.Colors.borderSubtle, lineWidth: 1))
     }
 
     private func handleAppear() {

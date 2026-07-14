@@ -65,8 +65,13 @@
 
 ---
 
-## 제안 수정 batch (batch-per-surface)
-1. **Batch A — Foundation 원칙 위반**: #1 breathing/glow/scale 제거, radius/hex 토큰 정리
-2. **Batch B — Conversation**: #2 send color, #3 running border, #6 error retry, radius drift
-3. **Batch C — Dock**: #4·#5 hover scale, #7 unread, `DS.GroupAccent` hex 정리, DockIcon raw font
-4. **Batch D — Panels/Overlays**: font/radius/hex 정리 (Report, ToolHistory, Terminal, Overlays)
+## 수정 batch 진행 결과 (batch-per-surface)
+1. **Batch A — Foundation** ✅: DSPrimaryButtonStyle dead code 제거(#1), `DS.Colors.notification` 신설+unread 분리(#7), `DS.GroupAccent` 신설+DockGrouping hex 제거, DockIcon/DockGroup hover scale-up 제거(#5). BlueCursorView hex는 Codable 지속 포맷이라 보류.
+2. **Batch B — Conversation** ✅: send/retry Action Blue 통일(#2/#6), running border sweep→정적(#3), `DS.CornerRadius.panel(14)` 신설, radius drift(5/7) 토큰화.
+3. **Batch C — Dock** ✅: DockIcon mini-preview 폰트를 명명 접근자로 정리. raw font는 dock-preset 스케일 예외로 확인되어 고정 역할 매핑 안 함(교체 시 프리셋 스케일 망가짐).
+4. **Batch D — Panels/Overlays** ✅: Report/ToolHistory/Terminal/InlineTerminal/TurnCard/TodoProgress/오버레이 radius를 `DS.CornerRadius` 참조로 교체. ReportViewer/TerminalOverlay 폰트는 독립 zoom/미연결 스케일 예외로 유지.
+
+### 수정 보류 항목
+- `BlueCursorView` colorHex 등 — Codable 지속 포맷의 문자열 기본값이라 토큰 참조 전환 시 타입/영속 포맷 변경. 리스크 대비 가치 낮아 유지.
+- `PickyReportViewer`/`PickyTerminalOverlay` 폰트 — 전자는 독립 per-panel zoom, 후자는 app-font-scale 미연결 standalone 패널. `PickyHUDTypography` 강제 시 스케일 회귀 위험.
+- radius `9` 관행값(Companion/Shortcuts) — 결정에 따라 기존 토큰 흡수 대상이나 이번 batch 범위 밖(Companion/Settings은 별도 surface). 추후 정리 권장.

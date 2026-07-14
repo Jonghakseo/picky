@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { BuiltPrompt } from "./prompt-builder.js";
-import type { PickyContextPacket } from "./protocol.js";
+import type { PickyContextPacket, PickyTodoState } from "./protocol.js";
 import type { AgentRuntime, RewindBranchMessage, RewindResult, RewindTarget, RuntimeEvent, RuntimeSessionHandle, RuntimeSteerResult } from "./runtime/types.js";
 import { SessionStore } from "./session-store.js";
 import { SessionSupervisor } from "./session-supervisor.js";
@@ -60,6 +60,30 @@ describe("SessionSupervisor rewind", () => {
     expect(rewoundEvents.at(-1)).toMatchObject({ editorText: "A" });
   });
 
+  it("clears todo state when the rewound active branch has no todo entry", async () => {
+    const runtime = new RewindRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-rewind-todo-clear-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("seed"));
+    const todoState: PickyTodoState = {
+      updatedAt: "2026-07-14T01:00:00.000Z",
+      tasks: [{ id: "todo-1", content: "Old branch task", status: "in_progress" }],
+    };
+    runtime.handle!.emit({ type: "todo_state", todoState });
+    await waitUntil(() => supervisor.get(session.id)?.todoState?.updatedAt === todoState.updatedAt);
+    runtime.handle!.rewindBranches.set("entry-root", []);
+    runtime.handle!.rewindEditorTexts.set("entry-root", "seed");
+    runtime.handle!.todoStates.set("entry-root", undefined);
+    const todoEvents: Array<PickyTodoState | undefined> = [];
+    supervisor.on("todoStateUpdated", (_sessionId, state) => todoEvents.push(state));
+
+    await supervisor.rewindToEntry(session.id, "entry-root");
+
+    expect(supervisor.get(session.id)?.todoState).toBeUndefined();
+    expect(todoEvents).toEqual([undefined]);
+  });
+
   it("reconciles when the Pi branch carries leading entries the journal never recorded", async () => {
     const runtime = new RewindRuntime();
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-rewind-test-"));
@@ -114,6 +138,7 @@ class RewindHandle implements RuntimeSessionHandle {
   rewindTargets: RewindTarget[] = [];
   rewindBranches = new Map<string, RewindBranchMessage[]>();
   rewindEditorTexts = new Map<string, string>();
+  todoStates = new Map<string, PickyTodoState | undefined>();
   rewoundEntryIds: string[] = [];
   steeringMode = "one-at-a-time" as const;
   followUpMode = "one-at-a-time" as const;
@@ -135,6 +160,10 @@ class RewindHandle implements RuntimeSessionHandle {
   getActiveBranchTranscript(): RewindBranchMessage[] {
     const entryId = this.rewoundEntryIds.at(-1);
     return entryId ? (this.rewindBranches.get(entryId) ?? []) : [];
+  }
+  getTodoStateResolution() {
+    const entryId = this.rewoundEntryIds.at(-1);
+    return { resolved: true, ...(entryId && this.todoStates.get(entryId) ? { todoState: this.todoStates.get(entryId) } : {}) };
   }
   subscribe(listener: (event: RuntimeEvent) => void): () => void {
     this.listeners.add(listener);

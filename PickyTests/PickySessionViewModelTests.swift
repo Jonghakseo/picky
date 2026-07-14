@@ -509,6 +509,17 @@ struct PickySessionViewModelTests {
         #expect(notifications.delivered.map(\.title).contains(L10n.t("notif.session.completed.title")))
     }
 
+    @MainActor @Test func slimTodoStateUpdatesApplyAndClearWithoutReplacingSession() {
+        let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running"))))
+
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionTodoStateUpdated(seq: 1))))
+        #expect(viewModel.sessions.first?.todoState?.tasks.first?.activeForm == "Implementing HUD")
+
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionTodoStateUpdated(seq: 2, cleared: true))))
+        #expect(viewModel.sessions.first?.todoState == nil)
+    }
+
     /// Cancellation-then-resume regression test. Reducer-direct: the legacy
     /// emit-based pilot was removed after Phase 3 once every other test was
     /// migrated and the dedicated transport smoke (`transportForwards...`)
@@ -4832,6 +4843,15 @@ private enum EventJSON {
         }.joined(separator: ",")
         return """
         {"id":"event-slash-commands","protocolVersion":"2026-05-09","timestamp":"2026-05-01T00:00:00.000Z","type":"slashCommandsSnapshot","sessionId":\(encodedSessionId)\(encodedRequestId),"commands":[\(commands)]}
+        """
+    }
+
+    static func sessionTodoStateUpdated(sessionId: String = "session-1", seq: Int, cleared: Bool = false) -> String {
+        let todoState = cleared
+            ? "null"
+            : "{\"tasks\":[{\"id\":\"todo-1\",\"content\":\"Implement HUD\",\"status\":\"in_progress\",\"activeForm\":\"Implementing HUD\"}],\"updatedAt\":\"2026-07-14T01:00:00.000Z\"}"
+        return """
+        {"id":"event-todo-\(seq)","protocolVersion":"2026-05-09","timestamp":"2026-07-14T01:00:00.000Z","type":"sessionTodoStateUpdated","sessionId":"\(sessionId)","todoState":\(todoState),"seq":\(seq)}
         """
     }
 

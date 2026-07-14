@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { ModelCycleDirection, PickyAgentSession, PickyContextPacket, PickyMainAgentState } from "./protocol.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import type { BuiltPrompt } from "./prompt-builder.js";
-import type { AgentRuntime, AnswerExtensionUiOptions, RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, ThinkingLevel } from "./runtime/types.js";
+import type { AgentRuntime, AnswerExtensionUiOptions, RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeTodoStateResolution, ThinkingLevel } from "./runtime/types.js";
 import type { TaskRouteDecision, TaskRouter } from "./task-router.js";
 import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY, SessionStore } from "./session-store.js";
 import { SessionSupervisor } from "./session-supervisor.js";
@@ -324,6 +324,43 @@ describe("SessionSupervisor", () => {
     const persisted = await new SessionStore(dir).loadAll();
     const restored = persisted.find((entry) => entry.id === session.id);
     expect(restored?.tools).toMatchObject([{ toolCallId: "tool-1", name: "bash", status: "running", preview: "npm test" }]);
+  });
+
+  it("persists todo state and broadcasts slim ordered updates including automatic clear", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-todo-state-update-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("todo state update"));
+    const sessionEvents: PickyAgentSession[] = [];
+    const todoEvents: Array<{ todoState: PickyAgentSession["todoState"]; seq: number }> = [];
+    supervisor.on("session", (emitted: PickyAgentSession) => sessionEvents.push(emitted));
+    supervisor.on("todoStateUpdated", (_sessionId, todoState, seq) => todoEvents.push({ todoState, seq }));
+    const todoState = {
+      tasks: [
+        { id: "todo-1", content: "Inspect protocol", status: "completed" as const },
+        { id: "todo-2", content: "Implement HUD", status: "in_progress" as const, activeForm: "Implementing HUD" },
+      ],
+      updatedAt: "2026-07-14T01:00:00.000Z",
+    };
+    const clearedState = { tasks: [], updatedAt: "2026-07-14T01:01:00.000Z" };
+
+    runtime.handle!.emit({ type: "todo_state", todoState });
+    await waitUntil(() => todoEvents.length === 1);
+    expect(sessionEvents).toHaveLength(0);
+
+    runtime.handle!.emit({ type: "status", status: "completed", summary: "Done" });
+    await waitUntil(() => supervisor.get(session.id)?.status === "completed");
+    sessionEvents.length = 0;
+    runtime.handle!.emit({ type: "todo_state", todoState: clearedState });
+    await waitUntil(() => todoEvents.length === 2);
+
+    expect(todoEvents.map((event) => event.todoState)).toEqual([todoState, clearedState]);
+    expect(todoEvents[1]?.seq).toBe((todoEvents[0]?.seq ?? 0) + 1);
+    expect(sessionEvents).toHaveLength(0);
+    expect(supervisor.get(session.id)?.todoState).toEqual(clearedState);
+    const restored = (await new SessionStore(dir).loadAll()).find((entry) => entry.id === session.id);
+    expect(restored?.todoState).toEqual(clearedState);
   });
 
   it("broadcasts activitySummary via sessionActivityUpdated without an accompanying full sessionUpdated", async () => {
@@ -1361,9 +1398,17 @@ describe("SessionSupervisor", () => {
 
     runtime.handle?.emit({ type: "assistant_delta", delta: "기존 답변" });
     runtime.handle?.emit({ type: "tool", toolCallId: "tool-1", name: "bash", status: "running", preview: "old tool" });
+    runtime.handle?.emit({
+      type: "todo_state",
+      todoState: {
+        tasks: [{ id: "old-todo", content: "Old session task", status: "in_progress" }],
+        updatedAt: "2026-07-14T01:00:00.000Z",
+      },
+    });
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await waitUntil(() => (supervisor.get(pickle.id)?.messages?.length ?? 0) > 0);
     await waitUntil(() => (supervisor.get(pickle.id)?.tools.length ?? 0) > 0);
+    await waitUntil(() => supervisor.get(pickle.id)?.todoState?.tasks[0]?.id === "old-todo");
     expect(supervisor.get(pickle.id)?.messages?.length).toBeGreaterThan(0);
     expect(supervisor.get(pickle.id)?.tools.length).toBeGreaterThan(0);
 
@@ -1384,6 +1429,7 @@ describe("SessionSupervisor", () => {
     expect(updated.tools).toEqual([]);
     expect(updated.artifacts).toEqual([]);
     expect(updated.changedFiles).toEqual([]);
+    expect(updated.todoState).toBeUndefined();
     expect(updated.activitySummary).toEqual({ read: 0, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 });
     expect(updated.piSessionFilePath).toBe("/tmp/manual-new-session-1.jsonl");
   });
@@ -2058,7 +2104,8 @@ describe("SessionSupervisor", () => {
       JSON.stringify({ type: "message", id: "a2", parentId: "u2", timestamp: "2026-05-01T00:00:04.000Z", message: { role: "assistant", content: [{ type: "text", text: "second answer" }], timestamp: 0 } }),
       JSON.stringify({ type: "message", id: "u3", parentId: "a2", timestamp: "2026-05-01T00:00:05.000Z", message: { role: "user", content: "third prompt", timestamp: 0 } }),
       JSON.stringify({ type: "message", id: "a3", parentId: "u3", timestamp: "2026-05-01T00:00:06.000Z", message: { role: "assistant", content: [{ type: "text", text: "third answer" }], timestamp: 0 } }),
-      JSON.stringify({ type: "message", id: "u4", parentId: "a3", timestamp: "2026-05-01T00:00:07.000Z", message: { role: "user", content: "/handoff-to-picky pin this in Picky", timestamp: 0 } }),
+      JSON.stringify({ type: "custom", customType: "todo-write-overlay-state", id: "todo-state", parentId: "a3", data: { updatedAt: Date.parse("2026-05-01T00:00:06.500Z"), tasks: [{ id: "todo-1", content: "Continue in Picky", status: "in_progress", activeForm: "Continuing in Picky" }] } }),
+      JSON.stringify({ type: "message", id: "u4", parentId: "todo-state", timestamp: "2026-05-01T00:00:07.000Z", message: { role: "user", content: "/handoff-to-picky pin this in Picky", timestamp: 0 } }),
     ].join("\n"));
     const supervisor = new SessionSupervisor(new ThrowingRuntime(), new SessionStore(dir));
     await supervisor.load();
@@ -2073,6 +2120,10 @@ describe("SessionSupervisor", () => {
     ]);
     expect(pinned.lastSummary).toBe("third answer");
     expect(pinned.finalAnswer).toBe("third answer");
+    expect(pinned.todoState).toEqual({
+      updatedAt: "2026-05-01T00:00:06.500Z",
+      tasks: [{ id: "todo-1", content: "Continue in Picky", status: "in_progress", activeForm: "Continuing in Picky" }],
+    });
   });
 
   it("captures pi session file emitted via setTimeout(0) inside prewarm before patchMainState resolves", async () => {
@@ -2707,6 +2758,74 @@ describe("SessionSupervisor", () => {
     expect(restored?.activitySummary).toEqual({ read: 0, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 });
     expect(restored?.logs).toContain("runtime reattached from pi session: /tmp/pi-session.jsonl");
     expect(restored?.logs.some((line) => line.includes("Runtime not attached after daemon restart"))).toBe(false);
+  });
+
+  it("hydrates active-branch todo state when reattaching a persisted session", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-reattach-todo-hydrate-"));
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "reattach-todo-hydrate",
+      title: "Todo Pickle",
+      status: "running",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      lastSummary: "Still working before restart",
+      logs: ["Picky handoff: investigate", "pi session: /tmp/pi-session.jsonl"],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+    });
+    const runtime = new ResumableRuntime();
+    runtime.resumeTodoStateResolution = {
+      resolved: true,
+      todoState: {
+        tasks: [{ id: "active-todo", content: "Resume active task", status: "in_progress" }],
+        updatedAt: "2026-07-14T01:00:00.000Z",
+      },
+    };
+    const supervisor = new SessionSupervisor(runtime, store);
+    const todoEvents: Array<PickyAgentSession["todoState"]> = [];
+    supervisor.on("todoStateUpdated", (_sessionId, todoState) => todoEvents.push(todoState));
+
+    await supervisor.load();
+
+    expect(supervisor.get("reattach-todo-hydrate")?.todoState).toEqual(runtime.resumeTodoStateResolution.todoState);
+    expect(todoEvents).toEqual([runtime.resumeTodoStateResolution.todoState]);
+    expect((await store.loadAll()).find((session) => session.id === "reattach-todo-hydrate")?.todoState).toEqual(runtime.resumeTodoStateResolution.todoState);
+  });
+
+  it("clears stale persisted todo state when the reattached active branch has none", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-reattach-todo-clear-"));
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "reattach-todo-clear",
+      title: "Todo Pickle",
+      status: "running",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      lastSummary: "Still working before restart",
+      logs: ["Picky handoff: investigate", "pi session: /tmp/pi-session.jsonl"],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+      todoState: {
+        tasks: [{ id: "stale-todo", content: "Stale task", status: "in_progress" }],
+        updatedAt: "2026-07-14T00:00:00.000Z",
+      },
+    });
+    const runtime = new ResumableRuntime();
+    runtime.resumeTodoStateResolution = { resolved: true };
+    const supervisor = new SessionSupervisor(runtime, store);
+    const todoEvents: Array<PickyAgentSession["todoState"]> = [];
+    supervisor.on("todoStateUpdated", (_sessionId, todoState) => todoEvents.push(todoState));
+
+    await supervisor.load();
+
+    expect(supervisor.get("reattach-todo-clear")?.todoState).toBeUndefined();
+    expect(todoEvents).toEqual([undefined]);
+    expect((await store.loadAll()).find((session) => session.id === "reattach-todo-clear")?.todoState).toBeUndefined();
   });
 
   it("recovers orphaned scoped child non-terminal sessions as blocked without startup resume", async () => {
@@ -5308,6 +5427,87 @@ describe("SessionSupervisor", () => {
     expect(outcomes).toEqual([{ baselineFound: true, importedMessageCount: 3, activeLastMessageId: "a2", baselinePiMessageId: "u1" }]);
   });
 
+  it("restores trailing todo state even when terminal sync imports no messages", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-terminal-todo-state-sync-"));
+    const piSessionFile = join(dir, "pi-session.jsonl");
+    const updatedAt = Date.parse("2026-07-14T01:00:00.000Z");
+    await writeFile(piSessionFile, [
+      JSON.stringify({ type: "message", id: "u1", parentId: null, timestamp: "2026-07-14T00:59:01.000Z", message: { role: "user", content: "prompt" } }),
+      JSON.stringify({ type: "message", id: "a1", parentId: "u1", timestamp: "2026-07-14T00:59:02.000Z", message: { role: "assistant", content: [{ type: "text", text: "answer" }] } }),
+      JSON.stringify({
+        type: "custom",
+        customType: "todo-write-overlay-state",
+        id: "todo-state",
+        parentId: "a1",
+        data: { updatedAt, tasks: [{ id: "todo-1", content: "Verify HUD", status: "in_progress", activeForm: "Verifying HUD" }] },
+      }),
+    ].join("\n"));
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "terminal-todo-state-session",
+      title: "Terminal todo state sync",
+      status: "completed",
+      cwd: "/tmp/project",
+      createdAt: "2026-07-14T00:59:00.000Z",
+      updatedAt: "2026-07-14T00:59:10.000Z",
+      logs: [`pi session: ${piSessionFile}`],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+      messages: [
+        { id: "msg-pi-user-u1", kind: "user_text", createdAt: "2026-07-14T00:59:01.000Z", originatedBy: "pi_extension", text: "prompt" },
+        { id: "msg-pi-agent-a1", kind: "agent_text", createdAt: "2026-07-14T00:59:02.000Z", text: "answer" },
+      ],
+    });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), store);
+    await supervisor.load();
+
+    await supervisor.syncTerminalSession("terminal-todo-state-session", "a1");
+
+    expect(supervisor.get("terminal-todo-state-session")?.todoState).toEqual({
+      updatedAt: "2026-07-14T01:00:00.000Z",
+      tasks: [{ id: "todo-1", content: "Verify HUD", status: "in_progress", activeForm: "Verifying HUD" }],
+    });
+  });
+
+  it("clears persisted todo state when terminal sync resolves an active branch with no todo entry", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-terminal-todo-clear-sync-"));
+    const piSessionFile = join(dir, "pi-session.jsonl");
+    await writeFile(piSessionFile, [
+      JSON.stringify({ type: "message", id: "u1", parentId: null, timestamp: "2026-07-14T00:59:01.000Z", message: { role: "user", content: "prompt" } }),
+      JSON.stringify({ type: "message", id: "a1", parentId: "u1", timestamp: "2026-07-14T00:59:02.000Z", message: { role: "assistant", content: [{ type: "text", text: "answer" }] } }),
+    ].join("\n"));
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "terminal-todo-clear-session",
+      title: "Terminal todo clear",
+      status: "completed",
+      createdAt: "2026-07-14T00:59:00.000Z",
+      updatedAt: "2026-07-14T00:59:10.000Z",
+      logs: [`pi session: ${piSessionFile}`],
+      tools: [],
+      todoState: {
+        updatedAt: "2026-07-14T00:58:00.000Z",
+        tasks: [{ id: "todo-old", content: "Old branch", status: "in_progress" }],
+      },
+      artifacts: [],
+      changedFiles: [],
+      messages: [
+        { id: "msg-pi-user-u1", kind: "user_text", createdAt: "2026-07-14T00:59:01.000Z", originatedBy: "pi_extension", text: "prompt" },
+        { id: "msg-pi-agent-a1", kind: "agent_text", createdAt: "2026-07-14T00:59:02.000Z", text: "answer" },
+      ],
+    });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), store);
+    await supervisor.load();
+    const todoEvents: Array<unknown> = [];
+    supervisor.on("todoStateUpdated", (_sessionId, todoState) => todoEvents.push(todoState));
+
+    await supervisor.syncTerminalSession("terminal-todo-clear-session", "a1");
+
+    expect(supervisor.get("terminal-todo-clear-session")?.todoState).toBeUndefined();
+    expect(todoEvents).toEqual([undefined]);
+  });
+
   it("emits a baseline-not-found terminalSessionSyncOutcome when the baseline is no longer on the active path", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-terminal-baseline-miss-"));
     const piSessionFile = join(dir, "pi-session.jsonl");
@@ -6226,6 +6426,7 @@ class StaticTaskRouter implements TaskRouter {
 class ResumableRuntime implements AgentRuntime {
   handle?: ManualHandle;
   resumeCalls: Array<{ sessionFilePath: string; cwd?: string; sessionId?: string }> = [];
+  resumeTodoStateResolution?: RuntimeTodoStateResolution;
 
   constructor(private readonly slashCommands: RuntimeSlashCommand[] = []) {}
 
@@ -6239,6 +6440,7 @@ class ResumableRuntime implements AgentRuntime {
     this.resumeCalls.push({ sessionFilePath, cwd: options.cwd, sessionId: options.sessionId });
     this.handle = new ManualHandle(options.sessionId ?? "manual");
     this.handle.slashCommands = [...this.slashCommands];
+    this.handle.todoStateResolution = this.resumeTodoStateResolution;
     return this.handle;
   }
 }
@@ -6469,6 +6671,7 @@ class ManualHandle implements RuntimeSessionHandle {
   sessionFilePath?: string;
   slashCommands: RuntimeSlashCommand[] = [];
   assistantRunMetadata?: RuntimeAssistantRunMetadata;
+  todoStateResolution?: RuntimeTodoStateResolution;
   onFollowUp?: (handle: ManualHandle, prompt: BuiltPrompt) => void;
   onSteer?: (handle: ManualHandle, prompt: BuiltPrompt) => void;
   onUserBash?: (handle: ManualHandle, command: string, options?: { excludeFromContext?: boolean; onOutputChunk?: (chunk: string) => void }) => void | Promise<void>;
@@ -6550,6 +6753,9 @@ class ManualHandle implements RuntimeSessionHandle {
   }
   getAssistantRunMetadata(): RuntimeAssistantRunMetadata | undefined {
     return this.assistantRunMetadata;
+  }
+  getTodoStateResolution(): RuntimeTodoStateResolution {
+    return this.todoStateResolution ?? { resolved: false };
   }
   clearQueue(): { steering: string[]; followUp: string[] } {
     const result = { steering: [...this.queuedSteerTexts], followUp: [...this.queuedFollowUpTexts] };

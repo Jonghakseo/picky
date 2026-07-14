@@ -164,6 +164,55 @@ struct ProtocolContractTests {
         )))
     }
 
+    @Test func decodesTodoStateFromSessionUpdateFixture() throws {
+        let decoder = JSONDecoder.pickyAgentProtocolDecoder()
+        let fixture = try #require(fixtureURLs(in: "contracts/protocol").first {
+            $0.lastPathComponent == "session-updated.event.json"
+        })
+
+        let envelope = try decoder.decode(PickyEventEnvelope.self, from: Data(contentsOf: fixture))
+
+        guard case .sessionUpdated(let session) = envelope.event else {
+            Issue.record("Expected sessionUpdated event")
+            return
+        }
+        let todoState = try #require(session.todoState)
+        #expect(todoState.completedCount == 1)
+        #expect(todoState.tasks.count == 2)
+        #expect(todoState.tasks[1].status == .inProgress)
+        #expect(todoState.tasks[1].activeForm == "Implementing HUD projection")
+        #expect(todoState.tasks[1].notes == "Keep the overlay read-only")
+    }
+
+    @Test func decodesSlimTodoStateUpdatesIncludingClear() throws {
+        let decoder = JSONDecoder.pickyAgentProtocolDecoder()
+        let fixture = try #require(fixtureURLs(in: "contracts/protocol").first {
+            $0.lastPathComponent == "session-todo-state-updated.event.json"
+        })
+        let update = try decoder.decode(PickyEventEnvelope.self, from: Data(contentsOf: fixture))
+        let clearJSON = """
+        {
+          "id":"event-session-todo-clear",
+          "protocolVersion":"2026-05-09",
+          "timestamp":"2026-07-14T01:01:00.000Z",
+          "type":"sessionTodoStateUpdated",
+          "sessionId":"session-001",
+          "todoState":null,
+          "seq":10
+        }
+        """.data(using: .utf8)!
+        let clear = try decoder.decode(PickyEventEnvelope.self, from: clearJSON)
+
+        guard case .sessionTodoStateUpdated(let sessionID, let todoState, let seq) = update.event else {
+            Issue.record("Expected sessionTodoStateUpdated event")
+            return
+        }
+        #expect(sessionID == "session-001")
+        #expect(todoState?.tasks.first?.activeForm == "Implementing HUD")
+        #expect(seq == 9)
+        #expect(clear.event == .sessionTodoStateUpdated(sessionId: "session-001", todoState: nil, seq: 10))
+    }
+
     @Test func decodesQuickReplyEvent() throws {
         let json = """
         {
@@ -342,6 +391,7 @@ struct ProtocolContractTests {
         #expect(session.steeringMode == .oneAtATime)
         #expect(session.followUpMode == .oneAtATime)
         #expect(session.activitySummary == .zero)
+        #expect(session.todoState == nil)
         #expect(session.piSessionFilePath == nil)
     }
 

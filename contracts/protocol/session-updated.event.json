@@ -13,6 +13,23 @@
     "lastSummary": "Started",
     "logs": [],
     "tools": [],
+    "todoState": {
+      "tasks": [
+        {
+          "id": "todo-1",
+          "content": "Inspect protocol",
+          "status": "completed"
+        },
+        {
+          "id": "todo-2",
+          "content": "Implement HUD projection",
+          "status": "in_progress",
+          "activeForm": "Implementing HUD projection",
+          "notes": "Keep the overlay read-only"
+        }
+      ],
+      "updatedAt": "2026-05-01T00:00:00.500Z"
+    },
     "artifacts": [],
     "changedFiles": []
   }

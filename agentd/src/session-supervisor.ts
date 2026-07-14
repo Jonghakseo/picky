@@ -202,6 +202,7 @@ export class SessionSupervisor extends EventEmitter {
       getSession: (sessionId) => this.mustGet(sessionId),
       patchSession: (sessionId, patch, options) => this.patch(sessionId, patch, options),
       emitToolActivityUpdated: (sessionId, tool) => this.emit("toolActivityUpdated", sessionId, tool),
+      updateTodoState: (sessionId, todoState) => this.updateTodoState(sessionId, todoState),
       consumeNoTurnRanSessionStateRestore: (sessionId) => this.consumeNoTurnRanSessionStateRestore(sessionId),
       appendLog: (sessionId, line) => this.appendLog(sessionId, line),
       materializeTerminalArtifacts: (sessionId) => this.materializeTerminalArtifacts(sessionId),
@@ -967,7 +968,8 @@ export class SessionSupervisor extends EventEmitter {
     logAgentd("pickle session pinned", { sessionId: id, titleChars: session.title.length, cwd: context.cwd, contextId: context.id });
     await this.upsert(session);
 
-    const sourceMessages = await readRecentPinnedSourceMessages(session.piSessionFilePath);
+    const sourceState = await readRecentPinnedSourceState(session.piSessionFilePath);
+    const sourceMessages = sourceState?.messages ?? [];
     if (sourceMessages.length > 0) {
       await this.messageBuilder.recordTerminalSessionMessages(id, sourceMessages);
       const latestAssistantText = [...sourceMessages].reverse().find((message) => message.kind === "agent_text")?.text?.trim();
@@ -975,6 +977,7 @@ export class SessionSupervisor extends EventEmitter {
     } else {
       await this.messageBuilder.seedPinnedSession(id, context.transcript, session.finalAnswer, session.title);
     }
+    if (sourceState?.todoState) await this.patch(id, { todoState: sourceState.todoState });
 
     await this.materializeTerminalArtifacts(id);
     return this.mustGet(id);
@@ -1670,6 +1673,7 @@ export class SessionSupervisor extends EventEmitter {
       removeMessages: (id, ids) => this.messageBuilder.removeMessages(id, ids),
       drainQueue: async (id, handle) => { this.pendingQueueDeliveries.delete(id); this.materializedQueueDeliveries.delete(id); handle.clearQueue(); await this.applyQueueUpdate(id, [], []); },
       patch: (id, patch) => this.patch(id, patch),
+      updateTodoState: (id, todoState) => this.updateTodoState(id, todoState),
       emitRewound: (id, editorText, removedIds) => this.emit("sessionRewound", id, editorText, removedIds),
       waitSettled: (id) => this.waitForRuntimeEvents(id),
     };
@@ -1816,6 +1820,9 @@ export class SessionSupervisor extends EventEmitter {
     if (!sessionFilePath) throw new Error(`Session has no Pi session file to sync: ${sessionId}`);
     logAgentd("terminal session sync requested", { sessionId, sessionFilePath, baselinePiMessageId });
     const result = await readPiTerminalSessionMessages(sessionFilePath, baselinePiMessageId);
+    if (result.todoStateResolved) {
+      await this.updateTodoState(sessionId, result.todoState);
+    }
     if (!result.baselineFound) {
       logAgentd("terminal session sync skipped", { sessionId, reason: "baseline pi message not found", baselinePiMessageId, activeLastMessageId: result.activeLastMessageId });
       this.emitTerminalSessionSyncOutcome(sessionId, { baselineFound: false, importedMessageCount: 0, activeLastMessageId: result.activeLastMessageId, baselinePiMessageId });
@@ -2622,6 +2629,8 @@ export class SessionSupervisor extends EventEmitter {
     // survives an agentd restart parks the next turn on waiting_for_input with
     // no question bubble for the user to answer.
     handle.setHostPendingExtensionUiPresent?.(() => Boolean(this.sessions.get(sessionId)?.pendingExtensionUiRequest));
+    const todoResolution = handle.getTodoStateResolution?.();
+    if (todoResolution?.resolved) await this.updateTodoState(sessionId, todoResolution.todoState);
     const currentAssistantRun = handle.getAssistantRunMetadata?.();
     if (currentAssistantRun) await this.patch(sessionId, { currentAssistantRun });
     await this.applyQueueUpdate(sessionId, handle.getSteeringMessages(), handle.getFollowUpMessages());
@@ -2716,6 +2725,7 @@ export class SessionSupervisor extends EventEmitter {
       tools: [],
       artifacts: [],
       changedFiles: [],
+      todoState: undefined,
       messages: [],
       queuedSteers: [],
       queuedFollowUps: [],
@@ -2802,6 +2812,16 @@ export class SessionSupervisor extends EventEmitter {
     });
   }
 
+  private async updateTodoState(sessionId: string, todoState: PickyAgentSession["todoState"]): Promise<void> {
+    const current = this.mustGet(sessionId).todoState;
+    if (sameTodoState(current, todoState)) return;
+    await this.patch(sessionId, { todoState }, { emitSession: false });
+    const seq = this.nextSeq(sessionId);
+    await this.chainEmit(sessionId, async () => {
+      this.emit("todoStateUpdated", sessionId, todoState, seq);
+    });
+  }
+
   private async syncSessionMessages(sessionId: string, messages: readonly PickySessionMessage[]): Promise<void> {
     await this.runSessionWrite(sessionId, async () => {
       const session = { ...this.mustGet(sessionId), messages: [...messages], updatedAt: new Date().toISOString() };
@@ -2869,6 +2889,12 @@ function readImageSize(path: string): { width: number; height: number } | undefi
   }
 }
 
+function sameTodoState(left: PickyAgentSession["todoState"], right: PickyAgentSession["todoState"]): boolean {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return left.updatedAt === right.updatedAt && JSON.stringify(left.tasks) === JSON.stringify(right.tasks);
+}
+
 function awaitPendingRuntimeHandle(pending: Promise<RuntimeSessionHandle>, signal?: AbortSignal): Promise<RuntimeSessionHandle> {
   if (!signal) return pending;
   if (signal.aborted) return Promise.reject(abortSignalReason(signal));
@@ -2896,14 +2922,17 @@ function createPendingRuntimeHandle(): { promise: Promise<RuntimeSessionHandle>;
   return { promise, resolve, reject };
 }
 
-async function readRecentPinnedSourceMessages(sessionFilePath: string | undefined): Promise<PickySessionMessage[]> {
-  if (!sessionFilePath) return [];
+async function readRecentPinnedSourceState(sessionFilePath: string | undefined): Promise<{ messages: PickySessionMessage[]; todoState?: PickyAgentSession["todoState"] } | undefined> {
+  if (!sessionFilePath) return undefined;
   try {
     const result = await readPiTerminalSessionMessages(sessionFilePath);
     const conversationMessages = result.messages.filter((message) => !isPickyHandoffCommandMessage(message));
-    return lastTurns(conversationMessages, PINNED_SOURCE_TURN_COUNT);
+    return {
+      messages: lastTurns(conversationMessages, PINNED_SOURCE_TURN_COUNT),
+      ...(result.todoState ? { todoState: result.todoState } : {}),
+    };
   } catch {
-    return [];
+    return undefined;
   }
 }
 

@@ -31,6 +31,7 @@ interface RuntimeEventHandlerDependencies {
   getSession(sessionId: string): PickyAgentSession;
   patchSession(sessionId: string, patch: Partial<PickyAgentSession>, options?: { emitSession?: boolean }): Promise<void>;
   emitToolActivityUpdated(sessionId: string, tool: PickyToolActivity): void;
+  updateTodoState(sessionId: string, todoState: PickyAgentSession["todoState"]): Promise<void>;
   consumeNoTurnRanSessionStateRestore?(sessionId: string): Partial<PickyAgentSession> | undefined;
   appendLog(sessionId: string, line: string): Promise<void>;
   materializeTerminalArtifacts(sessionId: string): Promise<void>;
@@ -74,6 +75,7 @@ export class RuntimeEventHandler {
 
   async handle(sessionId: string, event: RuntimeEvent): Promise<void> {
     if (event.type === "log") return this.dependencies.appendLog(sessionId, event.line);
+    if (event.type === "todo_state") return this.dependencies.updateTodoState(sessionId, event.todoState);
     if (event.type === "input_message") {
       const currentStatus = this.dependencies.getSession(sessionId).status;
       if (isTerminalStatus(currentStatus) && currentStatus !== "completed") return;

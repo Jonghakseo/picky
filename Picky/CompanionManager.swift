@@ -2075,7 +2075,7 @@ final class CompanionManager: ObservableObject {
         case .sessionUpdated(let session):
             handleSessionStatusTransition(session: session)
             updatePassiveAgentSummary(session.lastSummary ?? "\(session.title) · \(session.status.rawValue)")
-        case .sessionResourcesReloaded, .sessionLogAppended, .toolActivityUpdated, .sessionArchivedAuthoritative, .pluginsReloaded:
+        case .sessionResourcesReloaded, .sessionLogAppended, .toolActivityUpdated, .sessionTodoStateUpdated, .sessionArchivedAuthoritative, .pluginsReloaded:
             // Progress events are already represented in the HUD. They should not
             // replace a cursor bubble that is currently speaking/showing a real
             // response, otherwise generic text like "작업 진행 중…" hides the answer.

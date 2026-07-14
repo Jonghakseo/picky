@@ -82,7 +82,8 @@ struct PickyConversationCardView: View {
     }
 
     private func chatContent(fillsAvailableHeight: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let todoPresentation = PickyTodoProgressPresentation(state: session.todoState)
+        return VStack(alignment: .leading, spacing: 10) {
             PickyConversationHeaderView(
                 viewModel: viewModel,
                 session: session,
@@ -95,8 +96,16 @@ struct PickyConversationCardView: View {
                 session: session,
                 viewModel: viewModel,
                 isCommandShortcutHintVisible: isCommandShortcutHintVisible,
-                fillsAvailableHeight: fillsAvailableHeight
+                fillsAvailableHeight: fillsAvailableHeight,
+                bottomOverlayInset: todoPresentation == nil ? 0 : PickyTodoProgressOverlayView.bottomContentInset
             )
+            .overlay(alignment: .bottom) {
+                if let todoPresentation {
+                    PickyTodoProgressOverlayView(presentation: todoPresentation)
+                        .padding(.horizontal, 4)
+                        .padding(.bottom, 3)
+                }
+            }
             PickyConversationComposerView(
                 session: session,
                 viewModel: viewModel,

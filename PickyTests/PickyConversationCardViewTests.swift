@@ -1114,6 +1114,39 @@ struct PickyConversationCardViewTests {
         #expect(PickyConversationListView(session: pendingQuestionSession, viewModel: viewModel).bottomScrollTrigger != PickyConversationListView(session: answeredQuestionSession, viewModel: viewModel).bottomScrollTrigger)
     }
 
+    @Test func todoProgressRepinsOnlyWhenOverlayVisibilityChanges() {
+        let viewModel = makeViewModel()
+        var first = makeConversationSession(status: .running, messages: [message("u1", kind: .userText, text: "first")])
+        first.todoState = PickyTodoState(
+            tasks: [PickyTodoTask(id: "todo-1", content: "Implement HUD", status: .inProgress)],
+            updatedAt: Date(timeIntervalSince1970: 1_800_000_000)
+        )
+        var updated = first
+        updated.todoState = PickyTodoState(
+            tasks: [PickyTodoTask(id: "todo-1", content: "Implement HUD", status: .completed)],
+            updatedAt: Date(timeIntervalSince1970: 1_800_000_010)
+        )
+
+        let firstTrigger = PickyConversationListView(
+            session: first,
+            viewModel: viewModel,
+            bottomOverlayInset: PickyTodoProgressOverlayView.bottomContentInset
+        ).bottomScrollTrigger
+        let updatedTrigger = PickyConversationListView(
+            session: updated,
+            viewModel: viewModel,
+            bottomOverlayInset: PickyTodoProgressOverlayView.bottomContentInset
+        ).bottomScrollTrigger
+        let clearedTrigger = PickyConversationListView(
+            session: updated,
+            viewModel: viewModel,
+            bottomOverlayInset: 0
+        ).bottomScrollTrigger
+
+        #expect(firstTrigger == updatedTrigger)
+        #expect(firstTrigger != clearedTrigger)
+    }
+
     @Test func questionCollapseScrollPolicyRepinsOnlyWhenActiveQuestionCloses() {
         let open = PickyConversationBottomScrollTrigger(
             latestMessageID: "q1",

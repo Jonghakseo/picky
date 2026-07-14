@@ -156,6 +156,80 @@ describe("normalizePiEvent", () => {
     expect(result.tool.argsPreview?.startsWith('{"command":"xcodebuild')).toBe(true);
   });
 
+  it("extracts normalized todo state from appended extension entries", () => {
+    const result = normalizePiEvent({
+      type: "entry_appended",
+      entry: {
+        type: "custom",
+        customType: "todo-write-overlay-state",
+        data: {
+          updatedAt: Date.parse("2026-07-14T01:00:00.000Z"),
+          tasks: [
+            { id: "todo-1", content: "Inspect protocol", status: "completed" },
+            {
+              id: "todo-2",
+              content: "Implement HUD projection ".repeat(40),
+              status: "in_progress",
+              activeForm: "Implementing HUD projection",
+              notes: "Keep this read-only",
+            },
+          ],
+        },
+      },
+    });
+
+    expect(result).toEqual({
+      kind: "todoState",
+      todoState: {
+        updatedAt: "2026-07-14T01:00:00.000Z",
+        tasks: [
+          { id: "todo-1", content: "Inspect protocol", status: "completed" },
+          {
+            id: "todo-2",
+            content: "Implement HUD projection ".repeat(40),
+            status: "in_progress",
+            activeForm: "Implementing HUD projection",
+            notes: "Keep this read-only",
+          },
+        ],
+      },
+    });
+  });
+
+  it("preserves an appended empty todo state so automatic expiry clears the HUD", () => {
+    const result = normalizePiEvent({
+      type: "entry_appended",
+      entry: {
+        type: "custom",
+        customType: "todo-write-overlay-state",
+        data: { updatedAt: Date.parse("2026-07-14T01:00:01.000Z"), tasks: [] },
+      },
+    });
+
+    expect(result).toEqual({
+      kind: "todoState",
+      todoState: { updatedAt: "2026-07-14T01:00:01.000Z", tasks: [] },
+    });
+  });
+
+  it("ignores unrelated or malformed appended entries", () => {
+    const unrelated = normalizePiEvent({
+      type: "entry_appended",
+      entry: { type: "custom", customType: "other-extension", data: { tasks: [] } },
+    });
+    const malformed = normalizePiEvent({
+      type: "entry_appended",
+      entry: {
+        type: "custom",
+        customType: "todo-write-overlay-state",
+        data: { updatedAt: Date.now(), tasks: [{ id: "todo-1", content: "Missing status" }] },
+      },
+    });
+
+    expect(unrelated).toEqual({ kind: "none" });
+    expect(malformed).toEqual({ kind: "none" });
+  });
+
   it("correlates tool events by toolCallId", async () => {
     const start = normalizePiEvent(await fixture("tool-start.json"));
     expect(start).toMatchObject({ kind: "tool", tool: { toolCallId: "call-1", status: "running" } });

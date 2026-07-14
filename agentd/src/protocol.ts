@@ -121,6 +121,19 @@ export const PickyArtifactSchema = z.object({ id: z.string(), kind: z.string(), 
 export type PickyArtifact = z.infer<typeof PickyArtifactSchema>;
 export const PickyToolActivitySchema = z.object({ toolCallId: z.string(), name: z.string(), status: z.enum(["running", "succeeded", "failed"]), preview: z.string().optional(), argsPreview: z.string().optional(), resultPreview: z.string().optional(), startedAt: isoTimestamp.optional(), endedAt: isoTimestamp.optional() });
 export type PickyToolActivity = z.infer<typeof PickyToolActivitySchema>;
+export const PickyTodoTaskSchema = z.object({
+  id: z.string(),
+  content: z.string(),
+  status: z.enum(["pending", "in_progress", "completed"]),
+  activeForm: z.string().optional(),
+  notes: z.string().optional(),
+});
+export type PickyTodoTask = z.infer<typeof PickyTodoTaskSchema>;
+export const PickyTodoStateSchema = z.object({
+  tasks: z.array(PickyTodoTaskSchema),
+  updatedAt: isoTimestamp,
+});
+export type PickyTodoState = z.infer<typeof PickyTodoStateSchema>;
 const PickyExtensionUiQuestionOptionSchema = z.preprocess(
   (option) => typeof option === "string" ? { value: option, label: option } : option,
   z.object({ value: z.string(), label: z.string(), description: z.string().optional() }),
@@ -220,6 +233,7 @@ export const PickyAgentSessionSchema = z.object({
   finalAnswer: z.string().optional(),
   logs: z.array(z.string()).default([]),
   tools: z.array(PickyToolActivitySchema).default([]),
+  todoState: PickyTodoStateSchema.optional(),
   artifacts: z.array(PickyArtifactSchema).default([]),
   changedFiles: z.array(PickyChangedFileSchema).default([]),
   messages: z.array(PickySessionMessageSchema).default([]),
@@ -374,6 +388,7 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
   }),
   EventBaseSchema.extend({ type: z.literal("sessionLogAppended"), sessionId: z.string(), line: z.string() }),
   EventBaseSchema.extend({ type: z.literal("toolActivityUpdated"), sessionId: z.string(), tool: PickyToolActivitySchema }),
+  EventBaseSchema.extend({ type: z.literal("sessionTodoStateUpdated"), sessionId: z.string(), todoState: PickyTodoStateSchema.nullable(), seq: z.number().int() }),
   EventBaseSchema.extend({ type: z.literal("extensionUiRequest"), request: PickyExtensionUiRequestSchema }),
   EventBaseSchema.extend({ type: z.literal("artifactUpdated"), sessionId: z.string(), artifact: PickyArtifactSchema }),
   EventBaseSchema.extend({ type: z.literal("pointerOverlayRequested"), request: PickyPointerOverlayRequestSchema }),

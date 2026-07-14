@@ -52,6 +52,7 @@ describe("picky agentd known bugs (failing reproductions)", () => {
         Object.assign(session, patch);
       },
       emitToolActivityUpdated: () => {},
+      updateTodoState: async () => {},
       appendLog: async () => {},
       materializeTerminalArtifacts: async () => {},
       applyQueueUpdate: async () => {},

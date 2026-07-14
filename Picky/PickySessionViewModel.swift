@@ -105,6 +105,7 @@ final class PickySessionListViewModel: ObservableObject {
         // updatedAt is bumped by every tool/log event so it cannot stand in.
         var lastRequestAt: Date?
         var tools: [PickyToolActivity]
+        var todoState: PickyTodoState? = nil
         var artifacts: [PickyArtifact]
         var changedFiles: [PickyChangedFile]
         var messages: [PickySessionMessage]
@@ -1703,6 +1704,8 @@ final class PickySessionListViewModel: ObservableObject {
             applySessionLogAppended(sessionID: sessionId, line: line)
         case .toolActivityUpdated(let sessionId, let tool):
             applyToolActivityUpdated(sessionID: sessionId, tool: tool)
+        case .sessionTodoStateUpdated(let sessionId, let todoState, let seq):
+            applyTodoStateUpdated(sessionID: sessionId, todoState: todoState, seq: seq)
         case .extensionUiRequest(let request):
             applyExtensionUiRequest(request)
         case .artifactUpdated(let sessionId, let artifact):
@@ -1887,6 +1890,15 @@ final class PickySessionListViewModel: ObservableObject {
             }
             card.logPreview = [tool.name, tool.preview].compactMap { $0 }.joined(separator: ": ")
             card.updatedAt = tool.endedAt ?? Date()
+        }
+    }
+
+    private func applyTodoStateUpdated(sessionID sessionId: String, todoState: PickyTodoState?, seq: Int) {
+        PickyPerf.event("vm_event_todo_state_updated")
+        guard acceptIncrementalEvent(sessionID: sessionId, seq: seq) else { return }
+        update(sessionID: sessionId) { card in
+            card.todoState = todoState
+            card.updatedAt = todoState?.updatedAt ?? Date()
         }
     }
 
@@ -2571,6 +2583,7 @@ extension PickySessionListViewModel.SessionCard {
         // and let elapsedSinceLastRequest() fall back to updatedAt.
         self.lastRequestAt = nil
         self.tools = session.tools
+        self.todoState = session.todoState
         self.artifacts = session.artifacts
         self.changedFiles = session.changedFiles
         self.messages = session.messages
@@ -2649,10 +2662,12 @@ extension PickySessionListViewModel.SessionCard {
         guard pendingExtensionUiRequest == nil else { return false }
         guard messages.isEmpty, queuedSteers.isEmpty, queuedFollowUps.isEmpty else { return false }
         guard tools.isEmpty, artifacts.isEmpty, changedFiles.isEmpty else { return false }
+        guard todoState?.tasks.isEmpty != false else { return false }
         return !previous.messages.isEmpty
             || !previous.queuedSteers.isEmpty
             || !previous.queuedFollowUps.isEmpty
             || !previous.tools.isEmpty
+            || previous.todoState?.tasks.isEmpty == false
             || !previous.artifacts.isEmpty
             || !previous.changedFiles.isEmpty
             || previous.lastRequestText != nil

@@ -81,6 +81,32 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
+  it("broadcasts slim todo state updates including clear", async () => {
+    const { ws } = await connectWithHello();
+    const pendingUpdate = waitForEvent(ws, "sessionTodoStateUpdated");
+    supervisor.emit("todoStateUpdated", "session-todo", {
+      tasks: [{ id: "todo-1", content: "Implement HUD", status: "in_progress" }],
+      updatedAt: "2026-07-14T01:00:00.000Z",
+    }, 4);
+
+    await expect(pendingUpdate).resolves.toMatchObject({
+      type: "sessionTodoStateUpdated",
+      sessionId: "session-todo",
+      todoState: { tasks: [{ id: "todo-1", status: "in_progress" }] },
+      seq: 4,
+    });
+
+    const pendingClear = waitForEvent(ws, "sessionTodoStateUpdated");
+    supervisor.emit("todoStateUpdated", "session-todo", undefined, 5);
+    await expect(pendingClear).resolves.toMatchObject({
+      type: "sessionTodoStateUpdated",
+      sessionId: "session-todo",
+      todoState: null,
+      seq: 5,
+    });
+    ws.close();
+  });
+
   it("broadcasts sessionArchivedAuthoritative when setSessionArchived runs (regression for picky_unarchive_pickle not reaching the dock)", async () => {
     const session = await supervisor.create(context("to be archived"));
     const { ws } = await connectWithHello();

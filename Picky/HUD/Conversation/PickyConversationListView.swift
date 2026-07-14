@@ -15,6 +15,9 @@ struct PickyConversationListView: View {
     /// grow to consume the leftover vertical space so the composer stays pinned to
     /// the card's bottom edge instead of floating below a hardcoded 640pt cap.
     var fillsAvailableHeight = false
+    /// Space reserved at the bottom of scroll content for a read-only overlay
+    /// such as the todo progress pill. Zero preserves the historical layout.
+    var bottomOverlayInset: CGFloat = 0
     @State private var hasAppeared = false
     @State private var delayedQuestionCollapseScrollTask: Task<Void, Never>?
 
@@ -67,7 +70,7 @@ struct PickyConversationListView: View {
                         // their body and `agentActivity` messages render no view, so a
                         // dedicated always-rendered anchor is the only reliable target.
                         Color.clear
-                            .frame(height: 1)
+                            .frame(height: max(1, bottomOverlayInset))
                             .id(Self.bottomAnchorID)
                     }
                     .padding(.vertical, 2)
@@ -106,7 +109,8 @@ struct PickyConversationListView: View {
             steeringMode: session.steeringMode,
             followUpMode: session.followUpMode,
             lastRequestAt: session.lastRequestAt,
-            pendingExtensionUiRequestID: session.pendingExtensionUiRequest?.id
+            pendingExtensionUiRequestID: session.pendingExtensionUiRequest?.id,
+            hasBottomOverlay: bottomOverlayInset > 0
         )
     }
 
@@ -601,6 +605,7 @@ struct PickyConversationBottomScrollTrigger: Equatable {
     let followUpMode: PickyQueueMode
     let lastRequestAt: Date?
     let pendingExtensionUiRequestID: String?
+    var hasBottomOverlay = false
 }
 
 /// Single source of truth for the message → bubble mapping. The render path

@@ -12,6 +12,7 @@ export interface RewindDeps {
   removeMessages(sessionId: string, ids: readonly string[]): Promise<void>;
   drainQueue(sessionId: string, handle: RuntimeSessionHandle): Promise<void>;
   patch(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void>;
+  updateTodoState(sessionId: string, todoState: PickyAgentSession["todoState"]): Promise<void>;
   emitRewound(sessionId: string, editorText: string | undefined, removedIds: string[]): void;
   waitSettled(sessionId: string): Promise<void>;
 }
@@ -34,6 +35,8 @@ export async function rewindToEntry(deps: RewindDeps, sessionId: string, entryId
 
   const result = await handle.rewindToEntry(entryId);
   const newBranch = handle.getActiveBranchTranscript?.() ?? [];
+  const todoResolution = handle.getTodoStateResolution?.();
+  if (todoResolution?.resolved) await deps.updateTodoState(sessionId, todoResolution.todoState);
   const removedIds = rewindRemovedMessageIds(deps.session(sessionId).messages ?? [], newBranch);
   await deps.removeMessages(sessionId, removedIds);
 

@@ -1,0 +1,19 @@
+{
+  "id": "event-session-todo-001",
+  "protocolVersion": "2026-05-09",
+  "timestamp": "2026-07-14T01:00:00.000Z",
+  "type": "sessionTodoStateUpdated",
+  "sessionId": "session-001",
+  "todoState": {
+    "tasks": [
+      {
+        "id": "todo-1",
+        "content": "Implement HUD",
+        "status": "in_progress",
+        "activeForm": "Implementing HUD"
+      }
+    ],
+    "updatedAt": "2026-07-14T01:00:00.000Z"
+  },
+  "seq": 9
+}

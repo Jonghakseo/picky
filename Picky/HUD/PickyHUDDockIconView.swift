@@ -215,13 +215,16 @@ struct PickyHUDDockIconView: View {
                 // animation is purely a function of time, and removing the view
                 // (when `session.status != .running`) hard-stops it.
                 if isScreenContextArmed {
-                    Image("PickyCursorNormal")
-                        .resizable()
-                        .renderingMode(.template)
-                        .foregroundStyle(DS.Colors.accentText)
-                        .scaledToFit()
-                        .frame(width: metrics.sessionLogoSide * 0.96, height: metrics.sessionLogoSide * 0.96)
-                        .shadow(color: DS.Colors.accentText.opacity(isSelected ? 0.18 : 0.10), radius: 2.0, x: 0, y: 0.7)
+                    ZStack {
+                        dockTodoProgressRing
+                        Image("PickyCursorNormal")
+                            .resizable()
+                            .renderingMode(.template)
+                            .foregroundStyle(DS.Colors.accentText)
+                            .scaledToFit()
+                            .frame(width: metrics.sessionLogoSide * 0.96, height: metrics.sessionLogoSide * 0.96)
+                            .shadow(color: DS.Colors.accentText.opacity(isSelected ? 0.18 : 0.10), radius: 2.0, x: 0, y: 0.7)
+                    }
                 } else if session.status == .running {
                     TimelineView(.animation) { context in
                         let _ = PickyPerf.event("dock_icon_timeline_tick")
@@ -231,6 +234,7 @@ struct PickyHUDDockIconView: View {
                                 .stroke(statusColor.opacity(0.16 + 0.36 * phase), lineWidth: 1.0)
                                 .frame(width: metrics.sessionLogoSide, height: metrics.sessionLogoSide)
                                 .scaleEffect(1.0 + 0.12 * phase)
+                            dockTodoProgressRing
                             Group {
                                 if isRunningWinkVisible(at: context.date) {
                                     dockPickleAsset(.wink)
@@ -241,10 +245,15 @@ struct PickyHUDDockIconView: View {
                             .scaleEffect(0.965 + 0.08 * phase)
                         }
                     }
-                } else if let asset = dockStatusAsset {
-                    dockPickleAsset(asset)
                 } else {
-                    normalPickleGlyph()
+                    ZStack {
+                        dockTodoProgressRing
+                        if let asset = dockStatusAsset {
+                            dockPickleAsset(asset)
+                        } else {
+                            normalPickleGlyph()
+                        }
+                    }
                 }
             }
 
@@ -256,6 +265,33 @@ struct PickyHUDDockIconView: View {
                 .frame(width: metrics.sessionTileWidth - 4, alignment: .center)
         }
         .opacity(isArchivePressing ? 0.64 : 1)
+    }
+
+    private var todoProgressPresentation: PickyTodoProgressPresentation? {
+        PickyTodoProgressPresentation(state: session.todoState)
+    }
+
+    @ViewBuilder
+    private var dockTodoProgressRing: some View {
+        if let todoProgressPresentation {
+            let lineWidth = max(1.2, 1.45 * metrics.scale)
+            ZStack {
+                Circle()
+                    .stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: lineWidth)
+                if todoProgressPresentation.fraction > 0 {
+                    Circle()
+                        .trim(from: 0, to: CGFloat(todoProgressPresentation.fraction))
+                        .stroke(
+                            todoProgressPresentation.isComplete ? DS.Colors.success : DS.Colors.info,
+                            style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                        )
+                        .rotationEffect(.degrees(-90))
+                        .animation(.easeOut(duration: 0.2), value: todoProgressPresentation.fraction)
+                }
+            }
+            .frame(width: metrics.sessionLogoSide, height: metrics.sessionLogoSide)
+            .accessibilityHidden(true)
+        }
     }
 
     private var dockIconBackground: some View {
@@ -1113,7 +1149,8 @@ private struct PickyHUDMiniPreviewCardView: View {
 
     private var gitRefreshKey: String {
         let updatedAtBucket = Int(session.updatedAt.timeIntervalSince1970 / Self.gitRefreshBucketSeconds)
-        return "\(session.cwd ?? "")|\(updatedAtBucket)"
+        let todoKey = session.todoState.map { String($0.updatedAt.timeIntervalSince1970) } ?? "none"
+        return "\(session.cwd ?? "")|\(updatedAtBucket)|todo:\(todoKey)"
     }
 
     var body: some View {
@@ -1159,6 +1196,7 @@ private struct PickyHUDMiniPreviewCardView: View {
                 )
         }
         .task(id: gitRefreshKey) {
+            guard todoProgressPresentation == nil else { return }
             PickyPerf.event("mini_preview_git_task_start")
             if gitStatus == nil, let cached = PickyGitRepositoryStatus.cached(cwd: session.cwd) {
                 gitStatus = cached
@@ -1175,7 +1213,22 @@ private struct PickyHUDMiniPreviewCardView: View {
 
     @ViewBuilder
     private var contextLine: some View {
-        if let gitStatus {
+        if let todoProgressPresentation {
+            HStack(spacing: max(3, 4 * scale)) {
+                Text(todoProgressPresentation.countText)
+                    .font(.system(size: secondaryFontSize, weight: .medium, design: .monospaced))
+                    .foregroundColor(todoProgressPresentation.isComplete ? DS.Colors.success : DS.Colors.info)
+                    .fixedSize(horizontal: true, vertical: false)
+                Text("·")
+                    .font(.system(size: secondaryFontSize, weight: .medium, design: .monospaced))
+                    .foregroundColor(DS.Colors.textTertiary)
+                Text(todoProgressPresentation.isComplete ? L10n.t("hud.todo.complete") : todoProgressPresentation.activeText)
+                    .font(.system(size: secondaryFontSize, weight: .medium))
+                    .foregroundColor(DS.Colors.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+        } else if let gitStatus {
             HStack(spacing: max(3, 4 * scale)) {
                 Text(gitStatus.repositoryDisplayName)
                     .font(.system(size: secondaryFontSize, weight: .medium, design: .monospaced))
@@ -1202,7 +1255,15 @@ private struct PickyHUDMiniPreviewCardView: View {
         }
     }
 
+    private var todoProgressPresentation: PickyTodoProgressPresentation? {
+        PickyTodoProgressPresentation(state: session.todoState)
+    }
+
     private var contextAccessibilityLabel: String {
+        if let todoProgressPresentation {
+            let summary = todoProgressPresentation.isComplete ? L10n.t("hud.todo.complete") : todoProgressPresentation.activeText
+            return "\(todoProgressPresentation.countText), \(summary)"
+        }
         if let gitStatus {
             return "\(gitStatus.repositoryDisplayName), \(gitStatus.branchDisplayName)"
         }

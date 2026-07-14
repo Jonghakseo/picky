@@ -18,6 +18,7 @@ import {
 import type { BuiltPrompt } from "../prompt-builder.js";
 import { ExtensionUiBridge } from "../application/extension-ui-bridge.js";
 import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
+import { resolveTodoStateFromPiSessionEntries } from "../domain/todo-state.js";
 import { isTransientAgentBusyError } from "../domain/transient-runtime-error.js";
 import type { AgentRuntime, AnswerExtensionUiOptions, RewindBranchMessage, RewindResult, RewindTarget, RuntimeAssistantRunMetadata, RuntimeBashExecutionResult, RuntimeEvent, RuntimeModelOption, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
 import type { ModelCycleDirection, PickyQueueMode } from "../protocol.js";
@@ -498,6 +499,10 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     // sessionManager.getBranch() already returns the active path in root->leaf (oldest->newest)
     // order. Do NOT reverse it here; the supervisor reconcile anchors on the last (newest) entry.
     return branchTranscriptFromEntries(this.runtime.session.sessionManager.getBranch());
+  }
+
+  getTodoStateResolution() {
+    return resolveTodoStateFromPiSessionEntries(this.runtime.session.sessionManager.getBranch());
   }
 
   getSteeringMessages(): readonly string[] {

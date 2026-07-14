@@ -103,6 +103,7 @@ export class AgentdServer {
     this.options.supervisor.on("log", (sessionId, line) => this.broadcast({ type: "sessionLogAppended", sessionId, line }));
     this.options.supervisor.on("extensionUiRequest", (request) => this.broadcast({ type: "extensionUiRequest", request }));
     this.options.supervisor.on("toolActivityUpdated", (sessionId, tool) => this.broadcast({ type: "toolActivityUpdated", sessionId, tool }));
+    this.options.supervisor.on("todoStateUpdated", (sessionId, todoState, seq) => this.broadcast({ type: "sessionTodoStateUpdated", sessionId, todoState: todoState ?? null, seq }));
     this.options.supervisor.on("queueUpdated", (sessionId, steering, followUp, steeringMode, followUpMode, seq) => this.broadcast({ type: "sessionQueueUpdated", sessionId, steering, followUp, steeringMode, followUpMode, seq }));
     this.options.supervisor.on("activityUpdated", (sessionId, activitySummary, seq) => this.broadcast({ type: "sessionActivityUpdated", sessionId, activitySummary, seq }));
     this.options.supervisor.on("messageAppended", (sessionId, message, seq) => this.broadcast({ type: "sessionMessageAppended", sessionId, message, seq }));
@@ -802,6 +803,8 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, lineChars: event.line.length };
     case "toolActivityUpdated":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, tool: event.tool.name, status: event.tool.status };
+    case "sessionTodoStateUpdated":
+      return { eventId: event.id, type: event.type, sessionId: event.sessionId, tasks: event.todoState?.tasks.length ?? 0, seq: event.seq };
     case "extensionUiRequest":
       return { eventId: event.id, type: event.type, sessionId: event.request.sessionId, requestId: event.request.id, method: event.request.method };
     case "artifactUpdated":

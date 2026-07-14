@@ -1,6 +1,6 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { BuiltPrompt } from "../prompt-builder.js";
-import type { ModelCycleDirection, PickyQueueMode } from "../protocol.js";
+import type { ModelCycleDirection, PickyQueueMode, PickyTodoState } from "../protocol.js";
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 export type RuntimeSlashCommandSource = "extension" | "prompt" | "skill" | "builtin";
@@ -26,6 +26,11 @@ export type RuntimeSessionStatus = "running" | "waiting_for_input" | "blocked" |
 export interface RuntimeAssistantRunMetadata {
   model?: string;
   thinkingLevel?: ThinkingLevel;
+}
+
+export interface RuntimeTodoStateResolution {
+  resolved: boolean;
+  todoState?: PickyTodoState;
 }
 
 export interface RuntimeBashExecutionResult {
@@ -60,6 +65,7 @@ export type RuntimeEvent =
    */
   | { type: "turn_text_complete"; text: string; inputId?: string; assistantRun?: RuntimeAssistantRunMetadata }
   | { type: "tool"; toolCallId: string; name: string; status: "running" | "succeeded" | "failed"; preview?: string; argsPreview?: string; resultPreview?: string }
+  | { type: "todo_state"; todoState?: PickyTodoState }
   | { type: "extension_ui"; request: Record<string, unknown>; waitsForInput: boolean }
   | { type: "extension_ui_cancelled"; requestId: string }
   | { type: "session_info"; name: string }
@@ -112,6 +118,7 @@ export interface RuntimeSessionHandle {
   listRewindTargets?(): RewindTarget[];
   rewindToEntry?(entryId: string): Promise<RewindResult>;
   getActiveBranchTranscript?(): RewindBranchMessage[];
+  getTodoStateResolution?(): RuntimeTodoStateResolution;
   /**
    * Lets the host (supervisor) tell the runtime whether it currently surfaces
    * a pending extension UI request to the user. The runtime uses the callback

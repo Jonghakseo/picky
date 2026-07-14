@@ -1,6 +1,7 @@
-import type { PickyToolActivity, SessionStatus } from "../protocol.js";
+import type { PickyTodoState, PickyToolActivity, SessionStatus } from "../protocol.js";
 import type { RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeSessionStatus, ThinkingLevel } from "../runtime/types.js";
 import { sliceUtf16Safe } from "./safe-truncate.js";
+import { todoStateFromPiSessionEntry } from "./todo-state.js";
 
 interface PiEventNormalizationContext {
   hasQueuedSteering?: boolean;
@@ -28,6 +29,7 @@ type NormalizedPiEvent =
   | { kind: "thinkingDelta"; delta: string }
   | { kind: "status"; status: SessionStatus; summary?: string; finalAnswer?: string; assistantRun?: RuntimeAssistantRunMetadata }
   | { kind: "tool"; tool: PickyToolActivity }
+  | { kind: "todoState"; todoState: PickyTodoState }
   | { kind: "extensionUi"; request: Record<string, unknown>; waitsForInput: boolean }
   | { kind: "sessionInfo"; name: string }
   | { kind: "turnTextComplete"; text: string; assistantRun?: RuntimeAssistantRunMetadata }
@@ -52,6 +54,11 @@ export function normalizePiEvent(event: unknown, context: PiEventNormalizationCo
       return { kind: "status", status: "failed", summary: stringValue(assistantEvent.error) ?? "Agent error" };
     }
     return { kind: "none" };
+  }
+
+  if (type === "entry_appended") {
+    const todoState = todoStateFromPiSessionEntry(piEvent.entry);
+    return todoState ? { kind: "todoState", todoState } : { kind: "none" };
   }
 
   if (type === "tool_execution_start") {
@@ -161,6 +168,7 @@ export function runtimeEventFromPiEvent(event: unknown, context?: PiEventNormali
     };
   }
   if (normalized.kind === "tool") return { type: "tool", toolCallId: normalized.tool.toolCallId, name: normalized.tool.name, status: normalized.tool.status, preview: normalized.tool.preview, argsPreview: normalized.tool.argsPreview, resultPreview: normalized.tool.resultPreview };
+  if (normalized.kind === "todoState") return { type: "todo_state", todoState: normalized.todoState };
   if (normalized.kind === "extensionUi") return { type: "extension_ui", request: normalized.request, waitsForInput: normalized.waitsForInput };
   if (normalized.kind === "sessionInfo") return { type: "session_info", name: normalized.name };
   if (normalized.kind === "turnTextComplete") {

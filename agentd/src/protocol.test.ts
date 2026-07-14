@@ -202,6 +202,18 @@ describe("protocol contract fixtures", () => {
     }
   });
 
+  it("parses slim todo state updates including authoritative clears", () => {
+    expect(EventEnvelopeSchema.parse({
+      id: "event-todo-state",
+      protocolVersion: "2026-05-09",
+      timestamp: "2026-07-14T01:00:00.000Z",
+      type: "sessionTodoStateUpdated",
+      sessionId: "session-001",
+      todoState: null,
+      seq: 10,
+    })).toMatchObject({ type: "sessionTodoStateUpdated", sessionId: "session-001", todoState: null, seq: 10 });
+  });
+
   it("parses message rewind commands and events", () => {
     expect(CommandEnvelopeSchema.parse({
       id: "cmd-list-rewind",

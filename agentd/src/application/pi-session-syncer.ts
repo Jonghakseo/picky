@@ -2,13 +2,16 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { hasActivity, zeroActivitySummary } from "../domain/activity-summary.js";
 import { categorizeTool } from "../domain/tool-categorizer.js";
-import type { PickyActivitySummary, PickySessionMessage } from "../protocol.js";
+import { resolveTodoStateFromPiSessionEntries } from "../domain/todo-state.js";
+import type { PickyActivitySummary, PickySessionMessage, PickyTodoState } from "../protocol.js";
 
 interface PiSessionEntry {
   type?: string;
   id?: string;
   parentId?: string | null;
   timestamp?: string;
+  customType?: string;
+  data?: unknown;
   message?: PiSessionMessage;
 }
 
@@ -27,6 +30,8 @@ interface PiContentBlock {
 
 interface PiTerminalSessionSyncResult {
   messages: PickySessionMessage[];
+  todoState?: PickyTodoState;
+  todoStateResolved: boolean;
   activeLastMessageId?: string;
   baselineFound: boolean;
   baselineCreatedAt?: string;
@@ -59,17 +64,33 @@ export async function readPiSessionInfoName(sessionFilePath: string): Promise<st
 export async function readPiTerminalSessionMessages(sessionFilePath: string, baselinePiMessageId?: string): Promise<PiTerminalSessionSyncResult> {
   const text = await readFile(sessionFilePath, "utf8");
   const entries = parseMessageEntries(text);
-  const activePath = activeMessagePath(entries);
-  const activeLastMessageId = activePath.at(-1)?.id;
+  const activePath = activeBranchPath(entries);
+  const activeLastMessageId = [...activePath].reverse().find(isImportableMessageEntry)?.id;
+  const todoResolution = resolveTodoStateFromPiSessionEntries(activePath);
   const startIndex = baselinePiMessageId ? activePath.findIndex((entry) => entry.id === baselinePiMessageId) : -1;
   const baselineFound = baselinePiMessageId ? startIndex >= 0 : true;
-  if (baselinePiMessageId && startIndex < 0) return { messages: [], activeLastMessageId, baselineFound };
+  if (baselinePiMessageId && startIndex < 0) {
+    return {
+      messages: [],
+      todoStateResolved: todoResolution.resolved,
+      ...(todoResolution.todoState ? { todoState: todoResolution.todoState } : {}),
+      activeLastMessageId,
+      baselineFound,
+    };
+  }
 
   const baselineEntry = startIndex >= 0 ? activePath[startIndex] : undefined;
   const baselineCreatedAt = baselineEntry ? isoTimestamp(baselineEntry.timestamp, baselineEntry.message?.timestamp) : undefined;
   const candidates = baselinePiMessageId ? activePath.slice(startIndex + 1) : activePath;
   const messages = candidates.flatMap(toPickySessionMessages);
-  return { messages, activeLastMessageId, baselineFound, baselineCreatedAt };
+  return {
+    messages,
+    todoStateResolved: todoResolution.resolved,
+    ...(todoResolution.todoState ? { todoState: todoResolution.todoState } : {}),
+    activeLastMessageId,
+    baselineFound,
+    baselineCreatedAt,
+  };
 }
 
 function parseMessageEntries(text: string): PiSessionEntry[] {
@@ -86,8 +107,8 @@ function parseMessageEntries(text: string): PiSessionEntry[] {
     .filter((entry): entry is PiSessionEntry => Boolean(entry?.id));
 }
 
-function activeMessagePath(entries: PiSessionEntry[]): PiSessionEntry[] {
-  let current = lastImportableMessageEntry(entries);
+function activeBranchPath(entries: PiSessionEntry[]): PiSessionEntry[] {
+  let current = lastBranchEntry(entries);
   if (!current) return [];
   const byId = new Map(entries.flatMap((entry) => entry.id ? [[entry.id, entry] as const] : []));
   const path: PiSessionEntry[] = [];
@@ -102,10 +123,10 @@ function activeMessagePath(entries: PiSessionEntry[]): PiSessionEntry[] {
   return path.reverse();
 }
 
-function lastImportableMessageEntry(entries: PiSessionEntry[]): PiSessionEntry | undefined {
+function lastBranchEntry(entries: PiSessionEntry[]): PiSessionEntry | undefined {
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index];
-    if (entry && isImportableMessageEntry(entry)) return entry;
+    if (entry && entry.parentId !== undefined) return entry;
   }
   return undefined;
 }

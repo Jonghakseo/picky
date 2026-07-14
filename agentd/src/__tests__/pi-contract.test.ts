@@ -120,13 +120,14 @@ describe("pi-coding-agent contract", () => {
 });
 
 async function createTestSession(): Promise<unknown> {
-  const cwd = await mkdtemp(join(tmpdir(), "picky-pi-contract-"));
-  // Use the high-level createAgentSession entry point with a minimal options bag.
-  // pi auto-resolves SessionManager/SettingsManager/ResourceLoader from cwd, so we
-  // don't have to thread the lower-level factories that PiSdkRuntime uses for its
-  // hot path. This keeps the contract test focused on the surface picky touches
-  // instead of duplicating the runtime wiring.
-  const result = await (pi as unknown as { createAgentSession: (options: { cwd: string }) => Promise<{ session: unknown }> }).createAgentSession({ cwd });
+  const cwd = await mkdtemp(join(tmpdir(), "picky-pi-contract-cwd-"));
+  const agentDir = await mkdtemp(join(tmpdir(), "picky-pi-contract-agent-"));
+  // Use the high-level createAgentSession entry point with isolated cwd and agentDir
+  // values so the contract test never loads the user's installed Pi extensions.
+  // Pi auto-resolves SessionManager/SettingsManager/ResourceLoader from these paths,
+  // keeping the test focused on the surface Picky touches without duplicating the
+  // runtime wiring.
+  const result = await (pi as unknown as { createAgentSession: (options: { cwd: string; agentDir: string }) => Promise<{ session: unknown }> }).createAgentSession({ cwd, agentDir });
   return result.session;
 }
 

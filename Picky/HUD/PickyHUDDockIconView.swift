@@ -1143,6 +1143,12 @@ private struct PickyHUDMiniPreviewCardView: View {
     private var cornerRadius: CGFloat { max(12, 16 * scale) }
     private var titleFontSize: CGFloat { max(12, 14 * scale) }
     private var secondaryFontSize: CGFloat { max(10, 11 * scale) }
+    // Dock-preset-scaled fonts (S/M/L). These intentionally scale with the dock
+    // size preset rather than the app font scale, so they are component-level
+    // geometry exceptions to `PickyHUDTypography`'s fixed roles.
+    private var titleFont: Font { .system(size: titleFontSize, weight: .semibold) }
+    private var secondaryFont: Font { .system(size: secondaryFontSize, weight: .medium) }
+    private var secondaryMonoFont: Font { .system(size: secondaryFontSize, weight: .medium, design: .monospaced) }
     private var statusDotSide: CGFloat { max(6, 7 * scale) }
     private var horizontalPadding: CGFloat { max(8, 10 * scale) }
     private var verticalPadding: CGFloat { max(7, 9 * scale) }
@@ -1164,13 +1170,13 @@ private struct PickyHUDMiniPreviewCardView: View {
             VStack(alignment: .leading, spacing: max(2, 3 * scale)) {
                 HStack(spacing: max(5, 7 * scale)) {
                     Text(session.title)
-                        .font(.system(size: titleFontSize, weight: .semibold))
+                        .font(titleFont)
                         .foregroundColor(DS.Colors.textPrimary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .layoutPriority(1)
                     Text(statusLabel)
-                        .font(.system(size: secondaryFontSize, weight: .medium))
+                        .font(secondaryFont)
                         .foregroundColor(DS.Colors.textSecondary)
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
@@ -1216,14 +1222,14 @@ private struct PickyHUDMiniPreviewCardView: View {
         if let todoProgressPresentation {
             HStack(spacing: max(3, 4 * scale)) {
                 Text(todoProgressPresentation.countText)
-                    .font(.system(size: secondaryFontSize, weight: .medium, design: .monospaced))
+                    .font(secondaryMonoFont)
                     .foregroundColor(todoProgressPresentation.isComplete ? DS.Colors.success : DS.Colors.info)
                     .fixedSize(horizontal: true, vertical: false)
                 Text("·")
-                    .font(.system(size: secondaryFontSize, weight: .medium, design: .monospaced))
+                    .font(secondaryMonoFont)
                     .foregroundColor(DS.Colors.textTertiary)
                 Text(todoProgressPresentation.isComplete ? L10n.t("hud.todo.complete") : todoProgressPresentation.activeText)
-                    .font(.system(size: secondaryFontSize, weight: .medium))
+                    .font(secondaryFont)
                     .foregroundColor(DS.Colors.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -1231,16 +1237,16 @@ private struct PickyHUDMiniPreviewCardView: View {
         } else if let gitStatus {
             HStack(spacing: max(3, 4 * scale)) {
                 Text(gitStatus.repositoryDisplayName)
-                    .font(.system(size: secondaryFontSize, weight: .medium, design: .monospaced))
+                    .font(secondaryMonoFont)
                     .foregroundColor(DS.Colors.textSecondary)
                     .lineLimit(1)
                     .layoutPriority(2)
                 Text("·")
-                    .font(.system(size: secondaryFontSize, weight: .medium, design: .monospaced))
+                    .font(secondaryMonoFont)
                     .foregroundColor(DS.Colors.textTertiary)
                     .fixedSize(horizontal: true, vertical: false)
                 Text(gitStatus.branchDisplayName)
-                    .font(.system(size: secondaryFontSize, weight: .medium, design: .monospaced))
+                    .font(secondaryMonoFont)
                     .foregroundColor(DS.Colors.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -1248,7 +1254,7 @@ private struct PickyHUDMiniPreviewCardView: View {
             }
         } else if let cwd = session.compactCwdDescription {
             Text(cwd)
-                .font(.system(size: secondaryFontSize, weight: .medium, design: .monospaced))
+                .font(secondaryMonoFont)
                 .foregroundColor(DS.Colors.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.middle)

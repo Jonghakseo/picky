@@ -87,19 +87,14 @@ struct PickyTodoProgressOverlayView: View {
             Divider()
                 .overlay(DS.Colors.borderSubtle.opacity(0.65))
 
-            ScrollView(.vertical, showsIndicators: presentation.tasks.count > 6) {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(presentation.tasks.enumerated()), id: \.element.id) { index, task in
-                        taskRow(task)
-                        if index < presentation.tasks.count - 1 {
-                            Divider()
-                                .overlay(DS.Colors.borderSubtle.opacity(0.45))
-                                .padding(.leading, 34)
-                        }
-                    }
+            if presentation.usesScrollableExpandedList {
+                ScrollView(.vertical, showsIndicators: true) {
+                    expandedTaskRows
                 }
+                .frame(maxHeight: 224)
+            } else {
+                expandedTaskRows
             }
-            .frame(maxHeight: 224)
         }
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -111,6 +106,19 @@ struct PickyTodoProgressOverlayView: View {
                 .shadow(color: .black.opacity(0.15), radius: 12, y: 5)
         )
         .accessibilityElement(children: .contain)
+    }
+
+    private var expandedTaskRows: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(presentation.tasks.enumerated()), id: \.element.id) { index, task in
+                taskRow(task)
+                if index < presentation.tasks.count - 1 {
+                    Divider()
+                        .overlay(DS.Colors.borderSubtle.opacity(0.45))
+                        .padding(.leading, 34)
+                }
+            }
+        }
     }
 
     private func taskRow(_ task: PickyTodoTask) -> some View {

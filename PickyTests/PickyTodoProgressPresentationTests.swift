@@ -50,6 +50,20 @@ struct PickyTodoProgressPresentationTests {
         #expect(presentation.activeText == "Run tests")
     }
 
+    @Test func expandedListOnlyScrollsAfterSixTasks() throws {
+        let threeTasks = PickyTodoState(
+            tasks: (1...3).map { PickyTodoTask(id: "todo-\($0)", content: "Task \($0)", status: .pending) },
+            updatedAt: Date(timeIntervalSince1970: 1_800_000_003)
+        )
+        let sevenTasks = PickyTodoState(
+            tasks: (1...7).map { PickyTodoTask(id: "todo-\($0)", content: "Task \($0)", status: .pending) },
+            updatedAt: Date(timeIntervalSince1970: 1_800_000_004)
+        )
+
+        #expect(try #require(PickyTodoProgressPresentation(state: threeTasks)).usesScrollableExpandedList == false)
+        #expect(try #require(PickyTodoProgressPresentation(state: sevenTasks)).usesScrollableExpandedList)
+    }
+
     @Test func daemonSessionUpdateCanAuthoritativelyClearTodoState() {
         let todoState = PickyTodoState(
             tasks: [PickyTodoTask(id: "todo-1", content: "Implement HUD", status: .inProgress)],

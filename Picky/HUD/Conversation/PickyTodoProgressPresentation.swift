@@ -38,6 +38,10 @@ struct PickyTodoProgressPresentation: Equatable {
     var countText: String {
         "\(completedCount)/\(totalCount)"
     }
+
+    var usesScrollableExpandedList: Bool {
+        tasks.count > 6
+    }
 }
 
 extension PickyTodoTask {

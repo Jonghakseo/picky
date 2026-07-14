@@ -4772,13 +4772,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Todo write overlay"
+            "value": "TODO write"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Todo write 오버레이"
+            "value": "TODO write"
           }
         }
       }

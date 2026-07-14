@@ -411,6 +411,12 @@ final class BuddyDictationManager: NSObject, ObservableObject {
     }
 
     private func startRecognitionSession() async throws {
+        // Unit tests drive dictation state transitions without opening the real
+        // AVAudioEngine input tap (which would otherwise trigger the microphone
+        // system prompt). The recording-state publishers set by the caller stay
+        // intact so voice tests still observe the expected transitions.
+        guard !PickyRuntimeEnvironment.isRunningUnitTests else { return }
+
         activeTranscriptionSession?.cancel()
         activeTranscriptionSession = nil
 
@@ -746,6 +752,11 @@ final class BuddyDictationManager: NSObject, ObservableObject {
     /// so macOS has time to update its authorization cache. This prevents the
     /// permission dialog from popping up again on rapid follow-up presses.
     private func requestMicrophoneAndSpeechPermissionsWithoutDuplicatePrompts() async -> Bool {
+        // Unit tests exercise the voice state machine without a real microphone.
+        // Skip the system permission prompts here, matching the permission-probe
+        // guards elsewhere in the app (e.g. CompanionManager.requestScreenContentPermission).
+        guard !PickyRuntimeEnvironment.isRunningUnitTests else { return true }
+
         // If a permission request is already in-flight, reuse it.
         if let activePermissionRequestTask {
             return await activePermissionRequestTask.value

@@ -472,7 +472,7 @@ struct PickyHUDDockCollapsedGroupBadge: View {
                         Capsule(style: .continuous)
                             .fill(DS.Colors.notification)
                     )
-                    .foregroundColor(.white)
+                    .foregroundColor(DS.Colors.notificationText)
                     .overlay(
                         Capsule(style: .continuous)
                             .stroke(DS.Colors.background, lineWidth: 0.8)

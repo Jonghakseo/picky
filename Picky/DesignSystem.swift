@@ -147,6 +147,10 @@ enum DS {
         /// not a clickable/selected affordance. Always paired with a count or dot shape.
         static let notification = Color(light: Color(hex: "#2563EB"), dark: Color(hex: "#60A5FA"))
 
+        /// Text/number drawn on top of `notification`. Light uses white on the deep
+        /// blue fill; dark uses near-black on the brighter blue fill for legibility.
+        static let notificationText = Color(light: .white, dark: Color(hex: "#101211"))
+
         // ── Overlay Cursor ───────────────────────────────────────────
 
         /// The blue cursor/bubble color used in OverlayWindow.

@@ -40,7 +40,7 @@ struct PickyErrorBubbleView: View {
                         .foregroundColor(DS.Colors.textPrimary)
                         .padding(7)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(DS.Colors.surface2.opacity(0.86)))
+                        .background(RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous).fill(DS.Colors.surface2.opacity(0.86)))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if let errorContext = message.errorContext, !errorContext.isEmpty {
@@ -51,7 +51,7 @@ struct PickyErrorBubbleView: View {
                 }
                 HStack(spacing: 6) {
                     if let onRetry, Self.isRecoverableRuntimeRace(errorMessage: message.errorMessage) {
-                        recoveryChip(Self.retryLabel, color: DS.Colors.success, action: onRetry)
+                        recoveryChip(Self.retryLabel, color: DS.Colors.accentText, action: onRetry)
                     }
                     recoveryChip(Self.openTerminalLabel, color: DS.Colors.accentText, action: onOpenTerminal)
                 }

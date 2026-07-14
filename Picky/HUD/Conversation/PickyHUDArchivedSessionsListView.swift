@@ -112,7 +112,7 @@ struct PickyHUDArchivedSessionsListView: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
                 .background(
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
                         .fill(DS.Colors.destructiveText.opacity(0.10))
                 )
         }
@@ -178,7 +178,7 @@ struct PickyHUDArchivedSessionsListView: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
                         .fill(DS.Colors.surface2)
                 )
         }
@@ -205,7 +205,7 @@ struct PickyHUDArchivedSessionsListView: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
                         .fill(isArmed ? DS.Colors.destructiveText.opacity(0.12) : DS.Colors.surface2.opacity(0.6))
                 )
                 .animation(.easeOut(duration: 0.12), value: isArmed)

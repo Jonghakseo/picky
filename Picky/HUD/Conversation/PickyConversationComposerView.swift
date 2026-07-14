@@ -1140,12 +1140,11 @@ struct PickyConversationComposerView: View {
 
     private var sendColor: Color {
         if effectiveBashMode != .none { return bashAccentColor }
-        switch defaultSubmitKind {
-        case .followUp:
-            return DS.Colors.success
-        case .steer, nil:
-            return DS.Colors.overlayCursorBlue
-        }
+        // Send is an action, so it uses Action Blue for both follow-up and steer.
+        // The submit kind is a function of session status (already conveyed by the
+        // header status dot / running border) and the tooltip, so the button color
+        // does not need to re-encode it with a status color.
+        return DS.Colors.accentText
     }
 
     private func submitDefault() {
@@ -1375,43 +1374,15 @@ private struct PickyComposerAttachmentChipView: View {
     }
 }
 
-/// Sweeping angular-gradient border used as the "this Pickle is live" signal
-/// on the composer of a running Pickle. Animation lives only on the input
-/// surface so users get a steady peripheral cue exactly where they next act,
-/// without painting motion across the whole transcript.
-///
-/// Honors `accessibilityReduceMotion`: with reduced motion the gradient is
-/// drawn at a fixed phase so the running cue still reads distinctly but
-/// nothing animates.
+/// Static tinted border used as the "this Pickle is live" signal on the
+/// composer of a running Pickle. The running state is already conveyed by the
+/// header status dot and the card status border; this is a steady peripheral
+/// cue exactly where the user next acts, without decorative motion.
 private struct PickyRunningComposerBorder: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var phase: Double = 0
-
     var body: some View {
         let _ = PickyPerf.event("running_composer_border_body")
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .strokeBorder(
-                AngularGradient(
-                    gradient: Gradient(stops: [
-                        .init(color: DS.Colors.borderSubtle.opacity(0.45), location: 0.0),
-                        .init(color: DS.Colors.info.opacity(0.7), location: 0.25),
-                        .init(color: DS.Colors.borderSubtle.opacity(0.45), location: 0.5),
-                        .init(color: DS.Colors.borderSubtle.opacity(0.45), location: 1.0),
-                    ]),
-                    center: .center,
-                    startAngle: .degrees(phase),
-                    endAngle: .degrees(phase + 360)
-                ),
-                lineWidth: 1.0
-            )
-            .onAppear {
-                PickyPerf.event("running_composer_border_appear")
-                guard !reduceMotion else { return }
-                PickyPerf.event("running_composer_border_animation_start")
-                withAnimation(.linear(duration: 2.4).repeatForever(autoreverses: false)) {
-                    phase = 360
-                }
-            }
+        RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
+            .strokeBorder(DS.Colors.info.opacity(0.7), lineWidth: 1.0)
             .accessibilityHidden(true)
     }
 }

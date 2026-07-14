@@ -164,7 +164,7 @@ struct PickyConversationMarkdownText: View {
             }
         }
         .padding(8)
-        .background(DS.Colors.surface2, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .background(DS.Colors.surface2, in: RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous))
     }
 
     @ViewBuilder
@@ -203,9 +203,9 @@ struct PickyConversationMarkdownText: View {
                 }
             }
         }
-        .background(DS.Colors.surface2, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .background(DS.Colors.surface2, in: RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
+            RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                 .stroke(DS.Colors.borderSubtle, lineWidth: 0.8)
         )
     }

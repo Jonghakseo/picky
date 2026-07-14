@@ -265,8 +265,8 @@ struct PickyQuestionBubbleView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 7)
             .padding(.vertical, 5)
-            .background(RoundedRectangle(cornerRadius: 6).fill(selected ? DS.Colors.accentSubtle : DS.Colors.surface2.opacity(0.8)))
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(selected ? DS.Colors.accentText : DS.Colors.borderSubtle, lineWidth: 0.5))
+            .background(RoundedRectangle(cornerRadius: DS.CornerRadius.small).fill(selected ? DS.Colors.accentSubtle : DS.Colors.surface2.opacity(0.8)))
+            .overlay(RoundedRectangle(cornerRadius: DS.CornerRadius.small).stroke(selected ? DS.Colors.accentText : DS.Colors.borderSubtle, lineWidth: 0.5))
         }
         .buttonStyle(.plain)
         .foregroundColor(selected ? DS.Colors.accentText : DS.Colors.textPrimary)

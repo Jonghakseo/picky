@@ -125,7 +125,7 @@ struct PickyConversationHeaderView: View {
                 .padding(.horizontal, 5)
                 .padding(.vertical, 2)
                 .background(
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
                         .fill(DS.Colors.surface2.opacity(isTitleHovered ? 0.65 : 0))
                 )
                 .contentShape(Rectangle())
@@ -424,10 +424,10 @@ struct PickyConversationHeaderView: View {
     }
 
     private var piBadge: some View {
-        RoundedRectangle(cornerRadius: 7, style: .continuous)
+        RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
             .fill(isScreenContextArmed ? DS.Colors.accentSubtle.opacity(0.46) : statusColor.opacity(statusFillOpacity))
             .overlay(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                     .stroke(isScreenContextArmed ? DS.Colors.accentText.opacity(0.82) : statusColor.opacity(0.38), lineWidth: isScreenContextArmed ? 1.15 : 0.8)
             )
             .frame(width: 22, height: 22)

@@ -152,10 +152,10 @@ struct PickyConversationCardView: View {
     }
 
     private var cardBackground: some View {
-        RoundedRectangle(cornerRadius: 14, style: .continuous)
+        RoundedRectangle(cornerRadius: DS.CornerRadius.panel, style: .continuous)
             .fill(DS.Colors.surface1.opacity(cardBackgroundOpacity))
             .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.CornerRadius.panel, style: .continuous)
                     .stroke(cardBorderColor, lineWidth: isFileDropTargeted ? 1.3 : 1)
             )
             .shadow(color: .black.opacity(cardShadowOpacity), radius: PickyHUDExpansion.cardShadowRadius, y: PickyHUDExpansion.cardShadowYOffset)

@@ -237,6 +237,8 @@ enum DS {
         static let large: CGFloat = 10
         /// Large panels, permission cards.
         static let extraLarge: CGFloat = 12
+        /// Signature floating shells (Conversation Card, Dock shell).
+        static let panel: CGFloat = 14
         /// Pill-shaped buttons (the continue button).
         static let pill: CGFloat = .infinity
     }

@@ -210,7 +210,7 @@ struct PickyTurnCardViewTests {
     @Test func grouperPullsCompactSystemMessagesOutOfBodyIntoTrailing() {
         // Auto-compaction system messages must render outside the (possibly
         // collapsed) turn card so they stay visible no matter the card's
-        // expansion state. The grouper extracts them into `trailingCompactMessages`.
+        // expansion state. The grouper extracts them into `trailingMessages`.
         let messages: [PickySessionMessage] = [
             msg("u1", kind: .userText, secondsOffset: 0),
             msg("a-text", kind: .agentText, secondsOffset: 1, text: "real answer"),
@@ -222,7 +222,7 @@ struct PickyTurnCardViewTests {
 
         #expect(groups.count == 1)
         #expect(groups[0].bodyMessages.map(\.id) == ["a-text"])
-        #expect(groups[0].trailingCompactMessages.map(\.id) == ["a-compact-ok", "a-compact-fail"])
+        #expect(groups[0].trailingMessages.map(\.id) == ["a-compact-ok", "a-compact-fail"])
         // Once compact messages live outside the body, the collapsed representative
         // is just the latest agent text — no special-case filter needed.
         #expect(groups[0].collapsedRepresentativeMessage?.id == "a-text")
@@ -243,7 +243,48 @@ struct PickyTurnCardViewTests {
         #expect(groups.count == 1)
         #expect(groups[0].isCurrent)
         #expect(groups[0].bodyMessages.map(\.id) == ["a-text"])
-        #expect(groups[0].trailingCompactMessages.map(\.id) == ["a-compact-ok"])
+        #expect(groups[0].trailingMessages.map(\.id) == ["a-compact-ok"])
+    }
+
+    @Test func grouperHoistsPendingQuestionOutOfBodyIntoTrailing() {
+        // A pending extension-ui question must never hide behind a collapsed
+        // turn card. When the question lands in a turn without its own leading
+        // user message (follow-up on an idle session whose user_text only
+        // drains after the turn ends), the previous completed turn's collapsed
+        // card would swallow the INPUT NEEDED bubble.
+        let messages: [PickySessionMessage] = [
+            msg("u1", kind: .userText, secondsOffset: 0),
+            msg("a-text", kind: .agentText, secondsOffset: 1, text: "report"),
+            questionMsg("q-pending", requestID: "req-1", secondsOffset: 2)
+        ]
+
+        let groups = PickyTurnGrouper.groups(
+            from: messages,
+            sessionStatus: .waiting_for_input,
+            pendingQuestionRequestID: "req-1"
+        )
+
+        #expect(groups.count == 1)
+        #expect(groups[0].bodyMessages.map(\.id) == ["a-text"])
+        #expect(groups[0].trailingMessages.map(\.id) == ["q-pending"])
+    }
+
+    @Test func grouperKeepsAnsweredQuestionInBody() {
+        // Once the request is answered/cancelled the pending id no longer
+        // matches, so the question returns to the body as regular history.
+        let messages: [PickySessionMessage] = [
+            msg("u1", kind: .userText, secondsOffset: 0),
+            questionMsg("q-old", requestID: "req-1", secondsOffset: 1),
+            msg("a-text", kind: .agentText, secondsOffset: 2, text: "done")
+        ]
+
+        let answered = PickyTurnGrouper.groups(from: messages, sessionStatus: .completed, pendingQuestionRequestID: nil)
+        #expect(answered[0].bodyMessages.map(\.id) == ["q-old", "a-text"])
+        #expect(answered[0].trailingMessages.isEmpty)
+
+        let otherPending = PickyTurnGrouper.groups(from: messages, sessionStatus: .waiting_for_input, pendingQuestionRequestID: "req-2")
+        #expect(otherPending[0].bodyMessages.map(\.id) == ["q-old", "a-text"])
+        #expect(otherPending[0].trailingMessages.isEmpty)
     }
 
     // MARK: - Summary chip
@@ -500,6 +541,33 @@ private struct EmptyMessageContent: View {
 
 private let originDate = Date(timeIntervalSince1970: 1_700_000_000)
 
+
+private func questionMsg(
+    _ id: String,
+    requestID: String,
+    secondsOffset: TimeInterval
+) -> PickySessionMessage {
+    PickySessionMessage(
+        id: id,
+        kind: .agentQuestion,
+        createdAt: originDate.addingTimeInterval(secondsOffset),
+        originatedBy: nil,
+        text: nil,
+        question: PickyExtensionUiRequest(
+            id: requestID,
+            sessionId: "session-1",
+            method: "confirm",
+            title: "PR merge",
+            prompt: "Merge?",
+            createdAt: originDate.addingTimeInterval(secondsOffset)
+        ),
+        cancelledAt: nil,
+        activitySnapshot: nil,
+        assistantRun: nil,
+        errorContext: nil,
+        errorMessage: nil
+    )
+}
 
 private func msg(
     _ id: String,

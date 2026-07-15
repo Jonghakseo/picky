@@ -25,12 +25,15 @@ struct PickyTurnGroup: Identifiable, Equatable {
     let id: String
     let userMessage: PickySessionMessage?
     let bodyMessages: [PickySessionMessage]
-    /// Auto-compaction success/failure system messages that originated inside
-    /// this turn. They live outside the turn card so they remain visible
-    /// regardless of the card's collapsed/expanded state — tail compactions
-    /// emitted after `agent_end` would otherwise be hidden inside an
-    /// auto-collapsed completed turn. See `PickyTurnGrouper.groups`.
-    let trailingCompactMessages: [PickySessionMessage]
+    /// Messages that originated inside this turn but must stay visible
+    /// regardless of the card's collapsed/expanded state, so they render
+    /// outside the turn card: auto-compaction success/failure system messages
+    /// (tail compactions emitted after `agent_end` would otherwise be hidden
+    /// inside an auto-collapsed completed turn) and the question bubble for
+    /// the session's pending extension-ui request (a confirm/input prompt
+    /// must never be hidden behind a collapsed card). See
+    /// `PickyTurnGrouper.groups`.
+    let trailingMessages: [PickySessionMessage]
     /// The current turn is the latest group while the session is still
     /// "active" (running / queued / waiting_for_input). It is the only
     /// group that defaults to expanded.
@@ -46,14 +49,14 @@ struct PickyTurnGroup: Identifiable, Equatable {
         id: String,
         userMessage: PickySessionMessage?,
         bodyMessages: [PickySessionMessage],
-        trailingCompactMessages: [PickySessionMessage] = [],
+        trailingMessages: [PickySessionMessage] = [],
         isCurrent: Bool,
         liveActivitySummary: PickyActivitySummary? = nil
     ) {
         self.id = id
         self.userMessage = userMessage
         self.bodyMessages = bodyMessages
-        self.trailingCompactMessages = trailingCompactMessages
+        self.trailingMessages = trailingMessages
         self.isCurrent = isCurrent
         self.liveActivitySummary = liveActivitySummary
     }
@@ -65,7 +68,7 @@ struct PickyTurnGroup: Identifiable, Equatable {
     /// The message that should represent the turn when collapsed: the most
     /// recent text-bearing agent reply, falling back to the most recent error.
     /// Compaction system messages are not considered here because the grouper
-    /// pulls them into `trailingCompactMessages` and renders them outside the
+    /// pulls them into `trailingMessages` and renders them outside the
     /// card.
     var collapsedRepresentativeMessage: PickySessionMessage? {
         if let lastAgentText = bodyMessages.last(where: { msg in
@@ -246,7 +249,8 @@ enum PickyTurnGrouper {
     static func groups(
         from messages: [PickySessionMessage],
         sessionStatus: PickySessionStatus,
-        liveActivitySummary: PickyActivitySummary? = nil
+        liveActivitySummary: PickyActivitySummary? = nil,
+        pendingQuestionRequestID: String? = nil
     ) -> [PickyTurnGroup] {
         guard !messages.isEmpty else { return [] }
 
@@ -260,13 +264,28 @@ enum PickyTurnGrouper {
             if currentUser == nil && currentBody.isEmpty { return }
             let id = currentUser?.id ?? PickyTurnGroup.preTurnID
             let merged = mergeActivitySnapshots(currentBody)
-            let split = splitCompactSystemMessages(merged)
+            var (body, trailing) = splitCompactSystemMessages(merged)
+            // Hoist the pending extension-ui question out of the card body so an
+            // active INPUT NEEDED bubble can never hide behind a collapsed turn
+            // card. This matters when the question arrives before the turn's
+            // leading user_text/command_receipt materializes (e.g. a follow-up on
+            // an idle session whose user_text drains only after the turn ends):
+            // the question then lands in the previous completed turn, whose card
+            // has latched to collapsed. Once answered, the request id no longer
+            // matches and the message returns to the body as regular history.
+            if let pendingQuestionRequestID {
+                let hoisted = body.filter { $0.question?.id == pendingQuestionRequestID }
+                if !hoisted.isEmpty {
+                    body.removeAll { $0.question?.id == pendingQuestionRequestID }
+                    trailing.append(contentsOf: hoisted)
+                }
+            }
             output.append(
                 PickyTurnGroup(
                     id: id,
                     userMessage: currentUser,
-                    bodyMessages: split.body,
-                    trailingCompactMessages: split.compact,
+                    bodyMessages: body,
+                    trailingMessages: trailing,
                     isCurrent: false
                 )
             )
@@ -295,7 +314,7 @@ enum PickyTurnGrouper {
                     id: last.id,
                     userMessage: last.userMessage,
                     bodyMessages: last.bodyMessages,
-                    trailingCompactMessages: last.trailingCompactMessages,
+                    trailingMessages: last.trailingMessages,
                     isCurrent: true,
                     liveActivitySummary: liveActivitySummary
                 )

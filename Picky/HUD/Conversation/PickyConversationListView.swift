@@ -130,7 +130,7 @@ struct PickyConversationListView: View {
 
         let groups = turnGroups
         let renderedMessages = groups.flatMap { group in
-            [group.userMessage].compactMap { $0 } + group.bodyMessages + group.trailingCompactMessages
+            [group.userMessage].compactMap { $0 } + group.bodyMessages + group.trailingMessages
         }
         for message in renderedMessages {
             switch PickyConversationBubbleKind(message: message) {
@@ -171,7 +171,8 @@ struct PickyConversationListView: View {
         PickyTurnGrouper.groups(
             from: visibleMessages,
             sessionStatus: session.status,
-            liveActivitySummary: session.activitySummary
+            liveActivitySummary: session.activitySummary,
+            pendingQuestionRequestID: session.pendingExtensionUiRequest?.id
         )
     }
 
@@ -193,10 +194,10 @@ struct PickyConversationListView: View {
                         .id(message.id)
                 }
             }
-            // Auto-compaction success/failure bubbles live outside the card so
-            // they stay visible whether the card is collapsed or expanded — see
-            // `PickyTurnGrouper.splitCompactSystemMessages`.
-            ForEach(group.trailingCompactMessages, id: \.id) { message in
+            // Auto-compaction bubbles and the pending extension-ui question live
+            // outside the card so they stay visible whether the card is collapsed
+            // or expanded — see `PickyTurnGrouper.groups`.
+            ForEach(group.trailingMessages, id: \.id) { message in
                 messageView(message, in: group)
                     .id(message.id)
             }
@@ -207,7 +208,7 @@ struct PickyConversationListView: View {
                 messageView(message, in: group)
                     .id(message.id)
             }
-            ForEach(group.trailingCompactMessages, id: \.id) { message in
+            ForEach(group.trailingMessages, id: \.id) { message in
                 messageView(message, in: group)
                     .id(message.id)
             }

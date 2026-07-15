@@ -226,11 +226,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             Task.detached(priority: .background) {
                 PickyGeneratedReportsPruner().prune()
             }
-            // A/B debug flag: isolate the App Store purchase-sheet suppression
-            // bug by launching without any HUD panels.
-            if !UserDefaults.standard.bool(forKey: "PickyDebugDisableHUD") {
-                hudOverlayManager.start()
-            }
+            hudOverlayManager.start()
             // Best-effort install of /usr/local/bin/picky when we can do it
             // without prompting for credentials. Anything that would require
             // admin auth (typical fresh /usr/local/bin) is left for the user

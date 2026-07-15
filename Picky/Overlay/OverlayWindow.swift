@@ -45,7 +45,9 @@ class OverlayWindow: NSPanel, PickyScreenCaptureExcludedWindow {
         } else {
             self.level = .pickyCursorOverlay  // Above report panels and submenus/popups, below the lock screen
         }
-        self.ignoresMouseEvents = true  // Click-through
+        // A/B debug flag: keep the overlay clickable to test whether
+        // suppression depends on click-through (`ignoresMouseEvents`).
+        self.ignoresMouseEvents = !UserDefaults.standard.bool(forKey: "PickyDebugCursorOverlayClickable")  // Click-through
         self.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
         self.isReleasedWhenClosed = false
         self.hasShadow = false
@@ -53,7 +55,11 @@ class OverlayWindow: NSPanel, PickyScreenCaptureExcludedWindow {
         // capture target. Without this, Screenshot's "selected window" mode can
         // choose the transparent full-screen panel and save a black image with
         // only the Picky cursor.
-        self.sharingType = .none
+        // A/B debug flag: leave the default sharing type to test whether
+        // purchase-sheet suppression is triggered by capture-excluded windows.
+        if !UserDefaults.standard.bool(forKey: "PickyDebugCursorOverlayShareable") {
+            self.sharingType = .none
+        }
 
         // Important: Allow the window to appear even when app is not active
         self.hidesOnDeactivate = false

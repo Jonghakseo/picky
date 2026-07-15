@@ -1147,8 +1147,7 @@ struct PickyHUDDockRailView: View {
     /// scales with the preset) for a more polished panel feel than a full pill.
     private var dockGlassBackground: some View {
         let shape = RoundedRectangle(cornerRadius: metrics.outerCornerRadius, style: .continuous)
-        return shape
-            .fill(.ultraThinMaterial)
+        return PickyHUDMaterialFill(shape: shape, fallback: DS.Colors.surface1)
             .overlay(
                 shape
                     .fill(DS.Colors.surface1.opacity(0.18))
@@ -1183,8 +1182,10 @@ struct PickyHUDDockRailView: View {
     private var addAgentSlotButton: some View {
         Button(action: showRecentPickleFolderPicker) {
             ZStack {
-                RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
-                    .fill(.ultraThinMaterial)
+                PickyHUDMaterialFill(
+                    shape: RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous),
+                    fallback: DS.Colors.surface1
+                )
                 RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
                     .fill(Color.primary.opacity(0.04))
                 RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
@@ -1232,8 +1233,10 @@ struct PickyHUDDockRailView: View {
         Button(action: showRecentPickleFolderPicker) {
             ZStack {
                 ZStack {
-                    RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
-                        .fill(.ultraThinMaterial)
+                    PickyHUDMaterialFill(
+                        shape: RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous),
+                        fallback: DS.Colors.surface1
+                    )
                     RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
                         .fill(Color.primary.opacity(0.04))
                     RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)

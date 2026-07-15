@@ -168,6 +168,7 @@ struct PickyToolCallInlineRow: View {
 /// live feedback.
 private struct PickyToolCallPulsingDot: View {
     let color: Color
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var animating = false
 
     var body: some View {
@@ -175,11 +176,18 @@ private struct PickyToolCallPulsingDot: View {
         Circle()
             .fill(color)
             .frame(width: 6, height: 6)
-            .opacity(animating ? 0.35 : 1.0)
-            .animation(.easeInOut(duration: 0.75).repeatForever(autoreverses: true), value: animating)
+            .opacity(accessibilityReduceMotion ? 1 : (animating ? 0.35 : 1.0))
+            .animation(
+                accessibilityReduceMotion ? nil : .easeInOut(duration: 0.75).repeatForever(autoreverses: true),
+                value: animating
+            )
             .onAppear {
+                guard !accessibilityReduceMotion else { return }
                 PickyPerf.event("tool_call_pulsing_dot_animation_start")
                 animating = true
+            }
+            .onChange(of: accessibilityReduceMotion) { _, reduceMotion in
+                animating = !reduceMotion
             }
     }
 }

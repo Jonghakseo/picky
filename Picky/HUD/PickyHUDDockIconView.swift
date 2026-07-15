@@ -31,6 +31,7 @@ struct PickyHUDDockIconView: View {
     /// NSView being recreated mid-drag.
     var onReorderHandoff: (NSPoint) -> Void = { _ in }
 
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var completionFlashIntensity: Double = 0
     @State private var completionFlashTask: Task<Void, Never>?
     @State private var archiveFeedbackStartTask: Task<Void, Never>?
@@ -226,23 +227,15 @@ struct PickyHUDDockIconView: View {
                             .shadow(color: DS.Colors.accentText.opacity(isSelected ? 0.18 : 0.10), radius: 2.0, x: 0, y: 0.7)
                     }
                 } else if session.status == .running {
-                    TimelineView(.animation) { context in
-                        let _ = PickyPerf.event("dock_icon_timeline_tick")
-                        let phase = breathingPhase(at: context.date)
-                        ZStack {
-                            Circle()
-                                .stroke(statusColor.opacity(0.16 + 0.36 * phase), lineWidth: 1.0)
-                                .frame(width: metrics.sessionLogoSide, height: metrics.sessionLogoSide)
-                                .scaleEffect(1.0 + 0.12 * phase)
-                            dockTodoProgressRing
-                            Group {
-                                if isRunningWinkVisible(at: context.date) {
-                                    dockPickleAsset(.wink)
-                                } else {
-                                    normalPickleGlyph()
-                                }
-                            }
-                            .scaleEffect(0.965 + 0.08 * phase)
+                    if accessibilityReduceMotion {
+                        runningDockGlyph(phase: 0.5, isWinkVisible: false)
+                    } else {
+                        TimelineView(.animation) { context in
+                            let _ = PickyPerf.event("dock_icon_timeline_tick")
+                            runningDockGlyph(
+                                phase: breathingPhase(at: context.date),
+                                isWinkVisible: isRunningWinkVisible(at: context.date)
+                            )
                         }
                     }
                 } else {
@@ -265,6 +258,24 @@ struct PickyHUDDockIconView: View {
                 .frame(width: metrics.sessionTileWidth - 4, alignment: .center)
         }
         .opacity(isArchivePressing ? 0.64 : 1)
+    }
+
+    private func runningDockGlyph(phase: CGFloat, isWinkVisible: Bool) -> some View {
+        ZStack {
+            Circle()
+                .stroke(statusColor.opacity(0.16 + 0.36 * phase), lineWidth: 1.0)
+                .frame(width: metrics.sessionLogoSide, height: metrics.sessionLogoSide)
+                .scaleEffect(1.0 + 0.12 * phase)
+            dockTodoProgressRing
+            Group {
+                if isWinkVisible {
+                    dockPickleAsset(.wink)
+                } else {
+                    normalPickleGlyph()
+                }
+            }
+            .scaleEffect(0.965 + 0.08 * phase)
+        }
     }
 
     private var todoProgressPresentation: PickyTodoProgressPresentation? {
@@ -1190,8 +1201,10 @@ private struct PickyHUDMiniPreviewCardView: View {
         .padding(.vertical, verticalPadding)
         .frame(width: metrics.previewCardWidth)
         .background {
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(.ultraThinMaterial)
+            PickyHUDMaterialFill(
+                shape: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous),
+                fallback: DS.Colors.surface1
+            )
                 .overlay(
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .fill(DS.Colors.surface3.opacity(0.62))

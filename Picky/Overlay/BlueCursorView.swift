@@ -1508,20 +1508,23 @@ private enum PickyShakeReactionText {
 }
 
 private struct CursorWaitingIndicatorView: View {
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var isAnimating = false
 
     var body: some View {
         HStack(spacing: 4) {
             ForEach(0..<3, id: \.self) { index in
                 Circle()
-                    .fill(DS.Colors.overlayCursorBlue.opacity(isAnimating ? 0.95 : 0.42))
+                    .fill(DS.Colors.overlayCursorBlue.opacity(accessibilityReduceMotion ? 0.95 : (isAnimating ? 0.95 : 0.42)))
                     .frame(width: 4, height: 4)
-                    .scaleEffect(isAnimating ? 1.0 : 0.72)
-                    .offset(y: isAnimating ? -1.0 : 1.0)
+                    .scaleEffect(accessibilityReduceMotion ? 1.0 : (isAnimating ? 1.0 : 0.72))
+                    .offset(y: accessibilityReduceMotion ? 0 : (isAnimating ? -1.0 : 1.0))
                     .animation(
-                        .easeInOut(duration: 0.58)
-                            .repeatForever(autoreverses: true)
-                            .delay(Double(index) * 0.13),
+                        accessibilityReduceMotion
+                            ? nil
+                            : .easeInOut(duration: 0.58)
+                                .repeatForever(autoreverses: true)
+                                .delay(Double(index) * 0.13),
                         value: isAnimating
                     )
             }
@@ -1539,7 +1542,10 @@ private struct CursorWaitingIndicatorView: View {
                 .stroke(DS.Colors.overlayCursorBlue.opacity(0.26), lineWidth: 0.8)
         )
         .fixedSize()
-        .onAppear { isAnimating = true }
+        .onAppear { isAnimating = !accessibilityReduceMotion }
+        .onChange(of: accessibilityReduceMotion) { _, reduceMotion in
+            isAnimating = !reduceMotion
+        }
         .onDisappear { isAnimating = false }
     }
 }
@@ -1608,6 +1614,7 @@ private struct PickyHighlightOverlayView: View {
     let bubbleText: String?
     let screenSize: CGSize
 
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var pulsePhase: Double = 0
     @State private var measuredTagSize: CGSize = CGSize(width: 132, height: 22)
 
@@ -1682,14 +1689,26 @@ private struct PickyHighlightOverlayView: View {
             }
         }
         .onAppear {
-            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: false)) {
-                pulsePhase = 1.0
+            startPulseIfNeeded()
+        }
+        .onChange(of: accessibilityReduceMotion) { _, reduceMotion in
+            if reduceMotion {
+                pulsePhase = 0
+            } else {
+                startPulseIfNeeded()
             }
         }
         .onPreferenceChange(PickyHighlightTagSizeKey.self) { newSize in
             if newSize.width > 0, newSize.height > 0 {
                 measuredTagSize = newSize
             }
+        }
+    }
+
+    private func startPulseIfNeeded() {
+        guard !accessibilityReduceMotion else { return }
+        withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: false)) {
+            pulsePhase = 1.0
         }
     }
 }

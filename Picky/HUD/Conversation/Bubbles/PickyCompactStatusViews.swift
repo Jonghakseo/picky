@@ -8,11 +8,18 @@
 import SwiftUI
 
 struct PickyCompactingOverlayView: View {
+    @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
+
     var body: some View {
         ZStack {
-            Rectangle()
-                .fill(.regularMaterial)
-                .opacity(0.56)
+            if accessibilityReduceTransparency {
+                Rectangle()
+                    .fill(DS.Colors.surface1)
+            } else {
+                Rectangle()
+                    .fill(.regularMaterial)
+                    .opacity(0.56)
+            }
             HStack(spacing: 9) {
                 ProgressView()
                     .controlSize(.small)

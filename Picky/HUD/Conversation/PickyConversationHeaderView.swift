@@ -398,8 +398,7 @@ struct PickyConversationHeaderView: View {
         .padding(.horizontal, 4.5)
         .frame(height: 15)
         .background(
-            Capsule(style: .continuous)
-                .fill(.ultraThinMaterial)
+            PickyHUDMaterialFill(shape: Capsule(style: .continuous), fallback: DS.Colors.surface1)
         )
         .overlay(
             Capsule(style: .continuous)

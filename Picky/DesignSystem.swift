@@ -838,6 +838,32 @@ extension View {
     }
 }
 
+// MARK: - Accessibility-adaptive material
+
+/// Replaces translucent HUD materials with a semantic solid surface when the
+/// user enables Reduce Transparency, preserving the surface's shape and role.
+struct PickyHUDMaterialFill<FillShape: Shape>: View {
+    let shape: FillShape
+    let fallback: Color
+    let material: Material
+    @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
+
+    init(shape: FillShape, fallback: Color, material: Material = .ultraThinMaterial) {
+        self.shape = shape
+        self.fallback = fallback
+        self.material = material
+    }
+
+    @ViewBuilder
+    var body: some View {
+        if accessibilityReduceTransparency {
+            shape.fill(fallback)
+        } else {
+            shape.fill(material)
+        }
+    }
+}
+
 // MARK: - Color Utilities
 
 extension Color {

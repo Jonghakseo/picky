@@ -89,8 +89,10 @@ struct PickyHUDArchiveUndoToastView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .fill(.ultraThinMaterial)
+            PickyHUDMaterialFill(
+                    shape: RoundedRectangle(cornerRadius: 15, style: .continuous),
+                    fallback: DS.Colors.surface1
+                )
                 .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).fill(DS.Colors.surface1.opacity(0.28)))
                 .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).strokeBorder(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8))
         )

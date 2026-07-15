@@ -275,7 +275,7 @@ private struct PickyRecentPickleFolderRow: View {
             }
         }
         .background(isHovered ? DS.Colors.surface2 : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous))
         .onHover { isHovered = $0 }
     }
 

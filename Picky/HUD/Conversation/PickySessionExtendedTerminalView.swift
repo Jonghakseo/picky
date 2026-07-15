@@ -283,10 +283,10 @@ private struct PickySessionExtendedTerminalContentView: View {
     }
 
     private var addonBackground: some View {
-        RoundedRectangle(cornerRadius: 14, style: .continuous)
+        RoundedRectangle(cornerRadius: DS.CornerRadius.panel, style: .continuous)
             .fill(DS.Colors.surface1.opacity(0.95))
             .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.CornerRadius.panel, style: .continuous)
                     .stroke(DS.Colors.borderSubtle.opacity(0.65), lineWidth: 0.5)
             )
     }

@@ -302,10 +302,10 @@ struct PickyConversationComposerView: View {
     }
 
     private var terminalButtonBackground: some View {
-        RoundedRectangle(cornerRadius: 6, style: .continuous)
+        RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
             .fill(isExtendedTerminalOpen ? DS.Colors.accentSubtle.opacity(0.24) : Color.clear)
             .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
                     .stroke(isExtendedTerminalOpen ? DS.Colors.accentText.opacity(0.28) : Color.clear, lineWidth: 0.5)
             )
     }
@@ -430,10 +430,10 @@ struct PickyConversationComposerView: View {
                 }
                 .padding(4)
                 .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                         .fill(DS.Colors.surface1.opacity(0.96))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                                 .stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8)
                         )
                 )
@@ -468,7 +468,7 @@ struct PickyConversationComposerView: View {
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
         .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
                 .fill(isSelected ? DS.Colors.accentSubtle.opacity(0.55) : Color.clear)
         )
         .contentShape(Rectangle())
@@ -535,7 +535,7 @@ struct PickyConversationComposerView: View {
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
         .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
                 .fill(isSelected ? DS.Colors.accentSubtle.opacity(0.55) : Color.clear)
         )
         .contentShape(Rectangle())
@@ -549,10 +549,10 @@ struct PickyConversationComposerView: View {
     }
 
     private func autocompletePanelBackground(opacity: Double, strokeOpacity: Double) -> some View {
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
+        RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
             .fill(DS.Colors.surface1.opacity(opacity))
             .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                     .stroke(DS.Colors.borderSubtle.opacity(strokeOpacity), lineWidth: 0.8)
             )
     }
@@ -851,7 +851,7 @@ struct PickyConversationComposerView: View {
     }
 
     private var composerBackground: some View {
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
+        RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
             .fill(composerBackgroundFill)
             .overlay {
                 // Priority: drag-hover beats everything because that's the
@@ -865,18 +865,18 @@ struct PickyConversationComposerView: View {
                     isFocused: isFocused
                 ) {
                 case .fileDrop:
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                         .stroke(DS.Colors.accentText.opacity(0.85), lineWidth: 1)
                 case .bash:
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                         .stroke(bashAccentColor.opacity(0.9), lineWidth: 1)
                 case .running:
                     PickyRunningComposerBorder()
                 case .focused:
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                         .stroke(DS.Colors.borderStrong, lineWidth: 1)
                 case .rest:
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                         .stroke(DS.Colors.borderSubtle, lineWidth: 0.5)
                 }
             }

@@ -285,11 +285,11 @@ struct CompanionPanelExtensionsView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 9)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                 .fill(DS.Colors.accent.opacity(0.12))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                 .stroke(DS.Colors.accent.opacity(0.32), lineWidth: 1)
         )
     }
@@ -309,7 +309,7 @@ struct CompanionPanelExtensionsView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                 .fill(DS.Colors.success.opacity(0.10))
         )
     }

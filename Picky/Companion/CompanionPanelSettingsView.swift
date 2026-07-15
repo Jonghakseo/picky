@@ -875,10 +875,10 @@ struct CompanionPanelSettingsView: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                             .fill(DS.Colors.surface1.opacity(0.45))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                                     .stroke(DS.Colors.borderSubtle.opacity(0.4), lineWidth: 0.5)
                             )
                     )
@@ -930,10 +930,10 @@ struct CompanionPanelSettingsView: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .background(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                                 .fill(DS.Colors.accentText.opacity(0.12))
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                                         .stroke(DS.Colors.accentText.opacity(0.26), lineWidth: 0.5)
                                 )
                         )
@@ -1388,10 +1388,10 @@ struct CompanionPanelSettingsView: View {
                 .padding(.horizontal, 9)
                 .padding(.vertical, 4)
                 .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                         .fill(DS.Colors.accentText.opacity(0.14))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                                 .stroke(DS.Colors.accentText.opacity(0.38), lineWidth: 0.7)
                         )
                 )

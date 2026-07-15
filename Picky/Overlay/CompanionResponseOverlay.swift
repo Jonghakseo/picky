@@ -24,7 +24,7 @@ private enum CompanionResponseOverlayMetrics {
     static let lineSpacing: CGFloat = 3
     static let horizontalPadding: CGFloat = 14
     static let verticalPadding: CGFloat = 10
-    static let cornerRadius: CGFloat = DS.CornerRadius.large
+    static let cornerRadius: CGFloat = DS.CornerRadius.extraLarge
 
     static var bubbleFont: NSFont {
         .systemFont(ofSize: bubbleFontSize, weight: .regular)

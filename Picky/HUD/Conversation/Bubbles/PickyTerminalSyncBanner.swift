@@ -54,10 +54,10 @@ struct PickyTerminalSyncBanner: View {
         .padding(.vertical, 8)
         .background(severity.background)
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: DS.CornerRadius.medium)
                 .stroke(severity.tint.opacity(0.45), lineWidth: 0.5)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.medium))
         .padding(.horizontal, 4)
     }
 

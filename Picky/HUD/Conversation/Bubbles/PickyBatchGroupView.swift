@@ -23,9 +23,9 @@ struct PickyBatchGroupView: View {
         }
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(kind.color.opacity(0.05)))
+        .background(RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous).fill(kind.color.opacity(0.05)))
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous)
                 .stroke(kind.color.opacity(0.42), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
         )
     }

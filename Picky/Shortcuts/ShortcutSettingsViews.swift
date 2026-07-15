@@ -29,10 +29,10 @@ struct ShortcutKeyCapView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
                 .fill(DS.Colors.surface1.opacity(0.85))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
                         .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
                 )
         )

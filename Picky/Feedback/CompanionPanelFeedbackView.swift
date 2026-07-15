@@ -190,11 +190,11 @@ struct CompanionPanelFeedbackView: View {
                 .frame(minHeight: 96, maxHeight: 160)
                 .padding(6)
                 .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
                         .fill(DS.Colors.surface2.opacity(0.4))
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
                         .stroke(DS.Colors.borderSubtle.opacity(0.5), lineWidth: 0.5)
                 )
 
@@ -357,10 +357,10 @@ struct CompanionPanelFeedbackView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                         .fill(DS.Colors.accentText.opacity(isSendEnabled ? 0.16 : 0.06))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                                 .stroke(DS.Colors.accentText.opacity(isSendEnabled ? 0.4 : 0.18), lineWidth: 0.7)
                         )
                 )

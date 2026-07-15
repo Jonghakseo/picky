@@ -240,8 +240,6 @@ enum DS {
         static let small: CGFloat = 6
         /// Buttons, input fields, small cards.
         static let medium: CGFloat = 8
-        /// Cards, dialogs, chat bubbles.
-        static let large: CGFloat = 10
         /// Large panels, permission cards.
         static let extraLarge: CGFloat = 12
         /// Signature floating shells (Conversation Card, Dock shell).
@@ -565,15 +563,15 @@ struct DSIconButtonStyle: ButtonStyle {
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
                             .background(
-                                RoundedRectangle(cornerRadius: 6)
+                                RoundedRectangle(cornerRadius: DS.CornerRadius.small)
                                     .fill(DS.Colors.surface3.opacity(0.85))
                             )
                             .overlay(
                                 ZStack {
-                                    RoundedRectangle(cornerRadius: 6)
+                                    RoundedRectangle(cornerRadius: DS.CornerRadius.small)
                                         .stroke(Color.white.opacity(0.20), lineWidth: 0.8)
 
-                                    RoundedRectangle(cornerRadius: 6)
+                                    RoundedRectangle(cornerRadius: DS.CornerRadius.small)
                                         .trim(from: 0, to: 0.5)
                                         .stroke(
                                             LinearGradient(

@@ -164,9 +164,9 @@ private struct OnboardingHighlightViewerView: View {
                     }
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
                     .stroke(Color.white.opacity(0.18), lineWidth: 0.5)
             )
         }

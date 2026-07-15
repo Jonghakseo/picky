@@ -339,7 +339,7 @@ struct PickyToolHistoryEntryView: View {
         let (text, color): (String, Color) = {
             switch entry.status {
             case .running: return ("● running", DS.Colors.accentText)
-            case .succeeded: return ("● succeeded", DS.Colors.success)
+            case .succeeded: return ("● succeeded", DS.Colors.successText)
             case .failed: return ("● failed", DS.Colors.destructiveText)
             }
         }()
@@ -464,7 +464,7 @@ struct PickyToolHistoryEntryView: View {
                 diffLine(prefix: "-", text: change.oldText, color: DS.Colors.destructiveText, background: DS.Colors.destructive.opacity(0.08))
             }
             if !change.newText.isEmpty {
-                diffLine(prefix: "+", text: change.newText, color: DS.Colors.success, background: DS.Colors.success.opacity(0.10))
+                diffLine(prefix: "+", text: change.newText, color: DS.Colors.successText, background: DS.Colors.success.opacity(0.10))
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.small))

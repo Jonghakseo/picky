@@ -978,28 +978,28 @@ struct CompanionPanelSettingsView: View {
                 .pickyFont(size: 10, weight: .semibold)
                 .lineLimit(1)
         }
-        .foregroundColor(display.color)
+        .foregroundColor(display.foreground)
         .padding(.horizontal, 7)
         .padding(.vertical, 4)
         .background(
             Capsule(style: .continuous)
-                .fill(display.color.opacity(0.12))
+                .fill(display.background.opacity(0.12))
         )
     }
 
-    private func oauthStatusDisplay(_ status: PickyPiOAuthLoginStatus) -> (text: String, icon: String, color: Color) {
+    private func oauthStatusDisplay(_ status: PickyPiOAuthLoginStatus) -> (text: String, icon: String, foreground: Color, background: Color) {
         switch status {
         case .unknown, .checking:
-            return (L10n.t("settings.oauth.status.checking"), "clock", DS.Colors.textTertiary)
+            return (L10n.t("settings.oauth.status.checking"), "clock", DS.Colors.textTertiary, DS.Colors.textTertiary)
         case .notConfigured:
-            return (L10n.t("settings.oauth.status.notConfigured"), "circle", DS.Colors.textTertiary)
+            return (L10n.t("settings.oauth.status.notConfigured"), "circle", DS.Colors.textTertiary, DS.Colors.textTertiary)
         case .configured(let source):
             let sourceText = source?.isEmpty == false ? source! : L10n.t("settings.oauth.status.stored")
-            return (L10n.t("settings.oauth.status.configured", sourceText), "checkmark.circle.fill", DS.Colors.success)
+            return (L10n.t("settings.oauth.status.configured", sourceText), "checkmark.circle.fill", DS.Colors.successText, DS.Colors.success)
         case .signingIn:
-            return (L10n.t("settings.oauth.status.signingIn"), "arrow.triangle.2.circlepath", DS.Colors.accentText)
+            return (L10n.t("settings.oauth.status.signingIn"), "arrow.triangle.2.circlepath", DS.Colors.accentText, DS.Colors.accentText)
         case .failed:
-            return (L10n.t("settings.oauth.status.failed"), "exclamationmark.triangle.fill", DS.Colors.destructiveText)
+            return (L10n.t("settings.oauth.status.failed"), "exclamationmark.triangle.fill", DS.Colors.destructiveText, DS.Colors.destructiveText)
         }
     }
 
@@ -1371,10 +1371,10 @@ struct CompanionPanelSettingsView: View {
             HStack(spacing: 4) {
                 Image(systemName: "checkmark.circle.fill")
                     .pickyFont(size: 9, weight: .semibold)
-                    .foregroundColor(DS.Colors.success)
+                    .foregroundColor(DS.Colors.successText)
                 Text("common.saved")
                     .pickyFont(size: 10, weight: .medium)
-                    .foregroundColor(DS.Colors.success)
+                    .foregroundColor(DS.Colors.successText)
             }
         case .dirty:
             Button(action: { commitEdits(in: section) }) {

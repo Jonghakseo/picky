@@ -149,7 +149,7 @@ private struct PickyInlineTerminalSessionView: View {
         HStack(spacing: 8) {
             Image(systemName: "terminal.fill")
                 .pickyFont(size: 13, weight: .semibold)
-                .foregroundColor(DS.Colors.success)
+                .foregroundColor(DS.Colors.successText)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(session.title)
@@ -158,7 +158,7 @@ private struct PickyInlineTerminalSessionView: View {
                         .lineLimit(1)
                     Text("hud.inlineTerminal.tab.tui")
                         .pickyFont(size: 9, weight: .bold, design: .rounded)
-                        .foregroundColor(DS.Colors.success)
+                        .foregroundColor(DS.Colors.successText)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1.5)
                         .background(Capsule(style: .continuous).fill(DS.Colors.success.opacity(0.14)))

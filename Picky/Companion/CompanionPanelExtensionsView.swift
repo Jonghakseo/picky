@@ -298,7 +298,7 @@ struct CompanionPanelExtensionsView: View {
         HStack(alignment: .center, spacing: 10) {
             Image(systemName: "checkmark.circle.fill")
                 .pickyFont(size: 12, weight: .semibold)
-                .foregroundColor(DS.Colors.success)
+                .foregroundColor(DS.Colors.successText)
                 .frame(width: 16)
             Text(resultSummary(result: result))
                 .pickyFont(size: 11, weight: .medium)
@@ -439,7 +439,7 @@ struct CompanionPanelExtensionsView: View {
             if row.status == .installed {
                 curatedBadgePill(
                     text: L10n.t("status.extensions.state.installed"),
-                    foreground: DS.Colors.success,
+                    foreground: DS.Colors.successText,
                     background: DS.Colors.success.opacity(0.18)
                 )
             }

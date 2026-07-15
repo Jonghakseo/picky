@@ -42,7 +42,7 @@ struct PickyTodoProgressOverlayView: View {
 
                 Text(compactSummary)
                     .font(PickyHUDTypography.statusMedium)
-                    .foregroundColor(presentation.isComplete ? DS.Colors.success : DS.Colors.textSecondary)
+                    .foregroundColor(presentation.isComplete ? DS.Colors.successText : DS.Colors.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -147,7 +147,7 @@ struct PickyTodoProgressOverlayView: View {
         case .completed:
             Image(systemName: "checkmark.circle.fill")
                 .pickyFont(size: 13, weight: .semibold)
-                .foregroundColor(DS.Colors.success)
+                .foregroundColor(DS.Colors.successText)
         case .inProgress:
             ProgressView()
                 .controlSize(.small)

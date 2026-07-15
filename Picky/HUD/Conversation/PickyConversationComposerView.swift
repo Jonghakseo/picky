@@ -898,8 +898,8 @@ struct PickyConversationComposerView: View {
 
     private var bashAccentColor: Color {
         switch effectiveBashMode {
-        case .visible: return DS.Colors.success
-        case .private: return DS.Colors.warning
+        case .visible: return DS.Colors.successText
+        case .private: return DS.Colors.warningText
         case .none: return DS.Colors.borderSubtle
         }
     }

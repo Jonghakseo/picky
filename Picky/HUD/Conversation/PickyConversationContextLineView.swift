@@ -281,7 +281,7 @@ struct PickyConversationContextLineView: View {
     private func gitMetrics(status: PickyGitRepositoryStatus) -> some View {
         if status.insertions > 0 {
             Button(action: { runDiffChipAction() }) {
-                gitMetricPill("+\(status.insertions)", color: DS.Colors.success)
+                gitMetricPill("+\(status.insertions)", color: DS.Colors.successText)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)

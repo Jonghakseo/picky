@@ -221,7 +221,7 @@ private struct PickySessionExtendedTerminalContentView: View {
         HStack(spacing: 7) {
             Image(systemName: "terminal.fill")
                 .pickyFont(size: 11.5, weight: .semibold)
-                .foregroundColor(DS.Colors.success)
+                .foregroundColor(DS.Colors.successText)
             Text(verbatim: "Local Terminal")
                 .pickyFont(size: 11.5, weight: .semibold)
                 .foregroundColor(DS.Colors.textPrimary)

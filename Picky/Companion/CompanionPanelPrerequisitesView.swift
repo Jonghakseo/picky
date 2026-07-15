@@ -84,7 +84,7 @@ struct CompanionPanelPrerequisitesView: View {
                         .frame(width: 6, height: 6)
                     Text("common.granted")
                         .pickyFont(size: 11, weight: .medium)
-                        .foregroundColor(DS.Colors.success)
+                        .foregroundColor(DS.Colors.successText)
                 }
             } else {
                 HStack(spacing: 6) {
@@ -160,7 +160,7 @@ struct CompanionPanelPrerequisitesView: View {
                         .frame(width: 6, height: 6)
                     Text("common.granted")
                         .pickyFont(size: 11, weight: .medium)
-                        .foregroundColor(DS.Colors.success)
+                        .foregroundColor(DS.Colors.successText)
                 }
             } else {
                 Button(action: {
@@ -209,7 +209,7 @@ struct CompanionPanelPrerequisitesView: View {
                         .frame(width: 6, height: 6)
                     Text("common.granted")
                         .pickyFont(size: 11, weight: .medium)
-                        .foregroundColor(DS.Colors.success)
+                        .foregroundColor(DS.Colors.successText)
                 }
             } else {
                 Button(action: {
@@ -255,7 +255,7 @@ struct CompanionPanelPrerequisitesView: View {
                         .frame(width: 6, height: 6)
                     Text("common.granted")
                         .pickyFont(size: 11, weight: .medium)
-                        .foregroundColor(DS.Colors.success)
+                        .foregroundColor(DS.Colors.successText)
                 }
             } else {
                 Button(action: {
@@ -314,7 +314,7 @@ struct CompanionPanelPrerequisitesView: View {
                         .frame(width: 6, height: 6)
                     Text("common.granted")
                         .pickyFont(size: 11, weight: .medium)
-                        .foregroundColor(DS.Colors.success)
+                        .foregroundColor(DS.Colors.successText)
                 }
             } else {
                 Button(action: {

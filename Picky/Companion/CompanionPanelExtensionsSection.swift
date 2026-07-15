@@ -319,7 +319,7 @@ struct CompanionPanelExtensionsSection: View {
         case .installed:
             badgePill(
                 text: L10n.t("status.extensions.state.installed"),
-                foreground: DS.Colors.success,
+                foreground: DS.Colors.successText,
                 background: DS.Colors.success.opacity(0.18)
             )
         case .outdated:

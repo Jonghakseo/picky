@@ -111,7 +111,7 @@ struct PickyQuestionBubbleView: View {
             }
             Text("⌑ \(statusLabel) · \(request.method)")
                 .font(PickyHUDTypography.metaBold)
-                .foregroundColor(isClosed ? DS.Colors.textTertiary : DS.Colors.warning)
+                .foregroundColor(isClosed ? DS.Colors.textTertiary : DS.Colors.warningText)
                 .lineLimit(1)
             if isCollapsedDisplay, let title = request.title, !title.isEmpty {
                 Text("· \(title)")

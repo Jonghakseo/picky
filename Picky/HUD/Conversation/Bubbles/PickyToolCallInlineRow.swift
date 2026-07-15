@@ -68,7 +68,7 @@ struct PickyToolCallInlineRow: View {
             // indicator slot during a thinking/streaming gap.
             Image(systemName: "checkmark")
                 .pickyFont(size: 9, weight: .bold)
-                .foregroundColor(DS.Colors.success)
+                .foregroundColor(DS.Colors.successText)
                 .accessibilityLabel("Completed")
         }
     }

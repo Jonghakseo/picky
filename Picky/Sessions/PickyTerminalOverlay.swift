@@ -467,7 +467,7 @@ struct PickyTerminalOverlayView: View {
             HStack(spacing: 8) {
                 Image(systemName: "terminal.fill")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(DS.Colors.success)
+                    .foregroundColor(DS.Colors.successText)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(model.title)
                         .font(.system(size: 12.5, weight: .semibold))

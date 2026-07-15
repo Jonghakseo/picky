@@ -336,10 +336,10 @@ struct CompanionPanelFeedbackView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "checkmark.circle.fill")
                         .pickyFont(size: 10, weight: .semibold)
-                        .foregroundColor(DS.Colors.success)
+                        .foregroundColor(DS.Colors.successText)
                     Text("feedback.sent")
                         .pickyFont(size: 11, weight: .medium)
-                        .foregroundColor(DS.Colors.success)
+                        .foregroundColor(DS.Colors.successText)
                 }
             }
             Spacer()

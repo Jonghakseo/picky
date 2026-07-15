@@ -126,6 +126,9 @@ enum DS {
         /// Independent green so success states are visually distinct from the blue accent.
         static let success = Color(hex: "#34D399")      // Tailwind Emerald 400
 
+        /// Success text — darker on light surfaces, brighter on dark for contrast.
+        static let successText = Color(light: Color(hex: "#047857"), dark: Color(hex: "#34D399"))
+
         /// Warning — caution messages, manual verification failure explanations.
         static let warning = Color(hex: "#FFB224")            // Radix Amber 9
 

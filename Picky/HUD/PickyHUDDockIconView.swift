@@ -1223,7 +1223,7 @@ private struct PickyHUDMiniPreviewCardView: View {
             HStack(spacing: max(3, 4 * scale)) {
                 Text(todoProgressPresentation.countText)
                     .font(secondaryMonoFont)
-                    .foregroundColor(todoProgressPresentation.isComplete ? DS.Colors.success : DS.Colors.info)
+                    .foregroundColor(todoProgressPresentation.isComplete ? DS.Colors.successText : DS.Colors.info)
                     .fixedSize(horizontal: true, vertical: false)
                 Text("·")
                     .font(secondaryMonoFont)

@@ -149,7 +149,7 @@ struct CompanionPanelStatusView: View {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .pickyFont(size: 11, weight: .semibold)
-                    .foregroundColor(DS.Colors.warning)
+                    .foregroundColor(DS.Colors.warningText)
                     .frame(width: 14, alignment: .center)
                     .padding(.top, 1)
                 VStack(alignment: .leading, spacing: 2) {
@@ -220,7 +220,7 @@ struct CompanionPanelStatusView: View {
         HStack(alignment: .top, spacing: 11) {
             Image(systemName: "mic.fill")
                 .pickyFont(size: 14, weight: .semibold)
-                .foregroundColor(DS.Colors.success)
+                .foregroundColor(DS.Colors.successText)
                 .frame(width: 18, alignment: .center)
                 .padding(.top, 2)
 

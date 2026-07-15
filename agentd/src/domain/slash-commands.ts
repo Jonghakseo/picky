@@ -16,11 +16,13 @@ export function isNoTurnStateRestoringSlashCommand(text: string): boolean {
   return isNameSlashCommand(text) || isCompactSlashCommand(text) || isReloadSlashCommand(text);
 }
 
-// Matches `/name`, `/name args` where name is an identifier-like token without `/` or `:`.
-// Intentionally rejects `/skill:context7-cli` (skill commands stay visible as user text) and
-// `/Users/foo` (path-like inputs).
+// Matches `/name`, `/name args`, and namespaced prompt commands like `/github:pr-merge` where
+// every segment is an identifier-like token. Intentionally rejects `/skill:context7-cli` (skill
+// commands expand into a real prompt and stay visible as user text) and `/Users/foo` (path-like
+// inputs, which contain a `/` inside the token).
 export function isNonSkillSlashCommand(text: string): boolean {
-  return /^\s*\/[a-zA-Z][\w-]*(\s|$)/.test(text);
+  if (/^\s*\/skill:/.test(text)) return false;
+  return /^\s*\/[a-zA-Z][\w-]*(:[\w-]+)*(\s|$)/.test(text);
 }
 
 export function normalizeSlashCommands(commands: RuntimeSlashCommand[]): RuntimeSlashCommand[] {

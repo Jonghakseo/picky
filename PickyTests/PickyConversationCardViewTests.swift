@@ -623,6 +623,49 @@ struct PickyConversationCardViewTests {
         #expect(emptyError.titleText == nil)
     }
 
+    @Test func composerBorderStatePrioritizesDropBashRunningAndFocus() {
+        #expect(
+            PickyConversationComposerView.composerBorderState(
+                isDropTargeted: true,
+                bashMode: .visible,
+                isRunning: true,
+                isFocused: true
+            ) == .fileDrop
+        )
+        #expect(
+            PickyConversationComposerView.composerBorderState(
+                isDropTargeted: false,
+                bashMode: .private,
+                isRunning: true,
+                isFocused: true
+            ) == .bash
+        )
+        #expect(
+            PickyConversationComposerView.composerBorderState(
+                isDropTargeted: false,
+                bashMode: .none,
+                isRunning: true,
+                isFocused: true
+            ) == .running
+        )
+        #expect(
+            PickyConversationComposerView.composerBorderState(
+                isDropTargeted: false,
+                bashMode: .none,
+                isRunning: false,
+                isFocused: true
+            ) == .focused
+        )
+        #expect(
+            PickyConversationComposerView.composerBorderState(
+                isDropTargeted: false,
+                bashMode: .none,
+                isRunning: false,
+                isFocused: false
+            ) == .rest
+        )
+    }
+
     @Test func composerReturnKeyMappingKeepsShiftReturnForNewlines() {
         #expect(PickyConversationComposerView.returnKeyAction(for: []) == .submitDefault)
         #expect(PickyConversationComposerView.returnKeyAction(for: [.option]) == .submitOptionReturn)

@@ -37,6 +37,14 @@ enum PickyComposerBashMode: Equatable {
     case `private`
 }
 
+enum PickyComposerBorderState: Equatable {
+    case fileDrop
+    case bash
+    case running
+    case focused
+    case rest
+}
+
 struct PickyConversationComposerView: View {
     let session: PickySessionListViewModel.SessionCard
     @ObservedObject var viewModel: PickySessionListViewModel
@@ -807,6 +815,7 @@ struct PickyConversationComposerView: View {
         .disabled(isSendDisabled)
         .pointerCursor()
         .help(sendHelpText)
+        .accessibilityLabel(sendHelpText)
     }
 
     private var stopButton: some View {
@@ -866,19 +875,41 @@ struct PickyConversationComposerView: View {
                 // action the user is currently performing. Bash mode beats
                 // the running animation so the "this submit will execute,
                 // not converse" cue stays unambiguous even on a live session.
-                if isFileDropTargeted && !isComposerInputDisabled {
+                switch Self.composerBorderState(
+                    isDropTargeted: isFileDropTargeted && !isComposerInputDisabled,
+                    bashMode: effectiveBashMode,
+                    isRunning: session.status == .running,
+                    isFocused: isFocused
+                ) {
+                case .fileDrop:
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .stroke(DS.Colors.accentText.opacity(0.85), lineWidth: 1)
-                } else if effectiveBashMode != .none {
+                case .bash:
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .stroke(bashAccentColor.opacity(0.9), lineWidth: 1)
-                } else if session.status == .running {
+                case .running:
                     PickyRunningComposerBorder()
-                } else {
+                case .focused:
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(DS.Colors.borderStrong, lineWidth: 1)
+                case .rest:
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .stroke(DS.Colors.borderSubtle, lineWidth: 0.5)
                 }
             }
+    }
+
+    static func composerBorderState(
+        isDropTargeted: Bool,
+        bashMode: PickyComposerBashMode,
+        isRunning: Bool,
+        isFocused: Bool
+    ) -> PickyComposerBorderState {
+        if isDropTargeted { return .fileDrop }
+        if bashMode != .none { return .bash }
+        if isRunning { return .running }
+        if isFocused { return .focused }
+        return .rest
     }
 
     private var composerBackgroundFill: Color {

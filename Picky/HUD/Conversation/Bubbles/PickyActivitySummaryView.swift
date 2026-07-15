@@ -57,13 +57,13 @@ struct PickyContextUsageChip: View {
     var body: some View {
         HStack(spacing: 4) {
             Text("ctx")
-            ContextUsageBar(progress: display.fraction, color: display.color)
+            ContextUsageBar(progress: display.fraction, color: display.barColor)
                 .frame(width: 24, height: 5)
             Text(display.label)
                 .fontWeight(.bold)
         }
         .font(PickyHUDTypography.metaMonospacedMedium)
-        .foregroundColor(display.color.opacity(0.9))
+        .foregroundColor(display.textColor.opacity(0.9))
         .lineLimit(1)
         .help(display.tooltip)
     }
@@ -92,7 +92,8 @@ private struct ContextUsageBar: View {
 struct ContextUsageBatteryDisplay {
     let fraction: Double
     let label: String
-    let color: Color
+    let barColor: Color
+    let textColor: Color
     let tooltip: String
 
     init?(usage: PickyContextUsage) {
@@ -103,13 +104,17 @@ struct ContextUsageBatteryDisplay {
         // Bar is filled left-to-right as usage grows, so high context % = high fill = warmer color.
         switch clamped {
         case 90...:
-            self.color = DS.Colors.destructive
+            self.barColor = DS.Colors.destructive
+            self.textColor = DS.Colors.destructiveText
         case 75..<90:
-            self.color = DS.Colors.warning
+            self.barColor = DS.Colors.warning
+            self.textColor = DS.Colors.warningText
         case 50..<75:
-            self.color = DS.Colors.info
+            self.barColor = DS.Colors.info
+            self.textColor = DS.Colors.info
         default:
-            self.color = DS.Colors.success
+            self.barColor = DS.Colors.success
+            self.textColor = DS.Colors.successText
         }
         if let tokens = usage.tokens {
             self.tooltip = "Context usage: \(tokens.formatted())/\(usage.contextWindow.formatted()) tokens (\(Int(clamped.rounded()))%)"
@@ -137,7 +142,7 @@ extension PickyActivitySummary {
     var visibleToolCallItems: [PickyActivitySummaryDisplayItem] {
         [
             PickyActivitySummaryDisplayItem(id: "read", icon: "📖", label: "read", count: read, color: DS.Colors.info),
-            PickyActivitySummaryDisplayItem(id: "bash", icon: "⌨", label: "bash", count: bash, color: DS.Colors.warning),
+            PickyActivitySummaryDisplayItem(id: "bash", icon: "⌨", label: "bash", count: bash, color: DS.Colors.warningText),
             PickyActivitySummaryDisplayItem(id: "edit", icon: "✏", label: "edit", count: edit, color: DS.Colors.accentText),
             PickyActivitySummaryDisplayItem(id: "write", icon: "▣", label: "write", count: write, color: DS.Colors.floatingGradientPurple),
             PickyActivitySummaryDisplayItem(id: "other", icon: "⋯", label: "etc", count: other, color: DS.Colors.textSecondary),

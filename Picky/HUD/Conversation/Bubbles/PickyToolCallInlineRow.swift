@@ -90,7 +90,7 @@ struct PickyToolCallInlineRow: View {
     private var categoryColor: Color {
         switch entry.category {
         case .read: return DS.Colors.info
-        case .bash: return DS.Colors.warning
+        case .bash: return DS.Colors.warningText
         case .edit: return DS.Colors.accentText
         case .write: return DS.Colors.floatingGradientPurple
         case .other: return DS.Colors.textSecondary

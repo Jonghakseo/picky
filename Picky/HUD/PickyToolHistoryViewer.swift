@@ -536,7 +536,7 @@ private struct PickyToolHistoryCategoryDisplay {
 
     static let ordered: [PickyToolHistoryCategoryDisplay] = [
         .init(category: .read, label: "read", tint: DS.Colors.info),
-        .init(category: .bash, label: "bash", tint: DS.Colors.warning),
+        .init(category: .bash, label: "bash", tint: DS.Colors.warningText),
         .init(category: .edit, label: "edit", tint: DS.Colors.accentText),
         .init(category: .write, label: "write", tint: DS.Colors.floatingGradientPurple),
         .init(category: .other, label: "etc", tint: DS.Colors.textSecondary),

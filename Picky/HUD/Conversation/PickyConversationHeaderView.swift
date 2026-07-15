@@ -676,7 +676,7 @@ private struct PickyHeaderSessionMetaPill: View {
             if let modelText {
                 Button(action: onCycleModel) {
                     Text(modelText)
-                        .foregroundColor(tint.opacity(0.92))
+                        .foregroundColor(textColor.opacity(0.92))
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -690,7 +690,7 @@ private struct PickyHeaderSessionMetaPill: View {
             if let thinkingLevelText {
                 Button(action: onCycleThinkingLevel) {
                     Text(thinkingLevelText)
-                        .foregroundColor(tint.opacity(0.92))
+                        .foregroundColor(textColor.opacity(0.92))
                         .lineLimit(1)
                         .layoutPriority(1)
                 }
@@ -700,14 +700,14 @@ private struct PickyHeaderSessionMetaPill: View {
             }
         }
         .font(PickyHUDTypography.metaMonospacedMedium)
-        .foregroundColor(tint.opacity(0.88))
+        .foregroundColor(textColor.opacity(0.88))
         .lineLimit(1)
         .help(helpText)
     }
 
     private var separator: some View {
         Circle()
-            .fill(tint.opacity(0.55))
+            .fill(barColor.opacity(0.55))
             .frame(width: 3, height: 3)
     }
 
@@ -723,8 +723,12 @@ private struct PickyHeaderSessionMetaPill: View {
         assistantRun?.headerThinkingLevelText
     }
 
-    private var tint: Color {
-        contextDisplay?.color ?? DS.Colors.textTertiary
+    private var barColor: Color {
+        contextDisplay?.barColor ?? DS.Colors.textTertiary
+    }
+
+    private var textColor: Color {
+        contextDisplay?.textColor ?? DS.Colors.textTertiary
     }
 
     private var helpText: String {
@@ -752,13 +756,13 @@ private struct PickyHeaderContextUsageBar: View {
                     .fill(DS.Colors.surface2.opacity(0.85))
                 if display.isKnown {
                     Capsule()
-                        .fill(display.color)
+                        .fill(display.barColor)
                         .frame(width: geometry.size.width * CGFloat(max(0, min(1, display.fraction))))
                 }
             }
             .overlay(
                 Capsule()
-                    .stroke(display.color.opacity(display.isKnown ? 0.42 : 0.28), style: StrokeStyle(lineWidth: 0.6, dash: display.isKnown ? [] : [2, 2]))
+                    .stroke(display.barColor.opacity(display.isKnown ? 0.42 : 0.28), style: StrokeStyle(lineWidth: 0.6, dash: display.isKnown ? [] : [2, 2]))
             )
         }
     }
@@ -767,7 +771,8 @@ private struct PickyHeaderContextUsageBar: View {
 private struct PickyHeaderContextUsageDisplay {
     let fraction: Double
     let label: String
-    let color: Color
+    let barColor: Color
+    let textColor: Color
     let tooltip: String
     let isKnown: Bool
 
@@ -775,7 +780,8 @@ private struct PickyHeaderContextUsageDisplay {
         guard let percent = usage.percent else {
             self.fraction = 0
             self.label = "?%"
-            self.color = DS.Colors.textTertiary
+            self.barColor = DS.Colors.textTertiary
+            self.textColor = DS.Colors.textTertiary
             self.tooltip = "Context usage unknown after compaction until the next model response"
             self.isKnown = false
             return
@@ -786,11 +792,14 @@ private struct PickyHeaderContextUsageDisplay {
         self.label = "\(Int(clamped.rounded()))%"
         switch clamped {
         case 90...:
-            self.color = DS.Colors.destructive
+            self.barColor = DS.Colors.destructive
+            self.textColor = DS.Colors.destructiveText
         case 70..<90:
-            self.color = DS.Colors.warning
+            self.barColor = DS.Colors.warning
+            self.textColor = DS.Colors.warningText
         default:
-            self.color = DS.Colors.success
+            self.barColor = DS.Colors.success
+            self.textColor = DS.Colors.successText
         }
         if let tokens = usage.tokens {
             self.tooltip = "Context usage: \(tokens.formatted())/\(usage.contextWindow.formatted()) tokens (\(Int(clamped.rounded()))%)"

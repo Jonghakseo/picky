@@ -67,7 +67,7 @@ struct CompanionPanelPrerequisitesView: View {
             HStack(spacing: 8) {
                 Image(systemName: "hand.raised")
                     .pickyFont(size: 12, weight: .medium)
-                    .foregroundColor(isGranted ? DS.Colors.textTertiary : DS.Colors.warning)
+                    .foregroundColor(isGranted ? DS.Colors.textTertiary : DS.Colors.warningText)
                     .frame(width: 16)
 
                 Text("prereq.accessibility.title")
@@ -137,7 +137,7 @@ struct CompanionPanelPrerequisitesView: View {
             HStack(spacing: 8) {
                 Image(systemName: "rectangle.dashed.badge.record")
                     .pickyFont(size: 12, weight: .medium)
-                    .foregroundColor(isGranted ? DS.Colors.textTertiary : DS.Colors.warning)
+                    .foregroundColor(isGranted ? DS.Colors.textTertiary : DS.Colors.warningText)
                     .frame(width: 16)
 
                 VStack(alignment: .leading, spacing: 1) {
@@ -192,7 +192,7 @@ struct CompanionPanelPrerequisitesView: View {
             HStack(spacing: 8) {
                 Image(systemName: "eye")
                     .pickyFont(size: 12, weight: .medium)
-                    .foregroundColor(isGranted ? DS.Colors.textTertiary : DS.Colors.warning)
+                    .foregroundColor(isGranted ? DS.Colors.textTertiary : DS.Colors.warningText)
                     .frame(width: 16)
 
                 Text("prereq.screenContent.title")
@@ -238,7 +238,7 @@ struct CompanionPanelPrerequisitesView: View {
             HStack(spacing: 8) {
                 Image(systemName: "mic")
                     .pickyFont(size: 12, weight: .medium)
-                    .foregroundColor(isGranted ? DS.Colors.textTertiary : DS.Colors.warning)
+                    .foregroundColor(isGranted ? DS.Colors.textTertiary : DS.Colors.warningText)
                     .frame(width: 16)
 
                 Text("prereq.microphone.title")
@@ -297,7 +297,7 @@ struct CompanionPanelPrerequisitesView: View {
             HStack(spacing: 8) {
                 Image(systemName: iconName)
                     .pickyFont(size: 12, weight: .medium)
-                    .foregroundColor(isGranted ? DS.Colors.textTertiary : DS.Colors.warning)
+                    .foregroundColor(isGranted ? DS.Colors.textTertiary : DS.Colors.warningText)
                     .frame(width: 16)
 
                 Text(label)

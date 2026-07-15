@@ -23,7 +23,7 @@ struct PickyToolActivityRow: View {
                     if tool.riskLevel != .normal {
                         Text(riskLabel)
                             .font(PickyHUDTypography.minimumMedium)
-                            .foregroundColor(tool.riskLevel == .external ? DS.Colors.warning : DS.Colors.info)
+                            .foregroundColor(tool.riskLevel == .external ? DS.Colors.warningText : DS.Colors.info)
                     }
                     Spacer()
                     Text(tool.status)

@@ -850,6 +850,8 @@ Combined page for everything Picky surfaces back to you — cursor overlay, spee
 
 If **Show Picky Cursor** is off, smooth follow and idle animations are disabled. Picky still shows a minimal waiting indicator near the system cursor while a cursor-side request is in flight, then hides it again when the response arrives or the request ends.
 
+While the Mac App Store is the frontmost app, Picky temporarily hides the cursor overlay and brings it back when you switch away. macOS suppresses secure purchase confirmations whenever another app's window overlaps them, so this keeps App Store purchase sheets working while Picky runs.
+
 **Bubbles**
 
 | Setting | Default | Meaning |

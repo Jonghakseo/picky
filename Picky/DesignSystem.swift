@@ -227,10 +227,13 @@ enum DS {
     /// are not for product semantic reuse; see `design/TOKENS.md`.
     enum Integration {
         enum GitHub {
-            static let prOpen = Color(light: Color(hex: "#1F883D"), dark: Color(hex: "#3FB950"))
+            // Light values use Primer's fg-grade palette (not the brighter emphasis
+            // fills) so 10.5pt chip text keeps >=4.5:1 over the 5% tinted chip
+            // background; dark values are Primer dark fg over a 10% tint.
+            static let prOpen = Color(light: Color(hex: "#1A7F37"), dark: Color(hex: "#3FB950"))
             static let prMerged = Color(light: Color(hex: "#8250DF"), dark: Color(hex: "#A371F7"))
             static let prClosed = Color(light: Color(hex: "#CF222E"), dark: Color(hex: "#F85149"))
-            static let prDraft = Color(light: Color(hex: "#6E7781"), dark: Color(hex: "#8B949E"))
+            static let prDraft = Color(light: Color(hex: "#59636E"), dark: Color(hex: "#8B949E"))
         }
 
         enum Sentry {

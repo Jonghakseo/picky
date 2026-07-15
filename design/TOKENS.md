@@ -77,10 +77,12 @@ neutral.dark.1 → surface.panel → conversation.card.background
 
 | 토큰 | Light | Dark | 용도 |
 |---|---:|---:|---|
-| `integration.github.prOpen` | `#1F883D` | `#3FB950` | PR open (Primer) |
-| `integration.github.prMerged` | `#8250DF` | `#A371F7` | PR merged (Primer) |
-| `integration.github.prClosed` | `#CF222E` | `#F85149` | PR closed (Primer) |
-| `integration.github.prDraft` | `#6E7781` | `#8B949E` | PR draft (Primer) |
+| `integration.github.prOpen` | `#1A7F37` | `#3FB950` | PR open (Primer fg) |
+| `integration.github.prMerged` | `#8250DF` | `#A371F7` | PR merged (Primer fg) |
+| `integration.github.prClosed` | `#CF222E` | `#F85149` | PR closed (Primer fg) |
+| `integration.github.prDraft` | `#59636E` | `#8B949E` | PR draft (Primer fg) |
+
+GitHub 상태색은 foreground-grade다. 칩에서는 텍스트/아이콘 색으로 쓰고, 배경은 같은 색의 저농도 tint(light 5% / dark 10%)로 한다. 불투명 brand fill 위에 흰 텍스트를 올리지 않는다.
 | `integration.sentry.logo` | `#181225` | `#FFFFFF` | Sentry 로고 틴트 |
 
 사용자 설정값으로 저장된 hex(예: 블루 커서 색상 설정)를 런타임에 렌더링하는 경우는 토큰 대상이 아니다.

@@ -239,7 +239,10 @@ struct PickyConversationContextLineView: View {
         .foregroundColor(stateColor)
         .padding(.horizontal, 5)
         .padding(.vertical, 2)
-        .background(Capsule().fill(stateColor.opacity(0.10)))
+        // Light keeps the tint at 5%: the fg-grade state colors sit near the
+        // 4.5:1 AA floor on white, so a 10% tint would drag them under it.
+        // Dark has more headroom and keeps the 10% tint for chip legibility.
+        .background(Capsule().fill(stateColor.opacity(colorScheme == .dark ? 0.10 : 0.05)))
         .overlay(Capsule().stroke(stateColor.opacity(0.32), lineWidth: 0.5))
     }
 

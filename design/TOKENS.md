@@ -71,6 +71,20 @@ neutral.dark.1 → surface.panel → conversation.card.background
 - alpha를 component 파일에서 임의 조절하지 않는다. 반복되는 alpha는 semantic/component token으로 승격한다.
 - Pull Request, GitHub 등 외부 브랜드 상태색은 integration namespace 아래 명시적 예외로 둔다.
 
+### Integration colors
+
+외부 서비스 브랜드 색은 `DS.Integration` 아래에만 정의한다. 제품 semantic 역할로 재사용하지 않는다.
+
+| 토큰 | Light | Dark | 용도 |
+|---|---:|---:|---|
+| `integration.github.prOpen` | `#1F883D` | `#3FB950` | PR open (Primer) |
+| `integration.github.prMerged` | `#8250DF` | `#A371F7` | PR merged (Primer) |
+| `integration.github.prClosed` | `#CF222E` | `#F85149` | PR closed (Primer) |
+| `integration.github.prDraft` | `#6E7781` | `#8B949E` | PR draft (Primer) |
+| `integration.sentry.logo` | `#181225` | `#FFFFFF` | Sentry 로고 틴트 |
+
+사용자 설정값으로 저장된 hex(예: 블루 커서 색상 설정)를 런타임에 렌더링하는 경우는 토큰 대상이 아니다.
+
 ## Typography
 
 Picky는 macOS HUD이므로 Apple 웹 레퍼런스의 17–56px 마케팅 스케일을 사용하지 않는다.
@@ -90,6 +104,8 @@ Picky는 macOS HUD이므로 Apple 웹 레퍼런스의 17–56px 마케팅 스케
 | `type.status` | 11pt | Regular/Semibold | 상태와 progress | `status*` |
 | `type.meta` | 10.5pt | Regular | timestamp, counts | `meta*` |
 | `type.minimum` | 10pt | Regular/Semibold | 제한된 metadata 예외 | `minimum*` |
+| `type.badge` | 8pt | Semibold/Bold | shortcut hint, 상태 badge, 미니 카운트 (component 예외) | 신규 |
+| `type.badgeIcon` | 7pt | Bold | badge 내부 SF Symbol 글리프 | 신규 |
 
 ### Typography rules
 
@@ -99,6 +115,7 @@ Picky는 macOS HUD이므로 Apple 웹 레퍼런스의 17–56px 마케팅 스케
 - monospace는 명령, 경로, code, 시간, token count, 구조화 상태에 사용한다.
 - global app font scale을 모든 읽기 텍스트에 적용한다.
 - SF Symbol의 optical size는 텍스트 토큰의 직접 대상이 아니다.
+- 10pt 미만 텍스트는 `type.badge`/`type.badgeIcon` 두 토큰만 허용하며, 대상은 shortcut hint·상태 badge·미니 카운트로 한정한다. 그 외의 장식용 SF Symbol 글리프 크기는 토큰 비대상이다.
 
 ## Spacing
 
@@ -127,7 +144,15 @@ Picky는 macOS HUD이므로 Apple 웹 레퍼런스의 17–56px 마케팅 스케
 | `radius.pill` | full | 짧은 action, selection, status chip |
 | `radius.circle` | 50% | icon-only circular control |
 
-3, 4, 5, 7, 9, 10, 15pt 등의 기존 값은 시각 감사에서 역할을 확인한 뒤 위 scale로 통합한다. Dock preset에 따른 비례 radius는 component-level 예외다.
+3, 5, 7, 9, 15pt 등의 기존 값은 시각 감사에서 역할을 확인한 뒤 위 scale로 통합한다. Dock preset에 따른 비례 radius는 component-level 예외다.
+
+Component 토큰:
+
+| 토큰 | 값 | 용도 |
+|---|---:|---|
+| `radius.bubble.anchor` | 4pt | conversation bubble의 말꼬리(anchor) 코너. agent 측은 bottomLeading, user 측은 bottomTrailing |
+
+결정 사항: 기존 10pt(`DS.CornerRadius.large`)는 목표 scale에 없으므로 `radius.surface`(12pt)로 통합하고 삭제한다.
 
 ## Material
 

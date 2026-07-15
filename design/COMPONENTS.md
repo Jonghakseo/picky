@@ -68,6 +68,16 @@
 - action chip과 status badge를 시각적으로 구분한다.
 - 긴 문장이나 primary CTA를 chip에 넣지 않는다.
 
+### Shortcut key badge
+
+- ⌘ hold 시 컴포넌트 모서리에 나타나는 단축키 힌트 (`⌘N`, `⌘E`, `⌘1`…)
+- 단일 공용 컴포넌트로 구현하며 surface별 복제를 금지한다.
+- typography는 `type.badge`/`type.badgeIcon`만 사용한다.
+- material 사용 시 Reduce Transparency solid fallback을 포함한다.
+- 장식이므로 VoiceOver에서는 숨기고(`accessibilityHidden`), 대응 단축키는 버튼 본체의 label/help가 설명한다.
+
+현재 후보: Composer·Header·Dock group에 중복된 badge 구현을 통합한 공용 view
+
 ## Shells and surfaces
 
 ### HUD Dock

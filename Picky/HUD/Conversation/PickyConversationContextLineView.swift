@@ -241,16 +241,15 @@ struct PickyConversationContextLineView: View {
     }
 
     static func pullRequestBackground(for state: PickyGitHubPullRequestStatus.State) -> Color {
-        // GitHub Primer state-emphasis tokens.
         switch state {
         case .open:
-            return Color(hex: "#1F883D")
+            return DS.Integration.GitHub.prOpen
         case .merged:
-            return Color(hex: "#8250DF")
+            return DS.Integration.GitHub.prMerged
         case .closed:
-            return Color(hex: "#CF222E")
+            return DS.Integration.GitHub.prClosed
         case .draft:
-            return Color(hex: "#6E7781")
+            return DS.Integration.GitHub.prDraft
         }
     }
 
@@ -429,7 +428,7 @@ struct PickyConversationContextLineView: View {
     }
 
     private var sentryLogoColor: Color {
-        colorScheme == .dark ? .white : Color(hex: "#181225")
+        DS.Integration.Sentry.logo
     }
 
     private var googleWorkspaceLogoSide: CGFloat { 12 }

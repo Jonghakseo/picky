@@ -221,6 +221,23 @@ enum DS {
         static let gray = Color(hex: "#8C8C92")
     }
 
+    // MARK: - Integration Colors
+
+    /// External GitHub Primer and Sentry brand values. These explicit exceptions
+    /// are not for product semantic reuse; see `design/TOKENS.md`.
+    enum Integration {
+        enum GitHub {
+            static let prOpen = Color(light: Color(hex: "#1F883D"), dark: Color(hex: "#3FB950"))
+            static let prMerged = Color(light: Color(hex: "#8250DF"), dark: Color(hex: "#A371F7"))
+            static let prClosed = Color(light: Color(hex: "#CF222E"), dark: Color(hex: "#F85149"))
+            static let prDraft = Color(light: Color(hex: "#6E7781"), dark: Color(hex: "#8B949E"))
+        }
+
+        enum Sentry {
+            static let logo = Color(light: Color(hex: "#181225"), dark: .white)
+        }
+    }
+
     // MARK: - Spacing (for reference, not enforced)
 
     enum Spacing {

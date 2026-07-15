@@ -223,7 +223,9 @@ struct PickyConversationContextLineView: View {
     }
 
     private func pullRequestBadge(status: PickyGitHubPullRequestStatus) -> some View {
-        HStack(spacing: 4) {
+        let stateColor = Self.pullRequestStateColor(for: status.state)
+
+        return HStack(spacing: 4) {
             Image("github-logo")
                 .renderingMode(.template)
                 .resizable()
@@ -234,13 +236,14 @@ struct PickyConversationContextLineView: View {
                 .font(PickyHUDTypography.metaMonospacedSemibold)
                 .lineLimit(1)
         }
-        .foregroundColor(.white)
+        .foregroundColor(stateColor)
         .padding(.horizontal, 5)
         .padding(.vertical, 2)
-        .background(Capsule().fill(Self.pullRequestBackground(for: status.state)))
+        .background(Capsule().fill(stateColor.opacity(0.10)))
+        .overlay(Capsule().stroke(stateColor.opacity(0.32), lineWidth: 0.5))
     }
 
-    static func pullRequestBackground(for state: PickyGitHubPullRequestStatus.State) -> Color {
+    static func pullRequestStateColor(for state: PickyGitHubPullRequestStatus.State) -> Color {
         switch state {
         case .open:
             return DS.Integration.GitHub.prOpen

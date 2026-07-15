@@ -65,7 +65,7 @@ struct CompanionPanelSettingsView: View {
 
             if route != .index, let error = viewModel.validationError {
                 Text(error)
-                    .pickyFont(size: 10.5, weight: .medium)
+                    .font(PickyHUDTypography.supporting)
                     .foregroundColor(DS.Colors.destructiveText)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 12)
@@ -127,9 +127,9 @@ struct CompanionPanelSettingsView: View {
                 Button(action: { route = .index }) {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.left")
-                            .pickyFont(size: 11, weight: .semibold)
+                            .font(PickyHUDTypography.statusSemibold)
                         Text(L10n.t("tab.settings"))
-                            .pickyFont(size: 11.5, weight: .medium)
+                            .font(PickyHUDTypography.labelMedium)
                     }
                     .foregroundColor(DS.Colors.textTertiary)
                     .contentShape(Rectangle())
@@ -160,7 +160,7 @@ struct CompanionPanelSettingsView: View {
 
     private func indexGroupHeader(_ group: CompanionPanelSettingsGroup) -> some View {
         Text(group.titleKey)
-            .pickyFont(size: 10, weight: .semibold)
+            .font(PickyHUDTypography.minimumSemibold)
             .foregroundColor(DS.Colors.textTertiary)
             .textCase(.uppercase)
             .tracking(0.6)
@@ -178,11 +178,11 @@ struct CompanionPanelSettingsView: View {
             HStack(alignment: .center, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.title)
-                        .pickyFont(size: 12.5, weight: .semibold)
+                        .font(PickyHUDTypography.bodyCompactSemibold)
                         .foregroundColor(DS.Colors.textPrimary)
                     if let subtitle = indexSubtitle(for: item) {
                         Text(subtitle)
-                            .pickyFont(size: 10.5, weight: .medium)
+                            .font(PickyHUDTypography.supporting)
                             .foregroundColor(DS.Colors.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -192,7 +192,7 @@ struct CompanionPanelSettingsView: View {
                     statusIndicator(for: section)
                 }
                 Image(systemName: "chevron.right")
-                    .pickyFont(size: 10, weight: .semibold)
+                    .font(PickyHUDTypography.minimumSemibold)
                     .foregroundColor(DS.Colors.textTertiary)
             }
             .padding(.vertical, 9)
@@ -299,7 +299,7 @@ struct CompanionPanelSettingsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .onChange(of: viewModel.settings.pickleAgentThinkingLevel) { _, _ in saveImmediately(for: .pickle) }
                     Text("settings.field.reasoningLevel.pickleNote")
-                        .pickyFont(size: 10.5, weight: .medium)
+                        .font(PickyHUDTypography.supporting)
                         .foregroundColor(DS.Colors.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -337,14 +337,14 @@ struct CompanionPanelSettingsView: View {
             }) {
                 HStack(alignment: .center, spacing: 8) {
                     Image(systemName: isArchivedSessionsExpanded ? "chevron.down" : "chevron.right")
-                        .pickyFont(size: 10, weight: .semibold)
+                        .font(PickyHUDTypography.minimumSemibold)
                         .foregroundColor(DS.Colors.textTertiary)
                         .frame(width: 12)
                     Text("settings.pickle.archive.toggle")
-                        .pickyFont(size: 11.5, weight: .semibold)
+                        .font(PickyHUDTypography.labelSemibold)
                         .foregroundColor(DS.Colors.textPrimary)
                     Text("\(sessionListViewModel.archivedSessions.count)")
-                        .pickyFont(size: 10.5, weight: .medium)
+                        .font(PickyHUDTypography.metaMedium)
                         .foregroundColor(DS.Colors.textTertiary)
                     Spacer(minLength: 4)
                 }
@@ -491,7 +491,7 @@ struct CompanionPanelSettingsView: View {
                     )
                     if !viewModel.settings.cursor.showPiCursor {
                         Text("settings.cursor.disabledNote")
-                            .pickyFont(size: 10.5, weight: .medium)
+                            .font(PickyHUDTypography.supporting)
                             .foregroundColor(DS.Colors.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.top, 7)
@@ -545,11 +545,11 @@ struct CompanionPanelSettingsView: View {
                         onChoose: chooseMainAgentDirectory
                     )
                     Text("settings.field.pickyCwd.note")
-                        .pickyFont(size: 10.5, weight: .medium)
+                        .font(PickyHUDTypography.supporting)
                         .foregroundColor(DS.Colors.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                     Text("settings.field.pickyCwd.workspaceWarning")
-                        .pickyFont(size: 10.5, weight: .medium)
+                        .font(PickyHUDTypography.supporting)
                         .foregroundColor(DS.Colors.warningText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -566,7 +566,7 @@ struct CompanionPanelSettingsView: View {
                         onChoose: choosePiBinaryFile
                     )
                     Text("settings.field.piBinaryPath.note")
-                        .pickyFont(size: 10.5, weight: .medium)
+                        .font(PickyHUDTypography.supporting)
                         .foregroundColor(DS.Colors.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -583,7 +583,7 @@ struct CompanionPanelSettingsView: View {
                         onChoose: choosePiCodingAgentDirectory
                     )
                     Text("settings.field.piCodingAgentDir.note")
-                        .pickyFont(size: 10.5, weight: .medium)
+                        .font(PickyHUDTypography.supporting)
                         .foregroundColor(DS.Colors.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -628,7 +628,7 @@ struct CompanionPanelSettingsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .onChange(of: viewModel.settings.armedPickleDispatchMode) { _, _ in saveImmediately(for: .mainAgent) }
                     Text("settings.field.armedPickleDispatchMode.note")
-                        .pickyFont(size: 10.5, weight: .medium)
+                        .font(PickyHUDTypography.supporting)
                         .foregroundColor(DS.Colors.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -636,7 +636,7 @@ struct CompanionPanelSettingsView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack {
                         Text("settings.field.attachScreenshotsOnlyWhenInked")
-                            .pickyFont(size: 11.5, weight: .medium)
+                            .font(PickyHUDTypography.labelMedium)
                             .foregroundColor(DS.Colors.textPrimary)
                         Spacer(minLength: 8)
                         Toggle("settings.field.attachScreenshotsOnlyWhenInked",
@@ -650,7 +650,7 @@ struct CompanionPanelSettingsView: View {
                             }
                     }
                     Text("settings.field.attachScreenshotsOnlyWhenInked.note")
-                        .pickyFont(size: 10.5, weight: .medium)
+                        .font(PickyHUDTypography.supporting)
                         .foregroundColor(DS.Colors.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -667,7 +667,7 @@ struct CompanionPanelSettingsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .onChange(of: viewModel.settings.screenshotQuality) { _, _ in saveImmediately(for: .mainAgent) }
                     Text("settings.field.screenshotQuality.note")
-                        .pickyFont(size: 10.5, weight: .medium)
+                        .font(PickyHUDTypography.supporting)
                         .foregroundColor(DS.Colors.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -739,7 +739,7 @@ struct CompanionPanelSettingsView: View {
             .task { companionManager.refreshMainAgentModelOptions() }
 
             Text(helpText)
-                .pickyFont(size: 10.5, weight: .medium)
+                .font(PickyHUDTypography.supporting)
                 .foregroundColor(DS.Colors.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -785,9 +785,9 @@ struct CompanionPanelSettingsView: View {
                 Button(action: resetShortcutsToDefaults) {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.counterclockwise")
-                            .pickyFont(size: 10, weight: .semibold)
+                            .font(PickyHUDTypography.minimumSemibold)
                         Text("common.resetDefaults")
-                            .pickyFont(size: 11, weight: .semibold)
+                            .font(PickyHUDTypography.statusSemibold)
                     }
                     .foregroundColor(DS.Colors.textSecondary)
                     .padding(.horizontal, 12)
@@ -836,7 +836,7 @@ struct CompanionPanelSettingsView: View {
                     }
 
                     Text("settings.general.language.note")
-                        .pickyFont(size: 10.5, weight: .medium)
+                        .font(PickyHUDTypography.supporting)
                         .foregroundColor(DS.Colors.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -854,7 +854,7 @@ struct CompanionPanelSettingsView: View {
         ) {
             VStack(alignment: .leading, spacing: 10) {
                 Text("settings.oauth.body")
-                    .pickyFont(size: 11, weight: .medium)
+                    .font(PickyHUDTypography.supportingMedium)
                     .foregroundColor(DS.Colors.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -867,9 +867,9 @@ struct CompanionPanelSettingsView: View {
                 Button(action: { oauthLoginController.refreshAll() }) {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.clockwise")
-                            .pickyFont(size: 10, weight: .semibold)
+                            .font(PickyHUDTypography.minimumSemibold)
                         Text("settings.oauth.refresh")
-                            .pickyFont(size: 11, weight: .semibold)
+                            .font(PickyHUDTypography.statusSemibold)
                     }
                     .foregroundColor(DS.Colors.textSecondary)
                     .padding(.horizontal, 10)
@@ -887,7 +887,7 @@ struct CompanionPanelSettingsView: View {
                 .pointerCursor()
 
                 Text("settings.oauth.fallback")
-                    .pickyFont(size: 10.5, weight: .medium)
+                    .font(PickyHUDTypography.supporting)
                     .foregroundColor(DS.Colors.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -904,10 +904,10 @@ struct CompanionPanelSettingsView: View {
                     .frame(width: 18, height: 18)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(L10n.t(provider.titleKey))
-                        .pickyFont(size: 12, weight: .semibold)
+                        .font(PickyHUDTypography.supportingSemibold)
                         .foregroundColor(DS.Colors.textPrimary)
                     Text(L10n.t(provider.subtitleKey))
-                        .pickyFont(size: 10.5, weight: .medium)
+                        .font(PickyHUDTypography.supporting)
                         .foregroundColor(DS.Colors.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -917,7 +917,7 @@ struct CompanionPanelSettingsView: View {
 
             if case .failed(let message) = status {
                 Text(message)
-                    .pickyFont(size: 10.5, weight: .medium)
+                    .font(PickyHUDTypography.supporting)
                     .foregroundColor(DS.Colors.destructiveText)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -925,7 +925,7 @@ struct CompanionPanelSettingsView: View {
             HStack(spacing: 8) {
                 Button(action: { oauthLoginController.signIn(provider: provider) }) {
                     Text(oauthPrimaryButtonTitle(for: status))
-                        .pickyFont(size: 11, weight: .semibold)
+                        .font(PickyHUDTypography.statusSemibold)
                         .foregroundColor(DS.Colors.accentText)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
@@ -946,7 +946,7 @@ struct CompanionPanelSettingsView: View {
                 if case .signingIn = status {
                     Button(action: { oauthLoginController.cancel(provider: provider) }) {
                         Text("settings.oauth.cancel")
-                            .pickyFont(size: 11, weight: .semibold)
+                            .font(PickyHUDTypography.statusSemibold)
                             .foregroundColor(DS.Colors.textSecondary)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
@@ -973,9 +973,9 @@ struct CompanionPanelSettingsView: View {
         let display = oauthStatusDisplay(status)
         return HStack(spacing: 4) {
             Image(systemName: display.icon)
-                .pickyFont(size: 8.5, weight: .semibold)
+                .font(PickyHUDTypography.minimumSemibold)
             Text(display.text)
-                .pickyFont(size: 10, weight: .semibold)
+                .font(PickyHUDTypography.minimumSemibold)
                 .lineLimit(1)
         }
         .foregroundColor(display.foreground)
@@ -1034,9 +1034,9 @@ struct CompanionPanelSettingsView: View {
             }) {
                 HStack(spacing: 6) {
                     Image(systemName: "terminal")
-                        .pickyFont(size: 10, weight: .semibold)
+                        .font(PickyHUDTypography.minimumSemibold)
                     Text("settings.general.shellCommand.button")
-                        .pickyFont(size: 11, weight: .semibold)
+                        .font(PickyHUDTypography.statusSemibold)
                 }
                 .foregroundColor(DS.Colors.textSecondary)
                 .padding(.horizontal, 12)
@@ -1055,7 +1055,7 @@ struct CompanionPanelSettingsView: View {
             .pointerCursor()
 
             Text("settings.general.shellCommand.note")
-                .pickyFont(size: 10.5, weight: .medium)
+                .font(PickyHUDTypography.supporting)
                 .foregroundColor(DS.Colors.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -1065,7 +1065,7 @@ struct CompanionPanelSettingsView: View {
         sectionHeader(section: .builtinTools, title: L10n.t("settings.section.builtinTools.title"), subtitle: L10n.t("settings.section.builtinTools.subtitle")) {
             VStack(alignment: .leading, spacing: 10) {
                 Text("settings.section.builtinTools.note")
-                    .pickyFont(size: 11, weight: .medium)
+                    .font(PickyHUDTypography.supportingMedium)
                     .foregroundColor(DS.Colors.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -1094,14 +1094,14 @@ struct CompanionPanelSettingsView: View {
             HStack(alignment: .top, spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(L10n.t(tool.displayNameKey))
-                        .pickyFont(size: 11.5, weight: .semibold)
+                        .font(PickyHUDTypography.labelSemibold)
                         .foregroundColor(DS.Colors.textPrimary)
                     Text(L10n.t(tool.descriptionKey))
-                        .pickyFont(size: 10.5, weight: .medium)
+                        .font(PickyHUDTypography.supporting)
                         .foregroundColor(DS.Colors.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                     Text(verbatim: tool.rawValue)
-                        .pickyFont(size: 10, weight: .regular, design: .monospaced)
+                        .font(PickyHUDTypography.supportingMonospaced)
                         .foregroundColor(DS.Colors.textTertiary.opacity(0.7))
                 }
                 Spacer(minLength: 8)
@@ -1123,16 +1123,16 @@ struct CompanionPanelSettingsView: View {
         sectionHeader(section: .onboarding, title: L10n.t("settings.section.onboarding.title"), subtitle: L10n.t("settings.section.onboarding.subtitle")) {
             VStack(alignment: .leading, spacing: 10) {
                 Text("settings.section.onboarding.body")
-                    .pickyFont(size: 11, weight: .medium)
+                    .font(PickyHUDTypography.supportingMedium)
                     .foregroundColor(DS.Colors.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Button(action: replayOnboarding) {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.counterclockwise")
-                            .pickyFont(size: 10, weight: .semibold)
+                            .font(PickyHUDTypography.minimumSemibold)
                         Text("settings.section.onboarding.replay")
-                            .pickyFont(size: 11, weight: .semibold)
+                            .font(PickyHUDTypography.statusSemibold)
                     }
                     .foregroundColor(DS.Colors.textSecondary)
                     .padding(.horizontal, 12)
@@ -1207,7 +1207,7 @@ struct CompanionPanelSettingsView: View {
                         )
 
                         Text("settings.voice.openaiBaseUrlNote")
-                            .pickyFont(size: 10.5, weight: .medium)
+                            .font(PickyHUDTypography.supporting)
                             .foregroundColor(DS.Colors.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -1240,7 +1240,7 @@ struct CompanionPanelSettingsView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         toggleRow("settings.voice.toggle.ttsEnabled", isOn: $viewModel.settings.ttsEnabled, divider: false)
                         Text("settings.tts.disabledNote")
-                            .pickyFont(size: 10.5, weight: .medium)
+                            .font(PickyHUDTypography.supporting)
                             .foregroundColor(DS.Colors.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -1270,7 +1270,7 @@ struct CompanionPanelSettingsView: View {
                         )
 
                         Text("settings.azure.ttsUrlNote")
-                            .pickyFont(size: 10.5, weight: .medium)
+                            .font(PickyHUDTypography.supporting)
                             .foregroundColor(DS.Colors.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -1340,7 +1340,7 @@ struct CompanionPanelSettingsView: View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(title)
-                    .pickyFont(size: 11, weight: .semibold)
+                    .font(PickyHUDTypography.statusSemibold)
                     .foregroundColor(DS.Colors.textSecondary)
                     .textCase(.uppercase)
                     .tracking(0.4)
@@ -1351,7 +1351,7 @@ struct CompanionPanelSettingsView: View {
             }
             if let subtitle {
                 Text(subtitle)
-                    .pickyFont(size: 10.5, weight: .medium)
+                    .font(PickyHUDTypography.supporting)
                     .foregroundColor(DS.Colors.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1370,19 +1370,19 @@ struct CompanionPanelSettingsView: View {
         case .saved:
             HStack(spacing: 4) {
                 Image(systemName: "checkmark.circle.fill")
-                    .pickyFont(size: 9, weight: .semibold)
+                    .font(PickyHUDTypography.minimumSemibold)
                     .foregroundColor(DS.Colors.successText)
                 Text("common.saved")
-                    .pickyFont(size: 10, weight: .medium)
+                    .font(PickyHUDTypography.minimumMedium)
                     .foregroundColor(DS.Colors.successText)
             }
         case .dirty:
             Button(action: { commitEdits(in: section) }) {
                 HStack(spacing: 4) {
                     Image(systemName: "square.and.arrow.down")
-                        .pickyFont(size: 9.5, weight: .semibold)
+                        .font(PickyHUDTypography.minimumSemibold)
                     Text("common.save")
-                        .pickyFont(size: 10.5, weight: .bold)
+                        .font(PickyHUDTypography.metaBold)
                 }
                 .foregroundColor(DS.Colors.accentText)
                 .padding(.horizontal, 9)
@@ -1406,7 +1406,7 @@ struct CompanionPanelSettingsView: View {
             fieldLabel(label)
             TextField(placeholder, text: text)
                 .textFieldStyle(.plain)
-                .pickyFont(size: 11, weight: .medium, design: .monospaced)
+                .font(PickyHUDTypography.supportingMonospacedMedium)
                 .foregroundColor(DS.Colors.textSecondary)
                 .padding(.horizontal, 9)
                 .padding(.vertical, 7)
@@ -1426,7 +1426,7 @@ struct CompanionPanelSettingsView: View {
             fieldLabel(label)
             SecureField(placeholder, text: text)
                 .textFieldStyle(.plain)
-                .pickyFont(size: 11, weight: .medium, design: .monospaced)
+                .font(PickyHUDTypography.supportingMonospacedMedium)
                 .foregroundColor(DS.Colors.textSecondary)
                 .padding(.horizontal, 9)
                 .padding(.vertical, 7)
@@ -1447,7 +1447,7 @@ struct CompanionPanelSettingsView: View {
     /// blending together.
     private func voiceSubgroupHeader(_ title: LocalizedStringKey) -> some View {
         Text(title)
-            .pickyFont(size: 10.5, weight: .semibold)
+            .font(PickyHUDTypography.metaSemibold)
             .foregroundColor(DS.Colors.textSecondary)
             .textCase(.uppercase)
             .tracking(0.4)
@@ -1467,7 +1467,7 @@ struct CompanionPanelSettingsView: View {
             fieldLabel(label)
             TextField(placeholder, text: text)
                 .textFieldStyle(.plain)
-                .pickyFont(size: 11, weight: .medium, design: .monospaced)
+                .font(PickyHUDTypography.supportingMonospacedMedium)
                 .foregroundColor(DS.Colors.textSecondary)
                 .padding(.horizontal, 9)
                 .padding(.vertical, 7)
@@ -1487,7 +1487,7 @@ struct CompanionPanelSettingsView: View {
             fieldLabel(label)
             SecureField(placeholder, text: text)
                 .textFieldStyle(.plain)
-                .pickyFont(size: 11, weight: .medium, design: .monospaced)
+                .font(PickyHUDTypography.supportingMonospacedMedium)
                 .foregroundColor(DS.Colors.textSecondary)
                 .padding(.horizontal, 9)
                 .padding(.vertical, 7)
@@ -1504,7 +1504,7 @@ struct CompanionPanelSettingsView: View {
 
     private func fieldLabel(_ text: LocalizedStringKey) -> some View {
         Text(text)
-            .pickyFont(size: 10.5, weight: .semibold)
+            .font(PickyHUDTypography.metaSemibold)
             .foregroundColor(DS.Colors.textTertiary)
     }
 
@@ -1524,7 +1524,7 @@ struct CompanionPanelSettingsView: View {
             }
 
             Text("settings.field.dockSize.mediumNote")
-                .pickyFont(size: 10.5, weight: .medium)
+                .font(PickyHUDTypography.supporting)
                 .foregroundColor(DS.Colors.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -1534,7 +1534,7 @@ struct CompanionPanelSettingsView: View {
         VStack(spacing: 0) {
             HStack {
                 Text(title)
-                    .pickyFont(size: 11.5, weight: .medium)
+                    .font(PickyHUDTypography.labelMedium)
                     .foregroundColor(isEnabled ? DS.Colors.textPrimary : DS.Colors.textTertiary)
                 Spacer(minLength: 8)
                 Toggle(title, isOn: isOn)
@@ -1563,7 +1563,7 @@ struct CompanionPanelSettingsView: View {
         HStack(spacing: 7) {
             TextField(placeholder, text: text)
                 .textFieldStyle(.plain)
-                .pickyFont(size: 11, weight: .medium, design: .monospaced)
+                .font(PickyHUDTypography.supportingMonospacedMedium)
                 .foregroundColor(DS.Colors.textSecondary)
                 .padding(.horizontal, 9)
                 .padding(.vertical, 7)
@@ -1574,7 +1574,7 @@ struct CompanionPanelSettingsView: View {
                 .onChange(of: text.wrappedValue) { _, newValue in onChange(newValue) }
                 .onSubmit { onSubmit() }
             Button("common.choose") { onChoose() }
-                .pickyFont(size: 11, weight: .medium)
+                .font(PickyHUDTypography.supportingMedium)
                 .foregroundColor(DS.Colors.accentText)
                 .buttonStyle(.plain)
                 .pointerCursor()
@@ -1591,11 +1591,11 @@ struct CompanionPanelSettingsView: View {
         }) {
             HStack(spacing: 6) {
                 Image(systemName: "speaker.wave.2")
-                    .pickyFont(size: 11, weight: .medium)
+                    .font(PickyHUDTypography.supportingMedium)
                 Text("settings.macSpeechLink")
-                    .pickyFont(size: 11, weight: .semibold)
+                    .font(PickyHUDTypography.statusSemibold)
                 Image(systemName: "arrow.up.right")
-                    .pickyFont(size: 9, weight: .semibold)
+                    .font(PickyHUDTypography.minimumSemibold)
             }
             .foregroundColor(DS.Colors.textSecondary)
             .padding(.horizontal, 10)
@@ -1626,11 +1626,11 @@ struct CompanionPanelSettingsView: View {
         }) {
             HStack(spacing: 6) {
                 Image(systemName: "doc.text")
-                    .pickyFont(size: 11, weight: .medium)
+                    .font(PickyHUDTypography.supportingMedium)
                 Text("settings.action.openAgentsFile")
-                    .pickyFont(size: 11, weight: .semibold)
+                    .font(PickyHUDTypography.statusSemibold)
                 Image(systemName: "arrow.up.right")
-                    .pickyFont(size: 9, weight: .semibold)
+                    .font(PickyHUDTypography.minimumSemibold)
             }
             .foregroundColor(DS.Colors.textSecondary)
             .padding(.horizontal, 10)

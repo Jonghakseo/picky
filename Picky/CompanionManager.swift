@@ -799,7 +799,10 @@ final class CompanionManager: ObservableObject {
         }
 
         guard !isOverlayVisible else { return }
-        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
+        // A/B debug flag: isolate the App Store purchase-sheet suppression
+        // bug by never creating the full-screen cursor overlay windows.
+        let cursorOverlayDisabled = UserDefaults.standard.bool(forKey: "PickyDebugDisableCursorOverlay")
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil && !cursorOverlayDisabled {
             overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
         }
         isOverlayVisible = true

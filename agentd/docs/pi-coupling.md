@@ -170,6 +170,18 @@ When bumping pi (`agentd/package.json` `@earendil-works/pi-coding-agent`):
 - No changelog entry in 0.80.4-0.80.6 removes or changes Picky's T1-T4
   `AgentSession`, extension UI, tool definition, or event surfaces.
 
+### 0.80.6 -> 0.80.7
+
+- Pi 0.80.7 adds cache-friendly dynamic extension tool loading. Picky supplies
+  its SDK tools up front and does not dynamically activate tools during a run,
+  so no runtime code change is required.
+- The release removes the `openai-responses` `compat.sendSessionIdHeader`
+  models setting in favor of `compat.sessionAffinityFormat`. Picky does not
+  define either setting, so the breaking configuration change does not affect
+  the daemon or bundled handoff extension.
+- No changelog entry removes or changes Picky's T1-T4 `AgentSession`, extension
+  UI, tool definition, command registration, or event surfaces.
+
 ## Backward-compatibility policy
 
 - **Capability sniffs (T2) MUST stay non-fatal.** A pi version that drops

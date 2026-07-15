@@ -349,7 +349,9 @@ final class CompanionManager: ObservableObject {
         speechWatchdogTimeout: TimeInterval? = nil,
         armedPickleDispatchMode: PickyArmedPickleDispatchMode? = nil
     ) {
-        let resolvedInitialSettings = initialSettings ?? PickySettingsStore().load()
+        let resolvedInitialSettings = initialSettings
+            ?? Self.migrateLegacyCursorPreferenceIfNeeded(store: PickySettingsStore())
+        self.isCursorPreferenceEnabled = resolvedInitialSettings.cursor.showPiCursor
         let resolvedTranscriptionProviderFactory = transcriptionProviderFactory
             ?? { BuddyTranscriptionProviderFactory.makeDefaultProvider(settings: $0) }
         let resolvedSpeechPlaybackProviderFactory = speechPlaybackProviderFactory
@@ -486,21 +488,47 @@ final class CompanionManager: ObservableObject {
     private var localOverlayVisibilityReasons: Set<PickyOverlayReason> = []
     private var interactionOverlayVisibilityReasons: Set<PickyOverlayReason> = []
 
-    /// User preference for whether the Picky cursor should be shown.
-    /// When toggled off, the overlay is hidden and push-to-talk is disabled.
-    /// Persisted to UserDefaults so the choice survives app restarts.
-    @Published var isPickyCursorEnabled: Bool = UserDefaults.standard.object(forKey: "isPickyCursorEnabled") == nil
-        ? true
-        : UserDefaults.standard.bool(forKey: "isPickyCursorEnabled")
+    /// Whether the cursor overlay windows should exist at all. Sourced from
+    /// Settings → Cursor → "Show Picky cursor" (`cursor.showPiCursor`) — the
+    /// same key the rendering layer (`BlueCursorView`) reads — so the window
+    /// lifecycle and rendering can never disagree. Refreshed on settings save.
+    private var isCursorPreferenceEnabled: Bool
 
-    func setPickyCursorEnabled(_ enabled: Bool) {
-        isPickyCursorEnabled = enabled
-        UserDefaults.standard.set(enabled, forKey: "isPickyCursorEnabled")
+    /// One-shot migration: older builds gated the overlay *windows* behind a
+    /// separate `isPickyCursorEnabled` UserDefaults key while Settings'
+    /// `cursor.showPiCursor` only gated the *rendering*. Fold a legacy
+    /// "disabled" value into the settings file (preserving what the user
+    /// actually saw) and delete the key so `cursor.showPiCursor` becomes the
+    /// single source of truth.
+    static func migrateLegacyCursorPreferenceIfNeeded(
+        store: PickySettingsStore,
+        defaults: UserDefaults = .standard
+    ) -> PickySettings {
+        var settings = store.load()
+        if defaults.object(forKey: "isPickyCursorEnabled") != nil {
+            if !defaults.bool(forKey: "isPickyCursorEnabled") && settings.cursor.showPiCursor {
+                settings.cursor.showPiCursor = false
+                try? store.save(settings)
+            }
+            defaults.removeObject(forKey: "isPickyCursorEnabled")
+        }
+        return settings
+    }
+
+    /// Applies the "Show Picky cursor" preference to the overlay window
+    /// lifecycle. Turning it off tears every overlay reason down immediately;
+    /// turning it back on restores the always-on cursor once permissions allow.
+    func applyCursorPreferenceFromSettings(_ settings: PickySettings) {
+        let enabled = settings.cursor.showPiCursor
+        guard enabled != isCursorPreferenceEnabled else { return }
+        isCursorPreferenceEnabled = enabled
         transientHideTask?.cancel()
         transientHideTask = nil
 
         if enabled {
-            setLocalOverlayReason(.cursorPreferenceEnabled, visible: true)
+            if allPermissionsGranted {
+                setLocalOverlayReason(.cursorPreferenceEnabled, visible: true)
+            }
         } else {
             localOverlayVisibilityReasons.removeAll()
             interactionOverlayVisibilityReasons.removeAll()
@@ -528,7 +556,7 @@ final class CompanionManager: ObservableObject {
         bindSettingsChanges()
         // Show the cursor as soon as all permissions are available and the
         // cursor preference is enabled.
-        if allPermissionsGranted && isPickyCursorEnabled {
+        if allPermissionsGranted && isCursorPreferenceEnabled {
             setLocalOverlayReason(.cursorPreferenceEnabled, visible: true)
         }
     }
@@ -663,7 +691,7 @@ final class CompanionManager: ObservableObject {
 
         if !previouslyHadAll && allPermissionsGranted {
             PickyAnalytics.trackAllPermissionsGranted()
-            if isPickyCursorEnabled {
+            if isCursorPreferenceEnabled {
                 setLocalOverlayReason(.cursorPreferenceEnabled, visible: true)
             }
         }
@@ -704,7 +732,7 @@ final class CompanionManager: ObservableObject {
                     UserDefaults.standard.set(true, forKey: "hasScreenContentPermission")
                     PickyAnalytics.trackPermissionGranted(permission: "screen_content")
 
-                    if allPermissionsGranted && isPickyCursorEnabled {
+                    if allPermissionsGranted && isCursorPreferenceEnabled {
                         setLocalOverlayReason(.cursorPreferenceEnabled, visible: true)
                     }
                 }
@@ -870,6 +898,7 @@ final class CompanionManager: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 let settings = PickySettingsStore().load()
+                self?.applyCursorPreferenceFromSettings(settings)
                 self?.reloadVoiceProvidersFromSettings(settings)
                 self?.armedPickleDispatchMode = settings.armedPickleDispatchMode
                 self?.syncDaemonSettings(settings)
@@ -1232,7 +1261,7 @@ final class CompanionManager: ObservableObject {
             transientHideTask = nil
 
             // If the cursor is hidden, bring it back transiently for this interaction
-            if !isPickyCursorEnabled {
+            if !isCursorPreferenceEnabled {
                 setLocalOverlayReason(.activeVoiceInput, visible: true)
             }
 
@@ -2183,7 +2212,7 @@ final class CompanionManager: ObservableObject {
     /// fades out the overlay after a 1-second pause. Cancelled automatically
     /// if the user starts another push-to-talk interaction.
     private func scheduleTransientHideIfNeeded() {
-        guard !isPickyCursorEnabled && isOverlayVisible else { return }
+        guard !isCursorPreferenceEnabled && isOverlayVisible else { return }
         guard !hasActiveTransientOverlayBlocker else { return }
 
         transientHideTask?.cancel()

@@ -75,7 +75,7 @@ struct QuickInputPanelView: View {
             HStack(spacing: 6) {
                 TextField("Message Picky…", text: $viewModel.draftText, axis: .horizontal)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13.5, weight: .medium))
+                    .font(PickyHUDTypography.bodyMedium)
                     .foregroundColor(DS.Colors.textPrimary)
                     .focused($isFieldFocused)
                     .submitLabel(.send)
@@ -114,7 +114,7 @@ struct QuickInputPanelView: View {
 
             if let errorMessage = viewModel.errorMessage {
                 Text(errorMessage)
-                    .font(.system(size: 10.5, weight: .medium))
+                    .font(PickyHUDTypography.status)
                     .foregroundColor(DS.Colors.destructiveText)
                     .padding(.horizontal, 14)
                     .fixedSize(horizontal: false, vertical: true)
@@ -134,7 +134,7 @@ struct QuickInputPanelView: View {
                         .controlSize(.small)
                 } else {
                     Image(systemName: "arrow.up")
-                        .font(.system(size: 12, weight: .bold))
+                        .pickyFont(size: 12, weight: .bold)
                 }
             }
             .frame(width: 28, height: 28)
@@ -146,18 +146,21 @@ struct QuickInputPanelView: View {
         .buttonStyle(.plain)
         .disabled(isSendDisabled)
         .keyboardShortcut(.return, modifiers: [])
+        .accessibilityLabel("Send")
+        .accessibilityValue(viewModel.isSending ? "Sending" : "")
     }
 
     private var closeButton: some View {
         Button(action: { viewModel.close() }) {
             Image(systemName: "xmark")
-                .font(.system(size: 11, weight: .semibold))
+                .pickyFont(size: 11, weight: .semibold)
                 .foregroundColor(DS.Colors.textTertiary)
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .keyboardShortcut(.escape, modifiers: [])
+        .accessibilityLabel("Close")
     }
 
     private var isSendDisabled: Bool {
@@ -174,7 +177,7 @@ struct QuickInputPanelView: View {
         let tint: Color = isGated ? DS.Colors.textTertiary : DS.Colors.textSecondary
         return ZStack {
             Image(systemName: "camera")
-                .font(.system(size: 11, weight: .medium))
+                .pickyFont(size: 11, weight: .medium)
                 .foregroundColor(tint)
             if isGated {
                 // Diagonal strike to read as "no screenshot" without an extra

@@ -346,6 +346,7 @@ final class CompanionManager: ObservableObject {
         voiceContextCaptureCoordinator: PickyVoiceContextCaptureCoordinator? = nil,
         inkCaptureCoordinator: any PickyInkCaptureCoordinating = PickyInkCaptureCenter.shared,
         appearanceStore: PickyAppearanceStore? = nil,
+        fontScaleStore: PickyAppFontScaleStore? = nil,
         speechWatchdogTimeout: TimeInterval? = nil,
         armedPickleDispatchMode: PickyArmedPickleDispatchMode? = nil
     ) {
@@ -372,7 +373,10 @@ final class CompanionManager: ObservableObject {
         self.voiceContextCaptureCoordinator = voiceContextCaptureCoordinator ?? PickyVoiceContextCaptureCoordinator()
         self.armedPickleDispatchMode = armedPickleDispatchMode ?? resolvedInitialSettings.armedPickleDispatchMode
         self.inkCaptureCoordinator = inkCaptureCoordinator
-        self.quickInputPanelManager = QuickInputPanelManager(appearanceStore: appearanceStore)
+        self.quickInputPanelManager = QuickInputPanelManager(
+            appearanceStore: appearanceStore,
+            fontScaleStore: fontScaleStore
+        )
         self.screenContextTargetSessionID = selectionStore.screenContextTargetSessionID
         self.inkCaptureCoordinator.onStateChange = { [weak self] state in
             Task { @MainActor [weak self] in

@@ -34,6 +34,7 @@ final class QuickInputPanelManager {
 
     private let viewModel = QuickInputPanelViewModel()
     private let appearanceStore: PickyAppearanceStore
+    private let fontScaleStore: PickyAppFontScaleStore
     private var panel: QuickInputKeyablePanel?
 
     /// Called when the user submits a non-empty message. The host (typically
@@ -52,8 +53,12 @@ final class QuickInputPanelManager {
             .contains(point)
     }
 
-    init(appearanceStore: PickyAppearanceStore? = nil) {
+    init(
+        appearanceStore: PickyAppearanceStore? = nil,
+        fontScaleStore: PickyAppFontScaleStore? = nil
+    ) {
         self.appearanceStore = appearanceStore ?? PickyAppearanceStore()
+        self.fontScaleStore = fontScaleStore ?? PickyAppFontScaleStore()
         viewModel.onSubmit = { [weak self] text in
             self?.handleSubmit(text)
         }
@@ -118,9 +123,10 @@ final class QuickInputPanelManager {
     }
 
     private func createPanel() {
-        let rootView = QuickInputPanelView(viewModel: viewModel)
+        let quickInputView = QuickInputPanelView(viewModel: viewModel)
             .environmentObject(appearanceStore)
             .modifier(PickyPreferredColorSchemeModifier(store: appearanceStore))
+        let rootView = PickyAppFontScaleRoot(store: fontScaleStore) { quickInputView }
         let hostingView = NSHostingView(rootView: LocalizedHostingRoot { rootView })
         hostingView.frame = NSRect(x: 0, y: 0, width: panelWidth, height: estimatedPanelHeight)
 

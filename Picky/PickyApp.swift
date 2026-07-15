@@ -104,7 +104,8 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     private lazy var companionManager = CompanionManager(
         agentClient: hudAgentClientRouter,
         ownsAgentClientLifecycle: false,
-        appearanceStore: appearanceStore
+        appearanceStore: appearanceStore,
+        fontScaleStore: fontScaleStore
     )
     private lazy var hudPrimaryAgentClient = WebSocketPickyAgentClient(
         configuration: WebSocketPickyAgentClient.Configuration(

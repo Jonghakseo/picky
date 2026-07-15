@@ -201,7 +201,7 @@ struct PickyHUDDockIconView: View {
     }
 
     private func commandShortcutBadge(label: String) -> some View {
-        PickyHUDDockCommandShortcutBadge(label: label)
+        PickyShortcutKeyBadge(label: label)
     }
 
     private var dockIconContent: some View {

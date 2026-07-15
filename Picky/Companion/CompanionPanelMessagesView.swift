@@ -286,7 +286,7 @@ private struct CompanionPanelMessageRow: View {
                     .foregroundColor(message.role == .user ? DS.Colors.accentText : DS.Colors.textSecondary)
                 Spacer(minLength: 8)
                 Text(message.createdAt, formatter: Self.timeFormatter)
-                    .pickyFont(size: 9.5, weight: .medium)
+                    .font(PickyHUDTypography.minimumMedium)
                     .foregroundColor(DS.Colors.textTertiary)
             }
 

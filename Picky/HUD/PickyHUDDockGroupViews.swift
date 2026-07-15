@@ -465,7 +465,7 @@ struct PickyHUDDockCollapsedGroupBadge: View {
 
             if unreadCount > 0 {
                 Text("\(unreadCount)")
-                    .pickyFont(size: 8, weight: .medium)
+                    .font(PickyHUDTypography.badgeSemibold)
                     .padding(.horizontal, 3)
                     .padding(.vertical, 0.5)
                     .background(
@@ -487,7 +487,7 @@ struct PickyHUDDockCollapsedGroupBadge: View {
         .frame(width: metrics.sessionTileWidth, height: metrics.sessionTileHeight)
         .overlay(alignment: .topTrailing) {
             if isCommandShortcutHintVisible, let shortcutNumber {
-                PickyHUDDockCommandShortcutBadge(label: "\(shortcutNumber)")
+                PickyShortcutKeyBadge(label: "\(shortcutNumber)")
                     .offset(x: 5, y: -5)
                     .transition(.scale(scale: 0.88, anchor: .topTrailing).combined(with: .opacity))
             }
@@ -636,38 +636,5 @@ struct PickyHUDDockPullOutBadge: View {
                     .strokeBorder(Color.white.opacity(0.16), lineWidth: 1)
             )
             .fixedSize()
-    }
-}
-
-/// Shared ⌘N hint badge rendered at a dock item's top-trailing corner while
-/// the Command modifier is held. Used by both standalone Pickle icons and the
-/// collapsed-group folder badge so the visual treatment stays identical.
-struct PickyHUDDockCommandShortcutBadge: View {
-    let label: String
-
-    var body: some View {
-        HStack(spacing: 1.5) {
-            Image(systemName: "command")
-                .pickyFont(size: 6.5, weight: .bold)
-            Text(label)
-                .pickyFont(size: 7.5, weight: .bold, design: .rounded)
-                .monospacedDigit()
-        }
-        .foregroundColor(DS.Colors.textPrimary)
-        .padding(.horizontal, 4.5)
-        .frame(height: 15)
-        .background(
-            PickyHUDMaterialFill(shape: Capsule(style: .continuous), fallback: DS.Colors.surface1)
-        )
-        .overlay(
-            Capsule(style: .continuous)
-                .fill(DS.Colors.surface1.opacity(0.70))
-        )
-        .overlay(
-            Capsule(style: .continuous)
-                .strokeBorder(DS.Colors.borderSubtle.opacity(0.72), lineWidth: 0.7)
-        )
-        .shadow(color: Color.black.opacity(0.18), radius: 4, x: 0, y: 1.5)
-        .accessibilityHidden(true)
     }
 }

@@ -157,7 +157,7 @@ private struct PickyInlineTerminalSessionView: View {
                         .foregroundColor(DS.Colors.textPrimary)
                         .lineLimit(1)
                     Text("hud.inlineTerminal.tab.tui")
-                        .pickyFont(size: 9, weight: .bold, design: .rounded)
+                        .font(PickyHUDTypography.badgeBoldRounded)
                         .foregroundColor(DS.Colors.successText)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1.5)
@@ -175,7 +175,7 @@ private struct PickyInlineTerminalSessionView: View {
             } label: {
                 HStack(spacing: 5) {
                     Text("hud.inlineTerminal.tab.chat")
-                    shortcutBadge("T")
+                    PickyShortcutKeyBadge(label: "T")
                         .opacity(isCommandShortcutHintVisible ? 1 : 0)
                         .scaleEffect(isCommandShortcutHintVisible ? 1 : 0.88, anchor: .center)
                 }
@@ -205,23 +205,6 @@ private struct PickyInlineTerminalSessionView: View {
             .accessibilityLabel("Terminal mode menu")
         }
         .frame(minHeight: 26, alignment: .center)
-    }
-
-    private func shortcutBadge(_ letter: String) -> some View {
-        HStack(spacing: 1.5) {
-            Image(systemName: "command")
-                .pickyFont(size: 6.5, weight: .bold)
-            Text(letter)
-                .pickyFont(size: 7.5, weight: .bold, design: .rounded)
-        }
-        .foregroundColor(DS.Colors.textPrimary)
-        .padding(.horizontal, 4.5)
-        .frame(height: 15)
-        .background(PickyHUDMaterialFill(shape: Capsule(style: .continuous), fallback: DS.Colors.surface1))
-        .overlay(Capsule(style: .continuous).fill(DS.Colors.surface1.opacity(0.70)))
-        .overlay(Capsule(style: .continuous).strokeBorder(DS.Colors.borderSubtle.opacity(0.72), lineWidth: 0.7))
-        .shadow(color: Color.black.opacity(0.18), radius: 4, x: 0, y: 1.5)
-        .accessibilityHidden(true)
     }
 
     @ViewBuilder

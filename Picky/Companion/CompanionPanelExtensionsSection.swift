@@ -353,7 +353,7 @@ struct CompanionPanelExtensionsSection: View {
 
     private func badgePill(text: String, foreground: Color, background: Color) -> some View {
         Text(text)
-            .pickyFont(size: 9.5, weight: .medium)
+            .font(PickyHUDTypography.badgeSemibold)
             .foregroundColor(foreground)
             .lineLimit(1)
             .padding(.horizontal, 6)

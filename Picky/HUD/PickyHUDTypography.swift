@@ -33,6 +33,8 @@ enum PickyHUDTypography {
         static var status: CGFloat { 11 * scale }
         static var meta: CGFloat { 10.5 * scale }
         static var minimumText: CGFloat { 10 * scale }
+        static var badge: CGFloat { 8 * scale }
+        static var badgeIcon: CGFloat { 7 * scale }
     }
 
     static var title: Font { .system(size: Size.title, weight: .semibold) }
@@ -84,5 +86,12 @@ enum PickyHUDTypography {
     static var minimumSemibold: Font { .system(size: Size.minimumText, weight: .semibold) }
     static var minimumBold: Font { .system(size: Size.minimumText, weight: .bold) }
     static var minimumMonospacedMedium: Font { .system(size: Size.minimumText, weight: .medium, design: .monospaced) }
+    static var minimumMonospaced: Font { .system(size: Size.minimumText, weight: .regular, design: .monospaced) }
     static var minimumMonospacedBold: Font { .system(size: Size.minimumText, weight: .bold, design: .monospaced) }
+
+    static var badgeSemibold: Font { .system(size: Size.badge, weight: .semibold) }
+    static var badgeBold: Font { .system(size: Size.badge, weight: .bold) }
+    static var badgeBoldRounded: Font { .system(size: Size.badge, weight: .bold, design: .rounded) }
+    static var badgeMonospacedBold: Font { .system(size: Size.badge, weight: .bold, design: .monospaced) }
+    static var badgeIconBold: Font { .system(size: Size.badgeIcon, weight: .bold) }
 }

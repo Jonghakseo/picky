@@ -264,7 +264,7 @@ struct CompanionPanelFeedbackView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text(Self.formatBytes(attachment.byteCount))
-                    .pickyFont(size: 9.5, weight: .medium, design: .monospaced)
+                    .font(PickyHUDTypography.minimumMonospacedMedium)
                     .foregroundColor(DS.Colors.textTertiary)
             }
             Spacer(minLength: 6)

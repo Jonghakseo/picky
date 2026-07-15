@@ -475,7 +475,7 @@ struct PickyConversationListView: View {
             .background(Capsule().fill(DS.Colors.surface2.opacity(0.55)))
             .overlay(Capsule().stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.5))
             .overlay(alignment: .topTrailing) {
-                terminalShortcutBadge
+                PickyShortcutKeyBadge(label: "T", symbols: ["command", "shift"])
                     .fixedSize()
                     .offset(x: 10, y: -7)
                     .opacity(isCommandShortcutHintVisible ? 1 : 0)
@@ -488,25 +488,6 @@ struct PickyConversationListView: View {
         .padding(.bottom, 4)
         .help("Open full session history in Pi terminal (⌘⇧T)")
         .animation(.easeOut(duration: 0.12), value: isCommandShortcutHintVisible)
-    }
-
-    private var terminalShortcutBadge: some View {
-        HStack(spacing: 1.5) {
-            Image(systemName: "command")
-                .pickyFont(size: 6.5, weight: .bold)
-            Image(systemName: "shift")
-                .pickyFont(size: 6.5, weight: .bold)
-            Text("T")
-                .pickyFont(size: 7.5, weight: .bold, design: .rounded)
-        }
-        .foregroundColor(DS.Colors.textPrimary)
-        .padding(.horizontal, 4.5)
-        .frame(height: 15)
-        .background(PickyHUDMaterialFill(shape: Capsule(style: .continuous), fallback: DS.Colors.surface1))
-        .overlay(Capsule(style: .continuous).fill(DS.Colors.surface1.opacity(0.70)))
-        .overlay(Capsule(style: .continuous).strokeBorder(DS.Colors.borderSubtle.opacity(0.72), lineWidth: 0.7))
-        .shadow(color: Color.black.opacity(0.18), radius: 4, x: 0, y: 1.5)
-        .accessibilityHidden(true)
     }
 
     /// Time separator between two adjacent turn cards. Inside a turn card,

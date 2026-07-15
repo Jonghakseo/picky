@@ -272,7 +272,7 @@ struct PickyConversationHeaderView: View {
             .onDisappear { cancelStickyHoldFeedback() }
             .animation(.spring(response: 0.22, dampingFraction: 0.78), value: isScreenContextStickyArmed)
             .overlay(alignment: .topTrailing) {
-                screenContextShortcutBadge
+                PickyShortcutKeyBadge(label: "K")
                     .offset(x: 11, y: -8)
                     .opacity(isCommandShortcutHintVisible ? 1 : 0)
                     .scaleEffect(isCommandShortcutHintVisible ? 1 : 0.88, anchor: .center)
@@ -387,31 +387,6 @@ struct PickyConversationHeaderView: View {
         }
     }
 
-    private var screenContextShortcutBadge: some View {
-        HStack(spacing: 1.5) {
-            Image(systemName: "command")
-                .pickyFont(size: 6.5, weight: .bold)
-            Text("K")
-                .pickyFont(size: 7.5, weight: .bold, design: .rounded)
-        }
-        .foregroundColor(DS.Colors.textPrimary)
-        .padding(.horizontal, 4.5)
-        .frame(height: 15)
-        .background(
-            PickyHUDMaterialFill(shape: Capsule(style: .continuous), fallback: DS.Colors.surface1)
-        )
-        .overlay(
-            Capsule(style: .continuous)
-                .fill(DS.Colors.surface1.opacity(0.70))
-        )
-        .overlay(
-            Capsule(style: .continuous)
-                .strokeBorder(DS.Colors.borderSubtle.opacity(0.72), lineWidth: 0.7)
-        )
-        .shadow(color: Color.black.opacity(0.18), radius: 4, x: 0, y: 1.5)
-        .accessibilityHidden(true)
-    }
-
     private var voiceTargetMicBadge: some View {
         Image(systemName: "mic.fill")
             .pickyFont(size: 6.8, weight: .bold)
@@ -473,7 +448,7 @@ struct PickyConversationHeaderView: View {
 
     private func attentionIndicator(_ text: String) -> some View {
         Text(text)
-            .pickyFont(size: 7.2, weight: .bold, design: .monospaced)
+            .font(PickyHUDTypography.badgeMonospacedBold)
             .foregroundColor(.white)
             .frame(width: 10, height: 10)
             .background(Circle().fill(statusColor))

@@ -52,24 +52,12 @@ struct PickyPendingBubbleView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .background(
-                UnevenRoundedRectangle(
-                    topLeadingRadius: 12,
-                    bottomLeadingRadius: 12,
-                    bottomTrailingRadius: 4,
-                    topTrailingRadius: 12,
-                    style: .continuous
-                )
-                .fill(kind.color.opacity(0.08))
+                PickyConversationBubbleLayout.bubbleShape(side: .user)
+                    .fill(kind.color.opacity(0.08))
             )
             .overlay(
-                UnevenRoundedRectangle(
-                    topLeadingRadius: 12,
-                    bottomLeadingRadius: 12,
-                    bottomTrailingRadius: 4,
-                    topTrailingRadius: 12,
-                    style: .continuous
-                )
-                .stroke(kind.color.opacity(0.48), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                PickyConversationBubbleLayout.bubbleShape(side: .user)
+                    .stroke(kind.color.opacity(0.48), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
             )
             .frame(maxWidth: PickyConversationBubbleLayout.maxBubbleWidth(forDetailWidth: pickyHUDDetailWidth), alignment: .trailing)
         }

@@ -61,7 +61,12 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
         static let horizontalPadding: CGFloat = 10
         static let verticalPadding: CGFloat = 8
         static let maxBubbleWidthFallback: CGFloat = 320
-        static let bubbleRadii = AgentBubbleRadii(topLeft: 12, topRight: 12, bottomRight: 12, bottomLeft: 4)
+        static let bubbleRadii = AgentBubbleRadii(
+            topLeft: PickyConversationBubbleLayout.bubbleRadius,
+            topRight: PickyConversationBubbleLayout.bubbleRadius,
+            bottomRight: PickyConversationBubbleLayout.bubbleRadius,
+            bottomLeft: PickyConversationBubbleLayout.bubbleAnchorRadius
+        )
         static let badgeWidth: CGFloat = 30
         static let badgeHeight: CGFloat = 17
         static let badgeInset: CGFloat = 6

@@ -70,7 +70,12 @@ final class PickyUserBubbleSurfaceNSView: NSView {
         static let expansionSpacing: CGFloat = 7
         static let expansionButtonHeight: CGFloat = 22
         static let maxBubbleWidthFallback: CGFloat = 320
-        static let bubbleRadii = BubbleRadii(topLeft: 12, topRight: 12, bottomRight: 4, bottomLeft: 12)
+        static let bubbleRadii = BubbleRadii(
+            topLeft: PickyConversationBubbleLayout.bubbleRadius,
+            topRight: PickyConversationBubbleLayout.bubbleRadius,
+            bottomRight: PickyConversationBubbleLayout.bubbleAnchorRadius,
+            bottomLeft: PickyConversationBubbleLayout.bubbleRadius
+        )
     }
 
     private let markdownView = PickyBubbleMarkdownContentView()

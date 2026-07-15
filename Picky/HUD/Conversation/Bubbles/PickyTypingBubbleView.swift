@@ -42,24 +42,12 @@ struct PickyTypingBubbleView: View {
                 .frame(maxWidth: PickyConversationBubbleLayout.maxBubbleWidth(forDetailWidth: pickyHUDDetailWidth), alignment: .leading)
                 .contentShape(Rectangle())
                 .background(
-                    UnevenRoundedRectangle(
-                        topLeadingRadius: 12,
-                        bottomLeadingRadius: 4,
-                        bottomTrailingRadius: 12,
-                        topTrailingRadius: 12,
-                        style: .continuous
-                    )
-                    .fill(DS.Colors.info.opacity(0.10))
+                    PickyConversationBubbleLayout.bubbleShape(side: .agent)
+                        .fill(DS.Colors.info.opacity(0.10))
                 )
                 .overlay(
-                    UnevenRoundedRectangle(
-                        topLeadingRadius: 12,
-                        bottomLeadingRadius: 4,
-                        bottomTrailingRadius: 12,
-                        topTrailingRadius: 12,
-                        style: .continuous
-                    )
-                    .stroke(DS.Colors.info.opacity(0.30), lineWidth: 1)
+                    PickyConversationBubbleLayout.bubbleShape(side: .agent)
+                        .stroke(DS.Colors.info.opacity(0.30), lineWidth: 1)
                 )
             }
             .buttonStyle(.plain)

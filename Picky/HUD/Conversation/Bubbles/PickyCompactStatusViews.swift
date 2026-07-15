@@ -118,13 +118,7 @@ struct PickyCompactFailureBubbleView: View {
 }
 
 private var compactBubbleShape: UnevenRoundedRectangle {
-    UnevenRoundedRectangle(
-        topLeadingRadius: 12,
-        bottomLeadingRadius: 4,
-        bottomTrailingRadius: 12,
-        topTrailingRadius: 12,
-        style: .continuous
-    )
+    PickyConversationBubbleLayout.bubbleShape(side: .agent)
 }
 
 extension PickySessionMessage {

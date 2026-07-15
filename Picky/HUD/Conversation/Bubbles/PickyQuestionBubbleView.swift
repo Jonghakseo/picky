@@ -61,24 +61,12 @@ struct PickyQuestionBubbleView: View {
             .padding(.vertical, isCollapsedDisplay ? 6 : 9)
             .frame(maxWidth: PickyConversationBubbleLayout.maxBubbleWidth(forDetailWidth: pickyHUDDetailWidth, fraction: 0.88, oppositeSideReserve: 36), alignment: .leading)
             .background(
-                UnevenRoundedRectangle(
-                    topLeadingRadius: 12,
-                    bottomLeadingRadius: 4,
-                    bottomTrailingRadius: 12,
-                    topTrailingRadius: 12,
-                    style: .continuous
-                )
-                .fill(isClosed ? DS.Colors.surface2.opacity(0.55) : DS.Colors.warning.opacity(0.07))
+                PickyConversationBubbleLayout.bubbleShape(side: .agent)
+                    .fill(isClosed ? DS.Colors.surface2.opacity(0.55) : DS.Colors.warning.opacity(0.07))
             )
             .overlay(
-                UnevenRoundedRectangle(
-                    topLeadingRadius: 12,
-                    bottomLeadingRadius: 4,
-                    bottomTrailingRadius: 12,
-                    topTrailingRadius: 12,
-                    style: .continuous
-                )
-                .stroke((isClosed ? DS.Colors.borderSubtle : DS.Colors.warning.opacity(0.58)), lineWidth: 1)
+                PickyConversationBubbleLayout.bubbleShape(side: .agent)
+                    .stroke((isClosed ? DS.Colors.borderSubtle : DS.Colors.warning.opacity(0.58)), lineWidth: 1)
             )
             Spacer(minLength: 36)
         }

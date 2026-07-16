@@ -244,6 +244,72 @@ struct PickyConversationCardViewTests {
         #expect(PickyFinderOpenRequest.existingDirectoryURL(cwd: " ") == nil)
     }
 
+    @Test func artifactTrayPresentationDerivesSubtitlesActionsAndCount() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let reports = root.appendingPathComponent("reports", isDirectory: true)
+        try FileManager.default.createDirectory(at: reports, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let existingFile = reports.appendingPathComponent("final-report.md")
+        try "report".write(to: existingFile, atomically: true, encoding: .utf8)
+        let artifactURL = try #require(URL(string: "https://github.com/creatrip/picky/pull/42"))
+        let urlArtifact = PickyArtifact(
+            id: "url",
+            kind: "github",
+            title: "Pull request",
+            path: nil,
+            url: artifactURL,
+            updatedAt: baseDate
+        )
+        let existingArtifact = PickyArtifact(
+            id: "file",
+            kind: "report",
+            title: "Final report",
+            path: existingFile.path,
+            url: nil,
+            updatedAt: baseDate
+        )
+        let missingArtifact = PickyArtifact(
+            id: "missing",
+            kind: "report",
+            title: "Missing report",
+            path: reports.appendingPathComponent("missing.md").path,
+            url: nil,
+            updatedAt: baseDate
+        )
+        let unavailableArtifact = PickyArtifact(
+            id: "unavailable",
+            kind: "note",
+            title: "Untitled note",
+            path: nil,
+            url: nil,
+            updatedAt: baseDate
+        )
+
+        let urlPresentation = PickyArtifactTrayPresentation(artifact: urlArtifact, homeURL: root)
+        let existingPresentation = PickyArtifactTrayPresentation(artifact: existingArtifact, homeURL: root)
+        let missingPresentation = PickyArtifactTrayPresentation(artifact: missingArtifact, homeURL: root)
+        let unavailablePresentation = PickyArtifactTrayPresentation(artifact: unavailableArtifact, homeURL: root)
+
+        #expect(PickyArtifactTrayPresentation.trayCount(for: [urlArtifact, existingArtifact, missingArtifact, unavailableArtifact]) == 4)
+        #expect(urlPresentation.subtitle == "github.com")
+        #expect(urlPresentation.action == .openURL(artifactURL))
+        #expect(existingPresentation.subtitle == "~/reports/final-report.md")
+        #expect(existingPresentation.action == .revealPath(existingFile.standardizedFileURL))
+        #expect(missingPresentation.action == .missingPath)
+        #expect(unavailablePresentation.action == .unavailable)
+    }
+
+    @Test func artifactTrayMakesNonLinkArtifactsVisibleContext() {
+        var session = makeConversationSession(status: .completed)
+        session.cwd = nil
+        session.artifacts = [
+            PickyArtifact(id: "report", kind: "report", title: "Final report", path: "/tmp/final-report.md", url: nil, updatedAt: baseDate)
+        ]
+
+        #expect(PickyConversationContextLineView.hasContent(for: session))
+    }
+
     @Test func questionBubbleBodyTextDoesNotDuplicateTitle() {
         let titledOnly = extensionUiRequest(title: "짧은 테스트", prompt: nil)
         let samePrompt = extensionUiRequest(title: "짧은 테스트", prompt: " 짧은 테스트 ")

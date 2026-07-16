@@ -130,15 +130,15 @@ struct PickyConversationContextLineView: View {
     }
 
     /// The card uses this before constructing the context row so sessions with no
-    /// folder or link metadata do not retain an empty layout slot. Git and pull
+    /// folder or artifact metadata do not retain an empty layout slot. Git and pull
     /// request state require a working directory, which already supplies the
     /// primary context line.
     static func hasContent(for session: PickySessionListViewModel.SessionCard) -> Bool {
-        session.compactCwdDescription != nil || !session.linkBadgeArtifacts.isEmpty
+        session.compactCwdDescription != nil || !session.artifacts.isEmpty
     }
 
     private var hasLinkContext: Bool {
-        !session.linkBadgeArtifacts.isEmpty || pullRequestStatus != nil
+        !session.artifacts.isEmpty || pullRequestStatus != nil
     }
 
     private var hasPrimaryContext: Bool {
@@ -155,10 +155,10 @@ struct PickyConversationContextLineView: View {
 
     private var linkContextLine: some View {
         HStack(spacing: 6) {
-            Image(systemName: "link")
+            Image(systemName: session.linkBadgeArtifacts.isEmpty ? "tray.full" : "link")
                 .pickyFont(size: 10.5, weight: .medium)
                 .foregroundColor(DS.Colors.textTertiary.opacity(0.85))
-                .accessibilityLabel("Links")
+                .accessibilityLabel(L10n.t("hud.artifactTray.accessibilityLabel", Int64(session.artifacts.count)))
             linkBadges
                 .layoutPriority(2)
         }
@@ -223,9 +223,8 @@ struct PickyConversationContextLineView: View {
                     linkBadge(artifact)
                 }
             }
-            let remainingCount = artifacts.count - min(artifacts.count, 6)
-            if remainingCount > 0 {
-                moreLinksBadge(count: remainingCount)
+            if !session.artifacts.isEmpty {
+                PickyArtifactTrayButton(artifacts: session.artifacts)
             }
         }
     }
@@ -449,16 +448,6 @@ struct PickyConversationContextLineView: View {
 
     private var googleWorkspaceLogoPlate: Color? {
         colorScheme == .dark ? Color.white.opacity(0.92) : nil
-    }
-
-    private func moreLinksBadge(count: Int) -> some View {
-        Text("+\(count)")
-            .font(PickyHUDTypography.metaMonospacedSemibold)
-            .foregroundColor(DS.Colors.accentText)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 2)
-            .background(Capsule().fill(DS.Colors.accentSubtle.opacity(0.75)))
-            .help("\(count) more links")
     }
 
     private func gitMetricPill(_ text: String, color: Color) -> some View {

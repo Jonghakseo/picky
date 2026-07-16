@@ -4266,7 +4266,7 @@ describe("SessionSupervisor", () => {
     expect(persisted?.logs.at(-1)).toBe("tool output line");
   });
 
-  it("preserves concurrent appended logs and derived artifacts", async () => {
+  it("preserves concurrent logs while deriving artifacts only from user input", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-concurrent-log-"));
     const runtime = new ManualRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
@@ -4275,16 +4275,19 @@ describe("SessionSupervisor", () => {
 
     await Promise.all([
       appendLog(session.id, "Changed file: M Picky/App.swift - HUD fix\nhttps://github.com/acme/repo/pull/42"),
+      appendLog(session.id, "steer: https://github.com/acme/repo/pull/43"),
       appendLog(session.id, "pi session: /tmp/picky-concurrent-pi-session.jsonl"),
     ]);
 
     const updated = supervisor.get(session.id);
     expect(updated?.logs).toEqual(expect.arrayContaining([
       "Changed file: M Picky/App.swift - HUD fix\nhttps://github.com/acme/repo/pull/42",
+      "steer: https://github.com/acme/repo/pull/43",
       "pi session: /tmp/picky-concurrent-pi-session.jsonl",
     ]));
     expect(updated?.changedFiles).toEqual([{ status: "M", path: "Picky/App.swift", summary: "HUD fix" }]);
-    expect(updated?.artifacts.some((artifact) => artifact.kind === "github" && artifact.url === "https://github.com/acme/repo/pull/42")).toBe(true);
+    expect(updated?.artifacts.some((artifact) => artifact.kind === "github" && artifact.url === "https://github.com/acme/repo/pull/42")).toBe(false);
+    expect(updated?.artifacts.some((artifact) => artifact.kind === "github" && artifact.url === "https://github.com/acme/repo/pull/43")).toBe(true);
     expect(updated?.piSessionFilePath).toBe("/tmp/picky-concurrent-pi-session.jsonl");
   });
 

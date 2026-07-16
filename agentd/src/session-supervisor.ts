@@ -2766,7 +2766,10 @@ export class SessionSupervisor extends EventEmitter {
     await this.runSessionWrite(sessionId, async () => {
       const session = this.mustGet(sessionId);
       const changedFiles = mergeChangedFiles(session.changedFiles, extractChangedFilesFromExplicitText(line));
-      const linkArtifacts = extractSessionLinkArtifacts(line).filter((artifact) => !session.artifacts.some((existing) => existing.url === artifact.url));
+      const userInput = userInputFromLogLine(line);
+      const linkArtifacts = userInput
+        ? extractSessionLinkArtifacts(userInput).filter((artifact) => !session.artifacts.some((existing) => existing.url === artifact.url))
+        : [];
       const artifacts = mergeArtifacts(session.artifacts, linkArtifacts);
       const nextSession = {
         ...session,
@@ -2875,6 +2878,13 @@ export class SessionSupervisor extends EventEmitter {
     if (!session) throw new Error(`Unknown session: ${sessionId}`);
     return session;
   }
+}
+
+function userInputFromLogLine(line: string): string | undefined {
+  for (const prefix of [STEER_PREFIX, FOLLOWUP_PREFIX, HANDOFF_PREFIX, EXTENSION_ANSWER_PREFIX]) {
+    if (line.startsWith(prefix)) return line.slice(prefix.length);
+  }
+  return undefined;
 }
 
 function makePointerOverlayRequestForContext(context: PickyContextPacket, request: PickyShowPointerRequest): PickyShowPointerResult["request"] {

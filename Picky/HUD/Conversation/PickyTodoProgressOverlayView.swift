@@ -8,6 +8,36 @@
 
 import SwiftUI
 
+struct PickyTodoProgressRestoreButton: View {
+    static let bottomContentInset: CGFloat = 38
+
+    let presentation: PickyTodoProgressPresentation
+    let onRestore: () -> Void
+
+    var body: some View {
+        Button(action: onRestore) {
+            Label(presentation.countText, systemImage: "checklist")
+                .font(PickyHUDTypography.statusMonospacedMedium)
+                .foregroundColor(presentation.isComplete ? DS.Colors.successText : DS.Colors.info)
+                .padding(.horizontal, 10)
+                .frame(height: 30)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(DS.Colors.surface1.opacity(0.97))
+                        .overlay(
+                            Capsule(style: .continuous)
+                                .stroke((presentation.isComplete ? DS.Colors.success : DS.Colors.info).opacity(0.5), lineWidth: 0.8)
+                        )
+                )
+                .contentShape(Capsule(style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .help(L10n.t("hud.todo.show"))
+        .accessibilityLabel(L10n.t("hud.todo.show"))
+        .accessibilityValue(presentation.countText)
+    }
+}
+
 struct PickyTodoProgressOverlayView: View {
     static let bottomContentInset: CGFloat = 48
 

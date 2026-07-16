@@ -93,6 +93,14 @@ struct PickyConversationCardView: View {
                 hiddenSnapshotID: hiddenTodoSnapshotID
             ) ? todoPresentation : nil
         }
+        let isTodoHidden = todoPresentation != nil && visibleTodoPresentation == nil
+        let todoBottomInset: CGFloat = if visibleTodoPresentation != nil {
+            PickyTodoProgressOverlayView.bottomContentInset
+        } else if isTodoHidden {
+            PickyTodoProgressRestoreButton.bottomContentInset
+        } else {
+            0
+        }
         return VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: DS.Spacing.xs) {
                 PickyConversationHeaderView(
@@ -117,7 +125,7 @@ struct PickyConversationCardView: View {
                 viewModel: viewModel,
                 isCommandShortcutHintVisible: isCommandShortcutHintVisible,
                 fillsAvailableHeight: fillsAvailableHeight,
-                bottomOverlayInset: visibleTodoPresentation == nil ? 0 : PickyTodoProgressOverlayView.bottomContentInset
+                bottomOverlayInset: todoBottomInset
             )
             .overlay(alignment: .bottom) {
                 if let visibleTodoPresentation, let todoSnapshotID {
@@ -125,6 +133,14 @@ struct PickyConversationCardView: View {
                         presentation: visibleTodoPresentation,
                         onHide: { hiddenTodoSnapshotID = todoSnapshotID }
                     )
+                    .padding(.horizontal, 4)
+                    .padding(.bottom, 3)
+                } else if isTodoHidden, let todoPresentation {
+                    PickyTodoProgressRestoreButton(
+                        presentation: todoPresentation,
+                        onRestore: { hiddenTodoSnapshotID = nil }
+                    )
+                    .frame(maxWidth: .infinity, alignment: .trailing)
                     .padding(.horizontal, 4)
                     .padding(.bottom, 3)
                 }

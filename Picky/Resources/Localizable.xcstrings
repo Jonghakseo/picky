@@ -1448,13 +1448,29 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hide task progress until it updates"
+            "value": "Minimize task progress"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "다음 업데이트까지 작업 진행 숨기기"
+            "value": "작업 진행 최소화"
+          }
+        }
+      }
+    },
+    "hud.todo.show": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show task progress"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 진행 다시 보기"
           }
         }
       }

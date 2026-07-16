@@ -25,7 +25,7 @@ struct PickyActivitySummaryView: View {
     }
 
     private var content: some View {
-        HStack(spacing: 10) {
+        PickyFlowLayout(itemSpacing: DS.Spacing.sm, rowSpacing: DS.Spacing.sm) {
             ForEach(summary.visibleToolCallItems) { item in
                 activityChip(item.icon, label: item.label, count: item.count, color: item.color)
             }

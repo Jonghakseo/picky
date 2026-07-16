@@ -59,7 +59,15 @@ struct PickyQuestionBubbleView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, isCollapsedDisplay ? 6 : 9)
-            .frame(maxWidth: PickyConversationBubbleLayout.maxBubbleWidth(forDetailWidth: pickyHUDDetailWidth, fraction: 0.88, oppositeSideReserve: 36), alignment: .leading)
+            .frame(
+                maxWidth: PickyConversationBubbleLayout.maxBubbleWidth(
+                    forDetailWidth: pickyHUDDetailWidth,
+                    fraction: 0.88,
+                    oppositeSideReserve: 36,
+                    contentKind: .narrative
+                ),
+                alignment: .leading
+            )
             .background(
                 PickyConversationBubbleLayout.bubbleShape(side: .agent)
                     .fill(isClosed ? DS.Colors.surface2.opacity(0.55) : DS.Colors.warning.opacity(0.07))

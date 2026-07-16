@@ -85,6 +85,42 @@ struct PickyTests {
         #expect(occupiedWidth <= contentWidth)
     }
 
+    @Test func narrativeBubbleWidthKeepsRelativeWidthBelowReadingCap() throws {
+        let detailWidth: CGFloat = 800
+        let structuredWidth = PickyConversationBubbleLayout.maxBubbleWidth(
+            forDetailWidth: detailWidth,
+            contentKind: .structured
+        )
+        let narrativeWidth = PickyConversationBubbleLayout.maxBubbleWidth(
+            forDetailWidth: detailWidth,
+            contentKind: .narrative
+        )
+
+        #expect(structuredWidth < PickyConversationBubbleLayout.narrativeMaxWidth)
+        #expect(narrativeWidth == structuredWidth)
+    }
+
+    @Test func narrativeBubbleWidthClampsAtReadingCapOnWideCards() throws {
+        let detailWidth: CGFloat = 1_400
+        let structuredWidth = PickyConversationBubbleLayout.maxBubbleWidth(
+            forDetailWidth: detailWidth,
+            contentKind: .structured
+        )
+        let narrativeWidth = PickyConversationBubbleLayout.maxBubbleWidth(
+            forDetailWidth: detailWidth,
+            contentKind: .narrative
+        )
+
+        #expect(structuredWidth > PickyConversationBubbleLayout.narrativeMaxWidth)
+        #expect(narrativeWidth == PickyConversationBubbleLayout.narrativeMaxWidth)
+    }
+
+    @Test func bubbleContentKindPreservesWidthForCodeAndTables() throws {
+        #expect(PickyConversationBubbleLayout.contentKind(for: "Narrative prose") == .narrative)
+        #expect(PickyConversationBubbleLayout.contentKind(for: "```swift\nlet width = 720\n```") == .structured)
+        #expect(PickyConversationBubbleLayout.contentKind(for: "| Name | Value |\n| --- | --- |\n| width | 720 |") == .structured)
+    }
+
     @Test func bubbleMarkdownRendersEmphasisWithoutRawDelimiters() throws {
         let attributed = PickyBubbleMarkdown.attributedText(for: "이건 **중요**해요")
 

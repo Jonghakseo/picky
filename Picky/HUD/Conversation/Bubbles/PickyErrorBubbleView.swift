@@ -58,7 +58,15 @@ struct PickyErrorBubbleView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 9)
-            .frame(maxWidth: PickyConversationBubbleLayout.maxBubbleWidth(forDetailWidth: pickyHUDDetailWidth, fraction: 0.88, oppositeSideReserve: 36), alignment: .leading)
+            .frame(
+                maxWidth: PickyConversationBubbleLayout.maxBubbleWidth(
+                    forDetailWidth: pickyHUDDetailWidth,
+                    fraction: 0.88,
+                    oppositeSideReserve: 36,
+                    contentKind: .narrative
+                ),
+                alignment: .leading
+            )
             .background(
                 PickyConversationBubbleLayout.bubbleShape(side: .agent)
                     .fill(DS.Colors.destructiveText.opacity(0.07))

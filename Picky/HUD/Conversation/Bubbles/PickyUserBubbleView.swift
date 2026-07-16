@@ -86,7 +86,10 @@ struct PickyUserBubbleView: View {
     }
 
     private var bubbleMaxWidth: CGFloat {
-        PickyConversationBubbleLayout.maxBubbleWidth(forDetailWidth: pickyHUDDetailWidth)
+        PickyConversationBubbleLayout.maxBubbleWidth(
+            forDetailWidth: pickyHUDDetailWidth,
+            contentKind: PickyConversationBubbleLayout.contentKind(for: displayedMarkdown)
+        )
     }
 
     /// Mirrors the SwiftUI `.contextMenu` "Open as Report" gate so the

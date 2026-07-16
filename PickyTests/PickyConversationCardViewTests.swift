@@ -248,6 +248,20 @@ struct PickyConversationCardViewTests {
         #expect(PickyQuestionBubbleCopy.bodyText(for: untitled) == "askUserQuestion")
     }
 
+    @Test func selectQuestionOptionsStayInlineAtCountAndLabelLengthBoundaries() {
+        #expect(PickyQuestionOptionsLayoutPolicy.layout(for: ["One", "Two", "Three"]) == .inlineRow)
+        #expect(PickyQuestionOptionsLayoutPolicy.layout(for: ["12345678", "abcdef", "abcd"]) == .inlineRow)
+    }
+
+    @Test func selectQuestionOptionsStackWhenCountOrIndividualLabelExceedsInlineLimits() {
+        #expect(PickyQuestionOptionsLayoutPolicy.layout(for: ["One", "Two", "Three", "Four"]) == .stacked)
+        #expect(PickyQuestionOptionsLayoutPolicy.layout(for: ["123456789"]) == .stacked)
+    }
+
+    @Test func selectQuestionOptionsStackWhenCombinedLabelsExceedInlineLimit() {
+        #expect(PickyQuestionOptionsLayoutPolicy.layout(for: ["12345678", "abcdef", "abcde"]) == .stacked)
+    }
+
     @Test func queuedFollowUpMatchingUserTextDoesNotRenderPendingBubble() {
         let followUpPrompt = """
         # Picky follow-up

@@ -145,13 +145,28 @@ struct PickyQuestionBubbleView: View {
                 Button("Cancel") { cancel() }
                     .font(PickyHUDTypography.supportingMedium)
             } else {
-                HStack(spacing: 6) {
-                    ForEach(options, id: \.self) { option in
-                        Button(option) { answer(.string(option)) }
+                switch PickyQuestionOptionsLayoutPolicy.layout(for: options) {
+                case .inlineRow:
+                    HStack(spacing: 6) {
+                        ForEach(options, id: \.self) { option in
+                            Button(option) { answer(.string(option)) }
+                        }
+                        Button("Cancel") { cancel() }
                     }
-                    Button("Cancel") { cancel() }
+                    .font(PickyHUDTypography.supportingMedium)
+                case .stacked:
+                    VStack(alignment: .leading, spacing: DS.Spacing.xs) {
+                        ForEach(options, id: \.self) { option in
+                            stackedSelectOptionButton(option)
+                        }
+                        Button("Cancel") { cancel() }
+                            .buttonStyle(.plain)
+                            .foregroundColor(DS.Colors.textSecondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(DS.Spacing.xs)
+                    }
+                    .font(PickyHUDTypography.supportingMedium)
                 }
-                .font(PickyHUDTypography.supportingMedium)
             }
         case "input", "editor":
             HStack(spacing: 6) {
@@ -237,6 +252,29 @@ struct PickyQuestionBubbleView: View {
             }
         }
         .padding(.vertical, 2)
+    }
+
+    private func stackedSelectOptionButton(_ option: String) -> some View {
+        Button { answer(.string(option)) } label: {
+            Text(option)
+                .multilineTextAlignment(.leading)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, DS.Spacing.sm)
+                .padding(.vertical, DS.Spacing.xs)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(DS.Colors.textPrimary)
+        .background(
+            RoundedRectangle(cornerRadius: DS.CornerRadius.small)
+                .fill(DS.Colors.surface2.opacity(0.8))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DS.CornerRadius.small)
+                .stroke(DS.Colors.borderSubtle, lineWidth: 0.5)
+        )
     }
 
     private func optionButton(label: String, description: String?, selected: Bool, action: @escaping () -> Void) -> some View {

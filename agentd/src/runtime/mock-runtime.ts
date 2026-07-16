@@ -46,6 +46,7 @@ export class MockRuntimeSession implements RuntimeSessionHandle {
   steeringMode: PickyQueueMode = "one-at-a-time";
   followUpMode: PickyQueueMode = "one-at-a-time";
   isStreaming = false;
+  isCompacting = false;
 
   constructor(readonly id: string) {}
 
@@ -66,6 +67,15 @@ export class MockRuntimeSession implements RuntimeSessionHandle {
 
   async abort(): Promise<void> {
     this.emit({ type: "status", status: "cancelled", summary: "Cancelled by app" });
+  }
+
+  async compact(_customInstructions?: string): Promise<void> {
+    // Match AgentSession.compact(): an active turn is stopped before manual compaction starts.
+    this.isStreaming = false;
+    this.isCompacting = true;
+    this.emit({ type: "status", status: "running", summary: "Compacting session…", compactionStarted: true, compactionReason: "manual" });
+    this.isCompacting = false;
+    this.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, compactionReason: "manual" });
   }
 
   getAssistantRunMetadata(): RuntimeAssistantRunMetadata {

@@ -31,7 +31,7 @@ import { isTransientAgentBusyError } from "./domain/transient-runtime-error.js";
 import { titleFromContext } from "./domain/session-title.js";
 import { normalizeOptionalString } from "./domain/strings.js";
 import { appendLiveBashOutput, formatUserBashFailureSystemMessage, formatUserBashRunningSystemMessage, formatUserBashSystemMessage, parseUserBashInput, userBashSummary, type UserBashInput } from "./domain/user-bash-format.js";
-import { isNonSkillSlashCommand, isNoTurnStateRestoringSlashCommand, isReloadSlashCommand, normalizeSlashCommands } from "./domain/slash-commands.js";
+import { isCompactSlashCommand, isNonSkillSlashCommand, isNoTurnStateRestoringSlashCommand, isReloadSlashCommand, normalizeSlashCommands } from "./domain/slash-commands.js";
 import { appendUniqueLog, hasPickleSessionMarkerLog, piSessionFilePathForSession, piSessionFilePathFromLogLine, withPiSessionFileFromLogs } from "./domain/pi-session-files.js";
 import { buildPinnedPickleSessionLogs, isPickyHandoffCommandMessage, lastTurns, PINNED_SOURCE_TURN_COUNT, piSessionFilePathFromHandoffTranscript, titleForEmptyPickleSession } from "./domain/pickle-handoff-context.js";
 import { extractPickyPromptUserInstruction, queueTextMatchesUserText } from "./domain/queue-policy.js";
@@ -1929,6 +1929,7 @@ export class SessionSupervisor extends EventEmitter {
       await this.appendLog(sessionId, `follow-up rejected: ${reason}`);
       throw new Error(reason);
     }
+    if (await this.executeCompactCommandIfSupported(sessionId, text, handle)) return this.mustGet(sessionId);
     await this.cancelPendingExtensionUiForUserInput(sessionId, handle);
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
     if (isNoTurnStateRestoringSlashCommand(text)) this.rememberNoTurnRanSessionState(sessionId);
@@ -2062,6 +2063,20 @@ export class SessionSupervisor extends EventEmitter {
       await this.patch(sessionId, wasRunning ? { lastSummary: `Bash failed: ${message}`, thinkingPreview: undefined } : { status: "failed", lastSummary: `Bash failed: ${message}`, thinkingPreview: undefined });
       throw error;
     }
+  }
+
+  private async executeCompactCommandIfSupported(sessionId: string, text: string, handle: RuntimeSessionHandle): Promise<boolean> {
+    if (!isCompactSlashCommand(text) || !handle.compact) return false;
+    await this.cancelPendingExtensionUiForUserInput(sessionId, handle);
+    this.runtimeEventHandler.resetAssistantDraft(sessionId);
+    const customInstructions = text.trim().replace(/^\/compact\s*/, "").trim() || undefined;
+    logAgentd("compact requested", {
+      sessionId,
+      wasStreaming: handle.isStreaming,
+      instructionChars: customInstructions?.length ?? 0,
+    });
+    await handle.compact(customInstructions);
+    return true;
   }
 
   private async cancelPendingExtensionUiForUserInput(sessionId: string, handle: RuntimeSessionHandle): Promise<void> {
@@ -2496,6 +2511,7 @@ export class SessionSupervisor extends EventEmitter {
       await this.appendLog(sessionId, `steer rejected: ${reason}`);
       throw new Error(reason);
     }
+    if (await this.executeCompactCommandIfSupported(sessionId, text, handle)) return this.mustGet(sessionId);
     await this.cancelPendingExtensionUiForUserInput(sessionId, handle);
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
     const prompt = buildSteerPrompt(text, context);

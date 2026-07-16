@@ -93,6 +93,8 @@ export interface RuntimeSessionHandle {
   interrupt?(prompt: BuiltPrompt): Promise<void>;
   steer(prompt: BuiltPrompt): Promise<RuntimeSteerResult>;
   abort(): Promise<void>;
+  /** Mirrors Pi TUI `/compact`: aborts an active turn first, then compacts the session. */
+  compact?(customInstructions?: string): Promise<void>;
   newSession?(): Promise<{ cancelled: boolean }>;
   executeUserBash?(command: string, options?: { excludeFromContext?: boolean; onOutputChunk?: (chunk: string) => void }): Promise<RuntimeBashExecutionResult>;
   /**

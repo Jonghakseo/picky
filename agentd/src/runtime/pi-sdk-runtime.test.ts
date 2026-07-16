@@ -94,6 +94,9 @@ class FakeSession extends EventEmitter {
 
   async compact(instructions?: string): Promise<void> {
     this.compactCalls.push(instructions);
+    // Pi's AgentSession.compact() aborts an active agent run before compaction. Mirror that public
+    // SDK contract so the adapter regression tests exercise the same TUI behavior.
+    if (this.isStreaming) await this.abort();
     // Real Pi SDK emits compaction_start *and* compaction_end around `session.compact()`; mirror
     // both here so the runtime-event handler sees the same lifecycle and the recovery handler
     // owns the compactionCompleted emission (no manual duplicate from the /compact slash handler).
@@ -1278,24 +1281,22 @@ describe("PiSdkRuntime", () => {
     expect(events).toContainEqual({ type: "context_usage", usage: { tokens: null, contextWindow: 200_000, percent: null } });
   });
 
-  it("rejects /compact while the active agent is running", async () => {
+  it("aborts the active agent and compacts when /compact is submitted as a steer", async () => {
     const fakeSession = new FakeSession();
     fakeSession.isStreaming = true;
-    const compactCalls: Array<string | undefined> = [];
-    (fakeSession as unknown as { compact: (instructions?: string) => Promise<unknown> }).compact = async (instructions) => {
-      compactCalls.push(instructions);
-      return {};
-    };
     const handle = await makeRuntime(fakeSession).prewarm({ cwd: "/tmp/project", sessionId: "session-compact-running" });
-    const events: Array<{ type: string; status?: string; noTurnRan?: boolean; preserveSessionState?: boolean; line?: string }> = [];
-    handle.subscribe((event) => events.push(event as { type: string; status?: string; noTurnRan?: boolean; preserveSessionState?: boolean; line?: string }));
+    const events: Array<{ type: string; status?: string; compactionStarted?: boolean; compactionCompleted?: boolean }> = [];
+    handle.subscribe((event) => events.push(event as { type: string; status?: string; compactionStarted?: boolean; compactionCompleted?: boolean }));
 
-    await handle.followUp({ text: "/compact", imagePaths: [] });
+    const outcome = await handle.steer({ text: "/compact", imagePaths: [] });
 
-    expect(compactCalls).toEqual([]);
+    expect(outcome).toEqual({ handledSynchronously: true });
+    expect(fakeSession.aborts).toBe(1);
+    expect(fakeSession.compactCalls).toEqual([undefined]);
     expect(fakeSession.prompts).toEqual([]);
-    expect(events).toContainEqual({ type: "log", line: "/compact rejected: cannot compact while the agent is running" });
-    expect(events).toContainEqual({ type: "status", status: "completed", summary: "/compact is unavailable while the agent is running", noTurnRan: true, preserveSessionState: true });
+    expect(fakeSession.steers).toEqual([]);
+    expect(events).toContainEqual(expect.objectContaining({ type: "status", status: "running", compactionStarted: true }));
+    expect(events).toContainEqual(expect.objectContaining({ type: "status", status: "completed", compactionCompleted: true }));
   });
 
   it("intercepts /reload and reloads Pi resources without an agent turn", async () => {

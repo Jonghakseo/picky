@@ -284,6 +284,15 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     this.emit({ type: "status", status: "failed", summary: message });
   }
 
+  async compact(customInstructions?: string): Promise<void> {
+    logAgentd("pi compact", {
+      sessionId: this.id,
+      wasStreaming: this.runtime.session.isStreaming,
+      instructionChars: customInstructions?.length ?? 0,
+    });
+    await this.runCompact(customInstructions);
+  }
+
   async abort(): Promise<void> {
     logAgentd("pi abort", { sessionId: this.id });
     if (this.initialPromptTimer) {
@@ -1000,31 +1009,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     }
     if (trimmed === "/compact" || trimmed.startsWith("/compact ")) {
       const instructions = trimmed.replace(/^\/compact\s*/, "").trim() || undefined;
-      if (this.runtime.session.isStreaming) {
-        this.emit({ type: "log", line: "/compact rejected: cannot compact while the agent is running" });
-        this.emit({ type: "status", status: "completed", summary: "/compact is unavailable while the agent is running", noTurnRan: true, preserveSessionState: true });
-        return true;
-      }
-      // Pi's `session.compact()` always emits `compaction_start` and `compaction_end` events, which
-      // our recovery handler translates into the matching `compactionStarted` / `compactionCompleted`
-      // status events. Do not also synthesize a manual completion event here — it would land as a
-      // second `compactionCompleted` and `runtime-event-handler` would record a duplicate
-      // "Session compacted" system message whenever anything (e.g. an `agent_activity` snapshot from
-      // `commitTurnActivity`) was appended between Pi's `compaction_end` and the manual emit, since
-      // `hasLatestCompactCompletionMessage` only checks the immediately preceding message.
-      try {
-        const outcome = await piTryCompact(this.runtime.session, this.id, instructions);
-        if (!outcome.supported) {
-          this.emit({ type: "status", status: "failed", summary: "/compact is not supported by this Pi runtime", noTurnRan: true });
-          return true;
-        }
-        this.emitContextUsageSnapshot({ resetAfterCompaction: true });
-        this.emit({ type: "log", line: instructions ? `compact completed with instructions: ${instructions}` : "compact completed" });
-      } catch (error) {
-        const message = messageOf(error);
-        logAgentd("slash /compact failed", { sessionId: this.id, error: message });
-        this.emit({ type: "status", status: "failed", summary: `/compact failed: ${message}`, noTurnRan: true });
-      }
+      await this.compact(instructions);
       return true;
     }
     if (trimmed === "/reload") {
@@ -1056,6 +1041,25 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       return true;
     }
     return false;
+  }
+
+  private async runCompact(instructions?: string): Promise<void> {
+    // Pi TUI delegates directly to AgentSession.compact(), whose public contract aborts an active
+    // agent operation before starting manual compaction. Do not pre-reject streaming sessions here.
+    // Pi's own compaction_start/end events remain the single source of lifecycle status.
+    try {
+      const outcome = await piTryCompact(this.runtime.session, this.id, instructions);
+      if (!outcome.supported) {
+        this.emit({ type: "status", status: "failed", summary: "/compact is not supported by this Pi runtime", noTurnRan: true });
+        return;
+      }
+      this.emitContextUsageSnapshot({ resetAfterCompaction: true });
+      this.emit({ type: "log", line: instructions ? `compact completed with instructions: ${instructions}` : "compact completed" });
+    } catch (error) {
+      const message = messageOf(error);
+      logAgentd("slash /compact failed", { sessionId: this.id, error: message });
+      this.emit({ type: "status", status: "failed", summary: `/compact failed: ${message}`, noTurnRan: true });
+    }
   }
 
   private async promptUntilAccepted(

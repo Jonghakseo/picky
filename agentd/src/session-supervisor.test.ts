@@ -1490,7 +1490,7 @@ describe("SessionSupervisor", () => {
     });
   });
 
-  it("keeps a running Pickle session running when /compact is rejected during an active turn", async () => {
+  it("routes /compact ahead of steer prompt handling and omits the command receipt", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
@@ -1499,19 +1499,19 @@ describe("SessionSupervisor", () => {
 
     runtime.handle?.emit({ type: "status", status: "running", summary: "Still working" });
     await settle();
-    expect(supervisor.get(pickle.id)?.status).toBe("running");
-    expect(supervisor.get(pickle.id)?.lastSummary).toBe("Still working");
-
     runtime.handle!.isStreaming = true;
-    runtime.handle!.onFollowUp = (handle) => {
-      handle.emit({ type: "status", status: "completed", summary: "/compact is unavailable while the agent is running", noTurnRan: true, preserveSessionState: true });
-    };
 
-    await supervisor.followUp(pickle.id, "/compact");
+    await supervisor.steer(pickle.id, "/compact focus on current changes", context("screen context must not wrap the command"));
     await settle();
 
-    expect(supervisor.get(pickle.id)?.status).toBe("running");
-    expect(supervisor.get(pickle.id)?.lastSummary).toBe("Still working");
+    expect(runtime.handle!.aborts).toBe(1);
+    expect(runtime.handle!.compactCalls).toEqual(["focus on current changes"]);
+    expect(runtime.handle!.steerPrompts).toEqual([]);
+    expect(runtime.handle!.followUps).toEqual([]);
+    expect(commandReceipts(supervisor.get(pickle.id))).toEqual([]);
+    expect(userTexts(supervisor.get(pickle.id))).not.toContain("/compact focus on current changes");
+    expect(supervisor.get(pickle.id)?.status).toBe("completed");
+    expect((supervisor.get(pickle.id)?.messages ?? []).some((message) => message.kind === "system" && message.text === "Session compacted")).toBe(true);
   });
 
   it("shows /reload loading state and settles without an agent turn", async () => {
@@ -6675,6 +6675,7 @@ class ManualHandle implements RuntimeSessionHandle {
   onFollowUp?: (handle: ManualHandle, prompt: BuiltPrompt) => void;
   onSteer?: (handle: ManualHandle, prompt: BuiltPrompt) => void;
   onUserBash?: (handle: ManualHandle, command: string, options?: { excludeFromContext?: boolean; onOutputChunk?: (chunk: string) => void }) => void | Promise<void>;
+  compactCalls: Array<string | undefined> = [];
   constructor(readonly id: string) {}
   async followUp(prompt: BuiltPrompt): Promise<void> {
     this.followUps.push(prompt);
@@ -6707,6 +6708,17 @@ class ManualHandle implements RuntimeSessionHandle {
   }
   async abort(): Promise<void> {
     this.aborts += 1;
+  }
+  async compact(customInstructions?: string): Promise<void> {
+    this.compactCalls.push(customInstructions);
+    if (this.isStreaming) {
+      this.aborts += 1;
+      this.isStreaming = false;
+    }
+    this.isCompacting = true;
+    this.emit({ type: "status", status: "running", summary: "Compacting session…", compactionStarted: true, compactionReason: "manual" });
+    this.isCompacting = false;
+    this.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, compactionReason: "manual" });
   }
   async executeUserBash(command: string, options?: { excludeFromContext?: boolean; onOutputChunk?: (chunk: string) => void }): Promise<{ output: string; exitCode: number; cancelled: boolean; truncated: boolean }> {
     this.userBashExecutions.push({ command, excludeFromContext: options?.excludeFromContext });

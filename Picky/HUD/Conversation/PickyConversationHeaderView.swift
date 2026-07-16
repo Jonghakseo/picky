@@ -81,39 +81,62 @@ struct PickyConversationHeaderView: View {
     var body: some View {
         let _ = PickyPerf.event("conversation_header_body")
         ViewThatFits(in: .horizontal) {
-            headerLayout(showsMeta: true)
-            headerLayout(showsMeta: false)
+            singleRowHeaderLayout
+            stackedHeaderLayout
         }
         .frame(width: PickyHUDDockLayout.detailContentWidth(for: pickyHUDDetailWidth), alignment: .leading)
         .frame(minHeight: 26, alignment: .leading)
     }
 
-    /// The wide tier keeps all session metadata in the header. When it no
-    /// longer fits, the narrow tier preserves the status, title, and menu and
-    /// moves the same metadata strings into the menu's leading info section.
-    /// There is deliberately no abbreviated middle tier: model and thinking
-    /// values either remain complete or move out of the header together.
-    private func headerLayout(showsMeta: Bool) -> some View {
-        HStack(alignment: .center, spacing: 8) {
+    /// Metadata is never hidden or abbreviated. The compact tier moves the
+    /// same interactive context/model/thinking controls onto a wrapping second
+    /// row so model and thinking cycling remain available at every card width.
+    private var singleRowHeaderLayout: some View {
+        HStack(alignment: .center, spacing: DS.Spacing.sm) {
+            headerLeadingContent(prefersMiddleTruncation: false)
+            Spacer(minLength: DS.Spacing.sm)
+            if headerMetaPresentation.hasContent {
+                sessionMetaControls(layout: .inline)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            conversationMenuButton
+        }
+    }
+
+    private var stackedHeaderLayout: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.xs) {
+            HStack(alignment: .center, spacing: DS.Spacing.sm) {
+                headerLeadingContent(prefersMiddleTruncation: true)
+                Spacer(minLength: DS.Spacing.sm)
+                conversationMenuButton
+            }
+
+            if headerMetaPresentation.hasContent {
+                sessionMetaControls(layout: .wrapping)
+                    .padding(.leading, 26 + DS.Spacing.sm)
+                    .padding(.trailing, 18 + DS.Spacing.sm)
+            }
+        }
+    }
+
+    private func headerLeadingContent(prefersMiddleTruncation: Bool) -> some View {
+        Group {
             piBadgeSlot
-            titleContent(prefersMiddleTruncation: !showsMeta)
+            titleContent(prefersMiddleTruncation: prefersMiddleTruncation)
                 .frame(minWidth: 96, maxWidth: .infinity, alignment: .leading)
                 .layoutPriority(1)
             statusLabel
                 .fixedSize(horizontal: true, vertical: false)
-
-            Spacer(minLength: 8)
-
-            if showsMeta, headerMetaPresentation.hasContent {
-                PickyHeaderSessionMetaPill(
-                    presentation: headerMetaPresentation,
-                    onCycleModel: { cycleModel() },
-                    onCycleThinkingLevel: { cycleThinkingLevel() }
-                )
-                .fixedSize(horizontal: true, vertical: false)
-            }
-            conversationMenuButton
         }
+    }
+
+    private func sessionMetaControls(layout: PickyHeaderSessionMetaPill.LayoutMode) -> some View {
+        PickyHeaderSessionMetaPill(
+            presentation: headerMetaPresentation,
+            layout: layout,
+            onCycleModel: { cycleModel() },
+            onCycleThinkingLevel: { cycleThinkingLevel() }
+        )
     }
 
     @ViewBuilder
@@ -244,7 +267,6 @@ struct PickyConversationHeaderView: View {
             PickyConversationMenu(
                 session: session,
                 viewModel: viewModel,
-                headerMetaItems: headerMetaPresentation.menuItems,
                 onArchive: { onArchiveSession(session.id) },
                 onRewind: onRewind
             )
@@ -713,75 +735,105 @@ struct PickyConversationHeaderMetaPresentation {
         contextDisplay != nil || modelText != nil || thinkingLevelText != nil
     }
 
-    var menuItems: [String] {
-        var items: [String] = []
-        if let contextDisplay {
-            items.append(L10n.t("hud.conversation.meta.context", contextDisplay.label))
-        }
-        if let modelText {
-            items.append(L10n.t("hud.conversation.meta.model", modelText))
-        }
-        if let thinkingLevelText {
-            items.append(L10n.t("hud.conversation.meta.thinking", thinkingLevelText))
-        }
-        return items
-    }
-
     var helpText: String {
         var parts: [String] = []
         if let contextDisplay {
             parts.append(contextDisplay.tooltip)
         }
-        parts.append(contentsOf: menuItems.dropFirst(contextDisplay == nil ? 0 : 1))
+        if let modelText {
+            parts.append(L10n.t("hud.conversation.meta.model", modelText))
+        }
+        if let thinkingLevelText {
+            parts.append(L10n.t("hud.conversation.meta.thinking", thinkingLevelText))
+        }
         return parts.joined(separator: " · ")
     }
 }
 
 private struct PickyHeaderSessionMetaPill: View {
+    enum LayoutMode {
+        case inline
+        case wrapping
+    }
+
     let presentation: PickyConversationHeaderMetaPresentation
+    let layout: LayoutMode
     let onCycleModel: () -> Void
     let onCycleThinkingLevel: () -> Void
 
     var body: some View {
-        HStack(spacing: 4) {
-            if let contextDisplay = presentation.contextDisplay {
-                PickyHeaderContextUsageBar(display: contextDisplay)
-                    .frame(width: 24, height: 5)
-                Text(contextDisplay.label)
-                    .fontWeight(.bold)
-                if presentation.modelText != nil || presentation.thinkingLevelText != nil {
-                    separator
+        Group {
+            switch layout {
+            case .inline:
+                HStack(spacing: DS.Spacing.xs) {
+                    if let contextDisplay = presentation.contextDisplay {
+                        contextControl(contextDisplay)
+                        if presentation.modelText != nil || presentation.thinkingLevelText != nil {
+                            separator
+                        }
+                    }
+                    if let modelText = presentation.modelText {
+                        modelControl(modelText)
+                    }
+                    if presentation.modelText != nil, presentation.thinkingLevelText != nil {
+                        separator
+                    }
+                    if let thinkingLevelText = presentation.thinkingLevelText {
+                        thinkingControl(thinkingLevelText)
+                    }
                 }
-            }
-            if let modelText = presentation.modelText {
-                Button(action: onCycleModel) {
-                    Text(modelText)
-                        .foregroundColor(textColor.opacity(0.92))
-                        .lineLimit(1)
+            case .wrapping:
+                PickyFlowLayout(itemSpacing: DS.Spacing.sm, rowSpacing: DS.Spacing.xs) {
+                    if let contextDisplay = presentation.contextDisplay {
+                        contextControl(contextDisplay)
+                    }
+                    if let modelText = presentation.modelText {
+                        modelControl(modelText)
+                    }
+                    if let thinkingLevelText = presentation.thinkingLevelText {
+                        thinkingControl(thinkingLevelText)
+                    }
                 }
-                .buttonStyle(.plain)
-                .pointerCursor()
-                .help("Cycle scoped model (⌃P)")
-            }
-            if presentation.modelText != nil, presentation.thinkingLevelText != nil {
-                separator
-            }
-            if let thinkingLevelText = presentation.thinkingLevelText {
-                Button(action: onCycleThinkingLevel) {
-                    Text(thinkingLevelText)
-                        .foregroundColor(textColor.opacity(0.92))
-                        .lineLimit(1)
-                        .layoutPriority(1)
-                }
-                .buttonStyle(.plain)
-                .pointerCursor()
-                .help("Cycle thinking level (⇧Tab)")
             }
         }
         .font(PickyHUDTypography.metaMonospacedMedium)
         .foregroundColor(textColor.opacity(0.88))
         .lineLimit(1)
         .help(presentation.helpText)
+    }
+
+    private func contextControl(_ display: PickyHeaderContextUsageDisplay) -> some View {
+        HStack(spacing: DS.Spacing.xs) {
+            PickyHeaderContextUsageBar(display: display)
+                .frame(width: 24, height: 5)
+            Text(display.label)
+                .fontWeight(.bold)
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private func modelControl(_ modelText: String) -> some View {
+        Button(action: onCycleModel) {
+            Text(modelText)
+                .foregroundColor(textColor.opacity(0.92))
+                .lineLimit(1)
+        }
+        .buttonStyle(.plain)
+        .fixedSize(horizontal: true, vertical: false)
+        .pointerCursor()
+        .help("Cycle scoped model (⌃P)")
+    }
+
+    private func thinkingControl(_ thinkingLevelText: String) -> some View {
+        Button(action: onCycleThinkingLevel) {
+            Text(thinkingLevelText)
+                .foregroundColor(textColor.opacity(0.92))
+                .lineLimit(1)
+        }
+        .buttonStyle(.plain)
+        .fixedSize(horizontal: true, vertical: false)
+        .pointerCursor()
+        .help("Cycle thinking level (⇧Tab)")
     }
 
     private var separator: some View {

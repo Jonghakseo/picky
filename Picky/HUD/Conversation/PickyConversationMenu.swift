@@ -10,10 +10,6 @@ import SwiftUI
 struct PickyConversationMenu: View {
     let session: PickySessionListViewModel.SessionCard
     @ObservedObject var viewModel: PickySessionListViewModel
-    /// Read-only metadata moved here by the narrow conversation-header tier.
-    /// Values are built once in `PickyConversationHeaderMetaPresentation` so
-    /// this section always matches the wide header's context/model/thinking UI.
-    var headerMetaItems: [String] = []
     var onArchive: (() -> Void)?
     var onRewind: (() -> Void)?
 
@@ -35,15 +31,6 @@ struct PickyConversationMenu: View {
     var canCompact: Bool { session.canRequestDockCompaction }
 
     var body: some View {
-        if !headerMetaItems.isEmpty {
-            Section(L10n.t("hud.menu.sessionInfo")) {
-                ForEach(headerMetaItems, id: \.self) { item in
-                    Text(item)
-                        .disabled(true)
-                }
-            }
-        }
-
         Section("QUICK") {
             Button("hud.menu.openTerminal") {
                 viewModel.openTerminalOverlay(sessionID: session.id)

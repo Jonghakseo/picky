@@ -688,7 +688,7 @@ struct PickyConversationCardViewTests {
         }
     }
 
-    @Test func headerMetaPresentationKeepsFullModelAndMenuItemsInSync() {
+    @Test func headerMetaPresentationKeepsFullInteractiveMetadataVisible() {
         let presentation = PickyConversationHeaderMetaPresentation(
             assistantRun: PickyAssistantRunMetadata(
                 model: "anthropic/claude-opus-4-7",
@@ -697,13 +697,12 @@ struct PickyConversationCardViewTests {
             contextUsage: PickyContextUsage(tokens: 420, contextWindow: 1_000, percent: 42)
         )
 
+        #expect(presentation.hasContent)
+        #expect(presentation.contextDisplay?.label == "42%")
         #expect(presentation.modelText == "anthropic/claude-opus-4-7")
         #expect(presentation.thinkingLevelText == "xhigh")
-        #expect(presentation.menuItems == [
-            L10n.t("hud.conversation.meta.context", "42%"),
-            L10n.t("hud.conversation.meta.model", "anthropic/claude-opus-4-7"),
-            L10n.t("hud.conversation.meta.thinking", "xhigh")
-        ])
+        #expect(presentation.helpText.contains("anthropic/claude-opus-4-7"))
+        #expect(presentation.helpText.contains("xhigh"))
     }
 
     @Test func headerRenameCommandBuilderTrimsAndDedupsAndRejectsEmpty() {

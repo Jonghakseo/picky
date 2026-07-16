@@ -471,6 +471,7 @@ struct PickyHUDView: View {
                 pendingDoneFlashSessionIDs: viewModel.pendingDoneFlashSessionIDs,
                 unreadSessionIDs: viewModel.unreadSessionIDs,
                 metrics: dockMetrics,
+                availableRailLength: placement.availableDockRailLength,
                 onHoverSession: previewDockSession,
                 onOpenSession: toggleOpenSession,
                 onToggleScreenContextTarget: toggleScreenContextTarget,
@@ -499,26 +500,6 @@ struct PickyHUDView: View {
                 onDockHandleDragChanged: onDockHandleDragChanged,
                 onDockHandleDragEnded: onDockHandleDragEnded,
                 onDockHandleDoubleClick: onDockHandleDoubleClick
-            )
-            .frame(
-                width: placement.dockSide.orientation == .horizontal
-                    ? PickyHUDDockLayout.horizontalDockRailLength(
-                        sessionCount: visibleSessions.count,
-                        isAddSlotExpanded: isDockAddSlotExpanded,
-                        metrics: dockMetrics
-                    )
-                    : dockMetrics.railWidth,
-                height: placement.dockSide.orientation == .horizontal
-                    ? PickyHUDDockLayout.horizontalDockRailCrossSize(
-                        hasGroupHeaders: dockProjection.items.contains { item in
-                            switch item {
-                            case .groupHeader, .collapsedGroup: return true
-                            default: return false
-                            }
-                        },
-                        metrics: dockMetrics
-                    )
-                    : nil
             )
             // In horizontal mode the mini hover preview is centered on each dock
             // icon (`miniPreviewOffset` x = 0), so previewing an edge icon makes

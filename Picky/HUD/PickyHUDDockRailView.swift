@@ -121,6 +121,8 @@ struct PickyHUDDockRailView: View {
     let pendingDoneFlashSessionIDs: Set<String>
     let unreadSessionIDs: Set<String>
     let metrics: PickyHUDDockMetrics
+    /// Screen-aware primary-axis budget from the per-display placement.
+    let availableRailLength: CGFloat
     let onHoverSession: (String) -> Void
     let onOpenSession: (String) -> Void
     let onToggleScreenContextTarget: (String) -> Void
@@ -244,6 +246,7 @@ struct PickyHUDDockRailView: View {
 
     var body: some View {
         let _ = PickyPerf.event("dock_rail_body")
+        let resolvedRailLength = overflowLayout.railLength
         Group {
             if dockSide.orientation == .horizontal {
                 HStack(spacing: 2) {
@@ -258,7 +261,7 @@ struct PickyHUDDockRailView: View {
                 // padding.
                 .padding(.horizontal, metrics.topPadding)
                 .padding(.vertical, metrics.horizontalPadding)
-                .frame(width: railHeight, height: horizontalRailCrossSize, alignment: .center)
+                .frame(width: resolvedRailLength, height: horizontalRailCrossSize, alignment: .center)
             } else {
                 // The handle is the first child INSIDE the dock capsule (after a small top
                 // padding) so the dock body itself acts as the hit target. The capsule
@@ -272,7 +275,7 @@ struct PickyHUDDockRailView: View {
                 .padding(.horizontal, metrics.horizontalPadding)
                 .padding(.top, metrics.topPadding)
                 .padding(.bottom, metrics.bottomPadding)
-                .frame(width: metrics.railWidth, height: railHeight, alignment: .top)
+                .frame(width: metrics.railWidth, height: resolvedRailLength, alignment: .top)
             }
         }
         .background(dockGlassBackground)
@@ -394,6 +397,31 @@ struct PickyHUDDockRailView: View {
         )
     }
 
+    /// The handle, add slot, their padding, and intervening gaps remain outside
+    /// the sessions scroll viewport so they stay reachable at every list size.
+    private var fixedChromeLength: CGFloat {
+        if dockSide.orientation == .horizontal {
+            return (metrics.topPadding * 2)
+                + metrics.handleAreaHeight
+                + 4 // handle/body and body/add-slot HStack gaps
+                + PickyHUDDockLayout.addSlotFrameHeight(isExpanded: isAddSlotExpanded, metrics: metrics)
+        }
+        return metrics.topPadding
+            + metrics.handleAreaHeight
+            + 2
+            + metrics.addSlotTopPadding
+            + PickyHUDDockLayout.addSlotFrameHeight(isExpanded: isAddSlotExpanded, metrics: metrics)
+            + metrics.bottomPadding
+    }
+
+    private var overflowLayout: PickyHUDDockOverflowLayout {
+        PickyHUDDockOverflowPolicy.layout(
+            contentLength: railHeight,
+            availableLength: availableRailLength,
+            fixedChromeLength: fixedChromeLength
+        )
+    }
+
     @ViewBuilder
     private var sessionsAndAddSlot: some View {
         if projection.items.isEmpty && projection.slots.isEmpty {
@@ -401,30 +429,79 @@ struct PickyHUDDockRailView: View {
             // to anchor visually. Use the full-size add button (not the collapsible
             // one) since there are no sessions to keep it compact for.
             addAgentSlotButton
-        } else {
+        } else if overflowLayout.needsScroll {
             if dockSide.orientation == .horizontal {
-                // Bottom-align so ungrouped Pickle icons (`sessionTileHeight`)
-                // share the same baseline as the drawer of a grouped block
-                // (which sits below its title chip). Without this they
-                // floated to the rail's vertical center and looked offset
-                // from the grouped Pickles whenever any dock group existed.
-                // The collapsible `+` slot is *not* a Pickle and stays
-                // vertically centered — flexing its height to fill the
-                // wrapper lets the button center itself inside that frame
-                // while the body row keeps its bottom-aligned baseline.
-                HStack(alignment: .bottom, spacing: 2) {
+                horizontalScrollableSessionsAndAddSlot
+            } else {
+                verticalScrollableSessionsAndAddSlot
+            }
+        } else if dockSide.orientation == .horizontal {
+            horizontalSessionsAndAddSlot
+        } else {
+            verticalSessionsAndAddSlot
+        }
+    }
+
+    private var horizontalSessionsAndAddSlot: some View {
+        // Bottom-align so ungrouped Pickle icons (`sessionTileHeight`) share
+        // the same baseline as a grouped drawer. The collapsible `+` slot is
+        // not a Pickle and stays vertically centered in its wrapper.
+        HStack(alignment: .bottom, spacing: 2) {
+            HStack(alignment: .bottom, spacing: metrics.sessionSpacing) {
+                dockBodyItems
+            }
+            collapsibleAddAgentSlot
+                .frame(maxHeight: .infinity)
+        }
+    }
+
+    @ViewBuilder
+    private var verticalSessionsAndAddSlot: some View {
+        VStack(spacing: metrics.sessionSpacing) {
+            dockBodyItems
+        }
+        collapsibleAddAgentSlot
+            .padding(.top, metrics.addSlotTopPadding)
+    }
+
+    private var horizontalScrollableSessionsAndAddSlot: some View {
+        HStack(alignment: .bottom, spacing: 2) {
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .bottom, spacing: metrics.sessionSpacing) {
                         dockBodyItems
                     }
-                    collapsibleAddAgentSlot
-                        .frame(maxHeight: .infinity)
                 }
-            } else {
+                .frame(width: overflowLayout.sessionsViewportLength)
+                .onAppear { revealActiveSession(using: proxy) }
+                .onChange(of: activeSessionID) { _, _ in revealActiveSession(using: proxy) }
+            }
+            collapsibleAddAgentSlot
+                .frame(maxHeight: .infinity)
+        }
+    }
+
+    @ViewBuilder
+    private var verticalScrollableSessionsAndAddSlot: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: metrics.sessionSpacing) {
                     dockBodyItems
                 }
-                collapsibleAddAgentSlot
-                    .padding(.top, metrics.addSlotTopPadding)
+            }
+            .frame(height: overflowLayout.sessionsViewportLength)
+            .onAppear { revealActiveSession(using: proxy) }
+            .onChange(of: activeSessionID) { _, _ in revealActiveSession(using: proxy) }
+        }
+        collapsibleAddAgentSlot
+            .padding(.top, metrics.addSlotTopPadding)
+    }
+
+    private func revealActiveSession(using proxy: ScrollViewProxy) {
+        guard let activeSessionID else { return }
+        DispatchQueue.main.async {
+            withAnimation(.easeOut(duration: 0.18)) {
+                proxy.scrollTo(activeSessionID, anchor: .center)
             }
         }
     }
@@ -506,6 +583,7 @@ struct PickyHUDDockRailView: View {
                             isCommandShortcutHintVisible: isCommandShortcutHintVisible,
                             onTap: { onToggleDockGroupCollapsed(group.id) }
                         )
+                        .id(topID)
                         .publishDockSlotCenter(sessionID: topID, dockSide: dockSide)
                     } else {
                         // Group has no visible members — render a small
@@ -571,6 +649,7 @@ struct PickyHUDDockRailView: View {
             // the group-container boundary — which is what caused the flicker.
             Color.clear
                 .frame(width: metrics.sessionTileWidth, height: metrics.sessionTileHeight)
+                .id(session.id)
                 .publishDockSlotCenter(sessionID: session.id, dockSide: dockSide)
         } else {
             PickyHUDDockIconView(
@@ -599,6 +678,7 @@ struct PickyHUDDockRailView: View {
                     reorderController.begin(sessionID: session.id, anchorScreenPoint: anchorScreenPoint)
                 }
             )
+            .id(session.id)
             .publishDockSlotCenter(sessionID: session.id, dockSide: dockSide)
             .transaction { transaction in
                 // While a drag is in progress, animate sibling slot moves so

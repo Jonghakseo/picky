@@ -33,6 +33,10 @@ final class PickyHUDPlacement: ObservableObject {
     /// session count, and card width. The overlay manager keeps this in sync so
     /// SwiftUI lays out to the same width AppKit applies to the NSPanel.
     @Published var panelWidth: CGFloat
+    /// Primary-axis length the dock rail may use on this display after screen
+    /// margins, HUD shadow bleed, and the current dock anchor are accounted
+    /// for. Vertical rails consume this as height; horizontal rails as width.
+    @Published var availableDockRailLength: CGFloat
     /// Per-display dock group collapse/expand overrides keyed by group ID.
     /// A missing entry means the group uses the layout's stored default, so
     /// each monitor's dock manages its collapsed groups independently. The
@@ -54,6 +58,7 @@ final class PickyHUDPlacement: ObservableObject {
         dockSizePreset: PickyHUDDockSizePreset = .medium,
         cardSize: PickyHUDCardSize? = nil,
         panelWidth: CGFloat = PickyHUDDockLayout.panelWidth,
+        availableDockRailLength: CGFloat = PickyHUDPlacement.defaultAvailableCardMaxHeight,
         collapsedGroupOverrides: [String: Bool] = [:]
     ) {
         self.availableCardMaxHeight = availableCardMaxHeight
@@ -61,6 +66,7 @@ final class PickyHUDPlacement: ObservableObject {
         self.dockSizePreset = dockSizePreset
         self.cardSize = cardSize
         self.panelWidth = panelWidth
+        self.availableDockRailLength = availableDockRailLength
         self.collapsedGroupOverrides = collapsedGroupOverrides
     }
 }

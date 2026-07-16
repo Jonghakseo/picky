@@ -173,13 +173,22 @@ final class PickyHUDOverlayManager {
 
     private func panelWidth(for displayID: CGDirectDisplayID, dockSide: PickyHUDDockSide? = nil) -> CGFloat {
         let side = dockSide ?? position(for: displayID).side
-        return PickyHUDDockLayout.panelWidth(
+        let intrinsicWidth = PickyHUDDockLayout.panelWidth(
             cardWidth: cardWidth(for: displayID),
             dockSide: side,
             sessionCount: projectedDockSessionCount(for: displayID),
             isAddSlotExpanded: false,
             metrics: PickyHUDDockMetrics(preset: currentDockSizePreset)
         )
+        guard side.orientation == .horizontal,
+              let screen = screen(for: displayID) else {
+            return intrinsicWidth
+        }
+        // A horizontal rail now scrolls its sessions rather than widening the
+        // transparent panel offscreen. Keep the entire panel inside the same
+        // visible-frame margins used by the other horizontal placement math.
+        let screenWidth = max(0, screen.visibleFrame.width - (PickyHUDDockLayout.screenMargin * 2))
+        return min(intrinsicWidth, screenWidth)
     }
 
     /// Number of session tiles currently projected for this display's dock
@@ -191,6 +200,29 @@ final class PickyHUDOverlayManager {
             visibleSessionIDs: Array(viewModel.sessions.reversed().map(\.id)),
             collapsedOverrides: dockGroupCollapse(for: displayID)
         ).slots.count
+    }
+
+    private func horizontalDockRailLength(
+        for screen: NSScreen,
+        displayID: CGDirectDisplayID,
+        dockSide: PickyHUDDockSide,
+        isAddSlotExpanded: Bool = false
+    ) -> CGFloat {
+        let metrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
+        let contentLength = PickyHUDDockLayout.horizontalDockRailLength(
+            sessionCount: projectedDockSessionCount(for: displayID),
+            isAddSlotExpanded: isAddSlotExpanded,
+            metrics: metrics
+        )
+        return PickyHUDDockOverflowPolicy.layout(
+            contentLength: contentLength,
+            availableLength: computeAvailableDockRailLength(
+                for: screen,
+                dockSide: dockSide,
+                anchorPercent: position(for: displayID).anchorPercent
+            ),
+            fixedChromeLength: 0
+        ).railLength
     }
 
     func start() {
@@ -305,11 +337,17 @@ final class PickyHUDOverlayManager {
         let panelIdentifier = NSUserInterfaceItemIdentifier("picky-hud-\(displayID)")
         hudPanel.identifier = panelIdentifier
 
+        let initialPosition = position(for: displayID)
         let placement = PickyHUDPlacement(
-            dockSide: position(for: displayID).side,
+            dockSide: initialPosition.side,
             dockSizePreset: currentDockSizePreset,
             cardSize: cardSize(for: displayID),
             panelWidth: initialPanelWidth,
+            availableDockRailLength: initialAvailableDockRailLength(
+                displayID: displayID,
+                dockSide: initialPosition.side,
+                anchorPercent: initialPosition.anchorPercent
+            ),
             collapsedGroupOverrides: dockGroupCollapse(for: displayID)
         )
         let hudRoot = PickyHUDView(
@@ -397,6 +435,14 @@ final class PickyHUDOverlayManager {
             PickyPerf.event("placement_publish_dock_side")
             entry.placement.dockSide = pos.side
         }
+        let nextDockRailLength = computeAvailableDockRailLength(
+            for: screen,
+            dockSide: pos.side,
+            anchorPercent: pos.anchorPercent
+        )
+        if abs(entry.placement.availableDockRailLength - nextDockRailLength) > 0.5 {
+            entry.placement.availableDockRailLength = nextDockRailLength
+        }
         let nextCardSize = cardSize(for: displayID)
         if entry.placement.cardSize != nextCardSize {
             PickyPerf.event("placement_publish_card_size")
@@ -407,6 +453,51 @@ final class PickyHUDOverlayManager {
             PickyPerf.event("placement_publish_panel_width")
             entry.placement.panelWidth = nextPanelWidth
         }
+    }
+
+    /// Largest primary-axis length the dock rail may occupy without extending
+    /// beyond the display's visible frame. The rail itself reserves persistent
+    /// chrome and scrolls sessions/groups when its content exceeds this budget.
+    private func computeAvailableDockRailLength(
+        for screen: NSScreen,
+        dockSide: PickyHUDDockSide,
+        anchorPercent: Double
+    ) -> CGFloat {
+        let visibleFrame = screen.visibleFrame
+        guard visibleFrame.width > 0, visibleFrame.height > 0 else {
+            return PickyHUDPlacement.defaultAvailableCardMaxHeight
+        }
+        switch dockSide.orientation {
+        case .vertical:
+            let dockAnchoredCap = PickyHUDDockLayout.dockTopAnchoredPointAlignedMaxPanelHeight(
+                visibleFrame: visibleFrame,
+                topPaddingFromContentTop: PickyHUDExpansion.dockBodyTopOffsetFromContentTop,
+                anchorPercent: anchorPercent
+            )
+            let panelCap = min((visibleFrame.height - 160).rounded(.down), dockAnchoredCap)
+            return max(0, panelCap - PickyHUDExpansion.dockShadowVerticalPadding)
+        case .horizontal:
+            let metrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
+            let horizontalChrome = (PickyHUDDockLayout.screenMargin * 2)
+                + (PickyHUDExpansion.dockShadowHorizontalPadding * 2)
+                + (PickyHUDDockLayout.miniPreviewHorizontalReserve(metrics: metrics) * 2)
+            return max(0, visibleFrame.width - horizontalChrome)
+        }
+    }
+
+    private func initialAvailableDockRailLength(
+        displayID: CGDirectDisplayID,
+        dockSide: PickyHUDDockSide,
+        anchorPercent: Double
+    ) -> CGFloat {
+        guard let screen = screen(for: displayID) else {
+            return PickyHUDPlacement.defaultAvailableCardMaxHeight
+        }
+        return computeAvailableDockRailLength(
+            for: screen,
+            dockSide: dockSide,
+            anchorPercent: anchorPercent
+        )
     }
 
     /// Largest height the conversation card may take on the given screen, derived
@@ -461,6 +552,10 @@ final class PickyHUDOverlayManager {
         PickyPerf.event("panel_resize_requested")
         guard var entry = panelsByDisplayID[displayID] else { return }
         guard let screen = screen(for: displayID) else { return }
+        let nextPanelWidth = panelWidth(for: displayID)
+        if abs(entry.placement.panelWidth - nextPanelWidth) > 0.5 {
+            entry.placement.panelWidth = nextPanelWidth
+        }
         let resolvedTargetFrame = PickyPerf.interval("panel_resize_target_frame") {
             self.targetFrame(for: screen, displayID: displayID, contentSize: contentSize)
         }
@@ -534,10 +629,10 @@ final class PickyHUDOverlayManager {
         let originX: CGFloat
         let originY: CGFloat
         if pos.side.orientation == .horizontal {
-            let horizontalDockLength = PickyHUDDockLayout.horizontalDockRailLength(
-                sessionCount: projectedDockSessionCount(for: displayID),
-                isAddSlotExpanded: false,
-                metrics: dockMetrics
+            let horizontalDockLength = horizontalDockRailLength(
+                for: screen,
+                displayID: displayID,
+                dockSide: pos.side
             )
             safeXOffset = PickyHUDDockLayout.clampedHorizontalXOffset(
                 pos.xOffset,
@@ -736,10 +831,10 @@ final class PickyHUDOverlayManager {
         let keepVisible = dockMetrics.railWidth
         let startPanelWidth = panelWidth(for: displayID, dockSide: startPos.side)
         if startPos.side.orientation == .horizontal {
-            let horizontalDockLength = PickyHUDDockLayout.horizontalDockRailLength(
-                sessionCount: projectedDockSessionCount(for: displayID),
-                isAddSlotExpanded: false,
-                metrics: dockMetrics
+            let horizontalDockLength = horizontalDockRailLength(
+                for: screen,
+                displayID: displayID,
+                dockSide: startPos.side
             )
             // -- X axis: along-axis position from screen center --
             pos.xOffset = PickyHUDDockLayout.clampedHorizontalXOffset(

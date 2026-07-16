@@ -127,6 +127,14 @@ struct PickyConversationCardViewTests {
         #expect(snapshot.contextUsageFooterCount == 0)
     }
 
+    @Test func contextLineOnlyOccupiesCardSpaceWhenSessionHasContext() {
+        var sessionWithoutContext = makeConversationSession(status: .completed)
+        sessionWithoutContext.cwd = nil
+
+        #expect(!PickyConversationContextLineView.hasContent(for: sessionWithoutContext))
+        #expect(PickyConversationContextLineView.hasContent(for: makeConversationSession(status: .completed)))
+    }
+
     @Test func agentResponsePreviewTruncatesAfterEightLinesOrFiveHundredCharacters() {
         let exactCharacters = String(repeating: "가", count: 500)
         let longCharacters = exactCharacters + "나다라"

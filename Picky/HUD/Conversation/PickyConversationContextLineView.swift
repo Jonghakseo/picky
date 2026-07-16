@@ -129,6 +129,14 @@ struct PickyConversationContextLineView: View {
         }
     }
 
+    /// The card uses this before constructing the context row so sessions with no
+    /// folder or link metadata do not retain an empty layout slot. Git and pull
+    /// request state require a working directory, which already supplies the
+    /// primary context line.
+    static func hasContent(for session: PickySessionListViewModel.SessionCard) -> Bool {
+        session.compactCwdDescription != nil || !session.linkBadgeArtifacts.isEmpty
+    }
+
     private var hasLinkContext: Bool {
         !session.linkBadgeArtifacts.isEmpty || pullRequestStatus != nil
     }

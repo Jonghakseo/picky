@@ -83,15 +83,25 @@ struct PickyConversationCardView: View {
 
     private func chatContent(fillsAvailableHeight: Bool) -> some View {
         let todoPresentation = PickyTodoProgressPresentation(state: session.todoState)
-        return VStack(alignment: .leading, spacing: 10) {
-            PickyConversationHeaderView(
-                viewModel: viewModel,
-                session: session,
-                onArchiveSession: onArchiveSession,
-                isCommandShortcutHintVisible: isCommandShortcutHintVisible,
-                onRewind: { showingRewindPicker = true }
-            )
-            PickyConversationContextLineView(viewModel: viewModel, session: session)
+        return VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: DS.Spacing.xs) {
+                PickyConversationHeaderView(
+                    viewModel: viewModel,
+                    session: session,
+                    onArchiveSession: onArchiveSession,
+                    isCommandShortcutHintVisible: isCommandShortcutHintVisible,
+                    onRewind: { showingRewindPicker = true }
+                )
+                if PickyConversationContextLineView.hasContent(for: session) {
+                    PickyConversationContextLineView(viewModel: viewModel, session: session)
+                }
+            }
+            // The 4pt header/context gap forms one chrome group. A 12pt break
+            // separates that group from the transcript, while 8pt keeps the
+            // composer visually connected. The list retains its own 2pt content
+            // inset; it is transcript-internal spacing rather than card chrome.
+            .padding(.bottom, DS.Spacing.md)
+
             PickyConversationListView(
                 session: session,
                 viewModel: viewModel,
@@ -106,6 +116,8 @@ struct PickyConversationCardView: View {
                         .padding(.bottom, 3)
                 }
             }
+            .padding(.bottom, DS.Spacing.sm)
+
             PickyConversationComposerView(
                 session: session,
                 viewModel: viewModel,

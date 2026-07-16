@@ -155,10 +155,9 @@ struct PickyConversationContextLineView: View {
 
     private var linkContextLine: some View {
         HStack(spacing: 6) {
-            Image(systemName: session.linkBadgeArtifacts.isEmpty ? "tray.full" : "link")
-                .pickyFont(size: 10.5, weight: .medium)
-                .foregroundColor(DS.Colors.textTertiary.opacity(0.85))
-                .accessibilityLabel(L10n.t("hud.artifactTray.accessibilityLabel", Int64(session.artifacts.count)))
+            if !session.artifacts.isEmpty {
+                PickyArtifactTrayButton(artifacts: session.artifacts)
+            }
             linkBadges
                 .layoutPriority(2)
         }
@@ -222,9 +221,6 @@ struct PickyConversationContextLineView: View {
                 } else {
                     linkBadge(artifact)
                 }
-            }
-            if !session.artifacts.isEmpty {
-                PickyArtifactTrayButton(artifacts: session.artifacts)
             }
         }
     }

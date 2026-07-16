@@ -43,7 +43,7 @@ struct PickyTodoProgressOverlayView: View {
 
     let presentation: PickyTodoProgressPresentation
     let onHide: () -> Void
-    @State private var isExpanded = false
+    @Binding var isExpanded: Bool
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 8) {
@@ -133,28 +133,6 @@ struct PickyTodoProgressOverlayView: View {
                 Text(presentation.countText)
                     .font(PickyHUDTypography.statusMonospacedMedium)
                     .foregroundColor(DS.Colors.textSecondary)
-
-                Button { isExpanded = false } label: {
-                    Image(systemName: "chevron.down")
-                        .pickyFont(size: 9, weight: .semibold)
-                        .foregroundColor(DS.Colors.textTertiary)
-                        .frame(width: 22, height: 22)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(L10n.t("hud.todo.collapse"))
-                .accessibilityLabel(L10n.t("hud.todo.collapse"))
-
-                Button(action: onHide) {
-                    Image(systemName: "minus")
-                        .pickyFont(size: 8.5, weight: .semibold)
-                        .foregroundColor(DS.Colors.textTertiary)
-                        .frame(width: 22, height: 22)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(L10n.t("hud.todo.hide"))
-                .accessibilityLabel(L10n.t("hud.todo.hide"))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)

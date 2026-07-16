@@ -30,6 +30,7 @@ struct PickyConversationCardView: View {
     @State private var isFileDropTargeted = false
     @State private var showingRewindPicker = false
     @State private var hiddenTodoSnapshotID: PickyTodoProgressSnapshotID?
+    @State private var isTodoExpanded = false
 
     var body: some View {
         let _ = PickyPerf.event("conversation_card_body")
@@ -72,6 +73,10 @@ struct PickyConversationCardView: View {
         .onHover(perform: updateVoiceFollowUpHover)
         .sheet(isPresented: $showingRewindPicker) {
             PickyRewindPickerView(session: session, viewModel: viewModel)
+        }
+        .onChange(of: session.id) { _, _ in
+            isTodoExpanded = false
+            hiddenTodoSnapshotID = nil
         }
     }
 
@@ -119,6 +124,7 @@ struct PickyConversationCardView: View {
             // composer visually connected. The list retains its own 2pt content
             // inset; it is transcript-internal spacing rather than card chrome.
             .padding(.bottom, DS.Spacing.md)
+            .simultaneousGesture(TapGesture().onEnded { collapseTodoIfNeeded() })
 
             PickyConversationListView(
                 session: session,
@@ -128,21 +134,35 @@ struct PickyConversationCardView: View {
                 bottomOverlayInset: todoBottomInset
             )
             .overlay(alignment: .bottom) {
-                if let visibleTodoPresentation, let todoSnapshotID {
-                    PickyTodoProgressOverlayView(
-                        presentation: visibleTodoPresentation,
-                        onHide: { hiddenTodoSnapshotID = todoSnapshotID }
-                    )
-                    .padding(.horizontal, 4)
-                    .padding(.bottom, 3)
-                } else if isTodoHidden, let todoPresentation {
-                    PickyTodoProgressRestoreButton(
-                        presentation: todoPresentation,
-                        onRestore: { hiddenTodoSnapshotID = nil }
-                    )
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .padding(.horizontal, 4)
-                    .padding(.bottom, 3)
+                ZStack(alignment: .bottom) {
+                    if isTodoExpanded, visibleTodoPresentation != nil {
+                        Color.clear
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .contentShape(Rectangle())
+                            .onTapGesture(perform: collapseTodoIfNeeded)
+                            .accessibilityHidden(true)
+                    }
+
+                    if let visibleTodoPresentation, let todoSnapshotID {
+                        PickyTodoProgressOverlayView(
+                            presentation: visibleTodoPresentation,
+                            onHide: {
+                                isTodoExpanded = false
+                                hiddenTodoSnapshotID = todoSnapshotID
+                            },
+                            isExpanded: $isTodoExpanded
+                        )
+                        .padding(.horizontal, 4)
+                        .padding(.bottom, 3)
+                    } else if isTodoHidden, let todoPresentation {
+                        PickyTodoProgressRestoreButton(
+                            presentation: todoPresentation,
+                            onRestore: { hiddenTodoSnapshotID = nil }
+                        )
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .padding(.horizontal, 4)
+                        .padding(.bottom, 3)
+                    }
                 }
             }
             .padding(.bottom, DS.Spacing.sm)
@@ -158,7 +178,12 @@ struct PickyConversationCardView: View {
                 onToggleExtendedTerminal: onToggleExtendedTerminal,
                 onRequestRewind: { showingRewindPicker = true }
             )
+            .simultaneousGesture(TapGesture().onEnded { collapseTodoIfNeeded() })
         }
+    }
+
+    private func collapseTodoIfNeeded() {
+        if isTodoExpanded { isTodoExpanded = false }
     }
 
     private func terminalModeHeight(resolvedHeight: CGFloat?, maxHeight: CGFloat) -> CGFloat? {

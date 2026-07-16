@@ -4374,6 +4374,49 @@ struct PickySessionViewModelTests {
         ])
     }
 
+    @Test func reportOutlineIncludesOnlyFirstThreeHeadingLevelsWithStableBlockIDs() throws {
+        let blocks = PickyReportBlockPresentation.blocks(from: """
+        # Overview
+        Intro
+        ## Findings
+        ### Accessibility
+        #### Detail excluded from outline
+        """)
+
+        let outline = PickyReportOutlineEntry.entries(from: blocks)
+
+        #expect(outline.map(\.title) == ["Overview", "Findings", "Accessibility"])
+        #expect(outline.map(\.level) == [1, 2, 3])
+        #expect(outline.map(\.id) == [blocks[0].id, blocks[2].id, blocks[3].id])
+        #expect(blocks[0].id == PickyReportBlockPresentation.blocks(from: "# Overview").first?.id)
+    }
+
+    @Test func reportSearchStateFindsPlainTextAndWrapsBetweenMatchingBlocks() throws {
+        let blocks = PickyReportBlockPresentation.blocks(from: """
+        # Risk register
+        The first risk is contrast.
+        ## Follow-up
+        Another RISK needs a visual check.
+        """)
+        var state = PickyReportSearchState()
+
+        state.update(query: "risk", in: blocks)
+        #expect(state.matches == [blocks[0].id, blocks[1].id, blocks[3].id])
+        #expect(state.currentMatchID == blocks[0].id)
+
+        state.selectNext()
+        #expect(state.currentMatchID == blocks[1].id)
+        state.selectNext()
+        state.selectNext()
+        #expect(state.currentMatchID == blocks[0].id)
+        state.selectPrevious()
+        #expect(state.currentMatchID == blocks[3].id)
+
+        state.update(query: "", in: blocks)
+        #expect(state.matches.isEmpty)
+        #expect(state.currentMatchID == nil)
+    }
+
     @MainActor @Test func openReportByMessageIDOpensThatSpecificMessageNotJustTheLatest() async throws {
         // The HUD bubble's hover icon needs to be able to expand any message in
         // the conversation, not just the most recent agent reply. Verify that

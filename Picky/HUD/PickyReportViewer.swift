@@ -230,12 +230,130 @@ struct PickyReportMarkdownRenderer {
     }
 }
 
+/// Stable, presentation-ready identity for a parsed report block. The identity
+/// combines its source index with a deterministic content hash so navigation can
+/// survive a report refresh when the nearby block did not change.
+struct PickyReportBlockPresentation: Identifiable, Equatable {
+    let id: String
+    let block: PickyReportMarkdownRenderer.Block
+    let plainText: String
+
+    static func blocks(from markdown: String, renderer: PickyReportMarkdownRenderer = PickyReportMarkdownRenderer()) -> [Self] {
+        renderer.blocks(from: markdown).enumerated().map { index, block in
+            Self(index: index, block: block, renderer: renderer)
+        }
+    }
+
+    init(index: Int, block: PickyReportMarkdownRenderer.Block, renderer: PickyReportMarkdownRenderer = PickyReportMarkdownRenderer()) {
+        self.id = "report-block-\(index)-\(Self.stableHash(for: Self.sourceText(for: block)))"
+        self.block = block
+        self.plainText = Self.plainText(for: block, renderer: renderer)
+    }
+
+    private static func sourceText(for block: PickyReportMarkdownRenderer.Block) -> String {
+        switch block {
+        case .heading(let level, let text): "heading|\(level)|\(text)"
+        case .paragraph(let text): "paragraph|\(text)"
+        case .bullet(let text): "bullet|\(text)"
+        case .table(let headers, let rows): "table|\(headers.joined(separator: "|"))|\(rows.map { $0.joined(separator: "|") }.joined(separator: "\\n"))"
+        case .codeBlock(let text): "code|\(text)"
+        }
+    }
+
+    private static func plainText(for block: PickyReportMarkdownRenderer.Block, renderer: PickyReportMarkdownRenderer) -> String {
+        func rendered(_ markdown: String) -> String {
+            String(renderer.inlineAttributedString(for: markdown).characters)
+        }
+
+        switch block {
+        case .heading(_, let text), .paragraph(let text), .bullet(let text), .codeBlock(let text):
+            return rendered(text)
+        case .table(let headers, let rows):
+            return ([headers] + rows).flatMap { $0 }.map(rendered).joined(separator: " ")
+        }
+    }
+
+    private static func stableHash(for text: String) -> String {
+        // FNV-1a is deliberately deterministic (unlike Swift's randomized
+        // `Hasher`) and needs no additional framework dependency.
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        for byte in text.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 1_099_511_628_211
+        }
+        return String(hash, radix: 16)
+    }
+}
+
+struct PickyReportOutlineEntry: Identifiable, Equatable {
+    let id: String
+    let level: Int
+    let title: String
+
+    static func entries(from blocks: [PickyReportBlockPresentation]) -> [Self] {
+        blocks.compactMap { block in
+            guard case .heading(let level, let title) = block.block, (1...3).contains(level) else { return nil }
+            return Self(id: block.id, level: level, title: title)
+        }
+    }
+}
+
+struct PickyReportSearchState: Equatable {
+    private(set) var query = ""
+    private(set) var matches: [String] = []
+    private(set) var currentIndex: Int?
+
+    var currentMatchID: String? {
+        guard let currentIndex, matches.indices.contains(currentIndex) else { return nil }
+        return matches[currentIndex]
+    }
+
+    mutating func update(query: String, in blocks: [PickyReportBlockPresentation]) {
+        self.query = query
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        matches = term.isEmpty ? [] : blocks.compactMap { block in
+            block.plainText.localizedCaseInsensitiveContains(term) ? block.id : nil
+        }
+        currentIndex = matches.isEmpty ? nil : 0
+    }
+
+    mutating func selectNext() {
+        guard !matches.isEmpty else { return }
+        currentIndex = ((currentIndex ?? -1) + 1) % matches.count
+    }
+
+    mutating func selectPrevious() {
+        guard !matches.isEmpty else { return }
+        currentIndex = ((currentIndex ?? 0) - 1 + matches.count) % matches.count
+    }
+}
+
+private struct PickyReportBlockPosition: Equatable {
+    let id: String
+    let minY: CGFloat
+    let isHeading: Bool
+}
+
+private struct PickyReportBlockPositionPreferenceKey: PreferenceKey {
+    static var defaultValue: [PickyReportBlockPosition] = []
+
+    static func reduce(value: inout [PickyReportBlockPosition], nextValue: () -> [PickyReportBlockPosition]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
+private enum PickyReportScrollCoordinateSpace {
+    static let name = "PickyReportScrollCoordinateSpace"
+}
+
 struct PickyMarkdownReportView: View {
-    let markdown: String
+    let blocks: [PickyReportBlockPresentation]
     /// Multiplier applied to every font size in this view. 1.0 maps to the report's
     /// readable defaults; ⌘+ / ⌘- on the report panel update the model and re-render
     /// this view at the new scale.
     var fontScale: Double = 1.0
+    var matchingBlockIDs: Set<String> = []
+    var currentMatchID: String?
     /// Global app font scale (⌘+ / ⌘- when no detached panel has focus). Composed
     /// multiplicatively with the per-panel `fontScale` so a user who set the app
     /// to 110% and the panel to 130% sees 143% on the report body. Declared as an
@@ -257,8 +375,8 @@ struct PickyMarkdownReportView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(Array(renderer.blocks(from: markdown).enumerated()), id: \.offset) { _, block in
-                blockView(block)
+            ForEach(blocks) { presentation in
+                reportBlockView(presentation)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -270,6 +388,42 @@ struct PickyMarkdownReportView: View {
             }
         )
         .textSelection(.enabled)
+    }
+
+    private func reportBlockView(_ presentation: PickyReportBlockPresentation) -> some View {
+        blockView(presentation.block)
+            .id(presentation.id)
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: PickyReportBlockPositionPreferenceKey.self,
+                        value: [
+                            PickyReportBlockPosition(
+                                id: presentation.id,
+                                minY: proxy.frame(in: .named(PickyReportScrollCoordinateSpace.name)).minY.rounded(),
+                                isHeading: isHeading(presentation.block)
+                            ),
+                        ]
+                    )
+                }
+            }
+            .background(highlightBackground(for: presentation.id))
+    }
+
+    @ViewBuilder
+    private func highlightBackground(for id: String) -> some View {
+        if id == currentMatchID {
+            RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
+                .fill(DS.Colors.warning.opacity(0.16))
+        } else if matchingBlockIDs.contains(id) {
+            RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
+                .fill(DS.Colors.accentSubtle)
+        }
+    }
+
+    private func isHeading(_ block: PickyReportMarkdownRenderer.Block) -> Bool {
+        if case .heading = block { return true }
+        return false
     }
 
     @ViewBuilder
@@ -645,25 +799,74 @@ struct PickyReportViewerWindowView: View {
     @ObservedObject var model: PickyReportViewerModel
     @State private var didCopyMarkdown = false
     @State private var copyFeedbackTask: Task<Void, Never>?
+    @State private var isOutlinePresented = false
+    @State private var isSearchPresented = false
+    @State private var searchState = PickyReportSearchState()
+    @State private var activeSectionID: String?
+    /// The nearest visible block is retained across a streamed report refresh,
+    /// then restored after SwiftUI has laid out the new block tree.
+    @State private var scrollAnchorID: String?
+    @FocusState private var isSearchFieldFocused: Bool
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            Divider().overlay(DS.Colors.borderSubtle)
-            ScrollView {
-                reportContent
-                    .padding(EdgeInsets(top: 22, leading: 24, bottom: 28, trailing: 24))
-            }
-        }
-        .onChange(of: model.revision) { _, _ in resetCopyFeedback() }
-        .background(PickyAppearancePanelChrome.overlayBackground)
-        .background(zoomKeyboardShortcuts)
+    private var reportBlocks: [PickyReportBlockPresentation] {
+        PickyReportBlockPresentation.blocks(from: model.markdown)
     }
 
-    /// Hidden buttons that bind ⌘+ / ⌘- / ⌘0 to the model's zoom controls.
-    /// Placed in a `.background(...)` of zero size so they exist in the responder chain
-    /// without taking layout space or showing focus rings.
-    private var zoomKeyboardShortcuts: some View {
+    private var outlineEntries: [PickyReportOutlineEntry] {
+        PickyReportOutlineEntry.entries(from: reportBlocks)
+    }
+
+    var body: some View {
+        let blocks = reportBlocks
+        let outline = PickyReportOutlineEntry.entries(from: blocks)
+        ScrollViewReader { proxy in
+            VStack(alignment: .leading, spacing: 0) {
+                header(outline: outline)
+                if isSearchPresented {
+                    searchBar(blocks: blocks)
+                }
+                Divider().overlay(DS.Colors.borderSubtle)
+                HStack(spacing: 0) {
+                    // The detached panel has a 620pt minimum width, so the 192pt
+                    // sidebar always pushes content without entering an overlay
+                    // mode below the approved 520pt readability guard.
+                    if isOutlinePresented, outline.count >= 3 {
+                        outlineSidebar(entries: outline, proxy: proxy)
+                        Divider().overlay(DS.Colors.borderSubtle)
+                    }
+                    ScrollView {
+                        reportContent(blocks: blocks)
+                            .padding(EdgeInsets(top: 22, leading: 24, bottom: 28, trailing: 24))
+                    }
+                    .coordinateSpace(name: PickyReportScrollCoordinateSpace.name)
+                }
+            }
+            .onPreferenceChange(PickyReportBlockPositionPreferenceKey.self) { positions in
+                updateScrollTracking(with: positions)
+            }
+            .onChange(of: model.revision) { _, _ in
+                resetCopyFeedback()
+                searchState.update(query: searchState.query, in: reportBlocks)
+                restoreScrollPosition(using: proxy)
+            }
+            .onChange(of: searchState.currentMatchID) { _, matchID in
+                guard let matchID else { return }
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    proxy.scrollTo(matchID, anchor: .center)
+                }
+            }
+        }
+        .onExitCommand {
+            guard isSearchPresented else { return }
+            closeSearch()
+        }
+        .background(PickyAppearancePanelChrome.overlayBackground)
+        .background(keyboardShortcuts)
+    }
+
+    /// Hidden buttons keep native key-equivalent routing in the panel responder
+    /// chain without reserving toolbar space.
+    private var keyboardShortcuts: some View {
         ZStack {
             Button("Zoom In") { model.zoomIn() }
                 .keyboardShortcut("=", modifiers: .command)
@@ -671,6 +874,14 @@ struct PickyReportViewerWindowView: View {
                 .keyboardShortcut("-", modifiers: .command)
             Button("Reset Zoom") { model.resetZoom() }
                 .keyboardShortcut("0", modifiers: .command)
+            Button(L10n.t("hud.report.search"), action: openSearch)
+                .keyboardShortcut("f", modifiers: .command)
+            if outlineEntries.count >= 3 {
+                Button(L10n.t("hud.report.outline.toggle")) {
+                    isOutlinePresented.toggle()
+                }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
+            }
         }
         .opacity(0)
         .frame(width: 0, height: 0)
@@ -678,15 +889,20 @@ struct PickyReportViewerWindowView: View {
     }
 
     @ViewBuilder
-    private var reportContent: some View {
+    private func reportContent(blocks: [PickyReportBlockPresentation]) -> some View {
         if model.markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             emptyState("No content captured for this report.")
         } else {
-            PickyMarkdownReportView(markdown: model.markdown, fontScale: model.fontScale)
+            PickyMarkdownReportView(
+                blocks: blocks,
+                fontScale: model.fontScale,
+                matchingBlockIDs: Set(searchState.matches),
+                currentMatchID: searchState.currentMatchID
+            )
         }
     }
 
-    private var header: some View {
+    private func header(outline: [PickyReportOutlineEntry]) -> some View {
         HStack(alignment: .center, spacing: 12) {
             Image(systemName: "doc.text.magnifyingglass")
                 .pickyFont(size: 18, weight: .semibold)
@@ -708,6 +924,22 @@ struct PickyReportViewerWindowView: View {
                 .help("Open \(model.fileURL.path) in Finder")
             }
             Spacer()
+            if outline.count >= 3 {
+                Button { isOutlinePresented.toggle() } label: {
+                    Image(systemName: "list.bullet.indent")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help(L10n.t("hud.report.outline.help"))
+                .accessibilityLabel(L10n.t("hud.report.outline.toggle"))
+            }
+            Button(action: openSearch) {
+                Image(systemName: "magnifyingglass")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .help(L10n.t("hud.report.search.help"))
+            .accessibilityLabel(L10n.t("hud.report.search"))
             Button(action: copyMarkdownToPasteboard) {
                 Label(
                     didCopyMarkdown ? "Copied" : "Copy",
@@ -723,6 +955,141 @@ struct PickyReportViewerWindowView: View {
         .padding(.horizontal, 18)
         .padding(.top, 14)
         .padding(.bottom, 12)
+    }
+
+    private func searchBar(blocks: [PickyReportBlockPresentation]) -> some View {
+        HStack(spacing: 8) {
+            TextField(L10n.t("hud.report.search.placeholder"), text: Binding(
+                get: { searchState.query },
+                set: { searchState.update(query: $0, in: blocks) }
+            ))
+            .textFieldStyle(.roundedBorder)
+            .font(PickyHUDTypography.supporting)
+            .focused($isSearchFieldFocused)
+            .accessibilityLabel(L10n.t("hud.report.search.field.accessibilityLabel"))
+            .onKeyPress { press in
+                guard press.key == .return else { return .ignored }
+                if press.modifiers.contains(.shift) {
+                    searchState.selectPrevious()
+                } else {
+                    searchState.selectNext()
+                }
+                return .handled
+            }
+
+            Text(L10n.t(
+                "hud.report.search.matchCount",
+                Int64((searchState.currentIndex ?? -1) + 1),
+                Int64(searchState.matches.count)
+            ))
+            .font(PickyHUDTypography.status)
+            .foregroundStyle(DS.Colors.textSecondary)
+            .monospacedDigit()
+            .frame(minWidth: 42, alignment: .trailing)
+
+            Button { searchState.selectPrevious() } label: {
+                Image(systemName: "chevron.up")
+            }
+            .buttonStyle(.borderless)
+            .disabled(searchState.matches.isEmpty)
+            .help(L10n.t("hud.report.search.previous"))
+            .accessibilityLabel(L10n.t("hud.report.search.previous"))
+
+            Button { searchState.selectNext() } label: {
+                Image(systemName: "chevron.down")
+            }
+            .buttonStyle(.borderless)
+            .disabled(searchState.matches.isEmpty)
+            .help(L10n.t("hud.report.search.next"))
+            .accessibilityLabel(L10n.t("hud.report.search.next"))
+
+            Button(action: closeSearch) {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.borderless)
+            .help(L10n.t("hud.report.search.close"))
+            .accessibilityLabel(L10n.t("hud.report.search.close"))
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 8)
+        .background(DS.Colors.surface1)
+    }
+
+    private func outlineSidebar(entries: [PickyReportOutlineEntry], proxy: ScrollViewProxy) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(entries) { entry in
+                    Button {
+                        activeSectionID = entry.id
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            proxy.scrollTo(entry.id, anchor: .top)
+                        }
+                    } label: {
+                        Text(entry.title)
+                            .font(PickyHUDTypography.supporting)
+                            .foregroundStyle(activeSectionID == entry.id ? DS.Colors.accentText : DS.Colors.textSecondary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.leading, CGFloat(entry.level - 1) * DS.Spacing.xs)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(
+                                RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
+                                    .fill(activeSectionID == entry.id ? DS.Colors.accentSubtle : Color.clear)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(entry.title)
+                }
+            }
+            .padding(8)
+        }
+        .frame(width: 192)
+        .accessibilityLabel(L10n.t("hud.report.outline"))
+    }
+
+    private func updateScrollTracking(with positions: [PickyReportBlockPosition]) {
+        guard !positions.isEmpty else { return }
+        let viewportTop: CGFloat = 0
+        let nearest = positions.min { abs($0.minY - viewportTop) < abs($1.minY - viewportTop) }
+        if scrollAnchorID != nearest?.id {
+            scrollAnchorID = nearest?.id
+        }
+
+        let headings = positions.filter(\.isHeading)
+        let current = headings
+            .filter { $0.minY <= 16 }
+            .max { $0.minY < $1.minY }
+            ?? headings.min { $0.minY < $1.minY }
+        // Preference values update while scrolling, but state changes only when
+        // the active heading actually changes, keeping tracking inexpensive.
+        if activeSectionID != current?.id {
+            activeSectionID = current?.id
+        }
+    }
+
+    private func openSearch() {
+        isSearchPresented = true
+        searchState.update(query: searchState.query, in: reportBlocks)
+        Task { @MainActor in
+            await Task.yield()
+            isSearchFieldFocused = true
+        }
+    }
+
+    private func closeSearch() {
+        isSearchPresented = false
+        isSearchFieldFocused = false
+        searchState.update(query: "", in: reportBlocks)
+    }
+
+    private func restoreScrollPosition(using proxy: ScrollViewProxy) {
+        guard let scrollAnchorID else { return }
+        Task { @MainActor in
+            await Task.yield()
+            proxy.scrollTo(scrollAnchorID, anchor: .top)
+        }
     }
 
     private func openReportFile() {

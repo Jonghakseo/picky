@@ -17,7 +17,7 @@
   - Rest:
   - Hover:
   - Pressed:
-  - Focused:
+  - Focused (custom 시각화가 필요한 경우에만):
   - Disabled:
   - Running/waiting/completed/failed:
 - Token plan:

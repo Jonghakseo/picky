@@ -28,10 +28,10 @@ neutral.dark.1 → surface.panel → conversation.card.background
 | `color.canvas` | 가장 깊은 앱/HUD 배경 | `DS.Colors.background` |
 | `color.surface.panel` | 카드, sidebar, panel | `DS.Colors.surface1` |
 | `color.surface.control` | input, bubble, control fill | `DS.Colors.surface2` |
-| `color.surface.hover` | hover state | `DS.Colors.surface3` |
+| `color.surface.hover` | hover 및 선택적 keyboard-focus state layer | `DS.Colors.surface3` |
 | `color.surface.pressed` | pressed/active state | `DS.Colors.surface4` |
 | `color.separator.subtle` | card outline, divider | `DS.Colors.borderSubtle` |
-| `color.separator.strong` | focus, emphasized boundary | `DS.Colors.borderStrong` |
+| `color.separator.strong` | emphasized boundary | `DS.Colors.borderStrong` |
 | `color.text.primary` | 제목과 본문 | `DS.Colors.textPrimary` |
 | `color.text.secondary` | 설명과 보조 정보 | `DS.Colors.textSecondary` |
 | `color.text.tertiary` | timestamp, disabled-adjacent metadata | `DS.Colors.textTertiary` |
@@ -43,6 +43,8 @@ neutral.dark.1 → surface.panel → conversation.card.background
 | `color.status.success` | 완료 상태 | `DS.Colors.success` |
 | `color.status.warning` | 입력 대기·주의 | `DS.Colors.warningText` |
 | `color.status.danger` | 실패·파괴적 행동 | `DS.Colors.destructiveText` |
+
+Keyboard focus에 전용 시각 token을 강제하지 않는다. 별도 표시가 필요한 컴포넌트는 `color.surface.hover` 계열의 subtle state layer를 우선 재사용하며, border/ring은 배경 전환만으로 상태가 충분히 전달되지 않는 경우에만 사용한다. focus 처리로 component의 frame, padding, radius가 달라져서는 안 된다.
 
 ### Draft palette
 

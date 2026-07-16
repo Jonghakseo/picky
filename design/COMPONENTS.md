@@ -33,7 +33,7 @@
 - 화면이나 context에서 가장 중요한 다음 행동
 - 한 surface에 과도하게 반복하지 않는다.
 - Action Blue fill + on-action text
-- Rest, hover, pressed, focus, disabled 상태 필수
+- Rest, hover, pressed, disabled 상태를 정의한다. 별도 focus 시각화는 컴포넌트 맥락상 필요한 경우에만 선택 적용한다.
 - 장식용 glow와 breathing animation은 사용하지 않는다.
 
 현재 후보: `DSPrimaryButtonStyle`
@@ -50,7 +50,7 @@
 
 - toolbar, menu-adjacent, inline action
 - rest 상태에서는 chrome을 최소화한다.
-- hover와 keyboard focus는 명확히 구분한다.
+- keyboard 조작은 보존한다. 별도 focus 시각화가 필요하면 layout을 바꾸지 않는 subtle background state layer를 우선하고, border/ring은 제한적으로 사용한다.
 
 현재 후보: `DSTertiaryButtonStyle`, `DSTextButtonStyle`
 
@@ -122,7 +122,7 @@
 
 필수 상태:
 
-- Empty / typing / focused / disabled
+- Empty / typing / editing-focused / disabled (입력 focus는 편집 동작 상태이며 추가 장식은 선택 사항)
 - Follow-up / steer
 - Bash visible / Bash private
 - File drop target

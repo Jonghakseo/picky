@@ -67,7 +67,7 @@
 ## Picky usage rules
 
 1. 시스템 control이 Picky의 상태 모델을 충분히 표현하면 시스템 동작을 우선한다.
-2. custom control은 hover만 아니라 keyboard focus, accessibility, appearance 상태까지 정의한다.
+2. custom control은 keyboard 조작, accessibility, appearance 상태를 보존한다. 별도 focus 시각화는 선택 사항이며, 적용 시 layout 비변형과 subtle background state layer를 우선한다.
 3. material은 floating layer를 설명할 때만 사용한다.
 4. semantic color와 system font를 우선하고 raw value는 token 정의에 한정한다.
 5. 웹사이트 레퍼런스와 HIG가 충돌하면 HIG를 따른다.

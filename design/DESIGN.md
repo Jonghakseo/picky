@@ -119,8 +119,8 @@ UI chrome은 이 정보와 행동보다 앞에 나서지 않는다.
 
 1. 사용자 목표와 상태를 정의한다.
 2. 기존 컴포넌트와 semantic token으로 해결 가능한지 확인한다.
-3. light/dark, hover, pressed, focused, disabled, waiting, error 상태를 명시한다.
-4. 키보드, 포인터, VoiceOver, contrast, Reduce Motion 영향을 검토한다.
+3. light/dark, hover, pressed, disabled, waiting, error 상태를 명시한다. custom focus 시각화는 필요한 경우에만 선택적으로 설계한다.
+4. 키보드 조작, 포인터, VoiceOver, contrast, Reduce Motion 영향을 검토한다. focus 효과를 추가하면 layout을 바꾸지 않는 subtle background state layer를 우선한다.
 5. HUD 변경이면 레이아웃 안정성과 성능을 측정한다.
 6. 새로운 토큰이나 variant가 필요하면 이 문서를 먼저 갱신한다.
 

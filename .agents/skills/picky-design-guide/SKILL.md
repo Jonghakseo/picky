@@ -1,6 +1,6 @@
 ---
 name: picky-design-guide
-description: Picky 저장소에서 SwiftUI/AppKit UI를 새로 만들거나 수정하고, HUD·Conversation·Dock·Quick Input·Companion·Settings·overlay의 색상, 타이포그래피, 간격, radius, material, shadow, motion, 상태 표현, 접근성, 디자인 일관성을 검수할 때 사용한다. Picky 디자인 문서를 source of truth로 적용하고 Action Blue와 semantic status, macOS HIG, light/dark, keyboard focus, HUD 성능을 확인한다.
+description: Picky 저장소에서 SwiftUI/AppKit UI를 새로 만들거나 수정하고, HUD·Conversation·Dock·Quick Input·Companion·Settings·overlay의 색상, 타이포그래피, 간격, radius, material, shadow, motion, 상태 표현, 접근성, 디자인 일관성을 검수할 때 사용한다. Picky 디자인 문서를 source of truth로 적용하고 Action Blue와 semantic status, macOS HIG, light/dark, keyboard interaction, HUD 성능을 확인한다.
 ---
 
 # Picky Design Guide
@@ -71,7 +71,7 @@ Near miss에는 이 스킬의 시각 규칙을 억지로 적용하지 않는다.
 
 #### One blue means action
 
-- Action Blue: CTA, 링크, 선택, keyboard focus
+- Action Blue: CTA, 링크, 선택
 - Semantic status: running/info, success, waiting/warning, failure/destructive, queued/neutral
 - status는 색상 외 아이콘, 레이블 또는 형태를 함께 사용한다.
 - status color를 일반 CTA fill로 사용하지 않는다.
@@ -79,9 +79,9 @@ Near miss에는 이 스킬의 시각 규칙을 억지로 적용하지 않는다.
 #### Native before novel
 
 - 시스템 폰트와 SF Symbols를 기본으로 한다.
-- macOS keyboard focus, pointer, tooltip, menu, drag/drop 동작을 보존한다.
+- macOS keyboard navigation, pointer, tooltip, menu, drag/drop 동작을 보존한다.
 - system semantic color와 appearance 적응을 우선한다.
-- custom control은 rest, hover, pressed, focus, disabled 상태를 명시한다.
+- custom control은 rest, hover, pressed, disabled 상태를 명시한다. custom focus 시각화는 필요한 경우에만 선택 적용하며, 기존 layout을 바꾸지 않는 subtle background 전환을 border/ring보다 우선한다.
 
 #### Dense, never cramped
 
@@ -117,7 +117,7 @@ Near miss에는 이 스킬의 시각 규칙을 억지로 적용하지 않는다.
 - Rest
 - Hover
 - Pressed
-- Keyboard focused
+- Keyboard focused (custom 시각화가 필요한 경우에만 선택 적용)
 - Disabled
 - Selected
 - Loading/running

@@ -642,6 +642,14 @@ struct PickyMarkdownReportFontScalePersister {
     let save: (Double) -> Void
 }
 
+/// Shared report-viewer preference hook. The latest explicit outline toggle is
+/// restored by subsequently opened report panels, including after app relaunch.
+@MainActor
+struct PickyReportOutlineVisibilityPersister {
+    let load: () -> Bool
+    let save: (Bool) -> Void
+}
+
 @MainActor
 final class PickyReportViewerPresenter: PickyReportPresenting {
     static let shared = PickyReportViewerPresenter()
@@ -698,7 +706,8 @@ final class PickyReportViewerPresenter: PickyReportPresenting {
             title: title,
             fileURL: fileURL,
             markdown: markdown,
-            fontScalePersister: makeFontScalePersister()
+            fontScalePersister: makeFontScalePersister(),
+            outlineVisibilityPersister: makeOutlineVisibilityPersister()
         )
         let panel = PickyReportPanel(
             contentRect: targetFrame(),
@@ -762,6 +771,18 @@ final class PickyReportViewerPresenter: PickyReportPresenting {
         )
     }
 
+    private func makeOutlineVisibilityPersister() -> PickyReportOutlineVisibilityPersister {
+        let store = settingsStore
+        return PickyReportOutlineVisibilityPersister(
+            load: { store.load().reportViewerOutlinePresented },
+            save: { isPresented in
+                var current = store.load()
+                current.reportViewerOutlinePresented = isPresented
+                try? store.save(current)
+            }
+        )
+    }
+
     private func targetFrame() -> NSRect {
         let screen = NSScreen.main ?? NSScreen.screens.first
         let visibleFrame = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
@@ -785,20 +806,25 @@ final class PickyReportViewerModel: ObservableObject {
     /// Live zoom multiplier for the markdown body. Bound to `PickyFontScales.minimum/maximum`
     /// and rounded to one decimal so ⌘+ taps don't drift due to floating-point.
     @Published private(set) var fontScale: Double
+    @Published private(set) var isOutlinePresented: Bool
 
     private let fontScalePersister: PickyMarkdownReportFontScalePersister?
+    private let outlineVisibilityPersister: PickyReportOutlineVisibilityPersister?
 
     init(
         title: String,
         fileURL: URL,
         markdown: String,
-        fontScalePersister: PickyMarkdownReportFontScalePersister? = nil
+        fontScalePersister: PickyMarkdownReportFontScalePersister? = nil,
+        outlineVisibilityPersister: PickyReportOutlineVisibilityPersister? = nil
     ) {
         self.title = title
         self.fileURL = fileURL
         self.markdown = markdown
         self.fontScalePersister = fontScalePersister
+        self.outlineVisibilityPersister = outlineVisibilityPersister
         self.fontScale = PickyFontScales.clamped(fontScalePersister?.load() ?? PickyFontScales.defaults.markdownReport)
+        self.isOutlinePresented = outlineVisibilityPersister?.load() ?? false
     }
 
     func update(title: String, fileURL: URL, markdown: String) {
@@ -812,11 +838,25 @@ final class PickyReportViewerModel: ObservableObject {
     func zoomOut() { setFontScale(fontScale - PickyFontScales.step) }
     func resetZoom() { setFontScale(PickyFontScales.defaults.markdownReport) }
 
+    func toggleOutline() {
+        setOutlinePresented(!isOutlinePresented)
+    }
+
+    func dismissOutline() {
+        setOutlinePresented(false)
+    }
+
     private func setFontScale(_ newValue: Double) {
         let clamped = PickyFontScales.clamped(newValue)
         guard clamped != fontScale else { return }
         fontScale = clamped
         fontScalePersister?.save(clamped)
+    }
+
+    private func setOutlinePresented(_ isPresented: Bool) {
+        guard isPresented != isOutlinePresented else { return }
+        isOutlinePresented = isPresented
+        outlineVisibilityPersister?.save(isPresented)
     }
 }
 
@@ -824,7 +864,6 @@ struct PickyReportViewerWindowView: View {
     @ObservedObject var model: PickyReportViewerModel
     @State private var didCopyMarkdown = false
     @State private var copyFeedbackTask: Task<Void, Never>?
-    @State private var isOutlinePresented = false
     @State private var isSearchPresented = false
     @State private var searchState = PickyReportSearchState()
     @State private var activeSectionID: String?
@@ -874,8 +913,8 @@ struct PickyReportViewerWindowView: View {
         .onExitCommand {
             if isSearchPresented {
                 closeSearch()
-            } else if isOutlinePresented {
-                isOutlinePresented = false
+            } else if outlineIsVisible {
+                model.dismissOutline()
             }
         }
         .background(PickyAppearancePanelChrome.overlayBackground)
@@ -897,7 +936,7 @@ struct PickyReportViewerWindowView: View {
                 .keyboardShortcut("f", modifiers: .command)
             if outlineEntries.count >= 3 {
                 Button(L10n.t("hud.report.outline.toggle")) {
-                    isOutlinePresented.toggle()
+                    model.toggleOutline()
                 }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
             }
@@ -926,7 +965,7 @@ struct PickyReportViewerWindowView: View {
     }
 
     private var outlineIsVisible: Bool {
-        isOutlinePresented && outlineEntries.count >= 3
+        model.isOutlinePresented && outlineEntries.count >= 3
     }
 
     @ViewBuilder
@@ -948,7 +987,7 @@ struct PickyReportViewerWindowView: View {
                     Color.clear
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .contentShape(Rectangle())
-                        .onTapGesture { isOutlinePresented = false }
+                        .onTapGesture { model.dismissOutline() }
                         .accessibilityHidden(true)
                     outlineOverlay(entries: outline, proxy: proxy)
                 }
@@ -1013,7 +1052,7 @@ struct PickyReportViewerWindowView: View {
             }
             Spacer()
             if outline.count >= 3 {
-                Button { isOutlinePresented.toggle() } label: {
+                Button { model.toggleOutline() } label: {
                     Image(systemName: "list.bullet.indent")
                 }
                 .buttonStyle(.bordered)
@@ -1113,7 +1152,7 @@ struct PickyReportViewerWindowView: View {
                             proxy.scrollTo(entry.id, anchor: .top)
                         }
                         if outlinePresentationMode == .overlay {
-                            isOutlinePresented = false
+                            model.dismissOutline()
                         }
                     } label: {
                         Text(entry.title)

@@ -4398,6 +4398,35 @@ struct PickySessionViewModelTests {
         #expect(PickyReportOutlineLayoutPolicy.readingColumnWidth(forPushedViewerWidth: 741) == 500)
     }
 
+    @Test func reportViewerModelRestoresAndPersistsLastOutlineVisibility() {
+        var storedVisibility = true
+        var savedValues: [Bool] = []
+        let persister = PickyReportOutlineVisibilityPersister(
+            load: { storedVisibility },
+            save: { value in
+                storedVisibility = value
+                savedValues.append(value)
+            }
+        )
+        let model = PickyReportViewerModel(
+            title: "Report",
+            fileURL: URL(fileURLWithPath: "/tmp/report.md"),
+            markdown: "# Report",
+            outlineVisibilityPersister: persister
+        )
+
+        #expect(model.isOutlinePresented)
+
+        model.toggleOutline()
+        #expect(!model.isOutlinePresented)
+        #expect(storedVisibility == false)
+
+        model.toggleOutline()
+        model.dismissOutline()
+        #expect(!model.isOutlinePresented)
+        #expect(savedValues == [false, true, false])
+    }
+
     @Test func reportSearchStateFindsPlainTextAndWrapsBetweenMatchingBlocks() throws {
         let blocks = PickyReportBlockPresentation.blocks(from: """
         # Risk register

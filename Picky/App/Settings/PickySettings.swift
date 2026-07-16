@@ -675,6 +675,9 @@ struct PickySettings: Codable, Equatable {
     /// `PickyDetachedPanelKind.rawValue`. Empty/missing entries fall back to
     /// the panel's built-in `targetFrame()`.
     var detachedPanelFrames: [String: PickyDetachedPanelFrame]
+    /// Last user-selected outline visibility for detached markdown report viewers.
+    /// Shared across reports so each newly opened viewer restores the most recent choice.
+    var reportViewerOutlinePresented: Bool
     /// User-configured click actions for the git chips (insertions/deletions
     /// and branch label) rendered on the Pickle conversation card. Empty
     /// actions mean "no action wired yet"; the chip click handler deep-links
@@ -771,6 +774,7 @@ struct PickySettings: Codable, Equatable {
         recentPickleCwds: [String] = [],
         pinnedPickleCwds: [String] = [],
         detachedPanelFrames: [String: PickyDetachedPanelFrame] = [:],
+        reportViewerOutlinePresented: Bool = false,
         gitChipActions: PickyGitChipActions = .empty,
         dockLayout: PickyDockLayout = .empty
     ) {
@@ -839,6 +843,7 @@ struct PickySettings: Codable, Equatable {
         self.pinnedPickleCwds = normalizedPinnedPickleCwds
         self.recentPickleCwds = PickySettings.normalizedRecentPickleCwds(recentPickleCwds, excluding: normalizedPinnedPickleCwds)
         self.detachedPanelFrames = detachedPanelFrames
+        self.reportViewerOutlinePresented = reportViewerOutlinePresented
         self.gitChipActions = gitChipActions
         self.dockLayout = dockLayout
     }
@@ -931,6 +936,7 @@ struct PickySettings: Codable, Equatable {
             recentPickleCwds: [],
             pinnedPickleCwds: [],
             detachedPanelFrames: [:],
+            reportViewerOutlinePresented: false,
             gitChipActions: .empty,
             dockLayout: .empty
         )
@@ -1048,6 +1054,7 @@ struct PickySettings: Codable, Equatable {
         case recentPickleCwds
         case pinnedPickleCwds
         case detachedPanelFrames
+        case reportViewerOutlinePresented
         case gitChipActions
         case dockLayout
     }
@@ -1137,6 +1144,7 @@ struct PickySettings: Codable, Equatable {
             excluding: pinnedPickleCwds
         )
         detachedPanelFrames = try container.decodeIfPresent([String: PickyDetachedPanelFrame].self, forKey: .detachedPanelFrames) ?? defaults.detachedPanelFrames
+        reportViewerOutlinePresented = try container.decodeIfPresent(Bool.self, forKey: .reportViewerOutlinePresented) ?? defaults.reportViewerOutlinePresented
         gitChipActions = try container.decodeIfPresent(PickyGitChipActions.self, forKey: .gitChipActions) ?? defaults.gitChipActions
         // Missing dockLayout means the user is on a pre-grouping build. Decode
         // as empty and let `PickySessionListViewModel` rehydrate from the

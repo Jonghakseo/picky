@@ -66,6 +66,23 @@ struct PickySettingsPolishTests {
         #expect(settings.attachScreenshotsOnlyWhenInked == false)
     }
 
+    @Test func settingsLoadDefaultsReportOutlineVisibilityToClosedWhenLegacyFileLacksField() throws {
+        let legacyJSON = """
+        {
+          "defaultCwd": "/tmp",
+          "worktreeParent": "",
+          "preferredToolVisibility": "visible in context only",
+          "readOnlyInvestigationPreference": true,
+          "daemonPath": "/tmp/agentd",
+          "logPath": "/tmp/logs"
+        }
+        """.data(using: .utf8)!
+
+        let settings = try JSONDecoder().decode(PickySettings.self, from: legacyJSON)
+
+        #expect(settings.reportViewerOutlinePresented == false)
+    }
+
     @Test func updateChannelDefaultsFollowBuildReleaseChannel() {
         #expect(PickySettings.defaultUpdateChannel(forReleaseChannel: "beta") == .beta)
         #expect(PickySettings.defaultUpdateChannel(forReleaseChannel: " Beta ") == .beta)

@@ -882,6 +882,18 @@ struct PickyHUDMaterialFill<FillShape: Shape>: View {
     }
 }
 
+/// Shared semantic state layer for compact HUD controls. Centralizing the
+/// alpha keeps hover/pressed contrast consistent across chips and segmented
+/// controls while each component retains its own shape and hit geometry.
+enum PickyHUDInteractionStateLayer {
+    private static let fillOpacity = 0.62
+
+    static func fill(isHovered: Bool, isPressed: Bool) -> Color {
+        if isPressed { return DS.Colors.surface4.opacity(fillOpacity) }
+        return isHovered ? DS.Colors.surface3.opacity(fillOpacity) : .clear
+    }
+}
+
 /// Shared interaction treatment for compact HUD chips. The 22pt hit target
 /// extends into the chip row's existing whitespace without changing its compact
 /// visual capsule or row height; native focusability retains macOS keyboard
@@ -908,10 +920,7 @@ struct PickyHUDCompactChipButtonStyle: ButtonStyle {
     }
 
     private func interactionFill(isPressed: Bool) -> Color {
-        if isPressed {
-            return DS.Colors.surface4.opacity(0.62)
-        }
-        return isHovered ? DS.Colors.surface3.opacity(0.62) : .clear
+        PickyHUDInteractionStateLayer.fill(isHovered: isHovered, isPressed: isPressed)
     }
 }
 

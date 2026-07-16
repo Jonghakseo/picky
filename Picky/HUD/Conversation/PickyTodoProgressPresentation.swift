@@ -53,17 +53,27 @@ struct PickyTodoProgressPresentation: Equatable {
         self.updatedAt = state.updatedAt
     }
 
-    /// The compact label communicates which step the agent is currently on,
-    /// while `fraction` remains completion-based for the progress ring.
+    var activeStepNumber: Int? {
+        tasks.firstIndex(where: { $0.status == .inProgress }).map { $0 + 1 }
+    }
+
+    /// The compact count follows the current step while work is active, then
+    /// falls back to completed work for pending/between-step/complete snapshots.
     var currentStepNumber: Int {
-        if let activeIndex = tasks.firstIndex(where: { $0.status == .inProgress }) {
-            return activeIndex + 1
-        }
-        return completedCount
+        activeStepNumber ?? completedCount
     }
 
     var countText: String {
         "\(currentStepNumber)/\(totalCount)"
+    }
+
+    /// Ordinal wording is reserved for an active task. Snapshots with no active
+    /// task use completion wording, matching the adjacent completion ring.
+    var stepText: String {
+        if let activeStepNumber {
+            return L10n.t("hud.todo.stepCount", Int64(activeStepNumber), Int64(totalCount))
+        }
+        return L10n.t("hud.todo.completedCount", Int64(completedCount), Int64(totalCount))
     }
 
     var usesScrollableExpandedList: Bool {

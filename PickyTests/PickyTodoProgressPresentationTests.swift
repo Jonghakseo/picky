@@ -35,6 +35,7 @@ struct PickyTodoProgressPresentationTests {
         #expect(presentation.completedCount == 1)
         #expect(presentation.currentStepNumber == 2)
         #expect(presentation.countText == "2/3")
+        #expect(presentation.stepText == L10n.t("hud.todo.stepCount", Int64(2), Int64(3)))
         #expect(presentation.totalCount == 3)
         #expect(presentation.fraction == 1.0 / 3.0)
         #expect(presentation.activeText == "Implementing HUD")
@@ -67,6 +68,7 @@ struct PickyTodoProgressPresentationTests {
         #expect(presentation.completedCount == 0)
         #expect(presentation.currentStepNumber == 1)
         #expect(presentation.countText == "1/3")
+        #expect(presentation.stepText == L10n.t("hud.todo.stepCount", Int64(1), Int64(3)))
         #expect(presentation.fraction == 0)
     }
 
@@ -81,8 +83,10 @@ struct PickyTodoProgressPresentationTests {
 
         let presentation = try #require(PickyTodoProgressPresentation(state: state))
 
+        #expect(presentation.activeStepNumber == nil)
         #expect(presentation.currentStepNumber == 0)
         #expect(presentation.countText == "0/2")
+        #expect(presentation.stepText == L10n.t("hud.todo.completedCount", Int64(0), Int64(2)))
     }
 
     @Test func hiddenTodoSnapshotReturnsWhenTheTodoStateUpdates() {
@@ -146,8 +150,10 @@ struct PickyTodoProgressPresentationTests {
         let presentation = try #require(PickyTodoProgressPresentation(state: state))
 
         #expect(presentation.completedCount == 2)
+        #expect(presentation.activeStepNumber == nil)
         #expect(presentation.currentStepNumber == 2)
         #expect(presentation.countText == "2/2")
+        #expect(presentation.stepText == L10n.t("hud.todo.completedCount", Int64(2), Int64(2)))
         #expect(presentation.totalCount == 2)
         #expect(presentation.fraction == 1)
         #expect(presentation.activeText == "Run tests")

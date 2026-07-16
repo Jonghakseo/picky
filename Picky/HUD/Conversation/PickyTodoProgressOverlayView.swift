@@ -8,6 +8,33 @@
 
 import SwiftUI
 
+private struct PickyTodoProgressButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+    @State private var isHovered = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
+                    .fill(interactionFill(isPressed: configuration.isPressed))
+            )
+            .focusable()
+            .onHover { isHovered = $0 }
+            .animation(
+                accessibilityReduceMotion ? nil : .easeOut(duration: DS.Animation.fast),
+                value: configuration.isPressed
+            )
+            .animation(
+                accessibilityReduceMotion ? nil : .easeOut(duration: DS.Animation.fast),
+                value: isHovered
+            )
+    }
+
+    private func interactionFill(isPressed: Bool) -> Color {
+        PickyHUDInteractionStateLayer.fill(isHovered: isHovered, isPressed: isPressed)
+    }
+}
+
 struct PickyTodoProgressRestoreButton: View {
     static let bottomContentInset: CGFloat = 38
 
@@ -16,25 +43,28 @@ struct PickyTodoProgressRestoreButton: View {
 
     var body: some View {
         Button(action: onRestore) {
-            Label(presentation.countText, systemImage: "checklist")
+            Label(presentation.stepText, systemImage: "checklist")
                 .font(PickyHUDTypography.statusMonospacedMedium)
                 .foregroundColor(presentation.isComplete ? DS.Colors.successText : DS.Colors.info)
                 .padding(.horizontal, 10)
                 .frame(height: 30)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(DS.Colors.surface1.opacity(0.97))
-                        .overlay(
-                            Capsule(style: .continuous)
-                                .stroke((presentation.isComplete ? DS.Colors.success : DS.Colors.info).opacity(0.5), lineWidth: 0.8)
-                        )
-                )
                 .contentShape(Capsule(style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PickyTodoProgressButtonStyle())
+        // The base surface sits behind the style's state layer so hover/press
+        // feedback remains visible instead of being covered by an opaque label.
+        .background(
+            Capsule(style: .continuous)
+                .fill(DS.Colors.surface1.opacity(0.97))
+                .overlay(
+                    Capsule(style: .continuous)
+                        .stroke((presentation.isComplete ? DS.Colors.success : DS.Colors.info).opacity(0.5), lineWidth: 0.8)
+                )
+        )
+        .clipShape(Capsule(style: .continuous))
         .help(L10n.t("hud.todo.show"))
         .accessibilityLabel(L10n.t("hud.todo.show"))
-        .accessibilityValue(presentation.countText)
+        .accessibilityValue(presentation.stepText)
     }
 }
 
@@ -44,12 +74,13 @@ struct PickyTodoProgressOverlayView: View {
     let presentation: PickyTodoProgressPresentation
     let onHide: () -> Void
     @Binding var isExpanded: Bool
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 8) {
             if isExpanded {
                 expandedCard
-                    .transition(.scale(scale: 0.97, anchor: .bottom).combined(with: .opacity))
+                    .transition(expandedTransition)
             }
             compactPill
         }
@@ -58,7 +89,10 @@ struct PickyTodoProgressOverlayView: View {
                 isExpanded = false
             }
         }
-        .animation(.easeOut(duration: 0.16), value: isExpanded)
+        .animation(
+            accessibilityReduceMotion ? nil : .easeOut(duration: DS.Animation.normal),
+            value: isExpanded
+        )
     }
 
     private var compactPill: some View {
@@ -69,7 +103,7 @@ struct PickyTodoProgressOverlayView: View {
                 HStack(spacing: 9) {
                     progressRing(side: 19, lineWidth: 2.4)
 
-                    Text(presentation.countText)
+                    Text(presentation.stepText)
                         .font(PickyHUDTypography.statusMonospacedMedium)
                         .foregroundColor(DS.Colors.textPrimary)
                         .fixedSize(horizontal: true, vertical: false)
@@ -91,10 +125,11 @@ struct PickyTodoProgressOverlayView: View {
                 .frame(height: 38)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PickyTodoProgressButtonStyle())
             .help(L10n.t("hud.todo.toggle.help"))
-            .accessibilityLabel("\(presentation.countText), \(compactSummary)")
-            .accessibilityHint(L10n.t("hud.todo.toggle.help"))
+            .accessibilityLabel("\(presentation.stepText), \(compactSummary)")
+            .accessibilityValue(isExpanded ? L10n.t("hud.todo.state.expanded") : L10n.t("hud.todo.state.collapsed"))
+            .accessibilityHint(isExpanded ? L10n.t("hud.todo.collapse") : L10n.t("hud.todo.expand"))
 
             Rectangle()
                 .fill(DS.Colors.borderSubtle.opacity(0.65))
@@ -108,7 +143,7 @@ struct PickyTodoProgressOverlayView: View {
                     .frame(width: 29, height: 38)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PickyTodoProgressButtonStyle())
             .help(L10n.t("hud.todo.hide"))
             .accessibilityLabel(L10n.t("hud.todo.hide"))
         }
@@ -130,7 +165,7 @@ struct PickyTodoProgressOverlayView: View {
                     .font(PickyHUDTypography.supportingSemibold)
                     .foregroundColor(DS.Colors.textPrimary)
                 Spacer(minLength: 8)
-                Text(presentation.countText)
+                Text(presentation.stepText)
                     .font(PickyHUDTypography.statusMonospacedMedium)
                     .foregroundColor(DS.Colors.textSecondary)
             }
@@ -156,7 +191,8 @@ struct PickyTodoProgressOverlayView: View {
                     RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous)
                         .stroke(DS.Colors.borderSubtle.opacity(0.75), lineWidth: 0.8)
                 )
-                .shadow(color: .black.opacity(0.15), radius: 12, y: 5)
+                // `elevation.transient`: this card floats above transcript content.
+                .shadow(color: .black.opacity(0.18), radius: 12, y: 8)
         )
         .accessibilityElement(children: .contain)
     }
@@ -228,6 +264,12 @@ struct PickyTodoProgressOverlayView: View {
         }
     }
 
+    private var expandedTransition: AnyTransition {
+        accessibilityReduceMotion
+            ? .opacity
+            : .scale(scale: 0.97, anchor: .bottom).combined(with: .opacity)
+    }
+
     private var compactSummary: String {
         presentation.isComplete ? L10n.t("hud.todo.complete") : presentation.activeText
     }
@@ -245,7 +287,10 @@ struct PickyTodoProgressOverlayView: View {
                     .trim(from: 0, to: presentation.fraction)
                     .stroke(progressColor, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                     .rotationEffect(.degrees(-90))
-                    .animation(.easeOut(duration: 0.2), value: presentation.fraction)
+                    .animation(
+                        accessibilityReduceMotion ? nil : .easeOut(duration: DS.Animation.normal),
+                        value: presentation.fraction
+                    )
             }
         }
         .frame(width: side, height: side)

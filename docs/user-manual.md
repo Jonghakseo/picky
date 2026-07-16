@@ -630,6 +630,8 @@ Ways to open:
 Report viewer features:
 
 - Markdown rendering.
+- Outline (table of contents) navigation. When a report has two or more headings, a toggle appears in the header (also `Cmd + Shift + O`) to show a section list; wide reports pin the outline beside the text, narrow reports overlay it. Your last outline visibility choice is remembered.
+- In-report search (`Cmd + F`) that highlights matches and jumps between them with Enter / Shift + Enter.
 - Open backing report file.
 - Copy Markdown to clipboard.
 - Persistent zoom.
@@ -639,10 +641,12 @@ Where reports live and when they go away:
 - Every time you open a report, Picky writes a Markdown copy under `~/Library/Application Support/Picky/GeneratedReports/` named after the source message ID. Opening the same message again overwrites the same file rather than creating a new one.
 - On each app launch Picky sweeps that folder and deletes Markdown files older than **30 days** (last modified). Non-`.md` files and subfolders are never touched, so anything you drop in there by hand stays put. The sweep runs in the background and silently no-ops on a fresh install or after a permissions hiccup.
 
-Report zoom shortcuts:
+Report shortcuts:
 
 | Shortcut | Action |
 | --- | --- |
+| Cmd + F | Search within the report. |
+| Cmd + Shift + O | Toggle the outline (when the report has 2+ headings). |
 | Cmd + `=` | Zoom in. |
 | Cmd + `-` | Zoom out. |
 | Cmd + `0` | Reset zoom. |

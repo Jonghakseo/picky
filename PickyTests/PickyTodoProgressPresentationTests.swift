@@ -33,6 +33,8 @@ struct PickyTodoProgressPresentationTests {
         let presentation = try #require(PickyTodoProgressPresentation(state: state))
 
         #expect(presentation.completedCount == 1)
+        #expect(presentation.currentStepNumber == 2)
+        #expect(presentation.countText == "2/3")
         #expect(presentation.totalCount == 3)
         #expect(presentation.fraction == 1.0 / 3.0)
         #expect(presentation.activeText == "Implementing HUD")
@@ -48,6 +50,39 @@ struct PickyTodoProgressPresentationTests {
         let presentation = try #require(PickyTodoProgressPresentation(state: state))
 
         #expect(presentation.activeText == "Run tests")
+    }
+
+    @Test func firstInProgressTaskDisplaysOneOfTotalWhileCompletionRingStartsAtZero() throws {
+        let state = PickyTodoState(
+            tasks: [
+                PickyTodoTask(id: "todo-1", content: "Prepare workspace", status: .inProgress),
+                PickyTodoTask(id: "todo-2", content: "Implement", status: .pending),
+                PickyTodoTask(id: "todo-3", content: "Verify", status: .pending),
+            ],
+            updatedAt: Date(timeIntervalSince1970: 1_800_000_002)
+        )
+
+        let presentation = try #require(PickyTodoProgressPresentation(state: state))
+
+        #expect(presentation.completedCount == 0)
+        #expect(presentation.currentStepNumber == 1)
+        #expect(presentation.countText == "1/3")
+        #expect(presentation.fraction == 0)
+    }
+
+    @Test func entirelyPendingTodoStillDisplaysZeroOfTotal() throws {
+        let state = PickyTodoState(
+            tasks: [
+                PickyTodoTask(id: "todo-1", content: "Prepare workspace", status: .pending),
+                PickyTodoTask(id: "todo-2", content: "Implement", status: .pending),
+            ],
+            updatedAt: Date(timeIntervalSince1970: 1_800_000_002)
+        )
+
+        let presentation = try #require(PickyTodoProgressPresentation(state: state))
+
+        #expect(presentation.currentStepNumber == 0)
+        #expect(presentation.countText == "0/2")
     }
 
     @Test func expandedListOnlyScrollsAfterSixTasks() throws {
@@ -89,6 +124,8 @@ struct PickyTodoProgressPresentationTests {
         let presentation = try #require(PickyTodoProgressPresentation(state: state))
 
         #expect(presentation.completedCount == 2)
+        #expect(presentation.currentStepNumber == 2)
+        #expect(presentation.countText == "2/2")
         #expect(presentation.totalCount == 2)
         #expect(presentation.fraction == 1)
         #expect(presentation.activeText == "Run tests")

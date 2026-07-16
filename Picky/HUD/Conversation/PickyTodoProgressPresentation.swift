@@ -35,8 +35,17 @@ struct PickyTodoProgressPresentation: Equatable {
         self.updatedAt = state.updatedAt
     }
 
+    /// The compact label communicates which step the agent is currently on,
+    /// while `fraction` remains completion-based for the progress ring.
+    var currentStepNumber: Int {
+        if let activeIndex = tasks.firstIndex(where: { $0.status == .inProgress }) {
+            return activeIndex + 1
+        }
+        return completedCount
+    }
+
     var countText: String {
-        "\(completedCount)/\(totalCount)"
+        "\(currentStepNumber)/\(totalCount)"
     }
 
     var usesScrollableExpandedList: Bool {

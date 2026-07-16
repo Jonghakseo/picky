@@ -4240,6 +4240,19 @@ struct PickySessionViewModelTests {
         )
     }
 
+    @Test func autocompletePopupIsPlacedEntirelyAboveTheComposer() {
+        let composerBounds = CGRect(x: 12, y: 80, width: 360, height: 64)
+        let popupSize = CGSize(width: 360, height: 107)
+
+        let origin = PickyComposerAutocompletePlacementPolicy.popupOrigin(
+            composerBounds: composerBounds,
+            popupSize: popupSize
+        )
+
+        #expect(origin.x == composerBounds.minX)
+        #expect(origin.y + popupSize.height == composerBounds.minY - DS.Spacing.xs)
+    }
+
     @MainActor @Test func textSteerCanTargetCancelledSessionByExplicitID() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())

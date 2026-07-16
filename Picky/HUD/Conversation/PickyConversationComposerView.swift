@@ -45,6 +45,56 @@ enum PickyComposerBorderState: Equatable {
     case rest
 }
 
+enum PickyComposerAutocompletePlacementPolicy {
+    static func popupOrigin(
+        composerBounds: CGRect,
+        popupSize: CGSize,
+        spacing: CGFloat = DS.Spacing.xs
+    ) -> CGPoint {
+        CGPoint(
+            x: composerBounds.minX,
+            y: composerBounds.minY - popupSize.height - spacing
+        )
+    }
+}
+
+/// Places the autocomplete popup outside the composer's measured bounds. This
+/// keeps the composer/card height stable while avoiding SwiftUI alignment-guide
+/// behavior that can place conditional overlay content below the editor.
+private struct PickyComposerAutocompleteOverlayLayout: Layout {
+    func sizeThatFits(
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout Void
+    ) -> CGSize {
+        subviews.first?.sizeThatFits(proposal) ?? .zero
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout Void
+    ) {
+        guard let composer = subviews.first else { return }
+        composer.place(
+            at: bounds.origin,
+            anchor: .topLeading,
+            proposal: ProposedViewSize(width: bounds.width, height: bounds.height)
+        )
+
+        guard subviews.count > 1 else { return }
+        let popup = subviews[1]
+        let popupProposal = ProposedViewSize(width: bounds.width, height: nil)
+        let popupSize = popup.sizeThatFits(popupProposal)
+        let origin = PickyComposerAutocompletePlacementPolicy.popupOrigin(
+            composerBounds: bounds,
+            popupSize: popupSize
+        )
+        popup.place(at: origin, anchor: .topLeading, proposal: popupProposal)
+    }
+}
+
 struct PickyConversationComposerView: View {
     let session: PickySessionListViewModel.SessionCard
     @ObservedObject var viewModel: PickySessionListViewModel
@@ -100,19 +150,16 @@ struct PickyConversationComposerView: View {
         VStack(alignment: .leading, spacing: 4) {
             screenContextAttachmentChip
             attachmentChipsRow
-            composerRow
-                // An overlay does not contribute to the VStack's proposed size, so
-                // opening suggestions neither reflows the transcript nor moves the
-                // attachment/context chips away from the editor.
-                .overlay(alignment: .topLeading) {
-                    if autocompleteIsVisible {
-                        autocompletePanel
-                            .alignmentGuide(.top) { dimensions in
-                                dimensions[.bottom] + DS.Spacing.xs
-                            }
-                    }
+            // The custom layout reports only the composer's size, so opening
+            // suggestions never reflows the card. It measures the popup itself
+            // and places its bottom edge 4pt above the composer's top edge.
+            PickyComposerAutocompleteOverlayLayout {
+                composerRow
+                if autocompleteIsVisible {
+                    autocompletePanel
                 }
-                .zIndex(1)
+            }
+            .zIndex(1)
         }
         .onAppear {
             viewModel.ensureSlashCommandsLoaded(sessionID: session.id)

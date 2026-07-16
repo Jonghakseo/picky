@@ -102,7 +102,7 @@ struct PickyTodoProgressOverlayView: View {
                 .accessibilityHidden(true)
 
             Button(action: onHide) {
-                Image(systemName: "xmark")
+                Image(systemName: "minus")
                     .pickyFont(size: 8.5, weight: .semibold)
                     .foregroundColor(DS.Colors.textTertiary)
                     .frame(width: 29, height: 38)
@@ -146,7 +146,7 @@ struct PickyTodoProgressOverlayView: View {
                 .accessibilityLabel(L10n.t("hud.todo.collapse"))
 
                 Button(action: onHide) {
-                    Image(systemName: "xmark")
+                    Image(systemName: "minus")
                         .pickyFont(size: 8.5, weight: .semibold)
                         .foregroundColor(DS.Colors.textTertiary)
                         .frame(width: 22, height: 22)

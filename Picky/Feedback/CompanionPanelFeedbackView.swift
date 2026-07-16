@@ -45,7 +45,7 @@ struct CompanionPanelFeedbackView: View {
     @State private var selectedMediaAttachments: [SelectedMediaAttachment] = []
     @State private var mediaAttachmentNotice: String?
     @State private var attachmentScope: AttachmentScope = .logsOnly
-    @State private var status: SendStatus = .idle
+    @State private var sendState = PickyFeedbackSendStateMachine()
     @State private var statusResetTask: Task<Void, Never>?
 
     private let isConfigured = PickyFeedbackConfiguration.isConfigured
@@ -126,13 +126,6 @@ struct CompanionPanelFeedbackView: View {
         }
     }
 
-    enum SendStatus: Equatable {
-        case idle
-        case sending
-        case sent
-        case failed(String)
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             categoryPicker
@@ -142,10 +135,7 @@ struct CompanionPanelFeedbackView: View {
             metadataFooter
 
             if case .failed(let reason) = status {
-                Text(reason)
-                    .pickyFont(size: 10.5, weight: .medium)
-                    .foregroundColor(DS.Colors.destructiveText)
-                    .fixedSize(horizontal: false, vertical: true)
+                failureNotice(reason: reason)
             }
 
             if !isConfigured {
@@ -343,38 +333,64 @@ struct CompanionPanelFeedbackView: View {
                 }
             }
             Spacer()
-            Button(action: send) {
-                HStack(spacing: 6) {
-                    if status == .sending {
-                        ProgressView()
-                            .controlSize(.mini)
-                            .scaleEffect(0.7)
+            if !status.isFailed {
+                Button(action: send) {
+                    HStack(spacing: 6) {
+                        if status == .sending {
+                            ProgressView()
+                                .controlSize(.mini)
+                                .scaleEffect(0.7)
+                        }
+                        Text(status == .sending ? "feedback.sending" : "feedback.send")
+                            .pickyFont(size: 11.5, weight: .semibold)
                     }
-                    Text(status == .sending ? "feedback.sending" : "feedback.send")
-                        .pickyFont(size: 11.5, weight: .semibold)
+                    .foregroundColor(DS.Colors.accentText)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
+                            .fill(DS.Colors.accentText.opacity(isSendEnabled ? 0.16 : 0.06))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
+                                    .stroke(DS.Colors.accentText.opacity(isSendEnabled ? 0.4 : 0.18), lineWidth: 0.7)
+                            )
+                    )
                 }
-                .foregroundColor(DS.Colors.accentText)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
-                        .fill(DS.Colors.accentText.opacity(isSendEnabled ? 0.16 : 0.06))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
-                                .stroke(DS.Colors.accentText.opacity(isSendEnabled ? 0.4 : 0.18), lineWidth: 0.7)
-                        )
-                )
+                .buttonStyle(.plain)
+                .pointerCursor(isEnabled: isSendEnabled)
+                .disabled(!isSendEnabled)
             }
-            .buttonStyle(.plain)
-            .pointerCursor()
-            .disabled(!isSendEnabled)
         }
+    }
+
+    private var status: PickyFeedbackSendStatus {
+        sendState.status
     }
 
     private var isSendEnabled: Bool {
         guard isConfigured else { return false }
         guard status != .sending else { return false }
         return !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func failureNotice(reason: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
+            Image(systemName: "exclamationmark.circle.fill")
+                .font(PickyHUDTypography.status)
+                .foregroundColor(DS.Colors.destructiveText)
+            Text(reason)
+                .font(PickyHUDTypography.status)
+                .foregroundColor(DS.Colors.destructiveText)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 4)
+            Button("Retry", action: send)
+                .buttonStyle(.plain)
+                .font(PickyHUDTypography.statusSemibold)
+                .foregroundColor(DS.Colors.accentText)
+                .disabled(!isSendEnabled)
+                .pointerCursor(isEnabled: isSendEnabled)
+                .accessibilityLabel("Retry feedback")
+        }
     }
 
     private func fieldLabel(_ text: LocalizedStringKey) -> some View {
@@ -510,7 +526,10 @@ struct CompanionPanelFeedbackView: View {
     }
 
     private func send() {
-        guard isSendEnabled else { return }
+        guard isSendEnabled, sendState.beginSending() else { return }
+        statusResetTask?.cancel()
+        statusResetTask = nil
+
         let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
         let payload = PickyFeedbackPayload(
             category: category,
@@ -522,23 +541,36 @@ struct CompanionPanelFeedbackView: View {
         )
         let scope = attachmentScope.bundleScope
         let mediaSelection = selectedMediaAttachments
-
-        status = .sent
-        message = ""
-        selectedMediaAttachments = []
-        mediaAttachmentNotice = nil
-
         let job = FeedbackSendJob(payload: payload, diagnosticsScope: scope, mediaSelection: mediaSelection)
-        Task(priority: .utility) {
-            await job.run()
-        }
 
+        // The job intentionally continues if the panel closes. Its completion
+        // only updates this transient view state; no feedback draft is persisted.
+        Task { @MainActor in
+            let result = await Task.detached(priority: .utility) {
+                await job.run()
+            }.value
+            completeSend(result)
+        }
+    }
+
+    private func completeSend(_ result: Result<Void, PickyFeedbackSendFailure>) {
+        switch sendState.finish(result) {
+        case .clear:
+            message = ""
+            selectedMediaAttachments = []
+            mediaAttachmentNotice = nil
+            scheduleSentStatusReset()
+        case .preserve:
+            break
+        }
+    }
+
+    private func scheduleSentStatusReset() {
         statusResetTask?.cancel()
         statusResetTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 2_400_000_000)
-            if !Task.isCancelled, status == .sent {
-                status = .idle
-            }
+            guard !Task.isCancelled else { return }
+            sendState.resetSentStatus()
         }
     }
 
@@ -547,7 +579,7 @@ struct CompanionPanelFeedbackView: View {
         var diagnosticsScope: PickyDiagnosticsBundleScope?
         var mediaSelection: [SelectedMediaAttachment]
 
-        func run() async {
+        nonisolated func run() async -> Result<Void, PickyFeedbackSendFailure> {
             do {
                 var attachments: [PickyFeedbackAttachment] = []
                 if let diagnosticsScope {
@@ -555,12 +587,15 @@ struct CompanionPanelFeedbackView: View {
                 }
                 attachments.append(contentsOf: try buildMediaAttachments(from: mediaSelection))
                 try await PickyFeedbackSender().send(payload, attachments: attachments)
+                return .success(())
             } catch {
-                NSLog("Picky feedback send failed: \(PickyFeedbackSendErrorDescription.describe(error))")
+                let message = PickyFeedbackSendErrorDescription.describe(error)
+                NSLog("Picky feedback send failed: \(message)")
+                return .failure(PickyFeedbackSendFailure(message: message))
             }
         }
 
-        private func buildAttachment(
+        nonisolated private func buildAttachment(
             scope: PickyDiagnosticsBundleScope,
             payload: PickyFeedbackPayload
         ) throws -> PickyFeedbackAttachment {
@@ -579,7 +614,7 @@ struct CompanionPanelFeedbackView: View {
             return PickyFeedbackAttachment(filename: bundle.filename, data: data, kind: .diagnostics)
         }
 
-        private func buildMediaAttachments(from selection: [SelectedMediaAttachment]) throws -> [PickyFeedbackAttachment] {
+        nonisolated private func buildMediaAttachments(from selection: [SelectedMediaAttachment]) throws -> [PickyFeedbackAttachment] {
             guard selection.count <= MediaAttachmentPolicy.maxCount else {
                 throw MediaAttachmentError.tooMany
             }
@@ -602,7 +637,7 @@ struct CompanionPanelFeedbackView: View {
             return attachments
         }
 
-        private func selectedMediaAttachment(from url: URL) throws -> SelectedMediaAttachment {
+        nonisolated private func selectedMediaAttachment(from url: URL) throws -> SelectedMediaAttachment {
             let standardizedURL = url.standardizedFileURL
             let filename = standardizedURL.lastPathComponent
             let values = try standardizedURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .contentTypeKey])
@@ -621,13 +656,13 @@ struct CompanionPanelFeedbackView: View {
             return SelectedMediaAttachment(url: standardizedURL, filename: filename, byteCount: byteCount, kind: kind)
         }
 
-        private func mediaAttachmentKind(for type: UTType) -> MediaAttachmentKind {
+        nonisolated private func mediaAttachmentKind(for type: UTType) -> MediaAttachmentKind {
             if type.conforms(to: .image) { return .image }
             if type.conforms(to: .movie) || type.conforms(to: .video) { return .video }
             return .file
         }
 
-        private func fileByteCount(for url: URL, resourceValues: URLResourceValues) throws -> Int {
+        nonisolated private func fileByteCount(for url: URL, resourceValues: URLResourceValues) throws -> Int {
             if let fileSize = resourceValues.fileSize { return fileSize }
             let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
             if let size = attributes[.size] as? NSNumber { return size.intValue }

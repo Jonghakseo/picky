@@ -85,6 +85,28 @@ struct PickyTodoProgressPresentationTests {
         #expect(presentation.countText == "0/2")
     }
 
+    @Test func hiddenTodoSnapshotReturnsWhenTheTodoStateUpdates() {
+        let hiddenSnapshot = PickyTodoProgressSnapshotID(
+            sessionID: "session-1",
+            updatedAt: Date(timeIntervalSince1970: 1_800_000_002)
+        )
+        let updatedSnapshot = PickyTodoProgressSnapshotID(
+            sessionID: "session-1",
+            updatedAt: Date(timeIntervalSince1970: 1_800_000_003)
+        )
+
+        #expect(!PickyTodoProgressOverlayPolicy.shouldShow(
+            snapshotID: hiddenSnapshot,
+            hiddenSnapshotID: hiddenSnapshot
+        ))
+        #expect(PickyTodoProgressOverlayPolicy.shouldShow(
+            snapshotID: updatedSnapshot,
+            hiddenSnapshotID: hiddenSnapshot
+        ))
+        #expect(PickyTodoProgressOverlayPolicy.shouldCollapse(isComplete: true))
+        #expect(!PickyTodoProgressOverlayPolicy.shouldCollapse(isComplete: false))
+    }
+
     @Test func expandedListOnlyScrollsAfterSixTasks() throws {
         let threeTasks = PickyTodoState(
             tasks: (1...3).map { PickyTodoTask(id: "todo-\($0)", content: "Task \($0)", status: .pending) },

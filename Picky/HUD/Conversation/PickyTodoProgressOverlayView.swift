@@ -12,6 +12,7 @@ struct PickyTodoProgressOverlayView: View {
     static let bottomContentInset: CGFloat = 48
 
     let presentation: PickyTodoProgressPresentation
+    let onHide: () -> Void
     @State private var isExpanded = false
 
     var body: some View {
@@ -22,52 +23,74 @@ struct PickyTodoProgressOverlayView: View {
             }
             compactPill
         }
-        .onChange(of: presentation.updatedAt) { _, _ in
-            if presentation.isComplete { isExpanded = false }
+        .onChange(of: presentation.isComplete) { _, isComplete in
+            if PickyTodoProgressOverlayPolicy.shouldCollapse(isComplete: isComplete) {
+                isExpanded = false
+            }
         }
         .animation(.easeOut(duration: 0.16), value: isExpanded)
     }
 
     private var compactPill: some View {
-        Button {
-            isExpanded.toggle()
-        } label: {
-            HStack(spacing: 9) {
-                progressRing(side: 19, lineWidth: 2.4)
+        HStack(spacing: 0) {
+            Button {
+                isExpanded.toggle()
+            } label: {
+                HStack(spacing: 9) {
+                    progressRing(side: 19, lineWidth: 2.4)
 
-                Text(presentation.countText)
-                    .font(PickyHUDTypography.statusMonospacedMedium)
-                    .foregroundColor(DS.Colors.textPrimary)
-                    .fixedSize(horizontal: true, vertical: false)
+                    Text(presentation.countText)
+                        .font(PickyHUDTypography.statusMonospacedMedium)
+                        .foregroundColor(DS.Colors.textPrimary)
+                        .fixedSize(horizontal: true, vertical: false)
 
-                Text(compactSummary)
-                    .font(PickyHUDTypography.statusMedium)
-                    .foregroundColor(presentation.isComplete ? DS.Colors.successText : DS.Colors.textSecondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(compactSummary)
+                        .font(PickyHUDTypography.statusMedium)
+                        .foregroundColor(presentation.isComplete ? DS.Colors.successText : DS.Colors.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
-                Image(systemName: isExpanded ? "chevron.down" : "chevron.up")
-                    .pickyFont(size: 9.5, weight: .semibold)
-                    .foregroundColor(DS.Colors.textTertiary)
-                    .frame(width: 12)
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.up")
+                        .pickyFont(size: 9.5, weight: .semibold)
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .frame(width: 12)
+                }
+                .padding(.leading, 11)
+                .padding(.trailing, 8)
+                .frame(height: 38)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 11)
-            .frame(height: 38)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(DS.Colors.surface1.opacity(0.97))
-                    .overlay(
-                        Capsule(style: .continuous)
-                            .stroke(progressColor.opacity(0.5), lineWidth: 0.8)
-                    )
-            )
-            .contentShape(Capsule(style: .continuous))
+            .buttonStyle(.plain)
+            .help(L10n.t("hud.todo.toggle.help"))
+            .accessibilityLabel("\(presentation.countText), \(compactSummary)")
+            .accessibilityHint(L10n.t("hud.todo.toggle.help"))
+
+            Rectangle()
+                .fill(DS.Colors.borderSubtle.opacity(0.65))
+                .frame(width: 0.5, height: 16)
+                .accessibilityHidden(true)
+
+            Button(action: onHide) {
+                Image(systemName: "xmark")
+                    .pickyFont(size: 8.5, weight: .semibold)
+                    .foregroundColor(DS.Colors.textTertiary)
+                    .frame(width: 29, height: 38)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(L10n.t("hud.todo.hide"))
+            .accessibilityLabel(L10n.t("hud.todo.hide"))
         }
-        .buttonStyle(.plain)
-        .help(L10n.t("hud.todo.toggle.help"))
-        .accessibilityLabel("\(presentation.countText), \(compactSummary)")
-        .accessibilityHint(L10n.t("hud.todo.toggle.help"))
+        .background(
+            Capsule(style: .continuous)
+                .fill(DS.Colors.surface1.opacity(0.97))
+                .overlay(
+                    Capsule(style: .continuous)
+                        .stroke(progressColor.opacity(0.5), lineWidth: 0.8)
+                )
+        )
+        .clipShape(Capsule(style: .continuous))
     }
 
     private var expandedCard: some View {
@@ -80,6 +103,28 @@ struct PickyTodoProgressOverlayView: View {
                 Text(presentation.countText)
                     .font(PickyHUDTypography.statusMonospacedMedium)
                     .foregroundColor(DS.Colors.textSecondary)
+
+                Button { isExpanded = false } label: {
+                    Image(systemName: "chevron.down")
+                        .pickyFont(size: 9, weight: .semibold)
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(L10n.t("hud.todo.collapse"))
+                .accessibilityLabel(L10n.t("hud.todo.collapse"))
+
+                Button(action: onHide) {
+                    Image(systemName: "xmark")
+                        .pickyFont(size: 8.5, weight: .semibold)
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(L10n.t("hud.todo.hide"))
+                .accessibilityLabel(L10n.t("hud.todo.hide"))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)

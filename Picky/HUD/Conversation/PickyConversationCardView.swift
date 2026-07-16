@@ -29,6 +29,7 @@ struct PickyConversationCardView: View {
     @State private var droppedFilePaths: [String] = []
     @State private var isFileDropTargeted = false
     @State private var showingRewindPicker = false
+    @State private var hiddenTodoSnapshotID: PickyTodoProgressSnapshotID?
 
     var body: some View {
         let _ = PickyPerf.event("conversation_card_body")
@@ -83,6 +84,15 @@ struct PickyConversationCardView: View {
 
     private func chatContent(fillsAvailableHeight: Bool) -> some View {
         let todoPresentation = PickyTodoProgressPresentation(state: session.todoState)
+        let todoSnapshotID = todoPresentation.map {
+            PickyTodoProgressSnapshotID(sessionID: session.id, updatedAt: $0.updatedAt)
+        }
+        let visibleTodoPresentation = todoSnapshotID.flatMap { snapshotID in
+            PickyTodoProgressOverlayPolicy.shouldShow(
+                snapshotID: snapshotID,
+                hiddenSnapshotID: hiddenTodoSnapshotID
+            ) ? todoPresentation : nil
+        }
         return VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: DS.Spacing.xs) {
                 PickyConversationHeaderView(
@@ -107,13 +117,16 @@ struct PickyConversationCardView: View {
                 viewModel: viewModel,
                 isCommandShortcutHintVisible: isCommandShortcutHintVisible,
                 fillsAvailableHeight: fillsAvailableHeight,
-                bottomOverlayInset: todoPresentation == nil ? 0 : PickyTodoProgressOverlayView.bottomContentInset
+                bottomOverlayInset: visibleTodoPresentation == nil ? 0 : PickyTodoProgressOverlayView.bottomContentInset
             )
             .overlay(alignment: .bottom) {
-                if let todoPresentation {
-                    PickyTodoProgressOverlayView(presentation: todoPresentation)
-                        .padding(.horizontal, 4)
-                        .padding(.bottom, 3)
+                if let visibleTodoPresentation, let todoSnapshotID {
+                    PickyTodoProgressOverlayView(
+                        presentation: visibleTodoPresentation,
+                        onHide: { hiddenTodoSnapshotID = todoSnapshotID }
+                    )
+                    .padding(.horizontal, 4)
+                    .padding(.bottom, 3)
                 }
             }
             .padding(.bottom, DS.Spacing.sm)

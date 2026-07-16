@@ -8,6 +8,24 @@
 
 import Foundation
 
+struct PickyTodoProgressSnapshotID: Equatable {
+    let sessionID: String
+    let updatedAt: Date
+}
+
+enum PickyTodoProgressOverlayPolicy {
+    static func shouldShow(
+        snapshotID: PickyTodoProgressSnapshotID,
+        hiddenSnapshotID: PickyTodoProgressSnapshotID?
+    ) -> Bool {
+        snapshotID != hiddenSnapshotID
+    }
+
+    static func shouldCollapse(isComplete: Bool) -> Bool {
+        isComplete
+    }
+}
+
 struct PickyTodoProgressPresentation: Equatable {
     let tasks: [PickyTodoTask]
     let completedCount: Int

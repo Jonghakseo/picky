@@ -1416,13 +1416,45 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Show or hide task progress"
+            "value": "Expand or collapse task progress"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "작업 진행 목록 보기 또는 숨기기"
+            "value": "작업 진행 목록 펼치기 또는 축소하기"
+          }
+        }
+      }
+    },
+    "hud.todo.collapse": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Collapse task progress"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 진행 목록 축소"
+          }
+        }
+      }
+    },
+    "hud.todo.hide": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide task progress until it updates"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다음 업데이트까지 작업 진행 숨기기"
           }
         }
       }

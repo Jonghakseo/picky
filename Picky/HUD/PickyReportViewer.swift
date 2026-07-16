@@ -934,7 +934,7 @@ struct PickyReportViewerWindowView: View {
                 .keyboardShortcut("0", modifiers: .command)
             Button(L10n.t("hud.report.search"), action: openSearch)
                 .keyboardShortcut("f", modifiers: .command)
-            if outlineEntries.count >= 3 {
+            if outlineEntries.count >= 2 {
                 Button(L10n.t("hud.report.outline.toggle")) {
                     model.toggleOutline()
                 }
@@ -965,7 +965,7 @@ struct PickyReportViewerWindowView: View {
     }
 
     private var outlineIsVisible: Bool {
-        model.isOutlinePresented && outlineEntries.count >= 3
+        model.isOutlinePresented && outlineEntries.count >= 2
     }
 
     @ViewBuilder
@@ -1051,7 +1051,7 @@ struct PickyReportViewerWindowView: View {
                 .help("Open \(model.fileURL.path) in Finder")
             }
             Spacer()
-            if outline.count >= 3 {
+            if outline.count >= 2 {
                 Button { model.toggleOutline() } label: {
                     Image(systemName: "list.bullet.indent")
                 }

@@ -604,6 +604,42 @@ struct PickyConversationCardViewTests {
         #expect(header.titleHelpText.contains("rename"))
     }
 
+    @Test func headerStatusPresentationMapsEveryStateToLocalizedLabelKeyAndTone() {
+        let expectations: [(PickySessionStatus, String, PickyConversationStatusTone)] = [
+            (.running, "hud.conversation.status.running", .info),
+            (.completed, "hud.conversation.status.completed", .success),
+            (.waiting_for_input, "hud.conversation.status.waiting", .warning),
+            (.failed, "hud.conversation.status.failed", .destructiveText),
+            (.blocked, "hud.conversation.status.blocked", .warningText),
+            (.cancelled, "hud.conversation.status.cancelled", .textTertiary),
+            (.queued, "hud.conversation.status.queued", .textTertiary)
+        ]
+
+        for (status, labelKey, tone) in expectations {
+            let presentation = PickyConversationStatusPresentation(status: status)
+            #expect(presentation.labelKey == labelKey)
+            #expect(presentation.tone == tone)
+        }
+    }
+
+    @Test func headerMetaPresentationKeepsFullModelAndMenuItemsInSync() {
+        let presentation = PickyConversationHeaderMetaPresentation(
+            assistantRun: PickyAssistantRunMetadata(
+                model: "anthropic/claude-opus-4-7",
+                thinkingLevel: .xhigh
+            ),
+            contextUsage: PickyContextUsage(tokens: 420, contextWindow: 1_000, percent: 42)
+        )
+
+        #expect(presentation.modelText == "anthropic/claude-opus-4-7")
+        #expect(presentation.thinkingLevelText == "xhigh")
+        #expect(presentation.menuItems == [
+            L10n.t("hud.conversation.meta.context", "42%"),
+            L10n.t("hud.conversation.meta.model", "anthropic/claude-opus-4-7"),
+            L10n.t("hud.conversation.meta.thinking", "xhigh")
+        ])
+    }
+
     @Test func headerRenameCommandBuilderTrimsAndDedupsAndRejectsEmpty() {
         // Empty input or whitespace-only input must cancel (no command emitted).
         #expect(PickyConversationHeaderView.renameCommandText(forNewTitle: "", current: "Old") == nil)

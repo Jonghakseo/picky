@@ -80,24 +80,44 @@ struct PickyConversationHeaderView: View {
 
     var body: some View {
         let _ = PickyPerf.event("conversation_header_body")
-        HStack(alignment: .center, spacing: 8) {
-            leadingTitle
-            trailingActions
+        ViewThatFits(in: .horizontal) {
+            headerLayout(showsMeta: true)
+            headerLayout(showsMeta: false)
         }
-        .frame(width: PickyHUDDockLayout.detailContentWidth(for: pickyHUDDetailWidth), alignment: .trailing)
-        .frame(minHeight: 26, alignment: .trailing)
+        .frame(width: PickyHUDDockLayout.detailContentWidth(for: pickyHUDDetailWidth), alignment: .leading)
+        .frame(minHeight: 26, alignment: .leading)
     }
 
-    private var leadingTitle: some View {
-        HStack(alignment: .center, spacing: 7) {
+    /// The wide tier keeps all session metadata in the header. When it no
+    /// longer fits, the narrow tier preserves the status, title, and menu and
+    /// moves the same metadata strings into the menu's leading info section.
+    /// There is deliberately no abbreviated middle tier: model and thinking
+    /// values either remain complete or move out of the header together.
+    private func headerLayout(showsMeta: Bool) -> some View {
+        HStack(alignment: .center, spacing: 8) {
             piBadgeSlot
-            titleContent
+            titleContent(prefersMiddleTruncation: !showsMeta)
+                .frame(minWidth: 96, maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(1)
+            statusLabel
+                .fixedSize(horizontal: true, vertical: false)
+
+            Spacer(minLength: 8)
+
+            if showsMeta, headerMetaPresentation.hasContent {
+                PickyHeaderSessionMetaPill(
+                    presentation: headerMetaPresentation,
+                    onCycleModel: { cycleModel() },
+                    onCycleThinkingLevel: { cycleThinkingLevel() }
+                )
+                .fixedSize(horizontal: true, vertical: false)
+            }
+            conversationMenuButton
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
-    private var titleContent: some View {
+    private func titleContent(prefersMiddleTruncation: Bool) -> some View {
         if isEditingTitle {
             TextField("", text: $titleDraft)
                 .textFieldStyle(.plain)
@@ -121,7 +141,7 @@ struct PickyConversationHeaderView: View {
                 .font(PickyHUDTypography.title)
                 .foregroundColor(DS.Colors.textPrimary)
                 .lineLimit(1)
-                .truncationMode(.tail)
+                .truncationMode(prefersMiddleTruncation ? .middle : .tail)
                 .padding(.horizontal, 5)
                 .padding(.vertical, 2)
                 .background(
@@ -193,24 +213,22 @@ struct PickyConversationHeaderView: View {
         }
     }
 
-    private var trailingActions: some View {
-        HStack(alignment: .center, spacing: 8) {
-            if showsHeaderSessionMeta {
-                PickyHeaderSessionMetaPill(
-                    assistantRun: latestAssistantRun,
-                    contextUsage: session.contextUsage,
-                    onCycleModel: { cycleModel() },
-                    onCycleThinkingLevel: { cycleThinkingLevel() }
-                )
-                .fixedSize(horizontal: true, vertical: false)
-            }
-            conversationMenuButton
-        }
-        .fixedSize(horizontal: true, vertical: false)
+    private var statusLabel: some View {
+        // The Pi badge is the interactive accessibility element and already
+        // announces `statusDescription`; hide this visual duplicate so VoiceOver
+        // reports the status exactly once in the header summary.
+        Text(statusPresentation.label)
+            .font(PickyHUDTypography.statusSemibold)
+            .foregroundColor(statusTone.textColor)
+            .lineLimit(1)
+            .accessibilityHidden(true)
     }
 
-    private var showsHeaderSessionMeta: Bool {
-        latestAssistantRun?.hasHeaderText == true || session.contextUsage != nil
+    private var headerMetaPresentation: PickyConversationHeaderMetaPresentation {
+        PickyConversationHeaderMetaPresentation(
+            assistantRun: latestAssistantRun,
+            contextUsage: session.contextUsage
+        )
     }
 
     private var latestAssistantRun: PickyAssistantRunMetadata? {
@@ -226,6 +244,7 @@ struct PickyConversationHeaderView: View {
             PickyConversationMenu(
                 session: session,
                 viewModel: viewModel,
+                headerMetaItems: headerMetaPresentation.menuItems,
                 onArchive: { onArchiveSession(session.id) },
                 onRewind: onRewind
             )
@@ -481,19 +500,15 @@ struct PickyConversationHeaderView: View {
     }
 
     private var statusDescription: String {
-        switch session.status {
-        case .running: return "Working"
-        case .completed: return "Done"
-        case .waiting_for_input: return "Waiting for input"
-        case .failed: return "Failed"
-        case .blocked: return "Blocked"
-        case .cancelled: return "Cancelled"
-        case .queued: return "Queued"
-        }
+        statusPresentation.label
+    }
+
+    var statusPresentation: PickyConversationStatusPresentation {
+        PickyConversationStatusPresentation(status: session.status)
     }
 
     var statusTone: PickyConversationStatusTone {
-        PickyConversationStatusTone(status: session.status)
+        statusPresentation.tone
     }
 
     private var statusColor: Color {
@@ -551,6 +566,72 @@ enum PickyConversationStatusTone: Equatable {
             return DS.Colors.warningText
         case .textTertiary:
             return DS.Colors.textTertiary
+        }
+    }
+
+    /// Foreground-grade counterpart for readable status text on the header's
+    /// neutral surface. Fill-grade tokens remain in `color` for the Pi badge.
+    var textColor: Color {
+        switch self {
+        case .info:
+            return DS.Colors.info
+        case .success:
+            return DS.Colors.successText
+        case .warning, .warningText:
+            return DS.Colors.warningText
+        case .destructiveText:
+            return DS.Colors.destructiveText
+        case .textTertiary:
+            return DS.Colors.textTertiary
+        }
+    }
+}
+
+/// Localized, concise status projection for the conversation header. It keeps
+/// the status label, semantic tone, and Pi-badge accessibility summary aligned.
+enum PickyConversationStatusPresentation: Equatable {
+    case running
+    case completed
+    case waitingForInput
+    case failed
+    case blocked
+    case cancelled
+    case queued
+
+    init(status: PickySessionStatus) {
+        switch status {
+        case .running: self = .running
+        case .completed: self = .completed
+        case .waiting_for_input: self = .waitingForInput
+        case .failed: self = .failed
+        case .blocked: self = .blocked
+        case .cancelled: self = .cancelled
+        case .queued: self = .queued
+        }
+    }
+
+    var labelKey: String {
+        switch self {
+        case .running: return "hud.conversation.status.running"
+        case .completed: return "hud.conversation.status.completed"
+        case .waitingForInput: return "hud.conversation.status.waiting"
+        case .failed: return "hud.conversation.status.failed"
+        case .blocked: return "hud.conversation.status.blocked"
+        case .cancelled: return "hud.conversation.status.cancelled"
+        case .queued: return "hud.conversation.status.queued"
+        }
+    }
+
+    var label: String { L10n.t(labelKey) }
+
+    var tone: PickyConversationStatusTone {
+        switch self {
+        case .running: return .info
+        case .completed: return .success
+        case .waitingForInput: return .warning
+        case .failed: return .destructiveText
+        case .blocked: return .warningText
+        case .cancelled, .queued: return .textTertiary
         }
     }
 }
@@ -631,38 +712,78 @@ struct PickleLogoGlyph: Shape {
     }
 }
 
+/// Shared session metadata projection for the wide header and the narrow
+/// header's menu section. Keeping the strings here prevents the two tiers from
+/// drifting when a session's model, thinking level, or context usage changes.
+struct PickyConversationHeaderMetaPresentation {
+    let contextDisplay: PickyHeaderContextUsageDisplay?
+    let modelText: String?
+    let thinkingLevelText: String?
+
+    init(assistantRun: PickyAssistantRunMetadata?, contextUsage: PickyContextUsage?) {
+        contextDisplay = contextUsage.map(PickyHeaderContextUsageDisplay.init(usage:))
+        modelText = assistantRun?.headerModelText
+        thinkingLevelText = assistantRun?.headerThinkingLevelText
+    }
+
+    var hasContent: Bool {
+        contextDisplay != nil || modelText != nil || thinkingLevelText != nil
+    }
+
+    var menuItems: [String] {
+        var items: [String] = []
+        if let contextDisplay {
+            items.append(L10n.t("hud.conversation.meta.context", contextDisplay.label))
+        }
+        if let modelText {
+            items.append(L10n.t("hud.conversation.meta.model", modelText))
+        }
+        if let thinkingLevelText {
+            items.append(L10n.t("hud.conversation.meta.thinking", thinkingLevelText))
+        }
+        return items
+    }
+
+    var helpText: String {
+        var parts: [String] = []
+        if let contextDisplay {
+            parts.append(contextDisplay.tooltip)
+        }
+        parts.append(contentsOf: menuItems.dropFirst(contextDisplay == nil ? 0 : 1))
+        return parts.joined(separator: " · ")
+    }
+}
+
 private struct PickyHeaderSessionMetaPill: View {
-    let assistantRun: PickyAssistantRunMetadata?
-    let contextUsage: PickyContextUsage?
+    let presentation: PickyConversationHeaderMetaPresentation
     let onCycleModel: () -> Void
     let onCycleThinkingLevel: () -> Void
 
     var body: some View {
         HStack(spacing: 4) {
-            if let contextDisplay {
+            if let contextDisplay = presentation.contextDisplay {
                 PickyHeaderContextUsageBar(display: contextDisplay)
                     .frame(width: 24, height: 5)
                 Text(contextDisplay.label)
                     .fontWeight(.bold)
-                if modelText != nil || thinkingLevelText != nil {
+                if presentation.modelText != nil || presentation.thinkingLevelText != nil {
                     separator
                 }
             }
-            if let modelText {
+            if let modelText = presentation.modelText {
                 Button(action: onCycleModel) {
                     Text(modelText)
                         .foregroundColor(textColor.opacity(0.92))
                         .lineLimit(1)
-                        .truncationMode(.middle)
                 }
                 .buttonStyle(.plain)
                 .pointerCursor()
                 .help("Cycle scoped model (⌃P)")
             }
-            if modelText != nil, thinkingLevelText != nil {
+            if presentation.modelText != nil, presentation.thinkingLevelText != nil {
                 separator
             }
-            if let thinkingLevelText {
+            if let thinkingLevelText = presentation.thinkingLevelText {
                 Button(action: onCycleThinkingLevel) {
                     Text(thinkingLevelText)
                         .foregroundColor(textColor.opacity(0.92))
@@ -677,7 +798,7 @@ private struct PickyHeaderSessionMetaPill: View {
         .font(PickyHUDTypography.metaMonospacedMedium)
         .foregroundColor(textColor.opacity(0.88))
         .lineLimit(1)
-        .help(helpText)
+        .help(presentation.helpText)
     }
 
     private var separator: some View {
@@ -686,38 +807,12 @@ private struct PickyHeaderSessionMetaPill: View {
             .frame(width: 3, height: 3)
     }
 
-    private var contextDisplay: PickyHeaderContextUsageDisplay? {
-        contextUsage.map(PickyHeaderContextUsageDisplay.init(usage:))
-    }
-
-    private var modelText: String? {
-        assistantRun?.headerModelText
-    }
-
-    private var thinkingLevelText: String? {
-        assistantRun?.headerThinkingLevelText
-    }
-
     private var barColor: Color {
-        contextDisplay?.barColor ?? DS.Colors.textTertiary
+        presentation.contextDisplay?.barColor ?? DS.Colors.textTertiary
     }
 
     private var textColor: Color {
-        contextDisplay?.textColor ?? DS.Colors.textTertiary
-    }
-
-    private var helpText: String {
-        var parts: [String] = []
-        if let contextDisplay {
-            parts.append(contextDisplay.tooltip)
-        }
-        if let modelText {
-            parts.append("Model: \(modelText)")
-        }
-        if let thinkingLevelText {
-            parts.append("Thinking: \(thinkingLevelText)")
-        }
-        return parts.joined(separator: " · ")
+        presentation.contextDisplay?.textColor ?? DS.Colors.textTertiary
     }
 }
 
@@ -743,7 +838,7 @@ private struct PickyHeaderContextUsageBar: View {
     }
 }
 
-private struct PickyHeaderContextUsageDisplay {
+struct PickyHeaderContextUsageDisplay {
     let fraction: Double
     let label: String
     let barColor: Color
@@ -786,17 +881,12 @@ private struct PickyHeaderContextUsageDisplay {
 }
 
 private extension PickyAssistantRunMetadata {
-    var hasHeaderText: Bool {
-        headerModelText != nil || headerThinkingLevelText != nil
-    }
-
     var headerModelText: String? {
         guard let model else { return nil }
-        let leaf = model.split(separator: "/").last.map(String.init) ?? model
-        let compact = ["claude-", "openai-"].reduce(leaf) { partial, prefix in
-            partial.hasPrefix(prefix) ? String(partial.dropFirst(prefix.count)) : partial
-        }
-        let trimmed = compact.trimmingCharacters(in: .whitespacesAndNewlines)
+        // The responsive header has only two tiers. Preserve the complete model
+        // identifier in the wide tier; the narrow tier moves it into the menu
+        // instead of abbreviating it.
+        let trimmed = model.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }
 

@@ -326,14 +326,57 @@ struct PickyTests {
         #expect(QuickInputPanelLayout.estimatedPanelHeight >= QuickInputPanelLayout.capsuleHeight + outset * 2)
     }
 
-    @Test func archiveUndoToastLayoutPinsToScreenBottomRight() throws {
+    @Test func archiveUndoToastLayoutPrefersCornerOppositeDock() throws {
         let visibleFrame = CGRect(x: 100, y: 80, width: 1440, height: 900)
         let panelSize = CGSize(width: 304, height: 78)
+        let dockFrames: [(PickyHUDDockSide, CGRect, PickyHUDArchiveUndoToastLayout.Anchor)] = [
+            (.right, CGRect(x: 1450, y: 180, width: 72, height: 520), .bottomLeading),
+            (.left, CGRect(x: 118, y: 180, width: 72, height: 520), .bottomTrailing),
+            (.bottom, CGRect(x: 480, y: 98, width: 600, height: 72), .topTrailing),
+            (.top, CGRect(x: 480, y: 890, width: 600, height: 72), .bottomTrailing)
+        ]
 
-        let frame = PickyHUDArchiveUndoToastLayout.panelFrame(visibleFrame: visibleFrame, panelSize: panelSize)
+        for (side, dockFrame, expectedAnchor) in dockFrames {
+            let anchor = PickyHUDArchiveUndoToastLayout.anchor(
+                dockSide: side,
+                dockFrame: dockFrame,
+                visibleFrame: visibleFrame,
+                panelSize: panelSize
+            )
+            let frame = PickyHUDArchiveUndoToastLayout.panelFrame(
+                visibleFrame: visibleFrame,
+                dockSide: side,
+                dockFrame: dockFrame,
+                panelSize: panelSize
+            )
 
-        #expect(frame.origin.x == visibleFrame.maxX - panelSize.width - PickyHUDArchiveUndoToastPolicy.screenMargin)
-        #expect(frame.origin.y == visibleFrame.minY + PickyHUDArchiveUndoToastPolicy.screenMargin)
+            #expect(anchor == expectedAnchor)
+            #expect(!dockFrame.intersects(frame))
+        }
+    }
+
+    @Test func archiveUndoToastLayoutFallsBackWhenPreferredCornerIsOccupied() throws {
+        let visibleFrame = CGRect(x: 100, y: 80, width: 1440, height: 900)
+        let panelSize = CGSize(width: 304, height: 78)
+        // A right-side dock normally chooses bottom-leading. This HUD frame
+        // occupies that corner, so the policy must move to the next safe one.
+        let dockFrame = CGRect(x: 100, y: 80, width: 400, height: 220)
+
+        let anchor = PickyHUDArchiveUndoToastLayout.anchor(
+            dockSide: .right,
+            dockFrame: dockFrame,
+            visibleFrame: visibleFrame,
+            panelSize: panelSize
+        )
+        let frame = PickyHUDArchiveUndoToastLayout.panelFrame(
+            visibleFrame: visibleFrame,
+            dockSide: .right,
+            dockFrame: dockFrame,
+            panelSize: panelSize
+        )
+
+        #expect(anchor == .topLeading)
+        #expect(!dockFrame.intersects(frame))
         #expect(frame.size == panelSize)
     }
 

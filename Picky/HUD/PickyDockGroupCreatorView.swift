@@ -10,8 +10,8 @@
 import SwiftUI
 
 struct PickyDockGroupCreatorView: View {
-    /// All Pickles currently visible in the dock universe, in the dock's
-    /// render order. The creator lists them with checkboxes so the user can
+    /// All live Pickles in the dock universe, including members hidden by a
+    /// collapsed group. The creator lists them with checkboxes so the user can
     /// hand-pick which ones land in the new group.
     let availableSessions: [PickySessionListViewModel.SessionCard]
     /// Accent color the new group will adopt — surfaced as a small swatch
@@ -168,11 +168,8 @@ struct PickyDockGroupCreatorView: View {
         }
     }
 
-    /// Project the user's selection back onto the dock's render order so
-    /// the group's member array preserves what the dock already showed —
-    /// prevents surprise reordering when a session that lived in the top
-    /// slot ends up at the bottom of the new group just because the user
-    /// happened to tick its checkbox last.
+    /// Project the user's selection back onto the supplied live-session order
+    /// so ticking order never changes the new group's member order.
     private var selectedMembersInRenderOrder: [String] {
         availableSessions
             .map(\.id)

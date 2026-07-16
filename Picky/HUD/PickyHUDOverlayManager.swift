@@ -760,7 +760,16 @@ final class PickyHUDOverlayManager {
 
     private func positionArchiveUndoToast(displayID: CGDirectDisplayID) {
         guard let screen = screen(for: displayID), let entry = archiveUndoToastsByDisplayID[displayID] else { return }
-        let frame = PickyHUDArchiveUndoToastLayout.panelFrame(visibleFrame: screen.visibleFrame)
+        let position = position(for: displayID)
+        // The HUD panel frame includes its dock rail and any open conversation
+        // card. Treating that live frame as occupied keeps the six-second undo
+        // affordance out from under the dock even while the panel moves/resizes.
+        let dockFrame = panelsByDisplayID[displayID]?.panel.frame ?? .null
+        let frame = PickyHUDArchiveUndoToastLayout.panelFrame(
+            visibleFrame: screen.visibleFrame,
+            dockSide: position.side,
+            dockFrame: dockFrame
+        )
         if entry.panel.frame.integral != frame.integral {
             entry.panel.setFrame(frame, display: true)
         }

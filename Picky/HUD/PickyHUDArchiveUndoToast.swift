@@ -20,16 +20,87 @@ enum PickyHUDArchiveUndoToastPolicy {
 }
 
 enum PickyHUDArchiveUndoToastLayout {
+    /// Screen corners are named from the user's reading direction: `leading`
+    /// is the visible frame's minimum X and `top` is its maximum Y in AppKit
+    /// screen coordinates.
+    enum Anchor: Equatable {
+        case bottomLeading
+        case bottomTrailing
+        case topLeading
+        case topTrailing
+    }
+
+    /// Prefer the corner opposite the dock: right → bottom-leading, left →
+    /// bottom-trailing, bottom → top-trailing, top → bottom-trailing. If the
+    /// preferred corner is occupied by the current HUD panel, continue around
+    /// the remaining corners on that side before accepting an overlap.
+    static func anchor(
+        dockSide: PickyHUDDockSide,
+        dockFrame: CGRect,
+        visibleFrame: CGRect,
+        panelSize: CGSize = PickyHUDArchiveUndoToastPolicy.panelSize
+    ) -> Anchor {
+        let candidates: [Anchor]
+        switch dockSide {
+        case .right:
+            candidates = [.bottomLeading, .topLeading, .bottomTrailing, .topTrailing]
+        case .left:
+            candidates = [.bottomTrailing, .topTrailing, .bottomLeading, .topLeading]
+        case .bottom:
+            candidates = [.topTrailing, .topLeading, .bottomTrailing, .bottomLeading]
+        case .top:
+            candidates = [.bottomTrailing, .bottomLeading, .topTrailing, .topLeading]
+        }
+
+        return candidates.first {
+            !dockFrame.intersects(panelFrame(visibleFrame: visibleFrame, anchor: $0, panelSize: panelSize))
+        } ?? candidates[0]
+    }
+
+    static func panelFrame(
+        visibleFrame: CGRect,
+        dockSide: PickyHUDDockSide,
+        dockFrame: CGRect,
+        panelSize: CGSize = PickyHUDArchiveUndoToastPolicy.panelSize
+    ) -> CGRect {
+        panelFrame(
+            visibleFrame: visibleFrame,
+            anchor: anchor(
+                dockSide: dockSide,
+                dockFrame: dockFrame,
+                visibleFrame: visibleFrame,
+                panelSize: panelSize
+            ),
+            panelSize: panelSize
+        )
+    }
+
+    /// Compatibility fallback for callers without HUD placement context.
     static func panelFrame(visibleFrame: CGRect, panelSize: CGSize = PickyHUDArchiveUndoToastPolicy.panelSize) -> CGRect {
+        panelFrame(visibleFrame: visibleFrame, anchor: .bottomTrailing, panelSize: panelSize)
+    }
+
+    private static func panelFrame(visibleFrame: CGRect, anchor: Anchor, panelSize: CGSize) -> CGRect {
         let margin = PickyHUDArchiveUndoToastPolicy.screenMargin
         let width = min(panelSize.width, max(0, visibleFrame.width - (margin * 2)))
         let height = min(panelSize.height, max(0, visibleFrame.height - (margin * 2)))
-        return CGRect(
-            x: visibleFrame.maxX - width - margin,
-            y: visibleFrame.minY + margin,
-            width: width,
-            height: height
-        )
+        let x: CGFloat
+        let y: CGFloat
+        switch anchor {
+        case .bottomLeading:
+            x = visibleFrame.minX + margin
+            y = visibleFrame.minY + margin
+        case .bottomTrailing:
+            x = visibleFrame.maxX - width - margin
+            y = visibleFrame.minY + margin
+        case .topLeading:
+            x = visibleFrame.minX + margin
+            y = visibleFrame.maxY - height - margin
+        case .topTrailing:
+            x = visibleFrame.maxX - width - margin
+            y = visibleFrame.maxY - height - margin
+        }
+        return CGRect(x: x, y: y, width: width, height: height)
     }
 }
 

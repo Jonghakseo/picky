@@ -10,10 +10,14 @@
 import SwiftUI
 import AppKit
 
-/// Height of the thin group header chip rendered above an expanded group's
-/// member icons. Used by both the rendered view and `railHeight` math so the
-/// dock capsule reserves matching vertical space.
+/// Visual height of the thin group title above an expanded group's member
+/// icons. Its interaction row is taller so the compact label remains easy to
+/// click without making the title itself visually heavier.
 let PickyHUDDockGroupHeaderHeight: CGFloat = 14
+/// Actual layout and hit-test height of a group header. Keeping this separate
+/// from `PickyHUDDockGroupHeaderHeight` preserves the quiet 14pt title while
+/// reserving a 24pt target that cannot overlap the first member icon.
+let PickyHUDDockGroupHeaderHitAreaHeight: CGFloat = 24
 let PickyHUDDockGroupContentSpacing: CGFloat = 2
 
 /// Named SwiftUI coordinate space the rail establishes so child icons and
@@ -259,38 +263,40 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
             .foregroundColor(DS.Colors.textPrimary)
             .lineLimit(1)
             .truncationMode(.tail)
-            .frame(width: drawerSpan, height: PickyHUDDockGroupHeaderHeight, alignment: .center)
-        .contentShape(Rectangle())
-        // Tap anywhere on the header row toggles collapse. The rename
-        // affordance moved to the right-click context menu ("Rename")
-        // because the always-visible header no longer has a text label to
-        // host a double-tap target.
-        .onTapGesture {
-            onToggleCollapsed()
-        }
-        .accessibilityLabel(
-            group.isCollapsed
-                ? "Expand group \(group.displayName)"
-                : "Collapse group \(group.displayName)"
-        )
-        // Header drag = reorder the entire group block. `minimumDistance`
-        // keeps the single-tap toggle and double-tap rename responsive
-        // for short cursor moves; only intentional drags begin reorder.
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 4, coordinateSpace: .global)
-                .onChanged { value in
-                    if !hasReportedHeaderDragBegin {
-                        hasReportedHeaderDragBegin = true
-                        onHeaderDragBegin()
+            .frame(height: PickyHUDDockGroupHeaderHeight, alignment: .center)
+            // The visual title stays 14pt high, while this surrounding row
+            // reserves a 24pt target. As a layout row (rather than an overlay),
+            // it never reaches into the first member icon below.
+            .frame(width: drawerSpan, height: PickyHUDDockGroupHeaderHitAreaHeight, alignment: .center)
+            .contentShape(Rectangle())
+            // A reorder drag takes precedence over the collapse tap once it
+            // crosses the 4pt threshold; a stationary click still collapses.
+            // Right-click remains owned by the context menu below.
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 4, coordinateSpace: .global)
+                    .onChanged { value in
+                        if !hasReportedHeaderDragBegin {
+                            hasReportedHeaderDragBegin = true
+                            onHeaderDragBegin()
+                        }
+                        onHeaderDragChanged(value.translation)
                     }
-                    onHeaderDragChanged(value.translation)
-                }
-                .onEnded { value in
-                    hasReportedHeaderDragBegin = false
-                    onHeaderDragEnded(value.translation)
-                }
-        )
-        .contextMenu {
+                    .onEnded { value in
+                        hasReportedHeaderDragBegin = false
+                        onHeaderDragEnded(value.translation)
+                    }
+            )
+            // Tap anywhere on the header row toggles collapse. The rename
+            // affordance lives in the right-click context menu ("Rename").
+            .onTapGesture {
+                onToggleCollapsed()
+            }
+            .accessibilityLabel(
+                group.isCollapsed
+                    ? "Expand group \(group.displayName)"
+                    : "Collapse group \(group.displayName)"
+            )
+            .contextMenu {
             PickyHUDDockGroupContextMenu(
                 group: group,
                 onRename: { presentRenameDialog() },

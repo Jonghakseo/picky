@@ -1303,7 +1303,9 @@ struct PickyHUDDockRailView: View {
             onRemoveRecentPickleFolder: onRemoveRecentPickleFolder,
             onPinPickleFolder: onPinPickleFolder,
             onUnpinPickleFolder: onUnpinPickleFolder,
-            availableSessionsForGroupCreation: sessions,
+            // Use the full live list, not the collapsed projection slots, so
+            // members hidden inside a collapsed group remain selectable.
+            availableSessionsForGroupCreation: allSessions,
             suggestedGroupColor: nextSuggestedGroupColor,
             onCreateGroup: { name, memberIDs in
                 _ = onCreateDockGroup(name, memberIDs)
@@ -1373,7 +1375,9 @@ struct PickyHUDDockRailView: View {
             onRemoveRecentPickleFolder: onRemoveRecentPickleFolder,
             onPinPickleFolder: onPinPickleFolder,
             onUnpinPickleFolder: onUnpinPickleFolder,
-            availableSessionsForGroupCreation: sessions,
+            // Use the full live list, not the collapsed projection slots, so
+            // members hidden inside a collapsed group remain selectable.
+            availableSessionsForGroupCreation: allSessions,
             suggestedGroupColor: nextSuggestedGroupColor,
             onCreateGroup: { name, memberIDs in
                 _ = onCreateDockGroup(name, memberIDs)

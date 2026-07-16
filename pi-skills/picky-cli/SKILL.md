@@ -40,12 +40,18 @@ The `picky` CLI is Picky.app's local programmatic interface. It can submit text 
   - Use `--cwd <path>` to bind the Pickle to a workspace.
   - Use `--no-context` only when live app-side context should be skipped.
   - Use `--wait` only when the caller needs the final Pickle answer before continuing.
+  - Use `--group <name>` to assign the Pickle to a dock group.
   - Use `picky pickle-create --empty` only when the user asks for a blank Pickle.
 
 - `picky pickle-list` lists Pickle sessions currently shown in the Picky dock.
 
   - Prefer `--json` when you need to inspect session IDs programmatically.
-  - Use `--include-archived` only when archived Pickles are relevant.
+  - Use `--include-archived` or `--archived` only when archived Pickles are relevant.
+  - Use `--query <text>` to filter sessions by their searchable fields.
+
+- `picky pickle-archive <session-id>` hides a Pickle from the dock; `picky pickle-unarchive <session-id>` restores it within the retention window.
+
+- `picky pickle-group-list` lists dock groups. Prefer `--json` for programmatic use.
 
 - `picky pickle-followup <session-id> <text>` sends a follow-up to an existing Pickle.
 

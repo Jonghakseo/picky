@@ -11,6 +11,7 @@ import SwiftUI
 private struct PickyTodoProgressButtonStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var isHovered = false
+    @FocusState private var isFocused: Bool
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -19,6 +20,8 @@ private struct PickyTodoProgressButtonStyle: ButtonStyle {
                     .fill(interactionFill(isPressed: configuration.isPressed))
             )
             .focusable()
+            .focused($isFocused)
+            .focusEffectDisabled()
             .onHover { isHovered = $0 }
             .animation(
                 accessibilityReduceMotion ? nil : .easeOut(duration: DS.Animation.fast),
@@ -28,10 +31,18 @@ private struct PickyTodoProgressButtonStyle: ButtonStyle {
                 accessibilityReduceMotion ? nil : .easeOut(duration: DS.Animation.fast),
                 value: isHovered
             )
+            .animation(
+                accessibilityReduceMotion ? nil : .easeOut(duration: DS.Animation.fast),
+                value: isFocused
+            )
     }
 
     private func interactionFill(isPressed: Bool) -> Color {
-        PickyHUDInteractionStateLayer.fill(isHovered: isHovered, isPressed: isPressed)
+        PickyHUDInteractionStateLayer.fill(
+            isHovered: isHovered,
+            isPressed: isPressed,
+            isFocused: isFocused
+        )
     }
 }
 

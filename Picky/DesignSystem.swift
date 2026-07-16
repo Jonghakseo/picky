@@ -886,11 +886,13 @@ struct PickyHUDMaterialFill<FillShape: Shape>: View {
 /// alpha keeps hover/pressed contrast consistent across chips and segmented
 /// controls while each component retains its own shape and hit geometry.
 enum PickyHUDInteractionStateLayer {
-    private static let fillOpacity = 0.62
+    private static let pointerFillOpacity = 0.62
+    private static let keyboardFocusFillOpacity = 0.42
 
-    static func fill(isHovered: Bool, isPressed: Bool) -> Color {
-        if isPressed { return DS.Colors.surface4.opacity(fillOpacity) }
-        return isHovered ? DS.Colors.surface3.opacity(fillOpacity) : .clear
+    static func fill(isHovered: Bool, isPressed: Bool, isFocused: Bool = false) -> Color {
+        if isPressed { return DS.Colors.surface4.opacity(pointerFillOpacity) }
+        if isHovered { return DS.Colors.surface3.opacity(pointerFillOpacity) }
+        return isFocused ? DS.Colors.surface3.opacity(keyboardFocusFillOpacity) : .clear
     }
 }
 
@@ -902,7 +904,9 @@ struct PickyHUDCompactChipButtonStyle: ButtonStyle {
     private static let hitTargetHeight: CGFloat = 22
     private static let verticalHitTargetOutset: CGFloat = 4
 
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var isHovered = false
+    @FocusState private var isFocused: Bool
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -913,14 +917,30 @@ struct PickyHUDCompactChipButtonStyle: ButtonStyle {
                     .fill(interactionFill(isPressed: configuration.isPressed))
             )
             .focusable()
+            .focused($isFocused)
+            .focusEffectDisabled()
             .onHover { isHovered = $0 }
             .padding(.vertical, -Self.verticalHitTargetOutset)
-            .animation(.easeOut(duration: DS.Animation.fast), value: configuration.isPressed)
-            .animation(.easeOut(duration: DS.Animation.fast), value: isHovered)
+            .animation(
+                accessibilityReduceMotion ? nil : .easeOut(duration: DS.Animation.fast),
+                value: configuration.isPressed
+            )
+            .animation(
+                accessibilityReduceMotion ? nil : .easeOut(duration: DS.Animation.fast),
+                value: isHovered
+            )
+            .animation(
+                accessibilityReduceMotion ? nil : .easeOut(duration: DS.Animation.fast),
+                value: isFocused
+            )
     }
 
     private func interactionFill(isPressed: Bool) -> Color {
-        PickyHUDInteractionStateLayer.fill(isHovered: isHovered, isPressed: isPressed)
+        PickyHUDInteractionStateLayer.fill(
+            isHovered: isHovered,
+            isPressed: isPressed,
+            isFocused: isFocused
+        )
     }
 }
 

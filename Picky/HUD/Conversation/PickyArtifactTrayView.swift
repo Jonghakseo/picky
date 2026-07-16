@@ -87,6 +87,46 @@ private struct PickyArtifactTrayPopover: View {
     }
 }
 
+private struct PickyArtifactTrayActionButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovered = false
+    @FocusState private var isFocused: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
+                    .fill(interactionFill(isPressed: configuration.isPressed))
+            )
+            .focusable(isEnabled)
+            .focused($isFocused)
+            .focusEffectDisabled()
+            .onHover { isHovered = $0 }
+            .animation(
+                accessibilityReduceMotion ? nil : .easeOut(duration: DS.Animation.fast),
+                value: configuration.isPressed
+            )
+            .animation(
+                accessibilityReduceMotion ? nil : .easeOut(duration: DS.Animation.fast),
+                value: isHovered
+            )
+            .animation(
+                accessibilityReduceMotion ? nil : .easeOut(duration: DS.Animation.fast),
+                value: isFocused
+            )
+    }
+
+    private func interactionFill(isPressed: Bool) -> Color {
+        guard isEnabled else { return .clear }
+        return PickyHUDInteractionStateLayer.fill(
+            isHovered: isHovered,
+            isPressed: isPressed,
+            isFocused: isFocused
+        )
+    }
+}
+
 private struct PickyArtifactTrayRow: View {
     let artifact: PickyArtifact
     let copied: Bool
@@ -128,7 +168,7 @@ private struct PickyArtifactTrayRow: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PickyArtifactTrayActionButtonStyle())
             .disabled(!isPrimaryActionAvailable)
             .accessibilityLabel("\(presentation.title), \(subtitle)")
             .accessibilityHint(primaryActionHint)
@@ -141,7 +181,7 @@ private struct PickyArtifactTrayRow: View {
                         .frame(width: 22, height: 22)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PickyArtifactTrayActionButtonStyle())
                 .help(L10n.t(copied ? "hud.artifactTray.copied" : "hud.artifactTray.copy"))
                 .accessibilityLabel(L10n.t(copied ? "hud.artifactTray.copied" : "hud.artifactTray.copy"))
             }

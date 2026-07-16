@@ -166,25 +166,50 @@ final class PickyToolHistoryViewerModel: ObservableObject {
 
 struct PickyToolHistoryViewerWindowView: View {
     @ObservedObject var model: PickyToolHistoryViewerModel
+    @State private var selectedCategories: Set<PickyToolHistoryCategory> = []
+    @State private var failuresOnly = false
+    @State private var query = ""
+    @FocusState private var isSearchFieldFocused: Bool
+
+    private var filterResult: PickyToolHistoryFilterResult {
+        PickyToolHistoryFilterPolicy.result(
+            entries: model.entries,
+            selectedCategories: selectedCategories,
+            failuresOnly: failuresOnly,
+            query: query
+        )
+    }
+
+    private var hasActiveFilters: Bool {
+        !selectedCategories.isEmpty || failuresOnly || !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var body: some View {
+        let result = filterResult
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider().overlay(DS.Colors.borderSubtle)
             ScrollView {
                 if model.entries.isEmpty {
                     emptyState
+                } else if result.entries.isEmpty {
+                    filteredEmptyState
                 } else {
                     LazyVStack(alignment: .leading, spacing: 10) {
-                        ForEach(model.entries) { entry in
+                        ForEach(result.entries) { entry in
                             PickyToolHistoryEntryView(entry: entry)
                         }
                     }
-                    .padding(EdgeInsets(top: 16, leading: 18, bottom: 22, trailing: 18))
+                    .padding(.top, 16)
+                    filterFooter(result)
+                        .padding(.top, 12)
                 }
             }
+            .padding(.horizontal, model.entries.isEmpty || result.entries.isEmpty ? 0 : 18)
+            .padding(.bottom, model.entries.isEmpty || result.entries.isEmpty ? 0 : 22)
         }
         .background(PickyAppearancePanelChrome.overlayBackground)
+        .background(keyboardShortcuts)
     }
 
     private var header: some View {
@@ -199,7 +224,14 @@ struct PickyToolHistoryViewerWindowView: View {
                     .lineLimit(1)
                 summaryStrip
             }
-            Spacer()
+            .layoutPriority(1)
+            Spacer(minLength: 8)
+            TextField(L10n.t("hud.toolHistory.search.placeholder"), text: $query)
+                .textFieldStyle(.roundedBorder)
+                .font(PickyHUDTypography.status)
+                .frame(width: 150)
+                .focused($isSearchFieldFocused)
+                .accessibilityLabel(L10n.t("hud.toolHistory.search.accessibilityLabel"))
             scopeToggle
             Button {
                 model.reload()
@@ -213,6 +245,13 @@ struct PickyToolHistoryViewerWindowView: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
+    }
+
+    private var keyboardShortcuts: some View {
+        Button(L10n.t("hud.toolHistory.search.accessibilityLabel")) {
+            isSearchFieldFocused = true
+        }
+        .keyboardShortcut("f", modifiers: .command)
     }
 
     @ViewBuilder
@@ -247,24 +286,83 @@ struct PickyToolHistoryViewerWindowView: View {
     }
 
     private var summaryStrip: some View {
-        HStack(spacing: 10) {
-            ForEach(PickyToolHistoryCategoryDisplay.ordered, id: \.category) { display in
-                let count = model.summary.count(of: display.category)
-                if count > 0 {
-                    HStack(spacing: 3) {
-                        Text(display.label)
-                        Text("\(count)").fontWeight(.bold)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(PickyToolHistoryCategoryDisplay.ordered, id: \.category) { display in
+                    let count = model.summary.count(of: display.category)
+                    if count > 0 {
+                        categoryFilterButton(display, count: count)
                     }
-                    .font(PickyHUDTypography.metaMonospacedMedium)
-                    .foregroundStyle(display.tint)
+                }
+                if model.summary.total > 0 {
+                    failureFilterButton
                 }
             }
-            if model.summary.total > 0 {
-                Text("· total \(model.summary.total)")
-                    .font(PickyHUDTypography.metaMonospacedMedium)
-                    .foregroundStyle(DS.Colors.textTertiary)
+        }
+        .frame(maxWidth: 330, alignment: .leading)
+    }
+
+    private func categoryFilterButton(_ display: PickyToolHistoryCategoryDisplay, count: Int) -> some View {
+        let isSelected = selectedCategories.contains(display.category)
+        return Button {
+            if isSelected {
+                selectedCategories.remove(display.category)
+            } else {
+                selectedCategories.insert(display.category)
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Text(display.label)
+                Text("\(count)").fontWeight(.bold)
+            }
+            .font(PickyHUDTypography.metaMonospacedMedium)
+            .foregroundStyle(isSelected ? DS.Colors.accentText : display.tint)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(isSelected ? DS.Colors.accentSubtle : Color.clear))
+            .overlay(Capsule().stroke(isSelected ? DS.Colors.accentText.opacity(0.7) : Color.clear, lineWidth: 0.8))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L10n.t("hud.toolHistory.categoryFilter.accessibilityLabel", display.label, Int64(count)))
+        .accessibilityValue(isSelected ? L10n.t("hud.toolHistory.filter.selected") : "")
+    }
+
+    private var failureFilterButton: some View {
+        Button { failuresOnly.toggle() } label: {
+            Text(L10n.t("hud.toolHistory.failuresOnly"))
+                .font(PickyHUDTypography.metaMonospacedMedium)
+                .foregroundStyle(failuresOnly ? DS.Colors.destructiveText : DS.Colors.textSecondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Capsule().fill(failuresOnly ? DS.Colors.destructive.opacity(0.12) : Color.clear))
+                .overlay(Capsule().stroke(failuresOnly ? DS.Colors.destructiveText.opacity(0.7) : Color.clear, lineWidth: 0.8))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L10n.t("hud.toolHistory.failuresOnly"))
+        .accessibilityValue(failuresOnly ? L10n.t("hud.toolHistory.filter.selected") : "")
+    }
+
+    private func filterFooter(_ result: PickyToolHistoryFilterResult) -> some View {
+        HStack {
+            Text(L10n.t("hud.toolHistory.filter.resultCount", Int64(result.visibleCount), Int64(result.totalCount)))
+                .font(PickyHUDTypography.status)
+                .foregroundStyle(DS.Colors.textTertiary)
+                .monospacedDigit()
+            Spacer()
+            if hasActiveFilters {
+                clearFiltersButton
             }
         }
+    }
+
+    private var clearFiltersButton: some View {
+        Button(action: clearFilters) {
+            Text(L10n.t("hud.toolHistory.filter.clear"))
+                .font(PickyHUDTypography.statusSemibold)
+                .foregroundStyle(DS.Colors.accentText)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L10n.t("hud.toolHistory.filter.clear"))
     }
 
     private var emptyState: some View {
@@ -277,6 +375,27 @@ struct PickyToolHistoryViewerWindowView: View {
                 .foregroundStyle(DS.Colors.textSecondary)
         }
         .frame(maxWidth: .infinity, minHeight: 240)
+    }
+
+    private var filteredEmptyState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "line.3.horizontal.decrease.circle")
+                .pickyFont(size: 24, weight: .light)
+                .foregroundStyle(DS.Colors.textTertiary)
+            Text(L10n.t("hud.toolHistory.filter.empty"))
+                .pickyFont(size: 13, weight: .medium)
+                .foregroundStyle(DS.Colors.textSecondary)
+            if hasActiveFilters {
+                clearFiltersButton
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 240)
+    }
+
+    private func clearFilters() {
+        selectedCategories.removeAll()
+        failuresOnly = false
+        query = ""
     }
 }
 

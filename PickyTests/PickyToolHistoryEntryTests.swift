@@ -307,4 +307,92 @@ struct PickyToolHistoryEntryTests {
         )
         #expect(inverted.durationMs == nil)
     }
+
+    @Test func categoryFiltersPreserveSourceOrderAndAllowMultipleSelections() {
+        let entries = filterEntries()
+        let visible = PickyToolHistoryFilterPolicy.filter(
+            entries: entries,
+            selectedCategories: [.read, .edit]
+        )
+
+        #expect(visible.map(\.id) == ["read", "edit"])
+    }
+
+    @Test func failureAndTextFiltersCombineWithCategoryFilters() {
+        let entries = filterEntries()
+        let visible = PickyToolHistoryFilterPolicy.filter(
+            entries: entries,
+            selectedCategories: [.bash],
+            failuresOnly: true,
+            query: "RETRY"
+        )
+
+        #expect(visible.map(\.id) == ["failed-bash"])
+    }
+
+    @Test func searchMatchesRenderedDetailTextCaseInsensitively() {
+        let entries = filterEntries()
+
+        #expect(PickyToolHistoryFilterPolicy.filter(entries: entries, query: "config.swift").map(\.id) == ["read"])
+        #expect(PickyToolHistoryFilterPolicy.filter(entries: entries, query: "deploy preview").map(\.id) == ["failed-bash"])
+        #expect(PickyToolHistoryFilterPolicy.filter(entries: entries, query: "  ").map(\.id) == entries.map(\.id))
+    }
+
+    @Test func filterResultKeepsTotalAndReportsNoMatches() {
+        let result = PickyToolHistoryFilterPolicy.result(
+            entries: filterEntries(),
+            selectedCategories: [.write],
+            failuresOnly: true,
+            query: "missing"
+        )
+
+        #expect(result.totalCount == 4)
+        #expect(result.visibleCount == 0)
+        #expect(result.entries.isEmpty)
+    }
+
+    private func filterEntries() -> [PickyToolHistoryEntry] {
+        [
+            PickyToolHistoryEntry(
+                id: "read",
+                index: 1,
+                name: "read",
+                category: .read,
+                status: .succeeded,
+                durationMs: nil,
+                startedAt: nil,
+                detail: .read(file: "Config.swift", range: "L1–L10", resultSummary: "10 lines")
+            ),
+            PickyToolHistoryEntry(
+                id: "failed-bash",
+                index: 2,
+                name: "bash",
+                category: .bash,
+                status: .failed,
+                durationMs: nil,
+                startedAt: nil,
+                detail: .bash(command: "deploy preview", output: "retry after failure")
+            ),
+            PickyToolHistoryEntry(
+                id: "edit",
+                index: 3,
+                name: "edit",
+                category: .edit,
+                status: .succeeded,
+                durationMs: nil,
+                startedAt: nil,
+                detail: .edit(file: "PickyHUDView.swift", changes: [])
+            ),
+            PickyToolHistoryEntry(
+                id: "write",
+                index: 4,
+                name: "write",
+                category: .write,
+                status: .running,
+                durationMs: nil,
+                startedAt: nil,
+                detail: .write(file: "Report.md", content: "draft")
+            ),
+        ]
+    }
 }

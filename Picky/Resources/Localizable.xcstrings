@@ -2019,6 +2019,22 @@
         }
       }
     },
+    "hud.toolHistory.categoryFilter.accessibilityLabel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@, %lld calls"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ %lld개 호출"
+          }
+        }
+      }
+    },
     "hud.toolHistory.empty": {
       "localizations": {
         "en": {
@@ -2031,6 +2047,118 @@
           "stringUnit": {
             "state": "translated",
             "value": "아직 기록된 툴 호출이 없어요"
+          }
+        }
+      }
+    },
+    "hud.toolHistory.failuresOnly": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failures only"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실패만"
+          }
+        }
+      }
+    },
+    "hud.toolHistory.filter.clear": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear filters"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "필터 지우기"
+          }
+        }
+      }
+    },
+    "hud.toolHistory.filter.empty": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No tool calls match these filters"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "필터와 일치하는 툴 호출이 없어요"
+          }
+        }
+      }
+    },
+    "hud.toolHistory.filter.resultCount": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld / %lld shown"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld / %lld개 표시"
+          }
+        }
+      }
+    },
+    "hud.toolHistory.filter.selected": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Selected"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택됨"
+          }
+        }
+      }
+    },
+    "hud.toolHistory.search.accessibilityLabel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search tool history"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "툴 이력 검색"
+          }
+        }
+      }
+    },
+    "hud.toolHistory.search.placeholder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search tools"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "툴 검색"
           }
         }
       }

@@ -8,7 +8,7 @@
 
 import Foundation
 
-enum PickyToolHistoryCategory: String, Equatable {
+enum PickyToolHistoryCategory: String, Equatable, Hashable {
     case read, bash, edit, write, other
 }
 

@@ -460,6 +460,38 @@
         }
       }
     },
+    "feedback.retry": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retry"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 시도"
+          }
+        }
+      }
+    },
+    "feedback.retry.accessibilityLabel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retry feedback"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "피드백 다시 보내기"
+          }
+        }
+      }
+    },
     "feedback.send": {
       "localizations": {
         "en": {
@@ -472,6 +504,86 @@
           "stringUnit": {
             "state": "translated",
             "value": "보내기"
+          }
+        }
+      }
+    },
+    "feedback.sendFailure.attachment": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t upload an attachment. Check the file and retry."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "첨부 파일을 업로드하지 못했어요. 파일을 확인한 뒤 다시 시도해 주세요."
+          }
+        }
+      }
+    },
+    "feedback.sendFailure.connection": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t send feedback. Check your connection and retry."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "피드백을 보내지 못했어요. 인터넷 연결을 확인한 뒤 다시 시도해 주세요."
+          }
+        }
+      }
+    },
+    "feedback.sendFailure.diagnostics": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t prepare the diagnostics bundle. Try again without diagnostics."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "진단 번들을 준비하지 못했어요. 진단 파일 없이 다시 시도해 보세요."
+          }
+        }
+      }
+    },
+    "feedback.sendFailure.generic": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t send feedback. Please retry."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "피드백을 보내지 못했어요. 다시 시도해 주세요."
+          }
+        }
+      }
+    },
+    "feedback.sendFailure.service": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Feedback service is unavailable. Please retry later."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "피드백 서비스를 사용할 수 없어요. 잠시 후 다시 시도해 주세요."
           }
         }
       }
@@ -696,6 +808,55 @@
           "stringUnit": {
             "state": "translated",
             "value": "모두 지우기"
+          }
+        }
+      }
+    },
+    "hud.conversation.jumpToLatest": {
+      "comment": "Compact button label that returns a reader to the newest conversation content.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Latest"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최신"
+          }
+        }
+      }
+    },
+    "hud.conversation.jumpToLatest.accessibilityLabel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jump to latest conversation content"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최신 대화 내용으로 이동"
+          }
+        }
+      }
+    },
+    "hud.conversation.jumpToLatest.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jump to latest conversation content"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최신 대화 내용으로 이동"
           }
         }
       }

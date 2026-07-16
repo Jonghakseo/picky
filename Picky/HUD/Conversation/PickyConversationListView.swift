@@ -21,6 +21,11 @@ struct PickyConversationListView: View {
     @State private var hasAppeared = false
     @State private var isPinnedToBottom = true
     @State private var hasUnreadContentSinceUnpinning = false
+    @State private var scrollViewportHeight: CGFloat = 0
+    @State private var bottomAnchorMaxY: CGFloat = .infinity
+    /// Suppresses an unpin caused by the short layout interval between a
+    /// streaming update growing the content and its requested bottom scroll.
+    @State private var isAwaitingProgrammaticBottomPin = false
     @State private var delayedQuestionCollapseScrollTask: Task<Void, Never>?
 
     var body: some View {
@@ -74,15 +79,25 @@ struct PickyConversationListView: View {
                         Color.clear
                             .frame(height: max(1, bottomOverlayInset))
                             .id(Self.bottomAnchorID)
-                            .onAppear {
-                                isPinnedToBottom = true
-                                hasUnreadContentSinceUnpinning = false
-                            }
-                            .onDisappear {
-                                isPinnedToBottom = false
+                            .background {
+                                GeometryReader { proxy in
+                                    Color.clear.preference(
+                                        key: PickyConversationBottomAnchorPreferenceKey.self,
+                                        value: proxy.frame(in: .named(Self.scrollCoordinateSpace)).maxY
+                                    )
+                                }
                             }
                     }
                     .padding(.vertical, 2)
+                }
+                .coordinateSpace(name: Self.scrollCoordinateSpace)
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear.preference(
+                            key: PickyConversationScrollViewportPreferenceKey.self,
+                            value: proxy.size.height
+                        )
+                    }
                 }
                 if session.isCompacting {
                     PickyCompactingOverlayView()
@@ -99,6 +114,14 @@ struct PickyConversationListView: View {
                 }
             }
             .frame(minHeight: 80, maxHeight: fillsAvailableHeight ? .infinity : 640)
+            .onPreferenceChange(PickyConversationScrollViewportPreferenceKey.self) { height in
+                scrollViewportHeight = height
+                updatePinnedStateFromViewportGeometry()
+            }
+            .onPreferenceChange(PickyConversationBottomAnchorPreferenceKey.self) { maxY in
+                bottomAnchorMaxY = maxY
+                updatePinnedStateFromViewportGeometry()
+            }
             .task(id: session.id) {
                 // Session changes always start at the most recent content. VStack is
                 // eager, so the bottom sentinel is in the view tree by this point.
@@ -143,6 +166,7 @@ struct PickyConversationListView: View {
             .onDisappear {
                 delayedQuestionCollapseScrollTask?.cancel()
                 delayedQuestionCollapseScrollTask = nil
+                isAwaitingProgrammaticBottomPin = false
             }
         }
     }
@@ -574,7 +598,7 @@ struct PickyConversationListView: View {
             hasUnreadContentSinceUnpinning = false
             scrollToBottom(proxy: proxy, animated: PickyConversationScrollPolicy.shouldAnimateScroll(hasAppeared: hasAppeared))
         }) {
-            Label("Latest", systemImage: "arrow.down")
+            Label(L10n.t("hud.conversation.jumpToLatest"), systemImage: "arrow.down")
                 .font(PickyHUDTypography.statusSemibold)
                 .foregroundColor(DS.Colors.accentText)
                 .padding(.horizontal, 9)
@@ -583,11 +607,27 @@ struct PickyConversationListView: View {
                 .overlay(Capsule().stroke(DS.Colors.borderSubtle, lineWidth: 0.5))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Jump to latest conversation content")
-        .help("Jump to latest conversation content")
+        .accessibilityLabel(L10n.t("hud.conversation.jumpToLatest.accessibilityLabel"))
+        .help(L10n.t("hud.conversation.jumpToLatest.help"))
+    }
+
+    private func updatePinnedStateFromViewportGeometry() {
+        guard scrollViewportHeight > 0, bottomAnchorMaxY.isFinite else { return }
+
+        if PickyConversationScrollPolicy.isBottomAnchorPinned(
+            maxY: bottomAnchorMaxY,
+            viewportHeight: scrollViewportHeight
+        ) {
+            isPinnedToBottom = true
+            hasUnreadContentSinceUnpinning = false
+            isAwaitingProgrammaticBottomPin = false
+        } else if !isAwaitingProgrammaticBottomPin {
+            isPinnedToBottom = false
+        }
     }
 
     private func scrollToBottom(proxy: ScrollViewProxy, animated: Bool) {
+        isAwaitingProgrammaticBottomPin = true
         if animated {
             PickyPerf.event("conversation_scroll_to_bottom_animated")
         } else {
@@ -625,12 +665,33 @@ struct PickyConversationListView: View {
     }
 
     private static let bottomAnchorID = "__picky_conversation_bottom_anchor__"
+    private static let scrollCoordinateSpace = "PickyConversationScrollViewport"
+}
+
+private struct PickyConversationScrollViewportPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+private struct PickyConversationBottomAnchorPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat = .infinity
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
 }
 
 enum PickyConversationScrollPolicy {
     static let liveUpdateAnimation = Animation.easeOut(duration: 0.18)
 
     static let questionCollapseRepinDelayNanoseconds: UInt64 = 220_000_000
+    /// Treat the bottom as pinned while its sentinel remains within this
+    /// distance of the viewport's lower edge. This absorbs sub-pixel layout
+    /// movement without stealing the reader's position.
+    static let bottomPinThreshold: CGFloat = 28
 
     static func shouldAnimateScroll(hasAppeared: Bool) -> Bool {
         hasAppeared
@@ -661,6 +722,10 @@ enum PickyConversationScrollPolicy {
 
     static func shouldShowJumpToLatest(isPinnedToBottom: Bool, hasUnreadContent: Bool) -> Bool {
         !isPinnedToBottom && hasUnreadContent
+    }
+
+    static func isBottomAnchorPinned(maxY: CGFloat, viewportHeight: CGFloat) -> Bool {
+        maxY <= viewportHeight + bottomPinThreshold
     }
 
     static func shouldRepinAfterQuestionCollapse(

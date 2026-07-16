@@ -11,8 +11,15 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-private enum PickyFeedbackSendErrorDescription {
-    static func describe(_ error: Error) -> String {
+private struct PickyFeedbackMediaAttachmentError: Error {
+    let technicalDescription: String
+}
+
+enum PickyFeedbackSendErrorDescription {
+    /// Detailed backend failures stay in the diagnostic log; this copy is not
+    /// shown to users because Slack codes and transport details are not useful
+    /// recovery guidance.
+    static func technicalDescription(_ error: Error) -> String {
         if let sendError = error as? PickyFeedbackSendError {
             switch sendError {
             case .notConfigured:
@@ -20,7 +27,7 @@ private enum PickyFeedbackSendErrorDescription {
             case .emptyMessage:
                 return "Message is empty."
             case .httpStatus(let code, let detail):
-                return "Couldn't send (HTTP \(code) at \(detail)). Try again."
+                return "Couldn't send (HTTP \(code) at \(detail))."
             case .slackError(let detail):
                 return "Slack rejected the request: \(detail)"
             case .transport(let detail):
@@ -33,7 +40,30 @@ private enum PickyFeedbackSendErrorDescription {
                 return "Couldn't package diagnostics: \(detail)"
             }
         }
+        if let mediaError = error as? PickyFeedbackMediaAttachmentError {
+            return "Couldn't prepare attachment: \(mediaError.technicalDescription)"
+        }
         return "Couldn't send. \(error.localizedDescription)"
+    }
+
+    static func userMessage(_ error: Error) -> String {
+        if error is PickyDiagnosticsBundleError {
+            return L10n.t("feedback.sendFailure.diagnostics")
+        }
+        if error is PickyFeedbackMediaAttachmentError {
+            return L10n.t("feedback.sendFailure.attachment")
+        }
+        if let sendError = error as? PickyFeedbackSendError {
+            switch sendError {
+            case .transport:
+                return L10n.t("feedback.sendFailure.connection")
+            case .httpStatus(_, let detail) where detail == "upload":
+                return L10n.t("feedback.sendFailure.attachment")
+            case .notConfigured, .emptyMessage, .httpStatus, .slackError:
+                return L10n.t("feedback.sendFailure.service")
+            }
+        }
+        return L10n.t("feedback.sendFailure.generic")
     }
 }
 
@@ -383,13 +413,13 @@ struct CompanionPanelFeedbackView: View {
                 .foregroundColor(DS.Colors.destructiveText)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 4)
-            Button("Retry", action: send)
+            Button(L10n.t("feedback.retry"), action: send)
                 .buttonStyle(.plain)
                 .font(PickyHUDTypography.statusSemibold)
                 .foregroundColor(DS.Colors.accentText)
                 .disabled(!isSendEnabled)
                 .pointerCursor(isEnabled: isSendEnabled)
-                .accessibilityLabel("Retry feedback")
+                .accessibilityLabel(L10n.t("feedback.retry.accessibilityLabel"))
         }
     }
 
@@ -589,9 +619,9 @@ struct CompanionPanelFeedbackView: View {
                 try await PickyFeedbackSender().send(payload, attachments: attachments)
                 return .success(())
             } catch {
-                let message = PickyFeedbackSendErrorDescription.describe(error)
-                NSLog("Picky feedback send failed: \(message)")
-                return .failure(PickyFeedbackSendFailure(message: message))
+                let technicalDescription = PickyFeedbackSendErrorDescription.technicalDescription(error)
+                NSLog("Picky feedback send failed: \(technicalDescription)")
+                return .failure(PickyFeedbackSendFailure(message: PickyFeedbackSendErrorDescription.userMessage(error)))
             }
         }
 
@@ -615,26 +645,30 @@ struct CompanionPanelFeedbackView: View {
         }
 
         nonisolated private func buildMediaAttachments(from selection: [SelectedMediaAttachment]) throws -> [PickyFeedbackAttachment] {
-            guard selection.count <= MediaAttachmentPolicy.maxCount else {
-                throw MediaAttachmentError.tooMany
-            }
-
-            var totalBytes = 0
-            var attachments: [PickyFeedbackAttachment] = []
-            for selected in selection {
-                let refreshed = try selectedMediaAttachment(from: selected.url)
-                totalBytes += refreshed.byteCount
-                guard totalBytes <= MediaAttachmentPolicy.maxTotalBytes else {
-                    throw MediaAttachmentError.totalTooLarge(totalBytes)
+            do {
+                guard selection.count <= MediaAttachmentPolicy.maxCount else {
+                    throw MediaAttachmentError.tooMany
                 }
-                attachments.append(PickyFeedbackAttachment(
-                    filename: refreshed.filename,
-                    fileURL: refreshed.url,
-                    byteCount: refreshed.byteCount,
-                    kind: .media
-                ))
+
+                var totalBytes = 0
+                var attachments: [PickyFeedbackAttachment] = []
+                for selected in selection {
+                    let refreshed = try selectedMediaAttachment(from: selected.url)
+                    totalBytes += refreshed.byteCount
+                    guard totalBytes <= MediaAttachmentPolicy.maxTotalBytes else {
+                        throw MediaAttachmentError.totalTooLarge(totalBytes)
+                    }
+                    attachments.append(PickyFeedbackAttachment(
+                        filename: refreshed.filename,
+                        fileURL: refreshed.url,
+                        byteCount: refreshed.byteCount,
+                        kind: .media
+                    ))
+                }
+                return attachments
+            } catch {
+                throw PickyFeedbackMediaAttachmentError(technicalDescription: error.localizedDescription)
             }
-            return attachments
         }
 
         nonisolated private func selectedMediaAttachment(from url: URL) throws -> SelectedMediaAttachment {

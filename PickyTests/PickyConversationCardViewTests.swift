@@ -1302,6 +1302,20 @@ struct PickyConversationCardViewTests {
         #expect(PickyConversationScrollPolicy.shouldAutoScroll(from: nil, to: initialTrigger, isPinnedToBottom: false))
     }
 
+    @Test func conversationScrollPolicyTreatsOnlyNearViewportBottomAsPinned() {
+        let viewportHeight: CGFloat = 320
+        let threshold = PickyConversationScrollPolicy.bottomPinThreshold
+
+        #expect(PickyConversationScrollPolicy.isBottomAnchorPinned(
+            maxY: viewportHeight + threshold,
+            viewportHeight: viewportHeight
+        ))
+        #expect(!PickyConversationScrollPolicy.isBottomAnchorPinned(
+            maxY: viewportHeight + threshold + 0.1,
+            viewportHeight: viewportHeight
+        ))
+    }
+
     @Test func conversationScrollPolicyShowsAndHidesJumpToLatestForUnreadRemoteContent() {
         let current = PickyConversationBottomScrollTrigger(
             latestMessageID: "message-1",

@@ -212,6 +212,8 @@ struct PickyHUDDockRailView: View {
     @State private var groupDragStartLayoutIndex: Int = 0
     @State private var groupDragCurrentLayoutIndex: Int = 0
 
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+
     /// macOS Dock-style pull-out. While dragging an icon or group clearly
     /// away from the dock on the cross axis, we arm a destructive release:
     /// a Pickle archives, a group is removed. Sessions require a short dwell
@@ -499,9 +501,18 @@ struct PickyHUDDockRailView: View {
 
     private func revealActiveSession(using proxy: ScrollViewProxy) {
         guard let activeSessionID else { return }
+        let reduceMotion = accessibilityReduceMotion
         DispatchQueue.main.async {
-            withAnimation(.easeOut(duration: 0.18)) {
-                proxy.scrollTo(activeSessionID, anchor: .center)
+            if reduceMotion {
+                var transaction = Transaction(animation: nil)
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    proxy.scrollTo(activeSessionID, anchor: .center)
+                }
+            } else {
+                withAnimation(.easeOut(duration: 0.18)) {
+                    proxy.scrollTo(activeSessionID, anchor: .center)
+                }
             }
         }
     }

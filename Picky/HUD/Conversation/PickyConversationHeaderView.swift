@@ -535,23 +535,6 @@ enum PickyConversationStatusTone: Equatable {
     case warningText
     case textTertiary
 
-    init(status: PickySessionStatus) {
-        switch status {
-        case .running:
-            self = .info
-        case .completed:
-            self = .success
-        case .waiting_for_input:
-            self = .warning
-        case .failed:
-            self = .destructiveText
-        case .blocked:
-            self = .warningText
-        case .queued, .cancelled:
-            self = .textTertiary
-        }
-    }
-
     var color: Color {
         switch self {
         case .info:

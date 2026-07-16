@@ -882,6 +882,39 @@ struct PickyHUDMaterialFill<FillShape: Shape>: View {
     }
 }
 
+/// Shared interaction treatment for compact HUD chips. The 22pt hit target
+/// extends into the chip row's existing whitespace without changing its compact
+/// visual capsule or row height; native focusability retains macOS keyboard
+/// focus feedback independently from pointer hover.
+struct PickyHUDCompactChipButtonStyle: ButtonStyle {
+    private static let hitTargetHeight: CGFloat = 22
+    private static let verticalHitTargetOutset: CGFloat = 4
+
+    @State private var isHovered = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .frame(minHeight: Self.hitTargetHeight)
+            .contentShape(Capsule(style: .continuous))
+            .background(
+                Capsule(style: .continuous)
+                    .fill(interactionFill(isPressed: configuration.isPressed))
+            )
+            .focusable()
+            .onHover { isHovered = $0 }
+            .padding(.vertical, -Self.verticalHitTargetOutset)
+            .animation(.easeOut(duration: DS.Animation.fast), value: configuration.isPressed)
+            .animation(.easeOut(duration: DS.Animation.fast), value: isHovered)
+    }
+
+    private func interactionFill(isPressed: Bool) -> Color {
+        if isPressed {
+            return DS.Colors.surface4.opacity(0.62)
+        }
+        return isHovered ? DS.Colors.surface3.opacity(0.62) : .clear
+    }
+}
+
 // MARK: - Color Utilities
 
 extension Color {

@@ -328,6 +328,31 @@ struct PickyReportSearchState: Equatable {
     }
 }
 
+enum PickyReportOutlinePresentationMode: Equatable {
+    case pushed
+    case overlay
+}
+
+/// Keeps the report's readable text column at or above 500pt when the outline
+/// occupies layout space. The 48pt content inset and 1pt divider are included
+/// so this policy reflects the actual column available to report prose.
+enum PickyReportOutlineLayoutPolicy {
+    static let sidebarWidth: CGFloat = 192
+    static let contentHorizontalInsets: CGFloat = 48
+    static let dividerWidth: CGFloat = 1
+    static let minimumReadingColumnWidth: CGFloat = 500
+
+    static let minimumPushedViewerWidth = sidebarWidth + dividerWidth + contentHorizontalInsets + minimumReadingColumnWidth
+
+    static func presentationMode(forViewerWidth width: CGFloat) -> PickyReportOutlinePresentationMode {
+        width >= minimumPushedViewerWidth ? .pushed : .overlay
+    }
+
+    static func readingColumnWidth(forPushedViewerWidth width: CGFloat) -> CGFloat {
+        max(0, width - sidebarWidth - dividerWidth - contentHorizontalInsets)
+    }
+}
+
 private struct PickyReportBlockPosition: Equatable {
     let id: String
     let minY: CGFloat
@@ -803,6 +828,9 @@ struct PickyReportViewerWindowView: View {
     @State private var isSearchPresented = false
     @State private var searchState = PickyReportSearchState()
     @State private var activeSectionID: String?
+    /// Rounded before storage so sub-point AppKit layout updates do not trigger
+    /// report-body recomputation while the panel is resized.
+    @State private var viewerWidth: CGFloat = 0
     /// The nearest visible block is retained across a streamed report refresh,
     /// then restored after SwiftUI has laid out the new block tree.
     @State private var scrollAnchorID: String?
@@ -826,20 +854,7 @@ struct PickyReportViewerWindowView: View {
                     searchBar(blocks: blocks)
                 }
                 Divider().overlay(DS.Colors.borderSubtle)
-                HStack(spacing: 0) {
-                    // The detached panel has a 620pt minimum width, so the 192pt
-                    // sidebar always pushes content without entering an overlay
-                    // mode below the approved 520pt readability guard.
-                    if isOutlinePresented, outline.count >= 3 {
-                        outlineSidebar(entries: outline, proxy: proxy)
-                        Divider().overlay(DS.Colors.borderSubtle)
-                    }
-                    ScrollView {
-                        reportContent(blocks: blocks)
-                            .padding(EdgeInsets(top: 22, leading: 24, bottom: 28, trailing: 24))
-                    }
-                    .coordinateSpace(name: PickyReportScrollCoordinateSpace.name)
-                }
+                reportBody(blocks: blocks, outline: outline, proxy: proxy)
             }
             .onPreferenceChange(PickyReportBlockPositionPreferenceKey.self) { positions in
                 updateScrollTracking(with: positions)
@@ -857,11 +872,15 @@ struct PickyReportViewerWindowView: View {
             }
         }
         .onExitCommand {
-            guard isSearchPresented else { return }
-            closeSearch()
+            if isSearchPresented {
+                closeSearch()
+            } else if isOutlinePresented {
+                isOutlinePresented = false
+            }
         }
         .background(PickyAppearancePanelChrome.overlayBackground)
         .background(keyboardShortcuts)
+        .background(viewerWidthReader)
     }
 
     /// Hidden buttons keep native key-equivalent routing in the panel responder
@@ -900,6 +919,75 @@ struct PickyReportViewerWindowView: View {
                 currentMatchID: searchState.currentMatchID
             )
         }
+    }
+
+    private var outlinePresentationMode: PickyReportOutlinePresentationMode {
+        PickyReportOutlineLayoutPolicy.presentationMode(forViewerWidth: viewerWidth)
+    }
+
+    private var outlineIsVisible: Bool {
+        isOutlinePresented && outlineEntries.count >= 3
+    }
+
+    @ViewBuilder
+    private func reportBody(
+        blocks: [PickyReportBlockPresentation],
+        outline: [PickyReportOutlineEntry],
+        proxy: ScrollViewProxy
+    ) -> some View {
+        if outlineIsVisible, outlinePresentationMode == .pushed {
+            HStack(spacing: 0) {
+                outlineSidebar(entries: outline, proxy: proxy)
+                Divider().overlay(DS.Colors.borderSubtle)
+                reportScroll(blocks: blocks)
+            }
+        } else {
+            ZStack(alignment: .topLeading) {
+                reportScroll(blocks: blocks)
+                if outlineIsVisible {
+                    Color.clear
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .contentShape(Rectangle())
+                        .onTapGesture { isOutlinePresented = false }
+                        .accessibilityHidden(true)
+                    outlineOverlay(entries: outline, proxy: proxy)
+                }
+            }
+        }
+    }
+
+    private func reportScroll(blocks: [PickyReportBlockPresentation]) -> some View {
+        ScrollView {
+            reportContent(blocks: blocks)
+                .padding(EdgeInsets(top: 22, leading: 24, bottom: 28, trailing: 24))
+        }
+        .coordinateSpace(name: PickyReportScrollCoordinateSpace.name)
+    }
+
+    private func outlineOverlay(entries: [PickyReportOutlineEntry], proxy: ScrollViewProxy) -> some View {
+        let shape = RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous)
+        return outlineSidebar(entries: entries, proxy: proxy)
+            .frame(maxHeight: .infinity, alignment: .topLeading)
+            .background(PickyHUDMaterialFill(shape: shape, fallback: DS.Colors.surface1))
+            .overlay(shape.stroke(DS.Colors.borderSubtle.opacity(0.7), lineWidth: 0.8))
+            .clipShape(shape)
+            .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 8)
+    }
+
+    private var viewerWidthReader: some View {
+        GeometryReader { proxy in
+            Color.clear
+                .onAppear { updateViewerWidth(proxy.size.width) }
+                .onChange(of: proxy.size.width) { _, width in
+                    updateViewerWidth(width)
+                }
+        }
+    }
+
+    private func updateViewerWidth(_ width: CGFloat) {
+        let roundedWidth = width.rounded()
+        guard viewerWidth != roundedWidth else { return }
+        viewerWidth = roundedWidth
     }
 
     private func header(outline: [PickyReportOutlineEntry]) -> some View {
@@ -1024,6 +1112,9 @@ struct PickyReportViewerWindowView: View {
                         withAnimation(.easeInOut(duration: 0.2)) {
                             proxy.scrollTo(entry.id, anchor: .top)
                         }
+                        if outlinePresentationMode == .overlay {
+                            isOutlinePresented = false
+                        }
                     } label: {
                         Text(entry.title)
                             .font(PickyHUDTypography.supporting)
@@ -1045,7 +1136,7 @@ struct PickyReportViewerWindowView: View {
             }
             .padding(8)
         }
-        .frame(width: 192)
+        .frame(width: PickyReportOutlineLayoutPolicy.sidebarWidth)
         .accessibilityLabel(L10n.t("hud.report.outline"))
     }
 

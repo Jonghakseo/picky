@@ -23,7 +23,7 @@ struct PickyArtifactTrayButton: View {
                 .background(Capsule().fill(DS.Colors.accentSubtle.opacity(0.75)))
                 .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PickyHUDCompactChipButtonStyle())
         .help(L10n.t("hud.artifactTray.help", Int64(count)))
         .accessibilityLabel(L10n.t("hud.artifactTray.accessibilityLabel", Int64(count)))
         .pointerCursor()

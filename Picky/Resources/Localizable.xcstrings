@@ -1163,7 +1163,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "사고 수준: %@"
+            "value": "추론 수준: %@"
           }
         }
       }

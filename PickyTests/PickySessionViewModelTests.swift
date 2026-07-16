@@ -4391,6 +4391,13 @@ struct PickySessionViewModelTests {
         #expect(blocks[0].id == PickyReportBlockPresentation.blocks(from: "# Overview").first?.id)
     }
 
+    @Test func reportOutlinePresentationOverlaysBeforeItWouldReduceTheReadingColumnBelow500Points() {
+        #expect(PickyReportOutlineLayoutPolicy.presentationMode(forViewerWidth: 620) == .overlay)
+        #expect(PickyReportOutlineLayoutPolicy.presentationMode(forViewerWidth: 740) == .overlay)
+        #expect(PickyReportOutlineLayoutPolicy.presentationMode(forViewerWidth: 741) == .pushed)
+        #expect(PickyReportOutlineLayoutPolicy.readingColumnWidth(forPushedViewerWidth: 741) == 500)
+    }
+
     @Test func reportSearchStateFindsPlainTextAndWrapsBetweenMatchingBlocks() throws {
         let blocks = PickyReportBlockPresentation.blocks(from: """
         # Risk register

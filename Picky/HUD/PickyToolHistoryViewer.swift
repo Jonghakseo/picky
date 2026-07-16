@@ -322,7 +322,7 @@ struct PickyToolHistoryViewerWindowView: View {
             .background(Capsule().fill(isSelected ? DS.Colors.accentSubtle : Color.clear))
             .overlay(Capsule().stroke(isSelected ? DS.Colors.accentText.opacity(0.7) : Color.clear, lineWidth: 0.8))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PickyHUDCompactChipButtonStyle())
         .accessibilityLabel(L10n.t("hud.toolHistory.categoryFilter.accessibilityLabel", display.label, Int64(count)))
         .accessibilityValue(isSelected ? L10n.t("hud.toolHistory.filter.selected") : "")
     }
@@ -337,7 +337,7 @@ struct PickyToolHistoryViewerWindowView: View {
                 .background(Capsule().fill(failuresOnly ? DS.Colors.destructive.opacity(0.12) : Color.clear))
                 .overlay(Capsule().stroke(failuresOnly ? DS.Colors.destructiveText.opacity(0.7) : Color.clear, lineWidth: 0.8))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PickyHUDCompactChipButtonStyle())
         .accessibilityLabel(L10n.t("hud.toolHistory.failuresOnly"))
         .accessibilityValue(failuresOnly ? L10n.t("hud.toolHistory.filter.selected") : "")
     }

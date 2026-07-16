@@ -552,6 +552,26 @@ final class SelfSizingMarkdownTextView: NSTextView {
         return used
     }
 
+    /// Measures a code block's natural text size without imposing a wrapping
+    /// width. Its enclosing NSScrollView uses this document width for
+    /// horizontal overflow while the bubble itself remains width-capped.
+    func measureUnwrappedSize() -> NSSize {
+        guard let layoutManager, let textContainer else { return .zero }
+        let previousSize = textContainer.size
+        let previousWidthTracking = textContainer.widthTracksTextView
+        textContainer.widthTracksTextView = false
+        textContainer.size = NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        layoutManager.ensureLayout(for: textContainer)
+        let used = layoutManager.usedRect(for: textContainer).size
+        textContainer.size = previousSize
+        textContainer.widthTracksTextView = previousWidthTracking
+        layoutManager.ensureLayout(for: textContainer)
+        return used
+    }
+
     /// Adds Picky-specific actions (today: "Open as Report") to the native
     /// NSTextView right-click menu so users keep Copy / Look Up / Translate
     /// / Speech / Services while gaining the report shortcut that used to

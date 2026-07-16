@@ -347,6 +347,7 @@ private final class PickyCodeMarkdownBlockView: PickyMarkdownBlockNSView {
     }
 
     private let textView = SelfSizingMarkdownTextView()
+    private let scrollView = NSScrollView()
     private let omittedField = NSTextField(labelWithString: "")
     private let displayText: String
     private let omittedCount: Int
@@ -361,6 +362,9 @@ private final class PickyCodeMarkdownBlockView: PickyMarkdownBlockNSView {
         textView.fillsAvailableWidth = false
         textView.textContainerInset = .zero
         textView.drawsBackground = false
+        textView.textContainer?.widthTracksTextView = false
+        textView.isHorizontallyResizable = true
+        textView.isVerticallyResizable = true
         textView.textStorage?.setAttributedString(NSAttributedString(
             string: displayText.isEmpty ? " " : displayText,
             attributes: [
@@ -368,7 +372,14 @@ private final class PickyCodeMarkdownBlockView: PickyMarkdownBlockNSView {
                 .foregroundColor: NSColor(DS.Colors.codeText)
             ]
         ))
-        addSubview(textView)
+
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasHorizontalScroller = true
+        scrollView.hasVerticalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.documentView = textView
+        addSubview(scrollView)
 
         omittedField.font = NSFont.systemFont(ofSize: PickyHUDTypography.Size.meta, weight: .medium)
         omittedField.textColor = NSColor(DS.Colors.textTertiary)
@@ -397,9 +408,7 @@ private final class PickyCodeMarkdownBlockView: PickyMarkdownBlockNSView {
     override func computeMeasuredSize(forWidth width: CGFloat) -> NSSize {
         let cap = max(0, width)
         guard cap > 0 else { return .zero }
-        let textCap = max(0, cap - 2 * Metrics.padding)
-        textView.hugContentMaxWidth = textCap
-        let textSize = textView.measureUsedSize(forWidth: textCap)
+        let textSize = textView.measureUnwrappedSize()
         let omittedHeight = omittedCount > 0 ? Metrics.omittedHeight : 0
         let measuredWidth = min(cap, ceil(textSize.width) + 2 * Metrics.padding)
         let measuredHeight = Metrics.padding + ceil(textSize.height) + Metrics.padding + omittedHeight
@@ -408,12 +417,20 @@ private final class PickyCodeMarkdownBlockView: PickyMarkdownBlockNSView {
 
     override func layout() {
         super.layout()
-        let textHeight = textView.measureUsedSize(forWidth: max(0, bounds.width - 2 * Metrics.padding)).height
-        textView.frame = NSRect(
+        let textCap = max(0, bounds.width - 2 * Metrics.padding)
+        let textSize = textView.measureUnwrappedSize()
+        let textHeight = ceil(textSize.height)
+        scrollView.frame = NSRect(
             x: Metrics.padding,
             y: Metrics.padding,
-            width: max(0, bounds.width - 2 * Metrics.padding),
-            height: ceil(textHeight)
+            width: textCap,
+            height: textHeight
+        )
+        textView.frame = NSRect(
+            x: 0,
+            y: 0,
+            width: max(textCap, ceil(textSize.width)),
+            height: textHeight
         )
         if omittedCount > 0 {
             omittedField.frame = NSRect(

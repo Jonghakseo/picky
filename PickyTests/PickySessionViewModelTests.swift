@@ -4228,15 +4228,16 @@ struct PickySessionViewModelTests {
         )
 
         #expect(suggestions.map(\.name) == commands.map(\.name))
-        #expect(PickySlashCommandAutocompletePolicy.visibleRange(selectedIndex: 5, suggestionCount: suggestions.count, maxVisible: 4) == 3..<7)
     }
 
-    @Test func autocompleteVisibleRangeKeepsAtMostMaxVisibleSuggestionsAroundSelection() {
-        #expect(PickySlashCommandAutocompletePolicy.visibleRange(selectedIndex: 0, suggestionCount: 10, maxVisible: 4) == 0..<4)
-        #expect(PickySlashCommandAutocompletePolicy.visibleRange(selectedIndex: 3, suggestionCount: 10, maxVisible: 4) == 1..<5)
-        #expect(PickySlashCommandAutocompletePolicy.visibleRange(selectedIndex: 9, suggestionCount: 10, maxVisible: 4) == 6..<10)
-        #expect(PickySlashCommandAutocompletePolicy.visibleRange(selectedIndex: 8, suggestionCount: 3, maxVisible: 4) == 0..<3)
-        #expect(PickySlashCommandAutocompletePolicy.visibleRange(selectedIndex: 0, suggestionCount: 10, maxVisible: 0) == 0..<0)
+    @Test func autocompletePanelHeightShowsUpToFourRowsAndKeepsOverflowScrollable() {
+        #expect(PickyConversationComposerView.autocompletePanelHeight(forSuggestionCount: 0) == 0)
+        #expect(PickyConversationComposerView.autocompletePanelHeight(forSuggestionCount: 1) == 32)
+        #expect(PickyConversationComposerView.autocompletePanelHeight(forSuggestionCount: 4) == 107)
+        #expect(
+            PickyConversationComposerView.autocompletePanelHeight(forSuggestionCount: 8)
+                == PickyConversationComposerView.autocompletePanelHeight(forSuggestionCount: 4)
+        )
     }
 
     @MainActor @Test func textSteerCanTargetCancelledSessionByExplicitID() async throws {

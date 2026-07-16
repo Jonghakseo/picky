@@ -36,10 +36,7 @@ struct PickyAgentBubbleView: View {
     }
 
     private var bubbleMaxWidth: CGFloat {
-        PickyConversationBubbleLayout.maxBubbleWidth(
-            forDetailWidth: pickyHUDDetailWidth,
-            contentKind: PickyConversationBubbleLayout.contentKind(for: displayedMarkdown)
-        )
+        PickyConversationBubbleLayout.maxBubbleWidth(forDetailWidth: pickyHUDDetailWidth)
     }
 
     var displayedMarkdown: String {
@@ -114,10 +111,7 @@ struct PickyNotifyBubbleView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .frame(
-                maxWidth: PickyConversationBubbleLayout.maxBubbleWidth(
-                    forDetailWidth: pickyHUDDetailWidth,
-                    contentKind: PickyConversationBubbleLayout.contentKind(for: previewMarkdown)
-                ),
+                maxWidth: PickyConversationBubbleLayout.maxBubbleWidth(forDetailWidth: pickyHUDDetailWidth),
                 alignment: .leading
             )
             .background(

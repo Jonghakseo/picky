@@ -85,14 +85,6 @@ enum PickySlashCommandAutocompletePolicy {
         }
     }
 
-    static func visibleRange(selectedIndex: Int, suggestionCount: Int, maxVisible: Int) -> Range<Int> {
-        guard suggestionCount > 0, maxVisible > 0 else { return 0..<0 }
-        let clampedIndex = clampedSelectionIndex(selectedIndex, suggestionCount: suggestionCount)
-        let visibleCount = min(maxVisible, suggestionCount)
-        let halfWindow = visibleCount / 2
-        let lowerBound = min(max(clampedIndex - halfWindow, 0), suggestionCount - visibleCount)
-        return lowerBound..<(lowerBound + visibleCount)
-    }
 
     private static func stringIndex(in text: String, utf16Offset: Int) -> String.Index? {
         guard utf16Offset >= 0, utf16Offset <= text.utf16.count else { return nil }

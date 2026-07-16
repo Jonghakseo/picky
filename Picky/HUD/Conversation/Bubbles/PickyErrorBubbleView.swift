@@ -62,8 +62,7 @@ struct PickyErrorBubbleView: View {
                 maxWidth: PickyConversationBubbleLayout.maxBubbleWidth(
                     forDetailWidth: pickyHUDDetailWidth,
                     fraction: 0.88,
-                    oppositeSideReserve: 36,
-                    contentKind: .narrative
+                    oppositeSideReserve: 36
                 ),
                 alignment: .leading
             )

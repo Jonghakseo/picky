@@ -485,7 +485,7 @@ struct PickyConversationComposerView: View {
                 LazyVStack(alignment: .leading, spacing: 1, content: content)
             }
             .scrollDisabled(suggestionCount <= PickySlashCommandAutocompletePolicy.maxVisibleRows)
-            .frame(maxHeight: Self.autocompletePanelMaximumHeight)
+            .frame(maxHeight: .infinity)
             .onAppear {
                 proxy.scrollTo(selectedID, anchor: .center)
             }
@@ -495,6 +495,7 @@ struct PickyConversationComposerView: View {
         }
         .padding(DS.Spacing.xs)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: Self.autocompletePanelHeight(forSuggestionCount: suggestionCount), alignment: .top)
         .background(autocompletePanelBackground)
     }
 
@@ -1307,14 +1308,19 @@ struct PickyConversationComposerView: View {
 
     private static let tabKeyCode: UInt16 = 48
     private static let pKeyCode: UInt16 = 35
-    /// Four dense rows plus the panel's 4pt top/bottom inset. This
-    /// component-level height keeps the transient overlay compact without
-    /// constraining the complete result set's internal scroll range.
+    /// Each autocomplete row has a 24pt minimum height, separated by 1pt.
+    /// The panel adds a 4pt inset above and below the scrollable rows.
     private static let autocompleteRowMinimumHeight: CGFloat = DS.Spacing.xxl
-    private static let autocompletePanelMaximumHeight =
-        CGFloat(PickySlashCommandAutocompletePolicy.maxVisibleRows) * autocompleteRowMinimumHeight
-        + CGFloat(PickySlashCommandAutocompletePolicy.maxVisibleRows - 1)
-        + DS.Spacing.sm
+    private static let autocompleteRowSpacing: CGFloat = 1
+    private static let autocompletePanelVerticalInset: CGFloat = DS.Spacing.xs
+
+    static func autocompletePanelHeight(forSuggestionCount suggestionCount: Int) -> CGFloat {
+        let visibleRows = min(max(suggestionCount, 0), PickySlashCommandAutocompletePolicy.maxVisibleRows)
+        guard visibleRows > 0 else { return 0 }
+        return CGFloat(visibleRows) * autocompleteRowMinimumHeight
+            + CGFloat(visibleRows - 1) * autocompleteRowSpacing
+            + 2 * autocompletePanelVerticalInset
+    }
     private static let slashCommandLoadingRetryIntervalNanoseconds: UInt64 = 1_000_000_000
 
     private func stopIfPossible() {

@@ -226,6 +226,13 @@ struct PickyUserBubblePixelWidthTests {
         )
     }
 
+    @Test func agentCodeBlockUsesHorizontalScrollerForLongLines() throws {
+        let surface = try layoutAgentBubble(text: "```\n" + String(repeating: "let identifier = veryLongValue ", count: 20) + "\n```", cardWidth: 600)
+        let codeBlockScrollViews = collectScrollViews(surface).filter { $0.documentView is NSTextView }
+
+        #expect(codeBlockScrollViews.contains { $0.hasHorizontalScroller })
+    }
+
     @Test func agentTableUsesDedicatedAppKitTableBlockInsteadOfInlineFlattening() throws {
         let markdown = "| Name | Value |\n| --- | --- |\n| Width | Hug |"
         let surface = try layoutAgentBubble(text: markdown, cardWidth: 600)
@@ -278,6 +285,17 @@ private func collectAgentBubbleSurfaces(_ root: NSView) -> [PickyAgentBubbleSurf
     }
     for sub in root.subviews {
         out.append(contentsOf: collectAgentBubbleSurfaces(sub))
+    }
+    return out
+}
+
+private func collectScrollViews(_ root: NSView) -> [NSScrollView] {
+    var out: [NSScrollView] = []
+    if let match = root as? NSScrollView {
+        out.append(match)
+    }
+    for sub in root.subviews {
+        out.append(contentsOf: collectScrollViews(sub))
     }
     return out
 }

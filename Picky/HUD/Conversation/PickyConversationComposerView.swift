@@ -98,11 +98,21 @@ struct PickyConversationComposerView: View {
     var body: some View {
         let _ = PickyPerf.event("composer_body")
         VStack(alignment: .leading, spacing: 4) {
-            slashCommandAutocomplete
-            fileMentionAutocomplete
             screenContextAttachmentChip
             attachmentChipsRow
             composerRow
+                // An overlay does not contribute to the VStack's proposed size, so
+                // opening suggestions neither reflows the transcript nor moves the
+                // attachment/context chips away from the editor.
+                .overlay(alignment: .topLeading) {
+                    if autocompleteIsVisible {
+                        autocompletePanel
+                            .alignmentGuide(.top) { dimensions in
+                                dimensions[.bottom] + DS.Spacing.xs
+                            }
+                    }
+                }
+                .zIndex(1)
         }
         .onAppear {
             viewModel.ensureSlashCommandsLoaded(sessionID: session.id)
@@ -404,45 +414,88 @@ struct PickyConversationComposerView: View {
         viewModel.screenContextTargetSessionID == session.id
     }
 
-    // MARK: - Slash command autocomplete
+    // MARK: - Autocomplete
 
+    /// Both autocomplete sources share one transient surface anchored to the
+    /// editor. Slash commands take precedence over file mentions, matching the
+    /// existing keyboard-routing policy.
     @ViewBuilder
-    private var slashCommandAutocomplete: some View {
+    private var autocompletePanel: some View {
         if slashCommandAutocompleteIsVisible {
             let suggestions = slashCommandSuggestions
             if !suggestions.isEmpty {
                 let selectedIndex = selectedSlashCommandClampedIndex(for: suggestions)
-                let visibleRange = PickySlashCommandAutocompletePolicy.visibleRange(
-                    selectedIndex: selectedIndex,
-                    suggestionCount: suggestions.count,
-                    maxVisible: Self.maxVisibleAutocompleteSuggestions
-                )
-                VStack(alignment: .leading, spacing: 1) {
-                    ForEach(Array(suggestions[visibleRange].enumerated()), id: \.element.id) { offset, command in
-                        let index = visibleRange.lowerBound + offset
+                autocompleteSuggestions(
+                    selectedID: suggestions[selectedIndex].id,
+                    suggestionCount: suggestions.count
+                ) {
+                    ForEach(Array(suggestions.enumerated()), id: \.element.id) { index, command in
                         Button {
                             acceptSlashCommand(command)
                         } label: {
                             slashCommandRow(command, isSelected: index == selectedIndex)
                         }
                         .buttonStyle(.plain)
+                        .id(command.id)
                     }
                 }
-                .padding(4)
-                .background(
-                    RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
-                        .fill(DS.Colors.surface1.opacity(0.96))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
-                                .stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8)
-                        )
-                )
             } else if !viewModel.hasLoadedSlashCommands(sessionID: session.id) {
                 slashCommandStatus("Loading commands…")
             } else {
                 slashCommandStatus("No matching commands")
             }
+        } else if fileMentionAutocompleteIsVisible {
+            let suggestions = fileMentionSuggestions
+            if !suggestions.isEmpty {
+                let selectedIndex = selectedFileMentionClampedIndex(for: suggestions)
+                autocompleteSuggestions(
+                    selectedID: suggestions[selectedIndex].displayPath,
+                    suggestionCount: suggestions.count
+                ) {
+                    ForEach(Array(suggestions.enumerated()), id: \.element.displayPath) { index, suggestion in
+                        Button {
+                            acceptFileMention(suggestion)
+                        } label: {
+                            fileMentionRow(suggestion, isSelected: index == selectedIndex)
+                        }
+                        .buttonStyle(.plain)
+                        .id(suggestion.displayPath)
+                    }
+                }
+            } else {
+                slashCommandStatus(fileMentionStatusText)
+            }
         }
+    }
+
+    private var autocompleteIsVisible: Bool {
+        slashCommandAutocompleteIsVisible || fileMentionAutocompleteIsVisible
+    }
+
+    /// Keeps the full result set available to keyboard and pointer navigation
+    /// while constraining the floating panel to four dense rows. ScrollViewReader
+    /// reveals the keyboard-selected item without resizing the composer.
+    private func autocompleteSuggestions<SelectionID: Hashable, Content: View>(
+        selectedID: SelectionID,
+        suggestionCount: Int,
+        @ViewBuilder content: @escaping () -> Content
+    ) -> some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: suggestionCount > PickySlashCommandAutocompletePolicy.maxVisibleRows) {
+                LazyVStack(alignment: .leading, spacing: 1, content: content)
+            }
+            .scrollDisabled(suggestionCount <= PickySlashCommandAutocompletePolicy.maxVisibleRows)
+            .frame(maxHeight: Self.autocompletePanelMaximumHeight)
+            .onAppear {
+                proxy.scrollTo(selectedID, anchor: .center)
+            }
+            .onChange(of: selectedID) { _, newSelectedID in
+                proxy.scrollTo(newSelectedID, anchor: .center)
+            }
+        }
+        .padding(DS.Spacing.xs)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(autocompletePanelBackground)
     }
 
     private func slashCommandRow(_ command: PickySlashCommand, isSelected: Bool) -> some View {
@@ -467,6 +520,7 @@ struct PickyConversationComposerView: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
+        .frame(minHeight: Self.autocompleteRowMinimumHeight)
         .background(
             RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
                 .fill(isSelected ? DS.Colors.accentSubtle.opacity(0.55) : Color.clear)
@@ -481,39 +535,7 @@ struct PickyConversationComposerView: View {
             .padding(.horizontal, 9)
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(autocompletePanelBackground(opacity: 0.90, strokeOpacity: 0.45))
-    }
-
-    // MARK: - File mention autocomplete
-
-    @ViewBuilder
-    private var fileMentionAutocomplete: some View {
-        if fileMentionAutocompleteIsVisible {
-            let suggestions = fileMentionSuggestions
-            if !suggestions.isEmpty {
-                let selectedIndex = selectedFileMentionClampedIndex(for: suggestions)
-                let visibleRange = PickySlashCommandAutocompletePolicy.visibleRange(
-                    selectedIndex: selectedIndex,
-                    suggestionCount: suggestions.count,
-                    maxVisible: Self.maxVisibleAutocompleteSuggestions
-                )
-                VStack(alignment: .leading, spacing: 1) {
-                    ForEach(Array(suggestions[visibleRange].enumerated()), id: \.element.displayPath) { offset, suggestion in
-                        let index = visibleRange.lowerBound + offset
-                        Button {
-                            acceptFileMention(suggestion)
-                        } label: {
-                            fileMentionRow(suggestion, isSelected: index == selectedIndex)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(4)
-                .background(autocompletePanelBackground(opacity: 0.96, strokeOpacity: 0.55))
-            } else {
-                slashCommandStatus(fileMentionStatusText)
-            }
-        }
+            .background(autocompletePanelBackground)
     }
 
     private func fileMentionRow(_ suggestion: PickyFileMentionAutocompletePolicy.Suggestion, isSelected: Bool) -> some View {
@@ -534,6 +556,7 @@ struct PickyConversationComposerView: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
+        .frame(minHeight: Self.autocompleteRowMinimumHeight)
         .background(
             RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
                 .fill(isSelected ? DS.Colors.accentSubtle.opacity(0.55) : Color.clear)
@@ -548,13 +571,13 @@ struct PickyConversationComposerView: View {
         return "No matching files"
     }
 
-    private func autocompletePanelBackground(opacity: Double, strokeOpacity: Double) -> some View {
-        RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
-            .fill(DS.Colors.surface1.opacity(opacity))
+    private var autocompletePanelBackground: some View {
+        let shape = RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous)
+        return PickyHUDMaterialFill(shape: shape, fallback: DS.Colors.surface1)
             .overlay(
-                RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
-                    .stroke(DS.Colors.borderSubtle.opacity(strokeOpacity), lineWidth: 0.8)
+                shape.stroke(DS.Colors.borderSubtle.opacity(0.7), lineWidth: 0.8)
             )
+            .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 8)
     }
 
     var slashCommandAutocompleteIsVisible: Bool {
@@ -1284,7 +1307,14 @@ struct PickyConversationComposerView: View {
 
     private static let tabKeyCode: UInt16 = 48
     private static let pKeyCode: UInt16 = 35
-    private static let maxVisibleAutocompleteSuggestions = 4
+    /// Four dense rows plus the panel's 4pt top/bottom inset. This
+    /// component-level height keeps the transient overlay compact without
+    /// constraining the complete result set's internal scroll range.
+    private static let autocompleteRowMinimumHeight: CGFloat = DS.Spacing.xxl
+    private static let autocompletePanelMaximumHeight =
+        CGFloat(PickySlashCommandAutocompletePolicy.maxVisibleRows) * autocompleteRowMinimumHeight
+        + CGFloat(PickySlashCommandAutocompletePolicy.maxVisibleRows - 1)
+        + DS.Spacing.sm
     private static let slashCommandLoadingRetryIntervalNanoseconds: UInt64 = 1_000_000_000
 
     private func stopIfPossible() {

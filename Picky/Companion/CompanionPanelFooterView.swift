@@ -71,6 +71,33 @@ struct CompanionPanelFooterView: View {
     }
 }
 
+/// Shared compact icon-action treatment for the Companion panel. It preserves
+/// each glyph's optical size while giving small utility controls a 28pt target
+/// and quiet hover/pressed feedback.
+struct CompanionPanelIconActionStyle: ButtonStyle {
+    var size: CGFloat = 28
+
+    @State private var isHovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .frame(width: size, height: size)
+            .contentShape(RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous))
+            .background(
+                RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
+                    .fill(
+                        configuration.isPressed
+                            ? DS.Colors.surface4
+                            : isHovering ? DS.Colors.surface3.opacity(0.7) : Color.clear
+                    )
+            )
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.easeOut(duration: DS.Animation.fast), value: configuration.isPressed)
+            .animation(.easeOut(duration: DS.Animation.fast), value: isHovering)
+            .onHover { isHovering = $0 }
+    }
+}
+
 /// Subtle bug glyph that drills the panel into the feedback sub-page. Styled
 /// to match the appearance toggle's icon buttons (same size, same tertiary
 /// foreground, same primary-on-hover treatment) so it reads as part of the
@@ -86,13 +113,8 @@ struct CompanionPanelFeedbackGlyphButton: View {
                 .pickyFont(size: 10.5, weight: .semibold)
                 .foregroundColor(isHovering ? DS.Colors.textPrimary : DS.Colors.textTertiary)
                 .frame(width: 18, height: 18)
-                .background(
-                    RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
-                        .fill(isHovering ? DS.Colors.textPrimary.opacity(0.06) : Color.clear)
-                )
-                .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CompanionPanelIconActionStyle())
         .pointerCursor()
         .help("footer.feedback.accessibilityLabel")
         .accessibilityLabel(Text("footer.feedback.accessibilityLabel"))
@@ -141,7 +163,8 @@ struct CompanionPanelAppearanceToggle: View {
                 .foregroundColor(appearanceStore.mode == target ? DS.Colors.textPrimary : DS.Colors.textTertiary)
                 .frame(width: 14, height: 14)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CompanionPanelIconActionStyle())
+        .help(accessibilityLabel)
         .accessibilityLabel(accessibilityLabel)
         .pointerCursor()
     }

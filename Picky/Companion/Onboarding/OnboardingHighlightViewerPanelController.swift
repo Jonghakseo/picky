@@ -34,7 +34,7 @@ final class OnboardingHighlightViewerPanelController {
     ) {
         dismiss()
 
-        let screen = NSScreen.main ?? NSScreen.screens.first
+        let screen = matchingScreen(for: capturedDisplayFrame)
         let panelSize = NSSize(width: 360, height: 270)
         let frame = computeFrame(of: screen, size: panelSize)
 
@@ -81,6 +81,41 @@ final class OnboardingHighlightViewerPanelController {
         dismissTask = nil
         panel?.orderOut(nil)
         panel = nil
+    }
+
+    private func matchingScreen(for capturedDisplayFrame: CGRect) -> NSScreen? {
+        let screens = NSScreen.screens
+        guard let index = Self.matchingScreenIndex(
+            screenFrames: screens.map(\.frame),
+            capturedDisplayFrame: capturedDisplayFrame
+        ) else {
+            return NSScreen.main ?? screens.first
+        }
+        return screens[index]
+    }
+
+    /// Prefers an exact capture-display frame, then a real intersection. The
+    /// latter covers display reconfiguration between capture and presentation
+    /// without arbitrarily moving a preview to an unrelated screen.
+    static func matchingScreenIndex(
+        screenFrames: [CGRect],
+        capturedDisplayFrame: CGRect
+    ) -> Int? {
+        if let exactMatch = screenFrames.firstIndex(of: capturedDisplayFrame) {
+            return exactMatch
+        }
+
+        var bestIndex: Int?
+        var largestIntersectionArea: CGFloat = 0
+        for (index, screenFrame) in screenFrames.enumerated() {
+            let intersection = screenFrame.intersection(capturedDisplayFrame)
+            let area = max(intersection.width, 0) * max(intersection.height, 0)
+            if area > largestIntersectionArea {
+                bestIndex = index
+                largestIntersectionArea = area
+            }
+        }
+        return bestIndex
     }
 
     private func computeFrame(of screen: NSScreen?, size: NSSize) -> NSRect {

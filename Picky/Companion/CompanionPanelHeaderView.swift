@@ -20,9 +20,8 @@ struct CompanionPanelHeaderView: View {
 
             Spacer()
 
-            // Plain glyph close button. The pre-minimal design wrapped this in a tinted
-            // circle which read as a chip; here the icon stands alone and the hover/press
-            // states come from the surrounding `.buttonStyle(.plain)` + opacity feedback.
+            // Plain glyph close button. The glyph stays visually quiet while the
+            // shared icon-action style supplies its 28pt target and hover feedback.
             Button(action: {
                 NotificationCenter.default.post(name: .pickyDismissPanel, object: nil)
             }) {
@@ -32,8 +31,9 @@ struct CompanionPanelHeaderView: View {
                     .frame(width: 20, height: 20, alignment: .center)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(CompanionPanelIconActionStyle())
             .pointerCursor()
+            .help("Dismiss panel")
             .accessibilityLabel("Dismiss panel")
         }
         .padding(.horizontal, 16)

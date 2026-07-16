@@ -3,6 +3,7 @@
 //  PickyTests
 //
 
+import CoreGraphics
 import Foundation
 import Testing
 @testable import Picky
@@ -46,6 +47,32 @@ struct PickyOnboardingActivationTests {
 
         #expect(context.store.load().onboardingCompletedVersion == snapshot)
         #expect(snapshot == PickyOnboardingVersion.current)
+    }
+
+    @Test func highlightViewerPrefersItsCapturedDisplayAndOnlyFallsBackWhenNoScreenIntersects() {
+        let screens = [
+            CGRect(x: 0, y: 0, width: 1_440, height: 900),
+            CGRect(x: 1_440, y: 0, width: 1_920, height: 1_080),
+        ]
+
+        #expect(
+            OnboardingHighlightViewerPanelController.matchingScreenIndex(
+                screenFrames: screens,
+                capturedDisplayFrame: screens[1]
+            ) == 1
+        )
+        #expect(
+            OnboardingHighlightViewerPanelController.matchingScreenIndex(
+                screenFrames: screens,
+                capturedDisplayFrame: CGRect(x: 1_300, y: 0, width: 300, height: 900)
+            ) == 1
+        )
+        #expect(
+            OnboardingHighlightViewerPanelController.matchingScreenIndex(
+                screenFrames: screens,
+                capturedDisplayFrame: CGRect(x: 4_000, y: 0, width: 200, height: 200)
+            ) == nil
+        )
     }
 
     private struct Context {

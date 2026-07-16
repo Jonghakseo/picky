@@ -7,6 +7,8 @@ enum PickySlashCommandNavigationDirection {
 
 enum PickySlashCommandAutocompletePolicy {
     static let maxSuggestions = 20
+    /// Maximum number of dense rows visible before the composer panel scrolls.
+    static let maxVisibleRows = 4
 
     static func query(in text: String, cursorLocation: Int?) -> String? {
         let utf16Count = text.utf16.count

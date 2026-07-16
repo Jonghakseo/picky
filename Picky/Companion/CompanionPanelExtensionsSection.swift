@@ -250,10 +250,11 @@ struct CompanionPanelExtensionsSection: View {
             Image(systemName: "info.circle")
                 .pickyFont(size: 10, weight: .medium)
                 .foregroundColor(DS.Colors.textTertiary)
-                .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CompanionPanelIconActionStyle())
+        .pointerCursor()
         .help(tooltipText(for: row))
+        .accessibilityLabel(Text(tooltipText(for: row)))
         .popover(
             isPresented: Binding(
                 get: { infoPopoverRowName == row.name },

@@ -1220,8 +1220,99 @@ struct PickyConversationCardViewTests {
         )
 
         #expect(PickyConversationScrollPolicy.shouldRepinAfterQuestionCollapse(from: open, to: closed))
+        #expect(PickyConversationScrollPolicy.shouldAutoScroll(from: open, to: closed, isPinnedToBottom: false))
         #expect(!PickyConversationScrollPolicy.shouldRepinAfterQuestionCollapse(from: closed, to: opened))
         #expect(!PickyConversationScrollPolicy.shouldRepinAfterQuestionCollapse(from: open, to: opened))
+    }
+
+    @Test func conversationScrollPolicyKeepsUnpinnedRemoteMessagesInPlace() {
+        let current = PickyConversationBottomScrollTrigger(
+            latestMessageID: "message-1",
+            queuedSteers: [],
+            queuedFollowUps: [],
+            steeringMode: .oneAtATime,
+            followUpMode: .oneAtATime,
+            lastRequestAt: nil,
+            pendingExtensionUiRequestID: nil
+        )
+        let remoteMessage = PickyConversationBottomScrollTrigger(
+            latestMessageID: "message-2",
+            queuedSteers: [],
+            queuedFollowUps: [],
+            steeringMode: .oneAtATime,
+            followUpMode: .oneAtATime,
+            lastRequestAt: nil,
+            pendingExtensionUiRequestID: nil
+        )
+
+        #expect(PickyConversationScrollPolicy.shouldAutoScroll(from: current, to: remoteMessage, isPinnedToBottom: true))
+        #expect(!PickyConversationScrollPolicy.shouldAutoScroll(from: current, to: remoteMessage, isPinnedToBottom: false))
+    }
+
+    @Test func conversationScrollPolicyReturnsUnpinnedUsersToTheirOwnSubmission() {
+        let current = PickyConversationBottomScrollTrigger(
+            latestMessageID: "message-1",
+            queuedSteers: [],
+            queuedFollowUps: [],
+            steeringMode: .oneAtATime,
+            followUpMode: .oneAtATime,
+            lastRequestAt: nil,
+            pendingExtensionUiRequestID: nil
+        )
+        let localSubmission = PickyConversationBottomScrollTrigger(
+            latestMessageID: "message-1",
+            queuedSteers: [],
+            queuedFollowUps: [],
+            steeringMode: .oneAtATime,
+            followUpMode: .oneAtATime,
+            lastRequestAt: baseDate,
+            pendingExtensionUiRequestID: nil
+        )
+
+        #expect(PickyConversationScrollPolicy.shouldAutoScroll(from: current, to: localSubmission, isPinnedToBottom: true))
+        #expect(PickyConversationScrollPolicy.shouldAutoScroll(from: current, to: localSubmission, isPinnedToBottom: false))
+    }
+
+    @Test func conversationScrollPolicyPinsSessionSwitches() {
+        let initialTrigger = PickyConversationBottomScrollTrigger(
+            latestMessageID: "message-1",
+            queuedSteers: [],
+            queuedFollowUps: [],
+            steeringMode: .oneAtATime,
+            followUpMode: .oneAtATime,
+            lastRequestAt: nil,
+            pendingExtensionUiRequestID: nil
+        )
+
+        #expect(PickyConversationScrollPolicy.shouldAutoScroll(from: nil, to: initialTrigger, isPinnedToBottom: true))
+        #expect(PickyConversationScrollPolicy.shouldAutoScroll(from: nil, to: initialTrigger, isPinnedToBottom: false))
+    }
+
+    @Test func conversationScrollPolicyShowsAndHidesJumpToLatestForUnreadRemoteContent() {
+        let current = PickyConversationBottomScrollTrigger(
+            latestMessageID: "message-1",
+            queuedSteers: [],
+            queuedFollowUps: [],
+            steeringMode: .oneAtATime,
+            followUpMode: .oneAtATime,
+            lastRequestAt: nil,
+            pendingExtensionUiRequestID: nil
+        )
+        let remoteMessage = PickyConversationBottomScrollTrigger(
+            latestMessageID: "message-2",
+            queuedSteers: [],
+            queuedFollowUps: [],
+            steeringMode: .oneAtATime,
+            followUpMode: .oneAtATime,
+            lastRequestAt: nil,
+            pendingExtensionUiRequestID: nil
+        )
+
+        #expect(PickyConversationScrollPolicy.shouldMarkContentUnread(from: current, to: remoteMessage, isPinnedToBottom: false))
+        #expect(!PickyConversationScrollPolicy.shouldMarkContentUnread(from: current, to: remoteMessage, isPinnedToBottom: true))
+        #expect(PickyConversationScrollPolicy.shouldShowJumpToLatest(isPinnedToBottom: false, hasUnreadContent: true))
+        #expect(!PickyConversationScrollPolicy.shouldShowJumpToLatest(isPinnedToBottom: true, hasUnreadContent: true))
+        #expect(!PickyConversationScrollPolicy.shouldShowJumpToLatest(isPinnedToBottom: false, hasUnreadContent: false))
     }
 
     @Test func visibleMessagesContainsLastTwoUserTurnsOnward() {

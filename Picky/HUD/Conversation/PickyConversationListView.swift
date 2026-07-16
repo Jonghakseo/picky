@@ -19,6 +19,8 @@ struct PickyConversationListView: View {
     /// such as the todo progress pill. Zero preserves the historical layout.
     var bottomOverlayInset: CGFloat = 0
     @State private var hasAppeared = false
+    @State private var isPinnedToBottom = true
+    @State private var hasUnreadContentSinceUnpinning = false
     @State private var delayedQuestionCollapseScrollTask: Task<Void, Never>?
 
     var body: some View {
@@ -72,6 +74,13 @@ struct PickyConversationListView: View {
                         Color.clear
                             .frame(height: max(1, bottomOverlayInset))
                             .id(Self.bottomAnchorID)
+                            .onAppear {
+                                isPinnedToBottom = true
+                                hasUnreadContentSinceUnpinning = false
+                            }
+                            .onDisappear {
+                                isPinnedToBottom = false
+                            }
                     }
                     .padding(.vertical, 2)
                 }
@@ -79,19 +88,56 @@ struct PickyConversationListView: View {
                     PickyCompactingOverlayView()
                 }
             }
+            .overlay(alignment: .bottomTrailing) {
+                if PickyConversationScrollPolicy.shouldShowJumpToLatest(
+                    isPinnedToBottom: isPinnedToBottom,
+                    hasUnreadContent: hasUnreadContentSinceUnpinning
+                ) {
+                    jumpToLatestButton(proxy: proxy)
+                        .padding(.trailing, 8)
+                        .padding(.bottom, max(8, bottomOverlayInset + 6))
+                }
+            }
             .frame(minHeight: 80, maxHeight: fillsAvailableHeight ? .infinity : 640)
             .task(id: session.id) {
-                // VStack is eager so the bottom sentinel is in the view tree by the
-                // time this runs. A single non-animated scroll dispatched onto the
-                // next runloop tick is enough; no extra sleep needed.
-                scrollToBottom(proxy: proxy, animated: PickyConversationScrollPolicy.shouldAnimateScroll(hasAppeared: hasAppeared))
+                // Session changes always start at the most recent content. VStack is
+                // eager, so the bottom sentinel is in the view tree by this point.
+                if PickyConversationScrollPolicy.shouldAutoScroll(
+                    from: nil,
+                    to: bottomScrollTrigger,
+                    isPinnedToBottom: isPinnedToBottom
+                ) {
+                    isPinnedToBottom = true
+                    hasUnreadContentSinceUnpinning = false
+                    scrollToBottom(proxy: proxy, animated: PickyConversationScrollPolicy.shouldAnimateScroll(hasAppeared: hasAppeared))
+                }
                 hasAppeared = true
             }
             .onChange(of: bottomScrollTrigger) { oldValue, newValue in
                 PickyPerf.event("conversation_bottom_scroll_trigger_changed")
-                scrollToBottom(proxy: proxy, animated: PickyConversationScrollPolicy.shouldAnimateScroll(hasAppeared: hasAppeared))
-                if PickyConversationScrollPolicy.shouldRepinAfterQuestionCollapse(from: oldValue, to: newValue) {
-                    scheduleQuestionCollapseScrollToBottom(proxy: proxy)
+                let shouldAutoScroll = PickyConversationScrollPolicy.shouldAutoScroll(
+                    from: oldValue,
+                    to: newValue,
+                    isPinnedToBottom: isPinnedToBottom
+                )
+
+                if shouldAutoScroll {
+                    // Local submissions and question completion deliberately return
+                    // the user to the active end of the conversation. Mark this
+                    // before the deferred ScrollViewProxy action so the jump pill
+                    // does not flash while the sentinel comes back into view.
+                    isPinnedToBottom = true
+                    hasUnreadContentSinceUnpinning = false
+                    scrollToBottom(proxy: proxy, animated: PickyConversationScrollPolicy.shouldAnimateScroll(hasAppeared: hasAppeared))
+                    if PickyConversationScrollPolicy.shouldRepinAfterQuestionCollapse(from: oldValue, to: newValue) {
+                        scheduleQuestionCollapseScrollToBottom(proxy: proxy)
+                    }
+                } else if PickyConversationScrollPolicy.shouldMarkContentUnread(
+                    from: oldValue,
+                    to: newValue,
+                    isPinnedToBottom: isPinnedToBottom
+                ) {
+                    hasUnreadContentSinceUnpinning = true
                 }
             }
             .onDisappear {
@@ -522,6 +568,25 @@ struct PickyConversationListView: View {
         return "\(hours)h \(minutes % 60)m later"
     }
 
+    private func jumpToLatestButton(proxy: ScrollViewProxy) -> some View {
+        Button(action: {
+            isPinnedToBottom = true
+            hasUnreadContentSinceUnpinning = false
+            scrollToBottom(proxy: proxy, animated: PickyConversationScrollPolicy.shouldAnimateScroll(hasAppeared: hasAppeared))
+        }) {
+            Label("Latest", systemImage: "arrow.down")
+                .font(PickyHUDTypography.statusSemibold)
+                .foregroundColor(DS.Colors.accentText)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(DS.Colors.surface2.opacity(0.96)))
+                .overlay(Capsule().stroke(DS.Colors.borderSubtle, lineWidth: 0.5))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Jump to latest conversation content")
+        .help("Jump to latest conversation content")
+    }
+
     private func scrollToBottom(proxy: ScrollViewProxy, animated: Bool) {
         if animated {
             PickyPerf.event("conversation_scroll_to_bottom_animated")
@@ -571,11 +636,55 @@ enum PickyConversationScrollPolicy {
         hasAppeared
     }
 
+    /// A missing prior trigger represents a session switch, which always starts
+    /// at the active end of that session's conversation.
+    static func shouldAutoScroll(
+        from oldValue: PickyConversationBottomScrollTrigger?,
+        to newValue: PickyConversationBottomScrollTrigger,
+        isPinnedToBottom: Bool
+    ) -> Bool {
+        guard let oldValue else { return true }
+        return isPinnedToBottom
+            || isLocalSubmission(from: oldValue, to: newValue)
+            || shouldRepinAfterQuestionCollapse(from: oldValue, to: newValue)
+    }
+
+    static func shouldMarkContentUnread(
+        from oldValue: PickyConversationBottomScrollTrigger,
+        to newValue: PickyConversationBottomScrollTrigger,
+        isPinnedToBottom: Bool
+    ) -> Bool {
+        !isPinnedToBottom
+            && !shouldAutoScroll(from: oldValue, to: newValue, isPinnedToBottom: false)
+            && hasNewContent(from: oldValue, to: newValue)
+    }
+
+    static func shouldShowJumpToLatest(isPinnedToBottom: Bool, hasUnreadContent: Bool) -> Bool {
+        !isPinnedToBottom && hasUnreadContent
+    }
+
     static func shouldRepinAfterQuestionCollapse(
         from oldValue: PickyConversationBottomScrollTrigger,
         to newValue: PickyConversationBottomScrollTrigger
     ) -> Bool {
         oldValue.pendingExtensionUiRequestID != nil && newValue.pendingExtensionUiRequestID == nil
+    }
+
+    private static func isLocalSubmission(
+        from oldValue: PickyConversationBottomScrollTrigger,
+        to newValue: PickyConversationBottomScrollTrigger
+    ) -> Bool {
+        oldValue.lastRequestAt != newValue.lastRequestAt
+    }
+
+    private static func hasNewContent(
+        from oldValue: PickyConversationBottomScrollTrigger,
+        to newValue: PickyConversationBottomScrollTrigger
+    ) -> Bool {
+        oldValue.latestMessageID != newValue.latestMessageID
+            || oldValue.queuedSteers != newValue.queuedSteers
+            || oldValue.queuedFollowUps != newValue.queuedFollowUps
+            || (oldValue.pendingExtensionUiRequestID == nil && newValue.pendingExtensionUiRequestID != nil)
     }
 }
 

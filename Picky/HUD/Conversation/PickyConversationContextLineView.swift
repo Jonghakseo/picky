@@ -22,6 +22,7 @@ struct PickyConversationContextLineView: View {
     @ObservedObject var viewModel: PickySessionListViewModel
     let session: PickySessionListViewModel.SessionCard
     @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject private var faviconStore = PickyFaviconStore.shared
     @State private var gitStatus: PickyGitRepositoryStatus?
     @State private var pullRequestStatus: PickyGitHubPullRequestStatus?
     @State private var inFlightGitAction: GitRemoteAction?
@@ -127,6 +128,9 @@ struct PickyConversationContextLineView: View {
                 manualRefreshTick &+= 1
             }
         }
+        .task(id: faviconPageURLs) {
+            await faviconStore.load(pageURLs: faviconPageURLs)
+        }
     }
 
     /// The card uses this before constructing the context row so sessions with no
@@ -200,6 +204,12 @@ struct PickyConversationContextLineView: View {
         session.linkBadgeArtifacts(suppressingPullRequest: pullRequestStatus)
     }
 
+    private var faviconPageURLs: [URL] {
+        visibleLinkArtifacts.prefix(6).compactMap { artifact in
+            artifact.linkBadgeKind == .generic ? artifact.url : nil
+        }
+    }
+
     private var linkBadges: some View {
         let artifacts = visibleLinkArtifacts
         return HStack(spacing: 4) {
@@ -217,7 +227,8 @@ struct PickyConversationContextLineView: View {
                         linkBadge(artifact)
                     }
                     .buttonStyle(.plain)
-                    .help("Open \(artifact.title)")
+                    .help(linkBadgeHelp(for: artifact))
+                    .accessibilityLabel(linkBadgeHelp(for: artifact))
                 } else {
                     linkBadge(artifact)
                 }
@@ -368,6 +379,13 @@ struct PickyConversationContextLineView: View {
         session.linkBadgeText(for: artifact)
     }
 
+    private func linkBadgeHelp(for artifact: PickyArtifact) -> String {
+        if artifact.linkBadgeKind == .generic, let url = artifact.url {
+            return "Open \(url.absoluteString)"
+        }
+        return "Open \(artifact.title)"
+    }
+
     @ViewBuilder
     private func linkBadgeIcon(for artifact: PickyArtifact) -> some View {
         // Known Links badges must use official brand logo assets. Do not use
@@ -402,11 +420,26 @@ struct PickyConversationContextLineView: View {
             officialLinkLogo("google-slides-logo", side: googleWorkspaceLogoSide, plate: googleWorkspaceLogoPlate)
         case .googleDrive:
             officialLinkLogo("google-drive-logo", side: googleWorkspaceLogoSide, plate: googleWorkspaceLogoPlate)
+        case .generic:
+            if let url = artifact.url, let favicon = faviconStore.image(for: url) {
+                Image(nsImage: favicon)
+                    .renderingMode(.original)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 11, height: 11)
+                    .accessibilityHidden(true)
+            } else {
+                genericLinkIcon
+            }
         case nil:
-            Image(systemName: "link")
-                .pickyFont(size: 9.5, weight: .semibold)
-                .accessibilityHidden(true)
+            genericLinkIcon
         }
+    }
+
+    private var genericLinkIcon: some View {
+        Image(systemName: "link")
+            .pickyFont(size: 9.5, weight: .semibold)
+            .accessibilityHidden(true)
     }
 
     private func officialLinkLogo(_ assetName: String, side: CGFloat = 11, plate: Color? = nil) -> some View {

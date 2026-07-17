@@ -2224,6 +2224,7 @@ struct PickySessionViewModelTests {
         let sheets = PickyArtifact(id: "sheets-1", kind: "googleSheets", title: "Sheets", path: nil, url: URL(string: "https://docs.google.com/spreadsheets/d/sheet123/edit")!, updatedAt: Date())
         let slides = PickyArtifact(id: "slides-1", kind: "googleSlides", title: "Slides", path: nil, url: URL(string: "https://docs.google.com/presentation/d/slide123/edit")!, updatedAt: Date())
         let drive = PickyArtifact(id: "drive-1", kind: "googleDrive", title: "Drive", path: nil, url: URL(string: "https://drive.google.com/file/d/file123/view")!, updatedAt: Date())
+        let generic = PickyArtifact(id: "link-1", kind: "link", title: "example.com", path: nil, url: URL(string: "https://example.com/docs?tab=mac#install")!, updatedAt: Date())
 
         #expect(pullRequest.linkBadgeKind == .github)
         #expect(pullRequest.githubIssueOrPullRequestNumber == "42")
@@ -2241,6 +2242,7 @@ struct PickySessionViewModelTests {
         #expect(sheets.linkBadgeKind == .googleSheets)
         #expect(slides.linkBadgeKind == .googleSlides)
         #expect(drive.linkBadgeKind == .googleDrive)
+        #expect(generic.linkBadgeKind == .generic)
     }
 
     @Test func sessionCardShowsMeaningfulLinkTextOnlyOrDuplicateIndexes() throws {
@@ -2250,7 +2252,10 @@ struct PickySessionViewModelTests {
         let slack = PickyArtifact(id: "slack-1", kind: "slack", title: "Slack", path: nil, url: URL(string: "https://example.slack.com/archives/C012ZMHLPDW/p1777763920621249")!, updatedAt: Date())
         let notion1 = PickyArtifact(id: "notion-1", kind: "notion", title: "Notion", path: nil, url: URL(string: "https://www.notion.so/example/355d62c6956180cf8695dcdf5c4ff226")!, updatedAt: Date())
         let notion2 = PickyArtifact(id: "notion-2", kind: "notion", title: "Notion", path: nil, url: URL(string: "https://app.notion.com/p/351d62c6956180498d13e3494b488192")!, updatedAt: Date())
-        let card = PickySessionListViewModel.SessionCard.fixture(artifacts: [github, jira, linear, slack, notion1, notion2])
+        let generic1 = PickyArtifact(id: "link-1", kind: "link", title: "example.com", path: nil, url: URL(string: "https://example.com/docs/one")!, updatedAt: Date())
+        let generic2 = PickyArtifact(id: "link-2", kind: "link", title: "example.com", path: nil, url: URL(string: "https://example.com/docs/two")!, updatedAt: Date())
+        let otherGeneric = PickyArtifact(id: "link-3", kind: "link", title: "example.org", path: nil, url: URL(string: "https://example.org/docs")!, updatedAt: Date())
+        let card = PickySessionListViewModel.SessionCard.fixture(artifacts: [github, jira, linear, slack, notion1, notion2, generic1, generic2, otherGeneric])
 
         #expect(card.linkBadgeText(for: github) == "#42")
         #expect(card.linkBadgeText(for: jira) == "COM-123")
@@ -2258,6 +2263,9 @@ struct PickySessionViewModelTests {
         #expect(card.linkBadgeText(for: slack) == nil)
         #expect(card.linkBadgeText(for: notion1) == "#1")
         #expect(card.linkBadgeText(for: notion2) == "#2")
+        #expect(card.linkBadgeText(for: generic1) == "#1")
+        #expect(card.linkBadgeText(for: generic2) == "#2")
+        #expect(card.linkBadgeText(for: otherGeneric) == nil)
     }
 
     @Test func sessionCardSuppressesGitHubArtifactsThatDuplicateTheCurrentBranchPR() throws {

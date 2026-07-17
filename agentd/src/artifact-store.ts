@@ -23,7 +23,7 @@ export function githubPullRequestTitle(url: string): string {
   return number ? `#${number}` : "GitHub";
 }
 
-type SessionLinkKind = "github" | "slack" | "notion" | "jira" | "sentry" | "linear" | "figma" | "googleDocs" | "googleSheets" | "googleSlides" | "googleDrive";
+type SessionLinkKind = "github" | "slack" | "notion" | "jira" | "sentry" | "linear" | "figma" | "googleDocs" | "googleSheets" | "googleSlides" | "googleDrive" | "link";
 
 interface ExtractedSessionLink {
   kind: SessionLinkKind;
@@ -35,10 +35,12 @@ export function extractSessionLinks(text: string): ExtractedSessionLink[] {
   const links: ExtractedSessionLink[] = [];
   const seen = new Set<string>();
   for (const rawUrl of extractRawLinkCandidates(text)) {
-    const url = normalizeLinkUrl(rawUrl);
-    if (!url || seen.has(url)) continue;
-    const kind = sessionLinkKind(url);
+    const candidate = normalizeLinkUrl(rawUrl);
+    if (!candidate) continue;
+    const kind = sessionLinkKind(candidate);
     if (!kind) continue;
+    const url = canonicalSessionLinkUrl(candidate, kind);
+    if (seen.has(url)) continue;
     seen.add(url);
     links.push({ kind, title: sessionLinkTitle(kind, url), url });
   }
@@ -47,7 +49,7 @@ export function extractSessionLinks(text: string): ExtractedSessionLink[] {
 
 function extractRawLinkCandidates(text: string): string[] {
   const candidates: string[] = [];
-  const regex = /https:(?:\/\/|\\\/\\\/)/g;
+  const regex = /https?:(?:\/\/|\\\/\\\/)/gi;
   for (const match of text.matchAll(regex)) {
     let rawUrl = "";
     for (let index = match.index; index < text.length; index += 1) {
@@ -98,7 +100,7 @@ function sessionLinkKind(url: string): SessionLinkKind | undefined {
     if (/^\/presentation\/d\/[^/]+/.test(parsed.pathname)) return "googleSlides";
   }
   if (host === "drive.google.com" && (/^\/file\/d\/[^/]+/.test(parsed.pathname) || /^\/drive\//.test(parsed.pathname))) return "googleDrive";
-  return undefined;
+  return "link";
 }
 
 function sessionLinkTitle(kind: SessionLinkKind, url: string): string {
@@ -112,7 +114,8 @@ function sessionLinkTitle(kind: SessionLinkKind, url: string): string {
   if (kind === "googleDocs") return "Docs";
   if (kind === "googleSheets") return "Sheets";
   if (kind === "googleSlides") return "Slides";
-  return "Drive";
+  if (kind === "googleDrive") return "Drive";
+  return safeUrl(url)?.hostname || "Link";
 }
 
 function githubIssueOrPullRequestNumber(url: string): string | undefined {
@@ -131,7 +134,13 @@ function normalizeLinkUrl(rawUrl: string): string | undefined {
   let trimmed = rawUrl.replace(/(?:&quot;|&#34;|&apos;|&#39;)+$/g, "").replace(/[.,;:!?]+$/g, "");
   while (trimmed.endsWith(")") && countCharacter(trimmed, ")") > countCharacter(trimmed, "(")) trimmed = trimmed.slice(0, -1);
   const parsed = safeUrl(trimmed);
-  if (!parsed) return undefined;
+  if (!parsed || (parsed.protocol !== "http:" && parsed.protocol !== "https:")) return undefined;
+  return parsed.toString();
+}
+
+function canonicalSessionLinkUrl(url: string, kind: SessionLinkKind): string {
+  if (kind === "link") return url;
+  const parsed = new URL(url);
   parsed.search = "";
   parsed.hash = "";
   return parsed.toString();

@@ -1,7 +1,7 @@
 import Foundation
 
 enum PickyLinkBadgeKind: Equatable {
-    case github, slack, notion, jira, sentry, linear, figma, googleDocs, googleSheets, googleSlides, googleDrive
+    case github, slack, notion, jira, sentry, linear, figma, googleDocs, googleSheets, googleSlides, googleDrive, generic
 }
 
 extension PickyArtifact {
@@ -19,6 +19,7 @@ extension PickyArtifact {
         if kind == "googleSheets" { return .googleSheets }
         if kind == "googleSlides" { return .googleSlides }
         if kind == "googleDrive" { return .googleDrive }
+        if kind == "link", let scheme = url?.scheme?.lowercased(), scheme == "http" || scheme == "https" { return .generic }
         guard let url else { return nil }
         let host = url.host?.lowercased() ?? ""
         if host == "github.com", githubIssueOrPullRequestNumber != nil { return .github }
@@ -32,6 +33,7 @@ extension PickyArtifact {
         if host == "docs.google.com", url.pathComponents.contains("spreadsheets") { return .googleSheets }
         if host == "docs.google.com", url.pathComponents.contains("presentation") { return .googleSlides }
         if host == "drive.google.com", url.pathComponents.contains("file") || url.pathComponents.contains("drive") { return .googleDrive }
+        if let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" { return .generic }
         return nil
     }
 

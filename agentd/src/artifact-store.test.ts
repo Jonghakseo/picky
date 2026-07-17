@@ -13,6 +13,7 @@ const supportedSessionLinks = [
   { label: "Google Slides", kind: "googleSlides", title: "Slides", url: "https://docs.google.com/presentation/d/slide123/edit" },
   { label: "Google Drive", kind: "googleDrive", title: "Drive", url: "https://drive.google.com/file/d/file123/view" },
   { label: "Notion", kind: "notion", title: "Notion", url: "https://www.notion.so/example/355d62c6956180cf8695dcdf5c4ff226" },
+  { label: "Generic", kind: "link", title: "example.com", url: "https://example.com/docs?tab=mac#install" },
 ] as const;
 
 describe("session link extraction", () => {
@@ -50,6 +51,30 @@ describe("session link extraction", () => {
     expect(extractSessionLinkArtifacts("https://github.com/acme/repo/pull/42", "2026-05-01T00:00:00.000Z")[0]).toMatchObject({ kind: "github", title: "#42", url: "https://github.com/acme/repo/pull/42" });
     expect(extractGithubPullRequestUrls("I will open a PR later")).toEqual([]);
     expect(extractChangedFilesFromExplicitText("Changed file: M Picky/App.swift - updated HUD")).toEqual([{ status: "M", path: "Picky/App.swift", summary: "updated HUD" }]);
+  });
+
+  it("extracts arbitrary HTTP and HTTPS links while preserving their destinations", () => {
+    expect(extractSessionLinks([
+      "Website https://example.com/docs/getting-started?tab=mac#install",
+      "HTTP mirror http://downloads.example.org/releases/app.zip?source=chat",
+      "Uppercase HTTPS://UPPER.example.com/path",
+      "Duplicate https://example.com/docs/getting-started?tab=mac#install",
+      "Unsupported ftp://example.com/archive.zip",
+    ].join("\n"))).toEqual([
+      { kind: "link", title: "example.com", url: "https://example.com/docs/getting-started?tab=mac#install" },
+      { kind: "link", title: "downloads.example.org", url: "http://downloads.example.org/releases/app.zip?source=chat" },
+      { kind: "link", title: "upper.example.com", url: "https://upper.example.com/path" },
+    ]);
+  });
+
+  it("keeps known link canonicalization when arbitrary links are enabled", () => {
+    expect(extractSessionLinks([
+      "Known https://example.atlassian.net/browse/COM-123?focusedCommentId=99#comment",
+      "Generic https://example.com/issues/123?focusedCommentId=99#comment",
+    ].join("\n"))).toEqual([
+      { kind: "jira", title: "COM-123", url: "https://example.atlassian.net/browse/COM-123" },
+      { kind: "link", title: "example.com", url: "https://example.com/issues/123?focusedCommentId=99#comment" },
+    ]);
   });
 
   it("extracts GitHub issue and pull request links with trailing slashes", () => {

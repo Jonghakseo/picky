@@ -212,6 +212,13 @@ final class PickySessionListViewModel: ObservableObject {
                 let sameKind = linkBadgeArtifacts.filter { $0.linkBadgeKind == kind }
                 guard sameKind.count > 1, let index = sameKind.firstIndex(where: { $0.id == artifact.id }) else { return nil }
                 return "#\(index + 1)"
+            case .generic:
+                guard let host = artifact.url?.host?.lowercased() else { return nil }
+                let sameHost = linkBadgeArtifacts.filter {
+                    $0.linkBadgeKind == .generic && $0.url?.host?.lowercased() == host
+                }
+                guard sameHost.count > 1, let index = sameHost.firstIndex(where: { $0.id == artifact.id }) else { return nil }
+                return "#\(index + 1)"
             }
         }
 

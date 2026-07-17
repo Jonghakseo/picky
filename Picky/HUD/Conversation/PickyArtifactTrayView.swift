@@ -38,6 +38,7 @@ struct PickyArtifactTrayButton: View {
 private struct PickyArtifactTrayPopover: View {
     let artifacts: [PickyArtifact]
     @Binding var isPresented: Bool
+    @ObservedObject private var faviconStore = PickyFaviconStore.shared
     @State private var copiedArtifactID: String?
     @State private var copyFeedbackTask: Task<Void, Never>?
 
@@ -71,6 +72,15 @@ private struct PickyArtifactTrayPopover: View {
         .clipShape(shape)
         .onExitCommand { isPresented = false }
         .onDisappear { copyFeedbackTask?.cancel() }
+        .task(id: faviconPageURLs) {
+            await faviconStore.load(pageURLs: faviconPageURLs)
+        }
+    }
+
+    private var faviconPageURLs: [URL] {
+        artifacts.compactMap { artifact in
+            artifact.linkBadgeKind == .generic ? artifact.url : nil
+        }
     }
 
     private func copy(_ artifact: PickyArtifact) {
@@ -238,6 +248,7 @@ private struct PickyArtifactTrayRow: View {
 
 private struct PickyArtifactTrayIcon: View {
     let artifact: PickyArtifact
+    @ObservedObject private var faviconStore = PickyFaviconStore.shared
 
     var body: some View {
         switch artifact.linkBadgeKind {
@@ -264,11 +275,30 @@ private struct PickyArtifactTrayIcon: View {
             brandAsset("google-slides-logo")
         case .googleDrive:
             brandAsset("google-drive-logo")
+        case .generic:
+            if let url = artifact.url, let favicon = faviconStore.image(for: url) {
+                Image(nsImage: favicon)
+                    .renderingMode(.original)
+                    .resizable()
+                    .scaledToFit()
+            } else {
+                genericLinkIcon
+            }
         case nil:
-            Image(systemName: artifact.path == nil ? "doc.text" : "doc")
-                .font(PickyHUDTypography.supportingSemibold)
-                .foregroundStyle(DS.Colors.textSecondary)
+            artifactIcon
         }
+    }
+
+    private var genericLinkIcon: some View {
+        Image(systemName: "link")
+            .font(PickyHUDTypography.supportingSemibold)
+            .foregroundStyle(DS.Colors.textSecondary)
+    }
+
+    private var artifactIcon: some View {
+        Image(systemName: artifact.path == nil ? "doc.text" : "doc")
+            .font(PickyHUDTypography.supportingSemibold)
+            .foregroundStyle(DS.Colors.textSecondary)
     }
 
     private func brandAsset(_ name: String, template: Bool = false) -> some View {

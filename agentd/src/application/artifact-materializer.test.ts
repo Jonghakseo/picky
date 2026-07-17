@@ -44,13 +44,13 @@ describe("ArtifactMaterializer", () => {
           text: "Intermediate output https://linear.app/acme/issue/ENG-123/ignore-this",
         },
       ],
-      logs: ["tool output https://www.notion.so/acme/Example-abcdefabcdefabcdefabcdefabcdefab"],
+      logs: ["tool output https://unregistered.example.com/log-only"],
       tools: [
         {
           toolCallId: "read-skill",
           name: "read",
           status: "succeeded",
-          preview: "Notion URL example: https://www.notion.so/acme/Example-0123456789abcdef0123456789abcdef",
+          preview: "URL example: https://unregistered.example.com/tool-preview-only",
         },
       ],
     });

@@ -69,7 +69,7 @@ describe("neutral prompt builder", () => {
     expect(pair.user).toContain("Do not expose internal tool logs verbatim");
   });
 
-  it("does not include pointer tag instructions in Picky prompts", () => {
+  it("advertises structured pointer calls without text-tag instructions", () => {
     const turnPrompt = buildMainAgentPrompt(PickyContextPacketSchema.parse(readJson("context/plain-text.context.json")));
     const pair = buildMainAgentBootstrapPair();
     const picklePrompt = buildPicklePrompt(PickyContextPacketSchema.parse(readJson("context/plain-text.context.json")), {
@@ -77,6 +77,10 @@ describe("neutral prompt builder", () => {
       instructions: "Investigate without showing overlays",
     });
 
+    expect(pair.user).toContain("picky_show_pointer");
+    expect(pair.user).toContain("concrete location in a captured screenshot");
+    expect(pair.user).toContain("screenshot-pixel x/y coordinates (top-left origin)");
+    expect(pair.user).toContain("short label");
     expect(pair.user).not.toContain("[POINT:");
     expect(pair.user).not.toContain("append pointer tags");
     expect(turnPrompt.text).not.toContain("[POINT:");

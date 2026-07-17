@@ -135,6 +135,7 @@ struct CompanionPanelSettingsView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .hoverAffordance()
 
                 Spacer(minLength: 6)
             }
@@ -198,6 +199,7 @@ struct CompanionPanelSettingsView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .hoverAffordance()
     }
 
     /// Resolves the subtitle text shown under each index row. Live summaries
@@ -350,6 +352,7 @@ struct CompanionPanelSettingsView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .hoverAffordance()
 
             if isArchivedSessionsExpanded {
                 PickyHUDArchivedSessionsListView(
@@ -800,6 +803,7 @@ struct CompanionPanelSettingsView: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .hoverAffordance()
             }
         }
     }
@@ -880,6 +884,7 @@ struct CompanionPanelSettingsView: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .hoverAffordance()
 
                 Text("settings.oauth.fallback")
                     .font(PickyHUDTypography.supporting)
@@ -936,6 +941,7 @@ struct CompanionPanelSettingsView: View {
                 .buttonStyle(.plain)
                 .disabled(oauthIsBusy(status))
                 .opacity(oauthIsBusy(status) ? 0.55 : 1)
+                .hoverAffordance()
 
                 if case .signingIn = status {
                     Button(action: { oauthLoginController.cancel(provider: provider) }) {
@@ -946,6 +952,7 @@ struct CompanionPanelSettingsView: View {
                             .padding(.vertical, 6)
                     }
                     .buttonStyle(.plain)
+                    .hoverAffordance()
                 }
 
                 Spacer(minLength: 0)
@@ -1045,6 +1052,7 @@ struct CompanionPanelSettingsView: View {
                 )
             }
             .buttonStyle(.plain)
+            .hoverAffordance()
 
             Text("settings.general.shellCommand.note")
                 .font(PickyHUDTypography.supporting)
@@ -1140,6 +1148,7 @@ struct CompanionPanelSettingsView: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .hoverAffordance()
             }
         }
     }
@@ -1388,6 +1397,7 @@ struct CompanionPanelSettingsView: View {
                 )
             }
             .buttonStyle(.plain)
+            .hoverAffordance()
         }
     }
 
@@ -1567,6 +1577,7 @@ struct CompanionPanelSettingsView: View {
                 .font(PickyHUDTypography.supportingMedium)
                 .foregroundColor(DS.Colors.accentText)
                 .buttonStyle(.plain)
+                .hoverAffordance()
         }
     }
 
@@ -1596,6 +1607,7 @@ struct CompanionPanelSettingsView: View {
         }
         .buttonStyle(.plain)
         .help(L10n.t("settings.macSpeechLink.help"))
+        .hoverAffordance()
     }
 
     /// Opens the AGENTS.md file inside the main-agent cwd. If the file is
@@ -1629,6 +1641,7 @@ struct CompanionPanelSettingsView: View {
             )
         }
         .buttonStyle(.plain)
+        .hoverAffordance()
     }
 
     private func providerPicker(title: LocalizedStringKey, capability: PickyVoiceProviderCapability, selection: Binding<PickyVoiceProviderSelection>, isEnabled: Bool = true) -> some View {

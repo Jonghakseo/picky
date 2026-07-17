@@ -155,6 +155,7 @@ struct PickyHUDArchiveUndoToastView: View {
                         .fill(DS.Colors.accentText.opacity(0.12))
                         .overlay(Capsule(style: .continuous).strokeBorder(DS.Colors.accentText.opacity(0.24), lineWidth: 0.7))
                 )
+                .hoverAffordance()
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)

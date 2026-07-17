@@ -246,6 +246,7 @@ struct CompanionPanelFeedbackView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(status == .sending || selectedMediaAttachments.count >= MediaAttachmentPolicy.maxCount)
+                .hoverAffordance()
             }
 
             if selectedMediaAttachments.isEmpty {
@@ -298,6 +299,7 @@ struct CompanionPanelFeedbackView: View {
             }
             .buttonStyle(.plain)
             .disabled(status == .sending)
+            .hoverAffordance()
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
@@ -386,6 +388,7 @@ struct CompanionPanelFeedbackView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!isSendEnabled)
+                .hoverAffordance()
             }
         }
     }
@@ -416,6 +419,7 @@ struct CompanionPanelFeedbackView: View {
                 .foregroundColor(DS.Colors.accentText)
                 .disabled(!isSendEnabled)
                 .accessibilityLabel(L10n.t("feedback.retry.accessibilityLabel"))
+                .hoverAffordance()
         }
     }
 

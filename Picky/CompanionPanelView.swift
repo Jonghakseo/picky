@@ -298,6 +298,7 @@ private struct CompanionPanelTabBar: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .hoverAffordance()
             }
         }
         .frame(maxWidth: .infinity)

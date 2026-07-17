@@ -197,6 +197,7 @@ struct PickyConversationContextLineView: View {
         .buttonStyle(.plain)
         .layoutPriority(1)
         .help("Open working folder in Finder")
+        .hoverAffordance()
     }
 
     private var visibleLinkArtifacts: [PickyArtifact] {
@@ -218,6 +219,7 @@ struct PickyConversationContextLineView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Open PR #\(pullRequestStatus.number) — \(pullRequestStatus.title) [\(pullRequestStatus.state.rawValue)]")
+                .hoverAffordance()
             }
             ForEach(artifacts.prefix(6)) { artifact in
                 if let url = artifact.url {
@@ -227,6 +229,7 @@ struct PickyConversationContextLineView: View {
                     .buttonStyle(.plain)
                     .help(linkBadgeHelp(for: artifact))
                     .accessibilityLabel(linkBadgeHelp(for: artifact))
+                    .hoverAffordance()
                 } else {
                     linkBadge(artifact)
                 }
@@ -288,6 +291,7 @@ struct PickyConversationContextLineView: View {
             }
             .buttonStyle(.plain)
             .help("Open \(url.absoluteString)")
+            .hoverAffordance()
         } else {
             content
         }
@@ -302,6 +306,7 @@ struct PickyConversationContextLineView: View {
             }
             .buttonStyle(.plain)
             .help(diffChipHelp(lines: status.insertions + status.deletions))
+            .hoverAffordance()
         }
         if status.deletions > 0 {
             Button(action: { runDiffChipAction() }) {
@@ -310,6 +315,7 @@ struct PickyConversationContextLineView: View {
             }
             .buttonStyle(.plain)
             .help(diffChipHelp(lines: status.insertions + status.deletions))
+            .hoverAffordance()
         }
         if status.aheadCount > 0 {
             Button(action: { runRemoteAction(.push) }) {
@@ -319,6 +325,7 @@ struct PickyConversationContextLineView: View {
             .disabled(inFlightGitAction != nil)
             .opacity(inFlightGitAction == .push ? 0.45 : 1)
             .help(inFlightGitAction == .push ? "Pushing…" : "git push (\(status.aheadCount) ahead of upstream)")
+            .hoverAffordance()
         }
         if status.behindCount > 0 {
             Button(action: { runRemoteAction(.pull) }) {
@@ -328,6 +335,7 @@ struct PickyConversationContextLineView: View {
             .disabled(inFlightGitAction != nil)
             .opacity(inFlightGitAction == .pull ? 0.45 : 1)
             .help(inFlightGitAction == .pull ? "Pulling…" : "git pull (\(status.behindCount) behind upstream)")
+            .hoverAffordance()
         }
     }
 
@@ -350,6 +358,7 @@ struct PickyConversationContextLineView: View {
         }
         .buttonStyle(.plain)
         .help(branchChipHelp(branch: status.branchName))
+        .hoverAffordance()
     }
 
     private func linkBadge(_ artifact: PickyArtifact) -> some View {

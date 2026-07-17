@@ -324,6 +324,7 @@ struct PickyConversationHeaderView: View {
             .accessibilityAction(named: Text("Lock Pickle as sticky target")) {
                 viewModel.armScreenContextTarget(sessionID: session.id, sticky: true)
             }
+            .hoverAffordance()
     }
 
     private var stickyHoldProgressRing: some View {
@@ -819,6 +820,7 @@ private struct PickyHeaderSessionMetaPill: View {
         .buttonStyle(.plain)
         .fixedSize(horizontal: true, vertical: false)
         .help("Cycle scoped model (⌃P)")
+        .hoverAffordance()
     }
 
     private func thinkingControl(_ thinkingLevelText: String) -> some View {
@@ -830,6 +832,7 @@ private struct PickyHeaderSessionMetaPill: View {
         .buttonStyle(.plain)
         .fixedSize(horizontal: true, vertical: false)
         .help("Cycle thinking level (⇧Tab)")
+        .hoverAffordance()
     }
 
     private var separator: some View {

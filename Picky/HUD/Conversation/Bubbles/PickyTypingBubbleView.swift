@@ -54,6 +54,7 @@ struct PickyTypingBubbleView: View {
             .accessibilityLabel("Thinking")
             .accessibilityValue(isCollapsed ? "Collapsed" : "Expanded")
             .help(isCollapsed ? "Expand thinking" : "Collapse thinking")
+            .hoverAffordance()
             Spacer(minLength: PickyConversationBubbleLayout.oppositeSideReserve)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

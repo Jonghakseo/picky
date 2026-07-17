@@ -26,6 +26,7 @@ extension PickyHUDDockRailView {
         .buttonStyle(.plain)
         .help(isMinimized ? "Expand dock" : "Minimize dock")
         .accessibilityLabel(isMinimized ? "Expand dock" : "Minimize dock")
+        .hoverAffordance()
     }
 
     private var minimizeChevronSymbol: String {
@@ -97,6 +98,7 @@ extension PickyHUDDockRailView {
         .accessibilityLabel(summaryAccessibilityLabel(items))
         .accessibilityAddTraits(.isButton)
         .accessibilityHint("Expand dock")
+        .hoverAffordance()
     }
 
     @ViewBuilder

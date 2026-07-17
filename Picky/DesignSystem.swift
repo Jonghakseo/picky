@@ -693,6 +693,29 @@ extension View {
             }
         }
     }
+
+    /// Subtle hover affordance for clickable controls that have no built-in hover
+    /// state — plain `Button`s and `.onTapGesture` targets. Communicates
+    /// "clickable" via a rest→hover brightness lift instead of a pointing-hand
+    /// cursor swap, per PRINCIPLES §4 (Cursor는 macOS 관습을 따른다) and §7
+    /// (hover confirms interactability). Layout-neutral: no scale or shape change.
+    /// Mirrors the existing dock badge/group hover idiom (`.brightness` on hover).
+    func hoverAffordance(brightness amount: Double = 0.06) -> some View {
+        modifier(HoverAffordanceModifier(brightness: amount))
+    }
+}
+
+/// Backing modifier for `View.hoverAffordance()`.
+private struct HoverAffordanceModifier: ViewModifier {
+    let brightness: Double
+    @State private var isHovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .brightness(isHovered ? brightness : 0)
+            .animation(.easeOut(duration: DS.Animation.fast), value: isHovered)
+            .onHover { isHovered = $0 }
+    }
 }
 
 // MARK: - Buddy Composer Visual Style

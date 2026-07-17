@@ -48,6 +48,7 @@ struct CompanionPanelFooterView: View {
                 .foregroundColor(primaryActionForeground)
             }
             .buttonStyle(.plain)
+            .hoverAffordance()
 
             Spacer()
 

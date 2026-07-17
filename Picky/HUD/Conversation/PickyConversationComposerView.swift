@@ -329,6 +329,7 @@ struct PickyConversationComposerView: View {
             .help(notifyOnCompletionHelpText)
             .accessibilityLabel("Notify on completion")
             .accessibilityValue(session.notifyMainOnCompletion == true ? "On" : "Off")
+            .hoverAffordance()
         }
     }
 
@@ -354,6 +355,7 @@ struct PickyConversationComposerView: View {
         .help("Extended terminal (⌘E)")
         .accessibilityLabel("Extended terminal")
         .accessibilityValue(isExtendedTerminalOpen ? "Open" : "Closed")
+        .hoverAffordance()
     }
 
     private var terminalButtonBackground: some View {
@@ -867,6 +869,7 @@ struct PickyConversationComposerView: View {
         .disabled(isSendDisabled)
         .help(sendHelpText)
         .accessibilityLabel(sendHelpText)
+        .hoverAffordance()
     }
 
     private var stopButton: some View {
@@ -880,6 +883,7 @@ struct PickyConversationComposerView: View {
         .buttonStyle(.plain)
         .help("Stop this Pickle")
         .accessibilityLabel("Stop Pickle")
+        .hoverAffordance()
     }
 
     var isStopButtonVisible: Bool {
@@ -1439,6 +1443,7 @@ private struct PickyComposerAttachmentChipView: View {
             .buttonStyle(.plain)
             .help("Remove attachment")
             .accessibilityLabel("Remove attachment \(attachment.displayName)")
+            .hoverAffordance()
         }
         .padding(.leading, 4)
         .padding(.trailing, 2)

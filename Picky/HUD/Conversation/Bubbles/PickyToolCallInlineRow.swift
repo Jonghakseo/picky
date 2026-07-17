@@ -49,6 +49,7 @@ struct PickyToolCallInlineRow: View {
         .help(helpText)
         .accessibilityLabel("\(tool.name) tool call")
         .accessibilityHint("Open tool history")
+        .hoverAffordance()
     }
 
     @ViewBuilder

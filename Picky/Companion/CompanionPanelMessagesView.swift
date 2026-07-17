@@ -117,6 +117,7 @@ struct CompanionPanelMessagesView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(companionManager.isResettingMainAgentSession)
+                .hoverAffordance()
             }
 
             if companionManager.mainAgentSessionInfo.canOpenInPi {
@@ -138,6 +139,7 @@ struct CompanionPanelMessagesView: View {
                     .foregroundColor(DS.Colors.textSecondary)
             }
             .buttonStyle(.plain)
+            .hoverAffordance()
 
             Button(action: copyMainAgentResumeCommand) {
                 Label(copyButtonLabelKey, systemImage: copyButtonIconName)
@@ -145,6 +147,7 @@ struct CompanionPanelMessagesView: View {
                     .foregroundColor(DS.Colors.textSecondary)
             }
             .buttonStyle(.plain)
+            .hoverAffordance()
 
             Spacer(minLength: 0)
         }
@@ -206,6 +209,7 @@ struct CompanionPanelMessagesView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(isSubmitDisabled)
+                .hoverAffordance()
             }
 
             if let error = companionManager.directMessageError {

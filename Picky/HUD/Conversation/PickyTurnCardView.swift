@@ -455,6 +455,7 @@ struct PickyTurnCardView<MessageContent: View>: View {
         .accessibilityLabel("Turn summary")
         .accessibilityValue(summary.displayText)
         .accessibilityHint(isExpanded ? "Tap to collapse" : "Tap to expand")
+        .hoverAffordance()
     }
 
     private var headerForegroundColor: Color {

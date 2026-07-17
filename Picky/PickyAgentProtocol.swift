@@ -17,6 +17,8 @@ enum PickyBuiltinTool: String, Codable, CaseIterable, Hashable, Sendable {
     case pickleSessions = "picky_pickle_sessions"
     case steerPickle = "picky_steer_pickle"
     case abortPickle = "picky_abort_pickle"
+    case showPointer = "picky_show_pointer"
+    case showAnnotations = "picky_show_annotations"
     case readUserGuide = "read_picky_user_guide"
 
     /// L10n key for the user-facing display name shown in the settings UI.
@@ -26,6 +28,8 @@ enum PickyBuiltinTool: String, Codable, CaseIterable, Hashable, Sendable {
         case .pickleSessions: "settings.builtinTools.tool.pickleSessions.name"
         case .steerPickle: "settings.builtinTools.tool.steerPickle.name"
         case .abortPickle: "settings.builtinTools.tool.abortPickle.name"
+        case .showPointer: "settings.builtinTools.tool.showPointer.name"
+        case .showAnnotations: "settings.builtinTools.tool.showAnnotations.name"
         case .readUserGuide: "settings.builtinTools.tool.readUserGuide.name"
         }
     }
@@ -37,6 +41,8 @@ enum PickyBuiltinTool: String, Codable, CaseIterable, Hashable, Sendable {
         case .pickleSessions: "settings.builtinTools.tool.pickleSessions.description"
         case .steerPickle: "settings.builtinTools.tool.steerPickle.description"
         case .abortPickle: "settings.builtinTools.tool.abortPickle.description"
+        case .showPointer: "settings.builtinTools.tool.showPointer.description"
+        case .showAnnotations: "settings.builtinTools.tool.showAnnotations.description"
         case .readUserGuide: "settings.builtinTools.tool.readUserGuide.description"
         }
     }

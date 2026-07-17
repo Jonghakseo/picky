@@ -4953,6 +4953,70 @@
         }
       }
     },
+    "settings.builtinTools.tool.showAnnotations.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Let the agent draw shapes over your screen — circles, boxes, lines, a spotlight, and labels — to guide you. Disabling stops Picky from drawing annotations."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트가 원·상자·선·스포트라이트·라벨 같은 도형을 화면에 그려 안내해요. 끄면 화면에 주석을 그릴 수 없어요."
+          }
+        }
+      }
+    },
+    "settings.builtinTools.tool.showAnnotations.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Draw on screen"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화면에 그리기"
+          }
+        }
+      }
+    },
+    "settings.builtinTools.tool.showPointer.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Let the agent point at an on-screen location with an animated cursor and highlight. Disabling stops Picky from showing where to click."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트가 화면의 특정 위치를 움직이는 커서와 하이라이트로 가리켜요. 끄면 클릭할 위치를 짚어줄 수 없어요."
+          }
+        }
+      }
+    },
+    "settings.builtinTools.tool.showPointer.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Point on screen"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화면 가리키기"
+          }
+        }
+      }
+    },
     "settings.section.voice.title": {
       "localizations": {
         "en": {

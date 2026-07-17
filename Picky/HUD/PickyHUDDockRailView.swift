@@ -1336,8 +1336,9 @@ struct PickyHUDDockRailView: View {
     }
 
     private func summaryChip(dot: Color, text: Color, count: Int) -> some View {
-        // Fixed-width chip with leading content so the dots line up in a column
-        // (vertical) while the whole block stays centered in the rail.
+        // Natural-width chip, centered by the enclosing stack. Keeping the chip
+        // sized to its content (dot + count) means the block sits symmetrically
+        // in the rail instead of leaving empty padding on one side.
         HStack(spacing: 5) {
             Circle()
                 .fill(dot)
@@ -1347,11 +1348,7 @@ struct PickyHUDDockRailView: View {
                 .foregroundColor(text)
                 .fixedSize()
         }
-        .frame(
-            width: dockSide.orientation == .vertical ? summaryChipRowWidth : nil,
-            height: dockSide.orientation == .vertical ? summaryChipLineHeight : nil,
-            alignment: .leading
-        )
+        .frame(height: dockSide.orientation == .vertical ? summaryChipLineHeight : nil)
     }
 
     private func summaryDotColor(_ status: PickyHUDDockSummaryStatus) -> Color {

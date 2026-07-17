@@ -104,7 +104,6 @@ struct CompanionPanelPrerequisitesView: View {
                             )
                     }
                     .buttonStyle(.plain)
-                    .pointerCursor()
 
                     Button(action: {
                         // Reveals the app in Finder so the user can drag it into
@@ -124,7 +123,6 @@ struct CompanionPanelPrerequisitesView: View {
                             )
                     }
                     .buttonStyle(.plain)
-                    .pointerCursor()
                 }
             }
         }
@@ -180,7 +178,6 @@ struct CompanionPanelPrerequisitesView: View {
                         )
                 }
                 .buttonStyle(.plain)
-                .pointerCursor()
             }
         }
         .padding(.vertical, 6)
@@ -226,7 +223,6 @@ struct CompanionPanelPrerequisitesView: View {
                         )
                 }
                 .buttonStyle(.plain)
-                .pointerCursor()
             }
         }
         .padding(.vertical, 6)
@@ -281,7 +277,6 @@ struct CompanionPanelPrerequisitesView: View {
                         )
                 }
                 .buttonStyle(.plain)
-                .pointerCursor()
             }
         }
         .padding(.vertical, 6)
@@ -333,7 +328,6 @@ struct CompanionPanelPrerequisitesView: View {
                         )
                 }
                 .buttonStyle(.plain)
-                .pointerCursor()
             }
         }
         .padding(.vertical, 6)

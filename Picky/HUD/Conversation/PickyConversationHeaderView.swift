@@ -173,7 +173,6 @@ struct PickyConversationHeaderView: View {
                 )
                 .contentShape(Rectangle())
                 .onHover { isTitleHovered = $0 }
-                .pointerCursor()
                 .onTapGesture(count: 2) { beginTitleEdit() }
                 .nativeTooltip(titleHelpText)
                 .accessibilityHint(titleHelpText)
@@ -302,7 +301,6 @@ struct PickyConversationHeaderView: View {
             }
             .frame(width: 26, height: 26)
             .contentShape(Rectangle())
-            .pointerCursor()
             .onTapGesture { handleBadgeTap() }
             .onLongPressGesture(
                 minimumDuration: PickyConversationStickyArmHoldPolicy.duration,
@@ -820,7 +818,6 @@ private struct PickyHeaderSessionMetaPill: View {
         }
         .buttonStyle(.plain)
         .fixedSize(horizontal: true, vertical: false)
-        .pointerCursor()
         .help("Cycle scoped model (⌃P)")
     }
 
@@ -832,7 +829,6 @@ private struct PickyHeaderSessionMetaPill: View {
         }
         .buttonStyle(.plain)
         .fixedSize(horizontal: true, vertical: false)
-        .pointerCursor()
         .help("Cycle thinking level (⇧Tab)")
     }
 

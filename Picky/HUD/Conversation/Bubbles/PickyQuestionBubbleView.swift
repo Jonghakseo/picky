@@ -123,7 +123,6 @@ struct PickyQuestionBubbleView: View {
                 label.contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .pointerCursor()
             .help(isCollapsed ? "Expand question details" : "Collapse question details")
             .accessibilityLabel("Question \(statusLabel)")
             .accessibilityValue(isCollapsed ? "Collapsed" : "Expanded")

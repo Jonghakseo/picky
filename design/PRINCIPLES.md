@@ -54,6 +54,17 @@ macOS 시스템 동작이 충분한 경우 커스텀 동작보다 우선한다.
 
 새로운 시각 표현은 native behavior를 대체하는 것이 아니라 Picky의 상태 모델을 더 명확히 표현해야 한다.
 
+### Cursor는 macOS 관습을 따른다
+
+macOS는 pointing-hand(손가락) 커서를 하이퍼링크에만 예약한다. 웹처럼 모든 클릭 가능한 컨트롤에 pointing-hand를 붙이지 않는다.
+
+- 버튼, tile, chip, badge, 아이콘 액션 등 일반 컨트롤은 기본 arrow 커서를 유지한다.
+- "클릭 가능함"은 커서가 아니라 **hover 상태(배경/색상/텍스트 전환)** 로 전달한다 (§7·§8). 커서만으로 어포던스를 표현하지 않는다.
+- pointing-hand 커서는 외부 URL을 여는 진짜 링크에만 사용한다.
+- 드래그 핸들의 grab(open/closed hand), 리사이즈 핸들의 resize, 텍스트 입력의 I-beam 등 **다른** 시스템 커서는 각자의 macOS 관습대로 유지한다 — 이 규칙은 pointing-hand에만 적용된다.
+
+따라서 `.pointerCursor()`(pointing-hand) modifier와 버튼 스타일의 `NSCursor.pointingHand` 사용은 앱 전역에서 제거하며, 신규 코드에서도 도입하지 않는다.
+
 ## 5. Dense, never cramped
 
 Picky는 여러 장기 작업을 동시에 다루므로 일반적인 마케팅 페이지보다 밀도가 높다.

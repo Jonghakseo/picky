@@ -452,7 +452,6 @@ struct PickyTurnCardView<MessageContent: View>: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .pointerCursor()
         .accessibilityLabel("Turn summary")
         .accessibilityValue(summary.displayText)
         .accessibilityHint(isExpanded ? "Tap to collapse" : "Tap to expand")

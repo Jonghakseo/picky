@@ -130,7 +130,6 @@ struct CompanionPanelStatusView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .pointerCursor()
     }
 
     private func popToIndex() {
@@ -210,7 +209,6 @@ struct CompanionPanelStatusView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .pointerCursor()
     }
 
     /// "Ready when you are" / "Listening..." line. Inline mic glyph + title/subtitle

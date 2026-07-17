@@ -252,7 +252,6 @@ struct CompanionPanelExtensionsSection: View {
                 .foregroundColor(DS.Colors.textTertiary)
         }
         .buttonStyle(CompanionPanelIconActionStyle())
-        .pointerCursor()
         .help(tooltipText(for: row))
         .accessibilityLabel(Text(tooltipText(for: row)))
         .popover(

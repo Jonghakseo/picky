@@ -28,6 +28,8 @@
 
 ## Controls
 
+모든 control은 클릭 가능함을 **hover 상태(배경/색상/텍스트 전환)** 로 알린다. pointing-hand 커서로 어포던스를 표현하지 않는다 (PRINCIPLES §4 “Cursor는 macOS 관습을 따른다”). 즉 rest→hover 시각 변화가 각 control 계약의 필수 요소다.
+
 ### Primary action
 
 - 화면이나 context에서 가장 중요한 다음 행동

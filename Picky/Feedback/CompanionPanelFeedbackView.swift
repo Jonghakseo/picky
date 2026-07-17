@@ -245,7 +245,6 @@ struct CompanionPanelFeedbackView: View {
                     .foregroundColor(DS.Colors.accentText)
                 }
                 .buttonStyle(.plain)
-                .pointerCursor()
                 .disabled(status == .sending || selectedMediaAttachments.count >= MediaAttachmentPolicy.maxCount)
             }
 
@@ -298,7 +297,6 @@ struct CompanionPanelFeedbackView: View {
                     .background(Circle().fill(DS.Colors.surface2.opacity(0.75)))
             }
             .buttonStyle(.plain)
-            .pointerCursor()
             .disabled(status == .sending)
         }
         .padding(.horizontal, 8)
@@ -387,7 +385,6 @@ struct CompanionPanelFeedbackView: View {
                     )
                 }
                 .buttonStyle(.plain)
-                .pointerCursor(isEnabled: isSendEnabled)
                 .disabled(!isSendEnabled)
             }
         }
@@ -418,7 +415,6 @@ struct CompanionPanelFeedbackView: View {
                 .font(PickyHUDTypography.statusSemibold)
                 .foregroundColor(DS.Colors.accentText)
                 .disabled(!isSendEnabled)
-                .pointerCursor(isEnabled: isSendEnabled)
                 .accessibilityLabel(L10n.t("feedback.retry.accessibilityLabel"))
         }
     }

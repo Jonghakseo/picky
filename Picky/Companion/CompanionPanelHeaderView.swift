@@ -32,7 +32,6 @@ struct CompanionPanelHeaderView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(CompanionPanelIconActionStyle())
-            .pointerCursor()
             .help("Dismiss panel")
             .accessibilityLabel("Dismiss panel")
         }

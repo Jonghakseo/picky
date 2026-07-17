@@ -24,7 +24,6 @@ extension PickyHUDDockRailView {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .pointerCursor()
         .help(isMinimized ? "Expand dock" : "Minimize dock")
         .accessibilityLabel(isMinimized ? "Expand dock" : "Minimize dock")
     }
@@ -94,7 +93,6 @@ extension PickyHUDDockRailView {
         // the gaps between chips — is hit-testable.
         .contentShape(Rectangle())
         .onTapGesture { onToggleMinimized() }
-        .pointerCursor()
         .accessibilityElement(children: .combine)
         .accessibilityLabel(summaryAccessibilityLabel(items))
         .accessibilityAddTraits(.isButton)

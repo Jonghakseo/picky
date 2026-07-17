@@ -120,7 +120,6 @@ struct PickyHUDDockIconView: View {
                 onReorderHandoff: onReorderHandoff
             )
         }
-        .pointerCursor()
         .onAppear {
             if shouldFlashCompletion { runCompletionFlash() }
         }
@@ -671,11 +670,6 @@ final class PickyHUDDockIconClickNSView: NSView {
 
     deinit {
         cancelTransientInteraction(notifyingCallbacks: false)
-    }
-
-    override func resetCursorRects() {
-        super.resetCursorRects()
-        addCursorRect(bounds, cursor: .pointingHand)
     }
 
     override func updateTrackingAreas() {

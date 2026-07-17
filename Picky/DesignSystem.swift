@@ -319,10 +319,7 @@ struct DSSecondaryButtonStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
             .animation(.easeOut(duration: DS.Animation.fast), value: configuration.isPressed)
             .animation(.easeOut(duration: DS.Animation.fast), value: isHovered)
-            .onHover { hovering in
-                isHovered = hovering
-                if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-            }
+            .onHover { hovering in isHovered = hovering }
     }
 
     private func buttonBackgroundColor(isPressed: Bool) -> Color {
@@ -361,10 +358,7 @@ struct DSTertiaryButtonStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
             .animation(.easeOut(duration: DS.Animation.fast), value: configuration.isPressed)
             .animation(.easeOut(duration: DS.Animation.fast), value: isHovered)
-            .onHover { hovering in
-                isHovered = hovering
-                if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-            }
+            .onHover { hovering in isHovered = hovering }
     }
 
     private func buttonBackgroundColor(isPressed: Bool) -> Color {
@@ -399,10 +393,7 @@ struct DSTextButtonStyle: ButtonStyle {
             )
             .animation(.easeOut(duration: DS.Animation.fast), value: configuration.isPressed)
             .animation(.easeOut(duration: DS.Animation.fast), value: isHovered)
-            .onHover { hovering in
-                isHovered = hovering
-                if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-            }
+            .onHover { hovering in isHovered = hovering }
     }
 }
 
@@ -434,10 +425,7 @@ struct DSOutlinedButtonStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
             .animation(.easeOut(duration: DS.Animation.fast), value: configuration.isPressed)
             .animation(.easeOut(duration: DS.Animation.fast), value: isHovered)
-            .onHover { hovering in
-                isHovered = hovering
-                if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-            }
+            .onHover { hovering in isHovered = hovering }
     }
 
     private func buttonBackgroundColor(isPressed: Bool) -> Color {
@@ -488,10 +476,7 @@ struct DSDestructiveButtonStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
             .animation(.easeOut(duration: DS.Animation.fast), value: configuration.isPressed)
             .animation(.easeOut(duration: DS.Animation.fast), value: isHovered)
-            .onHover { hovering in
-                isHovered = hovering
-                if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-            }
+            .onHover { hovering in isHovered = hovering }
     }
 
     private func buttonBackgroundColor(isPressed: Bool) -> Color {
@@ -547,10 +532,6 @@ struct DSIconButtonStyle: ButtonStyle {
             .animation(.easeOut(duration: DS.Animation.fast), value: configuration.isPressed)
             .animation(.easeOut(duration: DS.Animation.fast), value: isHovered)
             .contentShape(Circle())
-            // Cursor change via AppKit cursor rects — more reliable than NSCursor.push/pop
-            // because cursor rects are managed at the window level and don't conflict
-            // with SwiftUI's internal cursor handling.
-            .overlay(PointerCursorView())
             .onHover { hovering in
                 isHovered = hovering
                 // Show the tooltip after a delay (like native tooltips), hide immediately
@@ -697,20 +678,14 @@ extension View {
         self.buttonStyle(DSIconButtonStyle(size: size, isDestructiveOnHover: isDestructiveOnHover, tooltipText: tooltip, tooltipAlignment: tooltipAlignment))
     }
 
-    /// Attaches the shared pointing-hand cursor treatment used across interactive controls.
-    /// Disabled controls can opt out so they keep the default arrow cursor.
-    func pointerCursor(isEnabled: Bool = true) -> some View {
-        self.overlay {
-            if isEnabled {
-                PointerCursorView()
-            }
-        }
-    }
-
     /// Attaches an open-hand grab cursor used for draggable handles such as the HUD's
-    /// dock anchor handle. Backed by AppKit cursor rects (same approach as
-    /// `pointerCursor`) so the cursor is reliable even when the SwiftUI .onHover
-    /// tracking misfires.
+    /// dock anchor handle. Backed by AppKit cursor rects so the cursor is reliable
+    /// even when the SwiftUI .onHover tracking misfires.
+    ///
+    /// Note: there is deliberately no pointing-hand (`pointerCursor`) equivalent.
+    /// Per PRINCIPLES §4, Picky follows the macOS convention of reserving the
+    /// pointing-hand cursor for hyperlinks; clickable controls signal affordance
+    /// through hover state, not a cursor swap.
     func openHandCursor(isEnabled: Bool = true) -> some View {
         self.overlay {
             if isEnabled {
@@ -726,35 +701,6 @@ enum BuddyComposerVisualStyle {
     static let waveformLeadingColor = Color(hex: "#F3FBFF")
     static let waveformTrailingColor = Color(hex: "#8FD2FF")
     static let waveformGlowColor = Color(hex: "#AEE3FF")
-}
-
-// MARK: - Pointer Cursor (AppKit Bridge)
-
-/// Uses AppKit's cursor rect system to reliably show a pointing hand cursor.
-/// More reliable than NSCursor.push()/pop() inside SwiftUI's .onHover because
-/// cursor rects are managed at the window level and don't conflict with
-/// SwiftUI's internal cursor handling.
-private class PointerCursorNSView: NSView {
-    override func resetCursorRects() {
-        super.resetCursorRects()
-        addCursorRect(bounds, cursor: .pointingHand)
-    }
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        return nil
-    }
-}
-
-private struct PointerCursorView: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        return PointerCursorNSView()
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        // Invalidate cursor rects when the view updates (e.g., resizes)
-        // so AppKit recalculates the cursor area.
-        nsView.window?.invalidateCursorRects(for: nsView)
-    }
 }
 
 // MARK: - Open Hand Cursor (AppKit Bridge)
@@ -787,7 +733,7 @@ private struct OpenHandCursorView: NSViewRepresentable {
 // MARK: - I-Beam Cursor (AppKit Bridge)
 
 /// Uses AppKit's cursor rect system to reliably show an I-beam (text selection) cursor.
-/// Same approach as PointerCursorView — cursor rects are managed at the window level
+/// Cursor rects are managed at the window level
 /// and don't conflict with SwiftUI's internal cursor handling.
 /// Unlike NSCursor.push()/pop() in .onHover, this avoids cursor stack imbalance
 /// when the mouse moves quickly between views.

@@ -135,7 +135,6 @@ struct CompanionPanelSettingsView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .pointerCursor()
 
                 Spacer(minLength: 6)
             }
@@ -199,7 +198,6 @@ struct CompanionPanelSettingsView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .pointerCursor()
     }
 
     /// Resolves the subtitle text shown under each index row. Live summaries
@@ -352,7 +350,6 @@ struct CompanionPanelSettingsView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .pointerCursor()
 
             if isArchivedSessionsExpanded {
                 PickyHUDArchivedSessionsListView(
@@ -803,7 +800,6 @@ struct CompanionPanelSettingsView: View {
                     )
                 }
                 .buttonStyle(.plain)
-                .pointerCursor()
             }
         }
     }
@@ -884,7 +880,6 @@ struct CompanionPanelSettingsView: View {
                     )
                 }
                 .buttonStyle(.plain)
-                .pointerCursor()
 
                 Text("settings.oauth.fallback")
                     .font(PickyHUDTypography.supporting)
@@ -939,7 +934,6 @@ struct CompanionPanelSettingsView: View {
                         )
                 }
                 .buttonStyle(.plain)
-                .pointerCursor()
                 .disabled(oauthIsBusy(status))
                 .opacity(oauthIsBusy(status) ? 0.55 : 1)
 
@@ -952,7 +946,6 @@ struct CompanionPanelSettingsView: View {
                             .padding(.vertical, 6)
                     }
                     .buttonStyle(.plain)
-                    .pointerCursor()
                 }
 
                 Spacer(minLength: 0)
@@ -1052,7 +1045,6 @@ struct CompanionPanelSettingsView: View {
                 )
             }
             .buttonStyle(.plain)
-            .pointerCursor()
 
             Text("settings.general.shellCommand.note")
                 .font(PickyHUDTypography.supporting)
@@ -1148,7 +1140,6 @@ struct CompanionPanelSettingsView: View {
                     )
                 }
                 .buttonStyle(.plain)
-                .pointerCursor()
             }
         }
     }
@@ -1397,7 +1388,6 @@ struct CompanionPanelSettingsView: View {
                 )
             }
             .buttonStyle(.plain)
-            .pointerCursor()
         }
     }
 
@@ -1577,7 +1567,6 @@ struct CompanionPanelSettingsView: View {
                 .font(PickyHUDTypography.supportingMedium)
                 .foregroundColor(DS.Colors.accentText)
                 .buttonStyle(.plain)
-                .pointerCursor()
         }
     }
 
@@ -1606,7 +1595,6 @@ struct CompanionPanelSettingsView: View {
             )
         }
         .buttonStyle(.plain)
-        .pointerCursor()
         .help(L10n.t("settings.macSpeechLink.help"))
     }
 
@@ -1641,7 +1629,6 @@ struct CompanionPanelSettingsView: View {
             )
         }
         .buttonStyle(.plain)
-        .pointerCursor()
     }
 
     private func providerPicker(title: LocalizedStringKey, capability: PickyVoiceProviderCapability, selection: Binding<PickyVoiceProviderSelection>, isEnabled: Bool = true) -> some View {

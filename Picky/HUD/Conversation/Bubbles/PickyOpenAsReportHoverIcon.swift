@@ -37,7 +37,6 @@ struct PickyOpenAsReportHoverIcon: View {
         }
         .buttonStyle(.plain)
         .help("Open this message as report")
-        .pointerCursor()
     }
 }
 

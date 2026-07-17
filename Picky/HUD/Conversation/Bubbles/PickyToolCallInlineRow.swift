@@ -46,7 +46,6 @@ struct PickyToolCallInlineRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .pointerCursor()
         .help(helpText)
         .accessibilityLabel("\(tool.name) tool call")
         .accessibilityHint("Open tool history")

@@ -317,7 +317,6 @@ struct PickyConversationComposerView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .pointerCursor()
             .overlay(alignment: .topTrailing) {
                 PickyShortcutKeyBadge(label: "N")
                     .fixedSize()
@@ -343,7 +342,6 @@ struct PickyConversationComposerView: View {
                 .background(terminalButtonBackground)
         }
         .buttonStyle(.plain)
-        .pointerCursor()
         .overlay(alignment: .topTrailing) {
             PickyShortcutKeyBadge(label: "E")
                 .fixedSize()
@@ -867,7 +865,6 @@ struct PickyConversationComposerView: View {
         }
         .buttonStyle(.plain)
         .disabled(isSendDisabled)
-        .pointerCursor()
         .help(sendHelpText)
         .accessibilityLabel(sendHelpText)
     }
@@ -881,7 +878,6 @@ struct PickyConversationComposerView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .pointerCursor()
         .help("Stop this Pickle")
         .accessibilityLabel("Stop Pickle")
     }
@@ -1441,7 +1437,6 @@ private struct PickyComposerAttachmentChipView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .pointerCursor()
             .help("Remove attachment")
             .accessibilityLabel("Remove attachment \(attachment.displayName)")
         }

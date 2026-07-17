@@ -503,7 +503,6 @@ struct PickyHUDDockCollapsedGroupBadge: View {
         .onHover { hovering in
             withAnimation(.easeOut(duration: 0.12)) { isHovered = hovering }
         }
-        .pointerCursor()
         .onTapGesture { onTap() }
     }
 

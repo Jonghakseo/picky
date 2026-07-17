@@ -48,7 +48,6 @@ struct CompanionPanelFooterView: View {
                 .foregroundColor(primaryActionForeground)
             }
             .buttonStyle(.plain)
-            .pointerCursor()
 
             Spacer()
 
@@ -115,7 +114,6 @@ struct CompanionPanelFeedbackGlyphButton: View {
                 .frame(width: 18, height: 18)
         }
         .buttonStyle(CompanionPanelIconActionStyle())
-        .pointerCursor()
         .help("footer.feedback.accessibilityLabel")
         .accessibilityLabel(Text("footer.feedback.accessibilityLabel"))
         .onHover { hovering in
@@ -166,6 +164,5 @@ struct CompanionPanelAppearanceToggle: View {
         .buttonStyle(CompanionPanelIconActionStyle())
         .help(accessibilityLabel)
         .accessibilityLabel(accessibilityLabel)
-        .pointerCursor()
     }
 }

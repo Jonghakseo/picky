@@ -1360,7 +1360,6 @@ struct PickyHUDDockRailView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .pointerCursor()
         .recentPickleFolderPicker(
             isPresented: $isRecentPickleFolderPickerPresented,
             arrowEdge: recentPickleFolderPickerArrowEdge,
@@ -1432,7 +1431,6 @@ struct PickyHUDDockRailView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .pointerCursor()
         .recentPickleFolderPicker(
             isPresented: $isRecentPickleFolderPickerPresented,
             arrowEdge: recentPickleFolderPickerArrowEdge,

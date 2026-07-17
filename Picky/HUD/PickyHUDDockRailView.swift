@@ -1186,12 +1186,16 @@ struct PickyHUDDockRailView: View {
                     dockAnchorHandle
                     minimizeChevronButton
                 }
+                // Inset the grip/chevron off the pill's rounded end caps so the
+                // chevron isn't crushed against the edge (see §1 of the plan).
+                .padding(.vertical, 6)
                 .frame(width: metrics.handleAreaHeight, height: horizontalRailCrossSize, alignment: .center)
             } else {
                 HStack(spacing: 4) {
                     dockAnchorHandle
                     minimizeChevronButton
                 }
+                .padding(.horizontal, 6)
                 .frame(width: metrics.railWidth, height: metrics.handleAreaHeight, alignment: .center)
             }
         }

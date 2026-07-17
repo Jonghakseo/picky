@@ -18,9 +18,15 @@ extension PickyHUDDockRailView {
     var minimizeChevronButton: some View {
         Button(action: onToggleMinimized) {
             Image(systemName: minimizeChevronSymbol)
-                .font(.system(size: max(8, 10 * metrics.scale), weight: .semibold))
-                .foregroundColor(DS.Colors.textTertiary)
-                .frame(width: metrics.handleAreaHeight, height: metrics.handleAreaHeight)
+                .font(.system(size: max(9, 11 * metrics.scale), weight: .semibold))
+                .foregroundColor(DS.Colors.textSecondary)
+                // Give the chevron a defined slot along the strip's long axis so
+                // it reads as an intentional control instead of a cramped
+                // afterthought; the grip fills the remaining space (see §3).
+                .frame(
+                    width: dockSide.orientation == .horizontal ? metrics.handleAreaHeight : chevronSlotLength,
+                    height: dockSide.orientation == .horizontal ? chevronSlotLength : metrics.handleAreaHeight
+                )
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -28,6 +34,9 @@ extension PickyHUDDockRailView {
         .accessibilityLabel(isMinimized ? "Expand dock" : "Minimize dock")
         .hoverAffordance()
     }
+
+    /// Long-axis extent of the chevron's tap slot within the control strip.
+    private var chevronSlotLength: CGFloat { max(22, metrics.handleAreaHeight + 6) }
 
     private var minimizeChevronSymbol: String {
         switch dockSide.orientation {

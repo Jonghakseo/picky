@@ -283,6 +283,59 @@ export class AgentdServer {
         const commands = await this.options.supervisor.listSlashCommands(cmd.sessionId);
         this.send(ws, { type: "slashCommandsSnapshot", sessionId: cmd.sessionId, requestId: cmd.id, commands });
       },
+      getAutocompleteCapabilities: async (cmd) => {
+        const capabilities = await this.options.supervisor.getAutocompleteCapabilities(cmd.sessionId);
+        this.send(ws, {
+          type: "autocompleteCapabilitiesSnapshot",
+          sessionId: cmd.sessionId,
+          requestId: cmd.id,
+          generation: capabilities.generation,
+          triggerCharacters: capabilities.triggerCharacters,
+        });
+      },
+      autocompleteQuery: async (cmd) => {
+        const suggestions = await this.options.supervisor.queryAutocomplete(cmd.sessionId, {
+          generation: cmd.generation,
+          lines: cmd.lines,
+          cursorLine: cmd.cursorLine,
+          cursorCol: cmd.cursorCol,
+          force: cmd.force,
+        });
+        this.send(ws, {
+          type: "autocompleteSuggestionsSnapshot",
+          sessionId: cmd.sessionId,
+          requestId: cmd.id,
+          generation: suggestions.generation,
+          draftRevision: cmd.draftRevision,
+          draftFingerprint: cmd.draftFingerprint,
+          cursorLine: cmd.cursorLine,
+          cursorCol: cmd.cursorCol,
+          prefix: suggestions.prefix,
+          items: suggestions.items,
+        });
+      },
+      autocompleteApply: async (cmd) => {
+        const completion = await this.options.supervisor.applyAutocomplete(cmd.sessionId, {
+          generation: cmd.generation,
+          lines: cmd.lines,
+          cursorLine: cmd.cursorLine,
+          cursorCol: cmd.cursorCol,
+          force: cmd.force,
+          item: cmd.item,
+          prefix: cmd.prefix,
+        });
+        this.send(ws, {
+          type: "autocompleteCompletionApplied",
+          sessionId: cmd.sessionId,
+          requestId: cmd.id,
+          generation: completion.generation,
+          draftRevision: cmd.draftRevision,
+          draftFingerprint: cmd.draftFingerprint,
+          lines: completion.lines,
+          cursorLine: completion.cursorLine,
+          cursorCol: completion.cursorCol,
+        });
+      },
       listRewindTargets: async (cmd) => {
         const targets = await this.options.supervisor.listRewindTargets(cmd.sessionId);
         this.send(ws, { type: "rewindTargetsSnapshot", sessionId: cmd.sessionId, requestId: cmd.id, targets });
@@ -747,9 +800,14 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
     case "abort":
     case "getSession":
     case "listSlashCommands":
+    case "getAutocompleteCapabilities":
     case "listRewindTargets":
     case "duplicatePickleSession":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId };
+    case "autocompleteQuery":
+      return { commandId: command.id, type: command.type, sessionId: command.sessionId, generation: command.generation, lines: command.lines.length, draftRevision: command.draftRevision };
+    case "autocompleteApply":
+      return { commandId: command.id, type: command.type, sessionId: command.sessionId, generation: command.generation, lines: command.lines.length, draftRevision: command.draftRevision, itemChars: command.item.value.length };
     case "rewindSession":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, entryId: command.entryId };
     case "answerExtensionUi":
@@ -831,6 +889,12 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, commandId: event.commandId, action: event.action };
     case "slashCommandsSnapshot":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, requestId: event.requestId, commands: event.commands.length };
+    case "autocompleteCapabilitiesSnapshot":
+      return { eventId: event.id, type: event.type, sessionId: event.sessionId, requestId: event.requestId, generation: event.generation, triggers: event.triggerCharacters.length };
+    case "autocompleteSuggestionsSnapshot":
+      return { eventId: event.id, type: event.type, sessionId: event.sessionId, requestId: event.requestId, generation: event.generation, draftRevision: event.draftRevision, suggestions: event.items.length };
+    case "autocompleteCompletionApplied":
+      return { eventId: event.id, type: event.type, sessionId: event.sessionId, requestId: event.requestId, generation: event.generation, draftRevision: event.draftRevision, lines: event.lines.length };
     case "rewindTargetsSnapshot":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, requestId: event.requestId, targets: event.targets.length };
     case "sessionRewound":

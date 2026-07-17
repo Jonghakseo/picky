@@ -1,6 +1,6 @@
 {
   "id": "event-session-message-replaced",
-  "protocolVersion": "2026-05-09",
+  "protocolVersion": "2026-07-17",
   "timestamp": "2026-05-05T00:00:01.000Z",
   "type": "sessionMessageReplaced",
   "sessionId": "session-001",

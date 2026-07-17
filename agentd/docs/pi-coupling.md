@@ -95,6 +95,13 @@ Picky-side extras (`askUserQuestion`, snake_case `ask_user_question`) are
 layered onto the result via `Object.assign` AFTER the strict object so they
 cannot mask a missing pi method.
 
+`addAutocompleteProvider` is host-neutral and is composed in agentd over Pi's
+`CombinedAutocompleteProvider`; query/apply results cross the app protocol as
+UTF-16 cursor metadata. `setEditorComponent` / `getEditorComponent` remain
+unsupported because their factories consume raw terminal input and render ANSI
+components. The native HUD editor only projects the active completion prefix
+with temporary AppKit attributes.
+
 ### Tool definitions: `agentd/src/application/*-tool.ts`
 
 `handoff-tool.ts`, `ask-user-question-tool.ts`, `user-guide-tool.ts`,

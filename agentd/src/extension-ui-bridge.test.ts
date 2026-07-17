@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { AutocompleteProvider } from "@earendil-works/pi-tui";
 import { ExtensionUiBridge, PickyOverlayUnsupportedError } from "./application/extension-ui-bridge.js";
 
 describe("ExtensionUiBridge", () => {
@@ -127,6 +128,64 @@ describe("ExtensionUiBridge", () => {
     expect(context.getEditorText()).toBe("review comments\nmore");
   });
 
+  it("composes extension autocomplete providers over the host slash and path provider", async () => {
+    const baseProvider = autocompleteProvider({
+      prefix: "/he",
+      items: [{ value: "help", label: "help", description: "Built-in help" }],
+    });
+    const bridge = new ExtensionUiBridge("session-autocomplete", {
+      autocompleteGeneration: 7,
+      createBaseAutocompleteProvider: () => baseProvider,
+    });
+    const context = bridge.createContext();
+    context.addAutocompleteProvider((current) => ({
+      triggerCharacters: [">"],
+      async getSuggestions(lines, line, col, options) {
+        const beforeCursor = (lines[line] ?? "").slice(0, col);
+        if (!beforeCursor.startsWith(">")) return current.getSuggestions(lines, line, col, options);
+        return {
+          prefix: beforeCursor,
+          items: [{ value: ">worker", label: ">worker", description: "Delegate to worker" }],
+        };
+      },
+      applyCompletion(lines, line, col, item, prefix) {
+        if (prefix.startsWith(">")) {
+          const next = [...lines];
+          next[line] = `${item.value} `;
+          return { lines: next, cursorLine: line, cursorCol: item.value.length + 1 };
+        }
+        return current.applyCompletion(lines, line, col, item, prefix);
+      },
+    }));
+
+    expect(bridge.autocompleteCapabilities()).toEqual({ generation: 7, triggerCharacters: [">"] });
+    const signal = new AbortController().signal;
+    await expect(bridge.getAutocompleteSuggestions({ lines: [">w"], cursorLine: 0, cursorCol: 2, signal })).resolves.toEqual({
+      prefix: ">w",
+      items: [{ value: ">worker", label: ">worker", description: "Delegate to worker" }],
+    });
+    await expect(bridge.getAutocompleteSuggestions({ lines: ["/he"], cursorLine: 0, cursorCol: 3, signal })).resolves.toEqual({
+      prefix: "/he",
+      items: [{ value: "help", label: "help", description: "Built-in help" }],
+    });
+    expect(bridge.applyAutocompleteCompletion([">w"], 0, 2, { value: ">worker", label: ">worker" }, ">w")).toEqual({
+      lines: [">worker "],
+      cursorLine: 0,
+      cursorCol: 8,
+    });
+  });
+
+  it("deduplicates trigger characters across stacked autocomplete wrappers", () => {
+    const bridge = new ExtensionUiBridge("session-autocomplete-triggers", {
+      createBaseAutocompleteProvider: () => autocompleteProvider(null, ["$"]),
+    });
+    const context = bridge.createContext();
+    context.addAutocompleteProvider((current) => ({ ...current, triggerCharacters: ["$", ">"] }));
+    context.addAutocompleteProvider((current) => ({ ...current, triggerCharacters: [">", "#"] }));
+
+    expect(bridge.autocompleteCapabilities().triggerCharacters).toEqual(["$", ">", "#"]);
+  });
+
   it("ignores setWidget because Picky has no TUI widget surface", async () => {
     const bridge = new ExtensionUiBridge("session-1");
     const requests: unknown[] = [];
@@ -190,6 +249,25 @@ describe("ExtensionUiBridge", () => {
     expect(bridge.answer("ext-ui-never-issued", { cancelled: true })).toBe(false);
   });
 });
+
+function autocompleteProvider(
+  suggestions: Awaited<ReturnType<AutocompleteProvider["getSuggestions"]>>,
+  triggerCharacters?: string[],
+): AutocompleteProvider {
+  return {
+    triggerCharacters,
+    async getSuggestions() {
+      return suggestions;
+    },
+    applyCompletion(lines, cursorLine, cursorCol, item, prefix) {
+      const currentLine = lines[cursorLine] ?? "";
+      const prefixStart = cursorCol - prefix.length;
+      const next = [...lines];
+      next[cursorLine] = `${currentLine.slice(0, prefixStart)}${item.value}${currentLine.slice(cursorCol)}`;
+      return { lines: next, cursorLine, cursorCol: prefixStart + item.value.length };
+    },
+  };
+}
 
 function nextRequest(bridge: ExtensionUiBridge): Promise<{ id: string; sessionId: string; method: string; prompt?: string; text?: string; notifyType?: string; questions?: Array<{ id?: string; options?: Array<{ value: string; label: string }> }> }> {
   return new Promise((resolve) => bridge.once("request", (request) => resolve(request)));

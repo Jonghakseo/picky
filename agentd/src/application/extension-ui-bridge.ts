@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
+import type { AutocompleteItem, AutocompleteProvider, AutocompleteSuggestions } from "@earendil-works/pi-tui";
 import type { PickyExtensionNotifyType, PickyExtensionUiRequest } from "../protocol.js";
 
 type ExtensionUiMethod = PickyExtensionUiRequest["method"];
@@ -80,14 +81,43 @@ interface PendingDialog {
   cleanup?: () => void;
 }
 
+type AutocompleteProviderFactory = Parameters<ExtensionUIContext["addAutocompleteProvider"]>[0];
+
+export interface ExtensionAutocompleteCapabilities {
+  generation: number;
+  triggerCharacters: string[];
+}
+
+export interface ExtensionAutocompleteQuery {
+  lines: string[];
+  cursorLine: number;
+  cursorCol: number;
+  force?: boolean;
+  signal: AbortSignal;
+}
+
+export interface ExtensionAutocompleteCompletion {
+  lines: string[];
+  cursorLine: number;
+  cursorCol: number;
+}
+
+interface ExtensionUiBridgeOptions {
+  disableBlockingDialogs?: boolean;
+  autocompleteGeneration?: number;
+  createBaseAutocompleteProvider?: () => AutocompleteProvider;
+}
+
 export class ExtensionUiBridge extends EventEmitter {
   private pending = new Map<string, PendingDialog>();
   private queuedDialogIds: string[] = [];
   private activeDialogId: string | undefined;
   private cancellingAll = false;
   private editorText = "";
+  private autocompleteProviderFactories: AutocompleteProviderFactory[] = [];
+  private composedAutocompleteProvider: AutocompleteProvider | undefined;
 
-  constructor(private readonly sessionId: string, private readonly options: { disableBlockingDialogs?: boolean } = {}) {
+  constructor(private readonly sessionId: string, private readonly options: ExtensionUiBridgeOptions = {}) {
     super();
   }
 
@@ -133,7 +163,11 @@ export class ExtensionUiBridge extends EventEmitter {
       setHiddenThinkingLabel: () => undefined,
       setFooter: () => undefined,
       setHeader: () => undefined,
-      addAutocompleteProvider: () => undefined,
+      addAutocompleteProvider: (factory) => this.addAutocompleteProvider(factory),
+      // Pi custom editors are terminal components that consume raw key sequences and
+      // render ANSI rows. Picky keeps its native AppKit editor, so the generic editor
+      // component contract remains intentionally unsupported. The HUD projects the
+      // active autocomplete prefix with native temporary text attributes instead.
       setEditorComponent: () => undefined,
       getEditorComponent: () => undefined,
       getToolsExpanded: () => false,
@@ -154,6 +188,33 @@ export class ExtensionUiBridge extends EventEmitter {
       askUserQuestion,
       ask_user_question: askUserQuestion,
     });
+  }
+
+  autocompleteCapabilities(): ExtensionAutocompleteCapabilities {
+    const provider = this.autocompleteProvider();
+    return {
+      generation: this.options.autocompleteGeneration ?? 0,
+      triggerCharacters: [...(provider.triggerCharacters ?? [])],
+    };
+  }
+
+  async getAutocompleteSuggestions(query: ExtensionAutocompleteQuery): Promise<AutocompleteSuggestions | null> {
+    return this.autocompleteProvider().getSuggestions(
+      query.lines,
+      query.cursorLine,
+      query.cursorCol,
+      { signal: query.signal, force: query.force },
+    );
+  }
+
+  applyAutocompleteCompletion(
+    lines: string[],
+    cursorLine: number,
+    cursorCol: number,
+    item: AutocompleteItem,
+    prefix: string,
+  ): ExtensionAutocompleteCompletion {
+    return this.autocompleteProvider().applyCompletion(lines, cursorLine, cursorCol, item, prefix);
   }
 
   /**
@@ -187,6 +248,26 @@ export class ExtensionUiBridge extends EventEmitter {
       this.cancellingAll = false;
     }
     return requestIds.length;
+  }
+
+  private addAutocompleteProvider(factory: AutocompleteProviderFactory): void {
+    this.autocompleteProviderFactories.push(factory);
+    this.composedAutocompleteProvider = undefined;
+  }
+
+  private autocompleteProvider(): AutocompleteProvider {
+    if (this.composedAutocompleteProvider) return this.composedAutocompleteProvider;
+    let provider = this.options.createBaseAutocompleteProvider?.() ?? emptyAutocompleteProvider;
+    const triggerCharacters = [...(provider.triggerCharacters ?? [])];
+    for (const factory of this.autocompleteProviderFactories) {
+      provider = factory(provider);
+      triggerCharacters.push(...(provider.triggerCharacters ?? []));
+    }
+    if (triggerCharacters.length > 0) {
+      provider.triggerCharacters = [...new Set(triggerCharacters)];
+    }
+    this.composedAutocompleteProvider = provider;
+    return provider;
   }
 
   private dialog(method: DialogMethod, payload: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
@@ -283,6 +364,19 @@ export class ExtensionUiBridge extends EventEmitter {
     return answer.value;
   }
 }
+
+const emptyAutocompleteProvider: AutocompleteProvider = {
+  async getSuggestions() {
+    return null;
+  },
+  applyCompletion(lines, cursorLine, cursorCol, item, prefix) {
+    const currentLine = lines[cursorLine] ?? "";
+    const prefixStart = Math.max(0, cursorCol - prefix.length);
+    const nextLines = [...lines];
+    nextLines[cursorLine] = `${currentLine.slice(0, prefixStart)}${item.value}${currentLine.slice(cursorCol)}`;
+    return { lines: nextLines, cursorLine, cursorCol: prefixStart + item.value.length };
+  },
+};
 
 function notifyTypeValue(value: unknown): PickyExtensionNotifyType | undefined {
   if (value === "info" || value === "warning" || value === "error") return value;

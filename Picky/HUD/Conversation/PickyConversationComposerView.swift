@@ -109,15 +109,18 @@ struct PickyConversationComposerView: View {
     @State private var attachments: [PickyComposerAttachment] = []
     @State private var attachmentContentWidth: CGFloat = 0
     @State private var attachmentViewportWidth: CGFloat = 0
-    @State private var selectedSlashCommandIndex: Int = 0
-    @State private var isSlashCommandAutocompleteDismissed: Bool = false
-    @State private var acceptedSlashCommandDraft: String?
+    @State private var selectedAutocompleteIndex: Int = 0
+    @State private var isAutocompleteDismissed: Bool = false
+    @State private var autocompleteCapabilities: PickyAutocompleteCapabilitiesSnapshot?
+    @State private var autocompleteSuggestions: PickyAutocompleteSuggestionsSnapshot?
+    @State private var autocompleteCapabilitiesRequestID: String?
+    @State private var autocompleteQueryRequestID: String?
+    @State private var autocompleteApplyRequestID: String?
+    @State private var autocompleteDraftRevision: Int = 0
+    @State private var autocompleteDraftFingerprint: String = UUID().uuidString
     @State private var composerCursorLocation: Int?
     @State private var composerSelectionOverride: NSRange?
-    @State private var selectedFileMentionIndex: Int = 0
-    @State private var isFileMentionAutocompleteDismissed: Bool = false
-    @State private var fileMentionSuggestions: [PickyFileMentionAutocompletePolicy.Suggestion] = []
-    @State private var fileMentionSearchDraft: String?
+    @State private var isIMEComposing: Bool = false
     @State private var appliedComposerDraftRequestID: String?
     @State private var keyDownMonitor: Any?
     @State private var measuredEditorContentHeight: CGFloat = Self.minimumEditorHeight
@@ -163,6 +166,7 @@ struct PickyConversationComposerView: View {
         }
         .onAppear {
             viewModel.ensureSlashCommandsLoaded(sessionID: session.id)
+            requestAutocompleteCapabilities()
             installKeyDownMonitorIfNeeded()
             restorePersistedDraftIfNeeded()
             restorePersistedAttachmentsIfNeeded()
@@ -189,63 +193,73 @@ struct PickyConversationComposerView: View {
         .onChange(of: session.id) { _, _ in
             attachments = viewModel.persistedComposerAttachmentPaths(for: session.id)
                 .map { PickyComposerAttachment(path: $0) }
+            resetAutocompleteState()
+            requestAutocompleteCapabilities()
         }
         .onChange(of: attachments) { _, _ in
             persistAttachments()
         }
-        // Safety-net polling: when the autocomplete is open and commands have not loaded yet,
-        // periodically re-request so we recover even if the first response was dropped (epoch
-        // mismatch after a concurrent invalidation, transport loss, etc.). The .task body exits
-        // immediately once commands are loaded or the autocomplete is dismissed, and re-spawns
-        // when those conditions change because they are part of the task id.
-        .task(id: SlashCommandPollingKey(
-            sessionID: session.id,
-            isVisible: slashCommandAutocompleteIsVisible,
-            isLoaded: viewModel.hasLoadedSlashCommands(sessionID: session.id)
-        )) {
-            guard slashCommandAutocompleteIsVisible,
-                  !viewModel.hasLoadedSlashCommands(sessionID: session.id) else { return }
-            while !Task.isCancelled {
-                do {
-                    try await Task.sleep(nanoseconds: Self.slashCommandLoadingRetryIntervalNanoseconds)
-                } catch {
-                    return
-                }
-                if Task.isCancelled { return }
-                if viewModel.hasLoadedSlashCommands(sessionID: session.id) { return }
-                if !slashCommandAutocompleteIsVisible { return }
-                viewModel.refreshSlashCommandsIfStillLoading(sessionID: session.id)
-            }
+        .onReceive(viewModel.autocompleteEvents) { event in
+            applyAutocompleteEvent(event)
         }
-        .task(id: FileMentionSearchKey(
+        .task(id: AutocompleteQueryKey(
+            sessionID: session.id,
             draft: draft,
-            cwd: session.cwd,
-            isVisible: fileMentionAutocompleteIsVisible
+            cursorLocation: composerCursorLocation,
+            generation: autocompleteCapabilities?.generation,
+            triggerCharacters: autocompleteCapabilities?.triggerCharacters ?? [],
+            draftRevision: autocompleteDraftRevision,
+            draftFingerprint: autocompleteDraftFingerprint,
+            isComposing: isIMEComposing,
+            isDismissed: isAutocompleteDismissed
         )) {
-            let searchDraft = draft
-            guard fileMentionAutocompleteIsVisible,
-                  PickyFileMentionAutocompletePolicy.query(in: searchDraft) != nil else {
-                fileMentionSuggestions = []
-                fileMentionSearchDraft = nil
+            guard let capabilities = autocompleteCapabilities,
+                  capabilities.generation > 0,
+                  !isIMEComposing,
+                  !isAutocompleteDismissed,
+                  PickyComposerAutocompletePolicy.shouldQuery(
+                    text: draft,
+                    cursorLocation: composerCursorLocation,
+                    triggerCharacters: capabilities.triggerCharacters
+                  )
+            else {
+                autocompleteQueryRequestID = nil
+                autocompleteSuggestions = nil
                 return
             }
-            let suggestions = await PickyFileMentionSearchService.suggestions(for: searchDraft, cwd: session.cwd)
-            guard !Task.isCancelled else { return }
-            fileMentionSuggestions = suggestions
-            fileMentionSearchDraft = searchDraft
+            do {
+                try await Task.sleep(nanoseconds: Self.autocompleteDebounceNanoseconds)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled,
+                  let position = PickyComposerAutocompletePolicy.cursorPosition(
+                    in: draft,
+                    utf16Offset: composerCursorLocation
+                  )
+            else { return }
+            autocompleteQueryRequestID = viewModel.queryAutocomplete(
+                sessionID: session.id,
+                generation: capabilities.generation,
+                lines: position.lines,
+                cursorLine: position.line,
+                cursorCol: position.column,
+                draftRevision: autocompleteDraftRevision,
+                draftFingerprint: autocompleteDraftFingerprint
+            )
         }
     }
 
-    private struct SlashCommandPollingKey: Equatable {
+    private struct AutocompleteQueryKey: Equatable {
         let sessionID: String
-        let isVisible: Bool
-        let isLoaded: Bool
-    }
-
-    private struct FileMentionSearchKey: Equatable {
         let draft: String
-        let cwd: String?
-        let isVisible: Bool
+        let cursorLocation: Int?
+        let generation: Int?
+        let triggerCharacters: [String]
+        let draftRevision: Int
+        let draftFingerprint: String
+        let isComposing: Bool
+        let isDismissed: Bool
     }
 
     private var composerRow: some View {
@@ -401,8 +415,17 @@ struct PickyConversationComposerView: View {
                 textColor: isComposerInputDisabled ? .secondaryLabelColor : .labelColor,
                 textContainerInsetHeight: Self.editorTextInsetHeight,
                 selectionOverride: $composerSelectionOverride,
+                temporaryHighlightRange: autocompleteHighlightRange,
+                temporaryHighlightColor: NSColor(DS.Colors.accentText),
                 onSelectionChange: { composerCursorLocation = $0.location },
                 onMeasuredContentHeight: { measuredEditorContentHeight = $0 },
+                onMarkedTextChange: { isMarked in
+                    isIMEComposing = isMarked
+                    if isMarked {
+                        autocompleteSuggestions = nil
+                        autocompleteQueryRequestID = nil
+                    }
+                },
                 onReturn: handleComposerReturnKey,
                 onUpArrow: handleComposerUpArrowKey,
                 onDownArrow: { moveAutocompleteSelection(.down) },
@@ -412,17 +435,13 @@ struct PickyConversationComposerView: View {
             )
             .frame(height: editorHeight)
             .onChange(of: draft) { _, newValue in
-                selectedSlashCommandIndex = 0
-                let shouldResetSlashCommandDismissal = Self.shouldResetSlashCommandDismissal(
-                    newDraft: newValue,
-                    acceptedDraft: acceptedSlashCommandDraft
-                )
-                acceptedSlashCommandDraft = nil
-                if shouldResetSlashCommandDismissal {
-                    isSlashCommandAutocompleteDismissed = false
-                }
-                selectedFileMentionIndex = 0
-                isFileMentionAutocompleteDismissed = false
+                selectedAutocompleteIndex = 0
+                isAutocompleteDismissed = false
+                autocompleteSuggestions = nil
+                autocompleteQueryRequestID = nil
+                autocompleteApplyRequestID = nil
+                autocompleteDraftRevision &+= 1
+                autocompleteDraftFingerprint = UUID().uuidString
                 viewModel.updateComposerDraft(newValue, sessionID: session.id)
             }
         }
@@ -463,66 +482,41 @@ struct PickyConversationComposerView: View {
 
     // MARK: - Autocomplete
 
-    /// Both autocomplete sources share one transient surface anchored to the
-    /// editor. Slash commands take precedence over file mentions, matching the
-    /// existing keyboard-routing policy.
+    /// Pi's composed provider is the single source for slash, path, and extension
+    /// completions. Keeping one surface preserves wrapper fallback and custom
+    /// applyCompletion semantics instead of racing three independent providers.
     @ViewBuilder
     private var autocompletePanel: some View {
-        if slashCommandAutocompleteIsVisible {
-            let suggestions = slashCommandSuggestions
-            if !suggestions.isEmpty {
-                let selectedIndex = selectedSlashCommandClampedIndex(for: suggestions)
-                autocompleteSuggestions(
-                    selectedID: suggestions[selectedIndex].id,
-                    suggestionCount: suggestions.count
-                ) {
-                    ForEach(Array(suggestions.enumerated()), id: \.element.id) { index, command in
-                        Button {
-                            acceptSlashCommand(command)
-                        } label: {
-                            slashCommandRow(command, isSelected: index == selectedIndex)
-                        }
-                        .buttonStyle(.plain)
-                        .id(command.id)
+        if let snapshot = autocompleteSuggestions, !snapshot.items.isEmpty {
+            let selectedIndex = selectedAutocompleteClampedIndex(for: snapshot.items)
+            autocompleteSuggestionList(
+                selectedID: selectedIndex,
+                suggestionCount: snapshot.items.count
+            ) {
+                ForEach(Array(snapshot.items.enumerated()), id: \.offset) { index, item in
+                    Button {
+                        acceptAutocomplete(item, snapshot: snapshot)
+                    } label: {
+                        autocompleteRow(item, prefix: snapshot.prefix, isSelected: index == selectedIndex)
                     }
+                    .buttonStyle(.plain)
+                    .id(index)
                 }
-            } else if !viewModel.hasLoadedSlashCommands(sessionID: session.id) {
-                slashCommandStatus("Loading commands…")
-            } else {
-                slashCommandStatus("No matching commands")
-            }
-        } else if fileMentionAutocompleteIsVisible {
-            let suggestions = fileMentionSuggestions
-            if !suggestions.isEmpty {
-                let selectedIndex = selectedFileMentionClampedIndex(for: suggestions)
-                autocompleteSuggestions(
-                    selectedID: suggestions[selectedIndex].displayPath,
-                    suggestionCount: suggestions.count
-                ) {
-                    ForEach(Array(suggestions.enumerated()), id: \.element.displayPath) { index, suggestion in
-                        Button {
-                            acceptFileMention(suggestion)
-                        } label: {
-                            fileMentionRow(suggestion, isSelected: index == selectedIndex)
-                        }
-                        .buttonStyle(.plain)
-                        .id(suggestion.displayPath)
-                    }
-                }
-            } else {
-                slashCommandStatus(fileMentionStatusText)
             }
         }
     }
 
     private var autocompleteIsVisible: Bool {
-        slashCommandAutocompleteIsVisible || fileMentionAutocompleteIsVisible
+        !isComposerInputDisabled
+            && !isIMEComposing
+            && !isAutocompleteDismissed
+            && autocompleteSuggestions?.items.isEmpty == false
     }
 
     /// Keeps the full result set available to keyboard and pointer navigation
     /// while constraining the floating panel to four dense rows. ScrollViewReader
     /// reveals the keyboard-selected item without resizing the composer.
-    private func autocompleteSuggestions<SelectionID: Hashable, Content: View>(
+    private func autocompleteSuggestionList<SelectionID: Hashable, Content: View>(
         selectedID: SelectionID,
         suggestionCount: Int,
         @ViewBuilder content: @escaping () -> Content
@@ -546,19 +540,30 @@ struct PickyConversationComposerView: View {
         .background(autocompletePanelBackground)
     }
 
-    private func slashCommandRow(_ command: PickySlashCommand, isSelected: Bool) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text("/\(command.name)")
+    private func autocompleteRow(_ item: PickyAutocompleteItem, prefix: String?, isSelected: Bool) -> some View {
+        let command = matchingSlashCommand(for: item, prefix: prefix)
+        let isFile = prefix?.hasPrefix("@") == true
+        let isDirectory = isFile && item.label.hasSuffix("/")
+        return HStack(alignment: .firstTextBaseline, spacing: 6) {
+            if isFile {
+                Image(systemName: isDirectory ? "folder.fill" : "doc.text")
+                    .pickyFont(size: 10, weight: .semibold)
+                    .foregroundColor(isDirectory ? DS.Colors.accentText : DS.Colors.textTertiary)
+                    .frame(width: 14)
+            }
+            Text(command.map { "/\($0.name)" } ?? item.label)
                 .font(PickyHUDTypography.labelMonospacedSemibold)
                 .foregroundColor(DS.Colors.accentText)
                 .lineLimit(1)
-            Text(command.source.displayName)
-                .font(PickyHUDTypography.minimumSemibold)
-                .foregroundColor(DS.Colors.textTertiary)
-                .padding(.horizontal, 4)
-                .padding(.vertical, 1)
-                .background(Capsule().fill(DS.Colors.surface2.opacity(0.75)))
-            if let description = command.description, !description.isEmpty {
+            if let command {
+                Text(command.source.displayName)
+                    .font(PickyHUDTypography.minimumSemibold)
+                    .foregroundColor(DS.Colors.textTertiary)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(Capsule().fill(DS.Colors.surface2.opacity(0.75)))
+            }
+            if let description = item.description, !description.isEmpty {
                 Text(description)
                     .font(PickyHUDTypography.status)
                     .foregroundColor(DS.Colors.textSecondary)
@@ -576,47 +581,12 @@ struct PickyConversationComposerView: View {
         .contentShape(Rectangle())
     }
 
-    private func slashCommandStatus(_ text: String) -> some View {
-        Text(text)
-            .font(PickyHUDTypography.status)
-            .foregroundColor(DS.Colors.textTertiary)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(autocompletePanelBackground)
-    }
-
-    private func fileMentionRow(_ suggestion: PickyFileMentionAutocompletePolicy.Suggestion, isSelected: Bool) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Image(systemName: suggestion.isDirectory ? "folder.fill" : "doc.text")
-                .pickyFont(size: 10, weight: .semibold)
-                .foregroundColor(suggestion.isDirectory ? DS.Colors.accentText : DS.Colors.textTertiary)
-                .frame(width: 14)
-            Text(suggestion.label)
-                .font(PickyHUDTypography.labelMonospacedSemibold)
-                .foregroundColor(DS.Colors.accentText)
-                .lineLimit(1)
-            Text(suggestion.displayPath)
-                .font(PickyHUDTypography.status)
-                .foregroundColor(DS.Colors.textSecondary)
-                .lineLimit(1)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
-        .frame(minHeight: Self.autocompleteRowMinimumHeight)
-        .background(
-            RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
-                .fill(isSelected ? DS.Colors.accentSubtle.opacity(0.55) : Color.clear)
-        )
-        .contentShape(Rectangle())
-    }
-
-    private var fileMentionStatusText: String {
-        let cwd = session.cwd?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if cwd.isEmpty { return "No working directory for file mentions" }
-        if !PickyFileMentionSearchService.isAvailable { return "File search requires fd (not installed)" }
-        return "No matching files"
+    private func matchingSlashCommand(for item: PickyAutocompleteItem, prefix: String?) -> PickySlashCommand? {
+        guard prefix?.hasPrefix("/") == true else { return nil }
+        return viewModel.slashCommandsIncludingRewindTreeCommand(
+            viewModel.slashCommandsBySessionID[session.id] ?? [],
+            sessionID: session.id
+        ).first { $0.name == item.value }
     }
 
     private var autocompletePanelBackground: some View {
@@ -628,133 +598,146 @@ struct PickyConversationComposerView: View {
             .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 8)
     }
 
-    var slashCommandAutocompleteIsVisible: Bool {
-        !isComposerInputDisabled
-            && PickySlashCommandAutocompletePolicy.query(in: draft, cursorLocation: composerCursorLocation) != nil
-            && !isSlashCommandAutocompleteDismissed
-    }
-
-    var slashCommandSuggestions: [PickySlashCommand] {
-        guard PickySlashCommandAutocompletePolicy.query(in: draft, cursorLocation: composerCursorLocation) != nil else { return [] }
-        return viewModel.slashCommandSuggestions(
-            for: draft,
-            cursorLocation: composerCursorLocation,
-            sessionID: session.id
+    private var autocompleteHighlightRange: NSRange? {
+        guard !isIMEComposing else { return nil }
+        return PickyComposerAutocompletePolicy.highlightRange(
+            prefix: autocompleteSuggestions?.prefix,
+            cursorLocation: composerCursorLocation ?? draft.utf16.count,
+            text: draft
         )
     }
 
-    var fileMentionAutocompleteIsVisible: Bool {
-        !slashCommandAutocompleteIsVisible
-            && !isComposerInputDisabled
-            && PickyFileMentionAutocompletePolicy.query(in: draft) != nil
-            && !isFileMentionAutocompleteDismissed
-    }
-
-    private func selectedSlashCommandClampedIndex(for suggestions: [PickySlashCommand]) -> Int {
-        PickySlashCommandAutocompletePolicy.clampedSelectionIndex(selectedSlashCommandIndex, suggestionCount: suggestions.count)
-    }
-
-    private func moveSlashCommandSelection(_ direction: PickySlashCommandNavigationDirection) -> Bool {
-        let suggestions = slashCommandSuggestions
-        guard slashCommandAutocompleteIsVisible, !suggestions.isEmpty else { return false }
-        selectedSlashCommandIndex = PickySlashCommandAutocompletePolicy.movedSelectionIndex(
-            current: selectedSlashCommandIndex,
-            suggestionCount: suggestions.count,
-            direction: direction
+    private func selectedAutocompleteClampedIndex(for suggestions: [PickyAutocompleteItem]) -> Int {
+        PickySlashCommandAutocompletePolicy.clampedSelectionIndex(
+            selectedAutocompleteIndex,
+            suggestionCount: suggestions.count
         )
-        return true
-    }
-
-    @discardableResult
-    private func acceptSelectedSlashCommand() -> Bool {
-        let suggestions = slashCommandSuggestions
-        guard slashCommandAutocompleteIsVisible, !suggestions.isEmpty else { return false }
-        acceptSlashCommand(suggestions[selectedSlashCommandClampedIndex(for: suggestions)])
-        return true
-    }
-
-    private func acceptSlashCommand(_ command: PickySlashCommand) {
-        let completion = PickySlashCommandAutocompletePolicy.completedText(
-            in: draft,
-            cursorLocation: composerCursorLocation,
-            command: command
-        )
-        acceptedSlashCommandDraft = completion.text
-        draft = completion.text
-        composerSelectionOverride = NSRange(location: completion.cursorLocation, length: 0)
-        selectedSlashCommandIndex = 0
-        isSlashCommandAutocompleteDismissed = true
-    }
-
-    private func selectedFileMentionClampedIndex(for suggestions: [PickyFileMentionAutocompletePolicy.Suggestion]) -> Int {
-        PickySlashCommandAutocompletePolicy.clampedSelectionIndex(selectedFileMentionIndex, suggestionCount: suggestions.count)
-    }
-
-    private func moveFileMentionSelection(_ direction: PickySlashCommandNavigationDirection) -> Bool {
-        let suggestions = fileMentionSuggestions
-        guard fileMentionAutocompleteIsVisible, !suggestions.isEmpty else { return false }
-        selectedFileMentionIndex = PickySlashCommandAutocompletePolicy.movedSelectionIndex(
-            current: selectedFileMentionIndex,
-            suggestionCount: suggestions.count,
-            direction: direction
-        )
-        return true
     }
 
     private func moveAutocompleteSelection(_ direction: PickySlashCommandNavigationDirection) -> Bool {
-        if moveSlashCommandSelection(direction) { return true }
-        return moveFileMentionSelection(direction)
+        guard autocompleteIsVisible, let items = autocompleteSuggestions?.items, !items.isEmpty else { return false }
+        selectedAutocompleteIndex = PickySlashCommandAutocompletePolicy.movedSelectionIndex(
+            current: selectedAutocompleteIndex,
+            suggestionCount: items.count,
+            direction: direction
+        )
+        return true
     }
 
     @discardableResult
-    private func acceptSelectedFileMention() -> Bool {
-        let suggestions = fileMentionSuggestions
-        switch PickyFileMentionAutocompletePolicy.acceptDecision(
-            isVisible: fileMentionAutocompleteIsVisible,
-            searchDraft: fileMentionSearchDraft,
-            draft: draft,
-            hasSuggestions: !suggestions.isEmpty
-        ) {
-        case .consume:
-            return true
-        case .accept:
-            acceptFileMention(suggestions[selectedFileMentionClampedIndex(for: suggestions)])
-            return true
-        case .passthrough:
-            return false
-        }
-    }
-
-    private func acceptFileMention(_ suggestion: PickyFileMentionAutocompletePolicy.Suggestion) {
-        draft = PickyFileMentionAutocompletePolicy.completedText(in: draft, with: suggestion)
-        selectedFileMentionIndex = 0
-        isFileMentionAutocompleteDismissed = !suggestion.isDirectory
-        isFocused = true
-    }
-
     private func acceptSelectedAutocomplete() -> Bool {
-        if acceptSelectedSlashCommand() { return true }
-        return acceptSelectedFileMention()
-    }
-
-    @discardableResult
-    private func dismissSlashCommandAutocomplete() -> Bool {
-        guard slashCommandAutocompleteIsVisible else { return false }
-        isSlashCommandAutocompleteDismissed = true
+        guard autocompleteApplyRequestID == nil,
+              autocompleteIsVisible,
+              let snapshot = autocompleteSuggestions,
+              !snapshot.items.isEmpty
+        else { return autocompleteApplyRequestID != nil }
+        acceptAutocomplete(
+            snapshot.items[selectedAutocompleteClampedIndex(for: snapshot.items)],
+            snapshot: snapshot
+        )
         return true
     }
 
-    @discardableResult
-    private func dismissFileMentionAutocomplete() -> Bool {
-        guard fileMentionAutocompleteIsVisible else { return false }
-        isFileMentionAutocompleteDismissed = true
-        return true
+    private func acceptAutocomplete(_ item: PickyAutocompleteItem, snapshot: PickyAutocompleteSuggestionsSnapshot) {
+        guard autocompleteApplyRequestID == nil,
+              let prefix = snapshot.prefix,
+              let position = PickyComposerAutocompletePolicy.cursorPosition(
+                in: draft,
+                utf16Offset: composerCursorLocation
+              )
+        else { return }
+        autocompleteApplyRequestID = viewModel.applyAutocomplete(
+            sessionID: session.id,
+            generation: snapshot.generation,
+            lines: position.lines,
+            cursorLine: position.line,
+            cursorCol: position.column,
+            draftRevision: autocompleteDraftRevision,
+            draftFingerprint: autocompleteDraftFingerprint,
+            item: item,
+            prefix: prefix
+        )
     }
 
     @discardableResult
     private func dismissAutocomplete() -> Bool {
-        if dismissSlashCommandAutocomplete() { return true }
-        return dismissFileMentionAutocomplete()
+        guard autocompleteIsVisible else { return false }
+        isAutocompleteDismissed = true
+        autocompleteSuggestions = nil
+        autocompleteQueryRequestID = nil
+        return true
+    }
+
+    private func requestAutocompleteCapabilities() {
+        autocompleteCapabilitiesRequestID = viewModel.requestAutocompleteCapabilities(sessionID: session.id)
+    }
+
+    private func resetAutocompleteState() {
+        autocompleteCapabilities = nil
+        autocompleteSuggestions = nil
+        autocompleteCapabilitiesRequestID = nil
+        autocompleteQueryRequestID = nil
+        autocompleteApplyRequestID = nil
+        selectedAutocompleteIndex = 0
+        isAutocompleteDismissed = false
+        autocompleteDraftFingerprint = UUID().uuidString
+    }
+
+    private func applyAutocompleteEvent(_ event: PickyAutocompleteClientEvent) {
+        switch event {
+        case .reconnected:
+            resetAutocompleteState()
+            requestAutocompleteCapabilities()
+        case .resourcesReloaded(let sessionID):
+            guard sessionID == session.id else { return }
+            resetAutocompleteState()
+            requestAutocompleteCapabilities()
+        case .capabilities(let snapshot):
+            guard snapshot.sessionId == session.id,
+                  snapshot.requestId == autocompleteCapabilitiesRequestID else { return }
+            autocompleteCapabilities = snapshot
+            autocompleteCapabilitiesRequestID = nil
+            autocompleteSuggestions = nil
+            autocompleteQueryRequestID = nil
+        case .suggestions(let snapshot):
+            guard snapshot.sessionId == session.id,
+                  snapshot.requestId == autocompleteQueryRequestID,
+                  snapshot.generation == autocompleteCapabilities?.generation,
+                  snapshot.draftRevision == autocompleteDraftRevision,
+                  snapshot.draftFingerprint == autocompleteDraftFingerprint,
+                  let position = PickyComposerAutocompletePolicy.cursorPosition(
+                    in: draft,
+                    utf16Offset: composerCursorLocation
+                  ),
+                  position.line == snapshot.cursorLine,
+                  position.column == snapshot.cursorCol,
+                  !isIMEComposing
+            else { return }
+            autocompleteQueryRequestID = nil
+            autocompleteSuggestions = snapshot.items.isEmpty ? nil : snapshot
+            selectedAutocompleteIndex = 0
+        case .completion(let completion):
+            guard completion.sessionId == session.id,
+                  completion.requestId == autocompleteApplyRequestID,
+                  completion.generation == autocompleteCapabilities?.generation,
+                  completion.draftRevision == autocompleteDraftRevision,
+                  completion.draftFingerprint == autocompleteDraftFingerprint,
+                  let cursorOffset = PickyComposerAutocompletePolicy.utf16Offset(
+                    lines: completion.lines,
+                    line: completion.cursorLine,
+                    column: completion.cursorCol
+                  ),
+                  !isIMEComposing
+            else { return }
+            autocompleteApplyRequestID = nil
+            autocompleteSuggestions = nil
+            selectedAutocompleteIndex = 0
+            let completedText = PickyComposerAutocompletePolicy.text(from: completion.lines)
+            draft = completedText
+            composerSelectionOverride = NSRange(location: cursorOffset, length: 0)
+            composerCursorLocation = cursorOffset
+            isFocused = true
+        }
     }
 
     private func handleReplySubmitKey() {
@@ -1127,10 +1110,11 @@ struct PickyConversationComposerView: View {
         guard let request, appliedComposerDraftRequestID != request.id else { return }
         draft = request.text
         viewModel.updateComposerDraft(request.text, sessionID: session.id)
-        selectedSlashCommandIndex = 0
-        isSlashCommandAutocompleteDismissed = true
-        selectedFileMentionIndex = 0
-        isFileMentionAutocompleteDismissed = true
+        selectedAutocompleteIndex = 0
+        autocompleteSuggestions = nil
+        autocompleteQueryRequestID = nil
+        autocompleteApplyRequestID = nil
+        isAutocompleteDismissed = true
         appliedComposerDraftRequestID = request.id
         focusComposerIfPossible()
         viewModel.consumeComposerDraftRequest(sessionID: session.id, requestID: request.id)
@@ -1368,7 +1352,7 @@ struct PickyConversationComposerView: View {
             + CGFloat(visibleRows - 1) * autocompleteRowSpacing
             + 2 * autocompletePanelVerticalInset
     }
-    private static let slashCommandLoadingRetryIntervalNanoseconds: UInt64 = 1_000_000_000
+    private static let autocompleteDebounceNanoseconds: UInt64 = 80_000_000
 
     private func stopIfPossible() {
         guard [.running, .queued, .waiting_for_input].contains(session.status) else { return }

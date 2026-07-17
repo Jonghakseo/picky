@@ -55,6 +55,60 @@ struct PickyIMETextViewTests {
         #expect(textView.string == "first\n")
     }
 
+    @Test func temporaryHighlightStylesTextWithoutMutatingEditorContent() throws {
+        let textView = PickyIMENSTextView()
+        textView.string = ">worker task"
+        let range = NSRange(location: 0, length: 7)
+
+        textView.setTemporaryHighlight(range: range, color: .systemBlue)
+
+        #expect(textView.string == ">worker task")
+        let temporaryColor = textView.layoutManager?.temporaryAttribute(
+            .foregroundColor,
+            atCharacterIndex: 1,
+            effectiveRange: nil
+        ) as? NSColor
+        #expect(temporaryColor == .systemBlue)
+
+        textView.setTemporaryHighlight(range: nil, color: nil)
+        #expect(textView.layoutManager?.temporaryAttribute(
+            .foregroundColor,
+            atCharacterIndex: 1,
+            effectiveRange: nil
+        ) == nil)
+    }
+
+    @Test func markedTextClearsTemporaryHighlightAndReportsCompositionState() throws {
+        let textView = PickyIMENSTextView()
+        textView.string = ">w"
+        textView.setTemporaryHighlight(range: NSRange(location: 0, length: 2), color: .systemBlue)
+        var states: [Bool] = []
+        textView.onMarkedTextChange = { states.append($0) }
+
+        textView.setMarkedText("한", selectedRange: NSRange(location: 1, length: 0), replacementRange: NSRange(location: 0, length: 0))
+        #expect(states == [true])
+        #expect(textView.layoutManager?.temporaryAttribute(
+            .foregroundColor,
+            atCharacterIndex: 1,
+            effectiveRange: nil
+        ) == nil)
+
+        textView.unmarkText()
+        #expect(states == [true, false])
+    }
+
+    @Test func insertTextCommitReportsMarkedTextEndedWithoutExplicitUnmark() throws {
+        let textView = PickyIMENSTextView()
+        var states: [Bool] = []
+        textView.onMarkedTextChange = { states.append($0) }
+
+        textView.setMarkedText("한", selectedRange: NSRange(location: 1, length: 0), replacementRange: NSRange(location: 0, length: 0))
+        textView.insertText("한", replacementRange: NSRange(location: NSNotFound, length: 0))
+
+        #expect(states == [true, false])
+        #expect(!textView.hasMarkedText())
+    }
+
     @Test func mouseDownFocusHelperMakesTextViewFirstResponderInNonactivatingHUDPanel() throws {
         let panel = PickyHUDPanel(
             contentRect: NSRect(x: 0, y: 0, width: 240, height: 120),

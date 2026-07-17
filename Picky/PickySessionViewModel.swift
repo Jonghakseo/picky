@@ -15,6 +15,14 @@ struct PickyHUDOpenSessionRequest: Equatable {
     var targetDisplayID: CGDirectDisplayID?
 }
 
+enum PickyAutocompleteClientEvent: Equatable {
+    case reconnected
+    case resourcesReloaded(sessionID: String)
+    case capabilities(PickyAutocompleteCapabilitiesSnapshot)
+    case suggestions(PickyAutocompleteSuggestionsSnapshot)
+    case completion(PickyAutocompleteCompletionApplied)
+}
+
 enum PickySessionListViewModelError: LocalizedError, Equatable {
     case emptyFollowUp
     case noSessionSelected
@@ -286,6 +294,10 @@ final class PickySessionListViewModel: ObservableObject {
     /// Published mirror of `PickySessionSlashCommandController` cache state.
     /// Every controller mutation path must call `syncSlashCommands()`.
     @Published private(set) var slashCommandsBySessionID: [String: [PickySlashCommand]] = [:]
+    /// High-frequency autocomplete responses bypass `objectWillChange` so typing does not
+    /// invalidate every conversation bubble observing this view model. The active composer
+    /// filters this stream by session, generation, request id, draft revision, and cursor.
+    let autocompleteEvents = PassthroughSubject<PickyAutocompleteClientEvent, Never>()
     /// Published mirror of `PickySessionComposerDraftController` request state.
     /// `PickyConversationComposerView` observes this dictionary with `.onChange`,
     /// so every controller mutation path must call `syncComposerDraftRequests()`.
@@ -769,6 +781,73 @@ final class PickySessionListViewModel: ObservableObject {
 
     func hasLoadedSlashCommands(sessionID: String) -> Bool {
         slashCommandController.hasLoaded(sessionID: sessionID)
+    }
+
+    @discardableResult
+    func requestAutocompleteCapabilities(sessionID: String) -> String {
+        sendAutocompleteCommand(PickyCommandEnvelope(type: .getAutocompleteCapabilities, sessionId: sessionID))
+    }
+
+    @discardableResult
+    func queryAutocomplete(
+        sessionID: String,
+        generation: Int,
+        lines: [String],
+        cursorLine: Int,
+        cursorCol: Int,
+        draftRevision: Int,
+        draftFingerprint: String,
+        force: Bool = false
+    ) -> String {
+        sendAutocompleteCommand(PickyCommandEnvelope(
+            type: .autocompleteQuery,
+            sessionId: sessionID,
+            generation: generation,
+            lines: lines,
+            cursorLine: cursorLine,
+            cursorCol: cursorCol,
+            force: force,
+            draftRevision: draftRevision,
+            draftFingerprint: draftFingerprint
+        ))
+    }
+
+    @discardableResult
+    func applyAutocomplete(
+        sessionID: String,
+        generation: Int,
+        lines: [String],
+        cursorLine: Int,
+        cursorCol: Int,
+        draftRevision: Int,
+        draftFingerprint: String,
+        item: PickyAutocompleteItem,
+        prefix: String
+    ) -> String {
+        sendAutocompleteCommand(PickyCommandEnvelope(
+            type: .autocompleteApply,
+            sessionId: sessionID,
+            generation: generation,
+            lines: lines,
+            cursorLine: cursorLine,
+            cursorCol: cursorCol,
+            draftRevision: draftRevision,
+            draftFingerprint: draftFingerprint,
+            item: item,
+            prefix: prefix
+        ))
+    }
+
+    private func sendAutocompleteCommand(_ command: PickyCommandEnvelope) -> String {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await client.send(command)
+            } catch {
+                lastError = error.localizedDescription
+            }
+        }
+        return command.id
     }
 
     private static func milliseconds(_ interval: TimeInterval) -> Int {
@@ -1680,6 +1759,7 @@ final class PickySessionListViewModel: ObservableObject {
                 armInitialSnapshotWatchdog()
             }
             lastError = nil
+            autocompleteEvents.send(.reconnected)
             Task {
                 pickySessionLog("send listSessions for initial snapshot")
                 try? await client.send(PickyCommandEnvelope(type: .listSessions))
@@ -1721,8 +1801,15 @@ final class PickySessionListViewModel: ObservableObject {
             PickyPerf.event("vm_event_session_resources_reloaded")
             pickySessionLog("session resources reloaded session=\(sessionId)")
             invalidateSlashCommandCache(sessionID: sessionId, refreshIfPreviouslyRequested: true)
+            autocompleteEvents.send(.resourcesReloaded(sessionID: sessionId))
         case .slashCommandsSnapshot(let sessionId, let requestId, let commands):
             applySlashCommandsSnapshot(sessionID: sessionId, requestID: requestId, commands: commands)
+        case .autocompleteCapabilitiesSnapshot(let snapshot):
+            autocompleteEvents.send(.capabilities(snapshot))
+        case .autocompleteSuggestionsSnapshot(let snapshot):
+            autocompleteEvents.send(.suggestions(snapshot))
+        case .autocompleteCompletionApplied(let completion):
+            autocompleteEvents.send(.completion(completion))
         case .rewindTargetsSnapshot: break
         case .sessionRewound(let sessionId, let editorText, _): applySessionRewound(sessionID: sessionId, editorText: editorText)
         case .sessionMessageAppended(let sessionId, let message, let seq):

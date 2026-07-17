@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { accessSync, constants as fsConstants } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { extname } from "node:path";
+import { homedir } from "node:os";
+import { extname, join } from "node:path";
 import {
   type AgentSession,
   type AgentSessionRuntime,
@@ -13,12 +15,13 @@ import {
   getAgentDir,
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
+import { CombinedAutocompleteProvider, type SlashCommand } from "@earendil-works/pi-tui";
 import type { BuiltPrompt } from "../prompt-builder.js";
 import { ExtensionUiBridge } from "../application/extension-ui-bridge.js";
 import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
 import { resolveTodoStateFromPiSessionEntries } from "../domain/todo-state.js";
 import { isTransientAgentBusyError } from "../domain/transient-runtime-error.js";
-import type { AgentRuntime, AnswerExtensionUiOptions, RewindBranchMessage, RewindResult, RewindTarget, RuntimeAssistantRunMetadata, RuntimeBashExecutionResult, RuntimeEvent, RuntimeModelOption, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
+import type { AgentRuntime, AnswerExtensionUiOptions, RewindBranchMessage, RewindResult, RewindTarget, RuntimeAssistantRunMetadata, RuntimeAutocompleteApplyRequest, RuntimeAutocompleteCapabilities, RuntimeAutocompleteCompletion, RuntimeAutocompleteQuery, RuntimeAutocompleteSuggestions, RuntimeBashExecutionResult, RuntimeEvent, RuntimeModelOption, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
 import type { ModelCycleDirection, PickyQueueMode } from "../protocol.js";
 import { logAgentd } from "../local-log.js";
 import {
@@ -63,6 +66,8 @@ const PICKY_BUILTIN_SLASH_COMMANDS: ReadonlyArray<{ name: string; description: s
 // extension changes mid-session), which would leak the mapping. The cap is generous enough to
 // cover realistic concurrent in-flight slash commands while keeping memory bounded.
 const SLASH_EXPANSION_MAP_CAP = 64;
+const AUTOCOMPLETE_MAX_ITEMS = 20;
+const AUTOCOMPLETE_QUERY_TIMEOUT_MS = 2_000;
 
 interface PiSdkRuntimeOptions {
   agentDir?: string;
@@ -218,6 +223,8 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   // clear the counter when Pi opens a fresh agent cycle (agent_start) so a real cancellation
   // of the new turn still surfaces.
   private pendingAbortAcknowledgements = 0;
+  private autocompleteGeneration = 0;
+  private autocompleteQueryController: AbortController | undefined;
 
   constructor(readonly id: string, private readonly runtime: AgentSessionRuntime, private configuredThinkingLevel?: ThinkingLevel, private readonly bridgeOptions: { disableBlockingDialogs?: boolean } = {}) {
     this.uiBridge = this.createBridge();
@@ -446,6 +453,61 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     return metadata.model || metadata.thinkingLevel ? metadata : undefined;
   }
 
+  getAutocompleteCapabilities(): RuntimeAutocompleteCapabilities {
+    return this.uiBridge.autocompleteCapabilities();
+  }
+
+  async queryAutocomplete(query: RuntimeAutocompleteQuery): Promise<RuntimeAutocompleteSuggestions> {
+    this.assertAutocompleteGeneration(query.generation);
+    this.autocompleteQueryController?.abort();
+    const controller = new AbortController();
+    this.autocompleteQueryController = controller;
+    const bridge = this.uiBridge;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const cancelled = new Promise<null>((resolve) => {
+      controller.signal.addEventListener("abort", () => resolve(null), { once: true });
+      timeout = setTimeout(() => {
+        controller.abort();
+        resolve(null);
+      }, AUTOCOMPLETE_QUERY_TIMEOUT_MS);
+    });
+    try {
+      const suggestions = await Promise.race([
+        bridge.getAutocompleteSuggestions({
+          lines: query.lines,
+          cursorLine: query.cursorLine,
+          cursorCol: query.cursorCol,
+          force: query.force,
+          signal: controller.signal,
+        }),
+        cancelled,
+      ]);
+      if (controller.signal.aborted || bridge !== this.uiBridge) {
+        return { generation: query.generation, items: [] };
+      }
+      return {
+        generation: query.generation,
+        ...(suggestions?.prefix !== undefined ? { prefix: suggestions.prefix } : {}),
+        items: (suggestions?.items ?? []).slice(0, AUTOCOMPLETE_MAX_ITEMS),
+      };
+    } finally {
+      if (timeout) clearTimeout(timeout);
+      if (this.autocompleteQueryController === controller) this.autocompleteQueryController = undefined;
+    }
+  }
+
+  applyAutocomplete(request: RuntimeAutocompleteApplyRequest): RuntimeAutocompleteCompletion {
+    this.assertAutocompleteGeneration(request.generation);
+    const completion = this.uiBridge.applyAutocompleteCompletion(
+      request.lines,
+      request.cursorLine,
+      request.cursorCol,
+      request.item,
+      request.prefix,
+    );
+    return { generation: request.generation, ...completion };
+  }
+
   async listSlashCommands(): Promise<RuntimeSlashCommand[]> {
     const commands: RuntimeSlashCommand[] = [
       ...PICKY_BUILTIN_SLASH_COMMANDS.map((command) => ({ ...command, source: "builtin" as const })),
@@ -458,9 +520,10 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     //     auto-discovered local extension under ~/.pi/agent/extensions/*. A directory-level
     //     `ui.custom` scan therefore flags ALL local extensions if any single sibling uses it,
     //     producing false positives for clean extensions like /github:pr-merge.
-    //   - ExtensionUiBridge already implements the common surfaces (notify/confirm/select/
-    //     input/editor/askUserQuestion/setStatus/setTitle/...) and silently no-ops the
-    //     overlay-only ones (setWidget/setHeader/setFooter/addAutocompleteProvider/...).
+    //   - ExtensionUiBridge implements the common surfaces (notify/confirm/select/input/
+    //     editor/askUserQuestion/setStatus/setTitle) and composes addAutocompleteProvider
+    //     over Pi's built-in slash/path provider. Terminal-component surfaces such as
+    //     setWidget/setHeader/setFooter/setEditorComponent remain no-ops.
     //   - The only hard failure is `ui.custom`, which throws PickyOverlayUnsupportedError.
     //     extension-crash-guard.ts swallows that (and any extension TypeError such as a missing
     //     `theme.fg`) so daemon stays alive; the user just sees the command no-op or error.
@@ -1167,8 +1230,46 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     return true;
   }
 
+  private assertAutocompleteGeneration(generation: number): void {
+    if (generation !== this.autocompleteGeneration) {
+      throw new Error(`Stale autocomplete generation for session ${this.id}: expected ${this.autocompleteGeneration}, received ${generation}`);
+    }
+  }
+
+  private createBaseAutocompleteProvider(): CombinedAutocompleteProvider {
+    const commands: SlashCommand[] = [
+      ...PICKY_BUILTIN_SLASH_COMMANDS,
+      ...(this.getSessionFilePath() ? [{ name: "tree", description: "Rewind to an earlier message" }] : []),
+      ...this.runtime.session.extensionRunner.getRegisteredCommands().map((command) => ({
+        name: command.invocationName,
+        description: command.description,
+        getArgumentCompletions: command.getArgumentCompletions,
+      })),
+      ...this.runtime.session.promptTemplates.map((template) => ({
+        name: template.name,
+        description: template.description,
+      })),
+      ...this.runtime.session.resourceLoader.getSkills().skills.map((skill) => ({
+        name: `skill:${skill.name}`,
+        description: skill.description,
+      })),
+    ];
+    return new CombinedAutocompleteProvider(
+      commands,
+      this.runtime.session.sessionManager.getCwd(),
+      resolveAutocompleteFdPath(),
+    );
+  }
+
   private createBridge(): ExtensionUiBridge {
-    const bridge = new ExtensionUiBridge(this.id, { disableBlockingDialogs: this.bridgeOptions.disableBlockingDialogs ?? false });
+    this.autocompleteQueryController?.abort();
+    this.autocompleteQueryController = undefined;
+    const generation = ++this.autocompleteGeneration;
+    const bridge = new ExtensionUiBridge(this.id, {
+      disableBlockingDialogs: this.bridgeOptions.disableBlockingDialogs ?? false,
+      autocompleteGeneration: generation,
+      createBaseAutocompleteProvider: () => this.createBaseAutocompleteProvider(),
+    });
     bridge.on("request", (request, waitsForInput) => {
       const waits = Boolean(waitsForInput);
       if (bridge !== this.uiBridge) {
@@ -1190,6 +1291,28 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private emit(event: RuntimeEvent): void {
     for (const listener of this.listeners) listener(event);
   }
+}
+
+let cachedAutocompleteFdPath: string | null | undefined;
+
+function resolveAutocompleteFdPath(): string | null {
+  if (cachedAutocompleteFdPath !== undefined) return cachedAutocompleteFdPath;
+  const candidates = [
+    process.env.PICKY_FD_PATH,
+    join(homedir(), ".pi", "agent", "bin", "fd"),
+    "/opt/homebrew/bin/fd",
+    "/usr/local/bin/fd",
+    "/usr/bin/fd",
+  ].filter((candidate): candidate is string => Boolean(candidate));
+  cachedAutocompleteFdPath = candidates.find((candidate) => {
+    try {
+      accessSync(candidate, fsConstants.X_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  }) ?? null;
+  return cachedAutocompleteFdPath;
 }
 
 function queueKindFromStreamingBehavior(streamingBehavior?: "steer" | "followUp"): "steering" | "followUp" | undefined {

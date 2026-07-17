@@ -1,0 +1,18 @@
+{
+  "id": "cmd-autocomplete-apply",
+  "protocolVersion": "2026-07-17",
+  "type": "autocompleteApply",
+  "sessionId": "session-1",
+  "generation": 3,
+  "lines": [">w"],
+  "cursorLine": 0,
+  "cursorCol": 2,
+  "draftRevision": 4,
+  "draftFingerprint": "draft-4",
+  "item": {
+    "value": ">worker",
+    "label": ">worker",
+    "description": "Delegate to worker"
+  },
+  "prefix": ">w"
+}

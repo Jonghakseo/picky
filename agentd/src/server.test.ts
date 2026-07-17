@@ -39,6 +39,80 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
+  it("routes autocomplete capabilities, query, and apply responses only to the requesting client", async () => {
+    const requester = await connectWithHello();
+    const observer = await connectWithHello();
+    const capabilities = vi.spyOn(supervisor, "getAutocompleteCapabilities")
+      .mockResolvedValue({ generation: 7, triggerCharacters: [">"] });
+    const query = vi.spyOn(supervisor, "queryAutocomplete")
+      .mockResolvedValue({ generation: 7, prefix: ">w", items: [{ value: ">worker", label: "Worker" }] });
+    const apply = vi.spyOn(supervisor, "applyAutocomplete")
+      .mockResolvedValue({ generation: 7, lines: [">worker "], cursorLine: 0, cursorCol: 8 });
+
+    requester.ws.send(JSON.stringify({
+      id: "cmd-autocomplete-capabilities",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "getAutocompleteCapabilities",
+      sessionId: "session-autocomplete",
+    }));
+    await expect(nextEvent(requester.ws)).resolves.toMatchObject({
+      type: "autocompleteCapabilitiesSnapshot",
+      requestId: "cmd-autocomplete-capabilities",
+      generation: 7,
+      triggerCharacters: [">"],
+    });
+
+    requester.ws.send(JSON.stringify({
+      id: "cmd-autocomplete-query",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "autocompleteQuery",
+      sessionId: "session-autocomplete",
+      generation: 7,
+      lines: [">w"],
+      cursorLine: 0,
+      cursorCol: 2,
+      draftRevision: 3,
+      draftFingerprint: "draft-3",
+    }));
+    await expect(nextEvent(requester.ws)).resolves.toMatchObject({
+      type: "autocompleteSuggestionsSnapshot",
+      requestId: "cmd-autocomplete-query",
+      draftRevision: 3,
+      draftFingerprint: "draft-3",
+      prefix: ">w",
+      items: [{ value: ">worker", label: "Worker" }],
+    });
+
+    requester.ws.send(JSON.stringify({
+      id: "cmd-autocomplete-apply",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "autocompleteApply",
+      sessionId: "session-autocomplete",
+      generation: 7,
+      lines: [">w"],
+      cursorLine: 0,
+      cursorCol: 2,
+      draftRevision: 3,
+      draftFingerprint: "draft-3",
+      item: { value: ">worker", label: "Worker" },
+      prefix: ">w",
+    }));
+    await expect(nextEvent(requester.ws)).resolves.toMatchObject({
+      type: "autocompleteCompletionApplied",
+      requestId: "cmd-autocomplete-apply",
+      lines: [">worker "],
+      cursorLine: 0,
+      cursorCol: 8,
+    });
+
+    expect(capabilities).toHaveBeenCalledWith("session-autocomplete");
+    expect(query).toHaveBeenCalledWith("session-autocomplete", expect.objectContaining({ generation: 7, cursorCol: 2 }));
+    expect(apply).toHaveBeenCalledWith("session-autocomplete", expect.objectContaining({ prefix: ">w" }));
+    await expect(nextEventWithin(observer.ws, 50)).resolves.toBeUndefined();
+    requester.ws.close();
+    observer.ws.close();
+  });
+
   it("returns error for malformed JSON and keeps serving commands", async () => {
     const { ws } = await connectWithHello();
     ws.send("not json");

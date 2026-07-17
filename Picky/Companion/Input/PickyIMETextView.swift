@@ -23,8 +23,11 @@ struct PickyIMETextView: NSViewRepresentable {
     var textContainerInsetHeight: CGFloat = 2
     var showsVerticalScroller: Bool = true
     var selectionOverride: Binding<NSRange?>? = nil
+    var temporaryHighlightRange: NSRange? = nil
+    var temporaryHighlightColor: NSColor? = nil
     var onSelectionChange: ((NSRange) -> Void)?
     var onMeasuredContentHeight: ((CGFloat) -> Void)?
+    var onMarkedTextChange: ((Bool) -> Void)?
     var onReturn: ((NSEvent.ModifierFlags) -> Bool)?
     var onUpArrow: ((NSEvent.ModifierFlags) -> Bool)?
     var onDownArrow: (() -> Bool)?
@@ -75,6 +78,7 @@ struct PickyIMETextView: NSViewRepresentable {
         configureCallbacks(on: textView, context: context)
         scrollView.documentView = textView
         applyConfiguration(to: textView)
+        applyTemporaryHighlight(to: textView)
         context.coordinator.measure(textView: textView)
         return scrollView
     }
@@ -106,6 +110,7 @@ struct PickyIMETextView: NSViewRepresentable {
 
         configureCallbacks(on: textView, context: context)
         applyConfiguration(to: textView)
+        applyTemporaryHighlight(to: textView)
 
         if isFocused?.wrappedValue == true, textView.window?.firstResponder !== textView {
             textView.window?.makeFirstResponder(textView)
@@ -122,12 +127,20 @@ struct PickyIMETextView: NSViewRepresentable {
         textView.onLayout = { textView in
             context.coordinator.measure(textView: textView)
         }
+        textView.onMarkedTextChange = onMarkedTextChange
         textView.onReturn = onReturn
         textView.onUpArrow = onUpArrow
         textView.onDownArrow = onDownArrow
         textView.onTab = onTab
         textView.onEscape = onEscape
         textView.onControlP = onControlP
+    }
+
+    private func applyTemporaryHighlight(to textView: PickyIMENSTextView) {
+        textView.setTemporaryHighlight(
+            range: temporaryHighlightRange,
+            color: temporaryHighlightColor
+        )
     }
 
     private func applyConfiguration(to textView: PickyIMENSTextView) {
@@ -206,6 +219,7 @@ struct PickyIMETextView: NSViewRepresentable {
 final class PickyIMENSTextView: NSTextView {
     var onFocusChange: ((Bool) -> Void)?
     var onLayout: ((PickyIMENSTextView) -> Void)?
+    var onMarkedTextChange: ((Bool) -> Void)?
     var onReturn: ((NSEvent.ModifierFlags) -> Bool)?
     var onUpArrow: ((NSEvent.ModifierFlags) -> Bool)?
     var onDownArrow: (() -> Bool)?
@@ -214,6 +228,8 @@ final class PickyIMENSTextView: NSTextView {
     var onControlP: ((_ shiftPressed: Bool) -> Void)?
 
     private var isCommittingMarkedTextWithReturn = false
+    private var temporaryHighlightRange: NSRange?
+    private var lastReportedMarkedTextState = false
 
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
@@ -237,6 +253,43 @@ final class PickyIMENSTextView: NSTextView {
     override func mouseDown(with event: NSEvent) {
         focusForMouseDown()
         super.mouseDown(with: event)
+    }
+
+    override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
+        clearTemporaryHighlight()
+        reportMarkedTextState(hasMarkedText())
+    }
+
+    override func unmarkText() {
+        super.unmarkText()
+        reportMarkedTextState(false)
+    }
+
+    override func insertText(_ string: Any, replacementRange: NSRange) {
+        super.insertText(string, replacementRange: replacementRange)
+        reportMarkedTextState(hasMarkedText())
+    }
+
+    private func reportMarkedTextState(_ isMarked: Bool) {
+        guard lastReportedMarkedTextState != isMarked else { return }
+        lastReportedMarkedTextState = isMarked
+        onMarkedTextChange?(isMarked)
+    }
+
+    func setTemporaryHighlight(range: NSRange?, color: NSColor?) {
+        clearTemporaryHighlight()
+        guard !hasMarkedText(), let range, range.length > 0, let color,
+              range.location >= 0, NSMaxRange(range) <= string.utf16.count,
+              let layoutManager else { return }
+        layoutManager.addTemporaryAttribute(.foregroundColor, value: color, forCharacterRange: range)
+        temporaryHighlightRange = range
+    }
+
+    private func clearTemporaryHighlight() {
+        guard let temporaryHighlightRange, let layoutManager else { return }
+        layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: temporaryHighlightRange)
+        self.temporaryHighlightRange = nil
     }
 
     override func layout() {

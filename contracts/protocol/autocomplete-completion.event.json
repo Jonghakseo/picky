@@ -1,0 +1,14 @@
+{
+  "id": "event-autocomplete-completion",
+  "protocolVersion": "2026-07-17",
+  "timestamp": "2026-07-17T00:00:00.000Z",
+  "type": "autocompleteCompletionApplied",
+  "sessionId": "session-1",
+  "requestId": "cmd-autocomplete-apply",
+  "generation": 3,
+  "draftRevision": 4,
+  "draftFingerprint": "draft-4",
+  "lines": [">worker "],
+  "cursorLine": 0,
+  "cursorCol": 8
+}

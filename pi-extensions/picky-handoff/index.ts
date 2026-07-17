@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const DEFAULT_PROTOCOL_VERSION = "2026-05-09";
+const DEFAULT_PROTOCOL_VERSION = "2026-07-17";
 const DEFAULT_CONNECTION_FILE = join(homedir(), "Library", "Application Support", "Picky", "agentd-connection.json");
 const DEFAULT_WAIT_FOR_IDLE_TIMEOUT_MS = 10_000;
 const MAX_BRANCH_ENTRIES = 16;

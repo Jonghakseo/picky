@@ -7,7 +7,7 @@
 
 import Foundation
 
-let pickyAgentProtocolVersion = "2026-05-09"
+let pickyAgentProtocolVersion = "2026-07-17"
 
 /// Identifiers for Picky's built-in tools exposed to the main agent.
 /// These names mirror `name:` on each `defineTool(...)` call in
@@ -75,6 +75,15 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var disabledBuiltinTools: [String]?
     var action: PickyPushToTalkControlAction?
     var entryId: String?
+    var generation: Int?
+    var lines: [String]?
+    var cursorLine: Int?
+    var cursorCol: Int?
+    var force: Bool?
+    var draftRevision: Int?
+    var draftFingerprint: String?
+    var item: PickyAutocompleteItem?
+    var prefix: String?
 
     init(
         id: String = "cmd-\(UUID().uuidString)",
@@ -105,7 +114,16 @@ struct PickyCommandEnvelope: Codable, Equatable {
         baselinePiMessageId: String? = nil,
         disabledBuiltinTools: [String]? = nil,
         action: PickyPushToTalkControlAction? = nil,
-        entryId: String? = nil
+        entryId: String? = nil,
+        generation: Int? = nil,
+        lines: [String]? = nil,
+        cursorLine: Int? = nil,
+        cursorCol: Int? = nil,
+        force: Bool? = nil,
+        draftRevision: Int? = nil,
+        draftFingerprint: String? = nil,
+        item: PickyAutocompleteItem? = nil,
+        prefix: String? = nil
     ) {
         self.id = id
         self.protocolVersion = pickyAgentProtocolVersion
@@ -137,6 +155,15 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.action = action
         self.entryId = entryId
         self.disabledBuiltinTools = disabledBuiltinTools
+        self.generation = generation
+        self.lines = lines
+        self.cursorLine = cursorLine
+        self.cursorCol = cursorCol
+        self.force = force
+        self.draftRevision = draftRevision
+        self.draftFingerprint = draftFingerprint
+        self.item = item
+        self.prefix = prefix
     }
 }
 
@@ -179,6 +206,9 @@ enum PickyCommandType: String, Codable, Equatable {
     case cycleSessionThinkingLevel
     case cycleSessionModel
     case listSlashCommands
+    case getAutocompleteCapabilities
+    case autocompleteQuery
+    case autocompleteApply
     case listRewindTargets
     case rewindSession
     case getSession
@@ -250,6 +280,9 @@ enum PickyEvent: Equatable {
     case dockGroupsRequested(requestId: String)
     case pushToTalkControlRequested(PickyPushToTalkControlRequest)
     case slashCommandsSnapshot(sessionId: String, requestId: String?, commands: [PickySlashCommand])
+    case autocompleteCapabilitiesSnapshot(PickyAutocompleteCapabilitiesSnapshot)
+    case autocompleteSuggestionsSnapshot(PickyAutocompleteSuggestionsSnapshot)
+    case autocompleteCompletionApplied(PickyAutocompleteCompletionApplied)
     case rewindTargetsSnapshot(sessionId: String, requestId: String?, targets: [PickyRewindTarget])
     case sessionRewound(sessionId: String, editorText: String?, removedIds: [String])
     case sessionMessageAppended(sessionId: String, message: PickySessionMessage, seq: Int)
@@ -329,6 +362,12 @@ enum PickyEvent: Equatable {
         case "slashCommandsSnapshot":
             let payload = try PickySlashCommandsSnapshotPayload(from: decoder)
             return .slashCommandsSnapshot(sessionId: payload.sessionId, requestId: payload.requestId, commands: payload.commands)
+        case "autocompleteCapabilitiesSnapshot":
+            return .autocompleteCapabilitiesSnapshot(try PickyAutocompleteCapabilitiesSnapshot(from: decoder))
+        case "autocompleteSuggestionsSnapshot":
+            return .autocompleteSuggestionsSnapshot(try PickyAutocompleteSuggestionsSnapshot(from: decoder))
+        case "autocompleteCompletionApplied":
+            return .autocompleteCompletionApplied(try PickyAutocompleteCompletionApplied(from: decoder))
         case "rewindTargetsSnapshot":
             let payload = try PickyRewindTargetsSnapshotPayload(from: decoder)
             return .rewindTargetsSnapshot(sessionId: payload.sessionId, requestId: payload.requestId, targets: payload.targets)
@@ -577,6 +616,48 @@ struct PickySlashCommand: Codable, Equatable, Identifiable {
     let name: String
     let description: String?
     let source: PickySlashCommandSource
+}
+
+struct PickyAutocompleteItem: Codable, Equatable, Sendable {
+    let value: String
+    let label: String
+    let description: String?
+
+    init(value: String, label: String, description: String? = nil) {
+        self.value = value
+        self.label = label
+        self.description = description
+    }
+}
+
+struct PickyAutocompleteCapabilitiesSnapshot: Codable, Equatable, Sendable {
+    let sessionId: String
+    let requestId: String
+    let generation: Int
+    let triggerCharacters: [String]
+}
+
+struct PickyAutocompleteSuggestionsSnapshot: Codable, Equatable, Sendable {
+    let sessionId: String
+    let requestId: String
+    let generation: Int
+    let draftRevision: Int
+    let draftFingerprint: String
+    let cursorLine: Int
+    let cursorCol: Int
+    let prefix: String?
+    let items: [PickyAutocompleteItem]
+}
+
+struct PickyAutocompleteCompletionApplied: Codable, Equatable, Sendable {
+    let sessionId: String
+    let requestId: String
+    let generation: Int
+    let draftRevision: Int
+    let draftFingerprint: String
+    let lines: [String]
+    let cursorLine: Int
+    let cursorCol: Int
 }
 
 struct PickyRewindTarget: Decodable, Equatable, Identifiable {

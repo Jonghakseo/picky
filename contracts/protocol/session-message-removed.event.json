@@ -1,6 +1,6 @@
 {
   "id": "event-session-message-removed",
-  "protocolVersion": "2026-05-09",
+  "protocolVersion": "2026-07-17",
   "timestamp": "2026-05-05T00:00:02.000Z",
   "type": "sessionMessageRemoved",
   "sessionId": "session-001",

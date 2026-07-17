@@ -15,7 +15,7 @@ import { PiSessionTailWatcher, type PiSessionTailEntry } from "./application/pi-
 import { inferTerminalStatusFromEntries } from "./application/terminal-tail-status.js";
 import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY, SessionStore } from "./session-store.js";
 import type { TaskRouter } from "./task-router.js";
-import type { AgentRuntime, RewindTarget, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./runtime/types.js";
+import type { AgentRuntime, RewindTarget, RuntimeAutocompleteApplyRequest, RuntimeAutocompleteCapabilities, RuntimeAutocompleteCompletion, RuntimeAutocompleteQuery, RuntimeAutocompleteSuggestions, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./runtime/types.js";
 import { listRewindTargets as rewindListTargets, rewindToEntry as runRewindToEntry, type RewindDeps } from "./application/session-rewind.js";
 import { hasActivity, zeroActivitySummary } from "./domain/activity-summary.js";
 import { mergeArtifacts } from "./domain/artifacts.js";
@@ -358,6 +358,34 @@ export class SessionSupervisor extends EventEmitter {
     const fallbackHandle = await this.slashCommandFallbackHandle(session);
     const fallbackCommands = await this.listSlashCommandsFromHandle(sessionId, fallbackHandle, "main");
     return fallbackCommands ?? [];
+  }
+
+  async getAutocompleteCapabilities(sessionId: string): Promise<RuntimeAutocompleteCapabilities> {
+    const handle = await this.autocompleteRuntimeHandle(sessionId);
+    return handle?.getAutocompleteCapabilities?.() ?? { generation: 0, triggerCharacters: [] };
+  }
+
+  async queryAutocomplete(sessionId: string, query: RuntimeAutocompleteQuery): Promise<RuntimeAutocompleteSuggestions> {
+    const handle = await this.autocompleteRuntimeHandle(sessionId);
+    if (!handle?.queryAutocomplete) throw new Error(`Autocomplete is unavailable for session: ${sessionId}`);
+    return handle.queryAutocomplete(query);
+  }
+
+  async applyAutocomplete(sessionId: string, request: RuntimeAutocompleteApplyRequest): Promise<RuntimeAutocompleteCompletion> {
+    const handle = await this.autocompleteRuntimeHandle(sessionId);
+    if (!handle?.applyAutocomplete) throw new Error(`Autocomplete is unavailable for session: ${sessionId}`);
+    return handle.applyAutocomplete(request);
+  }
+
+  private async autocompleteRuntimeHandle(sessionId: string): Promise<RuntimeSessionHandle | undefined> {
+    const session = this.mustGet(sessionId);
+    const attached = this.runtimeHandles.get(sessionId);
+    if (attached) return attached;
+    const pending = await this.pendingRuntimeHandle(sessionId, "autocomplete");
+    if (pending) return pending;
+    const resumed = await this.tryResumeRuntimeHandle(session);
+    if (resumed) return resumed;
+    return this.slashCommandFallbackHandle(session);
   }
 
   private async listSlashCommandsFromHandle(sessionId: string, handle: RuntimeSessionHandle | undefined, source: "attached" | "pending" | "resumed" | "main"): Promise<RuntimeSlashCommand[] | undefined> {

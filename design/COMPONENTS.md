@@ -130,6 +130,8 @@
 - File drop target
 - Slash command autocomplete
 - File mention autocomplete
+- Pi extension autocomplete provider results (same transient surface and keyboard routing)
+- Active autocomplete-prefix emphasis (suppressed during IME marked text)
 - Attachment present
 - Waiting/running session constraints
 

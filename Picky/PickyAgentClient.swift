@@ -466,6 +466,12 @@ private extension PickyEventEnvelope {
             return "type=pushToTalkControlRequested id=\(id) request=\(request.requestId) action=\(request.action.rawValue)"
         case .slashCommandsSnapshot(let sessionId, let requestId, let commands):
             return "type=slashCommandsSnapshot id=\(id) session=\(sessionId) request=\(requestId ?? "none") commands=\(commands.count)"
+        case .autocompleteCapabilitiesSnapshot(let snapshot):
+            return "type=autocompleteCapabilitiesSnapshot id=\(id) session=\(snapshot.sessionId) request=\(snapshot.requestId) generation=\(snapshot.generation) triggers=\(snapshot.triggerCharacters.count)"
+        case .autocompleteSuggestionsSnapshot(let snapshot):
+            return "type=autocompleteSuggestionsSnapshot id=\(id) session=\(snapshot.sessionId) request=\(snapshot.requestId) generation=\(snapshot.generation) revision=\(snapshot.draftRevision) suggestions=\(snapshot.items.count)"
+        case .autocompleteCompletionApplied(let completion):
+            return "type=autocompleteCompletionApplied id=\(id) session=\(completion.sessionId) request=\(completion.requestId) generation=\(completion.generation) revision=\(completion.draftRevision) lines=\(completion.lines.count)"
         case .rewindTargetsSnapshot(let sessionId, let requestId, let targets):
             return "type=rewindTargetsSnapshot id=\(id) session=\(sessionId) request=\(requestId ?? "none") targets=\(targets.count)"
         case .sessionRewound(let sessionId, let editorText, let removedIds):

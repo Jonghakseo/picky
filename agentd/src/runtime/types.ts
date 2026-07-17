@@ -1,4 +1,5 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import type { BuiltPrompt } from "../prompt-builder.js";
 import type { ModelCycleDirection, PickyQueueMode, PickyTodoState } from "../protocol.js";
 
@@ -8,6 +9,32 @@ export interface RuntimeSlashCommand {
   name: string;
   description?: string;
   source: RuntimeSlashCommandSource;
+}
+export interface RuntimeAutocompleteCapabilities {
+  generation: number;
+  triggerCharacters: string[];
+}
+export interface RuntimeAutocompleteQuery {
+  generation: number;
+  lines: string[];
+  cursorLine: number;
+  cursorCol: number;
+  force?: boolean;
+}
+export interface RuntimeAutocompleteSuggestions {
+  generation: number;
+  prefix?: string;
+  items: AutocompleteItem[];
+}
+export interface RuntimeAutocompleteApplyRequest extends RuntimeAutocompleteQuery {
+  item: AutocompleteItem;
+  prefix: string;
+}
+export interface RuntimeAutocompleteCompletion {
+  generation: number;
+  lines: string[];
+  cursorLine: number;
+  cursorCol: number;
 }
 export interface RewindTarget {
   entryId: string;
@@ -117,6 +144,9 @@ export interface RuntimeSessionHandle {
   setModel?(pattern?: string): Promise<RuntimeAssistantRunMetadata | undefined>;
   cycleModel?(direction: ModelCycleDirection): Promise<RuntimeAssistantRunMetadata | undefined>;
   listSlashCommands?(): RuntimeSlashCommand[] | Promise<RuntimeSlashCommand[]>;
+  getAutocompleteCapabilities?(): RuntimeAutocompleteCapabilities;
+  queryAutocomplete?(query: RuntimeAutocompleteQuery): Promise<RuntimeAutocompleteSuggestions>;
+  applyAutocomplete?(request: RuntimeAutocompleteApplyRequest): RuntimeAutocompleteCompletion;
   listRewindTargets?(): RewindTarget[];
   rewindToEntry?(entryId: string): Promise<RewindResult>;
   getActiveBranchTranscript?(): RewindBranchMessage[];

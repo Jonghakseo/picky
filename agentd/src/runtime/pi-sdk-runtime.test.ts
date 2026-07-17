@@ -61,6 +61,7 @@ class FakeSession extends EventEmitter {
     getSkills: () => ({ skills: this.skills }),
   };
   sessionManager = {
+    getCwd: () => "/tmp/project",
     appendMessage: (message: Record<string, unknown>): string => {
       this.appendedMessages.push(message);
       return `entry-${this.appendedMessages.length}`;
@@ -334,6 +335,73 @@ describe("PiSdkRuntime", () => {
     expect(events).toContainEqual({ type: "log", line: "pi session: /tmp/fake-session.jsonl" });
     expect(events).toContainEqual({ type: "status", status: "running", summary: "Agent started" });
     expect(events).toContainEqual({ type: "assistant_delta", delta: "ok" });
+  });
+
+  it("runs extension autocomplete wrappers over Pi slash and path completion", async () => {
+    const fakeSession = new FakeSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm!({ cwd: "/tmp/project", sessionId: "session-autocomplete" });
+    const ui = fakeSession.uiContext as {
+      addAutocompleteProvider(factory: (current: any) => any): void;
+    };
+    ui.addAutocompleteProvider((current) => ({
+      triggerCharacters: [">"],
+      async getSuggestions(lines: string[], line: number, col: number, options: { signal: AbortSignal }) {
+        const beforeCursor = (lines[line] ?? "").slice(0, col);
+        if (!beforeCursor.startsWith(">")) return current.getSuggestions(lines, line, col, options);
+        return { prefix: beforeCursor, items: [{ value: ">worker", label: ">worker", description: "Delegate" }] };
+      },
+      applyCompletion(lines: string[], line: number, _col: number, item: { value: string }, prefix: string) {
+        if (!prefix.startsWith(">")) return current.applyCompletion(lines, line, _col, item, prefix);
+        const next = [...lines];
+        next[line] = `${item.value} `;
+        return { lines: next, cursorLine: line, cursorCol: item.value.length + 1 };
+      },
+    }));
+
+    const capabilities = handle.getAutocompleteCapabilities!();
+    expect(capabilities.triggerCharacters).toEqual([">"]);
+    await expect(handle.queryAutocomplete!({
+      generation: capabilities.generation,
+      lines: [">w"],
+      cursorLine: 0,
+      cursorCol: 2,
+    })).resolves.toEqual({
+      generation: capabilities.generation,
+      prefix: ">w",
+      items: [{ value: ">worker", label: ">worker", description: "Delegate" }],
+    });
+    expect(handle.applyAutocomplete!({
+      generation: capabilities.generation,
+      lines: [">w"],
+      cursorLine: 0,
+      cursorCol: 2,
+      item: { value: ">worker", label: ">worker" },
+      prefix: ">w",
+    })).toEqual({
+      generation: capabilities.generation,
+      lines: [">worker "],
+      cursorLine: 0,
+      cursorCol: 8,
+    });
+  });
+
+  it("rejects autocomplete requests from a replaced bridge generation", async () => {
+    const fakeSession = new FakeSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm!({ cwd: "/tmp/project", sessionId: "session-autocomplete-stale" });
+    const staleGeneration = handle.getAutocompleteCapabilities!().generation;
+
+    await (handle as unknown as { bindCurrentSession: () => Promise<void> }).bindCurrentSession();
+    const currentGeneration = handle.getAutocompleteCapabilities!().generation;
+
+    expect(currentGeneration).toBeGreaterThan(staleGeneration);
+    await expect(handle.queryAutocomplete!({
+      generation: staleGeneration,
+      lines: [">w"],
+      cursorLine: 0,
+      cursorCol: 2,
+    })).rejects.toThrow(/Stale autocomplete generation/);
   });
 
   it("mirrors Pi extension injected user and custom messages", async () => {

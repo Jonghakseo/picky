@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const PROTOCOL_VERSION = "2026-05-09";
+export const PROTOCOL_VERSION = "2026-07-17";
 
 const isoTimestamp = z.string().datetime({ offset: true });
 
@@ -110,6 +110,12 @@ const PickySlashCommandSchema = z.object({
   description: z.string().optional(),
   source: PickySlashCommandSourceSchema,
 });
+export const PickyAutocompleteItemSchema = z.object({
+  value: z.string(),
+  label: z.string(),
+  description: z.string().optional(),
+});
+export type PickyAutocompleteItem = z.infer<typeof PickyAutocompleteItemSchema>;
 export const PickyRewindTargetSchema = z.object({
   entryId: z.string().min(1),
   text: z.string(),
@@ -329,6 +335,31 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("abortMainAgent") }),
   CommandBaseSchema.extend({ type: z.literal("setMainAgentThinkingLevel"), mainAgentThinkingLevel: ThinkingLevelSchema }),
   CommandBaseSchema.extend({ type: z.literal("listSlashCommands"), sessionId: z.string() }),
+  CommandBaseSchema.extend({ type: z.literal("getAutocompleteCapabilities"), sessionId: z.string() }),
+  CommandBaseSchema.extend({
+    type: z.literal("autocompleteQuery"),
+    sessionId: z.string(),
+    generation: z.number().int().nonnegative(),
+    lines: z.array(z.string()).min(1).max(1_000),
+    cursorLine: z.number().int().nonnegative(),
+    cursorCol: z.number().int().nonnegative(),
+    force: z.boolean().optional(),
+    draftRevision: z.number().int().nonnegative(),
+    draftFingerprint: z.string().min(1),
+  }),
+  CommandBaseSchema.extend({
+    type: z.literal("autocompleteApply"),
+    sessionId: z.string(),
+    generation: z.number().int().nonnegative(),
+    lines: z.array(z.string()).min(1).max(1_000),
+    cursorLine: z.number().int().nonnegative(),
+    cursorCol: z.number().int().nonnegative(),
+    force: z.boolean().optional(),
+    draftRevision: z.number().int().nonnegative(),
+    draftFingerprint: z.string().min(1),
+    item: PickyAutocompleteItemSchema,
+    prefix: z.string(),
+  }),
   CommandBaseSchema.extend({ type: z.literal("listRewindTargets"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("rewindSession"), sessionId: z.string(), entryId: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("getSession"), sessionId: z.string() }),
@@ -447,6 +478,36 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
     action: PickyPushToTalkControlActionSchema,
   }),
   EventBaseSchema.extend({ type: z.literal("slashCommandsSnapshot"), sessionId: z.string(), requestId: z.string().optional(), commands: z.array(PickySlashCommandSchema) }),
+  EventBaseSchema.extend({
+    type: z.literal("autocompleteCapabilitiesSnapshot"),
+    sessionId: z.string(),
+    requestId: z.string(),
+    generation: z.number().int().nonnegative(),
+    triggerCharacters: z.array(z.string()),
+  }),
+  EventBaseSchema.extend({
+    type: z.literal("autocompleteSuggestionsSnapshot"),
+    sessionId: z.string(),
+    requestId: z.string(),
+    generation: z.number().int().nonnegative(),
+    draftRevision: z.number().int().nonnegative(),
+    draftFingerprint: z.string().min(1),
+    cursorLine: z.number().int().nonnegative(),
+    cursorCol: z.number().int().nonnegative(),
+    prefix: z.string().optional(),
+    items: z.array(PickyAutocompleteItemSchema),
+  }),
+  EventBaseSchema.extend({
+    type: z.literal("autocompleteCompletionApplied"),
+    sessionId: z.string(),
+    requestId: z.string(),
+    generation: z.number().int().nonnegative(),
+    draftRevision: z.number().int().nonnegative(),
+    draftFingerprint: z.string().min(1),
+    lines: z.array(z.string()).min(1),
+    cursorLine: z.number().int().nonnegative(),
+    cursorCol: z.number().int().nonnegative(),
+  }),
   EventBaseSchema.extend({ type: z.literal("rewindTargetsSnapshot"), sessionId: z.string(), requestId: z.string().optional(), targets: z.array(PickyRewindTargetSchema) }),
   EventBaseSchema.extend({ type: z.literal("sessionRewound"), sessionId: z.string(), editorText: z.string().optional(), removedIds: z.array(z.string()) }),
   EventBaseSchema.extend({ type: z.literal("sessionMessageAppended"), sessionId: z.string(), message: PickySessionMessageSchema, seq: z.number().int() }),

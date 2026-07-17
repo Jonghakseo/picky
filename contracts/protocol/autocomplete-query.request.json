@@ -1,0 +1,12 @@
+{
+  "id": "cmd-autocomplete-query",
+  "protocolVersion": "2026-07-17",
+  "type": "autocompleteQuery",
+  "sessionId": "session-1",
+  "generation": 3,
+  "lines": [">w"],
+  "cursorLine": 0,
+  "cursorCol": 2,
+  "draftRevision": 4,
+  "draftFingerprint": "draft-4"
+}

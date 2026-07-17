@@ -27,7 +27,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-future-001",
-          "protocolVersion":"2026-05-09",
+          "protocolVersion":"2026-07-17",
           "timestamp":"2026-05-01T00:00:00.000Z",
           "type":"sessionLogAppended",
           "sessionId":"session-001",
@@ -44,7 +44,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-future-002",
-          "protocolVersion":"2026-05-09",
+          "protocolVersion":"2026-07-17",
           "timestamp":"2026-05-01T00:00:00.000Z",
           "type":"newFutureEvent",
           "details":"kept recoverable"
@@ -59,7 +59,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-external-accepted-001",
-          "protocolVersion":"2026-05-09",
+          "protocolVersion":"2026-07-17",
           "timestamp":"2026-05-01T00:00:00.000Z",
           "type":"externalEntryAccepted",
           "commandId":"cli-1",
@@ -102,6 +102,62 @@ struct ProtocolContractTests {
         #expect(decoded.context?.id == "context-test-001")
     }
 
+    @Test func encodesAutocompleteQueryAndApplyCommandsWithUTF16CursorMetadata() throws {
+        let query = PickyCommandEnvelope(
+            id: "cmd-autocomplete-query",
+            type: .autocompleteQuery,
+            sessionId: "session-1",
+            generation: 3,
+            lines: [">w"],
+            cursorLine: 0,
+            cursorCol: 2,
+            draftRevision: 4,
+            draftFingerprint: "draft-4"
+        )
+        let apply = PickyCommandEnvelope(
+            id: "cmd-autocomplete-apply",
+            type: .autocompleteApply,
+            sessionId: "session-1",
+            generation: 3,
+            lines: [">w"],
+            cursorLine: 0,
+            cursorCol: 2,
+            draftRevision: 4,
+            draftFingerprint: "draft-4",
+            item: PickyAutocompleteItem(value: ">worker", label: ">worker"),
+            prefix: ">w"
+        )
+        let encoder = JSONEncoder.pickyAgentProtocolEncoder()
+        let decoder = JSONDecoder.pickyAgentProtocolDecoder()
+
+        let decodedQuery = try decoder.decode(PickyCommandEnvelope.self, from: encoder.encode(query))
+        let decodedApply = try decoder.decode(PickyCommandEnvelope.self, from: encoder.encode(apply))
+
+        #expect(decodedQuery.cursorCol == 2)
+        #expect(decodedQuery.draftFingerprint == "draft-4")
+        #expect(decodedApply.item == PickyAutocompleteItem(value: ">worker", label: ">worker"))
+        #expect(decodedApply.prefix == ">w")
+    }
+
+    @Test func decodesAutocompleteSnapshots() throws {
+        let data = try Data(contentsOf: try #require(fixtureURLs(in: "contracts/protocol").first {
+            $0.lastPathComponent == "autocomplete-suggestions.event.json"
+        }))
+        let envelope = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: data)
+
+        guard case .autocompleteSuggestionsSnapshot(let snapshot) = envelope.event else {
+            Issue.record("Expected autocompleteSuggestionsSnapshot")
+            return
+        }
+        #expect(snapshot.generation == 3)
+        #expect(snapshot.prefix == ">w")
+        #expect(snapshot.items == [PickyAutocompleteItem(
+            value: ">worker",
+            label: ">worker",
+            description: "Delegate to worker"
+        )])
+    }
+
     @Test func encodesAndDecodesPickleCommand() throws {
         let command = PickyCommandEnvelope(id: "cmd-pickle", type: .createEmptyPickleSession)
         let data = try JSONEncoder.pickyAgentProtocolEncoder().encode(command)
@@ -116,12 +172,12 @@ struct ProtocolContractTests {
         let queueJSON = """
         {
           "id":"event-queue",
-          "protocolVersion":"2026-05-09",
-          "timestamp":"2026-05-09T00:00:00.000Z",
+          "protocolVersion":"2026-07-17",
+          "timestamp":"2026-07-17T00:00:00.000Z",
           "type":"sessionQueueUpdated",
           "sessionId":"session-queue",
-          "steering":[{"id":"steer-1","text":"slow down","enqueuedAt":"2026-05-09T00:00:00.000Z"}],
-          "followUp":[{"id":"follow-1","text":"then report","enqueuedAt":"2026-05-09T00:00:01.000Z"}],
+          "steering":[{"id":"steer-1","text":"slow down","enqueuedAt":"2026-07-17T00:00:00.000Z"}],
+          "followUp":[{"id":"follow-1","text":"then report","enqueuedAt":"2026-07-17T00:00:01.000Z"}],
           "steeringMode":"one-at-a-time",
           "followUpMode":"all",
           "seq":7
@@ -130,8 +186,8 @@ struct ProtocolContractTests {
         let terminalJSON = """
         {
           "id":"event-terminal-sync",
-          "protocolVersion":"2026-05-09",
-          "timestamp":"2026-05-09T00:00:00.000Z",
+          "protocolVersion":"2026-07-17",
+          "timestamp":"2026-07-17T00:00:00.000Z",
           "type":"terminalSessionSyncOutcome",
           "sessionId":"session-terminal",
           "baselineFound":true,
@@ -193,7 +249,7 @@ struct ProtocolContractTests {
         let clearJSON = """
         {
           "id":"event-session-todo-clear",
-          "protocolVersion":"2026-05-09",
+          "protocolVersion":"2026-07-17",
           "timestamp":"2026-07-14T01:01:00.000Z",
           "type":"sessionTodoStateUpdated",
           "sessionId":"session-001",
@@ -217,7 +273,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-quick-001",
-          "protocolVersion":"2026-05-09",
+          "protocolVersion":"2026-07-17",
           "timestamp":"2026-05-01T00:00:00.000Z",
           "type":"quickReply",
           "contextId":"context-1",
@@ -233,7 +289,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-quick-002",
-          "protocolVersion":"2026-05-09",
+          "protocolVersion":"2026-07-17",
           "timestamp":"2026-05-01T00:00:00.000Z",
           "type":"quickReply",
           "contextId":"session-1",
@@ -258,7 +314,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-quick-003",
-          "protocolVersion":"2026-05-09",
+          "protocolVersion":"2026-07-17",
           "timestamp":"2026-05-01T00:00:00.000Z",
           "type":"quickReply",
           "contextId":"context-1",
@@ -283,7 +339,7 @@ struct ProtocolContractTests {
         let snapshotJSON = """
         {
           "id":"event-main-messages-001",
-          "protocolVersion":"2026-05-09",
+          "protocolVersion":"2026-07-17",
           "timestamp":"2026-05-01T00:00:00.000Z",
           "type":"mainMessagesSnapshot",
           "messages":[{"role":"user","text":"안녕","createdAt":"2026-05-01T00:00:00.000Z"}]
@@ -292,7 +348,7 @@ struct ProtocolContractTests {
         let appendedJSON = """
         {
           "id":"event-main-message-001",
-          "protocolVersion":"2026-05-09",
+          "protocolVersion":"2026-07-17",
           "timestamp":"2026-05-01T00:00:01.000Z",
           "type":"mainMessageAppended",
           "message":{"role":"assistant","text":"바로 답변","createdAt":"2026-05-01T00:00:01.000Z"}
@@ -320,7 +376,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-notify-message",
-          "protocolVersion":"2026-05-09",
+          "protocolVersion":"2026-07-17",
           "timestamp":"2026-05-05T00:00:00.000Z",
           "type":"sessionMessageAppended",
           "sessionId":"session-1",
@@ -363,7 +419,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-legacy-session",
-          "protocolVersion":"2026-05-09",
+          "protocolVersion":"2026-07-17",
           "timestamp":"2026-05-05T00:00:00.000Z",
           "type":"sessionUpdated",
           "session":{
@@ -399,7 +455,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-session-file",
-          "protocolVersion":"2026-05-09",
+          "protocolVersion":"2026-07-17",
           "timestamp":"2026-05-05T00:00:00.000Z",
           "type":"sessionUpdated",
           "session":{
@@ -429,7 +485,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-message-appended",
-          "protocolVersion":"2026-05-09",
+          "protocolVersion":"2026-07-17",
           "timestamp":"2026-05-05T00:00:00.000Z",
           "type":"sessionMessageAppended",
           "sessionId":"session-001",
@@ -463,7 +519,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-activity-message",
-          "protocolVersion":"2026-05-09",
+          "protocolVersion":"2026-07-17",
           "timestamp":"2026-05-05T00:00:00.000Z",
           "type":"sessionMessageAppended",
           "sessionId":"session-001",
@@ -491,7 +547,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-queue-updated",
-          "protocolVersion":"2026-05-09",
+          "protocolVersion":"2026-07-17",
           "timestamp":"2026-05-05T00:00:00.000Z",
           "type":"sessionQueueUpdated",
           "sessionId":"session-001",

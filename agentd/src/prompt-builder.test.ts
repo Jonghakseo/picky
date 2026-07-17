@@ -81,6 +81,8 @@ describe("neutral prompt builder", () => {
     expect(pair.user).toContain("concrete location in a captured screenshot");
     expect(pair.user).toContain("screenshot-pixel x/y coordinates (top-left origin)");
     expect(pair.user).toContain("short label");
+    expect(pair.user).toContain("picky_show_annotations");
+    expect(pair.user).toContain("mode `clear`");
     expect(pair.user).not.toContain("[POINT:");
     expect(pair.user).not.toContain("append pointer tags");
     expect(turnPrompt.text).not.toContain("[POINT:");

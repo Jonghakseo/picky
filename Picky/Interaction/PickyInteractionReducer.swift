@@ -77,6 +77,12 @@ private struct PickyInteractionReducing {
             applyPointerCancelled(pointerID: pointerID)
         case .pointerAnimationFinished(let pointerID):
             applyPointerAnimationFinished(pointerID: pointerID)
+        case .agentAnnotationsRequested(let mode, let annotations):
+            applyAgentAnnotationsRequested(mode: mode, annotations: annotations)
+        case .agentAnnotationsExpired(let now):
+            applyAgentAnnotationsExpired(now: now)
+        case .agentAnnotationsClearedForUserInput:
+            clearAgentAnnotationsForUserInput()
         case .speechStarted:
             record(.accepted, "Speech provider started")
         case .speechFinished(let speechID), .speechFailed(let speechID):
@@ -110,6 +116,7 @@ private struct PickyInteractionReducing {
     // MARK: - Voice input lifecycle
 
     private mutating func applyVoicePressed(targetSessionID: String?) {
+        clearAgentAnnotationsForUserInput()
         let inputID = envelope.correlation.inputID ?? envelope.id
         state.queuedSpeechReplies.removeAll()
         var preemptedSpeechID: UUID?
@@ -207,6 +214,7 @@ private struct PickyInteractionReducing {
     // MARK: - Text input lifecycle
 
     private mutating func applyTextSubmitted(text: String, inputID: UUID) {
+        clearAgentAnnotationsForUserInput()
         let source = envelope.correlation.source
         state.queuedSpeechReplies.removeAll()
         state.input = .textSubmitting(inputID: inputID, text: text)
@@ -528,6 +536,57 @@ private struct PickyInteractionReducing {
         state.pointer = .idle
         state = state.removingOverlayReason(.activePointerAnimation)
         record(.stateChanged, "Pointer animation finished")
+    }
+
+    // MARK: - Agent annotations
+
+    private mutating func applyAgentAnnotationsRequested(mode: PickyAnnotationOverlayMode, annotations: [PickyAgentAnnotation]) {
+        switch mode {
+        case .clear:
+            state.agentAnnotations = []
+        case .replace:
+            state.agentAnnotations = uniqueAnnotations(annotations)
+        case .append:
+            var indexed = Dictionary(uniqueKeysWithValues: state.agentAnnotations.map { ($0.id, $0) })
+            for annotation in annotations { indexed[annotation.id] = annotation }
+            state.agentAnnotations = sortedAnnotations(Array(indexed.values))
+        }
+        state = state.agentAnnotations.isEmpty
+            ? state.removingOverlayReason(.activeAgentAnnotations)
+            : state.addingOverlayReason(.activeAgentAnnotations)
+        record(.stateChanged, "Agent annotations \(mode.rawValue)")
+    }
+
+    private mutating func applyAgentAnnotationsExpired(now: Date) {
+        let previousCount = state.agentAnnotations.count
+        state.agentAnnotations.removeAll { $0.expiresAt <= now }
+        guard state.agentAnnotations.count != previousCount else {
+            record(.staleEvent, "No agent annotations expired")
+            return
+        }
+        if state.agentAnnotations.isEmpty {
+            state = state.removingOverlayReason(.activeAgentAnnotations)
+        }
+        record(.stateChanged, "Expired agent annotations removed")
+    }
+
+    private mutating func clearAgentAnnotationsForUserInput() {
+        guard !state.agentAnnotations.isEmpty else { return }
+        state.agentAnnotations = []
+        state = state.removingOverlayReason(.activeAgentAnnotations)
+        record(.stateChanged, "Agent annotations cleared for user input")
+    }
+
+    private func uniqueAnnotations(_ annotations: [PickyAgentAnnotation]) -> [PickyAgentAnnotation] {
+        var indexed: [String: PickyAgentAnnotation] = [:]
+        for annotation in annotations { indexed[annotation.id] = annotation }
+        return sortedAnnotations(Array(indexed.values))
+    }
+
+    private func sortedAnnotations(_ annotations: [PickyAgentAnnotation]) -> [PickyAgentAnnotation] {
+        annotations.sorted {
+            $0.zOrder == $1.zOrder ? $0.id < $1.id : $0.zOrder < $1.zOrder
+        }
     }
 
     // MARK: - Speech output lifecycle

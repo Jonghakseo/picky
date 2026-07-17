@@ -273,6 +273,7 @@ enum PickyEvent: Equatable {
     case extensionUiRequest(PickyExtensionUiRequest)
     case artifactUpdated(sessionId: String, artifact: PickyArtifact)
     case pointerOverlayRequested(PickyPointerOverlayRequest)
+    case annotationOverlayRequested(PickyAnnotationOverlayRequest)
     case pickleHandoffRequested(PickyPickleHandoffRequest)
     case pickleBridgeRequested(PickyPickleBridgeRequest)
     case externalEntryRequested(PickyExternalEntryRequest)
@@ -416,6 +417,9 @@ enum PickyEvent: Equatable {
         case "pointerOverlayRequested":
             let payload = try PickyPointerOverlayRequestedPayload(from: decoder)
             return .pointerOverlayRequested(payload.request)
+        case "annotationOverlayRequested":
+            let payload = try PickyAnnotationOverlayRequestedPayload(from: decoder)
+            return .annotationOverlayRequested(payload.request)
         case "pickleHandoffRequested":
             return .pickleHandoffRequested(try PickyPickleHandoffRequest(from: decoder))
         case "pickleBridgeRequested":
@@ -456,6 +460,7 @@ private struct PickyTodoStateUpdatedPayload: Decodable { let sessionId: String; 
 private struct PickyExtensionUiRequestPayload: Decodable { let request: PickyExtensionUiRequest }
 private struct PickyArtifactUpdatedPayload: Decodable { let sessionId: String; let artifact: PickyArtifact }
 private struct PickyPointerOverlayRequestedPayload: Decodable { let request: PickyPointerOverlayRequest }
+private struct PickyAnnotationOverlayRequestedPayload: Decodable { let request: PickyAnnotationOverlayRequest }
 private struct PickySlashCommandsSnapshotPayload: Decodable { let sessionId: String; let requestId: String?; let commands: [PickySlashCommand] }
 private struct PickyRewindTargetsSnapshotPayload: Decodable { let sessionId: String; let requestId: String?; let targets: [PickyRewindTarget] }
 private struct PickySessionRewoundPayload: Decodable { let sessionId: String; let editorText: String?; let removedIds: [String] }
@@ -465,6 +470,50 @@ private struct PickySessionMessageReplacedPayload: Decodable { let sessionId: St
 private struct PickySessionMessageRemovedPayload: Decodable { let sessionId: String; let messageId: String; let seq: Int }
 private struct PickySessionQueueUpdatedPayload: Decodable { let sessionId: String; let steering: [PickyQueueItem]; let followUp: [PickyQueueItem]; let steeringMode: PickyQueueMode?; let followUpMode: PickyQueueMode?; let seq: Int }
 private struct PickySessionActivityUpdatedPayload: Decodable { let sessionId: String; let activitySummary: PickyActivitySummary; let seq: Int }
+
+enum PickyAnnotationOverlayMode: String, Codable, Equatable {
+    case replace, append, clear
+}
+
+enum PickyAnnotationOverlayShape: String, Codable, Equatable {
+    case target, circle, rect, line, spotlight, label
+}
+
+enum PickyAnnotationSpotlightShape: String, Codable, Equatable {
+    case rect, circle
+}
+
+struct PickyAnnotationOverlayAnnotation: Codable, Equatable, Identifiable {
+    let id: String
+    let shape: PickyAnnotationOverlayShape
+    let screenId: String?
+    let x: Double?
+    let y: Double?
+    let r: Double?
+    let rx: Double?
+    let ry: Double?
+    let w: Double?
+    let h: Double?
+    let x1: Double?
+    let y1: Double?
+    let x2: Double?
+    let y2: Double?
+    let spotlightShape: PickyAnnotationSpotlightShape?
+    let label: String?
+    let ttlMs: Double?
+    let zOrder: Double?
+    let clamped: Bool?
+}
+
+struct PickyAnnotationOverlayRequest: Codable, Equatable, Identifiable {
+    let id: String
+    let mode: PickyAnnotationOverlayMode
+    let annotations: [PickyAnnotationOverlayAnnotation]
+    let contextId: String?
+    let screenId: String?
+    let screenBounds: PickyCGRect
+    let screenshotSize: PickyPointerScreenshotSize
+}
 
 struct PickyHelloEvent: Decodable, Equatable {
     let serverName: String

@@ -295,6 +295,8 @@ final class CompanionManager: ObservableObject {
     /// Stable id for the active pointer animation. Every delayed BlueCursorView
     /// callback validates this id before mutating or clearing pointer state.
     @Published var detectedElementPointerID: String?
+    /// Resolved AI annotations, rendered independently from user ink and pointer animation.
+    @Published private(set) var agentAnnotations: [PickyAgentAnnotation] = []
 
     let buddyDictationManager: BuddyDictationManager
     let globalPushToTalkShortcutMonitor = GlobalPushToTalkShortcutMonitor()
@@ -434,6 +436,7 @@ final class CompanionManager: ObservableObject {
     /// Scheduled hide for transient cursor mode — cancelled if the user
     /// speaks again before the delay elapses.
     private var transientHideTask: Task<Void, Never>?
+    private var annotationExpiryTask: Task<Void, Never>?
     private var responseStateTask: Task<Void, Never>?
     private var deferredInteractionSpeechTask: Task<Void, Never>?
     private var deferredFinishAwaitingAgentResponseTask: Task<Void, Never>?
@@ -598,6 +601,8 @@ final class CompanionManager: ObservableObject {
         buddyDictationManager.cancelCurrentDictation()
         overlayWindowManager.hideOverlay()
         transientHideTask?.cancel()
+        annotationExpiryTask?.cancel()
+        annotationExpiryTask = nil
 
         currentResponseTask?.cancel()
         currentResponseTask = nil
@@ -770,6 +775,7 @@ final class CompanionManager: ObservableObject {
     }
 
     private func beginInkCapture(source: PickyInkCaptureSource) {
+        interactionCoordinator.accept(.agentAnnotationsClearedForUserInput, correlation: PickyInteractionCorrelation(source: .text))
         if inkCaptureCoordinator.isActive {
             setLocalOverlayReason(.activeInkCapture, visible: true)
             return
@@ -1551,6 +1557,8 @@ final class CompanionManager: ObservableObject {
     private func applyInteractionProjection(_ projection: PickyInteractionProjection) {
         isSendingDirectMessage = projection.hasPendingTextSubmission
         isWaitingForCursorResponse = projection.isWaitingForCursorResponse
+        agentAnnotations = projection.agentAnnotations
+        scheduleAnnotationExpiryIfNeeded(for: projection.agentAnnotations)
         setInteractionOverlayReasons(from: projection.state.overlay)
 
         switch projection.state.output {
@@ -2142,6 +2150,8 @@ final class CompanionManager: ObservableObject {
             isLoadingMainAgentModelOptions = false
         case .pointerOverlayRequested(let request):
             applyPointerOverlayRequest(request)
+        case .annotationOverlayRequested(let request):
+            applyAnnotationOverlayRequest(request)
         case .error(let error):
             finishAwaitingAgentResponse(visibleText: error.message, spokenText: nil)
         case .hello, .sessionSnapshot, .artifactUpdated, .slashCommandsSnapshot,
@@ -2207,6 +2217,42 @@ final class CompanionManager: ObservableObject {
             setLocalOverlayReason(.activePointerAnimation, visible: true)
         } catch {
             latestAgentSessionSummary = "Pointer overlay ignored: \(error.localizedDescription)"
+        }
+    }
+
+    private func applyAnnotationOverlayRequest(_ request: PickyAnnotationOverlayRequest) {
+        do {
+            let annotations = try PickyAnnotationOverlayResolver.resolve(request)
+            interactionCoordinator.accept(
+                .agentAnnotationsRequested(mode: request.mode, annotations: annotations),
+                correlation: PickyInteractionCorrelation(source: .agent)
+            )
+            if request.mode != .clear {
+                latestAgentSessionSummary = "Showing \(annotations.count) screen annotation\(annotations.count == 1 ? "" : "s")."
+            }
+        } catch {
+            latestAgentSessionSummary = "Annotation overlay ignored: \(error.localizedDescription)"
+        }
+    }
+
+    private func scheduleAnnotationExpiryIfNeeded(for annotations: [PickyAgentAnnotation]) {
+        annotationExpiryTask?.cancel()
+        guard let expiresAt = annotations.map(\.expiresAt).min() else {
+            annotationExpiryTask = nil
+            return
+        }
+        let delay = max(0, expiresAt.timeIntervalSinceNow)
+        annotationExpiryTask = Task { [weak self] in
+            if delay > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            }
+            guard !Task.isCancelled else { return }
+            await MainActor.run { [weak self] in
+                self?.interactionCoordinator.accept(
+                    .agentAnnotationsExpired(now: Date()),
+                    correlation: PickyInteractionCorrelation(source: .system)
+                )
+            }
         }
     }
 

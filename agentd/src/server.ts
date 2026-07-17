@@ -127,6 +127,7 @@ export class AgentdServer {
     }));
 
     this.options.supervisor.on("pointerOverlayRequested", (request) => this.broadcast({ type: "pointerOverlayRequested", request }));
+    this.options.supervisor.on("annotationOverlayRequested", (request) => this.broadcast({ type: "annotationOverlayRequested", request }));
     this.options.supervisor.on("artifact", (sessionId, artifact) => this.broadcast({ type: "artifactUpdated", sessionId, artifact }));
     this.options.supervisor.on("terminalSessionSyncOutcome", (sessionId, outcome) => this.broadcast({
       type: "terminalSessionSyncOutcome",
@@ -965,6 +966,8 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, artifactId: event.artifact.id, kind: event.artifact.kind };
     case "pointerOverlayRequested":
       return { eventId: event.id, type: event.type, requestId: event.request.id, screenId: event.request.screenId };
+    case "annotationOverlayRequested":
+      return { eventId: event.id, type: event.type, requestId: event.request.id, screenId: event.request.screenId, mode: event.request.mode, annotations: event.request.annotations.length };
     case "pickleHandoffRequested":
       return { eventId: event.id, type: event.type, requestId: event.requestId, contextId: event.context.id, titleChars: event.title.length, instructionChars: event.instructions.length, cwd: event.cwd };
     case "pickleBridgeRequested":

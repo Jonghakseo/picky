@@ -1,5 +1,6 @@
 import { PICKLE_TOOL_NAMES } from "./application/picky-tool-names.js";
 import { PICKY_SHOW_POINTER_TOOL_NAME } from "./application/pointer-tool.js";
+import { PICKY_SHOW_ANNOTATIONS_TOOL_NAME } from "./application/annotation-tool.js";
 import type { PickyContextPacket } from "./protocol.js";
 
 export interface BuiltPrompt {
@@ -136,6 +137,7 @@ export function buildMainAgentBootstrapPair(
     `- \`${PICKLE_TOOL_NAMES.abort}\` only runs when the user explicitly asks to stop, cancel, or kill a Pickle; if the target is ambiguous, resolve it with \`${PICKLE_TOOL_NAMES.sessions}\`.`,
     `- Pickle hover follow-ups bypass you and go directly to a Pickle. When reusing a running Pickle fits, prefer \`${PICKLE_TOOL_NAMES.steer}\`, identifying the target with \`${PICKLE_TOOL_NAMES.sessions}\` as needed.`,
     `- \`${PICKY_SHOW_POINTER_TOOL_NAME}\` can show a pointer at a concrete location in a captured screenshot. Use it only when that visual reference helps the user; provide screenshot-pixel x/y coordinates (top-left origin) and a short label. Do not use text tags.`,
+    `- \`${PICKY_SHOW_ANNOTATIONS_TOOL_NAME}\` can show related screen annotations. Use it instead of a single pointer only when several shapes clarify the guidance; use screenshot-pixel coordinates (top-left origin), concise labels, and mode \`clear\` to erase them.`,
     "- If the user request Source is `text`, treat the request text as deliberate typed input, not speech recognition output.",
     "- Do not expose internal tool logs verbatim and do not hard-code workflows from URLs or app names.",
     "",

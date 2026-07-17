@@ -1026,6 +1026,47 @@ describe("SessionSupervisor", () => {
     });
   });
 
+  it("validates and emits structured annotation overlays against captured screenshots", async () => {
+    const supervisor = await makeSupervisor();
+    const annotationContext: PickyContextPacket = {
+      ...context("annotate here"),
+      screenshots: [{
+        id: "shot-annotation",
+        label: "cursor screen",
+        path: "/tmp/shot-annotation.jpg",
+        screenId: "screen-annotation",
+        bounds: { x: 100, y: 200, width: 300, height: 400 },
+        screenshotWidthInPixels: 600,
+        screenshotHeightInPixels: 800,
+        isCursorScreen: true,
+      }],
+    };
+    await supervisor.create(annotationContext);
+    const emitted: unknown[] = [];
+    supervisor.on("annotationOverlayRequested", (request) => emitted.push(request));
+
+    const result = await supervisor.requestAnnotationOverlay({
+      mode: "replace",
+      annotations: [
+        { id: "target", shape: "target", x: -20, y: 900, r: 30 },
+        { id: "line", shape: "line", x1: 0, y1: 0, x2: 900, y2: 900, ttlMs: 500 },
+      ],
+    });
+
+    expect(emitted).toEqual([result.request]);
+    expect(result.request).toMatchObject({
+      mode: "replace",
+      contextId: annotationContext.id,
+      screenId: "screen-annotation",
+      screenBounds: { x: 100, y: 200, width: 300, height: 400 },
+      screenshotSize: { width: 600, height: 800 },
+      annotations: [
+        { id: "target", shape: "target", x: 0, y: 800, r: 30, clamped: true },
+        { id: "line", shape: "line", x1: 0, y1: 0, x2: 600, y2: 800, ttlMs: 500, clamped: true },
+      ],
+    });
+  });
+
   it("derives screenshot pixel dimensions from image files when context metadata is missing", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const imagePath = join(dir, "shot.jpg");

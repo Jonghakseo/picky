@@ -597,6 +597,10 @@ struct BlueCursorView: View {
                     .allowsHitTesting(false)
             }
 
+            if !companionManager.agentAnnotations.isEmpty {
+                PickyAgentAnnotationOverlayView(screenFrame: screenFrame, annotations: companionManager.agentAnnotations)
+                    .allowsHitTesting(false)
+            }
 
             // Fixed target highlight — independent of the cursor buddy animation so
             // pointer requests remain visible even on another display or while

@@ -1834,7 +1834,7 @@ final class PickySessionListViewModel: ObservableObject {
                 assignSessionToDockGroup(sessionID: sessionID, groupName: groupName)
             }
         case .quickReply, .mainMessagesSnapshot, .mainMessageAppended, .mainAgentSessionInfoUpdated, .mainAgentModelsSnapshot,
-             .pointerOverlayRequested, .pickleHandoffRequested, .pickleBridgeRequested, .externalEntryRequested,
+             .pointerOverlayRequested, .annotationOverlayRequested, .pickleHandoffRequested, .pickleBridgeRequested, .externalEntryRequested,
              .dockGroupsRequested, .pushToTalkControlRequested, .hello, .pluginsReloaded, .unknown:
             break
         }

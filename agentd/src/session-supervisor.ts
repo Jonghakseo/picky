@@ -8,8 +8,9 @@ import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
 import { summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
 import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentPickleCompletionPrompt, buildPicklePrompt, buildSteerPrompt, type BuiltPrompt } from "./prompt-builder.js";
-import type { ModelCycleDirection, PickyActivitySummary, PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
+import type { ModelCycleDirection, PickyActivitySummary, PickyAgentSession, PickyAnnotationOverlayRequest, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-tool.js";
+import type { PickyShowAnnotationsRequest, PickyShowAnnotationsResult } from "./application/annotation-tool.js";
 import { readPiSessionInfoName, readPiTerminalSessionMessages } from "./application/pi-session-syncer.js";
 import { PiSessionTailWatcher, type PiSessionTailEntry } from "./application/pi-session-tail-watcher.js";
 import { inferTerminalStatusFromEntries } from "./application/terminal-tail-status.js";
@@ -22,6 +23,7 @@ import { mergeArtifacts } from "./domain/artifacts.js";
 import { mergeChangedFiles } from "./domain/changed-files.js";
 import { readImageSizeFromBuffer } from "./domain/image-size.js";
 import { clampPointerCoordinates, screenshotSizeFromMetadata, selectPointerScreenshot } from "./domain/pointer-validation.js";
+import { clampAnnotation } from "./domain/annotation-validation.js";
 import { diffQueueRemovedItems, queueItems, sameQueueItems } from "./domain/queue-policy.js";
 import { isTerminalStatus } from "./domain/session-status.js";
 import { HANDOFF_PREFIX, FOLLOWUP_PREFIX, STEER_PREFIX, EXTENSION_ANSWER_PREFIX } from "./domain/log-prefixes.js";
@@ -447,6 +449,14 @@ export class SessionSupervisor extends EventEmitter {
     if (!context) throw new Error("No captured Picky context is available for pointer overlay validation.");
     const overlayRequest = makePointerOverlayRequestForContext(context, request);
     this.emit("pointerOverlayRequested", overlayRequest);
+    return { request: overlayRequest };
+  }
+
+  async requestAnnotationOverlay(request: PickyShowAnnotationsRequest): Promise<PickyShowAnnotationsResult> {
+    const context = this.contextForPointerRequest();
+    if (!context) throw new Error("No captured Picky context is available for annotation overlay validation.");
+    const overlayRequest = makeAnnotationOverlayRequestForContext(context, request);
+    this.emit("annotationOverlayRequested", overlayRequest);
     return { request: overlayRequest };
   }
 
@@ -2932,6 +2942,34 @@ function makePointerOverlayRequestForContext(context: PickyContextPacket, reques
       screenshotSize,
     }),
     ...(bounded.clamped ? { clamped: true } : {}),
+  };
+}
+
+function makeAnnotationOverlayRequestForContext(context: PickyContextPacket, request: PickyShowAnnotationsRequest): PickyAnnotationOverlayRequest {
+  const requestedScreenId = request.screenId ?? request.annotations.find((annotation) => annotation.screenId)?.screenId;
+  const screenshot = selectPointerScreenshot(context.screenshots, { screenId: requestedScreenId });
+  if (!screenshot.bounds) throw new Error(`No display bounds are available for ${screenshot.screenId ?? screenshot.id}.`);
+  const screenshotSize = screenshotSizeFromMetadata(screenshot) ?? readImageSize(screenshot.path);
+  if (!screenshotSize) {
+    throw new Error(`Screenshot pixel coordinates require screenshot dimensions for ${screenshot.screenId ?? screenshot.id}.`);
+  }
+  const selectedScreenId = screenshot.screenId ?? screenshot.id;
+  const annotations = request.annotations.map((annotation) => {
+    const annotationScreenId = annotation.screenId?.trim();
+    if (annotationScreenId && annotationScreenId !== selectedScreenId && annotationScreenId !== screenshot.id) {
+      throw new Error(`Annotation ${annotation.id} targets ${annotationScreenId}, but this request resolved ${selectedScreenId}.`);
+    }
+    return { ...clampAnnotation(annotation, screenshotSize), screenId: selectedScreenId };
+  });
+  if (request.mode !== "clear" && annotations.length === 0) throw new Error("Annotations are required unless mode is clear.");
+  return {
+    id: `annotations-${randomUUID()}`,
+    mode: request.mode,
+    annotations,
+    contextId: context.id,
+    screenId: selectedScreenId,
+    screenBounds: screenshot.bounds,
+    screenshotSize,
   };
 }
 

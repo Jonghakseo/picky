@@ -183,6 +183,9 @@ enum PickyInteractionEvent: Equatable, Codable {
     case pointerRequested(PickyPointerTarget)
     case pointerCancelled(pointerID: String, reason: PickyPointerCancelReason)
     case pointerAnimationFinished(pointerID: String)
+    case agentAnnotationsRequested(mode: PickyAnnotationOverlayMode, annotations: [PickyAgentAnnotation])
+    case agentAnnotationsExpired(now: Date)
+    case agentAnnotationsClearedForUserInput
 
     case speechStarted(text: String, speechID: UUID, sourceContextID: String?)
     case speechFinished(speechID: UUID)
@@ -199,6 +202,7 @@ enum PickyInteractionEvent: Equatable, Codable {
         case textSubmitted, textContextCaptured, textSubmissionAccepted, textSubmissionFailed
         case voiceContextCaptured, externalContextCaptured, agentSubmissionAccepted, quickReply, passiveAgentSummary, pickleCompleted, sessionTerminated
         case pointerRequested, pointerCancelled, pointerAnimationFinished
+        case agentAnnotationsRequested, agentAnnotationsExpired, agentAnnotationsClearedForUserInput
         case speechStarted, speechFinished, speechFailed, minimumDisplayTimerFired
         case overlayShown, overlayHidden, transientHideTimerFired
     }
@@ -206,7 +210,7 @@ enum PickyInteractionEvent: Equatable, Codable {
     fileprivate enum FieldKey: String, CodingKey {
         case enabled, targetSessionID, message, inputID, text, context, contextID, contextId, transcript, sessionID, sessionId
         case originSource, replyKind, source, summary, pointerID, pointerId, reason, speechID, speechId, sourceContextID
-        case timerID, timerId
+        case timerID, timerId, mode, annotations, now
     }
 
     init(from decoder: Decoder) throws {
@@ -301,6 +305,17 @@ enum PickyInteractionEvent: Equatable, Codable {
         case .pointerAnimationFinished:
             let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
             self = .pointerAnimationFinished(pointerID: try payload.decodeFlexibleString(primary: .pointerID, fallback: .pointerId))
+        case .agentAnnotationsRequested:
+            let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
+            self = .agentAnnotationsRequested(
+                mode: try payload.decode(PickyAnnotationOverlayMode.self, forKey: .mode),
+                annotations: try payload.decode([PickyAgentAnnotation].self, forKey: .annotations)
+            )
+        case .agentAnnotationsExpired:
+            let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
+            self = .agentAnnotationsExpired(now: try payload.decode(Date.self, forKey: .now))
+        case .agentAnnotationsClearedForUserInput:
+            self = .agentAnnotationsClearedForUserInput
         case .speechStarted:
             let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
             self = .speechStarted(text: try payload.decode(String.self, forKey: .text), speechID: try payload.decodeFlexibleUUID(primary: .speechID, fallback: .speechId), sourceContextID: try payload.decodeIfPresent(String.self, forKey: .sourceContextID))
@@ -395,6 +410,14 @@ enum PickyInteractionEvent: Equatable, Codable {
         case .pointerAnimationFinished(let pointerID):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .pointerAnimationFinished)
             try payload.encode(pointerID, forKey: .pointerID)
+        case .agentAnnotationsRequested(let mode, let annotations):
+            var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .agentAnnotationsRequested)
+            try payload.encode(mode, forKey: .mode); try payload.encode(annotations, forKey: .annotations)
+        case .agentAnnotationsExpired(let now):
+            var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .agentAnnotationsExpired)
+            try payload.encode(now, forKey: .now)
+        case .agentAnnotationsClearedForUserInput:
+            try container.encode([String: String](), forKey: .agentAnnotationsClearedForUserInput)
         case .speechStarted(let text, let speechID, let sourceContextID):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .speechStarted)
             try payload.encode(text, forKey: .text); try payload.encode(speechID, forKey: .speechID); try payload.encodeIfPresent(sourceContextID, forKey: .sourceContextID)

@@ -1,0 +1,18 @@
+{
+  "id": "event-annotations-001",
+  "protocolVersion": "2026-07-17",
+  "timestamp": "2026-07-17T00:00:06.000Z",
+  "type": "annotationOverlayRequested",
+  "request": {
+    "id": "annotations-001",
+    "mode": "replace",
+    "contextId": "context-route-001",
+    "screenId": "screen1",
+    "annotations": [
+      { "id": "target-1", "shape": "target", "x": 640, "y": 360, "r": 28, "ttlMs": 3000 },
+      { "id": "label-1", "shape": "label", "x": 640, "y": 400, "label": "Start here", "zOrder": 1 }
+    ],
+    "screenBounds": { "x": 0, "y": 0, "width": 1728, "height": 1117 },
+    "screenshotSize": { "width": 1280, "height": 827 }
+  }
+}

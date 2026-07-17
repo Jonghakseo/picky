@@ -5,6 +5,8 @@ struct PickyInteractionState: Equatable, Codable {
     var input: PickyInputPhase
     var output: PickyOutputPhase
     var pointer: PickyPointerPhase
+    /// Transient AI visual guidance. Kept separate from pointer animations and user ink.
+    var agentAnnotations: [PickyAgentAnnotation]
     var overlay: PickyOverlayPhase
     var pendingTextInputs: [UUID: PickyTextInputState]
     var pendingVoiceInputs: [UUID: PickyVoiceInputState]
@@ -22,6 +24,7 @@ struct PickyInteractionState: Equatable, Codable {
         input: PickyInputPhase = .idle,
         output: PickyOutputPhase = .idle,
         pointer: PickyPointerPhase = .idle,
+        agentAnnotations: [PickyAgentAnnotation] = [],
         overlay: PickyOverlayPhase = .hidden,
         pendingTextInputs: [UUID: PickyTextInputState] = [:],
         pendingVoiceInputs: [UUID: PickyVoiceInputState] = [:],
@@ -33,6 +36,7 @@ struct PickyInteractionState: Equatable, Codable {
         self.input = input
         self.output = output
         self.pointer = pointer
+        self.agentAnnotations = agentAnnotations
         self.overlay = overlay
         self.pendingTextInputs = pendingTextInputs
         self.pendingVoiceInputs = pendingVoiceInputs
@@ -47,6 +51,7 @@ struct PickyInteractionState: Equatable, Codable {
         self.input = try container.decode(PickyInputPhase.self, forKey: .input)
         self.output = try container.decode(PickyOutputPhase.self, forKey: .output)
         self.pointer = try container.decode(PickyPointerPhase.self, forKey: .pointer)
+        self.agentAnnotations = try container.decodeIfPresent([PickyAgentAnnotation].self, forKey: .agentAnnotations) ?? []
         self.overlay = try container.decode(PickyOverlayPhase.self, forKey: .overlay)
         self.pendingTextInputs = try container.decode([UUID: PickyTextInputState].self, forKey: .pendingTextInputs)
         self.pendingVoiceInputs = try container.decode([UUID: PickyVoiceInputState].self, forKey: .pendingVoiceInputs)
@@ -192,6 +197,54 @@ enum PickyDisplaySource: String, Equatable, Codable {
     case suppressed
 }
 
+/// Resolved, display-point annotation geometry rendered on a transparent overlay.
+/// It is intentionally separate from both `PickyPointerTarget` and user ink.
+struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
+    let id: String
+    let shape: PickyAnnotationOverlayShape
+    let displayFrame: CGRect
+    var point: CGPoint?
+    var endPoint: CGPoint?
+    var rect: CGRect?
+    var radius: CGFloat?
+    var radiusX: CGFloat?
+    var radiusY: CGFloat?
+    let spotlightShape: PickyAnnotationSpotlightShape?
+    let label: String?
+    let expiresAt: Date
+    let zOrder: Double
+
+    init(
+        id: String,
+        shape: PickyAnnotationOverlayShape,
+        displayFrame: CGRect,
+        point: CGPoint? = nil,
+        endPoint: CGPoint? = nil,
+        rect: CGRect? = nil,
+        radius: CGFloat? = nil,
+        radiusX: CGFloat? = nil,
+        radiusY: CGFloat? = nil,
+        spotlightShape: PickyAnnotationSpotlightShape?,
+        label: String?,
+        expiresAt: Date,
+        zOrder: Double
+    ) {
+        self.id = id
+        self.shape = shape
+        self.displayFrame = displayFrame
+        self.point = point
+        self.endPoint = endPoint
+        self.rect = rect
+        self.radius = radius
+        self.radiusX = radiusX
+        self.radiusY = radiusY
+        self.spotlightShape = spotlightShape
+        self.label = label
+        self.expiresAt = expiresAt
+        self.zOrder = zOrder
+    }
+}
+
 struct PickyPointerTarget: Equatable, Codable, Identifiable {
     let id: String
     let source: PickyPointerSource
@@ -249,6 +302,7 @@ enum PickyOverlayReason: String, Equatable, Codable, Hashable {
     case waitingForVoiceResponse
     case speakingResponse
     case activePointerAnimation
+    case activeAgentAnnotations
     case activeInkCapture
     case screenContextTarget
     case transientPointerDisplay

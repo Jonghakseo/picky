@@ -277,6 +277,41 @@ export const PickyPointerOverlayRequestSchema = z.object({
 });
 export type PickyPointerOverlayRequest = z.infer<typeof PickyPointerOverlayRequestSchema>;
 
+const PickyAnnotationShapeSchema = z.enum(["target", "circle", "rect", "line", "spotlight", "label"]);
+export const PickyAnnotationOverlayAnnotationSchema = z.object({
+  id: z.string().min(1),
+  shape: PickyAnnotationShapeSchema,
+  screenId: z.string().optional(),
+  x: z.number().finite().optional(),
+  y: z.number().finite().optional(),
+  r: z.number().nonnegative().finite().optional(),
+  rx: z.number().nonnegative().finite().optional(),
+  ry: z.number().nonnegative().finite().optional(),
+  w: z.number().nonnegative().finite().optional(),
+  h: z.number().nonnegative().finite().optional(),
+  x1: z.number().finite().optional(),
+  y1: z.number().finite().optional(),
+  x2: z.number().finite().optional(),
+  y2: z.number().finite().optional(),
+  spotlightShape: z.enum(["rect", "circle"]).optional(),
+  label: z.string().optional(),
+  ttlMs: z.number().nonnegative().finite().optional(),
+  zOrder: z.number().finite().optional(),
+  clamped: z.boolean().optional(),
+});
+export type PickyAnnotationOverlayAnnotation = z.infer<typeof PickyAnnotationOverlayAnnotationSchema>;
+
+export const PickyAnnotationOverlayRequestSchema = z.object({
+  id: z.string().min(1),
+  mode: z.enum(["replace", "append", "clear"]),
+  annotations: z.array(PickyAnnotationOverlayAnnotationSchema),
+  contextId: z.string().optional(),
+  screenId: z.string().optional(),
+  screenBounds: BoundsSchema,
+  screenshotSize: z.object({ width: z.number().positive(), height: z.number().positive() }),
+});
+export type PickyAnnotationOverlayRequest = z.infer<typeof PickyAnnotationOverlayRequestSchema>;
+
 // App-owned Pickle dock group snapshot for CLI commands.
 export const DockGroupSchema = z.object({
   id: z.string(),
@@ -423,6 +458,7 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
   EventBaseSchema.extend({ type: z.literal("extensionUiRequest"), request: PickyExtensionUiRequestSchema }),
   EventBaseSchema.extend({ type: z.literal("artifactUpdated"), sessionId: z.string(), artifact: PickyArtifactSchema }),
   EventBaseSchema.extend({ type: z.literal("pointerOverlayRequested"), request: PickyPointerOverlayRequestSchema }),
+  EventBaseSchema.extend({ type: z.literal("annotationOverlayRequested"), request: PickyAnnotationOverlayRequestSchema }),
   EventBaseSchema.extend({
     type: z.literal("pickleHandoffRequested"),
     requestId: z.string().min(1),

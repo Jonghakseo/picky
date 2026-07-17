@@ -112,6 +112,12 @@ struct PickyHUDDockRailView: View {
     /// apply these too, or expanded-on-this-display groups would render with
     /// their model (default) collapse state mid-drag and appear to collapse.
     let collapsedGroupOverrides: [String: Bool]
+    /// When true the dock hides its session tiles and renders only the control
+    /// strip plus a compact status summary derived from `summaryStatuses`.
+    let isMinimized: Bool
+    /// Live statuses of every session, used only to build the minimized-state
+    /// summary chips. Ignored while the dock is expanded.
+    let summaryStatuses: [PickySessionStatus]
     let activeSessionID: String?
     let openedSessionID: String?
     let previewSessionID: String?
@@ -144,6 +150,8 @@ struct PickyHUDDockRailView: View {
     let onRenameDockGroup: (_ id: String, _ name: String) -> Void
     let onSetDockGroupColor: (_ id: String, _ color: PickyDockGroupColor) -> Void
     let onToggleDockGroupCollapsed: (_ id: String) -> Void
+    /// Toggle this display's dock minimized state (strip-only summary <-> full rail).
+    let onToggleMinimized: () -> Void
     let onRemoveDockGroup: (_ id: String, _ keepMembers: Bool) -> Void
     /// Persist a session move into a specific dock container/position.
     let onMoveSessionInDock: (_ sessionID: String, _ destination: PickyDockContainer) -> Void
@@ -251,36 +259,26 @@ struct PickyHUDDockRailView: View {
         let resolvedRailLength = overflowLayout.railLength
         Group {
             if dockSide.orientation == .horizontal {
+                // Strip (grip + minimize chevron) sits at the leading edge as its
+                // own pill surface; the glass capsule body holds the tiles or
+                // the minimized summary to its trailing side.
                 HStack(spacing: 2) {
-                    dockAnchorHandle
-                    sessionsAndAddSlot
+                    dockControlStrip
+                    dockCapsuleBody
                 }
-                // Symmetric leading/trailing in horizontal so the dock doesn't
-                // look lopsided. Vertical's larger `bottomPadding` exists to
-                // give the `+` button breathing room below the dash; in
-                // horizontal the equivalent breathing room comes from the
-                // empty panel area to the right of the dock, not from internal
-                // padding.
-                .padding(.horizontal, metrics.topPadding)
-                .padding(.vertical, metrics.horizontalPadding)
                 .frame(width: resolvedRailLength, height: horizontalRailCrossSize, alignment: .center)
             } else {
-                // The handle is the first child INSIDE the dock capsule (after a small top
-                // padding) so the dock body itself acts as the hit target. The capsule
-                // background is opaque, which sidesteps SwiftUI's transparent-view hit-
-                // testing quirks: clicks anywhere in the handle's row hit the NSView
-                // backing the handle, not the empty space outside an external pill.
+                // Strip on top (own pill surface), capsule body below. Splitting
+                // the surfaces lets the grip live outside the glass while the
+                // strip pill still provides an opaque backing for the handle
+                // NSView's hit testing.
                 VStack(spacing: 2) {
-                    dockAnchorHandle
-                    sessionsAndAddSlot
+                    dockControlStrip
+                    dockCapsuleBody
                 }
-                .padding(.horizontal, metrics.horizontalPadding)
-                .padding(.top, metrics.topPadding)
-                .padding(.bottom, metrics.bottomPadding)
                 .frame(width: metrics.railWidth, height: resolvedRailLength, alignment: .top)
             }
         }
-        .background(dockGlassBackground)
         .coordinateSpace(name: PickyHUDDockRailCoordinateSpace)
         .overlay { draggedFloatingIconOverlay }
         .onPreferenceChange(PickyDockSlotCenterPreferenceKey.self) { centers in
@@ -366,6 +364,7 @@ struct PickyHUDDockRailView: View {
     }
 
     private var railHeight: CGFloat {
+        if isMinimized { return minimizedRailLength }
         if dockSide.orientation == .horizontal {
             // Horizontal: group headers stack ABOVE their drawer (cross axis),
             // so they do not add to long-axis length. Empty-group drop tiles
@@ -394,9 +393,39 @@ struct PickyHUDDockRailView: View {
     /// sits inside the capsule above its members.
     private var horizontalRailCrossSize: CGFloat {
         PickyHUDDockLayout.horizontalDockRailCrossSize(
-            hasGroupHeaders: groupHeaderCount > 0,
+            hasGroupHeaders: !isMinimized && groupHeaderCount > 0,
             metrics: metrics
         )
+    }
+
+    // MARK: - Minimized summary geometry
+
+    private var summaryItems: [PickyHUDDockSummaryItem] {
+        PickyHUDDockSummaryPolicy.summary(for: summaryStatuses)
+    }
+
+    /// Number of summary chips rendered while minimized. Falls back to a single
+    /// neutral total chip when sessions exist but none are running/waiting/failed,
+    /// and to zero chips when there are no sessions at all.
+    private var summaryChipCount: Int {
+        let items = summaryItems
+        if !items.isEmpty { return items.count }
+        return summaryStatuses.isEmpty ? 0 : 1
+    }
+
+    /// Long-axis extent of one summary chip (height in vertical, width in horizontal).
+    private var summaryChipLineHeight: CGFloat { max(15, metrics.statusDotSide + 7) }
+    private var summaryChipRowWidth: CGFloat { max(24, metrics.statusDotSide + 18) }
+
+    private var minimizedRailLength: CGFloat {
+        let count = summaryChipCount
+        let spacing = CGFloat(max(0, count - 1)) * metrics.sessionSpacing
+        if dockSide.orientation == .horizontal {
+            let row = count > 0 ? CGFloat(count) * summaryChipRowWidth + spacing : 0
+            return metrics.topPadding + metrics.handleAreaHeight + 2 + row + metrics.topPadding
+        }
+        let column = count > 0 ? CGFloat(count) * summaryChipLineHeight + spacing : 0
+        return metrics.topPadding + metrics.handleAreaHeight + 2 + column + metrics.bottomPadding
     }
 
     /// The handle, add slot, their padding, and intervening gaps remain outside
@@ -1169,6 +1198,173 @@ struct PickyHUDDockRailView: View {
             groupDragOffset = .zero
         }
         draggingGroupID = nil
+    }
+
+    // MARK: - External control strip + capsule body
+
+    /// The dock's top (vertical) / leading (horizontal) control strip: its own
+    /// quiet pill surface hosting the drag grip and the minimize chevron. It
+    /// occupies the same reserved chrome region the in-capsule handle used to,
+    /// so the rail-height math is unchanged.
+    private var dockControlStrip: some View {
+        Group {
+            if dockSide.orientation == .horizontal {
+                VStack(spacing: 4) {
+                    dockAnchorHandle
+                    minimizeChevronButton
+                }
+                .frame(width: metrics.handleAreaHeight, height: horizontalRailCrossSize, alignment: .center)
+            } else {
+                HStack(spacing: 4) {
+                    dockAnchorHandle
+                    minimizeChevronButton
+                }
+                .frame(width: metrics.railWidth, height: metrics.handleAreaHeight, alignment: .center)
+            }
+        }
+        .background(dockStripSurface)
+    }
+
+    /// Glass-backed capsule that holds either the session tiles or, while
+    /// minimized, the compact status summary. Padding mirrors the pre-split
+    /// layout so the expanded rail keeps its exact dimensions.
+    @ViewBuilder
+    private var dockCapsuleBody: some View {
+        let body = Group {
+            if isMinimized {
+                minimizedSummary
+            } else {
+                sessionsAndAddSlot
+            }
+        }
+        if dockSide.orientation == .horizontal {
+            body
+                .padding(.horizontal, metrics.topPadding)
+                .padding(.vertical, metrics.horizontalPadding)
+                .frame(height: horizontalRailCrossSize)
+                .background(dockGlassBackground)
+        } else {
+            body
+                .padding(.horizontal, metrics.horizontalPadding)
+                .padding(.top, metrics.topPadding)
+                .padding(.bottom, metrics.bottomPadding)
+                .frame(width: metrics.railWidth)
+                .background(dockGlassBackground)
+        }
+    }
+
+    /// Minimize/expand chevron. Points "into" the dock body when expanded
+    /// (collapse) and back out when minimized (expand), tracking dock side.
+    private var minimizeChevronButton: some View {
+        Button(action: onToggleMinimized) {
+            Image(systemName: minimizeChevronSymbol)
+                .font(.system(size: max(8, 10 * metrics.scale), weight: .semibold))
+                .foregroundColor(DS.Colors.textTertiary)
+                .frame(width: metrics.handleAreaHeight, height: metrics.handleAreaHeight)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .pointerCursor()
+        .help(isMinimized ? "Expand dock" : "Minimize dock")
+        .accessibilityLabel(isMinimized ? "Expand dock" : "Minimize dock")
+    }
+
+    private var minimizeChevronSymbol: String {
+        switch dockSide.orientation {
+        case .vertical:
+            return isMinimized ? "chevron.down" : "chevron.up"
+        case .horizontal:
+            return isMinimized ? "chevron.right" : "chevron.left"
+        }
+    }
+
+    private var dockStripSurface: some View {
+        let shape = Capsule(style: .continuous)
+        return PickyHUDMaterialFill(shape: shape, fallback: DS.Colors.surface1)
+            .overlay(shape.fill(DS.Colors.surface1.opacity(0.14)))
+            .overlay(shape.strokeBorder(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8))
+            .compositingGroup()
+            .shadow(
+                color: Color.black.opacity(PickyHUDExpansion.dockTightShadowOpacity),
+                radius: PickyHUDExpansion.dockTightShadowRadius,
+                x: 0,
+                y: PickyHUDExpansion.dockTightShadowYOffset
+            )
+    }
+
+    // MARK: - Minimized status summary
+
+    @ViewBuilder
+    private var minimizedSummary: some View {
+        let items = summaryItems
+        Group {
+            if dockSide.orientation == .horizontal {
+                HStack(spacing: metrics.sessionSpacing) { summaryChips(items) }
+            } else {
+                VStack(spacing: metrics.sessionSpacing) { summaryChips(items) }
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(summaryAccessibilityLabel(items))
+    }
+
+    @ViewBuilder
+    private func summaryChips(_ items: [PickyHUDDockSummaryItem]) -> some View {
+        if items.isEmpty {
+            if !summaryStatuses.isEmpty {
+                summaryChip(dot: DS.Colors.textTertiary, text: DS.Colors.textSecondary, count: summaryStatuses.count)
+            }
+        } else {
+            ForEach(items, id: \.status) { item in
+                summaryChip(
+                    dot: summaryDotColor(item.status),
+                    text: summaryTextColor(item.status),
+                    count: item.count
+                )
+            }
+        }
+    }
+
+    private func summaryChip(dot: Color, text: Color, count: Int) -> some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(dot)
+                .frame(width: metrics.statusDotSide, height: metrics.statusDotSide)
+            Text("\(count)")
+                .pickyFont(size: max(11, 13 * metrics.scale), weight: .semibold)
+                .foregroundColor(text)
+        }
+        .frame(height: dockSide.orientation == .vertical ? summaryChipLineHeight : nil)
+    }
+
+    private func summaryDotColor(_ status: PickyHUDDockSummaryStatus) -> Color {
+        switch status {
+        case .running: DS.Colors.info
+        case .waiting: DS.Colors.warning
+        case .failed: DS.Colors.destructive
+        }
+    }
+
+    private func summaryTextColor(_ status: PickyHUDDockSummaryStatus) -> Color {
+        switch status {
+        case .running: DS.Colors.info
+        case .waiting: DS.Colors.warningText
+        case .failed: DS.Colors.destructiveText
+        }
+    }
+
+    private func summaryAccessibilityLabel(_ items: [PickyHUDDockSummaryItem]) -> String {
+        guard !items.isEmpty else {
+            return summaryStatuses.isEmpty ? "Dock minimized" : "Dock minimized, \(summaryStatuses.count) Pickles"
+        }
+        let parts = items.map { item -> String in
+            switch item.status {
+            case .running: return "\(item.count) running"
+            case .waiting: return "\(item.count) waiting"
+            case .failed: return "\(item.count) failed"
+            }
+        }
+        return "Dock minimized, " + parts.joined(separator: ", ")
     }
 
     /// Drag handle that lives inside the dock capsule's top row. Backed by an

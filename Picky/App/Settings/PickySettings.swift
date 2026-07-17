@@ -631,6 +631,10 @@ struct PickySettings: Codable, Equatable {
     /// ID. Each monitor manages its own collapsed groups independently; a
     /// missing entry falls back to the layout's stored `isCollapsed` default.
     var hudDockGroupCollapse: [String: [String: Bool]]
+    /// Per-display minimized (collapsed) state for the dock keyed by display ID.
+    /// When true the dock hides its session tiles and shows only the control
+    /// strip plus a compact status summary. Missing entries default to expanded.
+    var hudDockMinimized: [String: Bool]
     /// S/M/L size preset for the Pickle dock rail only. The conversation card keeps
     /// its current width so the setting stays visually scoped to the dock.
     var hudDockSizePreset: PickyHUDDockSizePreset
@@ -763,6 +767,7 @@ struct PickySettings: Codable, Equatable {
         quickInputShortcut: PickyShortcutSpec = .defaultQuickInput,
         hudDockPositions: [String: PickyHUDDockPosition] = [:],
         hudDockGroupCollapse: [String: [String: Bool]] = [:],
+        hudDockMinimized: [String: Bool] = [:],
         hudDockSizePreset: PickyHUDDockSizePreset = .medium,
         hudCardSizes: [String: PickyHUDCardSize] = [:],
         updateChannel: PickyUpdateChannel = .stable,
@@ -831,6 +836,7 @@ struct PickySettings: Codable, Equatable {
         self.quickInputShortcut = quickInputShortcut
         self.hudDockPositions = hudDockPositions
         self.hudDockGroupCollapse = hudDockGroupCollapse
+        self.hudDockMinimized = hudDockMinimized
         self.hudDockSizePreset = hudDockSizePreset
         self.hudCardSizes = hudCardSizes
         self.updateChannel = updateChannel
@@ -925,6 +931,7 @@ struct PickySettings: Codable, Equatable {
             quickInputShortcut: .defaultQuickInput,
             hudDockPositions: [:],
             hudDockGroupCollapse: [:],
+            hudDockMinimized: [:],
             hudDockSizePreset: .medium,
             hudCardSizes: [:],
             updateChannel: defaultUpdateChannel(forReleaseChannel: AppBundleConfiguration.releaseChannel),
@@ -1043,6 +1050,7 @@ struct PickySettings: Codable, Equatable {
         case quickInputShortcut
         case hudDockPositions
         case hudDockGroupCollapse
+        case hudDockMinimized
         case hudDockSizePreset
         case hudCardSizes
         case updateChannel
@@ -1116,6 +1124,7 @@ struct PickySettings: Codable, Equatable {
         attachScreenshotsOnlyWhenInked = try container.decodeIfPresent(Bool.self, forKey: .attachScreenshotsOnlyWhenInked) ?? defaults.attachScreenshotsOnlyWhenInked
         useConversationCard = try container.decodeIfPresent(Bool.self, forKey: .useConversationCard) ?? defaults.useConversationCard
         hudDockGroupCollapse = try container.decodeIfPresent([String: [String: Bool]].self, forKey: .hudDockGroupCollapse) ?? defaults.hudDockGroupCollapse
+        hudDockMinimized = try container.decodeIfPresent([String: Bool].self, forKey: .hudDockMinimized) ?? defaults.hudDockMinimized
         hudDockSizePreset = try container.decodeIfPresent(PickyHUDDockSizePreset.self, forKey: .hudDockSizePreset) ?? defaults.hudDockSizePreset
         hudCardSizes = (try container.decodeIfPresent([String: PickyHUDCardSize].self, forKey: .hudCardSizes) ?? defaults.hudCardSizes)
             .mapValues { $0.clamped() }

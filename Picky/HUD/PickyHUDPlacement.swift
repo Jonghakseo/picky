@@ -42,6 +42,10 @@ final class PickyHUDPlacement: ObservableObject {
     /// each monitor's dock manages its collapsed groups independently. The
     /// overlay manager seeds this from Settings and persists changes.
     @Published var collapsedGroupOverrides: [String: Bool]
+    /// Per-display minimized state. When true the dock collapses to its control
+    /// strip plus a compact status summary, hiding the session tiles. Seeded
+    /// from Settings by the overlay manager and persisted on toggle.
+    @Published var isMinimized: Bool
 
     var cardWidth: CGFloat { cardSize?.width ?? PickyHUDCardSize.defaultWidth }
     var fixedCardHeight: CGFloat? { cardSize?.height }
@@ -59,7 +63,8 @@ final class PickyHUDPlacement: ObservableObject {
         cardSize: PickyHUDCardSize? = nil,
         panelWidth: CGFloat = PickyHUDDockLayout.panelWidth,
         availableDockRailLength: CGFloat = PickyHUDPlacement.defaultAvailableCardMaxHeight,
-        collapsedGroupOverrides: [String: Bool] = [:]
+        collapsedGroupOverrides: [String: Bool] = [:],
+        isMinimized: Bool = false
     ) {
         self.availableCardMaxHeight = availableCardMaxHeight
         self.dockSide = dockSide
@@ -68,5 +73,6 @@ final class PickyHUDPlacement: ObservableObject {
         self.panelWidth = panelWidth
         self.availableDockRailLength = availableDockRailLength
         self.collapsedGroupOverrides = collapsedGroupOverrides
+        self.isMinimized = isMinimized
     }
 }

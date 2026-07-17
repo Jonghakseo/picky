@@ -335,6 +335,36 @@ struct PickySettingsPolishTests {
         #expect(store.load().hudDockSizePreset == .large)
     }
 
+    @Test func settingsRoundTripPreservesHUDDockMinimizedPerDisplay() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let store = PickySettingsStore(appSupportRoot: root)
+        var settings = PickySettings.defaults(appSupportRoot: root)
+        settings.defaultCwd = project.path
+        settings.worktreeParent = project.path
+        settings.hudDockMinimized = ["1": true, "2": false]
+
+        try store.save(settings)
+
+        #expect(store.load().hudDockMinimized == ["1": true, "2": false])
+    }
+
+    @Test func settingsLoadDefaultsHUDDockMinimizedToEmptyWhenLegacyFileLacksField() throws {
+        let legacyJSON = """
+        {
+          "defaultCwd": "/tmp",
+          "worktreeParent": "",
+          "daemonPath": "/tmp/agentd",
+          "logPath": "/tmp/logs"
+        }
+        """.data(using: .utf8)!
+
+        let settings = try JSONDecoder().decode(PickySettings.self, from: legacyJSON)
+
+        #expect(settings.hudDockMinimized.isEmpty)
+    }
+
     @Test func settingsRoundTripPreservesHUDCardSizes() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
         let project = root.appendingPathComponent("project", isDirectory: true)

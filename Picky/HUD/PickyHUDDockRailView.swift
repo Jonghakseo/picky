@@ -1312,8 +1312,16 @@ struct PickyHUDDockRailView: View {
                 VStack(spacing: metrics.sessionSpacing) { summaryChips(items) }
             }
         }
+        // Tapping the summary is a second, larger affordance to expand the dock
+        // (the chevron in the strip is the first). The whole area — including
+        // the gaps between chips — is hit-testable.
+        .contentShape(Rectangle())
+        .onTapGesture { onToggleMinimized() }
+        .pointerCursor()
         .accessibilityElement(children: .combine)
         .accessibilityLabel(summaryAccessibilityLabel(items))
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("Expand dock")
     }
 
     @ViewBuilder

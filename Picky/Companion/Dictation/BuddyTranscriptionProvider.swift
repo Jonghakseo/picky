@@ -106,6 +106,10 @@ enum BuddyTranscriptionProviderFactory {
             return "azure"
         case .elevenLabs:
             return "elevenlabs"
+        case .edge:
+            // Edge is playback-only. A stale/corrupt STT setting safely keeps
+            // the established local transcription path.
+            return "local"
         }
     }
 }

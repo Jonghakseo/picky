@@ -2,11 +2,13 @@ import { once } from "node:events";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Readable } from "node:stream";
 import WebSocket from "ws";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PROTOCOL_VERSION, parseCommand, type EventEnvelope, type PickyAgentSession, type PickyContextPacket } from "./protocol.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import { AgentdServer, commandLogFields, compactSessionsForSnapshot, sanitizeForJson } from "./server.js";
+import { EdgeTTSService, type EdgeTTSClient } from "./edge-tts-service.js";
 import { SessionStore } from "./session-store.js";
 import { SessionSupervisor } from "./session-supervisor.js";
 
@@ -407,6 +409,57 @@ describe("AgentdServer", () => {
 
     expect(clearQueue).toHaveBeenCalledWith(session.id, "all");
     ws.close();
+  });
+
+  it("keeps Edge TTS routes absent when the primary service is not injected", async () => {
+    const response = await fetch(`http://127.0.0.1:${port}/v1/edge-tts/voices`, {
+      headers: { Authorization: "Bearer test-token" },
+    });
+    expect(response.status).toBe(404);
+  });
+
+  it("serves authenticated primary Edge TTS voices and MP3 while rejecting invalid requests", async () => {
+    const edgeServer = new AgentdServer({
+      port: 0,
+      token: "edge-token",
+      supervisor,
+      edgeTTS: new EdgeTTSService(() => fakeEdgeClient()),
+    });
+    const edgePort = await edgeServer.start();
+    const baseURL = `http://127.0.0.1:${edgePort}/v1/edge-tts`;
+    try {
+      const unauthorized = await fetch(`${baseURL}/voices`);
+      expect(unauthorized.status).toBe(401);
+
+      const voices = await fetch(`${baseURL}/voices`, { headers: { Authorization: "Bearer edge-token" } });
+      expect(voices.status).toBe(200);
+      await expect(voices.json()).resolves.toMatchObject({ voices: [{ shortName: "ko-KR-SunHiNeural" }] });
+
+      const speech = await fetch(`${baseURL}/speech`, {
+        method: "POST",
+        headers: { Authorization: "Bearer edge-token", "Content-Type": "application/json" },
+        body: JSON.stringify({ input: "안녕하세요", voice: "ko-KR-SunHiNeural" }),
+      });
+      expect(speech.status).toBe(200);
+      expect(speech.headers.get("content-type")).toContain("audio/mpeg");
+      expect(Buffer.from(await speech.arrayBuffer())).toEqual(Buffer.from("test-mp3"));
+
+      const invalid = await fetch(`${baseURL}/speech`, {
+        method: "POST",
+        headers: { Authorization: "Bearer edge-token", "Content-Type": "application/json" },
+        body: JSON.stringify({ input: "", voice: "ko-KR-SunHiNeural" }),
+      });
+      expect(invalid.status).toBe(400);
+
+      const oversized = await fetch(`${baseURL}/speech`, {
+        method: "POST",
+        headers: { Authorization: "Bearer edge-token", "Content-Type": "application/json" },
+        body: JSON.stringify({ input: "a".repeat(70_000), voice: "ko-KR-SunHiNeural" }),
+      });
+      expect(oversized.status).toBe(413);
+    } finally {
+      await edgeServer.stop();
+    }
   });
 
   it("sanitizes unpaired surrogate strings before JSON serialization", () => {
@@ -850,6 +903,23 @@ describe("AgentdServer", () => {
     expect(compact.messages?.map((m) => m.id)).toEqual(["m1", "m2", "m3", "m4", "m5"]);
   });
 });
+
+function fakeEdgeClient(): EdgeTTSClient {
+  return {
+    getVoices: async () => [{
+      ShortName: "ko-KR-SunHiNeural",
+      Locale: "ko-KR",
+      Gender: "Female",
+      FriendlyName: "SunHi",
+      Name: "Microsoft Server Speech Text to Speech Voice (ko-KR, SunHiNeural)",
+      SuggestedCodec: "audio-24khz-48kbitrate-mono-mp3",
+      Status: "GA",
+    }],
+    setMetadata: async () => {},
+    toStream: () => ({ audioStream: Readable.from([Buffer.from("test-mp3")]) }),
+    close: () => {},
+  };
+}
 
 function makeSession(overrides: Partial<PickyAgentSession> = {}): PickyAgentSession {
   return {

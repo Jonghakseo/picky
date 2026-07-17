@@ -12,6 +12,7 @@ import { stabilizeProcessCwd, type ProcessCwdStabilizerResult } from "./process-
 import { ThinkingLevelSchema, type ThinkingLevel } from "./protocol.js";
 import type { AgentRuntime } from "./runtime/types.js";
 import { logAgentd } from "./local-log.js";
+import { EdgeTTSService } from "./edge-tts-service.js";
 
 export type AgentdMode = "primary" | "child";
 
@@ -200,6 +201,10 @@ export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOv
       currentDefaultCwd.value = cwd;
       logAgentd("default cwd updated", { defaultCwd: cwd });
     },
+    // Edge Read Aloud is a primary-only opt-in adapter. A child daemon must
+    // never expose this route because it is not the app-owned daemon whose
+    // connection token is published to the Settings client.
+    edgeTTS: config.mode === "primary" ? new EdgeTTSService() : undefined,
   });
   appPickleHandoffRef.current = (request) => server.requestPickleHandoffFromApp(request);
   appPickleHandoffRef.bridge = (request) => server.requestPickleBridgeFromApp(request);

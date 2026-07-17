@@ -50,6 +50,7 @@ struct CompanionPanelSettingsView: View {
     @State private var elevenLabsSTTModelDraft: String = ""
     @State private var elevenLabsSTTLanguageDraft: String = ""
     @StateObject private var oauthLoginController = PickyPiOAuthLoginController()
+    @StateObject private var edgeTTSVoiceCatalog = EdgeTTSVoiceCatalog()
     @State private var saveStatuses = CompanionPanelSettingsSaveStatuses()
     @State private var saveStatusResets: [CompanionPanelSettingsSection: AnyCancellable] = [:]
     /// Whether the archived-Pickle list at the bottom of the Pickle page is
@@ -1252,6 +1253,11 @@ struct CompanionPanelSettingsView: View {
                         openMacOSSpeechSettingsButton
                     }
 
+                    if viewModel.settings.ttsEnabled, viewModel.settings.ttsProvider == .edge {
+                        edgeTTSSettings
+                            .task { edgeTTSVoiceCatalog.refresh() }
+                    }
+
                     if viewModel.settings.ttsEnabled, viewModel.settings.ttsProvider == .azure {
                         azureTextField(
                             label: "settings.voice.azure.tts.url",
@@ -1642,6 +1648,99 @@ struct CompanionPanelSettingsView: View {
         }
         .buttonStyle(.plain)
         .hoverAffordance()
+    }
+
+    private var edgeTTSSettings: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("settings.voice.edge.disclosure")
+                .font(PickyHUDTypography.supporting)
+                .foregroundColor(DS.Colors.warningText)
+                .fixedSize(horizontal: false, vertical: true)
+
+            switch edgeTTSVoiceCatalog.state {
+            case .idle, .loading:
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("settings.voice.edge.loading")
+                        .font(PickyHUDTypography.supporting)
+                        .foregroundColor(DS.Colors.textTertiary)
+                }
+            case .failed(let message):
+                Text(L10n.t("settings.voice.edge.selectedVoice", viewModel.settings.edgeTTSVoice))
+                    .font(PickyHUDTypography.supporting)
+                    .foregroundColor(DS.Colors.textTertiary)
+                Text(message)
+                    .font(PickyHUDTypography.supporting)
+                    .foregroundColor(DS.Colors.destructiveText)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("settings.voice.edge.retry") { edgeTTSVoiceCatalog.refresh() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            case .loaded:
+                edgeTTSVoicePickers
+            }
+        }
+    }
+
+    private var edgeTTSVoicePickers: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            fieldLabel("settings.voice.edge.language")
+            Picker("settings.voice.edge.language", selection: edgeTTSLocaleBinding) {
+                ForEach(edgeTTSVoiceCatalog.locales(selectedVoice: viewModel.settings.edgeTTSVoice), id: \.self) { locale in
+                    Text(edgeTTSLocaleLabel(locale)).tag(locale)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            fieldLabel("settings.voice.edge.voice")
+            Picker("settings.voice.edge.voice", selection: $viewModel.settings.edgeTTSVoice) {
+                if !EdgeTTSVoiceCatalogProjection.isSelectedVoiceAvailable(viewModel.settings.edgeTTSVoice, voices: edgeTTSVoiceCatalog.voices) {
+                    Text(L10n.t("settings.voice.edge.savedVoiceUnavailable", viewModel.settings.edgeTTSVoice)).tag(viewModel.settings.edgeTTSVoice)
+                }
+                ForEach(edgeTTSVoiceCatalog.voices(in: selectedEdgeTTSLocale)) { voice in
+                    Text(edgeTTSVoiceLabel(voice)).tag(voice.shortName)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .onChange(of: viewModel.settings.edgeTTSVoice) { _, _ in commitVoiceField() }
+        }
+    }
+
+    private var selectedEdgeTTSLocale: String {
+        EdgeTTSVoiceCatalogProjection.selectedLocale(
+            voice: viewModel.settings.edgeTTSVoice,
+            voices: edgeTTSVoiceCatalog.voices
+        ) ?? EdgeTTSVoiceCatalogProjection.unavailableLocale
+    }
+
+    private func edgeTTSLocaleLabel(_ locale: String) -> String {
+        locale == EdgeTTSVoiceCatalogProjection.unavailableLocale
+            ? L10n.t("settings.voice.edge.localeUnavailable")
+            : edgeTTSVoiceCatalog.voices(in: locale).isEmpty
+                ? L10n.t("settings.voice.edge.localeUnavailableWithName", locale)
+                : locale
+    }
+
+    private func edgeTTSVoiceLabel(_ voice: EdgeTTSVoice) -> String {
+        guard let genderKey = EdgeTTSVoiceCatalogProjection.genderLocalizationKey(voice.gender) else {
+            return voice.friendlyName
+        }
+        return "\(voice.friendlyName) (\(L10n.t(genderKey)))"
+    }
+
+    private var edgeTTSLocaleBinding: Binding<String> {
+        Binding(
+            get: { selectedEdgeTTSLocale },
+            set: { locale in
+                guard let voice = edgeTTSVoiceCatalog.voices(in: locale).first else { return }
+                // The voice picker observes this binding and persists once.
+                viewModel.settings.edgeTTSVoice = voice.shortName
+            }
+        )
     }
 
     private func providerPicker(title: LocalizedStringKey, capability: PickyVoiceProviderCapability, selection: Binding<PickyVoiceProviderSelection>, isEnabled: Bool = true) -> some View {

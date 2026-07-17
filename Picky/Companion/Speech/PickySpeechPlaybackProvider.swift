@@ -78,6 +78,16 @@ enum PickySpeechPlaybackProviderFactory {
             return fallback
         }
 
+        if requestedProvider == "edge" {
+            let provider = EdgeTTSSpeechPlaybackProvider(voice: settings.edgeTTSVoice)
+            let fallback = PickyFallbackSpeechPlaybackProvider(
+                primary: provider,
+                fallback: PickySystemSpeechPlaybackProvider()
+            )
+            print("🔊 TTS: using provider \(fallback.displayName)")
+            return fallback
+        }
+
         let provider = PickySystemSpeechPlaybackProvider()
         print("🔊 TTS: using local provider \(provider.displayName)")
         return provider
@@ -196,6 +206,8 @@ enum PickySpeechPlaybackProviderFactory {
             return "azure"
         case .elevenLabs:
             return "elevenlabs"
+        case .edge:
+            return "edge"
         }
     }
 }

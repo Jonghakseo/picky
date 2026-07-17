@@ -784,16 +784,17 @@ Changes apply to the main agent immediately and interrupt any in-progress turn. 
 
 ### 13.6 Voice (STT & TTS)
 
-Picky supports four backends for speech recognition and synthesis: Apple/macOS
-built-in, OpenAI direct (`api.openai.com`), Azure OpenAI, and ElevenLabs.
-Each backend has its own credentials section that appears only when that
-provider is selected.
+Picky supports Apple/macOS built-in, OpenAI direct (`api.openai.com`), Azure
+OpenAI, and ElevenLabs for speech recognition and synthesis. **Edge TTS
+(Online)** is an additional playback-only, explicit opt-in provider; it sends
+spoken response text to Microsoft Edge Read Aloud through local `picky-agentd`.
+Each provider's relevant settings appear only when that provider is selected.
 
 | Setting | Values / behavior |
 | --- | --- |
 | STT provider | Apple Speech (default), OpenAI, Azure OpenAI, ElevenLabs. Apple Speech uses the on-device `SFSpeechRecognizer` (offline). OpenAI uses `gpt-4o-transcribe` against `api.openai.com`. Azure OpenAI uses your deployment URL. ElevenLabs uses `scribe_v2` against `api.elevenlabs.io` (the legacy `scribe_v1` is deprecated as of 2026). |
 | Enable spoken replies (TTS) | On/off. When off, text replies still appear but audio playback is skipped. |
-| TTS provider | macOS Speech (default), OpenAI, Azure OpenAI, ElevenLabs. macOS Speech uses the system `NSSpeechSynthesizer` voice. OpenAI uses `gpt-4o-mini-tts` against `api.openai.com`. ElevenLabs uses `eleven_multilingual_v2` against `api.elevenlabs.io` by default. |
+| TTS provider | macOS Speech (default), OpenAI, Azure OpenAI, ElevenLabs, Edge TTS (Online, explicit opt-in; playback only). macOS Speech uses the system `NSSpeechSynthesizer` voice. OpenAI uses `gpt-4o-mini-tts` against `api.openai.com`. ElevenLabs uses `eleven_multilingual_v2` against `api.elevenlabs.io` by default. Edge TTS sends spoken response text to Microsoft Edge Read Aloud through local `picky-agentd`. |
 | Open macOS Speech Settings | Opens the system Spoken Content settings for local TTS voice selection. |
 
 OpenAI STT fields (when STT provider = OpenAI):
@@ -836,11 +837,12 @@ ElevenLabs TTS fields (when TTS provider = ElevenLabs):
 - ElevenLabs TTS output format — leave blank for `mp3_44100_128`
 - ElevenLabs TTS base URL — leave blank for `https://api.elevenlabs.io`
 
-> **Edge TTS / unofficial backends.** Picky does not bundle Microsoft Edge TTS,
-> Piper, or other non-public APIs. To use them, run an OpenAI-compatible proxy
-> (e.g. [openai-edge-tts](https://github.com/travisvn/openai-edge-tts)) locally
-> and point Picky at it via the OpenAI base URL override. Picky speaks only the
-> standard OpenAI Audio protocol — proxy maintenance is the user's responsibility.
+> **Edge TTS (Online, explicit opt-in; playback only).** Choose **Edge TTS
+> (Online)** in the TTS provider picker, then select a language and voice. Picky
+> sends spoken response text through its local `picky-agentd` adapter to Microsoft
+> Edge Read Aloud. This unofficial service may change or become unavailable; Picky
+> falls back to macOS Speech if it fails. macOS Speech remains the default. Picky
+> uses the MIT-licensed `msedge-tts` package for this adapter.
 
 ### 13.7 Overlay & Notifications
 

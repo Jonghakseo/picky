@@ -23,6 +23,7 @@
     "@earendil-works/pi-coding-agent": "0.80.7",
     "@earendil-works/pi-tui": "0.80.7",
     "commander": "^14.0.3",
+    "msedge-tts": "2.0.7",
     "typebox": "^1.1.37",
     "ws": "^8.18.0",
     "zod": "^3.24.1"

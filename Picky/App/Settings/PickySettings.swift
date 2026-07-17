@@ -13,6 +13,8 @@ enum PickyVoiceProviderSelection: String, Codable, CaseIterable, Identifiable {
     case openai
     case azure
     case elevenLabs
+    /// Online, explicit opt-in only; unavailable for speech transcription.
+    case edge
 
     var id: String { rawValue }
 
@@ -22,6 +24,7 @@ enum PickyVoiceProviderSelection: String, Codable, CaseIterable, Identifiable {
         case .openai: "OpenAI"
         case .azure: "Azure OpenAI"
         case .elevenLabs: "ElevenLabs"
+        case .edge: L10n.t("settings.voice.edge.provider")
         }
     }
 
@@ -38,11 +41,18 @@ enum PickyVoiceProviderSelection: String, Codable, CaseIterable, Identifiable {
             return "Azure OpenAI"
         case .elevenLabs:
             return "ElevenLabs"
+        case .edge:
+            return L10n.t("settings.voice.edge.provider")
         }
     }
 
     static func cases(for capability: PickyVoiceProviderCapability) -> [PickyVoiceProviderSelection] {
-        [.local, .openai, .azure, .elevenLabs]
+        switch capability {
+        case .transcription:
+            [.local, .openai, .azure, .elevenLabs]
+        case .speechPlayback:
+            [.local, .openai, .azure, .elevenLabs, .edge]
+        }
     }
 
     /// Legacy migration: existing settings.json files may contain an `"automatic"`
@@ -545,6 +555,9 @@ struct PickySettings: Codable, Equatable {
     var ttsProvider: PickyVoiceProviderSelection
     /// When false, Picky still shows text replies but skips spoken TTS playback.
     var ttsEnabled: Bool
+    /// Selected Microsoft Edge Read Aloud voice when `.edge` is the TTS provider.
+    /// This has no effect until the user explicitly selects Edge TTS.
+    var edgeTTSVoice: String
     /// Names of Picky built-in tools the user has explicitly disabled. Empty by
     /// default; the daemon filters these out of the main agent runtime on next
     /// reset. Unknown names are tolerated so older clients survive new tool
@@ -726,6 +739,7 @@ struct PickySettings: Codable, Equatable {
         sttProvider: PickyVoiceProviderSelection = .local,
         ttsProvider: PickyVoiceProviderSelection = .local,
         ttsEnabled: Bool = true,
+        edgeTTSVoice: String = "ko-KR-SunHiNeural",
         disabledBuiltinTools: Set<PickyBuiltinTool> = [],
         azureOpenAIEndpoint: String = "",
         azureOpenAIAPIKey: String = "",
@@ -795,6 +809,7 @@ struct PickySettings: Codable, Equatable {
         self.sttProvider = sttProvider
         self.ttsProvider = ttsProvider
         self.ttsEnabled = ttsEnabled
+        self.edgeTTSVoice = edgeTTSVoice
         self.disabledBuiltinTools = disabledBuiltinTools
         self.azureOpenAIEndpoint = azureOpenAIEndpoint
         self.azureOpenAIAPIKey = azureOpenAIAPIKey
@@ -890,6 +905,7 @@ struct PickySettings: Codable, Equatable {
             sttProvider: .local,
             ttsProvider: .local,
             ttsEnabled: true,
+            edgeTTSVoice: "ko-KR-SunHiNeural",
             disabledBuiltinTools: [],
             azureOpenAIEndpoint: "",
             azureOpenAIAPIKey: "",
@@ -988,6 +1004,8 @@ struct PickySettings: Codable, Equatable {
         copy.elevenLabsSTTAPIKey = elevenLabsSTTAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.elevenLabsSTTModel = elevenLabsSTTModel.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.elevenLabsSTTLanguage = elevenLabsSTTLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.edgeTTSVoice = edgeTTSVoice.trimmingCharacters(in: .whitespacesAndNewlines)
+        if copy.edgeTTSVoice.isEmpty { copy.edgeTTSVoice = "ko-KR-SunHiNeural" }
         copy.mainAgentModelPattern = mainAgentModelPattern.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.pickleAgentModelPattern = pickleAgentModelPattern.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.hudCardSizes = hudCardSizes.mapValues { $0.clamped() }
@@ -1009,6 +1027,7 @@ struct PickySettings: Codable, Equatable {
         case sttProvider
         case ttsProvider
         case ttsEnabled
+        case edgeTTSVoice
         case disabledBuiltinTools
         case azureOpenAIEndpoint
         case azureOpenAIAPIKey
@@ -1083,6 +1102,7 @@ struct PickySettings: Codable, Equatable {
         sttProvider = try container.decodeIfPresent(PickyVoiceProviderSelection.self, forKey: .sttProvider) ?? defaults.sttProvider
         ttsProvider = try container.decodeIfPresent(PickyVoiceProviderSelection.self, forKey: .ttsProvider) ?? defaults.ttsProvider
         ttsEnabled = try container.decodeIfPresent(Bool.self, forKey: .ttsEnabled) ?? defaults.ttsEnabled
+        edgeTTSVoice = try container.decodeIfPresent(String.self, forKey: .edgeTTSVoice) ?? defaults.edgeTTSVoice
         let rawDisabled = try container.decodeIfPresent([String].self, forKey: .disabledBuiltinTools) ?? []
         disabledBuiltinTools = Set(rawDisabled.compactMap(PickyBuiltinTool.init(rawValue:)))
         azureOpenAIEndpoint = try container.decodeIfPresent(String.self, forKey: .azureOpenAIEndpoint) ?? defaults.azureOpenAIEndpoint

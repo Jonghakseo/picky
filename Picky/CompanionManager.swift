@@ -86,6 +86,7 @@ private struct PickyVoiceProviderSettings: Equatable {
     let sttProvider: PickyVoiceProviderSelection
     let ttsProvider: PickyVoiceProviderSelection
     let ttsEnabled: Bool
+    let edgeTTSVoice: String
     let azureOpenAIEndpoint: String
     let azureOpenAIAPIKey: String
     let azureOpenAITTSEndpoint: String
@@ -113,6 +114,7 @@ private struct PickyVoiceProviderSettings: Equatable {
         sttProvider = settings.sttProvider
         ttsProvider = settings.ttsProvider
         ttsEnabled = settings.ttsEnabled
+        edgeTTSVoice = settings.edgeTTSVoice
         azureOpenAIEndpoint = settings.azureOpenAIEndpoint
         azureOpenAIAPIKey = settings.azureOpenAIAPIKey
         azureOpenAITTSEndpoint = settings.azureOpenAITTSEndpoint

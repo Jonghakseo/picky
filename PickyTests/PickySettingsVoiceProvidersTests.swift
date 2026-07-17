@@ -10,7 +10,7 @@ import Testing
 @Suite("PickySettings voice provider extensions")
 struct PickySettingsVoiceProvidersTests {
     @Test func voiceProviderEnumIncludesAllSelectableCases() {
-        #expect(PickyVoiceProviderSelection.allCases == [.local, .openai, .azure, .elevenLabs])
+        #expect(PickyVoiceProviderSelection.allCases == [.local, .openai, .azure, .elevenLabs, .edge])
     }
 
     @Test func transcriptionCapabilityListsAllProviders() {
@@ -20,7 +20,7 @@ struct PickySettingsVoiceProvidersTests {
 
     @Test func speechPlaybackCapabilityListsAllProviders() {
         let cases = PickyVoiceProviderSelection.cases(for: .speechPlayback)
-        #expect(cases == [.local, .openai, .azure, .elevenLabs])
+        #expect(cases == [.local, .openai, .azure, .elevenLabs, .edge])
     }
 
     @Test func openAIDisplayNamesAreOpenAI() {
@@ -29,9 +29,11 @@ struct PickySettingsVoiceProvidersTests {
         #expect(PickyVoiceProviderSelection.openai.displayName(for: .speechPlayback) == "OpenAI")
     }
 
-    @Test func freshInstallDefaultsToAppleSpeechTranscription() {
+    @Test func freshInstallDefaultsToAppleSpeechTranscriptionAndPlayback() {
         let settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
         #expect(settings.sttProvider == .local)
+        #expect(settings.ttsProvider == .local)
+        #expect(settings.edgeTTSVoice == "ko-KR-SunHiNeural")
     }
 
     @Test func newOpenAIAndElevenLabsFieldsDefaultToEmpty() {
@@ -69,7 +71,8 @@ struct PickySettingsVoiceProvidersTests {
         settings.elevenLabsSTTModel = "scribe_v1"
         settings.elevenLabsSTTLanguage = "en"
         settings.sttProvider = .openai
-        settings.ttsProvider = .elevenLabs
+        settings.ttsProvider = .edge
+        settings.edgeTTSVoice = "en-US-AriaNeural"
 
         let data = try JSONEncoder().encode(settings)
         let restored = try JSONDecoder().decode(PickySettings.self, from: data)
@@ -89,7 +92,8 @@ struct PickySettingsVoiceProvidersTests {
         #expect(restored.elevenLabsSTTModel == "scribe_v1")
         #expect(restored.elevenLabsSTTLanguage == "en")
         #expect(restored.sttProvider == .openai)
-        #expect(restored.ttsProvider == .elevenLabs)
+        #expect(restored.ttsProvider == .edge)
+        #expect(restored.edgeTTSVoice == "en-US-AriaNeural")
     }
 
     @Test func legacySettingsWithAutomaticProviderMigratesToLocal() throws {
@@ -122,6 +126,7 @@ struct PickySettingsVoiceProvidersTests {
         #expect(settings.elevenLabsSTTAPIKey == "")
         #expect(settings.elevenLabsSTTModel == "")
         #expect(settings.elevenLabsSTTLanguage == "")
+        #expect(settings.edgeTTSVoice == "ko-KR-SunHiNeural")
         #expect(settings.sttProvider == .local)
         #expect(settings.ttsProvider == .local)
     }
@@ -142,6 +147,7 @@ struct PickySettingsVoiceProvidersTests {
         settings.elevenLabsSTTAPIKey = " el-key "
         settings.elevenLabsSTTModel = " scribe_v1 "
         settings.elevenLabsSTTLanguage = " en "
+        settings.edgeTTSVoice = " en-US-AriaNeural \n"
 
         let normalized = settings.normalizedPaths()
 
@@ -159,5 +165,6 @@ struct PickySettingsVoiceProvidersTests {
         #expect(normalized.elevenLabsSTTAPIKey == "el-key")
         #expect(normalized.elevenLabsSTTModel == "scribe_v1")
         #expect(normalized.elevenLabsSTTLanguage == "en")
+        #expect(normalized.edgeTTSVoice == "en-US-AriaNeural")
     }
 }

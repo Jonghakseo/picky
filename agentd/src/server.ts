@@ -1,18 +1,23 @@
 import { randomUUID } from "node:crypto";
-import { createServer, type Server as HttpServer } from "node:http";
-import { WebSocket, WebSocketServer } from "ws";
+import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
+import { WebSocketServer } from "ws";
+import type { WebSocket } from "ws";
 import { isAuthorized } from "./auth.js";
 import { FOLLOWUP_PREFIX, HANDOFF_PREFIX, STEER_PREFIX } from "./domain/log-prefixes.js";
 import { sliceUtf16Safe } from "./domain/safe-truncate.js";
 import { PROTOCOL_VERSION, PickyAgentSessionSchema, parseCommand, type DockGroup, type EventEnvelope, type PickyAgentSession, type PickyAgentSessionParsed, type PickyContextPacket, type PickyPushToTalkControlAction } from "./protocol.js";
 import type { SessionSupervisor } from "./session-supervisor.js";
 import { logAgentd } from "./local-log.js";
+import { EdgeTTSServiceError } from "./edge-tts-service.js";
+import type { EdgeTTSService } from "./edge-tts-service.js";
 
 interface AgentdServerOptions {
   port: number;
   token: string;
   supervisor: SessionSupervisor;
   setDefaultCwd?: (cwd: string) => void;
+  /** Primary-only. Child daemons intentionally omit the local Edge TTS routes. */
+  edgeTTS?: EdgeTTSService;
 }
 
 type ParsedCommand = ReturnType<typeof parseCommand>;
@@ -84,7 +89,9 @@ export class AgentdServer {
   constructor(private readonly options: AgentdServerOptions) {}
 
   async start(): Promise<number> {
-    this.httpServer = createServer();
+    this.httpServer = createServer((request, response) => {
+      void this.handleHttpRequest(request, response);
+    });
     this.wsServer = new WebSocketServer({ noServer: true });
 
     this.httpServer.on("upgrade", (request, socket, head) => {
@@ -195,6 +202,50 @@ export class AgentdServer {
     for (const client of this.clients) client.close();
     await new Promise<void>((resolve) => this.wsServer?.close(() => resolve()) ?? resolve());
     await new Promise<void>((resolve) => this.httpServer?.close(() => resolve()) ?? resolve());
+  }
+
+  private async handleHttpRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    const isEdgeRoute = url.pathname === "/v1/edge-tts/voices" || url.pathname === "/v1/edge-tts/speech";
+    if (!isEdgeRoute || !this.options.edgeTTS) {
+      writeJSON(response, 404, { error: { code: "not_found", message: "Not found." } });
+      return;
+    }
+    if (!isAuthorized(request, this.options.token)) {
+      writeJSON(response, 401, { error: { code: "unauthorized", message: "Unauthorized." } });
+      return;
+    }
+
+    try {
+      if (request.method === "GET" && url.pathname === "/v1/edge-tts/voices") {
+        writeJSON(response, 200, { voices: await this.options.edgeTTS.listVoices() });
+        return;
+      }
+      if (request.method === "POST" && url.pathname === "/v1/edge-tts/speech") {
+        const body = await readEdgeTTSRequest(request);
+        const controller = new AbortController();
+        request.once("aborted", () => controller.abort());
+        response.once("close", () => controller.abort());
+        const audio = await this.options.edgeTTS.synthesize(body.input, body.voice, controller.signal);
+        if (!response.writableEnded) {
+          response.writeHead(200, {
+            "Content-Type": "audio/mpeg",
+            "Content-Length": String(audio.length),
+            "Cache-Control": "no-store",
+          });
+          response.end(audio);
+        }
+        return;
+      }
+      writeJSON(response, 405, { error: { code: "method_not_allowed", message: "Method not allowed." } });
+    } catch (error) {
+      const serviceError = error instanceof EdgeTTSServiceError
+        ? error
+        : new EdgeTTSServiceError("Invalid Edge TTS request.", 400);
+      if (!response.writableEnded) {
+        writeJSON(response, serviceError.statusCode, { error: { code: "edge_tts_error", message: serviceError.message } });
+      }
+    }
   }
 
   private accept(ws: WebSocket): void {
@@ -681,6 +732,51 @@ export class AgentdServer {
     ws.send(json);
     return { bytes: Buffer.byteLength(json, "utf8"), type: event.type };
   }
+}
+
+const EDGE_TTS_HTTP_BODY_LIMIT_BYTES = 64 * 1024;
+
+async function readEdgeTTSRequest(request: IncomingMessage): Promise<{ input: string; voice: string }> {
+  const chunks: Buffer[] = [];
+  let byteLength = 0;
+  let bodyTooLarge = false;
+  for await (const chunk of request) {
+    const bytes = Buffer.from(chunk);
+    byteLength += bytes.length;
+    if (byteLength > EDGE_TTS_HTTP_BODY_LIMIT_BYTES) {
+      // Drain without buffering the remainder so the client receives a
+      // structured 413 rather than a transport-level socket failure.
+      bodyTooLarge = true;
+      continue;
+    }
+    chunks.push(bytes);
+  }
+  if (bodyTooLarge) throw new EdgeTTSServiceError("Edge TTS request body is too large.", 413);
+  let payload: unknown;
+  try {
+    payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    throw new EdgeTTSServiceError("Edge TTS request body must be valid JSON.", 400);
+  }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new EdgeTTSServiceError("Edge TTS request body must be an object.", 400);
+  }
+  const { input, voice } = payload as Record<string, unknown>;
+  if (typeof input !== "string" || typeof voice !== "string") {
+    throw new EdgeTTSServiceError("Edge TTS request requires string input and voice fields.", 400);
+  }
+  return { input, voice };
+}
+
+function writeJSON(response: ServerResponse, statusCode: number, payload: unknown): void {
+  if (response.writableEnded) return;
+  const body = JSON.stringify(payload);
+  response.writeHead(statusCode, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Content-Length": String(Buffer.byteLength(body)),
+    "Cache-Control": "no-store",
+  });
+  response.end(body);
 }
 
 interface ExternalEntryPending {

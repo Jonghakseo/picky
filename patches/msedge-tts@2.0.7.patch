@@ -1,0 +1,51 @@
+diff --git a/dist/MsEdgeTTS.js b/dist/MsEdgeTTS.js
+index b1bc3b0d..1a555154 100644
+--- a/dist/MsEdgeTTS.js
++++ b/dist/MsEdgeTTS.js
+@@ -126,7 +126,7 @@ class MsEdgeTTS {
+                             }
+                         }
+                     }
+-                `).then(resolve);
++                `).then(resolve, reject);
+             };
+             this._ws.onmessage = (m) => {
+                 const buffer = index_1.Buffer.from(m.data);
+@@ -217,8 +217,20 @@ class MsEdgeTTS {
+             this._log("connecting: ", i);
+             await this._initClient();
+         }
+-        this._ws.send(message, () => {
+-            this._log("<-", message);
++        await new Promise((resolve, reject) => {
++            try {
++                this._ws.send(message, (error) => {
++                    if (error) {
++                        reject(error);
++                        return;
++                    }
++                    this._log("<-", message);
++                    resolve();
++                });
++            }
++            catch (error) {
++                reject(error);
++            }
+         });
+     }
+     _pushAudioData(data, requestId) {
+@@ -430,7 +442,13 @@ class MsEdgeTTS {
+             metadata: metadataStream,
+             turnEnded: false,
+         };
+-        this._send(request).then();
++        // Surface send failures through the returned streams. Calling `.then()`
++        // without a rejection handler leaks an unhandled rejection in Node and
++        // can terminate consumers before they can handle synthesis failure.
++        this._send(request).catch((error) => {
++            audioStream.destroy(error);
++            metadataStream?.destroy(error);
++        });
+         return { audioStream, metadataStream, requestId };
+     }
+ }

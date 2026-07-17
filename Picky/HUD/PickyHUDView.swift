@@ -111,9 +111,10 @@ struct PickyHUDView: View {
             cancelPendingClose()
             heldSession = nil
         }
-        withAnimation(PickyHUDExpansion.animation) {
-            placement.isMinimized = next
-        }
+        // Toggle without animation: the rail restructures between summary and
+        // full tiles, and animating that transition reads as a jitter rather
+        // than a meaningful spatial change.
+        placement.isMinimized = next
         onDockMinimizedChanged(next)
     }
 

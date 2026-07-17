@@ -57,7 +57,9 @@ nonisolated enum PickyComposerAutocompletePolicy {
         let token = activeToken(in: beforeCursor)
         if token.hasPrefix("@") { return true }
         if token.contains("/") || token.hasPrefix(".") || token.hasPrefix("~/") { return true }
-        if token.isEmpty && beforeCursor.last?.isWhitespace == true { return true }
+        // Pi's provider can resolve an empty path prefix, but Pi's editor only asks
+        // for it on explicit Tab. Natural re-query here would reopen cwd results
+        // immediately after an accepted file completion appends its trailing space.
         return triggerCharacters.contains { trigger in
             !trigger.isEmpty && token.hasPrefix(trigger)
         }

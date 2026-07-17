@@ -46,6 +46,16 @@ struct PickyComposerAutocompletePolicyTests {
         ))
     }
 
+    @Test func doesNotRequeryPathCompletionAfterAcceptedFileAddsTrailingSpace() {
+        let completedFile = "@frontend/apps/web/tests/styled-tw-migration/HOW_TO_PARALLEL_MIGRATION.md "
+
+        #expect(!PickyComposerAutocompletePolicy.shouldQuery(
+            text: completedFile,
+            cursorLocation: completedFile.utf16.count,
+            triggerCharacters: []
+        ))
+    }
+
     @Test func computesHighlightRangeInUTF16WithoutSplittingEarlierEmoji() throws {
         let text = "😀 >worker task"
         let cursor = "😀 >worker".utf16.count

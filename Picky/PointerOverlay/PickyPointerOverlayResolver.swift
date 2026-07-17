@@ -19,6 +19,7 @@ enum PickyDetectedHighlightKind: String, Codable, Equatable {
 struct PickyPointerOverlayRequest: Codable, Equatable, Identifiable {
     let id: String
     let contextId: String?
+    let contextGeneration: Int?
     let screenId: String?
     let x: Double
     let y: Double

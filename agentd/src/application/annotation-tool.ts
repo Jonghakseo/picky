@@ -24,7 +24,6 @@ const AnnotationShapeParameter = Type.Union(ANNOTATION_SHAPES.map((shape) => Typ
 const AnnotationParameter = Type.Object({
   id: Type.String({ minLength: 1, description: "Stable annotation identifier used for replacement and expiry." }),
   shape: AnnotationShapeParameter,
-  screenId: Type.Optional(Type.String({ description: "Optional captured screen ID. It must match the request screen when supplied." })),
   x: Type.Optional(Type.Number({ description: "Screenshot-pixel horizontal coordinate from the left edge." })),
   y: Type.Optional(Type.Number({ description: "Screenshot-pixel vertical coordinate from the top edge." })),
   r: Type.Optional(Type.Number({ minimum: 0, description: "Radius in screenshot pixels." })),
@@ -44,7 +43,7 @@ const AnnotationParameter = Type.Object({
 const PickyShowAnnotationsParameters = Type.Object({
   mode: Type.Optional(Type.Union([Type.Literal("replace"), Type.Literal("append"), Type.Literal("clear")], { description: "replace discards current annotations, append merges by id, clear removes all annotations." })),
   screenId: Type.Optional(Type.String({ description: "Optional captured screen ID. Omit to use the cursor or primary captured screen." })),
-  annotations: Type.Array(AnnotationParameter, { description: "Annotations to display. Use an empty array only with mode clear." }),
+  annotations: Type.Array(AnnotationParameter, { maxItems: 24, description: "Annotations to display on one captured screen. Use an empty array only with mode clear." }),
 });
 
 export function createPickyShowAnnotationsTool(
@@ -57,6 +56,7 @@ export function createPickyShowAnnotationsTool(
     promptSnippet: `${PICKY_SHOW_ANNOTATIONS_TOOL_NAME}: draw structured annotations in screenshot-pixel coordinates.`,
     promptGuidelines: [
       `Use ${PICKY_SHOW_ANNOTATIONS_TOOL_NAME} to group related visual guidance; use picky_show_pointer for a single location.`,
+      "Each call targets one captured screen. To annotate a second display, call this tool again with that screenId.",
       "Use screenshot-pixel coordinates with a top-left origin, concise labels, and mode clear to remove annotations.",
       "Do not use text tags, arrows, or freehand paths.",
     ],

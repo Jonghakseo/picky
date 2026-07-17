@@ -10,6 +10,7 @@
 import AVFoundation
 import Combine
 import Foundation
+import OSLog
 import ScreenCaptureKit
 import SwiftUI
 
@@ -297,6 +298,11 @@ final class CompanionManager: ObservableObject {
     @Published var detectedElementPointerID: String?
     /// Resolved AI annotations, rendered independently from user ink and pointer animation.
     @Published private(set) var agentAnnotations: [PickyAgentAnnotation] = []
+    /// Most recent main-agent context submitted by this app and the newest overlay
+    /// generation accepted for it. Overlay events from an older capture must not
+    /// guide the user against a newer desktop state.
+    private var latestOverlayContextID: String?
+    private var latestOverlayContextGeneration = 0
 
     let buddyDictationManager: BuddyDictationManager
     let globalPushToTalkShortcutMonitor = GlobalPushToTalkShortcutMonitor()
@@ -1405,6 +1411,7 @@ final class CompanionManager: ObservableObject {
     /// to know about voice vs text vs follow-up paths, and production code
     /// keeps its existing behavior when no interceptor is attached.
     private func submitOrIntercept(_ submission: PickyAgentSubmission) async throws -> PickyAgentSubmissionReceipt {
+        noteMainOverlayContext(submission.context)
         if let interceptor = submissionInterceptor,
            let receipt = await interceptor(submission) {
             return receipt
@@ -2064,6 +2071,7 @@ final class CompanionManager: ObservableObject {
     /// state for the whole Pickle run.
     func noteExternalSubmission(kind: PickyExternalEntryKind, text: String, context: PickyContextPacket) {
         guard kind == .submitMain else { return }
+        noteMainOverlayContext(context)
         let inputID = UUID()
         interactionCoordinator.accept(
             .externalContextCaptured(inputID: inputID, text: text, context: context),
@@ -2189,6 +2197,7 @@ final class CompanionManager: ObservableObject {
     }
 
     private func applyPointerOverlayRequest(_ request: PickyPointerOverlayRequest) {
+        guard shouldApplyOverlay(contextID: request.contextId, generation: request.contextGeneration) else { return }
         do {
             let target = try PickyPointerOverlayResolver.resolve(request)
             detectedElementPointerID = nil
@@ -2221,6 +2230,14 @@ final class CompanionManager: ObservableObject {
     }
 
     private func applyAnnotationOverlayRequest(_ request: PickyAnnotationOverlayRequest) {
+        if request.mode == .clear {
+            interactionCoordinator.accept(
+                .agentAnnotationsRequested(mode: .clear, annotations: []),
+                correlation: PickyInteractionCorrelation(source: .agent)
+            )
+            return
+        }
+        guard shouldApplyOverlay(contextID: request.contextId, generation: request.contextGeneration) else { return }
         do {
             let annotations = try PickyAnnotationOverlayResolver.resolve(request)
             interactionCoordinator.accept(
@@ -2233,6 +2250,31 @@ final class CompanionManager: ObservableObject {
         } catch {
             latestAgentSessionSummary = "Annotation overlay ignored: \(error.localizedDescription)"
         }
+    }
+
+    private func noteMainOverlayContext(_ context: PickyContextPacket) {
+        latestOverlayContextID = context.id
+    }
+
+    private func shouldApplyOverlay(contextID: String?, generation: Int?) -> Bool {
+        guard let contextID, let generation else {
+            if latestOverlayContextID != nil {
+                PickyLog.logger(.agentClient).debug("Dropping overlay without a capture generation after a newer context was submitted")
+                return false
+            }
+            return true
+        }
+        if let latestOverlayContextID, contextID != latestOverlayContextID {
+            PickyLog.logger(.agentClient).debug("Dropping stale overlay context=\(contextID, privacy: .public) latest=\(latestOverlayContextID, privacy: .public)")
+            return false
+        }
+        if generation < latestOverlayContextGeneration {
+            PickyLog.logger(.agentClient).debug("Dropping stale overlay generation=\(generation) latest=\(self.latestOverlayContextGeneration)")
+            return false
+        }
+        latestOverlayContextID = contextID
+        latestOverlayContextGeneration = generation
+        return true
     }
 
     private func scheduleAnnotationExpiryIfNeeded(for annotations: [PickyAgentAnnotation]) {

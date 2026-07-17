@@ -68,10 +68,11 @@ export function createPickyShowPointerTool(
   });
 }
 
-export function makePointerOverlayRequest(input: PickyShowPointerRequest, defaults: { contextId?: string; screenId?: string; screenBounds: { x: number; y: number; width: number; height: number }; screenshotSize: { width: number; height: number } }): PickyPointerOverlayRequest {
+export function makePointerOverlayRequest(input: PickyShowPointerRequest, defaults: { contextId?: string; contextGeneration?: number; screenId?: string; screenBounds: { x: number; y: number; width: number; height: number }; screenshotSize: { width: number; height: number } }): PickyPointerOverlayRequest {
   return {
     id: `pointer-${randomUUID()}`,
     contextId: defaults.contextId,
+    contextGeneration: defaults.contextGeneration,
     screenId: normalizeOptionalString(input.screenId) ?? defaults.screenId,
     x: input.x,
     y: input.y,

@@ -1093,6 +1093,7 @@ struct PickyCompanionManagerTests {
         manager.applyAgentEvent(.pointerOverlayRequested(PickyPointerOverlayRequest(
             id: "pointer-after-voice-settings",
             contextId: "context-pointer",
+            contextGeneration: nil,
             screenId: "screen-1",
             x: 20,
             y: 20,

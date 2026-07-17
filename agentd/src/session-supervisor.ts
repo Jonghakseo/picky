@@ -100,6 +100,7 @@ export class SessionSupervisor extends EventEmitter {
   private mainThinkingLevel?: ThinkingLevel;
   private mainDraft = "";
   private mainContext?: PickyContextPacket;
+  private mainContextGeneration = 0;
   private mainState: PickyMainAgentState = { messages: [] };
   private mainReplyContextId = "main";
   private mainIsProcessing = false;
@@ -445,23 +446,35 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   async requestPointerOverlay(request: PickyShowPointerRequest): Promise<PickyShowPointerResult> {
-    const context = this.contextForPointerRequest();
-    if (!context) throw new Error("No captured Picky context is available for pointer overlay validation.");
-    const overlayRequest = makePointerOverlayRequestForContext(context, request);
+    const captured = this.contextForPointerRequest();
+    if (!captured) throw new Error("No captured Picky context is available for pointer overlay validation.");
+    const overlayRequest = makePointerOverlayRequestForContext(captured.context, request, captured.generation);
     this.emit("pointerOverlayRequested", overlayRequest);
     return { request: overlayRequest };
   }
 
   async requestAnnotationOverlay(request: PickyShowAnnotationsRequest): Promise<PickyShowAnnotationsResult> {
-    const context = this.contextForPointerRequest();
-    if (!context) throw new Error("No captured Picky context is available for annotation overlay validation.");
-    const overlayRequest = makeAnnotationOverlayRequestForContext(context, request);
+    if (request.mode === "clear") {
+      const overlayRequest: PickyAnnotationOverlayRequest = {
+        id: `annotations-${randomUUID()}`,
+        mode: "clear",
+        annotations: [],
+      };
+      this.emit("annotationOverlayRequested", overlayRequest);
+      return { request: overlayRequest };
+    }
+
+    const captured = this.contextForPointerRequest();
+    if (!captured) throw new Error("No captured Picky context is available for annotation overlay validation.");
+    const overlayRequest = makeAnnotationOverlayRequestForContext(captured.context, request, captured.generation);
     this.emit("annotationOverlayRequested", overlayRequest);
     return { request: overlayRequest };
   }
 
-  private contextForPointerRequest(): PickyContextPacket | undefined {
-    return this.mainContext ?? [...this.sessionContexts.values()].at(-1);
+  private contextForPointerRequest(): { context: PickyContextPacket; generation: number } | undefined {
+    if (this.mainContext) return { context: this.mainContext, generation: this.mainContextGeneration };
+    const context = [...this.sessionContexts.values()].at(-1);
+    return context ? { context, generation: 0 } : undefined;
   }
 
   async prewarmMainAgent(cwd = process.cwd()): Promise<void> {
@@ -1083,6 +1096,7 @@ export class SessionSupervisor extends EventEmitter {
     const generation = this.mainHandleGeneration;
     this.beginMainTurn(context.id);
     this.mainContext = context;
+    this.mainContextGeneration += 1;
     const prompt = buildMainAgentPrompt(context);
     // Append the user message to mainState.messages AFTER deliverMainPrompt
     // resolves. finally{} guarantees the message is still recorded if deliver
@@ -2925,7 +2939,7 @@ function userInputFromLogLine(line: string): string | undefined {
   return undefined;
 }
 
-function makePointerOverlayRequestForContext(context: PickyContextPacket, request: PickyShowPointerRequest): PickyShowPointerResult["request"] {
+function makePointerOverlayRequestForContext(context: PickyContextPacket, request: PickyShowPointerRequest, contextGeneration: number): PickyShowPointerResult["request"] {
   const screenshot = selectPointerScreenshot(context.screenshots, request);
   if (!screenshot.bounds) throw new Error(`No display bounds are available for ${screenshot.screenId ?? screenshot.id}.`);
   const screenshotSize = screenshotSizeFromMetadata(screenshot) ?? readImageSize(screenshot.path);
@@ -2937,6 +2951,7 @@ function makePointerOverlayRequestForContext(context: PickyContextPacket, reques
   return {
     ...makePointerOverlayRequest({ ...request, ...bounded }, {
       contextId: context.id,
+      contextGeneration,
       screenId: screenshot.screenId,
       screenBounds: screenshot.bounds,
       screenshotSize,
@@ -2945,28 +2960,22 @@ function makePointerOverlayRequestForContext(context: PickyContextPacket, reques
   };
 }
 
-function makeAnnotationOverlayRequestForContext(context: PickyContextPacket, request: PickyShowAnnotationsRequest): PickyAnnotationOverlayRequest {
-  const requestedScreenId = request.screenId ?? request.annotations.find((annotation) => annotation.screenId)?.screenId;
-  const screenshot = selectPointerScreenshot(context.screenshots, { screenId: requestedScreenId });
+function makeAnnotationOverlayRequestForContext(context: PickyContextPacket, request: PickyShowAnnotationsRequest, contextGeneration: number): PickyAnnotationOverlayRequest {
+  const screenshot = selectPointerScreenshot(context.screenshots, { screenId: request.screenId });
   if (!screenshot.bounds) throw new Error(`No display bounds are available for ${screenshot.screenId ?? screenshot.id}.`);
   const screenshotSize = screenshotSizeFromMetadata(screenshot) ?? readImageSize(screenshot.path);
   if (!screenshotSize) {
     throw new Error(`Screenshot pixel coordinates require screenshot dimensions for ${screenshot.screenId ?? screenshot.id}.`);
   }
   const selectedScreenId = screenshot.screenId ?? screenshot.id;
-  const annotations = request.annotations.map((annotation) => {
-    const annotationScreenId = annotation.screenId?.trim();
-    if (annotationScreenId && annotationScreenId !== selectedScreenId && annotationScreenId !== screenshot.id) {
-      throw new Error(`Annotation ${annotation.id} targets ${annotationScreenId}, but this request resolved ${selectedScreenId}.`);
-    }
-    return { ...clampAnnotation(annotation, screenshotSize), screenId: selectedScreenId };
-  });
+  const annotations = request.annotations.map((annotation) => clampAnnotation(annotation, screenshotSize));
   if (request.mode !== "clear" && annotations.length === 0) throw new Error("Annotations are required unless mode is clear.");
   return {
     id: `annotations-${randomUUID()}`,
     mode: request.mode,
     annotations,
     contextId: context.id,
+    contextGeneration,
     screenId: selectedScreenId,
     screenBounds: screenshot.bounds,
     screenshotSize,

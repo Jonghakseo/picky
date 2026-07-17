@@ -43,6 +43,43 @@ struct PickyAgentAnnotationOverlayTests {
         #expect(manager.agentAnnotations.first?.radius == 10)
     }
 
+    @Test func clearsAnnotationOverlayWithoutScreenGeometry() async throws {
+        let manager = CompanionManager(agentClient: FakePickyAgentClient())
+        manager.applyAgentEvent(.annotationOverlayRequested(request(annotations: [
+            annotation(id: "visible", shape: .target, x: 200, y: 100, r: 20),
+        ])))
+        try await waitUntil { manager.agentAnnotations.count == 1 }
+
+        manager.applyAgentEvent(.annotationOverlayRequested(PickyAnnotationOverlayRequest(
+            id: "annotations-clear",
+            mode: .clear,
+            annotations: [],
+            contextId: nil,
+            contextGeneration: nil,
+            screenId: nil,
+            screenBounds: nil,
+            screenshotSize: nil
+        )))
+        try await waitUntil { manager.agentAnnotations.isEmpty }
+
+        #expect(manager.agentAnnotations.isEmpty)
+    }
+
+    @Test func dropsAnnotationOverlayFromAnOlderCaptureGeneration() async throws {
+        let manager = CompanionManager(agentClient: FakePickyAgentClient())
+        manager.applyAgentEvent(.annotationOverlayRequested(request(
+            annotations: [annotation(id: "current", shape: .target, x: 200, y: 100, r: 20)],
+            contextGeneration: 2
+        )))
+        try await waitUntil { manager.agentAnnotations.first?.id == "current" }
+        manager.applyAgentEvent(.annotationOverlayRequested(request(
+            annotations: [annotation(id: "stale", shape: .target, x: 100, y: 100, r: 20)],
+            contextGeneration: 1
+        )))
+
+        #expect(manager.agentAnnotations.map(\.id) == ["current"])
+    }
+
     @Test func reducerReplacesAppendsExpiresAndClearsAnnotationsForUserInput() {
         let initial = PickyInteractionState()
         let original = resolvedAnnotation(id: "original", expiresAt: now.addingTimeInterval(10), zOrder: 1)
@@ -63,6 +100,35 @@ struct PickyAgentAnnotationOverlayTests {
         let clearedForInput = reduce(expired, .agentAnnotationsClearedForUserInput)
         #expect(clearedForInput.agentAnnotations.isEmpty)
         #expect(clearedForInput.overlay == .hidden)
+    }
+
+    @Test func reducerBoundsAppendedAnnotationsAndClearsThemForCLIInput() {
+        let existing = (0..<PickyInteractionReducer.maximumAgentAnnotationCount)
+            .map { resolvedAnnotation(id: "existing-\($0)", expiresAt: now.addingTimeInterval(10), zOrder: Double($0)) }
+        let initial = reduce(PickyInteractionState(), .agentAnnotationsRequested(mode: .replace, annotations: existing))
+        let appended = reduce(initial, .agentAnnotationsRequested(mode: .append, annotations: [
+            resolvedAnnotation(id: "new", expiresAt: now.addingTimeInterval(10), zOrder: 24),
+        ]))
+
+        #expect(appended.agentAnnotations.count == PickyInteractionReducer.maximumAgentAnnotationCount)
+        #expect(!appended.agentAnnotations.contains(where: { $0.id == "existing-0" }))
+        #expect(appended.agentAnnotations.contains(where: { $0.id == "new" }))
+
+        let cliContext = PickyContextPacket(
+            id: "cli-context",
+            source: "cli",
+            capturedAt: now,
+            transcript: "next",
+            selectedText: nil,
+            cwd: nil,
+            activeApp: nil,
+            activeWindow: nil,
+            browser: nil,
+            screenshots: [],
+            warnings: []
+        )
+        let clearedForCLI = reduce(appended, .externalContextCaptured(inputID: UUID(), text: "next", context: cliContext))
+        #expect(clearedForCLI.agentAnnotations.isEmpty)
     }
 
     @Test func decodesAnnotationOverlayProtocolEvent() throws {
@@ -105,12 +171,17 @@ struct PickyAgentAnnotationOverlayTests {
         ).state
     }
 
-    private func request(annotations: [PickyAnnotationOverlayAnnotation]) -> PickyAnnotationOverlayRequest {
+    private func request(
+        annotations: [PickyAnnotationOverlayAnnotation],
+        mode: PickyAnnotationOverlayMode = .replace,
+        contextGeneration: Int? = nil
+    ) -> PickyAnnotationOverlayRequest {
         PickyAnnotationOverlayRequest(
             id: "annotations-request",
-            mode: .replace,
+            mode: mode,
             annotations: annotations,
             contextId: "context",
+            contextGeneration: contextGeneration,
             screenId: "screen",
             screenBounds: PickyCGRect(x: 100, y: 200, width: 200, height: 100),
             screenshotSize: PickyPointerScreenshotSize(width: 400, height: 200)
@@ -124,7 +195,7 @@ struct PickyAgentAnnotationOverlayTests {
         w: Double? = nil, h: Double? = nil, x1: Double? = nil, y1: Double? = nil, x2: Double? = nil, y2: Double? = nil,
         spotlightShape: PickyAnnotationSpotlightShape? = nil, label: String? = nil
     ) -> PickyAnnotationOverlayAnnotation {
-        PickyAnnotationOverlayAnnotation(id: id, shape: shape, screenId: nil, x: x, y: y, r: r, rx: rx, ry: ry, w: w, h: h, x1: x1, y1: y1, x2: x2, y2: y2, spotlightShape: spotlightShape, label: label, ttlMs: nil, zOrder: nil, clamped: nil)
+        PickyAnnotationOverlayAnnotation(id: id, shape: shape, x: x, y: y, r: r, rx: rx, ry: ry, w: w, h: h, x1: x1, y1: y1, x2: x2, y2: y2, spotlightShape: spotlightShape, label: label, ttlMs: nil, zOrder: nil, clamped: nil)
     }
 
     private func resolvedAnnotation(id: String, expiresAt: Date, zOrder: Double) -> PickyAgentAnnotation {

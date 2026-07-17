@@ -267,6 +267,7 @@ export type PickyAgentSession = Omit<PickyAgentSessionParsed, "messages" | "queu
 export const PickyPointerOverlayRequestSchema = z.object({
   id: z.string().min(1),
   contextId: z.string().optional(),
+  contextGeneration: z.number().int().nonnegative().optional(),
   screenId: z.string().optional(),
   x: z.number().finite(),
   y: z.number().finite(),
@@ -281,7 +282,6 @@ const PickyAnnotationShapeSchema = z.enum(["target", "circle", "rect", "line", "
 export const PickyAnnotationOverlayAnnotationSchema = z.object({
   id: z.string().min(1),
   shape: PickyAnnotationShapeSchema,
-  screenId: z.string().optional(),
   x: z.number().finite().optional(),
   y: z.number().finite().optional(),
   r: z.number().nonnegative().finite().optional(),
@@ -304,11 +304,12 @@ export type PickyAnnotationOverlayAnnotation = z.infer<typeof PickyAnnotationOve
 export const PickyAnnotationOverlayRequestSchema = z.object({
   id: z.string().min(1),
   mode: z.enum(["replace", "append", "clear"]),
-  annotations: z.array(PickyAnnotationOverlayAnnotationSchema),
+  annotations: z.array(PickyAnnotationOverlayAnnotationSchema).max(24),
   contextId: z.string().optional(),
+  contextGeneration: z.number().int().nonnegative().optional(),
   screenId: z.string().optional(),
-  screenBounds: BoundsSchema,
-  screenshotSize: z.object({ width: z.number().positive(), height: z.number().positive() }),
+  screenBounds: BoundsSchema.optional(),
+  screenshotSize: z.object({ width: z.number().positive(), height: z.number().positive() }).optional(),
 });
 export type PickyAnnotationOverlayRequest = z.infer<typeof PickyAnnotationOverlayRequestSchema>;
 

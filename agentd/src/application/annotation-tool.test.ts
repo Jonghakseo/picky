@@ -8,7 +8,7 @@ const request = {
   screenId: "screen-1",
   screenBounds: { x: 0, y: 0, width: 200, height: 100 },
   screenshotSize: { width: 400, height: 200 },
-  annotations: [{ id: "save", shape: "target" as const, x: 400, y: 0, r: 24, screenId: "screen-1", clamped: true }],
+  annotations: [{ id: "save", shape: "target" as const, x: 400, y: 0, r: 24, clamped: true }],
 };
 
 describe("picky_show_annotations", () => {
@@ -48,7 +48,11 @@ describe("picky_show_annotations", () => {
     const result = await tool.execute("tool-1", { mode: "clear", annotations: [] } as never, undefined, undefined, {} as never);
 
     expect(definition.name).toBe(PICKY_SHOW_ANNOTATIONS_TOOL_NAME);
-    expect(JSON.stringify(definition.parameters)).toContain('"spotlight"');
+    const parameters = JSON.stringify(definition.parameters);
+    expect(parameters).toContain('"spotlight"');
+    expect(parameters).toContain('"maxItems":24');
+    expect(parameters).not.toContain('"Optional captured screen ID. It must match the request screen when supplied."');
+    expect(definition.promptGuidelines?.join("\n")).toContain("one captured screen");
     expect(definition.promptGuidelines?.join("\n")).toContain("Do not use text tags");
     expect(received).toEqual({ mode: "clear", screenId: undefined, annotations: [] });
     expect(result.content[0]).toMatchObject({ type: "text", text: "Screen annotations cleared." });

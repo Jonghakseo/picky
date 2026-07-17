@@ -8,6 +8,7 @@ struct PickyInteractionTransition: Equatable {
 
 enum PickyInteractionReducer {
     static let minimumDisplayDuration: TimeInterval = 0.35
+    static let maximumAgentAnnotationCount = 24
 
     static func reduce(
         state: PickyInteractionState,
@@ -295,6 +296,7 @@ private struct PickyInteractionReducing {
     // MARK: - External (CLI) input
 
     private mutating func applyExternalContextCaptured(inputID: UUID, text: String, context: PickyContextPacket) {
+        clearAgentAnnotationsForUserInput()
         // Always register the cursor owner so the eventual quickReply matches the
         // .cli presentation policy (bubble + TTS when idle).
         state.contextOwnership[context.id] = .cli
@@ -547,9 +549,28 @@ private struct PickyInteractionReducing {
         case .replace:
             state.agentAnnotations = uniqueAnnotations(annotations)
         case .append:
-            var indexed = Dictionary(uniqueKeysWithValues: state.agentAnnotations.map { ($0.id, $0) })
-            for annotation in annotations { indexed[annotation.id] = annotation }
-            state.agentAnnotations = sortedAnnotations(Array(indexed.values))
+            var merged = state.agentAnnotations
+            for annotation in annotations {
+                if let index = merged.firstIndex(where: { $0.id == annotation.id }) {
+                    merged[index] = annotation
+                } else {
+                    merged.append(annotation)
+                }
+            }
+            let overflow = max(0, merged.count - PickyInteractionReducer.maximumAgentAnnotationCount)
+            if overflow > 0 {
+                let expiredIndexes = merged.enumerated()
+                    .sorted { left, right in
+                        left.element.zOrder == right.element.zOrder
+                            ? left.offset < right.offset
+                            : left.element.zOrder < right.element.zOrder
+                    }
+                    .prefix(overflow)
+                    .map(\.offset)
+                    .sorted(by: >)
+                for index in expiredIndexes { merged.remove(at: index) }
+            }
+            state.agentAnnotations = sortedAnnotations(merged)
         }
         state = state.agentAnnotations.isEmpty
             ? state.removingOverlayReason(.activeAgentAnnotations)

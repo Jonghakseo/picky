@@ -1017,6 +1017,7 @@ describe("SessionSupervisor", () => {
     expect(emitted).toHaveLength(1);
     expect(result.request).toMatchObject({
       contextId: pointerContext.id,
+      contextGeneration: 0,
       screenId: "screen1",
       x: 0,
       y: 800,
@@ -1057,6 +1058,7 @@ describe("SessionSupervisor", () => {
     expect(result.request).toMatchObject({
       mode: "replace",
       contextId: annotationContext.id,
+      contextGeneration: 0,
       screenId: "screen-annotation",
       screenBounds: { x: 100, y: 200, width: 300, height: 400 },
       screenshotSize: { width: 600, height: 800 },
@@ -1065,6 +1067,44 @@ describe("SessionSupervisor", () => {
         { id: "line", shape: "line", x1: 0, y1: 0, x2: 600, y2: 800, ttlMs: 500, clamped: true },
       ],
     });
+  });
+
+  it("emits a clear annotation overlay without a captured context", async () => {
+    const supervisor = await makeSupervisor();
+    const emitted: unknown[] = [];
+    supervisor.on("annotationOverlayRequested", (request) => emitted.push(request));
+
+    const result = await supervisor.requestAnnotationOverlay({ mode: "clear", annotations: [] });
+
+    expect(result.request).toMatchObject({ mode: "clear", annotations: [] });
+    expect(result.request.contextId).toBeUndefined();
+    expect(result.request.screenBounds).toBeUndefined();
+    expect(emitted).toEqual([result.request]);
+  });
+
+  it("increments overlay capture generation when the main context is replaced", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-overlay-generation-"));
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
+    await supervisor.load();
+    const screenshot = {
+      id: "shot-main",
+      label: "cursor screen",
+      path: "/tmp/shot-main.jpg",
+      screenId: "screen-main",
+      bounds: { x: 0, y: 0, width: 100, height: 100 },
+      screenshotWidthInPixels: 100,
+      screenshotHeightInPixels: 100,
+      isCursorScreen: true,
+    };
+
+    await supervisor.route({ ...context("first overlay context"), screenshots: [screenshot] });
+    const first = await supervisor.requestPointerOverlay({ x: 50, y: 50 });
+    await supervisor.route({ ...context("second overlay context"), screenshots: [screenshot] });
+    const second = await supervisor.requestPointerOverlay({ x: 50, y: 50 });
+
+    expect(first.request).toMatchObject({ contextId: "context-first overlay context", contextGeneration: 1 });
+    expect(second.request).toMatchObject({ contextId: "context-second overlay context", contextGeneration: 2 });
   });
 
   it("derives screenshot pixel dimensions from image files when context metadata is missing", async () => {

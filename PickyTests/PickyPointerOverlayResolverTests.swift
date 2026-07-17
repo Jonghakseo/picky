@@ -90,6 +90,29 @@ struct PickyPointerOverlayResolverTests {
         #expect(manager.voiceState == .idle)
     }
 
+    @Test func dropsPointerOverlayFromAnOlderCaptureGeneration() {
+        let manager = CompanionManager(agentClient: FakePointerClient(), selectionStore: FakePointerSelectionStore())
+        manager.applyAgentEvent(.pointerOverlayRequested(request(
+            x: 50,
+            y: 25,
+            label: "Current",
+            contextGeneration: 2,
+            screenBounds: PickyCGRect(x: 0, y: 0, width: 100, height: 100),
+            screenshotSize: PickyPointerScreenshotSize(width: 100, height: 100)
+        )))
+        manager.applyAgentEvent(.pointerOverlayRequested(request(
+            x: 10,
+            y: 10,
+            label: "Stale",
+            contextGeneration: 1,
+            screenBounds: PickyCGRect(x: 0, y: 0, width: 100, height: 100),
+            screenshotSize: PickyPointerScreenshotSize(width: 100, height: 100)
+        )))
+
+        #expect(manager.detectedElementBubbleText == "Current")
+        #expect(manager.detectedElementScreenLocation == CGPoint(x: 50, y: 75))
+    }
+
     @Test func clearDetectedElementResetsAllHighlightFields() {
         let manager = CompanionManager(agentClient: FakePointerClient(), selectionStore: FakePointerSelectionStore())
         manager.applyAgentEvent(.pointerOverlayRequested(request(
@@ -115,12 +138,14 @@ struct PickyPointerOverlayResolverTests {
         x: Double,
         y: Double,
         label: String? = nil,
+        contextGeneration: Int? = nil,
         screenBounds: PickyCGRect,
         screenshotSize: PickyPointerScreenshotSize
     ) -> PickyPointerOverlayRequest {
         PickyPointerOverlayRequest(
             id: "pointer-test",
             contextId: "context-test",
+            contextGeneration: contextGeneration,
             screenId: "screen1",
             x: x,
             y: y,

@@ -492,7 +492,6 @@ enum PickyAnnotationSpotlightShape: String, Codable, Equatable {
 struct PickyAnnotationOverlayAnnotation: Codable, Equatable, Identifiable {
     let id: String
     let shape: PickyAnnotationOverlayShape
-    let screenId: String?
     let x: Double?
     let y: Double?
     let r: Double?
@@ -516,9 +515,10 @@ struct PickyAnnotationOverlayRequest: Codable, Equatable, Identifiable {
     let mode: PickyAnnotationOverlayMode
     let annotations: [PickyAnnotationOverlayAnnotation]
     let contextId: String?
+    let contextGeneration: Int?
     let screenId: String?
-    let screenBounds: PickyCGRect
-    let screenshotSize: PickyPointerScreenshotSize
+    let screenBounds: PickyCGRect?
+    let screenshotSize: PickyPointerScreenshotSize?
 }
 
 struct PickyHelloEvent: Decodable, Equatable {

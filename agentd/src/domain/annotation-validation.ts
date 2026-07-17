@@ -8,7 +8,6 @@ export type SpotlightShape = "rect" | "circle";
 export interface AnnotationInput {
   id: string;
   shape: AnnotationShape;
-  screenId?: string;
   x?: number;
   y?: number;
   r?: number;
@@ -106,7 +105,6 @@ function normalizeAnnotation(annotation: AnnotationInput): AnnotationInput {
   return {
     ...annotation,
     id,
-    screenId: annotation.screenId?.trim() || undefined,
     label: label || undefined,
     ...(annotation.ttlMs !== undefined ? { ttlMs: nonNegativeFinite(annotation.ttlMs, "ttlMs") } : {}),
     ...(annotation.zOrder !== undefined ? { zOrder: requiredFinite(annotation.zOrder, "zOrder") } : {}),

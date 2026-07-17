@@ -33,21 +33,21 @@ enum PickyAnnotationOverlayResolver {
         _ request: PickyAnnotationOverlayRequest,
         now: Date = Date()
     ) throws -> [PickyAgentAnnotation] {
-        guard request.screenBounds.width > 0, request.screenBounds.height > 0 else {
+        guard let screenBounds = request.screenBounds, screenBounds.width > 0, screenBounds.height > 0 else {
             throw PickyAnnotationOverlayResolveError.invalidDisplayBounds
         }
-        guard request.screenshotSize.width > 0, request.screenshotSize.height > 0 else {
+        guard let screenshotSize = request.screenshotSize, screenshotSize.width > 0, screenshotSize.height > 0 else {
             throw PickyAnnotationOverlayResolveError.invalidScreenshotSize
         }
 
         let displayFrame = CGRect(
-            x: request.screenBounds.x,
-            y: request.screenBounds.y,
-            width: request.screenBounds.width,
-            height: request.screenBounds.height
+            x: screenBounds.x,
+            y: screenBounds.y,
+            width: screenBounds.width,
+            height: screenBounds.height
         )
         return try request.annotations.map { annotation in
-            try resolve(annotation, displayFrame: displayFrame, screenshotSize: request.screenshotSize, now: now)
+            try resolve(annotation, displayFrame: displayFrame, screenshotSize: screenshotSize, now: now)
         }
     }
 

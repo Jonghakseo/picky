@@ -408,14 +408,12 @@ struct PickyHUDDockRailView: View {
     /// neutral total chip when sessions exist but none are running/waiting/failed,
     /// and to zero chips when there are no sessions at all.
     private var summaryChipCount: Int {
-        let items = summaryItems
-        if !items.isEmpty { return items.count }
-        return summaryStatuses.isEmpty ? 0 : 1
+        summaryItems.count
     }
 
     /// Long-axis extent of one summary chip (height in vertical, width in horizontal).
     private var summaryChipLineHeight: CGFloat { max(15, metrics.statusDotSide + 7) }
-    private var summaryChipRowWidth: CGFloat { max(24, metrics.statusDotSide + 18) }
+    private var summaryChipRowWidth: CGFloat { max(30, metrics.statusDotSide + 22) }
 
     private var minimizedRailLength: CGFloat {
         let count = summaryChipCount
@@ -1230,26 +1228,36 @@ struct PickyHUDDockRailView: View {
     /// layout so the expanded rail keeps its exact dimensions.
     @ViewBuilder
     private var dockCapsuleBody: some View {
-        let body = Group {
-            if isMinimized {
-                minimizedSummary
-            } else {
-                sessionsAndAddSlot
-            }
-        }
         if dockSide.orientation == .horizontal {
-            body
-                .padding(.horizontal, metrics.topPadding)
-                .padding(.vertical, metrics.horizontalPadding)
-                .frame(height: horizontalRailCrossSize)
-                .background(dockGlassBackground)
+            // Explicit HStack so the tiles row and the `+` slot share a single
+            // glass surface. Applying `.background` to a multi-view builder
+            // would back each child separately and detach the `+` button.
+            HStack(spacing: 2) {
+                if isMinimized {
+                    minimizedSummary
+                } else {
+                    sessionsAndAddSlot
+                }
+            }
+            .padding(.horizontal, metrics.topPadding)
+            .padding(.vertical, metrics.horizontalPadding)
+            .frame(height: horizontalRailCrossSize)
+            .background(dockGlassBackground)
         } else {
-            body
-                .padding(.horizontal, metrics.horizontalPadding)
-                .padding(.top, metrics.topPadding)
-                .padding(.bottom, metrics.bottomPadding)
-                .frame(width: metrics.railWidth)
-                .background(dockGlassBackground)
+            // Explicit VStack so the tiles column and the `+` slot stay inside
+            // one capsule instead of getting one glass surface each.
+            VStack(spacing: 2) {
+                if isMinimized {
+                    minimizedSummary
+                } else {
+                    sessionsAndAddSlot
+                }
+            }
+            .padding(.horizontal, metrics.horizontalPadding)
+            .padding(.top, metrics.topPadding)
+            .padding(.bottom, metrics.bottomPadding)
+            .frame(width: metrics.railWidth)
+            .background(dockGlassBackground)
         }
     }
 
@@ -1310,22 +1318,18 @@ struct PickyHUDDockRailView: View {
 
     @ViewBuilder
     private func summaryChips(_ items: [PickyHUDDockSummaryItem]) -> some View {
-        if items.isEmpty {
-            if !summaryStatuses.isEmpty {
-                summaryChip(dot: DS.Colors.textTertiary, text: DS.Colors.textSecondary, count: summaryStatuses.count)
-            }
-        } else {
-            ForEach(items, id: \.status) { item in
-                summaryChip(
-                    dot: summaryDotColor(item.status),
-                    text: summaryTextColor(item.status),
-                    count: item.count
-                )
-            }
+        ForEach(items, id: \.status) { item in
+            summaryChip(
+                dot: summaryDotColor(item.status),
+                text: summaryTextColor(item.status),
+                count: item.count
+            )
         }
     }
 
     private func summaryChip(dot: Color, text: Color, count: Int) -> some View {
+        // Fixed-width chip with leading content so the dots line up in a column
+        // (vertical) while the whole block stays centered in the rail.
         HStack(spacing: 5) {
             Circle()
                 .fill(dot)
@@ -1333,8 +1337,13 @@ struct PickyHUDDockRailView: View {
             Text("\(count)")
                 .pickyFont(size: max(11, 13 * metrics.scale), weight: .semibold)
                 .foregroundColor(text)
+                .fixedSize()
         }
-        .frame(height: dockSide.orientation == .vertical ? summaryChipLineHeight : nil)
+        .frame(
+            width: dockSide.orientation == .vertical ? summaryChipRowWidth : nil,
+            height: dockSide.orientation == .vertical ? summaryChipLineHeight : nil,
+            alignment: .leading
+        )
     }
 
     private func summaryDotColor(_ status: PickyHUDDockSummaryStatus) -> Color {
@@ -1342,6 +1351,8 @@ struct PickyHUDDockRailView: View {
         case .running: DS.Colors.info
         case .waiting: DS.Colors.warning
         case .failed: DS.Colors.destructive
+        case .completed: DS.Colors.success
+        case .neutral: DS.Colors.textTertiary
         }
     }
 
@@ -1350,18 +1361,20 @@ struct PickyHUDDockRailView: View {
         case .running: DS.Colors.info
         case .waiting: DS.Colors.warningText
         case .failed: DS.Colors.destructiveText
+        case .completed: DS.Colors.successText
+        case .neutral: DS.Colors.textSecondary
         }
     }
 
     private func summaryAccessibilityLabel(_ items: [PickyHUDDockSummaryItem]) -> String {
-        guard !items.isEmpty else {
-            return summaryStatuses.isEmpty ? "Dock minimized" : "Dock minimized, \(summaryStatuses.count) Pickles"
-        }
+        guard !items.isEmpty else { return "Dock minimized" }
         let parts = items.map { item -> String in
             switch item.status {
             case .running: return "\(item.count) running"
             case .waiting: return "\(item.count) waiting"
             case .failed: return "\(item.count) failed"
+            case .completed: return "\(item.count) completed"
+            case .neutral: return "\(item.count) idle"
             }
         }
         return "Dock minimized, " + parts.joined(separator: ", ")

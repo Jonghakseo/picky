@@ -12,15 +12,18 @@
 
 import Foundation
 
-/// Coarse status buckets surfaced in the minimized dock summary. Terminal and
-/// neutral states (completed, cancelled, queued) are intentionally excluded so
-/// the collapsed strip only carries the "still needs an eye on it" mix.
+/// Status buckets surfaced in the minimized dock summary. Every session maps to
+/// exactly one bucket so the collapsed strip accounts for all pickles, not just
+/// the attention states. Queued and cancelled share the neutral bucket since
+/// both render with the same neutral tone.
 enum PickyHUDDockSummaryStatus: CaseIterable, Equatable, Hashable {
     case running
     case waiting
     case failed
+    case completed
+    case neutral
 
-    init?(_ status: PickySessionStatus) {
+    init(_ status: PickySessionStatus) {
         switch status {
         case .running:
             self = .running
@@ -28,8 +31,10 @@ enum PickyHUDDockSummaryStatus: CaseIterable, Equatable, Hashable {
             self = .waiting
         case .failed:
             self = .failed
-        case .queued, .completed, .cancelled:
-            return nil
+        case .completed:
+            self = .completed
+        case .queued, .cancelled:
+            self = .neutral
         }
     }
 }
@@ -40,15 +45,15 @@ struct PickyHUDDockSummaryItem: Equatable {
 }
 
 enum PickyHUDDockSummaryPolicy {
-    /// Ordered summary chips for the minimized dock. Buckets with a zero count
-    /// are omitted so a calm dock naturally collapses to fewer (or no) chips.
-    /// Order follows `PickyHUDDockSummaryStatus.allCases` (running, waiting,
-    /// failed) to match the expanded dock's top-to-bottom reading order.
+    /// Ordered summary chips for the minimized dock. Every session is bucketed,
+    /// and buckets with a zero count are omitted so a dock with only, say,
+    /// running and completed pickles shows exactly two chips. Order follows
+    /// `PickyHUDDockSummaryStatus.allCases` (running, waiting, failed,
+    /// completed, neutral).
     static func summary(for statuses: [PickySessionStatus]) -> [PickyHUDDockSummaryItem] {
         var counts: [PickyHUDDockSummaryStatus: Int] = [:]
         for status in statuses {
-            guard let bucket = PickyHUDDockSummaryStatus(status) else { continue }
-            counts[bucket, default: 0] += 1
+            counts[PickyHUDDockSummaryStatus(status), default: 0] += 1
         }
         return PickyHUDDockSummaryStatus.allCases.compactMap { bucket in
             guard let count = counts[bucket], count > 0 else { return nil }
@@ -56,9 +61,8 @@ enum PickyHUDDockSummaryPolicy {
         }
     }
 
-    /// True when no bucketed (running/waiting/failed) session exists, so the
-    /// view can fall back to a single neutral total chip instead of an empty
-    /// summary. `total` is the caller's overall session count for that chip.
+    /// True when there are no sessions at all, so the view can render an empty
+    /// summary (strip only).
     static func isCalm(_ summary: [PickyHUDDockSummaryItem]) -> Bool {
         summary.isEmpty
     }

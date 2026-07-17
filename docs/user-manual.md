@@ -257,6 +257,8 @@ The dock icon color, glyph, unread dot, and completion flash reflect these state
 | Press and hold a Pickle | Archives it after a ~1.2s hold timer; a progress ring fills around the dock icon, and moving the cursor more than ~10pt away cancels the archive before it fires. Archives are recoverable from the undo toast or Settings → Pickle → Archived sessions. |
 | Drag a Pickle | Reorders dock Pickles, or drags one into / out of a group. The move is committed when you release. Hold it clearly **outside** the dock for a moment and an **Archive** label appears; release there to archive it (macOS Dock style). |
 | Right-click / Control-click | Opens the dock context menu (Send Context / Compact / Archive / Stop). |
+| Click the minimize/expand chevron | Collapses the dock into a compact control strip, or restores the full dock. |
+| Click the compact status summary | Restores the full dock. The compact strip shows a count for every active status category (running, waiting, failed, completed, and idle). |
 | Click the `+` slot | Opens a popover with pinned/recent folders, **Choose Folder…**, and **New Group…**. |
 | Drag the dock handle | Move the dock along or across screen edges. The dock may tuck partly off-screen, but its handle slot stays visible so it remains grabbable. |
 | Double-click the dock handle | Toggle the dock between vertical and horizontal layouts. |
@@ -369,7 +371,7 @@ The context line can show:
 - Git insertion/deletion counts.
 - Ahead/behind counts.
 - Pull request status.
-- Link badges from artifacts, such as GitHub, Slack, Notion, Jira, Linear, or generic links.
+- Link badges from artifacts, such as GitHub, Slack, Notion, Jira, Linear, or generic links. Generic web links display the site's favicon when it is available; otherwise they use the standard link icon.
 
 Interactions:
 

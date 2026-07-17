@@ -8,6 +8,7 @@ export const PICKY_SHOW_POINTER_TOOL_NAME = "picky_show_pointer";
 export interface PickyShowPointerRequest {
   x: number;
   y: number;
+  r?: number;
   screenId?: string;
   label?: string;
 }
@@ -24,6 +25,7 @@ interface PickyShowPointerToolDetails {
 const PickyShowPointerParameters = Type.Object({
   x: Type.Number({ description: "Horizontal screenshot-pixel coordinate, measured from the left edge." }),
   y: Type.Number({ description: "Vertical screenshot-pixel coordinate, measured from the top edge." }),
+  r: Type.Optional(Type.Number({ minimum: 0, description: "Optional highlight radius in screenshot pixels." })),
   label: Type.Optional(Type.String({ description: "Optional short label shown beside the pointer." })),
   screenId: Type.Optional(Type.String({ description: "Optional captured screen ID. Omit to use the cursor or primary captured screen." })),
 });
@@ -47,6 +49,7 @@ export function createPickyShowPointerTool(
         const result = await onShowPointer({
           x: params.x,
           y: params.y,
+          r: params.r,
           label: params.label,
           screenId: params.screenId,
         });
@@ -76,6 +79,7 @@ export function makePointerOverlayRequest(input: PickyShowPointerRequest, defaul
     screenId: normalizeOptionalString(input.screenId) ?? defaults.screenId,
     x: input.x,
     y: input.y,
+    r: input.r,
     label: normalizeOptionalString(input.label),
     screenBounds: defaults.screenBounds,
     screenshotSize: defaults.screenshotSize,

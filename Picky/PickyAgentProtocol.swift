@@ -506,7 +506,6 @@ struct PickyAnnotationOverlayAnnotation: Codable, Equatable, Identifiable {
     let spotlightShape: PickyAnnotationSpotlightShape?
     let label: String?
     let ttlMs: Double?
-    let zOrder: Double?
     let clamped: Bool?
 }
 

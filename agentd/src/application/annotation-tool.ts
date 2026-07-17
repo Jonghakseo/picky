@@ -38,7 +38,6 @@ const AnnotationParameter = Type.Object({
   spotlightShape: Type.Optional(Type.Union([Type.Literal("rect"), Type.Literal("circle")])),
   label: Type.Optional(Type.String({ maxLength: 120, description: "Short label text." })),
   ttlMs: Type.Optional(Type.Number({ minimum: 0, maximum: 60_000, description: "Optional visibility duration in milliseconds." })),
-  zOrder: Type.Optional(Type.Number({ description: "Optional drawing order; larger values render above smaller values." })),
 });
 const PickyShowAnnotationsParameters = Type.Object({
   mode: Type.Optional(Type.Union([Type.Literal("replace"), Type.Literal("append"), Type.Literal("clear")], { description: "replace discards current annotations, append merges by id, clear removes all annotations." })),

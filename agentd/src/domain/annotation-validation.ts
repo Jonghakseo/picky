@@ -22,7 +22,6 @@ export interface AnnotationInput {
   spotlightShape?: SpotlightShape;
   label?: string;
   ttlMs?: number;
-  zOrder?: number;
 }
 
 export interface ClampedAnnotation extends AnnotationInput {
@@ -107,7 +106,6 @@ function normalizeAnnotation(annotation: AnnotationInput): AnnotationInput {
     id,
     label: label || undefined,
     ...(annotation.ttlMs !== undefined ? { ttlMs: nonNegativeFinite(annotation.ttlMs, "ttlMs") } : {}),
-    ...(annotation.zOrder !== undefined ? { zOrder: requiredFinite(annotation.zOrder, "zOrder") } : {}),
   };
 }
 

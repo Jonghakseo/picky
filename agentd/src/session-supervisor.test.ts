@@ -1012,7 +1012,7 @@ describe("SessionSupervisor", () => {
     const emitted: unknown[] = [];
     supervisor.on("pointerOverlayRequested", (request) => emitted.push(request));
 
-    const result = await supervisor.requestPointerOverlay({ x: -20, y: 900, label: "target" });
+    const result = await supervisor.requestPointerOverlay({ x: -20, y: 900, r: 1_000, label: "target" });
 
     expect(emitted).toHaveLength(1);
     expect(result.request).toMatchObject({
@@ -1021,6 +1021,7 @@ describe("SessionSupervisor", () => {
       screenId: "screen1",
       x: 0,
       y: 800,
+      r: 800,
       clamped: true,
       screenBounds: { x: 100, y: 200, width: 300, height: 400 },
       screenshotSize: { width: 600, height: 800 },

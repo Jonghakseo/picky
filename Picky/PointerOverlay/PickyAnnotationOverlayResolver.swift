@@ -84,8 +84,7 @@ enum PickyAnnotationOverlayResolver {
                 radius: try radius(annotation.r, "r", min(xScale, yScale)),
                 spotlightShape: nil,
                 label: normalizedLabel(annotation.label),
-                expiresAt: expiresAt,
-                zOrder: annotation.zOrder ?? 0
+                expiresAt: expiresAt
             )
         case .circle:
             let resolvedRadius: CGFloat?
@@ -110,8 +109,7 @@ enum PickyAnnotationOverlayResolver {
                 radiusY: resolvedRadiusY,
                 spotlightShape: nil,
                 label: normalizedLabel(annotation.label),
-                expiresAt: expiresAt,
-                zOrder: annotation.zOrder ?? 0
+                expiresAt: expiresAt
             )
         case .rect:
             return PickyAgentAnnotation(
@@ -121,8 +119,7 @@ enum PickyAnnotationOverlayResolver {
                 rect: try rect(annotation, displayFrame: displayFrame, xScale: xScale, yScale: yScale),
                 spotlightShape: nil,
                 label: normalizedLabel(annotation.label),
-                expiresAt: expiresAt,
-                zOrder: annotation.zOrder ?? 0
+                expiresAt: expiresAt
             )
         case .line:
             return PickyAgentAnnotation(
@@ -133,8 +130,7 @@ enum PickyAnnotationOverlayResolver {
                 endPoint: try point(annotation.x2, annotation.y2, "x2", "y2"),
                 spotlightShape: nil,
                 label: normalizedLabel(annotation.label),
-                expiresAt: expiresAt,
-                zOrder: annotation.zOrder ?? 0
+                expiresAt: expiresAt
             )
         case .spotlight:
             guard let spotlightShape = annotation.spotlightShape else {
@@ -148,8 +144,7 @@ enum PickyAnnotationOverlayResolver {
                     rect: try rect(annotation, displayFrame: displayFrame, xScale: xScale, yScale: yScale),
                     spotlightShape: spotlightShape,
                     label: normalizedLabel(annotation.label),
-                    expiresAt: expiresAt,
-                    zOrder: annotation.zOrder ?? 0
+                    expiresAt: expiresAt
                 )
             }
             return PickyAgentAnnotation(
@@ -160,8 +155,7 @@ enum PickyAnnotationOverlayResolver {
                 radius: try radius(annotation.r, "r", min(xScale, yScale)),
                 spotlightShape: spotlightShape,
                 label: normalizedLabel(annotation.label),
-                expiresAt: expiresAt,
-                zOrder: annotation.zOrder ?? 0
+                expiresAt: expiresAt
             )
         case .label:
             return PickyAgentAnnotation(
@@ -171,8 +165,7 @@ enum PickyAnnotationOverlayResolver {
                 point: try point(annotation.x, annotation.y, "x", "y"),
                 spotlightShape: nil,
                 label: normalizedLabel(annotation.label),
-                expiresAt: expiresAt,
-                zOrder: annotation.zOrder ?? 0
+                expiresAt: expiresAt
             )
         }
     }

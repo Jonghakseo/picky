@@ -212,7 +212,6 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
     let spotlightShape: PickyAnnotationSpotlightShape?
     let label: String?
     let expiresAt: Date
-    let zOrder: Double
 
     init(
         id: String,
@@ -226,8 +225,7 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
         radiusY: CGFloat? = nil,
         spotlightShape: PickyAnnotationSpotlightShape?,
         label: String?,
-        expiresAt: Date,
-        zOrder: Double
+        expiresAt: Date
     ) {
         self.id = id
         self.shape = shape
@@ -241,7 +239,6 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
         self.spotlightShape = spotlightShape
         self.label = label
         self.expiresAt = expiresAt
-        self.zOrder = zOrder
     }
 }
 

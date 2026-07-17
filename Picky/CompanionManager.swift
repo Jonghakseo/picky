@@ -2204,7 +2204,7 @@ final class CompanionManager: ObservableObject {
             detectedElementDisplayFrame = target.displayFrame
             detectedElementBubbleText = target.bubbleText
             detectedElementDisplayDuration = target.duration
-            detectedElementTargetFrame = nil
+            detectedElementTargetFrame = target.targetFrame
             detectedElementHighlightKind = .screenElement
             detectedElementScreenLocation = target.screenLocation
             detectedElementPointerID = request.id
@@ -2216,7 +2216,7 @@ final class CompanionManager: ObservableObject {
                     displayFrame: target.displayFrame,
                     bubbleText: target.bubbleText,
                     duration: target.duration,
-                    targetFrame: nil,
+                    targetFrame: target.targetFrame,
                     highlightKind: .screenElement
                 )),
                 correlation: PickyInteractionCorrelation(pointerID: request.id, source: .pointer)

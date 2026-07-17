@@ -82,12 +82,12 @@ struct PickyAgentAnnotationOverlayTests {
 
     @Test func reducerReplacesAppendsExpiresAndClearsAnnotationsForUserInput() {
         let initial = PickyInteractionState()
-        let original = resolvedAnnotation(id: "original", expiresAt: now.addingTimeInterval(10), zOrder: 1)
-        let replacement = resolvedAnnotation(id: "original", expiresAt: now.addingTimeInterval(20), zOrder: 2)
-        let additional = resolvedAnnotation(id: "additional", expiresAt: now.addingTimeInterval(5), zOrder: 0)
+        let original = resolvedAnnotation(id: "original", expiresAt: now.addingTimeInterval(10))
+        let replacement = resolvedAnnotation(id: "original", expiresAt: now.addingTimeInterval(20))
+        let additional = resolvedAnnotation(id: "additional", expiresAt: now.addingTimeInterval(5))
 
         let replaced = reduce(initial, .agentAnnotationsRequested(mode: .replace, annotations: [original, additional]))
-        #expect(replaced.agentAnnotations.map(\.id) == ["additional", "original"])
+        #expect(replaced.agentAnnotations.map(\.id) == ["original", "additional"])
         #expect(replaced.overlay == .visible(reason: [.activeAgentAnnotations]))
 
         let appended = reduce(replaced, .agentAnnotationsRequested(mode: .append, annotations: [replacement]))
@@ -104,10 +104,10 @@ struct PickyAgentAnnotationOverlayTests {
 
     @Test func reducerBoundsAppendedAnnotationsAndClearsThemForCLIInput() {
         let existing = (0..<PickyInteractionReducer.maximumAgentAnnotationCount)
-            .map { resolvedAnnotation(id: "existing-\($0)", expiresAt: now.addingTimeInterval(10), zOrder: Double($0)) }
+            .map { resolvedAnnotation(id: "existing-\($0)", expiresAt: now.addingTimeInterval(10)) }
         let initial = reduce(PickyInteractionState(), .agentAnnotationsRequested(mode: .replace, annotations: existing))
         let appended = reduce(initial, .agentAnnotationsRequested(mode: .append, annotations: [
-            resolvedAnnotation(id: "new", expiresAt: now.addingTimeInterval(10), zOrder: 24),
+            resolvedAnnotation(id: "new", expiresAt: now.addingTimeInterval(10)),
         ]))
 
         #expect(appended.agentAnnotations.count == PickyInteractionReducer.maximumAgentAnnotationCount)
@@ -129,6 +129,57 @@ struct PickyAgentAnnotationOverlayTests {
         )
         let clearedForCLI = reduce(appended, .externalContextCaptured(inputID: UUID(), text: "next", context: cliContext))
         #expect(clearedForCLI.agentAnnotations.isEmpty)
+    }
+
+    @Test func roughGeometryIsStableForAnAnnotationIDAndVariesAcrossIDs() {
+        let first = PickyAnnotationRoughGeometry.linePaths(
+            id: "save-button",
+            start: CGPoint(x: 10, y: 20),
+            end: CGPoint(x: 90, y: 80)
+        )
+        let repeated = PickyAnnotationRoughGeometry.linePaths(
+            id: "save-button",
+            start: CGPoint(x: 10, y: 20),
+            end: CGPoint(x: 90, y: 80)
+        )
+        let other = PickyAnnotationRoughGeometry.linePaths(
+            id: "cancel-button",
+            start: CGPoint(x: 10, y: 20),
+            end: CGPoint(x: 90, y: 80)
+        )
+
+        #expect(first == repeated)
+        #expect(first != other)
+    }
+
+    @Test func combinedSpotlightMaskContainsEveryHoleAndUsesSingleDimmingStrength() {
+        let screenFrame = CGRect(x: 0, y: 0, width: 100, height: 100)
+        let spotlights = [
+            PickyAgentAnnotation(
+                id: "circle-hole",
+                shape: .spotlight,
+                displayFrame: screenFrame,
+                point: CGPoint(x: 20, y: 20),
+                radius: 10,
+                spotlightShape: .circle,
+                label: nil,
+                expiresAt: now
+            ),
+            PickyAgentAnnotation(
+                id: "rect-hole",
+                shape: .spotlight,
+                displayFrame: screenFrame,
+                rect: CGRect(x: 60, y: 30, width: 20, height: 10),
+                spotlightShape: .rect,
+                label: nil,
+                expiresAt: now
+            ),
+        ]
+
+        let holes = PickyAnnotationSpotlightMaskGeometry.holes(for: spotlights, screenFrame: screenFrame)
+
+        #expect(holes == [.circle(CGRect(x: 10, y: 70, width: 20, height: 20)), .rect(CGRect(x: 60, y: 60, width: 20, height: 10))])
+        #expect(PickyAnnotationSpotlightMaskGeometry.dimmingOpacity == 0.38)
     }
 
     @Test func decodesAnnotationOverlayProtocolEvent() throws {
@@ -195,10 +246,10 @@ struct PickyAgentAnnotationOverlayTests {
         w: Double? = nil, h: Double? = nil, x1: Double? = nil, y1: Double? = nil, x2: Double? = nil, y2: Double? = nil,
         spotlightShape: PickyAnnotationSpotlightShape? = nil, label: String? = nil
     ) -> PickyAnnotationOverlayAnnotation {
-        PickyAnnotationOverlayAnnotation(id: id, shape: shape, x: x, y: y, r: r, rx: rx, ry: ry, w: w, h: h, x1: x1, y1: y1, x2: x2, y2: y2, spotlightShape: spotlightShape, label: label, ttlMs: nil, zOrder: nil, clamped: nil)
+        PickyAnnotationOverlayAnnotation(id: id, shape: shape, x: x, y: y, r: r, rx: rx, ry: ry, w: w, h: h, x1: x1, y1: y1, x2: x2, y2: y2, spotlightShape: spotlightShape, label: label, ttlMs: nil, clamped: nil)
     }
 
-    private func resolvedAnnotation(id: String, expiresAt: Date, zOrder: Double) -> PickyAgentAnnotation {
-        PickyAgentAnnotation(id: id, shape: .target, displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100), point: CGPoint(x: 50, y: 50), radius: 10, spotlightShape: nil, label: nil, expiresAt: expiresAt, zOrder: zOrder)
+    private func resolvedAnnotation(id: String, expiresAt: Date) -> PickyAgentAnnotation {
+        PickyAgentAnnotation(id: id, shape: .target, displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100), point: CGPoint(x: 50, y: 50), radius: 10, spotlightShape: nil, label: nil, expiresAt: expiresAt)
     }
 }

@@ -559,18 +559,11 @@ private struct PickyInteractionReducing {
             }
             let overflow = max(0, merged.count - PickyInteractionReducer.maximumAgentAnnotationCount)
             if overflow > 0 {
-                let expiredIndexes = merged.enumerated()
-                    .sorted { left, right in
-                        left.element.zOrder == right.element.zOrder
-                            ? left.offset < right.offset
-                            : left.element.zOrder < right.element.zOrder
-                    }
-                    .prefix(overflow)
-                    .map(\.offset)
-                    .sorted(by: >)
-                for index in expiredIndexes { merged.remove(at: index) }
+                // The model cannot influence visual stacking. Retain insertion order
+                // and discard the oldest annotations when append exceeds the cap.
+                merged.removeFirst(overflow)
             }
-            state.agentAnnotations = sortedAnnotations(merged)
+            state.agentAnnotations = merged
         }
         state = state.agentAnnotations.isEmpty
             ? state.removingOverlayReason(.activeAgentAnnotations)
@@ -599,15 +592,15 @@ private struct PickyInteractionReducing {
     }
 
     private func uniqueAnnotations(_ annotations: [PickyAgentAnnotation]) -> [PickyAgentAnnotation] {
-        var indexed: [String: PickyAgentAnnotation] = [:]
-        for annotation in annotations { indexed[annotation.id] = annotation }
-        return sortedAnnotations(Array(indexed.values))
-    }
-
-    private func sortedAnnotations(_ annotations: [PickyAgentAnnotation]) -> [PickyAgentAnnotation] {
-        annotations.sorted {
-            $0.zOrder == $1.zOrder ? $0.id < $1.id : $0.zOrder < $1.zOrder
+        var unique: [PickyAgentAnnotation] = []
+        for annotation in annotations {
+            if let index = unique.firstIndex(where: { $0.id == annotation.id }) {
+                unique[index] = annotation
+            } else {
+                unique.append(annotation)
+            }
         }
+        return unique
     }
 
     // MARK: - Speech output lifecycle

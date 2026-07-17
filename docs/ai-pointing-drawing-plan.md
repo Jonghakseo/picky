@@ -95,14 +95,15 @@ out of scope for v1; revisit later.)
    Add a new `annotationOverlayRequested` event. Fields per annotation:
    `shape` (point | circle | rect | line | spotlight | label),
    coordinates (screenshot px, matching existing convention), `screenId`,
-   `label`, `ttl`, `zOrder`, optional style. Mirror the Codable types across
+   `label`, `ttl`, optional style. Render fixed semantic layers rather than
+   accepting model-controlled stacking. Mirror the Codable types across
    `agentd/src/protocol.ts:267-278` and `Picky/PickyAgentProtocol.swift:275,416-418`.
 6. **Dedicated AI-annotation renderer.** Keep transient AI annotations separate
    from user ink. Add `PickyAgentAnnotationOverlayView` mounted near the existing
    ink and point-highlight layers in `Picky/Overlay/BlueCursorView.swift:595-615`.
    Render a collection of circles, rectangles, lines, spotlight regions, and
-   labels. Follow the Picky design system (Action Blue, semantic status) — apply
-   the `picky-design-guide` skill, not a hand-drawn/sketchy style.
+   labels. Follow the Picky design system (Action Blue, semantic status) and
+   apply a subtle deterministic hand-drawn stroke treatment for outline shapes.
 7. **Lifecycle semantics.** Support replace / append / clear, TTL, animation
    completion, cancellation on new user input, deterministic per-id cleanup.
    Add an annotation collection alongside — not inside — `PickyPointerTarget` in

@@ -87,6 +87,12 @@ describe("pointer validation", () => {
     expect(clampPointerCoordinates({ x: 25, y: 75 }, { width: 100, height: 100 })).toEqual({ x: 25, y: 75, clamped: undefined });
   });
 
+  it("clamps an optional highlight radius like screenshot coordinates", () => {
+    expect(clampPointerCoordinates({ x: 25, y: 75, r: 120 }, { width: 100, height: 80 })).toEqual({ x: 25, y: 75, r: 100, clamped: true });
+    expect(clampPointerCoordinates({ x: 25, y: 75, r: 12 }, { width: 100, height: 80 })).toEqual({ x: 25, y: 75, r: 12 });
+    expect(() => clampPointerCoordinates({ x: 25, y: 75, r: -1 }, { width: 100, height: 80 })).toThrow("r must be a non-negative finite number.");
+  });
+
   it("treats screenshot width and height as inclusive max-edge coordinates", () => {
     expect(clampPointerCoordinates({ x: 100, y: 100 }, { width: 100, height: 100 })).toEqual({ x: 100, y: 100, clamped: undefined });
   });

@@ -272,6 +272,7 @@ export const PickyPointerOverlayRequestSchema = z.object({
   x: z.number().finite(),
   y: z.number().finite(),
   label: z.string().optional(),
+  r: z.number().nonnegative().finite().optional(),
   clamped: z.boolean().optional(),
   screenBounds: BoundsSchema,
   screenshotSize: z.object({ width: z.number().positive(), height: z.number().positive() }),
@@ -296,7 +297,6 @@ export const PickyAnnotationOverlayAnnotationSchema = z.object({
   spotlightShape: z.enum(["rect", "circle"]).optional(),
   label: z.string().optional(),
   ttlMs: z.number().nonnegative().finite().optional(),
-  zOrder: z.number().finite().optional(),
   clamped: z.boolean().optional(),
 });
 export type PickyAnnotationOverlayAnnotation = z.infer<typeof PickyAnnotationOverlayAnnotationSchema>;

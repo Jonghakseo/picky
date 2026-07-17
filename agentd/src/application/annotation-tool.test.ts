@@ -51,6 +51,7 @@ describe("picky_show_annotations", () => {
     const parameters = JSON.stringify(definition.parameters);
     expect(parameters).toContain('"spotlight"');
     expect(parameters).toContain('"maxItems":24');
+    expect(parameters).not.toContain('"zOrder"');
     expect(parameters).not.toContain('"Optional captured screen ID. It must match the request screen when supplied."');
     expect(definition.promptGuidelines?.join("\n")).toContain("one captured screen");
     expect(definition.promptGuidelines?.join("\n")).toContain("Do not use text tags");

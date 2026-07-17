@@ -1097,6 +1097,7 @@ struct PickyCompanionManagerTests {
             screenId: "screen-1",
             x: 20,
             y: 20,
+            r: nil,
             label: "Settings",
             clamped: nil,
             screenBounds: PickyCGRect(x: 0, y: 0, width: 100, height: 100),

@@ -4,7 +4,7 @@ import { createPickyShowPointerTool, makePointerOverlayRequest, PICKY_SHOW_POINT
 describe("makePointerOverlayRequest", () => {
   it("trims label/screenId and falls back to default screenId when input is empty", () => {
     const overlay = makePointerOverlayRequest(
-      { x: 12, y: 34, label: "  Try Eleven v3  ", screenId: "  " },
+      { x: 12, y: 34, r: 16, label: "  Try Eleven v3  ", screenId: "  " },
       {
         contextId: "context-1",
         screenId: "screen2",
@@ -18,6 +18,7 @@ describe("makePointerOverlayRequest", () => {
       screenId: "screen2",
       x: 12,
       y: 34,
+      r: 16,
       label: "Try Eleven v3",
       screenshotSize: { width: 600, height: 800 },
     });
@@ -49,6 +50,7 @@ describe("makePointerOverlayRequest", () => {
           screenId: "screen2",
           x: 0,
           y: 800,
+          r: 24,
           label: "Save",
           clamped: true,
           screenBounds: { x: 100, y: 200, width: 300, height: 400 },
@@ -59,14 +61,14 @@ describe("makePointerOverlayRequest", () => {
 
     const result = await tool.execute(
       "tool-1",
-      { x: -20, y: 900, label: "Save", screenId: "screen2" } as never,
+      { x: -20, y: 900, r: 24, label: "Save", screenId: "screen2" } as never,
       undefined,
       undefined,
       {} as never,
     );
     const content = result.content[0];
 
-    expect(received).toEqual({ x: -20, y: 900, label: "Save", screenId: "screen2" });
+    expect(received).toEqual({ x: -20, y: 900, r: 24, label: "Save", screenId: "screen2" });
     expect(content).toMatchObject({
       type: "text",
       text: "Pointer shown at screenshot pixel (0, 800) on screen2. Coordinates were clamped to the screenshot bounds.",
@@ -87,6 +89,7 @@ describe("makePointerOverlayRequest", () => {
     expect(definition.name).toBe(PICKY_SHOW_POINTER_TOOL_NAME);
     expect(schema).toContain('"x"');
     expect(schema).toContain('"y"');
+    expect(schema).toContain('"r"');
     expect(schema).toContain('"label"');
     expect(schema).toContain('"screenId"');
     expect(definition.promptGuidelines?.join("\n")).toContain("Do not use text tags");

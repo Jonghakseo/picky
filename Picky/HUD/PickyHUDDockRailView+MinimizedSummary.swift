@@ -19,7 +19,9 @@ extension PickyHUDDockRailView {
         Button(action: onToggleMinimized) {
             Image(systemName: minimizeChevronSymbol)
                 .font(.system(size: max(9, 11 * metrics.scale), weight: .semibold))
-                .foregroundColor(DS.Colors.textSecondary)
+                // Match the drag handle's idle tint so the strip's two controls
+                // read as one quiet set (hover brightness lifts both).
+                .foregroundColor(DS.Colors.textTertiary.opacity(0.22))
                 // Give the chevron a defined slot along the strip's long axis so
                 // it reads as an intentional control instead of a cramped
                 // afterthought; the grip fills the remaining space (see §3).

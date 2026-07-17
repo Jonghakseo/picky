@@ -20,6 +20,13 @@ protocol PickyInkCaptureCoordinating: AnyObject {
     func begin(source: PickyInkCaptureSource, origin: CGPoint) -> Bool
     func finish(warpSystemCursor: Bool) -> PickyInkCapture?
     func cancel()
+
+    /// Pre-installs the shared suppressing event tap ahead of the first draw.
+    /// Default is a no-op so lightweight test doubles need not implement it.
+    @discardableResult
+    func ensureEventTapInstalled() -> Bool
+    /// Removes the shared tap entirely (permission loss / app stop).
+    func teardownEventTap()
 }
 
 extension PickyInkCaptureCoordinating {
@@ -31,6 +38,10 @@ extension PickyInkCaptureCoordinating {
     func finish() -> PickyInkCapture? {
         finish(warpSystemCursor: false)
     }
+
+    @discardableResult
+    func ensureEventTapInstalled() -> Bool { false }
+    func teardownEventTap() {}
 }
 
 final class PickyInkCaptureCenter: PickyInkCaptureCoordinating {
@@ -64,5 +75,14 @@ final class PickyInkCaptureCenter: PickyInkCaptureCoordinating {
 
     func cancel() {
         controller.cancel()
+    }
+
+    @discardableResult
+    func ensureEventTapInstalled() -> Bool {
+        controller.ensureEventTapInstalled()
+    }
+
+    func teardownEventTap() {
+        controller.teardownEventTap()
     }
 }

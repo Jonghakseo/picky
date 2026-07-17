@@ -604,6 +604,7 @@ final class CompanionManager: ObservableObject {
         quickInputDoubleTapDetector.reset()
         quickInputPanelManager.dismiss()
         cancelInkCapture()
+        inkCaptureCoordinator.teardownEventTap()
         buddyDictationManager.cancelCurrentDictation()
         overlayWindowManager.hideOverlay()
         transientHideTask?.cancel()
@@ -663,8 +664,12 @@ final class CompanionManager: ObservableObject {
 
         if currentlyHasAccessibility {
             globalPushToTalkShortcutMonitor.start()
+            // Pre-warm the shared suppressing mouse tap so the first ink draw
+            // doesn't leak its opening mouse-down while a fresh tap is created.
+            inkCaptureCoordinator.ensureEventTapInstalled()
         } else {
             globalPushToTalkShortcutMonitor.stop()
+            inkCaptureCoordinator.teardownEventTap()
         }
 
         hasScreenRecordingPermission = WindowPositionManager.hasScreenRecordingPermission()

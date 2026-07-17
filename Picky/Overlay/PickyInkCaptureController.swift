@@ -23,6 +23,10 @@ final class PickyInkCaptureController {
         let source: PickyInkCaptureSource
         let startedAt: Date
         var virtualCursor: CGPoint
+        /// Ownership of the physical mouse gesture currently in flight. Decided
+        /// at mouse-down and held to mouse-up so a drag never gets split
+        /// between Picky ink and the app underneath.
+        var gesture: PickyInkGesturePhase = .idle
         var activeStrokeOrigin: CGPoint?
         var activeStrokePoints: [CGPoint] = []
         var completedStrokes: [[CGPoint]] = []
@@ -38,6 +42,16 @@ final class PickyInkCaptureController {
     private var session: Session?
     private var eventTap: CFMachPort?
     private var eventTapRunLoopSource: CFRunLoopSource?
+    /// Backstop that force-cancels a voice capture if a push-to-talk release is
+    /// ever missed, so a wedged session can't suppress every mouse event
+    /// indefinitely. Text capture is bounded by Quick Input panel dismissal.
+    private var watchdogWorkItem: DispatchWorkItem?
+    private let voiceSessionSafetyTimeout: TimeInterval = 120
+
+    /// True while the shared suppressing event tap is installed and listening.
+    /// The tap is kept alive across capture sessions (installed on first use or
+    /// pre-warm) so arming ink never has to race a fresh `CGEvent.tapCreate`.
+    var isEventTapInstalled: Bool { eventTap != nil }
 
     /// Sliding window of recent virtual-cursor positions painted as a fading
     /// blue ink trail behind the system pointer to signal "drawing mode".
@@ -66,6 +80,7 @@ final class PickyInkCaptureController {
     }
 
     deinit {
+        watchdogWorkItem?.cancel()
         stopEventTap()
     }
 
@@ -85,14 +100,33 @@ final class PickyInkCaptureController {
             publishState()
             return false
         }
+        scheduleWatchdogIfNeeded(for: source)
         publishState()
         return true
+    }
+
+    /// Pre-installs (or reuses) the shared suppressing event tap without arming
+    /// a capture session. Called when Accessibility permission is granted so the
+    /// first PTT / Quick Input draw doesn't leak its opening mouse-down while a
+    /// fresh tap is still being created.
+    @discardableResult
+    func ensureEventTapInstalled() -> Bool {
+        startEventTapIfNeeded()
+    }
+
+    /// Tears the shared tap down entirely (permission loss / app stop). Any
+    /// in-flight capture is abandoned first.
+    func teardownEventTap() {
+        cancelWatchdog()
+        session = nil
+        stopEventTap()
+        publishState()
     }
 
     func finish(warpSystemCursor: Bool = false) -> PickyInkCapture? {
         guard let finishedSession = session else { return nil }
         session = nil
-        stopEventTap()
+        cancelWatchdog()
         if warpSystemCursor {
             warpSystemCursorToAppKitPoint(finishedSession.virtualCursor)
         }
@@ -121,8 +155,25 @@ final class PickyInkCaptureController {
     func cancel() {
         guard session != nil else { return }
         session = nil
-        stopEventTap()
+        cancelWatchdog()
         publishState()
+    }
+
+    private func scheduleWatchdogIfNeeded(for source: PickyInkCaptureSource) {
+        cancelWatchdog()
+        guard source == .voice else { return }
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, self.isActive else { return }
+            print("⚠️ Picky ink: voice capture exceeded safety ceiling; force-cancelling")
+            self.cancel()
+        }
+        watchdogWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + voiceSessionSafetyTimeout, execute: workItem)
+    }
+
+    private func cancelWatchdog() {
+        watchdogWorkItem?.cancel()
+        watchdogWorkItem = nil
     }
 
     private func startEventTapIfNeeded() -> Bool {
@@ -193,34 +244,67 @@ final class PickyInkCaptureController {
             if let eventTap {
                 CGEvent.tapEnable(tap: eventTap, enable: true)
             }
+            // The suppression window was interrupted; abandon any in-flight
+            // gesture so a half-captured drag can neither leak nor draw a stray
+            // stroke once the tap comes back.
+            invalidateActiveGesture()
             return nil
         }
 
-        guard let currentSession = session else { return Unmanaged.passUnretained(event) }
+        // Fast path: no capture armed — the app underneath owns every event.
+        // Keeps the always-installed tap cheap while ink is idle.
+        guard var currentSession = session else { return Unmanaged.passUnretained(event) }
 
         let point = appKitPoint(for: event) ?? NSEvent.mouseLocation
-        if currentSession.activeStrokeOrigin == nil,
-           shouldPassThroughMouseEvent(point, currentSession.source) {
-            moveVirtualCursor(to: point)
-            return Unmanaged.passUnretained(event)
-        }
+        let input = Self.gestureInput(for: eventType)
+        let overPassThrough = shouldPassThroughMouseEvent(point, currentSession.source)
+        let decision = PickyInkGesturePolicy.decide(
+            phase: currentSession.gesture,
+            input: input,
+            isOverPassThroughRegion: overPassThrough
+        )
+        currentSession.gesture = decision.phase
+        session = currentSession
 
-        switch eventType {
-        case .mouseMoved, .rightMouseDragged, .otherMouseDragged,
-             .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp:
-            moveVirtualCursor(to: point)
-        case .leftMouseDown:
+        switch decision.strokeCommand {
+        case .begin:
             beginPotentialStroke(at: point)
-        case .leftMouseDragged:
+        case .update:
             updatePotentialStroke(to: point)
-        case .leftMouseUp:
+        case .finish:
             finishPotentialStroke(at: point)
-        default:
-            break
+        case nil:
+            moveVirtualCursor(to: point)
         }
 
-        // Suppress all mouse input while Picky owns ink capture.
-        return nil
+        switch decision.action {
+        case .passThrough:
+            return Unmanaged.passUnretained(event)
+        case .suppress:
+            return nil
+        }
+    }
+
+    private static func gestureInput(for eventType: CGEventType) -> PickyInkGestureInput {
+        switch eventType {
+        case .leftMouseDown: return .leftDown
+        case .leftMouseDragged: return .leftDragged
+        case .leftMouseUp: return .leftUp
+        case .mouseMoved: return .moved
+        default: return .other
+        }
+    }
+
+    private func invalidateActiveGesture() {
+        guard var current = session else { return }
+        current.gesture = .invalid
+        current.activeStrokeOrigin = nil
+        current.activeStrokePoints = []
+        current.lastAcceptedPoint = nil
+        current.didCrossThreshold = false
+        current.thresholdFeedbackPoint = nil
+        session = current
+        publishState()
     }
 
     private func appKitPoint(for event: CGEvent) -> CGPoint? {

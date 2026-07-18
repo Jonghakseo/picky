@@ -23,17 +23,30 @@ struct PickyAgentAnnotationOverlayTests {
         #expect(resolved.allSatisfy { $0.expiresAt == now.addingTimeInterval(66) && $0.pendingTTL == 6 })
     }
 
-    @Test func firstSpeechStartActivatesDeferredAnnotationTTL() {
-        let pending = resolvedAnnotation(id: "pending", expiresAt: now.addingTimeInterval(66), pendingTTL: 6)
-        let requested = reduce(PickyInteractionState(), .agentAnnotationsRequested(mode: .append, annotations: [pending]))
-        #expect(requested.agentAnnotations.first?.expiresAt == now.addingTimeInterval(66))
+    @Test func bufferedAnnotationsRevealAfterSpeechAndLingerAfterNarration() {
+        let pending = resolvedAnnotation(id: "a", expiresAt: now.addingTimeInterval(66), pendingTTL: 6)
+        // Streamed annotations are buffered, not shown, until narration reaches them.
+        let buffered = reduce(PickyInteractionState(), .agentAnnotationsRequested(mode: .append, annotations: [pending]))
+        #expect(buffered.agentAnnotations.isEmpty)
+        #expect(buffered.pendingAgentAnnotations.count == 1)
 
-        let started = reduce(requested, .speechStarted(text: "Look here.", speechID: UUID(), sourceContextID: "context"))
-        #expect(started.agentAnnotations.first?.expiresAt == now.addingTimeInterval(6))
-        #expect(started.agentAnnotations.first?.pendingTTL == nil)
+        // First speech schedules the reveal; it is still not shown until the timer fires.
+        let spoke = reduce(buffered, .speechStarted(text: "Look here.", speechID: UUID(), sourceContextID: "context"))
+        #expect(spoke.agentAnnotations.isEmpty)
+        let pendingID = spoke.pendingAgentAnnotations.first!.id
 
-        let expired = reduce(started, .agentAnnotationsExpired(now: now.addingTimeInterval(5.9)))
-        #expect(expired.agentAnnotations.count == 1)
+        // Reveal shows it and it persists (no early expiry) through the narration.
+        let revealed = reduce(spoke, .agentAnnotationRevealDue(id: pendingID))
+        #expect(revealed.agentAnnotations.map(\.id) == ["a"])
+        #expect(revealed.agentAnnotations.first?.expiresAt == .distantFuture)
+        let notExpired = reduce(revealed, .agentAnnotationsExpired(now: now.addingTimeInterval(600)))
+        #expect(notExpired.agentAnnotations.count == 1)
+
+        // Narration ends (silent settle): the ttl linger starts from now.
+        let settled = reduce(revealed, .mainTurnSettled(contextID: "context"))
+        #expect(settled.agentAnnotations.first?.expiresAt == now.addingTimeInterval(6))
+        let expired = reduce(settled, .agentAnnotationsExpired(now: now.addingTimeInterval(6.1)))
+        #expect(expired.agentAnnotations.isEmpty)
     }
 
     @Test func companionManagerAppliesAnnotationOverlayEvent() async throws {
@@ -42,7 +55,10 @@ struct PickyAgentAnnotationOverlayTests {
         manager.applyAgentEvent(.annotationOverlayRequested(request(annotations: [
             annotation(id: "manager-rect", shape: .rect, x: 200, y: 100, w: 40, h: 20),
         ])))
-        try await waitUntil { manager.interactionProjectionSequence > sequenceBeforeEvent }
+        // Annotations are buffered until narration reaches them; a silent turn settle
+        // reveals whatever remains buffered.
+        manager.applyAgentEvent(.mainTurnSettled(contextId: "context"))
+        try await waitUntil { manager.interactionProjectionSequence > sequenceBeforeEvent && manager.agentAnnotations.count == 1 }
 
         #expect(manager.agentAnnotations.count == 1)
         #expect(manager.agentAnnotations.first?.id == "manager-rect")
@@ -54,6 +70,7 @@ struct PickyAgentAnnotationOverlayTests {
         manager.applyAgentEvent(.annotationOverlayRequested(request(annotations: [
             annotation(id: "visible", shape: .rect, x: 200, y: 100, w: 20, h: 20),
         ])))
+        manager.applyAgentEvent(.mainTurnSettled(contextId: "context"))
         try await waitUntil { manager.agentAnnotations.count == 1 }
 
         manager.applyAgentEvent(.annotationOverlayRequested(PickyAnnotationOverlayRequest(
@@ -77,6 +94,7 @@ struct PickyAgentAnnotationOverlayTests {
             annotations: [annotation(id: "current", shape: .rect, x: 200, y: 100, w: 20, h: 20)],
             contextGeneration: 2
         )))
+        manager.applyAgentEvent(.mainTurnSettled(contextId: "context"))
         try await waitUntil { manager.agentAnnotations.first?.id == "current" }
         manager.applyAgentEvent(.annotationOverlayRequested(request(
             annotations: [annotation(id: "stale", shape: .rect, x: 100, y: 100, w: 20, h: 20)],
@@ -86,41 +104,40 @@ struct PickyAgentAnnotationOverlayTests {
         #expect(manager.agentAnnotations.map(\.id) == ["current"])
     }
 
-    @Test func reducerReplacesAppendsExpiresAndClearsAnnotationsForUserInput() {
+    @Test func reducerBuffersReplacesAppendsAndClearsAnnotations() {
         let initial = PickyInteractionState()
-        let original = resolvedAnnotation(id: "original", expiresAt: now.addingTimeInterval(10))
-        let replacement = resolvedAnnotation(id: "original", expiresAt: now.addingTimeInterval(20))
-        let additional = resolvedAnnotation(id: "additional", expiresAt: now.addingTimeInterval(5))
+        let original = resolvedAnnotation(id: "original", expiresAt: now.addingTimeInterval(10), pendingTTL: 6)
+        let additional = resolvedAnnotation(id: "additional", expiresAt: now.addingTimeInterval(5), pendingTTL: 6)
 
+        // Replace buffers without showing anything.
         let replaced = reduce(initial, .agentAnnotationsRequested(mode: .replace, annotations: [original, additional]))
-        #expect(replaced.agentAnnotations.map(\.id) == ["original", "additional"])
-        #expect(replaced.overlay == .visible(reason: [.activeAgentAnnotations, .activePointerAnimation]))
+        #expect(replaced.agentAnnotations.isEmpty)
+        #expect(replaced.pendingAgentAnnotations.map(\.annotation.id) == ["original", "additional"])
+        #expect(replaced.overlay == .hidden)
 
-        let appended = reduce(replaced, .agentAnnotationsRequested(mode: .append, annotations: [replacement]))
-        #expect(appended.agentAnnotations.count == 2)
-        #expect(appended.agentAnnotations.first { $0.id == "original" }?.expiresAt == now.addingTimeInterval(20))
+        // Append buffers more.
+        let appended = reduce(replaced, .agentAnnotationsRequested(mode: .append, annotations: [
+            resolvedAnnotation(id: "third", expiresAt: now, pendingTTL: 6),
+        ]))
+        #expect(appended.pendingAgentAnnotations.count == 3)
 
-        let expired = reduce(appended, .agentAnnotationsExpired(now: now.addingTimeInterval(6)))
-        #expect(expired.agentAnnotations.map(\.id) == ["original"])
-
-        let clearedForInput = reduce(expired, .agentAnnotationsClearedForUserInput)
-        #expect(clearedForInput.agentAnnotations.isEmpty)
-        // User input ends the turn: the annotation buddy springs back to the cursor,
-        // so its pointer overlay stays active until the fly-back animation finishes.
-        #expect(clearedForInput.overlay == .visible(reason: [.activePointerAnimation]))
+        // Clear drops buffered and shown annotations.
+        let cleared = reduce(appended, .agentAnnotationsRequested(mode: .clear, annotations: []))
+        #expect(cleared.pendingAgentAnnotations.isEmpty)
+        #expect(cleared.agentAnnotations.isEmpty)
     }
 
-    @Test func reducerBoundsAppendedAnnotationsAndClearsThemForCLIInput() {
+    @Test func reducerBoundsBufferedAnnotationsAndClearsThemForCLIInput() {
         let existing = (0..<PickyInteractionReducer.maximumAgentAnnotationCount)
-            .map { resolvedAnnotation(id: "existing-\($0)", expiresAt: now.addingTimeInterval(10)) }
+            .map { resolvedAnnotation(id: "existing-\($0)", expiresAt: now.addingTimeInterval(10), pendingTTL: 6) }
         let initial = reduce(PickyInteractionState(), .agentAnnotationsRequested(mode: .replace, annotations: existing))
         let appended = reduce(initial, .agentAnnotationsRequested(mode: .append, annotations: [
-            resolvedAnnotation(id: "new", expiresAt: now.addingTimeInterval(10)),
+            resolvedAnnotation(id: "new", expiresAt: now.addingTimeInterval(10), pendingTTL: 6),
         ]))
 
-        #expect(appended.agentAnnotations.count == PickyInteractionReducer.maximumAgentAnnotationCount)
-        #expect(!appended.agentAnnotations.contains(where: { $0.id == "existing-0" }))
-        #expect(appended.agentAnnotations.contains(where: { $0.id == "new" }))
+        #expect(appended.pendingAgentAnnotations.count == PickyInteractionReducer.maximumAgentAnnotationCount)
+        #expect(!appended.pendingAgentAnnotations.contains(where: { $0.annotation.id == "existing-0" }))
+        #expect(appended.pendingAgentAnnotations.contains(where: { $0.annotation.id == "new" }))
 
         let cliContext = PickyContextPacket(
             id: "cli-context",

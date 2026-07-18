@@ -1969,6 +1969,15 @@ final class CompanionManager: ObservableObject {
         return true
     }
 
+    fileprivate func runAnnotationRevealEffect(id: UUID, delay: TimeInterval) {
+        interactionTimerScheduler.schedule(after: delay) { [weak self] in
+            self?.interactionCoordinator.accept(
+                .agentAnnotationRevealDue(id: id),
+                correlation: PickyInteractionCorrelation(source: .system)
+            )
+        }
+    }
+
     fileprivate func runMinimumDisplayTimerEffect(timerID: UUID, speechID: UUID?, inputID: UUID?, delay: TimeInterval) {
         interactionTimerScheduler.schedule(after: delay) { [weak self] in
             self?.interactionCoordinator.effectCompleted(
@@ -2864,6 +2873,8 @@ private final class CompanionInteractionEffectRunner: PickyInteractionEffectRunn
                 manager?.advancePointerAnimation(pointerID: pointerID)
             case .cancelPointerAnimation(let pointerID):
                 manager?.cancelPointerAnimation(pointerID: pointerID)
+            case .scheduleAnnotationReveal(let id, let delay):
+                manager?.runAnnotationRevealEffect(id: id, delay: delay)
             case .showOverlay, .scheduleTransientHide, .cancelTransientHide:
                 break
             }

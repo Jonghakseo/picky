@@ -640,7 +640,7 @@ struct PickyInteractionReducerTests {
     }
 
     @Test func annotationPointerParksAcrossStreamGapThenHopsToNextShape() {
-        let first = reduce(PickyInteractionState(), .agentAnnotationsRequested(mode: .append, annotations: [annotation(id: "rect")]), id: timerA)
+        let first = revealAnnotation(id: "rect", into: PickyInteractionState())
         let firstTarget = pointerTarget(from: first)
         #expect(firstTarget.id == "annotation-rect")
         #expect(firstTarget.highlightKind == .annotation)
@@ -651,7 +651,8 @@ struct PickyInteractionReducerTests {
         #expect(parked.state.annotationPointerIsParked)
         #expect(parked.state.activeAnnotationPointerID == firstTarget.id)
 
-        let appended = reduce(parked.state, .agentAnnotationsRequested(mode: .append, annotations: [annotation(id: "line")]), id: UUID())
+        // A later shape reveals mid-park and converts the fly-back into a direct hop.
+        let appended = revealAnnotation(id: "line", into: parked.state)
         #expect(appended.effects == [
             .setPointerParksAtTarget(pointerID: firstTarget.id, parksAtTarget: false),
             .advancePointerAnimation(pointerID: firstTarget.id),
@@ -687,13 +688,10 @@ struct PickyInteractionReducerTests {
     }
 
     @Test func turnEndFinishesQueuedShapesBeforeReturningToCursor() {
-        let requested = reduce(
-            PickyInteractionState(),
-            .agentAnnotationsRequested(mode: .append, annotations: [annotation(id: "rect"), annotation(id: "line")]),
-            id: timerA
-        )
-        let firstTarget = pointerTarget(from: requested)
-        let settled = reduce(requested.state, .mainTurnSettled(contextID: "ctx"), id: timerB)
+        let rectReveal = revealAnnotation(id: "rect", into: PickyInteractionState())
+        let firstTarget = pointerTarget(from: rectReveal)
+        let queued = revealAnnotation(id: "line", into: rectReveal.state)
+        let settled = reduce(queued.state, .mainTurnSettled(contextID: "ctx"), id: timerB)
 
         #expect(settled.effects == [
             .setPointerParksAtTarget(pointerID: firstTarget.id, parksAtTarget: false),
@@ -744,14 +742,21 @@ struct PickyInteractionReducerTests {
         )
     }
 
+    /// Requests, anchors, and reveals one annotation so its buddy choreography starts.
+    private func revealAnnotation(id annotationID: String, into state: PickyInteractionState) -> PickyInteractionTransition {
+        let requested = reduce(state, .agentAnnotationsRequested(mode: .append, annotations: [annotation(id: annotationID)]), id: UUID())
+        var current = requested.state
+        if current.annotationSpeechAnchor == nil {
+            current = reduce(current, .speechStarted(text: "n", speechID: UUID(), sourceContextID: "ctx"), id: UUID()).state
+        }
+        let pendingID = current.pendingAgentAnnotations.first { $0.annotation.id == annotationID }!.id
+        return reduce(current, .agentAnnotationRevealDue(id: pendingID), id: UUID())
+    }
+
     private func parkedAnnotationPointerState() -> PickyInteractionState {
-        let requested = reduce(
-            PickyInteractionState(),
-            .agentAnnotationsRequested(mode: .append, annotations: [annotation(id: "rect")]),
-            id: timerA
-        )
-        let target = pointerTarget(from: requested)
-        return reduce(requested.state, .pointerAnimationParked(pointerID: target.id), id: timerB).state
+        let revealed = revealAnnotation(id: "rect", into: PickyInteractionState())
+        let target = pointerTarget(from: revealed)
+        return reduce(revealed.state, .pointerAnimationParked(pointerID: target.id), id: timerB).state
     }
 
     private func pointerTarget(from transition: PickyInteractionTransition) -> PickyPointerTarget {

@@ -27,4 +27,7 @@ enum PickyInteractionEffect: Equatable {
     case setPointerParksAtTarget(pointerID: String, parksAtTarget: Bool)
     case advancePointerAnimation(pointerID: String)
     case cancelPointerAnimation(pointerID: String?)
+    /// Fires `.agentAnnotationRevealDue(id:)` after `delay` so a buffered annotation
+    /// appears in sync with the narration that precedes it.
+    case scheduleAnnotationReveal(id: UUID, delay: TimeInterval)
 }

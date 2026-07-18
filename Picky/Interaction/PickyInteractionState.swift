@@ -28,8 +28,21 @@ struct PickyInteractionState: Equatable, Codable {
     /// A later final quick reply for the same context updates visible text but must not
     /// enqueue the full reply a second time.
     var streamedNarrationContextIDs: Set<String>
-    /// Annotation TTLs are deferred until the first accepted speech start for a turn.
-    var annotationTTLsStarted: Bool
+    /// Annotations received from the streamed DSL wait here until narration reaches
+    /// their preceding-text position. They are deliberately absent from
+    /// `agentAnnotations` so the overlay cannot render them early.
+    var pendingAgentAnnotations: [PickyPendingAgentAnnotation]
+    /// Cumulative narration characters received for the current main-agent turn.
+    var annotationNarrationCharacterCount: Int
+    /// The first accepted TTS start for this turn. It anchors visual reveal timing.
+    var annotationSpeechAnchor: Date?
+    /// The actual (or no-audio estimated) narration end used to start TTL linger.
+    var annotationNarrationEnd: Date?
+    /// A terminal reply/settlement was received; wait for queued speech to drain before
+    /// finalizing `annotationNarrationEnd`.
+    var annotationTurnSettled: Bool
+    /// Monotonic arrival order used only to gently stagger a silent annotation-only turn.
+    var annotationArrivalSequence: Int
     var lastDisplayMessage: PickyDisplayMessage?
     /// sessionID -> (inputID, contextID) captured at `agentSubmissionAccepted` so a later
     /// `.sessionTerminated` can release the matching `.waitingForAgent` output even when
@@ -55,7 +68,12 @@ struct PickyInteractionState: Equatable, Codable {
         contextOwnership: [String: PickyContextOwner] = [:],
         queuedSpeechReplies: [PickyQueuedSpeechReply] = [],
         streamedNarrationContextIDs: Set<String> = [],
-        annotationTTLsStarted: Bool = false,
+        pendingAgentAnnotations: [PickyPendingAgentAnnotation] = [],
+        annotationNarrationCharacterCount: Int = 0,
+        annotationSpeechAnchor: Date? = nil,
+        annotationNarrationEnd: Date? = nil,
+        annotationTurnSettled: Bool = false,
+        annotationArrivalSequence: Int = 0,
         lastDisplayMessage: PickyDisplayMessage? = nil,
         pendingAgentRequestsBySession: [String: PickyPendingAgentRequest] = [:]
     ) {
@@ -75,7 +93,12 @@ struct PickyInteractionState: Equatable, Codable {
         self.contextOwnership = contextOwnership
         self.queuedSpeechReplies = queuedSpeechReplies
         self.streamedNarrationContextIDs = streamedNarrationContextIDs
-        self.annotationTTLsStarted = annotationTTLsStarted
+        self.pendingAgentAnnotations = pendingAgentAnnotations
+        self.annotationNarrationCharacterCount = annotationNarrationCharacterCount
+        self.annotationSpeechAnchor = annotationSpeechAnchor
+        self.annotationNarrationEnd = annotationNarrationEnd
+        self.annotationTurnSettled = annotationTurnSettled
+        self.annotationArrivalSequence = annotationArrivalSequence
         self.lastDisplayMessage = lastDisplayMessage
         self.pendingAgentRequestsBySession = pendingAgentRequestsBySession
     }
@@ -98,7 +121,12 @@ struct PickyInteractionState: Equatable, Codable {
         self.contextOwnership = try container.decode([String: PickyContextOwner].self, forKey: .contextOwnership)
         self.queuedSpeechReplies = try container.decode([PickyQueuedSpeechReply].self, forKey: .queuedSpeechReplies)
         self.streamedNarrationContextIDs = try container.decodeIfPresent(Set<String>.self, forKey: .streamedNarrationContextIDs) ?? []
-        self.annotationTTLsStarted = try container.decodeIfPresent(Bool.self, forKey: .annotationTTLsStarted) ?? false
+        self.pendingAgentAnnotations = try container.decodeIfPresent([PickyPendingAgentAnnotation].self, forKey: .pendingAgentAnnotations) ?? []
+        self.annotationNarrationCharacterCount = try container.decodeIfPresent(Int.self, forKey: .annotationNarrationCharacterCount) ?? 0
+        self.annotationSpeechAnchor = try container.decodeIfPresent(Date.self, forKey: .annotationSpeechAnchor)
+        self.annotationNarrationEnd = try container.decodeIfPresent(Date.self, forKey: .annotationNarrationEnd)
+        self.annotationTurnSettled = try container.decodeIfPresent(Bool.self, forKey: .annotationTurnSettled) ?? false
+        self.annotationArrivalSequence = try container.decodeIfPresent(Int.self, forKey: .annotationArrivalSequence) ?? 0
         self.lastDisplayMessage = try container.decodeIfPresent(PickyDisplayMessage.self, forKey: .lastDisplayMessage)
         // Older journals do not encode this field; treat absence as an empty map.
         self.pendingAgentRequestsBySession = try container.decodeIfPresent([String: PickyPendingAgentRequest].self, forKey: .pendingAgentRequestsBySession) ?? [:]
@@ -296,6 +324,15 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
         expiresAt = try container.decode(Date.self, forKey: .expiresAt)
         pendingTTL = try container.decodeIfPresent(TimeInterval.self, forKey: .pendingTTL)
     }
+}
+
+/// Buffered annotation metadata. `id` is a timer token rather than the visual
+/// annotation id, so a later replacement cannot be revealed by an old timer.
+struct PickyPendingAgentAnnotation: Equatable, Codable, Identifiable {
+    let id: UUID
+    let annotation: PickyAgentAnnotation
+    let precedingNarrationCharacters: Int
+    let silentTurnSequence: Int
 }
 
 struct PickyPointerTarget: Equatable, Codable, Identifiable {

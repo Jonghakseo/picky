@@ -811,7 +811,8 @@ struct PickyInteractionReducerTests {
         )
         let initial = PickyInteractionState(
             annotationSceneIdentity: identity,
-            annotationScenePhase: .visible
+            annotationScenePhase: .visible,
+            annotationSceneRecoveryAllowed: true
         )
         let revealed = revealAnnotation(id: "rect", into: initial)
         let target = pointerTarget(from: revealed)
@@ -843,7 +844,8 @@ struct PickyInteractionReducerTests {
         )
         let initial = PickyInteractionState(
             annotationSceneIdentity: identity,
-            annotationScenePhase: .visible
+            annotationScenePhase: .visible,
+            annotationSceneRecoveryAllowed: true
         )
         let pointed = reduce(initial, .pointerRequested(target), id: timerA)
 
@@ -877,7 +879,8 @@ struct PickyInteractionReducerTests {
         )
         let initial = PickyInteractionState(
             annotationSceneIdentity: identity,
-            annotationScenePhase: .visible
+            annotationScenePhase: .visible,
+            annotationSceneRecoveryAllowed: true
         )
         let pointed = reduce(initial, .pointerRequested(standalone), id: timerA)
         let revealed = revealAnnotation(id: "rect", into: pointed.state)
@@ -908,7 +911,8 @@ struct PickyInteractionReducerTests {
         let speechID = UUID(uuidString: "A0000000-0000-0000-0000-000000000013")!
         var initial = PickyInteractionState(
             annotationSceneIdentity: identity,
-            annotationScenePhase: .visible
+            annotationScenePhase: .visible,
+            annotationSceneRecoveryAllowed: true
         )
         initial.output = .speaking(
             contextID: "ctx",
@@ -930,6 +934,81 @@ struct PickyInteractionReducerTests {
             if case .stopSpeech = effect { return true }
             return false
         })
+    }
+
+    @Test func sceneMismatchAfterFinalSpeechDrainsPermanentlyClearsAnnotations() {
+        let identity = PickyAnnotationSceneIdentity(
+            contextID: "ctx",
+            generation: 1,
+            token: UUID(uuidString: "A0000000-0000-0000-0000-000000000015")!
+        )
+        let speechID = UUID(uuidString: "A0000000-0000-0000-0000-000000000016")!
+        var initial = PickyInteractionState(
+            agentAnnotations: [annotation(id: "rect")],
+            annotationSceneIdentity: identity,
+            annotationScenePhase: .visible,
+            annotationSceneRecoveryAllowed: true,
+            annotationTurnSettled: true
+        )
+        initial.output = .speaking(
+            contextID: "ctx",
+            speechID: speechID,
+            text: "final narration",
+            minimumDisplayTimerID: nil,
+            minimumDisplayUntil: nil,
+            finishPending: false
+        )
+
+        let drained = reduce(initial, .speechFinished(speechID: speechID), id: timerA)
+        #expect(drained.state.agentAnnotations.map(\.id) == ["rect"])
+
+        let cleared = reduce(
+            drained.state,
+            .agentAnnotationSceneMismatched(identity: identity, reason: .visual),
+            id: timerB
+        )
+
+        #expect(cleared.state.agentAnnotations.isEmpty)
+        #expect(cleared.state.annotationSceneIdentity == nil)
+        #expect(cleared.state.annotationScenePhase == .inactive)
+    }
+
+    @Test func finalSpeechDrainClearsAnnotationsAlreadySuspendedDuringNarration() {
+        let identity = PickyAnnotationSceneIdentity(
+            contextID: "ctx",
+            generation: 1,
+            token: UUID(uuidString: "A0000000-0000-0000-0000-000000000017")!
+        )
+        let speechID = UUID(uuidString: "A0000000-0000-0000-0000-000000000018")!
+        var initial = PickyInteractionState(
+            agentAnnotations: [annotation(id: "rect")],
+            annotationSceneIdentity: identity,
+            annotationScenePhase: .visible,
+            annotationSceneRecoveryAllowed: true,
+            annotationTurnSettled: true
+        )
+        initial.output = .speaking(
+            contextID: "ctx",
+            speechID: speechID,
+            text: "final narration",
+            minimumDisplayTimerID: nil,
+            minimumDisplayUntil: nil,
+            finishPending: false
+        )
+
+        let suspended = reduce(
+            initial,
+            .agentAnnotationSceneMismatched(identity: identity, reason: .visual),
+            id: timerA
+        )
+        #expect(suspended.state.annotationScenePhase == .suspended)
+        #expect(suspended.state.agentAnnotations.map(\.id) == ["rect"])
+
+        let cleared = reduce(suspended.state, .speechFinished(speechID: speechID), id: timerB)
+
+        #expect(cleared.state.agentAnnotations.isEmpty)
+        #expect(cleared.state.annotationSceneIdentity == nil)
+        #expect(cleared.state.annotationScenePhase == .inactive)
     }
 
     @Test func newTextInputClearsParkedAnnotationsAndRequestsFlyBack() {

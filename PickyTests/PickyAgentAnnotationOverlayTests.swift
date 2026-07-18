@@ -62,7 +62,18 @@ struct PickyAgentAnnotationOverlayTests {
         )
         var state = reduce(PickyInteractionState(), .agentAnnotationScenePrepared(identity: identity))
         state = reduce(state, .agentAnnotationsRequested(mode: .append, annotations: [resolvedAnnotation(id: "a")]))
-        state = reduce(state, .mainTurnSettled(contextID: "context"))
+        let speechID = UUID(uuidString: "A0000000-0000-0000-0000-000000000003")!
+        state = reduce(state, .speechStarted(text: "Look here.", speechID: speechID, sourceContextID: "context"))
+        state.output = .speaking(
+            contextID: "context",
+            speechID: speechID,
+            text: "Look here.",
+            minimumDisplayTimerID: nil,
+            minimumDisplayUntil: nil,
+            finishPending: false
+        )
+        let pendingID = state.pendingAgentAnnotations.first!.id
+        state = reduce(state, .agentAnnotationRevealDue(id: pendingID))
 
         #expect(state.annotationScenePhase == .validating)
         #expect(state.agentAnnotations.map(\.id) == ["a"])
@@ -98,7 +109,7 @@ struct PickyAgentAnnotationOverlayTests {
         #expect(manager.agentAnnotations.map(\.id) == ["manager-rect"])
     }
 
-    @Test func companionManagerProjectsAnnotationsOnlyWhileTheCapturedSceneMatches() async throws {
+    @Test func companionManagerPermanentlyClearsSettledAnnotationsOnSceneMismatch() async throws {
         let baselineFingerprint = PickyAnnotationSceneFingerprint(
             width: 10,
             height: 10,
@@ -147,7 +158,7 @@ struct PickyAgentAnnotationOverlayTests {
 
         await monitor.sampleNow()
         await monitor.sampleNow()
-        try await waitUntil { manager.agentAnnotations.map(\.id) == ["manager-rect"] }
+        #expect(manager.agentAnnotations.isEmpty)
         manager.stop()
     }
 

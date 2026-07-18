@@ -755,6 +755,7 @@ private struct PickyInteractionReducing {
         }
         state.annotationSceneIdentity = identity
         state.annotationScenePhase = .validating
+        state.annotationSceneRecoveryAllowed = true
         state = state.removingOverlayReason(.activeAgentAnnotations)
         record(.stateChanged, "Agent annotation scene validating")
     }
@@ -781,6 +782,12 @@ private struct PickyInteractionReducing {
     ) {
         guard state.annotationSceneIdentity == identity else {
             record(.staleEvent, "Ignored stale annotation scene mismatch")
+            return
+        }
+        guard state.annotationSceneRecoveryAllowed else {
+            cancelAnnotationPointerForSceneSuspension()
+            clearAgentAnnotations(resetNarration: true)
+            record(.stateChanged, "Agent annotations cleared after narration: \(reason.rawValue)")
             return
         }
         state.annotationScenePhase = .suspended
@@ -881,10 +888,15 @@ private struct PickyInteractionReducing {
         }
     }
 
-    /// Narration is over: surface any remaining shapes, reset only narration timing,
-    /// and send the buddy cursor back. Drawings persist until a new input, explicit
-    /// CLEAR, or a scene suspension hides them.
+    /// Narration is over: a scene that disappeared during speech is no longer useful,
+    /// so discard it rather than polling for a later restoration. A still-matching scene
+    /// keeps its drawings, but the next mismatch clears them permanently.
     private mutating func concludeAnnotationTurn() {
+        if state.annotationScenePhase == .suspended {
+            clearAgentAnnotations(resetNarration: true)
+            record(.stateChanged, "Suspended agent annotations cleared after narration")
+            return
+        }
         while !state.pendingAgentAnnotations.isEmpty {
             revealAnnotation(state.pendingAgentAnnotations.removeFirst().annotation, animatePointer: false)
         }
@@ -893,6 +905,7 @@ private struct PickyInteractionReducing {
         state.annotationSpeechAnchor = nil
         state.annotationTurnSettled = false
         state.annotationArrivalSequence = 0
+        state.annotationSceneRecoveryAllowed = false
         endAnnotationPointerTurn(discardingPendingTargets: true)
     }
 
@@ -912,6 +925,7 @@ private struct PickyInteractionReducing {
         state.agentAnnotations = []
         state.annotationSceneIdentity = nil
         state.annotationScenePhase = .inactive
+        state.annotationSceneRecoveryAllowed = false
         if resetNarration {
             state.annotationNarrationWeight = 0
             state.annotationSpeechAnchor = nil

@@ -31,6 +31,8 @@ Expected adaptive cadence:
 - application/window mismatch: notification-driven wake-up plus a 5-second semantic-only liveness retry; no pixel capture while still mismatched
 - display change: immediate suspend, capture-cache invalidation, then suspended adaptive pixel validation
 - window title change: immediate pixel sample without URL lookup or URL-based invalidation
+- while narration is active, a mismatch suspends and can resume; after the final TTS queue drains, the next mismatch permanently clears the annotation and stops the monitor
+- if the scene is already suspended when the final TTS queue drains, it clears immediately instead of polling for restoration
 
 ## Instruments signposts
 
@@ -44,8 +46,9 @@ Open Instruments with the Logging template, attach to Picky, then filter by thos
 
 ## Suggested manual scenario
 
-1. Display an annotation and wait for `visible`.
-2. Switch to another app; expect immediate `suspended` and no repeating capture samples.
-3. Return to the original app/window; expect two `matching` samples and `visible`.
-4. Scroll away and back; expect the same suspend/resume cycle.
-5. Leave the original screen static for over 30 seconds and confirm `delayMs=5000`.
+1. While TTS is active, display an annotation and wait for `visible`.
+2. Switch to another app; expect immediate `suspended` without interrupting TTS.
+3. Return before TTS ends; expect two `matching` samples and `visible`.
+4. After TTS ends, change the app/window or scroll away; expect a permanent clear and a monitor stop rather than a later resume.
+5. Repeat while suspended and let TTS finish before returning; expect the annotation to clear immediately.
+6. Keep a settled annotation on its original static screen for over 30 seconds and confirm `delayMs=5000` until it is cleared or replaced.

@@ -18,11 +18,14 @@ struct PickyInteractionState: Equatable, Codable {
     /// Mirrors the active target's hold policy so the reducer can change it when a turn ends.
     var activeAnnotationPointerParksAtTarget: Bool
     /// Transient AI visual guidance. Kept separate from pointer animations and user ink.
-    /// Geometry remains here while the captured desktop context is temporarily absent;
-    /// the projection hides it until the matching scene is restored.
+    /// During narration, geometry remains here while the captured desktop context is
+    /// temporarily absent; the projection hides it until the matching scene is restored.
     var agentAnnotations: [PickyAgentAnnotation]
     var annotationSceneIdentity: PickyAnnotationSceneIdentity?
     var annotationScenePhase: PickyAnnotationScenePhase
+    /// Scene recovery is useful only while narration may still need the annotation.
+    /// Once the final TTS queue drains, the next mismatch clears the geometry permanently.
+    var annotationSceneRecoveryAllowed: Bool
     var overlay: PickyOverlayPhase
     var pendingTextInputs: [UUID: PickyTextInputState]
     var pendingVoiceInputs: [UUID: PickyVoiceInputState]
@@ -69,6 +72,7 @@ struct PickyInteractionState: Equatable, Codable {
         agentAnnotations: [PickyAgentAnnotation] = [],
         annotationSceneIdentity: PickyAnnotationSceneIdentity? = nil,
         annotationScenePhase: PickyAnnotationScenePhase = .inactive,
+        annotationSceneRecoveryAllowed: Bool = false,
         overlay: PickyOverlayPhase = .hidden,
         pendingTextInputs: [UUID: PickyTextInputState] = [:],
         pendingVoiceInputs: [UUID: PickyVoiceInputState] = [:],
@@ -96,6 +100,7 @@ struct PickyInteractionState: Equatable, Codable {
         self.agentAnnotations = agentAnnotations
         self.annotationSceneIdentity = annotationSceneIdentity
         self.annotationScenePhase = annotationScenePhase
+        self.annotationSceneRecoveryAllowed = annotationSceneRecoveryAllowed
         self.overlay = overlay
         self.pendingTextInputs = pendingTextInputs
         self.pendingVoiceInputs = pendingVoiceInputs
@@ -126,6 +131,7 @@ struct PickyInteractionState: Equatable, Codable {
         self.agentAnnotations = try container.decodeIfPresent([PickyAgentAnnotation].self, forKey: .agentAnnotations) ?? []
         self.annotationSceneIdentity = try container.decodeIfPresent(PickyAnnotationSceneIdentity.self, forKey: .annotationSceneIdentity)
         self.annotationScenePhase = try container.decodeIfPresent(PickyAnnotationScenePhase.self, forKey: .annotationScenePhase) ?? .inactive
+        self.annotationSceneRecoveryAllowed = try container.decodeIfPresent(Bool.self, forKey: .annotationSceneRecoveryAllowed) ?? false
         self.overlay = try container.decode(PickyOverlayPhase.self, forKey: .overlay)
         self.pendingTextInputs = try container.decode([UUID: PickyTextInputState].self, forKey: .pendingTextInputs)
         self.pendingVoiceInputs = try container.decode([UUID: PickyVoiceInputState].self, forKey: .pendingVoiceInputs)

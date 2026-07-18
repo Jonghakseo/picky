@@ -222,6 +222,54 @@ struct PickyAgentAnnotationOverlayTests {
         #expect(anchor == CGPoint(x: 20, y: 36))
     }
 
+    @Test func rectLabelsFallBackToBottomRightWhenTooCloseToTheTop() {
+        let annotation = PickyAgentAnnotation(
+            id: "top-rect",
+            shape: .rect,
+            displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100),
+            rect: CGRect(x: 20, y: 90, width: 30, height: 8),
+            label: "Top",
+            expiresAt: now
+        )
+
+        let anchor = PickyAnnotationLabelGeometry.outlineAnchor(for: annotation, screenFrame: annotation.displayFrame)
+
+        // No room above (rect hugs the top), so the chip drops to the bottom-right.
+        #expect(anchor == CGPoint(x: 26.5, y: 24))
+    }
+
+    @Test func lineLabelsAnchorLeftOfTheLineWhenThereIsRoom() {
+        let annotation = PickyAgentAnnotation(
+            id: "line-room",
+            shape: .line,
+            displayFrame: CGRect(x: 0, y: 0, width: 200, height: 100),
+            point: CGPoint(x: 80, y: 50),
+            endPoint: CGPoint(x: 150, y: 50),
+            label: "Flow",
+            expiresAt: now
+        )
+
+        let anchor = PickyAnnotationLabelGeometry.outlineAnchor(for: annotation, screenFrame: annotation.displayFrame)
+
+        #expect(anchor == CGPoint(x: 44, y: 50))
+    }
+
+    @Test func lineLabelsFallBackToTheRightWhenNoRoomOnTheLeft() {
+        let annotation = PickyAgentAnnotation(
+            id: "line-cramped",
+            shape: .line,
+            displayFrame: CGRect(x: 0, y: 0, width: 200, height: 100),
+            point: CGPoint(x: 10, y: 50),
+            endPoint: CGPoint(x: 150, y: 50),
+            label: "Edge",
+            expiresAt: now
+        )
+
+        let anchor = PickyAnnotationLabelGeometry.outlineAnchor(for: annotation, screenFrame: annotation.displayFrame)
+
+        #expect(anchor == CGPoint(x: 186, y: 50))
+    }
+
     @Test func spotlightMaskUsesShapeMatchedHolesAndOmitsPlainAnnotations() {
         let screenFrame = CGRect(x: 0, y: 0, width: 100, height: 100)
         let annotations = [

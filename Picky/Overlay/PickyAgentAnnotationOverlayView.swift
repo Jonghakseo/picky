@@ -135,25 +135,44 @@ struct PickyAgentAnnotationOverlayView: View {
     }
 }
 
-/// Stable text-chip anchors for outline annotations. RECT labels sit just above the
-/// top-left edge; LINE labels sit above their midpoint so neither obscures the stroke.
+/// Text-chip anchors (chip centers) for outline annotations. RECT labels sit above the
+/// top-left edge, falling back to the bottom-right corner when the top is off-screen.
+/// LINE labels sit left of the line's left end, falling back to the right of its right
+/// end when there is no room on the left. Anchors are chip centers, so the estimated
+/// chip width is used to keep the chip beside (not on top of) the stroke.
 enum PickyAnnotationLabelGeometry {
     static let strokeOffset: CGFloat = 14
+    private static let labelGap: CGFloat = 8
+    private static let estimatedLabelHeight: CGFloat = 26
+
+    /// Rough chip width from text length; placement tolerates a few pixels of error.
+    static func estimatedLabelWidth(_ text: String) -> CGFloat {
+        CGFloat(text.count) * 9 + 20
+    }
 
     static func outlineAnchor(for annotation: PickyAgentAnnotation, screenFrame: CGRect) -> CGPoint? {
+        let labelWidth = estimatedLabelWidth(annotation.label ?? "")
         switch annotation.shape {
         case .rect:
             guard let rect = annotation.rect else { return nil }
             let localRect = localRect(rect, in: screenFrame)
-            return CGPoint(x: localRect.minX, y: max(0, localRect.minY - strokeOffset))
+            let aboveY = localRect.minY - strokeOffset
+            // Prefer just above the top edge; if that clips the top, drop to bottom-right.
+            if aboveY - estimatedLabelHeight / 2 >= 0 {
+                return CGPoint(x: localRect.minX, y: aboveY)
+            }
+            return CGPoint(x: localRect.maxX - labelWidth / 2, y: localRect.maxY + strokeOffset)
         case .line:
             guard let start = annotation.point, let end = annotation.endPoint else { return nil }
             let localStart = PickyOverlayGeometry.swiftUICoordinates(for: start, in: screenFrame)
             let localEnd = PickyOverlayGeometry.swiftUICoordinates(for: end, in: screenFrame)
-            return CGPoint(
-                x: (localStart.x + localEnd.x) / 2,
-                y: max(0, (localStart.y + localEnd.y) / 2 - strokeOffset)
-            )
+            let leftPoint = localStart.x <= localEnd.x ? localStart : localEnd
+            let rightPoint = localStart.x <= localEnd.x ? localEnd : localStart
+            // Prefer left of the left end; if there is no room, go right of the right end.
+            if leftPoint.x - labelGap - labelWidth >= 0 {
+                return CGPoint(x: leftPoint.x - labelGap - labelWidth / 2, y: leftPoint.y)
+            }
+            return CGPoint(x: rightPoint.x + labelGap + labelWidth / 2, y: rightPoint.y)
         case .label:
             return nil
         }

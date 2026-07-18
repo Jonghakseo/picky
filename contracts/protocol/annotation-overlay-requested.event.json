@@ -10,7 +10,7 @@
     "contextGeneration": 1,
     "screenId": "screen1",
     "annotations": [
-      { "id": "target-1", "shape": "target", "x": 640, "y": 360, "r": 28, "ttlMs": 3000 },
+      { "id": "rect-1", "shape": "rect", "x": 640, "y": 360, "w": 120, "h": 60, "ttlMs": 3000 },
       { "id": "label-1", "shape": "label", "x": 640, "y": 400, "label": "Start here" }
     ],
     "screenBounds": { "x": 0, "y": 0, "width": 1728, "height": 1117 },

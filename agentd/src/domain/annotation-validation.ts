@@ -1,6 +1,6 @@
 import type { ScreenshotSize } from "./pointer-validation.js";
 
-export const ANNOTATION_SHAPES = ["target", "circle", "rect", "line", "spotlight", "label"] as const;
+export const ANNOTATION_SHAPES = ["rect", "line", "spotlight", "label"] as const;
 export type AnnotationShape = typeof ANNOTATION_SHAPES[number];
 export type AnnotationMode = "replace" | "append" | "clear";
 export type SpotlightShape = "rect" | "circle";
@@ -47,14 +47,6 @@ export function clampAnnotation(annotation: AnnotationInput, screenshotSize: Scr
   };
 
   switch (input.shape) {
-    case "target":
-      return withClamped(input, { x: coordinate(input.x, "x", "x"), y: coordinate(input.y, "y", "y"), r: radius(input.r, "r") }, clamped);
-    case "circle":
-      return withClamped(input, {
-        x: coordinate(input.x, "x", "x"),
-        y: coordinate(input.y, "y", "y"),
-        ...(input.r !== undefined ? { r: radius(input.r, "r") } : { rx: radius(input.rx, "rx"), ry: radius(input.ry, "ry") }),
-      }, clamped);
     case "rect":
       return clampRect(input, screenshotSize, coordinate, clamped);
     case "line":

@@ -1,6 +1,6 @@
 import type { AnnotationInput } from "./annotation-validation.js";
 
-const KNOWN_VERBS = ["POINT", "TARGET", "CIRCLE", "RECT", "LINE", "SPOTLIGHT", "LABEL", "SCREEN"] as const;
+const KNOWN_VERBS = ["POINT", "RECT", "LINE", "SPOTLIGHT", "LABEL", "SCREEN"] as const;
 type KnownVerb = typeof KNOWN_VERBS[number];
 
 /** Matches a complete DSL opener; partial openers are handled incrementally below. */
@@ -191,23 +191,6 @@ export class AnnotationDslParser {
 
     let annotation: AnnotationInput | undefined;
     switch (verb) {
-      case "TARGET": {
-        const fields = required("x", "y", "r");
-        if (!fields) return { error: "TARGET requires x, y, and r" };
-        annotation = { ...this.annotationBase("target", ttlMs, label), ...fields };
-        break;
-      }
-      case "CIRCLE": {
-        const fields = required("x", "y");
-        const r = optionalNumber(args, "r", heals);
-        const rx = optionalNumber(args, "rx", heals);
-        const ry = optionalNumber(args, "ry", heals);
-        if (!fields || r === null || rx === null || ry === null || (r === undefined && (rx === undefined || ry === undefined)) || (r !== undefined && (rx !== undefined || ry !== undefined))) {
-          return { error: "CIRCLE requires x, y, and either r or rx with ry" };
-        }
-        annotation = { ...this.annotationBase("circle", ttlMs, label), ...fields, ...(r === undefined ? { rx: rx!, ry: ry! } : { r }) };
-        break;
-      }
       case "RECT": {
         const fields = required("x", "y", "w", "h");
         if (!fields) return { error: "RECT requires x, y, w, and h" };
@@ -266,8 +249,6 @@ function healingSummary(verb: KnownVerb, heals: ReadonlySet<HealReason>): string
 function allowedKeysFor(verb: KnownVerb): ReadonlySet<string> {
   switch (verb) {
     case "POINT": return new Set(["x", "y", "r", "ttl", "label"]);
-    case "TARGET": return new Set(["x", "y", "r", "ttl", "label"]);
-    case "CIRCLE": return new Set(["x", "y", "r", "rx", "ry", "ttl", "label"]);
     case "RECT": return new Set(["x", "y", "w", "h", "ttl", "label"]);
     case "LINE": return new Set(["x1", "y1", "x2", "y2", "ttl", "label"]);
     case "SPOTLIGHT": return new Set(["shape", "x", "y", "r", "w", "h", "ttl", "label"]);

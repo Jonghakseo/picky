@@ -4,7 +4,7 @@ import { AnnotationDslParser, ANNOTATION_DSL_TAG_OPEN_PATTERN } from "./annotati
 describe("AnnotationDslParser", () => {
   it("extracts valid tags and removes them from clean text", () => {
     const parser = new AnnotationDslParser();
-    const result = parser.feed('먼저 여기예요. [TARGET: x=200 y=100 r=30 ttl=8000 label="저장"] 다음을 보세요.');
+    const result = parser.feed('먼저 여기예요. [RECT: x=200 y=100 w=30 h=30 ttl=8000 label="저장"] 다음을 보세요.');
 
     expect(result.cleanText).toBe("먼저 여기예요. 다음을 보세요.");
     expect(result.droppedTags).toEqual([]);
@@ -12,7 +12,7 @@ describe("AnnotationDslParser", () => {
     expect(result.completedTags).toEqual([
       {
         kind: "annotation",
-        annotation: { id: "dsl-1", shape: "target", x: 200, y: 100, r: 30, ttlMs: 8000, label: "저장" },
+        annotation: { id: "dsl-1", shape: "rect", x: 200, y: 100, w: 30, h: 30, ttlMs: 8000, label: "저장" },
       },
     ]);
   });
@@ -20,14 +20,14 @@ describe("AnnotationDslParser", () => {
   it("buffers a tag split across three deltas and supports quoted brackets and escapes", () => {
     const parser = new AnnotationDslParser();
     expect(parser.feed("설명을 ")).toMatchObject({ cleanText: "설명을 ", completedTags: [] });
-    expect(parser.feed('[CIRCLE: x=20 y=30 r=40 ttl=')).toMatchObject({ cleanText: "", completedTags: [] });
+    expect(parser.feed('[RECT: x=20 y=30 w=40 h=40 ttl=')).toMatchObject({ cleanText: "", completedTags: [] });
     const result = parser.feed('6000 label="A ] \\"B\\""] 계속');
 
     expect(result.cleanText).toBe(" 계속");
     expect(result.completedTags).toEqual([
       {
         kind: "annotation",
-        annotation: { id: "dsl-1", shape: "circle", x: 20, y: 30, r: 40, ttlMs: 6000, label: 'A ] "B"' },
+        annotation: { id: "dsl-1", shape: "rect", x: 20, y: 30, w: 40, h: 40, ttlMs: 6000, label: 'A ] "B"' },
       },
     ]);
   });
@@ -96,11 +96,11 @@ describe("AnnotationDslParser", () => {
 
   it("heals px units and rounds float coordinates while rejecting unparseable coordinates", () => {
     const parser = new AnnotationDslParser();
-    const healed = parser.feed("[TARGET: x=120.5px y=340.4px r=24.5 ttl=6000]");
-    const dropped = parser.feed("[TARGET: x=left y=340 r=24 ttl=6000]");
+    const healed = parser.feed("[RECT: x=120.5px y=340.4px w=24.5 h=10 ttl=6000]");
+    const dropped = parser.feed("[RECT: x=left y=340 w=24 h=10 ttl=6000]");
 
-    expect(healed.completedTags[0]).toMatchObject({ kind: "annotation", annotation: { x: 121, y: 340, r: 25 } });
-    expect(healed.healedTags).toEqual(["TARGET: numeric px unit, rounded float"]);
+    expect(healed.completedTags[0]).toMatchObject({ kind: "annotation", annotation: { x: 121, y: 340, w: 25, h: 10 } });
+    expect(healed.healedTags).toEqual(["RECT: numeric px unit, rounded float"]);
     expect(dropped.completedTags).toEqual([]);
     expect(dropped.droppedTags).toHaveLength(1);
   });
@@ -122,7 +122,7 @@ describe("AnnotationDslParser", () => {
   it("ignores unknown extra keys but hard-drops nested tags and unterminated quotes", () => {
     const parser = new AnnotationDslParser();
     const extra = parser.feed("[POINT: x=1 y=2 ttl=6000 confidence=high]");
-    const nested = parser.feed("[POINT: x=1 y=[TARGET: x=2 y=3 r=4 ttl=6000] ttl=6000]");
+    const nested = parser.feed("[POINT: x=1 y=[RECT: x=2 y=3 w=4 h=4 ttl=6000] ttl=6000]");
     const unterminated = parser.feed("[POINT: x=1 y=2 ttl=6000 label=\"broken]");
 
     expect(extra.completedTags).toEqual([{ kind: "point", x: 1, y: 2, ttlMs: 6000 }]);

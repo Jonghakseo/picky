@@ -75,9 +75,9 @@ describe("neutral prompt builder", () => {
 
     expect(allEnabled.user).toContain("## Picky visual overlay DSL");
     expect(allEnabled.user).toContain("[POINT: x=<number>");
-    expect(allEnabled.user).toContain("[TARGET: x=<number>");
+    expect(allEnabled.user).toContain("[RECT: x=<number>");
     expect(allEnabled.user).toContain("[SPOTLIGHT: shape=circle");
-    expect(allEnabled.user).toContain("Tags are invisible to the user's transcript");
+    expect(allEnabled.user).toContain("invisible in the user's transcript");
     expect(overlayDisabled.user).not.toContain("## Picky visual overlay DSL");
   });
 
@@ -87,7 +87,7 @@ describe("neutral prompt builder", () => {
 
     expect(enabled?.user).toContain("## Picky visual overlay DSL");
     expect(enabled?.user).toContain("[POINT: x=<number>");
-    expect(enabled?.user).toContain("[TARGET: x=<number>");
+    expect(enabled?.user).toContain("[RECT: x=<number>");
     expect(overlayDisabled).toBeUndefined();
   });
 

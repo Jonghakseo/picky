@@ -1050,7 +1050,7 @@ describe("SessionSupervisor", () => {
     const result = await supervisor.requestAnnotationOverlay({
       mode: "replace",
       annotations: [
-        { id: "target", shape: "target", x: -20, y: 900, r: 30 },
+        { id: "spot", shape: "spotlight", spotlightShape: "circle", x: -20, y: 900, r: 30 },
         { id: "line", shape: "line", x1: 0, y1: 0, x2: 900, y2: 900, ttlMs: 500 },
       ],
     });
@@ -1064,7 +1064,7 @@ describe("SessionSupervisor", () => {
       screenBounds: { x: 100, y: 200, width: 300, height: 400 },
       screenshotSize: { width: 600, height: 800 },
       annotations: [
-        { id: "target", shape: "target", x: 0, y: 800, r: 30, clamped: true },
+        { id: "spot", shape: "spotlight", x: 0, y: 800, r: 30, clamped: true },
         { id: "line", shape: "line", x1: 0, y1: 0, x2: 600, y2: 800, ttlMs: 500, clamped: true },
       ],
     });
@@ -1118,7 +1118,7 @@ describe("SessionSupervisor", () => {
     const bootstrap = mainRuntime.handle?.bootstrapInjections[0]?.user ?? "";
     expect(bootstrap).toContain("## Picky visual overlay DSL");
     expect(bootstrap).toContain("[POINT: x=<number>");
-    expect(bootstrap).toContain("[TARGET: x=<number>");
+    expect(bootstrap).toContain("[RECT: x=<number>");
   });
 
   it("emits DSL overlays mid-stream and persists only clean main-agent text", async () => {
@@ -1247,7 +1247,7 @@ describe("SessionSupervisor", () => {
       }],
     });
 
-    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "여기입니다. [CIRCLE: x=20 y=30 r=10 ttl=6000]" });
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "여기입니다. [RECT: x=20 y=30 w=10 h=10 ttl=6000]" });
     await settle();
     mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await waitUntil(() => quickReplies.length === 1);

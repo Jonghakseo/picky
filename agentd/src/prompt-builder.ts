@@ -176,37 +176,30 @@ export function buildMainAgentVisualOverlayGuidance(disabledBuiltinTools: Readon
 function buildVisualOverlayDslPrompt(disabledBuiltinTools: ReadonlySet<string>): string[] {
   if (disabledBuiltinTools.has("picky_screen_overlay")) return [];
 
-  const lines = [
+  return [
     "",
     "## Picky visual overlay DSL",
     "",
-    "When a concrete location in a captured screenshot would help the user, emit a visual tag inline in your normal reply. Tags are invisible to the user's transcript, so narrate naturally around them. Use screenshot pixels with a top-left origin and the dimensions supplied for the screenshot. Use one visual thing at a time, concise labels, and a required ttl in milliseconds (500-60000). Do not emit a tag when no captured screenshot grounds the location.",
+    "You can draw on the user's screen to guide them. When a concrete location in a captured screenshot would help, emit a visual tag inline in your normal reply. Reach for an overlay proactively whenever pointing at or marking a spot would make your explanation clearer or easier to follow \u2014 you do not need the user to explicitly ask you to show or mark something. Only skip it when no captured screenshot grounds the location.",
+    "",
+    "Always speak as well: never reply with tags only. Every reply must include spoken narration text around any tags, because tags are silent and invisible in the user's transcript. Narrate naturally around them.",
+    "",
+    "Use screenshot pixels with a top-left origin and the dimensions supplied for the screenshot. Use one visual thing at a time, concise labels, and a required ttl in milliseconds (500-60000).",
     "",
     "Every argument is named. Double-quoted label/text values support \\\" and \\\\ escapes. [SCREEN: id=<screenId>] selects the captured display for following tags; omit it to use the cursor/primary display.",
+    "",
+    "Pointer:",
+    "- [POINT: x=<number> y=<number> r=<number> ttl=<milliseconds> label=\"short label\"]",
+    "- Example: Let me point you to the Save button. [POINT: x=120 y=340 r=24 ttl=6000 label=\"Save\"]",
+    "",
+    "Drawing shapes:",
+    "- [RECT: x=<number> y=<number> w=<number> h=<number> ttl=<milliseconds> label=\"short label\"]",
+    "- [LINE: x1=<number> y1=<number> x2=<number> y2=<number> ttl=<milliseconds> label=\"short label\"]",
+    "- [SPOTLIGHT: shape=circle x=<number> y=<number> r=<number> ttl=<milliseconds>] (or shape=rect x=<number> y=<number> w=<number> h=<number>)",
+    "- [LABEL: x=<number> y=<number> ttl=<milliseconds> text=\"short text\"]",
+    "- Example: Check this area. [RECT: x=180 y=80 w=120 h=60 ttl=6000 label=\"Here\"]",
+    "- Example: Let me highlight the menu area. [SPOTLIGHT: shape=rect x=50 y=60 w=200 h=80 ttl=6000]",
   ];
-  {
-    lines.push(
-      "",
-      "Pointer:",
-      "- [POINT: x=<number> y=<number> r=<number> ttl=<milliseconds> label=\"short label\"]",
-      "- Example: 먼저 저장 버튼을 가리킬게요. [POINT: x=120 y=340 r=24 ttl=6000 label=\"저장\"]",
-    );
-  }
-  {
-    lines.push(
-      "",
-      "Drawing shapes:",
-      "- [TARGET: x=<number> y=<number> r=<number> ttl=<milliseconds> label=\"short label\"]",
-      "- [CIRCLE: x=<number> y=<number> r=<number> ttl=<milliseconds> label=\"short label\"] (or rx=<number> ry=<number>)",
-      "- [RECT: x=<number> y=<number> w=<number> h=<number> ttl=<milliseconds> label=\"short label\"]",
-      "- [LINE: x1=<number> y1=<number> x2=<number> y2=<number> ttl=<milliseconds>]",
-      "- [SPOTLIGHT: shape=circle x=<number> y=<number> r=<number> ttl=<milliseconds>] (or shape=rect x=<number> y=<number> w=<number> h=<number>)",
-      "- [LABEL: x=<number> y=<number> ttl=<milliseconds> text=\"short text\"]",
-      "- Example: 이 부분을 확인해 주세요. [CIRCLE: x=200 y=100 r=40 ttl=6000 label=\"여기\"] [LABEL: x=250 y=150 ttl=6000 text=\"확인\"]",
-      "- Example: 메뉴 영역을 강조할게요. [SPOTLIGHT: shape=rect x=50 y=60 w=200 h=80 ttl=6000]",
-    );
-  }
-  return lines;
 }
 
 function hasGroundingContext(context: PickyContextPacket): boolean {

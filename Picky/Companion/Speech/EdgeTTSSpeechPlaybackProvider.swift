@@ -228,6 +228,9 @@ final class EdgeTTSVoiceCatalog: ObservableObject {
 final class EdgeTTSSpeechPlaybackProvider: NSObject, PickySpeechPlaybackProvider {
     var displayName: String { L10n.t("settings.voice.edge.provider") }
     var isSpeaking: Bool { isPlaybackInProgress }
+    // Each narration sentence is a separate Edge request, so the buddy can speak
+    // sentence-by-sentence as they stream instead of waiting for the whole reply.
+    let supportsIncrementalPlayback = true
 
     private let connectionInfoStore: any PickyAgentdConnectionInfoReading
     private let urlSession: URLSession
@@ -237,6 +240,10 @@ final class EdgeTTSSpeechPlaybackProvider: NSObject, PickySpeechPlaybackProvider
     private var activeSpeechID: UUID?
     private var onFinish: ((Bool) -> Void)?
     private var isPlaybackInProgress = false
+    // Warmed audio for upcoming sentences, keyed by normalized text. Prefetching
+    // the next sentence during the current one hides its ~synth+network latency.
+    private var prefetchTasks: [String: Task<Data, Error>] = [:]
+    private static let maxPrefetchEntries = 3
 
     init(
         voice: String,
@@ -251,9 +258,12 @@ final class EdgeTTSSpeechPlaybackProvider: NSObject, PickySpeechPlaybackProvider
 
     @discardableResult
     func speak(_ utterance: String, onFinish: @escaping (Bool) -> Void) -> Bool {
-        stopSpeaking()
         let input = utterance.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !input.isEmpty else { return false }
+        guard !input.isEmpty else { stopSpeaking(); return false }
+        // Reclaim this sentence's warmed audio before stopSpeaking() clears the
+        // cache, so a prefetch in flight is consumed rather than discarded.
+        let prefetched = prefetchTasks.removeValue(forKey: input)
+        stopSpeaking()
 
         let speechID = UUID()
         activeSpeechID = speechID
@@ -261,8 +271,13 @@ final class EdgeTTSSpeechPlaybackProvider: NSObject, PickySpeechPlaybackProvider
         self.onFinish = onFinish
         speechTask = Task { [connectionInfoStore, urlSession, voice] in
             do {
-                let connection = try connectionInfoStore.readConnectionInfo()
-                let audio = try await Self.generateSpeechAudio(input: input, voice: voice, connection: connection, urlSession: urlSession)
+                let audio: Data
+                if let prefetched {
+                    audio = try await prefetched.value
+                } else {
+                    let connection = try connectionInfoStore.readConnectionInfo()
+                    audio = try await Self.generateSpeechAudio(input: input, voice: voice, connection: connection, urlSession: urlSession)
+                }
                 guard !Task.isCancelled else { return }
                 self.playAudioData(audio, speechID: speechID)
             } catch {
@@ -271,6 +286,19 @@ final class EdgeTTSSpeechPlaybackProvider: NSObject, PickySpeechPlaybackProvider
             }
         }
         return true
+    }
+
+    func prefetch(_ utterance: String) {
+        let input = utterance.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !input.isEmpty, prefetchTasks[input] == nil else { return }
+        // Bound memory: drop the oldest warmed entry once the cache is full.
+        if prefetchTasks.count >= Self.maxPrefetchEntries, let stale = prefetchTasks.keys.first {
+            prefetchTasks.removeValue(forKey: stale)?.cancel()
+        }
+        prefetchTasks[input] = Task { [connectionInfoStore, urlSession, voice] in
+            let connection = try connectionInfoStore.readConnectionInfo()
+            return try await Self.generateSpeechAudio(input: input, voice: voice, connection: connection, urlSession: urlSession)
+        }
     }
 
     func stopSpeaking() {
@@ -282,6 +310,8 @@ final class EdgeTTSSpeechPlaybackProvider: NSObject, PickySpeechPlaybackProvider
         activeSpeechID = nil
         onFinish = nil
         isPlaybackInProgress = false
+        for task in prefetchTasks.values { task.cancel() }
+        prefetchTasks.removeAll()
     }
 
     static func makeSpeechRequest(input: String, voice: String, connection: PickyAgentdConnectionInfo) throws -> URLRequest {

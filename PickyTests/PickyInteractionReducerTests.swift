@@ -74,7 +74,9 @@ struct PickyInteractionReducerTests {
             correlation: .init(inputID: inputA, contextID: "voice-context", speechID: inputB, source: .agent)
         )
 
-        #expect(queued.effects.isEmpty)
+        // Queued replies are prefetched so incremental providers can warm their
+        // audio during the current utterance (no-op for non-incremental ones).
+        #expect(queued.effects == [.prefetchSpeech(text: "second reply")])
         #expect(queued.state.queuedSpeechReplies.map(\.text) == ["second reply"])
         #expect(queued.journalRecords.last?.message == "Voice quick reply queued")
 
@@ -121,6 +123,8 @@ struct PickyInteractionReducerTests {
             correlation: .init(contextID: "voice-context", speechID: inputB, source: .agent)
         )
         #expect(second.state.queuedSpeechReplies.map(\.text) == ["둘째 문장."])
+        // The queued sentence is prefetched so its audio warms while the first plays.
+        #expect(second.effects.contains(.prefetchSpeech(text: "둘째 문장.")))
 
         let final = reduce(
             second.state,

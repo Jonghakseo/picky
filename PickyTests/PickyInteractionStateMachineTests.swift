@@ -147,7 +147,7 @@ struct PickyInteractionStateMachineTests {
 
         #expect(transition.state.output == initial.output)
         #expect(transition.state.queuedSpeechReplies.map(\.text) == ["second voice reply"])
-        #expect(transition.effects.isEmpty)
+        #expect(transition.effects == [.prefetchSpeech(text: "second voice reply")])
         #expect(!containsStopSpeech(reason: .superseded, in: transition.effects))
         #expect(isSpeakingResponseOverlayActive(transition.state))
     }
@@ -602,7 +602,7 @@ struct PickyInteractionStateMachineTests {
         state = secondTransition.state
 
         #expect(state.queuedSpeechReplies.map(\.text) == ["second"])
-        #expect(secondTransition.effects.isEmpty)
+        #expect(secondTransition.effects == [.prefetchSpeech(text: "second")])
         #expect(!containsStopSpeech(reason: .superseded, speechID: firstSpeechID, in: secondTransition.effects))
 
         // First finish starts the queued second utterance.

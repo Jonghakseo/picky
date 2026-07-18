@@ -95,6 +95,24 @@ private final class EdgeTTSFallbackProvider: PickySpeechPlaybackProvider {
     }
 }
 
+private final class EdgeTTSCountingURLProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var requestCount = 0
+    nonisolated(unsafe) static var responseBody = Data([0x01, 0x02, 0x03])
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        Self.requestCount += 1
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "audio/mpeg"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Self.responseBody)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
 @MainActor
 private func edgeTTSTestSession(protocolClass: URLProtocol.Type) -> URLSession {
     let configuration = URLSessionConfiguration.ephemeral
@@ -296,6 +314,35 @@ struct EdgeTTSSpeechPlaybackProviderTests {
         try await waitForEdgeTTSCondition { completions.count == 1 }
         #expect(completions == [true])
         #expect(fallback.speakCount == 1)
+    }
+
+    @MainActor
+    @Test func supportsIncrementalPlaybackSoNarrationStreamsPerSentence() {
+        let provider = EdgeTTSSpeechPlaybackProvider(
+            voice: "ko-KR-SunHiNeural",
+            connectionInfoStore: EdgeTTSUnavailableConnectionStore()
+        )
+        #expect(provider.supportsIncrementalPlayback)
+    }
+
+    @MainActor
+    @Test func prefetchedSentenceIsConsumedBySpeakWithoutASecondRequest() async throws {
+        EdgeTTSCountingURLProtocol.requestCount = 0
+        let provider = EdgeTTSSpeechPlaybackProvider(
+            voice: "ko-KR-SunHiNeural",
+            connectionInfoStore: EdgeTTSFakeConnectionStore(connection: PickyAgentdConnectionInfo(url: "ws://127.0.0.1:17631", token: "test-token")),
+            urlSession: edgeTTSTestSession(protocolClass: EdgeTTSCountingURLProtocol.self)
+        )
+
+        provider.prefetch("warmed sentence")
+        try await waitForEdgeTTSCondition { EdgeTTSCountingURLProtocol.requestCount == 1 }
+
+        var completions: [Bool] = []
+        #expect(provider.speak("warmed sentence") { completions.append($0) })
+        try await waitForEdgeTTSCondition { completions.count == 1 }
+
+        // The warmed request was reused; speak() must not issue a second one.
+        #expect(EdgeTTSCountingURLProtocol.requestCount == 1)
     }
 
     @MainActor

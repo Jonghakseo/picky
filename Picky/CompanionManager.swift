@@ -2028,6 +2028,12 @@ final class CompanionManager: ObservableObject {
         startOrDeferInteractionSpeech(speechID: speechID, text: spoken, contextID: contextID, requestedAt: Date())
     }
 
+    fileprivate func runPrefetchSpeechEffect(text: String) {
+        // Apply the same speech transform runSpeakEffect uses so the warmed
+        // audio is keyed by the exact string the provider will later synthesize.
+        speechPlaybackProvider.prefetch(stripParentheticalsForSpeech(text))
+    }
+
     private func startOrDeferInteractionSpeech(speechID: UUID, text: String, contextID: String?, requestedAt: Date) {
         guard isCurrentInteractionSpeechOutput(speechID) else {
             logSpeech("interaction start skipped stale projection speechID=\(speechID) context=\(contextID ?? "none")")
@@ -2975,6 +2981,8 @@ private final class CompanionInteractionEffectRunner: PickyInteractionEffectRunn
                 manager?.runMinimumDisplayTimerEffect(timerID: timerID, speechID: speechID, inputID: inputID, delay: delay)
             case .speak(let speechID, let text, let contextID):
                 manager?.runSpeakEffect(speechID: speechID, text: text, contextID: contextID)
+            case .prefetchSpeech(let text):
+                manager?.runPrefetchSpeechEffect(text: text)
             case .stopSpeech(_, let speechID):
                 manager?.stopCurrentInteractionSpeech(speechID: speechID)
             case .recordContextOwnership, .startDictation, .stopDictation:

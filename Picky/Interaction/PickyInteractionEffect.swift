@@ -10,6 +10,9 @@ enum PickyInteractionEffect: Equatable {
     case captureTextContext(inputID: UUID, text: String)
     case submitText(inputID: UUID, context: PickyContextPacket, text: String)
     case speak(speechID: UUID, text: String, contextID: String?)
+    /// Warm the audio for an upcoming queued sentence so its synthesis/network
+    /// latency overlaps the sentence currently playing instead of adding a gap.
+    case prefetchSpeech(text: String)
     /// Stops any in-flight TTS playback. `speechID` carries the utterance the
     /// reducer is preempting; nil means "stop whatever is playing without
     /// dispatching a synthetic .speechFailed" (used for voicePressed when no

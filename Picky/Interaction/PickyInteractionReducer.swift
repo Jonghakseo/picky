@@ -562,6 +562,9 @@ private struct PickyInteractionReducing {
         )
         if case .speaking = state.output {
             state.queuedSpeechReplies.append(queuedReply)
+            // Warm this sentence's audio now so it is ready before the currently
+            // playing sentence finishes (no-op for non-incremental providers).
+            effects.append(.prefetchSpeech(text: text))
             record(.accepted, "Voice quick reply queued")
         } else {
             startSpeakingReply(queuedReply, occurredAt: envelope.occurredAt)

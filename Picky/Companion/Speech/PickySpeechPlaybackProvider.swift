@@ -21,10 +21,17 @@ protocol PickySpeechPlaybackProvider: AnyObject {
     @discardableResult
     func speak(_ utterance: String, onFinish: @escaping (Bool) -> Void) -> Bool
     func stopSpeaking()
+
+    /// Optionally warm the audio for an utterance that is expected to be spoken
+    /// soon (e.g. the next queued narration sentence), so its network/synthesis
+    /// latency overlaps the currently playing sentence instead of adding a gap.
+    /// Default is a no-op; providers with per-request remote synthesis override it.
+    func prefetch(_ utterance: String)
 }
 
 extension PickySpeechPlaybackProvider {
     var supportsIncrementalPlayback: Bool { false }
+    func prefetch(_ utterance: String) {}
 }
 
 enum PickySpeechPlaybackProviderFactory {

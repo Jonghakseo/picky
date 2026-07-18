@@ -95,11 +95,18 @@ final class PickyAnnotationSceneMonitor {
         var confirmationNotBefore: Date?
         var semanticBlock: PickyAnnotationSceneMismatchReason?
         var lastMismatchReason: PickyAnnotationSceneMismatchReason?
+        var allowsTolerantRestoration: Bool
 
-        init(identity: PickyAnnotationSceneIdentity, baseline: PickyAnnotationSceneBaseline, now: Date) {
+        init(
+            identity: PickyAnnotationSceneIdentity,
+            baseline: PickyAnnotationSceneBaseline,
+            now: Date,
+            allowsTolerantRestoration: Bool
+        ) {
             self.identity = identity
             self.baseline = baseline
             self.startedAt = now
+            self.allowsTolerantRestoration = allowsTolerantRestoration
         }
     }
 
@@ -136,9 +143,18 @@ final class PickyAnnotationSceneMonitor {
         self.automaticallySchedulesSamples = automaticallySchedulesSamples
     }
 
-    func start(identity: PickyAnnotationSceneIdentity, baseline: PickyAnnotationSceneBaseline) {
+    func start(
+        identity: PickyAnnotationSceneIdentity,
+        baseline: PickyAnnotationSceneBaseline,
+        allowsTolerantRestoration: Bool = false
+    ) {
         stop(logReason: nil)
-        session = Session(identity: identity, baseline: baseline, now: now())
+        session = Session(
+            identity: identity,
+            baseline: baseline,
+            now: now(),
+            allowsTolerantRestoration: allowsTolerantRestoration
+        )
         if automaticallySchedulesSamples {
             installEventObservers(for: baseline, identity: identity)
         }
@@ -169,6 +185,19 @@ final class PickyAnnotationSceneMonitor {
 
     func stop() {
         stop(logReason: "stopped")
+    }
+
+    func setAllowsTolerantRestoration(_ allowsTolerantRestoration: Bool) {
+        guard let session,
+              session.allowsTolerantRestoration != allowsTolerantRestoration else { return }
+        session.allowsTolerantRestoration = allowsTolerantRestoration
+        if session.phase == .suspended {
+            session.stability.reset()
+            session.confirmationNotBefore = nil
+            if allowsTolerantRestoration {
+                requestSample(after: 0)
+            }
+        }
     }
 
     /// Test hook and event-driven fast path. Production polling still goes through
@@ -298,7 +327,11 @@ final class PickyAnnotationSceneMonitor {
                   !Task.isCancelled else { return }
 
             let decision = PickyPerf.interval("annotation_scene_stability") {
-                session.stability.observe(sample.observation, phase: session.phase)
+                session.stability.observe(
+                    sample.observation,
+                    phase: session.phase,
+                    allowsTolerantRestoration: session.allowsTolerantRestoration
+                )
             }
             session.sampleCount += 1
             let metrics = sample.observation.metrics

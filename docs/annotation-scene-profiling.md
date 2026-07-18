@@ -32,7 +32,7 @@ Expected adaptive cadence:
 - application/window mismatch: notification-driven wake-up plus a 5-second semantic-only liveness retry; no pixel capture while still mismatched
 - display change: immediate suspend, capture-cache invalidation, then suspended adaptive pixel validation
 - window title change: immediate pixel sample without URL lookup or URL-based invalidation
-- while narration is active, a mismatch suspends and can resume; after the final TTS queue drains, the next mismatch permanently clears the annotation and stops the monitor
+- while narration is active, a mismatch suspends and can resume using the same bounded localized-drift allowance as initial validation; after the final TTS queue drains, restoration returns to strict matching and the next mismatch permanently clears the annotation and stops the monitor
 - if the scene is already suspended when the final TTS queue drains, it clears immediately instead of polling for restoration
 
 ## Instruments signposts

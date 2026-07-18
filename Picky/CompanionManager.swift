@@ -1659,6 +1659,9 @@ final class CompanionManager: ObservableObject {
         showsAgentAnnotationDismissControl = projection.showsAgentAnnotationDismissControl
         let previousProjectedSceneIdentity = projectedAnnotationSceneIdentity
         projectedAnnotationSceneIdentity = projection.state.annotationSceneIdentity
+        annotationSceneMonitor?.setAllowsTolerantRestoration(
+            projection.state.annotationSceneRecoveryAllowed
+        )
         if previousProjectedSceneIdentity != nil,
            projection.state.annotationSceneIdentity == nil,
            activeAnnotationSceneIdentity == previousProjectedSceneIdentity {
@@ -2494,7 +2497,11 @@ final class CompanionManager: ObservableObject {
                 .agentAnnotationScenePrepared(identity: identity),
                 correlation: PickyInteractionCorrelation(contextID: contextID, source: .system)
             )
-            monitor.start(identity: identity, baseline: baseline)
+            monitor.start(
+                identity: identity,
+                baseline: baseline,
+                allowsTolerantRestoration: true
+            )
         }
         monitor.updateTarget(
             screenshot: screenshot,

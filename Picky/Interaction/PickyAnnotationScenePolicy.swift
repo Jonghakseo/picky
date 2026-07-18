@@ -135,9 +135,8 @@ enum PickyAnnotationSceneVisualPolicy {
         return .indeterminate(metrics)
     }
 
-    /// Initial reveal can tolerate a bounded localized color/highlight drift when the
-    /// desktop structure still matches globally. Restoration stays strict because stale
-    /// geometry has already been proven.
+    /// Initial reveal and narration-time restoration can tolerate bounded localized
+    /// color/highlight drift when the desktop structure still matches globally.
     static func canValidateInitialScene(_ metrics: PickyAnnotationSceneDifferenceMetrics) -> Bool {
         guard let roiChangedFraction = metrics.roiChangedFraction,
               let roiMeanDifference = metrics.roiMeanDifference else { return false }
@@ -214,7 +213,8 @@ struct PickyAnnotationSceneStabilityTracker: Equatable, Sendable {
 
     mutating func observe(
         _ observation: PickyAnnotationSceneVisualObservation,
-        phase: PickyAnnotationScenePhase
+        phase: PickyAnnotationScenePhase,
+        allowsTolerantRestoration: Bool = false
     ) -> PickyAnnotationSceneStabilityDecision {
         switch observation {
         case .matching:
@@ -236,7 +236,9 @@ struct PickyAnnotationSceneStabilityTracker: Equatable, Sendable {
             reset()
             return .suspend
         case .indeterminate(let metrics):
-            guard phase == .validating,
+            let allowsInitialTolerance = phase == .validating
+                || (phase == .suspended && allowsTolerantRestoration)
+            guard allowsInitialTolerance,
                   PickyAnnotationSceneVisualPolicy.canValidateInitialScene(metrics) else {
                 reset()
                 return .none

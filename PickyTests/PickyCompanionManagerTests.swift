@@ -899,6 +899,82 @@ struct PickyCompanionManagerTests {
         try await waitUntil { speechProvider.spokenUtterances == ["최종 응답입니다."] }
     }
 
+    @Test func unsupportedIncrementalProviderKeepsAnnotationOffsetsForFinalReplyTTS() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        let timerScheduler = FakeInteractionTimerScheduler()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider,
+            interactionTimerScheduler: timerScheduler
+        )
+        let contextID = "annotation-fallback-context"
+        let narration = [
+            "지금은 이벤트 상세의 하단입니다. 위쪽 요청 정보를 확인합니다.",
+            "태그에서는 운영 환경과 실제 URL을 대조해 재현 범위를 좁힙니다.",
+            "아래 Contexts는 실행 환경의 추가 단서를 확인하는 영역입니다.",
+        ]
+
+        for (index, text) in narration.enumerated() {
+            manager.applyAgentEvent(.mainNarrationChunk(PickyMainNarrationChunkEvent(
+                contextId: contextID,
+                text: text,
+                originSource: .voice,
+                replyKind: .main,
+                sessionId: nil
+            )))
+            manager.applyAgentEvent(.annotationOverlayRequested(PickyAnnotationOverlayRequest(
+                id: "annotations-\(index)",
+                mode: .append,
+                annotations: [PickyAnnotationOverlayAnnotation(
+                    id: "rect-\(index)",
+                    shape: .rect,
+                    x: 10,
+                    y: Double(10 + index * 30),
+                    w: 100,
+                    h: 20,
+                    x1: nil,
+                    y1: nil,
+                    x2: nil,
+                    y2: nil,
+                    spotlight: nil,
+                    label: "rect-\(index)",
+                    clamped: nil
+                )],
+                contextId: contextID,
+                contextGeneration: 1,
+                screenId: "screen",
+                screenBounds: PickyCGRect(x: 0, y: 0, width: 800, height: 600),
+                screenshotSize: PickyPointerScreenshotSize(width: 800, height: 600)
+            )))
+        }
+
+        let finalReply = narration.joined(separator: " ")
+        manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
+            contextId: contextID,
+            text: finalReply,
+            originSource: .voice,
+            replyKind: .main,
+            didStreamNarration: true
+        )))
+
+        try await waitUntil {
+            speechProvider.spokenUtterances == [finalReply] && timerScheduler.scheduledDelays.count == 4
+        }
+        let revealDelays = Array(timerScheduler.scheduledDelays.suffix(3))
+        guard revealDelays.count == 3 else {
+            Issue.record("Expected three annotation reveal timers, got \(timerScheduler.scheduledDelays)")
+            return
+        }
+        let expectedDelays = narration.indices.map { index in
+            Double(narration[0...index].reduce(0) { $0 + $1.count })
+                * PickyInteractionReducer.annotationRevealSecondsPerCharacter
+        }
+
+        #expect(revealDelays.elementsEqual(expectedDelays, by: { abs($0 - $1) < 0.05 }))
+        #expect(revealDelays[0] < revealDelays[1] && revealDelays[1] < revealDelays[2])
+    }
+
     @Test func completedVoiceInputAllowsCurrentResponseSpeech() async throws {
         let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
 

@@ -32,6 +32,9 @@ struct PickyInteractionState: Equatable, Codable {
     /// their preceding-text position. They are deliberately absent from
     /// `agentAnnotations` so the overlay cannot render them early.
     var pendingAgentAnnotations: [PickyPendingAgentAnnotation]
+    /// Reveal timers can wake in any order when several deadlines coincide. Keep
+    /// fired timer ids until every earlier annotation has become due, then drain FIFO.
+    var dueAgentAnnotationIDs: Set<UUID>
     /// Cumulative narration characters received for the current main-agent turn.
     var annotationNarrationCharacterCount: Int
     /// The first accepted TTS start for this turn. It anchors visual reveal timing.
@@ -67,6 +70,7 @@ struct PickyInteractionState: Equatable, Codable {
         queuedSpeechReplies: [PickyQueuedSpeechReply] = [],
         streamedNarrationContextIDs: Set<String> = [],
         pendingAgentAnnotations: [PickyPendingAgentAnnotation] = [],
+        dueAgentAnnotationIDs: Set<UUID> = [],
         annotationNarrationCharacterCount: Int = 0,
         annotationSpeechAnchor: Date? = nil,
         annotationTurnSettled: Bool = false,
@@ -91,6 +95,7 @@ struct PickyInteractionState: Equatable, Codable {
         self.queuedSpeechReplies = queuedSpeechReplies
         self.streamedNarrationContextIDs = streamedNarrationContextIDs
         self.pendingAgentAnnotations = pendingAgentAnnotations
+        self.dueAgentAnnotationIDs = dueAgentAnnotationIDs
         self.annotationNarrationCharacterCount = annotationNarrationCharacterCount
         self.annotationSpeechAnchor = annotationSpeechAnchor
         self.annotationTurnSettled = annotationTurnSettled
@@ -118,6 +123,7 @@ struct PickyInteractionState: Equatable, Codable {
         self.queuedSpeechReplies = try container.decode([PickyQueuedSpeechReply].self, forKey: .queuedSpeechReplies)
         self.streamedNarrationContextIDs = try container.decodeIfPresent(Set<String>.self, forKey: .streamedNarrationContextIDs) ?? []
         self.pendingAgentAnnotations = try container.decodeIfPresent([PickyPendingAgentAnnotation].self, forKey: .pendingAgentAnnotations) ?? []
+        self.dueAgentAnnotationIDs = try container.decodeIfPresent(Set<UUID>.self, forKey: .dueAgentAnnotationIDs) ?? []
         self.annotationNarrationCharacterCount = try container.decodeIfPresent(Int.self, forKey: .annotationNarrationCharacterCount) ?? 0
         self.annotationSpeechAnchor = try container.decodeIfPresent(Date.self, forKey: .annotationSpeechAnchor)
         self.annotationTurnSettled = try container.decodeIfPresent(Bool.self, forKey: .annotationTurnSettled) ?? false

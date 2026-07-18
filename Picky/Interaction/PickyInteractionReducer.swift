@@ -116,8 +116,8 @@ private struct PickyInteractionReducing {
             applyAgentSubmissionAccepted(contextID: contextID, sessionID: sessionID, inputID: inputID)
         case .quickReply(let contextID, let text, let originSource, let replyKind, let sessionID, let inputID):
             applyQuickReply(contextID: contextID, text: text, originSource: originSource, replyKind: replyKind, sessionID: sessionID, inputID: inputID)
-        case .narrationChunk(let contextID, let text, let originSource, let replyKind, let sessionID):
-            applyNarrationChunk(contextID: contextID, text: text, originSource: originSource, replyKind: replyKind, sessionID: sessionID)
+        case .narrationChunk(let contextID, let text, let originSource, let replyKind, let sessionID, let shouldSpeak):
+            applyNarrationChunk(contextID: contextID, text: text, originSource: originSource, replyKind: replyKind, sessionID: sessionID, shouldSpeak: shouldSpeak)
         case .streamedQuickReplyFinal(let contextID, let text, let originSource, let replyKind, let sessionID, let inputID):
             applyStreamedQuickReplyFinal(contextID: contextID, text: text, originSource: originSource, replyKind: replyKind, sessionID: sessionID, inputID: inputID)
         case .passiveAgentSummary(let sessionID, let text):
@@ -458,7 +458,8 @@ private struct PickyInteractionReducing {
         text: String,
         originSource: PickyQuickReplyOriginSource?,
         replyKind: PickyQuickReplyKind?,
-        sessionID: String?
+        sessionID: String?,
+        shouldSpeak: Bool
     ) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -472,6 +473,17 @@ private struct PickyInteractionReducing {
             record(.accepted, "Narration chunk did not require speech")
             return
         }
+
+        // Even providers that cannot play incremental chunks still receive the
+        // prose/tag stream. Preserve its character offsets so annotations can be
+        // timed against the final full-reply TTS instead of all revealing at zero.
+        state.annotationNarrationCharacterCount += trimmed.count
+        if let sessionID { state.pendingAgentRequestsBySession[sessionID] = nil }
+        guard shouldSpeak else {
+            record(.accepted, "Narration chunk tracked for annotation timing")
+            return
+        }
+
         let timerID = envelope.id
         enqueueOrSpeakQuickReply(
             contextID: contextID,
@@ -482,9 +494,6 @@ private struct PickyInteractionReducing {
             inputID: nil
         )
         state.streamedNarrationContextIDs.insert(contextID)
-        // Track narration length so buffered annotations can reveal in step with speech.
-        state.annotationNarrationCharacterCount += trimmed.count
-        if let sessionID { state.pendingAgentRequestsBySession[sessionID] = nil }
         record(.accepted, "Narration chunk queued for speech")
     }
 
@@ -717,11 +726,13 @@ private struct PickyInteractionReducing {
         switch mode {
         case .clear:
             state.pendingAgentAnnotations = []
+            state.dueAgentAnnotationIDs = []
             state.agentAnnotations = []
             state = state.removingOverlayReason(.activeAgentAnnotations)
             endAnnotationPointerTurn(discardingPendingTargets: true)
         case .replace:
             state.pendingAgentAnnotations = []
+            state.dueAgentAnnotationIDs = []
             state.agentAnnotations = []
             state = state.removingOverlayReason(.activeAgentAnnotations)
             for annotation in annotations { bufferOrRevealAnnotation(annotation) }
@@ -743,7 +754,11 @@ private struct PickyInteractionReducing {
         state.annotationArrivalSequence += 1
         state.pendingAgentAnnotations.append(pending)
         let overflow = max(0, state.pendingAgentAnnotations.count - PickyInteractionReducer.maximumAgentAnnotationCount)
-        if overflow > 0 { state.pendingAgentAnnotations.removeFirst(overflow) }
+        if overflow > 0 {
+            let removedIDs = state.pendingAgentAnnotations.prefix(overflow).map(\.id)
+            state.pendingAgentAnnotations.removeFirst(overflow)
+            state.dueAgentAnnotationIDs.subtract(removedIDs)
+        }
         if let anchor = state.annotationSpeechAnchor {
             scheduleAnnotationReveal(pending, anchor: anchor)
         }
@@ -765,12 +780,20 @@ private struct PickyInteractionReducing {
     }
 
     private mutating func applyAnnotationRevealDue(id: UUID) {
-        guard let index = state.pendingAgentAnnotations.firstIndex(where: { $0.id == id }) else {
+        guard state.pendingAgentAnnotations.contains(where: { $0.id == id }) else {
             record(.staleEvent, "Ignored stale annotation reveal")
             return
         }
-        let pending = state.pendingAgentAnnotations.remove(at: index)
-        revealAnnotation(pending.annotation)
+        state.dueAgentAnnotationIDs.insert(id)
+
+        // Equal/overdue Task.sleep deadlines can resume in arbitrary order. Only
+        // drain a due annotation after every earlier stream item is also due so
+        // both drawing appearance and buddy traversal remain source-order FIFO.
+        while let pending = state.pendingAgentAnnotations.first,
+              state.dueAgentAnnotationIDs.remove(pending.id) != nil {
+            state.pendingAgentAnnotations.removeFirst()
+            revealAnnotation(pending.annotation)
+        }
     }
 
     /// Shows an annotation and sends the buddy to it. Its lifetime is owned by the
@@ -808,6 +831,7 @@ private struct PickyInteractionReducing {
     /// only after the turn settled and the final queued TTS utterance drained.
     private mutating func concludeAnnotationTurn() {
         state.pendingAgentAnnotations = []
+        state.dueAgentAnnotationIDs = []
         state.agentAnnotations = []
         state.annotationNarrationCharacterCount = 0
         state.annotationSpeechAnchor = nil
@@ -824,6 +848,7 @@ private struct PickyInteractionReducing {
 
     private mutating func clearAgentAnnotationsForUserInput() {
         state.pendingAgentAnnotations = []
+        state.dueAgentAnnotationIDs = []
         state.annotationNarrationCharacterCount = 0
         state.annotationSpeechAnchor = nil
         state.annotationTurnSettled = false

@@ -2316,7 +2316,7 @@ final class CompanionManager: ObservableObject {
     }
 
     private func applyMainNarrationChunk(_ chunk: PickyMainNarrationChunkEvent) {
-        guard ttsPlaybackEnabled, speechPlaybackProvider.supportsIncrementalPlayback else { return }
+        guard ttsPlaybackEnabled else { return }
         let owner = interactionOwner(for: chunk.contextId)
         let originSource = chunk.originSource ?? owner.map { $0.isVoiceOwned ? .voice : .text }
         interactionCoordinator.accept(
@@ -2325,7 +2325,8 @@ final class CompanionManager: ObservableObject {
                 text: chunk.text,
                 originSource: originSource,
                 replyKind: chunk.replyKind ?? .main,
-                sessionID: chunk.sessionId
+                sessionID: chunk.sessionId,
+                shouldSpeak: speechPlaybackProvider.supportsIncrementalPlayback
             ),
             correlation: PickyInteractionCorrelation(contextID: chunk.contextId, sessionID: chunk.sessionId, source: .agent)
         )

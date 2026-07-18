@@ -110,13 +110,13 @@ struct PickyInteractionReducerTests {
 
         let first = reduce(
             state,
-            .narrationChunk(contextID: "voice-context", text: "첫 문장.", originSource: .voice, replyKind: .main, sessionID: nil),
+            .narrationChunk(contextID: "voice-context", text: "첫 문장.", originSource: .voice, replyKind: .main, sessionID: nil, shouldSpeak: true),
             id: timerA,
             correlation: .init(contextID: "voice-context", speechID: speechA, source: .agent)
         )
         let second = reduce(
             first.state,
-            .narrationChunk(contextID: "voice-context", text: "둘째 문장.", originSource: .voice, replyKind: .main, sessionID: nil),
+            .narrationChunk(contextID: "voice-context", text: "둘째 문장.", originSource: .voice, replyKind: .main, sessionID: nil, shouldSpeak: true),
             id: timerB,
             correlation: .init(contextID: "voice-context", speechID: inputB, source: .agent)
         )
@@ -237,6 +237,30 @@ struct PickyInteractionReducerTests {
         )
 
         #expect(transition.effects.contains(.speak(speechID: speechA, text: "spoken reply", contextID: "ctx-quick")))
+    }
+
+    @Test func narrationChunkPlaybackFlagRoundTripsAndDefaultsToSpeaking() throws {
+        let legacyData = #"{"narrationChunk":{"contextID":"ctx","text":"legacy"}}"#.data(using: .utf8)!
+        let legacy = try JSONDecoder().decode(PickyInteractionEvent.self, from: legacyData)
+        #expect(legacy == .narrationChunk(
+            contextID: "ctx",
+            text: "legacy",
+            originSource: nil,
+            replyKind: nil,
+            sessionID: nil,
+            shouldSpeak: true
+        ))
+
+        let timingOnly = PickyInteractionEvent.narrationChunk(
+            contextID: "ctx",
+            text: "timing",
+            originSource: .text,
+            replyKind: .main,
+            sessionID: nil,
+            shouldSpeak: false
+        )
+        let roundTripped = try JSONDecoder().decode(PickyInteractionEvent.self, from: JSONEncoder().encode(timingOnly))
+        #expect(roundTripped == timingOnly)
     }
 
     @Test func quickReplyMetadataDecodingIsTolerant() throws {
@@ -634,7 +658,7 @@ struct PickyInteractionReducerTests {
 
         state = reduce(
             state,
-            .narrationChunk(contextID: "ctx", text: firstText, originSource: .voice, replyKind: .main, sessionID: nil),
+            .narrationChunk(contextID: "ctx", text: firstText, originSource: .voice, replyKind: .main, sessionID: nil, shouldSpeak: true),
             id: timerA
         ).state
         state = reduce(
@@ -644,7 +668,7 @@ struct PickyInteractionReducerTests {
         ).state
         state = reduce(
             state,
-            .narrationChunk(contextID: "ctx", text: secondText, originSource: .voice, replyKind: .main, sessionID: nil),
+            .narrationChunk(contextID: "ctx", text: secondText, originSource: .voice, replyKind: .main, sessionID: nil, shouldSpeak: true),
             id: timerB
         ).state
         state = reduce(
@@ -657,6 +681,32 @@ struct PickyInteractionReducerTests {
             firstText.count,
             firstText.count + secondText.count,
         ])
+    }
+
+    @Test func outOfOrderAnnotationTimersRevealAndQueuePointersInArrivalOrder() {
+        let requested = reduce(
+            PickyInteractionState(),
+            .agentAnnotationsRequested(mode: .append, annotations: [
+                annotation(id: "first"),
+                annotation(id: "second"),
+                annotation(id: "third"),
+            ]),
+            id: timerA
+        )
+        let pendingIDs = requested.state.pendingAgentAnnotations.map(\.id)
+
+        let thirdDue = reduce(requested.state, .agentAnnotationRevealDue(id: pendingIDs[2]), id: UUID())
+        #expect(thirdDue.state.agentAnnotations.isEmpty)
+        #expect(thirdDue.state.pendingAnnotationPointerTargets.isEmpty)
+
+        let firstDue = reduce(thirdDue.state, .agentAnnotationRevealDue(id: pendingIDs[0]), id: UUID())
+        #expect(firstDue.state.agentAnnotations.map(\.id) == ["first"])
+        #expect(firstDue.state.activeAnnotationPointerID == "annotation-first")
+
+        let secondDue = reduce(firstDue.state, .agentAnnotationRevealDue(id: pendingIDs[1]), id: UUID())
+        #expect(secondDue.state.agentAnnotations.map(\.id) == ["first", "second", "third"])
+        #expect(secondDue.state.activeAnnotationPointerID == "annotation-first")
+        #expect(secondDue.state.pendingAnnotationPointerTargets.map(\.id) == ["annotation-second", "annotation-third"])
     }
 
     @Test func annotationPointerParksAcrossStreamGapThenHopsToNextShape() {

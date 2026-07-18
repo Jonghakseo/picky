@@ -171,7 +171,7 @@ enum PickyInteractionEvent: Equatable, Codable {
     case externalContextCaptured(inputID: UUID, text: String, context: PickyContextPacket)
     case agentSubmissionAccepted(contextID: String?, sessionID: String, inputID: UUID?)
     case quickReply(contextID: String, text: String, originSource: PickyQuickReplyOriginSource?, replyKind: PickyQuickReplyKind?, sessionID: String?, inputID: UUID?)
-    case narrationChunk(contextID: String, text: String, originSource: PickyQuickReplyOriginSource?, replyKind: PickyQuickReplyKind?, sessionID: String?)
+    case narrationChunk(contextID: String, text: String, originSource: PickyQuickReplyOriginSource?, replyKind: PickyQuickReplyKind?, sessionID: String?, shouldSpeak: Bool)
     case streamedQuickReplyFinal(contextID: String, text: String, originSource: PickyQuickReplyOriginSource?, replyKind: PickyQuickReplyKind?, sessionID: String?, inputID: UUID?)
     case passiveAgentSummary(sessionID: String, text: String)
     case pickleCompleted(sessionID: String, summary: String?)
@@ -218,7 +218,7 @@ enum PickyInteractionEvent: Equatable, Codable {
     fileprivate enum FieldKey: String, CodingKey {
         case enabled, targetSessionID, message, inputID, text, context, contextID, contextId, transcript, sessionID, sessionId
         case originSource, replyKind, source, summary, pointerID, pointerId, reason, speechID, speechId, sourceContextID
-        case timerID, timerId, mode, annotations, id
+        case timerID, timerId, mode, annotations, id, shouldSpeak
     }
 
     init(from decoder: Decoder) throws {
@@ -303,7 +303,8 @@ enum PickyInteractionEvent: Equatable, Codable {
                 text: try payload.decode(String.self, forKey: .text),
                 originSource: try payload.decodeIfPresent(PickyQuickReplyOriginSource.self, forKey: .originSource),
                 replyKind: try payload.decodeIfPresent(PickyQuickReplyKind.self, forKey: .replyKind),
-                sessionID: try payload.decodeIfPresent(String.self, forKey: .sessionID)
+                sessionID: try payload.decodeIfPresent(String.self, forKey: .sessionID),
+                shouldSpeak: try payload.decodeIfPresent(Bool.self, forKey: .shouldSpeak) ?? true
             )
         case .streamedQuickReplyFinal:
             let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
@@ -426,9 +427,9 @@ enum PickyInteractionEvent: Equatable, Codable {
         case .quickReply(let contextID, let text, let originSource, let replyKind, let sessionID, let inputID):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .quickReply)
             try payload.encode(contextID, forKey: .contextID); try payload.encode(text, forKey: .text); try payload.encodeIfPresent(originSource, forKey: .originSource); try payload.encodeIfPresent(replyKind, forKey: .replyKind); try payload.encodeIfPresent(sessionID, forKey: .sessionID); try payload.encodeIfPresent(inputID, forKey: .inputID)
-        case .narrationChunk(let contextID, let text, let originSource, let replyKind, let sessionID):
+        case .narrationChunk(let contextID, let text, let originSource, let replyKind, let sessionID, let shouldSpeak):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .narrationChunk)
-            try payload.encode(contextID, forKey: .contextID); try payload.encode(text, forKey: .text); try payload.encodeIfPresent(originSource, forKey: .originSource); try payload.encodeIfPresent(replyKind, forKey: .replyKind); try payload.encodeIfPresent(sessionID, forKey: .sessionID)
+            try payload.encode(contextID, forKey: .contextID); try payload.encode(text, forKey: .text); try payload.encodeIfPresent(originSource, forKey: .originSource); try payload.encodeIfPresent(replyKind, forKey: .replyKind); try payload.encodeIfPresent(sessionID, forKey: .sessionID); try payload.encode(shouldSpeak, forKey: .shouldSpeak)
         case .streamedQuickReplyFinal(let contextID, let text, let originSource, let replyKind, let sessionID, let inputID):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .streamedQuickReplyFinal)
             try payload.encode(contextID, forKey: .contextID); try payload.encode(text, forKey: .text); try payload.encodeIfPresent(originSource, forKey: .originSource); try payload.encodeIfPresent(replyKind, forKey: .replyKind); try payload.encodeIfPresent(sessionID, forKey: .sessionID); try payload.encodeIfPresent(inputID, forKey: .inputID)

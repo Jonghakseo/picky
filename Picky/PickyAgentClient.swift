@@ -422,6 +422,8 @@ private extension PickyEventEnvelope {
             return "type=hello id=\(id)"
         case .quickReply(let reply):
             return "type=quickReply id=\(id) context=\(reply.contextId) textChars=\(reply.text.count)"
+        case .mainTurnSettled(let contextId):
+            return "type=mainTurnSettled id=\(id) context=\(contextId)"
         case .mainNarrationChunk(let chunk):
             return "type=mainNarrationChunk id=\(id) context=\(chunk.contextId) textChars=\(chunk.text.count)"
         case .mainMessagesSnapshot(let messages):

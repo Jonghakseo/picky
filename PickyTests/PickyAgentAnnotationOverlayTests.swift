@@ -7,20 +7,14 @@ import Testing
 struct PickyAgentAnnotationOverlayTests {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
-    @Test func resolvesEveryV1ShapeFromScreenshotPixels() throws {
+    @Test func resolvesSupportedOverlayShapesFromScreenshotPixels() throws {
         let resolved = try PickyAnnotationOverlayResolver.resolve(request(annotations: [
-            annotation(id: "target", shape: .target, x: 200, y: 50, r: 20),
-            annotation(id: "circle", shape: .circle, x: 100, y: 100, rx: 40, ry: 20),
             annotation(id: "rect", shape: .rect, x: 200, y: 50, w: 100, h: 100),
             annotation(id: "line", shape: .line, x1: 0, y1: 0, x2: 400, y2: 200),
             annotation(id: "spotlight", shape: .spotlight, x: 200, y: 100, r: 40, spotlightShape: .circle),
             annotation(id: "label", shape: .label, x: 200, y: 100, label: " Save "),
         ]), now: now)
 
-        #expect(resolved.first { $0.id == "target" }?.point == CGPoint(x: 200, y: 275))
-        #expect(resolved.first { $0.id == "target" }?.radius == 10)
-        #expect(resolved.first { $0.id == "circle" }?.radiusX == 20)
-        #expect(resolved.first { $0.id == "circle" }?.radiusY == 10)
         #expect(resolved.first { $0.id == "rect" }?.rect == CGRect(x: 200, y: 225, width: 50, height: 50))
         #expect(resolved.first { $0.id == "line" }?.point == CGPoint(x: 100, y: 300))
         #expect(resolved.first { $0.id == "line" }?.endPoint == CGPoint(x: 300, y: 200))
@@ -46,20 +40,19 @@ struct PickyAgentAnnotationOverlayTests {
         let manager = CompanionManager(agentClient: FakePickyAgentClient())
         let sequenceBeforeEvent = manager.interactionProjectionSequence
         manager.applyAgentEvent(.annotationOverlayRequested(request(annotations: [
-            annotation(id: "manager-target", shape: .target, x: 200, y: 100, r: 20),
+            annotation(id: "manager-rect", shape: .rect, x: 200, y: 100, w: 40, h: 20),
         ])))
         try await waitUntil { manager.interactionProjectionSequence > sequenceBeforeEvent }
 
         #expect(manager.agentAnnotations.count == 1)
-        #expect(manager.agentAnnotations.first?.id == "manager-target")
-        #expect(manager.agentAnnotations.first?.point == CGPoint(x: 200, y: 250))
-        #expect(manager.agentAnnotations.first?.radius == 10)
+        #expect(manager.agentAnnotations.first?.id == "manager-rect")
+        #expect(manager.agentAnnotations.first?.rect == CGRect(x: 200, y: 240, width: 20, height: 10))
     }
 
     @Test func clearsAnnotationOverlayWithoutScreenGeometry() async throws {
         let manager = CompanionManager(agentClient: FakePickyAgentClient())
         manager.applyAgentEvent(.annotationOverlayRequested(request(annotations: [
-            annotation(id: "visible", shape: .target, x: 200, y: 100, r: 20),
+            annotation(id: "visible", shape: .rect, x: 200, y: 100, w: 20, h: 20),
         ])))
         try await waitUntil { manager.agentAnnotations.count == 1 }
 
@@ -81,12 +74,12 @@ struct PickyAgentAnnotationOverlayTests {
     @Test func dropsAnnotationOverlayFromAnOlderCaptureGeneration() async throws {
         let manager = CompanionManager(agentClient: FakePickyAgentClient())
         manager.applyAgentEvent(.annotationOverlayRequested(request(
-            annotations: [annotation(id: "current", shape: .target, x: 200, y: 100, r: 20)],
+            annotations: [annotation(id: "current", shape: .rect, x: 200, y: 100, w: 20, h: 20)],
             contextGeneration: 2
         )))
         try await waitUntil { manager.agentAnnotations.first?.id == "current" }
         manager.applyAgentEvent(.annotationOverlayRequested(request(
-            annotations: [annotation(id: "stale", shape: .target, x: 100, y: 100, r: 20)],
+            annotations: [annotation(id: "stale", shape: .rect, x: 100, y: 100, w: 20, h: 20)],
             contextGeneration: 1
         )))
 
@@ -101,7 +94,7 @@ struct PickyAgentAnnotationOverlayTests {
 
         let replaced = reduce(initial, .agentAnnotationsRequested(mode: .replace, annotations: [original, additional]))
         #expect(replaced.agentAnnotations.map(\.id) == ["original", "additional"])
-        #expect(replaced.overlay == .visible(reason: [.activeAgentAnnotations]))
+        #expect(replaced.overlay == .visible(reason: [.activeAgentAnnotations, .activePointerAnimation]))
 
         let appended = reduce(replaced, .agentAnnotationsRequested(mode: .append, annotations: [replacement]))
         #expect(appended.agentAnnotations.count == 2)
@@ -163,6 +156,22 @@ struct PickyAgentAnnotationOverlayTests {
 
         #expect(first == repeated)
         #expect(first != other)
+    }
+
+    @Test func rectLabelsAnchorAboveTheOutlineInsteadOfCoveringItsStroke() {
+        let annotation = PickyAgentAnnotation(
+            id: "save-area",
+            shape: .rect,
+            displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100),
+            rect: CGRect(x: 20, y: 30, width: 40, height: 20),
+            spotlightShape: nil,
+            label: "Save",
+            expiresAt: now
+        )
+
+        let anchor = PickyAnnotationLabelGeometry.outlineAnchor(for: annotation, screenFrame: annotation.displayFrame)
+
+        #expect(anchor == CGPoint(x: 20, y: 36))
     }
 
     @Test func combinedSpotlightMaskContainsEveryHoleAndUsesSingleDimmingStrength() {
@@ -255,14 +264,14 @@ struct PickyAgentAnnotationOverlayTests {
     private func annotation(
         id: String,
         shape: PickyAnnotationOverlayShape,
-        x: Double? = nil, y: Double? = nil, r: Double? = nil, rx: Double? = nil, ry: Double? = nil,
+        x: Double? = nil, y: Double? = nil, r: Double? = nil,
         w: Double? = nil, h: Double? = nil, x1: Double? = nil, y1: Double? = nil, x2: Double? = nil, y2: Double? = nil,
         spotlightShape: PickyAnnotationSpotlightShape? = nil, label: String? = nil
     ) -> PickyAnnotationOverlayAnnotation {
-        PickyAnnotationOverlayAnnotation(id: id, shape: shape, x: x, y: y, r: r, rx: rx, ry: ry, w: w, h: h, x1: x1, y1: y1, x2: x2, y2: y2, spotlightShape: spotlightShape, label: label, ttlMs: nil, clamped: nil)
+        PickyAnnotationOverlayAnnotation(id: id, shape: shape, x: x, y: y, r: r, w: w, h: h, x1: x1, y1: y1, x2: x2, y2: y2, spotlightShape: spotlightShape, label: label, ttlMs: nil, clamped: nil)
     }
 
     private func resolvedAnnotation(id: String, expiresAt: Date, pendingTTL: TimeInterval? = nil) -> PickyAgentAnnotation {
-        PickyAgentAnnotation(id: id, shape: .target, displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100), point: CGPoint(x: 50, y: 50), radius: 10, spotlightShape: nil, label: nil, expiresAt: expiresAt, pendingTTL: pendingTTL)
+        PickyAgentAnnotation(id: id, shape: .rect, displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100), rect: CGRect(x: 40, y: 40, width: 20, height: 20), spotlightShape: nil, label: nil, expiresAt: expiresAt, pendingTTL: pendingTTL)
     }
 }

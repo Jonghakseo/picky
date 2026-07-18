@@ -427,6 +427,7 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
     inputId: z.string().optional(),
     didStreamNarration: z.boolean().optional(),
   }),
+  EventBaseSchema.extend({ type: z.literal("mainTurnSettled"), contextId: z.string() }),
   EventBaseSchema.extend({
     type: z.literal("mainNarrationChunk"),
     contextId: z.string(),

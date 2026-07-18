@@ -119,6 +119,7 @@ export class AgentdServer {
     this.options.supervisor.on("messageRemoved", (sessionId, messageId, seq) => this.broadcast({ type: "sessionMessageRemoved", sessionId, messageId, seq }));
     this.options.supervisor.on("sessionRewound", (sessionId: string, editorText: string | undefined, removedIds: string[]) => this.broadcast({ type: "sessionRewound", sessionId, ...(editorText !== undefined ? { editorText } : {}), removedIds }));
     this.options.supervisor.on("quickReply", (contextId, text, metadata = {}) => this.broadcast({ type: "quickReply", contextId, text, ...metadata }));
+    this.options.supervisor.on("mainTurnSettled", (contextId) => this.broadcast({ type: "mainTurnSettled", contextId }));
     this.options.supervisor.on("mainNarrationChunk", (chunk) => this.broadcast({ type: "mainNarrationChunk", ...chunk }));
     this.options.supervisor.on("mainMessage", (message) => this.broadcast({ type: "mainMessageAppended", message }));
     this.options.supervisor.on("mainAgentSessionInfo", (info: { sessionFilePath?: string; cwd?: string }) => this.broadcast({
@@ -937,6 +938,8 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type };
     case "quickReply":
       return { eventId: event.id, type: event.type, contextId: event.contextId, textChars: event.text.length, originSource: event.originSource, replyKind: event.replyKind, sessionId: event.sessionId };
+    case "mainTurnSettled":
+      return { eventId: event.id, type: event.type, contextId: event.contextId };
     case "mainNarrationChunk":
       return { eventId: event.id, type: event.type, contextId: event.contextId, textChars: event.text.length, originSource: event.originSource, replyKind: event.replyKind, sessionId: event.sessionId };
     case "mainMessagesSnapshot":

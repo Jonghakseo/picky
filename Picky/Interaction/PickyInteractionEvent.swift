@@ -175,6 +175,8 @@ enum PickyInteractionEvent: Equatable, Codable {
     case streamedQuickReplyFinal(contextID: String, text: String, originSource: PickyQuickReplyOriginSource?, replyKind: PickyQuickReplyKind?, sessionID: String?, inputID: UUID?)
     case passiveAgentSummary(sessionID: String, text: String)
     case pickleCompleted(sessionID: String, summary: String?)
+    /// Main agent finished without a quick reply (for example, a DSL-only overlay turn).
+    case mainTurnSettled(contextID: String)
     /// Synthetic terminal signal dispatched by `CompanionManager` when an agentd session
     /// transitions to a terminal status (`cancelled`/`failed`) without emitting its own
     /// `quickReply` — typically a HUD abort or a runtime crash. The reducer uses this to
@@ -204,7 +206,7 @@ enum PickyInteractionEvent: Equatable, Codable {
         case appStarted, permissionsChanged, cursorPreferenceChanged
         case voicePressed, voiceStartFailed, voiceReleased, transcriptFinal, transcriptFailed
         case textSubmitted, textContextCaptured, textSubmissionAccepted, textSubmissionFailed
-        case voiceContextCaptured, externalContextCaptured, agentSubmissionAccepted, quickReply, narrationChunk, streamedQuickReplyFinal, passiveAgentSummary, pickleCompleted, sessionTerminated
+        case voiceContextCaptured, externalContextCaptured, agentSubmissionAccepted, quickReply, narrationChunk, streamedQuickReplyFinal, passiveAgentSummary, pickleCompleted, mainTurnSettled, sessionTerminated
         case pointerRequested, pointerCancelled, pointerAnimationFinished
         case agentAnnotationsRequested, agentAnnotationsStartTTL, agentAnnotationsExpired, agentAnnotationsClearedForUserInput
         case speechStarted, speechFinished, speechFailed, minimumDisplayTimerFired
@@ -317,6 +319,9 @@ enum PickyInteractionEvent: Equatable, Codable {
         case .pickleCompleted:
             let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
             self = .pickleCompleted(sessionID: try payload.decodeFlexibleString(primary: .sessionID, fallback: .sessionId), summary: try payload.decodeIfPresent(String.self, forKey: .summary))
+        case .mainTurnSettled:
+            let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
+            self = .mainTurnSettled(contextID: try payload.decodeFlexibleString(primary: .contextID, fallback: .contextId))
         case .sessionTerminated:
             let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
             self = .sessionTerminated(sessionID: try payload.decodeFlexibleString(primary: .sessionID, fallback: .sessionId))
@@ -431,6 +436,9 @@ enum PickyInteractionEvent: Equatable, Codable {
         case .pickleCompleted(let sessionID, let summary):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .pickleCompleted)
             try payload.encode(sessionID, forKey: .sessionID); try payload.encodeIfPresent(summary, forKey: .summary)
+        case .mainTurnSettled(let contextID):
+            var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .mainTurnSettled)
+            try payload.encode(contextID, forKey: .contextID)
         case .sessionTerminated(let sessionID):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .sessionTerminated)
             try payload.encode(sessionID, forKey: .sessionID)

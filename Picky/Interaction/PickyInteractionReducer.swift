@@ -1,4 +1,71 @@
+import CoreGraphics
 import Foundation
+
+private enum PickyAnnotationPointerTarget {
+    /// Matches the existing rough draw-on duration closely enough for the buddy to hover
+    /// while each annotation appears, without adding a second animation system.
+    static let hoverDuration: TimeInterval = 0.5
+
+    static func make(_ annotation: PickyAgentAnnotation) -> PickyPointerTarget? {
+        let anchor: CGPoint
+        let targetFrame: CGRect?
+        switch annotation.shape {
+        case .rect:
+            guard let rect = annotation.rect else { return nil }
+            anchor = CGPoint(x: rect.midX, y: rect.midY)
+            targetFrame = rect
+        case .line:
+            guard let start = annotation.point, let end = annotation.endPoint else { return nil }
+            anchor = CGPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
+            targetFrame = nil
+        case .spotlight:
+            if let rect = annotation.rect {
+                anchor = CGPoint(x: rect.midX, y: rect.midY)
+                targetFrame = rect
+            } else if let point = annotation.point {
+                anchor = point
+                if let radius = annotation.radius {
+                    targetFrame = CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2)
+                } else {
+                    targetFrame = nil
+                }
+            } else {
+                return nil
+            }
+        case .label:
+            guard let point = annotation.point else { return nil }
+            anchor = point
+            targetFrame = nil
+        }
+        return PickyPointerTarget(
+            id: "annotation-\(annotation.id)",
+            source: .agent,
+            screenLocation: anchor,
+            displayFrame: annotation.displayFrame,
+            // Shape labels remain on the annotation itself; suppress the pointer's
+            // conversational bubble so it only acts as a transient drawing guide.
+            bubbleText: "",
+            duration: hoverDuration,
+            targetFrame: targetFrame,
+            highlightKind: .screenElement,
+            returnsToCursor: true
+        )
+    }
+
+    static func settingReturnBehavior(_ target: PickyPointerTarget, returnsToCursor: Bool) -> PickyPointerTarget {
+        PickyPointerTarget(
+            id: target.id,
+            source: target.source,
+            screenLocation: target.screenLocation,
+            displayFrame: target.displayFrame,
+            bubbleText: target.bubbleText,
+            duration: target.duration,
+            targetFrame: target.targetFrame,
+            highlightKind: target.highlightKind,
+            returnsToCursor: returnsToCursor
+        )
+    }
+}
 
 struct PickyInteractionTransition: Equatable {
     var state: PickyInteractionState
@@ -74,6 +141,8 @@ private struct PickyInteractionReducing {
             applyPassiveAgentSummary(sessionID: sessionID, text: text)
         case .pickleCompleted(let sessionID, let summary):
             applyPickleCompleted(sessionID: sessionID, summary: summary)
+        case .mainTurnSettled(let contextID):
+            applyMainTurnSettled(contextID: contextID)
         case .sessionTerminated(let sessionID):
             applySessionTerminated(sessionID: sessionID)
         case .pointerRequested(let target):
@@ -543,6 +612,20 @@ private struct PickyInteractionReducing {
     /// canonical case is a HUD abort. We must release any matching cursor
     /// `.waitingForAgent` output here; otherwise the projection keeps reporting
     /// `isWaitingForCursorResponse = true` and the cursor stays yellow forever.
+    private mutating func applyMainTurnSettled(contextID: String) {
+        // A DSL-only main turn has no quickReply, so it cannot otherwise release a
+        // cursor-owned request or start annotation TTLs. Do not create a bubble or TTS.
+        activatePendingAnnotationTTLs(now: envelope.occurredAt)
+        guard case .waitingForAgent(_, let waitingContextID, _) = state.output,
+              waitingContextID == contextID else {
+            record(.accepted, "Main turn settled; cursor output already moved on for \(contextID)")
+            return
+        }
+        state.output = .idle
+        state = state.removingOverlayReason(.waitingForVoiceResponse)
+        record(.stateChanged, "Main turn settled; released cursor waitingForAgent for \(contextID)")
+    }
+
     private mutating func applySessionTerminated(sessionID: String) {
         guard let pending = state.pendingAgentRequestsBySession.removeValue(forKey: sessionID) else {
             record(.staleEvent, "Ignored sessionTerminated for unknown session \(sessionID)")
@@ -573,6 +656,9 @@ private struct PickyInteractionReducing {
     // MARK: - Pointer
 
     private mutating func applyPointerRequested(target: PickyPointerTarget) {
+        state.pendingAnnotationPointerTargets = []
+        state.activeAnnotationPointerID = nil
+        state.activeAnnotationPointerReturnsToCursor = true
         if let previous = state.pointer.target?.id, previous != target.id {
             effects.append(.cancelPointerAnimation(pointerID: previous))
         }
@@ -588,6 +674,9 @@ private struct PickyInteractionReducing {
             return
         }
         state.pointer = .idle
+        state.pendingAnnotationPointerTargets = []
+        state.activeAnnotationPointerID = nil
+        state.activeAnnotationPointerReturnsToCursor = true
         state = state.removingOverlayReason(.activePointerAnimation)
         effects.append(.cancelPointerAnimation(pointerID: pointerID))
         record(.stateChanged, "Pointer cancelled")
@@ -598,7 +687,18 @@ private struct PickyInteractionReducing {
             record(.staleEvent, "Ignored stale pointer finish")
             return
         }
-        state.pointer = .idle
+        if state.activeAnnotationPointerID == pointerID {
+            state.activeAnnotationPointerID = nil
+            state.activeAnnotationPointerReturnsToCursor = true
+            state.pointer = .idle
+            startNextAnnotationPointerIfPossible()
+            if state.activeAnnotationPointerID != nil {
+                record(.stateChanged, "Annotation pointer advanced")
+                return
+            }
+        } else {
+            state.pointer = .idle
+        }
         state = state.removingOverlayReason(.activePointerAnimation)
         record(.stateChanged, "Pointer animation finished")
     }
@@ -638,6 +738,12 @@ private struct PickyInteractionReducing {
         state = state.agentAnnotations.isEmpty
             ? state.removingOverlayReason(.activeAgentAnnotations)
             : state.addingOverlayReason(.activeAgentAnnotations)
+        switch mode {
+        case .clear:
+            clearAnnotationPointerChoreography()
+        case .replace, .append:
+            enqueueAnnotationPointerTargets(resolvedAnnotations)
+        }
         record(.stateChanged, "Agent annotations \(mode.rawValue)")
     }
 
@@ -656,6 +762,7 @@ private struct PickyInteractionReducing {
 
     private mutating func clearAgentAnnotationsForUserInput() {
         state.annotationTTLsStarted = false
+        clearAnnotationPointerChoreography()
         guard !state.agentAnnotations.isEmpty else { return }
         state.agentAnnotations = []
         state = state.removingOverlayReason(.activeAgentAnnotations)
@@ -672,6 +779,43 @@ private struct PickyInteractionReducing {
             activated.pendingTTL = nil
             return activated
         }
+    }
+
+    private mutating func enqueueAnnotationPointerTargets(_ annotations: [PickyAgentAnnotation]) {
+        let targets = annotations.compactMap(PickyAnnotationPointerTarget.make)
+        guard !targets.isEmpty else { return }
+        state.pendingAnnotationPointerTargets.append(contentsOf: targets)
+        if let activeID = state.activeAnnotationPointerID,
+           state.activeAnnotationPointerReturnsToCursor {
+            state.activeAnnotationPointerReturnsToCursor = false
+            effects.append(.setPointerReturnsToCursor(pointerID: activeID, returnsToCursor: false))
+        }
+        startNextAnnotationPointerIfPossible()
+    }
+
+    private mutating func startNextAnnotationPointerIfPossible() {
+        guard case .idle = state.pointer,
+              !state.pendingAnnotationPointerTargets.isEmpty else { return }
+        var target = state.pendingAnnotationPointerTargets.removeFirst()
+        target = PickyAnnotationPointerTarget.settingReturnBehavior(
+            target,
+            returnsToCursor: state.pendingAnnotationPointerTargets.isEmpty
+        )
+        state.pointer = .requested(target)
+        state.activeAnnotationPointerID = target.id
+        state.activeAnnotationPointerReturnsToCursor = target.returnsToCursor
+        state = state.addingOverlayReason(.activePointerAnimation)
+        effects.append(.startPointerAnimation(target: target))
+    }
+
+    private mutating func clearAnnotationPointerChoreography() {
+        state.pendingAnnotationPointerTargets = []
+        guard let activeID = state.activeAnnotationPointerID else { return }
+        state.activeAnnotationPointerID = nil
+        state.activeAnnotationPointerReturnsToCursor = true
+        state.pointer = .idle
+        state = state.removingOverlayReason(.activePointerAnimation)
+        effects.append(.cancelPointerAnimation(pointerID: activeID))
     }
 
     private func uniqueAnnotations(_ annotations: [PickyAgentAnnotation]) -> [PickyAgentAnnotation] {

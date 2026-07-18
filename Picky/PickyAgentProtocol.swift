@@ -254,6 +254,8 @@ struct PickyEventEnvelope: Decodable, Equatable {
 enum PickyEvent: Equatable {
     case hello(PickyHelloEvent)
     case quickReply(PickyQuickReplyEvent)
+    /// Main-agent turn finished without user-visible reply text (for example, DSL-only screen guidance).
+    case mainTurnSettled(contextId: String)
     case mainNarrationChunk(PickyMainNarrationChunkEvent)
     case mainMessagesSnapshot([PickyMainAgentMessage])
     case mainMessageAppended(PickyMainAgentMessage)
@@ -320,6 +322,8 @@ enum PickyEvent: Equatable {
         case "hello": return .hello(try PickyHelloEvent(from: decoder))
         case "quickReply":
             return .quickReply(try PickyQuickReplyEvent(from: decoder))
+        case "mainTurnSettled":
+            return .mainTurnSettled(contextId: try PickyMainTurnSettledPayload(from: decoder).contextId)
         case "mainNarrationChunk":
             return .mainNarrationChunk(try PickyMainNarrationChunkEvent(from: decoder))
         case "mainMessagesSnapshot":
@@ -448,6 +452,7 @@ private struct PickyMainMessagesSnapshotPayload: Decodable { let messages: [Pick
 private struct PickyMainMessageAppendedPayload: Decodable { let message: PickyMainAgentMessage }
 private struct PickyMainAgentSessionInfoUpdatedPayload: Decodable { let sessionFilePath: String?; let cwd: String? }
 private struct PickyMainAgentModelsSnapshotPayload: Decodable { let models: [PickyMainAgentModelOption] }
+private struct PickyMainTurnSettledPayload: Decodable { let contextId: String }
 private struct PickySessionSnapshotPayload: Decodable { let sessions: [PickyAgentSession] }
 private struct PickySessionUpdatedPayload: Decodable { let session: PickyAgentSession }
 private struct PickySessionArchivedAuthoritativePayload: Decodable { let sessionId: String; let archived: Bool }
@@ -482,7 +487,7 @@ enum PickyAnnotationOverlayMode: String, Codable, Equatable {
 }
 
 enum PickyAnnotationOverlayShape: String, Codable, Equatable {
-    case target, circle, rect, line, spotlight, label
+    case rect, line, spotlight, label
 }
 
 enum PickyAnnotationSpotlightShape: String, Codable, Equatable {
@@ -495,8 +500,6 @@ struct PickyAnnotationOverlayAnnotation: Codable, Equatable, Identifiable {
     let x: Double?
     let y: Double?
     let r: Double?
-    let rx: Double?
-    let ry: Double?
     let w: Double?
     let h: Double?
     let x1: Double?

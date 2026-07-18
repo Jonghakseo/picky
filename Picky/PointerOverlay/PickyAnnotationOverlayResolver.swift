@@ -81,44 +81,6 @@ enum PickyAnnotationOverlayResolver {
         let expiresAt = now.addingTimeInterval(ttl + maximumPendingTTLDeferral)
 
         switch annotation.shape {
-        case .target:
-            return PickyAgentAnnotation(
-                id: annotation.id,
-                shape: annotation.shape,
-                displayFrame: displayFrame,
-                point: try point(annotation.x, annotation.y, "x", "y"),
-                radius: try radius(annotation.r, "r", min(xScale, yScale)),
-                spotlightShape: nil,
-                label: normalizedLabel(annotation.label),
-                expiresAt: expiresAt,
-                pendingTTL: ttl
-            )
-        case .circle:
-            let resolvedRadius: CGFloat?
-            let resolvedRadiusX: CGFloat?
-            let resolvedRadiusY: CGFloat?
-            if let r = annotation.r {
-                resolvedRadius = try radius(r, "r", min(xScale, yScale))
-                resolvedRadiusX = nil
-                resolvedRadiusY = nil
-            } else {
-                resolvedRadius = nil
-                resolvedRadiusX = try radius(annotation.rx, "rx", xScale)
-                resolvedRadiusY = try radius(annotation.ry, "ry", yScale)
-            }
-            return PickyAgentAnnotation(
-                id: annotation.id,
-                shape: annotation.shape,
-                displayFrame: displayFrame,
-                point: try point(annotation.x, annotation.y, "x", "y"),
-                radius: resolvedRadius,
-                radiusX: resolvedRadiusX,
-                radiusY: resolvedRadiusY,
-                spotlightShape: nil,
-                label: normalizedLabel(annotation.label),
-                expiresAt: expiresAt,
-                pendingTTL: ttl
-            )
         case .rect:
             return PickyAgentAnnotation(
                 id: annotation.id,

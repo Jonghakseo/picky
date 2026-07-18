@@ -293,6 +293,8 @@ final class CompanionManager: ObservableObject {
     /// Whether the highlight is over an in-screen element (dim the surroundings)
     /// or over Picky's own HUD chrome like the dock (no dim).
     @Published var detectedElementHighlightKind: PickyDetectedHighlightKind?
+    /// Whether this visit is the last in its sequence and should spring back to the real cursor.
+    @Published var detectedElementReturnsToCursor = true
     /// Stable id for the active pointer animation. Every delayed BlueCursorView
     /// callback validates this id before mutating or clearing pointer state.
     @Published var detectedElementPointerID: String?
@@ -576,6 +578,51 @@ final class CompanionManager: ObservableObject {
         }
     }
 
+    /// Applies the reducer-owned pointer target to the existing BlueCursorView.
+    /// Clearing the id first cancels stale view callbacks without feeding a second
+    /// completion event back into the reducer.
+    func startPointerAnimation(target: PickyPointerTarget) {
+        detectedElementPointerID = nil
+        detectedElementDisplayFrame = target.displayFrame
+        detectedElementBubbleText = target.bubbleText
+        detectedElementDisplayDuration = target.duration
+        detectedElementTargetFrame = target.targetFrame
+        detectedElementHighlightKind = target.highlightKind
+        detectedElementReturnsToCursor = target.returnsToCursor
+        detectedElementScreenLocation = target.screenLocation
+        detectedElementPointerID = target.id
+        setLocalOverlayReason(.activePointerAnimation, visible: true)
+    }
+
+    func setPointerReturnsToCursor(pointerID: String, returnsToCursor: Bool) {
+        guard detectedElementPointerID == pointerID else { return }
+        detectedElementReturnsToCursor = returnsToCursor
+    }
+
+    /// Advances an annotation sequence without clearing visual target properties, so the
+    /// buddy can fly directly from its current shape to the next queued shape.
+    func advancePointerAnimation(pointerID: String) {
+        guard detectedElementPointerID == pointerID else { return }
+        interactionCoordinator.accept(
+            .pointerAnimationFinished(pointerID: pointerID),
+            correlation: PickyInteractionCorrelation(pointerID: pointerID, source: .pointer)
+        )
+    }
+
+    func cancelPointerAnimation(pointerID: String?) {
+        guard pointerID == nil || detectedElementPointerID == pointerID else { return }
+        detectedElementScreenLocation = nil
+        detectedElementDisplayFrame = nil
+        detectedElementBubbleText = nil
+        detectedElementDisplayDuration = nil
+        detectedElementTargetFrame = nil
+        detectedElementHighlightKind = nil
+        detectedElementReturnsToCursor = true
+        detectedElementPointerID = nil
+        setLocalOverlayReason(.activePointerAnimation, visible: false)
+        scheduleTransientHideIfNeeded()
+    }
+
     /// Called by BlueCursorView after the buddy finishes its pointing
     /// animation and returns to cursor-following mode.
     func clearDetectedElementLocation(pointerID: String? = nil) {
@@ -587,6 +634,7 @@ final class CompanionManager: ObservableObject {
         detectedElementDisplayDuration = nil
         detectedElementTargetFrame = nil
         detectedElementHighlightKind = nil
+        detectedElementReturnsToCursor = true
         detectedElementPointerID = nil
         if let clearedPointerID {
             interactionCoordinator.accept(
@@ -2148,6 +2196,8 @@ final class CompanionManager: ObservableObject {
             latestAgentSessionSummary = request.prompt ?? request.title ?? "Agent is waiting for input"
         case .quickReply(let reply):
             applyQuickReplyEvent(reply)
+        case .mainTurnSettled(let contextID):
+            applyMainTurnSettled(contextID: contextID)
         case .mainNarrationChunk(let chunk):
             applyMainNarrationChunk(chunk)
         case .externalEntryAccepted(let accepted):
@@ -2227,6 +2277,31 @@ final class CompanionManager: ObservableObject {
         }
     }
 
+    private func applyMainTurnSettled(contextID: String) {
+        let isMatchingWaitingTurn: Bool
+        if case .waitingForAgent(_, let waitingContextID, _) = interactionCoordinator.projection.state.output {
+            isMatchingWaitingTurn = waitingContextID == contextID
+        } else {
+            isMatchingWaitingTurn = false
+        }
+        interactionCoordinator.accept(
+            .mainTurnSettled(contextID: contextID),
+            correlation: PickyInteractionCorrelation(contextID: contextID, source: .agent)
+        )
+        guard isMatchingWaitingTurn else { return }
+        deferredFinishAwaitingAgentResponseTask?.cancel()
+        deferredFinishAwaitingAgentResponseTask = nil
+        deferredFinishAwaitingAgentResponseSessionID = nil
+        responseStateTask?.cancel()
+        responseStateTask = nil
+        pendingAgentResponseStartedAt = nil
+        currentVoicePromptPreview = nil
+        voicePromptBubbleState = .hidden
+        if voiceState == .processing {
+            reduceVoiceInteraction(.reset)
+        }
+    }
+
     private func applyMainNarrationChunk(_ chunk: PickyMainNarrationChunkEvent) {
         guard ttsPlaybackEnabled, speechPlaybackProvider.supportsIncrementalPlayback else { return }
         let owner = interactionOwner(for: chunk.contextId)
@@ -2247,14 +2322,6 @@ final class CompanionManager: ObservableObject {
         guard shouldApplyOverlay(contextID: request.contextId, generation: request.contextGeneration) else { return }
         do {
             let target = try PickyPointerOverlayResolver.resolve(request)
-            detectedElementPointerID = nil
-            detectedElementDisplayFrame = target.displayFrame
-            detectedElementBubbleText = target.bubbleText
-            detectedElementDisplayDuration = target.duration
-            detectedElementTargetFrame = target.targetFrame
-            detectedElementHighlightKind = .screenElement
-            detectedElementScreenLocation = target.screenLocation
-            detectedElementPointerID = request.id
             interactionCoordinator.accept(
                 .pointerRequested(PickyPointerTarget(
                     id: request.id,
@@ -2269,8 +2336,6 @@ final class CompanionManager: ObservableObject {
                 correlation: PickyInteractionCorrelation(pointerID: request.id, source: .pointer)
             )
             latestAgentSessionSummary = target.bubbleText.map { L10n.t("agent.summary.pointingScreen", $0) } ?? L10n.t("agent.summary.pointingScreenAnon")
-
-            setLocalOverlayReason(.activePointerAnimation, visible: true)
         } catch {
             latestAgentSessionSummary = "Pointer overlay ignored: \(error.localizedDescription)"
         }
@@ -2770,8 +2835,13 @@ private final class CompanionInteractionEffectRunner: PickyInteractionEffectRunn
                 manager?.stopCurrentInteractionSpeech(speechID: speechID)
             case .recordContextOwnership, .startDictation, .stopDictation:
                 break
-            case .showOverlay, .scheduleTransientHide, .cancelTransientHide,
-                 .startPointerAnimation, .cancelPointerAnimation:
+            case .startPointerAnimation(let target):
+                manager?.startPointerAnimation(target: target)
+            case .setPointerReturnsToCursor(let pointerID, let returnsToCursor):
+                manager?.setPointerReturnsToCursor(pointerID: pointerID, returnsToCursor: returnsToCursor)
+            case .cancelPointerAnimation(let pointerID):
+                manager?.cancelPointerAnimation(pointerID: pointerID)
+            case .showOverlay, .scheduleTransientHide, .cancelTransientHide:
                 break
             }
         }

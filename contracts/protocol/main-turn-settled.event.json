@@ -1,0 +1,7 @@
+{
+  "id": "event-main-turn-settled-001",
+  "protocolVersion": "2026-07-17",
+  "timestamp": "2026-07-17T00:00:00.000Z",
+  "type": "mainTurnSettled",
+  "contextId": "context-overlay-only-001"
+}

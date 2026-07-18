@@ -27,7 +27,7 @@ struct PickyAgentAnnotationOverlayView: View {
 
     /// Semantic layers are intentionally fixed: agents cannot control stacking.
     private var outlineShapes: [PickyAgentAnnotation] {
-        [.target, .circle, .rect, .line].flatMap { shape in
+        [.rect, .line].flatMap { shape in
             annotationsForScreen.filter { $0.shape == shape }
         }
     }
@@ -37,7 +37,7 @@ struct PickyAgentAnnotationOverlayView: View {
     }
 
     private var accessibilitySummary: String {
-        let labelTexts = labels.compactMap(\.label)
+        let labelTexts = annotationsForScreen.compactMap(\.label)
         guard !labelTexts.isEmpty else { return "Screen guidance is visible." }
         return "Screen guidance: \(labelTexts.joined(separator: ", "))."
     }
@@ -47,6 +47,10 @@ struct PickyAgentAnnotationOverlayView: View {
             spotlightMask
             ForEach(outlineShapes) { annotation in
                 shape(annotation)
+                if let label = annotation.label,
+                   let anchor = PickyAnnotationLabelGeometry.outlineAnchor(for: annotation, screenFrame: screenFrame) {
+                    annotationLabel(label).position(x: anchor.x, y: anchor.y)
+                }
             }
             ForEach(labels) { annotation in
                 if let point = localPoint(annotation.point), let label = annotation.label {
@@ -64,45 +68,6 @@ struct PickyAgentAnnotationOverlayView: View {
     @ViewBuilder
     private func shape(_ annotation: PickyAgentAnnotation) -> some View {
         switch annotation.shape {
-        case .target:
-            if let point = localPoint(annotation.point), let radius = annotation.radius {
-                ZStack {
-                    Circle()
-                        .fill(PickyAgentAnnotationOverlayStyle.targetFill)
-                        .frame(width: radius * 2, height: radius * 2)
-                        .position(point)
-                    PickyRoughStrokeView(
-                        paths: PickyAnnotationRoughGeometry.ellipsePaths(
-                            id: annotation.id,
-                            shape: .target,
-                            center: point,
-                            radiusX: radius,
-                            radiusY: radius
-                        )
-                    )
-                    Circle()
-                        .fill(PickyAgentAnnotationOverlayStyle.strokeColor)
-                        .frame(
-                            width: PickyAgentAnnotationOverlayStyle.targetCenterDiameter,
-                            height: PickyAgentAnnotationOverlayStyle.targetCenterDiameter
-                        )
-                        .position(point)
-                }
-            }
-        case .circle:
-            if let point = localPoint(annotation.point) {
-                let radiusX = annotation.radiusX ?? annotation.radius ?? 0
-                let radiusY = annotation.radiusY ?? annotation.radius ?? 0
-                PickyRoughStrokeView(
-                    paths: PickyAnnotationRoughGeometry.ellipsePaths(
-                        id: annotation.id,
-                        shape: .circle,
-                        center: point,
-                        radiusX: radiusX,
-                        radiusY: radiusY
-                    )
-                )
-            }
         case .rect:
             if let rect = localRect(annotation.rect) {
                 PickyRoughStrokeView(
@@ -170,18 +135,49 @@ struct PickyAgentAnnotationOverlayView: View {
     }
 }
 
+/// Stable text-chip anchors for outline annotations. RECT labels sit just above the
+/// top-left edge; LINE labels sit above their midpoint so neither obscures the stroke.
+enum PickyAnnotationLabelGeometry {
+    static let strokeOffset: CGFloat = 14
+
+    static func outlineAnchor(for annotation: PickyAgentAnnotation, screenFrame: CGRect) -> CGPoint? {
+        switch annotation.shape {
+        case .rect:
+            guard let rect = annotation.rect else { return nil }
+            let localRect = localRect(rect, in: screenFrame)
+            return CGPoint(x: localRect.minX, y: max(0, localRect.minY - strokeOffset))
+        case .line:
+            guard let start = annotation.point, let end = annotation.endPoint else { return nil }
+            let localStart = PickyOverlayGeometry.swiftUICoordinates(for: start, in: screenFrame)
+            let localEnd = PickyOverlayGeometry.swiftUICoordinates(for: end, in: screenFrame)
+            return CGPoint(
+                x: (localStart.x + localEnd.x) / 2,
+                y: max(0, (localStart.y + localEnd.y) / 2 - strokeOffset)
+            )
+        case .spotlight, .label:
+            return nil
+        }
+    }
+
+    private static func localRect(_ rect: CGRect, in screenFrame: CGRect) -> CGRect {
+        let topLeft = PickyOverlayGeometry.swiftUICoordinates(
+            for: CGPoint(x: rect.minX, y: rect.maxY),
+            in: screenFrame
+        )
+        return CGRect(origin: topLeft, size: rect.size)
+    }
+}
+
 /// Component-level values for the non-interactive, transient annotation surface.
-/// They preserve the semantic DS mappings while keeping its dimmer and target dot
-/// as explicit overlay-specific exceptions.
+/// They preserve the semantic DS mappings while keeping its dimmer as an
+/// explicit overlay-specific exception.
 private enum PickyAgentAnnotationOverlayStyle {
     static let strokeColor = DS.Colors.accent
-    static let targetFill = DS.Colors.accentSubtle
     static let labelBorder = DS.Colors.accent
     static let dimmingOpacity = 0.38
     static let dimmingColor = Color.black.opacity(dimmingOpacity)
     static let outlineLineWidth: CGFloat = 2
     static let labelBorderWidth: CGFloat = 1
-    static let targetCenterDiameter: CGFloat = 6
 }
 
 private struct PickyRoughStrokeView: View {
@@ -305,38 +301,6 @@ enum PickyAnnotationRoughGeometry {
         }
     }
 
-    static func ellipsePaths(
-        id: String,
-        shape: PickyAnnotationOverlayShape,
-        center: CGPoint,
-        radiusX: CGFloat,
-        radiusY: CGFloat
-    ) -> [PickyRoughPath] {
-        var random = PickySeededRandom(seed: seed(id: id, shape: shape, pass: 0))
-        let sampleCount = 9
-        let points = (0..<sampleCount).map { index -> CGPoint in
-            let angle = (CGFloat(index) / CGFloat(sampleCount)) * .pi * 2
-            let radialOffset = random.offset(maximum: roughness)
-            return CGPoint(
-                x: center.x + cos(angle) * max(0, radiusX + radialOffset),
-                y: center.y + sin(angle) * max(0, radiusY + radialOffset)
-            )
-        }
-
-        var commands: [PickyRoughPathCommand] = [.move(points[0])]
-        for index in points.indices {
-            let previous = points[(index - 1 + sampleCount) % sampleCount]
-            let current = points[index]
-            let next = points[(index + 1) % sampleCount]
-            let following = points[(index + 2) % sampleCount]
-            let control1 = interpolate(current, next, factor: 1 / 6, relativeTo: previous)
-            let control2 = interpolate(next, current, factor: 1 / 6, relativeTo: following)
-            commands.append(.curve(to: next, control1: control1, control2: control2))
-        }
-        commands.append(.close)
-        return [PickyRoughPath(commands: commands)]
-    }
-
     private static func roughLine(
         id: String,
         shape: PickyAnnotationOverlayShape,
@@ -367,13 +331,6 @@ enum PickyAnnotationRoughGeometry {
 
     private static func interpolate(_ start: CGPoint, _ end: CGPoint, factor: CGFloat) -> CGPoint {
         CGPoint(x: start.x + (end.x - start.x) * factor, y: start.y + (end.y - start.y) * factor)
-    }
-
-    private static func interpolate(_ current: CGPoint, _ next: CGPoint, factor: CGFloat, relativeTo previous: CGPoint) -> CGPoint {
-        CGPoint(
-            x: current.x + (next.x - previous.x) * factor,
-            y: current.y + (next.y - previous.y) * factor
-        )
     }
 
     private static func offset(_ point: CGPoint, by vector: CGPoint, distance: CGFloat) -> CGPoint {

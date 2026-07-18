@@ -1464,6 +1464,7 @@ export class SessionSupervisor extends EventEmitter {
       const reply = cleanFinalAnswer(this.mainAnnotationDslTagSeen ? normalizeDslWhitespace(draftSnapshot) : draftSnapshot);
       if (!reply) {
         logAgentd("main turn text complete with empty draft", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, eventTextChars: event.text.length });
+        this.emit("mainTurnSettled", this.mainReplyContextId);
         this.mainAnnotationDslParser.reset();
         this.mainAnnotationDslTagSeen = false;
         this.mainAssistantDeltaSeen = false;
@@ -1558,6 +1559,8 @@ export class SessionSupervisor extends EventEmitter {
               this.externalPickleReplyContexts.delete(this.mainReplyContextId);
             }
           }
+        } else {
+          this.emit("mainTurnSettled", this.mainReplyContextId);
         }
         this.schedulePickleCompletionDrain();
         this.mainNarrationSentenceChunker.reset();

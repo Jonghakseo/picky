@@ -1169,6 +1169,40 @@ describe("SessionSupervisor", () => {
     expect(supervisor.listMainMessages().at(-1)).toMatchObject({ role: "assistant", text: "여기를 먼저 보세요. 다음입니다." });
   });
 
+  it("settles a DSL-only main turn without emitting a quick reply", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-dsl-only-"));
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
+    const pointerEvents: unknown[] = [];
+    const quickReplies: string[] = [];
+    const settledContexts: string[] = [];
+    supervisor.on("pointerOverlayRequested", (request) => pointerEvents.push(request));
+    supervisor.on("quickReply", (_contextId, text) => quickReplies.push(text));
+    supervisor.on("mainTurnSettled", (contextId) => settledContexts.push(contextId));
+
+    await supervisor.route({
+      ...context("show the save button"),
+      screenshots: [{
+        id: "shot-main-dsl-only",
+        label: "cursor screen",
+        path: "/tmp/shot-main-dsl-only.jpg",
+        screenId: "screen-main-dsl-only",
+        bounds: { x: 0, y: 0, width: 100, height: 100 },
+        screenshotWidthInPixels: 100,
+        screenshotHeightInPixels: 100,
+        isCursorScreen: true,
+      }],
+    });
+
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "[POINT: x=20 y=30 ttl=6000]" });
+    await waitUntil(() => pointerEvents.length === 1);
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await waitUntil(() => settledContexts.length === 1);
+
+    expect(settledContexts).toEqual(["context-show the save button"]);
+    expect(quickReplies).toEqual([]);
+  });
+
   it("emits DSL-clean narration sentences before the final quick reply", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-narration-"));
     const mainRuntime = new ManualRuntime();
@@ -3585,15 +3619,17 @@ describe("SessionSupervisor", () => {
   });
 
   // A turn_text_complete without any buffered text (e.g. a noisy normalizer fallback
-  // or a runtime that emits it on a tool-only turn) must be a no-op rather than emit
-  // a blank quickReply that would silence Picky's TTS layer or surface an empty bubble.
-  it("ignores turn_text_complete with no buffered draft text", async () => {
+  // or a runtime that emits it on a DSL-only turn) must not emit a blank quickReply,
+  // but must still settle the app-side waiting state.
+  it("settles turn_text_complete with no buffered draft text without a quick reply", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const sideRuntime = new ManualRuntime();
     const mainRuntime = new ManualRuntime();
     const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), { mainRuntime });
     const replies: Array<{ contextId: string; text: string }> = [];
+    const settledContexts: string[] = [];
     supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
+    supervisor.on("mainTurnSettled", (contextId) => settledContexts.push(contextId));
 
     await supervisor.route(context("도구만"));
     mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Running" });
@@ -3601,6 +3637,7 @@ describe("SessionSupervisor", () => {
     await settle();
 
     expect(replies).toEqual([]);
+    expect(settledContexts).toEqual(["context-도구만"]);
   });
 
   // Non-streaming main runtimes (or any future adapter that emits an entire

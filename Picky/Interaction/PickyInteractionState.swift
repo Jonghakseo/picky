@@ -5,6 +5,11 @@ struct PickyInteractionState: Equatable, Codable {
     var input: PickyInputPhase
     var output: PickyOutputPhase
     var pointer: PickyPointerPhase
+    /// FIFO visits for streamed annotation anchors. The reducer advances this only after
+    /// the active buddy flight reports completion, so overlays are never traversed in parallel.
+    var pendingAnnotationPointerTargets: [PickyPointerTarget]
+    var activeAnnotationPointerID: String?
+    var activeAnnotationPointerReturnsToCursor: Bool
     /// Transient AI visual guidance. Kept separate from pointer animations and user ink.
     var agentAnnotations: [PickyAgentAnnotation]
     var overlay: PickyOverlayPhase
@@ -30,6 +35,9 @@ struct PickyInteractionState: Equatable, Codable {
         input: PickyInputPhase = .idle,
         output: PickyOutputPhase = .idle,
         pointer: PickyPointerPhase = .idle,
+        pendingAnnotationPointerTargets: [PickyPointerTarget] = [],
+        activeAnnotationPointerID: String? = nil,
+        activeAnnotationPointerReturnsToCursor: Bool = true,
         agentAnnotations: [PickyAgentAnnotation] = [],
         overlay: PickyOverlayPhase = .hidden,
         pendingTextInputs: [UUID: PickyTextInputState] = [:],
@@ -44,6 +52,9 @@ struct PickyInteractionState: Equatable, Codable {
         self.input = input
         self.output = output
         self.pointer = pointer
+        self.pendingAnnotationPointerTargets = pendingAnnotationPointerTargets
+        self.activeAnnotationPointerID = activeAnnotationPointerID
+        self.activeAnnotationPointerReturnsToCursor = activeAnnotationPointerReturnsToCursor
         self.agentAnnotations = agentAnnotations
         self.overlay = overlay
         self.pendingTextInputs = pendingTextInputs
@@ -61,6 +72,9 @@ struct PickyInteractionState: Equatable, Codable {
         self.input = try container.decode(PickyInputPhase.self, forKey: .input)
         self.output = try container.decode(PickyOutputPhase.self, forKey: .output)
         self.pointer = try container.decode(PickyPointerPhase.self, forKey: .pointer)
+        self.pendingAnnotationPointerTargets = try container.decodeIfPresent([PickyPointerTarget].self, forKey: .pendingAnnotationPointerTargets) ?? []
+        self.activeAnnotationPointerID = try container.decodeIfPresent(String.self, forKey: .activeAnnotationPointerID)
+        self.activeAnnotationPointerReturnsToCursor = try container.decodeIfPresent(Bool.self, forKey: .activeAnnotationPointerReturnsToCursor) ?? true
         self.agentAnnotations = try container.decodeIfPresent([PickyAgentAnnotation].self, forKey: .agentAnnotations) ?? []
         self.overlay = try container.decode(PickyOverlayPhase.self, forKey: .overlay)
         self.pendingTextInputs = try container.decode([UUID: PickyTextInputState].self, forKey: .pendingTextInputs)
@@ -219,8 +233,6 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
     var endPoint: CGPoint?
     var rect: CGRect?
     var radius: CGFloat?
-    var radiusX: CGFloat?
-    var radiusY: CGFloat?
     let spotlightShape: PickyAnnotationSpotlightShape?
     let label: String?
     var expiresAt: Date
@@ -236,8 +248,6 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
         endPoint: CGPoint? = nil,
         rect: CGRect? = nil,
         radius: CGFloat? = nil,
-        radiusX: CGFloat? = nil,
-        radiusY: CGFloat? = nil,
         spotlightShape: PickyAnnotationSpotlightShape?,
         label: String?,
         expiresAt: Date,
@@ -250,8 +260,6 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
         self.endPoint = endPoint
         self.rect = rect
         self.radius = radius
-        self.radiusX = radiusX
-        self.radiusY = radiusY
         self.spotlightShape = spotlightShape
         self.label = label
         self.expiresAt = expiresAt
@@ -259,7 +267,7 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, shape, displayFrame, point, endPoint, rect, radius, radiusX, radiusY, spotlightShape, label, expiresAt, pendingTTL
+        case id, shape, displayFrame, point, endPoint, rect, radius, spotlightShape, label, expiresAt, pendingTTL
     }
 
     init(from decoder: Decoder) throws {
@@ -271,8 +279,6 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
         endPoint = try container.decodeIfPresent(CGPoint.self, forKey: .endPoint)
         rect = try container.decodeIfPresent(CGRect.self, forKey: .rect)
         radius = try container.decodeIfPresent(CGFloat.self, forKey: .radius)
-        radiusX = try container.decodeIfPresent(CGFloat.self, forKey: .radiusX)
-        radiusY = try container.decodeIfPresent(CGFloat.self, forKey: .radiusY)
         spotlightShape = try container.decodeIfPresent(PickyAnnotationSpotlightShape.self, forKey: .spotlightShape)
         label = try container.decodeIfPresent(String.self, forKey: .label)
         expiresAt = try container.decode(Date.self, forKey: .expiresAt)
@@ -289,6 +295,9 @@ struct PickyPointerTarget: Equatable, Codable, Identifiable {
     let duration: TimeInterval
     let targetFrame: CGRect?
     let highlightKind: PickyDetectedHighlightKind
+    /// False only for an annotation visit that has another queued anchor; that visit
+    /// hops directly to the next shape instead of returning to the real cursor.
+    let returnsToCursor: Bool
 
     init(
         id: String,
@@ -298,7 +307,8 @@ struct PickyPointerTarget: Equatable, Codable, Identifiable {
         bubbleText: String? = nil,
         duration: TimeInterval,
         targetFrame: CGRect? = nil,
-        highlightKind: PickyDetectedHighlightKind = .screenElement
+        highlightKind: PickyDetectedHighlightKind = .screenElement,
+        returnsToCursor: Bool = true
     ) {
         self.id = id
         self.source = source
@@ -308,6 +318,24 @@ struct PickyPointerTarget: Equatable, Codable, Identifiable {
         self.duration = duration
         self.targetFrame = targetFrame
         self.highlightKind = highlightKind
+        self.returnsToCursor = returnsToCursor
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, source, screenLocation, displayFrame, bubbleText, duration, targetFrame, highlightKind, returnsToCursor
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        source = try container.decode(PickyPointerSource.self, forKey: .source)
+        screenLocation = try container.decode(CGPoint.self, forKey: .screenLocation)
+        displayFrame = try container.decode(CGRect.self, forKey: .displayFrame)
+        bubbleText = try container.decodeIfPresent(String.self, forKey: .bubbleText)
+        duration = try container.decode(TimeInterval.self, forKey: .duration)
+        targetFrame = try container.decodeIfPresent(CGRect.self, forKey: .targetFrame)
+        highlightKind = try container.decode(PickyDetectedHighlightKind.self, forKey: .highlightKind)
+        returnsToCursor = try container.decodeIfPresent(Bool.self, forKey: .returnsToCursor) ?? true
     }
 }
 

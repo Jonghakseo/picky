@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import Testing
 @testable import Picky
@@ -612,6 +613,72 @@ struct PickyInteractionReducerTests {
 
         // CLI ownership entry must still be there.
         #expect(state.contextOwnership["context-cli-survives"] == .cli)
+    }
+
+    @Test func mainTurnSettledReleasesMatchingWaitingOutputAndStartsAnnotationTTLs() {
+        let pendingAnnotation = PickyAgentAnnotation(
+            id: "overlay",
+            shape: .rect,
+            displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100),
+            rect: CGRect(x: 20, y: 20, width: 30, height: 20),
+            spotlightShape: nil,
+            label: nil,
+            expiresAt: baseDate.addingTimeInterval(66),
+            pendingTTL: 6
+        )
+        var state = PickyInteractionState(agentAnnotations: [pendingAnnotation])
+        state.output = .waitingForAgent(inputID: inputA, contextID: "ctx-overlay", promptPreview: "show me")
+
+        let settled = reduce(state, .mainTurnSettled(contextID: "ctx-overlay"), id: timerA)
+
+        #expect(settled.state.output == .idle)
+        #expect(settled.state.agentAnnotations.first?.expiresAt == baseDate.addingTimeInterval(6))
+        #expect(settled.state.agentAnnotations.first?.pendingTTL == nil)
+
+        let duplicate = reduce(settled.state, .mainTurnSettled(contextID: "ctx-overlay"), id: timerB)
+        #expect(duplicate.state.output == .idle)
+        #expect(duplicate.state.agentAnnotations.first?.expiresAt == baseDate.addingTimeInterval(6))
+    }
+
+    @Test func annotationPointersVisitAnchorsFIFOAndReturnOnlyAfterTheLastShape() {
+        let displayFrame = CGRect(x: 0, y: 0, width: 100, height: 100)
+        let annotations = [
+            PickyAgentAnnotation(id: "rect", shape: .rect, displayFrame: displayFrame, rect: CGRect(x: 10, y: 20, width: 20, height: 10), spotlightShape: nil, label: nil, expiresAt: baseDate),
+            PickyAgentAnnotation(id: "line", shape: .line, displayFrame: displayFrame, point: CGPoint(x: 30, y: 30), endPoint: CGPoint(x: 70, y: 50), spotlightShape: nil, label: nil, expiresAt: baseDate),
+            PickyAgentAnnotation(id: "label", shape: .label, displayFrame: displayFrame, point: CGPoint(x: 80, y: 60), spotlightShape: nil, label: "Save", expiresAt: baseDate),
+        ]
+
+        let first = reduce(PickyInteractionState(), .agentAnnotationsRequested(mode: .append, annotations: annotations), id: timerA)
+        guard case .startPointerAnimation(let firstTarget) = first.effects.first else {
+            Issue.record("expected the first annotation pointer animation")
+            return
+        }
+        #expect(firstTarget.id == "annotation-rect")
+        #expect(firstTarget.screenLocation == CGPoint(x: 20, y: 25))
+        #expect(firstTarget.returnsToCursor == false)
+
+        let second = reduce(first.state, .pointerAnimationFinished(pointerID: firstTarget.id), id: timerB)
+        guard case .startPointerAnimation(let secondTarget) = second.effects.first else {
+            Issue.record("expected the second annotation pointer animation")
+            return
+        }
+        #expect(secondTarget.id == "annotation-line")
+        #expect(secondTarget.screenLocation == CGPoint(x: 50, y: 40))
+        #expect(secondTarget.returnsToCursor == false)
+
+        let third = reduce(second.state, .pointerAnimationFinished(pointerID: secondTarget.id), id: UUID())
+        guard case .startPointerAnimation(let thirdTarget) = third.effects.first else {
+            Issue.record("expected the final annotation pointer animation")
+            return
+        }
+        #expect(thirdTarget.id == "annotation-label")
+        #expect(thirdTarget.screenLocation == CGPoint(x: 80, y: 60))
+        #expect(thirdTarget.returnsToCursor == true)
+
+        let completed = reduce(third.state, .pointerAnimationFinished(pointerID: thirdTarget.id), id: UUID())
+        #expect(completed.state.pointer == .idle)
+        #expect(completed.state.pendingAnnotationPointerTargets.isEmpty)
+        #expect(completed.state.overlay == .visible(reason: [.activeAgentAnnotations]))
     }
 
     private func reduce(

@@ -1335,7 +1335,11 @@ struct BlueCursorView: View {
                         self.cancelNavigationIfPointerCleared(stalePointerID: pointerID)
                         return
                     }
-                    self.startFlyingBackToCursor(pointerID: pointerID)
+                    if self.companionManager.detectedElementReturnsToCursor {
+                        self.startFlyingBackToCursor(pointerID: pointerID)
+                    } else {
+                        self.companionManager.advancePointerAnimation(pointerID: pointerID)
+                    }
                 }
             }
         }

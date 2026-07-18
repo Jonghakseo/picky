@@ -93,7 +93,7 @@ extension View {
     }
 }
 
-/// A render unit emitted by `PickyHUDDockRailView.buildRenderUnits` — either
+/// A render unit emitted by `PickyHUDDockRenderPolicy.renderUnits` — either
 /// an ungrouped session slot or a group block that wraps members in a single
 /// accent-bar container.
 struct PickyHUDDockRenderUnit: Identifiable {

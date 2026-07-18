@@ -6,6 +6,22 @@
 //  PickyHUDDockLayout; held/open/hover state policy lives here.
 //
 
+import Foundation
+
+/// Timing and geometry constants for the dock's hold-to-archive interaction.
+enum PickyHUDArchiveHoldPolicy {
+    static let duration: TimeInterval = 1.2
+    static let feedbackStartDelay: TimeInterval = 0.2
+    static let feedbackStartDelayNanoseconds: UInt64 = 200_000_000
+    static let maximumDistance: CGFloat = 10
+    static let ringGapStartFraction = 0.22
+    static let ringUsableFraction = 0.73
+
+    static var feedbackAnimationDuration: TimeInterval {
+        max(0, duration - feedbackStartDelay)
+    }
+}
+
 enum PickyHUDDockInteractionPolicy {
     static func activeSessionID(visibleIDs: [String], held: PickyHUDDockHold?, previewID: String?) -> String? {
         if let held, visibleIDs.contains(held.sessionID) { return held.sessionID }

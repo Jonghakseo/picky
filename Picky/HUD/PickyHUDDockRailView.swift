@@ -1,122 +1,5 @@
 import AppKit
-import Combine
 import SwiftUI
-
-enum PickyHUDArchiveHoldPolicy {
-    static let duration: TimeInterval = 1.2
-    static let feedbackStartDelay: TimeInterval = 0.2
-    static let feedbackStartDelayNanoseconds: UInt64 = 200_000_000
-    static let maximumDistance: CGFloat = 10
-    static let ringGapStartFraction = 0.22
-    static let ringUsableFraction = 0.73
-
-    static var feedbackAnimationDuration: TimeInterval {
-        max(0, duration - feedbackStartDelay)
-    }
-}
-
-/// Selects the one view that owns the new-Pickle popover. `nil` represents
-/// the regular dock-bottom add slot; a group id represents that group's empty
-/// create slot. Keeping this policy explicit prevents a group action from
-/// presenting relative to the always-rendered bottom button.
-enum PickyHUDDockNewPicklePopoverPolicy {
-    static func isPresented(
-        pickerIsPresented: Bool,
-        activeTargetGroupID: String?,
-        anchorGroupID: String?
-    ) -> Bool {
-        pickerIsPresented && activeTargetGroupID == anchorGroupID
-    }
-
-    static func shouldExpandDockAddSlot(
-        pickerIsPresented: Bool,
-        activeTargetGroupID: String?
-    ) -> Bool {
-        isPresented(
-            pickerIsPresented: pickerIsPresented,
-            activeTargetGroupID: activeTargetGroupID,
-            anchorGroupID: nil
-        )
-    }
-}
-
-extension PickySessionListViewModel.SessionCard {
-    var canRequestDockCompaction: Bool {
-        guard !isCompacting else { return false }
-        switch status {
-        case .completed, .blocked, .failed, .cancelled:
-            return true
-        case .queued, .running, .waiting_for_input:
-            return false
-        }
-    }
-}
-
-/// Owns an in-flight Pickle reorder drag at the dock-rail level. The per-icon
-/// click host only detects the reorder threshold and hands off here; from then
-/// on an app-level `NSEvent` monitor drives the drag to completion. This is
-/// essential because the live drop preview reparents the dragged icon across
-/// group boundaries (top-level <-> group member), which tears down and
-/// recreates its per-icon NSView. A rail-level monitor is immune to that, so
-/// the drag survives crossing into/out of groups and only commits on release.
-final class PickyDockReorderDragController: ObservableObject {
-    enum Phase: Equatable {
-        case idle
-        case dragging(sessionID: String, translation: CGSize)
-        case ended(sessionID: String, translation: CGSize)
-    }
-
-    @Published private(set) var phase: Phase = .idle
-
-    private var monitor: Any?
-    private var anchorScreenPoint: NSPoint = .zero
-    private var sessionID: String?
-
-    /// Begin tracking a reorder for `sessionID`. `anchorScreenPoint` is the
-    /// mouse-down location in screen space so deltas stay continuous with the
-    /// threshold the icon already crossed.
-    func begin(sessionID: String, anchorScreenPoint: NSPoint) {
-        if self.sessionID != nil { cancelMonitor() }
-        self.sessionID = sessionID
-        self.anchorScreenPoint = anchorScreenPoint
-        phase = .dragging(sessionID: sessionID, translation: currentTranslation())
-        monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDragged, .leftMouseUp]) { [weak self] event in
-            guard let self, let sessionID = self.sessionID else { return event }
-            let translation = self.currentTranslation()
-            switch event.type {
-            case .leftMouseUp:
-                self.phase = .ended(sessionID: sessionID, translation: translation)
-                self.cancelMonitor()
-                self.sessionID = nil
-                return nil
-            default:
-                self.phase = .dragging(sessionID: sessionID, translation: translation)
-                return nil
-            }
-        }
-    }
-
-    /// Acknowledge that the SwiftUI side consumed the terminal phase and return
-    /// to idle so the next drag starts clean.
-    func reset() {
-        phase = .idle
-    }
-
-    /// Screen-space delta from the mouse-down anchor, flipped to SwiftUI
-    /// top-down y. Screen-space keeps it stable even as the icon's NSView is
-    /// recreated mid-drag.
-    private func currentTranslation() -> CGSize {
-        let current = NSEvent.mouseLocation
-        return CGSize(width: current.x - anchorScreenPoint.x, height: -(current.y - anchorScreenPoint.y))
-    }
-
-    private func cancelMonitor() {
-        if let monitor { NSEvent.removeMonitor(monitor) }
-        monitor = nil
-    }
-
-    deinit { cancelMonitor() }
-}
 
 struct PickyHUDDockRailView: View {
     let sessions: [PickySessionListViewModel.SessionCard]
@@ -351,103 +234,28 @@ struct PickyHUDDockRailView: View {
         }
     }
 
-    /// Number of group header chips rendered in this projection. Every group
-    /// renders one header chip regardless of collapse state (an expanded group
-    /// emits a `.groupHeader` item; a collapsed group emits `.collapsedGroup`
-    /// but still renders the same chip above its badge). The rail height must
-    /// account for ALL of them or the bottom `+` slot overflows the capsule
-    /// when groups are collapsed.
-    private var groupHeaderCount: Int {
-        projection.items.reduce(0) { count, item in
-            switch item {
-            case .groupHeader, .collapsedGroup: return count + 1
-            default: return count
-            }
-        }
-    }
-
-    /// Number of empty-group drop tiles rendered (one per expanded group
-    /// with zero projected members, plus one per collapsed group with no
-    /// projected top member). Each tile occupies a full session tile slot
-    /// below its header but does NOT appear in `projection.slots`, so the
-    /// rail height must account for them explicitly or the dashed drop slot
-    /// overflows the capsule.
-    private var emptyGroupDropTileCount: Int {
-        var count = 0
-        for item in projection.items {
-            switch item {
-            case .groupHeader(let g):
-                if !projection.slots.contains(where: { slot in
-                    if case .group(let id, _) = slot.container { return id == g.id }
-                    return false
-                }) {
-                    count += 1
-                }
-            case .collapsedGroup(_, let topMember):
-                if topMember == nil { count += 1 }
-            default:
-                break
-            }
-        }
-        return count
-    }
-
-    private var railHeight: CGFloat {
-        if dockSide.orientation == .horizontal {
-            // Horizontal: group headers stack ABOVE their drawer (cross axis),
-            // so they do not add to long-axis length. Empty-group drop tiles
-            // are full-sized tiles inside the drawer and do add one tile
-            // worth of long-axis length each (`sessionTileWidth`, not
-            // `sessionTileHeight`).
-            let emptyDropExtraLength = CGFloat(emptyGroupDropTileCount) * (metrics.sessionTileWidth + metrics.sessionSpacing)
-            return PickyHUDDockLayout.horizontalDockRailLength(
-                sessionCount: sessions.count,
-                isAddSlotExpanded: isAddSlotExpanded,
-                metrics: metrics
-            ) + emptyDropExtraLength
-        }
-        let headersExtraLength = PickyHUDDockLayout.dockGroupHeaderExtraLength(groupHeaderCount: groupHeaderCount)
-        let emptyDropExtraLength = CGFloat(emptyGroupDropTileCount) * (metrics.sessionTileHeight + metrics.sessionSpacing)
-        let base = PickyHUDDockLayout.dockRailHeight(
-            sessionCount: sessions.count,
-            isAddSlotExpanded: isAddSlotExpanded,
-            metrics: metrics
-        )
-        return base + headersExtraLength + emptyDropExtraLength
-    }
-
-    /// Cross-axis (height) of the dock rail in horizontal mode. Grows by the
-    /// group header chip height when any dock group is rendered so the title
-    /// sits inside the capsule above its members.
     private var horizontalRailCrossSize: CGFloat {
-        PickyHUDDockLayout.horizontalDockRailCrossSize(
-            hasGroupHeaders: groupHeaderCount > 0,
+        PickyHUDDockRailLayoutPolicy.horizontalCrossSize(
+            projection: projection,
             metrics: metrics
         )
-    }
-
-    /// The handle, add slot, their padding, and intervening gaps remain outside
-    /// the sessions scroll viewport so they stay reachable at every list size.
-    private var fixedChromeLength: CGFloat {
-        if dockSide.orientation == .horizontal {
-            return (metrics.topPadding * 2)
-                + metrics.handleAreaHeight
-                + 4 // handle/body and body/add-slot HStack gaps
-                + PickyHUDDockLayout.addSlotFrameHeight(isExpanded: isAddSlotExpanded, metrics: metrics)
-        }
-        return metrics.topPadding
-            + metrics.handleAreaHeight
-            + 2
-            + metrics.addSlotTopPadding
-            + PickyHUDDockLayout.addSlotFrameHeight(isExpanded: isAddSlotExpanded, metrics: metrics)
-            + metrics.bottomPadding
     }
 
     private var overflowLayout: PickyHUDDockOverflowLayout {
         PickyHUDDockOverflowPolicy.layout(
-            contentLength: railHeight,
+            contentLength: PickyHUDDockRailLayoutPolicy.contentLength(
+                sessionCount: sessions.count,
+                isAddSlotExpanded: isAddSlotExpanded,
+                dockSide: dockSide,
+                projection: projection,
+                metrics: metrics
+            ),
             availableLength: availableRailLength,
-            fixedChromeLength: fixedChromeLength
+            fixedChromeLength: PickyHUDDockRailLayoutPolicy.fixedChromeLength(
+                isAddSlotExpanded: isAddSlotExpanded,
+                dockSide: dockSide,
+                metrics: metrics
+            )
         )
     }
 
@@ -553,7 +361,7 @@ struct PickyHUDDockRailView: View {
         // Group the projection items by group so we can render each group as
         // a single visual block with its accent bar. Ungrouped sessions emit
         // standalone slots that pass straight through.
-        let renderUnits = Self.buildRenderUnits(from: projection.items)
+        let renderUnits = PickyHUDDockRenderPolicy.renderUnits(from: projection.items)
         ForEach(renderUnits) { unit in
             renderUnitView(unit)
         }
@@ -576,7 +384,7 @@ struct PickyHUDDockRailView: View {
                 group: group,
                 dockSide: dockSide,
                 metrics: metrics,
-                drawerSpan: groupDrawerSpan(group: group, members: members),
+                drawerSpan: PickyHUDDockRenderPolicy.groupDrawerSpan(group: group, members: members, dockSide: dockSide, metrics: metrics),
                 isRenamingOnAppear: pendingRenameGroupID == group.id,
                 onRenameCommit: { newName in
                     onRenameDockGroup(group.id, newName)
@@ -629,14 +437,14 @@ struct PickyHUDDockRailView: View {
                         // pickles in or expand/rename via the header menu.
                         emptyGroupCreateSlot(for: group)
                             .publishDockSlotCenter(
-                                sessionID: Self.emptyGroupDropTargetID(groupID: group.id),
+                                sessionID: PickyHUDDockRenderPolicy.emptyGroupDropTargetID(groupID: group.id),
                                 dockSide: dockSide
                             )
                     }
                 } else if members.isEmpty {
                     emptyGroupCreateSlot(for: group)
                         .publishDockSlotCenter(
-                            sessionID: Self.emptyGroupDropTargetID(groupID: group.id),
+                            sessionID: PickyHUDDockRenderPolicy.emptyGroupDropTargetID(groupID: group.id),
                             dockSide: dockSide
                         )
                 } else {
@@ -796,95 +604,6 @@ struct PickyHUDDockRailView: View {
         PickyHUDDockPullOutBadge(text: text)
     }
 
-    /// Synthetic id used to publish/look up an empty group's drop tile
-    /// center in `slotCenters`. Distinct from any real session id so drag
-    /// hit-tests can tell "drop into empty group" apart from "drop onto a
-    /// session".
-    private static func emptyGroupDropTargetID(groupID: String) -> String {
-        "_empty_group:\(groupID)"
-    }
-
-    /// Long-axis span of a group block's drawer (the surface that hosts
-    /// member icons or the collapsed/empty placeholder). The header chip is
-    /// sized to match so the group title sits centered above the drawer. In
-    /// vertical mode every group occupies a single column; in horizontal
-    /// mode an expanded group with N members spans N tiles plus (N-1) gaps.
-    private func groupDrawerSpan(
-        group: PickyDockGroup,
-        members: [PickyHUDDockGroupMemberRef]
-    ) -> CGFloat {
-        guard dockSide.orientation == .horizontal else {
-            return metrics.sessionTileWidth
-        }
-        if group.isCollapsed || members.isEmpty {
-            return metrics.sessionTileWidth
-        }
-        let n = CGFloat(members.count)
-        return n * metrics.sessionTileWidth + max(0, n - 1) * metrics.sessionSpacing
-    }
-
-    /// Extract the group id from a synthetic empty-group drop target id, or
-    /// return nil if the input is a real session id.
-    private static func parseEmptyGroupDropTargetID(_ id: String) -> String? {
-        guard id.hasPrefix("_empty_group:") else { return nil }
-        return String(id.dropFirst("_empty_group:".count))
-    }
-
-    /// Walk projection items linearly and emit one render unit per ungrouped
-    /// session or per group block. Group members get attached to their owning
-    /// group, collapsed groups carry the single visible top member as their
-    /// only "member".
-    private static func buildRenderUnits(from items: [PickyDockRenderItem]) -> [PickyHUDDockRenderUnit] {
-        var units: [PickyHUDDockRenderUnit] = []
-        var activeGroup: PickyDockGroup?
-        var activeMembers: [PickyHUDDockGroupMemberRef] = []
-
-        func flushGroup() {
-            if let group = activeGroup {
-                units.append(.init(kind: .group(group: group, members: activeMembers)))
-                activeGroup = nil
-                activeMembers = []
-            }
-        }
-
-        for item in items {
-            switch item {
-            case .session(let id):
-                flushGroup()
-                units.append(.init(kind: .session(id: id)))
-            case .groupHeader(let group):
-                flushGroup()
-                activeGroup = group
-                activeMembers = []
-            case .groupMember(_, let sid, _):
-                if activeGroup != nil {
-                    activeMembers.append(.init(sessionID: sid))
-                } else {
-                    // Malformed projection — stray member without header.
-                    // Render as ungrouped to avoid losing the icon.
-                    units.append(.init(kind: .session(id: sid)))
-                }
-            case .collapsedGroup(let group, let topMember):
-                flushGroup()
-                var members: [PickyHUDDockGroupMemberRef] = []
-                if let topMember { members.append(.init(sessionID: topMember)) }
-                units.append(.init(kind: .group(group: group, members: members)))
-            }
-        }
-        flushGroup()
-        return units
-    }
-
-    /// Distance between successive icon centers along the dock's primary
-    /// axis. Drives the threshold at which a drag tips the icon into the
-    /// next visible slot.
-    private var slotPitchAlongAxis: CGFloat {
-        switch dockSide.orientation {
-        case .horizontal: return metrics.sessionTileWidth + metrics.sessionSpacing
-        case .vertical:   return metrics.sessionTileHeight + metrics.sessionSpacing
-        }
-    }
-
     /// Animation applied to each non-dragged icon's slot transition. The
     /// dragged icon must NOT be animated because its visual position is
     /// already driven explicitly by `dragOffset`; spring-interpolating its
@@ -896,34 +615,6 @@ struct PickyHUDDockRailView: View {
     }
 
     // MARK: - Reorder gestures
-
-    /// Cursor delta projected onto the dock's primary axis, in points. SwiftUI
-    /// top-down y is already applied at the NSView boundary, so we just pick
-    /// the relevant component here. Positive = later visible slot (right in
-    /// horizontal, down in vertical).
-    private func axisDelta(_ translation: CGSize) -> CGFloat {
-        switch dockSide.orientation {
-        case .horizontal: return translation.width
-        case .vertical:   return translation.height
-        }
-    }
-
-    /// Signed distance the cursor has been dragged *away* from the dock along
-    /// the cross axis (perpendicular to the icon column/row). Positive means
-    /// pulled out toward open screen; negative means pushed across the dock.
-    private func pullOutDistance(_ translation: CGSize) -> CGFloat {
-        switch dockSide {
-        case .left:   return translation.width
-        case .right:  return -translation.width
-        case .top:    return translation.height
-        case .bottom: return -translation.height
-        }
-    }
-
-    /// Cross-axis travel past which a drag counts as "outside the dock". Based
-    /// on the dock thickness plus a margin so the icon has visibly cleared the
-    /// capsule before a destructive release arms.
-    private var pullOutThreshold: CGFloat { metrics.railWidth * 0.5 + 40 }
 
     /// Schedule the dwell that arms session archive-on-release. Idempotent:
     /// re-arming while a timer is pending (or already armed) is a no-op, so
@@ -969,7 +660,7 @@ struct PickyHUDDockRailView: View {
         // dock on the cross axis, freeze the layout (no sibling reflow) and
         // arm archive-on-release after a short dwell. Returning early keeps
         // the dock visually still while the icon floats outside.
-        if pullOutDistance(translation) > pullOutThreshold {
+        if PickyHUDDockDragGeometry.pullOutDistance(translation, dockSide: dockSide) > PickyHUDDockDragGeometry.pullOutThreshold(metrics: metrics) {
             pendingDropContainer = layout.container(forSessionID: sessionID)
             scheduleSessionPullOutDwell()
             return
@@ -979,7 +670,7 @@ struct PickyHUDDockRailView: View {
             withAnimation(.easeOut(duration: 0.16)) { sessionPullOutArmed = false }
         }
 
-        let translationAxis = axisDelta(translation)
+        let translationAxis = PickyHUDDockDragGeometry.axisDelta(translation, orientation: dockSide.orientation)
         let cursorAxis = dragStartCenter + translationAxis
 
         // Hit-test against the FROZEN reference snapshot (captured at drag
@@ -994,7 +685,7 @@ struct PickyHUDDockRailView: View {
         }
         var emptyGroupCandidates: [PickyDockDropResolver.EmptyGroupCandidate] = []
         for (centerKey, center) in dragReferenceCenters {
-            guard let groupID = Self.parseEmptyGroupDropTargetID(centerKey) else { continue }
+            guard let groupID = PickyHUDDockRenderPolicy.parseEmptyGroupDropTargetID(centerKey) else { continue }
             emptyGroupCandidates.append(.init(groupID: groupID, center: center))
         }
 
@@ -1004,7 +695,7 @@ struct PickyHUDDockRailView: View {
             slotCandidates: slotCandidates,
             emptyGroupCandidates: emptyGroupCandidates,
             layout: layout,
-            slotPitch: slotPitchAlongAxis
+            slotPitch: PickyHUDDockDragGeometry.slotPitch(orientation: dockSide.orientation, metrics: metrics)
         )
 
         // Record where the icon *would* land. This drives the live preview
@@ -1055,37 +746,6 @@ struct PickyHUDDockRailView: View {
 
     // MARK: - Group header drag (whole-group reorder)
 
-    /// Visible top-level entry ids in the order the projection emitted them.
-    /// `"session:<id>"` for an ungrouped slot, `"group:<id>"` for a group
-    /// (either expanded or collapsed). Drives the header drag's drop
-    /// hit-test along the same axis the icons live on.
-    private var visibleTopEntryIDs: [String] {
-        var ids: [String] = []
-        for item in projection.items {
-            switch item {
-            case .session(let sid): ids.append("session:\(sid)")
-            case .groupHeader(let g): ids.append("group:\(g.id)")
-            case .collapsedGroup(let g, _): ids.append("group:\(g.id)")
-            case .groupMember: break
-            }
-        }
-        return ids
-    }
-
-    /// Translate a visible top-entry index back to its index in
-    /// `dockLayout.entries`. Necessary when the visible projection is a
-    /// strict subset of the persisted layout (for example archived or
-    /// missing sessions). When the visible entry id maps to a layout entry
-    /// that no longer exists, returns nil so the caller can no-op safely.
-    private func layoutEntryIndex(forVisibleTopEntryID entryID: String) -> Int? {
-        layout.entries.firstIndex { entry in
-            switch entry {
-            case .session(let id): return "session:\(id)" == entryID
-            case .group(let g):    return "group:\(g.id)" == entryID
-            }
-        }
-    }
-
     private func handleGroupHeaderDragBegin(groupID: String) {
         guard let layoutIdx = layout.entries.firstIndex(where: { entry in
             if case .group(let g) = entry, g.id == groupID { return true }
@@ -1110,7 +770,7 @@ struct PickyHUDDockRailView: View {
         // macOS Dock-style pull-out: while the group block is dragged clearly
         // outside the dock, arm removal-on-release immediately (no dwell) and
         // let the block float freely under the cursor instead of reordering.
-        if pullOutDistance(translation) > pullOutThreshold {
+        if PickyHUDDockDragGeometry.pullOutDistance(translation, dockSide: dockSide) > PickyHUDDockDragGeometry.pullOutThreshold(metrics: metrics) {
             if !groupPullOutArmed {
                 withAnimation(.easeOut(duration: 0.16)) { groupPullOutArmed = true }
             }
@@ -1121,9 +781,9 @@ struct PickyHUDDockRailView: View {
             withAnimation(.easeOut(duration: 0.16)) { groupPullOutArmed = false }
         }
 
-        let topEntryIDs = visibleTopEntryIDs
+        let topEntryIDs = PickyHUDDockRenderPolicy.visibleTopEntryIDs(in: projection.items)
         guard !topEntryIDs.isEmpty else { return }
-        let translationAxis = axisDelta(translation)
+        let translationAxis = PickyHUDDockDragGeometry.axisDelta(translation, orientation: dockSide.orientation)
         let cursorAxis = groupDragStartCenter + translationAxis
 
         // Find the visible top entry whose measured center is closest to
@@ -1141,7 +801,7 @@ struct PickyHUDDockRailView: View {
         }
         guard let nearestVisibleIdx else { return }
         let nearestEntryID = topEntryIDs[nearestVisibleIdx]
-        guard let nearestLayoutIdx = layoutEntryIndex(forVisibleTopEntryID: nearestEntryID) else { return }
+        guard let nearestLayoutIdx = PickyHUDDockRenderPolicy.layoutEntryIndex(forVisibleTopEntryID: nearestEntryID, in: layout) else { return }
 
         if nearestLayoutIdx != groupDragCurrentLayoutIndex {
             onMoveDockGroup(groupID, nearestLayoutIdx)

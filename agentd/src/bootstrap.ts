@@ -7,8 +7,6 @@ import { PiSdkRuntime } from "./runtime/pi-sdk-runtime.js";
 import { ConservativeMockTaskRouter } from "./task-router.js";
 import { createPickyAbortPickleTool, createPickyPickleSessionsTool, createPickyStartPickleTool, createPickySteerPickleTool, type PickyHandoffRequest, type PickyPickleAbortRequest, type PickyPickleSteerRequest } from "./application/handoff-tool.js";
 import { createPickyAskUserQuestionTool } from "./application/ask-user-question-tool.js";
-import { createPickyShowPointerTool } from "./application/pointer-tool.js";
-import { createPickyShowAnnotationsTool } from "./application/annotation-tool.js";
 import { createReadPickyUserGuideTool, readPickyUserGuide } from "./application/user-guide-tool.js";
 import { stabilizeProcessCwd, type ProcessCwdStabilizerResult } from "./process-cwd.js";
 import { ThinkingLevelSchema, type ThinkingLevel } from "./protocol.js";
@@ -311,8 +309,6 @@ function buildPrimaryMainRuntime(
     createPickyPickleSessionsTool(listPickleSessions),
     createPickySteerPickleTool(steerPickleSession),
     createPickyAbortPickleTool(abortPickleSession),
-    createPickyShowPointerTool((request) => requireSupervisor().requestPointerOverlay(request)),
-    createPickyShowAnnotationsTool((request) => requireSupervisor().requestAnnotationOverlay(request)),
     createReadPickyUserGuideTool(readPickyUserGuide),
   ];
   const toolsBuilder = (disabled: ReadonlySet<string>) => allBuiltinTools.filter((tool) => !disabled.has(tool.name));

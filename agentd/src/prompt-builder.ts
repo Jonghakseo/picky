@@ -1,6 +1,4 @@
 import { PICKLE_TOOL_NAMES } from "./application/picky-tool-names.js";
-import { PICKY_SHOW_POINTER_TOOL_NAME } from "./application/pointer-tool.js";
-import { PICKY_SHOW_ANNOTATIONS_TOOL_NAME } from "./application/annotation-tool.js";
 import type { PickyContextPacket } from "./protocol.js";
 
 export interface BuiltPrompt {
@@ -98,6 +96,7 @@ interface MainAgentBootstrapPair {
 
 export interface MainAgentBootstrapOptions {
   compactSummary?: string;
+  disabledBuiltinTools?: ReadonlySet<string>;
 }
 
 /**
@@ -115,6 +114,7 @@ export function buildMainAgentBootstrapPair(
     ? { compactSummary: optionsOrSummary }
     : optionsOrSummary ?? {};
   const trimmedSummary = options.compactSummary?.trim();
+  const visualOverlaySection = buildVisualOverlayDslPrompt(options.disabledBuiltinTools ?? new Set());
   const replyStyleSection: string[] = [
     "## Direct reply style for Picky TTS",
     "",
@@ -136,8 +136,7 @@ export function buildMainAgentBootstrapPair(
     `- Available delegation tools: \`${PICKLE_TOOL_NAMES.start}\`, \`${PICKLE_TOOL_NAMES.sessions}\`, \`${PICKLE_TOOL_NAMES.steer}\`, \`${PICKLE_TOOL_NAMES.abort}\`. Only the picky_* tools surface Pickles in the Picky dock; never simulate them with bash or by editing session files.`,
     `- \`${PICKLE_TOOL_NAMES.abort}\` only runs when the user explicitly asks to stop, cancel, or kill a Pickle; if the target is ambiguous, resolve it with \`${PICKLE_TOOL_NAMES.sessions}\`.`,
     `- Pickle hover follow-ups bypass you and go directly to a Pickle. When reusing a running Pickle fits, prefer \`${PICKLE_TOOL_NAMES.steer}\`, identifying the target with \`${PICKLE_TOOL_NAMES.sessions}\` as needed.`,
-    `- \`${PICKY_SHOW_POINTER_TOOL_NAME}\` can show a pointer at a concrete location in a captured screenshot. Use it only when that visual reference helps the user; provide screenshot-pixel x/y coordinates (top-left origin) and a short label. Do not use text tags.`,
-    `- \`${PICKY_SHOW_ANNOTATIONS_TOOL_NAME}\` can show related screen annotations on one captured display per call. Use it instead of a single pointer only when several shapes clarify the guidance; use screenshot-pixel coordinates (top-left origin), concise labels, and mode \`clear\` to erase them. To annotate a second display, call it again with that screenId.`,
+    ...visualOverlaySection,
 
     "- If the user request Source is `text`, treat the request text as deliberate typed input, not speech recognition output.",
     "- Do not expose internal tool logs verbatim and do not hard-code workflows from URLs or app names.",
@@ -159,6 +158,44 @@ export function buildMainAgentBootstrapPair(
   ].join("\n");
   const assistant = "OK";
   return { user, assistant };
+}
+
+function buildVisualOverlayDslPrompt(disabledBuiltinTools: ReadonlySet<string>): string[] {
+  const pointEnabled = !disabledBuiltinTools.has("picky_show_pointer");
+  const annotationsEnabled = !disabledBuiltinTools.has("picky_show_annotations");
+  if (!pointEnabled && !annotationsEnabled) return [];
+
+  const lines = [
+    "",
+    "## Picky visual overlay DSL",
+    "",
+    "When a concrete location in a captured screenshot would help the user, emit a visual tag inline in your normal reply. Tags are invisible to the user's transcript, so narrate naturally around them. Use screenshot pixels with a top-left origin and the dimensions supplied for the screenshot. Use one visual thing at a time, concise labels, and a required ttl in milliseconds (500-60000). Do not emit a tag when no captured screenshot grounds the location.",
+    "",
+    "Every argument is named. Double-quoted label/text values support \\\" and \\\\ escapes. [SCREEN: id=<screenId>] selects the captured display for following tags; omit it to use the cursor/primary display.",
+  ];
+  if (pointEnabled) {
+    lines.push(
+      "",
+      "Pointer:",
+      "- [POINT: x=<number> y=<number> r=<number> ttl=<milliseconds> label=\"short label\"]",
+      "- Example: 먼저 저장 버튼을 가리킬게요. [POINT: x=120 y=340 r=24 ttl=6000 label=\"저장\"]",
+    );
+  }
+  if (annotationsEnabled) {
+    lines.push(
+      "",
+      "Drawing shapes:",
+      "- [TARGET: x=<number> y=<number> r=<number> ttl=<milliseconds> label=\"short label\"]",
+      "- [CIRCLE: x=<number> y=<number> r=<number> ttl=<milliseconds> label=\"short label\"] (or rx=<number> ry=<number>)",
+      "- [RECT: x=<number> y=<number> w=<number> h=<number> ttl=<milliseconds> label=\"short label\"]",
+      "- [LINE: x1=<number> y1=<number> x2=<number> y2=<number> ttl=<milliseconds>]",
+      "- [SPOTLIGHT: shape=circle x=<number> y=<number> r=<number> ttl=<milliseconds>] (or shape=rect x=<number> y=<number> w=<number> h=<number>)",
+      "- [LABEL: x=<number> y=<number> ttl=<milliseconds> text=\"short text\"]",
+      "- Example: 이 부분을 확인해 주세요. [CIRCLE: x=200 y=100 r=40 ttl=6000 label=\"여기\"] [LABEL: x=250 y=150 ttl=6000 text=\"확인\"]",
+      "- Example: 메뉴 영역을 강조할게요. [SPOTLIGHT: shape=rect x=50 y=60 w=200 h=80 ttl=6000]",
+    );
+  }
+  return lines;
 }
 
 function hasGroundingContext(context: PickyContextPacket): boolean {

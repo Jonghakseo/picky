@@ -11,16 +11,21 @@ cross-checked against Picky's actual code. It stays
 inside Picky's non-negotiable boundary: Picky captures neutral context and
 renders/controls overlays; Pi decides intent and when to point/draw.
 
+> **Current implementation:** visual guidance is emitted as an inline, streamed
+> DSL in the assistant reply, not as a structured tool call. `agentd` strips and
+> incrementally parses completed tags, immediately reusing the existing validated
+> pointer/annotation request paths. This avoids the extra model continuation that
+> a tool result would require.
+
 ## TL;DR
 
-Picky already has the full transport + rendering pipeline for "AI points here".
-It is **inert but complete**: the app-side event and `BlueCursorView` renderer
-work, but there is **no LLM-callable tool registered** — the old
-`createPickyShowPointerTool` was removed in commit `dab252f3`. So:
+Picky has the full transport + rendering pipeline for "AI points here". The
+app-side events, `BlueCursorView`, and annotation renderer are fed by a streamed
+inline DSL rather than registered LLM tools:
 
-- **Phase 1 (revive pointing)** = wire one tool back in. Low risk, hours-scale.
-- **Phase 2 (multi-shape drawing)** = the real new work: a versioned annotation
-  protocol + a dedicated AI-annotation renderer.
+- **Pointing** uses `[POINT: x=… y=… ttl=…]` and maps to the pointer request path.
+- **Multi-shape drawing** uses tags such as `[CIRCLE: …]` and maps to the
+  versioned annotation protocol + dedicated AI-annotation renderer.
 
 ## What already exists (reusable)
 
@@ -34,7 +39,7 @@ work, but there is **no LLM-callable tool registered** — the old
 | ScreenCaptureKit capture with self-window exclusion | present | `Picky/Context/CompanionScreenCaptureUtility.swift:17-169` |
 | Protocol event `pointerOverlayRequested` | present | `Picky/PickyAgentProtocol.swift:275,416-418`, `agentd/src/server.ts:129` |
 | Coordinate validation/clamp + tests | present | `agentd/src/domain/pointer-validation.ts:19-51` |
-| LLM-callable pointer tool | MISSING | not registered in `agentd/src/bootstrap.ts:307-324`; `agentd/src/application/pointer-tool.ts` only builds a request object |
+| Streamed visual DSL parser | present | `agentd/src/domain/annotation-dsl.ts`; `SessionSupervisor` emits existing request events mid-stream |
 
 **Picky already does better than comparable apps:** it excludes its own
 overlay windows from capture (no visual feedback loop) and sends the screenshot's
@@ -69,21 +74,19 @@ windows, and capture infrastructure in reverse.
 
 ## Phased plan
 
-### Phase 1 — Revive AI pointing (small, low risk)
+### Phase 1 — Streamed AI pointing
 
-1. Add a real `defineTool` (`createPickyShowPointerTool`) in
-   `agentd/src/application/pointer-tool.ts` that calls
-   `SessionSupervisor.requestPointerOverlay()` (`agentd/src/session-supervisor.ts:445-454`).
-2. Register it in `agentd/src/bootstrap.ts:307-324`.
-3. Add prompt guidance in `agentd/src/prompt-builder.ts`. Use **structured tool
-   calls**, not custom text-tag parsing — Pi's runtime supports tools natively,
-   which avoids the parsing fragility and prompt pollution of a `[POINT:x,y]`
-   text convention.
-4. Tests: `agentd/src/application/pointer-tool.test.ts`,
-   `agentd/src/session-supervisor.test.ts`.
+1. `AnnotationDslParser` incrementally recognizes `[POINT: x=… y=… r=… ttl=…]`
+   across assistant deltas, strips it from user-visible text, and emits the
+   existing `SessionSupervisor.requestPointerOverlay()` path immediately.
+2. `prompt-builder.ts` injects the named-argument DSL grammar only when the
+   existing `picky_show_pointer` setting is enabled. The parser remains active
+   even when prompt guidance is disabled.
+3. Tests cover split tags, escaped quoted labels, malformed tags, and
+   mid-stream pointer emission.
 
-Transport and rendering are already proven, so this is mostly re-exposing a
-capability.
+Transport and rendering remain unchanged; the DSL changes only how the model
+supplies coordinates, avoiding a second inference after a tool result.
 
 ### Phase 2 — Multi-shape drawing (the new work)
 
@@ -104,14 +107,15 @@ out of scope for v1; revisit later.)
    Render a collection of circles, rectangles, lines, spotlight regions, and
    labels. Follow the Picky design system (Action Blue, semantic status) and
    apply a subtle deterministic hand-drawn stroke treatment for outline shapes.
-7. **Lifecycle semantics.** Support replace / append / clear, TTL, animation
-   completion, cancellation on new user input, deterministic per-id cleanup.
+7. **Lifecycle semantics.** DSL tags append during a turn, auto-clear on a new
+   turn, and require a TTL; animation completion and deterministic per-id cleanup
+   remain app-owned.
    Add an annotation collection alongside — not inside — `PickyPointerTarget` in
    `Picky/Interaction/PickyInteractionState.swift`.
 8. **Use target bounds.** Populate `targetFrame` (currently always nil at
    `Picky/CompanionManager.swift:2185-2203`) so ring/rect size can match the
    referenced element.
-9. **Tests.** Extend `pointer-tool.test.ts`, `session-supervisor.test.ts`,
+9. **Tests.** Extend `annotation-dsl.test.ts`, `session-supervisor.test.ts`,
    `PickyTests/PickyPointerOverlayResolverTests.swift`; add compound-annotation,
    lifecycle-race, and concurrent-display tests plus pure-geometry renderer tests.
 
@@ -156,20 +160,20 @@ screenshot's real pixel dimensions, per-display keying.
 
 | Aspect | Comparable app | Picky recommendation |
 | --- | --- | --- |
-| LLM output format | text tags like `[POINT:x,y]` regex-parsed | **structured tool calls** (Pi supports tools; avoids parsing fragility + prompt pollution) |
+| LLM output format | text tags like `[POINT:x,y]` regex-parsed | **streamed named-argument DSL** (`[POINT: x=… y=… ttl=…]`), parsed incrementally and validated through existing request paths |
 | Event reuse | one multi-purpose tag | new `annotationOverlayRequested`, separate from pointer |
 | Shape style | hand-drawn / sketchy | Picky design system (Action Blue, semantic status) |
 | Coordinates | screenshot px + `:screenN` | keep existing px + `screenId`; extend `pointer-validation.ts` |
 
 ## Integration seams (files a change plugs into)
 
-- Tool: `agentd/src/application/pointer-tool.ts` + register in `agentd/src/bootstrap.ts:307-324`
-- Handler: `SessionSupervisor.requestPointerOverlay()` (`agentd/src/session-supervisor.ts:445-454`)
+- Parser: `agentd/src/domain/annotation-dsl.ts`, fed by main-agent `assistant_delta` events
+- Handler: `SessionSupervisor.requestPointerOverlay()` / `requestAnnotationOverlay()`
 - Protocol: `agentd/src/protocol.ts:267-278` <-> `Picky/PickyAgentProtocol.swift:275,416-418`
 - Validation: `agentd/src/domain/pointer-validation.ts`
 - App state: `Picky/Interaction/PickyInteractionState.swift`
 - Render: new `PickyAgentAnnotationOverlayView` mounted at `Picky/Overlay/BlueCursorView.swift:595-615`
-- Tests: `agentd/src/application/pointer-tool.test.ts`, `agentd/src/session-supervisor.test.ts`, `PickyTests/PickyPointerOverlayResolverTests.swift`
+- Tests: `agentd/src/domain/annotation-dsl.test.ts`, `agentd/src/session-supervisor.test.ts`, `PickyTests/PickyPointerOverlayResolverTests.swift`
 
 ## Status of evidence
 

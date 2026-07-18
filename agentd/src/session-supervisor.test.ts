@@ -1108,6 +1108,71 @@ describe("SessionSupervisor", () => {
     expect(second.request).toMatchObject({ contextId: "context-second overlay context", contextGeneration: 2 });
   });
 
+  it("injects DSL prompt guidance from the disabled built-in settings set", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-dsl-prompt-"));
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
+
+    await supervisor.setDisabledBuiltinTools(["picky_show_pointer"]);
+    await supervisor.route(context("DSL prompt gating"));
+
+    const bootstrap = mainRuntime.handle?.bootstrapInjections[0]?.user ?? "";
+    expect(bootstrap).toContain("## Picky visual overlay DSL");
+    expect(bootstrap).not.toContain("[POINT: x=<number>");
+    expect(bootstrap).toContain("[TARGET: x=<number>");
+  });
+
+  it("emits DSL overlays mid-stream and persists only clean main-agent text", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-dsl-"));
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
+    const pointerEvents: unknown[] = [];
+    const annotationEvents: unknown[] = [];
+    const quickReplies: string[] = [];
+    supervisor.on("pointerOverlayRequested", (request) => pointerEvents.push(request));
+    supervisor.on("annotationOverlayRequested", (request) => annotationEvents.push(request));
+    supervisor.on("quickReply", (_contextId, text) => quickReplies.push(text));
+    const mainContext: PickyContextPacket = {
+      ...context("화면에서 알려줘"),
+      screenshots: [{
+        id: "shot-main-dsl",
+        label: "cursor screen",
+        path: "/tmp/shot-main-dsl.jpg",
+        screenId: "screen-main-dsl",
+        bounds: { x: 0, y: 0, width: 500, height: 400 },
+        screenshotWidthInPixels: 1000,
+        screenshotHeightInPixels: 800,
+        isCursorScreen: true,
+      }],
+    };
+
+    // The parser is intentionally independent of prompt injection, so a model-emitted tag
+    // still renders even after both visual DSL settings are disabled.
+    await supervisor.setDisabledBuiltinTools(["picky_show_pointer", "picky_show_annotations"]);
+    await supervisor.route(mainContext);
+    mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Running" });
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "여기를 먼저 보세요. [SCREEN: id=screen-main-dsl] [PO" });
+    await settle();
+    expect(pointerEvents).toEqual([]);
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "INT: x=120 y=340 r=24 ttl=6000 label=\"저장\"] [RECT: x=50 y=60 w=200 h=80 ttl=8000 label=\"영역\"] 다음입니다." });
+    await waitUntil(() => pointerEvents.length === 1 && annotationEvents.length === 1);
+
+    // Overlay events arrive before completion, preserving the low-latency streaming path.
+    expect(quickReplies).toEqual([]);
+    expect(pointerEvents[0]).toMatchObject({ screenId: "screen-main-dsl", x: 120, y: 340, r: 24, label: "저장", contextGeneration: 1 });
+    expect(annotationEvents[0]).toMatchObject({
+      mode: "append",
+      screenId: "screen-main-dsl",
+      contextGeneration: 1,
+      annotations: [{ shape: "rect", x: 50, y: 60, w: 200, h: 80, ttlMs: 8000, label: "영역" }],
+    });
+
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await waitUntil(() => quickReplies.length === 1);
+    expect(quickReplies[0]).toBe("여기를 먼저 보세요. 다음입니다.");
+    expect(supervisor.listMainMessages().at(-1)).toMatchObject({ role: "assistant", text: "여기를 먼저 보세요. 다음입니다." });
+  });
+
   it("derives screenshot pixel dimensions from image files when context metadata is missing", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const imagePath = join(dir, "shot.jpg");

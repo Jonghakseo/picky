@@ -69,24 +69,21 @@ describe("neutral prompt builder", () => {
     expect(pair.user).toContain("Do not expose internal tool logs verbatim");
   });
 
-  it("advertises structured pointer calls without text-tag instructions", () => {
-    const turnPrompt = buildMainAgentPrompt(PickyContextPacketSchema.parse(readJson("context/plain-text.context.json")));
-    const pair = buildMainAgentBootstrapPair();
-    const picklePrompt = buildPicklePrompt(PickyContextPacketSchema.parse(readJson("context/plain-text.context.json")), {
-      title: "Pickle work",
-      instructions: "Investigate without showing overlays",
-    });
+  it("gates the inline visual DSL prompt by the existing pointer and annotation identifiers", () => {
+    const allEnabled = buildMainAgentBootstrapPair();
+    const pointerDisabled = buildMainAgentBootstrapPair({ disabledBuiltinTools: new Set(["picky_show_pointer"]) });
+    const annotationsDisabled = buildMainAgentBootstrapPair({ disabledBuiltinTools: new Set(["picky_show_annotations"]) });
+    const allDisabled = buildMainAgentBootstrapPair({ disabledBuiltinTools: new Set(["picky_show_pointer", "picky_show_annotations"]) });
 
-    expect(pair.user).toContain("picky_show_pointer");
-    expect(pair.user).toContain("concrete location in a captured screenshot");
-    expect(pair.user).toContain("screenshot-pixel x/y coordinates (top-left origin)");
-    expect(pair.user).toContain("short label");
-    expect(pair.user).toContain("picky_show_annotations");
-    expect(pair.user).toContain("mode `clear`");
-    expect(pair.user).not.toContain("[POINT:");
-    expect(pair.user).not.toContain("append pointer tags");
-    expect(turnPrompt.text).not.toContain("[POINT:");
-    expect(picklePrompt.text).not.toContain("[POINT:");
+    expect(allEnabled.user).toContain("## Picky visual overlay DSL");
+    expect(allEnabled.user).toContain("[POINT: x=<number>");
+    expect(allEnabled.user).toContain("[SPOTLIGHT: shape=circle");
+    expect(allEnabled.user).toContain("Tags are invisible to the user's transcript");
+    expect(pointerDisabled.user).not.toContain("[POINT: x=<number>");
+    expect(pointerDisabled.user).toContain("[TARGET: x=<number>");
+    expect(annotationsDisabled.user).toContain("[POINT: x=<number>");
+    expect(annotationsDisabled.user).not.toContain("[TARGET: x=<number>");
+    expect(allDisabled.user).not.toContain("## Picky visual overlay DSL");
   });
 
   it("places the handoff title before Pickle boilerplate so auto-name sees it early", () => {

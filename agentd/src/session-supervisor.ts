@@ -9,8 +9,9 @@ import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
 import { summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
 import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentPickleCompletionPrompt, buildPicklePrompt, buildSteerPrompt, type BuiltPrompt } from "./prompt-builder.js";
 import type { ModelCycleDirection, PickyActivitySummary, PickyAgentSession, PickyAnnotationOverlayRequest, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
-import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-tool.js";
-import type { PickyShowAnnotationsRequest, PickyShowAnnotationsResult } from "./application/annotation-tool.js";
+import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-overlay-request.js";
+import type { PickyShowAnnotationsRequest, PickyShowAnnotationsResult } from "./application/annotation-overlay-request.js";
+import { AnnotationDslParser, type AnnotationDslTag } from "./domain/annotation-dsl.js";
 import { readPiSessionInfoName, readPiTerminalSessionMessages } from "./application/pi-session-syncer.js";
 import { PiSessionTailWatcher, type PiSessionTailEntry } from "./application/pi-session-tail-watcher.js";
 import { inferTerminalStatusFromEntries } from "./application/terminal-tail-status.js";
@@ -99,6 +100,9 @@ export class SessionSupervisor extends EventEmitter {
   private mainHandleGeneration = 0;
   private mainThinkingLevel?: ThinkingLevel;
   private mainDraft = "";
+  private mainAssistantDeltaSeen = false;
+  private mainAnnotationDslTagSeen = false;
+  private readonly mainAnnotationDslParser = new AnnotationDslParser();
   private mainContext?: PickyContextPacket;
   private mainContextGeneration = 0;
   private mainState: PickyMainAgentState = { messages: [] };
@@ -641,9 +645,13 @@ export class SessionSupervisor extends EventEmitter {
     this.disabledBuiltinTools = disabled;
     logAgentd("disabled builtin tools configured", { count: disabled.size, changed: same ? 0 : 1 });
     if (same) return;
-    if (!this.options.mainCustomToolsBuilder || !this.options.mainRuntime?.setCustomTools) return;
-    const tools = this.options.mainCustomToolsBuilder(disabled);
-    this.options.mainRuntime.setCustomTools(tools);
+    if (this.options.mainCustomToolsBuilder && this.options.mainRuntime?.setCustomTools) {
+      const tools = this.options.mainCustomToolsBuilder(disabled);
+      this.options.mainRuntime.setCustomTools(tools);
+    }
+    // Pointer/annotation identifiers now gate bootstrap prompt content rather than custom
+    // tools. Recreate the main handle for every settings change so its standing DSL guidance
+    // matches the current toggle state as well as the active custom-tool set.
     const currentHandle = this.mainHandle;
     this.detachMainHandleForInterruption();
     if (currentHandle) await this.abortResetMainHandle(currentHandle, "builtin-tools-switch");
@@ -703,6 +711,9 @@ export class SessionSupervisor extends EventEmitter {
     this.mainHandle = undefined;
     this.mainHandlePromise = undefined;
     this.mainDraft = "";
+    this.mainAssistantDeltaSeen = false;
+    this.mainAnnotationDslTagSeen = false;
+    this.mainAnnotationDslParser.reset();
     this.mainContext = undefined;
     this.mainReplyContextId = "main";
     this.mainIsProcessing = false;
@@ -1219,6 +1230,9 @@ export class SessionSupervisor extends EventEmitter {
     this.mainReplyContextId = contextId;
     this.activeMainRuntimeInputId = `main-turn-${this.mainTurnId}`;
     this.mainDraft = "";
+    this.mainAssistantDeltaSeen = false;
+    this.mainAnnotationDslTagSeen = false;
+    this.mainAnnotationDslParser.reset();
     this.mainTerminalProcessed = false;
   }
 
@@ -1274,7 +1288,10 @@ export class SessionSupervisor extends EventEmitter {
   private async injectMainBootstrap(handle: RuntimeSessionHandle): Promise<void> {
     if (!handle.injectInitialBootstrap) return;
     try {
-      await handle.injectInitialBootstrap(buildMainAgentBootstrapPair(this.mainState.compactSummary));
+      await handle.injectInitialBootstrap(buildMainAgentBootstrapPair({
+        compactSummary: this.mainState.compactSummary,
+        disabledBuiltinTools: this.disabledBuiltinTools,
+      }));
     } catch (error) {
       logAgentd("main bootstrap inject failed", { error: error instanceof Error ? error.message : String(error) });
     }
@@ -1374,7 +1391,8 @@ export class SessionSupervisor extends EventEmitter {
       // skip it). Without this, a Pickle-completion follow-up turn whose `running`
       // is omitted would be silently swallowed by the prior turn's guard.
       this.mainTerminalProcessed = false;
-      this.mainDraft += event.delta;
+      this.mainAssistantDeltaSeen = true;
+      this.mainDraft += await this.consumeMainAssistantDsl(event.delta);
       return;
     }
     if (event.type === "turn_text_complete") {
@@ -1388,16 +1406,22 @@ export class SessionSupervisor extends EventEmitter {
         logAgentd("main interrupted turn text suppressed", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, inputId: event.inputId, pending: this.interruptedMainInputIds.size });
         return;
       }
-      const draftSnapshot = this.mainDraft;
+      await this.finishMainAssistantDsl();
+      let draftSnapshot = this.mainDraft;
       this.mainDraft = "";
       // Prefer the streamed draft so any deltas that the normalizer trimmed
-      // out of the final assistant message are preserved, but fall back to
-      // the event's text payload so runtimes that deliver a whole turn in
-      // one shot (no prior `assistant_delta`) still flush the spoken turn
-      // through TTS instead of silently dropping it.
-      const reply = cleanFinalAnswer(draftSnapshot) ?? cleanFinalAnswer(event.text);
+      // out of the final assistant message are preserved, but parse the event
+      // payload when a runtime delivers the whole turn without deltas.
+      if (!draftSnapshot && !this.mainAssistantDeltaSeen) {
+        draftSnapshot = await this.consumeMainAssistantDsl(event.text);
+        await this.finishMainAssistantDsl();
+      }
+      const reply = cleanFinalAnswer(this.mainAnnotationDslTagSeen ? normalizeDslWhitespace(draftSnapshot) : draftSnapshot);
       if (!reply) {
         logAgentd("main turn text complete with empty draft", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, eventTextChars: event.text.length });
+        this.mainAnnotationDslParser.reset();
+        this.mainAnnotationDslTagSeen = false;
+        this.mainAssistantDeltaSeen = false;
         return;
       }
       logAgentd("main turn text flush", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, textChars: reply.length });
@@ -1411,6 +1435,9 @@ export class SessionSupervisor extends EventEmitter {
           sessionId: isPickleReply ? replyContextId : undefined,
         });
       }
+      this.mainAnnotationDslParser.reset();
+      this.mainAnnotationDslTagSeen = false;
+      this.mainAssistantDeltaSeen = false;
       return;
     }
     if (event.type === "status") {
@@ -1441,10 +1468,12 @@ export class SessionSupervisor extends EventEmitter {
         // so a racing terminal event that slipped past Guard A (e.g. via a custom
         // runtime that does not flip `mainTerminalProcessed`) cannot read the
         // still-populated draft and double-emit the reply.
+        await this.finishMainAssistantDsl();
         const draftSnapshot = this.mainDraft;
         this.mainDraft = "";
+        this.mainAnnotationDslParser.reset();
         logAgentd("main status", { status: event.status, contextId: this.mainReplyContextId, draftChars: draftSnapshot.length });
-        const rawReply = cleanFinalAnswer(draftSnapshot) ?? (event.status === "failed" ? event.summary : undefined);
+        const rawReply = cleanFinalAnswer(this.mainAnnotationDslTagSeen ? normalizeDslWhitespace(draftSnapshot) : draftSnapshot) ?? (event.status === "failed" ? event.summary : undefined);
         if (this.suppressNextMainReply) {
           this.suppressNextMainReply = false;
         } else if (rawReply) {
@@ -1480,7 +1509,61 @@ export class SessionSupervisor extends EventEmitter {
           }
         }
         this.schedulePickleCompletionDrain();
+        this.mainAnnotationDslTagSeen = false;
+        this.mainAssistantDeltaSeen = false;
       }
+    }
+  }
+
+  private async consumeMainAssistantDsl(text: string): Promise<string> {
+    const result = this.mainAnnotationDslParser.feed(text);
+    this.mainAnnotationDslTagSeen ||= result.completedTags.length > 0 || result.droppedTags.length > 0;
+    for (const summary of result.healedTags) {
+      logAgentd("main annotation DSL tag healed", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, summary });
+    }
+    for (const reason of result.droppedTags) {
+      logAgentd("main annotation DSL tag dropped", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, reason });
+    }
+    for (const tag of result.completedTags) await this.emitMainAnnotationDslTag(tag);
+    return result.cleanText;
+  }
+
+  private async finishMainAssistantDsl(): Promise<void> {
+    const result = this.mainAnnotationDslParser.finish();
+    this.mainAnnotationDslTagSeen ||= result.droppedTags.length > 0;
+    for (const summary of result.healedTags) {
+      logAgentd("main annotation DSL tag healed", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, summary });
+    }
+    for (const reason of result.droppedTags) {
+      logAgentd("main annotation DSL tag dropped", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, reason });
+    }
+  }
+
+  private async emitMainAnnotationDslTag(tag: AnnotationDslTag): Promise<void> {
+    if (tag.kind === "screen") return;
+    try {
+      if (tag.kind === "point") {
+        await this.requestPointerOverlay({
+          x: tag.x,
+          y: tag.y,
+          ...(tag.r === undefined ? {} : { r: tag.r }),
+          ...(tag.label === undefined ? {} : { label: tag.label }),
+          ...(tag.screenId === undefined ? {} : { screenId: tag.screenId }),
+        });
+        return;
+      }
+      await this.requestAnnotationOverlay({
+        mode: "append",
+        annotations: [tag.annotation],
+        ...(tag.screenId === undefined ? {} : { screenId: tag.screenId }),
+      });
+    } catch (error) {
+      logAgentd("main annotation DSL overlay unavailable", {
+        contextId: this.mainReplyContextId,
+        turnId: this.mainTurnId,
+        kind: tag.kind,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -1523,6 +1606,9 @@ export class SessionSupervisor extends EventEmitter {
       const prompt = buildMainAgentPickleCompletionPrompt(session);
       this.mainReplyContextId = sessionId;
       this.mainDraft = "";
+      this.mainAssistantDeltaSeen = false;
+      this.mainAnnotationDslTagSeen = false;
+      this.mainAnnotationDslParser.reset();
       const delivery = await this.preparePickyCompletionDelivery(prompt, session.cwd);
       if (!delivery) {
         // Child daemons have no local main runtime; forward the prebuilt prompt to the primary
@@ -1569,6 +1655,9 @@ export class SessionSupervisor extends EventEmitter {
     const prompt: BuiltPrompt = { text: promptText, imagePaths: [] };
     this.mainReplyContextId = sessionId;
     this.mainDraft = "";
+    this.mainAssistantDeltaSeen = false;
+    this.mainAnnotationDslTagSeen = false;
+    this.mainAnnotationDslParser.reset();
     this.externalPickleReplyContexts.add(sessionId);
     const delivery = await this.preparePickyCompletionDelivery(prompt, cwd);
     if (!delivery) {
@@ -2930,6 +3019,10 @@ export class SessionSupervisor extends EventEmitter {
     if (!session) throw new Error(`Unknown session: ${sessionId}`);
     return session;
   }
+}
+
+function normalizeDslWhitespace(text: string): string {
+  return text.replace(/[ \t]{2,}/g, " ");
 }
 
 function userInputFromLogLine(line: string): string | undefined {

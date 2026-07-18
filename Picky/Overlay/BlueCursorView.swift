@@ -1624,10 +1624,9 @@ private struct VoicePromptCursorBubbleView: View {
 // MARK: - Pointer Target Highlight
 
 /// Pi-cursor-blue highlight overlay used when Picky points at something on
-/// screen. Renders three concentric pulsing rings around the target and a
-/// status tag with a tail; for in-screen targets it also dims the surrounding
-/// area so the focus is unmistakable. Picky's own HUD chrome (e.g. the side
-/// agent dock) opts out of the dim layer.
+/// screen. For in-screen targets it dims the surrounding area so the focus is
+/// unmistakable, with an optional status tag. Picky's own HUD chrome (e.g. the
+/// side agent dock) opts out of the dim layer.
 private struct PickyHighlightOverlayView: View {
     let kind: PickyDetectedHighlightKind
     let targetCenter: CGPoint
@@ -1635,15 +1634,12 @@ private struct PickyHighlightOverlayView: View {
     let bubbleText: String?
     let screenSize: CGSize
 
-    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
-    @State private var pulsePhase: Double = 0
     @State private var measuredTagSize: CGSize = CGSize(width: 132, height: 22)
 
     private var ringInnerRadius: CGFloat {
         max(max(targetSize.width, targetSize.height) / 2 + 4, 14)
     }
 
-    private var ringMidRadius: CGFloat { ringInnerRadius + 6 }
     private var ringOuterRadius: CGFloat { ringInnerRadius + 13 }
 
     private var tagPlacement: PickyHighlightTagPlacement {
@@ -1680,25 +1676,6 @@ private struct PickyHighlightOverlayView: View {
                 .transition(.opacity)
             }
 
-            Circle()
-                .stroke(DS.Colors.overlayCursorBlue.opacity(0.25), lineWidth: 0.6)
-                .frame(width: ringOuterRadius * 2, height: ringOuterRadius * 2)
-                .scaleEffect(0.95 + 0.18 * pulsePhase)
-                .opacity(1.0 - 0.55 * pulsePhase)
-                .position(targetCenter)
-
-            Circle()
-                .stroke(DS.Colors.overlayCursorBlue.opacity(0.55), lineWidth: 1.0)
-                .frame(width: ringMidRadius * 2, height: ringMidRadius * 2)
-                .scaleEffect(0.97 + 0.10 * pulsePhase)
-                .opacity(1.0 - 0.30 * pulsePhase)
-                .position(targetCenter)
-
-            Circle()
-                .stroke(DS.Colors.overlayCursorBlue, lineWidth: 1.6)
-                .frame(width: ringInnerRadius * 2, height: ringInnerRadius * 2)
-                .position(targetCenter)
-
             if let bubbleText, !bubbleText.isEmpty {
                 PickyHighlightTagView(text: bubbleText, tailEdge: tagPlacement.tailEdge)
                     .background(
@@ -1709,16 +1686,6 @@ private struct PickyHighlightOverlayView: View {
                     .offset(x: tagPlacement.topLeading.x, y: tagPlacement.topLeading.y)
             }
         }
-        .onAppear {
-            startPulseIfNeeded()
-        }
-        .onChange(of: accessibilityReduceMotion) { _, reduceMotion in
-            if reduceMotion {
-                pulsePhase = 0
-            } else {
-                startPulseIfNeeded()
-            }
-        }
         .onPreferenceChange(PickyHighlightTagSizeKey.self) { newSize in
             if newSize.width > 0, newSize.height > 0 {
                 measuredTagSize = newSize
@@ -1726,12 +1693,6 @@ private struct PickyHighlightOverlayView: View {
         }
     }
 
-    private func startPulseIfNeeded() {
-        guard !accessibilityReduceMotion else { return }
-        withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: false)) {
-            pulsePhase = 1.0
-        }
-    }
 }
 
 private struct PickyHighlightTagSizeKey: PreferenceKey {

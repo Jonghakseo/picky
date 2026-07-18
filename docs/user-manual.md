@@ -289,6 +289,7 @@ Group related Pickles into a single labeled block in the dock rail.
 Create a group:
 
 - Click the `+` slot → **New Group…**, give it a name, and optionally pick initial Pickles and an accent color.
+- An empty group shows a dashed `+` tile. Click it to pick a working folder and start a new Pickle that lands directly in that group; the tile also stays a drop target for dragging existing Pickles in.
 
 Manage membership by dragging:
 

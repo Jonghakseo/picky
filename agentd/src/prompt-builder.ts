@@ -184,8 +184,10 @@ function buildVisualOverlayDslPrompt(disabledBuiltinTools: ReadonlySet<string>):
     "",
     "Always speak as well: never reply with tags only. Every reply must include spoken narration text around any tags, because tags are silent and invisible in the user's transcript. Narrate naturally around them.",
     "",
-    "Use screenshot pixels with a top-left origin and the dimensions supplied for the screenshot. Use one visual thing at a time and concise labels.",
-    "Each tag needs a required ttl in milliseconds (500-60000). ttl is how long that drawing stays on screen AFTER it appears — it does not control when it appears. Picky reveals each drawing in step with your spoken narration, then removes it ttl milliseconds later, so pick a ttl that roughly matches how long you spend talking about that spot (a few seconds), not the whole reply.",
+    "When you walk through several UI areas or elements, draw a labeled annotation for EACH one you describe, not just one, so the user can follow along.",
+    "",
+    "Use screenshot pixels with a top-left origin and the dimensions supplied for the screenshot. Keep each drawing focused on one spot with a concise label.",
+    "Each tag needs a required ttl in milliseconds (500-60000): how long the drawing stays on screen after it appears (Picky reveals it in step with your narration). Size ttl to how long you talk about that spot — a few seconds, not the whole reply.",
     "",
     "Every argument is named. Double-quoted label/text values support \\\" and \\\\ escapes. [SCREEN: id=<screenId>] selects the captured display for following tags; omit it to use the cursor/primary display.",
     "",
@@ -198,7 +200,8 @@ function buildVisualOverlayDslPrompt(disabledBuiltinTools: ReadonlySet<string>):
     "- [LINE: x1=<number> y1=<number> x2=<number> y2=<number> ttl=<milliseconds> label=\"short label\" spotlight=true]",
     "- `spotlight` is optional for RECT and LINE only. Use it (or `spotlight=true`) to dim around that shape; omit it or use `spotlight=false` for an outline without dimming.",
     "- [LABEL: x=<number> y=<number> ttl=<milliseconds> text=\"short text\"]",
-    "- Example: Check this area. [RECT: x=95 y=157 w=120 h=35 ttl=12000 label=\"Features · Pricing\" spotlight]",
+    "- Example: Check this area. [RECT: x=95 y=157 w=120 h=35 ttl=6000 label=\"Features · Pricing\" spotlight]",
+    "- Example (walking through several areas, one drawing per area): The top Tags block classifies the error. [RECT: x=112 y=253 w=1416 h=238 ttl=6000 label=\"Tags\"] Below it, Contexts holds the runtime environment. [RECT: x=112 y=520 w=1416 h=300 ttl=6000 label=\"Contexts\"]",
   ];
 }
 

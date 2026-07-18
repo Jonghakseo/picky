@@ -141,7 +141,6 @@ struct PickyAgentAnnotationOverlayTests {
         )
         let monitor = PickyAnnotationSceneMonitor(
             capturer: capturer,
-            semanticProvider: ManagerAnnotationSceneSemanticProvider(),
             automaticallySchedulesSamples: false
         )
         let manager = CompanionManager(
@@ -571,14 +570,16 @@ struct PickyAgentAnnotationOverlayTests {
         ) == [0, 1])
     }
 
-    @Test func dismissPanelFrameUsesTheVisibleTopRightCorner() {
+    @Test func dismissPanelFrameUsesTheLowerCenter() {
         let visibleFrame = CGRect(x: 40, y: 20, width: 1_200, height: 800)
 
         let frame = PickyAnnotationDismissPanelLayout.panelFrame(visibleFrame: visibleFrame)
 
         #expect(frame.size == PickyAnnotationDismissPanelLayout.panelSize)
-        #expect(frame.maxX == visibleFrame.maxX - PickyAnnotationDismissPanelLayout.margin)
-        #expect(frame.maxY == visibleFrame.maxY - PickyAnnotationDismissPanelLayout.margin)
+        #expect(frame.midX == visibleFrame.midX)
+        let expectedCenterY = visibleFrame.minY
+            + visibleFrame.height * (1 - PickyAnnotationDismissPanelLayout.verticalPositionFromTop)
+        #expect(frame.midY == expectedCenterY)
     }
 
     @Test func oversizedShapeLabelsClampInsideTheScreen() {
@@ -814,9 +815,3 @@ private final class ManagerAnnotationSceneCapturer: PickyAnnotationSceneSnapshot
     func reset() {}
 }
 
-@MainActor
-private final class ManagerAnnotationSceneSemanticProvider: PickyAnnotationSceneSemanticProviding {
-    func mismatchReason(for baseline: PickyAnnotationSceneBaseline) -> PickyAnnotationSceneMismatchReason? {
-        nil
-    }
-}

@@ -164,7 +164,7 @@ struct PickyAnnotationScenePolicyTests {
         #expect(PickyAnnotationScenePollingPolicy.delay(phase: .validating, elapsed: 0, retry: 0) == 0.30)
         #expect(PickyAnnotationScenePollingPolicy.delay(phase: .visible, elapsed: 2, retry: 0) == 0.50)
         #expect(PickyAnnotationScenePollingPolicy.delay(phase: .visible, elapsed: 10, retry: 0) == 1.0)
-        #expect(PickyAnnotationScenePollingPolicy.delay(phase: .visible, elapsed: 60, retry: 0) == 5.0)
+        #expect(PickyAnnotationScenePollingPolicy.delay(phase: .visible, elapsed: 60, retry: 0) == 1.5)
         #expect(PickyAnnotationScenePollingPolicy.delay(
             phase: .visible,
             elapsed: 60,
@@ -213,10 +213,8 @@ struct PickyAnnotationScenePolicyTests {
                 baselineFingerprint, baselineFingerprint,
             ]
         )
-        let semanticProvider = FakeAnnotationSceneSemanticProvider()
         let monitor = PickyAnnotationSceneMonitor(
             capturer: capturer,
-            semanticProvider: semanticProvider,
             automaticallySchedulesSamples: false
         )
         let identity = PickyAnnotationSceneIdentity(
@@ -277,7 +275,6 @@ struct PickyAnnotationScenePolicyTests {
         )
         let monitor = PickyAnnotationSceneMonitor(
             capturer: capturer,
-            semanticProvider: FakeAnnotationSceneSemanticProvider(),
             automaticallySchedulesSamples: false
         )
         let identity = PickyAnnotationSceneIdentity(
@@ -326,7 +323,6 @@ struct PickyAnnotationScenePolicyTests {
                     highlightDrift, highlightDrift,
                 ]
             ),
-            semanticProvider: FakeAnnotationSceneSemanticProvider(),
             automaticallySchedulesSamples: false
         )
         let identity = PickyAnnotationSceneIdentity(
@@ -375,7 +371,6 @@ struct PickyAnnotationScenePolicyTests {
                     highlightDrift, highlightDrift,
                 ]
             ),
-            semanticProvider: FakeAnnotationSceneSemanticProvider(),
             automaticallySchedulesSamples: false
         )
         let identity = PickyAnnotationSceneIdentity(
@@ -419,7 +414,6 @@ struct PickyAnnotationScenePolicyTests {
                 baseline: baselineFingerprint,
                 current: [changedFingerprint, changedFingerprint]
             ),
-            semanticProvider: FakeAnnotationSceneSemanticProvider(),
             automaticallySchedulesSamples: false
         )
         let identity = PickyAnnotationSceneIdentity(
@@ -444,7 +438,6 @@ struct PickyAnnotationScenePolicyTests {
         let capturer = SuspendingAnnotationSceneCapturer(fingerprint: referenceFingerprint)
         let monitor = PickyAnnotationSceneMonitor(
             capturer: capturer,
-            semanticProvider: FakeAnnotationSceneSemanticProvider(),
             automaticallySchedulesSamples: false
         )
         let firstIdentity = PickyAnnotationSceneIdentity(
@@ -490,7 +483,6 @@ struct PickyAnnotationScenePolicyTests {
         let capturer = SuspendingAnnotationSceneCapturer(fingerprint: referenceFingerprint)
         let monitor = PickyAnnotationSceneMonitor(
             capturer: capturer,
-            semanticProvider: FakeAnnotationSceneSemanticProvider(),
             automaticallySchedulesSamples: false
         )
         let identity = PickyAnnotationSceneIdentity(
@@ -520,7 +512,6 @@ struct PickyAnnotationScenePolicyTests {
         let referenceFingerprint = try #require(fingerprint(width: 10, height: 10))
         let monitor = PickyAnnotationSceneMonitor(
             capturer: FakeAnnotationSceneCapturer(baseline: referenceFingerprint, current: []),
-            semanticProvider: FakeAnnotationSceneSemanticProvider(),
             automaticallySchedulesSamples: true
         )
         let firstIdentity = PickyAnnotationSceneIdentity(
@@ -553,7 +544,6 @@ struct PickyAnnotationScenePolicyTests {
         let capturer = SuspendingAnnotationSceneCapturer(fingerprint: referenceFingerprint)
         let monitor = PickyAnnotationSceneMonitor(
             capturer: capturer,
-            semanticProvider: FakeAnnotationSceneSemanticProvider(),
             automaticallySchedulesSamples: true
         )
         let identity = PickyAnnotationSceneIdentity(
@@ -697,15 +687,6 @@ private final class SuspendingAnnotationSceneCapturer: PickyAnnotationSceneSnaps
 
     private func endCapture() {
         concurrentCaptures -= 1
-    }
-}
-
-@MainActor
-private final class FakeAnnotationSceneSemanticProvider: PickyAnnotationSceneSemanticProviding {
-    var reason: PickyAnnotationSceneMismatchReason?
-
-    func mismatchReason(for baseline: PickyAnnotationSceneBaseline) -> PickyAnnotationSceneMismatchReason? {
-        reason
     }
 }
 

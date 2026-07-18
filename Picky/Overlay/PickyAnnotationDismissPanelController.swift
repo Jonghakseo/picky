@@ -10,8 +10,10 @@ import AppKit
 import SwiftUI
 
 enum PickyAnnotationDismissPanelLayout {
-    static let panelSize = CGSize(width: 104, height: 44)
-    static let margin: CGFloat = DS.Spacing.lg
+    static let panelSize = CGSize(width: 160, height: 44)
+    /// Vertical placement measured from the top of the visible frame. 0.8 keeps the
+    /// control in the lower third where it stays legible over most desktop content.
+    static let verticalPositionFromTop: CGFloat = 0.8
 
     static func targetScreenIndexes(
         screenFrames: [CGRect],
@@ -33,9 +35,13 @@ enum PickyAnnotationDismissPanelLayout {
     }
 
     static func panelFrame(visibleFrame: CGRect) -> CGRect {
-        CGRect(
-            x: visibleFrame.maxX - panelSize.width - margin,
-            y: visibleFrame.maxY - panelSize.height - margin,
+        // AppKit visible frames are bottom-left origin, so 80% from the top maps to
+        // 20% up from the bottom edge.
+        let centerX = visibleFrame.midX
+        let centerY = visibleFrame.minY + visibleFrame.height * (1 - verticalPositionFromTop)
+        return CGRect(
+            x: centerX - panelSize.width / 2,
+            y: centerY - panelSize.height / 2,
             width: panelSize.width,
             height: panelSize.height
         )

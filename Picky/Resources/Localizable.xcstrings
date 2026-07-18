@@ -56,30 +56,30 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Close screen annotations"
+            "value": "Clear drawing"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "화면 어노테이션 닫기"
+            "value": "낙서 지우기"
           }
         }
       }
     },
     "annotation.dismiss.button": {
-      "comment": "Compact button shown at the top-right after annotation narration ends.",
+      "comment": "Compact button shown in the lower-center of the screen after annotation narration ends.",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Close"
+            "value": "Clear drawing"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "닫기"
+            "value": "낙서 지우기"
           }
         }
       }

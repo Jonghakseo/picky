@@ -261,7 +261,8 @@ struct PickyAnnotationSceneStabilityTracker: Equatable, Sendable {
 
 enum PickyAnnotationScenePollingPolicy {
     /// Initial validation is intentionally quick, while long-lived static annotations
-    /// back off to five-second captures to minimize ScreenCaptureKit wakeups.
+    /// back off to 1.5-second captures to keep visual-change detection responsive
+    /// without excessive ScreenCaptureKit wakeups.
     static func delay(
         phase: PickyAnnotationScenePhase,
         elapsed: TimeInterval,
@@ -277,7 +278,7 @@ enum PickyAnnotationScenePollingPolicy {
             if pendingVisualConfirmation { return 0.30 }
             if elapsed < 5 { return 0.50 }
             if elapsed < 30 { return 1.0 }
-            return 5.0
+            return 1.5
         case .suspended:
             if pendingVisualConfirmation { return 0.30 }
             let schedule: [TimeInterval] = [0.30, 0.60, 1.20, 2.40, 5.0]

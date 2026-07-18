@@ -43,11 +43,6 @@ protocol PickyAnnotationSceneSnapshotCapturing: AnyObject {
 }
 
 @MainActor
-protocol PickyAnnotationSceneSemanticProviding: AnyObject {
-    func mismatchReason(for baseline: PickyAnnotationSceneBaseline) -> PickyAnnotationSceneMismatchReason?
-}
-
-@MainActor
 final class PickyAnnotationSceneMonitor {
     typealias OutputHandler = @MainActor (PickyAnnotationSceneMonitorOutput) -> Void
 
@@ -114,7 +109,6 @@ final class PickyAnnotationSceneMonitor {
     var onSampleScheduled: (@MainActor (TimeInterval) -> Void)?
 
     private let capturer: any PickyAnnotationSceneSnapshotCapturing
-    private let semanticProvider: any PickyAnnotationSceneSemanticProviding
     private let now: () -> Date
     private let automaticallySchedulesSamples: Bool
     private var session: Session?
@@ -133,12 +127,10 @@ final class PickyAnnotationSceneMonitor {
 
     init(
         capturer: (any PickyAnnotationSceneSnapshotCapturing)? = nil,
-        semanticProvider: (any PickyAnnotationSceneSemanticProviding)? = nil,
         now: @escaping () -> Date = Date.init,
         automaticallySchedulesSamples: Bool = true
     ) {
         self.capturer = capturer ?? PickyScreenCaptureAnnotationSceneCapturer()
-        self.semanticProvider = semanticProvider ?? PickyAnnotationSceneSemanticProvider()
         self.now = now
         self.automaticallySchedulesSamples = automaticallySchedulesSamples
     }
@@ -301,21 +293,10 @@ final class PickyAnnotationSceneMonitor {
         }
 
         let sampleStartedAt = CFAbsoluteTimeGetCurrent()
-        if let reason = semanticProvider.mismatchReason(for: session.baseline) {
-            guard self.session?.identity == identity, !Task.isCancelled else { return }
-            transitionToSuspended(session, reason: reason)
-            session.semanticBlock = reason
-            session.retry += 1
-            logSample(
-                session: session,
-                outcome: "semantic-\(reason.rawValue)",
-                captureMilliseconds: 0,
-                compareMilliseconds: 0,
-                metrics: nil,
-                totalStartedAt: sampleStartedAt
-            )
-            return
-        }
+        // Visual-only policy: annotations are tied to the pixels they were drawn over,
+        // not to which app/window is focused. Semantic changes (app switch, window
+        // move, scroll, display) never suspend on their own; only an actual change in
+        // the captured region does. Working on another screen leaves this drawing alone.
         session.semanticBlock = nil
 
         do {
@@ -573,20 +554,13 @@ final class PickyAnnotationSceneMonitor {
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil,
             queue: .main
-        ) { [weak self] notification in
-            let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+        ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self,
-                      let session = self.session,
-                      session.identity == identity else { return }
-                let baselineMatches = baseline.applicationPID.map { app?.processIdentifier == $0 }
-                    ?? (baseline.applicationBundleID == app?.bundleIdentifier)
-                if baselineMatches {
-                    session.semanticBlock = nil
-                    self.requestSample(after: 0)
-                } else {
-                    self.suspendImmediately(reason: .application)
-                }
+                guard let self, self.session?.identity == identity else { return }
+                // Focus changes do not touch the drawn pixels; take a fresh visual
+                // sample so a real change is still detected promptly.
+                self.session?.semanticBlock = nil
+                self.requestSample(after: 0)
             }
         }
         screenObserver = NotificationCenter.default.addObserver(
@@ -595,8 +569,8 @@ final class PickyAnnotationSceneMonitor {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard self?.session?.identity == identity else { return }
-                self?.suspendImmediately(reason: .display)
+                guard let self, self.session?.identity == identity else { return }
+                self.refreshCaptureGeometryAfterDisplayChange()
             }
         }
         globalScrollMonitor = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) { [weak self] _ in
@@ -610,10 +584,25 @@ final class PickyAnnotationSceneMonitor {
     }
 
     private func handleScroll(identity: PickyAnnotationSceneIdentity) {
-        guard let session,
-              session.identity == identity,
-              session.semanticBlock == nil else { return }
-        suspendImmediately(reason: .scroll)
+        guard self.session?.identity == identity else { return }
+        // Scrolling may or may not change the drawn region; let the visual sampler decide
+        // instead of blindly suspending.
+        self.session?.semanticBlock = nil
+        requestSample(after: 0)
+    }
+
+    private func refreshCaptureGeometryAfterDisplayChange() {
+        guard let session else { return }
+        // A display reconfiguration can change capture geometry, so rebuild the baseline
+        // at the new resolution rather than suspending. The drawing is cleared only if the
+        // recaptured region actually differs.
+        session.captureEpoch &+= 1
+        for target in session.targets.values {
+            target.baselineFingerprint = nil
+        }
+        resetCapturerWhenIdle()
+        session.semanticBlock = nil
+        requestSample(after: 0)
     }
 
     private func installAccessibilityObserver(
@@ -693,12 +682,10 @@ final class PickyAnnotationSceneMonitor {
            context.identity == identity {
             observeFocusedWindow(refcon: Unmanaged.passUnretained(context).toOpaque())
         }
-        if let reason = semanticProvider.mismatchReason(for: session.baseline) {
-            suspendImmediately(reason: reason)
-        } else {
-            session.semanticBlock = nil
-            requestSample(after: 0)
-        }
+        // Window moves/resizes only matter if they change the captured pixels; re-sample
+        // visually instead of suspending on the geometry change alone.
+        session.semanticBlock = nil
+        requestSample(after: 0)
     }
 
     private func removeEventObservers() {
@@ -725,24 +712,7 @@ final class PickyAnnotationSceneMonitor {
 }
 
 @MainActor
-final class PickyAnnotationSceneSemanticProvider: PickyAnnotationSceneSemanticProviding {
-    func mismatchReason(for baseline: PickyAnnotationSceneBaseline) -> PickyAnnotationSceneMismatchReason? {
-        let currentApp = NSWorkspace.shared.frontmostApplication
-        if let expectedPID = baseline.applicationPID {
-            guard currentApp?.processIdentifier == expectedPID else { return .application }
-        } else if let expectedBundleID = baseline.applicationBundleID {
-            guard currentApp?.bundleIdentifier == expectedBundleID else { return .application }
-        }
-        if let expectedWindow = baseline.window {
-            guard let currentWindow = Self.currentWindowSignature(for: expectedWindow.ownerPID),
-                  currentWindow.windowID == expectedWindow.windowID,
-                  Self.framesMatch(currentWindow.frame, expectedWindow.frame) else {
-                return .window
-            }
-        }
-        return nil
-    }
-
+enum PickyAnnotationSceneSemanticProvider {
     static func currentWindowSignature(for pid: pid_t) -> PickyAnnotationSceneWindowSignature? {
         guard let windows = CGWindowListCopyWindowInfo(
             [.optionOnScreenOnly, .excludeDesktopElements],
@@ -758,13 +728,6 @@ final class PickyAnnotationSceneSemanticProvider: PickyAnnotationSceneSemanticPr
             return nil
         }
         return PickyAnnotationSceneWindowSignature(ownerPID: pid, windowID: windowNumber, frame: frame)
-    }
-
-    private static func framesMatch(_ lhs: CGRect, _ rhs: CGRect, tolerance: CGFloat = 1) -> Bool {
-        abs(lhs.minX - rhs.minX) <= tolerance
-            && abs(lhs.minY - rhs.minY) <= tolerance
-            && abs(lhs.width - rhs.width) <= tolerance
-            && abs(lhs.height - rhs.height) <= tolerance
     }
 }
 

@@ -145,6 +145,7 @@ private final class FakeInteractionTimerScheduler: PickyInteractionTimerScheduli
 
     private var scheduledOperations: [ScheduledOperation] = []
     var scheduledDelays: [TimeInterval] { scheduledOperations.map(\.delay) }
+    var pendingOperationCount: Int { scheduledOperations.count }
 
     func schedule(after delay: TimeInterval, operation: @escaping @MainActor () -> Void) {
         scheduledOperations.append(ScheduledOperation(delay: delay, operation: operation))
@@ -152,6 +153,12 @@ private final class FakeInteractionTimerScheduler: PickyInteractionTimerScheduli
 
     func fireNext() {
         scheduledOperations.removeFirst().operation()
+    }
+
+    func fireAll() {
+        while !scheduledOperations.isEmpty {
+            fireNext()
+        }
     }
 }
 
@@ -1562,6 +1569,125 @@ struct PickyCompanionManagerTests {
         #expect(stripParentheticalsForSpeech(allParens) == allParens)
     }
 
+    // MARK: - Interaction orchestration
+
+    @Test func mainTurnSettledClearsOnlyMatchingWaitingTurnAndIsIdempotent() async throws {
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            initialSettings: deterministicVoiceSettings()
+        )
+        let context = context(source: "cli")
+
+        manager.noteExternalSubmission(kind: .submitMain, text: "silent overlay turn", context: context)
+        try await waitUntil { manager.isWaitingForCursorResponse }
+        manager.beginAwaitingAgentResponse(recognizedTranscript: "show the setting")
+
+        #expect(manager.voiceState == .processing)
+        #expect(manager.voicePromptBubbleState == .recognized("show the setting"))
+        #expect(manager.isWaitingForCursorResponse)
+
+        let sequenceBeforeUnrelatedSettle = manager.interactionProjectionSequence
+        manager.applyAgentEvent(.mainTurnSettled(contextId: "unrelated-context"))
+        try await waitUntil { manager.interactionProjectionSequence > sequenceBeforeUnrelatedSettle }
+
+        #expect(manager.voiceState == .processing)
+        #expect(manager.voicePromptBubbleState == .recognized("show the setting"))
+        #expect(manager.isWaitingForCursorResponse)
+
+        manager.applyAgentEvent(.mainTurnSettled(contextId: context.id))
+        try await waitUntil {
+            manager.voiceState == .idle
+                && manager.voicePromptBubbleState == .hidden
+                && !manager.isWaitingForCursorResponse
+        }
+
+        let settledVoiceState = manager.voiceState
+        let settledPromptBubbleState = manager.voicePromptBubbleState
+        let settledWaitingProjection = manager.isWaitingForCursorResponse
+        let sequenceBeforeDuplicateSettle = manager.interactionProjectionSequence
+        manager.applyAgentEvent(.mainTurnSettled(contextId: context.id))
+        try await waitUntil { manager.interactionProjectionSequence > sequenceBeforeDuplicateSettle }
+
+        #expect(manager.voiceState == settledVoiceState)
+        #expect(manager.voicePromptBubbleState == settledPromptBubbleState)
+        #expect(manager.isWaitingForCursorResponse == settledWaitingProjection)
+    }
+
+    @Test func annotationPointerParkAppendAndSettleUpdatesOnlyCurrentPointer() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        speechProvider.supportsIncrementalPlayback = true
+        let timerScheduler = FakeInteractionTimerScheduler()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider,
+            initialSettings: deterministicVoiceSettings(),
+            interactionTimerScheduler: timerScheduler
+        )
+        let contextID = "annotation-pointer-context"
+
+        manager.applyAgentEvent(.mainNarrationChunk(PickyMainNarrationChunkEvent(
+            contextId: contextID,
+            text: "First annotation is visible.",
+            originSource: .voice,
+            replyKind: .main,
+            sessionId: nil
+        )))
+        try await waitUntil {
+            speechProvider.spokenUtterances == ["First annotation is visible."]
+                && timerScheduler.pendingOperationCount == 1
+        }
+
+        manager.applyAgentEvent(.annotationOverlayRequested(annotationRequest(
+            id: "first",
+            mode: .append,
+            contextID: contextID,
+            x: 20
+        )))
+        try await waitUntil { timerScheduler.pendingOperationCount == 2 }
+        timerScheduler.fireAll()
+        try await waitUntil { manager.detectedElementPointerID == "annotation-first" }
+
+        let firstLocation = manager.detectedElementScreenLocation
+        #expect(manager.detectedElementParksAtTarget)
+        #expect(!manager.detectedElementReturnsToCursor)
+
+        let sequenceBeforePark = manager.interactionProjectionSequence
+        manager.parkPointerAnimation(pointerID: "annotation-first")
+        try await waitUntil { manager.interactionProjectionSequence > sequenceBeforePark }
+
+        manager.applyAgentEvent(.annotationOverlayRequested(annotationRequest(
+            id: "second",
+            mode: .append,
+            contextID: contextID,
+            x: 300
+        )))
+        try await waitUntil { timerScheduler.pendingOperationCount == 1 }
+        timerScheduler.fireAll()
+        try await waitUntil { manager.detectedElementPointerID == "annotation-second" }
+
+        #expect(manager.detectedElementScreenLocation != firstLocation)
+        #expect(manager.detectedElementParksAtTarget)
+        #expect(!manager.detectedElementReturnsToCursor)
+
+        manager.parkPointerAnimation(pointerID: "annotation-first")
+        manager.advancePointerAnimation(pointerID: "annotation-first")
+        #expect(manager.detectedElementPointerID == "annotation-second")
+        #expect(manager.detectedElementParksAtTarget)
+
+        let sequenceBeforeSpeechFinish = manager.interactionProjectionSequence
+        speechProvider.finishSpeaking()
+        try await waitUntil { manager.interactionProjectionSequence > sequenceBeforeSpeechFinish }
+
+        manager.applyAgentEvent(.mainTurnSettled(contextId: contextID))
+        try await waitUntil {
+            manager.detectedElementPointerID == "annotation-second"
+                && !manager.detectedElementParksAtTarget
+                && manager.detectedElementReturnsToCursor
+        }
+    }
+
     // MARK: - External CLI submissions
 
     @Test func externalSubmitMainFlipsCursorIntoWaitingForAgent() async throws {
@@ -1584,6 +1710,38 @@ struct PickyCompanionManagerTests {
         // settle() beat is enough for any stray coordinator hop to surface.
         try await settle()
         #expect(!manager.isWaitingForCursorResponse)
+    }
+
+    private func annotationRequest(
+        id: String,
+        mode: PickyAnnotationOverlayMode,
+        contextID: String,
+        x: Double
+    ) -> PickyAnnotationOverlayRequest {
+        PickyAnnotationOverlayRequest(
+            id: "annotations-\(id)",
+            mode: mode,
+            annotations: [PickyAnnotationOverlayAnnotation(
+                id: id,
+                shape: .rect,
+                x: x,
+                y: 40,
+                w: 100,
+                h: 30,
+                x1: nil,
+                y1: nil,
+                x2: nil,
+                y2: nil,
+                spotlight: nil,
+                label: id,
+                clamped: nil
+            )],
+            contextId: contextID,
+            contextGeneration: 1,
+            screenId: "screen",
+            screenBounds: PickyCGRect(x: 0, y: 0, width: 800, height: 600),
+            screenshotSize: PickyPointerScreenshotSize(width: 800, height: 600)
+        )
     }
 
     private func fakeContextCaptureCoordinator(screenshots: [PickyScreenshotContext] = []) -> PickyVoiceContextCaptureCoordinator {

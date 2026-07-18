@@ -1146,9 +1146,6 @@ describe("SessionSupervisor", () => {
       }],
     };
 
-    // The parser is intentionally independent of prompt injection, so a model-emitted tag
-    // still renders even after both visual DSL settings are disabled.
-    await supervisor.setDisabledBuiltinTools(["picky_show_pointer", "picky_show_annotations"]);
     await supervisor.route(mainContext);
     mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Running" });
     mainRuntime.handle?.emit({ type: "assistant_delta", delta: "여기를 먼저 보세요. [SCREEN: id=screen-main-dsl] [PO" });
@@ -1171,6 +1168,103 @@ describe("SessionSupervisor", () => {
     await waitUntil(() => quickReplies.length === 1);
     expect(quickReplies[0]).toBe("여기를 먼저 보세요. 다음입니다.");
     expect(supervisor.listMainMessages().at(-1)).toMatchObject({ role: "assistant", text: "여기를 먼저 보세요. 다음입니다." });
+  });
+
+  it("strips disabled pointer DSL tags without emitting an overlay", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-dsl-pointer-disabled-"));
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
+    const pointerEvents: unknown[] = [];
+    const quickReplies: string[] = [];
+    supervisor.on("pointerOverlayRequested", (request) => pointerEvents.push(request));
+    supervisor.on("quickReply", (_contextId, text) => quickReplies.push(text));
+    await supervisor.setDisabledBuiltinTools(["picky_show_pointer"]);
+    await supervisor.route({
+      ...context("pointer disabled"),
+      screenshots: [{
+        id: "shot-pointer-disabled",
+        label: "cursor screen",
+        path: "/tmp/shot-pointer-disabled.jpg",
+        screenId: "screen-pointer-disabled",
+        bounds: { x: 0, y: 0, width: 100, height: 100 },
+        screenshotWidthInPixels: 100,
+        screenshotHeightInPixels: 100,
+        isCursorScreen: true,
+      }],
+    });
+
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "여기입니다. [POINT: x=20 y=30 ttl=6000]" });
+    await settle();
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await waitUntil(() => quickReplies.length === 1);
+
+    expect(pointerEvents).toEqual([]);
+    expect(quickReplies).toEqual(["여기입니다."]);
+  });
+
+  it("strips disabled annotation DSL tags without emitting an overlay", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-dsl-annotation-disabled-"));
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
+    const annotationEvents: unknown[] = [];
+    const quickReplies: string[] = [];
+    supervisor.on("annotationOverlayRequested", (request) => annotationEvents.push(request));
+    supervisor.on("quickReply", (_contextId, text) => quickReplies.push(text));
+    await supervisor.setDisabledBuiltinTools(["picky_show_annotations"]);
+    await supervisor.route({
+      ...context("annotation disabled"),
+      screenshots: [{
+        id: "shot-annotation-disabled",
+        label: "cursor screen",
+        path: "/tmp/shot-annotation-disabled.jpg",
+        screenId: "screen-annotation-disabled",
+        bounds: { x: 0, y: 0, width: 100, height: 100 },
+        screenshotWidthInPixels: 100,
+        screenshotHeightInPixels: 100,
+        isCursorScreen: true,
+      }],
+    });
+
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "여기입니다. [CIRCLE: x=20 y=30 r=10 ttl=6000]" });
+    await settle();
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await waitUntil(() => quickReplies.length === 1);
+
+    expect(annotationEvents).toEqual([]);
+    expect(quickReplies).toEqual(["여기입니다."]);
+  });
+
+  it("drops DSL overlays after the turn context is replaced", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-dsl-stale-context-"));
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
+    const pointerEvents: unknown[] = [];
+    supervisor.on("pointerOverlayRequested", (request) => pointerEvents.push(request));
+    const initialContext: PickyContextPacket = {
+      ...context("initial DSL context"),
+      screenshots: [{
+        id: "shot-initial-dsl",
+        label: "cursor screen",
+        path: "/tmp/shot-initial-dsl.jpg",
+        screenId: "screen-initial-dsl",
+        bounds: { x: 0, y: 0, width: 100, height: 100 },
+        screenshotWidthInPixels: 100,
+        screenshotHeightInPixels: 100,
+        isCursorScreen: true,
+      }],
+    };
+    await supervisor.route(initialContext);
+
+    // Mirror routeThroughMainAgent's context replacement while retaining the
+    // active turn envelope, as can happen before a delayed old-turn tag emits.
+    const replacement = { ...context("replacement DSL context"), screenshots: initialContext.screenshots };
+    const internal = supervisor as unknown as { mainContext?: PickyContextPacket; mainContextGeneration: number };
+    internal.mainContext = replacement;
+    internal.mainContextGeneration += 1;
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "[POINT: x=20 y=30 ttl=6000]" });
+    await settle();
+
+    expect(pointerEvents).toEqual([]);
   });
 
   it("derives screenshot pixel dimensions from image files when context metadata is missing", async () => {
@@ -4065,7 +4159,7 @@ describe("SessionSupervisor", () => {
     expect(injection.assistant).toBe("OK");
   });
 
-  it("skips bootstrap injection when Picky resumes from a persisted Pi session", async () => {
+  it("injects visual DSL guidance once when Picky resumes a persisted Pi session", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const store = new SessionStore(dir);
     await store.saveMainAgentState({ sessionFilePath: "/tmp/main-pi-session.jsonl", cwd: "/tmp/project", messages: [] });
@@ -4076,6 +4170,8 @@ describe("SessionSupervisor", () => {
     await supervisor.route(context("재시작 후 질문"));
 
     expect(mainRuntime.handle?.bootstrapInjections).toEqual([]);
+    expect(mainRuntime.handle?.resumeGuidanceInjections).toHaveLength(1);
+    expect(mainRuntime.handle?.resumeGuidanceInjections[0]?.user).toContain("## Picky visual overlay DSL");
   });
 
   it("injects the bootstrap pair when the main runtime cannot prewarm and goes straight to create", async () => {
@@ -6809,6 +6905,7 @@ class ManualHandle implements RuntimeSessionHandle {
   queuedFollowUpTexts: string[] = [];
   interrupts: BuiltPrompt[] = [];
   bootstrapInjections: Array<{ user: string; assistant: string }> = [];
+  resumeGuidanceInjections: Array<{ user: string; assistant: string }> = [];
   extensionUiAnswers: Array<{ requestId: string; value: unknown; options?: AnswerExtensionUiOptions }> = [];
   /** Request ids whose runtime-side dialog has already been discarded; mirrors the bridge throwing "Unknown extension UI request". */
   stalePendingRequestIds = new Set<string>();
@@ -6897,6 +6994,9 @@ class ManualHandle implements RuntimeSessionHandle {
   }
   async injectInitialBootstrap(messages: { user: string; assistant: string }): Promise<void> {
     this.bootstrapInjections.push(messages);
+  }
+  async injectResumeGuidance(messages: { user: string; assistant: string }): Promise<void> {
+    this.resumeGuidanceInjections.push(messages);
   }
   setThinkingLevel(level: ThinkingLevel): void {
     this.thinkingLevels.push(level);

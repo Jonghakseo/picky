@@ -160,6 +160,19 @@ export function buildMainAgentBootstrapPair(
   return { user, assistant };
 }
 
+export function buildMainAgentVisualOverlayGuidance(disabledBuiltinTools: ReadonlySet<string>): MainAgentBootstrapPair | undefined {
+  const visualOverlaySection = buildVisualOverlayDslPrompt(disabledBuiltinTools);
+  if (visualOverlaySection.length === 0) return undefined;
+  return {
+    user: [
+      "This message was not sent by the user. Picky agentd added this one-time notice while resuming an existing session.",
+      "Keep these visual overlay instructions in effect for the rest of this session.",
+      ...visualOverlaySection,
+    ].join("\n"),
+    assistant: "OK",
+  };
+}
+
 function buildVisualOverlayDslPrompt(disabledBuiltinTools: ReadonlySet<string>): string[] {
   const pointEnabled = !disabledBuiltinTools.has("picky_show_pointer");
   const annotationsEnabled = !disabledBuiltinTools.has("picky_show_annotations");

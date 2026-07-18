@@ -1238,6 +1238,20 @@ describe("PiSdkRuntime", () => {
     expect(fakeSession.appendedMessages).toHaveLength(0);
   });
 
+  it("appends resume guidance to an existing session", async () => {
+    const fakeSession = new FakeSession();
+    fakeSession.state.messages = [{ role: "user", content: "prior turn" }];
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky" });
+
+    await handle.injectResumeGuidance?.({ user: "visual DSL guidance", assistant: "OK" });
+
+    expect(fakeSession.state.messages).toHaveLength(3);
+    expect(fakeSession.state.messages[1]).toMatchObject({ role: "user", content: "visual DSL guidance" });
+    expect(fakeSession.state.messages[2]).toMatchObject({ role: "assistant", content: [{ type: "text", text: "OK" }] });
+    expect(fakeSession.appendedMessages).toHaveLength(2);
+  });
+
   it("skips bootstrap injection when the session has no resolved model", async () => {
     const fakeSession = new FakeSession();
     fakeSession.state.model = undefined;

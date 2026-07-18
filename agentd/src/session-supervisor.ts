@@ -7,7 +7,7 @@ import { extractChangedFilesFromExplicitText, extractSessionLinkArtifacts } from
 import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
 import { summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
-import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentPickleCompletionPrompt, buildPicklePrompt, buildSteerPrompt, type BuiltPrompt } from "./prompt-builder.js";
+import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentPickleCompletionPrompt, buildMainAgentVisualOverlayGuidance, buildPicklePrompt, buildSteerPrompt, type BuiltPrompt } from "./prompt-builder.js";
 import type { ModelCycleDirection, PickyActivitySummary, PickyAgentSession, PickyAnnotationOverlayRequest, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-overlay-request.js";
 import type { PickyShowAnnotationsRequest, PickyShowAnnotationsResult } from "./application/annotation-overlay-request.js";
@@ -83,6 +83,11 @@ interface SessionSupervisorOptions {
 const ARCHIVED_SESSION_RETENTION_DAYS = 7;
 const ARCHIVED_SESSION_RETENTION_MS = ARCHIVED_SESSION_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
+type MainTurnOverlayContext = {
+  context: PickyContextPacket;
+  generation: number;
+};
+
 export class SessionSupervisor extends EventEmitter {
   private sessions = new Map<string, PickyAgentSession>();
   private runtimeHandles = new Map<string, RuntimeSessionHandle>();
@@ -105,6 +110,9 @@ export class SessionSupervisor extends EventEmitter {
   private readonly mainAnnotationDslParser = new AnnotationDslParser();
   private mainContext?: PickyContextPacket;
   private mainContextGeneration = 0;
+  // DSL tags must resolve against the screenshot context the streaming turn saw,
+  // never against a newer context that replaced it while the turn was in flight.
+  private mainTurnOverlayContext?: MainTurnOverlayContext;
   private mainState: PickyMainAgentState = { messages: [] };
   private mainReplyContextId = "main";
   private mainIsProcessing = false;
@@ -452,6 +460,10 @@ export class SessionSupervisor extends EventEmitter {
   async requestPointerOverlay(request: PickyShowPointerRequest): Promise<PickyShowPointerResult> {
     const captured = this.contextForPointerRequest();
     if (!captured) throw new Error("No captured Picky context is available for pointer overlay validation.");
+    return this.requestPointerOverlayForContext(captured, request);
+  }
+
+  private requestPointerOverlayForContext(captured: MainTurnOverlayContext, request: PickyShowPointerRequest): PickyShowPointerResult {
     const overlayRequest = makePointerOverlayRequestForContext(captured.context, request, captured.generation);
     this.emit("pointerOverlayRequested", overlayRequest);
     return { request: overlayRequest };
@@ -470,6 +482,10 @@ export class SessionSupervisor extends EventEmitter {
 
     const captured = this.contextForPointerRequest();
     if (!captured) throw new Error("No captured Picky context is available for annotation overlay validation.");
+    return this.requestAnnotationOverlayForContext(captured, request);
+  }
+
+  private requestAnnotationOverlayForContext(captured: MainTurnOverlayContext, request: PickyShowAnnotationsRequest): PickyShowAnnotationsResult {
     const overlayRequest = makeAnnotationOverlayRequestForContext(captured.context, request, captured.generation);
     this.emit("annotationOverlayRequested", overlayRequest);
     return { request: overlayRequest };
@@ -715,6 +731,7 @@ export class SessionSupervisor extends EventEmitter {
     this.mainAnnotationDslTagSeen = false;
     this.mainAnnotationDslParser.reset();
     this.mainContext = undefined;
+    this.mainTurnOverlayContext = undefined;
     this.mainReplyContextId = "main";
     this.mainIsProcessing = false;
     this.mainTerminalProcessed = false;
@@ -1105,9 +1122,9 @@ export class SessionSupervisor extends EventEmitter {
     logAgentd("main route requested", { contextId: context.id, source: context.source, transcriptChars: context.transcript?.length });
     await this.maybeRolloverMainAgent(context);
     const generation = this.mainHandleGeneration;
-    this.beginMainTurn(context.id);
     this.mainContext = context;
     this.mainContextGeneration += 1;
+    this.beginMainTurn(context.id, { context, generation: this.mainContextGeneration });
     const prompt = buildMainAgentPrompt(context);
     // Append the user message to mainState.messages AFTER deliverMainPrompt
     // resolves. finally{} guarantees the message is still recorded if deliver
@@ -1225,9 +1242,10 @@ export class SessionSupervisor extends EventEmitter {
     await handle.followUp(prompt);
   }
 
-  private beginMainTurn(contextId: string): void {
+  private beginMainTurn(contextId: string, overlayContext: MainTurnOverlayContext): void {
     this.mainTurnId += 1;
     this.mainReplyContextId = contextId;
+    this.mainTurnOverlayContext = overlayContext;
     this.activeMainRuntimeInputId = `main-turn-${this.mainTurnId}`;
     this.mainDraft = "";
     this.mainAssistantDeltaSeen = false;
@@ -1297,6 +1315,16 @@ export class SessionSupervisor extends EventEmitter {
     }
   }
 
+  private async injectMainResumeGuidance(handle: RuntimeSessionHandle): Promise<void> {
+    const guidance = buildMainAgentVisualOverlayGuidance(this.disabledBuiltinTools);
+    if (!guidance || !handle.injectResumeGuidance) return;
+    try {
+      await handle.injectResumeGuidance(guidance);
+    } catch (error) {
+      logAgentd("main resume guidance inject failed", { error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
   private async tryResumeMainHandle(cwd: string, generation = this.mainHandleGeneration): Promise<RuntimeSessionHandle | undefined> {
     const sessionFilePath = this.mainState.sessionFilePath?.trim();
     if (!sessionFilePath || !this.options.mainRuntime?.resume) return undefined;
@@ -1312,6 +1340,7 @@ export class SessionSupervisor extends EventEmitter {
       // reportDiagnostics finds a subscribed listener (matches createPrewarmedMainHandle).
       const attached = this.attachMainHandle(handle, generation);
       await this.patchMainState({ cwd });
+      await this.injectMainResumeGuidance(attached);
       return attached;
     } catch (error) {
       logAgentd("main resume failed", { sessionFilePath, error: error instanceof Error ? error.message : String(error) });
@@ -1541,9 +1570,24 @@ export class SessionSupervisor extends EventEmitter {
 
   private async emitMainAnnotationDslTag(tag: AnnotationDslTag): Promise<void> {
     if (tag.kind === "screen") return;
+    if (tag.kind === "point" && this.disabledBuiltinTools.has("picky_show_pointer")) return;
+    if (tag.kind !== "point" && this.disabledBuiltinTools.has("picky_show_annotations")) return;
+
+    const captured = this.mainTurnOverlayContext;
+    if (!captured || this.mainContext?.id !== captured.context.id) {
+      logAgentd("stale DSL overlay dropped", {
+        contextId: this.mainReplyContextId,
+        turnId: this.mainTurnId,
+        capturedContextId: captured?.context.id,
+        currentContextId: this.mainContext?.id,
+        kind: tag.kind,
+      });
+      return;
+    }
+
     try {
       if (tag.kind === "point") {
-        await this.requestPointerOverlay({
+        this.requestPointerOverlayForContext(captured, {
           x: tag.x,
           y: tag.y,
           ...(tag.r === undefined ? {} : { r: tag.r }),
@@ -1552,7 +1596,7 @@ export class SessionSupervisor extends EventEmitter {
         });
         return;
       }
-      await this.requestAnnotationOverlay({
+      this.requestAnnotationOverlayForContext(captured, {
         mode: "append",
         annotations: [tag.annotation],
         ...(tag.screenId === undefined ? {} : { screenId: tag.screenId }),
@@ -1605,6 +1649,7 @@ export class SessionSupervisor extends EventEmitter {
     try {
       const prompt = buildMainAgentPickleCompletionPrompt(session);
       this.mainReplyContextId = sessionId;
+      this.mainTurnOverlayContext = undefined;
       this.mainDraft = "";
       this.mainAssistantDeltaSeen = false;
       this.mainAnnotationDslTagSeen = false;
@@ -1654,6 +1699,7 @@ export class SessionSupervisor extends EventEmitter {
     }
     const prompt: BuiltPrompt = { text: promptText, imagePaths: [] };
     this.mainReplyContextId = sessionId;
+    this.mainTurnOverlayContext = undefined;
     this.mainDraft = "";
     this.mainAssistantDeltaSeen = false;
     this.mainAnnotationDslTagSeen = false;

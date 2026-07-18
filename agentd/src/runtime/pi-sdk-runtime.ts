@@ -718,16 +718,28 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   }
 
   async injectInitialBootstrap(messages: { user: string; assistant: string }): Promise<void> {
-    const session = this.runtime.session;
-    const existing = (session.state.messages ?? []) as unknown[];
+    const existing = (this.runtime.session.state.messages ?? []) as unknown[];
     if (existing.length > 0) {
       logAgentd("pi inject bootstrap skipped", { sessionId: this.id, reason: "non-empty session", existingCount: existing.length });
       return;
     }
+    await this.appendSyntheticMessages("bootstrap", messages, existing);
+  }
 
+  async injectResumeGuidance(messages: { user: string; assistant: string }): Promise<void> {
+    const existing = (this.runtime.session.state.messages ?? []) as unknown[];
+    if (existing.length === 0) {
+      logAgentd("pi inject resume guidance skipped", { sessionId: this.id, reason: "empty session" });
+      return;
+    }
+    await this.appendSyntheticMessages("resume guidance", messages, existing);
+  }
+
+  private async appendSyntheticMessages(kind: "bootstrap" | "resume guidance", messages: { user: string; assistant: string }, existing: unknown[]): Promise<void> {
+    const session = this.runtime.session;
     const modelMetadata = piReadModelMetadata(session);
     if (!modelMetadata?.api || !modelMetadata.provider || !modelMetadata.modelId) {
-      logAgentd("pi inject bootstrap skipped", { sessionId: this.id, reason: "model metadata missing" });
+      logAgentd(`pi inject ${kind} skipped`, { sessionId: this.id, reason: "model metadata missing" });
       return;
     }
     const { api, provider, modelId } = modelMetadata;
@@ -760,7 +772,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       session.sessionManager.appendMessage(userMessage as never);
       session.sessionManager.appendMessage(assistantMessage as never);
       session.state.messages = [...existing, userMessage, assistantMessage] as never;
-      logAgentd("pi inject bootstrap", {
+      logAgentd(`pi inject ${kind}`, {
         sessionId: this.id,
         userChars: messages.user.length,
         assistantChars: messages.assistant.length,
@@ -768,7 +780,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
         model: modelId,
       });
     } catch (error) {
-      logAgentd("pi inject bootstrap failed", { sessionId: this.id, error: messageOf(error) });
+      logAgentd(`pi inject ${kind} failed`, { sessionId: this.id, error: messageOf(error) });
       throw error;
     }
   }

@@ -369,7 +369,11 @@ final class PickySessionListViewModel: ObservableObject {
     /// created. Empty layout falls back to the legacy `manualOrder` flow.
     @Published private(set) var dockLayout: PickyDockLayout = .empty
     private let dockLayoutController: PickySessionDockLayoutController
-    private var pendingDockGroupAssignments: [String: String] = [:]
+    private enum PendingDockGroupAssignment {
+        case groupName(String)
+        case groupID(String)
+    }
+    private var pendingDockGroupAssignments: [String: PendingDockGroupAssignment] = [:]
     private let composerDraftController: PickySessionComposerDraftController
     private var slashCommandController: PickySessionSlashCommandController!
     private let recentPickleFolderStore: PickyRecentPickleFolderStoring
@@ -2484,14 +2488,30 @@ final class PickySessionListViewModel: ObservableObject {
 
     func assignSessionToDockGroup(sessionID: String, groupName: String) {
         if !applyDockGroupAssignment(sessionID: sessionID, groupName: groupName) {
-            pendingDockGroupAssignments[sessionID] = groupName
+            pendingDockGroupAssignments[sessionID] = .groupName(groupName)
+        }
+    }
+
+    /// Assign a newly-created Pickle to an exact dock group. Manual Pickle
+    /// creation returns its session id before that session necessarily appears
+    /// in the dock universe, so defer the move until reconciliation observes it.
+    func assignSessionToDockGroup(sessionID: String, groupID: String) {
+        if !applyDockGroupAssignment(sessionID: sessionID, groupID: groupID) {
+            pendingDockGroupAssignments[sessionID] = .groupID(groupID)
         }
     }
 
     private func drainPendingDockGroupAssignments() {
         guard !pendingDockGroupAssignments.isEmpty else { return }
-        for (sessionID, groupName) in Array(pendingDockGroupAssignments) {
-            if applyDockGroupAssignment(sessionID: sessionID, groupName: groupName) {
+        for (sessionID, assignment) in Array(pendingDockGroupAssignments) {
+            let applied: Bool
+            switch assignment {
+            case .groupName(let groupName):
+                applied = applyDockGroupAssignment(sessionID: sessionID, groupName: groupName)
+            case .groupID(let groupID):
+                applied = applyDockGroupAssignment(sessionID: sessionID, groupID: groupID)
+            }
+            if applied {
                 pendingDockGroupAssignments.removeValue(forKey: sessionID)
             }
         }
@@ -2507,6 +2527,21 @@ final class PickySessionListViewModel: ObservableObject {
         let groupID = existing?.id ?? createDockGroup(name: target)
         let memberIndex = dockLayout.group(withID: groupID)?.memberSessionIDs.count ?? 0
         moveSessionInDock(sessionID: sessionID, to: .group(id: groupID, memberIndex: memberIndex))
+        return true
+    }
+
+    private func applyDockGroupAssignment(sessionID: String, groupID: String) -> Bool {
+        guard dockLayout.allKnownSessionIDs.contains(sessionID) else { return false }
+        guard let group = dockLayout.group(withID: groupID) else {
+            // The user may delete the target group while the folder picker or
+            // child creation is in flight. Keep the Pickle at top level rather
+            // than recreating a group the user explicitly removed.
+            return true
+        }
+        moveSessionInDock(
+            sessionID: sessionID,
+            to: .group(id: groupID, memberIndex: group.memberSessionIDs.count)
+        )
         return true
     }
 

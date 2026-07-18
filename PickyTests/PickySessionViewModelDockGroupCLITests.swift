@@ -142,6 +142,47 @@ struct PickySessionViewModelDockGroupCLITests {
         #expect(group?.memberSessionIDs == ["a"])
     }
 
+    @MainActor @Test func assignsPendingSessionToExactGroupIDAfterReconcile() throws {
+        let dockLayoutStore = CLIGroupDockLayoutStore(layout: PickyDockLayout(entries: [
+            .group(PickyDockGroup(id: "g1", name: "Research", color: .teal, memberSessionIDs: [])),
+            .group(PickyDockGroup(id: "g2", name: "Research", color: .amber, memberSessionIDs: []))
+        ]))
+        let viewModel = PickySessionListViewModel(
+            client: CLIGroupFakePickyAgentClient(),
+            notificationCenter: PickyNoopNotificationCenter(),
+            dockLayoutStore: dockLayoutStore
+        )
+
+        viewModel.assignSessionToDockGroup(sessionID: "new-pickle", groupID: "g2")
+        viewModel.apply(.protocolEvent(try Self.decodeEnvelope("""
+        {
+          "id": "snapshot-created-pickle",
+          "protocolVersion": "2026-07-17",
+          "timestamp": "2026-05-01T00:00:30.000Z",
+          "type": "sessionSnapshot",
+          "sessions": [
+            {
+              "id": "new-pickle",
+              "title": "New Pickle",
+              "status": "running",
+              "cwd": "/tmp/ws",
+              "createdAt": "2026-05-01T00:00:00.000Z",
+              "updatedAt": "2026-05-01T00:00:00.000Z",
+              "lastSummary": "",
+              "logs": [],
+              "tools": [],
+              "artifacts": [],
+              "changedFiles": []
+            }
+          ]
+        }
+        """)))
+
+        #expect(viewModel.dockLayout.group(withID: "g1")?.memberSessionIDs == [])
+        #expect(viewModel.dockLayout.group(withID: "g2")?.memberSessionIDs == ["new-pickle"])
+        #expect(viewModel.dockLayout.cliGroupTestEntryDescriptions == ["group:g1[]", "group:g2[new-pickle]"])
+    }
+
     @MainActor @Test func usesFirstCaseInsensitiveNameMatch() {
         let dockLayoutStore = CLIGroupDockLayoutStore(layout: PickyDockLayout(entries: [
             .group(PickyDockGroup(id: "g1", name: "Research", color: .teal, memberSessionIDs: ["b"])),

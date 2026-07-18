@@ -528,29 +528,37 @@ struct PickyHUDDockCollapsedGroupBadge: View {
     }
 }
 
-/// Dashed-outline placeholder rendered for a group that currently has no
-/// visible members. Provides a stable drop target so the user can drag
-/// pickles into a brand-new group before its first member arrives.
+/// Dashed-outline create button rendered for a group that currently has no
+/// visible members. It remains a stable drop target while also letting the
+/// user start a Pickle that will be assigned to this group automatically.
 struct PickyHUDDockGroupEmptySlot: View {
     let color: PickyDockGroupColor
     let metrics: PickyHUDDockMetrics
+    let onCreatePickle: () -> Void
 
     var body: some View {
-        RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
-            .strokeBorder(
-                color.accent.opacity(0.55),
-                style: StrokeStyle(lineWidth: 1, dash: [3, 3])
-            )
-            .background(
-                RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
-                    .fill(color.accent.opacity(0.06))
-            )
-            .frame(width: metrics.sessionTileWidth, height: metrics.sessionTileHeight)
-            .overlay(
-                Image(systemName: "arrow.down")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(color.accent.opacity(0.6))
-            )
+        Button(action: onCreatePickle) {
+            RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
+                .strokeBorder(
+                    color.accent.opacity(0.55),
+                    style: StrokeStyle(lineWidth: 1, dash: [3, 3])
+                )
+                .background(
+                    RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
+                        .fill(color.accent.opacity(0.06))
+                )
+                .frame(width: metrics.sessionTileWidth, height: metrics.sessionTileHeight)
+                .overlay(
+                    Image(systemName: "plus")
+                        .font(.system(size: metrics.plusFontSize, weight: .medium))
+                        .foregroundColor(DS.Colors.textSecondary)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L10n.t("dock.startPickle"))
+        .accessibilityHint(L10n.t("dock.startPickle.hint"))
+        .hoverAffordance()
     }
 }
 

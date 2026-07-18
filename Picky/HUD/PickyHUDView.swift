@@ -478,10 +478,14 @@ struct PickyHUDView: View {
                 onCompactSession: compactSession,
                 onArchiveSession: archiveSession,
                 onStopSession: stopSession,
-                onCreatePickle: chooseFolderForEmptyPickle,
+                onCreatePickle: { targetGroupID in
+                    chooseFolderForEmptyPickle(targetGroupID: targetGroupID)
+                },
                 pinnedPickleCwds: visiblePinnedPickleCwds,
                 recentPickleCwds: visibleRecentPickleCwds,
-                onCreatePickleInRecentFolder: startEmptyPickle,
+                onCreatePickleInRecentFolder: { cwd, targetGroupID in
+                    startEmptyPickle(cwd: cwd, targetGroupID: targetGroupID)
+                },
                 onRemoveRecentPickleFolder: viewModel.removeRecentPickleFolder,
                 onPinPickleFolder: viewModel.pinPickleFolder,
                 onUnpinPickleFolder: viewModel.unpinPickleFolder,
@@ -586,7 +590,7 @@ struct PickyHUDView: View {
         return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
     }
 
-    private func chooseFolderForEmptyPickle() {
+    private func chooseFolderForEmptyPickle(targetGroupID: String?) {
         NSApp.activate(ignoringOtherApps: true)
 
         let panel = NSOpenPanel()
@@ -601,7 +605,7 @@ struct PickyHUDView: View {
             panel.runModal()
         }
         if response == .OK, let url = panel.url {
-            startEmptyPickle(cwd: url.path)
+            startEmptyPickle(cwd: url.path, targetGroupID: targetGroupID)
         }
     }
 
@@ -621,11 +625,17 @@ struct PickyHUDView: View {
         return try operation()
     }
 
-    private func startEmptyPickle(cwd: String) {
+    private func startEmptyPickle(cwd: String, targetGroupID: String?) {
         Task {
             do {
                 let sessionID = try await viewModel.createEmptyPickleSession(cwd: cwd)
                 await MainActor.run {
+                    if let targetGroupID {
+                        viewModel.assignSessionToDockGroup(
+                            sessionID: sessionID,
+                            groupID: targetGroupID
+                        )
+                    }
                     requestManualAutoOpen(sessionID: sessionID)
                 }
             } catch {

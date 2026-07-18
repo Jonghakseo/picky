@@ -129,10 +129,12 @@ struct PickyHUDDockRailView: View {
     let onCompactSession: (String) -> Void
     let onArchiveSession: (String) -> Void
     let onStopSession: (String) -> Void
-    let onCreatePickle: () -> Void
+    /// Starts the choose-folder flow for a new Pickle. A non-nil group id
+    /// means the created session should be assigned to that exact group.
+    let onCreatePickle: (_ targetGroupID: String?) -> Void
     let pinnedPickleCwds: [String]
     let recentPickleCwds: [String]
-    let onCreatePickleInRecentFolder: (String) -> Void
+    let onCreatePickleInRecentFolder: (_ cwd: String, _ targetGroupID: String?) -> Void
     let onRemoveRecentPickleFolder: (String) -> Void
     let onPinPickleFolder: (String) -> Void
     let onUnpinPickleFolder: (String) -> Void
@@ -158,6 +160,9 @@ struct PickyHUDDockRailView: View {
 
     @State private var isAddSlotExpanded = false
     @State private var isRecentPickleFolderPickerPresented = false
+    /// Exact group targeted by the button that opened the shared new-Pickle
+    /// picker. `nil` means the regular dock-bottom `+` initiated the flow.
+    @State private var newPickleTargetGroupID: String?
     @State private var isAddSlotMenuPresented = false
     @State private var isHandleHovered = false
     @State private var isHandleDragging = false
@@ -292,6 +297,9 @@ struct PickyHUDDockRailView: View {
                 isAddSlotExpanded = isPresented
             }
             onAddSlotExpandedChanged(isPresented)
+            if !isPresented {
+                newPickleTargetGroupID = nil
+            }
         }
         // Drive the reorder drag from the rail-level controller. Running the
         // handlers here (rather than from the per-icon NSView) means they keep
@@ -597,18 +605,30 @@ struct PickyHUDDockRailView: View {
                         // Group has no visible members — render a small
                         // empty drop target so the user can still drag
                         // pickles in or expand/rename via the header menu.
-                        PickyHUDDockGroupEmptySlot(color: group.color, metrics: metrics)
-                            .publishDockSlotCenter(
-                                sessionID: Self.emptyGroupDropTargetID(groupID: group.id),
-                                dockSide: dockSide
-                            )
-                    }
-                } else if members.isEmpty {
-                    PickyHUDDockGroupEmptySlot(color: group.color, metrics: metrics)
+                        PickyHUDDockGroupEmptySlot(
+                            color: group.color,
+                            metrics: metrics,
+                            onCreatePickle: {
+                                showRecentPickleFolderPicker(targetGroupID: group.id)
+                            }
+                        )
                         .publishDockSlotCenter(
                             sessionID: Self.emptyGroupDropTargetID(groupID: group.id),
                             dockSide: dockSide
                         )
+                    }
+                } else if members.isEmpty {
+                    PickyHUDDockGroupEmptySlot(
+                        color: group.color,
+                        metrics: metrics,
+                        onCreatePickle: {
+                            showRecentPickleFolderPicker(targetGroupID: group.id)
+                        }
+                    )
+                    .publishDockSlotCenter(
+                        sessionID: Self.emptyGroupDropTargetID(groupID: group.id),
+                        dockSide: dockSide
+                    )
                 } else {
                     // Expanded group: members live inside the same app-drawer
                     // surface as the collapsed folder, extended along the dock
@@ -1176,6 +1196,7 @@ struct PickyHUDDockRailView: View {
     /// purely decorative and never claims clicks.
     private var dockAnchorHandle: some View {
         let isActive = isHandleHovered || isHandleDragging
+        let presentation = PickyHUDDockHandlePresentation.resolve(isActive: isActive)
         return PickyHUDDockAnchorHandleHost(
             onHoverChanged: { hovering in isHandleHovered = hovering },
             onDragChanged: { delta in
@@ -1200,10 +1221,10 @@ struct PickyHUDDockRailView: View {
             height: dockSide.orientation == .horizontal ? nil : metrics.handleAreaHeight
         )
         .overlay {
-            // Quiet by default — the pill should hint at draggability without
-            // shouting. Hover and drag expand and darken it for a clear cue.
+            // Visible without hover so the drag affordance survives translucent
+            // light surfaces. Hover and drag expand and strengthen its contrast.
             Capsule(style: .continuous)
-                .fill(DS.Colors.textTertiary.opacity(isActive ? 0.7 : 0.22))
+                .fill(presentation.foregroundColor.opacity(presentation.opacity))
                 .frame(
                     width: dockSide.orientation == .horizontal
                         ? metrics.handleHeight
@@ -1259,7 +1280,8 @@ struct PickyHUDDockRailView: View {
             )
     }
 
-    private func showRecentPickleFolderPicker() {
+    private func showRecentPickleFolderPicker(targetGroupID: String?) {
+        newPickleTargetGroupID = targetGroupID
         withAnimation(PickyHUDExpansion.animation) {
             isAddSlotExpanded = true
         }
@@ -1267,8 +1289,22 @@ struct PickyHUDDockRailView: View {
         isRecentPickleFolderPickerPresented = true
     }
 
+    private func createPickleInRecentFolder(_ cwd: String) {
+        let targetGroupID = newPickleTargetGroupID
+        newPickleTargetGroupID = nil
+        onCreatePickleInRecentFolder(cwd, targetGroupID)
+    }
+
+    private func chooseFolderForNewPickle() {
+        let targetGroupID = newPickleTargetGroupID
+        newPickleTargetGroupID = nil
+        onCreatePickle(targetGroupID)
+    }
+
     private var addAgentSlotButton: some View {
-        Button(action: showRecentPickleFolderPicker) {
+        Button {
+            showRecentPickleFolderPicker(targetGroupID: nil)
+        } label: {
             ZStack {
                 PickyHUDMaterialFill(
                     shape: RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous),
@@ -1294,8 +1330,8 @@ struct PickyHUDDockRailView: View {
             arrowEdge: recentPickleFolderPickerArrowEdge,
             pinnedPickleCwds: pinnedPickleCwds,
             recentPickleCwds: recentPickleCwds,
-            onCreatePickleInRecentFolder: onCreatePickleInRecentFolder,
-            onChooseFolder: onCreatePickle,
+            onCreatePickleInRecentFolder: createPickleInRecentFolder,
+            onChooseFolder: chooseFolderForNewPickle,
             onRemoveRecentPickleFolder: onRemoveRecentPickleFolder,
             onPinPickleFolder: onPinPickleFolder,
             onUnpinPickleFolder: onUnpinPickleFolder,
@@ -1320,7 +1356,9 @@ struct PickyHUDDockRailView: View {
     }
 
     private var collapsibleAddAgentSlot: some View {
-        Button(action: showRecentPickleFolderPicker) {
+        Button {
+            showRecentPickleFolderPicker(targetGroupID: nil)
+        } label: {
             ZStack {
                 ZStack {
                     PickyHUDMaterialFill(
@@ -1366,8 +1404,8 @@ struct PickyHUDDockRailView: View {
             arrowEdge: recentPickleFolderPickerArrowEdge,
             pinnedPickleCwds: pinnedPickleCwds,
             recentPickleCwds: recentPickleCwds,
-            onCreatePickleInRecentFolder: onCreatePickleInRecentFolder,
-            onChooseFolder: onCreatePickle,
+            onCreatePickleInRecentFolder: createPickleInRecentFolder,
+            onChooseFolder: chooseFolderForNewPickle,
             onRemoveRecentPickleFolder: onRemoveRecentPickleFolder,
             onPinPickleFolder: onPinPickleFolder,
             onUnpinPickleFolder: onUnpinPickleFolder,

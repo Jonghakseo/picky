@@ -2019,6 +2019,15 @@ final class CompanionManager: ObservableObject {
         }
     }
 
+    fileprivate func runAnnotationRecoveryExpiryEffect(identity: PickyAnnotationSceneIdentity, delay: TimeInterval) {
+        interactionTimerScheduler.schedule(after: delay) { [weak self] in
+            self?.interactionCoordinator.accept(
+                .agentAnnotationRecoveryExpired(identity: identity),
+                correlation: PickyInteractionCorrelation(source: .system)
+            )
+        }
+    }
+
     fileprivate func runMinimumDisplayTimerEffect(timerID: UUID, speechID: UUID?, inputID: UUID?, delay: TimeInterval) {
         interactionTimerScheduler.schedule(after: delay) { [weak self] in
             self?.interactionCoordinator.effectCompleted(
@@ -3156,6 +3165,8 @@ private final class CompanionInteractionEffectRunner: PickyInteractionEffectRunn
                 manager?.cancelPointerAnimation(pointerID: pointerID)
             case .scheduleAnnotationReveal(let id, let delay):
                 manager?.runAnnotationRevealEffect(id: id, delay: delay)
+            case .scheduleAnnotationRecoveryExpiry(let identity, let delay):
+                manager?.runAnnotationRecoveryExpiryEffect(identity: identity, delay: delay)
             case .showOverlay, .scheduleTransientHide, .cancelTransientHide:
                 break
             }

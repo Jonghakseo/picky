@@ -1353,7 +1353,7 @@ struct PickyInteractionReducerTests {
         })
     }
 
-    @Test func sceneMismatchAfterFinalSpeechDrainsPermanentlyClearsAnnotations() {
+    @Test func sceneMismatchDuringRecoveryGraceSuspendsAndExpiryClears() {
         let identity = PickyAnnotationSceneIdentity(
             contextID: "ctx",
             generation: 1,
@@ -1376,21 +1376,33 @@ struct PickyInteractionReducerTests {
             finishPending: false
         )
 
+        // Narration drains while the scene is visible: the geometry stays recoverable
+        // for a grace window and a recovery-expiry timer is scheduled.
         let drained = reduce(initial, .speechFinished(speechID: speechID), id: timerA)
         #expect(drained.state.agentAnnotations.map(\.id) == ["rect"])
+        #expect(drained.state.annotationSceneRecoveryAllowed == true)
+        #expect(drained.effects.contains { effect in
+            if case .scheduleAnnotationRecoveryExpiry(identity, _) = effect { return true }
+            return false
+        })
 
-        let cleared = reduce(
+        // A scene change within the grace hides but keeps the drawings.
+        let suspended = reduce(
             drained.state,
             .agentAnnotationSceneMismatched(identity: identity, reason: .visual),
             id: timerB
         )
+        #expect(suspended.state.annotationScenePhase == .suspended)
+        #expect(suspended.state.agentAnnotations.map(\.id) == ["rect"])
 
+        // When the grace lapses without returning, they are cleared for good.
+        let cleared = reduce(suspended.state, .agentAnnotationRecoveryExpired(identity: identity), id: UUID())
         #expect(cleared.state.agentAnnotations.isEmpty)
         #expect(cleared.state.annotationSceneIdentity == nil)
         #expect(cleared.state.annotationScenePhase == .inactive)
     }
 
-    @Test func finalSpeechDrainClearsAnnotationsAlreadySuspendedDuringNarration() {
+    @Test func finalSpeechDrainKeepsSuspendedAnnotationsRecoverableThroughGrace() {
         let identity = PickyAnnotationSceneIdentity(
             contextID: "ctx",
             generation: 1,
@@ -1413,19 +1425,32 @@ struct PickyInteractionReducerTests {
             finishPending: false
         )
 
+        // Suspended mid-narration (user switched away during playback).
         let suspended = reduce(
             initial,
             .agentAnnotationSceneMismatched(identity: identity, reason: .visual),
             id: timerA
         )
         #expect(suspended.state.annotationScenePhase == .suspended)
-        #expect(suspended.state.agentAnnotations.map(\.id) == ["rect"])
 
-        let cleared = reduce(suspended.state, .speechFinished(speechID: speechID), id: timerB)
+        // Final speech drains while suspended: geometry is kept (not cleared) and a
+        // recovery-expiry timer is scheduled.
+        let drained = reduce(suspended.state, .speechFinished(speechID: speechID), id: timerB)
+        #expect(drained.state.agentAnnotations.map(\.id) == ["rect"])
+        #expect(drained.state.annotationScenePhase == .suspended)
+        #expect(drained.effects.contains { effect in
+            if case .scheduleAnnotationRecoveryExpiry(identity, _) = effect { return true }
+            return false
+        })
 
-        #expect(cleared.state.agentAnnotations.isEmpty)
-        #expect(cleared.state.annotationSceneIdentity == nil)
-        #expect(cleared.state.annotationScenePhase == .inactive)
+        // Returning to the original scene within the grace restores the drawings.
+        let restored = reduce(drained.state, .agentAnnotationSceneMatched(identity: identity), id: UUID())
+        #expect(restored.state.annotationScenePhase == .visible)
+        #expect(restored.state.agentAnnotations.map(\.id) == ["rect"])
+
+        // But if the grace elapses while still suspended, they clear.
+        let expired = reduce(drained.state, .agentAnnotationRecoveryExpired(identity: identity), id: UUID())
+        #expect(expired.state.agentAnnotations.isEmpty)
     }
 
     @Test func newTextInputClearsParkedAnnotationsAndRequestsFlyBack() {

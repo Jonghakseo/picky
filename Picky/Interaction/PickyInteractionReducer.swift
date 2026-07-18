@@ -57,6 +57,10 @@ enum PickyInteractionReducer {
     static let minimumDisplayDuration: TimeInterval = 0.35
     static let maximumAgentAnnotationCount = 24
     static let maximumInvalidatedVisualNarrationTurnCount = 16
+    /// After narration ends, annotations stay recoverable (hide on scene change, restore
+    /// when the original pixels return) for this window before the next mismatch clears
+    /// them permanently. Covers a brief context switch without leaving stale drawings.
+    static let annotationRecoveryGraceAfterNarration: TimeInterval = 30
 
     static func reduce(
         state: PickyInteractionState,
@@ -150,6 +154,8 @@ private struct PickyInteractionReducing {
             applyAgentAnnotationSceneMatched(identity: identity)
         case .agentAnnotationSceneMismatched(let identity, let reason):
             applyAgentAnnotationSceneMismatched(identity: identity, reason: reason)
+        case .agentAnnotationRecoveryExpired(let identity):
+            applyAnnotationRecoveryExpired(identity: identity)
         case .agentAnnotationRevealDue(let id):
             applyAnnotationRevealDue(id: id)
         case .agentAnnotationsClearedForUserInput:
@@ -1227,11 +1233,10 @@ private struct PickyInteractionReducing {
     /// so discard it rather than polling for a later restoration. A still-matching scene
     /// keeps its drawings, but the next mismatch clears them permanently.
     private mutating func concludeAnnotationTurn() {
-        if state.annotationScenePhase == .suspended {
-            clearAgentAnnotations(resetNarration: true)
-            record(.stateChanged, "Suspended agent annotations cleared after narration")
-            return
-        }
+        // Narration ended, but keep the scene recoverable for a grace window so a brief
+        // context switch hides and then restores the drawings instead of clearing them
+        // outright. If the scene was suspended when narration ended, hold it suspended
+        // rather than clearing immediately. A timer lapses the window later.
         while !state.pendingAgentAnnotations.isEmpty {
             revealAnnotation(state.pendingAgentAnnotations.removeFirst().annotation, animatePointer: false)
         }
@@ -1240,9 +1245,32 @@ private struct PickyInteractionReducing {
         state.annotationSpeechAnchor = nil
         state.annotationTurnSettled = false
         state.annotationArrivalSequence = 0
+        state.agentAnnotationsDismissible = state.annotationScenePhase != .suspended && !state.agentAnnotations.isEmpty
+        endAnnotationPointerTurn(discardingPendingTargets: true)
+        if state.annotationSceneRecoveryAllowed, let identity = state.annotationSceneIdentity {
+            effects.append(.scheduleAnnotationRecoveryExpiry(
+                identity: identity,
+                delay: PickyInteractionReducer.annotationRecoveryGraceAfterNarration
+            ))
+        }
+    }
+
+    /// The post-narration recovery grace has elapsed. A scene the user never returned to
+    /// (still suspended) is cleared for good; a restored/kept scene simply stops
+    /// recovering, so the next mismatch clears it.
+    private mutating func applyAnnotationRecoveryExpired(identity: PickyAnnotationSceneIdentity) {
+        guard state.annotationSceneIdentity == identity, state.annotationSceneRecoveryAllowed else {
+            record(.staleEvent, "Ignored stale annotation recovery expiry")
+            return
+        }
+        if state.annotationScenePhase == .suspended {
+            clearAgentAnnotations(resetNarration: true)
+            record(.stateChanged, "Suspended agent annotations cleared after recovery grace")
+            return
+        }
         state.annotationSceneRecoveryAllowed = false
         state.agentAnnotationsDismissible = !state.agentAnnotations.isEmpty
-        endAnnotationPointerTurn(discardingPendingTargets: true)
+        record(.stateChanged, "Annotation recovery grace elapsed; scene locked")
     }
 
     private mutating func concludeAnnotationTurnIfSettled() {

@@ -202,6 +202,9 @@ enum PickyInteractionEvent: Equatable, Codable {
     case agentAnnotationSceneMatched(identity: PickyAnnotationSceneIdentity)
     /// Strong semantic changes suspend immediately; visual changes arrive only after two samples.
     case agentAnnotationSceneMismatched(identity: PickyAnnotationSceneIdentity, reason: PickyAnnotationSceneMismatchReason)
+    /// Fired by the MainActor timer effect when the post-narration recovery window
+    /// elapses: a still-suspended scene is cleared, and a visible one stops recovering.
+    case agentAnnotationRecoveryExpired(identity: PickyAnnotationSceneIdentity)
     /// Fired by the MainActor timer effect when one buffered annotation reaches its
     /// narration-relative reveal time.
     case agentAnnotationRevealDue(id: UUID)
@@ -225,6 +228,7 @@ enum PickyInteractionEvent: Equatable, Codable {
         case streamedQuickReplyFinal, passiveAgentSummary, pickleCompleted, mainTurnSettled, mainAgentSessionReset, sessionTerminated
         case pointerRequested, pointerCancelled, pointerAnimationParked, pointerAnimationFinished
         case agentAnnotationsRequested, agentAnnotationScenePrepared, agentAnnotationSceneMatched, agentAnnotationSceneMismatched
+        case agentAnnotationRecoveryExpired
         case agentAnnotationRevealDue, agentAnnotationsClearedForUserInput
         case speechStarted, speechFinished, speechFailed, minimumDisplayTimerFired
         case overlayShown, overlayHidden, transientHideTimerFired
@@ -400,6 +404,9 @@ enum PickyInteractionEvent: Equatable, Codable {
                 identity: try payload.decode(PickyAnnotationSceneIdentity.self, forKey: .identity),
                 reason: try payload.decode(PickyAnnotationSceneMismatchReason.self, forKey: .mismatchReason)
             )
+        case .agentAnnotationRecoveryExpired:
+            let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
+            self = .agentAnnotationRecoveryExpired(identity: try payload.decode(PickyAnnotationSceneIdentity.self, forKey: .identity))
         case .agentAnnotationRevealDue:
             let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
             self = .agentAnnotationRevealDue(id: try payload.decode(UUID.self, forKey: .id))
@@ -534,6 +541,9 @@ enum PickyInteractionEvent: Equatable, Codable {
         case .agentAnnotationSceneMismatched(let identity, let reason):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .agentAnnotationSceneMismatched)
             try payload.encode(identity, forKey: .identity); try payload.encode(reason, forKey: .mismatchReason)
+        case .agentAnnotationRecoveryExpired(let identity):
+            var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .agentAnnotationRecoveryExpired)
+            try payload.encode(identity, forKey: .identity)
         case .agentAnnotationRevealDue(let id):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .agentAnnotationRevealDue)
             try payload.encode(id, forKey: .id)

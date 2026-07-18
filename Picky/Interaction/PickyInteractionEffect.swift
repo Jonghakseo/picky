@@ -33,4 +33,8 @@ enum PickyInteractionEffect: Equatable {
     /// Fires `.agentAnnotationRevealDue(id:)` after `delay` so a buffered annotation
     /// appears in sync with the narration that precedes it.
     case scheduleAnnotationReveal(id: UUID, delay: TimeInterval)
+    /// Fires `.agentAnnotationRecoveryExpired(identity:)` after `delay` so the
+    /// post-narration recovery window can lapse: a scene the user never returned to
+    /// is cleared, and a restored one stops accepting further recovery.
+    case scheduleAnnotationRecoveryExpiry(identity: PickyAnnotationSceneIdentity, delay: TimeInterval)
 }

@@ -62,6 +62,13 @@ enum CompanionScreenCaptureUtility {
         window is PickyScreenCaptureExcludedWindow
     }
 
+    static func contextCaptureExcludedWindowIDs(in windows: [NSWindow]) -> Set<CGWindowID> {
+        Set(windows.compactMap { window in
+            guard shouldExcludeWindowFromContextCapture(window), window.windowNumber > 0 else { return nil }
+            return CGWindowID(window.windowNumber)
+        })
+    }
+
     nonisolated static func capturePixelSize(
         displayWidth: Int,
         displayHeight: Int,
@@ -119,12 +126,7 @@ enum CompanionScreenCaptureUtility {
         // Exclude Picky-owned control chrome (cursor overlays, HUD/dock, and
         // transient input panels) while leaving artifact viewers such as the
         // markdown report panel and Pi terminal visible for model inspection.
-        let excludedContextWindowIDs = Set(
-            NSApp.windows.compactMap { window -> CGWindowID? in
-                guard shouldExcludeWindowFromContextCapture(window), window.windowNumber > 0 else { return nil }
-                return CGWindowID(window.windowNumber)
-            }
-        )
+        let excludedContextWindowIDs = contextCaptureExcludedWindowIDs(in: NSApp.windows)
         let excludedContextWindows = content.windows.filter { window in
             excludedContextWindowIDs.contains(window.windowID)
         }

@@ -190,6 +190,12 @@ enum PickyInteractionEvent: Equatable, Codable {
     case pointerAnimationParked(pointerID: String)
     case pointerAnimationFinished(pointerID: String)
     case agentAnnotationsRequested(mode: PickyAnnotationOverlayMode, annotations: [PickyAgentAnnotation])
+    /// Starts app-local scene validation before resolved annotations may be projected.
+    case agentAnnotationScenePrepared(identity: PickyAnnotationSceneIdentity)
+    /// Emitted only after two low-resolution samples independently match the original context.
+    case agentAnnotationSceneMatched(identity: PickyAnnotationSceneIdentity)
+    /// Strong semantic changes suspend immediately; visual changes arrive only after two samples.
+    case agentAnnotationSceneMismatched(identity: PickyAnnotationSceneIdentity, reason: PickyAnnotationSceneMismatchReason)
     /// Fired by the MainActor timer effect when one buffered annotation reaches its
     /// narration-relative reveal time.
     case agentAnnotationRevealDue(id: UUID)
@@ -210,7 +216,8 @@ enum PickyInteractionEvent: Equatable, Codable {
         case textSubmitted, textContextCaptured, textSubmissionAccepted, textSubmissionFailed
         case voiceContextCaptured, externalContextCaptured, agentSubmissionAccepted, quickReply, narrationChunk, streamedQuickReplyFinal, passiveAgentSummary, pickleCompleted, mainTurnSettled, sessionTerminated
         case pointerRequested, pointerCancelled, pointerAnimationParked, pointerAnimationFinished
-        case agentAnnotationsRequested, agentAnnotationRevealDue, agentAnnotationsClearedForUserInput
+        case agentAnnotationsRequested, agentAnnotationScenePrepared, agentAnnotationSceneMatched, agentAnnotationSceneMismatched
+        case agentAnnotationRevealDue, agentAnnotationsClearedForUserInput
         case speechStarted, speechFinished, speechFailed, minimumDisplayTimerFired
         case overlayShown, overlayHidden, transientHideTimerFired
     }
@@ -218,7 +225,7 @@ enum PickyInteractionEvent: Equatable, Codable {
     fileprivate enum FieldKey: String, CodingKey {
         case enabled, targetSessionID, message, inputID, text, context, contextID, contextId, transcript, sessionID, sessionId
         case originSource, replyKind, source, summary, pointerID, pointerId, reason, speechID, speechId, sourceContextID
-        case timerID, timerId, mode, annotations, id, shouldSpeak
+        case timerID, timerId, mode, annotations, id, shouldSpeak, identity, mismatchReason
     }
 
     init(from decoder: Decoder) throws {
@@ -345,6 +352,18 @@ enum PickyInteractionEvent: Equatable, Codable {
                 mode: try payload.decode(PickyAnnotationOverlayMode.self, forKey: .mode),
                 annotations: try payload.decode([PickyAgentAnnotation].self, forKey: .annotations)
             )
+        case .agentAnnotationScenePrepared:
+            let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
+            self = .agentAnnotationScenePrepared(identity: try payload.decode(PickyAnnotationSceneIdentity.self, forKey: .identity))
+        case .agentAnnotationSceneMatched:
+            let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
+            self = .agentAnnotationSceneMatched(identity: try payload.decode(PickyAnnotationSceneIdentity.self, forKey: .identity))
+        case .agentAnnotationSceneMismatched:
+            let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
+            self = .agentAnnotationSceneMismatched(
+                identity: try payload.decode(PickyAnnotationSceneIdentity.self, forKey: .identity),
+                reason: try payload.decode(PickyAnnotationSceneMismatchReason.self, forKey: .mismatchReason)
+            )
         case .agentAnnotationRevealDue:
             let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
             self = .agentAnnotationRevealDue(id: try payload.decode(UUID.self, forKey: .id))
@@ -459,6 +478,15 @@ enum PickyInteractionEvent: Equatable, Codable {
         case .agentAnnotationsRequested(let mode, let annotations):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .agentAnnotationsRequested)
             try payload.encode(mode, forKey: .mode); try payload.encode(annotations, forKey: .annotations)
+        case .agentAnnotationScenePrepared(let identity):
+            var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .agentAnnotationScenePrepared)
+            try payload.encode(identity, forKey: .identity)
+        case .agentAnnotationSceneMatched(let identity):
+            var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .agentAnnotationSceneMatched)
+            try payload.encode(identity, forKey: .identity)
+        case .agentAnnotationSceneMismatched(let identity, let reason):
+            var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .agentAnnotationSceneMismatched)
+            try payload.encode(identity, forKey: .identity); try payload.encode(reason, forKey: .mismatchReason)
         case .agentAnnotationRevealDue(let id):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .agentAnnotationRevealDue)
             try payload.encode(id, forKey: .id)

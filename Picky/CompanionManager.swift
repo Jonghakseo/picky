@@ -303,6 +303,12 @@ final class CompanionManager: ObservableObject {
     /// Exact app-local screenshot samples for the latest overlay context, keyed
     /// by both screen id and screenshot id. Never serialized to agentd.
     private var latestOverlayScreenshotsByID: [String: PickyScreenshotContext] = [:]
+    /// App/window/URL identity captured with the exact screenshots above. The scene
+    /// monitor keeps this app-local and never extends the app-agentd protocol.
+    private var latestAnnotationSceneBaseline: PickyAnnotationSceneBaseline?
+    private var activeAnnotationSceneIdentity: PickyAnnotationSceneIdentity?
+    private var projectedAnnotationSceneIdentity: PickyAnnotationSceneIdentity?
+    private let annotationSceneMonitor: PickyAnnotationSceneMonitor?
     /// Stable base palette for each streamed context-generation/screen. Individual
     /// shapes may override it only when local contrast falls below the threshold.
     private var annotationBasePaletteByTurnScreen: [String: PickyAnnotationPaletteRole] = [:]
@@ -361,7 +367,8 @@ final class CompanionManager: ObservableObject {
         appearanceStore: PickyAppearanceStore? = nil,
         fontScaleStore: PickyAppFontScaleStore? = nil,
         speechWatchdogTimeout: TimeInterval? = nil,
-        armedPickleDispatchMode: PickyArmedPickleDispatchMode? = nil
+        armedPickleDispatchMode: PickyArmedPickleDispatchMode? = nil,
+        annotationSceneMonitor: PickyAnnotationSceneMonitor? = nil
     ) {
         let resolvedInitialSettings = initialSettings
             ?? Self.migrateLegacyCursorPreferenceIfNeeded(store: PickySettingsStore())
@@ -385,6 +392,8 @@ final class CompanionManager: ObservableObject {
         self.speechWatchdogTimeoutOverride = speechWatchdogTimeout
         self.voiceContextCaptureCoordinator = voiceContextCaptureCoordinator ?? PickyVoiceContextCaptureCoordinator()
         self.armedPickleDispatchMode = armedPickleDispatchMode ?? resolvedInitialSettings.armedPickleDispatchMode
+        self.annotationSceneMonitor = annotationSceneMonitor
+            ?? (PickyRuntimeEnvironment.isRunningUnitTests ? nil : PickyAnnotationSceneMonitor())
         self.inkCaptureCoordinator = inkCaptureCoordinator
         self.quickInputPanelManager = QuickInputPanelManager(
             appearanceStore: appearanceStore,
@@ -401,6 +410,9 @@ final class CompanionManager: ObservableObject {
         }
         self.inkCaptureCoordinator.shouldPassThroughMouseEvent = { [weak self] point, source in
             self?.shouldPassThroughInkMouseEvent(point: point, source: source) == true
+        }
+        self.annotationSceneMonitor?.onOutput = { [weak self] output in
+            self?.applyAnnotationSceneMonitorOutput(output)
         }
     }
 
@@ -667,6 +679,8 @@ final class CompanionManager: ObservableObject {
         buddyDictationManager.cancelCurrentDictation()
         overlayWindowManager.hideOverlay()
         transientHideTask?.cancel()
+        annotationSceneMonitor?.stop()
+        activeAnnotationSceneIdentity = nil
 
         currentResponseTask?.cancel()
         currentResponseTask = nil
@@ -1627,6 +1641,14 @@ final class CompanionManager: ObservableObject {
         isSendingDirectMessage = projection.hasPendingTextSubmission
         isWaitingForCursorResponse = projection.isWaitingForCursorResponse
         agentAnnotations = projection.agentAnnotations
+        let previousProjectedSceneIdentity = projectedAnnotationSceneIdentity
+        projectedAnnotationSceneIdentity = projection.state.annotationSceneIdentity
+        if previousProjectedSceneIdentity != nil,
+           projection.state.annotationSceneIdentity == nil,
+           activeAnnotationSceneIdentity == previousProjectedSceneIdentity {
+            annotationSceneMonitor?.stop()
+            activeAnnotationSceneIdentity = nil
+        }
         setInteractionOverlayReasons(from: projection.state.overlay)
 
         switch projection.state.output {
@@ -2356,6 +2378,8 @@ final class CompanionManager: ObservableObject {
     private func applyAnnotationOverlayRequest(_ request: PickyAnnotationOverlayRequest) {
         if request.mode == .clear {
             annotationBasePaletteByTurnScreen.removeAll()
+            annotationSceneMonitor?.stop()
+            activeAnnotationSceneIdentity = nil
             interactionCoordinator.accept(
                 .agentAnnotationsRequested(mode: .clear, annotations: []),
                 correlation: PickyInteractionCorrelation(source: .agent)
@@ -2365,7 +2389,8 @@ final class CompanionManager: ObservableObject {
         guard shouldApplyOverlay(contextID: request.contextId, generation: request.contextGeneration) else { return }
         do {
             let screenshotSize = request.screenshotSize.map { CGSize(width: $0.width, height: $0.height) }
-            let sampleGrid = overlayScreenshot(for: request)?.annotationColorSampleGrid
+            let screenshot = overlayScreenshot(for: request)
+            let sampleGrid = screenshot?.annotationColorSampleGrid
             let paletteKey = annotationPaletteKey(for: request)
             if request.mode == .replace {
                 annotationBasePaletteByTurnScreen[paletteKey] = nil
@@ -2386,9 +2411,14 @@ final class CompanionManager: ObservableObject {
             if let basePalette {
                 annotationBasePaletteByTurnScreen[paletteKey] = basePalette
             }
+            prepareAnnotationSceneIfNeeded(
+                request: request,
+                screenshot: screenshot,
+                annotations: annotations
+            )
             interactionCoordinator.accept(
                 .agentAnnotationsRequested(mode: request.mode, annotations: annotations),
-                correlation: PickyInteractionCorrelation(source: .agent)
+                correlation: PickyInteractionCorrelation(contextID: request.contextId, source: .agent)
             )
             if request.mode != .clear {
                 latestAgentSessionSummary = "Showing \(annotations.count) screen annotation\(annotations.count == 1 ? "" : "s")."
@@ -2399,7 +2429,11 @@ final class CompanionManager: ObservableObject {
     }
 
     private func noteMainOverlayContext(_ context: PickyContextPacket) {
+        annotationSceneMonitor?.stop()
+        activeAnnotationSceneIdentity = nil
         latestOverlayContextID = context.id
+        latestOverlayContextGeneration = 0
+        latestAnnotationSceneBaseline = PickyAnnotationSceneBaseline.capture(from: context)
         annotationBasePaletteByTurnScreen.removeAll()
         latestOverlayScreenshotsByID = context.screenshots.reduce(into: [:]) { result, screenshot in
             result[screenshot.id] = screenshot
@@ -2407,6 +2441,67 @@ final class CompanionManager: ObservableObject {
                 result[screenID] = screenshot
             }
         }
+    }
+
+    private func prepareAnnotationSceneIfNeeded(
+        request: PickyAnnotationOverlayRequest,
+        screenshot: PickyScreenshotContext?,
+        annotations: [PickyAgentAnnotation]
+    ) {
+        guard let monitor = annotationSceneMonitor,
+              let baseline = latestAnnotationSceneBaseline,
+              let contextID = request.contextId,
+              let generation = request.contextGeneration,
+              baseline.contextID == contextID,
+              let screenshot else {
+            return
+        }
+        let identity: PickyAnnotationSceneIdentity
+        if let active = activeAnnotationSceneIdentity,
+           active.contextID == contextID,
+           active.generation == generation {
+            identity = active
+        } else {
+            identity = PickyAnnotationSceneIdentity(
+                contextID: contextID,
+                generation: generation,
+                token: UUID()
+            )
+            activeAnnotationSceneIdentity = identity
+            interactionCoordinator.accept(
+                .agentAnnotationScenePrepared(identity: identity),
+                correlation: PickyInteractionCorrelation(contextID: contextID, source: .system)
+            )
+            monitor.start(identity: identity, baseline: baseline)
+        }
+        monitor.updateTarget(
+            screenshot: screenshot,
+            annotations: annotations,
+            mode: request.mode
+        )
+    }
+
+    private func applyAnnotationSceneMonitorOutput(_ output: PickyAnnotationSceneMonitorOutput) {
+        let identity: PickyAnnotationSceneIdentity
+        let event: PickyInteractionEvent
+        switch output {
+        case .matched(let matchedIdentity):
+            identity = matchedIdentity
+            event = .agentAnnotationSceneMatched(identity: matchedIdentity)
+        case .mismatched(let mismatchedIdentity, let reason):
+            identity = mismatchedIdentity
+            event = .agentAnnotationSceneMismatched(identity: mismatchedIdentity, reason: reason)
+        }
+        guard activeAnnotationSceneIdentity == identity else {
+            PickyLog.logger(.annotationScene).debug(
+                "dropping stale monitor output context=\(identity.contextID, privacy: .public) generation=\(identity.generation)"
+            )
+            return
+        }
+        interactionCoordinator.accept(
+            event,
+            correlation: PickyInteractionCorrelation(contextID: identity.contextID, source: .system)
+        )
     }
 
     private func annotationPaletteKey(for request: PickyAnnotationOverlayRequest) -> String {

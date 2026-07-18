@@ -21,7 +21,7 @@ struct PickyAgentAnnotationOverlayTests {
         #expect(resolved.first { $0.id == "line" }?.label == "Save")
     }
 
-    @Test func bufferedAnnotationsStayVisibleUntilTheFinalTTSUtteranceDrains() {
+    @Test func bufferedAnnotationsRemainVisibleAfterTheFinalTTSUtteranceDrains() {
         let annotation = resolvedAnnotation(id: "a")
         let buffered = reduce(PickyInteractionState(), .agentAnnotationsRequested(mode: .append, annotations: [annotation]))
         #expect(buffered.agentAnnotations.isEmpty)
@@ -45,11 +45,48 @@ struct PickyAgentAnnotationOverlayTests {
         #expect(settled.agentAnnotations.map(\.id) == ["a"])
 
         let drained = reduce(settled, .speechFinished(speechID: speechID))
-        #expect(drained.agentAnnotations.isEmpty)
+        #expect(drained.agentAnnotations.map(\.id) == ["a"])
         #expect(drained.pendingAgentAnnotations.isEmpty)
     }
 
-    @Test func companionManagerClearsSilentAnnotationsWhenTheTurnSettles() async throws {
+    @Test func sceneValidationSuspendsWithoutDiscardingAndRestoresOnlyMatchingIdentity() {
+        let identity = PickyAnnotationSceneIdentity(
+            contextID: "context",
+            generation: 3,
+            token: UUID(uuidString: "A0000000-0000-0000-0000-000000000001")!
+        )
+        let staleIdentity = PickyAnnotationSceneIdentity(
+            contextID: "context",
+            generation: 2,
+            token: UUID(uuidString: "A0000000-0000-0000-0000-000000000002")!
+        )
+        var state = reduce(PickyInteractionState(), .agentAnnotationScenePrepared(identity: identity))
+        state = reduce(state, .agentAnnotationsRequested(mode: .append, annotations: [resolvedAnnotation(id: "a")]))
+        state = reduce(state, .mainTurnSettled(contextID: "context"))
+
+        #expect(state.annotationScenePhase == .validating)
+        #expect(state.agentAnnotations.map(\.id) == ["a"])
+        #expect(PickyInteractionProjection(state: state).agentAnnotations.isEmpty)
+
+        state = reduce(state, .agentAnnotationSceneMatched(identity: identity))
+        #expect(state.annotationScenePhase == .visible)
+        #expect(PickyInteractionProjection(state: state).agentAnnotations.map(\.id) == ["a"])
+
+        state = reduce(state, .agentAnnotationSceneMismatched(identity: identity, reason: .visual))
+        #expect(state.annotationScenePhase == .suspended)
+        #expect(state.agentAnnotations.map(\.id) == ["a"])
+        #expect(PickyInteractionProjection(state: state).agentAnnotations.isEmpty)
+
+        state = reduce(state, .agentAnnotationSceneMatched(identity: staleIdentity))
+        #expect(state.annotationScenePhase == .suspended)
+        #expect(PickyInteractionProjection(state: state).agentAnnotations.isEmpty)
+
+        state = reduce(state, .agentAnnotationSceneMatched(identity: identity))
+        #expect(state.annotationScenePhase == .visible)
+        #expect(PickyInteractionProjection(state: state).agentAnnotations.map(\.id) == ["a"])
+    }
+
+    @Test func companionManagerKeepsSilentAnnotationsWhenTheTurnSettles() async throws {
         let manager = CompanionManager(agentClient: FakePickyAgentClient())
         let sequenceBeforeEvent = manager.interactionProjectionSequence
         manager.applyAgentEvent(.annotationOverlayRequested(request(annotations: [
@@ -58,7 +95,60 @@ struct PickyAgentAnnotationOverlayTests {
         manager.applyAgentEvent(.mainTurnSettled(contextId: "context"))
 
         try await waitUntil { manager.interactionProjectionSequence > sequenceBeforeEvent }
-        #expect(manager.agentAnnotations.isEmpty)
+        #expect(manager.agentAnnotations.map(\.id) == ["manager-rect"])
+    }
+
+    @Test func companionManagerProjectsAnnotationsOnlyWhileTheCapturedSceneMatches() async throws {
+        let baselineFingerprint = PickyAnnotationSceneFingerprint(
+            width: 10,
+            height: 10,
+            luminance: [UInt8](repeating: 64, count: 100)
+        )!
+        let changedFingerprint = PickyAnnotationSceneFingerprint(
+            width: 10,
+            height: 10,
+            luminance: [UInt8](repeating: 255, count: 100)
+        )!
+        let capturer = ManagerAnnotationSceneCapturer(
+            baseline: baselineFingerprint,
+            current: [
+                baselineFingerprint, baselineFingerprint,
+                changedFingerprint, changedFingerprint,
+                baselineFingerprint, baselineFingerprint,
+            ]
+        )
+        let monitor = PickyAnnotationSceneMonitor(
+            capturer: capturer,
+            semanticProvider: ManagerAnnotationSceneSemanticProvider(),
+            automaticallySchedulesSamples: false
+        )
+        let manager = CompanionManager(
+            agentClient: FakePickyAgentClient(),
+            annotationSceneMonitor: monitor
+        )
+        manager.noteExternalSubmission(
+            kind: .submitMain,
+            text: "show it",
+            context: sceneContext()
+        )
+        manager.applyAgentEvent(.annotationOverlayRequested(request(
+            annotations: [annotation(id: "manager-rect", shape: .rect, x: 200, y: 100, w: 40, h: 20)],
+            contextGeneration: 1
+        )))
+        manager.applyAgentEvent(.mainTurnSettled(contextId: "context"))
+
+        await monitor.sampleNow()
+        await monitor.sampleNow()
+        try await waitUntil { manager.agentAnnotations.map(\.id) == ["manager-rect"] }
+
+        await monitor.sampleNow()
+        await monitor.sampleNow()
+        try await waitUntil { manager.agentAnnotations.isEmpty }
+
+        await monitor.sampleNow()
+        await monitor.sampleNow()
+        try await waitUntil { manager.agentAnnotations.map(\.id) == ["manager-rect"] }
+        manager.stop()
     }
 
     @Test func resolverUsesActionBlueOnOrdinaryLightAndDarkScreens() throws {
@@ -518,6 +608,32 @@ struct PickyAgentAnnotationOverlayTests {
         #expect(eventRequest.annotations.first?.spotlight == true)
     }
 
+    private func sceneContext() -> PickyContextPacket {
+        PickyContextPacket(
+            id: "context",
+            source: "cli",
+            capturedAt: now,
+            transcript: "show it",
+            selectedText: nil,
+            cwd: nil,
+            activeApp: nil,
+            activeWindow: nil,
+            browser: nil,
+            screenshots: [
+                PickyScreenshotContext(
+                    id: "shot-1",
+                    label: "screen",
+                    path: "/tmp/not-read-by-fake.jpg",
+                    screenId: "screen",
+                    bounds: PickyCGRect(x: 100, y: 200, width: 200, height: 100),
+                    screenshotWidthInPixels: 400,
+                    screenshotHeightInPixels: 200
+                ),
+            ],
+            warnings: []
+        )
+    }
+
     private func uniformGrid(_ color: PickyScreenshotSampleColor) -> PickyScreenshotColorSampleGrid {
         PickyScreenshotColorSampleGrid(width: 4, height: 4, pixels: Array(repeating: color, count: 16))!
     }
@@ -613,5 +729,34 @@ struct PickyAgentAnnotationOverlayTests {
 
     private func resolvedAnnotation(id: String) -> PickyAgentAnnotation {
         PickyAgentAnnotation(id: id, shape: .rect, displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100), rect: CGRect(x: 40, y: 40, width: 20, height: 20), label: nil)
+    }
+}
+
+@MainActor
+private final class ManagerAnnotationSceneCapturer: PickyAnnotationSceneSnapshotCapturing {
+    let baseline: PickyAnnotationSceneFingerprint
+    var current: [PickyAnnotationSceneFingerprint]
+
+    init(baseline: PickyAnnotationSceneFingerprint, current: [PickyAnnotationSceneFingerprint]) {
+        self.baseline = baseline
+        self.current = current
+    }
+
+    func baselineFingerprint(for screenshot: PickyScreenshotContext) async throws -> PickyAnnotationSceneFingerprint {
+        baseline
+    }
+
+    func currentFingerprint(for screenshot: PickyScreenshotContext) async throws -> PickyAnnotationSceneFingerprint {
+        guard !current.isEmpty else { throw PickyAnnotationSceneCaptureError.fingerprintCreationFailed }
+        return current.removeFirst()
+    }
+
+    func reset() {}
+}
+
+@MainActor
+private final class ManagerAnnotationSceneSemanticProvider: PickyAnnotationSceneSemanticProviding {
+    func mismatchReason(for baseline: PickyAnnotationSceneBaseline) -> PickyAnnotationSceneMismatchReason? {
+        nil
     }
 }

@@ -28,6 +28,7 @@ enum PickyLog {
         case speech = "speech"
         case watchdog = "watchdog"
         case markdown = "markdown"
+        case annotationScene = "annotation-scene"
     }
 
     /// Returns a fresh `Logger` for `category`. `Logger` is a thin wrapper

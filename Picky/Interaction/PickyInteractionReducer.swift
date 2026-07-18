@@ -135,6 +135,12 @@ private struct PickyInteractionReducing {
             applyPointerAnimationFinished(pointerID: pointerID)
         case .agentAnnotationsRequested(let mode, let annotations):
             applyAgentAnnotationsRequested(mode: mode, annotations: annotations)
+        case .agentAnnotationScenePrepared(let identity):
+            applyAgentAnnotationScenePrepared(identity: identity)
+        case .agentAnnotationSceneMatched(let identity):
+            applyAgentAnnotationSceneMatched(identity: identity)
+        case .agentAnnotationSceneMismatched(let identity, let reason):
+            applyAgentAnnotationSceneMismatched(identity: identity, reason: reason)
         case .agentAnnotationRevealDue(let id):
             applyAnnotationRevealDue(id: id)
         case .agentAnnotationsClearedForUserInput:
@@ -712,6 +718,11 @@ private struct PickyInteractionReducing {
             }
         } else {
             state.pointer = .idle
+            startNextAnnotationPointerIfPossible()
+            if state.activeAnnotationPointerID != nil {
+                record(.stateChanged, "Standalone pointer finished; annotation pointer started")
+                return
+            }
         }
         state = state.removingOverlayReason(.activePointerAnimation)
         record(.stateChanged, "Pointer animation finished")
@@ -722,11 +733,7 @@ private struct PickyInteractionReducing {
     private mutating func applyAgentAnnotationsRequested(mode: PickyAnnotationOverlayMode, annotations: [PickyAgentAnnotation]) {
         switch mode {
         case .clear:
-            state.pendingAgentAnnotations = []
-            state.dueAgentAnnotationIDs = []
-            state.agentAnnotations = []
-            state = state.removingOverlayReason(.activeAgentAnnotations)
-            endAnnotationPointerTurn(discardingPendingTargets: true)
+            clearAgentAnnotations(resetNarration: true)
         case .replace:
             state.pendingAgentAnnotations = []
             state.dueAgentAnnotationIDs = []
@@ -737,6 +744,49 @@ private struct PickyInteractionReducing {
             for annotation in annotations { bufferOrRevealAnnotation(annotation) }
         }
         record(.stateChanged, "Agent annotations \(mode.rawValue)")
+    }
+
+    private mutating func applyAgentAnnotationScenePrepared(identity: PickyAnnotationSceneIdentity) {
+        if state.annotationSceneIdentity != identity {
+            state.pendingAgentAnnotations = []
+            state.dueAgentAnnotationIDs = []
+            state.agentAnnotations = []
+            endAnnotationPointerTurn(discardingPendingTargets: true)
+        }
+        state.annotationSceneIdentity = identity
+        state.annotationScenePhase = .validating
+        state = state.removingOverlayReason(.activeAgentAnnotations)
+        record(.stateChanged, "Agent annotation scene validating")
+    }
+
+    private mutating func applyAgentAnnotationSceneMatched(identity: PickyAnnotationSceneIdentity) {
+        guard state.annotationSceneIdentity == identity else {
+            record(.staleEvent, "Ignored stale annotation scene match")
+            return
+        }
+        let wasValidating = state.annotationScenePhase == .validating
+        state.annotationScenePhase = .visible
+        if !state.agentAnnotations.isEmpty {
+            state = state.addingOverlayReason(.activeAgentAnnotations)
+            if wasValidating, annotationSpeechActive {
+                enqueueAnnotationPointerTargets(state.agentAnnotations)
+            }
+        }
+        record(.stateChanged, wasValidating ? "Agent annotation scene validated" : "Agent annotations resumed")
+    }
+
+    private mutating func applyAgentAnnotationSceneMismatched(
+        identity: PickyAnnotationSceneIdentity,
+        reason: PickyAnnotationSceneMismatchReason
+    ) {
+        guard state.annotationSceneIdentity == identity else {
+            record(.staleEvent, "Ignored stale annotation scene mismatch")
+            return
+        }
+        state.annotationScenePhase = .suspended
+        state = state.removingOverlayReason(.activeAgentAnnotations)
+        cancelAnnotationPointerForSceneSuspension()
+        record(.stateChanged, "Agent annotations suspended: \(reason.rawValue)")
     }
 
     /// Buffers a streamed annotation so the overlay cannot show it before narration
@@ -796,9 +846,9 @@ private struct PickyInteractionReducing {
         }
     }
 
-    /// Shows an annotation and sends the buddy to it. Its lifetime is owned by the
-    /// narration turn and ends only when the final queued TTS utterance drains.
-    private mutating func revealAnnotation(_ annotation: PickyAgentAnnotation) {
+    /// Stores an annotation and, when its original scene is visible, sends the buddy
+    /// to it. Scene validation may keep the geometry resident but absent from projection.
+    private mutating func revealAnnotation(_ annotation: PickyAgentAnnotation, animatePointer: Bool = true) {
         if let index = state.agentAnnotations.firstIndex(where: { $0.id == annotation.id }) {
             state.agentAnnotations[index] = annotation
         } else {
@@ -806,8 +856,12 @@ private struct PickyInteractionReducing {
         }
         let overflow = max(0, state.agentAnnotations.count - PickyInteractionReducer.maximumAgentAnnotationCount)
         if overflow > 0 { state.agentAnnotations.removeFirst(overflow) }
-        state = state.addingOverlayReason(.activeAgentAnnotations)
-        enqueueAnnotationPointerTargets([annotation])
+        if state.annotationScenePhase.presentsAnnotations {
+            state = state.addingOverlayReason(.activeAgentAnnotations)
+            if animatePointer {
+                enqueueAnnotationPointerTargets([annotation])
+            }
+        }
         record(.stateChanged, "Annotation revealed")
     }
 
@@ -827,17 +881,18 @@ private struct PickyInteractionReducing {
         }
     }
 
-    /// Narration is over: clear every drawing and send the buddy cursor back. Runs
-    /// only after the turn settled and the final queued TTS utterance drained.
+    /// Narration is over: surface any remaining shapes, reset only narration timing,
+    /// and send the buddy cursor back. Drawings persist until a new input, explicit
+    /// CLEAR, or a scene suspension hides them.
     private mutating func concludeAnnotationTurn() {
-        state.pendingAgentAnnotations = []
+        while !state.pendingAgentAnnotations.isEmpty {
+            revealAnnotation(state.pendingAgentAnnotations.removeFirst().annotation, animatePointer: false)
+        }
         state.dueAgentAnnotationIDs = []
-        state.agentAnnotations = []
         state.annotationNarrationWeight = 0
         state.annotationSpeechAnchor = nil
         state.annotationTurnSettled = false
         state.annotationArrivalSequence = 0
-        state = state.removingOverlayReason(.activeAgentAnnotations)
         endAnnotationPointerTurn(discardingPendingTargets: true)
     }
 
@@ -847,17 +902,37 @@ private struct PickyInteractionReducing {
     }
 
     private mutating func clearAgentAnnotationsForUserInput() {
+        clearAgentAnnotations(resetNarration: true)
+        record(.stateChanged, "Agent annotations cleared for user input")
+    }
+
+    private mutating func clearAgentAnnotations(resetNarration: Bool) {
         state.pendingAgentAnnotations = []
         state.dueAgentAnnotationIDs = []
-        state.annotationNarrationWeight = 0
-        state.annotationSpeechAnchor = nil
-        state.annotationTurnSettled = false
-        state.annotationArrivalSequence = 0
-        endAnnotationPointerTurn(discardingPendingTargets: true)
-        guard !state.agentAnnotations.isEmpty else { return }
         state.agentAnnotations = []
+        state.annotationSceneIdentity = nil
+        state.annotationScenePhase = .inactive
+        if resetNarration {
+            state.annotationNarrationWeight = 0
+            state.annotationSpeechAnchor = nil
+            state.annotationTurnSettled = false
+            state.annotationArrivalSequence = 0
+        }
         state = state.removingOverlayReason(.activeAgentAnnotations)
-        record(.stateChanged, "Agent annotations cleared for user input")
+        endAnnotationPointerTurn(discardingPendingTargets: true)
+    }
+
+    private mutating func cancelAnnotationPointerForSceneSuspension() {
+        state.pendingAnnotationPointerTargets = []
+        state.annotationPointerTurnActive = false
+        state.annotationPointerIsParked = false
+        state.activeAnnotationPointerParksAtTarget = false
+        state.activeAnnotationPointerReturnsToCursor = true
+        guard let activeID = state.activeAnnotationPointerID else { return }
+        effects.append(.cancelPointerAnimation(pointerID: activeID))
+        state.activeAnnotationPointerID = nil
+        state.pointer = .idle
+        state = state.removingOverlayReason(.activePointerAnimation)
     }
 
     private mutating func enqueueAnnotationPointerTargets(_ annotations: [PickyAgentAnnotation]) {

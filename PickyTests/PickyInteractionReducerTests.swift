@@ -772,17 +772,17 @@ struct PickyInteractionReducerTests {
 
         // When speech drains, narration is over and the buddy flies back.
         let drained = reduce(settled.state, .speechFinished(speechID: speechID), id: timerB)
-        #expect(drained.state.agentAnnotations.isEmpty)
+        #expect(drained.state.agentAnnotations.map(\.id) == ["rect"])
         #expect(drained.effects.contains(.setPointerReturnsToCursor(pointerID: "annotation-rect", returnsToCursor: true)))
     }
 
-    @Test func turnEndDropsQueuedAnnotationVisitsAndReturnsToCursor() {
+    @Test func turnEndKeepsShapesButDropsQueuedAnnotationVisitsAndReturnsToCursor() {
         let rectReveal = revealAnnotation(id: "rect", into: PickyInteractionState())
         let firstTarget = pointerTarget(from: rectReveal)
         let queued = revealAnnotation(id: "line", into: rectReveal.state)
         let settled = reduce(queued.state, .mainTurnSettled(contextID: "ctx"), id: timerB)
 
-        #expect(settled.state.agentAnnotations.isEmpty)
+        #expect(settled.state.agentAnnotations.map(\.id) == ["rect", "line"])
         #expect(settled.state.pendingAnnotationPointerTargets.isEmpty)
         #expect(settled.effects == [
             .setPointerParksAtTarget(pointerID: firstTarget.id, parksAtTarget: false),
@@ -799,6 +799,135 @@ struct PickyInteractionReducerTests {
         })
         #expect(!settled.effects.contains { effect in
             if case .setPointerParksAtTarget = effect { return true }
+            return false
+        })
+    }
+
+    @Test func sceneSuspensionImmediatelyCancelsAnActiveAnnotationPointer() {
+        let identity = PickyAnnotationSceneIdentity(
+            contextID: "ctx",
+            generation: 1,
+            token: UUID(uuidString: "A0000000-0000-0000-0000-000000000010")!
+        )
+        let initial = PickyInteractionState(
+            annotationSceneIdentity: identity,
+            annotationScenePhase: .visible
+        )
+        let revealed = revealAnnotation(id: "rect", into: initial)
+        let target = pointerTarget(from: revealed)
+
+        let suspended = reduce(
+            revealed.state,
+            .agentAnnotationSceneMismatched(identity: identity, reason: .scroll),
+            id: timerA
+        )
+
+        #expect(suspended.state.annotationScenePhase == .suspended)
+        #expect(suspended.state.agentAnnotations.map(\.id) == ["rect"])
+        #expect(suspended.state.activeAnnotationPointerID == nil)
+        #expect(suspended.state.pointer == .idle)
+        #expect(suspended.effects == [.cancelPointerAnimation(pointerID: target.id)])
+    }
+
+    @Test func sceneSuspensionDoesNotClearAnUnrelatedStandalonePointer() {
+        let identity = PickyAnnotationSceneIdentity(
+            contextID: "ctx",
+            generation: 1,
+            token: UUID(uuidString: "A0000000-0000-0000-0000-000000000011")!
+        )
+        let target = PickyPointerTarget(
+            id: "standalone",
+            screenLocation: CGPoint(x: 40, y: 50),
+            displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100),
+            duration: 1
+        )
+        let initial = PickyInteractionState(
+            annotationSceneIdentity: identity,
+            annotationScenePhase: .visible
+        )
+        let pointed = reduce(initial, .pointerRequested(target), id: timerA)
+
+        let suspended = reduce(
+            pointed.state,
+            .agentAnnotationSceneMismatched(identity: identity, reason: .visual),
+            id: timerB
+        )
+
+        #expect(suspended.state.annotationScenePhase == .suspended)
+        #expect(suspended.state.pointer == .requested(target))
+        if case .visible(let reasons) = suspended.state.overlay {
+            #expect(reasons.contains(.activePointerAnimation))
+        } else {
+            Issue.record("Expected the standalone pointer overlay to remain visible")
+        }
+        #expect(suspended.effects.isEmpty)
+    }
+
+    @Test func standalonePointerCompletionStartsAQueuedAnnotationPointer() throws {
+        let identity = PickyAnnotationSceneIdentity(
+            contextID: "ctx",
+            generation: 1,
+            token: UUID(uuidString: "A0000000-0000-0000-0000-000000000014")!
+        )
+        let standalone = PickyPointerTarget(
+            id: "standalone",
+            screenLocation: CGPoint(x: 40, y: 50),
+            displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100),
+            duration: 1
+        )
+        let initial = PickyInteractionState(
+            annotationSceneIdentity: identity,
+            annotationScenePhase: .visible
+        )
+        let pointed = reduce(initial, .pointerRequested(standalone), id: timerA)
+        let revealed = revealAnnotation(id: "rect", into: pointed.state)
+        let queuedTarget = try #require(revealed.state.pendingAnnotationPointerTargets.first)
+
+        let finished = reduce(
+            revealed.state,
+            .pointerAnimationFinished(pointerID: standalone.id),
+            id: timerB
+        )
+
+        #expect(finished.state.activeAnnotationPointerID == queuedTarget.id)
+        #expect(finished.state.pendingAnnotationPointerTargets.isEmpty)
+        #expect(finished.effects.contains { effect in
+            if case .startPointerAnimation(let target) = effect {
+                return target.id == queuedTarget.id
+            }
+            return false
+        })
+    }
+
+    @Test func sceneSuspensionKeepsActiveSpeechRunning() {
+        let identity = PickyAnnotationSceneIdentity(
+            contextID: "ctx",
+            generation: 1,
+            token: UUID(uuidString: "A0000000-0000-0000-0000-000000000012")!
+        )
+        let speechID = UUID(uuidString: "A0000000-0000-0000-0000-000000000013")!
+        var initial = PickyInteractionState(
+            annotationSceneIdentity: identity,
+            annotationScenePhase: .visible
+        )
+        initial.output = .speaking(
+            contextID: "ctx",
+            speechID: speechID,
+            text: "keep speaking",
+            minimumDisplayTimerID: nil,
+            minimumDisplayUntil: nil,
+            finishPending: false
+        )
+
+        let suspended = reduce(
+            initial,
+            .agentAnnotationSceneMismatched(identity: identity, reason: .visual),
+            id: timerA
+        )
+
+        #expect(suspended.state.output == initial.output)
+        #expect(!suspended.effects.contains { effect in
+            if case .stopSpeech = effect { return true }
             return false
         })
     }

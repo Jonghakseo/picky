@@ -1,6 +1,6 @@
 import type { AnnotationInput } from "./annotation-validation.js";
 
-const KNOWN_VERBS = ["POINT", "RECT", "LINE", "SPOTLIGHT", "LABEL", "SCREEN"] as const;
+const KNOWN_VERBS = ["POINT", "RECT", "LINE", "LABEL", "SCREEN"] as const;
 type KnownVerb = typeof KNOWN_VERBS[number];
 
 /** Matches a complete DSL opener; partial openers are handled incrementally below. */
@@ -13,6 +13,7 @@ const HEAL_ORDER = [
   "unquoted single-token label",
   "numeric px unit",
   "rounded float",
+  "boolean value",
   "default ttl",
   "duplicate key last-wins",
   "unknown key ignored",
@@ -53,6 +54,7 @@ export interface AnnotationDslParseResult {
 interface ParsedValue {
   value: string;
   quoted: boolean;
+  bare?: boolean;
 }
 
 interface ParsedArguments {
@@ -154,8 +156,13 @@ export class AnnotationDslParser {
     if (!parsedArgs) return { error: `malformed ${verb} arguments` };
     for (const heal of parsedArgs.heals) heals.add(heal);
     const args = parsedArgs.values;
-    for (const key of Object.keys(args)) {
-      if (!allowedKeysFor(verb).has(key)) heals.add("unknown key ignored");
+    for (const [key, value] of Object.entries(args)) {
+      if (value.bare && key !== "spotlight") {
+        delete args[key];
+        heals.add("unknown key ignored");
+      } else if (!allowedKeysFor(verb).has(key)) {
+        heals.add("unknown key ignored");
+      }
     }
 
     if (verb === "SCREEN") {
@@ -189,33 +196,23 @@ export class AnnotationDslParser {
       return { tag: { kind: "point", x: fields.x!, y: fields.y!, ...(r === undefined ? {} : { r }), ...(label === undefined ? {} : { label }), ttlMs, ...(screenId ? { screenId } : {}) } };
     }
 
+    const spotlight = verb === "RECT" || verb === "LINE"
+      ? optionalBoolean(args, "spotlight", heals)
+      : undefined;
+    if (spotlight === null) return { error: `${verb} has invalid spotlight` };
+
     let annotation: AnnotationInput | undefined;
     switch (verb) {
       case "RECT": {
         const fields = required("x", "y", "w", "h");
         if (!fields) return { error: "RECT requires x, y, w, and h" };
-        annotation = { ...this.annotationBase("rect", ttlMs, label), ...fields };
+        annotation = { ...this.annotationBase("rect", ttlMs, label), ...fields, ...(spotlight === undefined ? {} : { spotlight }) };
         break;
       }
       case "LINE": {
         const fields = required("x1", "y1", "x2", "y2");
         if (!fields) return { error: "LINE requires x1, y1, x2, and y2" };
-        annotation = { ...this.annotationBase("line", ttlMs, label), ...fields };
-        break;
-      }
-      case "SPOTLIGHT": {
-        const shape = args.shape?.value;
-        if (shape === "circle") {
-          const fields = required("x", "y", "r");
-          if (!fields) return { error: "SPOTLIGHT circle requires x, y, and r" };
-          annotation = { ...this.annotationBase("spotlight", ttlMs, label), spotlightShape: "circle", ...fields };
-        } else if (shape === "rect") {
-          const fields = required("x", "y", "w", "h");
-          if (!fields) return { error: "SPOTLIGHT rect requires x, y, w, and h" };
-          annotation = { ...this.annotationBase("spotlight", ttlMs, label), spotlightShape: "rect", ...fields };
-        } else {
-          return { error: "SPOTLIGHT requires shape=circle or shape=rect" };
-        }
+        annotation = { ...this.annotationBase("line", ttlMs, label), ...fields, ...(spotlight === undefined ? {} : { spotlight }) };
         break;
       }
       case "LABEL": {
@@ -249,9 +246,8 @@ function healingSummary(verb: KnownVerb, heals: ReadonlySet<HealReason>): string
 function allowedKeysFor(verb: KnownVerb): ReadonlySet<string> {
   switch (verb) {
     case "POINT": return new Set(["x", "y", "r", "ttl", "label"]);
-    case "RECT": return new Set(["x", "y", "w", "h", "ttl", "label"]);
-    case "LINE": return new Set(["x1", "y1", "x2", "y2", "ttl", "label"]);
-    case "SPOTLIGHT": return new Set(["shape", "x", "y", "r", "w", "h", "ttl", "label"]);
+    case "RECT": return new Set(["x", "y", "w", "h", "ttl", "label", "spotlight"]);
+    case "LINE": return new Set(["x1", "y1", "x2", "y2", "ttl", "label", "spotlight"]);
     case "LABEL": return new Set(["x", "y", "ttl", "text"]);
     case "SCREEN": return new Set(["id"]);
   }
@@ -346,7 +342,11 @@ function parseNamedArguments(body: string): ParsedArguments | undefined {
     const beforeEquals = index;
     while (/\s/.test(body[index] ?? "")) index += 1;
     if (index > beforeEquals) heals.add("argument spacing/separator");
-    if (body[index] !== "=") return undefined;
+    if (body[index] !== "=") {
+      if (values[key]) heals.add("duplicate key last-wins");
+      values[key] = { value: "true", quoted: false, bare: true };
+      continue;
+    }
     index += 1;
     const afterEquals = index;
     while (/\s/.test(body[index] ?? "")) index += 1;
@@ -420,6 +420,24 @@ function finiteNumber(value: ParsedValue | undefined, heals: Set<HealReason>): n
 function optionalNumber(args: Record<string, ParsedValue>, key: string, heals: Set<HealReason>): number | undefined | null {
   if (!(key in args)) return undefined;
   return finiteNumber(args[key], heals) ?? null;
+}
+
+function optionalBoolean(args: Record<string, ParsedValue>, key: string, heals: Set<HealReason>): boolean | undefined | null {
+  const value = args[key];
+  if (!value) return undefined;
+  if (value.quoted) return null;
+  const normalized = value.value.toLowerCase();
+  if (normalized === "true") return true;
+  if (normalized === "false") return false;
+  if (["1", "yes", "on"].includes(normalized)) {
+    heals.add("boolean value");
+    return true;
+  }
+  if (["0", "no", "off"].includes(normalized)) {
+    heals.add("boolean value");
+    return false;
+  }
+  return null;
 }
 
 function optionalText(args: Record<string, ParsedValue>, key: string, heals: Set<HealReason>): string | undefined | null {

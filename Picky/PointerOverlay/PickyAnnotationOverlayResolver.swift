@@ -69,11 +69,6 @@ enum PickyAnnotationOverlayResolver {
                 y: displayFrame.maxY - sourceY * yScale
             )
         }
-        let radius = { (value: Double?, field: String, scale: CGFloat) throws -> CGFloat in
-            let source = try finite(value, annotationID: annotation.id, field: field)
-            guard source >= 0 else { throw PickyAnnotationOverlayResolveError.invalidGeometry(annotationID: annotation.id, field: field) }
-            return source * scale
-        }
         let ttl = (annotation.ttlMs ?? defaultTTL * 1_000) / 1_000
         // The countdown is activated by the interaction reducer when the first
         // narration utterance starts. Keep a finite safety deadline as well so a
@@ -87,7 +82,7 @@ enum PickyAnnotationOverlayResolver {
                 shape: annotation.shape,
                 displayFrame: displayFrame,
                 rect: try rect(annotation, displayFrame: displayFrame, xScale: xScale, yScale: yScale),
-                spotlightShape: nil,
+                spotlight: annotation.spotlight ?? false,
                 label: normalizedLabel(annotation.label),
                 expiresAt: expiresAt,
                 pendingTTL: ttl
@@ -99,34 +94,7 @@ enum PickyAnnotationOverlayResolver {
                 displayFrame: displayFrame,
                 point: try point(annotation.x1, annotation.y1, "x1", "y1"),
                 endPoint: try point(annotation.x2, annotation.y2, "x2", "y2"),
-                spotlightShape: nil,
-                label: normalizedLabel(annotation.label),
-                expiresAt: expiresAt,
-                pendingTTL: ttl
-            )
-        case .spotlight:
-            guard let spotlightShape = annotation.spotlightShape else {
-                throw PickyAnnotationOverlayResolveError.invalidGeometry(annotationID: annotation.id, field: "spotlightShape")
-            }
-            if spotlightShape == .rect {
-                return PickyAgentAnnotation(
-                    id: annotation.id,
-                    shape: annotation.shape,
-                    displayFrame: displayFrame,
-                    rect: try rect(annotation, displayFrame: displayFrame, xScale: xScale, yScale: yScale),
-                    spotlightShape: spotlightShape,
-                    label: normalizedLabel(annotation.label),
-                    expiresAt: expiresAt,
-                    pendingTTL: ttl
-                )
-            }
-            return PickyAgentAnnotation(
-                id: annotation.id,
-                shape: annotation.shape,
-                displayFrame: displayFrame,
-                point: try point(annotation.x, annotation.y, "x", "y"),
-                radius: try radius(annotation.r, "r", min(xScale, yScale)),
-                spotlightShape: spotlightShape,
+                spotlight: annotation.spotlight ?? false,
                 label: normalizedLabel(annotation.label),
                 expiresAt: expiresAt,
                 pendingTTL: ttl
@@ -137,7 +105,7 @@ enum PickyAnnotationOverlayResolver {
                 shape: annotation.shape,
                 displayFrame: displayFrame,
                 point: try point(annotation.x, annotation.y, "x", "y"),
-                spotlightShape: nil,
+                spotlight: false,
                 label: normalizedLabel(annotation.label),
                 expiresAt: expiresAt,
                 pendingTTL: ttl

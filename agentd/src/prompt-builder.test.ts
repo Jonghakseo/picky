@@ -76,7 +76,8 @@ describe("neutral prompt builder", () => {
     expect(allEnabled.user).toContain("## Picky visual overlay DSL");
     expect(allEnabled.user).toContain("[POINT: x=<number>");
     expect(allEnabled.user).toContain("[RECT: x=<number>");
-    expect(allEnabled.user).toContain("[SPOTLIGHT: shape=circle");
+    expect(allEnabled.user).toContain("spotlight=true");
+    expect(allEnabled.user).not.toContain("[SPOT" + "LIGHT:");
     expect(allEnabled.user).toContain("invisible in the user's transcript");
     expect(overlayDisabled.user).not.toContain("## Picky visual overlay DSL");
   });

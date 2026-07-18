@@ -17,6 +17,26 @@ describe("AnnotationDslParser", () => {
     ]);
   });
 
+  it("parses optional RECT and LINE spotlight flags without a dedicated spotlight shape", () => {
+    const parser = new AnnotationDslParser();
+    const result = parser.feed("[RECT: x=95 y=157 w=120 h=35 ttl=12000 spotlight] [LINE: x1=1 y1=2 x2=3 y2=4 ttl=6000 spotlight=true] [RECT: x=5 y=6 w=7 h=8 ttl=6000 spotlight=false] [LINE: x1=1 y1=2 x2=3 y2=4 ttl=6000]");
+
+    expect(result.completedTags).toEqual([
+      { kind: "annotation", annotation: { id: "dsl-1", shape: "rect", x: 95, y: 157, w: 120, h: 35, ttlMs: 12000, spotlight: true } },
+      { kind: "annotation", annotation: { id: "dsl-2", shape: "line", x1: 1, y1: 2, x2: 3, y2: 4, ttlMs: 6000, spotlight: true } },
+      { kind: "annotation", annotation: { id: "dsl-3", shape: "rect", x: 5, y: 6, w: 7, h: 8, ttlMs: 6000, spotlight: false } },
+      { kind: "annotation", annotation: { id: "dsl-4", shape: "line", x1: 1, y1: 2, x2: 3, y2: 4, ttlMs: 6000 } },
+    ]);
+  });
+
+  it("heals truthy spotlight values and ignores unknown bare arguments deterministically", () => {
+    const parser = new AnnotationDslParser();
+    const result = parser.feed("[RECT: x=1 y=2 w=3 h=4 ttl=6000 spotlight=on extraneous]");
+
+    expect(result.completedTags[0]).toMatchObject({ kind: "annotation", annotation: { shape: "rect", spotlight: true } });
+    expect(result.healedTags).toEqual(["RECT: boolean value, unknown key ignored"]);
+  });
+
   it("buffers a tag split across three deltas and supports quoted brackets and escapes", () => {
     const parser = new AnnotationDslParser();
     expect(parser.feed("설명을 ")).toMatchObject({ cleanText: "설명을 ", completedTags: [] });

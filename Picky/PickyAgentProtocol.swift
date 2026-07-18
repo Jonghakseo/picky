@@ -487,11 +487,7 @@ enum PickyAnnotationOverlayMode: String, Codable, Equatable {
 }
 
 enum PickyAnnotationOverlayShape: String, Codable, Equatable {
-    case rect, line, spotlight, label
-}
-
-enum PickyAnnotationSpotlightShape: String, Codable, Equatable {
-    case rect, circle
+    case rect, line, label
 }
 
 struct PickyAnnotationOverlayAnnotation: Codable, Equatable, Identifiable {
@@ -499,14 +495,13 @@ struct PickyAnnotationOverlayAnnotation: Codable, Equatable, Identifiable {
     let shape: PickyAnnotationOverlayShape
     let x: Double?
     let y: Double?
-    let r: Double?
     let w: Double?
     let h: Double?
     let x1: Double?
     let y1: Double?
     let x2: Double?
     let y2: Double?
-    let spotlightShape: PickyAnnotationSpotlightShape?
+    let spotlight: Bool?
     let label: String?
     let ttlMs: Double?
     let clamped: Bool?

@@ -10,10 +10,11 @@
 import CoreGraphics
 import Foundation
 
-/// Whether a Picky highlight is over an arbitrary in-screen element.
-/// Picky always dims the surroundings to focus attention on the target.
+/// Visual emphasis policy for a pointer target. Direct POINT requests dim their
+/// surroundings; annotation choreography only moves the buddy and remains non-dimming.
 enum PickyDetectedHighlightKind: String, Codable, Equatable {
     case screenElement
+    case annotation
 }
 
 struct PickyPointerOverlayRequest: Codable, Equatable, Identifiable {

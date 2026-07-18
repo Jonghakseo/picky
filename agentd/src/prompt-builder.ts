@@ -193,12 +193,11 @@ function buildVisualOverlayDslPrompt(disabledBuiltinTools: ReadonlySet<string>):
     "- Example: Let me point you to the Save button. [POINT: x=120 y=340 r=24 ttl=6000 label=\"Save\"]",
     "",
     "Drawing shapes:",
-    "- [RECT: x=<number> y=<number> w=<number> h=<number> ttl=<milliseconds> label=\"short label\"]",
-    "- [LINE: x1=<number> y1=<number> x2=<number> y2=<number> ttl=<milliseconds> label=\"short label\"]",
-    "- [SPOTLIGHT: shape=circle x=<number> y=<number> r=<number> ttl=<milliseconds>] (or shape=rect x=<number> y=<number> w=<number> h=<number>)",
+    "- [RECT: x=<number> y=<number> w=<number> h=<number> ttl=<milliseconds> label=\"short label\" spotlight]",
+    "- [LINE: x1=<number> y1=<number> x2=<number> y2=<number> ttl=<milliseconds> label=\"short label\" spotlight=true]",
+    "- `spotlight` is optional for RECT and LINE only. Use it (or `spotlight=true`) to dim around that shape; omit it or use `spotlight=false` for an outline without dimming.",
     "- [LABEL: x=<number> y=<number> ttl=<milliseconds> text=\"short text\"]",
-    "- Example: Check this area. [RECT: x=180 y=80 w=120 h=60 ttl=6000 label=\"Here\"]",
-    "- Example: Let me highlight the menu area. [SPOTLIGHT: shape=rect x=50 y=60 w=200 h=80 ttl=6000]",
+    "- Example: Check this area. [RECT: x=95 y=157 w=120 h=35 ttl=12000 label=\"Features · Pricing\" spotlight]",
   ];
 }
 

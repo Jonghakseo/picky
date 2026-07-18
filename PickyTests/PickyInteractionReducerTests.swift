@@ -621,7 +621,6 @@ struct PickyInteractionReducerTests {
             shape: .rect,
             displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100),
             rect: CGRect(x: 20, y: 20, width: 30, height: 20),
-            spotlightShape: nil,
             label: nil,
             expiresAt: baseDate.addingTimeInterval(66),
             pendingTTL: 6
@@ -644,6 +643,7 @@ struct PickyInteractionReducerTests {
         let first = reduce(PickyInteractionState(), .agentAnnotationsRequested(mode: .append, annotations: [annotation(id: "rect")]), id: timerA)
         let firstTarget = pointerTarget(from: first)
         #expect(firstTarget.id == "annotation-rect")
+        #expect(firstTarget.highlightKind == .annotation)
         #expect(firstTarget.returnsToCursor == false)
         #expect(firstTarget.parksAtTarget)
 
@@ -739,7 +739,6 @@ struct PickyInteractionReducerTests {
             shape: .rect,
             displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100),
             rect: CGRect(x: 10, y: 20, width: 20, height: 10),
-            spotlightShape: nil,
             label: nil,
             expiresAt: baseDate
         )

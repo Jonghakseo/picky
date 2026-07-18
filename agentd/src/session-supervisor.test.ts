@@ -1050,7 +1050,7 @@ describe("SessionSupervisor", () => {
     const result = await supervisor.requestAnnotationOverlay({
       mode: "replace",
       annotations: [
-        { id: "spot", shape: "spotlight", spotlightShape: "circle", x: -20, y: 900, r: 30 },
+        { id: "rect", shape: "rect", x: -20, y: 900, w: 80, h: 30, spotlight: true },
         { id: "line", shape: "line", x1: 0, y1: 0, x2: 900, y2: 900, ttlMs: 500 },
       ],
     });
@@ -1064,7 +1064,7 @@ describe("SessionSupervisor", () => {
       screenBounds: { x: 100, y: 200, width: 300, height: 400 },
       screenshotSize: { width: 600, height: 800 },
       annotations: [
-        { id: "spot", shape: "spotlight", x: 0, y: 800, r: 30, clamped: true },
+        { id: "rect", shape: "rect", x: 0, y: 800, w: 60, h: 0, spotlight: true, clamped: true },
         { id: "line", shape: "line", x1: 0, y1: 0, x2: 600, y2: 800, ttlMs: 500, clamped: true },
       ],
     });

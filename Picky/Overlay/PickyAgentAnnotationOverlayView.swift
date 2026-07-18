@@ -21,8 +21,8 @@ struct PickyAgentAnnotationOverlayView: View {
         }
     }
 
-    private var spotlights: [PickyAgentAnnotation] {
-        annotationsForScreen.filter { $0.shape == .spotlight }
+    private var spotlightedAnnotations: [PickyAgentAnnotation] {
+        annotationsForScreen.filter(\.spotlight)
     }
 
     /// Semantic layers are intentionally fixed: agents cannot control stacking.
@@ -80,14 +80,14 @@ struct PickyAgentAnnotationOverlayView: View {
                     paths: PickyAnnotationRoughGeometry.linePaths(id: annotation.id, start: start, end: end)
                 )
             }
-        case .label, .spotlight:
+        case .label:
             EmptyView()
         }
     }
 
     @ViewBuilder
     private var spotlightMask: some View {
-        if !spotlights.isEmpty {
+        if !spotlightedAnnotations.isEmpty {
             Canvas { context, size in
                 context.fill(
                     Path(CGRect(origin: .zero, size: size)),
@@ -96,10 +96,10 @@ struct PickyAgentAnnotationOverlayView: View {
                 // destinationOut makes overlapping holes a union, so every
                 // spotlighted region remains fully clear while dimming draws once.
                 context.blendMode = .destinationOut
-                for hole in PickyAnnotationSpotlightMaskGeometry.holes(for: spotlights, screenFrame: screenFrame) {
+                for hole in PickyAnnotationSpotlightMaskGeometry.holes(for: spotlightedAnnotations, screenFrame: screenFrame) {
                     switch hole {
-                    case .circle(let bounds):
-                        context.fill(Path(ellipseIn: bounds), with: .color(.black))
+                    case .roundedRect(let bounds, let cornerRadius):
+                        context.fill(Path(roundedRect: bounds, cornerRadius: cornerRadius), with: .color(.black))
                     case .rect(let bounds):
                         context.fill(Path(bounds), with: .color(.black))
                     }
@@ -154,7 +154,7 @@ enum PickyAnnotationLabelGeometry {
                 x: (localStart.x + localEnd.x) / 2,
                 y: max(0, (localStart.y + localEnd.y) / 2 - strokeOffset)
             )
-        case .spotlight, .label:
+        case .label:
             return nil
         }
     }
@@ -217,30 +217,45 @@ private struct PickyRoughStrokeView: View {
 
 enum PickyAnnotationSpotlightMaskGeometry {
     enum Hole: Equatable {
-        case circle(CGRect)
+        case roundedRect(CGRect, cornerRadius: CGFloat)
         case rect(CGRect)
     }
 
     static let dimmingOpacity = PickyAgentAnnotationOverlayStyle.dimmingOpacity
+    static let rectPadding: CGFloat = DS.Spacing.sm
+    static let linePadding: CGFloat = DS.Spacing.md
+    static let rectCornerRadius: CGFloat = DS.CornerRadius.small
 
     static func holes(for annotations: [PickyAgentAnnotation], screenFrame: CGRect) -> [Hole] {
         annotations.compactMap { annotation in
-            guard annotation.shape == .spotlight else { return nil }
-            if annotation.spotlightShape == .circle,
-               let point = annotation.point,
-               let radius = annotation.radius {
-                let localPoint = PickyOverlayGeometry.swiftUICoordinates(for: point, in: screenFrame)
-                return .circle(CGRect(
-                    x: localPoint.x - radius,
-                    y: localPoint.y - radius,
-                    width: radius * 2,
-                    height: radius * 2
+            guard annotation.spotlight else { return nil }
+            switch annotation.shape {
+            case .rect:
+                guard let rect = annotation.rect else { return nil }
+                let localRect = localRect(rect, in: screenFrame).insetBy(dx: -rectPadding, dy: -rectPadding)
+                return .roundedRect(localRect, cornerRadius: min(rectCornerRadius, min(localRect.width, localRect.height) / 2))
+            case .line:
+                guard let start = annotation.point, let end = annotation.endPoint else { return nil }
+                let localStart = PickyOverlayGeometry.swiftUICoordinates(for: start, in: screenFrame)
+                let localEnd = PickyOverlayGeometry.swiftUICoordinates(for: end, in: screenFrame)
+                return .rect(CGRect(
+                    x: min(localStart.x, localEnd.x) - linePadding,
+                    y: min(localStart.y, localEnd.y) - linePadding,
+                    width: abs(localEnd.x - localStart.x) + linePadding * 2,
+                    height: abs(localEnd.y - localStart.y) + linePadding * 2
                 ))
+            case .label:
+                return nil
             }
-            guard let rect = annotation.rect else { return nil }
-            let topLeft = PickyOverlayGeometry.swiftUICoordinates(for: CGPoint(x: rect.minX, y: rect.maxY), in: screenFrame)
-            return .rect(CGRect(origin: topLeft, size: rect.size))
         }
+    }
+
+    private static func localRect(_ rect: CGRect, in screenFrame: CGRect) -> CGRect {
+        let topLeft = PickyOverlayGeometry.swiftUICoordinates(
+            for: CGPoint(x: rect.minX, y: rect.maxY),
+            in: screenFrame
+        )
+        return CGRect(origin: topLeft, size: rect.size)
     }
 }
 

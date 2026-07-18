@@ -18,20 +18,6 @@ private enum PickyAnnotationPointerTarget {
             guard let start = annotation.point, let end = annotation.endPoint else { return nil }
             anchor = CGPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
             targetFrame = nil
-        case .spotlight:
-            if let rect = annotation.rect {
-                anchor = CGPoint(x: rect.midX, y: rect.midY)
-                targetFrame = rect
-            } else if let point = annotation.point {
-                anchor = point
-                if let radius = annotation.radius {
-                    targetFrame = CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2)
-                } else {
-                    targetFrame = nil
-                }
-            } else {
-                return nil
-            }
         case .label:
             guard let point = annotation.point else { return nil }
             anchor = point
@@ -47,7 +33,7 @@ private enum PickyAnnotationPointerTarget {
             bubbleText: "",
             duration: hoverDuration,
             targetFrame: targetFrame,
-            highlightKind: .screenElement,
+            highlightKind: .annotation,
             returnsToCursor: true
         )
     }

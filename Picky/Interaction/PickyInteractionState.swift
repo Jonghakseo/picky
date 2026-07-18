@@ -248,8 +248,7 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
     var point: CGPoint?
     var endPoint: CGPoint?
     var rect: CGRect?
-    var radius: CGFloat?
-    let spotlightShape: PickyAnnotationSpotlightShape?
+    let spotlight: Bool
     let label: String?
     var expiresAt: Date
     /// Non-nil while the overlay is waiting for the first response audio. Once
@@ -263,8 +262,7 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
         point: CGPoint? = nil,
         endPoint: CGPoint? = nil,
         rect: CGRect? = nil,
-        radius: CGFloat? = nil,
-        spotlightShape: PickyAnnotationSpotlightShape?,
+        spotlight: Bool = false,
         label: String?,
         expiresAt: Date,
         pendingTTL: TimeInterval? = nil
@@ -275,15 +273,14 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
         self.point = point
         self.endPoint = endPoint
         self.rect = rect
-        self.radius = radius
-        self.spotlightShape = spotlightShape
+        self.spotlight = spotlight
         self.label = label
         self.expiresAt = expiresAt
         self.pendingTTL = pendingTTL
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, shape, displayFrame, point, endPoint, rect, radius, spotlightShape, label, expiresAt, pendingTTL
+        case id, shape, displayFrame, point, endPoint, rect, spotlight, label, expiresAt, pendingTTL
     }
 
     init(from decoder: Decoder) throws {
@@ -294,8 +291,7 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
         point = try container.decodeIfPresent(CGPoint.self, forKey: .point)
         endPoint = try container.decodeIfPresent(CGPoint.self, forKey: .endPoint)
         rect = try container.decodeIfPresent(CGRect.self, forKey: .rect)
-        radius = try container.decodeIfPresent(CGFloat.self, forKey: .radius)
-        spotlightShape = try container.decodeIfPresent(PickyAnnotationSpotlightShape.self, forKey: .spotlightShape)
+        spotlight = try container.decodeIfPresent(Bool.self, forKey: .spotlight) ?? false
         label = try container.decodeIfPresent(String.self, forKey: .label)
         expiresAt = try container.decode(Date.self, forKey: .expiresAt)
         pendingTTL = try container.decodeIfPresent(TimeInterval.self, forKey: .pendingTTL)

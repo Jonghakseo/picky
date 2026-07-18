@@ -15,6 +15,31 @@ enum PickyHUDArchiveHoldPolicy {
     }
 }
 
+/// Selects the one view that owns the new-Pickle popover. `nil` represents
+/// the regular dock-bottom add slot; a group id represents that group's empty
+/// create slot. Keeping this policy explicit prevents a group action from
+/// presenting relative to the always-rendered bottom button.
+enum PickyHUDDockNewPicklePopoverPolicy {
+    static func isPresented(
+        pickerIsPresented: Bool,
+        activeTargetGroupID: String?,
+        anchorGroupID: String?
+    ) -> Bool {
+        pickerIsPresented && activeTargetGroupID == anchorGroupID
+    }
+
+    static func shouldExpandDockAddSlot(
+        pickerIsPresented: Bool,
+        activeTargetGroupID: String?
+    ) -> Bool {
+        isPresented(
+            pickerIsPresented: pickerIsPresented,
+            activeTargetGroupID: activeTargetGroupID,
+            anchorGroupID: nil
+        )
+    }
+}
+
 extension PickySessionListViewModel.SessionCard {
     var canRequestDockCompaction: Bool {
         guard !isCompacting else { return false }
@@ -293,10 +318,7 @@ struct PickyHUDDockRailView: View {
         }
         .onHover(perform: onDockHoverChanged)
         .onChange(of: isRecentPickleFolderPickerPresented) { _, isPresented in
-            withAnimation(PickyHUDExpansion.animation) {
-                isAddSlotExpanded = isPresented
-            }
-            onAddSlotExpandedChanged(isPresented)
+            updateDockAddSlotExpansion(pickerIsPresented: isPresented)
             if !isPresented {
                 newPickleTargetGroupID = nil
             }
@@ -605,30 +627,18 @@ struct PickyHUDDockRailView: View {
                         // Group has no visible members — render a small
                         // empty drop target so the user can still drag
                         // pickles in or expand/rename via the header menu.
-                        PickyHUDDockGroupEmptySlot(
-                            color: group.color,
-                            metrics: metrics,
-                            onCreatePickle: {
-                                showRecentPickleFolderPicker(targetGroupID: group.id)
-                            }
-                        )
+                        emptyGroupCreateSlot(for: group)
+                            .publishDockSlotCenter(
+                                sessionID: Self.emptyGroupDropTargetID(groupID: group.id),
+                                dockSide: dockSide
+                            )
+                    }
+                } else if members.isEmpty {
+                    emptyGroupCreateSlot(for: group)
                         .publishDockSlotCenter(
                             sessionID: Self.emptyGroupDropTargetID(groupID: group.id),
                             dockSide: dockSide
                         )
-                    }
-                } else if members.isEmpty {
-                    PickyHUDDockGroupEmptySlot(
-                        color: group.color,
-                        metrics: metrics,
-                        onCreatePickle: {
-                            showRecentPickleFolderPicker(targetGroupID: group.id)
-                        }
-                    )
-                    .publishDockSlotCenter(
-                        sessionID: Self.emptyGroupDropTargetID(groupID: group.id),
-                        dockSide: dockSide
-                    )
                 } else {
                     // Expanded group: members live inside the same app-drawer
                     // surface as the collapsed folder, extended along the dock
@@ -1282,21 +1292,89 @@ struct PickyHUDDockRailView: View {
 
     private func showRecentPickleFolderPicker(targetGroupID: String?) {
         newPickleTargetGroupID = targetGroupID
-        withAnimation(PickyHUDExpansion.animation) {
-            isAddSlotExpanded = true
-        }
-        onAddSlotExpandedChanged(true)
+        updateDockAddSlotExpansion(pickerIsPresented: true)
         isRecentPickleFolderPickerPresented = true
     }
 
-    private func createPickleInRecentFolder(_ cwd: String) {
-        let targetGroupID = newPickleTargetGroupID
+    private func updateDockAddSlotExpansion(pickerIsPresented: Bool) {
+        let expanded = PickyHUDDockNewPicklePopoverPolicy.shouldExpandDockAddSlot(
+            pickerIsPresented: pickerIsPresented,
+            activeTargetGroupID: newPickleTargetGroupID
+        )
+        withAnimation(PickyHUDExpansion.animation) {
+            isAddSlotExpanded = expanded
+        }
+        onAddSlotExpandedChanged(expanded)
+    }
+
+    private func newPicklePickerBinding(targetGroupID: String?) -> Binding<Bool> {
+        Binding(
+            get: {
+                PickyHUDDockNewPicklePopoverPolicy.isPresented(
+                    pickerIsPresented: isRecentPickleFolderPickerPresented,
+                    activeTargetGroupID: newPickleTargetGroupID,
+                    anchorGroupID: targetGroupID
+                )
+            },
+            set: { isPresented in
+                if isPresented {
+                    showRecentPickleFolderPicker(targetGroupID: targetGroupID)
+                } else if newPickleTargetGroupID == targetGroupID {
+                    isRecentPickleFolderPickerPresented = false
+                }
+            }
+        )
+    }
+
+    private func emptyGroupCreateSlot(for group: PickyDockGroup) -> some View {
+        newPicklePicker(
+            anchoredTo: PickyHUDDockGroupEmptySlot(
+                color: group.color,
+                metrics: metrics,
+                onCreatePickle: {
+                    showRecentPickleFolderPicker(targetGroupID: group.id)
+                }
+            ),
+            targetGroupID: group.id
+        )
+    }
+
+    private func newPicklePicker<Anchor: View>(
+        anchoredTo anchor: Anchor,
+        targetGroupID: String?
+    ) -> some View {
+        anchor.recentPickleFolderPicker(
+            isPresented: newPicklePickerBinding(targetGroupID: targetGroupID),
+            arrowEdge: recentPickleFolderPickerArrowEdge,
+            pinnedPickleCwds: pinnedPickleCwds,
+            recentPickleCwds: recentPickleCwds,
+            onCreatePickleInRecentFolder: { cwd in
+                createPickleInRecentFolder(cwd, targetGroupID: targetGroupID)
+            },
+            onChooseFolder: {
+                chooseFolderForNewPickle(targetGroupID: targetGroupID)
+            },
+            onRemoveRecentPickleFolder: onRemoveRecentPickleFolder,
+            onPinPickleFolder: onPinPickleFolder,
+            onUnpinPickleFolder: onUnpinPickleFolder,
+            // Use the full live list, not the collapsed projection slots, so
+            // members hidden inside a collapsed group remain selectable.
+            availableSessionsForGroupCreation: allSessions,
+            suggestedGroupColor: nextSuggestedGroupColor,
+            onCreateGroup: { name, memberIDs in
+                _ = onCreateDockGroup(name, memberIDs)
+            }
+        )
+    }
+
+    private func createPickleInRecentFolder(_ cwd: String, targetGroupID: String?) {
+        isRecentPickleFolderPickerPresented = false
         newPickleTargetGroupID = nil
         onCreatePickleInRecentFolder(cwd, targetGroupID)
     }
 
-    private func chooseFolderForNewPickle() {
-        let targetGroupID = newPickleTargetGroupID
+    private func chooseFolderForNewPickle(targetGroupID: String?) {
+        isRecentPickleFolderPickerPresented = false
         newPickleTargetGroupID = nil
         onCreatePickle(targetGroupID)
     }
@@ -1326,12 +1404,16 @@ struct PickyHUDDockRailView: View {
         }
         .buttonStyle(.plain)
         .recentPickleFolderPicker(
-            isPresented: $isRecentPickleFolderPickerPresented,
+            isPresented: newPicklePickerBinding(targetGroupID: nil),
             arrowEdge: recentPickleFolderPickerArrowEdge,
             pinnedPickleCwds: pinnedPickleCwds,
             recentPickleCwds: recentPickleCwds,
-            onCreatePickleInRecentFolder: createPickleInRecentFolder,
-            onChooseFolder: chooseFolderForNewPickle,
+            onCreatePickleInRecentFolder: { cwd in
+                createPickleInRecentFolder(cwd, targetGroupID: nil)
+            },
+            onChooseFolder: {
+                chooseFolderForNewPickle(targetGroupID: nil)
+            },
             onRemoveRecentPickleFolder: onRemoveRecentPickleFolder,
             onPinPickleFolder: onPinPickleFolder,
             onUnpinPickleFolder: onUnpinPickleFolder,
@@ -1400,12 +1482,16 @@ struct PickyHUDDockRailView: View {
         }
         .buttonStyle(.plain)
         .recentPickleFolderPicker(
-            isPresented: $isRecentPickleFolderPickerPresented,
+            isPresented: newPicklePickerBinding(targetGroupID: nil),
             arrowEdge: recentPickleFolderPickerArrowEdge,
             pinnedPickleCwds: pinnedPickleCwds,
             recentPickleCwds: recentPickleCwds,
-            onCreatePickleInRecentFolder: createPickleInRecentFolder,
-            onChooseFolder: chooseFolderForNewPickle,
+            onCreatePickleInRecentFolder: { cwd in
+                createPickleInRecentFolder(cwd, targetGroupID: nil)
+            },
+            onChooseFolder: {
+                chooseFolderForNewPickle(targetGroupID: nil)
+            },
             onRemoveRecentPickleFolder: onRemoveRecentPickleFolder,
             onPinPickleFolder: onPinPickleFolder,
             onUnpinPickleFolder: onUnpinPickleFolder,
@@ -1418,7 +1504,11 @@ struct PickyHUDDockRailView: View {
             }
         )
         .onHover { hovering in
-            let expanded = hovering || isRecentPickleFolderPickerPresented
+            let pickerKeepsExpanded = PickyHUDDockNewPicklePopoverPolicy.shouldExpandDockAddSlot(
+                pickerIsPresented: isRecentPickleFolderPickerPresented,
+                activeTargetGroupID: newPickleTargetGroupID
+            )
+            let expanded = hovering || pickerKeepsExpanded
             onAddSlotExpandedChanged(expanded)
             withAnimation(PickyHUDExpansion.animation) {
                 isAddSlotExpanded = expanded

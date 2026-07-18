@@ -25,10 +25,13 @@ final class PickySettingsViewModel: ObservableObject {
     func save() -> Bool {
         do {
             var updated = settings
-            // The settings panel edits a cached full settings snapshot, while manual Pickle
-            // creation updates recentPickleCwds/pinnedPickleCwds in the shared settings file at runtime.
-            // Preserve the latest disk-backed folder lists so a later Settings save cannot clobber them.
+            // The settings panel edits a cached full settings snapshot, while footer controls
+            // and manual Pickle creation update shared settings independently at runtime.
+            // Preserve those latest disk-backed values so a later Settings save cannot clobber
+            // appearance, HUD visibility, or recent/pinned folder changes.
             let runtimeSettings = store.load()
+            updated.appearance = runtimeSettings.appearance
+            updated.hudDockVisible = runtimeSettings.hudDockVisible
             updated.recentPickleCwds = runtimeSettings.recentPickleCwds
             updated.pinnedPickleCwds = runtimeSettings.pinnedPickleCwds
             try store.save(updated)

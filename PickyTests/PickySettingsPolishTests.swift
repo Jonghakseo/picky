@@ -216,6 +216,33 @@ struct PickySettingsPolishTests {
         #expect(saved.pinnedPickleCwds == [pinnedProject.path])
     }
 
+    @MainActor @Test func settingsViewModelSavePreservesFooterControlledPreferences() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let store = PickySettingsStore(appSupportRoot: root)
+        var settings = PickySettings.defaults(appSupportRoot: root)
+        settings.defaultCwd = project.path
+        settings.mainAgentCwd = project.path
+        settings.worktreeParent = project.path
+        try store.save(settings)
+
+        let viewModel = PickySettingsViewModel(store: store)
+        let appearanceStore = PickyAppearanceStore(settingsStore: store)
+        let visibilityStore = PickyHUDVisibilityStore(settingsStore: store)
+        appearanceStore.setMode(.light)
+        visibilityStore.setVisible(false)
+
+        viewModel.settings.mainAgentThinkingLevel = .high
+        #expect(viewModel.save())
+
+        let saved = store.load()
+        #expect(saved.mainAgentThinkingLevel == .high)
+        #expect(saved.appearance == .light)
+        #expect(!saved.hudDockVisible)
+    }
+
     @Test func settingsLoadDefaultsScreenContextScopeToFocusedScreenWhenLegacyFileLacksField() throws {
         let legacyJSON = """
         {
@@ -333,6 +360,44 @@ struct PickySettingsPolishTests {
         try store.save(settings)
 
         #expect(store.load().hudDockSizePreset == .large)
+    }
+
+    @Test func settingsLoadDefaultsHUDDockVisibleToTrueWhenLegacyFileLacksField() throws {
+        let legacyJSON = """
+        {
+          "defaultCwd": "/tmp",
+          "worktreeParent": "",
+          "daemonPath": "/tmp/agentd",
+          "logPath": "/tmp/logs"
+        }
+        """.data(using: .utf8)!
+
+        let settings = try JSONDecoder().decode(PickySettings.self, from: legacyJSON)
+
+        #expect(settings.hudDockVisible)
+    }
+
+    @MainActor @Test func hudVisibilityStoreTogglesAndPersistsThroughSettingsFile() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let settingsStore = PickySettingsStore(appSupportRoot: root)
+        var seed = PickySettings.defaults(appSupportRoot: root)
+        seed.defaultCwd = project.path
+        seed.mainAgentCwd = project.path
+        seed.worktreeParent = project.path
+        try settingsStore.save(seed)
+
+        let visibility = PickyHUDVisibilityStore(settingsStore: settingsStore)
+        #expect(visibility.isVisible)
+
+        visibility.toggle()
+        #expect(!visibility.isVisible)
+        #expect(!settingsStore.load().hudDockVisible)
+
+        let rehydrated = PickyHUDVisibilityStore(settingsStore: settingsStore)
+        #expect(!rehydrated.isVisible)
     }
 
     @Test func settingsLoadIgnoresRemovedHUDDockMinimizedField() throws {

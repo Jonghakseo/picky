@@ -9,6 +9,7 @@
 //
 
 import AppKit
+import Combine
 import SwiftUI
 
 final class PickyHUDPanel: NSPanel, PickyScreenCaptureExcludedWindow {
@@ -68,7 +69,9 @@ final class PickyHUDOverlayManager {
     private let viewModel: PickySessionListViewModel
     private let appearanceStore: PickyAppearanceStore
     private let fontScaleStore: PickyAppFontScaleStore
+    private let visibilityStore: PickyHUDVisibilityStore
     private let settingsStore: PickySettingsStore
+    private var visibilityCancellable: AnyCancellable?
     private let collapsedHeight: CGFloat = 180
     private let minimumHeight: CGFloat = 48
 
@@ -113,11 +116,13 @@ final class PickyHUDOverlayManager {
         viewModel: PickySessionListViewModel,
         appearanceStore: PickyAppearanceStore,
         fontScaleStore: PickyAppFontScaleStore,
+        visibilityStore: PickyHUDVisibilityStore,
         settingsStore: PickySettingsStore
     ) {
         self.viewModel = viewModel
         self.appearanceStore = appearanceStore
         self.fontScaleStore = fontScaleStore
+        self.visibilityStore = visibilityStore
         self.settingsStore = settingsStore
         let settings = settingsStore.load()
         self.currentPositionsByDisplayID = settings.hudDockPositions
@@ -227,7 +232,11 @@ final class PickyHUDOverlayManager {
 
     func start() {
         viewModel.start()
-        syncPanelsForCurrentScreens()
+        visibilityCancellable = visibilityStore.$isVisible
+            .removeDuplicates()
+            .sink { [weak self] isVisible in
+                self?.applyDockVisibility(isVisible)
+            }
         startScreenParametersObserver()
         startSettingsObserver()
     }
@@ -236,6 +245,11 @@ final class PickyHUDOverlayManager {
     /// notification banner; selection alone is not enough because each HUD view keeps
     /// its open card in local `heldSession` state.
     func focusSession(id: String) {
+        // Clicking a session notification is an explicit request to reveal its
+        // conversation, so restore a user-hidden dock before routing the open.
+        if !visibilityStore.isVisible {
+            visibilityStore.setVisible(true)
+        }
         // macOS notifications don't tell us which display they were shown on,
         // so use the screen under the cursor at click time as the target.
         // Falling back to `nil` (all displays) keeps focus working when the
@@ -258,10 +272,30 @@ final class PickyHUDOverlayManager {
     }
 
     func stop() {
+        visibilityCancellable = nil
         stopScreenParametersObserver()
         stopSettingsObserver()
         viewModel.stop()
         tearDownPanels()
+    }
+
+    private func applyDockVisibility(_ isVisible: Bool) {
+        if isVisible {
+            syncPanelsForCurrentScreens()
+            for (_, entry) in panelsByDisplayID {
+                entry.panel.orderFrontRegardless()
+            }
+            for (_, entry) in archiveUndoToastsByDisplayID where entry.toast != nil {
+                entry.panel.orderFrontRegardless()
+            }
+        } else {
+            for (_, entry) in panelsByDisplayID {
+                entry.panel.orderOut(nil)
+            }
+            for (_, entry) in archiveUndoToastsByDisplayID {
+                entry.panel.orderOut(nil)
+            }
+        }
     }
 
     private func tearDownPanels() {
@@ -298,6 +332,8 @@ final class PickyHUDOverlayManager {
                 entry.panel.orderOut(nil)
             }
         }
+
+        guard visibilityStore.isVisible else { return }
 
         // Create or reposition for every connected display.
         for screen in screens {
@@ -701,7 +737,7 @@ final class PickyHUDOverlayManager {
     // MARK: - Archive undo toast
 
     private func showArchiveUndoToast(displayID: CGDirectDisplayID, sessionID: String, title: String) {
-        guard screen(for: displayID) != nil else { return }
+        guard visibilityStore.isVisible, screen(for: displayID) != nil else { return }
         let toast = PickyHUDArchiveUndoToast(sessionID: sessionID, title: title)
         var entry = archiveUndoToastsByDisplayID[displayID] ?? makeArchiveUndoToastEntry()
         entry.dismissTask?.cancel()

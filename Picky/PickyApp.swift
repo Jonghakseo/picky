@@ -50,9 +50,12 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         return queue
     }()
     /// Single source of truth for the user-selected light/dark mode. Both the menu bar
-    /// companion panel and the HUD overlay observe this object so flipping the toggle
-    /// in the companion footer flips the entire UI surface.
+    /// companion panel and the HUD overlay observe this object so footer icon actions
+    /// update the entire UI surface.
     let appearanceStore: PickyAppearanceStore
+    /// Single source of truth for whether the HUD dock panels are shown. Hiding the
+    /// panels does not stop their shared session/client lifecycle.
+    let hudVisibilityStore: PickyHUDVisibilityStore
     /// Single source of truth for the global app font scale (⌘+ / ⌘- / ⌘0).
     /// Injected at every NSPanel hosting root so the HUD, Conversation, Companion,
     /// Settings, and Feedback surfaces all scale together. Detached report and
@@ -138,6 +141,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         viewModel: hudSessionViewModel,
         appearanceStore: appearanceStore,
         fontScaleStore: fontScaleStore,
+        visibilityStore: hudVisibilityStore,
         settingsStore: settingsStore
     )
     /// Shared with the plugin manager UI. Subscribes to the agent client for
@@ -157,6 +161,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
 
     override init() {
         self.appearanceStore = PickyAppearanceStore(settingsStore: settingsStore)
+        self.hudVisibilityStore = PickyHUDVisibilityStore(settingsStore: settingsStore)
         self.fontScaleStore = PickyAppFontScaleStore(settingsStore: settingsStore)
         self.onboardingActivator = PickyOnboardingActivator(settingsStore: settingsStore)
         super.init()
@@ -249,6 +254,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             sessionListViewModel: hudSessionViewModel,
             appearanceStore: appearanceStore,
             fontScaleStore: fontScaleStore,
+            hudVisibilityStore: hudVisibilityStore,
             updaterController: updaterController,
             navigator: panelNavigator,
             pluginReloadController: pluginReloadController

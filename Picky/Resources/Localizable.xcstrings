@@ -620,6 +620,38 @@
         }
       }
     },
+    "footer.dock.hide": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide Dock"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dock 숨기기"
+          }
+        }
+      }
+    },
+    "footer.dock.show": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show Dock"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dock 표시"
+          }
+        }
+      }
+    },
     "footer.quit.body": {
       "localizations": {
         "en": {

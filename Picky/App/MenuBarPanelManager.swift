@@ -42,6 +42,7 @@ final class MenuBarPanelManager: NSObject {
     private let sessionListViewModel: PickySessionListViewModel
     private let appearanceStore: PickyAppearanceStore
     private let fontScaleStore: PickyAppFontScaleStore
+    private let hudVisibilityStore: PickyHUDVisibilityStore
     private let updaterController: PickyUpdaterController
     private let pluginReloadController: PickyPluginReloadController
     /// Lives on the manager so the panel's tab/route selection survives
@@ -57,6 +58,7 @@ final class MenuBarPanelManager: NSObject {
         sessionListViewModel: PickySessionListViewModel,
         appearanceStore: PickyAppearanceStore,
         fontScaleStore: PickyAppFontScaleStore,
+        hudVisibilityStore: PickyHUDVisibilityStore,
         updaterController: PickyUpdaterController,
         navigator: PickyPanelNavigator,
         pluginReloadController: PickyPluginReloadController
@@ -65,6 +67,7 @@ final class MenuBarPanelManager: NSObject {
         self.sessionListViewModel = sessionListViewModel
         self.appearanceStore = appearanceStore
         self.fontScaleStore = fontScaleStore
+        self.hudVisibilityStore = hudVisibilityStore
         self.updaterController = updaterController
         self.navigator = navigator
         self.pluginReloadController = pluginReloadController
@@ -209,6 +212,7 @@ final class MenuBarPanelManager: NSObject {
             )
             .frame(width: self.panelWidth, height: self.panelHeight)
             .environmentObject(self.appearanceStore)
+            .environmentObject(self.hudVisibilityStore)
             .environmentObject(self.updaterController)
             .environmentObject(self.pluginReloadController)
             .modifier(PickyPreferredColorSchemeModifier(store: self.appearanceStore))

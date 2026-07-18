@@ -129,8 +129,9 @@ Most toggles and pickers save immediately. Directory and provider text fields sh
 Footer controls are always visible:
 
 - **Quit**: asks for confirmation before terminating Picky.
+- **Hide Dock / Show Dock**: hides or restores the HUD dock on every display without stopping Pickles or disconnecting their sessions. The choice persists across relaunches. Clicking a Pickle notification explicitly restores the Dock so the requested conversation can open.
 - **Send feedback (bug glyph)**: opens the feedback form regardless of which tab you are on. Routes the panel to Status → Send feedback so the back chevron lands on a familiar surface afterward.
-- **Light/Dark toggle**: switches the Picky UI appearance and persists the choice.
+- **Light/Dark icons**: click the sun or moon directly to select and persist the Picky UI appearance. The selected icon uses a quiet highlighted background.
 
 ## 3. Global shortcuts
 

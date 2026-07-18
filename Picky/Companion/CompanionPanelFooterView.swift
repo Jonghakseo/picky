@@ -2,24 +2,22 @@
 //  CompanionPanelFooterView.swift
 //  Picky
 //
-//  Footer controls for the companion panel: Quit on the left, light/dark
-//  appearance toggle on the right. The toggle flips PickyAppearanceStore.mode,
-//  which feeds `.preferredColorScheme(...)` at every NSPanel root and persists
-//  to the Picky settings file so the choice survives relaunches.
+//  Footer controls for the companion panel. App/surface actions stay grouped
+//  on the left; feedback and direct light/dark appearance actions stay on the
+//  right. Both HUD visibility and appearance persist across relaunches.
 //
 
 import AppKit
 import SwiftUI
 
 struct CompanionPanelFooterView: View {
-    @EnvironmentObject private var appearanceStore: PickyAppearanceStore
     @State private var isQuitConfirmationPresented = false
 
     /// Settings edits that need a fresh Picky process to become the applied
     /// runtime/daemon environment. When present, the left footer action becomes
     /// Restart instead of Quit.
     var restartRequirement: PickyRestartRequirement = .none
-    /// Tapped when the user hits the bug glyph next to the appearance toggle.
+    /// Tapped when the user hits the bug glyph next to the appearance controls.
     /// Hoisted to the parent so the footer stays a leaf view; the parent
     /// routes the panel to `Status → Feedback` regardless of which tab is
     /// currently active.
@@ -50,11 +48,17 @@ struct CompanionPanelFooterView: View {
             .buttonStyle(.plain)
             .hoverAffordance()
 
-            Spacer()
+            CompanionPanelFooterDivider()
+
+            CompanionPanelDockVisibilityButton()
+
+            Spacer(minLength: 8)
 
             CompanionPanelFeedbackGlyphButton(onTap: onFeedbackTapped)
 
-            CompanionPanelAppearanceToggle()
+            CompanionPanelFooterDivider()
+
+            CompanionPanelAppearancePicker()
         }
         .alert(L10n.t(primaryActionRequiresRestart ? "footer.restart.title" : "footer.quit.title"), isPresented: $isQuitConfirmationPresented) {
             Button(L10n.t("common.cancel"), role: .cancel) {}
@@ -76,6 +80,7 @@ struct CompanionPanelFooterView: View {
 /// and quiet hover/pressed feedback.
 struct CompanionPanelIconActionStyle: ButtonStyle {
     var size: CGFloat = 28
+    var isSelected = false
 
     @State private var isHovering = false
 
@@ -85,22 +90,60 @@ struct CompanionPanelIconActionStyle: ButtonStyle {
             .contentShape(RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous))
             .background(
                 RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
-                    .fill(
-                        configuration.isPressed
-                            ? DS.Colors.surface4
-                            : isHovering ? DS.Colors.surface3.opacity(0.7) : Color.clear
-                    )
+                    .fill(backgroundColor(isPressed: configuration.isPressed))
             )
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .animation(.easeOut(duration: DS.Animation.fast), value: configuration.isPressed)
             .animation(.easeOut(duration: DS.Animation.fast), value: isHovering)
             .onHover { isHovering = $0 }
     }
+
+    private func backgroundColor(isPressed: Bool) -> Color {
+        if isPressed { return DS.Colors.surface4 }
+        if isHovering { return DS.Colors.surface3.opacity(0.7) }
+        if isSelected { return DS.Colors.surface2.opacity(0.72) }
+        return .clear
+    }
+}
+
+private struct CompanionPanelFooterDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(DS.Colors.borderSubtle.opacity(0.55))
+            .frame(width: 1, height: 18)
+            .accessibilityHidden(true)
+    }
+}
+
+private struct CompanionPanelDockVisibilityButton: View {
+    @EnvironmentObject private var visibilityStore: PickyHUDVisibilityStore
+
+    private var presentation: CompanionPanelDockActionPresentation {
+        .resolve(isDockVisible: visibilityStore.isVisible)
+    }
+
+    var body: some View {
+        Button {
+            visibilityStore.toggle()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: presentation.systemImage)
+                    .pickyFont(size: 11, weight: .medium)
+                Text(LocalizedStringKey(presentation.titleKey))
+                    .pickyFont(size: 12, weight: .medium)
+            }
+            .foregroundColor(DS.Colors.textSecondary)
+        }
+        .buttonStyle(.plain)
+        .hoverAffordance()
+        .help(Text(LocalizedStringKey(presentation.titleKey)))
+        .accessibilityLabel(Text(LocalizedStringKey(presentation.titleKey)))
+    }
 }
 
 /// Subtle bug glyph that drills the panel into the feedback sub-page. Styled
-/// to match the appearance toggle's icon buttons (same size, same tertiary
-/// foreground, same primary-on-hover treatment) so it reads as part of the
+/// to match the appearance icon buttons (same size, same tertiary foreground,
+/// same primary-on-hover treatment) so it reads as part of the
 /// footer's icon row rather than a separate CTA. The actual routing lives in
 /// the parent so this stays a leaf view.
 struct CompanionPanelFeedbackGlyphButton: View {
@@ -123,34 +166,16 @@ struct CompanionPanelFeedbackGlyphButton: View {
     }
 }
 
-/// Compact light/dark switch shown in the footer's right edge. The sun and
-/// moon icons act as both labels and click affordances so users can tap either
-/// side as well as drag the SwiftUI Toggle thumb.
-struct CompanionPanelAppearanceToggle: View {
+/// Direct light/dark appearance actions shown at the footer's right edge.
+/// Each icon selects its corresponding mode; no redundant switch is rendered.
+struct CompanionPanelAppearancePicker: View {
     @EnvironmentObject private var appearanceStore: PickyAppearanceStore
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 2) {
             iconButton(systemName: "sun.max.fill", target: .light, accessibilityLabel: "Use light appearance")
-
-            Toggle("", isOn: toggleBinding)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .tint(DS.Colors.accent)
-                .help("Switch between light and dark appearance")
-
             iconButton(systemName: "moon.fill", target: .dark, accessibilityLabel: "Use dark appearance")
         }
-    }
-
-    /// Binding maps `.dark → true` so the switch reads as "dark on / light off",
-    /// matching the moon icon being on the right.
-    private var toggleBinding: Binding<Bool> {
-        Binding(
-            get: { appearanceStore.mode == .dark },
-            set: { isDark in appearanceStore.setMode(isDark ? .dark : .light) }
-        )
     }
 
     private func iconButton(systemName: String, target: PickyAppearanceMode, accessibilityLabel: String) -> some View {
@@ -162,7 +187,7 @@ struct CompanionPanelAppearanceToggle: View {
                 .foregroundColor(appearanceStore.mode == target ? DS.Colors.textPrimary : DS.Colors.textTertiary)
                 .frame(width: 14, height: 14)
         }
-        .buttonStyle(CompanionPanelIconActionStyle())
+        .buttonStyle(CompanionPanelIconActionStyle(isSelected: appearanceStore.mode == target))
         .help(accessibilityLabel)
         .accessibilityLabel(accessibilityLabel)
     }

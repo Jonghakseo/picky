@@ -644,9 +644,12 @@ struct PickySettings: Codable, Equatable {
     /// ID. Each monitor manages its own collapsed groups independently; a
     /// missing entry falls back to the layout's stored `isCollapsed` default.
     var hudDockGroupCollapse: [String: [String: Bool]]
-    /// Global visibility of the HUD dock panels. Hiding only orders the panels
-    /// out; session/client lifecycles continue running in the background.
+    /// Legacy default visibility for HUD dock panels. Existing settings files
+    /// use this value for every display until a display-specific override exists.
     var hudDockVisible: Bool
+    /// Per-display HUD dock visibility overrides keyed by display ID. A missing
+    /// entry inherits `hudDockVisible`, preserving legacy all-display behavior.
+    var hudDockVisibilityByDisplayID: [String: Bool]
     /// S/M/L size preset for the Pickle dock rail only. The conversation card keeps
     /// its current width so the setting stays visually scoped to the dock.
     var hudDockSizePreset: PickyHUDDockSizePreset
@@ -781,6 +784,7 @@ struct PickySettings: Codable, Equatable {
         hudDockPositions: [String: PickyHUDDockPosition] = [:],
         hudDockGroupCollapse: [String: [String: Bool]] = [:],
         hudDockVisible: Bool = true,
+        hudDockVisibilityByDisplayID: [String: Bool] = [:],
         hudDockSizePreset: PickyHUDDockSizePreset = .medium,
         hudCardSizes: [String: PickyHUDCardSize] = [:],
         updateChannel: PickyUpdateChannel = .stable,
@@ -851,6 +855,7 @@ struct PickySettings: Codable, Equatable {
         self.hudDockPositions = hudDockPositions
         self.hudDockGroupCollapse = hudDockGroupCollapse
         self.hudDockVisible = hudDockVisible
+        self.hudDockVisibilityByDisplayID = hudDockVisibilityByDisplayID
         self.hudDockSizePreset = hudDockSizePreset
         self.hudCardSizes = hudCardSizes
         self.updateChannel = updateChannel
@@ -947,6 +952,7 @@ struct PickySettings: Codable, Equatable {
             hudDockPositions: [:],
             hudDockGroupCollapse: [:],
             hudDockVisible: true,
+            hudDockVisibilityByDisplayID: [:],
             hudDockSizePreset: .medium,
             hudCardSizes: [:],
             updateChannel: defaultUpdateChannel(forReleaseChannel: AppBundleConfiguration.releaseChannel),
@@ -1069,6 +1075,7 @@ struct PickySettings: Codable, Equatable {
         case hudDockPositions
         case hudDockGroupCollapse
         case hudDockVisible
+        case hudDockVisibilityByDisplayID
         case hudDockSizePreset
         case hudCardSizes
         case updateChannel
@@ -1144,6 +1151,7 @@ struct PickySettings: Codable, Equatable {
         useConversationCard = try container.decodeIfPresent(Bool.self, forKey: .useConversationCard) ?? defaults.useConversationCard
         hudDockGroupCollapse = try container.decodeIfPresent([String: [String: Bool]].self, forKey: .hudDockGroupCollapse) ?? defaults.hudDockGroupCollapse
         hudDockVisible = try container.decodeIfPresent(Bool.self, forKey: .hudDockVisible) ?? defaults.hudDockVisible
+        hudDockVisibilityByDisplayID = try container.decodeIfPresent([String: Bool].self, forKey: .hudDockVisibilityByDisplayID) ?? [:]
         hudDockSizePreset = try container.decodeIfPresent(PickyHUDDockSizePreset.self, forKey: .hudDockSizePreset) ?? defaults.hudDockSizePreset
         hudCardSizes = (try container.decodeIfPresent([String: PickyHUDCardSize].self, forKey: .hudCardSizes) ?? defaults.hudCardSizes)
             .mapValues { $0.clamped() }

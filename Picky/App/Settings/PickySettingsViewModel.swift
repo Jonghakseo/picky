@@ -32,6 +32,7 @@ final class PickySettingsViewModel: ObservableObject {
             let runtimeSettings = store.load()
             updated.appearance = runtimeSettings.appearance
             updated.hudDockVisible = runtimeSettings.hudDockVisible
+            updated.hudDockVisibilityByDisplayID = runtimeSettings.hudDockVisibilityByDisplayID
             updated.recentPickleCwds = runtimeSettings.recentPickleCwds
             updated.pinnedPickleCwds = runtimeSettings.pinnedPickleCwds
             try store.save(updated)

@@ -118,13 +118,24 @@ private struct CompanionPanelFooterDivider: View {
 private struct CompanionPanelDockVisibilityButton: View {
     @EnvironmentObject private var visibilityStore: PickyHUDVisibilityStore
 
+    /// The footer is hosted in the menu-bar companion panel. Resolve the screen
+    /// under its click location so this action only affects the dock alongside
+    /// the display where the companion is open.
+    private var companionDisplayID: CGDirectDisplayID? {
+        let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }
+            ?? NSApp.keyWindow?.screen
+            ?? NSScreen.main
+        return screen?.pickyDisplayID
+    }
+
     private var presentation: CompanionPanelDockActionPresentation {
-        .resolve(isDockVisible: visibilityStore.isVisible)
+        .resolve(isDockVisible: visibilityStore.isVisible(for: companionDisplayID))
     }
 
     var body: some View {
         Button {
-            visibilityStore.toggle()
+            guard let companionDisplayID else { return }
+            visibilityStore.toggle(for: companionDisplayID)
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: presentation.systemImage)

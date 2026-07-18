@@ -3,6 +3,7 @@
 //  PickyTests
 //
 
+import CoreGraphics
 import Foundation
 import Testing
 @testable import Picky
@@ -231,8 +232,9 @@ struct PickySettingsPolishTests {
         let viewModel = PickySettingsViewModel(store: store)
         let appearanceStore = PickyAppearanceStore(settingsStore: store)
         let visibilityStore = PickyHUDVisibilityStore(settingsStore: store)
+        let displayID: CGDirectDisplayID = 1
         appearanceStore.setMode(.light)
-        visibilityStore.setVisible(false)
+        visibilityStore.setVisible(false, for: displayID)
 
         viewModel.settings.mainAgentThinkingLevel = .high
         #expect(viewModel.save())
@@ -240,7 +242,8 @@ struct PickySettingsPolishTests {
         let saved = store.load()
         #expect(saved.mainAgentThinkingLevel == .high)
         #expect(saved.appearance == .light)
-        #expect(!saved.hudDockVisible)
+        #expect(saved.hudDockVisible)
+        #expect(saved.hudDockVisibilityByDisplayID[String(displayID)] == false)
     }
 
     @Test func settingsLoadDefaultsScreenContextScopeToFocusedScreenWhenLegacyFileLacksField() throws {
@@ -375,9 +378,10 @@ struct PickySettingsPolishTests {
         let settings = try JSONDecoder().decode(PickySettings.self, from: legacyJSON)
 
         #expect(settings.hudDockVisible)
+        #expect(settings.hudDockVisibilityByDisplayID.isEmpty)
     }
 
-    @MainActor @Test func hudVisibilityStoreTogglesAndPersistsThroughSettingsFile() throws {
+    @MainActor @Test func hudVisibilityStoreTogglesOnlySpecifiedDisplayAndPersistsThroughSettingsFile() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let project = root.appendingPathComponent("project", isDirectory: true)
@@ -389,15 +393,20 @@ struct PickySettingsPolishTests {
         seed.worktreeParent = project.path
         try settingsStore.save(seed)
 
+        let displayA: CGDirectDisplayID = 101
+        let displayB: CGDirectDisplayID = 202
         let visibility = PickyHUDVisibilityStore(settingsStore: settingsStore)
-        #expect(visibility.isVisible)
+        #expect(visibility.isVisible(for: displayA))
+        #expect(visibility.isVisible(for: displayB))
 
-        visibility.toggle()
-        #expect(!visibility.isVisible)
-        #expect(!settingsStore.load().hudDockVisible)
+        visibility.toggle(for: displayA)
+        #expect(!visibility.isVisible(for: displayA))
+        #expect(visibility.isVisible(for: displayB))
+        #expect(settingsStore.load().hudDockVisibilityByDisplayID[String(displayA)] == false)
 
         let rehydrated = PickyHUDVisibilityStore(settingsStore: settingsStore)
-        #expect(!rehydrated.isVisible)
+        #expect(!rehydrated.isVisible(for: displayA))
+        #expect(rehydrated.isVisible(for: displayB))
     }
 
     @Test func settingsLoadIgnoresRemovedHUDDockMinimizedField() throws {

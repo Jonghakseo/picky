@@ -232,10 +232,9 @@ final class PickyHUDOverlayManager {
 
     func start() {
         viewModel.start()
-        visibilityCancellable = visibilityStore.$isVisible
-            .removeDuplicates()
-            .sink { [weak self] isVisible in
-                self?.applyDockVisibility(isVisible)
+        visibilityCancellable = visibilityStore.$visibilityByDisplayID
+            .sink { [weak self] _ in
+                self?.applyDockVisibility()
             }
         startScreenParametersObserver()
         startSettingsObserver()
@@ -246,15 +245,16 @@ final class PickyHUDOverlayManager {
     /// its open card in local `heldSession` state.
     func focusSession(id: String) {
         // Clicking a session notification is an explicit request to reveal its
-        // conversation, so restore a user-hidden dock before routing the open.
-        if !visibilityStore.isVisible {
-            visibilityStore.setVisible(true)
-        }
+        // conversation, so restore the dock on the target display before routing
+        // the open without unexpectedly revealing other user-hidden displays.
         // macOS notifications don't tell us which display they were shown on,
         // so use the screen under the cursor at click time as the target.
-        // Falling back to `nil` (all displays) keeps focus working when the
-        // cursor isn't over a known Picky screen.
         let targetDisplayID = displayIDUnderCursor()
+        if let targetDisplayID {
+            visibilityStore.setVisible(true, for: targetDisplayID)
+        } else {
+            visibilityStore.setAllVisible(true)
+        }
         viewModel.requestOpenSession(sessionID: id, targetDisplayID: targetDisplayID)
         if let targetDisplayID, let entry = panelsByDisplayID[targetDisplayID] {
             entry.panel.orderFrontRegardless()
@@ -279,20 +279,13 @@ final class PickyHUDOverlayManager {
         tearDownPanels()
     }
 
-    private func applyDockVisibility(_ isVisible: Bool) {
-        if isVisible {
-            syncPanelsForCurrentScreens()
-            for (_, entry) in panelsByDisplayID {
+    private func applyDockVisibility() {
+        syncPanelsForCurrentScreens()
+        for (displayID, entry) in archiveUndoToastsByDisplayID {
+            guard entry.toast != nil else { continue }
+            if visibilityStore.isVisible(for: displayID) {
                 entry.panel.orderFrontRegardless()
-            }
-            for (_, entry) in archiveUndoToastsByDisplayID where entry.toast != nil {
-                entry.panel.orderFrontRegardless()
-            }
-        } else {
-            for (_, entry) in panelsByDisplayID {
-                entry.panel.orderOut(nil)
-            }
-            for (_, entry) in archiveUndoToastsByDisplayID {
+            } else {
                 entry.panel.orderOut(nil)
             }
         }
@@ -333,18 +326,18 @@ final class PickyHUDOverlayManager {
             }
         }
 
-        guard visibilityStore.isVisible else { return }
-
-        // Create or reposition for every connected display.
+        // Create or reposition for every connected display, then independently
+        // order each panel in or out according to that display's visibility.
         for screen in screens {
             guard let displayID = screen.pickyDisplayID else { continue }
-            let shouldOrderFront = panelsByDisplayID[displayID] == nil
-            if shouldOrderFront {
+            if panelsByDisplayID[displayID] == nil {
                 panelsByDisplayID[displayID] = makePanelEntry(displayID: displayID)
             }
             positionPanel(on: screen, displayID: displayID)
-            if shouldOrderFront {
+            if visibilityStore.isVisible(for: displayID) {
                 panelsByDisplayID[displayID]?.panel.orderFrontRegardless()
+            } else {
+                panelsByDisplayID[displayID]?.panel.orderOut(nil)
             }
         }
         for displayID in archiveUndoToastsByDisplayID.keys {
@@ -737,7 +730,7 @@ final class PickyHUDOverlayManager {
     // MARK: - Archive undo toast
 
     private func showArchiveUndoToast(displayID: CGDirectDisplayID, sessionID: String, title: String) {
-        guard visibilityStore.isVisible, screen(for: displayID) != nil else { return }
+        guard visibilityStore.isVisible(for: displayID), screen(for: displayID) != nil else { return }
         let toast = PickyHUDArchiveUndoToast(sessionID: sessionID, title: title)
         var entry = archiveUndoToastsByDisplayID[displayID] ?? makeArchiveUndoToastEntry()
         entry.dismissTask?.cancel()
@@ -1104,7 +1097,7 @@ final class PickyHUDOverlayManager {
     }
 }
 
-private extension NSScreen {
+extension NSScreen {
     /// `CGDirectDisplayID` is stable across screen reconfigurations, while
     /// `NSScreen` instance identity is not. Returns `nil` for headless or
     /// unrecognized screens so callers can skip them.

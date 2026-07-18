@@ -67,6 +67,7 @@ private final class FakeVoiceSelectionStore: PickySessionSelectionStoring {
 @MainActor
 private final class FakeSpeechPlaybackProvider: PickySpeechPlaybackProvider {
     let displayName = "Fake Speech"
+    var supportsIncrementalPlayback = false
     private(set) var spokenUtterances: [String] = []
     private var onFinish: ((Bool) -> Void)?
     var shouldStartSpeaking = true
@@ -829,6 +830,73 @@ struct PickyCompanionManagerTests {
 
         #expect(speechProvider.spokenUtterances == ["빠른 답변"])
         manager.stop()
+    }
+
+    @Test func incrementalNarrationQueuesSentencesAndDoesNotRepeatFinalReply() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        speechProvider.supportsIncrementalPlayback = true
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider
+        )
+
+        manager.applyAgentEvent(.mainNarrationChunk(PickyMainNarrationChunkEvent(
+            contextId: "stream-context",
+            text: "첫 문장.",
+            originSource: .voice,
+            replyKind: .main,
+            sessionId: nil
+        )))
+        manager.applyAgentEvent(.mainNarrationChunk(PickyMainNarrationChunkEvent(
+            contextId: "stream-context",
+            text: "둘째 문장.",
+            originSource: .voice,
+            replyKind: .main,
+            sessionId: nil
+        )))
+        manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
+            contextId: "stream-context",
+            text: "첫 문장. 둘째 문장.",
+            originSource: .voice,
+            replyKind: .main,
+            didStreamNarration: true
+        )))
+        try await waitUntil { speechProvider.spokenUtterances == ["첫 문장."] }
+
+        speechProvider.finishSpeaking()
+        try await waitUntil { speechProvider.spokenUtterances == ["첫 문장.", "둘째 문장."] }
+        manager.interruptSpokenResponseForVoiceInput()
+        #expect(speechProvider.stopCount > 0)
+        speechProvider.finishSpeaking()
+        try await settle()
+        #expect(speechProvider.spokenUtterances == ["첫 문장.", "둘째 문장."])
+    }
+
+    @Test func unsupportedIncrementalProviderFallsBackToFinalQuickReply() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider
+        )
+
+        manager.applyAgentEvent(.mainNarrationChunk(PickyMainNarrationChunkEvent(
+            contextId: "fallback-context",
+            text: "먼저 도착한 문장.",
+            originSource: .voice,
+            replyKind: .main,
+            sessionId: nil
+        )))
+        manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
+            contextId: "fallback-context",
+            text: "최종 응답입니다.",
+            originSource: .voice,
+            replyKind: .main,
+            didStreamNarration: true
+        )))
+
+        try await waitUntil { speechProvider.spokenUtterances == ["최종 응답입니다."] }
     }
 
     @Test func completedVoiceInputAllowsCurrentResponseSpeech() async throws {

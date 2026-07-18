@@ -28,6 +28,8 @@ enum PickyAnnotationOverlayResolveError: LocalizedError, Equatable {
 
 enum PickyAnnotationOverlayResolver {
     static let defaultTTL: TimeInterval = 6
+    /// Safety bound when a turn never reaches audio/final-reply fallback.
+    static let maximumPendingTTLDeferral: TimeInterval = 60
 
     static func resolve(
         _ request: PickyAnnotationOverlayRequest,
@@ -72,7 +74,11 @@ enum PickyAnnotationOverlayResolver {
             guard source >= 0 else { throw PickyAnnotationOverlayResolveError.invalidGeometry(annotationID: annotation.id, field: field) }
             return source * scale
         }
-        let expiresAt = now.addingTimeInterval((annotation.ttlMs ?? defaultTTL * 1_000) / 1_000)
+        let ttl = (annotation.ttlMs ?? defaultTTL * 1_000) / 1_000
+        // The countdown is activated by the interaction reducer when the first
+        // narration utterance starts. Keep a finite safety deadline as well so a
+        // failed turn cannot leave an overlay on screen forever.
+        let expiresAt = now.addingTimeInterval(ttl + maximumPendingTTLDeferral)
 
         switch annotation.shape {
         case .target:
@@ -84,7 +90,8 @@ enum PickyAnnotationOverlayResolver {
                 radius: try radius(annotation.r, "r", min(xScale, yScale)),
                 spotlightShape: nil,
                 label: normalizedLabel(annotation.label),
-                expiresAt: expiresAt
+                expiresAt: expiresAt,
+                pendingTTL: ttl
             )
         case .circle:
             let resolvedRadius: CGFloat?
@@ -109,7 +116,8 @@ enum PickyAnnotationOverlayResolver {
                 radiusY: resolvedRadiusY,
                 spotlightShape: nil,
                 label: normalizedLabel(annotation.label),
-                expiresAt: expiresAt
+                expiresAt: expiresAt,
+                pendingTTL: ttl
             )
         case .rect:
             return PickyAgentAnnotation(
@@ -119,7 +127,8 @@ enum PickyAnnotationOverlayResolver {
                 rect: try rect(annotation, displayFrame: displayFrame, xScale: xScale, yScale: yScale),
                 spotlightShape: nil,
                 label: normalizedLabel(annotation.label),
-                expiresAt: expiresAt
+                expiresAt: expiresAt,
+                pendingTTL: ttl
             )
         case .line:
             return PickyAgentAnnotation(
@@ -130,7 +139,8 @@ enum PickyAnnotationOverlayResolver {
                 endPoint: try point(annotation.x2, annotation.y2, "x2", "y2"),
                 spotlightShape: nil,
                 label: normalizedLabel(annotation.label),
-                expiresAt: expiresAt
+                expiresAt: expiresAt,
+                pendingTTL: ttl
             )
         case .spotlight:
             guard let spotlightShape = annotation.spotlightShape else {
@@ -144,7 +154,8 @@ enum PickyAnnotationOverlayResolver {
                     rect: try rect(annotation, displayFrame: displayFrame, xScale: xScale, yScale: yScale),
                     spotlightShape: spotlightShape,
                     label: normalizedLabel(annotation.label),
-                    expiresAt: expiresAt
+                    expiresAt: expiresAt,
+                    pendingTTL: ttl
                 )
             }
             return PickyAgentAnnotation(
@@ -155,7 +166,8 @@ enum PickyAnnotationOverlayResolver {
                 radius: try radius(annotation.r, "r", min(xScale, yScale)),
                 spotlightShape: spotlightShape,
                 label: normalizedLabel(annotation.label),
-                expiresAt: expiresAt
+                expiresAt: expiresAt,
+                pendingTTL: ttl
             )
         case .label:
             return PickyAgentAnnotation(
@@ -165,7 +177,8 @@ enum PickyAnnotationOverlayResolver {
                 point: try point(annotation.x, annotation.y, "x", "y"),
                 spotlightShape: nil,
                 label: normalizedLabel(annotation.label),
-                expiresAt: expiresAt
+                expiresAt: expiresAt,
+                pendingTTL: ttl
             )
         }
     }

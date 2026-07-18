@@ -12,6 +12,12 @@ struct PickyInteractionState: Equatable, Codable {
     var pendingVoiceInputs: [UUID: PickyVoiceInputState]
     var contextOwnership: [String: PickyContextOwner]
     var queuedSpeechReplies: [PickyQueuedSpeechReply]
+    /// Context ids whose incremental narration has already entered the TTS queue.
+    /// A later final quick reply for the same context updates visible text but must not
+    /// enqueue the full reply a second time.
+    var streamedNarrationContextIDs: Set<String>
+    /// Annotation TTLs are deferred until the first accepted speech start for a turn.
+    var annotationTTLsStarted: Bool
     var lastDisplayMessage: PickyDisplayMessage?
     /// sessionID -> (inputID, contextID) captured at `agentSubmissionAccepted` so a later
     /// `.sessionTerminated` can release the matching `.waitingForAgent` output even when
@@ -30,6 +36,8 @@ struct PickyInteractionState: Equatable, Codable {
         pendingVoiceInputs: [UUID: PickyVoiceInputState] = [:],
         contextOwnership: [String: PickyContextOwner] = [:],
         queuedSpeechReplies: [PickyQueuedSpeechReply] = [],
+        streamedNarrationContextIDs: Set<String> = [],
+        annotationTTLsStarted: Bool = false,
         lastDisplayMessage: PickyDisplayMessage? = nil,
         pendingAgentRequestsBySession: [String: PickyPendingAgentRequest] = [:]
     ) {
@@ -42,6 +50,8 @@ struct PickyInteractionState: Equatable, Codable {
         self.pendingVoiceInputs = pendingVoiceInputs
         self.contextOwnership = contextOwnership
         self.queuedSpeechReplies = queuedSpeechReplies
+        self.streamedNarrationContextIDs = streamedNarrationContextIDs
+        self.annotationTTLsStarted = annotationTTLsStarted
         self.lastDisplayMessage = lastDisplayMessage
         self.pendingAgentRequestsBySession = pendingAgentRequestsBySession
     }
@@ -57,6 +67,8 @@ struct PickyInteractionState: Equatable, Codable {
         self.pendingVoiceInputs = try container.decode([UUID: PickyVoiceInputState].self, forKey: .pendingVoiceInputs)
         self.contextOwnership = try container.decode([String: PickyContextOwner].self, forKey: .contextOwnership)
         self.queuedSpeechReplies = try container.decode([PickyQueuedSpeechReply].self, forKey: .queuedSpeechReplies)
+        self.streamedNarrationContextIDs = try container.decodeIfPresent(Set<String>.self, forKey: .streamedNarrationContextIDs) ?? []
+        self.annotationTTLsStarted = try container.decodeIfPresent(Bool.self, forKey: .annotationTTLsStarted) ?? false
         self.lastDisplayMessage = try container.decodeIfPresent(PickyDisplayMessage.self, forKey: .lastDisplayMessage)
         // Older journals do not encode this field; treat absence as an empty map.
         self.pendingAgentRequestsBySession = try container.decodeIfPresent([String: PickyPendingAgentRequest].self, forKey: .pendingAgentRequestsBySession) ?? [:]
@@ -211,7 +223,10 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
     var radiusY: CGFloat?
     let spotlightShape: PickyAnnotationSpotlightShape?
     let label: String?
-    let expiresAt: Date
+    var expiresAt: Date
+    /// Non-nil while the overlay is waiting for the first response audio. Once
+    /// audio starts, the reducer converts it into `expiresAt` and clears this value.
+    var pendingTTL: TimeInterval?
 
     init(
         id: String,
@@ -225,7 +240,8 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
         radiusY: CGFloat? = nil,
         spotlightShape: PickyAnnotationSpotlightShape?,
         label: String?,
-        expiresAt: Date
+        expiresAt: Date,
+        pendingTTL: TimeInterval? = nil
     ) {
         self.id = id
         self.shape = shape
@@ -239,6 +255,28 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
         self.spotlightShape = spotlightShape
         self.label = label
         self.expiresAt = expiresAt
+        self.pendingTTL = pendingTTL
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, shape, displayFrame, point, endPoint, rect, radius, radiusX, radiusY, spotlightShape, label, expiresAt, pendingTTL
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        shape = try container.decode(PickyAnnotationOverlayShape.self, forKey: .shape)
+        displayFrame = try container.decode(CGRect.self, forKey: .displayFrame)
+        point = try container.decodeIfPresent(CGPoint.self, forKey: .point)
+        endPoint = try container.decodeIfPresent(CGPoint.self, forKey: .endPoint)
+        rect = try container.decodeIfPresent(CGRect.self, forKey: .rect)
+        radius = try container.decodeIfPresent(CGFloat.self, forKey: .radius)
+        radiusX = try container.decodeIfPresent(CGFloat.self, forKey: .radiusX)
+        radiusY = try container.decodeIfPresent(CGFloat.self, forKey: .radiusY)
+        spotlightShape = try container.decodeIfPresent(PickyAnnotationSpotlightShape.self, forKey: .spotlightShape)
+        label = try container.decodeIfPresent(String.self, forKey: .label)
+        expiresAt = try container.decode(Date.self, forKey: .expiresAt)
+        pendingTTL = try container.decodeIfPresent(TimeInterval.self, forKey: .pendingTTL)
     }
 }
 

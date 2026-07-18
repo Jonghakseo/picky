@@ -1170,6 +1170,29 @@ describe("SessionSupervisor", () => {
     expect(supervisor.listMainMessages().at(-1)).toMatchObject({ role: "assistant", text: "여기를 먼저 보세요. 다음입니다." });
   });
 
+  it("emits DSL-clean narration sentences before the final quick reply", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-narration-"));
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
+    const chunks: Array<{ contextId: string; text: string }> = [];
+    const replies: Array<{ text: string; metadata: { didStreamNarration?: boolean } }> = [];
+    supervisor.on("mainNarrationChunk", (chunk) => chunks.push(chunk));
+    supervisor.on("quickReply", (_contextId, text, metadata) => replies.push({ text, metadata }));
+
+    await supervisor.route(context("narrate this"));
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "먼저 저장하세요. [POINT: x=10 y=20] 다음 화면을 확인" });
+    await waitUntil(() => chunks.length === 1);
+    expect(chunks).toEqual([expect.objectContaining({ contextId: "context-narrate this", text: "먼저 저장하세요." })]);
+
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "하세요." });
+    await waitUntil(() => chunks.length === 2);
+    expect(chunks.map((chunk) => chunk.text)).toEqual(["먼저 저장하세요.", "다음 화면을 확인하세요."]);
+
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await waitUntil(() => replies.length === 1);
+    expect(replies[0]).toEqual({ text: "먼저 저장하세요. 다음 화면을 확인하세요.", metadata: expect.objectContaining({ didStreamNarration: true }) });
+  });
+
   it("strips disabled pointer DSL tags without emitting an overlay", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-dsl-pointer-disabled-"));
     const mainRuntime = new ManualRuntime();

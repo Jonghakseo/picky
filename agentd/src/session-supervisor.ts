@@ -12,6 +12,7 @@ import type { ModelCycleDirection, PickyActivitySummary, PickyAgentSession, Pick
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-overlay-request.js";
 import type { PickyShowAnnotationsRequest, PickyShowAnnotationsResult } from "./application/annotation-overlay-request.js";
 import { AnnotationDslParser, type AnnotationDslTag } from "./domain/annotation-dsl.js";
+import { NarrationSentenceChunker } from "./domain/narration-sentence-chunker.js";
 import { readPiSessionInfoName, readPiTerminalSessionMessages } from "./application/pi-session-syncer.js";
 import { PiSessionTailWatcher, type PiSessionTailEntry } from "./application/pi-session-tail-watcher.js";
 import { inferTerminalStatusFromEntries } from "./application/terminal-tail-status.js";
@@ -108,6 +109,8 @@ export class SessionSupervisor extends EventEmitter {
   private mainAssistantDeltaSeen = false;
   private mainAnnotationDslTagSeen = false;
   private readonly mainAnnotationDslParser = new AnnotationDslParser();
+  private readonly mainNarrationSentenceChunker = new NarrationSentenceChunker();
+  private mainNarrationChunkCount = 0;
   private mainContext?: PickyContextPacket;
   private mainContextGeneration = 0;
   // DSL tags must resolve against the screenshot context the streaming turn saw,
@@ -690,6 +693,10 @@ export class SessionSupervisor extends EventEmitter {
   setTTSEnabled(enabled: boolean): void {
     if (this.ttsEnabled === enabled) return;
     this.ttsEnabled = enabled;
+    if (!enabled) {
+      this.mainNarrationSentenceChunker.reset();
+      this.mainNarrationChunkCount = 0;
+    }
     logAgentd("tts enabled changed", { enabled });
     this.options.mainRuntime?.setMainAgentTTSEnabled?.(enabled);
     for (const listener of this.ttsEnabledListeners) {
@@ -730,6 +737,8 @@ export class SessionSupervisor extends EventEmitter {
     this.mainAssistantDeltaSeen = false;
     this.mainAnnotationDslTagSeen = false;
     this.mainAnnotationDslParser.reset();
+    this.mainNarrationSentenceChunker.reset();
+    this.mainNarrationChunkCount = 0;
     this.mainContext = undefined;
     this.mainTurnOverlayContext = undefined;
     this.mainReplyContextId = "main";
@@ -1251,6 +1260,8 @@ export class SessionSupervisor extends EventEmitter {
     this.mainAssistantDeltaSeen = false;
     this.mainAnnotationDslTagSeen = false;
     this.mainAnnotationDslParser.reset();
+    this.mainNarrationSentenceChunker.reset();
+    this.mainNarrationChunkCount = 0;
     this.mainTerminalProcessed = false;
   }
 
@@ -1445,6 +1456,11 @@ export class SessionSupervisor extends EventEmitter {
         draftSnapshot = await this.consumeMainAssistantDsl(event.text);
         await this.finishMainAssistantDsl();
       }
+      // Flush any buffered sentence and compute the streamed-narration flag AFTER
+      // the no-delta fallback consume, so a whole-turn `turn_text_complete` that
+      // emitted chunks via the fallback is not also re-spoken by the final reply.
+      this.flushMainNarrationSentences();
+      const didStreamNarration = this.mainNarrationChunkCount > 0;
       const reply = cleanFinalAnswer(this.mainAnnotationDslTagSeen ? normalizeDslWhitespace(draftSnapshot) : draftSnapshot);
       if (!reply) {
         logAgentd("main turn text complete with empty draft", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, eventTextChars: event.text.length });
@@ -1462,9 +1478,12 @@ export class SessionSupervisor extends EventEmitter {
           originSource: replyContextId === this.mainContext?.id ? quickReplyOriginFromContextSource(this.mainContext.source) : "system",
           replyKind: isPickleReply ? "pickleCompletion" : "main",
           sessionId: isPickleReply ? replyContextId : undefined,
+          ...(didStreamNarration ? { didStreamNarration: true } : {}),
         });
       }
       this.mainAnnotationDslParser.reset();
+      this.mainNarrationSentenceChunker.reset();
+      this.mainNarrationChunkCount = 0;
       this.mainAnnotationDslTagSeen = false;
       this.mainAssistantDeltaSeen = false;
       return;
@@ -1498,6 +1517,8 @@ export class SessionSupervisor extends EventEmitter {
         // runtime that does not flip `mainTerminalProcessed`) cannot read the
         // still-populated draft and double-emit the reply.
         await this.finishMainAssistantDsl();
+        this.flushMainNarrationSentences();
+        const didStreamNarration = this.mainNarrationChunkCount > 0;
         const draftSnapshot = this.mainDraft;
         this.mainDraft = "";
         this.mainAnnotationDslParser.reset();
@@ -1532,12 +1553,15 @@ export class SessionSupervisor extends EventEmitter {
                 originSource: this.mainReplyContextId === this.mainContext?.id ? quickReplyOriginFromContextSource(this.mainContext.source) : "system",
                 replyKind: isPickleReply ? "pickleCompletion" : "main",
                 sessionId: isPickleReply ? this.mainReplyContextId : undefined,
+                ...(didStreamNarration ? { didStreamNarration: true } : {}),
               });
               this.externalPickleReplyContexts.delete(this.mainReplyContextId);
             }
           }
         }
         this.schedulePickleCompletionDrain();
+        this.mainNarrationSentenceChunker.reset();
+        this.mainNarrationChunkCount = 0;
         this.mainAnnotationDslTagSeen = false;
         this.mainAssistantDeltaSeen = false;
       }
@@ -1554,7 +1578,37 @@ export class SessionSupervisor extends EventEmitter {
       logAgentd("main annotation DSL tag dropped", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, reason });
     }
     for (const tag of result.completedTags) await this.emitMainAnnotationDslTag(tag);
+    this.emitMainNarrationSentences(result.cleanText);
     return result.cleanText;
+  }
+
+  private emitMainNarrationSentences(cleanText: string): void {
+    if (!this.ttsEnabled) return;
+    for (const text of this.mainNarrationSentenceChunker.feed(cleanText)) {
+      this.emitMainNarrationChunk(text);
+    }
+  }
+
+  private flushMainNarrationSentences(): void {
+    if (!this.ttsEnabled) return;
+    for (const text of this.mainNarrationSentenceChunker.finish()) {
+      this.emitMainNarrationChunk(text);
+    }
+  }
+
+  private emitMainNarrationChunk(text: string): void {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const contextId = this.mainReplyContextId;
+    const isPickleReply = this.pickleSessionIds.has(contextId) || this.externalPickleReplyContexts.has(contextId);
+    this.mainNarrationChunkCount += 1;
+    this.emit("mainNarrationChunk", {
+      contextId,
+      text: trimmed,
+      originSource: contextId === this.mainContext?.id ? quickReplyOriginFromContextSource(this.mainContext.source) : "system",
+      replyKind: isPickleReply ? "pickleCompletion" : "main",
+      ...(isPickleReply ? { sessionId: contextId } : {}),
+    });
   }
 
   private async finishMainAssistantDsl(): Promise<void> {

@@ -26,7 +26,20 @@ struct PickyAgentAnnotationOverlayTests {
         #expect(resolved.first { $0.id == "line" }?.endPoint == CGPoint(x: 300, y: 200))
         #expect(resolved.first { $0.id == "spotlight" }?.spotlightShape == .circle)
         #expect(resolved.first { $0.id == "label" }?.label == "Save")
-        #expect(resolved.allSatisfy { $0.expiresAt == now.addingTimeInterval(6) })
+        #expect(resolved.allSatisfy { $0.expiresAt == now.addingTimeInterval(66) && $0.pendingTTL == 6 })
+    }
+
+    @Test func firstSpeechStartActivatesDeferredAnnotationTTL() {
+        let pending = resolvedAnnotation(id: "pending", expiresAt: now.addingTimeInterval(66), pendingTTL: 6)
+        let requested = reduce(PickyInteractionState(), .agentAnnotationsRequested(mode: .append, annotations: [pending]))
+        #expect(requested.agentAnnotations.first?.expiresAt == now.addingTimeInterval(66))
+
+        let started = reduce(requested, .speechStarted(text: "Look here.", speechID: UUID(), sourceContextID: "context"))
+        #expect(started.agentAnnotations.first?.expiresAt == now.addingTimeInterval(6))
+        #expect(started.agentAnnotations.first?.pendingTTL == nil)
+
+        let expired = reduce(started, .agentAnnotationsExpired(now: now.addingTimeInterval(5.9)))
+        #expect(expired.agentAnnotations.count == 1)
     }
 
     @Test func companionManagerAppliesAnnotationOverlayEvent() async throws {
@@ -249,7 +262,7 @@ struct PickyAgentAnnotationOverlayTests {
         PickyAnnotationOverlayAnnotation(id: id, shape: shape, x: x, y: y, r: r, rx: rx, ry: ry, w: w, h: h, x1: x1, y1: y1, x2: x2, y2: y2, spotlightShape: spotlightShape, label: label, ttlMs: nil, clamped: nil)
     }
 
-    private func resolvedAnnotation(id: String, expiresAt: Date) -> PickyAgentAnnotation {
-        PickyAgentAnnotation(id: id, shape: .target, displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100), point: CGPoint(x: 50, y: 50), radius: 10, spotlightShape: nil, label: nil, expiresAt: expiresAt)
+    private func resolvedAnnotation(id: String, expiresAt: Date, pendingTTL: TimeInterval? = nil) -> PickyAgentAnnotation {
+        PickyAgentAnnotation(id: id, shape: .target, displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100), point: CGPoint(x: 50, y: 50), radius: 10, spotlightShape: nil, label: nil, expiresAt: expiresAt, pendingTTL: pendingTTL)
     }
 }

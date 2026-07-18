@@ -1971,6 +1971,12 @@ final class CompanionManager: ObservableObject {
             handleInteractionSpeechFinished(speechID: speechID, didFinish: false, contextID: contextID)
             return
         }
+        // `speak` has accepted the utterance and scheduled any provider preroll;
+        // this is the earliest reliable app-side "about to speak" boundary.
+        interactionCoordinator.effectCompleted(
+            .speechStarted(text: text, speechID: speechID, sourceContextID: contextID),
+            correlation: PickyInteractionCorrelation(contextID: contextID, speechID: speechID, source: .system)
+        )
 
         let startedAt = Date()
         let watchdogDeadline = Date().addingTimeInterval(speechWatchdogTimeout(for: text))
@@ -2142,6 +2148,8 @@ final class CompanionManager: ObservableObject {
             latestAgentSessionSummary = request.prompt ?? request.title ?? "Agent is waiting for input"
         case .quickReply(let reply):
             applyQuickReplyEvent(reply)
+        case .mainNarrationChunk(let chunk):
+            applyMainNarrationChunk(chunk)
         case .externalEntryAccepted(let accepted):
             guard let sessionId = accepted.sessionId else { break }
             interactionCoordinator.accept(
@@ -2180,6 +2188,24 @@ final class CompanionManager: ObservableObject {
         let owner = interactionOwner(for: reply.contextId)
         let originSource = reply.originSource ?? owner.map { $0.isVoiceOwned ? .voice : .text }
         let replyKind = reply.replyKind ?? .main
+        interactionCoordinator.accept(
+            .agentAnnotationsStartTTL(now: Date()),
+            correlation: PickyInteractionCorrelation(contextID: reply.contextId, sessionID: reply.sessionId, source: .agent)
+        )
+        if reply.didStreamNarration == true {
+            interactionCoordinator.accept(
+                .streamedQuickReplyFinal(
+                    contextID: reply.contextId,
+                    text: reply.text,
+                    originSource: originSource,
+                    replyKind: replyKind,
+                    sessionID: reply.sessionId,
+                    inputID: reply.inputId
+                ),
+                correlation: PickyInteractionCorrelation(contextID: reply.contextId, sessionID: reply.sessionId, source: .agent)
+            )
+            return
+        }
         if quickReplyWouldUseTTS(owner: owner, replyKind: replyKind), shouldSuppressDuplicateQuickReplyTTS(reply, replyKind: replyKind) {
             return
         }
@@ -2199,6 +2225,22 @@ final class CompanionManager: ObservableObject {
             let spoken = stripParentheticalsForSpeech(reply.text)
             finishAwaitingAgentResponse(visibleText: reply.text, spokenText: spoken, enforceMinimumProcessingDuration: true)
         }
+    }
+
+    private func applyMainNarrationChunk(_ chunk: PickyMainNarrationChunkEvent) {
+        guard ttsPlaybackEnabled, speechPlaybackProvider.supportsIncrementalPlayback else { return }
+        let owner = interactionOwner(for: chunk.contextId)
+        let originSource = chunk.originSource ?? owner.map { $0.isVoiceOwned ? .voice : .text }
+        interactionCoordinator.accept(
+            .narrationChunk(
+                contextID: chunk.contextId,
+                text: chunk.text,
+                originSource: originSource,
+                replyKind: chunk.replyKind ?? .main,
+                sessionID: chunk.sessionId
+            ),
+            correlation: PickyInteractionCorrelation(contextID: chunk.contextId, sessionID: chunk.sessionId, source: .agent)
+        )
     }
 
     private func applyPointerOverlayRequest(_ request: PickyPointerOverlayRequest) {

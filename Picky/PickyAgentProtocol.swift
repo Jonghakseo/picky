@@ -257,6 +257,7 @@ struct PickyEventEnvelope: Decodable, Equatable {
 enum PickyEvent: Equatable {
     case hello(PickyHelloEvent)
     case quickReply(PickyQuickReplyEvent)
+    case mainNarrationChunk(PickyMainNarrationChunkEvent)
     case mainMessagesSnapshot([PickyMainAgentMessage])
     case mainMessageAppended(PickyMainAgentMessage)
     case mainAgentSessionInfoUpdated(sessionFilePath: String?, cwd: String?)
@@ -322,6 +323,8 @@ enum PickyEvent: Equatable {
         case "hello": return .hello(try PickyHelloEvent(from: decoder))
         case "quickReply":
             return .quickReply(try PickyQuickReplyEvent(from: decoder))
+        case "mainNarrationChunk":
+            return .mainNarrationChunk(try PickyMainNarrationChunkEvent(from: decoder))
         case "mainMessagesSnapshot":
             let payload = try PickyMainMessagesSnapshotPayload(from: decoder)
             return .mainMessagesSnapshot(payload.messages)
@@ -532,9 +535,10 @@ struct PickyQuickReplyEvent: Decodable, Equatable {
     let replyKind: PickyQuickReplyKind?
     let sessionId: String?
     let inputId: UUID?
+    let didStreamNarration: Bool?
 
     private enum CodingKeys: String, CodingKey {
-        case contextId, text, originSource, replyKind, sessionId, inputId
+        case contextId, text, originSource, replyKind, sessionId, inputId, didStreamNarration
     }
 
     init(
@@ -543,7 +547,8 @@ struct PickyQuickReplyEvent: Decodable, Equatable {
         originSource: PickyQuickReplyOriginSource? = nil,
         replyKind: PickyQuickReplyKind? = nil,
         sessionId: String? = nil,
-        inputId: UUID? = nil
+        inputId: UUID? = nil,
+        didStreamNarration: Bool? = nil
     ) {
         self.contextId = contextId
         self.text = text
@@ -551,6 +556,7 @@ struct PickyQuickReplyEvent: Decodable, Equatable {
         self.replyKind = replyKind
         self.sessionId = sessionId
         self.inputId = inputId
+        self.didStreamNarration = didStreamNarration
     }
 
     init(from decoder: Decoder) throws {
@@ -565,7 +571,18 @@ struct PickyQuickReplyEvent: Decodable, Equatable {
         } else {
             inputId = nil
         }
+        didStreamNarration = try c.decodeIfPresent(Bool.self, forKey: .didStreamNarration)
     }
+}
+
+struct PickyMainNarrationChunkEvent: Decodable, Equatable {
+    let contextId: String
+    let text: String
+    let originSource: PickyQuickReplyOriginSource?
+    let replyKind: PickyQuickReplyKind?
+    let sessionId: String?
+
+    private enum CodingKeys: String, CodingKey { case contextId, text, originSource, replyKind, sessionId }
 }
 
 struct PickyErrorEvent: Decodable, Equatable {

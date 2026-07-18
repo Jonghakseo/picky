@@ -66,6 +66,10 @@ private struct PickyInteractionReducing {
             applyAgentSubmissionAccepted(contextID: contextID, sessionID: sessionID, inputID: inputID)
         case .quickReply(let contextID, let text, let originSource, let replyKind, let sessionID, let inputID):
             applyQuickReply(contextID: contextID, text: text, originSource: originSource, replyKind: replyKind, sessionID: sessionID, inputID: inputID)
+        case .narrationChunk(let contextID, let text, let originSource, let replyKind, let sessionID):
+            applyNarrationChunk(contextID: contextID, text: text, originSource: originSource, replyKind: replyKind, sessionID: sessionID)
+        case .streamedQuickReplyFinal(let contextID, let text, let originSource, let replyKind, let sessionID, let inputID):
+            applyStreamedQuickReplyFinal(contextID: contextID, text: text, originSource: originSource, replyKind: replyKind, sessionID: sessionID, inputID: inputID)
         case .passiveAgentSummary(let sessionID, let text):
             applyPassiveAgentSummary(sessionID: sessionID, text: text)
         case .pickleCompleted(let sessionID, let summary):
@@ -80,11 +84,15 @@ private struct PickyInteractionReducing {
             applyPointerAnimationFinished(pointerID: pointerID)
         case .agentAnnotationsRequested(let mode, let annotations):
             applyAgentAnnotationsRequested(mode: mode, annotations: annotations)
+        case .agentAnnotationsStartTTL(let now):
+            activatePendingAnnotationTTLs(now: now)
+            record(.accepted, "Annotation TTLs started")
         case .agentAnnotationsExpired(let now):
             applyAgentAnnotationsExpired(now: now)
         case .agentAnnotationsClearedForUserInput:
             clearAgentAnnotationsForUserInput()
         case .speechStarted:
+            activatePendingAnnotationTTLs(now: envelope.occurredAt)
             record(.accepted, "Speech provider started")
         case .speechFinished(let speechID), .speechFailed(let speechID):
             applySpeechCompleted(speechID: speechID)
@@ -120,6 +128,7 @@ private struct PickyInteractionReducing {
         clearAgentAnnotationsForUserInput()
         let inputID = envelope.correlation.inputID ?? envelope.id
         state.queuedSpeechReplies.removeAll()
+        state.streamedNarrationContextIDs.removeAll()
         var preemptedSpeechID: UUID?
         if case .speaking(_, let speechID, _, _, _, _) = state.output {
             preemptedSpeechID = speechID
@@ -218,6 +227,7 @@ private struct PickyInteractionReducing {
         clearAgentAnnotationsForUserInput()
         let source = envelope.correlation.source
         state.queuedSpeechReplies.removeAll()
+        state.streamedNarrationContextIDs.removeAll()
         state.input = .textSubmitting(inputID: inputID, text: text)
         state.pendingTextInputs[inputID] = PickyTextInputState(text: text, source: source)
         if source == .quickInput {
@@ -387,6 +397,59 @@ private struct PickyInteractionReducing {
         }
     }
 
+    private mutating func applyNarrationChunk(
+        contextID: String,
+        text: String,
+        originSource: PickyQuickReplyOriginSource?,
+        replyKind: PickyQuickReplyKind?,
+        sessionID: String?
+    ) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            record(.staleEvent, "Ignored empty narration chunk")
+            return
+        }
+        let owner = state.contextOwnership[contextID] ?? ownerFromMetadata(originSource)
+        let resolvedReplyKind = replyKind ?? .main
+        guard !state.hasActiveVoiceInput,
+              owner.isVoiceOwned || owner.usesCursorResponsePresentation || resolvedReplyKind == .pickleCompletion else {
+            record(.accepted, "Narration chunk did not require speech")
+            return
+        }
+        let timerID = envelope.id
+        enqueueOrSpeakQuickReply(
+            contextID: contextID,
+            text: trimmed,
+            replyKind: resolvedReplyKind,
+            owner: owner,
+            timerID: timerID,
+            inputID: nil
+        )
+        state.streamedNarrationContextIDs.insert(contextID)
+        if let sessionID { state.pendingAgentRequestsBySession[sessionID] = nil }
+        record(.accepted, "Narration chunk queued for speech")
+    }
+
+    private mutating func applyStreamedQuickReplyFinal(
+        contextID: String,
+        text: String,
+        originSource: PickyQuickReplyOriginSource?,
+        replyKind: PickyQuickReplyKind?,
+        sessionID: String?,
+        inputID: UUID?
+    ) {
+        if let sessionID { state.pendingAgentRequestsBySession[sessionID] = nil }
+        guard state.streamedNarrationContextIDs.contains(contextID) else {
+            applyQuickReply(contextID: contextID, text: text, originSource: originSource, replyKind: replyKind, sessionID: sessionID, inputID: inputID)
+            return
+        }
+        let owner = state.contextOwnership[contextID] ?? ownerFromMetadata(originSource)
+        let source: PickyDisplaySource = replyKind == .pickleCompletion ? .pickleCompletion : (owner.usesCursorResponsePresentation ? .textReply : .voiceReply)
+        state.lastDisplayMessage = PickyDisplayMessage(id: contextID, contextID: contextID, text: text, source: source, updatedAt: envelope.occurredAt)
+        state = state.removingOverlayReason(.waitingForVoiceResponse)
+        record(.accepted, "Final quick reply retained streamed narration queue")
+    }
+
     private mutating func suppressPickleCompletionReply(
         contextID: String,
         text: String,
@@ -543,14 +606,21 @@ private struct PickyInteractionReducing {
     // MARK: - Agent annotations
 
     private mutating func applyAgentAnnotationsRequested(mode: PickyAnnotationOverlayMode, annotations: [PickyAgentAnnotation]) {
+        let resolvedAnnotations = annotations.map { annotation in
+            guard state.annotationTTLsStarted, annotation.pendingTTL != nil else { return annotation }
+            var activated = annotation
+            activated.expiresAt = envelope.occurredAt.addingTimeInterval(annotation.pendingTTL!)
+            activated.pendingTTL = nil
+            return activated
+        }
         switch mode {
         case .clear:
             state.agentAnnotations = []
         case .replace:
-            state.agentAnnotations = uniqueAnnotations(annotations)
+            state.agentAnnotations = uniqueAnnotations(resolvedAnnotations)
         case .append:
             var merged = state.agentAnnotations
-            for annotation in annotations {
+            for annotation in resolvedAnnotations {
                 if let index = merged.firstIndex(where: { $0.id == annotation.id }) {
                     merged[index] = annotation
                 } else {
@@ -585,10 +655,23 @@ private struct PickyInteractionReducing {
     }
 
     private mutating func clearAgentAnnotationsForUserInput() {
+        state.annotationTTLsStarted = false
         guard !state.agentAnnotations.isEmpty else { return }
         state.agentAnnotations = []
         state = state.removingOverlayReason(.activeAgentAnnotations)
         record(.stateChanged, "Agent annotations cleared for user input")
+    }
+
+    private mutating func activatePendingAnnotationTTLs(now: Date) {
+        guard !state.annotationTTLsStarted else { return }
+        state.annotationTTLsStarted = true
+        state.agentAnnotations = state.agentAnnotations.map { annotation in
+            guard let pendingTTL = annotation.pendingTTL else { return annotation }
+            var activated = annotation
+            activated.expiresAt = now.addingTimeInterval(pendingTTL)
+            activated.pendingTTL = nil
+            return activated
+        }
     }
 
     private func uniqueAnnotations(_ annotations: [PickyAgentAnnotation]) -> [PickyAgentAnnotation] {
@@ -624,6 +707,7 @@ private struct PickyInteractionReducing {
             record(.stateChanged, "Queued voice quick reply started")
         } else {
             state.output = .idle
+            if let contextID { state.streamedNarrationContextIDs.remove(contextID) }
             state = state.removingOverlayReason(.speakingResponse)
             record(.stateChanged, "Speech completed")
         }
@@ -689,13 +773,15 @@ private struct PickyInteractionReducing {
             minimumDisplayUntil: deadline,
             finishPending: false
         )
-        state.lastDisplayMessage = PickyDisplayMessage(
-            id: reply.contextID,
-            contextID: reply.contextID,
-            text: reply.text,
-            source: reply.displaySource,
-            updatedAt: occurredAt
-        )
+        if !state.streamedNarrationContextIDs.contains(reply.contextID) || state.lastDisplayMessage?.contextID != reply.contextID {
+            state.lastDisplayMessage = PickyDisplayMessage(
+                id: reply.contextID,
+                contextID: reply.contextID,
+                text: reply.text,
+                source: reply.displaySource,
+                updatedAt: occurredAt
+            )
+        }
         effects.append(.scheduleMinimumDisplay(timerID: reply.timerID, speechID: reply.speechID, inputID: reply.inputID, delay: minimumDisplayDuration))
         effects.append(.speak(speechID: reply.speechID, text: reply.text, contextID: reply.contextID))
     }

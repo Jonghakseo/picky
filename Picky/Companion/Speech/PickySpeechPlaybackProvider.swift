@@ -14,10 +14,17 @@ import Foundation
 protocol PickySpeechPlaybackProvider: AnyObject {
     var displayName: String { get }
     var isSpeaking: Bool { get }
+    /// Whether this provider can synthesize sentence-sized utterances quickly enough
+    /// to start a streamed assistant response before its final reply arrives.
+    var supportsIncrementalPlayback: Bool { get }
 
     @discardableResult
     func speak(_ utterance: String, onFinish: @escaping (Bool) -> Void) -> Bool
     func stopSpeaking()
+}
+
+extension PickySpeechPlaybackProvider {
+    var supportsIncrementalPlayback: Bool { false }
 }
 
 enum PickySpeechPlaybackProviderFactory {
@@ -411,6 +418,7 @@ enum PickySpeechPlaybackPreparation {
 @MainActor
 final class PickySystemSpeechPlaybackProvider: PickySpeechPlaybackProvider {
     let displayName = "macOS Speech"
+    let supportsIncrementalPlayback = true
 
     private(set) var isSpeaking = false
 

@@ -103,6 +103,34 @@ struct PickyInteractionReducerTests {
         #expect(started.journalRecords.last?.message == "Queued voice quick reply started")
     }
 
+    @Test func narrationChunksQueueInOrderAndFinalReplyDoesNotRepeatThem() {
+        var state = PickyInteractionState()
+        state.contextOwnership["voice-context"] = .voice(inputID: inputA)
+
+        let first = reduce(
+            state,
+            .narrationChunk(contextID: "voice-context", text: "첫 문장.", originSource: .voice, replyKind: .main, sessionID: nil),
+            id: timerA,
+            correlation: .init(contextID: "voice-context", speechID: speechA, source: .agent)
+        )
+        let second = reduce(
+            first.state,
+            .narrationChunk(contextID: "voice-context", text: "둘째 문장.", originSource: .voice, replyKind: .main, sessionID: nil),
+            id: timerB,
+            correlation: .init(contextID: "voice-context", speechID: inputB, source: .agent)
+        )
+        #expect(second.state.queuedSpeechReplies.map(\.text) == ["둘째 문장."])
+
+        let final = reduce(
+            second.state,
+            .streamedQuickReplyFinal(contextID: "voice-context", text: "첫 문장. 둘째 문장.", originSource: .voice, replyKind: .main, sessionID: nil, inputID: inputA),
+            id: UUID()
+        )
+        #expect(final.state.queuedSpeechReplies.map(\.text) == ["둘째 문장."])
+        #expect(final.effects.isEmpty)
+        #expect(final.state.lastDisplayMessage?.text == "첫 문장. 둘째 문장.")
+    }
+
     @Test func pendingSpeechQueueClearsWhenNewUserInputStarts() {
         var state = PickyInteractionState()
         state.contextOwnership["voice-context"] = .voice(inputID: inputA)

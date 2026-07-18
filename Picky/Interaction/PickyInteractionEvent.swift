@@ -171,6 +171,8 @@ enum PickyInteractionEvent: Equatable, Codable {
     case externalContextCaptured(inputID: UUID, text: String, context: PickyContextPacket)
     case agentSubmissionAccepted(contextID: String?, sessionID: String, inputID: UUID?)
     case quickReply(contextID: String, text: String, originSource: PickyQuickReplyOriginSource?, replyKind: PickyQuickReplyKind?, sessionID: String?, inputID: UUID?)
+    case narrationChunk(contextID: String, text: String, originSource: PickyQuickReplyOriginSource?, replyKind: PickyQuickReplyKind?, sessionID: String?)
+    case streamedQuickReplyFinal(contextID: String, text: String, originSource: PickyQuickReplyOriginSource?, replyKind: PickyQuickReplyKind?, sessionID: String?, inputID: UUID?)
     case passiveAgentSummary(sessionID: String, text: String)
     case pickleCompleted(sessionID: String, summary: String?)
     /// Synthetic terminal signal dispatched by `CompanionManager` when an agentd session
@@ -184,6 +186,8 @@ enum PickyInteractionEvent: Equatable, Codable {
     case pointerCancelled(pointerID: String, reason: PickyPointerCancelReason)
     case pointerAnimationFinished(pointerID: String)
     case agentAnnotationsRequested(mode: PickyAnnotationOverlayMode, annotations: [PickyAgentAnnotation])
+    /// Starts deferred annotation expiry when final-reply fallback has no incremental audio.
+    case agentAnnotationsStartTTL(now: Date)
     case agentAnnotationsExpired(now: Date)
     case agentAnnotationsClearedForUserInput
 
@@ -200,9 +204,9 @@ enum PickyInteractionEvent: Equatable, Codable {
         case appStarted, permissionsChanged, cursorPreferenceChanged
         case voicePressed, voiceStartFailed, voiceReleased, transcriptFinal, transcriptFailed
         case textSubmitted, textContextCaptured, textSubmissionAccepted, textSubmissionFailed
-        case voiceContextCaptured, externalContextCaptured, agentSubmissionAccepted, quickReply, passiveAgentSummary, pickleCompleted, sessionTerminated
+        case voiceContextCaptured, externalContextCaptured, agentSubmissionAccepted, quickReply, narrationChunk, streamedQuickReplyFinal, passiveAgentSummary, pickleCompleted, sessionTerminated
         case pointerRequested, pointerCancelled, pointerAnimationFinished
-        case agentAnnotationsRequested, agentAnnotationsExpired, agentAnnotationsClearedForUserInput
+        case agentAnnotationsRequested, agentAnnotationsStartTTL, agentAnnotationsExpired, agentAnnotationsClearedForUserInput
         case speechStarted, speechFinished, speechFailed, minimumDisplayTimerFired
         case overlayShown, overlayHidden, transientHideTimerFired
     }
@@ -288,6 +292,25 @@ enum PickyInteractionEvent: Equatable, Codable {
                 sessionID: try payload.decodeFlexibleOptionalString(primary: .sessionID, fallback: .sessionId),
                 inputID: try payload.decodeIfPresent(UUID.self, forKey: .inputID)
             )
+        case .narrationChunk:
+            let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
+            self = .narrationChunk(
+                contextID: try payload.decodeFlexibleString(primary: .contextID, fallback: .contextId),
+                text: try payload.decode(String.self, forKey: .text),
+                originSource: try payload.decodeIfPresent(PickyQuickReplyOriginSource.self, forKey: .originSource),
+                replyKind: try payload.decodeIfPresent(PickyQuickReplyKind.self, forKey: .replyKind),
+                sessionID: try payload.decodeIfPresent(String.self, forKey: .sessionID)
+            )
+        case .streamedQuickReplyFinal:
+            let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
+            self = .streamedQuickReplyFinal(
+                contextID: try payload.decodeFlexibleString(primary: .contextID, fallback: .contextId),
+                text: try payload.decode(String.self, forKey: .text),
+                originSource: try payload.decodeIfPresent(PickyQuickReplyOriginSource.self, forKey: .originSource),
+                replyKind: try payload.decodeIfPresent(PickyQuickReplyKind.self, forKey: .replyKind),
+                sessionID: try payload.decodeIfPresent(String.self, forKey: .sessionID),
+                inputID: try payload.decodeIfPresent(UUID.self, forKey: .inputID)
+            )
         case .passiveAgentSummary:
             let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
             self = .passiveAgentSummary(sessionID: try payload.decodeFlexibleString(primary: .sessionID, fallback: .sessionId), text: try payload.decode(String.self, forKey: .text))
@@ -311,6 +334,9 @@ enum PickyInteractionEvent: Equatable, Codable {
                 mode: try payload.decode(PickyAnnotationOverlayMode.self, forKey: .mode),
                 annotations: try payload.decode([PickyAgentAnnotation].self, forKey: .annotations)
             )
+        case .agentAnnotationsStartTTL:
+            let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
+            self = .agentAnnotationsStartTTL(now: try payload.decode(Date.self, forKey: .now))
         case .agentAnnotationsExpired:
             let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
             self = .agentAnnotationsExpired(now: try payload.decode(Date.self, forKey: .now))
@@ -393,6 +419,12 @@ enum PickyInteractionEvent: Equatable, Codable {
         case .quickReply(let contextID, let text, let originSource, let replyKind, let sessionID, let inputID):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .quickReply)
             try payload.encode(contextID, forKey: .contextID); try payload.encode(text, forKey: .text); try payload.encodeIfPresent(originSource, forKey: .originSource); try payload.encodeIfPresent(replyKind, forKey: .replyKind); try payload.encodeIfPresent(sessionID, forKey: .sessionID); try payload.encodeIfPresent(inputID, forKey: .inputID)
+        case .narrationChunk(let contextID, let text, let originSource, let replyKind, let sessionID):
+            var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .narrationChunk)
+            try payload.encode(contextID, forKey: .contextID); try payload.encode(text, forKey: .text); try payload.encodeIfPresent(originSource, forKey: .originSource); try payload.encodeIfPresent(replyKind, forKey: .replyKind); try payload.encodeIfPresent(sessionID, forKey: .sessionID)
+        case .streamedQuickReplyFinal(let contextID, let text, let originSource, let replyKind, let sessionID, let inputID):
+            var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .streamedQuickReplyFinal)
+            try payload.encode(contextID, forKey: .contextID); try payload.encode(text, forKey: .text); try payload.encodeIfPresent(originSource, forKey: .originSource); try payload.encodeIfPresent(replyKind, forKey: .replyKind); try payload.encodeIfPresent(sessionID, forKey: .sessionID); try payload.encodeIfPresent(inputID, forKey: .inputID)
         case .passiveAgentSummary(let sessionID, let text):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .passiveAgentSummary)
             try payload.encode(sessionID, forKey: .sessionID); try payload.encode(text, forKey: .text)
@@ -413,6 +445,9 @@ enum PickyInteractionEvent: Equatable, Codable {
         case .agentAnnotationsRequested(let mode, let annotations):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .agentAnnotationsRequested)
             try payload.encode(mode, forKey: .mode); try payload.encode(annotations, forKey: .annotations)
+        case .agentAnnotationsStartTTL(let now):
+            var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .agentAnnotationsStartTTL)
+            try payload.encode(now, forKey: .now)
         case .agentAnnotationsExpired(let now):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .agentAnnotationsExpired)
             try payload.encode(now, forKey: .now)

@@ -33,7 +33,7 @@ inline DSL rather than registered LLM tools:
 | --- | --- | --- |
 | Per-display transparent click-through overlay | present | `Picky/Overlay/OverlayWindow.swift:20-59` (`ignoresMouseEvents`, all-Spaces) |
 | Multi-display overlay lifecycle | present | `Picky/Overlay/OverlayWindowManager.swift:36-101,132-145` |
-| AI point renderer (spotlight + pulse rings + tag + animated cursor) | present | `Picky/Overlay/BlueCursorView.swift:1133-1719` (60fps Bezier fly-out, spring fly-back) |
+| AI point navigation (animated buddy + bubble) | present | `Picky/Overlay/BlueCursorView.swift` (Bezier fly-out, spring fly-back) |
 | User freehand ink (already shipped) | present | `Picky/Overlay/PickyInkOverlayView.swift:20-128`, `Picky/Context/PickyInkContext.swift` |
 | Coordinate resolver (screenshot px -> AppKit global, Y-flip, clamp) | present | `Picky/PointerOverlay/PickyPointerOverlayResolver.swift:63-100` |
 | ScreenCaptureKit capture with self-window exclusion | present | `Picky/Context/CompanionScreenCaptureUtility.swift:17-169` |
@@ -76,7 +76,7 @@ windows, and capture infrastructure in reverse.
 
 ### Phase 1 — Streamed AI pointing
 
-1. `AnnotationDslParser` incrementally recognizes `[POINT: x=… y=… r=…]`
+1. `AnnotationDslParser` incrementally recognizes `[POINT: x=… y=…]`
    across assistant deltas, strips it from user-visible text, and emits the
    existing `SessionSupervisor.requestPointerOverlay()` path immediately.
 2. `prompt-builder.ts` injects the named-argument DSL grammar only when the
@@ -103,7 +103,7 @@ optional spotlight.** Rectangle and line tags may carry a concise attached
    `agentd/src/protocol.ts:267-278` and `Picky/PickyAgentProtocol.swift:275,416-418`.
 6. **Dedicated AI-annotation renderer.** Keep transient AI annotations separate
    from user ink. Add `PickyAgentAnnotationOverlayView` mounted near the existing
-   ink and point-highlight layers in `Picky/Overlay/BlueCursorView.swift:595-615`.
+   ink and pointer-navigation layers in `Picky/Overlay/BlueCursorView.swift`.
    Render rectangles, lines, spotlight regions, and their attached labels.
    Follow the Picky design system (Action Blue, semantic status) and
    apply a subtle deterministic hand-drawn stroke treatment for outline shapes.
@@ -112,9 +112,8 @@ optional spotlight.** Rectangle and line tags may carry a concise attached
    New user input also clears the active drawing collection.
    Add an annotation collection alongside — not inside — `PickyPointerTarget` in
    `Picky/Interaction/PickyInteractionState.swift`.
-8. **Use target bounds.** Populate `targetFrame` for annotation navigation, but
-   suppress the generic circular pointer ring because RECT/LINE already render
-   their own precise geometry.
+8. **Pointer navigation only.** POINT and annotation visits move the buddy and
+   may show its navigation bubble, but do not render a fixed target highlight.
 9. **Tests.** Extend `annotation-dsl.test.ts`, `session-supervisor.test.ts`,
    `PickyTests/PickyPointerOverlayResolverTests.swift`; add compound-annotation,
    lifecycle-race, and concurrent-display tests plus pure-geometry renderer tests.
@@ -131,15 +130,10 @@ Adopt now (Phase 1-2):
 - **Gate "hot" actionable annotations by observability, not model confidence.**
   Only draw an actionable target when Picky can detect step completion (a click,
   or a re-capture diff). Everything else (drag, typing, sliders) degrades to a
-  passive highlight/line. Prevents false progress tracking.
-- **Radius-carrying targets (`x,y,r`)** instead of bare points, for dwell/hit-test
-  tolerance. Pairs with populating `targetFrame`.
+  passive rectangle/line. Prevents false progress tracking.
 - **Explicit "step back / no annotation" escape hatch** driven by upstream
   context (e.g. app-switch detection), so the AI does not draw stale annotations
   after the user has moved on.
-- **Hover-dwell completion signal:** poll the real cursor; if it stays within a
-  target radius for a minimum duration, treat the step as done and re-capture —
-  cheaper and more robust than detecting arbitrary UI changes.
 
 Adopt later (Phase 3, if computer-use is added):
 

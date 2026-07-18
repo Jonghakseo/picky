@@ -341,21 +341,6 @@ struct PickyAgentAnnotationOverlayTests {
         #expect(styles == ["same": .fallback])
     }
 
-    @Test func annotationTargetsDoNotRenderTheGenericPointerRing() {
-        #expect(!PickyPointerHighlightPolicy.showsRing(for: .annotation))
-        #expect(PickyPointerHighlightPolicy.showsRing(for: .screenElement))
-    }
-
-    @Test func pointerRingClampsItsPaintedBoundsInsideTheScreen() {
-        let center = PickyHighlightGeometry.clampedTargetCenter(
-            CGPoint(x: 0, y: 100),
-            targetSize: .zero,
-            screenSize: CGSize(width: 100, height: 100)
-        )
-
-        #expect(center == CGPoint(x: 16, y: 84))
-    }
-
     @Test func reduceMotionSkipsPointerTravelAndBubbleDelay() {
         #expect(!PickyPointerMotionPolicy.shouldAnimateTravel(reduceMotion: true))
         #expect(!PickyPointerMotionPolicy.shouldAnimateMascot(reduceMotion: true, requested: true))

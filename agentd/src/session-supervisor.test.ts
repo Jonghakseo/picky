@@ -1012,7 +1012,7 @@ describe("SessionSupervisor", () => {
     const emitted: unknown[] = [];
     supervisor.on("pointerOverlayRequested", (request) => emitted.push(request));
 
-    const result = await supervisor.requestPointerOverlay({ x: -20, y: 900, r: 1_000, label: "target" });
+    const result = await supervisor.requestPointerOverlay({ x: -20, y: 900, label: "target" });
 
     expect(emitted).toHaveLength(1);
     expect(result.request).toMatchObject({
@@ -1021,7 +1021,6 @@ describe("SessionSupervisor", () => {
       screenId: "screen1",
       x: 0,
       y: 800,
-      r: 800,
       clamped: true,
       screenBounds: { x: 100, y: 200, width: 300, height: 400 },
       screenshotSize: { width: 600, height: 800 },
@@ -1152,12 +1151,12 @@ describe("SessionSupervisor", () => {
     mainRuntime.handle?.emit({ type: "assistant_delta", delta: "여기를 먼저 보세요. [SCREEN: id=screen-main-dsl] [PO" });
     await settle();
     expect(pointerEvents).toEqual([]);
-    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "INT: x=120 y=340 r=24 label=\"저장\"] [RECT: x=50 y=60 w=200 h=80 label=\"영역\"] 다음입니다." });
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "INT: x=120 y=340 label=\"저장\"] [RECT: x=50 y=60 w=200 h=80 label=\"영역\"] 다음입니다." });
     await waitUntil(() => pointerEvents.length === 1 && annotationEvents.length === 1);
 
     // Overlay events arrive before completion, preserving the low-latency streaming path.
     expect(quickReplies).toEqual([]);
-    expect(pointerEvents[0]).toMatchObject({ screenId: "screen-main-dsl", x: 120, y: 340, r: 24, label: "저장", contextGeneration: 1 });
+    expect(pointerEvents[0]).toMatchObject({ screenId: "screen-main-dsl", x: 120, y: 340, label: "저장", contextGeneration: 1 });
     expect(annotationEvents[0]).toMatchObject({
       mode: "append",
       screenId: "screen-main-dsl",

@@ -23,7 +23,6 @@ export interface AnnotationDslPointTag {
   kind: "point";
   x: number;
   y: number;
-  r?: number;
   label?: string;
   screenId?: string;
 }
@@ -201,9 +200,7 @@ export class AnnotationDslParser {
     if (verb === "POINT") {
       const fields = required("x", "y");
       if (!fields) return { error: "POINT requires x and y" };
-      const r = optionalNumber(args, "r", heals);
-      if (r === null) return { error: "POINT has invalid r" };
-      return { tag: { kind: "point", x: fields.x!, y: fields.y!, ...(r === undefined ? {} : { r }), ...(label === undefined ? {} : { label }), ...(screenId ? { screenId } : {}) } };
+      return { tag: { kind: "point", x: fields.x!, y: fields.y!, ...(label === undefined ? {} : { label }), ...(screenId ? { screenId } : {}) } };
     }
 
     const spotlight = verb === "RECT" || verb === "LINE"
@@ -248,7 +245,7 @@ function healingSummary(verb: KnownVerb, heals: ReadonlySet<HealReason>): string
 
 function allowedKeysFor(verb: KnownVerb): ReadonlySet<string> {
   switch (verb) {
-    case "POINT": return new Set(["x", "y", "r", "label"]);
+    case "POINT": return new Set(["x", "y", "label"]);
     case "RECT": return new Set(["x", "y", "w", "h", "label", "spotlight"]);
     case "LINE": return new Set(["x1", "y1", "x2", "y2", "label", "spotlight"]);
     case "SCREEN": return new Set(["id"]);
@@ -408,11 +405,6 @@ function finiteNumber(value: ParsedValue | undefined, heals: Set<HealReason>): n
   if (!Number.isFinite(number)) return undefined;
   if (!Number.isInteger(number)) heals.add("rounded float");
   return Math.round(number);
-}
-
-function optionalNumber(args: Record<string, ParsedValue>, key: string, heals: Set<HealReason>): number | undefined | null {
-  if (!(key in args)) return undefined;
-  return finiteNumber(args[key], heals) ?? null;
 }
 
 function optionalBoolean(args: Record<string, ParsedValue>, key: string, heals: Set<HealReason>): boolean | undefined | null {

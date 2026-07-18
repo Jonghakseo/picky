@@ -286,13 +286,6 @@ final class CompanionManager: ObservableObject {
     @Published var detectedElementBubbleText: String?
     /// How long the buddy should keep the pointer bubble visible after arriving.
     @Published var detectedElementDisplayDuration: TimeInterval?
-    /// Optional bounding rect (global AppKit coords) of the highlighted element.
-    /// When provided, the highlight overlay sizes its rings to match the bbox.
-    /// When nil, the overlay falls back to a default-sized circle around the point.
-    @Published var detectedElementTargetFrame: CGRect?
-    /// Whether the highlight is over an in-screen element (dim the surroundings)
-    /// or over Picky's own HUD chrome like the dock (no dim).
-    @Published var detectedElementHighlightKind: PickyDetectedHighlightKind?
     /// Whether this visit is the last in its sequence and should spring back to the real cursor.
     @Published var detectedElementReturnsToCursor = true
     /// Keeps the final annotation target in place until its streamed turn settles.
@@ -593,8 +586,6 @@ final class CompanionManager: ObservableObject {
         detectedElementDisplayFrame = target.displayFrame
         detectedElementBubbleText = target.bubbleText
         detectedElementDisplayDuration = target.duration
-        detectedElementTargetFrame = target.targetFrame
-        detectedElementHighlightKind = target.highlightKind
         detectedElementReturnsToCursor = target.returnsToCursor
         detectedElementParksAtTarget = target.parksAtTarget
         detectedElementScreenLocation = target.screenLocation
@@ -637,8 +628,6 @@ final class CompanionManager: ObservableObject {
         detectedElementDisplayFrame = nil
         detectedElementBubbleText = nil
         detectedElementDisplayDuration = nil
-        detectedElementTargetFrame = nil
-        detectedElementHighlightKind = nil
         detectedElementReturnsToCursor = true
         detectedElementParksAtTarget = false
         detectedElementPointerID = nil
@@ -655,8 +644,6 @@ final class CompanionManager: ObservableObject {
         detectedElementDisplayFrame = nil
         detectedElementBubbleText = nil
         detectedElementDisplayDuration = nil
-        detectedElementTargetFrame = nil
-        detectedElementHighlightKind = nil
         detectedElementReturnsToCursor = true
         detectedElementParksAtTarget = false
         detectedElementPointerID = nil
@@ -2355,9 +2342,7 @@ final class CompanionManager: ObservableObject {
                     screenLocation: target.screenLocation,
                     displayFrame: target.displayFrame,
                     bubbleText: target.bubbleText,
-                    duration: target.duration,
-                    targetFrame: target.targetFrame,
-                    highlightKind: .screenElement
+                    duration: target.duration
                 )),
                 correlation: PickyInteractionCorrelation(pointerID: request.id, source: .pointer)
             )

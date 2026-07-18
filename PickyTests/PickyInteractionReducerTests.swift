@@ -663,7 +663,6 @@ struct PickyInteractionReducerTests {
         let first = revealAnnotation(id: "rect", into: PickyInteractionState())
         let firstTarget = pointerTarget(from: first)
         #expect(firstTarget.id == "annotation-rect")
-        #expect(firstTarget.highlightKind == .annotation)
         #expect(firstTarget.returnsToCursor == false)
         #expect(firstTarget.parksAtTarget)
 

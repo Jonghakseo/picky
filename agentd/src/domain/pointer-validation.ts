@@ -9,7 +9,6 @@ export interface PointerScreenRequest {
 export interface PointerCoordinateRequest {
   x: number;
   y: number;
-  r?: number;
 }
 
 export interface ScreenshotSize {
@@ -41,17 +40,11 @@ export function screenshotSizeFromMetadata(screenshot: ScreenshotContext): Scree
 export function clampPointerCoordinates(
   request: PointerCoordinateRequest,
   screenshotSize: ScreenshotSize,
-): { x: number; y: number; r?: number; clamped?: boolean } {
+): { x: number; y: number; clamped?: boolean } {
   const x = clamp(request.x, 0, screenshotSize.width);
   const y = clamp(request.y, 0, screenshotSize.height);
-  const r = request.r === undefined ? undefined : clampRadius(request.r, screenshotSize);
-  const clamped = x !== request.x || y !== request.y || r !== request.r;
-  return { x, y, ...(r === undefined ? {} : { r }), ...(clamped ? { clamped: true } : {}) };
-}
-
-function clampRadius(value: number, screenshotSize: ScreenshotSize): number {
-  if (!Number.isFinite(value) || value < 0) throw new Error("r must be a non-negative finite number.");
-  return clamp(value, 0, Math.max(screenshotSize.width, screenshotSize.height));
+  const clamped = x !== request.x || y !== request.y;
+  return { x, y, ...(clamped ? { clamped: true } : {}) };
 }
 
 function clamp(value: number, min: number, max: number): number {

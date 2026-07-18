@@ -40,18 +40,6 @@ struct PickyPointerOverlayResolverTests {
         #expect(target.displayFrame == CGRect(x: 0, y: 0, width: 1728, height: 1117))
     }
 
-    @Test func resolvesRadiusIntoTargetFrame() throws {
-        let target = try PickyPointerOverlayResolver.resolve(request(
-            x: 200,
-            y: 50,
-            r: 40,
-            screenBounds: PickyCGRect(x: 100, y: 200, width: 200, height: 100),
-            screenshotSize: PickyPointerScreenshotSize(width: 400, height: 200)
-        ))
-
-        #expect(target.targetFrame == CGRect(x: 180, y: 255, width: 40, height: 40))
-    }
-
     @Test func clampsCoordinatesAndNormalizesLabel() throws {
         let request = request(
             x: 999,
@@ -86,7 +74,6 @@ struct PickyPointerOverlayResolverTests {
         let eventRequest = request(
             x: 50,
             y: 25,
-            r: 20,
             label: "Settings",
             screenBounds: PickyCGRect(x: 10, y: 20, width: 100, height: 100),
             screenshotSize: PickyPointerScreenshotSize(width: 100, height: 100)
@@ -101,8 +88,6 @@ struct PickyPointerOverlayResolverTests {
         #expect(manager.detectedElementDisplayFrame == CGRect(x: 10, y: 20, width: 100, height: 100))
         #expect(manager.detectedElementBubbleText == "Settings")
         #expect(manager.detectedElementDisplayDuration == 1.0)
-        #expect(manager.detectedElementHighlightKind == .screenElement)
-        #expect(manager.detectedElementTargetFrame == CGRect(x: 40, y: 75, width: 40, height: 40))
         #expect(manager.voiceState == .idle)
     }
 
@@ -131,7 +116,7 @@ struct PickyPointerOverlayResolverTests {
         #expect(manager.detectedElementScreenLocation == CGPoint(x: 50, y: 75))
     }
 
-    @Test func clearDetectedElementResetsAllHighlightFields() async throws {
+    @Test func clearDetectedElementResetsAllPointerFields() async throws {
         let manager = CompanionManager(agentClient: FakePointerClient(), selectionStore: FakePointerSelectionStore())
         manager.applyAgentEvent(.pointerOverlayRequested(request(
             x: 50,
@@ -140,8 +125,7 @@ struct PickyPointerOverlayResolverTests {
             screenBounds: PickyCGRect(x: 0, y: 0, width: 200, height: 200),
             screenshotSize: PickyPointerScreenshotSize(width: 200, height: 200)
         )))
-        try await waitUntil { manager.detectedElementHighlightKind == .screenElement }
-        #expect(manager.detectedElementHighlightKind == .screenElement)
+        try await waitUntil { manager.detectedElementScreenLocation != nil }
 
         manager.clearDetectedElementLocation()
 
@@ -149,14 +133,11 @@ struct PickyPointerOverlayResolverTests {
         #expect(manager.detectedElementDisplayFrame == nil)
         #expect(manager.detectedElementBubbleText == nil)
         #expect(manager.detectedElementDisplayDuration == nil)
-        #expect(manager.detectedElementTargetFrame == nil)
-        #expect(manager.detectedElementHighlightKind == nil)
     }
 
     private func request(
         x: Double,
         y: Double,
-        r: Double? = nil,
         label: String? = nil,
         contextGeneration: Int? = nil,
         screenBounds: PickyCGRect,
@@ -169,7 +150,6 @@ struct PickyPointerOverlayResolverTests {
             screenId: "screen1",
             x: x,
             y: y,
-            r: r,
             label: label,
             clamped: nil,
             screenBounds: screenBounds,

@@ -272,7 +272,6 @@ export const PickyPointerOverlayRequestSchema = z.object({
   x: z.number().finite(),
   y: z.number().finite(),
   label: z.string().optional(),
-  r: z.number().nonnegative().finite().optional(),
   clamped: z.boolean().optional(),
   screenBounds: BoundsSchema,
   screenshotSize: z.object({ width: z.number().positive(), height: z.number().positive() }),

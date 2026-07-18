@@ -10,7 +10,6 @@
     "screenId": "screen1",
     "x": 640,
     "y": 360,
-    "r": 28,
     "label": "Start here",
     "screenBounds": { "x": 0, "y": 0, "width": 1728, "height": 1117 },
     "screenshotSize": { "width": 1280, "height": 827 }

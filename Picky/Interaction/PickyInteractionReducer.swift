@@ -8,16 +8,13 @@ private enum PickyAnnotationPointerTarget {
 
     static func make(_ annotation: PickyAgentAnnotation) -> PickyPointerTarget? {
         let anchor: CGPoint
-        let targetFrame: CGRect?
         switch annotation.shape {
         case .rect:
             guard let rect = annotation.rect else { return nil }
             anchor = CGPoint(x: rect.midX, y: rect.midY)
-            targetFrame = rect
         case .line:
             guard let start = annotation.point, let end = annotation.endPoint else { return nil }
             anchor = CGPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
-            targetFrame = nil
         }
         return PickyPointerTarget(
             id: "annotation-\(annotation.id)",
@@ -28,8 +25,6 @@ private enum PickyAnnotationPointerTarget {
             // conversational bubble so it only acts as a transient drawing guide.
             bubbleText: "",
             duration: hoverDuration,
-            targetFrame: targetFrame,
-            highlightKind: .annotation,
             returnsToCursor: true
         )
     }
@@ -46,8 +41,6 @@ private enum PickyAnnotationPointerTarget {
             displayFrame: target.displayFrame,
             bubbleText: target.bubbleText,
             duration: target.duration,
-            targetFrame: target.targetFrame,
-            highlightKind: target.highlightKind,
             returnsToCursor: returnsToCursor,
             parksAtTarget: parksAtTarget
         )

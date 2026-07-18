@@ -10,13 +10,6 @@
 import CoreGraphics
 import Foundation
 
-/// Visual emphasis policy for a pointer target. Direct POINT requests dim their
-/// surroundings; annotation choreography only moves the buddy and remains non-dimming.
-enum PickyDetectedHighlightKind: String, Codable, Equatable {
-    case screenElement
-    case annotation
-}
-
 struct PickyPointerOverlayRequest: Codable, Equatable, Identifiable {
     let id: String
     let contextId: String?
@@ -24,7 +17,6 @@ struct PickyPointerOverlayRequest: Codable, Equatable, Identifiable {
     let screenId: String?
     let x: Double
     let y: Double
-    let r: Double?
     let label: String?
     let clamped: Bool?
     let screenBounds: PickyCGRect
@@ -41,14 +33,12 @@ struct PickyResolvedPointerOverlayTarget: Equatable {
     let displayFrame: CGRect
     let bubbleText: String?
     let duration: TimeInterval
-    let targetFrame: CGRect?
 }
 
 enum PickyPointerOverlayResolveError: LocalizedError, Equatable {
     case invalidDisplayBounds
     case invalidScreenshotSize
     case invalidCoordinate
-    case invalidRadius
 
     var errorDescription: String? {
         switch self {
@@ -58,8 +48,6 @@ enum PickyPointerOverlayResolveError: LocalizedError, Equatable {
             return "Pointer overlay request needs a positive screenshot size for screenshotPixel coordinates."
         case .invalidCoordinate:
             return "Pointer overlay request has non-finite coordinates."
-        case .invalidRadius:
-            return "Pointer overlay request has a non-finite highlight radius."
         }
     }
 }
@@ -94,28 +82,11 @@ enum PickyPointerOverlayResolver {
             x: request.screenBounds.x + displayX,
             y: request.screenBounds.y + request.screenBounds.height - displayYFromTop
         )
-        let targetFrame: CGRect?
-        if let requestedRadius = request.r {
-            guard requestedRadius.isFinite else { throw PickyPointerOverlayResolveError.invalidRadius }
-            let radius = clamp(requestedRadius, lower: 0, upper: max(request.screenshotSize.width, request.screenshotSize.height))
-            let radiusX = (radius / request.screenshotSize.width) * request.screenBounds.width
-            let radiusY = (radius / request.screenshotSize.height) * request.screenBounds.height
-            targetFrame = CGRect(
-                x: globalPoint.x - radiusX,
-                y: globalPoint.y - radiusY,
-                width: radiusX * 2,
-                height: radiusY * 2
-            )
-        } else {
-            targetFrame = nil
-        }
-
         return PickyResolvedPointerOverlayTarget(
             screenLocation: globalPoint,
             displayFrame: displayFrame,
             bubbleText: normalizedBubbleText(request.label),
-            duration: defaultDuration,
-            targetFrame: targetFrame
+            duration: defaultDuration
         )
     }
 

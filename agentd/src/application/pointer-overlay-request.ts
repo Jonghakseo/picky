@@ -4,7 +4,6 @@ import type { PickyPointerOverlayRequest } from "../protocol.js";
 export interface PickyShowPointerRequest {
   x: number;
   y: number;
-  r?: number;
   screenId?: string;
   label?: string;
 }
@@ -21,7 +20,6 @@ export function makePointerOverlayRequest(input: PickyShowPointerRequest, defaul
     screenId: normalizeOptionalString(input.screenId) ?? defaults.screenId,
     x: input.x,
     y: input.y,
-    r: input.r,
     label: normalizeOptionalString(input.label),
     screenBounds: defaults.screenBounds,
     screenshotSize: defaults.screenshotSize,

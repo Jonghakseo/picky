@@ -1655,7 +1655,6 @@ export class SessionSupervisor extends EventEmitter {
         this.requestPointerOverlayForContext(captured, {
           x: tag.x,
           y: tag.y,
-          ...(tag.r === undefined ? {} : { r: tag.r }),
           ...(tag.label === undefined ? {} : { label: tag.label }),
           ...(tag.screenId === undefined ? {} : { screenId: tag.screenId }),
         });

@@ -331,8 +331,6 @@ struct PickyPointerTarget: Equatable, Codable, Identifiable {
     let displayFrame: CGRect
     let bubbleText: String?
     let duration: TimeInterval
-    let targetFrame: CGRect?
-    let highlightKind: PickyDetectedHighlightKind
     /// False only for an annotation visit that has another queued anchor; that visit
     /// hops directly to the next shape instead of returning to the real cursor.
     let returnsToCursor: Bool
@@ -346,8 +344,6 @@ struct PickyPointerTarget: Equatable, Codable, Identifiable {
         displayFrame: CGRect,
         bubbleText: String? = nil,
         duration: TimeInterval,
-        targetFrame: CGRect? = nil,
-        highlightKind: PickyDetectedHighlightKind = .screenElement,
         returnsToCursor: Bool = true,
         parksAtTarget: Bool = false
     ) {
@@ -357,14 +353,12 @@ struct PickyPointerTarget: Equatable, Codable, Identifiable {
         self.displayFrame = displayFrame
         self.bubbleText = bubbleText
         self.duration = duration
-        self.targetFrame = targetFrame
-        self.highlightKind = highlightKind
         self.returnsToCursor = returnsToCursor
         self.parksAtTarget = parksAtTarget
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, source, screenLocation, displayFrame, bubbleText, duration, targetFrame, highlightKind, returnsToCursor, parksAtTarget
+        case id, source, screenLocation, displayFrame, bubbleText, duration, returnsToCursor, parksAtTarget
     }
 
     init(from decoder: Decoder) throws {
@@ -375,8 +369,6 @@ struct PickyPointerTarget: Equatable, Codable, Identifiable {
         displayFrame = try container.decode(CGRect.self, forKey: .displayFrame)
         bubbleText = try container.decodeIfPresent(String.self, forKey: .bubbleText)
         duration = try container.decode(TimeInterval.self, forKey: .duration)
-        targetFrame = try container.decodeIfPresent(CGRect.self, forKey: .targetFrame)
-        highlightKind = try container.decode(PickyDetectedHighlightKind.self, forKey: .highlightKind)
         returnsToCursor = try container.decodeIfPresent(Bool.self, forKey: .returnsToCursor) ?? true
         parksAtTarget = try container.decodeIfPresent(Bool.self, forKey: .parksAtTarget) ?? false
     }

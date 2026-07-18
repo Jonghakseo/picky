@@ -203,6 +203,7 @@ export class AgentdServer {
     }
     this.pendingDockGroupsRequests.clear();
     for (const client of this.clients) client.close();
+    this.options.edgeTTS?.dispose();
     await new Promise<void>((resolve) => this.wsServer?.close(() => resolve()) ?? resolve());
     await new Promise<void>((resolve) => this.httpServer?.close(() => resolve()) ?? resolve());
   }

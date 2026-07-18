@@ -189,6 +189,57 @@ describe("EdgeTTSService", () => {
     expect(closed).toBeGreaterThanOrEqual(1);
   });
 
+  it("reuses one warm client across sequential requests and closes them on dispose", async () => {
+    let created = 0;
+    let closed = 0;
+    let metadataCalls = 0;
+    const service = new EdgeTTSService(() => {
+      created += 1;
+      return client({
+        setMetadata: async () => { metadataCalls += 1; },
+        toStream: () => ({ audioStream: Readable.from([Buffer.from("mp3")]) }),
+        close: () => { closed += 1; },
+      });
+    });
+
+    await service.synthesize("one", "ko-KR-SunHiNeural");
+    await service.synthesize("two", "ko-KR-SunHiNeural");
+    await service.synthesize("three", "ko-KR-SunHiNeural");
+
+    // One connection served all three sequential requests, and setMetadata ran
+    // once (real msedge-tts throws on a 2nd metadata call without options).
+    expect(created).toBe(1);
+    expect(metadataCalls).toBe(1);
+    expect(closed).toBe(0);
+
+    service.dispose();
+    expect(closed).toBe(1);
+  });
+
+  it("opens a second client only for overlapping concurrent requests", async () => {
+    let created = 0;
+    const release: Array<() => void> = [];
+    const service = new EdgeTTSService(() => {
+      created += 1;
+      return client({
+        toStream: () => {
+          const stream = new Readable({ read() {} });
+          release.push(() => { stream.push(Buffer.from("mp3")); stream.push(null); });
+          return { audioStream: stream };
+        },
+      });
+    });
+
+    const first = service.synthesize("a", "ko-KR-SunHiNeural");
+    const second = service.synthesize("b", "ko-KR-SunHiNeural");
+    // Both are in flight before either stream ends, so they cannot share a client.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    release.forEach((fn) => fn());
+    await Promise.all([first, second]);
+
+    expect(created).toBe(2);
+  });
+
   it("cancels the underlying stream and client", async () => {
     let closed = 0;
     const controller = new AbortController();

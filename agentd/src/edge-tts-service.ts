@@ -15,6 +15,13 @@ interface EdgeTTSStreamResult {
   audioStream: Readable;
 }
 
+interface PooledClient {
+  client: EdgeTTSClient;
+  voice: string;
+  busy: boolean;
+  configured: boolean;
+}
+
 export interface EdgeTTSClient {
   getVoices(): Promise<Voice[]>;
   setMetadata(voiceName: string, outputFormat: OUTPUT_FORMAT): Promise<void>;
@@ -38,9 +45,15 @@ export class EdgeTTSServiceError extends Error {
  * its input into an SSML template verbatim.
  */
 export class EdgeTTSService {
+  // Warm connections reused across requests. Each Edge synth otherwise pays a
+  // ~200ms WS handshake + metadata round-trip (measured), which dominates the
+  // ~330ms total for short sentences.
+  private readonly pool: PooledClient[] = [];
+
   constructor(
     private readonly createClient: () => EdgeTTSClient = () => new MsEdgeTTS(),
     private readonly timeoutMs = EDGE_TTS_TIMEOUT_MS,
+    private readonly maxPoolSize = 4,
   ) {}
 
   async listVoices(): Promise<EdgeTTSVoice[]> {
@@ -66,23 +79,68 @@ export class EdgeTTSService {
   async synthesize(input: string, voice: string, signal?: AbortSignal): Promise<Buffer> {
     const text = validatedInput(input);
     const voiceName = validatedVoice(voice);
-    const client = this.createClient();
+    const pooled = this.acquire(voiceName);
 
     try {
-      await withClientTimeout(
-        client.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3),
-        client,
-        this.timeoutMs,
-        signal,
-      );
-      const { audioStream } = client.toStream(escapeSSMLText(text));
-      return await collectAudio(audioStream, client, this.timeoutMs, signal);
+      // Configure (and open the WS) only once per pooled client. msedge-tts'
+      // setMetadata throws if called again without its 3rd options arg, and a
+      // reused OPEN socket needs no reconfiguration, so we skip it on reuse —
+      // which also drops the metadata round-trip from every subsequent request.
+      if (!pooled.configured) {
+        await withClientTimeout(
+          pooled.client.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3),
+          pooled.client,
+          this.timeoutMs,
+          signal,
+        );
+        pooled.configured = true;
+      }
+      const { audioStream } = pooled.client.toStream(escapeSSMLText(text));
+      const audio = await collectAudio(audioStream, pooled.client, this.timeoutMs, signal, { closeClientOnError: false });
+      this.release(pooled);
+      return audio;
     } catch (error) {
+      // A failed/aborted request may have left the socket in a bad state, so
+      // evict this client instead of returning it to the pool.
+      this.discard(pooled);
       if (error instanceof EdgeTTSServiceError) throw error;
       throw serviceError("Microsoft Edge speech synthesis failed.", error);
-    } finally {
-      client.close();
     }
+  }
+
+  /** Close every pooled connection. Call on daemon shutdown. */
+  dispose(): void {
+    for (const pooled of this.pool.splice(0)) {
+      try { pooled.client.close(); } catch { /* best effort */ }
+    }
+  }
+
+  private acquire(voice: string): PooledClient {
+    const idle = this.pool.find((entry) => !entry.busy && entry.voice === voice);
+    if (idle) {
+      idle.busy = true;
+      return idle;
+    }
+    const pooled: PooledClient = { client: this.createClient(), voice, busy: true, configured: false };
+    this.pool.push(pooled);
+    return pooled;
+  }
+
+  private release(pooled: PooledClient): void {
+    pooled.busy = false;
+    // Bound the pool: close and drop the oldest idle clients beyond the cap so
+    // bursts of concurrent requests do not leak connections.
+    const idle = this.pool.filter((entry) => !entry.busy);
+    while (idle.length > this.maxPoolSize) {
+      const victim = idle.shift()!;
+      this.discard(victim);
+    }
+  }
+
+  private discard(pooled: PooledClient): void {
+    const index = this.pool.indexOf(pooled);
+    if (index >= 0) this.pool.splice(index, 1);
+    try { pooled.client.close(); } catch { /* best effort */ }
   }
 }
 
@@ -143,7 +201,14 @@ function withClientTimeout<T>(operation: Promise<T>, client: EdgeTTSClient, time
   });
 }
 
-function collectAudio(stream: Readable, client: EdgeTTSClient, timeoutMs: number, signal?: AbortSignal): Promise<Buffer> {
+function collectAudio(
+  stream: Readable,
+  client: EdgeTTSClient,
+  timeoutMs: number,
+  signal?: AbortSignal,
+  options: { closeClientOnError?: boolean } = {},
+): Promise<Buffer> {
+  const closeClientOnError = options.closeClientOnError ?? true;
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let settled = false;
@@ -163,7 +228,9 @@ function collectAudio(stream: Readable, client: EdgeTTSClient, timeoutMs: number
     };
 
     const abort = (message: string, statusCode = 502) => {
-      client.close();
+      // When pooled, the caller (synthesize) decides whether to evict the
+      // client; closing it here would kill a connection we want to reuse.
+      if (closeClientOnError) client.close();
       stream.destroy();
       settle({ error: new EdgeTTSServiceError(message, statusCode) });
     };

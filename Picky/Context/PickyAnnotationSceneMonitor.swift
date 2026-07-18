@@ -401,7 +401,10 @@ final class PickyAnnotationSceneMonitor {
 
     private static func hasPendingVisualConfirmation(_ session: Session) -> Bool {
         switch session.phase {
-        case .validating, .suspended:
+        case .validating:
+            session.stability.consecutiveMatches > 0
+                || session.stability.consecutiveMismatches > 0
+        case .suspended:
             session.stability.consecutiveMatches > 0
         case .visible:
             session.stability.consecutiveMismatches > 0

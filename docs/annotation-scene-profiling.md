@@ -23,7 +23,8 @@ Useful fields:
 
 Expected adaptive cadence:
 
-- validation: 300 ms between the two required matches
+- validation: 300 ms between two confirmations; strict matches reveal normally, while stable localized highlight/color drift may also reveal only when the global scene still matches and ROI drift stays at or below 15% changed pixels / 10 mean luminance difference
+- two hard mismatches during initial validation transition to `suspended` instead of polling invisibly forever
 - first 5 seconds visible: 500 ms
 - 5–30 seconds visible: 1 second
 - long-lived visible annotation: 5 seconds

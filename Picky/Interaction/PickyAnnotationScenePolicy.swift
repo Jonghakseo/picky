@@ -61,6 +61,10 @@ enum PickyAnnotationSceneVisualPolicy {
     /// invalidation. Values in between are deliberately indeterminate to prevent flicker.
     static let matchingROIChangedFraction = 0.08
     static let matchingROIMeanDifference = 7.0
+    /// Initial reveal allowance for transient highlight/color drift. Kept well below
+    /// hard mismatch so localized content changes still block stale geometry.
+    static let initialValidationROIChangedFraction = 0.15
+    static let initialValidationROIMeanDifference = 10.0
     static let mismatchingROIChangedFraction = 0.20
     static let mismatchingROIMeanDifference = 14.0
     static let matchingGlobalChangedFraction = 0.18
@@ -129,6 +133,19 @@ enum PickyAnnotationSceneVisualPolicy {
             return .matching(metrics)
         }
         return .indeterminate(metrics)
+    }
+
+    /// Initial reveal can tolerate a bounded localized color/highlight drift when the
+    /// desktop structure still matches globally. Restoration stays strict because stale
+    /// geometry has already been proven.
+    static func canValidateInitialScene(_ metrics: PickyAnnotationSceneDifferenceMetrics) -> Bool {
+        guard let roiChangedFraction = metrics.roiChangedFraction,
+              let roiMeanDifference = metrics.roiMeanDifference else { return false }
+        let globalMatches = metrics.globalChangedFraction <= matchingGlobalChangedFraction
+            && metrics.globalMeanDifference <= matchingGlobalMeanDifference
+        let roiWithinInitialAllowance = roiChangedFraction <= initialValidationROIChangedFraction
+            && roiMeanDifference <= initialValidationROIMeanDifference
+        return globalMatches && roiWithinInitialAllowance
     }
 
     private static func difference(
@@ -212,15 +229,25 @@ struct PickyAnnotationSceneStabilityTracker: Equatable, Sendable {
         case .mismatching:
             consecutiveMismatches += 1
             consecutiveMatches = 0
-            guard phase == .visible,
+            guard (phase == .visible || phase == .validating),
                   consecutiveMismatches >= Self.requiredConsecutiveObservations else {
                 return .none
             }
             reset()
             return .suspend
-        case .indeterminate:
+        case .indeterminate(let metrics):
+            guard phase == .validating,
+                  PickyAnnotationSceneVisualPolicy.canValidateInitialScene(metrics) else {
+                reset()
+                return .none
+            }
+            consecutiveMatches += 1
+            consecutiveMismatches = 0
+            guard consecutiveMatches >= Self.requiredConsecutiveObservations else {
+                return .none
+            }
             reset()
-            return .none
+            return .show
         }
     }
 

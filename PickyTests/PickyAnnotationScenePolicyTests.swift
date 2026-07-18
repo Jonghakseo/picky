@@ -22,6 +22,45 @@ struct PickyAnnotationScenePolicyTests {
         #expect(tracker.observe(mismatching, phase: .visible) == .suspend)
     }
 
+    @Test func initialValidationSuspendsAfterTwoHardMismatches() {
+        var tracker = PickyAnnotationSceneStabilityTracker()
+        let mismatching = PickyAnnotationSceneVisualObservation.mismatching(.changed)
+
+        #expect(tracker.observe(mismatching, phase: .validating) == .none)
+        #expect(tracker.observe(mismatching, phase: .validating) == .suspend)
+    }
+
+    @Test func initialValidationAcceptsStableLocalizedDriftButRestorationRemainsStrict() {
+        let transientHighlightDrift = PickyAnnotationSceneVisualObservation.indeterminate(
+            PickyAnnotationSceneDifferenceMetrics(
+                globalChangedFraction: 0.02,
+                globalMeanDifference: 1.2,
+                roiChangedFraction: 0.125,
+                roiMeanDifference: 7.5
+            )
+        )
+        var validating = PickyAnnotationSceneStabilityTracker()
+
+        #expect(validating.observe(transientHighlightDrift, phase: .validating) == .none)
+        #expect(validating.observe(transientHighlightDrift, phase: .validating) == .show)
+
+        var restoring = PickyAnnotationSceneStabilityTracker()
+        #expect(restoring.observe(transientHighlightDrift, phase: .suspended) == .none)
+        #expect(restoring.observe(transientHighlightDrift, phase: .suspended) == .none)
+
+        let largerLocalizedChange = PickyAnnotationSceneVisualObservation.indeterminate(
+            PickyAnnotationSceneDifferenceMetrics(
+                globalChangedFraction: 0.02,
+                globalMeanDifference: 1.2,
+                roiChangedFraction: 0.18,
+                roiMeanDifference: 12
+            )
+        )
+        var conservativeValidation = PickyAnnotationSceneStabilityTracker()
+        #expect(conservativeValidation.observe(largerLocalizedChange, phase: .validating) == .none)
+        #expect(conservativeValidation.observe(largerLocalizedChange, phase: .validating) == .none)
+    }
+
     @Test func indeterminateFrameBreaksAConsecutiveSequence() throws {
         var tracker = PickyAnnotationSceneStabilityTracker()
         let matching = PickyAnnotationSceneVisualObservation.matching(.zero)
@@ -193,6 +232,89 @@ struct PickyAnnotationScenePolicyTests {
         #expect(outputs.count == 2)
         await monitor.sampleNow()
         #expect(outputs == [.matched(identity), .mismatched(identity, .visual), .matched(identity)])
+        monitor.stop()
+    }
+
+    @Test func monitorAllowsInitialLocalizedDriftButRequiresStrictRestoration() async throws {
+        let baselineFingerprint = try #require(fingerprint(width: 10, height: 10))
+        var driftPixels = baselineFingerprint.luminance
+        for index in [44, 45, 54, 55] { driftPixels[index] = 124 }
+        let highlightDrift = try #require(PickyAnnotationSceneFingerprint(
+            width: 10,
+            height: 10,
+            luminance: driftPixels
+        ))
+        let capturer = FakeAnnotationSceneCapturer(
+            baseline: baselineFingerprint,
+            current: [
+                highlightDrift, highlightDrift,
+                highlightDrift, highlightDrift,
+                baselineFingerprint, baselineFingerprint,
+            ]
+        )
+        let monitor = PickyAnnotationSceneMonitor(
+            capturer: capturer,
+            semanticProvider: FakeAnnotationSceneSemanticProvider(),
+            automaticallySchedulesSamples: false
+        )
+        let identity = PickyAnnotationSceneIdentity(
+            contextID: "context",
+            generation: 5,
+            token: UUID(uuidString: "A0000000-0000-0000-0000-000000000005")!
+        )
+        var outputs: [PickyAnnotationSceneMonitorOutput] = []
+        monitor.onOutput = { outputs.append($0) }
+        monitor.start(identity: identity, baseline: sceneBaseline(contextID: "context"))
+        monitor.updateTarget(screenshot: screenshot(), annotations: [annotation()], mode: .append)
+
+        await monitor.sampleNow()
+        await monitor.sampleNow()
+        #expect(outputs == [.matched(identity)])
+
+        monitor.suspendImmediately(reason: .scroll)
+        await monitor.sampleNow()
+        await monitor.sampleNow()
+        #expect(outputs == [.matched(identity), .mismatched(identity, .scroll)])
+
+        await monitor.sampleNow()
+        await monitor.sampleNow()
+        #expect(outputs == [
+            .matched(identity),
+            .mismatched(identity, .scroll),
+            .matched(identity),
+        ])
+        monitor.stop()
+    }
+
+    @Test func monitorSuspendsAnInitialHardMismatchInsteadOfValidatingForever() async throws {
+        let baselineFingerprint = try #require(fingerprint(width: 10, height: 10))
+        let changedFingerprint = try #require(PickyAnnotationSceneFingerprint(
+            width: 10,
+            height: 10,
+            luminance: [UInt8](repeating: 255, count: 100)
+        ))
+        let monitor = PickyAnnotationSceneMonitor(
+            capturer: FakeAnnotationSceneCapturer(
+                baseline: baselineFingerprint,
+                current: [changedFingerprint, changedFingerprint]
+            ),
+            semanticProvider: FakeAnnotationSceneSemanticProvider(),
+            automaticallySchedulesSamples: false
+        )
+        let identity = PickyAnnotationSceneIdentity(
+            contextID: "context",
+            generation: 6,
+            token: UUID(uuidString: "A0000000-0000-0000-0000-000000000006")!
+        )
+        var outputs: [PickyAnnotationSceneMonitorOutput] = []
+        monitor.onOutput = { outputs.append($0) }
+        monitor.start(identity: identity, baseline: sceneBaseline(contextID: "context"))
+        monitor.updateTarget(screenshot: screenshot(), annotations: [annotation()], mode: .append)
+
+        await monitor.sampleNow()
+        #expect(outputs.isEmpty)
+        await monitor.sampleNow()
+        #expect(outputs == [.mismatched(identity, .visual)])
         monitor.stop()
     }
 

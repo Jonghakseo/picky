@@ -51,6 +51,37 @@ function unknownFixtureKeys(schema: z.ZodTypeAny, fixture: unknown, path = ""): 
   });
 }
 
+function pointerOverlayEvent(extraRequestFields: Record<string, unknown> = {}) {
+  return {
+    id: "event-pointer-legacy",
+    protocolVersion: "2026-07-17",
+    timestamp: "2026-07-17T00:00:00.000Z",
+    type: "pointerOverlayRequested",
+    request: {
+      id: "pointer-legacy",
+      x: 640,
+      y: 360,
+      screenBounds: { x: 0, y: 0, width: 1728, height: 1117 },
+      screenshotSize: { width: 1280, height: 827 },
+      ...extraRequestFields,
+    },
+  };
+}
+
+function annotationOverlayEvent(annotation: Record<string, unknown>) {
+  return {
+    id: "event-annotation-legacy",
+    protocolVersion: "2026-07-17",
+    timestamp: "2026-07-17T00:00:00.000Z",
+    type: "annotationOverlayRequested",
+    request: {
+      id: "annotation-legacy",
+      mode: "replace",
+      annotations: [annotation],
+    },
+  };
+}
+
 function contextFixture() {
   return {
     id: "context-fixture",
@@ -100,6 +131,63 @@ describe("protocol contract fixtures", () => {
     for (const name of readdirSync(contractsRoot).filter((file) => file.endsWith(".event.json"))) {
       const fixture = JSON.parse(readFileSync(join(contractsRoot, name), "utf8"));
       expect(unknownFixtureKeys(eventVariantSchema(fixture), fixture)).toEqual([]);
+    }
+  });
+
+  it("pins the mainTurnSettled fixture variant and contextId", () => {
+    const fixture = JSON.parse(readFileSync(join(contractsRoot, "main-turn-settled.event.json"), "utf8"));
+
+    expect(EventEnvelopeSchema.parse(fixture)).toMatchObject({
+      type: "mainTurnSettled",
+      contextId: "context-overlay-only-001",
+    });
+  });
+
+  it("ignores retired pointer radius fields", () => {
+    const current = EventEnvelopeSchema.parse(pointerOverlayEvent());
+    const legacy = EventEnvelopeSchema.parse(pointerOverlayEvent({ r: 24 }));
+
+    expect(legacy).toEqual(current);
+  });
+
+  it("treats omitted and false annotation spotlight as equivalent visual defaults", () => {
+    const omitted = EventEnvelopeSchema.parse(annotationOverlayEvent({
+      id: "annotation-spotlight-omitted",
+      shape: "rect",
+      x: 10,
+      y: 20,
+      w: 30,
+      h: 40,
+    }));
+    const explicitFalse = EventEnvelopeSchema.parse(annotationOverlayEvent({
+      id: "annotation-spotlight-false",
+      shape: "rect",
+      x: 10,
+      y: 20,
+      w: 30,
+      h: 40,
+      spotlight: false,
+    }));
+
+    if (omitted.type !== "annotationOverlayRequested" || explicitFalse.type !== "annotationOverlayRequested") {
+      throw new Error("Expected annotation overlay requests");
+    }
+    expect(omitted.request.annotations[0]?.spotlight).toBeUndefined();
+    expect(explicitFalse.request.annotations[0]?.spotlight).toBe(false);
+    expect(Boolean(omitted.request.annotations[0]?.spotlight)).toBe(Boolean(explicitFalse.request.annotations[0]?.spotlight));
+  });
+
+  it("ignores retired annotation ttlMs fields", () => {
+    const annotation = { id: "annotation-ttl", shape: "rect", x: 10, y: 20, w: 30, h: 40 } as const;
+    const current = EventEnvelopeSchema.parse(annotationOverlayEvent(annotation));
+    const legacy = EventEnvelopeSchema.parse(annotationOverlayEvent({ ...annotation, ttlMs: 5_000 }));
+
+    expect(legacy).toEqual(current);
+  });
+
+  it("rejects retired annotation circle and target shapes", () => {
+    for (const shape of ["circle", "target"]) {
+      expect(() => EventEnvelopeSchema.parse(annotationOverlayEvent({ id: `annotation-${shape}`, shape }))).toThrow();
     }
   });
 

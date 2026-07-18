@@ -143,6 +143,19 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
+  it("broadcasts mainTurnSettled with its contextId", async () => {
+    const { ws } = await connectWithHello();
+    const pendingSettled = waitForEvent(ws, "mainTurnSettled");
+
+    supervisor.emit("mainTurnSettled", "context-overlay-only-001");
+
+    await expect(pendingSettled).resolves.toMatchObject({
+      type: "mainTurnSettled",
+      contextId: "context-overlay-only-001",
+    });
+    ws.close();
+  });
+
   it("broadcasts toolActivityUpdated events", async () => {
     const { ws } = await connectWithHello();
     const pendingToolEvent = waitForEvent(ws, "toolActivityUpdated");

@@ -158,6 +158,20 @@ struct ProtocolContractTests {
         )])
     }
 
+    @Test func decodesMainTurnSettledFixtureWithContextID() throws {
+        let fixture = try #require(fixtureURLs(in: "contracts/protocol").first {
+            $0.lastPathComponent == "main-turn-settled.event.json"
+        })
+
+        let envelope = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: Data(contentsOf: fixture))
+
+        guard case .mainTurnSettled(let contextID) = envelope.event else {
+            Issue.record("Expected mainTurnSettled event")
+            return
+        }
+        #expect(contextID == "context-overlay-only-001")
+    }
+
     @Test func encodesAndDecodesPickleCommand() throws {
         let command = PickyCommandEnvelope(id: "cmd-pickle", type: .createEmptyPickleSession)
         let data = try JSONEncoder.pickyAgentProtocolEncoder().encode(command)
@@ -415,6 +429,64 @@ struct ProtocolContractTests {
         #expect(request.questions?[1].defaultValue == .array([.string("rule")]))
     }
 
+    @Test func ignoresRetiredPointerRadiusField() throws {
+        let legacy = try JSONDecoder.pickyAgentProtocolDecoder().decode(
+            PickyEventEnvelope.self,
+            from: pointerOverlayEventData(extraRequestField: #""r":24,"#)
+        )
+        let current = try JSONDecoder.pickyAgentProtocolDecoder().decode(
+            PickyEventEnvelope.self,
+            from: pointerOverlayEventData()
+        )
+
+        #expect(legacy == current)
+    }
+
+    @Test func treatsOmittedAndFalseAnnotationSpotlightAsEquivalentVisualDefaults() throws {
+        let decoder = JSONDecoder.pickyAgentProtocolDecoder()
+        let omitted = try annotationOverlayRequest(
+            from: decoder,
+            annotation: #"{"id":"annotation-1","shape":"rect","x":10,"y":20,"w":30,"h":40}"#
+        )
+        let explicitFalse = try annotationOverlayRequest(
+            from: decoder,
+            annotation: #"{"id":"annotation-1","shape":"rect","x":10,"y":20,"w":30,"h":40,"spotlight":false}"#
+        )
+        let omittedAnnotation = try #require(omitted.annotations.first)
+        let explicitFalseAnnotation = try #require(explicitFalse.annotations.first)
+
+        #expect(omittedAnnotation.spotlight == nil)
+        #expect(explicitFalseAnnotation.spotlight == false)
+        #expect((omittedAnnotation.spotlight ?? false) == (explicitFalseAnnotation.spotlight ?? false))
+    }
+
+    @Test func ignoresRetiredAnnotationTTLField() throws {
+        let decoder = JSONDecoder.pickyAgentProtocolDecoder()
+        let legacy = try annotationOverlayRequest(
+            from: decoder,
+            annotation: #"{"id":"annotation-1","shape":"rect","x":10,"y":20,"w":30,"h":40,"ttlMs":5000}"#
+        )
+        let current = try annotationOverlayRequest(
+            from: decoder,
+            annotation: #"{"id":"annotation-1","shape":"rect","x":10,"y":20,"w":30,"h":40}"#
+        )
+
+        #expect(legacy == current)
+    }
+
+    @Test func rejectsRetiredAnnotationCircleAndTargetShapes() {
+        let decoder = JSONDecoder.pickyAgentProtocolDecoder()
+
+        for shape in ["circle", "target"] {
+            #expect(throws: DecodingError.self) {
+                _ = try decoder.decode(
+                    PickyEventEnvelope.self,
+                    from: annotationOverlayEventData(annotation: "{\"id\":\"annotation-\\(shape)\",\"shape\":\"\\(shape)\"}")
+                )
+            }
+        }
+    }
+
     @Test func decodesSessionWithoutNewFields() throws {
         let json = """
         {
@@ -580,6 +652,59 @@ struct ProtocolContractTests {
         #expect(decoded.sessionId == "session-001")
         #expect(decoded.kind == .all)
     }
+}
+
+private func pointerOverlayEventData(extraRequestField: String = "") -> Data {
+    """
+    {
+      "id":"event-pointer-legacy",
+      "protocolVersion":"2026-07-17",
+      "timestamp":"2026-07-17T00:00:00.000Z",
+      "type":"pointerOverlayRequested",
+      "request":{
+        "id":"pointer-legacy",
+        "x":640,
+        "y":360,
+        \(extraRequestField)
+        "screenBounds":{"x":0,"y":0,"width":1728,"height":1117},
+        "screenshotSize":{"width":1280,"height":827}
+      }
+    }
+    """.data(using: .utf8)!
+}
+
+private func annotationOverlayRequest(
+    from decoder: JSONDecoder,
+    annotation: String
+) throws -> PickyAnnotationOverlayRequest {
+    let envelope = try decoder.decode(
+        PickyEventEnvelope.self,
+        from: annotationOverlayEventData(annotation: annotation)
+    )
+    guard case .annotationOverlayRequested(let request) = envelope.event else {
+        throw AnnotationOverlayFixtureError.unexpectedEvent
+    }
+    return request
+}
+
+private func annotationOverlayEventData(annotation: String) -> Data {
+    """
+    {
+      "id":"event-annotation-legacy",
+      "protocolVersion":"2026-07-17",
+      "timestamp":"2026-07-17T00:00:00.000Z",
+      "type":"annotationOverlayRequested",
+      "request":{
+        "id":"annotation-legacy",
+        "mode":"replace",
+        "annotations":[\(annotation)]
+      }
+    }
+    """.data(using: .utf8)!
+}
+
+private enum AnnotationOverlayFixtureError: Error {
+    case unexpectedEvent
 }
 
 func fixtureURLs(in relativeDirectory: String) throws -> [URL] {

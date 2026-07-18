@@ -226,6 +226,12 @@ Details:
 - Marks are neutral context; Picky does not infer workflows from them.
 - If **Send screenshots only when drawn** (Settings → Picky) is enabled, the screenshot is sent to the model only after you actually draw a mark. Without a mark, only the transcript and non-visual context fields are sent; the screen capture itself still runs locally so the ink overlay can render.
 
+### 6.1 Picky screen guidance
+
+When a reply refers to a concrete location in a captured screenshot, Picky can temporarily point at that location or draw targets, circles, rectangles, lines, spotlights, and labels over the matching display. These overlays are grounded in the screenshot captured for the current turn, disappear automatically, and are not added to the conversation transcript.
+
+Turn **Screen pointing & drawing** off under Settings → Agents → Tools to disable all agent-authored screen overlays. This does not disable the marks you draw yourself during Push-to-Talk or Quick Input.
+
 ## 7. Pickle HUD and dock
 
 Pickles are independent Pi sessions shown in the Picky HUD dock. They are useful for long-running work that should continue in the background.
@@ -433,7 +439,7 @@ Safety behavior:
 
 ### 8.6 Slash command autocomplete
 
-Type `/` in the composer to show slash command suggestions. Picky also adds local HUD commands where useful; for example, `/tree` opens the Pickle message rewind picker instead of sending the text to Pi.
+Type `/` in the composer to show slash command suggestions supplied by Pi's built-in and extension autocomplete providers. Picky also adds local HUD commands where useful; for example, `/tree` opens the Pickle message rewind picker instead of sending the text to Pi.
 
 Suggestions follow the caret: they appear whenever the caret sits inside the leading command token, even when more draft text follows. Accepting a suggestion replaces only the typed command part and keeps the rest of your draft, so you can place the caret at the start of an existing message and prepend a command without losing your text.
 
@@ -776,7 +782,7 @@ Running Pickles can still cycle model/thinking independently from these defaults
 
 ### 13.5 Tools
 
-Built-in tools that the agents can call. Each row is an individual toggle; turning a tool off removes it from the agent's tool list entirely so it cannot be called.
+Built-in tools that the agents can call. Each row is an individual toggle; turning a tool off removes it from the agent's tool list entirely so it cannot be called. **Screen pointing & drawing** controls all agent-authored pointer and shape overlays as one capability.
 
 Changes apply to the main agent immediately and interrupt any in-progress turn. Pickles that started before the change keep their existing tool list until the next turn.
 
@@ -791,7 +797,7 @@ Each provider's relevant settings appear only when that provider is selected.
 | Setting | Values / behavior |
 | --- | --- |
 | STT provider | Apple Speech (default), OpenAI, Azure OpenAI, ElevenLabs. Apple Speech uses the on-device `SFSpeechRecognizer` (offline). OpenAI uses `gpt-4o-transcribe` against `api.openai.com`. Azure OpenAI uses your deployment URL. ElevenLabs uses `scribe_v2` against `api.elevenlabs.io` (the legacy `scribe_v1` is deprecated as of 2026). |
-| Enable spoken replies (TTS) | On/off. When off, text replies still appear but audio playback is skipped. |
+| Enable spoken replies (TTS) | On/off. When off, text replies still appear but audio playback is skipped. Long narrated replies can begin playing sentence by sentence while the remaining response is still streaming. |
 | TTS provider | macOS Speech (default), OpenAI, Azure OpenAI, ElevenLabs, Edge TTS (Online, explicit opt-in; playback only). macOS Speech uses the system `NSSpeechSynthesizer` voice. OpenAI uses `gpt-4o-mini-tts` against `api.openai.com`. ElevenLabs uses `eleven_multilingual_v2` against `api.elevenlabs.io` by default. Edge TTS sends spoken response text to Microsoft Edge Read Aloud through local `picky-agentd`. |
 | Open macOS Speech Settings | Opens the system Spoken Content settings for local TTS voice selection. |
 

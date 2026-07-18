@@ -967,8 +967,10 @@ struct PickyCompanionManagerTests {
             return
         }
         let expectedDelays = narration.indices.map { index in
-            Double(narration[0...index].reduce(0) { $0 + $1.count })
-                * PickyInteractionReducer.annotationRevealSecondsPerCharacter
+            PickyNarrationPaceModel.speechPrerollSeconds
+                + narration[0...index].reduce(0) {
+                    $0 + PickyNarrationPaceModel.weightedUnits(forNarration: $1)
+                } * PickyNarrationPaceModel.secondsPerWeightUnit
         }
 
         #expect(revealDelays.elementsEqual(expectedDelays, by: { abs($0 - $1) < 0.05 }))

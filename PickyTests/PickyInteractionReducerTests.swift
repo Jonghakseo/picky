@@ -677,9 +677,10 @@ struct PickyInteractionReducerTests {
             id: UUID()
         ).state
 
-        #expect(state.pendingAgentAnnotations.map(\.precedingNarrationCharacters) == [
-            firstText.count,
-            firstText.count + secondText.count,
+        #expect(state.pendingAgentAnnotations.map(\.precedingNarrationWeight) == [
+            PickyNarrationPaceModel.weightedUnits(forNarration: firstText),
+            PickyNarrationPaceModel.weightedUnits(forNarration: firstText)
+                + PickyNarrationPaceModel.weightedUnits(forNarration: secondText),
         ])
     }
 

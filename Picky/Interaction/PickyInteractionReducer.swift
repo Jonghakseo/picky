@@ -56,9 +56,6 @@ struct PickyInteractionTransition: Equatable {
 enum PickyInteractionReducer {
     static let minimumDisplayDuration: TimeInterval = 0.35
     static let maximumAgentAnnotationCount = 24
-    /// Heuristic speaking pace used to stagger annotation reveals against narration
-    /// length. Tuned by feel, not measured; lean slow so reveals do not outrun speech.
-    static let annotationRevealSecondsPerCharacter: TimeInterval = 0.075
 
     static func reduce(
         state: PickyInteractionState,
@@ -475,9 +472,9 @@ private struct PickyInteractionReducing {
         }
 
         // Even providers that cannot play incremental chunks still receive the
-        // prose/tag stream. Preserve its character offsets so annotations can be
+        // prose/tag stream. Preserve its weighted narration offsets so annotations can be
         // timed against the final full-reply TTS instead of all revealing at zero.
-        state.annotationNarrationCharacterCount += trimmed.count
+        state.annotationNarrationWeight += PickyNarrationPaceModel.weightedUnits(forNarration: trimmed)
         if let sessionID { state.pendingAgentRequestsBySession[sessionID] = nil }
         guard shouldSpeak else {
             record(.accepted, "Narration chunk tracked for annotation timing")
@@ -748,7 +745,7 @@ private struct PickyInteractionReducing {
         let pending = PickyPendingAgentAnnotation(
             id: UUID(),
             annotation: annotation,
-            precedingNarrationCharacters: state.annotationNarrationCharacterCount,
+            precedingNarrationWeight: state.annotationNarrationWeight,
             silentTurnSequence: state.annotationArrivalSequence
         )
         state.annotationArrivalSequence += 1
@@ -774,7 +771,10 @@ private struct PickyInteractionReducing {
     }
 
     private mutating func scheduleAnnotationReveal(_ pending: PickyPendingAgentAnnotation, anchor: Date) {
-        let revealAt = anchor.addingTimeInterval(Double(pending.precedingNarrationCharacters) * PickyInteractionReducer.annotationRevealSecondsPerCharacter)
+        let revealAt = anchor.addingTimeInterval(
+            PickyNarrationPaceModel.speechPrerollSeconds
+                + pending.precedingNarrationWeight * PickyNarrationPaceModel.secondsPerWeightUnit
+        )
         let delay = max(0, revealAt.timeIntervalSince(envelope.occurredAt))
         effects.append(.scheduleAnnotationReveal(id: pending.id, delay: delay))
     }
@@ -833,7 +833,7 @@ private struct PickyInteractionReducing {
         state.pendingAgentAnnotations = []
         state.dueAgentAnnotationIDs = []
         state.agentAnnotations = []
-        state.annotationNarrationCharacterCount = 0
+        state.annotationNarrationWeight = 0
         state.annotationSpeechAnchor = nil
         state.annotationTurnSettled = false
         state.annotationArrivalSequence = 0
@@ -849,7 +849,7 @@ private struct PickyInteractionReducing {
     private mutating func clearAgentAnnotationsForUserInput() {
         state.pendingAgentAnnotations = []
         state.dueAgentAnnotationIDs = []
-        state.annotationNarrationCharacterCount = 0
+        state.annotationNarrationWeight = 0
         state.annotationSpeechAnchor = nil
         state.annotationTurnSettled = false
         state.annotationArrivalSequence = 0

@@ -69,31 +69,26 @@ describe("neutral prompt builder", () => {
     expect(pair.user).toContain("Do not expose internal tool logs verbatim");
   });
 
-  it("gates the inline visual DSL prompt by the existing pointer and annotation identifiers", () => {
+  it("gates the inline visual DSL prompt by the screen-overlay identifier", () => {
     const allEnabled = buildMainAgentBootstrapPair();
-    const pointerDisabled = buildMainAgentBootstrapPair({ disabledBuiltinTools: new Set(["picky_screen_pointing"]) });
-    const annotationsDisabled = buildMainAgentBootstrapPair({ disabledBuiltinTools: new Set(["picky_screen_drawing"]) });
-    const allDisabled = buildMainAgentBootstrapPair({ disabledBuiltinTools: new Set(["picky_screen_pointing", "picky_screen_drawing"]) });
+    const overlayDisabled = buildMainAgentBootstrapPair({ disabledBuiltinTools: new Set(["picky_screen_overlay"]) });
 
     expect(allEnabled.user).toContain("## Picky visual overlay DSL");
     expect(allEnabled.user).toContain("[POINT: x=<number>");
+    expect(allEnabled.user).toContain("[TARGET: x=<number>");
     expect(allEnabled.user).toContain("[SPOTLIGHT: shape=circle");
     expect(allEnabled.user).toContain("Tags are invisible to the user's transcript");
-    expect(pointerDisabled.user).not.toContain("[POINT: x=<number>");
-    expect(pointerDisabled.user).toContain("[TARGET: x=<number>");
-    expect(annotationsDisabled.user).toContain("[POINT: x=<number>");
-    expect(annotationsDisabled.user).not.toContain("[TARGET: x=<number>");
-    expect(allDisabled.user).not.toContain("## Picky visual overlay DSL");
+    expect(overlayDisabled.user).not.toContain("## Picky visual overlay DSL");
   });
 
-  it("builds gated visual DSL guidance for resumed sessions", () => {
-    const pointerDisabled = buildMainAgentVisualOverlayGuidance(new Set(["picky_screen_pointing"]));
-    const allDisabled = buildMainAgentVisualOverlayGuidance(new Set(["picky_screen_pointing", "picky_screen_drawing"]));
+  it("builds visual DSL guidance for resumed sessions unless the overlay is disabled", () => {
+    const enabled = buildMainAgentVisualOverlayGuidance(new Set());
+    const overlayDisabled = buildMainAgentVisualOverlayGuidance(new Set(["picky_screen_overlay"]));
 
-    expect(pointerDisabled?.user).toContain("## Picky visual overlay DSL");
-    expect(pointerDisabled?.user).not.toContain("[POINT: x=<number>");
-    expect(pointerDisabled?.user).toContain("[TARGET: x=<number>");
-    expect(allDisabled).toBeUndefined();
+    expect(enabled?.user).toContain("## Picky visual overlay DSL");
+    expect(enabled?.user).toContain("[POINT: x=<number>");
+    expect(enabled?.user).toContain("[TARGET: x=<number>");
+    expect(overlayDisabled).toBeUndefined();
   });
 
   it("places the handoff title before Pickle boilerplate so auto-name sees it early", () => {

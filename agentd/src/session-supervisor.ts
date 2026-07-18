@@ -1624,8 +1624,7 @@ export class SessionSupervisor extends EventEmitter {
 
   private async emitMainAnnotationDslTag(tag: AnnotationDslTag): Promise<void> {
     if (tag.kind === "screen") return;
-    if (tag.kind === "point" && this.disabledBuiltinTools.has("picky_screen_pointing")) return;
-    if (tag.kind !== "point" && this.disabledBuiltinTools.has("picky_screen_drawing")) return;
+    if (this.disabledBuiltinTools.has("picky_screen_overlay")) return;
 
     const captured = this.mainTurnOverlayContext;
     if (!captured || this.mainContext?.id !== captured.context.id) {

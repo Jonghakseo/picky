@@ -174,9 +174,7 @@ export function buildMainAgentVisualOverlayGuidance(disabledBuiltinTools: Readon
 }
 
 function buildVisualOverlayDslPrompt(disabledBuiltinTools: ReadonlySet<string>): string[] {
-  const pointEnabled = !disabledBuiltinTools.has("picky_screen_pointing");
-  const annotationsEnabled = !disabledBuiltinTools.has("picky_screen_drawing");
-  if (!pointEnabled && !annotationsEnabled) return [];
+  if (disabledBuiltinTools.has("picky_screen_overlay")) return [];
 
   const lines = [
     "",
@@ -186,7 +184,7 @@ function buildVisualOverlayDslPrompt(disabledBuiltinTools: ReadonlySet<string>):
     "",
     "Every argument is named. Double-quoted label/text values support \\\" and \\\\ escapes. [SCREEN: id=<screenId>] selects the captured display for following tags; omit it to use the cursor/primary display.",
   ];
-  if (pointEnabled) {
+  {
     lines.push(
       "",
       "Pointer:",
@@ -194,7 +192,7 @@ function buildVisualOverlayDslPrompt(disabledBuiltinTools: ReadonlySet<string>):
       "- Example: 먼저 저장 버튼을 가리킬게요. [POINT: x=120 y=340 r=24 ttl=6000 label=\"저장\"]",
     );
   }
-  if (annotationsEnabled) {
+  {
     lines.push(
       "",
       "Drawing shapes:",

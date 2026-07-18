@@ -199,6 +199,23 @@ Composer는 첫 디자인 시스템 파일럿 대상으로 삼는다.
 - 진행 중 항목과 완료 항목을 빠르게 비교할 수 있어야 한다.
 - 실제 진행이 없는데 animation으로 활동감을 만들지 않는다.
 
+### Screen annotation dismiss control
+
+주요 구현:
+
+- `Picky/Overlay/PickyAnnotationDismissPanelController.swift`
+- `Picky/Interaction/PickyInteractionProjection.swift`
+
+역할과 상태 계약:
+
+- narration 중에는 annotation의 복구 흐름과 경쟁하지 않도록 숨긴다.
+- final TTS queue가 끝난 뒤에도 원본 scene에 annotation이 보이는 동안에만 표시한다.
+- annotation이 있는 각 display의 visible frame 우측 상단에 neutral capsule로 배치한다.
+- 전체 화면 cursor overlay의 click-through를 보존하기 위해 별도 `nonactivatingPanel`을 사용한다.
+- 클릭하면 현재 annotation scene 전체를 clear하며, 어느 display의 버튼을 눌러도 결과는 동일하다.
+- rest, hover, pressed 상태와 `xmark + label`, tooltip, VoiceOver label을 제공한다.
+- validating, suspended, narration-active, empty 상태에서는 표시하지 않는다.
+
 ## Initial standardization order
 
 1. Conversation Card + Composer

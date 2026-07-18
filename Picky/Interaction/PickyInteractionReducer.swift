@@ -738,9 +738,11 @@ private struct PickyInteractionReducing {
             state.pendingAgentAnnotations = []
             state.dueAgentAnnotationIDs = []
             state.agentAnnotations = []
+            state.agentAnnotationsDismissible = false
             state = state.removingOverlayReason(.activeAgentAnnotations)
             for annotation in annotations { bufferOrRevealAnnotation(annotation) }
         case .append:
+            if !annotations.isEmpty { state.agentAnnotationsDismissible = false }
             for annotation in annotations { bufferOrRevealAnnotation(annotation) }
         }
         record(.stateChanged, "Agent annotations \(mode.rawValue)")
@@ -756,6 +758,7 @@ private struct PickyInteractionReducing {
         state.annotationSceneIdentity = identity
         state.annotationScenePhase = .validating
         state.annotationSceneRecoveryAllowed = true
+        state.agentAnnotationsDismissible = false
         state = state.removingOverlayReason(.activeAgentAnnotations)
         record(.stateChanged, "Agent annotation scene validating")
     }
@@ -821,6 +824,7 @@ private struct PickyInteractionReducing {
     /// First accepted TTS start anchors reveal timing; schedule every buffered reveal.
     private mutating func applyAnnotationSpeechStarted(now: Date) {
         guard state.annotationSpeechAnchor == nil else { return }
+        state.agentAnnotationsDismissible = false
         state.annotationSpeechAnchor = now
         for pending in state.pendingAgentAnnotations {
             scheduleAnnotationReveal(pending, anchor: now)
@@ -906,6 +910,7 @@ private struct PickyInteractionReducing {
         state.annotationTurnSettled = false
         state.annotationArrivalSequence = 0
         state.annotationSceneRecoveryAllowed = false
+        state.agentAnnotationsDismissible = !state.agentAnnotations.isEmpty
         endAnnotationPointerTurn(discardingPendingTargets: true)
     }
 
@@ -926,6 +931,7 @@ private struct PickyInteractionReducing {
         state.annotationSceneIdentity = nil
         state.annotationScenePhase = .inactive
         state.annotationSceneRecoveryAllowed = false
+        state.agentAnnotationsDismissible = false
         if resetNarration {
             state.annotationNarrationWeight = 0
             state.annotationSpeechAnchor = nil

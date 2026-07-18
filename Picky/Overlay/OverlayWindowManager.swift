@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import Combine
 import SwiftUI
 
 /// macOS suppresses secure confirmation UI (App Store purchase sheets,
@@ -27,25 +28,39 @@ enum PickySecureSurfaceOverlayPolicy {
 // buddy seamlessly follows the cursor across multiple monitors.
 @MainActor
 class OverlayWindowManager {
+    private struct AnnotationDismissPresentation: Equatable {
+        let annotations: [PickyAgentAnnotation]
+        let isPresented: Bool
+    }
+
     private var overlayWindows: [OverlayWindow] = []
     private weak var currentCompanionManager: CompanionManager?
     private var screenParametersObserver: NSObjectProtocol?
     private var frontmostAppObserver: NSObjectProtocol?
+    private var annotationDismissObservation: AnyCancellable?
+    private let annotationDismissPanelController = PickyAnnotationDismissPanelController()
     private var isSuppressedForSecureSurface = false
 
     func showOverlay(onScreens screens: [NSScreen], companionManager: CompanionManager) {
+        // Rebinding can happen after display reconstruction; discard any panel whose
+        // button closure still references the previous manager before observing again.
+        annotationDismissPanelController.dismiss()
         currentCompanionManager = companionManager
         startScreenParametersObserverIfNeeded()
         startFrontmostAppObserverIfNeeded()
         isSuppressedForSecureSurface = PickySecureSurfaceOverlayPolicy.shouldSuppressOverlay(
             frontmostBundleID: NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         )
+        annotationDismissPanelController.setSuppressed(isSuppressedForSecureSurface)
         rebuildOverlayWindows(onScreens: screens, companionManager: companionManager)
+        startAnnotationDismissObservation(companionManager)
     }
 
     func hideOverlay() {
         stopScreenParametersObserver()
         stopFrontmostAppObserver()
+        stopAnnotationDismissObservation()
+        annotationDismissPanelController.dismiss()
         currentCompanionManager = nil
         removeOverlayWindows()
     }
@@ -54,6 +69,8 @@ class OverlayWindowManager {
     func fadeOutAndHideOverlay(duration: TimeInterval = 0.4) {
         stopScreenParametersObserver()
         stopFrontmostAppObserver()
+        stopAnnotationDismissObservation()
+        annotationDismissPanelController.dismiss()
         currentCompanionManager = nil
 
         let windowsToFade = overlayWindows
@@ -113,6 +130,7 @@ class OverlayWindowManager {
                 window.orderFrontRegardless()
             }
         }
+        annotationDismissPanelController.setSuppressed(suppressed)
     }
 
     private func startFrontmostAppObserverIfNeeded() {
@@ -146,6 +164,43 @@ class OverlayWindowManager {
         overlayWindows.removeAll()
     }
 
+    private func startAnnotationDismissObservation(_ companionManager: CompanionManager) {
+        stopAnnotationDismissObservation()
+        annotationDismissObservation = companionManager.$agentAnnotations
+            .combineLatest(companionManager.$showsAgentAnnotationDismissControl)
+            .map { annotations, isPresented in
+                AnnotationDismissPresentation(annotations: annotations, isPresented: isPresented)
+            }
+            .removeDuplicates()
+            .sink { [weak self, weak companionManager] presentation in
+                guard let self, let companionManager else { return }
+                self.annotationDismissPanelController.update(
+                    annotations: presentation.annotations,
+                    isPresented: presentation.isPresented,
+                    screens: NSScreen.screens,
+                    onDismiss: { [weak companionManager] in
+                        companionManager?.dismissAgentAnnotations()
+                    }
+                )
+            }
+    }
+
+    private func refreshAnnotationDismissPanels(for companionManager: CompanionManager) {
+        annotationDismissPanelController.update(
+            annotations: companionManager.agentAnnotations,
+            isPresented: companionManager.showsAgentAnnotationDismissControl,
+            screens: NSScreen.screens,
+            onDismiss: { [weak companionManager] in
+                companionManager?.dismissAgentAnnotations()
+            }
+        )
+    }
+
+    private func stopAnnotationDismissObservation() {
+        annotationDismissObservation?.cancel()
+        annotationDismissObservation = nil
+    }
+
     private func startScreenParametersObserverIfNeeded() {
         guard screenParametersObserver == nil else { return }
         screenParametersObserver = NotificationCenter.default.addObserver(
@@ -156,6 +211,7 @@ class OverlayWindowManager {
             Task { @MainActor [weak self] in
                 guard let self, let companionManager = self.currentCompanionManager else { return }
                 self.rebuildOverlayWindows(onScreens: NSScreen.screens, companionManager: companionManager)
+                self.refreshAnnotationDismissPanels(for: companionManager)
             }
         }
     }

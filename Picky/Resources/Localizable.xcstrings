@@ -50,6 +50,40 @@
         }
       }
     },
+    "annotation.dismiss.accessibility": {
+      "comment": "Accessibility label and tooltip for the button that clears screen annotations after narration.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close screen annotations"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화면 어노테이션 닫기"
+          }
+        }
+      }
+    },
+    "annotation.dismiss.button": {
+      "comment": "Compact button shown at the top-right after annotation narration ends.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "닫기"
+          }
+        }
+      }
+    },
     "common.findApp": {
       "comment": "Button that reveals Picky in Finder so the user can drag it into a system permission list.",
       "localizations": {

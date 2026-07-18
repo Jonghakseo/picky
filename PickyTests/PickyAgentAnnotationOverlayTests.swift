@@ -40,13 +40,16 @@ struct PickyAgentAnnotationOverlayTests {
         let pendingID = speaking.pendingAgentAnnotations.first!.id
         let revealed = reduce(speaking, .agentAnnotationRevealDue(id: pendingID))
         #expect(revealed.agentAnnotations.map(\.id) == ["a"])
+        #expect(!PickyInteractionProjection(state: revealed).showsAgentAnnotationDismissControl)
 
         let settled = reduce(revealed, .mainTurnSettled(contextID: "context"))
         #expect(settled.agentAnnotations.map(\.id) == ["a"])
+        #expect(!PickyInteractionProjection(state: settled).showsAgentAnnotationDismissControl)
 
         let drained = reduce(settled, .speechFinished(speechID: speechID))
         #expect(drained.agentAnnotations.map(\.id) == ["a"])
         #expect(drained.pendingAgentAnnotations.isEmpty)
+        #expect(PickyInteractionProjection(state: drained).showsAgentAnnotationDismissControl)
     }
 
     @Test func sceneValidationSuspendsWithoutDiscardingAndRestoresOnlyMatchingIdentity() {
@@ -97,7 +100,7 @@ struct PickyAgentAnnotationOverlayTests {
         #expect(PickyInteractionProjection(state: state).agentAnnotations.map(\.id) == ["a"])
     }
 
-    @Test func companionManagerKeepsSilentAnnotationsWhenTheTurnSettles() async throws {
+    @Test func companionManagerKeepsAndCanDismissSilentAnnotationsWhenTheTurnSettles() async throws {
         let manager = CompanionManager(agentClient: FakePickyAgentClient())
         let sequenceBeforeEvent = manager.interactionProjectionSequence
         manager.applyAgentEvent(.annotationOverlayRequested(request(annotations: [
@@ -107,6 +110,14 @@ struct PickyAgentAnnotationOverlayTests {
 
         try await waitUntil { manager.interactionProjectionSequence > sequenceBeforeEvent }
         #expect(manager.agentAnnotations.map(\.id) == ["manager-rect"])
+        #expect(manager.showsAgentAnnotationDismissControl)
+
+        let sequenceBeforeDismiss = manager.interactionProjectionSequence
+        manager.dismissAgentAnnotations()
+        try await waitUntil { manager.interactionProjectionSequence > sequenceBeforeDismiss }
+
+        #expect(manager.agentAnnotations.isEmpty)
+        #expect(!manager.showsAgentAnnotationDismissControl)
     }
 
     @Test func companionManagerPermanentlyClearsSettledAnnotationsOnSceneMismatch() async throws {
@@ -530,6 +541,44 @@ struct PickyAgentAnnotationOverlayTests {
 
         #expect(anchor == CGPoint(x: 80, y: 29))
         #expect(labelBounds(center: anchor!, size: labelSize).maxX <= annotation.displayFrame.width)
+    }
+
+    @Test func dismissPanelTargetsOnlyScreensContainingVisibleAnnotations() {
+        let screenFrames = [
+            CGRect(x: 0, y: 0, width: 100, height: 100),
+            CGRect(x: 100, y: 0, width: 100, height: 100),
+        ]
+        let annotations = [
+            PickyAgentAnnotation(
+                id: "first-screen",
+                shape: .rect,
+                displayFrame: screenFrames[0],
+                rect: CGRect(x: 20, y: 20, width: 20, height: 20),
+                label: nil
+            ),
+            PickyAgentAnnotation(
+                id: "second-screen",
+                shape: .rect,
+                displayFrame: screenFrames[1],
+                rect: CGRect(x: 120, y: 20, width: 20, height: 20),
+                label: nil
+            ),
+        ]
+
+        #expect(PickyAnnotationDismissPanelLayout.targetScreenIndexes(
+            screenFrames: screenFrames,
+            annotations: annotations
+        ) == [0, 1])
+    }
+
+    @Test func dismissPanelFrameUsesTheVisibleTopRightCorner() {
+        let visibleFrame = CGRect(x: 40, y: 20, width: 1_200, height: 800)
+
+        let frame = PickyAnnotationDismissPanelLayout.panelFrame(visibleFrame: visibleFrame)
+
+        #expect(frame.size == PickyAnnotationDismissPanelLayout.panelSize)
+        #expect(frame.maxX == visibleFrame.maxX - PickyAnnotationDismissPanelLayout.margin)
+        #expect(frame.maxY == visibleFrame.maxY - PickyAnnotationDismissPanelLayout.margin)
     }
 
     @Test func oversizedShapeLabelsClampInsideTheScreen() {

@@ -46,9 +46,10 @@ Open Instruments with the Logging template, attach to Picky, then filter by thos
 
 ## Suggested manual scenario
 
-1. While TTS is active, display an annotation and wait for `visible`.
+1. While TTS is active, display an annotation and wait for `visible`; confirm no close control is present.
 2. Switch to another app; expect immediate `suspended` without interrupting TTS.
 3. Return before TTS ends; expect two `matching` samples and `visible`.
-4. After TTS ends, change the app/window or scroll away; expect a permanent clear and a monitor stop rather than a later resume.
-5. Repeat while suspended and let TTS finish before returning; expect the annotation to clear immediately.
-6. Keep a settled annotation on its original static screen for over 30 seconds and confirm `delayMs=5000` until it is cleared or replaced.
+4. After TTS ends on the matching scene, confirm an `xmark + Close` control appears at the top-right of every annotated display. Click any one and expect all annotations plus the monitor to clear.
+5. Repeat without clicking, then change the app/window or scroll away after TTS; expect a permanent clear and a monitor stop rather than a later resume.
+6. Repeat while suspended and let TTS finish before returning; expect the annotation to clear immediately without showing the close control.
+7. Keep a settled annotation on its original static screen for over 30 seconds and confirm `delayMs=5000` until it is dismissed, cleared, or replaced.

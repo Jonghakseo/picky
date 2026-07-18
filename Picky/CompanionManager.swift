@@ -295,6 +295,8 @@ final class CompanionManager: ObservableObject {
     @Published var detectedElementPointerID: String?
     /// Resolved AI annotations, rendered independently from user ink and pointer animation.
     @Published private(set) var agentAnnotations: [PickyAgentAnnotation] = []
+    /// True only while settled annotations remain visible and can be explicitly dismissed.
+    @Published private(set) var showsAgentAnnotationDismissControl = false
     /// Most recent main-agent context submitted by this app and the newest overlay
     /// generation accepted for it. Overlay events from an older capture must not
     /// guide the user against a newer desktop state.
@@ -834,6 +836,19 @@ final class CompanionManager: ObservableObject {
                 await MainActor.run { isRequestingScreenContent = false }
             }
         }
+    }
+
+    /// Explicit user action from the post-narration annotation close control.
+    /// Stop scene monitoring immediately; the reducer clear then removes projection state.
+    func dismissAgentAnnotations() {
+        guard showsAgentAnnotationDismissControl else { return }
+        annotationBasePaletteByTurnScreen.removeAll()
+        annotationSceneMonitor?.stop()
+        activeAnnotationSceneIdentity = nil
+        interactionCoordinator.accept(
+            .agentAnnotationsRequested(mode: .clear, annotations: []),
+            correlation: PickyInteractionCorrelation(source: .system)
+        )
     }
 
     // MARK: - Private
@@ -1641,6 +1656,7 @@ final class CompanionManager: ObservableObject {
         isSendingDirectMessage = projection.hasPendingTextSubmission
         isWaitingForCursorResponse = projection.isWaitingForCursorResponse
         agentAnnotations = projection.agentAnnotations
+        showsAgentAnnotationDismissControl = projection.showsAgentAnnotationDismissControl
         let previousProjectedSceneIdentity = projectedAnnotationSceneIdentity
         projectedAnnotationSceneIdentity = projection.state.annotationSceneIdentity
         if previousProjectedSceneIdentity != nil,

@@ -7,6 +7,7 @@ struct PickyInteractionProjection: Equatable {
     let overlayVisible: Bool
     let pointerTarget: PickyPointerTarget?
     let agentAnnotations: [PickyAgentAnnotation]
+    let showsAgentAnnotationDismissControl: Bool
     let hasPendingTextSubmission: Bool
     let isWaitingForCursorResponse: Bool
     let isSpeaking: Bool
@@ -19,6 +20,8 @@ struct PickyInteractionProjection: Equatable {
         self.agentAnnotations = state.annotationScenePhase.presentsAnnotations
             ? state.agentAnnotations
             : []
+        self.showsAgentAnnotationDismissControl = state.agentAnnotationsDismissible
+            && !self.agentAnnotations.isEmpty
         self.hasPendingTextSubmission = !state.pendingTextInputs.isEmpty
         self.isWaitingForCursorResponse = Self.isWaitingForCursorResponse(from: state)
         if case .speaking = state.output {

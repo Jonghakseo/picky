@@ -26,6 +26,9 @@ struct PickyInteractionState: Equatable, Codable {
     /// Scene recovery is useful only while narration may still need the annotation.
     /// Once the final TTS queue drains, the next mismatch clears the geometry permanently.
     var annotationSceneRecoveryAllowed: Bool
+    /// Enables the explicit close control only after narration has fully concluded and
+    /// the annotation is still projected on its original scene.
+    var agentAnnotationsDismissible: Bool
     var overlay: PickyOverlayPhase
     var pendingTextInputs: [UUID: PickyTextInputState]
     var pendingVoiceInputs: [UUID: PickyVoiceInputState]
@@ -73,6 +76,7 @@ struct PickyInteractionState: Equatable, Codable {
         annotationSceneIdentity: PickyAnnotationSceneIdentity? = nil,
         annotationScenePhase: PickyAnnotationScenePhase = .inactive,
         annotationSceneRecoveryAllowed: Bool = false,
+        agentAnnotationsDismissible: Bool = false,
         overlay: PickyOverlayPhase = .hidden,
         pendingTextInputs: [UUID: PickyTextInputState] = [:],
         pendingVoiceInputs: [UUID: PickyVoiceInputState] = [:],
@@ -101,6 +105,7 @@ struct PickyInteractionState: Equatable, Codable {
         self.annotationSceneIdentity = annotationSceneIdentity
         self.annotationScenePhase = annotationScenePhase
         self.annotationSceneRecoveryAllowed = annotationSceneRecoveryAllowed
+        self.agentAnnotationsDismissible = agentAnnotationsDismissible
         self.overlay = overlay
         self.pendingTextInputs = pendingTextInputs
         self.pendingVoiceInputs = pendingVoiceInputs
@@ -132,6 +137,7 @@ struct PickyInteractionState: Equatable, Codable {
         self.annotationSceneIdentity = try container.decodeIfPresent(PickyAnnotationSceneIdentity.self, forKey: .annotationSceneIdentity)
         self.annotationScenePhase = try container.decodeIfPresent(PickyAnnotationScenePhase.self, forKey: .annotationScenePhase) ?? .inactive
         self.annotationSceneRecoveryAllowed = try container.decodeIfPresent(Bool.self, forKey: .annotationSceneRecoveryAllowed) ?? false
+        self.agentAnnotationsDismissible = try container.decodeIfPresent(Bool.self, forKey: .agentAnnotationsDismissible) ?? false
         self.overlay = try container.decode(PickyOverlayPhase.self, forKey: .overlay)
         self.pendingTextInputs = try container.decode([UUID: PickyTextInputState].self, forKey: .pendingTextInputs)
         self.pendingVoiceInputs = try container.decode([UUID: PickyVoiceInputState].self, forKey: .pendingVoiceInputs)

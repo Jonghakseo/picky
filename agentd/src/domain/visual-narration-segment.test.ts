@@ -33,11 +33,14 @@ describe("VisualNarrationSegmentAssembler", () => {
     assembler.prepare(first);
     assembler.appendText("A 설명.");
 
+    // "A 설명." ends at the buffer edge, so its sentence is held until the
+    // boundary flushes it right before committing the segment.
     expect(assembler.boundary()).toEqual([
+      { kind: "sentence", segment: first, index: 0, text: "A 설명." },
       { kind: "committed", segment: first, text: "A 설명.", sentenceCount: 1 },
     ]);
     expect(assembler.prepare(second)).toEqual([{ kind: "prepared", segment: second }]);
-    expect(assembler.appendText("B 설명.")).toEqual([
+    expect(assembler.appendText("B 설명. ")).toEqual([
       { kind: "sentence", segment: second, index: 0, text: "B 설명." },
     ]);
   });
@@ -74,7 +77,10 @@ describe("VisualNarrationSegmentAssembler", () => {
     assembler.appendText("설명 A. ");
     assembler.appendText(" 계속 A.");
 
+    // The first sentence emits on the trailing space; the last one lands at the
+    // buffer edge and is flushed by finish() before the commit.
     expect(assembler.finish()).toEqual([
+      { kind: "sentence", segment: first, index: 1, text: "계속 A." },
       { kind: "committed", segment: first, text: "설명 A. 계속 A.", sentenceCount: 2 },
     ]);
   });

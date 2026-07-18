@@ -1199,7 +1199,9 @@ describe("SessionSupervisor", () => {
     supervisor.setTTSEnabled(false);
 
     await supervisor.route(context("visible streamed response"));
-    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "첫 문장. 둘째 문장." });
+    // Trailing space after the last period confirms the sentence break mid-stream;
+    // a terminator at the buffer edge would otherwise wait for the next delta.
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "첫 문장. 둘째 문장. " });
 
     await waitUntil(() => chunks.length === 2);
     expect(chunks.map((chunk) => chunk.text)).toEqual(["첫 문장.", "둘째 문장."]);
@@ -1294,7 +1296,7 @@ describe("SessionSupervisor", () => {
         "[RECT: x=10 y=110 w=100 h=40 label=\"셋째\"] 세 번째 영역입니다.",
         "[RECT: x=10 y=160 w=100 h=40 label=\"넷째\"] 네 번째 영역입니다.",
         "[RECT: x=10 y=210 w=100 h=40 label=\"다섯째\"] 다섯 번째 영역입니다.",
-      ].join(" "),
+      ].join(" ") + " ",
     });
 
     await waitUntil(() => eventOrder.length === 10);
@@ -1370,12 +1372,12 @@ describe("SessionSupervisor", () => {
     expect(chunks).toEqual([expect.objectContaining({ contextId: "context-narrate this", text: "먼저 저장하세요." })]);
 
     mainRuntime.handle?.emit({ type: "assistant_delta", delta: "하세요." });
-    await waitUntil(() => visualSentences.length === 1);
-    expect(chunks.map((chunk) => chunk.text)).toEqual(["먼저 저장하세요."]);
-    expect(visualSentences.map((sentence) => sentence.text)).toEqual(["다음 화면을 확인하세요."]);
-
+    // The visual segment's only sentence ends at the buffer edge with no following
+    // whitespace, so it flushes when the turn terminates rather than mid-stream.
     mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await waitUntil(() => replies.length === 1);
+    expect(chunks.map((chunk) => chunk.text)).toEqual(["먼저 저장하세요."]);
+    expect(visualSentences.map((sentence) => sentence.text)).toEqual(["다음 화면을 확인하세요."]);
     expect(replies[0]).toEqual({ text: "먼저 저장하세요. 다음 화면을 확인하세요.", metadata: expect.objectContaining({ didStreamNarration: true }) });
   });
 

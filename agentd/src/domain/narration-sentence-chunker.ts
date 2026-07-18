@@ -23,11 +23,17 @@ export class NarrationSentenceChunker {
 
   private takeCompletedSentences(): string[] {
     const sentences: string[] = [];
-    let boundary: number | undefined;
     for (let index = 0; index < this.pending.length; index += 1) {
       if (!isSentenceTerminator(this.pending, index)) continue;
-      boundary = index + 1;
+      let boundary = index + 1;
       while (boundary < this.pending.length && isClosingPunctuation(this.pending[boundary]!)) boundary += 1;
+      if (requiresTrailingWhitespace(this.pending[index]!)) {
+        // An ASCII '.', '!' or '?' only ends a sentence when whitespace follows,
+        // so a mid-token dot like "schema.gql" is not treated as a break. When the
+        // terminator sits at the buffer edge, wait for more input before deciding.
+        if (boundary >= this.pending.length) break;
+        if (!isWhitespace(this.pending[boundary]!)) continue;
+      }
       const sentence = this.pending.slice(0, boundary).trim();
       if (sentence) sentences.push(sentence);
       this.pending = this.pending.slice(boundary);
@@ -48,6 +54,17 @@ function isSentenceTerminator(text: string, index: number): boolean {
 
 function isClosingPunctuation(character: string): boolean {
   return character === '"' || character === "'" || character === "”" || character === "’" || character === ")" || character === "]";
+}
+
+// Fullwidth CJK terminators are unambiguous full stops, but ASCII '.', '!' and
+// '?' also appear inside tokens (URLs, filenames, versions), so they require a
+// following whitespace to count as a sentence break.
+function requiresTrailingWhitespace(character: string): boolean {
+  return character === "." || character === "!" || character === "?";
+}
+
+function isWhitespace(character: string | undefined): boolean {
+  return character !== undefined && /\s/.test(character);
 }
 
 function isDigit(character: string | undefined): boolean {

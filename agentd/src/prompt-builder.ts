@@ -186,6 +186,8 @@ function buildVisualOverlayDslPrompt(disabledBuiltinTools: ReadonlySet<string>):
     "",
     "When you walk through several UI areas or elements, draw a labeled annotation for EACH one you describe, not just one, so the user can follow along.",
     "",
+    "Tag order matters: place each tag immediately BEFORE the sentence that describes that spot, never after it. Drawings reveal in sync with narration progress, so a tag placed after its sentence appears only once that explanation has already been spoken.",
+    "",
     "Use screenshot pixels with a top-left origin and the dimensions supplied for the screenshot. Keep each drawing focused on one spot with a concise label. Picky keeps drawings visible while narration is speaking and clears them when TTS ends; do not add lifetime or timing arguments.",
     "",
     "Every argument is named. Double-quoted label values support \\\" and \\\\ escapes. [SCREEN: id=<screenId>] selects the captured display for following tags; omit it to use the cursor/primary display.",
@@ -193,14 +195,14 @@ function buildVisualOverlayDslPrompt(disabledBuiltinTools: ReadonlySet<string>):
     "",
     "Pointer:",
     "- [POINT: x=<number> y=<number> label=\"short label\"]",
-    "- Example: Let me point you to the Save button. [POINT: x=120 y=340 label=\"Save\"]",
+    "- Example: [POINT: x=120 y=340 label=\"Save\"] The Save button is right here.",
     "",
     "Drawing shapes:",
     "- [RECT: x=<number> y=<number> w=<number> h=<number> label=\"short label\" spotlight]",
     "- [LINE: x1=<number> y1=<number> x2=<number> y2=<number> label=\"short label\" spotlight=true]",
     "- `spotlight` is optional for RECT and LINE only. Use it (or `spotlight=true`) to dim around that shape; omit it or use `spotlight=false` for an outline without dimming.",
-    "- Example: Check this area. [RECT: x=95 y=157 w=120 h=35 label=\"Features · Pricing\" spotlight]",
-    "- Example (walking through several areas, one drawing per area): The top Tags block classifies the error. [RECT: x=112 y=253 w=1416 h=238 label=\"Tags\"] Below it, Contexts holds the runtime environment. [RECT: x=112 y=520 w=1416 h=300 label=\"Contexts\"]",
+    "- Example: [RECT: x=95 y=157 w=120 h=35 label=\"Features · Pricing\" spotlight] Check this highlighted area.",
+    "- Example (walking through several areas, tag first, then its sentence): [RECT: x=112 y=253 w=1416 h=238 label=\"Tags\"] The top Tags block classifies the error. [RECT: x=112 y=520 w=1416 h=300 label=\"Contexts\"] Below it, Contexts holds the runtime environment.",
   ];
 }
 

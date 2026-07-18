@@ -1580,10 +1580,17 @@ export class SessionSupervisor extends EventEmitter {
     for (const reason of result.droppedTags) {
       logAgentd("main annotation DSL tag dropped", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, reason });
     }
-    // Broadcast preceding narration before its inline drawing tag. The app uses
-    // this order to delay reveal until TTS reaches the described screen area.
-    this.emitMainNarrationSentences(result.cleanText);
-    for (const tag of result.completedTags) this.emitMainAnnotationDslTag(tag);
+    // Preserve the assistant's original prose/tag order. Flush any unterminated
+    // prose before a tag so the app records a distinct narration offset for each
+    // drawing instead of revealing every tag from the delta at the same time.
+    for (const item of result.streamItems) {
+      if (item.kind === "text") {
+        this.emitMainNarrationSentences(item.text);
+      } else {
+        this.flushMainNarrationSentences();
+        this.emitMainAnnotationDslTag(item.tag);
+      }
+    }
     return result.cleanText;
   }
 

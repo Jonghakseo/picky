@@ -626,6 +626,39 @@ struct PickyInteractionReducerTests {
         #expect(duplicate.state.output == .idle)
     }
 
+    @Test func annotationRequestsKeepDistinctNarrationOffsets() {
+        var state = PickyInteractionState()
+        state.contextOwnership["ctx"] = .voice(inputID: inputA)
+        let firstText = "첫 번째 영역입니다."
+        let secondText = "두 번째 영역입니다."
+
+        state = reduce(
+            state,
+            .narrationChunk(contextID: "ctx", text: firstText, originSource: .voice, replyKind: .main, sessionID: nil),
+            id: timerA
+        ).state
+        state = reduce(
+            state,
+            .agentAnnotationsRequested(mode: .append, annotations: [annotation(id: "first")]),
+            id: UUID()
+        ).state
+        state = reduce(
+            state,
+            .narrationChunk(contextID: "ctx", text: secondText, originSource: .voice, replyKind: .main, sessionID: nil),
+            id: timerB
+        ).state
+        state = reduce(
+            state,
+            .agentAnnotationsRequested(mode: .append, annotations: [annotation(id: "second")]),
+            id: UUID()
+        ).state
+
+        #expect(state.pendingAgentAnnotations.map(\.precedingNarrationCharacters) == [
+            firstText.count,
+            firstText.count + secondText.count,
+        ])
+    }
+
     @Test func annotationPointerParksAcrossStreamGapThenHopsToNextShape() {
         let first = revealAnnotation(id: "rect", into: PickyInteractionState())
         let firstTarget = pointerTarget(from: first)

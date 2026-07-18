@@ -1172,6 +1172,49 @@ describe("SessionSupervisor", () => {
     expect(supervisor.listMainMessages().at(-1)).toMatchObject({ role: "assistant", text: "여기를 먼저 보세요. 다음입니다." });
   });
 
+  it("preserves narration offsets for multiple RECT tags emitted in one delta", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-dsl-ordered-rects-"));
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
+    const eventOrder: string[] = [];
+    supervisor.on("mainNarrationChunk", (chunk) => eventOrder.push(`narration:${chunk.text}`));
+    supervisor.on("annotationOverlayRequested", (request) => eventOrder.push(`annotation:${request.annotations[0]?.label ?? ""}`));
+
+    await supervisor.route({
+      ...context("explain several rows"),
+      screenshots: [{
+        id: "shot-ordered-rects",
+        label: "cursor screen",
+        path: "/tmp/shot-ordered-rects.jpg",
+        screenId: "screen-ordered-rects",
+        bounds: { x: 0, y: 0, width: 800, height: 600 },
+        screenshotWidthInPixels: 1600,
+        screenshotHeightInPixels: 1200,
+        isCursorScreen: true,
+      }],
+    });
+
+    mainRuntime.handle?.emit({
+      type: "assistant_delta",
+      delta: [
+        "첫 번째 영역입니다. [RECT: x=10 y=10 w=100 h=40 label=\"첫째\"]",
+        "두 번째 영역입니다. [RECT: x=10 y=60 w=100 h=40 label=\"둘째\"]",
+        "세 번째 영역입니다. [RECT: x=10 y=110 w=100 h=40 label=\"셋째\"]",
+        "네 번째 영역입니다. [RECT: x=10 y=160 w=100 h=40 label=\"넷째\"]",
+        "다섯 번째 영역입니다. [RECT: x=10 y=210 w=100 h=40 label=\"다섯째\"]",
+      ].join(" "),
+    });
+
+    await waitUntil(() => eventOrder.length === 10);
+    expect(eventOrder).toEqual([
+      "narration:첫 번째 영역입니다.", "annotation:첫째",
+      "narration:두 번째 영역입니다.", "annotation:둘째",
+      "narration:세 번째 영역입니다.", "annotation:셋째",
+      "narration:네 번째 영역입니다.", "annotation:넷째",
+      "narration:다섯 번째 영역입니다.", "annotation:다섯째",
+    ]);
+  });
+
   it("settles a DSL-only main turn without emitting a quick reply", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-dsl-only-"));
     const mainRuntime = new ManualRuntime();

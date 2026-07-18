@@ -41,9 +41,14 @@ export interface AnnotationDslScreenTag {
 
 export type AnnotationDslTag = AnnotationDslPointTag | AnnotationDslAnnotationTag | AnnotationDslScreenTag;
 
+export type AnnotationDslStreamItem =
+  | { kind: "text"; text: string }
+  | { kind: "tag"; tag: AnnotationDslTag };
+
 export interface AnnotationDslParseResult {
   cleanText: string;
   completedTags: AnnotationDslTag[];
+  streamItems: AnnotationDslStreamItem[];
   droppedTags: string[];
   /** Deterministic per-tag healing summaries for the caller's debug log. */
   healedTags: string[];
@@ -73,18 +78,26 @@ export class AnnotationDslParser {
     const source = this.pending + delta;
     this.pending = "";
     const completedTags: AnnotationDslTag[] = [];
+    const streamItems: AnnotationDslStreamItem[] = [];
     const droppedTags: string[] = [];
     const healedTags: string[] = [];
     let cleanText = "";
     let cursor = 0;
+    const appendText = (text: string): void => {
+      if (!text) return;
+      cleanText += text;
+      const previous = streamItems.at(-1);
+      if (previous?.kind === "text") previous.text += text;
+      else streamItems.push({ kind: "text", text });
+    };
 
     while (cursor < source.length) {
       const open = source.indexOf("[", cursor);
       if (open < 0) {
-        cleanText += source.slice(cursor);
+        appendText(source.slice(cursor));
         break;
       }
-      cleanText += source.slice(cursor, open);
+      appendText(source.slice(cursor, open));
       const remainder = source.slice(open);
       const opener = remainder.match(ANNOTATION_DSL_TAG_OPEN_PATTERN);
       if (!opener) {
@@ -92,7 +105,7 @@ export class AnnotationDslParser {
           this.pending = remainder;
           break;
         }
-        cleanText += "[";
+        appendText("[");
         cursor = open + 1;
         continue;
       }
@@ -117,6 +130,7 @@ export class AnnotationDslParser {
         const parsed = this.parseTag(knownVerb, body, heals);
         if (parsed.tag) {
           completedTags.push(parsed.tag);
+          streamItems.push({ kind: "tag", tag: parsed.tag });
           const summary = healingSummary(knownVerb, heals);
           if (summary) healedTags.push(summary);
         } else {
@@ -134,13 +148,13 @@ export class AnnotationDslParser {
       if (!cleanText.trim()) cleanText = "";
       else if (/\]$/.test(source)) cleanText = cleanText.trimEnd();
     }
-    return { cleanText, completedTags, droppedTags, healedTags };
+    return { cleanText, completedTags, streamItems, droppedTags, healedTags };
   }
 
   finish(): AnnotationDslParseResult {
     if (!this.pending) return emptyResult();
     this.pending = "";
-    return { cleanText: "", completedTags: [], droppedTags: ["unclosed DSL tag at turn end"], healedTags: [] };
+    return { cleanText: "", completedTags: [], streamItems: [], droppedTags: ["unclosed DSL tag at turn end"], healedTags: [] };
   }
 
   reset(): void {
@@ -224,7 +238,7 @@ export class AnnotationDslParser {
 }
 
 function emptyResult(): AnnotationDslParseResult {
-  return { cleanText: "", completedTags: [], droppedTags: [], healedTags: [] };
+  return { cleanText: "", completedTags: [], streamItems: [], droppedTags: [], healedTags: [] };
 }
 
 function healingSummary(verb: KnownVerb, heals: ReadonlySet<HealReason>): string | undefined {

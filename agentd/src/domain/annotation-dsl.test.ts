@@ -15,6 +15,11 @@ describe("AnnotationDslParser", () => {
         annotation: { id: "dsl-1", shape: "rect", x: 200, y: 100, w: 30, h: 30, label: "저장" },
       },
     ]);
+    expect(result.streamItems).toEqual([
+      { kind: "text", text: "먼저 여기예요. " },
+      { kind: "tag", tag: result.completedTags[0] },
+      { kind: "text", text: " 다음을 보세요." },
+    ]);
   });
 
   it("parses optional RECT and LINE spotlight flags", () => {
@@ -63,8 +68,14 @@ describe("AnnotationDslParser", () => {
 
   it("passes markdown through and drops a partial DSL tag at turn end", () => {
     const parser = new AnnotationDslParser();
-    expect(parser.feed("[guide](https://example.test) and [POI")).toEqual({ cleanText: "[guide](https://example.test) and ", completedTags: [], droppedTags: [], healedTags: [] });
-    expect(parser.finish()).toEqual({ cleanText: "", completedTags: [], droppedTags: ["unclosed DSL tag at turn end"], healedTags: [] });
+    expect(parser.feed("[guide](https://example.test) and [POI")).toEqual({
+      cleanText: "[guide](https://example.test) and ",
+      completedTags: [],
+      streamItems: [{ kind: "text", text: "[guide](https://example.test) and " }],
+      droppedTags: [],
+      healedTags: [],
+    });
+    expect(parser.finish()).toEqual({ cleanText: "", completedTags: [], streamItems: [], droppedTags: ["unclosed DSL tag at turn end"], healedTags: [] });
   });
 
   it("keeps SCREEN state for subsequent tags", () => {

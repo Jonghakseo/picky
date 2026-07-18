@@ -171,12 +171,18 @@ enum PickyInteractionEvent: Equatable, Codable {
     case externalContextCaptured(inputID: UUID, text: String, context: PickyContextPacket)
     case agentSubmissionAccepted(contextID: String?, sessionID: String, inputID: UUID?)
     case quickReply(contextID: String, text: String, originSource: PickyQuickReplyOriginSource?, replyKind: PickyQuickReplyKind?, sessionID: String?, inputID: UUID?)
-    case narrationChunk(contextID: String, text: String, originSource: PickyQuickReplyOriginSource?, replyKind: PickyQuickReplyKind?, sessionID: String?, shouldSpeak: Bool)
+    case narrationChunk(contextID: String, text: String, originSource: PickyQuickReplyOriginSource?, replyKind: PickyQuickReplyKind?, sessionID: String?, shouldSpeak: Bool, shouldSpeakFinalReply: Bool)
+    case visualNarrationSegmentPrepared(identity: PickyVisualNarrationSegmentIdentity, visual: PickyResolvedVisualNarrationVisual)
+    case visualNarrationSegmentSentence(identity: PickyVisualNarrationSegmentIdentity, index: Int, text: String, originSource: PickyQuickReplyOriginSource?, replyKind: PickyQuickReplyKind?, sessionID: String?, playbackMode: PickyVisualNarrationPlaybackMode)
+    case visualNarrationSegmentCommitted(identity: PickyVisualNarrationSegmentIdentity, text: String?, sentenceCount: Int)
     case streamedQuickReplyFinal(contextID: String, text: String, originSource: PickyQuickReplyOriginSource?, replyKind: PickyQuickReplyKind?, sessionID: String?, inputID: UUID?)
     case passiveAgentSummary(sessionID: String, text: String)
     case pickleCompleted(sessionID: String, summary: String?)
     /// Main agent finished without a quick reply (for example, a DSL-only overlay turn).
     case mainTurnSettled(contextID: String)
+    /// Explicit Messages-session reset. Clears local speech/visual lifecycle state after
+    /// agentd accepts the reset so late events from the previous turn remain tombstoned.
+    case mainAgentSessionReset
     /// Synthetic terminal signal dispatched by `CompanionManager` when an agentd session
     /// transitions to a terminal status (`cancelled`/`failed`) without emitting its own
     /// `quickReply` — typically a HUD abort or a runtime crash. The reducer uses this to
@@ -214,7 +220,9 @@ enum PickyInteractionEvent: Equatable, Codable {
         case appStarted, permissionsChanged, cursorPreferenceChanged
         case voicePressed, voiceStartFailed, voiceReleased, transcriptFinal, transcriptFailed
         case textSubmitted, textContextCaptured, textSubmissionAccepted, textSubmissionFailed
-        case voiceContextCaptured, externalContextCaptured, agentSubmissionAccepted, quickReply, narrationChunk, streamedQuickReplyFinal, passiveAgentSummary, pickleCompleted, mainTurnSettled, sessionTerminated
+        case voiceContextCaptured, externalContextCaptured, agentSubmissionAccepted, quickReply, narrationChunk
+        case visualNarrationSegmentPrepared, visualNarrationSegmentSentence, visualNarrationSegmentCommitted
+        case streamedQuickReplyFinal, passiveAgentSummary, pickleCompleted, mainTurnSettled, mainAgentSessionReset, sessionTerminated
         case pointerRequested, pointerCancelled, pointerAnimationParked, pointerAnimationFinished
         case agentAnnotationsRequested, agentAnnotationScenePrepared, agentAnnotationSceneMatched, agentAnnotationSceneMismatched
         case agentAnnotationRevealDue, agentAnnotationsClearedForUserInput
@@ -225,7 +233,8 @@ enum PickyInteractionEvent: Equatable, Codable {
     fileprivate enum FieldKey: String, CodingKey {
         case enabled, targetSessionID, message, inputID, text, context, contextID, contextId, transcript, sessionID, sessionId
         case originSource, replyKind, source, summary, pointerID, pointerId, reason, speechID, speechId, sourceContextID
-        case timerID, timerId, mode, annotations, id, shouldSpeak, identity, mismatchReason
+        case timerID, timerId, mode, annotations, id, shouldSpeak, shouldSpeakFinalReply, identity, mismatchReason
+        case visual, index, sentenceCount, playbackMode
     }
 
     init(from decoder: Decoder) throws {
@@ -311,7 +320,32 @@ enum PickyInteractionEvent: Equatable, Codable {
                 originSource: try payload.decodeIfPresent(PickyQuickReplyOriginSource.self, forKey: .originSource),
                 replyKind: try payload.decodeIfPresent(PickyQuickReplyKind.self, forKey: .replyKind),
                 sessionID: try payload.decodeIfPresent(String.self, forKey: .sessionID),
-                shouldSpeak: try payload.decodeIfPresent(Bool.self, forKey: .shouldSpeak) ?? true
+                shouldSpeak: try payload.decodeIfPresent(Bool.self, forKey: .shouldSpeak) ?? true,
+                shouldSpeakFinalReply: try payload.decodeIfPresent(Bool.self, forKey: .shouldSpeakFinalReply) ?? false
+            )
+        case .visualNarrationSegmentPrepared:
+            let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
+            self = .visualNarrationSegmentPrepared(
+                identity: try payload.decode(PickyVisualNarrationSegmentIdentity.self, forKey: .identity),
+                visual: try payload.decode(PickyResolvedVisualNarrationVisual.self, forKey: .visual)
+            )
+        case .visualNarrationSegmentSentence:
+            let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
+            self = .visualNarrationSegmentSentence(
+                identity: try payload.decode(PickyVisualNarrationSegmentIdentity.self, forKey: .identity),
+                index: try payload.decode(Int.self, forKey: .index),
+                text: try payload.decode(String.self, forKey: .text),
+                originSource: try payload.decodeIfPresent(PickyQuickReplyOriginSource.self, forKey: .originSource),
+                replyKind: try payload.decodeIfPresent(PickyQuickReplyKind.self, forKey: .replyKind),
+                sessionID: try payload.decodeIfPresent(String.self, forKey: .sessionID),
+                playbackMode: try payload.decode(PickyVisualNarrationPlaybackMode.self, forKey: .playbackMode)
+            )
+        case .visualNarrationSegmentCommitted:
+            let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
+            self = .visualNarrationSegmentCommitted(
+                identity: try payload.decode(PickyVisualNarrationSegmentIdentity.self, forKey: .identity),
+                text: try payload.decodeIfPresent(String.self, forKey: .text),
+                sentenceCount: try payload.decode(Int.self, forKey: .sentenceCount)
             )
         case .streamedQuickReplyFinal:
             let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
@@ -332,6 +366,8 @@ enum PickyInteractionEvent: Equatable, Codable {
         case .mainTurnSettled:
             let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
             self = .mainTurnSettled(contextID: try payload.decodeFlexibleString(primary: .contextID, fallback: .contextId))
+        case .mainAgentSessionReset:
+            self = .mainAgentSessionReset
         case .sessionTerminated:
             let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
             self = .sessionTerminated(sessionID: try payload.decodeFlexibleString(primary: .sessionID, fallback: .sessionId))
@@ -446,9 +482,18 @@ enum PickyInteractionEvent: Equatable, Codable {
         case .quickReply(let contextID, let text, let originSource, let replyKind, let sessionID, let inputID):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .quickReply)
             try payload.encode(contextID, forKey: .contextID); try payload.encode(text, forKey: .text); try payload.encodeIfPresent(originSource, forKey: .originSource); try payload.encodeIfPresent(replyKind, forKey: .replyKind); try payload.encodeIfPresent(sessionID, forKey: .sessionID); try payload.encodeIfPresent(inputID, forKey: .inputID)
-        case .narrationChunk(let contextID, let text, let originSource, let replyKind, let sessionID, let shouldSpeak):
+        case .narrationChunk(let contextID, let text, let originSource, let replyKind, let sessionID, let shouldSpeak, let shouldSpeakFinalReply):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .narrationChunk)
-            try payload.encode(contextID, forKey: .contextID); try payload.encode(text, forKey: .text); try payload.encodeIfPresent(originSource, forKey: .originSource); try payload.encodeIfPresent(replyKind, forKey: .replyKind); try payload.encodeIfPresent(sessionID, forKey: .sessionID); try payload.encode(shouldSpeak, forKey: .shouldSpeak)
+            try payload.encode(contextID, forKey: .contextID); try payload.encode(text, forKey: .text); try payload.encodeIfPresent(originSource, forKey: .originSource); try payload.encodeIfPresent(replyKind, forKey: .replyKind); try payload.encodeIfPresent(sessionID, forKey: .sessionID); try payload.encode(shouldSpeak, forKey: .shouldSpeak); try payload.encode(shouldSpeakFinalReply, forKey: .shouldSpeakFinalReply)
+        case .visualNarrationSegmentPrepared(let identity, let visual):
+            var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .visualNarrationSegmentPrepared)
+            try payload.encode(identity, forKey: .identity); try payload.encode(visual, forKey: .visual)
+        case .visualNarrationSegmentSentence(let identity, let index, let text, let originSource, let replyKind, let sessionID, let playbackMode):
+            var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .visualNarrationSegmentSentence)
+            try payload.encode(identity, forKey: .identity); try payload.encode(index, forKey: .index); try payload.encode(text, forKey: .text); try payload.encodeIfPresent(originSource, forKey: .originSource); try payload.encodeIfPresent(replyKind, forKey: .replyKind); try payload.encodeIfPresent(sessionID, forKey: .sessionID); try payload.encode(playbackMode, forKey: .playbackMode)
+        case .visualNarrationSegmentCommitted(let identity, let text, let sentenceCount):
+            var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .visualNarrationSegmentCommitted)
+            try payload.encode(identity, forKey: .identity); try payload.encodeIfPresent(text, forKey: .text); try payload.encode(sentenceCount, forKey: .sentenceCount)
         case .streamedQuickReplyFinal(let contextID, let text, let originSource, let replyKind, let sessionID, let inputID):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .streamedQuickReplyFinal)
             try payload.encode(contextID, forKey: .contextID); try payload.encode(text, forKey: .text); try payload.encodeIfPresent(originSource, forKey: .originSource); try payload.encodeIfPresent(replyKind, forKey: .replyKind); try payload.encodeIfPresent(sessionID, forKey: .sessionID); try payload.encodeIfPresent(inputID, forKey: .inputID)
@@ -461,6 +506,8 @@ enum PickyInteractionEvent: Equatable, Codable {
         case .mainTurnSettled(let contextID):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .mainTurnSettled)
             try payload.encode(contextID, forKey: .contextID)
+        case .mainAgentSessionReset:
+            try container.encode([String: String](), forKey: .mainAgentSessionReset)
         case .sessionTerminated(let sessionID):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .sessionTerminated)
             try payload.encode(sessionID, forKey: .sessionID)

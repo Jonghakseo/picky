@@ -2,7 +2,7 @@ import { appendFile, mkdir, mkdtemp, readFile, truncate, writeFile } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { ModelCycleDirection, PickyAgentSession, PickyContextPacket, PickyMainAgentState } from "./protocol.js";
+import type { ModelCycleDirection, PickyAgentSession, PickyContextPacket, PickyMainAgentState, PickyPreparedVisualNarrationVisual, PickyVisualNarrationSegmentIdentity } from "./protocol.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import type { BuiltPrompt } from "./prompt-builder.js";
 import type { AgentRuntime, AnswerExtensionUiOptions, RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeTodoStateResolution, ThinkingLevel } from "./runtime/types.js";
@@ -25,6 +25,25 @@ const contextWithPiSessionFile = (text: string, sessionFilePath: string): PickyC
   ...context(text),
   transcript: `${text}\n\n## Source Pi session\n- CWD: /tmp/project\n- Session file: ${sessionFilePath}\n`,
 });
+
+type PreparedVisualNarrationTestEvent = {
+  identity: PickyVisualNarrationSegmentIdentity;
+  visual: PickyPreparedVisualNarrationVisual;
+};
+
+type VisualNarrationSentenceTestEvent = {
+  identity: PickyVisualNarrationSegmentIdentity;
+  index: number;
+  text: string;
+  originSource?: string;
+  replyKind?: string;
+};
+
+type CommittedVisualNarrationTestEvent = {
+  identity: PickyVisualNarrationSegmentIdentity;
+  text?: string;
+  sentenceCount: number;
+};
 
 describe("SessionSupervisor", () => {
   it("creates multiple mock sessions concurrently", async () => {
@@ -1120,16 +1139,83 @@ describe("SessionSupervisor", () => {
     expect(bootstrap).toContain("[RECT: x=<number>");
   });
 
+  it("prepares visual segments, streams their sentences, and commits at the next opener colon", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-visual-segment-"));
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
+    const prepared: PreparedVisualNarrationTestEvent[] = [];
+    const sentences: VisualNarrationSentenceTestEvent[] = [];
+    const committed: CommittedVisualNarrationTestEvent[] = [];
+    supervisor.on("mainVisualNarrationSegmentPrepared", (event) => prepared.push(event));
+    supervisor.on("mainVisualNarrationSegmentSentence", (event) => sentences.push(event));
+    supervisor.on("mainVisualNarrationSegmentCommitted", (event) => committed.push(event));
+
+    await supervisor.route({
+      ...context("progressive visual narration"),
+      source: "voice",
+      screenshots: [{
+        id: "shot-progressive",
+        label: "cursor screen",
+        path: "/tmp/shot-progressive.jpg",
+        screenId: "screen-progressive",
+        bounds: { x: 0, y: 0, width: 800, height: 600 },
+        screenshotWidthInPixels: 1600,
+        screenshotHeightInPixels: 1200,
+        isCursorScreen: true,
+      }],
+    });
+
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "[RECT: x=10 y=20 w=100 h=40] 첫 문장. 둘째" });
+    await waitUntil(() => prepared.length === 1 && sentences.length === 1);
+    expect(sentences[0]).toMatchObject({ index: 0, text: "첫 문장.", originSource: "voice", replyKind: "main" });
+
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: " 문장! [LI" });
+    await settle();
+    expect(committed).toEqual([]);
+
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "NE:" });
+    await waitUntil(() => committed.length === 1 && sentences.length === 2);
+    expect(sentences[1]).toMatchObject({ index: 1, text: "둘째 문장!" });
+    expect(committed[0]).toMatchObject({ text: "첫 문장. 둘째 문장!", sentenceCount: 2 });
+    expect(prepared[0].identity).toEqual(committed[0].identity);
+
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: " x1=1 y1=2 x2=3 y2=4] 마지막 설명" });
+    await waitUntil(() => prepared.length === 2);
+    expect(prepared[1].identity.ordinal).toBe(1);
+    expect(prepared[1].identity.turnToken).toBe(prepared[0].identity.turnToken);
+
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await waitUntil(() => committed.length === 2);
+    expect(sentences[2]).toMatchObject({ index: 0, text: "마지막 설명" });
+    expect(committed[1]).toMatchObject({ text: "마지막 설명", sentenceCount: 1 });
+  });
+
+  it("emits ordinary narration sentences even when main-agent TTS is disabled", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-visible-narration-"));
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
+    const chunks: Array<{ text: string }> = [];
+    supervisor.on("mainNarrationChunk", (chunk) => chunks.push(chunk));
+    supervisor.setTTSEnabled(false);
+
+    await supervisor.route(context("visible streamed response"));
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "첫 문장. 둘째 문장." });
+
+    await waitUntil(() => chunks.length === 2);
+    expect(chunks.map((chunk) => chunk.text)).toEqual(["첫 문장.", "둘째 문장."]);
+  });
+
   it("emits DSL overlays mid-stream and persists only clean main-agent text", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-dsl-"));
     const mainRuntime = new ManualRuntime();
     const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
-    const pointerEvents: unknown[] = [];
-    const annotationEvents: unknown[] = [];
+    const preparedSegments: PreparedVisualNarrationTestEvent[] = [];
     const quickReplies: string[] = [];
     const eventOrder: string[] = [];
-    supervisor.on("pointerOverlayRequested", (request) => { pointerEvents.push(request); eventOrder.push("pointer"); });
-    supervisor.on("annotationOverlayRequested", (request) => { annotationEvents.push(request); eventOrder.push("annotation"); });
+    supervisor.on("mainVisualNarrationSegmentPrepared", (segment) => {
+      preparedSegments.push(segment);
+      eventOrder.push(`prepared:${segment.visual.kind}`);
+    });
     supervisor.on("mainNarrationChunk", () => eventOrder.push("narration"));
     supervisor.on("quickReply", (_contextId, text) => quickReplies.push(text));
     const mainContext: PickyContextPacket = {
@@ -1150,20 +1236,27 @@ describe("SessionSupervisor", () => {
     mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Running" });
     mainRuntime.handle?.emit({ type: "assistant_delta", delta: "여기를 먼저 보세요. [SCREEN: id=screen-main-dsl] [PO" });
     await settle();
-    expect(pointerEvents).toEqual([]);
+    expect(preparedSegments).toEqual([]);
     mainRuntime.handle?.emit({ type: "assistant_delta", delta: "INT: x=120 y=340 label=\"저장\"] [RECT: x=50 y=60 w=200 h=80 label=\"영역\"] 다음입니다." });
-    await waitUntil(() => pointerEvents.length === 1 && annotationEvents.length === 1);
+    await waitUntil(() => preparedSegments.length === 2);
 
-    // Overlay events arrive before completion, preserving the low-latency streaming path.
+    // Prepared geometry arrives before completion without using legacy overlay events.
     expect(quickReplies).toEqual([]);
-    expect(pointerEvents[0]).toMatchObject({ screenId: "screen-main-dsl", x: 120, y: 340, label: "저장", contextGeneration: 1 });
-    expect(annotationEvents[0]).toMatchObject({
-      mode: "append",
-      screenId: "screen-main-dsl",
-      contextGeneration: 1,
-      annotations: [{ shape: "rect", x: 50, y: 60, w: 200, h: 80, label: "영역" }],
+    expect(preparedSegments[0]).toMatchObject({
+      visual: { kind: "point", request: { screenId: "screen-main-dsl", x: 120, y: 340, label: "저장", contextGeneration: 1 } },
     });
-    expect(eventOrder.indexOf("narration")).toBeLessThan(eventOrder.indexOf("pointer"));
+    expect(preparedSegments[1]).toMatchObject({
+      visual: {
+        kind: "annotations",
+        request: {
+          mode: "append",
+          screenId: "screen-main-dsl",
+          contextGeneration: 1,
+          annotations: [{ shape: "rect", x: 50, y: 60, w: 200, h: 80, label: "영역" }],
+        },
+      },
+    });
+    expect(eventOrder.indexOf("narration")).toBeLessThan(eventOrder.indexOf("prepared:point"));
 
     mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await waitUntil(() => quickReplies.length === 1);
@@ -1176,8 +1269,8 @@ describe("SessionSupervisor", () => {
     const mainRuntime = new ManualRuntime();
     const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
     const eventOrder: string[] = [];
-    supervisor.on("mainNarrationChunk", (chunk) => eventOrder.push(`narration:${chunk.text}`));
-    supervisor.on("annotationOverlayRequested", (request) => eventOrder.push(`annotation:${request.annotations[0]?.label ?? ""}`));
+    supervisor.on("mainVisualNarrationSegmentPrepared", (segment) => eventOrder.push(`prepared:${segment.visual.request.annotations[0]?.label ?? ""}`));
+    supervisor.on("mainVisualNarrationSegmentSentence", (sentence) => eventOrder.push(`sentence:${sentence.text}`));
 
     await supervisor.route({
       ...context("explain several rows"),
@@ -1196,21 +1289,21 @@ describe("SessionSupervisor", () => {
     mainRuntime.handle?.emit({
       type: "assistant_delta",
       delta: [
-        "첫 번째 영역입니다. [RECT: x=10 y=10 w=100 h=40 label=\"첫째\"]",
-        "두 번째 영역입니다. [RECT: x=10 y=60 w=100 h=40 label=\"둘째\"]",
-        "세 번째 영역입니다. [RECT: x=10 y=110 w=100 h=40 label=\"셋째\"]",
-        "네 번째 영역입니다. [RECT: x=10 y=160 w=100 h=40 label=\"넷째\"]",
-        "다섯 번째 영역입니다. [RECT: x=10 y=210 w=100 h=40 label=\"다섯째\"]",
+        "[RECT: x=10 y=10 w=100 h=40 label=\"첫째\"] 첫 번째 영역입니다.",
+        "[RECT: x=10 y=60 w=100 h=40 label=\"둘째\"] 두 번째 영역입니다.",
+        "[RECT: x=10 y=110 w=100 h=40 label=\"셋째\"] 세 번째 영역입니다.",
+        "[RECT: x=10 y=160 w=100 h=40 label=\"넷째\"] 네 번째 영역입니다.",
+        "[RECT: x=10 y=210 w=100 h=40 label=\"다섯째\"] 다섯 번째 영역입니다.",
       ].join(" "),
     });
 
     await waitUntil(() => eventOrder.length === 10);
     expect(eventOrder).toEqual([
-      "narration:첫 번째 영역입니다.", "annotation:첫째",
-      "narration:두 번째 영역입니다.", "annotation:둘째",
-      "narration:세 번째 영역입니다.", "annotation:셋째",
-      "narration:네 번째 영역입니다.", "annotation:넷째",
-      "narration:다섯 번째 영역입니다.", "annotation:다섯째",
+      "prepared:첫째", "sentence:첫 번째 영역입니다.",
+      "prepared:둘째", "sentence:두 번째 영역입니다.",
+      "prepared:셋째", "sentence:세 번째 영역입니다.",
+      "prepared:넷째", "sentence:네 번째 영역입니다.",
+      "prepared:다섯째", "sentence:다섯 번째 영역입니다.",
     ]);
   });
 
@@ -1218,10 +1311,10 @@ describe("SessionSupervisor", () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-dsl-only-"));
     const mainRuntime = new ManualRuntime();
     const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
-    const pointerEvents: unknown[] = [];
+    const preparedSegments: unknown[] = [];
     const quickReplies: string[] = [];
     const settledContexts: string[] = [];
-    supervisor.on("pointerOverlayRequested", (request) => pointerEvents.push(request));
+    supervisor.on("mainVisualNarrationSegmentPrepared", (segment) => preparedSegments.push(segment));
     supervisor.on("quickReply", (_contextId, text) => quickReplies.push(text));
     supervisor.on("mainTurnSettled", (contextId) => settledContexts.push(contextId));
 
@@ -1240,7 +1333,7 @@ describe("SessionSupervisor", () => {
     });
 
     mainRuntime.handle?.emit({ type: "assistant_delta", delta: "[POINT: x=20 y=30]" });
-    await waitUntil(() => pointerEvents.length === 1);
+    await waitUntil(() => preparedSegments.length === 1);
     mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await waitUntil(() => settledContexts.length === 1);
 
@@ -1253,18 +1346,33 @@ describe("SessionSupervisor", () => {
     const mainRuntime = new ManualRuntime();
     const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
     const chunks: Array<{ contextId: string; text: string }> = [];
+    const visualSentences: Array<{ text: string }> = [];
     const replies: Array<{ text: string; metadata: { didStreamNarration?: boolean } }> = [];
     supervisor.on("mainNarrationChunk", (chunk) => chunks.push(chunk));
+    supervisor.on("mainVisualNarrationSegmentSentence", (sentence) => visualSentences.push(sentence));
     supervisor.on("quickReply", (_contextId, text, metadata) => replies.push({ text, metadata }));
 
-    await supervisor.route(context("narrate this"));
+    await supervisor.route({
+      ...context("narrate this"),
+      screenshots: [{
+        id: "shot-narrate",
+        label: "cursor screen",
+        path: "/tmp/shot-narrate.jpg",
+        screenId: "screen-narrate",
+        bounds: { x: 0, y: 0, width: 100, height: 100 },
+        screenshotWidthInPixels: 100,
+        screenshotHeightInPixels: 100,
+        isCursorScreen: true,
+      }],
+    });
     mainRuntime.handle?.emit({ type: "assistant_delta", delta: "먼저 저장하세요. [POINT: x=10 y=20] 다음 화면을 확인" });
     await waitUntil(() => chunks.length === 1);
     expect(chunks).toEqual([expect.objectContaining({ contextId: "context-narrate this", text: "먼저 저장하세요." })]);
 
     mainRuntime.handle?.emit({ type: "assistant_delta", delta: "하세요." });
-    await waitUntil(() => chunks.length === 2);
-    expect(chunks.map((chunk) => chunk.text)).toEqual(["먼저 저장하세요.", "다음 화면을 확인하세요."]);
+    await waitUntil(() => visualSentences.length === 1);
+    expect(chunks.map((chunk) => chunk.text)).toEqual(["먼저 저장하세요."]);
+    expect(visualSentences.map((sentence) => sentence.text)).toEqual(["다음 화면을 확인하세요."]);
 
     mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await waitUntil(() => replies.length === 1);

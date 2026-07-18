@@ -283,6 +283,23 @@ final class PickyFallbackSpeechPlaybackProvider: PickySpeechPlaybackProvider {
         primary.isSpeaking || fallback.isSpeaking
     }
 
+    /// Incremental playback survives failover only when both the primary and the
+    /// fallback can stream sentence-sized utterances. Without forwarding this, an
+    /// incremental primary (e.g. Edge/System) collapses to the protocol default
+    /// `false`, and CompanionManager routes narration through the non-incremental
+    /// final-reply path — desyncing visual narration from spoken audio.
+    var supportsIncrementalPlayback: Bool {
+        primary.supportsIncrementalPlayback && fallback.supportsIncrementalPlayback
+    }
+
+    /// Warm both providers so the sentence's audio is ready regardless of which one
+    /// ends up playing after a possible primary failover. No-op on providers that
+    /// do not implement prefetch.
+    func prefetch(_ utterance: String) {
+        primary.prefetch(utterance)
+        fallback.prefetch(utterance)
+    }
+
     // Internal (not private) so factory routing tests can assert the wiring.
     let primary: any PickySpeechPlaybackProvider
     let fallback: any PickySpeechPlaybackProvider
@@ -296,7 +313,11 @@ final class PickyFallbackSpeechPlaybackProvider: PickySpeechPlaybackProvider {
 
     @discardableResult
     func speak(_ utterance: String, onFinish: @escaping (Bool) -> Void) -> Bool {
-        stopSpeaking()
+        // Only halt the fallback here. The primary provider cancels its own prior
+        // playback inside speak() while first reclaiming this sentence's prefetched
+        // audio; calling primary.stopSpeaking() up front would clear that warmed
+        // cache and force a full re-synthesis, defeating incremental prefetch.
+        fallback.stopSpeaking()
 
         let speechID = UUID()
         activeSpeechID = speechID

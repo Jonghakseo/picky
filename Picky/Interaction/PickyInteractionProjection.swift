@@ -8,6 +8,7 @@ struct PickyInteractionProjection: Equatable {
     let pointerTarget: PickyPointerTarget?
     let agentAnnotations: [PickyAgentAnnotation]
     let showsAgentAnnotationDismissControl: Bool
+    let hasActivePointVisualNarration: Bool
     let hasPendingTextSubmission: Bool
     let isWaitingForCursorResponse: Bool
     let isSpeaking: Bool
@@ -22,6 +23,14 @@ struct PickyInteractionProjection: Equatable {
             : []
         self.showsAgentAnnotationDismissControl = state.agentAnnotationsDismissible
             && !self.agentAnnotations.isEmpty
+        if state.activeVisualNarrationSentenceCount > 0,
+           let identity = state.activeVisualNarrationIdentity,
+           let visual = state.visualNarrationSegments[identity.segmentId]?.visual,
+           case .point = visual {
+            self.hasActivePointVisualNarration = true
+        } else {
+            self.hasActivePointVisualNarration = false
+        }
         self.hasPendingTextSubmission = !state.pendingTextInputs.isEmpty
         self.isWaitingForCursorResponse = Self.isWaitingForCursorResponse(from: state)
         if case .speaking = state.output {
@@ -32,7 +41,29 @@ struct PickyInteractionProjection: Equatable {
     }
 
     private static func displayText(from state: PickyInteractionState) -> String? {
-        switch state.output {
+        if let identity = state.activeVisualNarrationIdentity,
+           let segment = state.visualNarrationSegments[identity.segmentId],
+           segment.identity == identity {
+            if case .annotations = segment.visual,
+               !state.annotationScenePhase.presentsAnnotations {
+                return nil
+            }
+            let sentences = segment.sentences
+                .sorted { $0.index < $1.index }
+                .prefix(state.activeVisualNarrationSentenceCount)
+                .map(\.text)
+            let text = sentences.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+            return text.isEmpty ? nil : text
+        }
+        if let streamed = state.streamedResponseText?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !streamed.isEmpty {
+            return streamed
+        }
+        if case .speaking(_, let speechID, _, _, _, _) = state.output,
+           state.visualNarrationSpeechMarkers[speechID] != nil {
+            return nil
+        }
+        return switch state.output {
         case .idle, .waitingForAgent:
             state.lastDisplayMessage?.text
         case .showingTextReply(_, let text, _, _):

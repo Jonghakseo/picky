@@ -112,13 +112,13 @@ struct PickyInteractionReducerTests {
 
         let first = reduce(
             state,
-            .narrationChunk(contextID: "voice-context", text: "첫 문장.", originSource: .voice, replyKind: .main, sessionID: nil, shouldSpeak: true),
+            .narrationChunk(contextID: "voice-context", text: "첫 문장.", originSource: .voice, replyKind: .main, sessionID: nil, shouldSpeak: true, shouldSpeakFinalReply: false),
             id: timerA,
             correlation: .init(contextID: "voice-context", speechID: speechA, source: .agent)
         )
         let second = reduce(
             first.state,
-            .narrationChunk(contextID: "voice-context", text: "둘째 문장.", originSource: .voice, replyKind: .main, sessionID: nil, shouldSpeak: true),
+            .narrationChunk(contextID: "voice-context", text: "둘째 문장.", originSource: .voice, replyKind: .main, sessionID: nil, shouldSpeak: true, shouldSpeakFinalReply: false),
             id: timerB,
             correlation: .init(contextID: "voice-context", speechID: inputB, source: .agent)
         )
@@ -134,6 +134,370 @@ struct PickyInteractionReducerTests {
         #expect(final.state.queuedSpeechReplies.map(\.text) == ["둘째 문장."])
         #expect(final.effects.isEmpty)
         #expect(final.state.lastDisplayMessage?.text == "첫 문장. 둘째 문장.")
+    }
+
+    @Test func ordinaryNarrationProjectsCompletedSentencesWithoutIncrementalTTS() {
+        var state = PickyInteractionState()
+        state.contextOwnership["stream-context"] = .quickInputText(inputID: inputA)
+
+        let first = reduce(
+            state,
+            .narrationChunk(contextID: "stream-context", text: "첫 문장.", originSource: .text, replyKind: .main, sessionID: nil, shouldSpeak: false, shouldSpeakFinalReply: true),
+            id: timerA
+        )
+        let second = reduce(
+            first.state,
+            .narrationChunk(contextID: "stream-context", text: "둘째 문장.", originSource: .text, replyKind: .main, sessionID: nil, shouldSpeak: false, shouldSpeakFinalReply: true),
+            id: timerB
+        )
+
+        #expect(PickyInteractionProjection(state: first.state).latestDisplayText == "첫 문장.")
+        #expect(PickyInteractionProjection(state: second.state).latestDisplayText == "첫 문장. 둘째 문장.")
+        #expect(second.state.finalNarrationSpeechContextIDs == ["stream-context"])
+        #expect(second.effects.isEmpty)
+    }
+
+    @Test func ttsDisabledNarrationKeepsSentenceStreamWithoutCreatingFinalSpeech() {
+        var state = PickyInteractionState()
+        state.contextOwnership["silent-context"] = .quickInputText(inputID: inputA)
+        state.output = .waitingForAgent(inputID: inputA, contextID: "silent-context", promptPreview: "question")
+
+        let sentence = reduce(
+            state,
+            .narrationChunk(contextID: "silent-context", text: "보이는 문장.", originSource: .text, replyKind: .main, sessionID: nil, shouldSpeak: false, shouldSpeakFinalReply: false),
+            id: timerA
+        )
+        let final = reduce(
+            sentence.state,
+            .streamedQuickReplyFinal(contextID: "silent-context", text: "보이는 문장.", originSource: .text, replyKind: .main, sessionID: nil, inputID: inputA),
+            id: timerB
+        )
+
+        #expect(PickyInteractionProjection(state: final.state).latestDisplayText == "보이는 문장.")
+        if case .showingTextReply(let contextID, let text, _, _) = final.state.output {
+            #expect(contextID == "silent-context")
+            #expect(text == "보이는 문장.")
+        } else {
+            Issue.record("expected silent stream to settle as showingTextReply")
+        }
+        #expect(final.effects == [
+            .scheduleMinimumDisplay(timerID: timerB, speechID: nil, inputID: inputA, delay: PickyInteractionReducer.minimumDisplayDuration)
+        ])
+        #expect(final.state.finalNarrationSpeechContextIDs.isEmpty)
+    }
+
+    @Test func emptyCommittedVisualRevealsWithoutBorrowingBubbleText() {
+        var state = PickyInteractionState()
+        state.contextOwnership["visual-context"] = .quickInputText(inputID: inputA)
+        let identity = visualIdentity(segmentID: "empty-segment", ordinal: 0)
+        let target = PickyPointerTarget(
+            id: "empty-pointer",
+            screenLocation: CGPoint(x: 10, y: 10),
+            displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100),
+            bubbleText: "navigation label",
+            duration: 0.5
+        )
+
+        state = reduce(state, .visualNarrationSegmentPrepared(identity: identity, visual: .point(target)), id: timerA).state
+        let committed = reduce(
+            state,
+            .visualNarrationSegmentCommitted(identity: identity, text: nil, sentenceCount: 0),
+            id: timerB
+        )
+        let projection = PickyInteractionProjection(state: committed.state)
+
+        #expect(committed.state.activeVisualNarrationIdentity == identity)
+        #expect(committed.state.activeVisualNarrationSentenceCount == 0)
+        #expect(committed.state.pointer.target?.id == "empty-pointer")
+        #expect(projection.latestDisplayText == nil)
+        #expect(projection.hasActivePointVisualNarration == false)
+    }
+
+    @Test func invalidatedVisualTurnRejectsFreshSegmentIDsAfterUserInput() {
+        var state = PickyInteractionState()
+        let oldIdentity = visualIdentity(segmentID: "old-a", ordinal: 0)
+        let lateIdentity = visualIdentity(segmentID: "old-b", ordinal: 1)
+        let target = PickyPointerTarget(
+            id: "old-pointer",
+            screenLocation: .zero,
+            displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100),
+            duration: 0.5
+        )
+
+        state = reduce(state, .visualNarrationSegmentPrepared(identity: oldIdentity, visual: .point(target)), id: timerA).state
+        state = reduce(state, .agentAnnotationsClearedForUserInput, id: timerB).state
+        let stale = reduce(
+            state,
+            .visualNarrationSegmentPrepared(identity: lateIdentity, visual: .point(target)),
+            id: UUID()
+        )
+
+        #expect(stale.state.visualNarrationSegments.isEmpty)
+        #expect(stale.state.activeVisualNarrationTurnIdentity == nil)
+        #expect(stale.state.invalidatedVisualNarrationTurnIdentities.contains(
+            PickyVisualNarrationTurnIdentity(segmentIdentity: oldIdentity)
+        ))
+        #expect(stale.journalRecords.last?.kind == .staleEvent)
+    }
+
+    @Test func mainSessionResetStopsSpeechAndTombstonesVisualTurn() throws {
+        var state = PickyInteractionState()
+        state.contextOwnership["visual-context"] = .voice(inputID: inputA)
+        let identity = visualIdentity(segmentID: "reset-segment", ordinal: 0)
+        let target = PickyPointerTarget(
+            id: "reset-pointer",
+            screenLocation: .zero,
+            displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100),
+            duration: 0.5
+        )
+        state = reduce(state, .visualNarrationSegmentPrepared(identity: identity, visual: .point(target)), id: UUID()).state
+        state = reduce(
+            state,
+            .visualNarrationSegmentSentence(identity: identity, index: 0, text: "reset me.", originSource: .voice, replyKind: .main, sessionID: nil, playbackMode: .incremental),
+            id: timerA,
+            correlation: .init(contextID: "visual-context", speechID: speechA, source: .agent)
+        ).state
+
+        let reset = reduce(state, .mainAgentSessionReset, id: timerB)
+
+        #expect(reset.state.output == .idle)
+        #expect(reset.state.visualNarrationSegments.isEmpty)
+        #expect(reset.state.activeVisualNarrationTurnIdentity == nil)
+        #expect(reset.state.invalidatedVisualNarrationTurnIdentities.contains(
+            PickyVisualNarrationTurnIdentity(segmentIdentity: identity)
+        ))
+        #expect(reset.effects.contains(.stopSpeech(reason: .superseded, speechID: speechA)))
+        let roundTripped = try JSONDecoder().decode(
+            PickyInteractionEvent.self,
+            from: JSONEncoder().encode(PickyInteractionEvent.mainAgentSessionReset)
+        )
+        #expect(roundTripped == .mainAgentSessionReset)
+    }
+
+    @Test func ordinaryNarrationAfterVisualBarrierClearsVisualAtMatchingSpeechStart() {
+        var state = PickyInteractionState()
+        state.contextOwnership["visual-context"] = .voice(inputID: inputA)
+        let identity = visualIdentity(segmentID: "before-malformed-barrier", ordinal: 0)
+        let target = PickyPointerTarget(
+            id: "barrier-pointer",
+            screenLocation: .zero,
+            displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100),
+            duration: 0.5
+        )
+
+        state = reduce(state, .visualNarrationSegmentPrepared(identity: identity, visual: .point(target)), id: UUID()).state
+        state = reduce(
+            state,
+            .visualNarrationSegmentSentence(identity: identity, index: 0, text: "시각 설명.", originSource: .voice, replyKind: .main, sessionID: nil, playbackMode: .incremental),
+            id: timerA,
+            correlation: .init(contextID: "visual-context", speechID: speechA, source: .agent)
+        ).state
+        state = reduce(
+            state,
+            .speechStarted(text: "시각 설명.", speechID: speechA, sourceContextID: "visual-context"),
+            id: UUID()
+        ).state
+        #expect(state.activeVisualNarrationIdentity == identity)
+
+        state = reduce(
+            state,
+            .narrationChunk(contextID: "visual-context", text: "barrier 뒤 설명.", originSource: .voice, replyKind: .main, sessionID: nil, shouldSpeak: true, shouldSpeakFinalReply: false),
+            id: timerB,
+            correlation: .init(contextID: "visual-context", speechID: inputB, source: .agent)
+        ).state
+        #expect(state.activeVisualNarrationIdentity == identity)
+
+        state = reduce(state, .speechFinished(speechID: speechA), id: UUID(), offset: 1).state
+        #expect(state.activeVisualNarrationIdentity == identity)
+        let startedOrdinary = reduce(
+            state,
+            .speechStarted(text: "barrier 뒤 설명.", speechID: inputB, sourceContextID: "visual-context"),
+            id: UUID(),
+            offset: 1.1
+        )
+
+        #expect(startedOrdinary.state.activeVisualNarrationIdentity == nil)
+        #expect(PickyInteractionProjection(state: startedOrdinary.state).latestDisplayText == "barrier 뒤 설명.")
+    }
+
+    @Test func visualNarrationFinalReplyModeActivatesAndAccumulatesBySentence() {
+        var state = PickyInteractionState()
+        state.contextOwnership["visual-context"] = .quickInputText(inputID: inputA)
+        let identity = visualIdentity(segmentID: "segment-a", ordinal: 0)
+        let target = PickyPointerTarget(
+            id: "pointer-a",
+            screenLocation: CGPoint(x: 30, y: 40),
+            displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100),
+            bubbleText: "target label",
+            duration: 0.5
+        )
+
+        let prepared = reduce(
+            state,
+            .visualNarrationSegmentPrepared(identity: identity, visual: .point(target)),
+            id: timerA
+        )
+        #expect(PickyInteractionProjection(state: prepared.state).latestDisplayText == nil)
+
+        let first = reduce(
+            prepared.state,
+            .visualNarrationSegmentSentence(identity: identity, index: 0, text: "첫 문장.", originSource: .text, replyKind: .main, sessionID: nil, playbackMode: .finalReply),
+            id: timerB
+        )
+        #expect(first.state.activeVisualNarrationIdentity == identity)
+        #expect(first.state.pointer.target?.id == "pointer-a")
+        #expect(PickyInteractionProjection(state: first.state).latestDisplayText == "첫 문장.")
+        #expect(PickyInteractionProjection(state: first.state).hasActivePointVisualNarration)
+
+        let second = reduce(
+            first.state,
+            .visualNarrationSegmentSentence(identity: identity, index: 1, text: "둘째 문장.", originSource: .text, replyKind: .main, sessionID: nil, playbackMode: .finalReply),
+            id: UUID()
+        )
+        #expect(PickyInteractionProjection(state: second.state).latestDisplayText == "첫 문장. 둘째 문장.")
+        #expect(second.state.finalNarrationSpeechContextIDs == ["visual-context"])
+    }
+
+    @Test func visualNarrationJoinsSentenceBeforePrepareAndIgnoresDuplicateOrMismatchedIdentity() {
+        var state = PickyInteractionState()
+        state.contextOwnership["visual-context"] = .quickInputText(inputID: inputA)
+        let identity = visualIdentity(segmentID: "segment-race", ordinal: 0)
+        let staleIdentity = PickyVisualNarrationSegmentIdentity(
+            contextId: identity.contextId,
+            contextGeneration: identity.contextGeneration,
+            turnToken: "stale-turn",
+            segmentId: identity.segmentId,
+            ordinal: identity.ordinal
+        )
+        let sentence = PickyInteractionEvent.visualNarrationSegmentSentence(
+            identity: identity,
+            index: 0,
+            text: "먼저 온 문장.",
+            originSource: .text,
+            replyKind: .main,
+            sessionID: nil,
+            playbackMode: .silent
+        )
+
+        state = reduce(state, sentence, id: timerA).state
+        #expect(state.activeVisualNarrationIdentity == nil)
+        let duplicate = reduce(state, sentence, id: timerB)
+        #expect(duplicate.journalRecords.last?.kind == .staleEvent)
+
+        let stale = reduce(
+            duplicate.state,
+            .visualNarrationSegmentPrepared(
+                identity: staleIdentity,
+                visual: .point(PickyPointerTarget(id: "stale", screenLocation: .zero, displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100), duration: 0.5))
+            ),
+            id: UUID()
+        )
+        #expect(stale.state.activeVisualNarrationIdentity == nil)
+        #expect(stale.journalRecords.last?.kind == .staleEvent)
+
+        let prepared = reduce(
+            stale.state,
+            .visualNarrationSegmentPrepared(
+                identity: identity,
+                visual: .point(PickyPointerTarget(id: "joined", screenLocation: .zero, displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100), duration: 0.5))
+            ),
+            id: UUID()
+        )
+        #expect(prepared.state.activeVisualNarrationIdentity == identity)
+        #expect(PickyInteractionProjection(state: prepared.state).latestDisplayText == "먼저 온 문장.")
+    }
+
+    @Test func incrementalVisualNarrationWaitsForMatchingSpeechStartAndDoesNotRevealFutureSegmentEarly() {
+        var state = PickyInteractionState()
+        state.contextOwnership["visual-context"] = .voice(inputID: inputA)
+        let identityA = visualIdentity(segmentID: "segment-a", ordinal: 0)
+        let identityB = visualIdentity(segmentID: "segment-b", ordinal: 1)
+        let targetA = PickyPointerTarget(id: "pointer-a", screenLocation: .zero, displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100), duration: 0.5)
+        let targetB = PickyPointerTarget(id: "pointer-b", screenLocation: CGPoint(x: 50, y: 50), displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100), duration: 0.5)
+
+        state = reduce(state, .visualNarrationSegmentPrepared(identity: identityA, visual: .point(targetA)), id: UUID()).state
+        state = reduce(state, .visualNarrationSegmentPrepared(identity: identityB, visual: .point(targetB)), id: UUID()).state
+        let sentenceA = reduce(
+            state,
+            .visualNarrationSegmentSentence(identity: identityA, index: 0, text: "A 설명.", originSource: .voice, replyKind: .main, sessionID: nil, playbackMode: .incremental),
+            id: timerA,
+            correlation: .init(contextID: "visual-context", speechID: speechA, source: .agent)
+        )
+        #expect(sentenceA.state.activeVisualNarrationIdentity == nil)
+
+        let startedA = reduce(sentenceA.state, .speechStarted(text: "A 설명.", speechID: speechA, sourceContextID: "visual-context"), id: UUID())
+        #expect(startedA.state.activeVisualNarrationIdentity == identityA)
+        #expect(PickyInteractionProjection(state: startedA.state).latestDisplayText == "A 설명.")
+
+        let sentenceB = reduce(
+            startedA.state,
+            .visualNarrationSegmentSentence(identity: identityB, index: 0, text: "B 설명.", originSource: .voice, replyKind: .main, sessionID: nil, playbackMode: .incremental),
+            id: timerB,
+            correlation: .init(contextID: "visual-context", speechID: inputB, source: .agent)
+        )
+        #expect(sentenceB.state.activeVisualNarrationIdentity == identityA)
+        #expect(PickyInteractionProjection(state: sentenceB.state).latestDisplayText == "A 설명.")
+
+        let draining = reduce(sentenceB.state, .speechFinished(speechID: speechA), id: UUID(), offset: 1)
+        #expect(draining.state.activeVisualNarrationIdentity == identityA)
+        let startedB = reduce(draining.state, .speechStarted(text: "B 설명.", speechID: inputB, sourceContextID: "visual-context"), id: UUID(), offset: 1.1)
+        #expect(startedB.state.activeVisualNarrationIdentity == identityB)
+        #expect(PickyInteractionProjection(state: startedB.state).latestDisplayText == "B 설명.")
+    }
+
+    @Test func incrementalSentenceThatStartedSpeakingBeforePrepareActivatesOnPrepare() {
+        var state = PickyInteractionState()
+        state.contextOwnership["visual-context"] = .voice(inputID: inputA)
+        let identity = visualIdentity(segmentID: "segment-late-prepare", ordinal: 0)
+
+        // Sentence arrives and starts speaking before its geometry (prepare) lands.
+        let sentence = reduce(
+            state,
+            .visualNarrationSegmentSentence(identity: identity, index: 0, text: "A 설명.", originSource: .voice, replyKind: .main, sessionID: nil, playbackMode: .incremental),
+            id: timerA,
+            correlation: .init(contextID: "visual-context", speechID: speechA, source: .agent)
+        )
+        let started = reduce(
+            sentence.state,
+            .speechStarted(text: "A 설명.", speechID: speechA, sourceContextID: "visual-context"),
+            id: UUID()
+        )
+        // No geometry yet, so activation cannot happen.
+        #expect(started.state.activeVisualNarrationIdentity == nil)
+
+        let prepared = reduce(
+            started.state,
+            .visualNarrationSegmentPrepared(identity: identity, visual: .point(PickyPointerTarget(id: "late-pointer", screenLocation: .zero, displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100), duration: 0.5))),
+            id: UUID()
+        )
+
+        #expect(prepared.state.activeVisualNarrationIdentity == identity)
+        #expect(prepared.state.pointer.target?.id == "late-pointer")
+        #expect(PickyInteractionProjection(state: prepared.state).latestDisplayText == "A 설명.")
+    }
+
+    @Test func suspendedVisualAnnotationHidesItsProgressiveBubbleUntilSceneResumes() {
+        var state = PickyInteractionState()
+        state.contextOwnership["visual-context"] = .quickInputText(inputID: inputA)
+        state.annotationScenePhase = .suspended
+        let identity = visualIdentity(segmentID: "segment-annotation", ordinal: 0)
+        state = reduce(
+            state,
+            .visualNarrationSegmentPrepared(identity: identity, visual: .annotations([annotation(id: "visual-rect")])),
+            id: timerA
+        ).state
+        state = reduce(
+            state,
+            .visualNarrationSegmentSentence(identity: identity, index: 0, text: "숨겨진 설명.", originSource: .text, replyKind: .main, sessionID: nil, playbackMode: .silent),
+            id: timerB
+        ).state
+
+        #expect(state.activeVisualNarrationIdentity == identity)
+        #expect(PickyInteractionProjection(state: state).latestDisplayText == nil)
+        #expect(PickyInteractionProjection(state: state).hasActivePointVisualNarration == false)
+
+        state.annotationScenePhase = .visible
+        #expect(PickyInteractionProjection(state: state).latestDisplayText == "숨겨진 설명.")
     }
 
     @Test func pendingSpeechQueueClearsWhenNewUserInputStarts() {
@@ -252,7 +616,8 @@ struct PickyInteractionReducerTests {
             originSource: nil,
             replyKind: nil,
             sessionID: nil,
-            shouldSpeak: true
+            shouldSpeak: true,
+            shouldSpeakFinalReply: false
         ))
 
         let timingOnly = PickyInteractionEvent.narrationChunk(
@@ -261,7 +626,8 @@ struct PickyInteractionReducerTests {
             originSource: .text,
             replyKind: .main,
             sessionID: nil,
-            shouldSpeak: false
+            shouldSpeak: false,
+            shouldSpeakFinalReply: true
         )
         let roundTripped = try JSONDecoder().decode(PickyInteractionEvent.self, from: JSONEncoder().encode(timingOnly))
         #expect(roundTripped == timingOnly)
@@ -662,7 +1028,7 @@ struct PickyInteractionReducerTests {
 
         state = reduce(
             state,
-            .narrationChunk(contextID: "ctx", text: firstText, originSource: .voice, replyKind: .main, sessionID: nil, shouldSpeak: true),
+            .narrationChunk(contextID: "ctx", text: firstText, originSource: .voice, replyKind: .main, sessionID: nil, shouldSpeak: true, shouldSpeakFinalReply: false),
             id: timerA
         ).state
         state = reduce(
@@ -672,7 +1038,7 @@ struct PickyInteractionReducerTests {
         ).state
         state = reduce(
             state,
-            .narrationChunk(contextID: "ctx", text: secondText, originSource: .voice, replyKind: .main, sessionID: nil, shouldSpeak: true),
+            .narrationChunk(contextID: "ctx", text: secondText, originSource: .voice, replyKind: .main, sessionID: nil, shouldSpeak: true, shouldSpeakFinalReply: false),
             id: timerB
         ).state
         state = reduce(
@@ -1027,6 +1393,16 @@ struct PickyInteractionReducerTests {
             if case .cancelPointerAnimation = effect { return true }
             return false
         })
+    }
+
+    private func visualIdentity(segmentID: String, ordinal: Int) -> PickyVisualNarrationSegmentIdentity {
+        PickyVisualNarrationSegmentIdentity(
+            contextId: "visual-context",
+            contextGeneration: 1,
+            turnToken: "main-turn-1",
+            segmentId: segmentID,
+            ordinal: ordinal
+        )
     }
 
     private func annotation(id: String) -> PickyAgentAnnotation {

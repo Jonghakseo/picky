@@ -1,0 +1,17 @@
+{
+  "id": "event-visual-segment-sentence-001",
+  "protocolVersion": "2026-07-17",
+  "timestamp": "2026-07-19T00:00:00.100Z",
+  "type": "mainVisualNarrationSegmentSentence",
+  "identity": {
+    "contextId": "context-visual-001",
+    "contextGeneration": 3,
+    "turnToken": "main-turn-7",
+    "segmentId": "segment-001",
+    "ordinal": 0
+  },
+  "index": 0,
+  "text": "첫 문장입니다.",
+  "originSource": "voice",
+  "replyKind": "main"
+}

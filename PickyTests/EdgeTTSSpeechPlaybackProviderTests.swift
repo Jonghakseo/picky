@@ -72,6 +72,8 @@ private final class EdgeTTSFallbackProvider: PickySpeechPlaybackProvider {
     let displayName = "Fallback"
     private(set) var speakCount = 0
     private(set) var isSpeaking = false
+    private(set) var prefetchedUtterances: [String] = []
+    var supportsIncrementalPlayback = false
     private var finish: ((Bool) -> Void)?
 
     @discardableResult
@@ -80,6 +82,10 @@ private final class EdgeTTSFallbackProvider: PickySpeechPlaybackProvider {
         isSpeaking = true
         finish = onFinish
         return true
+    }
+
+    func prefetch(_ utterance: String) {
+        prefetchedUtterances.append(utterance)
     }
 
     func stopSpeaking() {
@@ -342,6 +348,45 @@ struct EdgeTTSSpeechPlaybackProviderTests {
         try await waitForEdgeTTSCondition { completions.count == 1 }
 
         // The warmed request was reused; speak() must not issue a second one.
+        #expect(EdgeTTSCountingURLProtocol.requestCount == 1)
+    }
+
+    @MainActor
+    @Test func fallbackWrapperForwardsIncrementalCapabilityFromBothProviders() {
+        let primary = EdgeTTSSpeechPlaybackProvider(
+            voice: "ko-KR-SunHiNeural",
+            connectionInfoStore: EdgeTTSUnavailableConnectionStore()
+        )
+        let fallback = EdgeTTSFallbackProvider()
+
+        fallback.supportsIncrementalPlayback = true
+        #expect(PickyFallbackSpeechPlaybackProvider(primary: primary, fallback: fallback).supportsIncrementalPlayback)
+
+        fallback.supportsIncrementalPlayback = false
+        #expect(!PickyFallbackSpeechPlaybackProvider(primary: primary, fallback: fallback).supportsIncrementalPlayback)
+    }
+
+    @MainActor
+    @Test func fallbackWrapperForwardsPrefetchToBothProviders() async throws {
+        EdgeTTSCountingURLProtocol.requestCount = 0
+        let primary = EdgeTTSSpeechPlaybackProvider(
+            voice: "ko-KR-SunHiNeural",
+            connectionInfoStore: EdgeTTSFakeConnectionStore(connection: PickyAgentdConnectionInfo(url: "ws://127.0.0.1:17631", token: "test-token")),
+            urlSession: edgeTTSTestSession(protocolClass: EdgeTTSCountingURLProtocol.self)
+        )
+        let fallback = EdgeTTSFallbackProvider()
+        let provider = PickyFallbackSpeechPlaybackProvider(primary: primary, fallback: fallback)
+
+        provider.prefetch("warmed sentence")
+        try await waitForEdgeTTSCondition { EdgeTTSCountingURLProtocol.requestCount == 1 }
+        #expect(fallback.prefetchedUtterances == ["warmed sentence"])
+
+        // Speak reclaims the warmed audio before the primary self-stops. The stub
+        // bytes are not playable, so the primary reports failure and the wrapper
+        // fails over to the fake fallback — but the reclaim path must not issue a
+        // second synthesis request for the same sentence.
+        provider.speak("warmed sentence") { _ in }
+        try await waitForEdgeTTSCondition { fallback.speakCount == 1 }
         #expect(EdgeTTSCountingURLProtocol.requestCount == 1)
     }
 

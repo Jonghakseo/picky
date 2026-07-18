@@ -121,6 +121,9 @@ export class AgentdServer {
     this.options.supervisor.on("quickReply", (contextId, text, metadata = {}) => this.broadcast({ type: "quickReply", contextId, text, ...metadata }));
     this.options.supervisor.on("mainTurnSettled", (contextId) => this.broadcast({ type: "mainTurnSettled", contextId }));
     this.options.supervisor.on("mainNarrationChunk", (chunk) => this.broadcast({ type: "mainNarrationChunk", ...chunk }));
+    this.options.supervisor.on("mainVisualNarrationSegmentPrepared", (segment) => this.broadcast({ type: "mainVisualNarrationSegmentPrepared", ...segment }));
+    this.options.supervisor.on("mainVisualNarrationSegmentSentence", (sentence) => this.broadcast({ type: "mainVisualNarrationSegmentSentence", ...sentence }));
+    this.options.supervisor.on("mainVisualNarrationSegmentCommitted", (segment) => this.broadcast({ type: "mainVisualNarrationSegmentCommitted", ...segment }));
     this.options.supervisor.on("mainMessage", (message) => this.broadcast({ type: "mainMessageAppended", message }));
     this.options.supervisor.on("mainAgentSessionInfo", (info: { sessionFilePath?: string; cwd?: string }) => this.broadcast({
       type: "mainAgentSessionInfoUpdated",
@@ -946,6 +949,12 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, contextId: event.contextId };
     case "mainNarrationChunk":
       return { eventId: event.id, type: event.type, contextId: event.contextId, textChars: event.text.length, originSource: event.originSource, replyKind: event.replyKind, sessionId: event.sessionId };
+    case "mainVisualNarrationSegmentPrepared":
+      return { eventId: event.id, type: event.type, contextId: event.identity.contextId, turnToken: event.identity.turnToken, ordinal: event.identity.ordinal, visualKind: event.visual.kind };
+    case "mainVisualNarrationSegmentSentence":
+      return { eventId: event.id, type: event.type, contextId: event.identity.contextId, turnToken: event.identity.turnToken, ordinal: event.identity.ordinal, sentenceIndex: event.index, textChars: event.text.length };
+    case "mainVisualNarrationSegmentCommitted":
+      return { eventId: event.id, type: event.type, contextId: event.identity.contextId, turnToken: event.identity.turnToken, ordinal: event.identity.ordinal, sentenceCount: event.sentenceCount, textChars: event.text?.length ?? 0 };
     case "mainMessagesSnapshot":
       return { eventId: event.id, type: event.type, messages: event.messages.length };
     case "mainMessageAppended":

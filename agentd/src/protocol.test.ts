@@ -177,6 +177,21 @@ describe("protocol contract fixtures", () => {
     expect(Boolean(omitted.request.annotations[0]?.spotlight)).toBe(Boolean(explicitFalse.request.annotations[0]?.spotlight));
   });
 
+  it("requires exactly one prepared visual variant", () => {
+    const fixture = JSON.parse(readFileSync(join(contractsRoot, "main-visual-narration-segment-prepared.event.json"), "utf8"));
+
+    expect(() => EventEnvelopeSchema.parse({ ...fixture, visual: { kind: "point" } })).toThrow();
+    expect(() => EventEnvelopeSchema.parse({ ...fixture, visual: { kind: "annotations" } })).toThrow();
+  });
+
+  it("accepts an empty committed visual segment without prose", () => {
+    const fixture = JSON.parse(readFileSync(join(contractsRoot, "main-visual-narration-segment-committed.event.json"), "utf8"));
+    const parsed = EventEnvelopeSchema.parse({ ...fixture, text: undefined, sentenceCount: 0 });
+
+    expect(parsed).toMatchObject({ type: "mainVisualNarrationSegmentCommitted", sentenceCount: 0 });
+    if (parsed.type === "mainVisualNarrationSegmentCommitted") expect(parsed.text).toBeUndefined();
+  });
+
   it("ignores retired annotation ttlMs fields", () => {
     const annotation = { id: "annotation-ttl", shape: "rect", x: 10, y: 20, w: 30, h: 40 } as const;
     const current = EventEnvelopeSchema.parse(annotationOverlayEvent(annotation));

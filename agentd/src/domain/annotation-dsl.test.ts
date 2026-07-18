@@ -17,6 +17,7 @@ describe("AnnotationDslParser", () => {
     ]);
     expect(result.streamItems).toEqual([
       { kind: "text", text: "먼저 여기예요. " },
+      { kind: "visualBoundary", verb: "RECT" },
       { kind: "tag", tag: result.completedTags[0] },
       { kind: "text", text: " 다음을 보세요." },
     ]);
@@ -190,6 +191,48 @@ describe("AnnotationDslParser", () => {
     const second = parser.feed("다음");
 
     expect(`${first.cleanText}${second.cleanText}`).toBe("먼저 다음");
+  });
+
+  it("emits visual boundaries at the opener colon before a tag closes", () => {
+    const parser = new AnnotationDslParser();
+
+    const first = parser.feed("[RECT:");
+    const second = parser.feed(" x=1 y=2 w=3 h=4]");
+
+    expect(first.streamItems).toEqual([{ kind: "visualBoundary", verb: "RECT" }]);
+    expect(first.completedTags).toEqual([]);
+    expect(second.streamItems).toEqual([{ kind: "tag", tag: second.completedTags[0] }]);
+  });
+
+  it("waits for an unambiguous split opener and emits its boundary exactly once", () => {
+    const parser = new AnnotationDslParser();
+
+    expect(parser.feed("[LI").streamItems).toEqual([]);
+    expect(parser.feed("NE:").streamItems).toEqual([{ kind: "visualBoundary", verb: "LINE" }]);
+    const completed = parser.feed(" x1=1 y1=2 x2=3 y2=4]");
+
+    expect(completed.streamItems).toEqual([{ kind: "tag", tag: completed.completedTags[0] }]);
+  });
+
+  it("uses healed opener grammar for boundaries while SCREEN remains transparent", () => {
+    const parser = new AnnotationDslParser();
+    const result = parser.feed("[ Rect : x=1 y=2 w=3 h=4][SCREEN: id=secondary][ Point : x=5 y=6]");
+
+    expect(result.streamItems.filter((item) => item.kind === "visualBoundary")).toEqual([
+      { kind: "visualBoundary", verb: "RECT" },
+      { kind: "visualBoundary", verb: "POINT" },
+    ]);
+  });
+
+  it("emits a hard boundary for malformed known visual tags but not unknown tags", () => {
+    const parser = new AnnotationDslParser();
+    const result = parser.feed("[LINE: malformed] orphan [UNKNOWN: x=1] tail");
+
+    expect(result.streamItems).toEqual([
+      { kind: "visualBoundary", verb: "LINE" },
+      { kind: "text", text: " orphan  tail" },
+    ]);
+    expect(result.droppedTags).toHaveLength(2);
   });
 
   it("recognizes lowercase and whitespace-tolerant bracketed DSL tags", () => {

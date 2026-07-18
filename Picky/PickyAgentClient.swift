@@ -426,6 +426,12 @@ private extension PickyEventEnvelope {
             return "type=mainTurnSettled id=\(id) context=\(contextId)"
         case .mainNarrationChunk(let chunk):
             return "type=mainNarrationChunk id=\(id) context=\(chunk.contextId) textChars=\(chunk.text.count)"
+        case .mainVisualNarrationSegmentPrepared(let segment):
+            return "type=mainVisualNarrationSegmentPrepared id=\(id) context=\(segment.identity.contextId) turn=\(segment.identity.turnToken) ordinal=\(segment.identity.ordinal)"
+        case .mainVisualNarrationSegmentSentence(let sentence):
+            return "type=mainVisualNarrationSegmentSentence id=\(id) context=\(sentence.identity.contextId) turn=\(sentence.identity.turnToken) ordinal=\(sentence.identity.ordinal) index=\(sentence.index) textChars=\(sentence.text.count)"
+        case .mainVisualNarrationSegmentCommitted(let segment):
+            return "type=mainVisualNarrationSegmentCommitted id=\(id) context=\(segment.identity.contextId) turn=\(segment.identity.turnToken) ordinal=\(segment.identity.ordinal) sentences=\(segment.sentenceCount) textChars=\(segment.text?.count ?? 0)"
         case .mainMessagesSnapshot(let messages):
             return "type=mainMessagesSnapshot id=\(id) messages=\(messages.count)"
         case .mainMessageAppended(let message):

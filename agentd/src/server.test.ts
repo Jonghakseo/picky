@@ -156,6 +156,42 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
+  it("broadcasts progressive visual narration segment events in supervisor order", async () => {
+    const { ws } = await connectWithHello();
+    const identity = {
+      contextId: "context-visual",
+      contextGeneration: 1,
+      turnToken: "main-turn-1",
+      segmentId: "segment-1",
+      ordinal: 0,
+    };
+    const visual = {
+      kind: "point" as const,
+      request: {
+        id: "pointer-visual",
+        contextId: "context-visual",
+        contextGeneration: 1,
+        x: 10,
+        y: 20,
+        screenBounds: { x: 0, y: 0, width: 100, height: 100 },
+        screenshotSize: { width: 100, height: 100 },
+      },
+    };
+
+    const prepared = waitForEvent(ws, "mainVisualNarrationSegmentPrepared");
+    supervisor.emit("mainVisualNarrationSegmentPrepared", { identity, visual });
+    await expect(prepared).resolves.toMatchObject({ type: "mainVisualNarrationSegmentPrepared", identity, visual });
+
+    const sentence = waitForEvent(ws, "mainVisualNarrationSegmentSentence");
+    supervisor.emit("mainVisualNarrationSegmentSentence", { identity, index: 0, text: "첫 문장.", replyKind: "main" });
+    await expect(sentence).resolves.toMatchObject({ type: "mainVisualNarrationSegmentSentence", identity, index: 0, text: "첫 문장." });
+
+    const committed = waitForEvent(ws, "mainVisualNarrationSegmentCommitted");
+    supervisor.emit("mainVisualNarrationSegmentCommitted", { identity, text: "첫 문장.", sentenceCount: 1, replyKind: "main" });
+    await expect(committed).resolves.toMatchObject({ type: "mainVisualNarrationSegmentCommitted", identity, sentenceCount: 1 });
+    ws.close();
+  });
+
   it("broadcasts toolActivityUpdated events", async () => {
     const { ws } = await connectWithHello();
     const pendingToolEvent = waitForEvent(ws, "toolActivityUpdated");

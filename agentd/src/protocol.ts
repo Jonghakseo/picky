@@ -308,6 +308,21 @@ export const PickyAnnotationOverlayRequestSchema = z.object({
 });
 export type PickyAnnotationOverlayRequest = z.infer<typeof PickyAnnotationOverlayRequestSchema>;
 
+export const PickyVisualNarrationSegmentIdentitySchema = z.object({
+  contextId: z.string().min(1),
+  contextGeneration: z.number().int().nonnegative(),
+  turnToken: z.string().min(1),
+  segmentId: z.string().min(1),
+  ordinal: z.number().int().nonnegative(),
+});
+export type PickyVisualNarrationSegmentIdentity = z.infer<typeof PickyVisualNarrationSegmentIdentitySchema>;
+
+export const PickyPreparedVisualNarrationVisualSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("point"), request: PickyPointerOverlayRequestSchema }),
+  z.object({ kind: z.literal("annotations"), request: PickyAnnotationOverlayRequestSchema }),
+]);
+export type PickyPreparedVisualNarrationVisual = z.infer<typeof PickyPreparedVisualNarrationVisualSchema>;
+
 // App-owned Pickle dock group snapshot for CLI commands.
 export const DockGroupSchema = z.object({
   id: z.string(),
@@ -427,6 +442,29 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
     type: z.literal("mainNarrationChunk"),
     contextId: z.string(),
     text: z.string().min(1),
+    originSource: QuickReplyOriginSourceSchema.optional(),
+    replyKind: QuickReplyKindSchema.optional(),
+    sessionId: z.string().optional(),
+  }),
+  EventBaseSchema.extend({
+    type: z.literal("mainVisualNarrationSegmentPrepared"),
+    identity: PickyVisualNarrationSegmentIdentitySchema,
+    visual: PickyPreparedVisualNarrationVisualSchema,
+  }),
+  EventBaseSchema.extend({
+    type: z.literal("mainVisualNarrationSegmentSentence"),
+    identity: PickyVisualNarrationSegmentIdentitySchema,
+    index: z.number().int().nonnegative(),
+    text: z.string().min(1),
+    originSource: QuickReplyOriginSourceSchema.optional(),
+    replyKind: QuickReplyKindSchema.optional(),
+    sessionId: z.string().optional(),
+  }),
+  EventBaseSchema.extend({
+    type: z.literal("mainVisualNarrationSegmentCommitted"),
+    identity: PickyVisualNarrationSegmentIdentitySchema,
+    text: z.string().min(1).optional(),
+    sentenceCount: z.number().int().nonnegative(),
     originSource: QuickReplyOriginSourceSchema.optional(),
     replyKind: QuickReplyKindSchema.optional(),
     sessionId: z.string().optional(),

@@ -205,6 +205,9 @@ final class CompanionManager: ObservableObject {
         }
     }
     @Published private(set) var latestAgentSessionSummary: String?
+    @Published private(set) var isProgressiveResponseVisible = false
+    @Published private(set) var hasActiveVisualNarration = false
+    @Published private(set) var hasActivePointVisualNarration = false
     @Published private(set) var mainAgentMessages: [PickyMainAgentMessage] = []
     /// Most recent Picky main-agent Pi session location reported by
     /// picky-agentd. Used by the Status → Recent conversation sub-page to expose "Open in Pi" / "Copy
@@ -1657,6 +1660,14 @@ final class CompanionManager: ObservableObject {
         isWaitingForCursorResponse = projection.isWaitingForCursorResponse
         agentAnnotations = projection.agentAnnotations
         showsAgentAnnotationDismissControl = projection.showsAgentAnnotationDismissControl
+        hasActiveVisualNarration = projection.state.activeVisualNarrationIdentity != nil
+        hasActivePointVisualNarration = projection.hasActivePointVisualNarration
+        isProgressiveResponseVisible = projection.latestDisplayText != nil
+            && (hasActiveVisualNarration || projection.state.streamedResponseText != nil)
+        if isProgressiveResponseVisible, let latestDisplayText = projection.latestDisplayText {
+            latestAgentSessionSummary = latestDisplayText
+            voicePromptBubbleState = .hidden
+        }
         let previousProjectedSceneIdentity = projectedAnnotationSceneIdentity
         projectedAnnotationSceneIdentity = projection.state.annotationSceneIdentity
         annotationSceneMonitor?.setAllowsTolerantRestoration(
@@ -2168,6 +2179,13 @@ final class CompanionManager: ObservableObject {
 
         do {
             try await agentClient.send(PickyCommandEnvelope(type: .resetMainAgent))
+            annotationBasePaletteByTurnScreen.removeAll()
+            annotationSceneMonitor?.stop()
+            activeAnnotationSceneIdentity = nil
+            interactionCoordinator.accept(
+                .mainAgentSessionReset,
+                correlation: PickyInteractionCorrelation(source: .system)
+            )
             mainAgentMessages = []
             latestAgentSessionSummary = "Started a new Messages session"
             return true
@@ -2264,6 +2282,12 @@ final class CompanionManager: ObservableObject {
             applyMainTurnSettled(contextID: contextID)
         case .mainNarrationChunk(let chunk):
             applyMainNarrationChunk(chunk)
+        case .mainVisualNarrationSegmentPrepared(let segment):
+            applyVisualNarrationSegmentPrepared(segment)
+        case .mainVisualNarrationSegmentSentence(let sentence):
+            applyVisualNarrationSegmentSentence(sentence)
+        case .mainVisualNarrationSegmentCommitted(let segment):
+            applyVisualNarrationSegmentCommitted(segment)
         case .externalEntryAccepted(let accepted):
             guard let sessionId = accepted.sessionId else { break }
             interactionCoordinator.accept(
@@ -2363,9 +2387,9 @@ final class CompanionManager: ObservableObject {
     }
 
     private func applyMainNarrationChunk(_ chunk: PickyMainNarrationChunkEvent) {
-        guard ttsPlaybackEnabled else { return }
         let owner = interactionOwner(for: chunk.contextId)
         let originSource = chunk.originSource ?? owner.map { $0.isVoiceOwned ? .voice : .text }
+        let supportsIncrementalPlayback = ttsPlaybackEnabled && speechPlaybackProvider.supportsIncrementalPlayback
         interactionCoordinator.accept(
             .narrationChunk(
                 contextID: chunk.contextId,
@@ -2373,9 +2397,110 @@ final class CompanionManager: ObservableObject {
                 originSource: originSource,
                 replyKind: chunk.replyKind ?? .main,
                 sessionID: chunk.sessionId,
-                shouldSpeak: speechPlaybackProvider.supportsIncrementalPlayback
+                shouldSpeak: supportsIncrementalPlayback,
+                shouldSpeakFinalReply: ttsPlaybackEnabled && !supportsIncrementalPlayback
             ),
             correlation: PickyInteractionCorrelation(contextID: chunk.contextId, sessionID: chunk.sessionId, source: .agent)
+        )
+    }
+
+    private func applyVisualNarrationSegmentPrepared(
+        _ segment: PickyVisualNarrationSegmentPreparedEvent
+    ) {
+        guard shouldApplyOverlay(
+            contextID: segment.identity.contextId,
+            generation: segment.identity.contextGeneration
+        ) else { return }
+        do {
+            let visual: PickyResolvedVisualNarrationVisual
+            switch segment.visual {
+            case .point(let request):
+                guard request.contextId == segment.identity.contextId,
+                      request.contextGeneration == segment.identity.contextGeneration else { return }
+                let target = try PickyPointerOverlayResolver.resolve(request)
+                visual = .point(PickyPointerTarget(
+                    id: request.id,
+                    source: .agent,
+                    screenLocation: target.screenLocation,
+                    displayFrame: target.displayFrame,
+                    bubbleText: target.bubbleText,
+                    duration: target.duration
+                ))
+            case .annotations(let request):
+                guard request.contextId == segment.identity.contextId,
+                      request.contextGeneration == segment.identity.contextGeneration else { return }
+                let (annotations, screenshot) = try resolveAgentAnnotations(request)
+                prepareAnnotationSceneIfNeeded(
+                    request: request,
+                    screenshot: screenshot,
+                    annotations: annotations
+                )
+                visual = .annotations(annotations)
+            }
+            interactionCoordinator.accept(
+                .visualNarrationSegmentPrepared(identity: segment.identity, visual: visual),
+                correlation: PickyInteractionCorrelation(contextID: segment.identity.contextId, source: .agent)
+            )
+        } catch {
+            PickyLog.logger(.agentClient).debug(
+                "Visual narration segment prepare ignored ordinal=\(segment.identity.ordinal) error=\(error.localizedDescription, privacy: .public)"
+            )
+        }
+    }
+
+    private func applyVisualNarrationSegmentSentence(
+        _ sentence: PickyVisualNarrationSegmentSentenceEvent
+    ) {
+        guard shouldApplyOverlay(
+            contextID: sentence.identity.contextId,
+            generation: sentence.identity.contextGeneration
+        ) else { return }
+        let playbackMode: PickyVisualNarrationPlaybackMode
+        if !ttsPlaybackEnabled {
+            playbackMode = .silent
+        } else if speechPlaybackProvider.supportsIncrementalPlayback {
+            playbackMode = .incremental
+        } else {
+            playbackMode = .finalReply
+        }
+        let owner = interactionOwner(for: sentence.identity.contextId)
+        let originSource = sentence.originSource ?? owner.map { $0.isVoiceOwned ? .voice : .text }
+        interactionCoordinator.accept(
+            .visualNarrationSegmentSentence(
+                identity: sentence.identity,
+                index: sentence.index,
+                text: sentence.text,
+                originSource: originSource,
+                replyKind: sentence.replyKind ?? .main,
+                sessionID: sentence.sessionId,
+                playbackMode: playbackMode
+            ),
+            correlation: PickyInteractionCorrelation(
+                contextID: sentence.identity.contextId,
+                sessionID: sentence.sessionId,
+                source: .agent
+            )
+        )
+    }
+
+    private func applyVisualNarrationSegmentCommitted(
+        _ segment: PickyVisualNarrationSegmentCommittedEvent
+    ) {
+        guard shouldApplyOverlay(
+            contextID: segment.identity.contextId,
+            generation: segment.identity.contextGeneration
+        ) else { return }
+        interactionCoordinator.accept(
+            .visualNarrationSegmentCommitted(
+                identity: segment.identity,
+                text: segment.text,
+                sentenceCount: segment.sentenceCount
+            ),
+            correlation: PickyInteractionCorrelation(
+                contextID: segment.identity.contextId,
+                sessionID: segment.sessionId,
+                source: .agent
+            )
         )
     }
 
@@ -2413,29 +2538,7 @@ final class CompanionManager: ObservableObject {
         }
         guard shouldApplyOverlay(contextID: request.contextId, generation: request.contextGeneration) else { return }
         do {
-            let screenshotSize = request.screenshotSize.map { CGSize(width: $0.width, height: $0.height) }
-            let screenshot = overlayScreenshot(for: request)
-            let sampleGrid = screenshot?.annotationColorSampleGrid
-            let paletteKey = annotationPaletteKey(for: request)
-            if request.mode == .replace {
-                annotationBasePaletteByTurnScreen[paletteKey] = nil
-            }
-            let basePalette = annotationBasePaletteByTurnScreen[paletteKey]
-                ?? screenshotSize.flatMap {
-                    PickyAnnotationPaletteResolver.basePalette(
-                        for: request.annotations,
-                        screenshotSize: $0,
-                        sampleGrid: sampleGrid
-                    )
-                }
-            let annotations = try PickyAnnotationOverlayResolver.resolve(
-                request,
-                sampleGrid: sampleGrid,
-                preferredBasePalette: basePalette
-            )
-            if let basePalette {
-                annotationBasePaletteByTurnScreen[paletteKey] = basePalette
-            }
+            let (annotations, screenshot) = try resolveAgentAnnotations(request)
             prepareAnnotationSceneIfNeeded(
                 request: request,
                 screenshot: screenshot,
@@ -2451,6 +2554,35 @@ final class CompanionManager: ObservableObject {
         } catch {
             latestAgentSessionSummary = "Annotation overlay ignored: \(error.localizedDescription)"
         }
+    }
+
+    private func resolveAgentAnnotations(
+        _ request: PickyAnnotationOverlayRequest
+    ) throws -> ([PickyAgentAnnotation], PickyScreenshotContext?) {
+        let screenshotSize = request.screenshotSize.map { CGSize(width: $0.width, height: $0.height) }
+        let screenshot = overlayScreenshot(for: request)
+        let sampleGrid = screenshot?.annotationColorSampleGrid
+        let paletteKey = annotationPaletteKey(for: request)
+        if request.mode == .replace {
+            annotationBasePaletteByTurnScreen[paletteKey] = nil
+        }
+        let basePalette = annotationBasePaletteByTurnScreen[paletteKey]
+            ?? screenshotSize.flatMap {
+                PickyAnnotationPaletteResolver.basePalette(
+                    for: request.annotations,
+                    screenshotSize: $0,
+                    sampleGrid: sampleGrid
+                )
+            }
+        let annotations = try PickyAnnotationOverlayResolver.resolve(
+            request,
+            sampleGrid: sampleGrid,
+            preferredBasePalette: basePalette
+        )
+        if let basePalette {
+            annotationBasePaletteByTurnScreen[paletteKey] = basePalette
+        }
+        return (annotations, screenshot)
     }
 
     private func noteMainOverlayContext(_ context: PickyContextPacket) {

@@ -1,6 +1,6 @@
 # Visual Narration Segment Plan
 
-_Status: planned; implementation not started_
+_Status: implemented; automated validation complete, manual runtime verification pending_
 
 _Last updated: 2026-07-19_
 
@@ -10,26 +10,65 @@ _Last updated: 2026-07-19_
 
 | Section | Start line |
 |---|---:|
-| [Summary](#summary) | 34 |
-| [Why this work is needed](#why-this-work-is-needed) | 59 |
-| [Product contract](#product-contract) | 115 |
-| [Goals](#goals) | 227 |
-| [Non-goals](#non-goals) | 239 |
-| [Architecture principles](#architecture-principles) | 250 |
-| [Latency analysis](#latency-analysis) | 290 |
-| [Domain model](#domain-model) | 321 |
-| [Wire protocol](#wire-protocol) | 402 |
-| [Agentd design](#agentd-design) | 475 |
-| [Swift app design](#swift-app-design) | 551 |
-| [Failure handling and race safety](#failure-handling-and-race-safety) | 733 |
-| [Observability](#observability) | 777 |
-| [File-by-file change map](#file-by-file-change-map) | 806 |
-| [Test Plan Card](#test-plan-card) | 863 |
-| [Implementation sequence](#implementation-sequence) | 933 |
-| [Manual acceptance scenarios](#manual-acceptance-scenarios) | 1156 |
-| [Rollout and rollback](#rollout-and-rollback) | 1206 |
-| [Definition of done](#definition-of-done) | 1227 |
-| [Reference map](#reference-map) | 1251 |
+| [Approved implementation amendment: sentence-progressive bubbles](#approved-implementation-amendment-sentence-progressive-bubbles) | 35 |
+| [Summary](#summary) | 73 |
+| [Why this work is needed](#why-this-work-is-needed) | 98 |
+| [Product contract](#product-contract) | 154 |
+| [Goals](#goals) | 266 |
+| [Non-goals](#non-goals) | 278 |
+| [Architecture principles](#architecture-principles) | 289 |
+| [Latency analysis](#latency-analysis) | 329 |
+| [Domain model](#domain-model) | 360 |
+| [Wire protocol](#wire-protocol) | 441 |
+| [Agentd design](#agentd-design) | 538 |
+| [Swift app design](#swift-app-design) | 615 |
+| [Failure handling and race safety](#failure-handling-and-race-safety) | 796 |
+| [Observability](#observability) | 840 |
+| [File-by-file change map](#file-by-file-change-map) | 869 |
+| [Test Plan Card](#test-plan-card) | 926 |
+| [Implementation sequence](#implementation-sequence) | 996 |
+| [Manual acceptance scenarios](#manual-acceptance-scenarios) | 1219 |
+| [Rollout and rollback](#rollout-and-rollback) | 1269 |
+| [Definition of done](#definition-of-done) | 1290 |
+| [Reference map](#reference-map) | 1316 |
+
+## Approved implementation amendment: sentence-progressive bubbles
+
+The implementation includes a follow-up product decision made after this plan was approved: both ordinary main-agent prose and visual narration must appear in the cursor response bubble at least one completed sentence at a time.
+
+This amendment supersedes earlier statements in this document that required a multi-sentence visual segment to remain invisible and immutable until the next visual opener. The canonical segment is still committed at the next opener/turn end, but completed sentences are emitted before that final commit.
+
+The implemented lifecycle is:
+
+```text
+visual tag complete       sentence complete         next visual opener / turn end
+        │                        │                               │
+        ▼                        ▼                               ▼
+     prepared  ───────────▶ sentence progress ─────────────▶ committed
+ geometry only             immutable sentence event          canonical full text
+ validation may start      bubble/visual may activate        expected sentence count
+```
+
+Implemented protocol events:
+
+- `mainVisualNarrationSegmentPrepared`
+- `mainVisualNarrationSegmentSentence`
+- `mainVisualNarrationSegmentCommitted`
+
+Playback behavior:
+
+- Ordinary `mainNarrationChunk` events are emitted and projected even when TTS is disabled or the provider is non-incremental.
+- Incremental TTS activates a visual sentence only when the matching speech ID starts, so a prepared future segment cannot overwrite the segment currently being spoken.
+- Non-incremental TTS displays visual sentences progressively as generation completes, then clears sentence activation and synthesizes the final full reply once. This supersedes the earlier weighted-FIFO playback activation proposal for non-incremental providers; showing a stale final visual while audio restarts from the beginning is not permitted.
+- TTS-off mode displays visual sentences progressively without creating speech effects.
+- Annotation `validating`/`suspended` phases hide both the annotation and its active visual narration bubble.
+- An active POINT visual narration bubble suppresses the separate navigation-label bubble.
+
+Implementation outcome:
+
+- Agentd parser, segment assembler, supervisor, server, TypeScript schema, fixtures, and tests are implemented.
+- Swift protocol decoding, journal-compatible interaction state, reducer transitions, CompanionManager routing, projection, and cursor bubble integration are implemented.
+- The implementation reuses the existing response bubble visual style and annotation scene monitor; no new visual tokens, polling worker, real audio dependency, or real ScreenCaptureKit dependency were introduced.
 
 ## Summary
 
@@ -401,7 +440,7 @@ Do not overload `PickyPointerTarget.bubbleText`. That property belongs to the na
 
 ## Wire protocol
 
-Introduce two explicit events rather than giving existing overlay events two hidden meanings.
+Introduce three explicit events rather than giving existing overlay events hidden meanings.
 
 ### `mainVisualNarrationSegmentPrepared`
 
@@ -432,9 +471,30 @@ Emitted when a complete, valid POINT/RECT/LINE tag has been validated against ca
 }
 ```
 
+### `mainVisualNarrationSegmentSentence`
+
+Emitted exactly once for each completed sentence after the segment has been prepared. This is the progressive presentation unit; it carries the same full identity plus a zero-based sentence index.
+
+```json
+{
+  "type": "mainVisualNarrationSegmentSentence",
+  "identity": {
+    "contextId": "context-1",
+    "contextGeneration": 4,
+    "turnToken": "turn-uuid",
+    "segmentId": "segment-uuid",
+    "ordinal": 0
+  },
+  "index": 0,
+  "text": "첫 문장.",
+  "originSource": "voice",
+  "replyKind": "main"
+}
+```
+
 ### `mainVisualNarrationSegmentCommitted`
 
-Emitted when the next visual opener is recognized or the turn ends.
+Emitted when the next visual opener is recognized or the turn ends. `sentenceCount` lets the app detect empty visual-only segments and incomplete delivery without reparsing prose.
 
 ```json
 {
@@ -447,6 +507,7 @@ Emitted when the next visual opener is recognized or the turn ends.
     "ordinal": 0
   },
   "text": "첫 문장. 둘째 문장.",
+  "sentenceCount": 2,
   "originSource": "voice",
   "replyKind": "main"
 }
@@ -458,7 +519,8 @@ Emitted when the next visual opener is recognized or the turn ends.
 - Tagless/orphan prose continues to use `mainNarrationChunk` and the existing sentence chunker.
 - Visual-segment prose is not emitted a second time as `mainNarrationChunk`.
 - A committed visual segment with non-empty text counts toward `mainNarrationChunkCount` / `didStreamNarration` semantics so an incremental provider does not repeat it in the final quick reply.
-- A non-incremental provider still falls back to the final full `quickReply`, exactly as today.
+- A non-incremental provider displays sentence events progressively, then falls back to one final full `quickReply` synthesis.
+- TTS-off mode still emits both ordinary and visual sentence events for cursor presentation, but never creates speech effects.
 
 ### Contract set that must change together
 
@@ -468,6 +530,7 @@ Per `docs/refactoring-principles.md`, update as one atomic protocol set:
 - `agentd/src/protocol.test.ts`
 - `agentd/src/server.ts`
 - `contracts/protocol/main-visual-narration-segment-prepared.event.json` (new)
+- `contracts/protocol/main-visual-narration-segment-sentence.event.json` (new)
 - `contracts/protocol/main-visual-narration-segment-committed.event.json` (new)
 - `Picky/PickyAgentProtocol.swift`
 - `PickyTests/ProtocolContractTests.swift`
@@ -508,8 +571,8 @@ Responsibilities:
 
 - accept ordered `text`, `visualBoundary`, and validated visual `tag` items;
 - own the current prepared segment;
-- append prose to the current segment without sentence splitting;
-- emit commit actions on boundaries/finalization;
+- append prose to the current segment and emit each completed sentence exactly once;
+- flush the terminal sentence fragment and emit commit actions on boundaries/finalization;
 - return orphan/tagless prose to the existing sentence chunker;
 - preserve SCREEN transparency;
 - preserve empty segments;
@@ -526,6 +589,7 @@ Modify `agentd/src/session-supervisor.ts`:
 - route `streamItems` through the segment assembler;
 - prepare visual requests using existing validation/build helpers without emitting legacy overlay events;
 - emit `mainVisualNarrationSegmentPrepared` as soon as a tag is valid;
+- emit `mainVisualNarrationSegmentSentence` for every completed visual sentence;
 - emit `mainVisualNarrationSegmentCommitted` on early boundary/finalization;
 - feed orphan prose to `NarrationSentenceChunker` unchanged;
 - finalize the last segment before final `quickReply` / `mainTurnSettled`;
@@ -544,9 +608,9 @@ Do not duplicate pointer/annotation validation logic.
 
 ### Server routing
 
-Modify `agentd/src/server.ts` to broadcast both new events. Preserve event order from `SessionSupervisor`.
+Modify `agentd/src/server.ts` to broadcast all three new events. Preserve event order from `SessionSupervisor`.
 
-Do not add independent asynchronous dispatch that could reorder prepared/committed events.
+Do not add independent asynchronous dispatch that could reorder prepared/sentence/committed events.
 
 ## Swift app design
 
@@ -656,8 +720,8 @@ active
 
 For `PickySystemSpeechPlaybackProvider` and any future provider that returns `supportsIncrementalPlayback == true`:
 
-- each committed visual segment is one queued utterance, even if it contains multiple sentences;
-- preserve the segment identity on `PickyQueuedSpeechReply` and current speaking state/correlation;
+- each completed visual sentence is one queued utterance;
+- preserve segment identity plus sentence index on `PickyQueuedSpeechReply` and current speaking state/correlation;
 - do not expose the next segment's prose merely because it was queued;
 - when the provider accepts/starts the matching speechID, activate its visual and bubble in the same reducer transition;
 - suppress the normal `.speaking` text projection until the matching visual segment activates, preventing prose from appearing before its visual;
@@ -666,6 +730,8 @@ For `PickySystemSpeechPlaybackProvider` and any future provider that returns `su
 Tagless narration remains sentence-sized and follows the existing path.
 
 ### Non-incremental TTS
+
+> Superseded by the approved sentence-progressive amendment above. The implemented contract is the following, not weighted playback timers.
 
 Current non-incremental providers:
 
@@ -677,23 +743,20 @@ Current non-incremental providers:
 
 These providers currently synthesize the final full reply once.
 
-Required behavior:
+Implemented behavior:
 
-- commit and retain every visual segment with preceding narration weight;
-- do not enqueue one network TTS request per segment;
-- final quick reply starts one full utterance as today;
-- first final-reply `speechStarted` anchors weighted segment activation timers;
-- activation changes visual and bubble together;
-- use `PickyNarrationPaceModel` for estimated offsets;
-- final reply fallback remains available when no segment was incrementally spoken.
-
-This path remains an estimate relative to audio, but visual and bubble stay exact relative to each other.
+- retain every visual segment and display completed sentences progressively during generation;
+- do not enqueue one network TTS request per segment or sentence;
+- terminal quick reply clears active visual sentence narration and starts one full utterance;
+- the final full-reply bubble uses existing text-reply behavior, so audio never restarts while a stale final visual sentence remains active;
+- final reply fallback remains available when no sentence was incrementally spoken.
 
 ### TTS disabled / silent presentation
 
 - Visual segments still prepare and commit.
 - No speech effect is created.
-- Activate committed visuals immediately in source order, subject to scene validation.
+- Activate completed visual sentences immediately in source order, subject to scene validation.
+- A terminal silent reply clears the active narration bubble and settles through the existing minimum-display text-reply path.
 - Do not force the cursor into `.responding` solely to display a segment bubble if the existing owner/presentation policy would not show a cursor reply.
 - Preserve the existing final text reply behavior.
 
@@ -1228,25 +1291,27 @@ A temporary feature flag is optional during development, but do not add a perman
 
 Implementation is complete only when all are true:
 
-- [ ] Agentd owns visual segment boundaries; Swift performs no DSL/text inference.
-- [ ] POINT/RECT/LINE are boundaries; SCREEN is transparent.
-- [ ] Early opener detection commits at the colon exactly once across split deltas.
-- [ ] Prepared geometry is invisible and can start validation early.
-- [ ] Segment prose is immutable after commit.
-- [ ] Visual and bubble activate in the same reducer transition.
-- [ ] A future committed segment cannot overwrite the active bubble.
-- [ ] Multi-sentence visual prose appears as one bubble unit.
-- [ ] Incremental TTS queues one utterance per visual segment and does not repeat final reply.
-- [ ] Non-incremental TTS keeps one final full-reply synthesis.
-- [ ] TTS-disabled and presentation-ineligible paths preserve current behavior.
-- [ ] Scene validating/suspended/resume/final-drain policies remain correct.
-- [ ] POINT navigation bubble does not overlap visual narration prose.
-- [ ] Explicit legacy pointer/annotation tools remain unchanged.
-- [ ] Protocol schemas, fixtures, Swift decoding, and both contract suites agree.
-- [ ] Focused and full agentd/Swift suites pass.
-- [ ] macOS build and `git diff --check` pass.
-- [ ] Running Picky app was not restarted by automation.
-- [ ] Profiling/manual acceptance results are recorded in the relevant docs.
+- [x] Agentd owns visual segment boundaries; Swift performs no DSL/text inference.
+- [x] POINT/RECT/LINE are boundaries; SCREEN is transparent.
+- [x] Early opener detection commits at the colon exactly once across split deltas.
+- [x] Prepared geometry is invisible and can start validation early.
+- [x] Canonical segment prose is immutable after commit; sentence progress is emitted exactly once before commit.
+- [x] Visual and bubble activate in the same reducer transition.
+- [x] An incremental future segment cannot overwrite the active bubble before matching speech start.
+- [x] Multi-sentence ordinary and visual prose accumulates one completed sentence at a time.
+- [x] Incremental TTS queues one utterance per visual sentence and does not repeat the final reply.
+- [x] Non-incremental TTS keeps one final full-reply synthesis and clears stale visual sentence activation first.
+- [x] TTS-disabled replies stream completed sentences and settle through the existing text-reply lifecycle without speech.
+- [x] Full turn identity/tombstones reject delayed stale segments after user input or reset.
+- [x] Empty visual-only segments reveal without borrowing prose or leaking an invisible scene monitor.
+- [x] Scene validating/suspended/resume/final-drain policies remain correct.
+- [x] POINT navigation bubble does not overlap active visual narration prose; RECT/LINE do not suppress standalone navigation labels.
+- [x] Explicit legacy pointer/annotation tools remain unchanged.
+- [x] Protocol schemas, fixtures, Swift decoding, and both contract suites agree.
+- [x] Focused and full agentd/Swift suites pass.
+- [x] macOS build and `git diff --check` pass.
+- [x] Running Picky app was not restarted by automation.
+- [ ] Manual runtime acceptance and Debug profiling remain to be performed after an explicit app relaunch.
 
 ## Reference map
 

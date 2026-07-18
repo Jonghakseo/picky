@@ -257,6 +257,9 @@ enum PickyEvent: Equatable {
     /// Main-agent turn finished without user-visible reply text (for example, DSL-only screen guidance).
     case mainTurnSettled(contextId: String)
     case mainNarrationChunk(PickyMainNarrationChunkEvent)
+    case mainVisualNarrationSegmentPrepared(PickyVisualNarrationSegmentPreparedEvent)
+    case mainVisualNarrationSegmentSentence(PickyVisualNarrationSegmentSentenceEvent)
+    case mainVisualNarrationSegmentCommitted(PickyVisualNarrationSegmentCommittedEvent)
     case mainMessagesSnapshot([PickyMainAgentMessage])
     case mainMessageAppended(PickyMainAgentMessage)
     case mainAgentSessionInfoUpdated(sessionFilePath: String?, cwd: String?)
@@ -326,6 +329,12 @@ enum PickyEvent: Equatable {
             return .mainTurnSettled(contextId: try PickyMainTurnSettledPayload(from: decoder).contextId)
         case "mainNarrationChunk":
             return .mainNarrationChunk(try PickyMainNarrationChunkEvent(from: decoder))
+        case "mainVisualNarrationSegmentPrepared":
+            return .mainVisualNarrationSegmentPrepared(try PickyVisualNarrationSegmentPreparedEvent(from: decoder))
+        case "mainVisualNarrationSegmentSentence":
+            return .mainVisualNarrationSegmentSentence(try PickyVisualNarrationSegmentSentenceEvent(from: decoder))
+        case "mainVisualNarrationSegmentCommitted":
+            return .mainVisualNarrationSegmentCommitted(try PickyVisualNarrationSegmentCommittedEvent(from: decoder))
         case "mainMessagesSnapshot":
             let payload = try PickyMainMessagesSnapshotPayload(from: decoder)
             return .mainMessagesSnapshot(payload.messages)
@@ -515,6 +524,67 @@ struct PickyAnnotationOverlayRequest: Codable, Equatable, Identifiable {
     let screenId: String?
     let screenBounds: PickyCGRect?
     let screenshotSize: PickyPointerScreenshotSize?
+}
+
+struct PickyVisualNarrationSegmentIdentity: Codable, Equatable, Hashable {
+    let contextId: String
+    let contextGeneration: Int
+    let turnToken: String
+    let segmentId: String
+    let ordinal: Int
+}
+
+enum PickyPreparedVisualNarrationVisual: Codable, Equatable {
+    case point(PickyPointerOverlayRequest)
+    case annotations(PickyAnnotationOverlayRequest)
+
+    private enum CodingKeys: String, CodingKey { case kind, request }
+    private enum Kind: String, Codable { case point, annotations }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        switch try container.decode(Kind.self, forKey: .kind) {
+        case .point:
+            self = .point(try container.decode(PickyPointerOverlayRequest.self, forKey: .request))
+        case .annotations:
+            self = .annotations(try container.decode(PickyAnnotationOverlayRequest.self, forKey: .request))
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .point(let request):
+            try container.encode(Kind.point, forKey: .kind)
+            try container.encode(request, forKey: .request)
+        case .annotations(let request):
+            try container.encode(Kind.annotations, forKey: .kind)
+            try container.encode(request, forKey: .request)
+        }
+    }
+}
+
+struct PickyVisualNarrationSegmentPreparedEvent: Decodable, Equatable {
+    let identity: PickyVisualNarrationSegmentIdentity
+    let visual: PickyPreparedVisualNarrationVisual
+}
+
+struct PickyVisualNarrationSegmentSentenceEvent: Decodable, Equatable {
+    let identity: PickyVisualNarrationSegmentIdentity
+    let index: Int
+    let text: String
+    let originSource: PickyQuickReplyOriginSource?
+    let replyKind: PickyQuickReplyKind?
+    let sessionId: String?
+}
+
+struct PickyVisualNarrationSegmentCommittedEvent: Decodable, Equatable {
+    let identity: PickyVisualNarrationSegmentIdentity
+    let text: String?
+    let sentenceCount: Int
+    let originSource: PickyQuickReplyOriginSource?
+    let replyKind: PickyQuickReplyKind?
+    let sessionId: String?
 }
 
 struct PickyHelloEvent: Decodable, Equatable {

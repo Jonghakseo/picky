@@ -64,14 +64,24 @@ private final class FakeDirectMessageSpeechPlaybackProvider: PickySpeechPlayback
 struct PickyCompanionDirectMessageTests {
     @Test func resetMainAgentSessionClearsMessagesAndSendsResetCommand() async throws {
         let client = FakeDirectMessageClient()
+        let speechProvider = FakeDirectMessageSpeechPlaybackProvider()
         let manager = CompanionManager(
             agentClient: client,
+            speechPlaybackProvider: speechProvider,
             voiceContextCaptureCoordinator: fakeDirectMessageContextCaptureCoordinator()
         )
         manager.applyAgentEvent(.mainMessageAppended(PickyMainAgentMessage(role: .user, text: "old prompt", createdAt: Date(timeIntervalSince1970: 1_800_000_000))))
         manager.applyAgentEvent(.mainMessageAppended(PickyMainAgentMessage(role: .assistant, text: "old reply", createdAt: Date(timeIntervalSince1970: 1_800_000_001))))
+        manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
+            contextId: "old-cli-context",
+            text: "old spoken reply",
+            originSource: .cli,
+            replyKind: .main
+        )))
+        try await waitUntil { speechProvider.isSpeaking && manager.voiceState == .responding }
 
         let didReset = await manager.resetMainAgentSession()
+        try await waitUntil { !speechProvider.isSpeaking && manager.voiceState == .idle }
 
         #expect(didReset)
         #expect(client.sentCommands.map(\.type) == [.resetMainAgent])

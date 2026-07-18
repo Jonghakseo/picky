@@ -2,6 +2,7 @@ import type { AnnotationInput } from "./annotation-validation.js";
 
 const KNOWN_VERBS = ["POINT", "RECT", "LINE", "SCREEN"] as const;
 type KnownVerb = typeof KNOWN_VERBS[number];
+export type AnnotationDslVisualVerb = Exclude<KnownVerb, "SCREEN">;
 
 /** Matches a complete DSL opener; partial openers are handled incrementally below. */
 export const ANNOTATION_DSL_TAG_OPEN_PATTERN = /^\[\s*([A-Za-z]+)\s*:/;
@@ -42,6 +43,7 @@ export type AnnotationDslTag = AnnotationDslPointTag | AnnotationDslAnnotationTa
 
 export type AnnotationDslStreamItem =
   | { kind: "text"; text: string }
+  | { kind: "visualBoundary"; verb: AnnotationDslVisualVerb }
   | { kind: "tag"; tag: AnnotationDslTag };
 
 export interface AnnotationDslParseResult {
@@ -70,12 +72,16 @@ interface ParsedArguments {
  */
 export class AnnotationDslParser {
   private pending = "";
+  private pendingVisualBoundaryVerb?: AnnotationDslVisualVerb;
   private screenId?: string;
   private tagSequence = 0;
 
+  // eslint-disable-next-line complexity -- Incremental opener ownership and tag healing must share one ordered parser loop.
   feed(delta: string): AnnotationDslParseResult {
     const source = this.pending + delta;
+    const previouslyEmittedBoundaryVerb = this.pendingVisualBoundaryVerb;
     this.pending = "";
+    this.pendingVisualBoundaryVerb = undefined;
     const completedTags: AnnotationDslTag[] = [];
     const streamItems: AnnotationDslStreamItem[] = [];
     const droppedTags: string[] = [];
@@ -109,14 +115,21 @@ export class AnnotationDslParser {
         continue;
       }
 
+      const rawVerb = opener[1]!;
+      const verb = rawVerb.toUpperCase();
+      const visualVerb = isVisualVerb(verb) ? verb : undefined;
+      const boundaryAlreadyEmitted = open === 0 && visualVerb === previouslyEmittedBoundaryVerb;
+      if (visualVerb && !boundaryAlreadyEmitted) {
+        streamItems.push({ kind: "visualBoundary", verb: visualVerb });
+      }
+
       const close = findTagClose(source, open + opener[0].length);
       if (close === undefined) {
         this.pending = remainder;
+        this.pendingVisualBoundaryVerb = visualVerb;
         break;
       }
 
-      const rawVerb = opener[1]!;
-      const verb = rawVerb.toUpperCase();
       const body = source.slice(open + opener[0].length, close);
       if (!knownVerbSet.has(verb)) {
         droppedTags.push(`unknown verb ${verb}`);
@@ -153,11 +166,13 @@ export class AnnotationDslParser {
   finish(): AnnotationDslParseResult {
     if (!this.pending) return emptyResult();
     this.pending = "";
+    this.pendingVisualBoundaryVerb = undefined;
     return { cleanText: "", completedTags: [], streamItems: [], droppedTags: ["unclosed DSL tag at turn end"], healedTags: [] };
   }
 
   reset(): void {
     this.pending = "";
+    this.pendingVisualBoundaryVerb = undefined;
     this.screenId = undefined;
     this.tagSequence = 0;
   }
@@ -251,6 +266,10 @@ function allowedKeysFor(verb: KnownVerb): ReadonlySet<string> {
     case "LINE": return new Set(["x1", "y1", "x2", "y2", "label", "spotlight"]);
     case "SCREEN": return new Set(["id"]);
   }
+}
+
+function isVisualVerb(value: string): value is AnnotationDslVisualVerb {
+  return value === "POINT" || value === "RECT" || value === "LINE";
 }
 
 function isPartialKnownOpener(value: string): boolean {

@@ -349,6 +349,54 @@ struct ProtocolContractTests {
         )))
     }
 
+    @Test func decodesProgressiveVisualNarrationSegmentFixtures() throws {
+        let decoder = JSONDecoder.pickyAgentProtocolDecoder()
+        let fixtures = try fixtureURLs(in: "contracts/protocol")
+        let preparedURL = try #require(fixtures.first { $0.lastPathComponent == "main-visual-narration-segment-prepared.event.json" })
+        let sentenceURL = try #require(fixtures.first { $0.lastPathComponent == "main-visual-narration-segment-sentence.event.json" })
+        let committedURL = try #require(fixtures.first { $0.lastPathComponent == "main-visual-narration-segment-committed.event.json" })
+
+        let prepared = try decoder.decode(PickyEventEnvelope.self, from: Data(contentsOf: preparedURL))
+        let sentence = try decoder.decode(PickyEventEnvelope.self, from: Data(contentsOf: sentenceURL))
+        let committed = try decoder.decode(PickyEventEnvelope.self, from: Data(contentsOf: committedURL))
+
+        guard case .mainVisualNarrationSegmentPrepared(let preparedEvent) = prepared.event else {
+            Issue.record("Expected prepared visual narration segment")
+            return
+        }
+        #expect(preparedEvent.identity.contextId == "context-visual-001")
+        #expect(preparedEvent.identity.contextGeneration == 3)
+        #expect(preparedEvent.identity.turnToken == "main-turn-7")
+        #expect(preparedEvent.identity.segmentId == "segment-001")
+        #expect(preparedEvent.identity.ordinal == 0)
+        guard case .annotations(let request) = preparedEvent.visual else {
+            Issue.record("Expected prepared annotation visual")
+            return
+        }
+        #expect(request.annotations.first?.label == "첫 영역")
+
+        #expect(sentence.event == .mainVisualNarrationSegmentSentence(
+            PickyVisualNarrationSegmentSentenceEvent(
+                identity: preparedEvent.identity,
+                index: 0,
+                text: "첫 문장입니다.",
+                originSource: .voice,
+                replyKind: .main,
+                sessionId: nil
+            )
+        ))
+        #expect(committed.event == .mainVisualNarrationSegmentCommitted(
+            PickyVisualNarrationSegmentCommittedEvent(
+                identity: preparedEvent.identity,
+                text: "첫 문장입니다. 둘째 문장입니다.",
+                sentenceCount: 2,
+                originSource: .voice,
+                replyKind: .main,
+                sessionId: nil
+            )
+        ))
+    }
+
     @Test func decodesMainAgentMessagesEvents() throws {
         let snapshotJSON = """
         {

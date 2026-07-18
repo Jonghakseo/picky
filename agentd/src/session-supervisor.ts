@@ -9,11 +9,12 @@ import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
 import { summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
 import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentPickleCompletionPrompt, buildPicklePrompt, buildSteerPrompt, type BuiltPrompt } from "./prompt-builder.js";
-import type { ModelCycleDirection, PickyActivitySummary, PickyAgentSession, PickyAnnotationOverlayRequest, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
+import type { ModelCycleDirection, PickyActivitySummary, PickyAgentSession, PickyAnnotationOverlayRequest, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyPreparedVisualNarrationVisual, PickyQueueItem, PickyQueueMode, PickySessionMessage, PickyVisualNarrationSegmentIdentity } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-overlay-request.js";
 import type { PickyShowAnnotationsRequest, PickyShowAnnotationsResult } from "./application/annotation-overlay-request.js";
 import { AnnotationDslParser, type AnnotationDslTag } from "./domain/annotation-dsl.js";
 import { NarrationSentenceChunker } from "./domain/narration-sentence-chunker.js";
+import { VisualNarrationSegmentAssembler, type VisualNarrationSegmentAction } from "./domain/visual-narration-segment.js";
 import { readPiSessionInfoName, readPiTerminalSessionMessages } from "./application/pi-session-syncer.js";
 import { PiSessionTailWatcher, type PiSessionTailEntry } from "./application/pi-session-tail-watcher.js";
 import { inferTerminalStatusFromEntries } from "./application/terminal-tail-status.js";
@@ -92,6 +93,11 @@ type MainTurnOverlayContext = {
   generation: number;
 };
 
+type MainVisualNarrationSegment = {
+  identity: PickyVisualNarrationSegmentIdentity;
+  visual: PickyPreparedVisualNarrationVisual;
+};
+
 export class SessionSupervisor extends EventEmitter {
   private sessions = new Map<string, PickyAgentSession>();
   private runtimeHandles = new Map<string, RuntimeSessionHandle>();
@@ -113,6 +119,9 @@ export class SessionSupervisor extends EventEmitter {
   private mainAnnotationDslTagSeen = false;
   private readonly mainAnnotationDslParser = new AnnotationDslParser();
   private readonly mainNarrationSentenceChunker = new NarrationSentenceChunker();
+  private readonly mainVisualNarrationSegments = new VisualNarrationSegmentAssembler<MainVisualNarrationSegment>();
+  private mainVisualNarrationTurnToken = "main-turn-0";
+  private mainVisualNarrationOrdinal = 0;
   private mainNarrationChunkCount = 0;
   private mainContext?: PickyContextPacket;
   private mainContextGeneration = 0;
@@ -696,10 +705,8 @@ export class SessionSupervisor extends EventEmitter {
   setTTSEnabled(enabled: boolean): void {
     if (this.ttsEnabled === enabled) return;
     this.ttsEnabled = enabled;
-    if (!enabled) {
-      this.mainNarrationSentenceChunker.reset();
-      this.mainNarrationChunkCount = 0;
-    }
+    // Narration events also drive sentence-complete cursor bubbles, so toggling
+    // audio must not discard their parser state or streamed-reply bookkeeping.
     logAgentd("tts enabled changed", { enabled });
     this.options.mainRuntime?.setMainAgentTTSEnabled?.(enabled);
     for (const listener of this.ttsEnabledListeners) {
@@ -741,6 +748,8 @@ export class SessionSupervisor extends EventEmitter {
     this.mainAnnotationDslTagSeen = false;
     this.mainAnnotationDslParser.reset();
     this.mainNarrationSentenceChunker.reset();
+    this.mainVisualNarrationSegments.reset();
+    this.mainVisualNarrationOrdinal = 0;
     this.mainNarrationChunkCount = 0;
     this.mainContext = undefined;
     this.mainTurnOverlayContext = undefined;
@@ -749,6 +758,7 @@ export class SessionSupervisor extends EventEmitter {
     this.mainTerminalProcessed = false;
     this.suppressNextMainReply = false;
     this.mainTurnId += 1;
+    this.mainVisualNarrationTurnToken = `main-turn-${this.mainTurnId}`;
     this.activeMainRuntimeInputId = undefined;
     this.interruptedMainInputIds.clear();
     if (this.pendingPickleCompletions.length > 0) logAgentd("Picky pending Pickle completions cleared", { count: this.pendingPickleCompletions.length });
@@ -1256,6 +1266,9 @@ export class SessionSupervisor extends EventEmitter {
 
   private beginMainTurn(contextId: string, overlayContext: MainTurnOverlayContext): void {
     this.mainTurnId += 1;
+    this.mainVisualNarrationTurnToken = `main-turn-${this.mainTurnId}`;
+    this.mainVisualNarrationOrdinal = 0;
+    this.mainVisualNarrationSegments.reset();
     this.mainReplyContextId = contextId;
     this.mainTurnOverlayContext = overlayContext;
     this.activeMainRuntimeInputId = `main-turn-${this.mainTurnId}`;
@@ -1557,6 +1570,7 @@ export class SessionSupervisor extends EventEmitter {
         }
         this.schedulePickleCompletionDrain();
         this.mainNarrationSentenceChunker.reset();
+        this.mainVisualNarrationSegments.reset();
         this.mainNarrationChunkCount = 0;
         this.mainAnnotationDslTagSeen = false;
         this.mainAssistantDeltaSeen = false;
@@ -1573,29 +1587,28 @@ export class SessionSupervisor extends EventEmitter {
     for (const reason of result.droppedTags) {
       logAgentd("main annotation DSL tag dropped", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, reason });
     }
-    // Preserve the assistant's original prose/tag order. Flush any unterminated
-    // prose before a tag so the app records a distinct narration offset for each
-    // drawing instead of revealing every tag from the delta at the same time.
     for (const item of result.streamItems) {
       if (item.kind === "text") {
-        this.emitMainNarrationSentences(item.text);
-      } else {
+        this.applyMainVisualNarrationActions(this.mainVisualNarrationSegments.appendText(item.text));
+      } else if (item.kind === "visualBoundary") {
+        // Finish any ordinary prose that preceded the new visual before closing
+        // the current visual segment at the opener colon.
         this.flushMainNarrationSentences();
-        this.emitMainAnnotationDslTag(item.tag);
+        this.applyMainVisualNarrationActions(this.mainVisualNarrationSegments.boundary());
+      } else {
+        this.prepareMainVisualNarrationSegment(item.tag);
       }
     }
     return result.cleanText;
   }
 
   private emitMainNarrationSentences(cleanText: string): void {
-    if (!this.ttsEnabled) return;
     for (const text of this.mainNarrationSentenceChunker.feed(cleanText)) {
       this.emitMainNarrationChunk(text);
     }
   }
 
   private flushMainNarrationSentences(): void {
-    if (!this.ttsEnabled) return;
     for (const text of this.mainNarrationSentenceChunker.finish()) {
       this.emitMainNarrationChunk(text);
     }
@@ -1605,14 +1618,11 @@ export class SessionSupervisor extends EventEmitter {
     const trimmed = text.trim();
     if (!trimmed) return;
     const contextId = this.mainReplyContextId;
-    const isPickleReply = this.pickleSessionIds.has(contextId) || this.externalPickleReplyContexts.has(contextId);
     this.mainNarrationChunkCount += 1;
     this.emit("mainNarrationChunk", {
       contextId,
       text: trimmed,
-      originSource: contextId === this.mainContext?.id ? quickReplyOriginFromContextSource(this.mainContext.source) : "system",
-      replyKind: isPickleReply ? "pickleCompletion" : "main",
-      ...(isPickleReply ? { sessionId: contextId } : {}),
+      ...this.mainNarrationMetadata(),
     });
   }
 
@@ -1625,9 +1635,10 @@ export class SessionSupervisor extends EventEmitter {
     for (const reason of result.droppedTags) {
       logAgentd("main annotation DSL tag dropped", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, reason });
     }
+    this.applyMainVisualNarrationActions(this.mainVisualNarrationSegments.finish());
   }
 
-  private emitMainAnnotationDslTag(tag: AnnotationDslTag): void {
+  private prepareMainVisualNarrationSegment(tag: AnnotationDslTag): void {
     if (tag.kind === "screen") return;
     if (this.disabledBuiltinTools.has("picky_screen_overlay")) return;
 
@@ -1644,20 +1655,36 @@ export class SessionSupervisor extends EventEmitter {
     }
 
     try {
-      if (tag.kind === "point") {
-        this.requestPointerOverlayForContext(captured, {
-          x: tag.x,
-          y: tag.y,
-          ...(tag.label === undefined ? {} : { label: tag.label }),
-          ...(tag.screenId === undefined ? {} : { screenId: tag.screenId }),
-        });
-        return;
-      }
-      this.requestAnnotationOverlayForContext(captured, {
-        mode: "append",
-        annotations: [tag.annotation],
-        ...(tag.screenId === undefined ? {} : { screenId: tag.screenId }),
-      });
+      const visual: PickyPreparedVisualNarrationVisual = tag.kind === "point"
+        ? {
+          kind: "point",
+          request: makePointerOverlayRequestForContext(captured.context, {
+            x: tag.x,
+            y: tag.y,
+            ...(tag.label === undefined ? {} : { label: tag.label }),
+            ...(tag.screenId === undefined ? {} : { screenId: tag.screenId }),
+          }, captured.generation),
+        }
+        : {
+          kind: "annotations",
+          request: makeAnnotationOverlayRequestForContext(captured.context, {
+            mode: "append",
+            annotations: [tag.annotation],
+            ...(tag.screenId === undefined ? {} : { screenId: tag.screenId }),
+          }, captured.generation),
+        };
+      const segment: MainVisualNarrationSegment = {
+        identity: {
+          contextId: captured.context.id,
+          contextGeneration: captured.generation,
+          turnToken: this.mainVisualNarrationTurnToken,
+          segmentId: `segment-${randomUUID()}`,
+          ordinal: this.mainVisualNarrationOrdinal,
+        },
+        visual,
+      };
+      this.mainVisualNarrationOrdinal += 1;
+      this.applyMainVisualNarrationActions(this.mainVisualNarrationSegments.prepare(segment));
     } catch (error) {
       logAgentd("main annotation DSL overlay unavailable", {
         contextId: this.mainReplyContextId,
@@ -1666,6 +1693,61 @@ export class SessionSupervisor extends EventEmitter {
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  private applyMainVisualNarrationActions(actions: VisualNarrationSegmentAction<MainVisualNarrationSegment>[]): void {
+    for (const action of actions) {
+      if (action.kind === "orphanText") {
+        this.emitMainNarrationSentences(action.text);
+      } else if (action.kind === "prepared") {
+        this.emit("mainVisualNarrationSegmentPrepared", action.segment);
+        logAgentd("visual narration segment prepared", {
+          contextId: action.segment.identity.contextId,
+          turnToken: action.segment.identity.turnToken,
+          ordinal: action.segment.identity.ordinal,
+          kind: action.segment.visual.kind,
+        });
+      } else if (action.kind === "sentence") {
+        this.mainNarrationChunkCount += 1;
+        this.emit("mainVisualNarrationSegmentSentence", {
+          identity: action.segment.identity,
+          index: action.index,
+          text: action.text,
+          ...this.mainNarrationMetadata(),
+        });
+        logAgentd("visual narration segment sentence", {
+          contextId: action.segment.identity.contextId,
+          turnToken: action.segment.identity.turnToken,
+          ordinal: action.segment.identity.ordinal,
+          index: action.index,
+          textChars: action.text.length,
+        });
+      } else {
+        this.emit("mainVisualNarrationSegmentCommitted", {
+          identity: action.segment.identity,
+          ...(action.text ? { text: action.text } : {}),
+          sentenceCount: action.sentenceCount,
+          ...this.mainNarrationMetadata(),
+        });
+        logAgentd("visual narration segment committed", {
+          contextId: action.segment.identity.contextId,
+          turnToken: action.segment.identity.turnToken,
+          ordinal: action.segment.identity.ordinal,
+          sentenceCount: action.sentenceCount,
+          textChars: action.text?.length ?? 0,
+        });
+      }
+    }
+  }
+
+  private mainNarrationMetadata(): { originSource: ReturnType<typeof quickReplyOriginFromContextSource> | "system"; replyKind: "pickleCompletion" | "main"; sessionId?: string } {
+    const contextId = this.mainReplyContextId;
+    const isPickleReply = this.pickleSessionIds.has(contextId) || this.externalPickleReplyContexts.has(contextId);
+    return {
+      originSource: contextId === this.mainContext?.id ? quickReplyOriginFromContextSource(this.mainContext.source) : "system",
+      replyKind: isPickleReply ? "pickleCompletion" : "main",
+      ...(isPickleReply ? { sessionId: contextId } : {}),
+    };
   }
 
   private async notifyPickyOfPickleCompletion(sessionId: string): Promise<void> {
@@ -1711,6 +1793,8 @@ export class SessionSupervisor extends EventEmitter {
       this.mainAssistantDeltaSeen = false;
       this.mainAnnotationDslTagSeen = false;
       this.mainAnnotationDslParser.reset();
+      this.mainVisualNarrationSegments.reset();
+      this.mainVisualNarrationOrdinal = 0;
       const delivery = await this.preparePickyCompletionDelivery(prompt, session.cwd);
       if (!delivery) {
         // Child daemons have no local main runtime; forward the prebuilt prompt to the primary
@@ -1761,6 +1845,8 @@ export class SessionSupervisor extends EventEmitter {
     this.mainAssistantDeltaSeen = false;
     this.mainAnnotationDslTagSeen = false;
     this.mainAnnotationDslParser.reset();
+    this.mainVisualNarrationSegments.reset();
+    this.mainVisualNarrationOrdinal = 0;
     this.externalPickleReplyContexts.add(sessionId);
     const delivery = await this.preparePickyCompletionDelivery(prompt, cwd);
     if (!delivery) {

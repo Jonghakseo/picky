@@ -895,6 +895,11 @@ struct PickyCompanionManagerTests {
             replyKind: .main,
             sessionId: nil
         )))
+        try await waitUntil {
+            manager.latestAgentSessionSummary == "먼저 도착한 문장."
+                && manager.isProgressiveResponseVisible
+        }
+
         manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
             contextId: "fallback-context",
             text: "최종 응답입니다.",
@@ -904,6 +909,118 @@ struct PickyCompanionManagerTests {
         )))
 
         try await waitUntil { speechProvider.spokenUtterances == ["최종 응답입니다."] }
+    }
+
+    @Test func nonIncrementalVisualNarrationShowsSentencesProgressivelyAndSpeaksFinalReplyOnce() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider
+        )
+        let identity = visualNarrationIdentity(segmentID: "segment-final", ordinal: 0)
+
+        manager.applyAgentEvent(.mainVisualNarrationSegmentPrepared(
+            PickyVisualNarrationSegmentPreparedEvent(
+                identity: identity,
+                visual: .point(visualNarrationPointRequest(id: "point-final"))
+            )
+        ))
+        manager.applyAgentEvent(.mainVisualNarrationSegmentSentence(
+            PickyVisualNarrationSegmentSentenceEvent(
+                identity: identity,
+                index: 0,
+                text: "첫 문장.",
+                originSource: .voice,
+                replyKind: .main,
+                sessionId: nil
+            )
+        ))
+        try await waitUntil {
+            manager.latestAgentSessionSummary == "첫 문장."
+                && manager.hasActiveVisualNarration
+                && manager.isProgressiveResponseVisible
+        }
+
+        manager.applyAgentEvent(.mainVisualNarrationSegmentSentence(
+            PickyVisualNarrationSegmentSentenceEvent(
+                identity: identity,
+                index: 1,
+                text: "둘째 문장.",
+                originSource: .voice,
+                replyKind: .main,
+                sessionId: nil
+            )
+        ))
+        try await waitUntil { manager.latestAgentSessionSummary == "첫 문장. 둘째 문장." }
+        #expect(speechProvider.spokenUtterances.isEmpty)
+
+        manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
+            contextId: identity.contextId,
+            text: "첫 문장. 둘째 문장.",
+            originSource: .voice,
+            replyKind: .main,
+            didStreamNarration: true
+        )))
+        try await waitUntil {
+            speechProvider.spokenUtterances == ["첫 문장. 둘째 문장."]
+                && !manager.hasActiveVisualNarration
+                && !manager.isProgressiveResponseVisible
+        }
+    }
+
+    @Test func incrementalVisualNarrationKeepsFutureSegmentBufferedUntilItsSpeechStarts() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        speechProvider.supportsIncrementalPlayback = true
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider
+        )
+        let first = visualNarrationIdentity(segmentID: "segment-a", ordinal: 0)
+        let second = visualNarrationIdentity(segmentID: "segment-b", ordinal: 1)
+
+        for (identity, pointID) in [(first, "point-a"), (second, "point-b")] {
+            manager.applyAgentEvent(.mainVisualNarrationSegmentPrepared(
+                PickyVisualNarrationSegmentPreparedEvent(
+                    identity: identity,
+                    visual: .point(visualNarrationPointRequest(id: pointID))
+                )
+            ))
+        }
+        manager.applyAgentEvent(.mainVisualNarrationSegmentSentence(
+            PickyVisualNarrationSegmentSentenceEvent(
+                identity: first,
+                index: 0,
+                text: "A 설명.",
+                originSource: .voice,
+                replyKind: .main,
+                sessionId: nil
+            )
+        ))
+        try await waitUntil {
+            speechProvider.spokenUtterances == ["A 설명."]
+                && manager.latestAgentSessionSummary == "A 설명."
+        }
+
+        manager.applyAgentEvent(.mainVisualNarrationSegmentSentence(
+            PickyVisualNarrationSegmentSentenceEvent(
+                identity: second,
+                index: 0,
+                text: "B 설명.",
+                originSource: .voice,
+                replyKind: .main,
+                sessionId: nil
+            )
+        ))
+        try await settle()
+        #expect(manager.latestAgentSessionSummary == "A 설명.")
+
+        speechProvider.finishSpeaking()
+        try await waitUntil {
+            speechProvider.spokenUtterances == ["A 설명.", "B 설명."]
+                && manager.latestAgentSessionSummary == "B 설명."
+        }
     }
 
     @Test func unsupportedIncrementalProviderKeepsAnnotationOffsetsForFinalReplyTTS() async throws {
@@ -1779,6 +1896,34 @@ struct PickyCompanionManagerTests {
             path: path,
             screenId: "screen1",
             bounds: nil
+        )
+    }
+
+    private func visualNarrationIdentity(
+        segmentID: String,
+        ordinal: Int
+    ) -> PickyVisualNarrationSegmentIdentity {
+        PickyVisualNarrationSegmentIdentity(
+            contextId: "visual-context",
+            contextGeneration: 1,
+            turnToken: "main-turn-1",
+            segmentId: segmentID,
+            ordinal: ordinal
+        )
+    }
+
+    private func visualNarrationPointRequest(id: String) -> PickyPointerOverlayRequest {
+        PickyPointerOverlayRequest(
+            id: id,
+            contextId: "visual-context",
+            contextGeneration: 1,
+            screenId: "screen-main",
+            x: 30,
+            y: 40,
+            label: "target",
+            clamped: nil,
+            screenBounds: PickyCGRect(x: 0, y: 0, width: 100, height: 100),
+            screenshotSize: PickyPointerScreenshotSize(width: 100, height: 100)
         )
     }
 

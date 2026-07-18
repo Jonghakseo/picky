@@ -17,6 +17,10 @@
   },
   {
     "path": "agentd/src/domain/annotation-dsl.ts",
+    "directive": "// eslint-disable-next-line complexity -- Incremental opener ownership and tag healing must share one ordered parser loop."
+  },
+  {
+    "path": "agentd/src/domain/annotation-dsl.ts",
     "directive": "// eslint-disable-next-line complexity -- This single-pass parser deliberately couples cursor movement with healing diagnostics for deterministic recovery."
   },
   {

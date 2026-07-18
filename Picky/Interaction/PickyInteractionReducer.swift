@@ -56,6 +56,7 @@ struct PickyInteractionTransition: Equatable {
 enum PickyInteractionReducer {
     static let minimumDisplayDuration: TimeInterval = 0.35
     static let maximumAgentAnnotationCount = 24
+    static let maximumInvalidatedVisualNarrationTurnCount = 16
 
     static func reduce(
         state: PickyInteractionState,
@@ -113,8 +114,14 @@ private struct PickyInteractionReducing {
             applyAgentSubmissionAccepted(contextID: contextID, sessionID: sessionID, inputID: inputID)
         case .quickReply(let contextID, let text, let originSource, let replyKind, let sessionID, let inputID):
             applyQuickReply(contextID: contextID, text: text, originSource: originSource, replyKind: replyKind, sessionID: sessionID, inputID: inputID)
-        case .narrationChunk(let contextID, let text, let originSource, let replyKind, let sessionID, let shouldSpeak):
-            applyNarrationChunk(contextID: contextID, text: text, originSource: originSource, replyKind: replyKind, sessionID: sessionID, shouldSpeak: shouldSpeak)
+        case .narrationChunk(let contextID, let text, let originSource, let replyKind, let sessionID, let shouldSpeak, let shouldSpeakFinalReply):
+            applyNarrationChunk(contextID: contextID, text: text, originSource: originSource, replyKind: replyKind, sessionID: sessionID, shouldSpeak: shouldSpeak, shouldSpeakFinalReply: shouldSpeakFinalReply)
+        case .visualNarrationSegmentPrepared(let identity, let visual):
+            applyVisualNarrationSegmentPrepared(identity: identity, visual: visual)
+        case .visualNarrationSegmentSentence(let identity, let index, let text, let originSource, let replyKind, let sessionID, let playbackMode):
+            applyVisualNarrationSegmentSentence(identity: identity, index: index, text: text, originSource: originSource, replyKind: replyKind, sessionID: sessionID, playbackMode: playbackMode)
+        case .visualNarrationSegmentCommitted(let identity, let text, let sentenceCount):
+            applyVisualNarrationSegmentCommitted(identity: identity, text: text, sentenceCount: sentenceCount)
         case .streamedQuickReplyFinal(let contextID, let text, let originSource, let replyKind, let sessionID, let inputID):
             applyStreamedQuickReplyFinal(contextID: contextID, text: text, originSource: originSource, replyKind: replyKind, sessionID: sessionID, inputID: inputID)
         case .passiveAgentSummary(let sessionID, let text):
@@ -123,6 +130,8 @@ private struct PickyInteractionReducing {
             applyPickleCompleted(sessionID: sessionID, summary: summary)
         case .mainTurnSettled(let contextID):
             applyMainTurnSettled(contextID: contextID)
+        case .mainAgentSessionReset:
+            applyMainAgentSessionReset()
         case .sessionTerminated(let sessionID):
             applySessionTerminated(sessionID: sessionID)
         case .pointerRequested(let target):
@@ -145,8 +154,10 @@ private struct PickyInteractionReducing {
             applyAnnotationRevealDue(id: id)
         case .agentAnnotationsClearedForUserInput:
             clearAgentAnnotationsForUserInput()
-        case .speechStarted:
+        case .speechStarted(_, let speechID, _):
             applyAnnotationSpeechStarted(now: envelope.occurredAt)
+            applyVisualNarrationBarrierSpeechStarted(speechID: speechID)
+            applyVisualNarrationSpeechStarted(speechID: speechID)
             record(.accepted, "Speech provider started")
         case .speechFinished(let speechID), .speechFailed(let speechID):
             applySpeechCompleted(speechID: speechID)
@@ -462,7 +473,8 @@ private struct PickyInteractionReducing {
         originSource: PickyQuickReplyOriginSource?,
         replyKind: PickyQuickReplyKind?,
         sessionID: String?,
-        shouldSpeak: Bool
+        shouldSpeak: Bool,
+        shouldSpeakFinalReply: Bool
     ) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -473,31 +485,304 @@ private struct PickyInteractionReducing {
         let resolvedReplyKind = replyKind ?? .main
         guard !state.hasActiveVoiceInput,
               owner.isVoiceOwned || owner.usesCursorResponsePresentation || resolvedReplyKind == .pickleCompletion else {
-            record(.accepted, "Narration chunk did not require speech")
+            record(.accepted, "Narration chunk did not require presentation")
             return
         }
 
-        // Even providers that cannot play incremental chunks still receive the
-        // prose/tag stream. Preserve its weighted narration offsets so annotations can be
-        // timed against the final full-reply TTS instead of all revealing at zero.
         state.annotationNarrationWeight += PickyNarrationPaceModel.weightedUnits(forNarration: trimmed)
         if let sessionID { state.pendingAgentRequestsBySession[sessionID] = nil }
+        appendStreamedResponse(
+            contextID: contextID,
+            text: trimmed,
+            source: displaySource(replyKind: resolvedReplyKind, owner: owner)
+        )
+        if shouldSpeakFinalReply { state.finalNarrationSpeechContextIDs.insert(contextID) }
         guard shouldSpeak else {
-            record(.accepted, "Narration chunk tracked for annotation timing")
+            clearActiveVisualNarration()
+            record(.accepted, "Narration chunk displayed without incremental speech")
             return
         }
 
-        let timerID = envelope.id
+        let speechID = envelope.correlation.speechID ?? envelope.id
+        if state.activeVisualNarrationIdentity != nil {
+            state.visualNarrationClearSpeechIDs.insert(speechID)
+        }
         enqueueOrSpeakQuickReply(
             contextID: contextID,
             text: trimmed,
             replyKind: resolvedReplyKind,
             owner: owner,
-            timerID: timerID,
+            timerID: envelope.id,
             inputID: nil
         )
         state.streamedNarrationContextIDs.insert(contextID)
         record(.accepted, "Narration chunk queued for speech")
+    }
+
+    private mutating func applyVisualNarrationSegmentPrepared(
+        identity: PickyVisualNarrationSegmentIdentity,
+        visual: PickyResolvedVisualNarrationVisual
+    ) {
+        guard acceptVisualNarrationTurn(identity) else { return }
+        if let existing = state.visualNarrationSegments[identity.segmentId], existing.identity != identity {
+            record(.staleEvent, "Ignored mismatched visual narration prepare")
+            return
+        }
+        var segment = state.visualNarrationSegments[identity.segmentId] ?? PickyVisualNarrationSegmentState(
+            identity: identity,
+            visual: nil,
+            sentences: [],
+            committedText: nil,
+            expectedSentenceCount: nil
+        )
+        segment.visual = visual
+        state.visualNarrationSegments[identity.segmentId] = segment
+        if !state.visualNarrationOrder.contains(identity.segmentId) {
+            state.visualNarrationOrder.append(identity.segmentId)
+            state.visualNarrationOrder.sort {
+                (state.visualNarrationSegments[$0]?.identity.ordinal ?? .max)
+                    < (state.visualNarrationSegments[$1]?.identity.ordinal ?? .max)
+            }
+        }
+        trimVisualNarrationSegmentsIfNeeded()
+        if segment.expectedSentenceCount == 0 {
+            queueOrActivateVisualOnlyNarration(identity)
+        } else if let playbackMode = segment.sentences.first?.playbackMode,
+                  playbackMode != .incremental {
+            activateVisualNarration(identity: identity, sentenceCount: contiguousSentenceCount(in: segment))
+        } else if let startedSentenceIndex = state.visualNarrationSpeechMarkers.values
+            .filter({ $0.identity == identity })
+            .map(\.sentenceIndex).max() {
+            // Incremental race: a sentence began speaking before its geometry
+            // arrived, so its speechStarted activation no-op'd. Now that the
+            // visual exists, activate up to the highest already-started sentence.
+            activateVisualNarration(identity: identity, sentenceCount: startedSentenceIndex + 1)
+        }
+        record(.accepted, "Visual narration segment prepared")
+    }
+
+    private mutating func applyVisualNarrationSegmentSentence(
+        identity: PickyVisualNarrationSegmentIdentity,
+        index: Int,
+        text: String,
+        originSource: PickyQuickReplyOriginSource?,
+        replyKind: PickyQuickReplyKind?,
+        sessionID: String?,
+        playbackMode: PickyVisualNarrationPlaybackMode
+    ) {
+        guard acceptVisualNarrationTurn(identity) else { return }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard index >= 0, !trimmed.isEmpty else {
+            record(.staleEvent, "Ignored invalid visual narration sentence")
+            return
+        }
+        let owner = state.contextOwnership[identity.contextId] ?? ownerFromMetadata(originSource)
+        let resolvedReplyKind = replyKind ?? .main
+        guard !state.hasActiveVoiceInput,
+              owner.isVoiceOwned || owner.usesCursorResponsePresentation || resolvedReplyKind == .pickleCompletion else {
+            record(.accepted, "Visual narration sentence did not require presentation")
+            return
+        }
+        if let existing = state.visualNarrationSegments[identity.segmentId], existing.identity != identity {
+            record(.staleEvent, "Ignored mismatched visual narration sentence")
+            return
+        }
+        var segment = state.visualNarrationSegments[identity.segmentId] ?? PickyVisualNarrationSegmentState(
+            identity: identity,
+            visual: nil,
+            sentences: [],
+            committedText: nil,
+            expectedSentenceCount: nil
+        )
+        guard !segment.sentences.contains(where: { $0.index == index }) else {
+            record(.staleEvent, "Ignored duplicate visual narration sentence")
+            return
+        }
+        let sentence = PickyVisualNarrationSentenceState(
+            index: index,
+            text: trimmed,
+            precedingNarrationWeight: state.annotationNarrationWeight,
+            playbackMode: playbackMode,
+            originSource: originSource,
+            replyKind: resolvedReplyKind,
+            sessionID: sessionID
+        )
+        segment.sentences.append(sentence)
+        segment.sentences.sort { $0.index < $1.index }
+        state.visualNarrationSegments[identity.segmentId] = segment
+        if !state.visualNarrationOrder.contains(identity.segmentId) {
+            state.visualNarrationOrder.append(identity.segmentId)
+        }
+        state.annotationNarrationWeight += PickyNarrationPaceModel.weightedUnits(forNarration: trimmed)
+        if let sessionID { state.pendingAgentRequestsBySession[sessionID] = nil }
+
+        switch playbackMode {
+        case .incremental:
+            let marker = PickyVisualNarrationSpeechMarker(identity: identity, sentenceIndex: index)
+            enqueueOrSpeakQuickReply(
+                contextID: identity.contextId,
+                text: trimmed,
+                replyKind: resolvedReplyKind,
+                owner: owner,
+                timerID: envelope.id,
+                inputID: nil,
+                visualNarrationMarker: marker
+            )
+            state.streamedNarrationContextIDs.insert(identity.contextId)
+        case .finalReply:
+            state.finalNarrationSpeechContextIDs.insert(identity.contextId)
+            activateVisualNarration(identity: identity, sentenceCount: contiguousSentenceCount(in: segment))
+        case .silent:
+            activateVisualNarration(identity: identity, sentenceCount: contiguousSentenceCount(in: segment))
+        }
+        record(.accepted, "Visual narration sentence received")
+    }
+
+    private mutating func applyVisualNarrationSegmentCommitted(
+        identity: PickyVisualNarrationSegmentIdentity,
+        text: String?,
+        sentenceCount: Int
+    ) {
+        guard acceptVisualNarrationTurn(identity) else { return }
+        guard sentenceCount >= 0 else {
+            record(.staleEvent, "Ignored invalid visual narration commit")
+            return
+        }
+        if let existing = state.visualNarrationSegments[identity.segmentId], existing.identity != identity {
+            record(.staleEvent, "Ignored mismatched visual narration commit")
+            return
+        }
+        var segment = state.visualNarrationSegments[identity.segmentId] ?? PickyVisualNarrationSegmentState(
+            identity: identity,
+            visual: nil,
+            sentences: [],
+            committedText: nil,
+            expectedSentenceCount: nil
+        )
+        segment.committedText = text
+        segment.expectedSentenceCount = sentenceCount
+        state.visualNarrationSegments[identity.segmentId] = segment
+        if !state.visualNarrationOrder.contains(identity.segmentId) {
+            state.visualNarrationOrder.append(identity.segmentId)
+        }
+        trimVisualNarrationSegmentsIfNeeded()
+        if sentenceCount == 0 {
+            queueOrActivateVisualOnlyNarration(identity)
+        }
+        record(.accepted, "Visual narration segment committed")
+    }
+
+    private mutating func applyVisualNarrationBarrierSpeechStarted(speechID: UUID) {
+        guard state.visualNarrationClearSpeechIDs.remove(speechID) != nil else { return }
+        clearActiveVisualNarration()
+    }
+
+    private mutating func applyVisualNarrationSpeechStarted(speechID: UUID) {
+        guard let marker = state.visualNarrationSpeechMarkers[speechID],
+              let segment = state.visualNarrationSegments[marker.identity.segmentId],
+              segment.identity == marker.identity else { return }
+        let contiguous = contiguousSentenceCount(in: segment)
+        guard marker.sentenceIndex < contiguous else { return }
+        activateVisualNarration(identity: marker.identity, sentenceCount: marker.sentenceIndex + 1)
+    }
+
+    private mutating func activateVisualNarration(
+        identity: PickyVisualNarrationSegmentIdentity,
+        sentenceCount: Int
+    ) {
+        guard sentenceCount >= 0,
+              let segment = state.visualNarrationSegments[identity.segmentId],
+              segment.identity == identity,
+              let visual = segment.visual,
+              sentenceCount > 0 || segment.expectedSentenceCount == 0 else { return }
+        if state.activeVisualNarrationIdentity != identity {
+            state.activeVisualNarrationIdentity = identity
+            state.activeVisualNarrationSentenceCount = 0
+            switch visual {
+            case .point(let target):
+                applyPointerRequested(target: target)
+            case .annotations(let annotations):
+                if let pointerID = state.pointer.target?.id,
+                   state.activeAnnotationPointerID == nil {
+                    effects.append(.cancelPointerAnimation(pointerID: pointerID))
+                    state.pointer = .idle
+                    state = state.removingOverlayReason(.activePointerAnimation)
+                }
+                for annotation in annotations { revealAnnotation(annotation) }
+            }
+        }
+        state.activeVisualNarrationSentenceCount = max(
+            state.activeVisualNarrationSentenceCount,
+            min(sentenceCount, contiguousSentenceCount(in: segment))
+        )
+    }
+
+    private mutating func clearActiveVisualNarration() {
+        state.activeVisualNarrationIdentity = nil
+        state.activeVisualNarrationSentenceCount = 0
+    }
+
+    private mutating func queueOrActivateVisualOnlyNarration(_ identity: PickyVisualNarrationSegmentIdentity) {
+        guard let segment = state.visualNarrationSegments[identity.segmentId],
+              segment.identity == identity,
+              segment.expectedSentenceCount == 0,
+              segment.visual != nil else { return }
+        if annotationSpeechActive {
+            if !state.pendingVisualOnlyNarrationIdentities.contains(identity) {
+                state.pendingVisualOnlyNarrationIdentities.append(identity)
+            }
+        } else {
+            activateVisualNarration(identity: identity, sentenceCount: 0)
+        }
+    }
+
+    private func contiguousSentenceCount(in segment: PickyVisualNarrationSegmentState) -> Int {
+        var expected = 0
+        for sentence in segment.sentences {
+            guard sentence.index == expected else { break }
+            expected += 1
+        }
+        return expected
+    }
+
+    private mutating func trimVisualNarrationSegmentsIfNeeded() {
+        while state.visualNarrationOrder.count > PickyInteractionReducer.maximumAgentAnnotationCount {
+            let removedID = state.visualNarrationOrder.removeFirst()
+            if state.activeVisualNarrationIdentity?.segmentId == removedID { continue }
+            state.visualNarrationSegments[removedID] = nil
+        }
+    }
+
+    private mutating func acceptVisualNarrationTurn(_ identity: PickyVisualNarrationSegmentIdentity) -> Bool {
+        let turnIdentity = PickyVisualNarrationTurnIdentity(segmentIdentity: identity)
+        guard !state.invalidatedVisualNarrationTurnIdentities.contains(turnIdentity) else {
+            record(.staleEvent, "Ignored visual narration event from invalidated turn")
+            return false
+        }
+        if let activeTurn = state.activeVisualNarrationTurnIdentity,
+           activeTurn != turnIdentity {
+            record(.staleEvent, "Ignored visual narration event from non-active turn")
+            return false
+        }
+        state.activeVisualNarrationTurnIdentity = turnIdentity
+        return true
+    }
+
+    private mutating func invalidateActiveVisualNarrationTurn(contextID: String? = nil) {
+        guard let activeTurn = state.activeVisualNarrationTurnIdentity,
+              contextID == nil || activeTurn.contextId == contextID else { return }
+        if !state.invalidatedVisualNarrationTurnIdentities.contains(activeTurn) {
+            state.invalidatedVisualNarrationTurnIdentities.append(activeTurn)
+            let overflow = max(
+                0,
+                state.invalidatedVisualNarrationTurnIdentities.count
+                    - PickyInteractionReducer.maximumInvalidatedVisualNarrationTurnCount
+            )
+            if overflow > 0 {
+                state.invalidatedVisualNarrationTurnIdentities.removeFirst(overflow)
+            }
+        }
+        state.activeVisualNarrationTurnIdentity = nil
     }
 
     private mutating func applyStreamedQuickReplyFinal(
@@ -509,12 +794,41 @@ private struct PickyInteractionReducing {
         inputID: UUID?
     ) {
         if let sessionID { state.pendingAgentRequestsBySession[sessionID] = nil }
-        guard state.streamedNarrationContextIDs.contains(contextID) else {
-            applyQuickReply(contextID: contextID, text: text, originSource: originSource, replyKind: replyKind, sessionID: sessionID, inputID: inputID)
+        defer { invalidateActiveVisualNarrationTurn(contextID: contextID) }
+        if !state.streamedNarrationContextIDs.contains(contextID) {
+            let shouldSpeakFinal = state.finalNarrationSpeechContextIDs.remove(contextID) != nil
+            let hasProgressiveDisplay = state.streamedResponseContextID == contextID
+                || state.activeVisualNarrationIdentity?.contextId == contextID
+            if shouldSpeakFinal {
+                concludeProgressiveNarrationSpeech(contextID: contextID)
+                applyQuickReply(contextID: contextID, text: text, originSource: originSource, replyKind: replyKind, sessionID: sessionID, inputID: inputID)
+                return
+            }
+            if !hasProgressiveDisplay {
+                applyQuickReply(contextID: contextID, text: text, originSource: originSource, replyKind: replyKind, sessionID: sessionID, inputID: inputID)
+                return
+            }
+
+            // TTS-off replies still use the normal text-reply terminal state so the
+            // waiting cursor and progressive bubble cannot remain active indefinitely.
+            concludeProgressiveNarrationSpeech(contextID: contextID)
+            let timerID = envelope.id
+            showTextQuickReply(
+                contextID: contextID,
+                text: text,
+                replyKind: replyKind,
+                timerID: timerID,
+                deadline: envelope.occurredAt.addingTimeInterval(minimumDisplayDuration),
+                inputID: inputID
+            )
+            markAnnotationTurnSettled()
+            record(.stateChanged, "Final quick reply settled silent streamed narration")
             return
         }
         let owner = state.contextOwnership[contextID] ?? ownerFromMetadata(originSource)
-        let source: PickyDisplaySource = replyKind == .pickleCompletion ? .pickleCompletion : (owner.usesCursorResponsePresentation ? .textReply : .voiceReply)
+        let source = displaySource(replyKind: replyKind, owner: owner)
+        state.streamedResponseContextID = contextID
+        state.streamedResponseText = text
         state.lastDisplayMessage = PickyDisplayMessage(id: contextID, contextID: contextID, text: text, source: source, updatedAt: envelope.occurredAt)
         state = state.removingOverlayReason(.waitingForVoiceResponse)
         markAnnotationTurnSettled()
@@ -548,7 +862,8 @@ private struct PickyInteractionReducing {
         replyKind: PickyQuickReplyKind?,
         owner: PickyContextOwner,
         timerID: UUID,
-        inputID: UUID?
+        inputID: UUID?,
+        visualNarrationMarker: PickyVisualNarrationSpeechMarker? = nil
     ) {
         let speechID = envelope.correlation.speechID ?? envelope.id
         let displaySource: PickyDisplaySource = replyKind == .pickleCompletion ? .pickleCompletion : (owner.usesCursorResponsePresentation ? .textReply : .voiceReply)
@@ -558,7 +873,8 @@ private struct PickyInteractionReducing {
             timerID: timerID,
             speechID: speechID,
             inputID: inputID,
-            displaySource: displaySource
+            displaySource: displaySource,
+            visualNarrationMarker: visualNarrationMarker
         )
         if case .speaking = state.output {
             state.queuedSpeechReplies.append(queuedReply)
@@ -619,6 +935,7 @@ private struct PickyInteractionReducing {
     /// `isWaitingForCursorResponse = true` and the cursor stays yellow forever.
     private mutating func applyMainTurnSettled(contextID: String) {
         // A DSL-only main turn has no quickReply and no audio, so narration is over now.
+        invalidateActiveVisualNarrationTurn(contextID: contextID)
         markAnnotationTurnSettled()
         guard case .waitingForAgent(_, let waitingContextID, _) = state.output,
               waitingContextID == contextID else {
@@ -628,6 +945,16 @@ private struct PickyInteractionReducing {
         state.output = .idle
         state = state.removingOverlayReason(.waitingForVoiceResponse)
         record(.stateChanged, "Main turn settled; released cursor waitingForAgent for \(contextID)")
+    }
+
+    private mutating func applyMainAgentSessionReset() {
+        clearAgentAnnotationsForUserInput()
+        state.queuedSpeechReplies.removeAll()
+        preemptSpeakingOutputIfNeeded()
+        state.output = .idle
+        state = state.removingOverlayReason(.waitingForVoiceResponse)
+        state = state.removingOverlayReason(.speakingResponse)
+        record(.stateChanged, "Main agent session reset locally")
     }
 
     private mutating func applySessionTerminated(sessionID: String) {
@@ -756,6 +1083,7 @@ private struct PickyInteractionReducing {
             state.pendingAgentAnnotations = []
             state.dueAgentAnnotationIDs = []
             state.agentAnnotations = []
+            clearVisualAnnotationNarrationState()
             endAnnotationPointerTurn(discardingPendingTargets: true)
         }
         state.annotationSceneIdentity = identity
@@ -924,6 +1252,7 @@ private struct PickyInteractionReducing {
 
     private mutating func clearAgentAnnotationsForUserInput() {
         clearAgentAnnotations(resetNarration: true)
+        clearProgressiveNarrationState()
         record(.stateChanged, "Agent annotations cleared for user input")
     }
 
@@ -940,9 +1269,46 @@ private struct PickyInteractionReducing {
             state.annotationSpeechAnchor = nil
             state.annotationTurnSettled = false
             state.annotationArrivalSequence = 0
+            clearVisualAnnotationNarrationState()
         }
         state = state.removingOverlayReason(.activeAgentAnnotations)
         endAnnotationPointerTurn(discardingPendingTargets: true)
+    }
+
+    private mutating func clearVisualAnnotationNarrationState() {
+        let annotationSegmentIDs = Set(state.visualNarrationSegments.compactMap { id, segment in
+            if case .annotations = segment.visual { return id }
+            return nil
+        })
+        guard !annotationSegmentIDs.isEmpty else { return }
+        for id in annotationSegmentIDs { state.visualNarrationSegments[id] = nil }
+        state.visualNarrationOrder.removeAll { annotationSegmentIDs.contains($0) }
+        state.visualNarrationSpeechMarkers = state.visualNarrationSpeechMarkers.filter {
+            !annotationSegmentIDs.contains($0.value.identity.segmentId)
+        }
+        state.pendingVisualOnlyNarrationIdentities.removeAll {
+            annotationSegmentIDs.contains($0.segmentId)
+        }
+        if let activeID = state.activeVisualNarrationIdentity?.segmentId,
+           annotationSegmentIDs.contains(activeID) {
+            state.activeVisualNarrationIdentity = nil
+            state.activeVisualNarrationSentenceCount = 0
+        }
+    }
+
+    private mutating func clearProgressiveNarrationState() {
+        invalidateActiveVisualNarrationTurn()
+        state.streamedResponseContextID = nil
+        state.streamedResponseText = nil
+        state.finalNarrationSpeechContextIDs = []
+        state.visualNarrationSegments = [:]
+        state.visualNarrationOrder = []
+        state.activeVisualNarrationIdentity = nil
+        state.activeVisualNarrationSentenceCount = 0
+        state.visualNarrationSpeechMarkers = [:]
+        state.visualNarrationClearSpeechIDs = []
+        state.pendingVisualOnlyNarrationIdentities = []
+        state.streamedNarrationContextIDs = []
     }
 
     private mutating func cancelAnnotationPointerForSceneSuspension() {
@@ -1026,10 +1392,13 @@ private struct PickyInteractionReducing {
     // MARK: - Speech output lifecycle
 
     private mutating func applySpeechCompleted(speechID: UUID) {
+        state.visualNarrationSpeechMarkers[speechID] = nil
+        state.visualNarrationClearSpeechIDs.remove(speechID)
         guard case .speaking(let contextID, speechID, let text, let timerID, let minimumDisplayUntil, _) = state.output else {
             record(.staleEvent, "Ignored stale speech completion")
             return
         }
+        activatePendingVisualOnlyNarration(contextID: contextID)
         if let timerID, let minimumDisplayUntil, envelope.occurredAt < minimumDisplayUntil {
             state.output = .speaking(
                 contextID: contextID,
@@ -1044,7 +1413,10 @@ private struct PickyInteractionReducing {
             record(.stateChanged, "Queued voice quick reply started")
         } else {
             state.output = .idle
-            if let contextID { state.streamedNarrationContextIDs.remove(contextID) }
+            if let contextID {
+                state.streamedNarrationContextIDs.remove(contextID)
+                concludeProgressiveNarrationSpeech(contextID: contextID)
+            }
             state = state.removingOverlayReason(.speakingResponse)
             concludeAnnotationTurnIfSettled()
             record(.stateChanged, "Speech completed")
@@ -1071,6 +1443,7 @@ private struct PickyInteractionReducing {
                     record(.stateChanged, "Queued voice quick reply started")
                 } else {
                     state.output = .idle
+                    if let contextID { concludeProgressiveNarrationSpeech(contextID: contextID) }
                     state = state.removingOverlayReason(.speakingResponse)
                     concludeAnnotationTurnIfSettled()
                     record(.stateChanged, "Speaking reply minimum display completed")
@@ -1102,6 +1475,33 @@ private struct PickyInteractionReducing {
 
     // MARK: - Shared speech helpers
 
+    private mutating func concludeProgressiveNarrationSpeech(contextID: String) {
+        state.finalNarrationSpeechContextIDs.remove(contextID)
+        if state.activeVisualNarrationIdentity?.contextId == contextID {
+            clearActiveVisualNarration()
+        }
+        state.pendingVisualOnlyNarrationIdentities.removeAll { $0.contextId == contextID }
+        if state.streamedResponseContextID == contextID {
+            state.streamedResponseContextID = nil
+            state.streamedResponseText = nil
+        }
+        state.visualNarrationSpeechMarkers = state.visualNarrationSpeechMarkers.filter {
+            $0.value.identity.contextId != contextID
+        }
+    }
+
+    private mutating func activatePendingVisualOnlyNarration(contextID: String?) {
+        let due = state.pendingVisualOnlyNarrationIdentities
+            .filter { contextID == nil || $0.contextId == contextID }
+            .sorted { $0.ordinal < $1.ordinal }
+        state.pendingVisualOnlyNarrationIdentities.removeAll { identity in
+            due.contains(identity)
+        }
+        for identity in due {
+            activateVisualNarration(identity: identity, sentenceCount: 0)
+        }
+    }
+
     private mutating func startSpeakingReply(_ reply: PickyQueuedSpeechReply, occurredAt: Date) {
         let deadline = occurredAt.addingTimeInterval(minimumDisplayDuration)
         state = state.removingOverlayReason(.waitingForVoiceResponse)
@@ -1114,7 +1514,11 @@ private struct PickyInteractionReducing {
             minimumDisplayUntil: deadline,
             finishPending: false
         )
-        if !state.streamedNarrationContextIDs.contains(reply.contextID) || state.lastDisplayMessage?.contextID != reply.contextID {
+        if let marker = reply.visualNarrationMarker {
+            state.visualNarrationSpeechMarkers[reply.speechID] = marker
+        }
+        if reply.visualNarrationMarker == nil
+            && (!state.streamedNarrationContextIDs.contains(reply.contextID) || state.lastDisplayMessage?.contextID != reply.contextID) {
             state.lastDisplayMessage = PickyDisplayMessage(
                 id: reply.contextID,
                 contextID: reply.contextID,
@@ -1147,6 +1551,38 @@ private struct PickyInteractionReducing {
         guard case .speaking(_, let speechID, _, _, _, _) = state.output else { return }
         effects.append(.stopSpeech(reason: .superseded, speechID: speechID))
         state = state.removingOverlayReason(.speakingResponse)
+    }
+
+    private mutating func appendStreamedResponse(
+        contextID: String,
+        text: String,
+        source: PickyDisplaySource
+    ) {
+        let accumulated: String
+        if state.streamedResponseContextID == contextID,
+           let previous = state.streamedResponseText?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !previous.isEmpty {
+            accumulated = "\(previous) \(text)"
+        } else {
+            accumulated = text
+        }
+        state.streamedResponseContextID = contextID
+        state.streamedResponseText = accumulated
+        state.lastDisplayMessage = PickyDisplayMessage(
+            id: contextID,
+            contextID: contextID,
+            text: accumulated,
+            source: source,
+            updatedAt: envelope.occurredAt
+        )
+    }
+
+    private func displaySource(
+        replyKind: PickyQuickReplyKind?,
+        owner: PickyContextOwner
+    ) -> PickyDisplaySource {
+        if replyKind == .pickleCompletion { return .pickleCompletion }
+        return owner.usesCursorResponsePresentation ? .textReply : .voiceReply
     }
 
     private func ownerFromMetadata(_ origin: PickyQuickReplyOriginSource?) -> PickyContextOwner {

@@ -53,9 +53,18 @@ struct PickyCursorResponseBubbleLayout {
 final class PickyCursorResponseBubbleLayoutCache: ObservableObject {
     @Published private var cachedLayout: PickyCursorResponseBubbleLayout?
 
+    /// Returns a layout for the current text. On a cache miss the layout is
+    /// computed synchronously instead of returning nil, so the response bubble
+    /// never blanks for the one frame between a text change and the async cache
+    /// warm in `update(for:)`. That transient nil is what made the blue bubble
+    /// flicker as narration sentences accumulated or swapped at visual boundaries.
+    /// Computed inline without mutating `@Published` state so this stays safe to
+    /// call during a SwiftUI body evaluation; `update(for:)` still warms the
+    /// cache so steady-state renders reuse the stored layout.
     func layout(for sourceText: String) -> PickyCursorResponseBubbleLayout? {
-        guard cachedLayout?.sourceText == sourceText else { return nil }
-        return cachedLayout
+        guard !sourceText.isEmpty else { return nil }
+        if let cachedLayout, cachedLayout.sourceText == sourceText { return cachedLayout }
+        return PickyCursorResponseBubbleLayout(sourceText: sourceText)
     }
 
     func update(for sourceText: String) {

@@ -1,0 +1,36 @@
+{
+  "id": "event-visual-segment-prepared-001",
+  "protocolVersion": "2026-07-17",
+  "timestamp": "2026-07-19T00:00:00.000Z",
+  "type": "mainVisualNarrationSegmentPrepared",
+  "identity": {
+    "contextId": "context-visual-001",
+    "contextGeneration": 3,
+    "turnToken": "main-turn-7",
+    "segmentId": "segment-001",
+    "ordinal": 0
+  },
+  "visual": {
+    "kind": "annotations",
+    "request": {
+      "id": "annotations-segment-001",
+      "mode": "append",
+      "annotations": [
+        {
+          "id": "dsl-1",
+          "shape": "rect",
+          "x": 100,
+          "y": 120,
+          "w": 240,
+          "h": 80,
+          "label": "첫 영역"
+        }
+      ],
+      "contextId": "context-visual-001",
+      "contextGeneration": 3,
+      "screenId": "screen-main",
+      "screenBounds": { "x": 0, "y": 0, "width": 1728, "height": 1117 },
+      "screenshotSize": { "width": 1728, "height": 1117 }
+    }
+  }
+}

@@ -34,6 +34,28 @@ struct PickyInteractionState: Equatable, Codable {
     var pendingVoiceInputs: [UUID: PickyVoiceInputState]
     var contextOwnership: [String: PickyContextOwner]
     var queuedSpeechReplies: [PickyQueuedSpeechReply]
+    /// Sentence-complete response text shown independently from provider playback.
+    var streamedResponseContextID: String?
+    var streamedResponseText: String?
+    /// Context ids that must synthesize the final full reply because their provider
+    /// cannot play incremental narration chunks.
+    var finalNarrationSpeechContextIDs: Set<String>
+    /// Prepared visual segments keyed by protocol segment id. Geometry may arrive
+    /// before prose, and prose may arrive before local geometry resolution completes.
+    var visualNarrationSegments: [String: PickyVisualNarrationSegmentState]
+    var visualNarrationOrder: [String]
+    /// The only visual turn allowed to mutate segment state. Completed/cleared turns
+    /// move to the bounded tombstone list so delayed events cannot resurrect them.
+    var activeVisualNarrationTurnIdentity: PickyVisualNarrationTurnIdentity?
+    var invalidatedVisualNarrationTurnIdentities: [PickyVisualNarrationTurnIdentity]
+    var activeVisualNarrationIdentity: PickyVisualNarrationSegmentIdentity?
+    var activeVisualNarrationSentenceCount: Int
+    var visualNarrationSpeechMarkers: [UUID: PickyVisualNarrationSpeechMarker]
+    /// Ordinary narration that follows a malformed visual barrier clears the prior
+    /// visual only when this exact utterance starts, preserving playback alignment.
+    var visualNarrationClearSpeechIDs: Set<UUID>
+    /// Empty visual-only segments wait for preceding incremental speech to drain.
+    var pendingVisualOnlyNarrationIdentities: [PickyVisualNarrationSegmentIdentity]
     /// Context ids whose incremental narration has already entered the TTS queue.
     /// A later final quick reply for the same context updates visible text but must not
     /// enqueue the full reply a second time.
@@ -82,6 +104,18 @@ struct PickyInteractionState: Equatable, Codable {
         pendingVoiceInputs: [UUID: PickyVoiceInputState] = [:],
         contextOwnership: [String: PickyContextOwner] = [:],
         queuedSpeechReplies: [PickyQueuedSpeechReply] = [],
+        streamedResponseContextID: String? = nil,
+        streamedResponseText: String? = nil,
+        finalNarrationSpeechContextIDs: Set<String> = [],
+        visualNarrationSegments: [String: PickyVisualNarrationSegmentState] = [:],
+        visualNarrationOrder: [String] = [],
+        activeVisualNarrationTurnIdentity: PickyVisualNarrationTurnIdentity? = nil,
+        invalidatedVisualNarrationTurnIdentities: [PickyVisualNarrationTurnIdentity] = [],
+        activeVisualNarrationIdentity: PickyVisualNarrationSegmentIdentity? = nil,
+        activeVisualNarrationSentenceCount: Int = 0,
+        visualNarrationSpeechMarkers: [UUID: PickyVisualNarrationSpeechMarker] = [:],
+        visualNarrationClearSpeechIDs: Set<UUID> = [],
+        pendingVisualOnlyNarrationIdentities: [PickyVisualNarrationSegmentIdentity] = [],
         streamedNarrationContextIDs: Set<String> = [],
         pendingAgentAnnotations: [PickyPendingAgentAnnotation] = [],
         dueAgentAnnotationIDs: Set<UUID> = [],
@@ -111,6 +145,18 @@ struct PickyInteractionState: Equatable, Codable {
         self.pendingVoiceInputs = pendingVoiceInputs
         self.contextOwnership = contextOwnership
         self.queuedSpeechReplies = queuedSpeechReplies
+        self.streamedResponseContextID = streamedResponseContextID
+        self.streamedResponseText = streamedResponseText
+        self.finalNarrationSpeechContextIDs = finalNarrationSpeechContextIDs
+        self.visualNarrationSegments = visualNarrationSegments
+        self.visualNarrationOrder = visualNarrationOrder
+        self.activeVisualNarrationTurnIdentity = activeVisualNarrationTurnIdentity
+        self.invalidatedVisualNarrationTurnIdentities = invalidatedVisualNarrationTurnIdentities
+        self.activeVisualNarrationIdentity = activeVisualNarrationIdentity
+        self.activeVisualNarrationSentenceCount = activeVisualNarrationSentenceCount
+        self.visualNarrationSpeechMarkers = visualNarrationSpeechMarkers
+        self.visualNarrationClearSpeechIDs = visualNarrationClearSpeechIDs
+        self.pendingVisualOnlyNarrationIdentities = pendingVisualOnlyNarrationIdentities
         self.streamedNarrationContextIDs = streamedNarrationContextIDs
         self.pendingAgentAnnotations = pendingAgentAnnotations
         self.dueAgentAnnotationIDs = dueAgentAnnotationIDs
@@ -143,6 +189,18 @@ struct PickyInteractionState: Equatable, Codable {
         self.pendingVoiceInputs = try container.decode([UUID: PickyVoiceInputState].self, forKey: .pendingVoiceInputs)
         self.contextOwnership = try container.decode([String: PickyContextOwner].self, forKey: .contextOwnership)
         self.queuedSpeechReplies = try container.decode([PickyQueuedSpeechReply].self, forKey: .queuedSpeechReplies)
+        self.streamedResponseContextID = try container.decodeIfPresent(String.self, forKey: .streamedResponseContextID)
+        self.streamedResponseText = try container.decodeIfPresent(String.self, forKey: .streamedResponseText)
+        self.finalNarrationSpeechContextIDs = try container.decodeIfPresent(Set<String>.self, forKey: .finalNarrationSpeechContextIDs) ?? []
+        self.visualNarrationSegments = try container.decodeIfPresent([String: PickyVisualNarrationSegmentState].self, forKey: .visualNarrationSegments) ?? [:]
+        self.visualNarrationOrder = try container.decodeIfPresent([String].self, forKey: .visualNarrationOrder) ?? []
+        self.activeVisualNarrationTurnIdentity = try container.decodeIfPresent(PickyVisualNarrationTurnIdentity.self, forKey: .activeVisualNarrationTurnIdentity)
+        self.invalidatedVisualNarrationTurnIdentities = try container.decodeIfPresent([PickyVisualNarrationTurnIdentity].self, forKey: .invalidatedVisualNarrationTurnIdentities) ?? []
+        self.activeVisualNarrationIdentity = try container.decodeIfPresent(PickyVisualNarrationSegmentIdentity.self, forKey: .activeVisualNarrationIdentity)
+        self.activeVisualNarrationSentenceCount = try container.decodeIfPresent(Int.self, forKey: .activeVisualNarrationSentenceCount) ?? 0
+        self.visualNarrationSpeechMarkers = try container.decodeIfPresent([UUID: PickyVisualNarrationSpeechMarker].self, forKey: .visualNarrationSpeechMarkers) ?? [:]
+        self.visualNarrationClearSpeechIDs = try container.decodeIfPresent(Set<UUID>.self, forKey: .visualNarrationClearSpeechIDs) ?? []
+        self.pendingVisualOnlyNarrationIdentities = try container.decodeIfPresent([PickyVisualNarrationSegmentIdentity].self, forKey: .pendingVisualOnlyNarrationIdentities) ?? []
         self.streamedNarrationContextIDs = try container.decodeIfPresent(Set<String>.self, forKey: .streamedNarrationContextIDs) ?? []
         self.pendingAgentAnnotations = try container.decodeIfPresent([PickyPendingAgentAnnotation].self, forKey: .pendingAgentAnnotations) ?? []
         self.dueAgentAnnotationIDs = try container.decodeIfPresent(Set<UUID>.self, forKey: .dueAgentAnnotationIDs) ?? []
@@ -184,6 +242,87 @@ struct PickyQueuedSpeechReply: Equatable, Codable {
     let speechID: UUID
     let inputID: UUID?
     let displaySource: PickyDisplaySource
+    let visualNarrationMarker: PickyVisualNarrationSpeechMarker?
+
+    init(
+        contextID: String,
+        text: String,
+        timerID: UUID,
+        speechID: UUID,
+        inputID: UUID?,
+        displaySource: PickyDisplaySource,
+        visualNarrationMarker: PickyVisualNarrationSpeechMarker? = nil
+    ) {
+        self.contextID = contextID
+        self.text = text
+        self.timerID = timerID
+        self.speechID = speechID
+        self.inputID = inputID
+        self.displaySource = displaySource
+        self.visualNarrationMarker = visualNarrationMarker
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case contextID, text, timerID, speechID, inputID, displaySource, visualNarrationMarker
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        contextID = try container.decode(String.self, forKey: .contextID)
+        text = try container.decode(String.self, forKey: .text)
+        timerID = try container.decode(UUID.self, forKey: .timerID)
+        speechID = try container.decode(UUID.self, forKey: .speechID)
+        inputID = try container.decodeIfPresent(UUID.self, forKey: .inputID)
+        displaySource = try container.decode(PickyDisplaySource.self, forKey: .displaySource)
+        visualNarrationMarker = try container.decodeIfPresent(PickyVisualNarrationSpeechMarker.self, forKey: .visualNarrationMarker)
+    }
+}
+
+struct PickyVisualNarrationTurnIdentity: Hashable, Codable {
+    let contextId: String
+    let generation: Int
+    let turnToken: String
+
+    init(segmentIdentity: PickyVisualNarrationSegmentIdentity) {
+        contextId = segmentIdentity.contextId
+        generation = segmentIdentity.contextGeneration
+        turnToken = segmentIdentity.turnToken
+    }
+}
+
+enum PickyVisualNarrationPlaybackMode: String, Equatable, Codable {
+    case incremental
+    case finalReply
+    case silent
+}
+
+enum PickyResolvedVisualNarrationVisual: Equatable, Codable {
+    case point(PickyPointerTarget)
+    case annotations([PickyAgentAnnotation])
+}
+
+struct PickyVisualNarrationSentenceState: Equatable, Codable {
+    let index: Int
+    let text: String
+    let precedingNarrationWeight: Double
+    let playbackMode: PickyVisualNarrationPlaybackMode
+    let originSource: PickyQuickReplyOriginSource?
+    let replyKind: PickyQuickReplyKind?
+    let sessionID: String?
+}
+
+struct PickyVisualNarrationSegmentState: Equatable, Codable, Identifiable {
+    var id: String { identity.segmentId }
+    let identity: PickyVisualNarrationSegmentIdentity
+    var visual: PickyResolvedVisualNarrationVisual?
+    var sentences: [PickyVisualNarrationSentenceState]
+    var committedText: String?
+    var expectedSentenceCount: Int?
+}
+
+struct PickyVisualNarrationSpeechMarker: Equatable, Codable {
+    let identity: PickyVisualNarrationSegmentIdentity
+    let sentenceIndex: Int
 }
 
 enum PickyPointerPhase: Equatable, Codable {

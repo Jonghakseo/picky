@@ -678,6 +678,7 @@ struct BlueCursorView: View {
             if isCursorOnThisScreen,
                !companionManager.isQuickInputPanelVisible,
                overlayBubblePreferencesStore.preferences.showUserSpeechRecognitionBubble,
+               !companionManager.isProgressiveResponseVisible,
                companionManager.voicePromptBubbleState.isVisible,
                companionManager.onboardingBubbleText == nil {
                 let bubbleText = companionManager.voicePromptBubbleState.displayText
@@ -709,7 +710,8 @@ struct BlueCursorView: View {
             if isCursorOnThisScreen,
                !companionManager.isQuickInputPanelVisible,
                overlayBubblePreferencesStore.preferences.showPickyResponseBubble,
-               companionManager.voiceState == .responding,
+               (companionManager.voiceState == .responding || companionManager.isProgressiveResponseVisible),
+               !(companionManager.hasActiveVisualNarration && !companionManager.isProgressiveResponseVisible),
                let responseText = companionManager.latestAgentSessionSummary,
                !responseText.isEmpty,
                let responseBubbleLayout = responseBubbleLayoutCache.layout(for: responseText),
@@ -763,7 +765,9 @@ struct BlueCursorView: View {
             // Navigation pointer bubble — shown when buddy arrives at a detected element.
             // Pops in with a scale-bounce (0.5x → 1.0x spring) and a bright initial
             // glow that settles, creating a "materializing" effect.
-            if buddyNavigationMode == .pointingAtTarget && !navigationBubbleText.isEmpty {
+            if buddyNavigationMode == .pointingAtTarget,
+               !companionManager.hasActivePointVisualNarration,
+               !navigationBubbleText.isEmpty {
                 Text(navigationBubbleText)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.white)
@@ -876,6 +880,9 @@ struct BlueCursorView: View {
         .onChange(of: companionManager.voiceState) { _, _ in
             syncResponseBubbleLayout()
         }
+        .onChange(of: companionManager.isProgressiveResponseVisible) { _, _ in
+            syncResponseBubbleLayout()
+        }
         .onChange(of: overlayBubblePreferencesStore.preferences.showPickyResponseBubble) { _, _ in
             syncResponseBubbleLayout()
         }
@@ -917,7 +924,7 @@ struct BlueCursorView: View {
 
     private func syncResponseBubbleLayout() {
         guard overlayBubblePreferencesStore.preferences.showPickyResponseBubble,
-              companionManager.voiceState == .responding,
+              companionManager.voiceState == .responding || companionManager.isProgressiveResponseVisible,
               let responseText = companionManager.latestAgentSessionSummary,
               !responseText.isEmpty,
               companionManager.onboardingBubbleText == nil

@@ -335,34 +335,24 @@ struct PickySettingsPolishTests {
         #expect(store.load().hudDockSizePreset == .large)
     }
 
-    @Test func settingsRoundTripPreservesHUDDockMinimizedPerDisplay() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
-        let project = root.appendingPathComponent("project", isDirectory: true)
-        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
-        let store = PickySettingsStore(appSupportRoot: root)
-        var settings = PickySettings.defaults(appSupportRoot: root)
-        settings.defaultCwd = project.path
-        settings.worktreeParent = project.path
-        settings.hudDockMinimized = ["1": true, "2": false]
-
-        try store.save(settings)
-
-        #expect(store.load().hudDockMinimized == ["1": true, "2": false])
-    }
-
-    @Test func settingsLoadDefaultsHUDDockMinimizedToEmptyWhenLegacyFileLacksField() throws {
-        let legacyJSON = """
+    @Test func settingsLoadIgnoresRemovedHUDDockMinimizedField() throws {
+        let settingsFromMinimizeCapableBuild = """
         {
           "defaultCwd": "/tmp",
           "worktreeParent": "",
           "daemonPath": "/tmp/agentd",
-          "logPath": "/tmp/logs"
+          "logPath": "/tmp/logs",
+          "hudDockMinimized": {"1": true}
         }
         """.data(using: .utf8)!
 
-        let settings = try JSONDecoder().decode(PickySettings.self, from: legacyJSON)
+        let settings = try JSONDecoder().decode(PickySettings.self, from: settingsFromMinimizeCapableBuild)
+        let reencoded = try JSONEncoder().encode(settings)
+        let object = try JSONSerialization.jsonObject(with: reencoded)
+        let dictionary = try #require(object as? [String: Any])
 
-        #expect(settings.hudDockMinimized.isEmpty)
+        #expect(settings.defaultCwd == "/tmp")
+        #expect(dictionary["hudDockMinimized"] == nil)
     }
 
     @Test func settingsRoundTripPreservesHUDCardSizes() throws {

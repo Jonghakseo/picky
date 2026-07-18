@@ -57,13 +57,10 @@ enum PickyHUDExpansion {
     static let cardShadowOpacity = 0.12
     static let cardShadowRadius: CGFloat = 8
     static let cardShadowYOffset: CGFloat = 4
-    /// Thickness reserved for the external control strip (drag grip + minimize
-    /// chevron) that sits at the top of the dock, above the capsule body. The
-    /// strip is the topmost dock element, so it occupies the same reserved
-    /// chrome region the in-capsule handle used to — keeping the rail-height
-    /// math unchanged — while rendering as its own quiet pill surface. Kept
-    /// compact but tall enough to seat the grip pill and the chevron button.
-    static let dockHandleAreaHeight: CGFloat = 16
+    /// Hit area height for the drag handle that lives inside the dock capsule's top
+    /// row. The surrounding capsule padding keeps the 14pt row easy to grab without
+    /// adding a visually heavy band above the session tiles.
+    static let dockHandleAreaHeight: CGFloat = 14
     /// Distance from the panel content's top edge (in SwiftUI top-down coords) down
     /// to the dock CAPSULE's top edge. The handle now lives inside the capsule, so
     /// the offset is just the top shadow bleed wrapping the HStack — the anchor

@@ -112,12 +112,6 @@ struct PickyHUDDockRailView: View {
     /// apply these too, or expanded-on-this-display groups would render with
     /// their model (default) collapse state mid-drag and appear to collapse.
     let collapsedGroupOverrides: [String: Bool]
-    /// When true the dock hides its session tiles and renders only the control
-    /// strip plus a compact status summary derived from `summaryStatuses`.
-    let isMinimized: Bool
-    /// Live statuses of every session, used only to build the minimized-state
-    /// summary chips. Ignored while the dock is expanded.
-    let summaryStatuses: [PickySessionStatus]
     let activeSessionID: String?
     let openedSessionID: String?
     let previewSessionID: String?
@@ -150,8 +144,6 @@ struct PickyHUDDockRailView: View {
     let onRenameDockGroup: (_ id: String, _ name: String) -> Void
     let onSetDockGroupColor: (_ id: String, _ color: PickyDockGroupColor) -> Void
     let onToggleDockGroupCollapsed: (_ id: String) -> Void
-    /// Toggle this display's dock minimized state (strip-only summary <-> full rail).
-    let onToggleMinimized: () -> Void
     let onRemoveDockGroup: (_ id: String, _ keepMembers: Bool) -> Void
     /// Persist a session move into a specific dock container/position.
     let onMoveSessionInDock: (_ sessionID: String, _ destination: PickyDockContainer) -> Void
@@ -259,26 +251,33 @@ struct PickyHUDDockRailView: View {
         let resolvedRailLength = overflowLayout.railLength
         Group {
             if dockSide.orientation == .horizontal {
-                // Strip (grip + minimize chevron) sits at the leading edge as its
-                // own pill surface; the glass capsule body holds the tiles or
-                // the minimized summary to its trailing side.
                 HStack(spacing: 2) {
-                    dockControlStrip
-                    dockCapsuleBody
+                    dockAnchorHandle
+                    sessionsAndAddSlot
                 }
+                // Symmetric leading/trailing in horizontal so the dock doesn't
+                // look lopsided. Vertical's larger `bottomPadding` exists to
+                // give the `+` button breathing room below the dash; in
+                // horizontal the equivalent breathing room comes from the
+                // empty panel area to the right of the dock, not from internal
+                // padding.
+                .padding(.horizontal, metrics.topPadding)
+                .padding(.vertical, metrics.horizontalPadding)
                 .frame(width: resolvedRailLength, height: horizontalRailCrossSize, alignment: .center)
             } else {
-                // Strip on top (own pill surface), capsule body below. Splitting
-                // the surfaces lets the grip live outside the glass while the
-                // strip pill still provides an opaque backing for the handle
-                // NSView's hit testing.
+                // Keep the handle inside the opaque dock capsule so the AppKit-backed
+                // handle row retains a reliable hit target across its full width.
                 VStack(spacing: 2) {
-                    dockControlStrip
-                    dockCapsuleBody
+                    dockAnchorHandle
+                    sessionsAndAddSlot
                 }
+                .padding(.horizontal, metrics.horizontalPadding)
+                .padding(.top, metrics.topPadding)
+                .padding(.bottom, metrics.bottomPadding)
                 .frame(width: metrics.railWidth, height: resolvedRailLength, alignment: .top)
             }
         }
+        .background(dockGlassBackground)
         .coordinateSpace(name: PickyHUDDockRailCoordinateSpace)
         .overlay { draggedFloatingIconOverlay }
         .onPreferenceChange(PickyDockSlotCenterPreferenceKey.self) { centers in
@@ -364,7 +363,6 @@ struct PickyHUDDockRailView: View {
     }
 
     private var railHeight: CGFloat {
-        if isMinimized { return minimizedRailLength }
         if dockSide.orientation == .horizontal {
             // Horizontal: group headers stack ABOVE their drawer (cross axis),
             // so they do not add to long-axis length. Empty-group drop tiles
@@ -393,13 +391,10 @@ struct PickyHUDDockRailView: View {
     /// sits inside the capsule above its members.
     private var horizontalRailCrossSize: CGFloat {
         PickyHUDDockLayout.horizontalDockRailCrossSize(
-            hasGroupHeaders: !isMinimized && groupHeaderCount > 0,
+            hasGroupHeaders: groupHeaderCount > 0,
             metrics: metrics
         )
     }
-
-    // Minimized summary geometry and rendering live in
-    // `PickyHUDDockRailView+MinimizedSummary.swift`.
 
     /// The handle, add slot, their padding, and intervening gaps remain outside
     /// the sessions scroll viewport so they stay reachable at every list size.
@@ -1172,76 +1167,6 @@ struct PickyHUDDockRailView: View {
         }
         draggingGroupID = nil
     }
-
-    // MARK: - External control strip + capsule body
-
-    /// The dock's top (vertical) / leading (horizontal) control strip: its own
-    /// quiet pill surface hosting the drag grip and the minimize chevron. It
-    /// occupies the same reserved chrome region the in-capsule handle used to,
-    /// so the rail-height math is unchanged.
-    private var dockControlStrip: some View {
-        Group {
-            if dockSide.orientation == .horizontal {
-                VStack(spacing: 4) {
-                    dockAnchorHandle
-                    minimizeChevronButton
-                }
-                // Inset the grip/chevron off the pill's rounded end caps so the
-                // chevron isn't crushed against the edge (see §1 of the plan).
-                .padding(.vertical, 6)
-                .frame(width: metrics.handleAreaHeight, height: horizontalRailCrossSize, alignment: .center)
-            } else {
-                HStack(spacing: 4) {
-                    dockAnchorHandle
-                    minimizeChevronButton
-                }
-                .padding(.horizontal, 6)
-                .frame(width: metrics.railWidth, height: metrics.handleAreaHeight, alignment: .center)
-            }
-        }
-        .background(dockStripSurface)
-    }
-
-    /// Glass-backed capsule that holds either the session tiles or, while
-    /// minimized, the compact status summary. Padding mirrors the pre-split
-    /// layout so the expanded rail keeps its exact dimensions.
-    @ViewBuilder
-    private var dockCapsuleBody: some View {
-        if dockSide.orientation == .horizontal {
-            // Explicit HStack so the tiles row and the `+` slot share a single
-            // glass surface. Applying `.background` to a multi-view builder
-            // would back each child separately and detach the `+` button.
-            HStack(spacing: 2) {
-                if isMinimized {
-                    minimizedSummary
-                } else {
-                    sessionsAndAddSlot
-                }
-            }
-            .padding(.horizontal, metrics.topPadding)
-            .padding(.vertical, metrics.horizontalPadding)
-            .frame(height: horizontalRailCrossSize)
-            .background(dockGlassBackground)
-        } else {
-            // Explicit VStack so the tiles column and the `+` slot stay inside
-            // one capsule instead of getting one glass surface each.
-            VStack(spacing: 2) {
-                if isMinimized {
-                    minimizedSummary
-                } else {
-                    sessionsAndAddSlot
-                }
-            }
-            .padding(.horizontal, metrics.horizontalPadding)
-            .padding(.top, metrics.topPadding)
-            .padding(.bottom, metrics.bottomPadding)
-            .frame(width: metrics.railWidth)
-            .background(dockGlassBackground)
-        }
-    }
-
-    // Minimize chevron, strip surface, and minimized summary rendering live in
-    // `PickyHUDDockRailView+MinimizedSummary.swift`.
 
     /// Drag handle that lives inside the dock capsule's top row. Backed by an
     /// `NSViewRepresentable` so AppKit handles hit testing, tracking area, and

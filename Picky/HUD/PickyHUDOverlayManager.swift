@@ -108,9 +108,6 @@ final class PickyHUDOverlayManager {
     /// Per-display dock group collapse overrides keyed by display ID, then
     /// group ID. Each monitor manages its collapsed groups independently.
     private var dockGroupCollapseByDisplayID: [String: [String: Bool]]
-    /// Per-display dock minimized state keyed by display ID. Each monitor
-    /// remembers whether its dock is collapsed to the summary strip.
-    private var dockMinimizedByDisplayID: [String: Bool]
 
     init(
         viewModel: PickySessionListViewModel,
@@ -127,24 +124,10 @@ final class PickyHUDOverlayManager {
         self.currentDockSizePreset = settings.hudDockSizePreset
         self.currentCardSizesByDisplayID = settings.hudCardSizes
         self.dockGroupCollapseByDisplayID = settings.hudDockGroupCollapse
-        self.dockMinimizedByDisplayID = settings.hudDockMinimized
     }
 
     private func dockGroupCollapse(for displayID: CGDirectDisplayID) -> [String: Bool] {
         dockGroupCollapseByDisplayID[String(displayID)] ?? [:]
-    }
-
-    private func dockMinimized(for displayID: CGDirectDisplayID) -> Bool {
-        dockMinimizedByDisplayID[String(displayID)] ?? false
-    }
-
-    /// Store this display's minimized state and persist so the per-monitor dock
-    /// collapse survives relaunch.
-    private func handleDockMinimizedChanged(displayID: CGDirectDisplayID, isMinimized: Bool) {
-        dockMinimizedByDisplayID[String(displayID)] = isMinimized
-        var settings = settingsStore.load()
-        settings.hudDockMinimized = dockMinimizedByDisplayID
-        try? settingsStore.save(settings)
     }
 
     /// Store this display's collapse overrides and persist to Settings so the
@@ -365,8 +348,7 @@ final class PickyHUDOverlayManager {
                 dockSide: initialPosition.side,
                 anchorPercent: initialPosition.anchorPercent
             ),
-            collapsedGroupOverrides: dockGroupCollapse(for: displayID),
-            isMinimized: dockMinimized(for: displayID)
+            collapsedGroupOverrides: dockGroupCollapse(for: displayID)
         )
         let hudRoot = PickyHUDView(
             viewModel: viewModel,
@@ -405,9 +387,6 @@ final class PickyHUDOverlayManager {
             },
             onDockGroupCollapseChanged: { [weak self] overrides in
                 self?.handleDockGroupCollapseChanged(displayID: displayID, overrides: overrides)
-            },
-            onDockMinimizedChanged: { [weak self] isMinimized in
-                self?.handleDockMinimizedChanged(displayID: displayID, isMinimized: isMinimized)
             }
         )
             .environmentObject(appearanceStore)

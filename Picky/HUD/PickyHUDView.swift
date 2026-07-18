@@ -37,9 +37,6 @@ struct PickyHUDView: View {
     /// overlay manager to store the map keyed by display ID so collapse state
     /// is independent per monitor and survives relaunch.
     var onDockGroupCollapseChanged: (_ overrides: [String: Bool]) -> Void = { _ in }
-    /// Persist this display's dock minimized state. Wired by the overlay
-    /// manager to store the flag keyed by display ID.
-    var onDockMinimizedChanged: (_ isMinimized: Bool) -> Void = { _ in }
     @State private var heldSession: PickyHUDDockHold?
     @State private var pendingManualAutoOpenSessionID: String?
     @State private var pendingRequestedOpenSessionID: String?
@@ -102,22 +99,6 @@ struct PickyHUDView: View {
         }
     }
 
-    /// Toggle this display's dock minimized state. Minimizing hides the session
-    /// tiles behind the summary strip, so close any expanded card first — it has
-    /// no icon to anchor to once the rail collapses.
-    private func toggleDockMinimizedForThisDisplay() {
-        let next = !placement.isMinimized
-        if next {
-            cancelPendingClose()
-            heldSession = nil
-        }
-        // Toggle without animation: the rail restructures between summary and
-        // full tiles, and animating that transition reads as a jitter rather
-        // than a meaningful spatial change.
-        placement.isMinimized = next
-        onDockMinimizedChanged(next)
-    }
-
     /// Close the expanded HUD card for `sessionID`, mirroring the manual
     /// close path (clear held/hover state, mark the session closed).
     private func closeOpenedSession(_ sessionID: String) {
@@ -163,9 +144,6 @@ struct PickyHUDView: View {
     }
 
     private var activeSession: PickySessionListViewModel.SessionCard? {
-        // A minimized dock collapses to its summary strip and shows no
-        // conversation card, so suppress the active session projection.
-        guard !placement.isMinimized else { return nil }
         guard let activeSessionID else { return nil }
         return visibleSessions.first { $0.id == activeSessionID }
     }
@@ -484,8 +462,6 @@ struct PickyHUDView: View {
                 baseProjection: dockProjection,
                 layout: viewModel.dockLayout,
                 collapsedGroupOverrides: placement.collapsedGroupOverrides,
-                isMinimized: placement.isMinimized,
-                summaryStatuses: viewModel.sessions.map(\.status),
                 activeSessionID: activeSession?.id,
                 openedSessionID: openedSessionID,
                 previewSessionID: hoverPreviewSessionID,
@@ -515,7 +491,6 @@ struct PickyHUDView: View {
                 onRenameDockGroup: { id, name in viewModel.renameDockGroup(id: id, to: name) },
                 onSetDockGroupColor: { id, color in viewModel.setDockGroupColor(id: id, color: color) },
                 onToggleDockGroupCollapsed: { id in toggleDockGroupCollapsedForThisDisplay(id) },
-                onToggleMinimized: { toggleDockMinimizedForThisDisplay() },
                 onRemoveDockGroup: { id, keepMembers in viewModel.removeDockGroup(id: id, keepMembers: keepMembers) },
                 onMoveSessionInDock: { sessionID, container in viewModel.moveSessionInDock(sessionID: sessionID, to: container) },
                 onMoveDockGroup: { id, target in viewModel.moveDockGroup(id: id, toTopLevelIndex: target) },

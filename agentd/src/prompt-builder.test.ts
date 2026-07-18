@@ -71,9 +71,9 @@ describe("neutral prompt builder", () => {
 
   it("gates the inline visual DSL prompt by the existing pointer and annotation identifiers", () => {
     const allEnabled = buildMainAgentBootstrapPair();
-    const pointerDisabled = buildMainAgentBootstrapPair({ disabledBuiltinTools: new Set(["picky_show_pointer"]) });
-    const annotationsDisabled = buildMainAgentBootstrapPair({ disabledBuiltinTools: new Set(["picky_show_annotations"]) });
-    const allDisabled = buildMainAgentBootstrapPair({ disabledBuiltinTools: new Set(["picky_show_pointer", "picky_show_annotations"]) });
+    const pointerDisabled = buildMainAgentBootstrapPair({ disabledBuiltinTools: new Set(["picky_screen_pointing"]) });
+    const annotationsDisabled = buildMainAgentBootstrapPair({ disabledBuiltinTools: new Set(["picky_screen_drawing"]) });
+    const allDisabled = buildMainAgentBootstrapPair({ disabledBuiltinTools: new Set(["picky_screen_pointing", "picky_screen_drawing"]) });
 
     expect(allEnabled.user).toContain("## Picky visual overlay DSL");
     expect(allEnabled.user).toContain("[POINT: x=<number>");
@@ -87,8 +87,8 @@ describe("neutral prompt builder", () => {
   });
 
   it("builds gated visual DSL guidance for resumed sessions", () => {
-    const pointerDisabled = buildMainAgentVisualOverlayGuidance(new Set(["picky_show_pointer"]));
-    const allDisabled = buildMainAgentVisualOverlayGuidance(new Set(["picky_show_pointer", "picky_show_annotations"]));
+    const pointerDisabled = buildMainAgentVisualOverlayGuidance(new Set(["picky_screen_pointing"]));
+    const allDisabled = buildMainAgentVisualOverlayGuidance(new Set(["picky_screen_pointing", "picky_screen_drawing"]));
 
     expect(pointerDisabled?.user).toContain("## Picky visual overlay DSL");
     expect(pointerDisabled?.user).not.toContain("[POINT: x=<number>");

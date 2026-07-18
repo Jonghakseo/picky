@@ -80,7 +80,7 @@ windows, and capture infrastructure in reverse.
    across assistant deltas, strips it from user-visible text, and emits the
    existing `SessionSupervisor.requestPointerOverlay()` path immediately.
 2. `prompt-builder.ts` injects the named-argument DSL grammar only when the
-   existing `picky_show_pointer` setting is enabled. The parser remains active
+   existing `picky_screen_pointing` setting is enabled. The parser remains active
    even when prompt guidance is disabled.
 3. Tests cover split tags, escaped quoted labels, malformed tags, and
    mid-stream pointer emission.

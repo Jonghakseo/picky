@@ -1113,7 +1113,7 @@ describe("SessionSupervisor", () => {
     const mainRuntime = new ManualRuntime();
     const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
 
-    await supervisor.setDisabledBuiltinTools(["picky_show_pointer"]);
+    await supervisor.setDisabledBuiltinTools(["picky_screen_pointing"]);
     await supervisor.route(context("DSL prompt gating"));
 
     const bootstrap = mainRuntime.handle?.bootstrapInjections[0]?.user ?? "";
@@ -1201,7 +1201,7 @@ describe("SessionSupervisor", () => {
     const quickReplies: string[] = [];
     supervisor.on("pointerOverlayRequested", (request) => pointerEvents.push(request));
     supervisor.on("quickReply", (_contextId, text) => quickReplies.push(text));
-    await supervisor.setDisabledBuiltinTools(["picky_show_pointer"]);
+    await supervisor.setDisabledBuiltinTools(["picky_screen_pointing"]);
     await supervisor.route({
       ...context("pointer disabled"),
       screenshots: [{
@@ -1233,7 +1233,7 @@ describe("SessionSupervisor", () => {
     const quickReplies: string[] = [];
     supervisor.on("annotationOverlayRequested", (request) => annotationEvents.push(request));
     supervisor.on("quickReply", (_contextId, text) => quickReplies.push(text));
-    await supervisor.setDisabledBuiltinTools(["picky_show_annotations"]);
+    await supervisor.setDisabledBuiltinTools(["picky_screen_drawing"]);
     await supervisor.route({
       ...context("annotation disabled"),
       screenshots: [{

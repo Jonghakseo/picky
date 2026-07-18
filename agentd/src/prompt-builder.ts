@@ -174,8 +174,8 @@ export function buildMainAgentVisualOverlayGuidance(disabledBuiltinTools: Readon
 }
 
 function buildVisualOverlayDslPrompt(disabledBuiltinTools: ReadonlySet<string>): string[] {
-  const pointEnabled = !disabledBuiltinTools.has("picky_show_pointer");
-  const annotationsEnabled = !disabledBuiltinTools.has("picky_show_annotations");
+  const pointEnabled = !disabledBuiltinTools.has("picky_screen_pointing");
+  const annotationsEnabled = !disabledBuiltinTools.has("picky_screen_drawing");
   if (!pointEnabled && !annotationsEnabled) return [];
 
   const lines = [

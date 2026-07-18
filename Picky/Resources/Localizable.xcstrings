@@ -4766,13 +4766,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Built-in tools the agents can call."
+            "value": "Built-in capabilities the agents can use."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "에이전트가 호출하는 내장 도구."
+            "value": "에이전트가 사용할 수 있는 내장 기능."
           }
         }
       }
@@ -4782,13 +4782,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Changes apply to the main agent immediately and interrupt any in-progress turn. Disabling a tool removes it from the agent's tool list entirely so it cannot be called."
+            "value": "Changes apply to the main agent immediately and interrupt any in-progress turn. Turning one off stops the agent from using that capability."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "변경 즉시 메인 에이전트에 적용되며, 진행 중이던 turn은 중단돼요. 도구를 끄면 에이전트의 도구 목록에서 완전히 제거되어 호출할 수 없어요."
+            "value": "변경 즉시 메인 에이전트에 적용되며, 진행 중이던 turn은 중단돼요. 항목을 끄면 에이전트가 해당 기능을 사용할 수 없어요."
           }
         }
       }

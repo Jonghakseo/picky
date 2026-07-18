@@ -18,7 +18,7 @@ describe("categorizeTool", () => {
     expect(categorizeTool("write")).toBe("write");
   });
 
-  it.each(["grep", "mcp__notion__readPage", "picky_show_pointer", ""])("classifies %s as other", (toolName) => {
+  it.each(["grep", "mcp__notion__readPage", "picky_screen_pointing", ""])("classifies %s as other", (toolName) => {
     expect(categorizeTool(toolName)).toBe("other");
   });
 });

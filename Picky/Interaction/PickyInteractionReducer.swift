@@ -1392,13 +1392,14 @@ private struct PickyInteractionReducing {
     // MARK: - Speech output lifecycle
 
     private mutating func applySpeechCompleted(speechID: UUID) {
+        let completedOrdinal = state.visualNarrationSpeechMarkers[speechID]?.identity.ordinal
         state.visualNarrationSpeechMarkers[speechID] = nil
         state.visualNarrationClearSpeechIDs.remove(speechID)
         guard case .speaking(let contextID, speechID, let text, let timerID, let minimumDisplayUntil, _) = state.output else {
             record(.staleEvent, "Ignored stale speech completion")
             return
         }
-        activatePendingVisualOnlyNarration(contextID: contextID)
+        activatePendingVisualOnlyNarration(contextID: contextID, afterOrdinal: completedOrdinal)
         if let timerID, let minimumDisplayUntil, envelope.occurredAt < minimumDisplayUntil {
             state.output = .speaking(
                 contextID: contextID,
@@ -1477,10 +1478,12 @@ private struct PickyInteractionReducing {
 
     private mutating func concludeProgressiveNarrationSpeech(contextID: String) {
         state.finalNarrationSpeechContextIDs.remove(contextID)
+        // Narration is over: reveal any empty visual-only segments that never reached
+        // their turn, in source order, before tearing down the narration bookkeeping.
+        activatePendingVisualOnlyNarration(contextID: contextID, afterOrdinal: nil)
         if state.activeVisualNarrationIdentity?.contextId == contextID {
             clearActiveVisualNarration()
         }
-        state.pendingVisualOnlyNarrationIdentities.removeAll { $0.contextId == contextID }
         if state.streamedResponseContextID == contextID {
             state.streamedResponseContextID = nil
             state.streamedResponseText = nil
@@ -1490,13 +1493,31 @@ private struct PickyInteractionReducing {
         }
     }
 
-    private mutating func activatePendingVisualOnlyNarration(contextID: String?) {
-        let due = state.pendingVisualOnlyNarrationIdentities
+    /// Reveals buffered empty (prose-less) visual-only segments in source order.
+    ///
+    /// When `afterOrdinal` is set, only the segments that immediately follow the one
+    /// whose narration just finished are revealed, contiguously in ordinal order. This
+    /// keeps a later empty RECT from drawing before an earlier one that is still waiting
+    /// for its own segment's speech. When `afterOrdinal` is nil the narration has fully
+    /// concluded, so every remaining empty segment is flushed in order.
+    private mutating func activatePendingVisualOnlyNarration(contextID: String?, afterOrdinal: Int?) {
+        let candidates = state.pendingVisualOnlyNarrationIdentities
             .filter { contextID == nil || $0.contextId == contextID }
             .sorted { $0.ordinal < $1.ordinal }
-        state.pendingVisualOnlyNarrationIdentities.removeAll { identity in
-            due.contains(identity)
+        guard !candidates.isEmpty else { return }
+        var due: [PickyVisualNarrationSegmentIdentity] = []
+        if let afterOrdinal {
+            var expected = afterOrdinal + 1
+            for identity in candidates {
+                guard identity.ordinal == expected else { break }
+                due.append(identity)
+                expected += 1
+            }
+        } else {
+            due = candidates
         }
+        guard !due.isEmpty else { return }
+        state.pendingVisualOnlyNarrationIdentities.removeAll { due.contains($0) }
         for identity in due {
             activateVisualNarration(identity: identity, sentenceCount: 0)
         }

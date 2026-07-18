@@ -476,6 +476,53 @@ struct PickyInteractionReducerTests {
         #expect(PickyInteractionProjection(state: prepared.state).latestDisplayText == "A 설명.")
     }
 
+    @Test func emptyAnnotationSegmentsRevealInSourceOrderNotAllAtFirstCompletion() {
+        var state = PickyInteractionState()
+        state.contextOwnership["visual-context"] = .voice(inputID: inputA)
+        let seg0 = visualIdentity(segmentID: "seg-0", ordinal: 0)
+        let seg1 = visualIdentity(segmentID: "seg-1", ordinal: 1)
+        let seg2 = visualIdentity(segmentID: "seg-2", ordinal: 2)
+        let seg3 = visualIdentity(segmentID: "seg-3", ordinal: 3)
+
+        // seg0 (non-empty) starts speaking and reveals its RECT.
+        state = reduce(state, .visualNarrationSegmentPrepared(identity: seg0, visual: .annotations([annotation(id: "rect-0")])), id: UUID()).state
+        state = reduce(
+            state,
+            .visualNarrationSegmentSentence(identity: seg0, index: 0, text: "설명 0.", originSource: .voice, replyKind: .main, sessionID: nil, playbackMode: .incremental),
+            id: timerA,
+            correlation: .init(contextID: "visual-context", speechID: speechA, source: .agent)
+        ).state
+        state = reduce(state, .speechStarted(text: "설명 0.", speechID: speechA, sourceContextID: "visual-context"), id: UUID()).state
+        #expect(state.agentAnnotations.map(\.id) == ["rect-0"])
+
+        // While seg0 is still speaking, an empty RECT (seg1), a non-empty RECT (seg2),
+        // and another empty RECT (seg3) all arrive. Empty segments buffer.
+        state = reduce(state, .visualNarrationSegmentPrepared(identity: seg1, visual: .annotations([annotation(id: "rect-1")])), id: UUID()).state
+        state = reduce(state, .visualNarrationSegmentCommitted(identity: seg1, text: nil, sentenceCount: 0), id: UUID()).state
+        state = reduce(state, .visualNarrationSegmentPrepared(identity: seg2, visual: .annotations([annotation(id: "rect-2")])), id: UUID()).state
+        state = reduce(
+            state,
+            .visualNarrationSegmentSentence(identity: seg2, index: 0, text: "설명 2.", originSource: .voice, replyKind: .main, sessionID: nil, playbackMode: .incremental),
+            id: timerB,
+            correlation: .init(contextID: "visual-context", speechID: inputB, source: .agent)
+        ).state
+        state = reduce(state, .visualNarrationSegmentPrepared(identity: seg3, visual: .annotations([annotation(id: "rect-3")])), id: UUID()).state
+        state = reduce(state, .visualNarrationSegmentCommitted(identity: seg3, text: nil, sentenceCount: 0), id: UUID()).state
+        #expect(state.agentAnnotations.map(\.id) == ["rect-0"])
+
+        // seg0's speech completes: only its immediate follower seg1 reveals. The
+        // distant empty seg3 must NOT jump ahead of seg2.
+        state = reduce(state, .speechFinished(speechID: speechA), id: UUID(), offset: 1).state
+        #expect(state.agentAnnotations.map(\.id) == ["rect-0", "rect-1"])
+
+        // seg2 speaks and reveals its RECT, then its completion flushes the trailing
+        // empty seg3 last, preserving source order end to end.
+        state = reduce(state, .speechStarted(text: "설명 2.", speechID: inputB, sourceContextID: "visual-context"), id: UUID(), offset: 1.1).state
+        #expect(state.agentAnnotations.map(\.id) == ["rect-0", "rect-1", "rect-2"])
+        state = reduce(state, .speechFinished(speechID: inputB), id: UUID(), offset: 2).state
+        #expect(state.agentAnnotations.map(\.id) == ["rect-0", "rect-1", "rect-2", "rect-3"])
+    }
+
     @Test func suspendedVisualAnnotationHidesItsProgressiveBubbleUntilSceneResumes() {
         var state = PickyInteractionState()
         state.contextOwnership["visual-context"] = .quickInputText(inputID: inputA)

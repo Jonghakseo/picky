@@ -2417,16 +2417,23 @@ final class CompanionManager: ObservableObject {
         return true
     }
 
-    private func scheduleAnnotationExpiryIfNeeded(for annotations: [PickyAgentAnnotation]) {
+    func scheduleAnnotationExpiryIfNeeded(for annotations: [PickyAgentAnnotation]) {
         annotationExpiryTask?.cancel()
-        guard let expiresAt = annotations.map(\.expiresAt).min() else {
-            annotationExpiryTask = nil
+        annotationExpiryTask = nil
+        // Only annotations whose ttl has been activated (pendingTTL == nil) carry a real
+        // expiry. Annotations still lingering through narration use a far-future sentinel
+        // (`expiresAt == .distantFuture`); converting that delay to UInt64 nanoseconds
+        // overflows and crashes, so those must be skipped entirely.
+        guard let expiresAt = annotations.lazy.filter({ $0.pendingTTL == nil }).map(\.expiresAt).min() else {
             return
         }
         let delay = max(0, expiresAt.timeIntervalSinceNow)
+        // Defensive: never convert a non-finite or absurdly large delay to nanoseconds.
+        guard delay.isFinite, delay < 86_400 else { return }
+        let nanoseconds = UInt64(delay * 1_000_000_000)
         annotationExpiryTask = Task { [weak self] in
-            if delay > 0 {
-                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            if nanoseconds > 0 {
+                try? await Task.sleep(nanoseconds: nanoseconds)
             }
             guard !Task.isCancelled else { return }
             await MainActor.run { [weak self] in

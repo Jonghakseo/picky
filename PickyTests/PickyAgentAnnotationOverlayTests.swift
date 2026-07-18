@@ -65,6 +65,37 @@ struct PickyAgentAnnotationOverlayTests {
         #expect(manager.agentAnnotations.first?.rect == CGRect(x: 200, y: 240, width: 20, height: 10))
     }
 
+    @Test func schedulingExpiryIgnoresPersistingAnnotationsWithoutOverflow() {
+        let manager = CompanionManager(agentClient: FakePickyAgentClient())
+        // A lingering annotation persists through narration with a far-future sentinel
+        // expiry and no activated ttl. Converting that delay to UInt64 nanoseconds used
+        // to overflow and crash; scheduling must simply skip it.
+        let persisting = PickyAgentAnnotation(
+            id: "persisting",
+            shape: .rect,
+            displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100),
+            rect: CGRect(x: 10, y: 10, width: 20, height: 20),
+            label: nil,
+            expiresAt: .distantFuture,
+            pendingTTL: 6
+        )
+        manager.scheduleAnnotationExpiryIfNeeded(for: [persisting])
+
+        // A finite (activated) expiry alongside a persisting one still schedules safely.
+        let active = PickyAgentAnnotation(
+            id: "active",
+            shape: .rect,
+            displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100),
+            rect: CGRect(x: 30, y: 30, width: 20, height: 20),
+            label: nil,
+            expiresAt: now.addingTimeInterval(2)
+        )
+        manager.scheduleAnnotationExpiryIfNeeded(for: [persisting, active])
+
+        // Reaching here without a runtime trap is the regression assertion.
+        #expect(manager.agentAnnotations.isEmpty)
+    }
+
     @Test func clearsAnnotationOverlayWithoutScreenGeometry() async throws {
         let manager = CompanionManager(agentClient: FakePickyAgentClient())
         manager.applyAgentEvent(.annotationOverlayRequested(request(annotations: [

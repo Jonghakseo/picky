@@ -31,6 +31,27 @@ interface ExtractedSessionLink {
   url: string;
 }
 
+type ClassifiedSessionLinkKind = Exclude<SessionLinkKind, "link">;
+
+interface SessionLinkClassifier {
+  kind: ClassifiedSessionLinkKind;
+  matches: (url: string, parsed: URL, host: string) => boolean;
+}
+
+const SESSION_LINK_CLASSIFIERS: readonly SessionLinkClassifier[] = [
+  { kind: "github", matches: (_url, parsed, host) => host === "github.com" && /\/[^/]+\/[^/]+\/(?:pull|issues)\/[0-9]+\/?$/.test(parsed.pathname) },
+  { kind: "slack", matches: (_url, parsed, host) => host.endsWith(".slack.com") && /\/archives\/[A-Z0-9]+\/p[0-9]+$/.test(parsed.pathname) },
+  { kind: "notion", matches: (_url, _parsed, host) => ["notion.so", "www.notion.so", "app.notion.com"].includes(host) },
+  { kind: "jira", matches: (url, _parsed, host) => host.endsWith(".atlassian.net") && Boolean(jiraIssueKey(url)) },
+  { kind: "sentry", matches: (_url, parsed, host) => host.endsWith(".sentry.io") && /\/issues\/[0-9]+\/?$/.test(parsed.pathname) },
+  { kind: "linear", matches: (url, _parsed, host) => host === "linear.app" && Boolean(linearIssueKey(url)) },
+  { kind: "figma", matches: (_url, parsed, host) => (host === "figma.com" || host.endsWith(".figma.com")) && /^\/(file|design|proto|board)\/[A-Za-z0-9_-]+(?:\/|$)/.test(parsed.pathname) },
+  { kind: "googleDocs", matches: (_url, parsed, host) => host === "docs.google.com" && /^\/document\/d\/[^/]+/.test(parsed.pathname) },
+  { kind: "googleSheets", matches: (_url, parsed, host) => host === "docs.google.com" && /^\/spreadsheets\/d\/[^/]+/.test(parsed.pathname) },
+  { kind: "googleSlides", matches: (_url, parsed, host) => host === "docs.google.com" && /^\/presentation\/d\/[^/]+/.test(parsed.pathname) },
+  { kind: "googleDrive", matches: (_url, parsed, host) => host === "drive.google.com" && (/^\/file\/d\/[^/]+/.test(parsed.pathname) || /^\/drive\//.test(parsed.pathname)) },
+];
+
 export function extractSessionLinks(text: string): ExtractedSessionLink[] {
   const links: ExtractedSessionLink[] = [];
   const seen = new Set<string>();
@@ -87,20 +108,7 @@ function sessionLinkKind(url: string): SessionLinkKind | undefined {
   const parsed = safeUrl(url);
   const host = parsed?.hostname.toLowerCase();
   if (!parsed || !host) return undefined;
-  if (host === "github.com" && /\/[^/]+\/[^/]+\/(?:pull|issues)\/[0-9]+\/?$/.test(parsed.pathname)) return "github";
-  if (host.endsWith(".slack.com") && /\/archives\/[A-Z0-9]+\/p[0-9]+$/.test(parsed.pathname)) return "slack";
-  if (["notion.so", "www.notion.so", "app.notion.com"].includes(host)) return "notion";
-  if (host.endsWith(".atlassian.net") && jiraIssueKey(url)) return "jira";
-  if (host.endsWith(".sentry.io") && /\/issues\/[0-9]+\/?$/.test(parsed.pathname)) return "sentry";
-  if (host === "linear.app" && linearIssueKey(url)) return "linear";
-  if ((host === "figma.com" || host.endsWith(".figma.com")) && /^\/(file|design|proto|board)\/[A-Za-z0-9_-]+(?:\/|$)/.test(parsed.pathname)) return "figma";
-  if (host === "docs.google.com") {
-    if (/^\/document\/d\/[^/]+/.test(parsed.pathname)) return "googleDocs";
-    if (/^\/spreadsheets\/d\/[^/]+/.test(parsed.pathname)) return "googleSheets";
-    if (/^\/presentation\/d\/[^/]+/.test(parsed.pathname)) return "googleSlides";
-  }
-  if (host === "drive.google.com" && (/^\/file\/d\/[^/]+/.test(parsed.pathname) || /^\/drive\//.test(parsed.pathname))) return "googleDrive";
-  return "link";
+  return SESSION_LINK_CLASSIFIERS.find((classifier) => classifier.matches(url, parsed, host))?.kind ?? "link";
 }
 
 function sessionLinkTitle(kind: SessionLinkKind, url: string): string {

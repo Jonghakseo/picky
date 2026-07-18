@@ -35,6 +35,7 @@ type NormalizedPiEvent =
   | { kind: "turnTextComplete"; text: string; assistantRun?: RuntimeAssistantRunMetadata }
   | { kind: "none" };
 
+// eslint-disable-next-line complexity -- This is the exhaustive Pi event adapter; keeping event variants together makes unknown events fail closed.
 export function normalizePiEvent(event: unknown, context: PiEventNormalizationContext = {}): NormalizedPiEvent {
   const piEvent = asRecord(event);
   const type = stringValue(piEvent.type);

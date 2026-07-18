@@ -162,6 +162,7 @@ export class AnnotationDslParser {
     this.tagSequence = 0;
   }
 
+  // eslint-disable-next-line complexity -- The parser keeps grammar validation and healing decisions together so malformed tags cannot be partially accepted.
   private parseTag(verb: KnownVerb, body: string, heals: Set<HealReason>): { tag?: AnnotationDslTag; error?: string } {
     const parsedArgs = parseNamedArguments(body);
     if (!parsedArgs) return { error: `malformed ${verb} arguments` };
@@ -317,6 +318,7 @@ function closingQuoteFor(character: string): string | undefined {
   return undefined;
 }
 
+// eslint-disable-next-line complexity -- This single-pass parser deliberately couples cursor movement with healing diagnostics for deterministic recovery.
 function parseNamedArguments(body: string): ParsedArguments | undefined {
   const values: Record<string, ParsedValue> = {};
   const heals = new Set<HealReason>();

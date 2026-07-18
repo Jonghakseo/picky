@@ -37,7 +37,11 @@ export function summarizeExtensionUiAnswer(request: PickyExtensionUiRequest, raw
       if (!isPlainObject(inner)) return undefined;
       return summarizeAskUserQuestion(request.questions ?? [], inner);
     }
-    default:
+    case "notify":
+    case "setStatus":
+    case "setWidget":
+    case "setTitle":
+    case "set_editor_text":
       return undefined;
   }
 }

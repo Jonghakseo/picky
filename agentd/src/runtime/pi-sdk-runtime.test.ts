@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import type { AutocompleteItem, AutocompleteProvider } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 import { PiSdkRuntime } from "./pi-sdk-runtime.js";
 
@@ -342,7 +343,7 @@ describe("PiSdkRuntime", () => {
     const runtime = makeRuntime(fakeSession);
     const handle = await runtime.prewarm!({ cwd: "/tmp/project", sessionId: "session-autocomplete" });
     const ui = fakeSession.uiContext as {
-      addAutocompleteProvider(factory: (current: any) => any): void;
+      addAutocompleteProvider(factory: (current: AutocompleteProvider) => AutocompleteProvider): void;
     };
     ui.addAutocompleteProvider((current) => ({
       triggerCharacters: [">"],
@@ -351,7 +352,7 @@ describe("PiSdkRuntime", () => {
         if (!beforeCursor.startsWith(">")) return current.getSuggestions(lines, line, col, options);
         return { prefix: beforeCursor, items: [{ value: ">worker", label: ">worker", description: "Delegate" }] };
       },
-      applyCompletion(lines: string[], line: number, _col: number, item: { value: string }, prefix: string) {
+      applyCompletion(lines: string[], line: number, _col: number, item: AutocompleteItem, prefix: string) {
         if (!prefix.startsWith(">")) return current.applyCompletion(lines, line, _col, item, prefix);
         const next = [...lines];
         next[line] = `${item.value} `;

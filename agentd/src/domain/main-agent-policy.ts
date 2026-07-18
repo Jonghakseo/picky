@@ -42,6 +42,7 @@ export function quickReplyOriginFromContextSource(source: string | undefined): Q
       // dedicated origin instead of collapsing to "unknown" which would render as a
       // silent text-reply update.
       return "cli";
+    case undefined:
     default:
       return "unknown";
   }

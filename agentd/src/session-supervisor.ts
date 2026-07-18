@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- SessionSupervisor remains the single mutable session owner; scripts/check-architecture-rules.js enforces its no-growth ratchet. */
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
@@ -16,8 +17,10 @@ import { NarrationSentenceChunker } from "./domain/narration-sentence-chunker.js
 import { readPiSessionInfoName, readPiTerminalSessionMessages } from "./application/pi-session-syncer.js";
 import { PiSessionTailWatcher, type PiSessionTailEntry } from "./application/pi-session-tail-watcher.js";
 import { inferTerminalStatusFromEntries } from "./application/terminal-tail-status.js";
-import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY, SessionStore } from "./session-store.js";
+import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY } from "./session-store.js";
+import type { SessionStore } from "./session-store.js";
 import type { TaskRouter } from "./task-router.js";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentRuntime, RewindTarget, RuntimeAutocompleteApplyRequest, RuntimeAutocompleteCapabilities, RuntimeAutocompleteCompletion, RuntimeAutocompleteQuery, RuntimeAutocompleteSuggestions, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./runtime/types.js";
 import { listRewindTargets as rewindListTargets, rewindToEntry as runRewindToEntry, type RewindDeps } from "./application/session-rewind.js";
 import { hasActivity, zeroActivitySummary } from "./domain/activity-summary.js";
@@ -78,7 +81,7 @@ interface SessionSupervisorOptions {
   // returns the filtered ToolDefinition[] that should be active. bootstrap.ts
   // owns the tool registry; supervisor only stores the disabled set and asks
   // for a refreshed list when it changes.
-  mainCustomToolsBuilder?: (disabled: ReadonlySet<string>) => import("@earendil-works/pi-coding-agent").ToolDefinition[];
+  mainCustomToolsBuilder?: (disabled: ReadonlySet<string>) => ToolDefinition[];
 }
 
 const ARCHIVED_SESSION_RETENTION_DAYS = 7;
@@ -1410,6 +1413,7 @@ export class SessionSupervisor extends EventEmitter {
     await write;
   }
 
+  // eslint-disable-next-line complexity, max-lines-per-function -- Main-turn streaming and terminal guards share one ordered state owner to prevent duplicate replies.
   private async applyMainRuntimeEvent(event: RuntimeEvent): Promise<void> {
     if (event.type === "log") {
       const sessionFilePath = piSessionFilePathFromLogLine(event.line);
@@ -2568,6 +2572,7 @@ export class SessionSupervisor extends EventEmitter {
     return { steering, followUp };
   }
 
+  // eslint-disable-next-line complexity -- Queue reconciliation is atomic so persisted items, delivery drains, modes, and emitted sequence numbers stay consistent.
   private async applyQueueUpdateNow(sessionId: string, steering: readonly string[], followUp: readonly string[], steeringMode: PickyQueueMode, followUpMode: PickyQueueMode): Promise<void> {
     if (!this.sessions.has(sessionId)) return;
     const enqueuedAt = new Date().toISOString();
@@ -2739,6 +2744,7 @@ export class SessionSupervisor extends EventEmitter {
     }
   }
 
+  // eslint-disable-next-line complexity -- Steer owns one transactional flow across runtime attachment, rollback, queue journaling, and synchronous slash handling.
   async steer(sessionId: string, text: string, context?: PickyContextPacket): Promise<PickyAgentSession> {
     const pendingAbort = this.pendingAbortOperations.get(sessionId);
     if (pendingAbort) {

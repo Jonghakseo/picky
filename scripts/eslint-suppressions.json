@@ -1,0 +1,62 @@
+[
+  {
+    "path": "agentd/src/application/runtime-event-handler.ts",
+    "directive": "// eslint-disable-next-line complexity -- This is the exhaustive runtime-event router; splitting it would duplicate ordering and terminal-state guards."
+  },
+  {
+    "path": "agentd/src/application/runtime-event-handler.ts",
+    "directive": "// eslint-disable-next-line complexity -- Status transitions intentionally stay with their single session-state owner to preserve terminal and compaction invariants."
+  },
+  {
+    "path": "agentd/src/application/runtime-event-handler.ts",
+    "directive": "// eslint-disable-next-line complexity -- Tool lifecycle ordering is kept atomic so late-event and activity accounting guards cannot drift apart."
+  },
+  {
+    "path": "agentd/src/domain/annotation-dsl.ts",
+    "directive": "// eslint-disable-next-line complexity -- The parser keeps grammar validation and healing decisions together so malformed tags cannot be partially accepted."
+  },
+  {
+    "path": "agentd/src/domain/annotation-dsl.ts",
+    "directive": "// eslint-disable-next-line complexity -- This single-pass parser deliberately couples cursor movement with healing diagnostics for deterministic recovery."
+  },
+  {
+    "path": "agentd/src/domain/pi-event-normalizer.ts",
+    "directive": "// eslint-disable-next-line complexity -- This is the exhaustive Pi event adapter; keeping event variants together makes unknown events fail closed."
+  },
+  {
+    "path": "agentd/src/runtime/pi-sdk-runtime.ts",
+    "directive": "// eslint-disable-next-line complexity -- Queue translation, recovery interception, and terminal de-duplication must run in one ordered adapter pipeline."
+  },
+  {
+    "path": "agentd/src/runtime/pi-sdk-runtime.ts",
+    "directive": "// eslint-disable-next-line complexity -- Recovery events form one ordered state machine whose cancellation and compaction side effects must stay atomic."
+  },
+  {
+    "path": "agentd/src/server.ts",
+    "directive": "// eslint-disable-next-line max-lines-per-function -- The exhaustive typed command registry stays centralized so protocol commands cannot be registered without dispatch behavior."
+  },
+  {
+    "path": "agentd/src/server.ts",
+    "directive": "// eslint-disable-next-line complexity -- This exhaustive protocol projection intentionally mirrors every command variant without executing behavior."
+  },
+  {
+    "path": "agentd/src/server.ts",
+    "directive": "// eslint-disable-next-line complexity -- This exhaustive protocol projection intentionally mirrors every event variant without executing behavior."
+  },
+  {
+    "path": "agentd/src/session-supervisor.ts",
+    "directive": "/* eslint-disable max-lines -- SessionSupervisor remains the single mutable session owner; scripts/check-architecture-rules.js enforces its no-growth ratchet. */"
+  },
+  {
+    "path": "agentd/src/session-supervisor.ts",
+    "directive": "// eslint-disable-next-line complexity, max-lines-per-function -- Main-turn streaming and terminal guards share one ordered state owner to prevent duplicate replies."
+  },
+  {
+    "path": "agentd/src/session-supervisor.ts",
+    "directive": "// eslint-disable-next-line complexity -- Queue reconciliation is atomic so persisted items, delivery drains, modes, and emitted sequence numbers stay consistent."
+  },
+  {
+    "path": "agentd/src/session-supervisor.ts",
+    "directive": "// eslint-disable-next-line complexity -- Steer owns one transactional flow across runtime attachment, rollback, queue journaling, and synchronous slash handling."
+  }
+]

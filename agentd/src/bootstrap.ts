@@ -1,3 +1,4 @@
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { AgentdServer, APP_PICKLE_HANDOFF_UNAVAILABLE, type AppPickleBridgeRequest, type AppPickleBridgeResult, type AppPickleHandoffRequest, type AppPickleHandoffResult } from "./server.js";
 import { defaultAppSupportRoot } from "./artifact-store.js";
 import { SessionStore } from "./session-store.js";
@@ -57,41 +58,20 @@ export function parseAgentdConfig(env: NodeJS.ProcessEnv): AgentdConfig {
   const token = env.PICKY_AGENTD_TOKEN;
   if (!token) throw new Error("PICKY_AGENTD_TOKEN is required");
 
-  const rawMode = env.PICKY_AGENTD_MODE?.trim();
-  let mode: AgentdMode;
-  if (rawMode === undefined || rawMode === "" || rawMode === "primary") mode = "primary";
-  else if (rawMode === "child") mode = "child";
-  else throw new Error(`Unknown PICKY_AGENTD_MODE: ${JSON.stringify(rawMode)} (expected "primary" | "child")`);
+  const mode = parseAgentdMode(env.PICKY_AGENTD_MODE);
+  const sessionId = env.PICKY_AGENTD_SESSION_ID?.trim() || undefined;
+  const sessionCwd = env.PICKY_AGENTD_SESSION_CWD?.trim() || undefined;
+  assertChildAgentdConfig(mode, sessionId, sessionCwd);
 
-  if (mode === "child") {
-    if (!env.PICKY_AGENTD_SESSION_ID?.trim()) throw new Error("PICKY_AGENTD_SESSION_ID is required in child mode");
-    if (!env.PICKY_AGENTD_SESSION_CWD?.trim()) throw new Error("PICKY_AGENTD_SESSION_CWD is required in child mode");
-  }
-
-  const appSupportDir = env.PICKY_APP_SUPPORT_DIR ?? defaultAppSupportRoot();
   const initialDefaultCwd = mode === "child"
-    ? env.PICKY_AGENTD_SESSION_CWD!.trim()
+    ? sessionCwd!
     : (env.PICKY_DEFAULT_CWD ?? process.cwd());
-
-  // Child daemons bind to an OS-assigned port; the parent reads the bound port from the
-  // `picky-agentd listening on …` stdout line. Primary keeps the historical default. We ignore
-  // an inherited PICKY_AGENTD_PORT in child mode so children spawned by a primary that still has
-  // that env exported do not race for the primary's pinned port. An empty string in primary mode
-  // falls back to the default (matches the legacy `Number("") === 0` permissive behaviour from
-  // before bootstrap split).
-  const defaultPort = mode === "child" ? 0 : 17631;
-  const portEnvRaw = mode === "child" ? undefined : env.PICKY_AGENTD_PORT?.trim();
-  const portEnv = portEnvRaw === undefined || portEnvRaw === "" ? undefined : portEnvRaw;
-  if (portEnv !== undefined && (!/^[0-9]+$/.test(portEnv) || Number(portEnv) > 65535)) {
-    throw new Error(`Invalid PICKY_AGENTD_PORT: ${JSON.stringify(portEnv)}`);
-  }
-  const port = portEnv === undefined ? defaultPort : Number(portEnv);
 
   return {
     mode,
-    port,
+    port: parseAgentdPort(mode, env.PICKY_AGENTD_PORT),
     token,
-    appSupportDir,
+    appSupportDir: env.PICKY_APP_SUPPORT_DIR ?? defaultAppSupportRoot(),
     defaultCwd: initialDefaultCwd,
     mainAgentCwd: env.PICKY_MAIN_AGENT_CWD ?? initialDefaultCwd,
     mainAgentThinkingLevel: parseThinkingLevel(env.PICKY_MAIN_AGENT_THINKING_LEVEL, { fallback: "medium", label: "main" }) ?? "medium",
@@ -99,10 +79,35 @@ export function parseAgentdConfig(env: NodeJS.ProcessEnv): AgentdConfig {
     pickleThinkingLevel: parseThinkingLevel(env.PICKY_PICKLE_THINKING_LEVEL, { label: "pickle" }),
     pickleModelPattern: env.PICKY_PICKLE_MODEL?.trim() || undefined,
     useMockRuntime: env.PICKY_AGENTD_RUNTIME === "mock",
-    sessionId: env.PICKY_AGENTD_SESSION_ID?.trim() || undefined,
-    sessionCwd: env.PICKY_AGENTD_SESSION_CWD?.trim() || undefined,
+    sessionId,
+    sessionCwd,
     primaryUrl: env.PICKY_AGENTD_PRIMARY_URL?.trim() || undefined,
   };
+}
+
+function parseAgentdMode(value: string | undefined): AgentdMode {
+  const mode = value?.trim();
+  if (mode === undefined || mode === "" || mode === "primary") return "primary";
+  if (mode === "child") return "child";
+  throw new Error(`Unknown PICKY_AGENTD_MODE: ${JSON.stringify(mode)} (expected "primary" | "child")`);
+}
+
+function assertChildAgentdConfig(mode: AgentdMode, sessionId: string | undefined, sessionCwd: string | undefined): void {
+  if (mode !== "child") return;
+  if (!sessionId) throw new Error("PICKY_AGENTD_SESSION_ID is required in child mode");
+  if (!sessionCwd) throw new Error("PICKY_AGENTD_SESSION_CWD is required in child mode");
+}
+
+function parseAgentdPort(mode: AgentdMode, value: string | undefined): number {
+  // Child daemons bind to an OS-assigned port; the parent reads the bound port from the
+  // `picky-agentd listening on …` stdout line. Ignore inherited primary ports in child mode.
+  if (mode === "child") return 0;
+  const port = value?.trim();
+  if (port === undefined || port === "") return 17631;
+  if (!/^[0-9]+$/.test(port) || Number(port) > 65535) {
+    throw new Error(`Invalid PICKY_AGENTD_PORT: ${JSON.stringify(port)}`);
+  }
+  return Number(port);
 }
 
 function describeStabilizationError(error: unknown): string {
@@ -237,7 +242,7 @@ export function primeSessionIdFactoryForResume(result: ComposeResult): "consumed
 
 interface PrimaryMainRuntimeBundle {
   runtime: AgentRuntime;
-  toolsBuilder: (disabled: ReadonlySet<string>) => import("@earendil-works/pi-coding-agent").ToolDefinition[];
+  toolsBuilder: (disabled: ReadonlySet<string>) => ToolDefinition[];
 }
 
 function buildPrimaryMainRuntime(
@@ -304,7 +309,7 @@ function buildPrimaryMainRuntime(
   // on the main runtime and it is registered separately on Pickle child
   // runtimes. The user can disable individual entries from the settings UI;
   // `toolsBuilder` returns the subset that should be active.
-  const allBuiltinTools: import("@earendil-works/pi-coding-agent").ToolDefinition[] = [
+  const allBuiltinTools: ToolDefinition[] = [
     createPickyStartPickleTool(startPickleFromMainContext),
     createPickyPickleSessionsTool(listPickleSessions),
     createPickySteerPickleTool(steerPickleSession),

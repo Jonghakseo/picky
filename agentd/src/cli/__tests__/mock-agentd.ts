@@ -1,6 +1,7 @@
 import { createServer, type Server } from "node:http";
 import { randomUUID } from "node:crypto";
-import { WebSocket, WebSocketServer } from "ws";
+import { WebSocketServer } from "ws";
+import type { WebSocket } from "ws";
 import { PROTOCOL_VERSION } from "../../protocol.js";
 
 export type MockAgentdEvent = { type: string; [key: string]: unknown };

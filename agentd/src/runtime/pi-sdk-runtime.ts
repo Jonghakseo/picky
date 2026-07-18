@@ -860,6 +860,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     return () => this.listeners.delete(listener);
   }
 
+  // eslint-disable-next-line complexity -- Queue translation, recovery interception, and terminal de-duplication must run in one ordered adapter pipeline.
   private runtimeEventFromPiEvent(event: unknown): RuntimeEvent | undefined {
     const record = asRecord(event);
     // A new agent cycle starts: stop absorbing aborted drains from prior abort cycles so a
@@ -997,6 +998,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     return this.getSteeringMessages().includes(text) || this.getFollowUpMessages().includes(text);
   }
 
+  // eslint-disable-next-line complexity -- Recovery events form one ordered state machine whose cancellation and compaction side effects must stay atomic.
   private runtimeEventFromRecoveryPiEvent(event: Record<string, unknown>): RuntimeEvent | undefined {
     if (event.type === "auto_retry_start") {
       this.cancelDeferredTerminalError();

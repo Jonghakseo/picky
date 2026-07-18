@@ -12,8 +12,8 @@
     "dev:cli": "tsx src/cli.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "eslint src --max-warnings 9999",
-    "lint:fix": "eslint src --fix --max-warnings 9999",
+    "lint": "eslint src --max-warnings 0",
+    "lint:fix": "eslint src --fix --max-warnings 0",
     "test": "vitest run",
     "test:serial": "vitest run --no-file-parallelism",
     "test:contracts": "vitest run src/protocol.test.ts src/prompt-builder.test.ts src/pi-event-normalizer.test.ts"

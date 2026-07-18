@@ -73,6 +73,7 @@ export class RuntimeEventHandler {
     this.seenToolCallIds.delete(sessionId);
   }
 
+  // eslint-disable-next-line complexity -- This is the exhaustive runtime-event router; splitting it would duplicate ordering and terminal-state guards.
   async handle(sessionId: string, event: RuntimeEvent): Promise<void> {
     if (event.type === "log") return this.dependencies.appendLog(sessionId, event.line);
     if (event.type === "todo_state") return this.dependencies.updateTodoState(sessionId, event.todoState);
@@ -146,6 +147,7 @@ export class RuntimeEventHandler {
     await this.dependencies.patchSession(sessionId, { title: trimmed });
   }
 
+  // eslint-disable-next-line complexity -- Status transitions intentionally stay with their single session-state owner to preserve terminal and compaction invariants.
   private async applyStatusEvent(sessionId: string, event: Extract<RuntimeEvent, { type: "status" }>): Promise<void> {
     logAgentd("session status", { sessionId, status: event.status, summaryChars: event.summary?.length });
     const terminal = ["completed", "failed", "cancelled"].includes(event.status);
@@ -370,6 +372,7 @@ export class RuntimeEventHandler {
     await this.dependencies.patchSession(sessionId, patch);
   }
 
+  // eslint-disable-next-line complexity -- Tool lifecycle ordering is kept atomic so late-event and activity accounting guards cannot drift apart.
   private async applyToolEvent(sessionId: string, event: Extract<RuntimeEvent, { type: "tool" }>): Promise<void> {
     this.thinkingActive.set(sessionId, false);
     const seen = this.seenToolCallIds.get(sessionId) ?? new Set<string>();

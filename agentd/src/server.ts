@@ -318,6 +318,7 @@ export class AgentdServer {
     }
   }
 
+  // eslint-disable-next-line max-lines-per-function -- The exhaustive typed command registry stays centralized so protocol commands cannot be registered without dispatch behavior.
   private async dispatchCommand(ws: WebSocket, command: ParsedCommand): Promise<void> {
     const handlers: CommandHandlerMap = {
       listSessions: (cmd) => this.send(ws, { type: "sessionSnapshot", sessions: compactSessionsForSnapshot(this.options.supervisor.list()).map(protocolSession) }),
@@ -848,6 +849,7 @@ function repairLoneSurrogates(value: string): string {
   return result;
 }
 
+// eslint-disable-next-line complexity -- This exhaustive protocol projection intentionally mirrors every command variant without executing behavior.
 export function commandLogFields(command: ReturnType<typeof parseCommand>): Record<string, string | number | undefined> {
   switch (command.type) {
     case "routeTask":
@@ -932,6 +934,7 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
   }
 }
 
+// eslint-disable-next-line complexity -- This exhaustive protocol projection intentionally mirrors every event variant without executing behavior.
 function eventLogFields(event: EventEnvelope): Record<string, string | number | undefined> {
   switch (event.type) {
     case "hello":

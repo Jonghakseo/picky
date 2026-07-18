@@ -6,6 +6,11 @@ cd "$ROOT"
 
 HOST_ARCH="$(uname -m)"
 DESTINATION="${PICKY_XCODE_DESTINATION:-platform=macOS,arch=${HOST_ARCH}}"
+PRE_PUSH_REFS="$(mktemp "${TMPDIR:-/tmp}/picky-pre-push-refs.XXXXXX")"
+trap 'rm -f "$PRE_PUSH_REFS"' EXIT
+if [ ! -t 0 ]; then
+  cat > "$PRE_PUSH_REFS"
+fi
 
 require_command() {
   local command_name="$1"
@@ -63,12 +68,21 @@ run_swiftlint_warning_first() {
   fi
 }
 
+require_command git "Install Git."
+require_command node "Install Node.js 22.19.0."
 require_command pnpm "Install pnpm 10.15.1 or run Corepack setup."
 require_command swiftlint "Install it with: brew install swiftlint"
 require_command xcodebuild "Install Xcode command line tools / Xcode."
 
+if [ -s "$PRE_PUSH_REFS" ]; then
+  while IFS= read -r local_sha; do
+    run_step "agentd: outgoing commit lint ${local_sha:0:12}" "$ROOT/scripts/check-agentd-lint-snapshot.sh" --commit "$local_sha"
+  done < <(awk '$2 !~ /^0+$/ { print $2 }' "$PRE_PUSH_REFS" | sort -u)
+fi
+
 run_step "agentd: typecheck" pnpm --dir agentd run typecheck
-run_step "agentd: lint" pnpm --dir agentd run lint
+run_step "agentd: lint (zero warnings)" pnpm --dir agentd run lint
+run_step "ESLint suppression guard" pnpm run check:eslint-suppressions
 run_with_retry 5 "agentd: tests (serial)" pnpm --dir agentd run test:serial
 run_step "architecture guard" pnpm run check:architecture
 run_swiftlint_warning_first

@@ -216,28 +216,41 @@ function hasGroundingContext(context: PickyContextPacket): boolean {
 
 function appendContext(lines: string[], context: PickyContextPacket): void {
   lines.push("", "## Captured context", `- Captured at: ${context.capturedAt}`);
+  appendApplicationContext(lines, context);
+  if (context.selectedText) lines.push("", "## Selected text", context.selectedText);
+  appendScreenshots(lines, context.screenshots);
+  appendInkMarks(lines, context.inkMarks);
+}
+
+function appendApplicationContext(lines: string[], context: PickyContextPacket): void {
   if (context.activeApp?.name) lines.push(`- Active app: ${context.activeApp.name}`);
   if (context.activeWindow?.title && !context.browser?.title) lines.push(`- Active window: ${context.activeWindow.title}`);
   if (context.browser?.title) lines.push(`- Browser title: ${context.browser.title}`);
   if (context.browser?.url) lines.push(`- Browser URL: ${context.browser.url}`);
-  if (context.selectedText) lines.push("", "## Selected text", context.selectedText);
-  if (context.screenshots.length > 0) {
-    lines.push("", "## Screenshots");
-    for (const screenshot of context.screenshots) {
-      const screen = screenshot.screenId ? ` (${screenshot.screenId})` : "";
-      const pixelSize = screenshot.screenshotWidthInPixels && screenshot.screenshotHeightInPixels ? `; screenshotPixels=${screenshot.screenshotWidthInPixels}x${screenshot.screenshotHeightInPixels}` : "";
-      const focus = context.screenshots.length > 1 ? (screenshot.isCursorScreen || screenshot.label.toLowerCase().includes("cursor") || screenshot.label.toLowerCase().includes("primary") ? "; primary cursor/focus screen" : "; secondary screen") : "";
-      const cursor = screenshot.cursor ? `; cursorScreenshotPixel=${formatCoordinate(screenshot.cursor.screenshotPixel.x)},${formatCoordinate(screenshot.cursor.screenshotPixel.y)}` : "";
-      lines.push(`- ${screenshot.label}${screen}${focus}${pixelSize}${cursor}: ${screenshot.path}`);
-    }
-  }
-  if (context.inkMarks.length > 0) {
-    lines.push("", "## User-marked screen regions");
-    lines.push("The user drew these semi-transparent Picky highlighter strokes during input. The attached screenshot files are annotated with matching blue strokes and number badges.");
-    for (const [index, mark] of context.inkMarks.entries()) {
-      const screen = mark.screenId ? ` on ${mark.screenId}` : "";
-      lines.push(`- mark${index + 1}${screen}`);
-    }
+}
+
+function appendScreenshots(lines: string[], screenshots: PickyContextPacket["screenshots"]): void {
+  if (screenshots.length === 0) return;
+  lines.push("", "## Screenshots");
+  for (const screenshot of screenshots) lines.push(screenshotContextLine(screenshot, screenshots.length));
+}
+
+function screenshotContextLine(screenshot: PickyContextPacket["screenshots"][number], screenshotCount: number): string {
+  const screen = screenshot.screenId ? ` (${screenshot.screenId})` : "";
+  const pixelSize = screenshot.screenshotWidthInPixels && screenshot.screenshotHeightInPixels ? `; screenshotPixels=${screenshot.screenshotWidthInPixels}x${screenshot.screenshotHeightInPixels}` : "";
+  const isPrimary = screenshot.isCursorScreen || screenshot.label.toLowerCase().includes("cursor") || screenshot.label.toLowerCase().includes("primary");
+  const focus = screenshotCount > 1 ? (isPrimary ? "; primary cursor/focus screen" : "; secondary screen") : "";
+  const cursor = screenshot.cursor ? `; cursorScreenshotPixel=${formatCoordinate(screenshot.cursor.screenshotPixel.x)},${formatCoordinate(screenshot.cursor.screenshotPixel.y)}` : "";
+  return `- ${screenshot.label}${screen}${focus}${pixelSize}${cursor}: ${screenshot.path}`;
+}
+
+function appendInkMarks(lines: string[], inkMarks: PickyContextPacket["inkMarks"]): void {
+  if (inkMarks.length === 0) return;
+  lines.push("", "## User-marked screen regions");
+  lines.push("The user drew these semi-transparent Picky highlighter strokes during input. The attached screenshot files are annotated with matching blue strokes and number badges.");
+  for (const [index, mark] of inkMarks.entries()) {
+    const screen = mark.screenId ? ` on ${mark.screenId}` : "";
+    lines.push(`- mark${index + 1}${screen}`);
   }
 }
 

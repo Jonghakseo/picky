@@ -615,28 +615,15 @@ struct PickyInteractionReducerTests {
         #expect(state.contextOwnership["context-cli-survives"] == .cli)
     }
 
-    @Test func mainTurnSettledReleasesMatchingWaitingOutputAndStartsAnnotationTTLs() {
-        let pendingAnnotation = PickyAgentAnnotation(
-            id: "overlay",
-            shape: .rect,
-            displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100),
-            rect: CGRect(x: 20, y: 20, width: 30, height: 20),
-            label: nil,
-            expiresAt: baseDate.addingTimeInterval(66),
-            pendingTTL: 6
-        )
-        var state = PickyInteractionState(agentAnnotations: [pendingAnnotation])
+    @Test func mainTurnSettledReleasesMatchingWaitingOutput() {
+        var state = PickyInteractionState()
         state.output = .waitingForAgent(inputID: inputA, contextID: "ctx-overlay", promptPreview: "show me")
 
         let settled = reduce(state, .mainTurnSettled(contextID: "ctx-overlay"), id: timerA)
-
         #expect(settled.state.output == .idle)
-        #expect(settled.state.agentAnnotations.first?.expiresAt == baseDate.addingTimeInterval(6))
-        #expect(settled.state.agentAnnotations.first?.pendingTTL == nil)
 
         let duplicate = reduce(settled.state, .mainTurnSettled(contextID: "ctx-overlay"), id: timerB)
         #expect(duplicate.state.output == .idle)
-        #expect(duplicate.state.agentAnnotations.first?.expiresAt == baseDate.addingTimeInterval(6))
     }
 
     @Test func annotationPointerParksAcrossStreamGapThenHopsToNextShape() {
@@ -685,6 +672,24 @@ struct PickyInteractionReducerTests {
         #expect(ended.effects.contains(.setPointerParksAtTarget(pointerID: "annotation-rect", parksAtTarget: false)))
         #expect(ended.effects.contains(.setPointerReturnsToCursor(pointerID: "annotation-rect", returnsToCursor: true)))
         #expect(!ended.effects.contains(.advancePointerAnimation(pointerID: "annotation-rect")))
+    }
+
+    @Test func annotationBuddyReturnsOnlyAfterSpeechDrainsWhenSettledMidSpeech() {
+        let parked = parkedAnnotationPointerState()
+        var speaking = parked
+        let speechID = UUID()
+        speaking.output = .speaking(contextID: "ctx", speechID: speechID, text: "narrating", minimumDisplayTimerID: nil, minimumDisplayUntil: nil, finishPending: false)
+
+        // The turn settles while the last utterance is still playing: the buddy must NOT
+        // fly back yet (regression: it used to fly back at reply time, before the buddy
+        // even started, and then never returned).
+        let settled = reduce(speaking, .mainTurnSettled(contextID: "ctx"), id: timerA)
+        #expect(settled.state.annotationTurnSettled)
+        #expect(!settled.effects.contains(.setPointerReturnsToCursor(pointerID: "annotation-rect", returnsToCursor: true)))
+
+        // When speech drains, narration is over and the buddy flies back.
+        let drained = reduce(settled.state, .speechFinished(speechID: speechID), id: timerB)
+        #expect(drained.effects.contains(.setPointerReturnsToCursor(pointerID: "annotation-rect", returnsToCursor: true)))
     }
 
     @Test func turnEndFinishesQueuedShapesBeforeReturningToCursor() {

@@ -36,10 +36,8 @@ struct PickyInteractionState: Equatable, Codable {
     var annotationNarrationCharacterCount: Int
     /// The first accepted TTS start for this turn. It anchors visual reveal timing.
     var annotationSpeechAnchor: Date?
-    /// The actual (or no-audio estimated) narration end used to start TTL linger.
-    var annotationNarrationEnd: Date?
     /// A terminal reply/settlement was received; wait for queued speech to drain before
-    /// finalizing `annotationNarrationEnd`.
+    /// surfacing any still-buffered shapes and sending the buddy back to the cursor.
     var annotationTurnSettled: Bool
     /// Monotonic arrival order used only to gently stagger a silent annotation-only turn.
     var annotationArrivalSequence: Int
@@ -71,7 +69,6 @@ struct PickyInteractionState: Equatable, Codable {
         pendingAgentAnnotations: [PickyPendingAgentAnnotation] = [],
         annotationNarrationCharacterCount: Int = 0,
         annotationSpeechAnchor: Date? = nil,
-        annotationNarrationEnd: Date? = nil,
         annotationTurnSettled: Bool = false,
         annotationArrivalSequence: Int = 0,
         lastDisplayMessage: PickyDisplayMessage? = nil,
@@ -96,7 +93,6 @@ struct PickyInteractionState: Equatable, Codable {
         self.pendingAgentAnnotations = pendingAgentAnnotations
         self.annotationNarrationCharacterCount = annotationNarrationCharacterCount
         self.annotationSpeechAnchor = annotationSpeechAnchor
-        self.annotationNarrationEnd = annotationNarrationEnd
         self.annotationTurnSettled = annotationTurnSettled
         self.annotationArrivalSequence = annotationArrivalSequence
         self.lastDisplayMessage = lastDisplayMessage
@@ -124,7 +120,6 @@ struct PickyInteractionState: Equatable, Codable {
         self.pendingAgentAnnotations = try container.decodeIfPresent([PickyPendingAgentAnnotation].self, forKey: .pendingAgentAnnotations) ?? []
         self.annotationNarrationCharacterCount = try container.decodeIfPresent(Int.self, forKey: .annotationNarrationCharacterCount) ?? 0
         self.annotationSpeechAnchor = try container.decodeIfPresent(Date.self, forKey: .annotationSpeechAnchor)
-        self.annotationNarrationEnd = try container.decodeIfPresent(Date.self, forKey: .annotationNarrationEnd)
         self.annotationTurnSettled = try container.decodeIfPresent(Bool.self, forKey: .annotationTurnSettled) ?? false
         self.annotationArrivalSequence = try container.decodeIfPresent(Int.self, forKey: .annotationArrivalSequence) ?? 0
         self.lastDisplayMessage = try container.decodeIfPresent(PickyDisplayMessage.self, forKey: .lastDisplayMessage)

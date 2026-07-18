@@ -23,7 +23,7 @@ struct PickyAgentAnnotationOverlayTests {
         #expect(resolved.allSatisfy { $0.expiresAt == now.addingTimeInterval(66) && $0.pendingTTL == 6 })
     }
 
-    @Test func bufferedAnnotationsRevealAfterSpeechAndLingerAfterNarration() {
+    @Test func bufferedAnnotationsRevealAfterSpeechAndExpireAfterTheirTtl() {
         let pending = resolvedAnnotation(id: "a", expiresAt: now.addingTimeInterval(66), pendingTTL: 6)
         // Streamed annotations are buffered, not shown, until narration reaches them.
         let buffered = reduce(PickyInteractionState(), .agentAnnotationsRequested(mode: .append, annotations: [pending]))
@@ -35,17 +35,16 @@ struct PickyAgentAnnotationOverlayTests {
         #expect(spoke.agentAnnotations.isEmpty)
         let pendingID = spoke.pendingAgentAnnotations.first!.id
 
-        // Reveal shows it and it persists (no early expiry) through the narration.
+        // Reveal shows it and starts its ttl countdown from the moment it appears.
         let revealed = reduce(spoke, .agentAnnotationRevealDue(id: pendingID))
         #expect(revealed.agentAnnotations.map(\.id) == ["a"])
-        #expect(revealed.agentAnnotations.first?.expiresAt == .distantFuture)
-        let notExpired = reduce(revealed, .agentAnnotationsExpired(now: now.addingTimeInterval(600)))
-        #expect(notExpired.agentAnnotations.count == 1)
+        #expect(revealed.agentAnnotations.first?.expiresAt == now.addingTimeInterval(6))
+        #expect(revealed.agentAnnotations.first?.pendingTTL == nil)
 
-        // Narration ends (silent settle): the ttl linger starts from now.
-        let settled = reduce(revealed, .mainTurnSettled(contextID: "context"))
-        #expect(settled.agentAnnotations.first?.expiresAt == now.addingTimeInterval(6))
-        let expired = reduce(settled, .agentAnnotationsExpired(now: now.addingTimeInterval(6.1)))
+        // It stays for its ttl, then expires.
+        let notYet = reduce(revealed, .agentAnnotationsExpired(now: now.addingTimeInterval(5.9)))
+        #expect(notYet.agentAnnotations.count == 1)
+        let expired = reduce(notYet, .agentAnnotationsExpired(now: now.addingTimeInterval(6.1)))
         #expect(expired.agentAnnotations.isEmpty)
     }
 

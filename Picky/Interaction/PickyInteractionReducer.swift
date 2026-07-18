@@ -70,8 +70,8 @@ enum PickyInteractionReducer {
     /// Heuristic speaking pace used to stagger annotation reveals against narration
     /// length. Tuned by feel, not measured; lean slow so reveals do not outrun speech.
     static let annotationRevealSecondsPerCharacter: TimeInterval = 0.055
-    /// Fixed reveal gap used only for a silent (no-audio) turn.
-    static let annotationSilentTurnStagger: TimeInterval = 0.6
+    /// Fallback on-screen duration when a drawing tag omits an explicit ttl.
+    static let annotationDefaultTTL: TimeInterval = 6
 
     static func reduce(
         state: PickyInteractionState,
@@ -456,7 +456,6 @@ private struct PickyInteractionReducing {
         sessionID: String?,
         inputID: UUID?
     ) {
-        endAnnotationPointerTurn()
         if let sessionID { state.pendingAgentRequestsBySession[sessionID] = nil }
         let timerID = envelope.id
         let deadline = envelope.occurredAt.addingTimeInterval(minimumDisplayDuration)
@@ -516,7 +515,6 @@ private struct PickyInteractionReducing {
         sessionID: String?,
         inputID: UUID?
     ) {
-        endAnnotationPointerTurn()
         if let sessionID { state.pendingAgentRequestsBySession[sessionID] = nil }
         guard state.streamedNarrationContextIDs.contains(contextID) else {
             applyQuickReply(contextID: contextID, text: text, originSource: originSource, replyKind: replyKind, sessionID: sessionID, inputID: inputID)
@@ -624,7 +622,6 @@ private struct PickyInteractionReducing {
     /// `.waitingForAgent` output here; otherwise the projection keeps reporting
     /// `isWaitingForCursorResponse = true` and the cursor stays yellow forever.
     private mutating func applyMainTurnSettled(contextID: String) {
-        endAnnotationPointerTurn()
         // A DSL-only main turn has no quickReply and no audio, so narration is over now.
         markAnnotationTurnSettled()
         guard case .waitingForAgent(_, let waitingContextID, _) = state.output,
@@ -756,10 +753,6 @@ private struct PickyInteractionReducing {
     /// Buffers a streamed annotation so the overlay cannot show it before narration
     /// reaches its position. Once narration has ended it reveals immediately instead.
     private mutating func bufferOrRevealAnnotation(_ annotation: PickyAgentAnnotation) {
-        if state.annotationNarrationEnd != nil {
-            revealAnnotation(annotation)
-            return
-        }
         let pending = PickyPendingAgentAnnotation(
             id: UUID(),
             annotation: annotation,
@@ -799,16 +792,12 @@ private struct PickyInteractionReducing {
         revealAnnotation(pending.annotation)
     }
 
-    /// Shows an annotation and sends the buddy to it. It persists (no expiry) until
-    /// narration ends; if narration already ended, its post-narration ttl starts now.
+    /// Shows an annotation, sends the buddy to it, and starts its ttl countdown from
+    /// the moment it appears (ttl = how long the drawing stays on screen once shown).
     private mutating func revealAnnotation(_ annotation: PickyAgentAnnotation) {
         var shown = annotation
-        if let end = state.annotationNarrationEnd {
-            shown.expiresAt = end.addingTimeInterval(shown.pendingTTL ?? 0)
-            shown.pendingTTL = nil
-        } else {
-            shown.expiresAt = .distantFuture
-        }
+        shown.expiresAt = envelope.occurredAt.addingTimeInterval(shown.pendingTTL ?? PickyInteractionReducer.annotationDefaultTTL)
+        shown.pendingTTL = nil
         if let index = state.agentAnnotations.firstIndex(where: { $0.id == shown.id }) {
             state.agentAnnotations[index] = shown
         } else {
@@ -828,28 +817,34 @@ private struct PickyInteractionReducing {
     }
 
     /// The turn produced its terminal reply/settlement. If no audio is (or will be)
-    /// playing, narration is effectively over now; otherwise wait for speech to drain.
+    /// playing, narration is over now, so conclude immediately; otherwise wait for the
+    /// speech to drain (handled in `concludeAnnotationTurnIfSettled`).
     private mutating func markAnnotationTurnSettled() {
         state.annotationTurnSettled = true
-        guard state.annotationNarrationEnd == nil, !annotationSpeechActive else { return }
-        finalizeAnnotationNarrationEnd(now: envelope.occurredAt)
+        if !annotationSpeechActive {
+            concludeAnnotationTurn()
+        }
     }
 
-    /// Narration finished. Flush any unrevealed annotations and start each shown
-    /// annotation's post-narration ttl linger from this moment.
-    private mutating func finalizeAnnotationNarrationEnd(now: Date) {
-        guard state.annotationNarrationEnd == nil else { return }
-        state.annotationNarrationEnd = now
+    /// Narration is over: reveal anything still buffered, then send the buddy cursor
+    /// back to the user's cursor. Runs when the turn settled and speech has drained.
+    private mutating func concludeAnnotationTurn() {
+        flushBufferedAnnotations()
+        endAnnotationPointerTurn()
+    }
+
+    private mutating func concludeAnnotationTurnIfSettled() {
+        guard state.annotationTurnSettled, !annotationSpeechActive else { return }
+        concludeAnnotationTurn()
+    }
+
+    /// Reveals any annotations still buffered — a silent turn, or shapes whose heuristic
+    /// reveal time fell past the end of narration — so none stay hidden.
+    private mutating func flushBufferedAnnotations() {
+        guard !state.pendingAgentAnnotations.isEmpty else { return }
         let flush = state.pendingAgentAnnotations
         state.pendingAgentAnnotations = []
         for pending in flush { revealAnnotation(pending.annotation) }
-        state.agentAnnotations = state.agentAnnotations.map { annotation in
-            guard let ttl = annotation.pendingTTL else { return annotation }
-            var activated = annotation
-            activated.expiresAt = now.addingTimeInterval(ttl)
-            activated.pendingTTL = nil
-            return activated
-        }
     }
 
     private mutating func applyAgentAnnotationsExpired(now: Date) {
@@ -869,7 +864,6 @@ private struct PickyInteractionReducing {
         state.pendingAgentAnnotations = []
         state.annotationNarrationCharacterCount = 0
         state.annotationSpeechAnchor = nil
-        state.annotationNarrationEnd = nil
         state.annotationTurnSettled = false
         state.annotationArrivalSequence = 0
         endAnnotationPointerTurn(discardingPendingTargets: true)
@@ -967,17 +961,12 @@ private struct PickyInteractionReducing {
             state.output = .idle
             if let contextID { state.streamedNarrationContextIDs.remove(contextID) }
             state = state.removingOverlayReason(.speakingResponse)
-            finalizeAnnotationNarrationEndIfTurnSettled()
+            concludeAnnotationTurnIfSettled()
             record(.stateChanged, "Speech completed")
         }
     }
 
-    /// When the turn has already settled, the drain of the last utterance is the true
-    /// end of narration and begins each shown annotation's post-narration ttl linger.
-    private mutating func finalizeAnnotationNarrationEndIfTurnSettled() {
-        guard state.annotationTurnSettled, !annotationSpeechActive else { return }
-        finalizeAnnotationNarrationEnd(now: envelope.occurredAt)
-    }
+
 
     private mutating func applyMinimumDisplayTimerFired(timerID: UUID) {
         switch state.output {
@@ -998,7 +987,7 @@ private struct PickyInteractionReducing {
                 } else {
                     state.output = .idle
                     state = state.removingOverlayReason(.speakingResponse)
-                    finalizeAnnotationNarrationEndIfTurnSettled()
+                    concludeAnnotationTurnIfSettled()
                     record(.stateChanged, "Speaking reply minimum display completed")
                 }
             } else {

@@ -65,8 +65,12 @@ enum PickyAnnotationSceneVisualPolicy {
     /// hard mismatch so localized content changes still block stale geometry.
     static let initialValidationROIChangedFraction = 0.15
     static let initialValidationROIMeanDifference = 10.0
-    static let mismatchingROIChangedFraction = 0.20
-    static let mismatchingROIMeanDifference = 14.0
+    /// ROI invalidation is intentionally forgiving: a light scroll, cursor-adjacent
+    /// hover repaint, or small content update should keep the drawing on screen.
+    /// Only a substantial change to the pointed-at region (large occlusion, a real
+    /// scroll that moves the target away) crosses these thresholds.
+    static let mismatchingROIChangedFraction = 0.40
+    static let mismatchingROIMeanDifference = 24.0
     static let matchingGlobalChangedFraction = 0.18
     static let matchingGlobalMeanDifference = 8.0
     static let mismatchingGlobalChangedFraction = 0.42

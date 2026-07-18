@@ -189,6 +189,61 @@ struct PickyAgentAnnotationOverlayTests {
         #expect(first != other)
     }
 
+    @Test func roughLinesAndRectangleEdgesUseTwoDistinctPasses() {
+        let linePaths = PickyAnnotationRoughGeometry.linePaths(
+            id: "line",
+            start: CGPoint(x: 10, y: 20),
+            end: CGPoint(x: 90, y: 80)
+        )
+        let rectanglePaths = PickyAnnotationRoughGeometry.rectanglePaths(
+            id: "rect",
+            rect: CGRect(x: 20, y: 30, width: 80, height: 50)
+        )
+
+        #expect(linePaths.count == 2)
+        #expect(linePaths.allSatisfy { $0.commands.count == 3 })
+        #expect(linePaths[0] != linePaths[1])
+        #expect(rectanglePaths.count == 8)
+        #expect(rectanglePaths.allSatisfy { $0.commands.count == 3 })
+        #expect(rectanglePaths[0] != rectanglePaths[4])
+    }
+
+    @Test func roughRectanglePassesFollowThePerimeterInOrder() throws {
+        let rect = CGRect(x: 20, y: 30, width: 80, height: 50)
+        let corners = [
+            CGPoint(x: rect.minX, y: rect.minY),
+            CGPoint(x: rect.maxX, y: rect.minY),
+            CGPoint(x: rect.maxX, y: rect.maxY),
+            CGPoint(x: rect.minX, y: rect.maxY),
+        ]
+        let paths = PickyAnnotationRoughGeometry.rectanglePaths(id: "ordered-rect", rect: rect)
+
+        for (index, path) in paths.enumerated() {
+            let edge = index % corners.count
+            let start = try #require(roughPathStart(path))
+            let end = try #require(roughPathEnd(path))
+            #expect(distance(start, corners[edge]) < 3)
+            #expect(distance(end, corners[(edge + 1) % corners.count]) < 3)
+        }
+    }
+
+    @Test func roughGeometryStaysInsideABoundedSketchEnvelope() {
+        let lineBounds = CGRect(x: 10, y: 20, width: 80, height: 60).insetBy(dx: -4, dy: -4)
+        let rectangleBounds = CGRect(x: 20, y: 30, width: 80, height: 50).insetBy(dx: -4, dy: -4)
+        let linePoints = roughPathPoints(PickyAnnotationRoughGeometry.linePaths(
+            id: "bounded-line",
+            start: CGPoint(x: 10, y: 20),
+            end: CGPoint(x: 90, y: 80)
+        ))
+        let rectanglePoints = roughPathPoints(PickyAnnotationRoughGeometry.rectanglePaths(
+            id: "bounded-rect",
+            rect: CGRect(x: 20, y: 30, width: 80, height: 50)
+        ))
+
+        #expect(linePoints.allSatisfy(lineBounds.contains))
+        #expect(rectanglePoints.allSatisfy(rectangleBounds.contains))
+    }
+
     @Test func persistedAnnotationsDecodeWithFallbackVisualStyle() throws {
         let data = """
         {
@@ -489,6 +544,42 @@ struct PickyAgentAnnotationOverlayTests {
             width: size.width,
             height: size.height
         )
+    }
+
+    private func roughPathStart(_ path: PickyRoughPath) -> CGPoint? {
+        guard case .move(let point) = path.commands.first else { return nil }
+        return point
+    }
+
+    private func roughPathEnd(_ path: PickyRoughPath) -> CGPoint? {
+        for command in path.commands.reversed() {
+            switch command {
+            case .move(let point), .line(let point), .curve(to: let point, control1: _, control2: _):
+                return point
+            case .close:
+                continue
+            }
+        }
+        return nil
+    }
+
+    private func roughPathPoints(_ paths: [PickyRoughPath]) -> [CGPoint] {
+        paths.flatMap { path in
+            path.commands.flatMap { command -> [CGPoint] in
+                switch command {
+                case .move(let point), .line(let point):
+                    return [point]
+                case .curve(to: let point, control1: let control1, control2: let control2):
+                    return [point, control1, control2]
+                case .close:
+                    return []
+                }
+            }
+        }
+    }
+
+    private func distance(_ lhs: CGPoint, _ rhs: CGPoint) -> CGFloat {
+        hypot(lhs.x - rhs.x, lhs.y - rhs.y)
     }
 
     private func waitUntil(_ predicate: @escaping @MainActor () -> Bool) async throws {

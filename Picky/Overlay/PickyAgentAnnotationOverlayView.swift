@@ -232,8 +232,7 @@ enum PickyAnnotationLabelGeometry {
 private enum PickyAgentAnnotationOverlayStyle {
     static let dimmingOpacity = 0.38
     static let dimmingColor = Color.black.opacity(dimmingOpacity)
-    static let keylineWidth: CGFloat = 5
-    static let outlineLineWidth: CGFloat = 2
+    static let roughStrokeLineWidth: CGFloat = 1.5
 }
 
 private struct PickyRoughStrokeView: View {
@@ -241,26 +240,23 @@ private struct PickyRoughStrokeView: View {
     let visualStyle: PickyAnnotationVisualStyle
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var hasDrawn = false
+    @State private var drawProgress: CGFloat = 0
 
-    private var strokeEnd: CGFloat { reduceMotion || hasDrawn ? 1 : 0 }
+    private var effectiveDrawProgress: CGFloat { reduceMotion ? 1 : drawProgress }
 
     var body: some View {
         ZStack {
-            ForEach(Array(paths.enumerated()), id: \.offset) { _, roughPath in
-                let visiblePath = roughPath.path.trim(from: 0, to: strokeEnd)
-                visiblePath.stroke(
-                    visualStyle.keyline.color,
-                    style: StrokeStyle(
-                        lineWidth: PickyAgentAnnotationOverlayStyle.keylineWidth,
-                        lineCap: .round,
-                        lineJoin: .round
-                    )
+            ForEach(Array(paths.enumerated()), id: \.offset) { index, roughPath in
+                PickySequentialRoughPath(
+                    roughPath: roughPath,
+                    index: index,
+                    count: paths.count,
+                    progress: effectiveDrawProgress
                 )
-                visiblePath.stroke(
+                .stroke(
                     visualStyle.palette.color,
                     style: StrokeStyle(
-                        lineWidth: PickyAgentAnnotationOverlayStyle.outlineLineWidth,
+                        lineWidth: PickyAgentAnnotationOverlayStyle.roughStrokeLineWidth,
                         lineCap: .round,
                         lineJoin: .round
                     )
@@ -269,13 +265,31 @@ private struct PickyRoughStrokeView: View {
         }
         .onAppear {
             guard !reduceMotion else {
-                hasDrawn = true
+                drawProgress = 1
                 return
             }
             withAnimation(.easeInOut(duration: DS.Animation.slow)) {
-                hasDrawn = true
+                drawProgress = 1
             }
         }
+    }
+}
+
+private struct PickySequentialRoughPath: Shape {
+    let roughPath: PickyRoughPath
+    let index: Int
+    let count: Int
+    var progress: CGFloat
+
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func path(in _: CGRect) -> Path {
+        guard count > 0 else { return Path() }
+        let localProgress = min(max(progress * CGFloat(count) - CGFloat(index), 0), 1)
+        return roughPath.path.trimmedPath(from: 0, to: localProgress)
     }
 }
 
@@ -350,12 +364,14 @@ enum PickyRoughPathCommand: Equatable {
 }
 
 enum PickyAnnotationRoughGeometry {
-    /// Subtle, display-point jitter. This is deliberately not model configurable.
-    static let roughness: CGFloat = 1.2
+    /// Display-point deviation for the largest annotations. Smaller shapes scale
+    /// this down so the sketch texture never obscures the target geometry.
+    static let roughness: CGFloat = 1.6
+    static let passCount = 2
 
     static func linePaths(id: String, start: CGPoint, end: CGPoint) -> [PickyRoughPath] {
-        (0..<2).map { pass in
-            roughLine(id: id, shape: .line, pass: pass, start: start, end: end, overshoot: 0)
+        (0..<passCount).map { pass in
+            roughLine(id: id, shape: .line, seedIndex: pass, start: start, end: end, overshoot: 0)
         }
     }
 
@@ -366,22 +382,24 @@ enum PickyAnnotationRoughGeometry {
             CGPoint(x: rect.maxX, y: rect.maxY),
             CGPoint(x: rect.minX, y: rect.maxY),
         ]
-        return corners.indices.map { index in
-            roughLine(
-                id: id,
-                shape: .rect,
-                pass: index,
-                start: corners[index],
-                end: corners[(index + 1) % corners.count],
-                overshoot: roughness * 0.6
-            )
+        return (0..<passCount).flatMap { pass in
+            corners.indices.map { edge in
+                roughLine(
+                    id: id,
+                    shape: .rect,
+                    seedIndex: pass * corners.count + edge,
+                    start: corners[edge],
+                    end: corners[(edge + 1) % corners.count],
+                    overshoot: roughness * 0.55
+                )
+            }
         }
     }
 
     private static func roughLine(
         id: String,
         shape: PickyAnnotationOverlayShape,
-        pass: Int,
+        seedIndex: Int,
         start: CGPoint,
         end: CGPoint,
         overshoot: CGFloat
@@ -389,21 +407,65 @@ enum PickyAnnotationRoughGeometry {
         let dx = end.x - start.x
         let dy = end.y - start.y
         let length = sqrt(dx * dx + dy * dy)
-        let unit = length > 0 ? CGPoint(x: dx / length, y: dy / length) : .zero
-        let amplitude = min(roughness, max(0.35, length * 0.015))
-        var random = PickySeededRandom(seed: seed(id: id, shape: shape, pass: pass))
-        let adjustedStart = offset(start, by: unit, distance: -overshoot)
-        let adjustedEnd = offset(end, by: unit, distance: overshoot)
-        let control1 = offset(interpolate(adjustedStart, adjustedEnd, factor: 1 / 3), by: random.pointOffset(maximum: amplitude))
-        let control2 = offset(interpolate(adjustedStart, adjustedEnd, factor: 2 / 3), by: random.pointOffset(maximum: amplitude))
+        guard length > 0 else {
+            return PickyRoughPath(commands: [.move(start), .line(end)])
+        }
+
+        let tangent = CGPoint(x: dx / length, y: dy / length)
+        let normal = CGPoint(x: -tangent.y, y: tangent.x)
+        let amplitude = min(roughness, max(0.35, length * 0.02))
+        let boundedOvershoot = min(overshoot, length * 0.05)
+        var random = PickySeededRandom(seed: seed(id: id, shape: shape, pass: seedIndex))
+
+        let adjustedStart = offset(start, by: tangent, distance: -boundedOvershoot)
+        let adjustedEnd = offset(end, by: tangent, distance: boundedOvershoot)
+        let roughStart = jitteredEndpoint(adjustedStart, tangent: tangent, normal: normal, amplitude: amplitude, random: &random)
+        let roughEnd = jitteredEndpoint(adjustedEnd, tangent: tangent, normal: normal, amplitude: amplitude, random: &random)
+        let midpoint = offset(
+            offset(interpolate(roughStart, roughEnd, factor: 0.5), by: tangent, distance: random.offset(maximum: amplitude * 0.12)),
+            by: normal,
+            distance: random.signedMagnitude(minimum: amplitude * 0.35, maximum: amplitude * 0.9)
+        )
+
+        let firstControl1 = controlPoint(from: roughStart, to: midpoint, factor: 0.34, normal: normal, amplitude: amplitude, random: &random)
+        let firstControl2 = controlPoint(from: roughStart, to: midpoint, factor: 0.72, normal: normal, amplitude: amplitude, random: &random)
+        let secondControl1 = controlPoint(from: midpoint, to: roughEnd, factor: 0.28, normal: normal, amplitude: amplitude, random: &random)
+        let secondControl2 = controlPoint(from: midpoint, to: roughEnd, factor: 0.66, normal: normal, amplitude: amplitude, random: &random)
+
         return PickyRoughPath(commands: [
-            .move(offset(adjustedStart, by: random.pointOffset(maximum: amplitude))),
-            .curve(
-                to: offset(adjustedEnd, by: random.pointOffset(maximum: amplitude)),
-                control1: control1,
-                control2: control2
-            ),
+            .move(roughStart),
+            .curve(to: midpoint, control1: firstControl1, control2: firstControl2),
+            .curve(to: roughEnd, control1: secondControl1, control2: secondControl2),
         ])
+    }
+
+    private static func jitteredEndpoint(
+        _ point: CGPoint,
+        tangent: CGPoint,
+        normal: CGPoint,
+        amplitude: CGFloat,
+        random: inout PickySeededRandom
+    ) -> CGPoint {
+        offset(
+            offset(point, by: tangent, distance: random.offset(maximum: amplitude * 0.18)),
+            by: normal,
+            distance: random.offset(maximum: amplitude * 0.55)
+        )
+    }
+
+    private static func controlPoint(
+        from start: CGPoint,
+        to end: CGPoint,
+        factor: CGFloat,
+        normal: CGPoint,
+        amplitude: CGFloat,
+        random: inout PickySeededRandom
+    ) -> CGPoint {
+        offset(
+            interpolate(start, end, factor: factor),
+            by: normal,
+            distance: random.offset(maximum: amplitude * 0.2)
+        )
     }
 
     private static func interpolate(_ start: CGPoint, _ end: CGPoint, factor: CGFloat) -> CGPoint {
@@ -439,8 +501,9 @@ private struct PickySeededRandom {
         CGFloat((nextUnit() * 2 - 1) * Double(maximum))
     }
 
-    mutating func pointOffset(maximum: CGFloat) -> CGPoint {
-        CGPoint(x: offset(maximum: maximum), y: offset(maximum: maximum))
+    mutating func signedMagnitude(minimum: CGFloat, maximum: CGFloat) -> CGFloat {
+        let magnitude = minimum + CGFloat(nextUnit()) * max(0, maximum - minimum)
+        return nextUnit() < 0.5 ? -magnitude : magnitude
     }
 
     private mutating func nextUnit() -> Double {

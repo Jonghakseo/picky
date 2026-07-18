@@ -81,7 +81,7 @@ struct PickyPointerOverlayResolverTests {
         }
     }
 
-    @Test func companionManagerAppliesPointerOverlayEventWithoutSpeaking() {
+    @Test func companionManagerAppliesPointerOverlayEventWithoutSpeaking() async throws {
         let manager = CompanionManager(agentClient: FakePointerClient(), selectionStore: FakePointerSelectionStore())
         let eventRequest = request(
             x: 50,
@@ -93,6 +93,9 @@ struct PickyPointerOverlayResolverTests {
         )
 
         manager.applyAgentEvent(.pointerOverlayRequested(eventRequest))
+        // The interaction coordinator drains events asynchronously, so the pointer
+        // highlight fields land on the next MainActor tick.
+        try await waitUntil { manager.detectedElementScreenLocation == CGPoint(x: 60, y: 95) }
 
         #expect(manager.detectedElementScreenLocation == CGPoint(x: 60, y: 95))
         #expect(manager.detectedElementDisplayFrame == CGRect(x: 10, y: 20, width: 100, height: 100))
@@ -103,7 +106,7 @@ struct PickyPointerOverlayResolverTests {
         #expect(manager.voiceState == .idle)
     }
 
-    @Test func dropsPointerOverlayFromAnOlderCaptureGeneration() {
+    @Test func dropsPointerOverlayFromAnOlderCaptureGeneration() async throws {
         let manager = CompanionManager(agentClient: FakePointerClient(), selectionStore: FakePointerSelectionStore())
         manager.applyAgentEvent(.pointerOverlayRequested(request(
             x: 50,
@@ -113,6 +116,8 @@ struct PickyPointerOverlayResolverTests {
             screenBounds: PickyCGRect(x: 0, y: 0, width: 100, height: 100),
             screenshotSize: PickyPointerScreenshotSize(width: 100, height: 100)
         )))
+        try await waitUntil { manager.detectedElementBubbleText == "Current" }
+        // The stale (older-generation) request is dropped synchronously before dispatch.
         manager.applyAgentEvent(.pointerOverlayRequested(request(
             x: 10,
             y: 10,
@@ -126,7 +131,7 @@ struct PickyPointerOverlayResolverTests {
         #expect(manager.detectedElementScreenLocation == CGPoint(x: 50, y: 75))
     }
 
-    @Test func clearDetectedElementResetsAllHighlightFields() {
+    @Test func clearDetectedElementResetsAllHighlightFields() async throws {
         let manager = CompanionManager(agentClient: FakePointerClient(), selectionStore: FakePointerSelectionStore())
         manager.applyAgentEvent(.pointerOverlayRequested(request(
             x: 50,
@@ -135,6 +140,7 @@ struct PickyPointerOverlayResolverTests {
             screenBounds: PickyCGRect(x: 0, y: 0, width: 200, height: 200),
             screenshotSize: PickyPointerScreenshotSize(width: 200, height: 200)
         )))
+        try await waitUntil { manager.detectedElementHighlightKind == .screenElement }
         #expect(manager.detectedElementHighlightKind == .screenElement)
 
         manager.clearDetectedElementLocation()
@@ -170,7 +176,17 @@ struct PickyPointerOverlayResolverTests {
             screenshotSize: screenshotSize
         )
     }
+
+    private func waitUntil(_ predicate: @escaping @MainActor () -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(1)
+        while !predicate() {
+            guard Date() < deadline else { throw PointerOverlayDrainTimeout() }
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+    }
 }
+
+private struct PointerOverlayDrainTimeout: Error {}
 
 private final class FakePointerClient: PickyAgentClient {
     let events: AsyncStream<PickyClientEvent> = AsyncStream { _ in }

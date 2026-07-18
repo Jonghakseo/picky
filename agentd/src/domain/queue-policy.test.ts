@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PickyQueueItem } from "../protocol.js";
-import { diffQueueRemovedItems, matchPreviousQueueItems, queueItems, sameQueueItems } from "./queue-policy.js";
+import { diffQueueRemovedItems, dropAlreadyMaterializedQueueEntries, matchPreviousQueueItems, queueItems, sameQueueItems, type PendingQueueDelivery } from "./queue-policy.js";
 
 const enqueuedAt = "2026-06-03T00:00:00.000Z";
 
@@ -118,5 +118,54 @@ describe("queue policy", () => {
 
     expect(matched).toEqual([previous[1]]);
     expect([...usedPreviousIndexes]).toEqual([1]);
+  });
+
+  it("drops runtime echoes for deliveries already materialized as user messages", () => {
+    const materialized: PendingQueueDelivery[] = [
+      { id: "delivered", kind: "followUp", text: "same", originatedBy: "user" },
+    ];
+
+    expect(dropAlreadyMaterializedQueueEntries(
+      { steering: [], followUp: ["same"] },
+      [],
+      materialized,
+    )).toEqual({
+      queues: { steering: [], followUp: [] },
+      remainingMaterialized: [],
+    });
+  });
+
+  it("preserves a duplicate runtime entry while an identical delivery is still pending", () => {
+    const pending: PendingQueueDelivery[] = [
+      { id: "pending", kind: "followUp", text: "same", originatedBy: "user" },
+    ];
+    const materialized: PendingQueueDelivery[] = [
+      { id: "delivered", kind: "followUp", text: "same", originatedBy: "user" },
+    ];
+
+    expect(dropAlreadyMaterializedQueueEntries(
+      { steering: [], followUp: ["same", "same"] },
+      pending,
+      materialized,
+    )).toEqual({
+      queues: { steering: [], followUp: ["same"] },
+      remainingMaterialized: [],
+    });
+  });
+
+  it("keeps cross-kind text independent and retains unmatched materialized deliveries", () => {
+    const materialized: PendingQueueDelivery[] = [
+      { id: "steer-same", kind: "steering", text: "same", originatedBy: "user" },
+      { id: "follow-later", kind: "followUp", text: "later", originatedBy: "user" },
+    ];
+
+    expect(dropAlreadyMaterializedQueueEntries(
+      { steering: ["same"], followUp: ["same"] },
+      [],
+      materialized,
+    )).toEqual({
+      queues: { steering: [], followUp: ["same"] },
+      remainingMaterialized: [materialized[1]],
+    });
   });
 });

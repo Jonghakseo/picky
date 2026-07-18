@@ -1,12 +1,13 @@
 /* eslint-disable max-lines -- SessionSupervisor remains the single mutable session owner; scripts/check-architecture-rules.js enforces its no-growth ratchet. */
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { readFileSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, extname, join } from "node:path";
 import { extractChangedFilesFromExplicitText, extractSessionLinkArtifacts } from "./artifact-store.js";
 import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
+import { makeAnnotationOverlayRequestForContext, makePointerOverlayRequestForContext, type MainTurnOverlayContext } from "./application/overlay-context-resolver.js";
+import { awaitPendingRuntimeHandle, createPendingRuntimeHandle } from "./application/pending-runtime-handle.js";
+import { readRecentPinnedSourceState, snapshotPiSessionFile } from "./application/pinned-session-source.js";
+import { TerminalSessionCoordinator } from "./application/terminal-session-coordinator.js";
 import { summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
 import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentPickleCompletionPrompt, buildPicklePrompt, buildSteerPrompt, type BuiltPrompt } from "./prompt-builder.js";
 import type { ModelCycleDirection, PickyActivitySummary, PickyAgentSession, PickyAnnotationOverlayRequest, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyPreparedVisualNarrationVisual, PickyQueueItem, PickyQueueMode, PickySessionMessage, PickyVisualNarrationSegmentIdentity } from "./protocol.js";
@@ -15,9 +16,7 @@ import type { PickyShowAnnotationsRequest, PickyShowAnnotationsResult } from "./
 import { AnnotationDslParser, type AnnotationDslTag } from "./domain/annotation-dsl.js";
 import { NarrationSentenceChunker } from "./domain/narration-sentence-chunker.js";
 import { VisualNarrationSegmentAssembler, type VisualNarrationSegmentAction } from "./domain/visual-narration-segment.js";
-import { readPiSessionInfoName, readPiTerminalSessionMessages } from "./application/pi-session-syncer.js";
-import { PiSessionTailWatcher, type PiSessionTailEntry } from "./application/pi-session-tail-watcher.js";
-import { inferTerminalStatusFromEntries } from "./application/terminal-tail-status.js";
+import { readPiSessionInfoName } from "./application/pi-session-syncer.js";
 import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY } from "./session-store.js";
 import type { SessionStore } from "./session-store.js";
 import type { TaskRouter } from "./task-router.js";
@@ -27,11 +26,10 @@ import { listRewindTargets as rewindListTargets, rewindToEntry as runRewindToEnt
 import { hasActivity, zeroActivitySummary } from "./domain/activity-summary.js";
 import { mergeArtifacts } from "./domain/artifacts.js";
 import { mergeChangedFiles } from "./domain/changed-files.js";
-import { readImageSizeFromBuffer } from "./domain/image-size.js";
-import { clampPointerCoordinates, screenshotSizeFromMetadata, selectPointerScreenshot } from "./domain/pointer-validation.js";
-import { clampAnnotation } from "./domain/annotation-validation.js";
-import { diffQueueRemovedItems, queueItems, sameQueueItems } from "./domain/queue-policy.js";
+import { diffQueueRemovedItems, dropAlreadyMaterializedQueueEntries, queueItems, sameQueueItems, type PendingQueueDelivery } from "./domain/queue-policy.js";
 import { isTerminalStatus } from "./domain/session-status.js";
+import { countSystemMessages, sameTodoState, shouldReattachBlockedSessionOnStartup } from "./domain/session-state-policy.js";
+import { normalizeDslWhitespace, userInputFromLogLine } from "./domain/session-text-policy.js";
 import { HANDOFF_PREFIX, FOLLOWUP_PREFIX, STEER_PREFIX, EXTENSION_ANSWER_PREFIX } from "./domain/log-prefixes.js";
 import { cleanFinalAnswer } from "./domain/session-summary.js";
 import { settleActiveTools } from "./domain/tool-activity.js";
@@ -41,20 +39,12 @@ import { normalizeOptionalString } from "./domain/strings.js";
 import { appendLiveBashOutput, formatUserBashFailureSystemMessage, formatUserBashRunningSystemMessage, formatUserBashSystemMessage, parseUserBashInput, userBashSummary, type UserBashInput } from "./domain/user-bash-format.js";
 import { isCompactSlashCommand, isNonSkillSlashCommand, isNoTurnStateRestoringSlashCommand, isReloadSlashCommand, normalizeSlashCommands } from "./domain/slash-commands.js";
 import { appendUniqueLog, hasPickleSessionMarkerLog, piSessionFilePathForSession, piSessionFilePathFromLogLine, withPiSessionFileFromLogs } from "./domain/pi-session-files.js";
-import { buildPinnedPickleSessionLogs, isPickyHandoffCommandMessage, lastTurns, PINNED_SOURCE_TURN_COUNT, piSessionFilePathFromHandoffTranscript, titleForEmptyPickleSession } from "./domain/pickle-handoff-context.js";
+import { buildPinnedPickleSessionLogs, piSessionFilePathFromHandoffTranscript, titleForEmptyPickleSession } from "./domain/pickle-handoff-context.js";
 import { extractPickyPromptUserInstruction, queueTextMatchesUserText } from "./domain/queue-policy.js";
 import { MAIN_AGENT_COMPACT_SUMMARY_LIMIT, MAIN_AGENT_MESSAGE_LIMIT, MAIN_AGENT_ROLLOVER_CONTEXT_PERCENT, MAIN_AGENT_ROLLOVER_TURN_LIMIT, MAIN_AGENT_SUMMARY_MESSAGE_LIMIT, MAIN_AGENT_SUMMARY_PICKLE_SESSION_LIMIT, normalizeMainAgentState, quickReplyOriginFromContextSource, truncateMainSummaryText, type QuickReplyMetadata } from "./domain/main-agent-policy.js";
 import type { ToolCategory } from "./domain/tool-categorizer.js";
 import { logAgentd } from "./local-log.js";
 import { SessionMessageBuilder } from "./session-message-builder.js";
-
-type PendingQueueDelivery = {
-  id: string;
-  kind: "steering" | "followUp";
-  text: string;
-  originatedBy: "user" | "main_agent";
-  attachedImagesCount?: number;
-};
 
 export interface ReloadPluginsSummary {
   pickyReloaded: boolean;
@@ -87,11 +77,6 @@ interface SessionSupervisorOptions {
 
 const ARCHIVED_SESSION_RETENTION_DAYS = 7;
 const ARCHIVED_SESSION_RETENTION_MS = ARCHIVED_SESSION_RETENTION_DAYS * 24 * 60 * 60 * 1000;
-
-type MainTurnOverlayContext = {
-  context: PickyContextPacket;
-  generation: number;
-};
 
 type MainVisualNarrationSegment = {
   identity: PickyVisualNarrationSegmentIdentity;
@@ -207,13 +192,7 @@ export class SessionSupervisor extends EventEmitter {
   // observed to revert the session back to 'running' after a /name slash command.
   private patchChains = new Map<string, Promise<void>>();
   private mainStateWriteChain = Promise.resolve();
-  // Active JSONL tail watchers for Pickle sessions whose inline TUI / Pi terminal overlay is
-  // currently driving the conversation. The watcher emits new JSONL entries into
-  // `handleTerminalTailEntries`, which infers status transitions (running <-> completed) and
-  // patches the session so the HUD dock icon keeps animating even while the agentd-driven
-  // runtime is idle. Keyed by session id; entries are added/removed via
-  // `setTerminalSessionTailEnabled`.
-  private readonly terminalTailWatchers = new Map<string, PiSessionTailWatcher>();
+  private readonly terminalSessionCoordinator: TerminalSessionCoordinator;
 
   constructor(private readonly runtime: AgentRuntime, private readonly store: SessionStore, private readonly options: SessionSupervisorOptions = {}) {
     super();
@@ -227,6 +206,16 @@ export class SessionSupervisor extends EventEmitter {
       nextSeq: (sessionId) => this.nextSeq(sessionId),
       now: () => new Date().toISOString(),
       syncSessionMessages: async (sessionId, messages) => { await this.syncSessionMessages(sessionId, messages); },
+    });
+    this.terminalSessionCoordinator = new TerminalSessionCoordinator({
+      getSession: (sessionId) => this.sessions.get(sessionId),
+      getSessionOrThrow: (sessionId) => this.mustGet(sessionId),
+      hasRuntimeHandle: (sessionId) => this.runtimeHandles.has(sessionId),
+      detachRuntimeHandle: (sessionId) => this.detachRuntimeHandle(sessionId),
+      patchSession: (sessionId, patch) => this.patch(sessionId, patch),
+      updateTodoState: (sessionId, todoState) => this.updateTodoState(sessionId, todoState),
+      messageRecorder: this.messageBuilder,
+      emitSyncOutcome: (sessionId, outcome) => this.emit("terminalSessionSyncOutcome", sessionId, outcome),
     });
     this.runtimeEventHandler = new RuntimeEventHandler({
       getSession: (sessionId) => this.mustGet(sessionId),
@@ -263,7 +252,7 @@ export class SessionSupervisor extends EventEmitter {
       if (session.piSessionFilePath !== persistedSession.piSessionFilePath || session.notifyMainOnCompletion !== persistedSession.notifyMainOnCompletion) await this.store.save(session);
       if (this.pickleSessionIds.has(session.id)) void this.refreshPickleSessionTitleFromPi(session.id);
 
-      if (isOrphanedChildSessionRecovery(session)) {
+      if (session.logs.includes(ORPHANED_CHILD_SESSION_RECOVERY_LOG)) {
         const interrupted = await this.interruptedRuntimeLiveStatePatch(session.id);
         const current = this.mustGet(session.id);
         // Strip the ORPHANED marker from the persisted logs after we surface the recovery summary
@@ -314,7 +303,7 @@ export class SessionSupervisor extends EventEmitter {
           this.sessions.set(restored.id, restored);
           await this.store.save(restored);
         }
-      } else if (shouldReattachBlockedSessionOnStartup(session)) {
+      } else if (shouldReattachBlockedSessionOnStartup(session, Boolean(piSessionFilePathForSession(session)))) {
         await this.tryResumeRuntimeHandle(session);
       }
     }
@@ -2049,191 +2038,19 @@ export class SessionSupervisor extends EventEmitter {
     }
   }
 
-  /**
-   * Starts/stops a JSONL tail watcher for a Pickle whose Pi terminal overlay or inline TUI is
-   * driving the conversation. While enabled, new JSONL entries from the user-driven `pi --session`
-   * process are inspected to infer status transitions (running <-> completed) so the HUD dock icon
-   * keeps breathing/winking even though the agentd runtime is not the one producing turn events.
-   * Idempotent: enabling an already-watched session, or disabling an unwatched one, is a no-op.
-   */
   async setTerminalSessionTailEnabled(sessionId: string, enabled: boolean): Promise<void> {
-    if (enabled) {
-      if (this.terminalTailWatchers.has(sessionId)) return;
-      const session = this.sessions.get(sessionId);
-      if (!session) {
-        logAgentd("terminal tail skipped", { sessionId, reason: "unknown session" });
-        return;
-      }
-      const sessionFilePath = piSessionFilePathForSession(session);
-      if (!sessionFilePath) {
-        logAgentd("terminal tail skipped", { sessionId, reason: "no pi session file" });
-        return;
-      }
-      const watcher = new PiSessionTailWatcher(
-        sessionFilePath,
-        (entries) => this.handleTerminalTailEntries(sessionId, entries),
-        (error) => logAgentd("terminal tail error", { sessionId, error: error instanceof Error ? error.message : String(error) }),
-        { onTruncate: () => this.handleTerminalTailTruncation(sessionId, sessionFilePath) },
-      );
-      try {
-        await watcher.start();
-        this.terminalTailWatchers.set(sessionId, watcher);
-        logAgentd("terminal tail started", { sessionId, sessionFilePath });
-      } catch (error) {
-        logAgentd("terminal tail start failed", { sessionId, error: error instanceof Error ? error.message : String(error) });
-      }
-      return;
-    }
-    const watcher = this.terminalTailWatchers.get(sessionId);
-    if (!watcher) return;
-    this.terminalTailWatchers.delete(sessionId);
-    await watcher.stop().catch(() => undefined);
-    logAgentd("terminal tail stopped", { sessionId });
-  }
-
-  /**
-   * Invoked by `PiSessionTailWatcher` when the watched JSONL shrinks below its cursor, which
-   * Pi triggers when `pi --session` / `/compact` rewrites the transcript from a TUI overlay
-   * the user opened on top of an active Picky session. The in-memory `runtime.session` bound
-   * inside our `PiSdkRuntimeSession` is now stale (it still references pre-compaction message
-   * ids and parent chains), so we drop it from `runtimeHandles`. The next user input falls
-   * through `runtimeHandleForUserInput` -> `tryResumeRuntimeHandle`, which calls
-   * `runtime.resume(sessionFilePath, ...)` against the rewritten file and rebinds a fresh
-   * in-memory session. Without this, the next follow-up would be sent to the LLM with the
-   * pre-TUI context AND Pi SDK would append the response with a stale `parentId`, orphaning
-   * the compaction summary fork when the user reopens the TUI.
-   *
-   * We deliberately do NOT call `handle.abort()`: the tail watcher is only active while the
-   * TUI overlay is open, the HUD runtime is idle in that window, and `abort()` would emit a
-   * user-visible "Cancelled" status that the user did not request. The orphaned handle is
-   * left to be garbage-collected.
-   */
-  private handleTerminalTailTruncation(sessionId: string, sessionFilePath: string): void {
-    if (!this.runtimeHandles.has(sessionId)) return;
-    void this.detachRuntimeHandle(sessionId);
-    logAgentd("terminal tail invalidated runtime handle after pi session rewrite", { sessionId, sessionFilePath });
+    await this.terminalSessionCoordinator.setTailEnabled(sessionId, enabled);
   }
 
   private invalidateRuntimeHandleAfterTerminalSync(
     sessionId: string,
     outcome: { activeLastMessageId?: string; baselinePiMessageId?: string; importedMessageCount: number },
   ): void {
-    const activeLastMessageId = outcome.activeLastMessageId?.trim();
-    if (!activeLastMessageId) return;
-    const baselinePiMessageId = outcome.baselinePiMessageId?.trim();
-    const activePathAdvanced = baselinePiMessageId
-      ? activeLastMessageId !== baselinePiMessageId
-      : outcome.importedMessageCount > 0;
-    if (!activePathAdvanced) return;
-    if (!this.runtimeHandles.has(sessionId)) return;
-    void this.detachRuntimeHandle(sessionId);
-    logAgentd("terminal session sync invalidated runtime handle after pi session advanced", {
-      sessionId,
-      activeLastMessageId,
-      ...(baselinePiMessageId ? { baselinePiMessageId } : {}),
-      importedMessageCount: outcome.importedMessageCount,
-    });
-  }
-
-  private async handleTerminalTailEntries(sessionId: string, entries: PiSessionTailEntry[]): Promise<void> {
-    if (!this.sessions.has(sessionId)) return;
-    const inferred = inferTerminalStatusFromEntries(entries);
-    if (!inferred) return;
-    const session = this.mustGet(sessionId);
-    if (session.status === inferred) return;
-    // Don't overwrite an explicit user-side cancellation. If the user clicked Stop while the
-    // TUI was open, the cancelled state should stick until the overlay close reconcile
-    // (`syncTerminalSession`) decides what to do with whatever Pi wrote after the cancel.
-    if (session.status === "cancelled" && inferred !== "completed") return;
-    logAgentd("terminal tail status patch", { sessionId, from: session.status, to: inferred });
-    await this.patch(sessionId, { status: inferred });
+    this.terminalSessionCoordinator.invalidateRuntimeHandleAfterSync(sessionId, outcome);
   }
 
   async syncTerminalSession(sessionId: string, baselinePiMessageId?: string): Promise<PickyAgentSession> {
-    const session = this.mustGet(sessionId);
-    const sessionFilePath = piSessionFilePathForSession(session);
-    if (!sessionFilePath) throw new Error(`Session has no Pi session file to sync: ${sessionId}`);
-    logAgentd("terminal session sync requested", { sessionId, sessionFilePath, baselinePiMessageId });
-    const result = await readPiTerminalSessionMessages(sessionFilePath, baselinePiMessageId);
-    if (result.todoStateResolved) {
-      await this.updateTodoState(sessionId, result.todoState);
-    }
-    if (!result.baselineFound) {
-      logAgentd("terminal session sync skipped", { sessionId, reason: "baseline pi message not found", baselinePiMessageId, activeLastMessageId: result.activeLastMessageId });
-      this.emitTerminalSessionSyncOutcome(sessionId, { baselineFound: false, importedMessageCount: 0, activeLastMessageId: result.activeLastMessageId, baselinePiMessageId });
-      return this.mustGet(sessionId);
-    }
-
-    const existingMessages = this.mustGet(sessionId).messages ?? [];
-    const existingIds = new Set(existingMessages.map((message) => message.id));
-    // Skip pi_extension user_text imports that mirror a HUD-originated user_text already
-    // recorded after baseline. Happens when the user sends a HUD follow-up while the terminal
-    // overlay is still open: agentd records the prompt locally AND Pi writes the same prompt
-    // into its JSONL, so the post-close sync would otherwise produce a duplicate bubble labelled
-    // "from Pi extension". Match is scoped to the terminal window (createdAt >= baseline) and
-    // consumes one local entry per import to keep legitimate repeats elsewhere intact.
-    const baselineCreatedAt = result.baselineCreatedAt;
-    const hudUserTextsInWindow = existingMessages
-      .filter((message) => message.kind === "user_text" && message.originatedBy === "user" && typeof message.text === "string" && message.text.trim().length > 0)
-      .filter((message) => !baselineCreatedAt || message.createdAt >= baselineCreatedAt)
-      .map((message) => (message.text ?? "").trim());
-    const hudAgentTextsInWindow = existingMessages
-      .filter((message) => message.kind === "agent_text" && typeof message.text === "string" && message.text.trim().length > 0)
-      .filter((message) => !baselineCreatedAt || message.createdAt >= baselineCreatedAt)
-      .map((message) => (message.text ?? "").trim());
-    const messagesToImport = result.messages.filter((message) => {
-      if (existingIds.has(message.id)) return false;
-      const text = (message.text ?? "").trim();
-      if (!text) return true;
-      if (message.kind === "user_text") {
-        const index = hudUserTextsInWindow.indexOf(text);
-        if (index < 0) return true;
-        hudUserTextsInWindow.splice(index, 1);
-        return false;
-      }
-      if (message.kind === "agent_text") {
-        const index = hudAgentTextsInWindow.indexOf(text);
-        if (index < 0) return true;
-        hudAgentTextsInWindow.splice(index, 1);
-        return false;
-      }
-      return true;
-    });
-    this.invalidateRuntimeHandleAfterTerminalSync(sessionId, {
-      activeLastMessageId: result.activeLastMessageId,
-      baselinePiMessageId,
-      importedMessageCount: messagesToImport.length,
-    });
-    if (messagesToImport.length === 0) {
-      logAgentd("terminal session sync noop", { sessionId, activeLastMessageId: result.activeLastMessageId });
-      this.emitTerminalSessionSyncOutcome(sessionId, { baselineFound: true, importedMessageCount: 0, activeLastMessageId: result.activeLastMessageId, baselinePiMessageId });
-      return this.mustGet(sessionId);
-    }
-
-    await this.messageBuilder.recordTerminalSessionMessages(sessionId, messagesToImport);
-    const latestAssistantText = [...messagesToImport].reverse().find((message) => message.kind === "agent_text")?.text?.trim();
-    const latestUserText = [...messagesToImport].reverse().find((message) => message.kind === "user_text")?.text?.trim();
-    const patch: Partial<PickyAgentSession> = {
-      thinkingPreview: undefined,
-      ...(latestAssistantText ? { lastSummary: latestAssistantText, finalAnswer: latestAssistantText } : {}),
-      ...(latestUserText ? { logs: appendUniqueLog(this.mustGet(sessionId).logs, `${FOLLOWUP_PREFIX}${latestUserText}`) } : {}),
-    };
-    // A terminal overlay resume can be used as a recovery path for terminal Picky states
-    // (notably `cancelled`). If Pi wrote a new assistant answer after the baseline, the
-    // on-disk Pi transcript is now the source of truth and the HUD card should leave the
-    // stale terminal status instead of continuing to look cancelled/failed.
-    if (latestAssistantText) patch.status = "completed";
-    await this.patch(sessionId, patch);
-    logAgentd("terminal session synced", { sessionId, importedMessages: messagesToImport.length, activeLastMessageId: result.activeLastMessageId });
-    this.emitTerminalSessionSyncOutcome(sessionId, { baselineFound: true, importedMessageCount: messagesToImport.length, activeLastMessageId: result.activeLastMessageId, baselinePiMessageId });
-    return this.mustGet(sessionId);
-  }
-
-  private emitTerminalSessionSyncOutcome(
-    sessionId: string,
-    outcome: { baselineFound: boolean; importedMessageCount: number; activeLastMessageId?: string; baselinePiMessageId?: string },
-  ): void {
-    this.emit("terminalSessionSyncOutcome", sessionId, outcome);
+    return this.terminalSessionCoordinator.sync(sessionId, baselinePiMessageId);
   }
 
   async followUp(sessionId: string, text: string, context?: PickyContextPacket): Promise<PickyAgentSession> {
@@ -2495,7 +2312,7 @@ export class SessionSupervisor extends EventEmitter {
 
     const removeOne = (items: readonly PickyQueueItem[]): { items: PickyQueueItem[]; changed: boolean } => {
       const indexById = items.findIndex((item) => item.id === delivery.id);
-      const index = indexById >= 0 ? indexById : items.findIndex((item) => queueItemMatchesDelivery(item, delivery));
+      const index = indexById >= 0 ? indexById : items.findIndex((item) => queueTextMatchesUserText(item.text, delivery.text));
       if (index < 0) return { items: [...items], changed: false };
       const next = [...items];
       next.splice(index, 1);
@@ -2604,61 +2421,23 @@ export class SessionSupervisor extends EventEmitter {
     await (this.queueUpdateChains.get(sessionId) ?? Promise.resolve());
   }
 
-  private dropAlreadyMaterializedQueueEntries(
-    sessionId: string,
-    queues: { steering: readonly string[]; followUp: readonly string[] },
-    pendingDeliveries: readonly PendingQueueDelivery[],
-  ): { steering: string[]; followUp: string[] } {
-    const materialized = this.materializedQueueDeliveries.get(sessionId);
-    if (!materialized || materialized.length === 0) {
-      return { steering: [...queues.steering], followUp: [...queues.followUp] };
-    }
-
-    const pendingCounts = new Map<string, number>();
-    for (const delivery of pendingDeliveries) {
-      const key = `${delivery.kind}\u0000${delivery.text}`;
-      pendingCounts.set(key, (pendingCounts.get(key) ?? 0) + 1);
-    }
-
-    const remainingMaterialized = [...materialized];
-    const dropForKind = (kind: "steering" | "followUp", texts: readonly string[]): string[] => {
-      const result: string[] = [];
-      for (const text of texts) {
-        const key = `${kind}\u0000${text}`;
-        const pendingCount = pendingCounts.get(key) ?? 0;
-        if (pendingCount > 0) {
-          pendingCounts.set(key, pendingCount - 1);
-          result.push(text);
-          continue;
-        }
-
-        const materializedIndex = remainingMaterialized.findIndex((entry) => entry.kind === kind && entry.text === text);
-        if (materializedIndex >= 0) {
-          remainingMaterialized.splice(materializedIndex, 1);
-          continue;
-        }
-        result.push(text);
-      }
-      return result;
-    };
-
-    const steering = dropForKind("steering", queues.steering);
-    const followUp = dropForKind("followUp", queues.followUp);
-    if (remainingMaterialized.length > 0) {
-      this.materializedQueueDeliveries.set(sessionId, remainingMaterialized);
-    } else {
-      this.materializedQueueDeliveries.delete(sessionId);
-    }
-    return { steering, followUp };
-  }
-
   // eslint-disable-next-line complexity -- Queue reconciliation is atomic so persisted items, delivery drains, modes, and emitted sequence numbers stay consistent.
   private async applyQueueUpdateNow(sessionId: string, steering: readonly string[], followUp: readonly string[], steeringMode: PickyQueueMode, followUpMode: PickyQueueMode): Promise<void> {
     if (!this.sessions.has(sessionId)) return;
     const enqueuedAt = new Date().toISOString();
     const current = this.mustGet(sessionId);
     const pendingDeliveries = this.pendingQueueDeliveries.get(sessionId) ?? [];
-    const nextRuntimeQueues = this.dropAlreadyMaterializedQueueEntries(sessionId, { steering, followUp }, pendingDeliveries);
+    const reconciliation = dropAlreadyMaterializedQueueEntries(
+      { steering, followUp },
+      pendingDeliveries,
+      this.materializedQueueDeliveries.get(sessionId) ?? [],
+    );
+    const nextRuntimeQueues = reconciliation.queues;
+    if (reconciliation.remainingMaterialized.length > 0) {
+      this.materializedQueueDeliveries.set(sessionId, reconciliation.remainingMaterialized);
+    } else {
+      this.materializedQueueDeliveries.delete(sessionId);
+    }
     const queuedSteers = queueItems(nextRuntimeQueues.steering, enqueuedAt, current.queuedSteers, pendingDeliveries.filter((entry) => entry.kind === "steering"), randomUUID);
     const queuedFollowUps = queueItems(nextRuntimeQueues.followUp, enqueuedAt, current.queuedFollowUps, pendingDeliveries.filter((entry) => entry.kind === "followUp"), randomUUID);
     const previousSteeringMode = this.lastEmittedSteeringMode.get(sessionId) ?? current.steeringMode ?? "one-at-a-time";
@@ -3103,7 +2882,7 @@ export class SessionSupervisor extends EventEmitter {
     await this.runSessionWrite(sessionId, async () => {
       const session = this.mustGet(sessionId);
       const changedFiles = mergeChangedFiles(session.changedFiles, extractChangedFilesFromExplicitText(line));
-      const userInput = userInputFromLogLine(line);
+      const userInput = userInputFromLogLine(line, [STEER_PREFIX, FOLLOWUP_PREFIX, HANDOFF_PREFIX, EXTENSION_ANSWER_PREFIX]);
       const linkArtifacts = userInput
         ? extractSessionLinkArtifacts(userInput).filter((artifact) => !session.artifacts.some((existing) => existing.url === artifact.url))
         : [];
@@ -3215,147 +2994,4 @@ export class SessionSupervisor extends EventEmitter {
     if (!session) throw new Error(`Unknown session: ${sessionId}`);
     return session;
   }
-}
-
-function normalizeDslWhitespace(text: string): string {
-  return text.replace(/[ \t]{2,}/g, " ");
-}
-
-function userInputFromLogLine(line: string): string | undefined {
-  for (const prefix of [STEER_PREFIX, FOLLOWUP_PREFIX, HANDOFF_PREFIX, EXTENSION_ANSWER_PREFIX]) {
-    if (line.startsWith(prefix)) return line.slice(prefix.length);
-  }
-  return undefined;
-}
-
-function makePointerOverlayRequestForContext(context: PickyContextPacket, request: PickyShowPointerRequest, contextGeneration: number): PickyShowPointerResult["request"] {
-  const screenshot = selectPointerScreenshot(context.screenshots, request);
-  if (!screenshot.bounds) throw new Error(`No display bounds are available for ${screenshot.screenId ?? screenshot.id}.`);
-  const screenshotSize = screenshotSizeFromMetadata(screenshot) ?? readImageSize(screenshot.path);
-  if (!screenshotSize) {
-    throw new Error(`Screenshot pixel coordinates require screenshot dimensions for ${screenshot.screenId ?? screenshot.id}.`);
-  }
-
-  const bounded = clampPointerCoordinates(request, screenshotSize);
-  return {
-    ...makePointerOverlayRequest({ ...request, ...bounded }, {
-      contextId: context.id,
-      contextGeneration,
-      screenId: screenshot.screenId,
-      screenBounds: screenshot.bounds,
-      screenshotSize,
-    }),
-    ...(bounded.clamped ? { clamped: true } : {}),
-  };
-}
-
-function makeAnnotationOverlayRequestForContext(context: PickyContextPacket, request: PickyShowAnnotationsRequest, contextGeneration: number): PickyAnnotationOverlayRequest {
-  const screenshot = selectPointerScreenshot(context.screenshots, { screenId: request.screenId });
-  if (!screenshot.bounds) throw new Error(`No display bounds are available for ${screenshot.screenId ?? screenshot.id}.`);
-  const screenshotSize = screenshotSizeFromMetadata(screenshot) ?? readImageSize(screenshot.path);
-  if (!screenshotSize) {
-    throw new Error(`Screenshot pixel coordinates require screenshot dimensions for ${screenshot.screenId ?? screenshot.id}.`);
-  }
-  const selectedScreenId = screenshot.screenId ?? screenshot.id;
-  const annotations = request.annotations.map((annotation) => clampAnnotation(annotation, screenshotSize));
-  if (request.mode !== "clear" && annotations.length === 0) throw new Error("Annotations are required unless mode is clear.");
-  return {
-    id: `annotations-${randomUUID()}`,
-    mode: request.mode,
-    annotations,
-    contextId: context.id,
-    contextGeneration,
-    screenId: selectedScreenId,
-    screenBounds: screenshot.bounds,
-    screenshotSize,
-  };
-}
-
-function readImageSize(path: string): { width: number; height: number } | undefined {
-  try {
-    return readImageSizeFromBuffer(readFileSync(path));
-  } catch {
-    return undefined;
-  }
-}
-
-function sameTodoState(left: PickyAgentSession["todoState"], right: PickyAgentSession["todoState"]): boolean {
-  if (left === right) return true;
-  if (!left || !right) return false;
-  return left.updatedAt === right.updatedAt && JSON.stringify(left.tasks) === JSON.stringify(right.tasks);
-}
-
-function awaitPendingRuntimeHandle(pending: Promise<RuntimeSessionHandle>, signal?: AbortSignal): Promise<RuntimeSessionHandle> {
-  if (!signal) return pending;
-  if (signal.aborted) return Promise.reject(abortSignalReason(signal));
-  return new Promise<RuntimeSessionHandle>((resolve, reject) => {
-    const onAbort = () => reject(abortSignalReason(signal));
-    signal.addEventListener("abort", onAbort, { once: true });
-    pending.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
-  });
-}
-
-function abortSignalReason(signal: AbortSignal): unknown {
-  return signal.reason ?? new Error("Pending runtime handle wait aborted");
-}
-
-function createPendingRuntimeHandle(): { promise: Promise<RuntimeSessionHandle>; resolve: (handle: RuntimeSessionHandle) => void; reject: (error: unknown) => void } {
-  let resolve!: (handle: RuntimeSessionHandle) => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<RuntimeSessionHandle>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  // The pending handle exists so slash-command requests can await startup; startup failures are
-  // handled by the session creation path, so avoid an unhandled rejection when no request races it.
-  promise.catch(() => undefined);
-  return { promise, resolve, reject };
-}
-
-async function readRecentPinnedSourceState(sessionFilePath: string | undefined): Promise<{ messages: PickySessionMessage[]; todoState?: PickyAgentSession["todoState"] } | undefined> {
-  if (!sessionFilePath) return undefined;
-  try {
-    const result = await readPiTerminalSessionMessages(sessionFilePath);
-    const conversationMessages = result.messages.filter((message) => !isPickyHandoffCommandMessage(message));
-    return {
-      messages: lastTurns(conversationMessages, PINNED_SOURCE_TURN_COUNT),
-      ...(result.todoState ? { todoState: result.todoState } : {}),
-    };
-  } catch {
-    return undefined;
-  }
-}
-
-function shouldReattachBlockedSessionOnStartup(session: PickyAgentSession): boolean {
-  return session.status === "blocked" && session.archived !== true && Boolean(piSessionFilePathForSession(session));
-}
-
-function isOrphanedChildSessionRecovery(session: PickyAgentSession): boolean {
-  return session.logs.includes(ORPHANED_CHILD_SESSION_RECOVERY_LOG);
-}
-
-function queueItemMatchesDelivery(item: PickyQueueItem, delivery: PendingQueueDelivery): boolean {
-  return queueTextMatchesUserText(item.text, delivery.text);
-}
-
-function countSystemMessages(session: PickyAgentSession, text: string): number {
-  return (session.messages ?? []).filter((message) => message.kind === "system" && message.text === text).length;
-}
-
-/**
- * Copy `sourcePath` to a sibling file whose basename is `<newSessionId><ext>`. The copy is a
- * snapshot — bytes are read into memory and the trailing partial line (if any) is dropped before
- * writing, so a forked transcript never starts with a half-written JSON record even when the
- * source is being appended to mid-turn. Returns the absolute destination path.
- */
-async function snapshotPiSessionFile(sourcePath: string, newSessionId: string): Promise<string> {
-  const data = await readFile(sourcePath);
-  const lastNewline = data.lastIndexOf(0x0a /* \n */);
-  const trimmed = lastNewline >= 0 ? data.subarray(0, lastNewline + 1) : data;
-  const directory = dirname(sourcePath);
-  await mkdir(directory, { recursive: true });
-  const extension = extname(sourcePath) || ".jsonl";
-  const destinationPath = join(directory, `${newSessionId}${extension}`);
-  await writeFile(destinationPath, trimmed);
-  return destinationPath;
 }

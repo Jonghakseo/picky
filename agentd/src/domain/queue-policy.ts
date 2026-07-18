@@ -5,6 +5,57 @@ export interface PendingQueueDeliveryIdentity {
   text: string;
 }
 
+export interface MaterializedQueueDeliveryIdentity extends PendingQueueDeliveryIdentity {
+  kind: "steering" | "followUp";
+}
+
+export interface PendingQueueDelivery extends MaterializedQueueDeliveryIdentity {
+  originatedBy: "user" | "main_agent";
+  attachedImagesCount?: number;
+}
+
+export function dropAlreadyMaterializedQueueEntries<T extends MaterializedQueueDeliveryIdentity>(
+  queues: { steering: readonly string[]; followUp: readonly string[] },
+  pendingDeliveries: readonly T[],
+  materializedDeliveries: readonly T[],
+): { queues: { steering: string[]; followUp: string[] }; remainingMaterialized: T[] } {
+  const pendingCounts = new Map<string, number>();
+  for (const delivery of pendingDeliveries) {
+    const key = `${delivery.kind}\u0000${delivery.text}`;
+    pendingCounts.set(key, (pendingCounts.get(key) ?? 0) + 1);
+  }
+
+  const remainingMaterialized = [...materializedDeliveries];
+  const dropForKind = (kind: T["kind"], texts: readonly string[]): string[] => {
+    const result: string[] = [];
+    for (const text of texts) {
+      const key = `${kind}\u0000${text}`;
+      const pendingCount = pendingCounts.get(key) ?? 0;
+      if (pendingCount > 0) {
+        pendingCounts.set(key, pendingCount - 1);
+        result.push(text);
+        continue;
+      }
+
+      const materializedIndex = remainingMaterialized.findIndex((entry) => entry.kind === kind && entry.text === text);
+      if (materializedIndex >= 0) {
+        remainingMaterialized.splice(materializedIndex, 1);
+      } else {
+        result.push(text);
+      }
+    }
+    return result;
+  };
+
+  return {
+    queues: {
+      steering: dropForKind("steering", queues.steering),
+      followUp: dropForKind("followUp", queues.followUp),
+    },
+    remainingMaterialized,
+  };
+}
+
 export function matchPreviousQueueItems(
   nextTexts: readonly string[],
   previous: readonly PickyQueueItem[] | undefined = [],

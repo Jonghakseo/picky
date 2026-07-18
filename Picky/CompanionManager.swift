@@ -14,168 +14,11 @@ import OSLog
 import ScreenCaptureKit
 import SwiftUI
 
-enum CompanionVoiceState {
-    case idle
-    case listening
-    case processing
-    case responding
-}
-
-enum CompanionVoicePromptBubbleState: Equatable {
-    private static let recognizedPromptPreviewCharacterLimit = 280
-
-    case hidden
-    case recognizing
-    case recognized(String)
-
-    var isVisible: Bool {
-        if case .recognized = self { return true }
-        return false
-    }
-
-    var displayText: String {
-        switch self {
-        case .hidden, .recognizing:
-            return ""
-        case .recognized(let prompt):
-            return Self.truncatedPreviewText(for: prompt)
-        }
-    }
-
-    private static func truncatedPreviewText(for prompt: String) -> String {
-        guard prompt.count > recognizedPromptPreviewCharacterLimit else { return prompt }
-
-        let previewEndIndex = prompt.index(prompt.startIndex, offsetBy: recognizedPromptPreviewCharacterLimit)
-        return String(prompt[..<previewEndIndex])
-            .trimmingCharacters(in: .whitespacesAndNewlines) + "…"
-    }
-}
-
-struct CompanionVoicePresentationState: Equatable {
-    let voiceState: CompanionVoiceState
-    let promptBubbleState: CompanionVoicePromptBubbleState
-}
-
 private enum PickySpeechPollResult {
     case speaking
     case finished
     case timedOut
     case inactive
-}
-
-@MainActor
-protocol PickyInteractionTimerScheduling: AnyObject {
-    func schedule(after delay: TimeInterval, operation: @escaping @MainActor () -> Void)
-}
-
-@MainActor
-private final class PickyTaskInteractionTimerScheduler: PickyInteractionTimerScheduling {
-    func schedule(after delay: TimeInterval, operation: @escaping @MainActor () -> Void) {
-        Task { @MainActor in
-            let nanoseconds = UInt64(max(0, delay) * 1_000_000_000)
-            try? await Task.sleep(nanoseconds: nanoseconds)
-            guard !Task.isCancelled else { return }
-            operation()
-        }
-    }
-}
-
-/// The subset of persisted settings that changes the live STT/TTS providers.
-/// Settings saves are global, so unrelated edits (for example the main model)
-/// must not rebuild the voice stack or interrupt an active cursor reply.
-private struct PickyVoiceProviderSettings: Equatable {
-    let sttProvider: PickyVoiceProviderSelection
-    let ttsProvider: PickyVoiceProviderSelection
-    let ttsEnabled: Bool
-    let edgeTTSVoice: String
-    let azureOpenAIEndpoint: String
-    let azureOpenAIAPIKey: String
-    let azureOpenAITTSEndpoint: String
-    let azureOpenAITTSAPIKey: String
-    let azureOpenAITTSVoice: String
-    let azureSTTPreferredLanguage: String
-    let openAITTSAPIKey: String
-    let openAITTSVoice: String
-    let openAITTSModel: String
-    let openAISTTAPIKey: String
-    let openAISTTModel: String
-    let openAISTTPreferredLanguage: String
-    let openAITTSBaseURL: String
-    let openAISTTBaseURL: String
-    let elevenLabsTTSAPIKey: String
-    let elevenLabsTTSVoiceID: String
-    let elevenLabsTTSModel: String
-    let elevenLabsTTSOutputFormat: String
-    let elevenLabsTTSBaseURL: String
-    let elevenLabsSTTAPIKey: String
-    let elevenLabsSTTModel: String
-    let elevenLabsSTTLanguage: String
-
-    init(_ settings: PickySettings) {
-        sttProvider = settings.sttProvider
-        ttsProvider = settings.ttsProvider
-        ttsEnabled = settings.ttsEnabled
-        edgeTTSVoice = settings.edgeTTSVoice
-        azureOpenAIEndpoint = settings.azureOpenAIEndpoint
-        azureOpenAIAPIKey = settings.azureOpenAIAPIKey
-        azureOpenAITTSEndpoint = settings.azureOpenAITTSEndpoint
-        azureOpenAITTSAPIKey = settings.azureOpenAITTSAPIKey
-        azureOpenAITTSVoice = settings.azureOpenAITTSVoice
-        azureSTTPreferredLanguage = settings.azureSTTPreferredLanguage
-        openAITTSAPIKey = settings.openAITTSAPIKey
-        openAITTSVoice = settings.openAITTSVoice
-        openAITTSModel = settings.openAITTSModel
-        openAISTTAPIKey = settings.openAISTTAPIKey
-        openAISTTModel = settings.openAISTTModel
-        openAISTTPreferredLanguage = settings.openAISTTPreferredLanguage
-        openAITTSBaseURL = settings.openAITTSBaseURL
-        openAISTTBaseURL = settings.openAISTTBaseURL
-        elevenLabsTTSAPIKey = settings.elevenLabsTTSAPIKey
-        elevenLabsTTSVoiceID = settings.elevenLabsTTSVoiceID
-        elevenLabsTTSModel = settings.elevenLabsTTSModel
-        elevenLabsTTSOutputFormat = settings.elevenLabsTTSOutputFormat
-        elevenLabsTTSBaseURL = settings.elevenLabsTTSBaseURL
-        elevenLabsSTTAPIKey = settings.elevenLabsSTTAPIKey
-        elevenLabsSTTModel = settings.elevenLabsSTTModel
-        elevenLabsSTTLanguage = settings.elevenLabsSTTLanguage
-    }
-}
-
-enum CompanionVoicePresentationReducer {
-    static func reduce(
-        currentVoiceState: CompanionVoiceState,
-        isKeyboardRecording: Bool,
-        isMicrophoneRecording: Bool,
-        isFinalizingTranscript: Bool,
-        isPreparingToRecord: Bool,
-        isShortcutHeld: Bool,
-        isAwaitingAgentResponse: Bool,
-        recognizedPrompt: String?
-    ) -> CompanionVoicePresentationState {
-        let trimmedPrompt = recognizedPrompt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let promptBubbleState: CompanionVoicePromptBubbleState
-        if isFinalizingTranscript {
-            promptBubbleState = trimmedPrompt.isEmpty ? .hidden : .recognized(trimmedPrompt)
-        } else if isAwaitingAgentResponse {
-            promptBubbleState = trimmedPrompt.isEmpty ? .hidden : .recognized(trimmedPrompt)
-        } else {
-            promptBubbleState = .hidden
-        }
-
-        if currentVoiceState == .responding {
-            return CompanionVoicePresentationState(voiceState: .responding, promptBubbleState: .hidden)
-        }
-        if isShortcutHeld || isKeyboardRecording || isMicrophoneRecording {
-            return CompanionVoicePresentationState(voiceState: .listening, promptBubbleState: promptBubbleState)
-        }
-        if isFinalizingTranscript || isPreparingToRecord {
-            return CompanionVoicePresentationState(voiceState: .processing, promptBubbleState: promptBubbleState)
-        }
-        if isAwaitingAgentResponse {
-            return CompanionVoicePresentationState(voiceState: .processing, promptBubbleState: promptBubbleState)
-        }
-        return CompanionVoicePresentationState(voiceState: .idle, promptBubbleState: .hidden)
-    }
 }
 
 @MainActor
@@ -432,9 +275,23 @@ final class CompanionManager: ObservableObject {
     /// Monotonic marker for observing when queued interaction events have published.
     private(set) var interactionProjectionSequence: UInt64 = 0
     private lazy var interactionCoordinator: PickyInteractionCoordinator = {
+        let effectRunner = CompanionInteractionEffectRunner(
+            manager: self,
+            captureTextContext: { [weak self] in self?.runCaptureTextContextEffect(inputID: $0, text: $1) },
+            submitText: { [weak self] in self?.runSubmitTextEffect(inputID: $0, context: $1, text: $2) },
+            captureVoiceContext: { [weak self] in self?.runCaptureVoiceContextEffect(inputID: $0, transcript: $1, targetSessionID: $2) },
+            submitMain: { [weak self] in self?.runSubmitMainEffect(inputID: $0, transcript: $1, context: $2) },
+            followUpPickle: { [weak self] in self?.runFollowUpPickleEffect(inputID: $0, sessionID: $1, transcript: $2, context: $3) },
+            scheduleMinimumDisplay: { [weak self] in self?.runMinimumDisplayTimerEffect(timerID: $0, speechID: $1, inputID: $2, delay: $3) },
+            speak: { [weak self] in self?.runSpeakEffect(speechID: $0, text: $1, contextID: $2) },
+            prefetchSpeech: { [weak self] in self?.runPrefetchSpeechEffect(text: $0) },
+            stopSpeech: { [weak self] in self?.stopCurrentInteractionSpeech(speechID: $0) },
+            scheduleAnnotationReveal: { [weak self] in self?.runAnnotationRevealEffect(id: $0, delay: $1) },
+            scheduleAnnotationRecoveryExpiry: { [weak self] in self?.runAnnotationRecoveryExpiryEffect(identity: $0, delay: $1) }
+        )
         let coordinator = PickyInteractionCoordinator(
             envelopeMaker: PickyInteractionStaticEnvelopeMaker(),
-            effectRunner: CompanionInteractionEffectRunner(manager: self)
+            effectRunner: effectRunner
         )
         coordinator.onProjectionPublished = { [weak self] sequence, projection in
             self?.interactionProjectionSequence = sequence
@@ -1802,7 +1659,7 @@ final class CompanionManager: ObservableObject {
         completeDirectMessage(inputID: inputID, success: false)
     }
 
-    fileprivate func runCaptureTextContextEffect(inputID: UUID, text: String) {
+    private func runCaptureTextContextEffect(inputID: UUID, text: String) {
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
@@ -1830,7 +1687,7 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    fileprivate func runSubmitTextEffect(inputID: UUID, context: PickyContextPacket, text: String) {
+    private func runSubmitTextEffect(inputID: UUID, context: PickyContextPacket, text: String) {
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
@@ -1852,7 +1709,7 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    fileprivate func runCaptureVoiceContextEffect(inputID: UUID, transcript: String, targetSessionID: String?) {
+    private func runCaptureVoiceContextEffect(inputID: UUID, transcript: String, targetSessionID: String?) {
         currentResponseTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
@@ -1902,7 +1759,7 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    fileprivate func runSubmitMainEffect(inputID: UUID, transcript: String, context: PickyContextPacket) {
+    private func runSubmitMainEffect(inputID: UUID, transcript: String, context: PickyContextPacket) {
         currentResponseTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
@@ -1923,7 +1780,7 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    fileprivate func runFollowUpPickleEffect(inputID: UUID, sessionID: String, transcript: String, context: PickyContextPacket) {
+    private func runFollowUpPickleEffect(inputID: UUID, sessionID: String, transcript: String, context: PickyContextPacket) {
         currentResponseTask = Task { @MainActor [weak self] in
             guard let self else { return }
             let isScreenContextTargetedInput = screenContextVoiceTargetByInputID.removeValue(forKey: inputID) == sessionID
@@ -2010,7 +1867,7 @@ final class CompanionManager: ObservableObject {
         return true
     }
 
-    fileprivate func runAnnotationRevealEffect(id: UUID, delay: TimeInterval) {
+    private func runAnnotationRevealEffect(id: UUID, delay: TimeInterval) {
         interactionTimerScheduler.schedule(after: delay) { [weak self] in
             self?.interactionCoordinator.accept(
                 .agentAnnotationRevealDue(id: id),
@@ -2019,7 +1876,7 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    fileprivate func runAnnotationRecoveryExpiryEffect(identity: PickyAnnotationSceneIdentity, delay: TimeInterval) {
+    private func runAnnotationRecoveryExpiryEffect(identity: PickyAnnotationSceneIdentity, delay: TimeInterval) {
         interactionTimerScheduler.schedule(after: delay) { [weak self] in
             self?.interactionCoordinator.accept(
                 .agentAnnotationRecoveryExpired(identity: identity),
@@ -2028,7 +1885,7 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    fileprivate func runMinimumDisplayTimerEffect(timerID: UUID, speechID: UUID?, inputID: UUID?, delay: TimeInterval) {
+    private func runMinimumDisplayTimerEffect(timerID: UUID, speechID: UUID?, inputID: UUID?, delay: TimeInterval) {
         interactionTimerScheduler.schedule(after: delay) { [weak self] in
             self?.interactionCoordinator.effectCompleted(
                 .minimumDisplayTimerFired(timerID: timerID, speechID: speechID, inputID: inputID),
@@ -2037,7 +1894,7 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    fileprivate func runSpeakEffect(speechID: UUID, text: String, contextID: String?) {
+    private func runSpeakEffect(speechID: UUID, text: String, contextID: String?) {
         deferredInteractionSpeechTask?.cancel()
         deferredInteractionSpeechTask = nil
         // Strip parenthesised supplementary detail right before synthesis so
@@ -2051,7 +1908,7 @@ final class CompanionManager: ObservableObject {
         startOrDeferInteractionSpeech(speechID: speechID, text: spoken, contextID: contextID, requestedAt: Date())
     }
 
-    fileprivate func runPrefetchSpeechEffect(text: String) {
+    private func runPrefetchSpeechEffect(text: String) {
         // Apply the same speech transform runSpeakEffect uses so the warmed
         // audio is keyed by the exact string the provider will later synthesize.
         speechPlaybackProvider.prefetch(stripParentheticalsForSpeech(text))
@@ -3050,7 +2907,7 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    fileprivate func stopCurrentSpeech() {
+    private func stopCurrentSpeech() {
         logSpeech("stop current speech active=\(activeSpeechID?.uuidString ?? "none") interaction=\(interactionSpeechID?.uuidString ?? "none") providerSpeaking=\(speechPlaybackProvider.isSpeaking)")
         reduceVoiceInteraction(.reset)
         activeSpeechID = nil
@@ -3061,7 +2918,7 @@ final class CompanionManager: ObservableObject {
         speechPlaybackProvider.stopSpeaking()
     }
 
-    fileprivate func stopCurrentInteractionSpeech(speechID requestedSpeechID: UUID?) {
+    private func stopCurrentInteractionSpeech(speechID requestedSpeechID: UUID?) {
         // Prefer the speechID the reducer explicitly preempted. Falling back
         // to interactionSpeechID/activeSpeechID covers legacy call sites that
         // didn't know which utterance was active (e.g., voicePressed when no
@@ -3120,84 +2977,4 @@ final class CompanionManager: ObservableObject {
               let urlRange = Range(match.range(at: 1), in: text) else { return nil }
         return URL(string: String(text[urlRange]))
     }
-}
-
-@MainActor
-private final class CompanionInteractionEffectRunner: PickyInteractionEffectRunning {
-    private weak var manager: CompanionManager?
-
-    init(manager: CompanionManager) {
-        self.manager = manager
-    }
-
-    func run(_ effects: [PickyInteractionEffect]) {
-        for effect in effects {
-            switch effect {
-            case .captureTextContext(let inputID, let text):
-                manager?.runCaptureTextContextEffect(inputID: inputID, text: text)
-            case .submitText(let inputID, let context, let text):
-                manager?.runSubmitTextEffect(inputID: inputID, context: context, text: text)
-            case .captureVoiceContext(let inputID, let transcript, let targetSessionID):
-                manager?.runCaptureVoiceContextEffect(inputID: inputID, transcript: transcript, targetSessionID: targetSessionID)
-            case .submitMain(let inputID, let transcript, let context):
-                manager?.runSubmitMainEffect(inputID: inputID, transcript: transcript, context: context)
-            case .followUpPickle(let inputID, let sessionID, let transcript, let context):
-                manager?.runFollowUpPickleEffect(inputID: inputID, sessionID: sessionID, transcript: transcript, context: context)
-            case .scheduleMinimumDisplay(let timerID, let speechID, let inputID, let delay):
-                manager?.runMinimumDisplayTimerEffect(timerID: timerID, speechID: speechID, inputID: inputID, delay: delay)
-            case .speak(let speechID, let text, let contextID):
-                manager?.runSpeakEffect(speechID: speechID, text: text, contextID: contextID)
-            case .prefetchSpeech(let text):
-                manager?.runPrefetchSpeechEffect(text: text)
-            case .stopSpeech(_, let speechID):
-                manager?.stopCurrentInteractionSpeech(speechID: speechID)
-            case .recordContextOwnership, .startDictation, .stopDictation:
-                break
-            case .startPointerAnimation(let target):
-                manager?.startPointerAnimation(target: target)
-            case .setPointerReturnsToCursor(let pointerID, let returnsToCursor):
-                manager?.setPointerReturnsToCursor(pointerID: pointerID, returnsToCursor: returnsToCursor)
-            case .setPointerParksAtTarget(let pointerID, let parksAtTarget):
-                manager?.setPointerParksAtTarget(pointerID: pointerID, parksAtTarget: parksAtTarget)
-            case .advancePointerAnimation(let pointerID):
-                manager?.advancePointerAnimation(pointerID: pointerID)
-            case .cancelPointerAnimation(let pointerID):
-                manager?.cancelPointerAnimation(pointerID: pointerID)
-            case .scheduleAnnotationReveal(let id, let delay):
-                manager?.runAnnotationRevealEffect(id: id, delay: delay)
-            case .scheduleAnnotationRecoveryExpiry(let identity, let delay):
-                manager?.runAnnotationRecoveryExpiryEffect(identity: identity, delay: delay)
-            case .showOverlay, .scheduleTransientHide, .cancelTransientHide:
-                break
-            }
-        }
-    }
-}
-
-/// Removes or neutralizes speech-hostile supplementary detail so the TTS
-/// layer does not try to pronounce URLs, paths, and identifiers. Visible text
-/// keeps the original detail intact.
-func stripParentheticalsForSpeech(_ text: String) -> String {
-    let parentheticalPattern = #"[\(\uFF08][^\(\)\uFF08\uFF09]*[\)\uFF09]"#
-    guard let parentheticalRegex = try? NSRegularExpression(pattern: parentheticalPattern, options: []) else { return text }
-    let range = NSRange(text.startIndex..., in: text)
-    let withoutParentheticals = parentheticalRegex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "")
-
-    let withoutURLs = withoutParentheticals.replacingOccurrences(
-        of: #"(?i)(?:https?://|www\.)[^\s,，。！？!?]+"#,
-        with: "링크",
-        options: .regularExpression
-    )
-    let withoutPaths = withoutURLs.replacingOccurrences(
-        of: #"(?<!\S)(?:~/[^\s,，。！？!?]*|\.{1,2}/[^\s,，。！？!?]*|/[^\s,，。！？!?]+)(?=[\s,，。！？!?]|$)"#,
-        with: "해당 경로",
-        options: .regularExpression
-    )
-    let collapsed = withoutPaths
-        .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-        .replacingOccurrences(of: " ([,.!?。，！？])", with: "$1", options: .regularExpression)
-        .replacingOccurrences(of: "해당 경로 에서", with: "해당 경로에서")
-        .replacingOccurrences(of: "링크 에", with: "링크에")
-        .trimmingCharacters(in: .whitespacesAndNewlines)
-    return collapsed.isEmpty ? text : collapsed
 }

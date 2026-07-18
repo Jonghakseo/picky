@@ -157,6 +157,20 @@ function checkAgentdDomainImports() {
   }
 }
 
+function checkInteractionReducerMutationBoundary() {
+  const allowedFiles = new Set([
+    "Picky/Interaction/PickyInteractionReducer.swift",
+    "Picky/Interaction/PickyInteractionAnnotationReducer.swift",
+  ]);
+  for (const file of walk("Picky", (candidate) => candidate.endsWith(".swift"))) {
+    const relative = rel(file);
+    if (allowedFiles.has(relative)) continue;
+    if (fs.readFileSync(file, "utf8").includes("PickyInteractionReducing")) {
+      addError(`${relative} accesses PickyInteractionReducing; reducer mutation is restricted to the reducer implementation files.`);
+    }
+  }
+}
+
 function checkSecretCodingKeys() {
   const file = "Picky/App/Settings/PickySettings.swift";
   const text = read(file);
@@ -198,11 +212,12 @@ function checkFileSizeRatchet() {
   };
   const allowlist = new Map([
     ["Picky/PickySessionViewModel.swift", 2879],
-    ["Picky/CompanionManager.swift", 3040],
+    ["Picky/CompanionManager.swift", 3000],
+    ["Picky/Interaction/PickyInteractionReducer.swift", 1400],
     ["Picky/Companion/CompanionPanelSettingsView.swift", 2150],
     ["Picky/Overlay/BlueCursorView.swift", 1830],
     ["Picky/App/Settings/PickySettings.swift", 1550],
-    ["agentd/src/session-supervisor.ts", 3283],
+    ["agentd/src/session-supervisor.ts", 3000],
   ]);
 
   const swiftFiles = walk("Picky", (file) => file.endsWith(".swift"));
@@ -231,6 +246,7 @@ function main() {
     checkProtocolParity();
     checkSwiftDomainImports();
     checkAgentdDomainImports();
+    checkInteractionReducerMutationBoundary();
     checkSecretCodingKeys();
     checkFileSizeRatchet();
   }

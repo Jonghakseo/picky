@@ -189,6 +189,7 @@ function buildVisualOverlayDslPrompt(disabledBuiltinTools: ReadonlySet<string>):
     "Use screenshot pixels with a top-left origin and the dimensions supplied for the screenshot. Keep each drawing focused on one spot with a concise label. Picky keeps drawings visible while narration is speaking and clears them when TTS ends; do not add lifetime or timing arguments.",
     "",
     "Every argument is named. Double-quoted label values support \\\" and \\\\ escapes. [SCREEN: id=<screenId>] selects the captured display for following tags; omit it to use the cursor/primary display.",
+    "The `label` argument is optional for POINT, RECT, and LINE; omit it when no text label is needed.",
     "",
     "Pointer:",
     "- [POINT: x=<number> y=<number> r=<number> label=\"short label\"]",

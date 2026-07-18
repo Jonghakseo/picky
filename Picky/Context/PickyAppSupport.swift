@@ -68,9 +68,18 @@ struct PickyAppSupportScreenshotStore: PickyScreenshotStoring {
 
         let id = "shot-\(index + 1)"
         let fileURL = directory.appendingPathComponent("\(id).jpg")
+        var annotationColorSampleGrid = screen.annotationColorSampleGrid
         if let imageData = screen.imageData {
-            let dataToStore = annotatedImageData(from: imageData, inkMarks: screen.inkMarks) ?? imageData
+            let compositedData = annotatedImageData(from: imageData, inkMarks: screen.inkMarks)
+            let dataToStore = compositedData ?? imageData
             try dataToStore.write(to: fileURL, options: .atomic)
+            // User ink is composited into the model-bound screenshot here. Re-sample
+            // only when that composition succeeded; otherwise retain the capture grid
+            // without asking ImageIO to decode a known-invalid fallback payload.
+            if !screen.inkMarks.isEmpty, let compositedData {
+                annotationColorSampleGrid = PickyScreenshotColorSampleGrid.make(from: compositedData)
+                    ?? annotationColorSampleGrid
+            }
         } else if !fileManager.fileExists(atPath: fileURL.path) {
             try Data().write(to: fileURL, options: .atomic)
         }
@@ -84,7 +93,8 @@ struct PickyAppSupportScreenshotStore: PickyScreenshotStoring {
             screenshotWidthInPixels: screen.screenshotWidthInPixels,
             screenshotHeightInPixels: screen.screenshotHeightInPixels,
             isCursorScreen: screen.isCursorScreen,
-            cursor: screen.cursor
+            cursor: screen.cursor,
+            annotationColorSampleGrid: annotationColorSampleGrid
         )
     }
 

@@ -72,6 +72,66 @@ struct PickyContextPacketTests {
         ) == (width: 1440, height: 2560))
     }
 
+    @Test func screenshotColorGridKeepsTopLeftScreenshotCoordinates() throws {
+        let bytes: [UInt8] = [
+            255, 0, 0, 255,     0, 255, 0, 255,
+            0, 0, 255, 255,     255, 255, 255, 255,
+        ]
+        let provider = try #require(CGDataProvider(data: Data(bytes) as CFData))
+        let colorSpace = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        let image = try #require(CGImage(
+            width: 2,
+            height: 2,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: 8,
+            space: colorSpace,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue),
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: false,
+            intent: .defaultIntent
+        ))
+
+        let grid = try #require(PickyScreenshotColorSampleGrid.make(from: image, maximumDimension: 2))
+        let topLeft = grid.samples(
+            nearScreenshotPoints: [CGPoint(x: 0, y: 0)],
+            screenshotSize: CGSize(width: 2, height: 2),
+            neighborRadius: 0
+        )
+        let bottomLeft = grid.samples(
+            nearScreenshotPoints: [CGPoint(x: 0, y: 2)],
+            screenshotSize: CGSize(width: 2, height: 2),
+            neighborRadius: 0
+        )
+
+        #expect(topLeft.first == .init(red: 1, green: 0, blue: 0))
+        #expect(bottomLeft.first == .init(red: 0, green: 0, blue: 1))
+    }
+
+    @Test func annotationColorSamplesStayAppLocalAcrossContextEncoding() throws {
+        let samples = PickyScreenshotColorSampleGrid(
+            width: 1,
+            height: 1,
+            pixels: [.init(red: 1, green: 0, blue: 0)]
+        )!
+        let screenshot = PickyScreenshotContext(
+            id: "shot-1",
+            label: "primary",
+            path: "/tmp/shot.jpg",
+            screenId: "screen1",
+            bounds: PickyCGRect(x: 0, y: 0, width: 100, height: 100),
+            annotationColorSampleGrid: samples
+        )
+
+        let data = try JSONEncoder().encode(screenshot)
+        let json = String(decoding: data, as: UTF8.self)
+        let decoded = try JSONDecoder().decode(PickyScreenshotContext.self, from: data)
+
+        #expect(!json.contains("annotationColorSampleGrid"))
+        #expect(decoded.annotationColorSampleGrid == nil)
+    }
+
     @Test @MainActor func realScreenCaptureIsDisabledInUnitTests() async throws {
         do {
             _ = try await CompanionScreenCaptureUtility.captureScreensAsJPEG(scope: .focusedScreen)

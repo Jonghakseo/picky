@@ -33,6 +33,8 @@ enum PickyAnnotationOverlayResolver {
 
     static func resolve(
         _ request: PickyAnnotationOverlayRequest,
+        sampleGrid: PickyScreenshotColorSampleGrid? = nil,
+        preferredBasePalette: PickyAnnotationPaletteRole? = nil,
         now: Date = Date()
     ) throws -> [PickyAgentAnnotation] {
         guard let screenBounds = request.screenBounds, screenBounds.width > 0, screenBounds.height > 0 else {
@@ -48,8 +50,20 @@ enum PickyAnnotationOverlayResolver {
             width: screenBounds.width,
             height: screenBounds.height
         )
+        let visualStyles = PickyAnnotationPaletteResolver.styles(
+            for: request.annotations,
+            screenshotSize: CGSize(width: screenshotSize.width, height: screenshotSize.height),
+            sampleGrid: sampleGrid,
+            preferredBasePalette: preferredBasePalette
+        )
         return try request.annotations.map { annotation in
-            try resolve(annotation, displayFrame: displayFrame, screenshotSize: screenshotSize, now: now)
+            try resolve(
+                annotation,
+                displayFrame: displayFrame,
+                screenshotSize: screenshotSize,
+                visualStyle: visualStyles[annotation.id] ?? .fallback,
+                now: now
+            )
         }
     }
 
@@ -57,6 +71,7 @@ enum PickyAnnotationOverlayResolver {
         _ annotation: PickyAnnotationOverlayAnnotation,
         displayFrame: CGRect,
         screenshotSize: PickyPointerScreenshotSize,
+        visualStyle: PickyAnnotationVisualStyle,
         now: Date
     ) throws -> PickyAgentAnnotation {
         let xScale = displayFrame.width / screenshotSize.width
@@ -84,6 +99,7 @@ enum PickyAnnotationOverlayResolver {
                 rect: try rect(annotation, displayFrame: displayFrame, xScale: xScale, yScale: yScale),
                 spotlight: annotation.spotlight ?? false,
                 label: normalizedLabel(annotation.label),
+                visualStyle: visualStyle,
                 expiresAt: expiresAt,
                 pendingTTL: ttl
             )
@@ -96,6 +112,7 @@ enum PickyAnnotationOverlayResolver {
                 endPoint: try point(annotation.x2, annotation.y2, "x2", "y2"),
                 spotlight: annotation.spotlight ?? false,
                 label: normalizedLabel(annotation.label),
+                visualStyle: visualStyle,
                 expiresAt: expiresAt,
                 pendingTTL: ttl
             )
@@ -107,6 +124,7 @@ enum PickyAnnotationOverlayResolver {
                 point: try point(annotation.x, annotation.y, "x", "y"),
                 spotlight: false,
                 label: normalizedLabel(annotation.label),
+                visualStyle: visualStyle,
                 expiresAt: expiresAt,
                 pendingTTL: ttl
             )

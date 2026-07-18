@@ -130,6 +130,9 @@ struct PickyScreenshotContext: Codable, Equatable, Identifiable {
     /// screen. displayPoint and screenshotPixel use top-left origin to match
     /// Picky pointer tag coordinate conventions.
     let cursor: PickyCursorContext?
+    /// App-local color samples for annotation contrast. Excluded from Codable so
+    /// the neutral app-agentd context payload remains unchanged.
+    let annotationColorSampleGrid: PickyScreenshotColorSampleGrid?
 
     init(
         id: String,
@@ -140,7 +143,8 @@ struct PickyScreenshotContext: Codable, Equatable, Identifiable {
         screenshotWidthInPixels: Int? = nil,
         screenshotHeightInPixels: Int? = nil,
         isCursorScreen: Bool? = nil,
-        cursor: PickyCursorContext? = nil
+        cursor: PickyCursorContext? = nil,
+        annotationColorSampleGrid: PickyScreenshotColorSampleGrid? = nil
     ) {
         self.id = id
         self.label = label
@@ -151,6 +155,38 @@ struct PickyScreenshotContext: Codable, Equatable, Identifiable {
         self.screenshotHeightInPixels = screenshotHeightInPixels
         self.isCursorScreen = isCursorScreen
         self.cursor = cursor
+        self.annotationColorSampleGrid = annotationColorSampleGrid
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, label, path, screenId, bounds, screenshotWidthInPixels, screenshotHeightInPixels, isCursorScreen, cursor
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        label = try container.decode(String.self, forKey: .label)
+        path = try container.decode(String.self, forKey: .path)
+        screenId = try container.decodeIfPresent(String.self, forKey: .screenId)
+        bounds = try container.decodeIfPresent(PickyCGRect.self, forKey: .bounds)
+        screenshotWidthInPixels = try container.decodeIfPresent(Int.self, forKey: .screenshotWidthInPixels)
+        screenshotHeightInPixels = try container.decodeIfPresent(Int.self, forKey: .screenshotHeightInPixels)
+        isCursorScreen = try container.decodeIfPresent(Bool.self, forKey: .isCursorScreen)
+        cursor = try container.decodeIfPresent(PickyCursorContext.self, forKey: .cursor)
+        annotationColorSampleGrid = nil
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(label, forKey: .label)
+        try container.encode(path, forKey: .path)
+        try container.encodeIfPresent(screenId, forKey: .screenId)
+        try container.encodeIfPresent(bounds, forKey: .bounds)
+        try container.encodeIfPresent(screenshotWidthInPixels, forKey: .screenshotWidthInPixels)
+        try container.encodeIfPresent(screenshotHeightInPixels, forKey: .screenshotHeightInPixels)
+        try container.encodeIfPresent(isCursorScreen, forKey: .isCursorScreen)
+        try container.encodeIfPresent(cursor, forKey: .cursor)
     }
 }
 
@@ -172,6 +208,7 @@ struct PickyScreenContext: Equatable {
     let cursor: PickyCursorContext?
     let inkMarks: [PickyInkMarkContext]
     let imageData: Data?
+    let annotationColorSampleGrid: PickyScreenshotColorSampleGrid?
 
     init(
         label: String,
@@ -181,7 +218,8 @@ struct PickyScreenContext: Equatable {
         isCursorScreen: Bool,
         cursor: PickyCursorContext?,
         inkMarks: [PickyInkMarkContext] = [],
-        imageData: Data?
+        imageData: Data?,
+        annotationColorSampleGrid: PickyScreenshotColorSampleGrid? = nil
     ) {
         self.label = label
         self.frame = frame
@@ -191,6 +229,7 @@ struct PickyScreenContext: Equatable {
         self.cursor = cursor
         self.inkMarks = inkMarks
         self.imageData = imageData
+        self.annotationColorSampleGrid = annotationColorSampleGrid
     }
 }
 

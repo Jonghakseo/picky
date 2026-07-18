@@ -26,6 +26,33 @@ struct CompanionScreenCapture {
     let screenshotWidthInPixels: Int
     let screenshotHeightInPixels: Int
     let cursor: PickyCursorContext?
+    /// App-local downsample used only to choose readable annotation colors.
+    /// The neutral context payload never encodes or sends these pixels.
+    let annotationColorSampleGrid: PickyScreenshotColorSampleGrid?
+
+    init(
+        imageData: Data,
+        label: String,
+        isCursorScreen: Bool,
+        displayWidthInPoints: Int,
+        displayHeightInPoints: Int,
+        displayFrame: CGRect,
+        screenshotWidthInPixels: Int,
+        screenshotHeightInPixels: Int,
+        cursor: PickyCursorContext?,
+        annotationColorSampleGrid: PickyScreenshotColorSampleGrid? = nil
+    ) {
+        self.imageData = imageData
+        self.label = label
+        self.isCursorScreen = isCursorScreen
+        self.displayWidthInPoints = displayWidthInPoints
+        self.displayHeightInPoints = displayHeightInPoints
+        self.displayFrame = displayFrame
+        self.screenshotWidthInPixels = screenshotWidthInPixels
+        self.screenshotHeightInPixels = screenshotHeightInPixels
+        self.cursor = cursor
+        self.annotationColorSampleGrid = annotationColorSampleGrid
+    }
 }
 
 @MainActor
@@ -212,7 +239,8 @@ enum CompanionScreenCaptureUtility {
                 displayFrame: displayFrame,
                 screenshotWidthInPixels: configuration.width,
                 screenshotHeightInPixels: configuration.height,
-                cursor: cursorContext
+                cursor: cursorContext,
+                annotationColorSampleGrid: PickyScreenshotColorSampleGrid.make(from: cgImage)
             ))
         }
 

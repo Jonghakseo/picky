@@ -62,6 +62,73 @@ struct PickyAgentAnnotationOverlayTests {
         #expect(manager.agentAnnotations.count == 1)
         #expect(manager.agentAnnotations.first?.id == "manager-rect")
         #expect(manager.agentAnnotations.first?.rect == CGRect(x: 200, y: 240, width: 20, height: 10))
+        #expect(manager.agentAnnotations.first?.visualStyle == .fallback)
+    }
+
+    @Test func companionManagerUsesTheMatchingCapturedScreenshotSamples() async throws {
+        let manager = CompanionManager(agentClient: FakePickyAgentClient())
+        let sampleGrid = uniformGrid(.init(red: 1, green: 1, blue: 1))
+        let context = PickyContextPacket(
+            id: "context",
+            source: "cli",
+            capturedAt: now,
+            transcript: "show me",
+            selectedText: nil,
+            cwd: nil,
+            activeApp: nil,
+            activeWindow: nil,
+            browser: nil,
+            screenshots: [PickyScreenshotContext(
+                id: "shot-1",
+                label: "primary",
+                path: "/tmp/unused.jpg",
+                screenId: "screen",
+                bounds: PickyCGRect(x: 100, y: 200, width: 200, height: 100),
+                screenshotWidthInPixels: 400,
+                screenshotHeightInPixels: 200,
+                isCursorScreen: true,
+                annotationColorSampleGrid: sampleGrid
+            )],
+            warnings: []
+        )
+        manager.noteExternalSubmission(kind: .submitMain, text: "show me", context: context)
+        manager.applyAgentEvent(.annotationOverlayRequested(request(
+            annotations: [annotation(id: "adaptive", shape: .line, x1: 0, y1: 0, x2: 400, y2: 200)],
+            contextGeneration: 1
+        )))
+        manager.applyAgentEvent(.mainTurnSettled(contextId: "context"))
+
+        try await waitUntil { manager.agentAnnotations.first?.id == "adaptive" }
+
+        #expect(manager.agentAnnotations.first?.visualStyle.palette == .brightViolet)
+    }
+
+    @Test func companionManagerKeepsBasePaletteAcrossSequentialAppendEvents() async throws {
+        let manager = CompanionManager(agentClient: FakePickyAgentClient())
+        let white = PickyScreenshotSampleColor(red: 1, green: 1, blue: 1)
+        let black = PickyScreenshotSampleColor(red: 0, green: 0, blue: 0)
+        let sampleGrid = PickyScreenshotColorSampleGrid(
+            width: 10,
+            height: 10,
+            pixels: Array(repeating: white, count: 50) + Array(repeating: black, count: 50)
+        )!
+        let context = overlayContext(sampleGrid: sampleGrid)
+        manager.noteExternalSubmission(kind: .submitMain, text: "show me", context: context)
+        manager.applyAgentEvent(.annotationOverlayRequested(request(
+            annotations: [annotation(id: "first", shape: .line, x1: 0, y1: 0, x2: 400, y2: 0)],
+            mode: .replace,
+            contextGeneration: 1
+        )))
+        manager.applyAgentEvent(.annotationOverlayRequested(request(
+            annotations: [annotation(id: "second", shape: .line, x1: 0, y1: 200, x2: 400, y2: 200)],
+            mode: .append,
+            contextGeneration: 1
+        )))
+        manager.applyAgentEvent(.mainTurnSettled(contextId: "context"))
+
+        try await waitUntil { manager.agentAnnotations.count == 2 }
+
+        #expect(manager.agentAnnotations.map(\.visualStyle.palette) == [.brightViolet, .brightViolet])
     }
 
     @Test func schedulingExpiryIgnoresPersistingAnnotationsWithoutOverflow() {
@@ -207,7 +274,126 @@ struct PickyAgentAnnotationOverlayTests {
         #expect(first != other)
     }
 
-    @Test func rectLabelsAnchorAboveTheOutlineInsteadOfCoveringItsStroke() {
+    @Test func legacyPersistedAnnotationsDecodeWithFallbackVisualStyle() throws {
+        let data = """
+        {
+          "id":"legacy","shape":"label",
+          "displayFrame":[[0,0],[100,100]],
+          "point":[10,20],"spotlight":false,"label":"Legacy",
+          "expiresAt":1800000000
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(PickyAgentAnnotation.self, from: data)
+
+        #expect(decoded.visualStyle == .fallback)
+    }
+
+    @Test func paletteFallsBackToOverlayBlueAndLightKeylineWithoutScreenshotSamples() throws {
+        let resolved = try PickyAnnotationOverlayResolver.resolve(request(annotations: [
+            annotation(id: "fallback", shape: .line, x1: 0, y1: 0, x2: 100, y2: 100),
+        ]), sampleGrid: nil, now: now)
+
+        #expect(resolved.first?.visualStyle == .fallback)
+        #expect(resolved.first?.visualStyle.palette != .signalMagenta)
+    }
+
+    @Test func paletteChoosesVioletOnLightPixelsAndYellowOnDarkPixels() throws {
+        let lightGrid = uniformGrid(.init(red: 1, green: 1, blue: 1))
+        let darkGrid = uniformGrid(.init(red: 0, green: 0, blue: 0))
+        let request = request(annotations: [
+            annotation(id: "line", shape: .line, x1: 0, y1: 0, x2: 400, y2: 200),
+        ])
+
+        let light = try PickyAnnotationOverlayResolver.resolve(request, sampleGrid: lightGrid, now: now)
+        let dark = try PickyAnnotationOverlayResolver.resolve(request, sampleGrid: darkGrid, now: now)
+
+        #expect(light.first?.visualStyle == .init(palette: .brightViolet, keyline: .dark))
+        #expect(dark.first?.visualStyle == .init(palette: .signalYellow, keyline: .light))
+    }
+
+    @Test func streamedAppendKeepsTheTurnBasePaletteWhenContrastRemainsSufficient() {
+        let first = [annotation(id: "first", shape: .line, x1: 0, y1: 0, x2: 100, y2: 100)]
+        let second = [annotation(id: "second", shape: .line, x1: 0, y1: 0, x2: 100, y2: 100)]
+        let screenshotSize = CGSize(width: 100, height: 100)
+        let lightGrid = uniformGrid(.init(red: 1, green: 1, blue: 1))
+        let darkGrid = uniformGrid(.init(red: 0, green: 0, blue: 0))
+        let basePalette = PickyAnnotationPaletteResolver.basePalette(
+            for: first,
+            screenshotSize: screenshotSize,
+            sampleGrid: lightGrid
+        )
+
+        let appendedStyles = PickyAnnotationPaletteResolver.styles(
+            for: second,
+            screenshotSize: screenshotSize,
+            sampleGrid: darkGrid,
+            preferredBasePalette: basePalette
+        )
+
+        #expect(basePalette == .brightViolet)
+        #expect(appendedStyles["second"]?.palette == .brightViolet)
+    }
+
+    @Test func lowContrastShapeOverridesTheRequestPaletteWithoutChangingOtherShapes() {
+        let white = PickyScreenshotSampleColor(red: 1, green: 1, blue: 1)
+        let overlayBlue = PickyAnnotationPaletteRole.fallbackBlue.sampleColor
+        let grid = PickyScreenshotColorSampleGrid(
+            width: 10,
+            height: 10,
+            pixels: Array(repeating: white, count: 50) + Array(repeating: overlayBlue, count: 50)
+        )!
+        let annotations = [
+            annotation(id: "light", shape: .line, x1: 0, y1: 0, x2: 400, y2: 0),
+            annotation(id: "blue", shape: .line, x1: 0, y1: 200, x2: 400, y2: 200),
+        ]
+
+        let styles = PickyAnnotationPaletteResolver.styles(
+            for: annotations,
+            screenshotSize: CGSize(width: 400, height: 200),
+            sampleGrid: grid
+        )
+
+        #expect(styles["light"]?.palette == .brightViolet)
+        #expect(styles["blue"]?.palette == .signalYellow)
+    }
+
+    @Test func duplicateAnnotationIDsDoNotCrashPaletteFallback() {
+        let duplicates = [
+            annotation(id: "same", shape: .label, x: 10, y: 10, label: "First"),
+            annotation(id: "same", shape: .label, x: 20, y: 20, label: "Second"),
+        ]
+
+        let styles = PickyAnnotationPaletteResolver.styles(
+            for: duplicates,
+            screenshotSize: CGSize(width: 100, height: 100),
+            sampleGrid: nil
+        )
+
+        #expect(styles == ["same": .fallback])
+    }
+
+    @Test func pointerRingClampsItsPaintedBoundsInsideTheScreen() {
+        let center = PickyHighlightGeometry.clampedTargetCenter(
+            CGPoint(x: 0, y: 100),
+            targetSize: .zero,
+            screenSize: CGSize(width: 100, height: 100)
+        )
+
+        #expect(center == CGPoint(x: 16, y: 84))
+    }
+
+    @Test func reduceMotionSkipsPointerTravelAndBubbleDelay() {
+        #expect(!PickyPointerMotionPolicy.shouldAnimateTravel(reduceMotion: true))
+        #expect(!PickyPointerMotionPolicy.shouldAnimateMascot(reduceMotion: true, requested: true))
+        #expect(PickyPointerMotionPolicy.bubbleDismissalDelay(reduceMotion: true) == 0)
+        #expect(PickyPointerMotionPolicy.shouldAnimateTravel(reduceMotion: false))
+        #expect(PickyPointerMotionPolicy.shouldAnimateMascot(reduceMotion: false, requested: true))
+        #expect(!PickyPointerMotionPolicy.shouldAnimateMascot(reduceMotion: false, requested: false))
+        #expect(PickyPointerMotionPolicy.bubbleDismissalDelay(reduceMotion: false) == DS.Animation.fast)
+    }
+
+    @Test func rectLabelsAnchorAboveTheOutlineWithoutLeavingTheScreen() {
         let annotation = PickyAgentAnnotation(
             id: "save-area",
             shape: .rect,
@@ -216,13 +402,19 @@ struct PickyAgentAnnotationOverlayTests {
             label: "Save",
             expiresAt: now
         )
+        let labelSize = CGSize(width: 56, height: 26)
 
-        let anchor = PickyAnnotationLabelGeometry.outlineAnchor(for: annotation, screenFrame: annotation.displayFrame)
+        let anchor = PickyAnnotationLabelGeometry.outlineAnchor(
+            for: annotation,
+            screenFrame: annotation.displayFrame,
+            labelSize: labelSize
+        )
 
-        #expect(anchor == CGPoint(x: 20, y: 36))
+        #expect(anchor == CGPoint(x: 48, y: 29))
+        #expect(labelBounds(center: anchor!, size: labelSize).minX >= 0)
     }
 
-    @Test func rectLabelsFallBackToBottomRightWhenTooCloseToTheTop() {
+    @Test func rectLabelsFallBackBelowWhenTooCloseToTheTop() {
         let annotation = PickyAgentAnnotation(
             id: "top-rect",
             shape: .rect,
@@ -231,11 +423,16 @@ struct PickyAgentAnnotationOverlayTests {
             label: "Top",
             expiresAt: now
         )
+        let labelSize = CGSize(width: 47, height: 26)
 
-        let anchor = PickyAnnotationLabelGeometry.outlineAnchor(for: annotation, screenFrame: annotation.displayFrame)
+        let anchor = PickyAnnotationLabelGeometry.outlineAnchor(
+            for: annotation,
+            screenFrame: annotation.displayFrame,
+            labelSize: labelSize
+        )
 
-        // No room above (rect hugs the top), so the chip drops to the bottom-right.
-        #expect(anchor == CGPoint(x: 26.5, y: 24))
+        #expect(anchor == CGPoint(x: 26.5, y: 31))
+        #expect(labelBounds(center: anchor!, size: labelSize).minY >= 0)
     }
 
     @Test func lineLabelsAnchorLeftOfTheLineWhenThereIsRoom() {
@@ -249,12 +446,16 @@ struct PickyAgentAnnotationOverlayTests {
             expiresAt: now
         )
 
-        let anchor = PickyAnnotationLabelGeometry.outlineAnchor(for: annotation, screenFrame: annotation.displayFrame)
+        let anchor = PickyAnnotationLabelGeometry.outlineAnchor(
+            for: annotation,
+            screenFrame: annotation.displayFrame,
+            labelSize: CGSize(width: 56, height: 26)
+        )
 
         #expect(anchor == CGPoint(x: 44, y: 50))
     }
 
-    @Test func lineLabelsFallBackToTheRightWhenNoRoomOnTheLeft() {
+    @Test func lineLabelsUseAnotherSideInsteadOfClippingAtTheRightEdge() {
         let annotation = PickyAgentAnnotation(
             id: "line-cramped",
             shape: .line,
@@ -264,10 +465,35 @@ struct PickyAgentAnnotationOverlayTests {
             label: "Edge",
             expiresAt: now
         )
+        let labelSize = CGSize(width: 56, height: 26)
 
-        let anchor = PickyAnnotationLabelGeometry.outlineAnchor(for: annotation, screenFrame: annotation.displayFrame)
+        let anchor = PickyAnnotationLabelGeometry.outlineAnchor(
+            for: annotation,
+            screenFrame: annotation.displayFrame,
+            labelSize: labelSize
+        )
 
-        #expect(anchor == CGPoint(x: 186, y: 50))
+        #expect(anchor == CGPoint(x: 80, y: 29))
+        #expect(labelBounds(center: anchor!, size: labelSize).maxX <= annotation.displayFrame.width)
+    }
+
+    @Test func standaloneAndOversizedLabelsClampInsideTheScreen() {
+        let screenSize = CGSize(width: 100, height: 100)
+        let boundedSize = PickyAnnotationLabelGeometry.boundedLabelSize(
+            measuredSize: CGSize(width: 180, height: 30),
+            screenSize: screenSize
+        )
+        let anchor = PickyAnnotationLabelGeometry.clampedAnchor(
+            preferred: CGPoint(x: 2, y: 98),
+            screenSize: screenSize,
+            labelSize: boundedSize
+        )
+
+        #expect(boundedSize == CGSize(width: 80, height: 30))
+        #expect(anchor == CGPoint(x: 42, y: 83))
+        let paintedBounds = labelBounds(center: anchor, size: boundedSize).insetBy(dx: -2, dy: -2)
+        #expect(paintedBounds.minX >= 0 && paintedBounds.maxX <= screenSize.width)
+        #expect(paintedBounds.minY >= 0 && paintedBounds.maxY <= screenSize.height)
     }
 
     @Test func spotlightMaskUsesShapeMatchedHolesAndOmitsPlainAnnotations() {
@@ -334,6 +560,45 @@ struct PickyAgentAnnotationOverlayTests {
         #expect(eventRequest.mode == .append)
         #expect(eventRequest.annotations.first?.shape == .line)
         #expect(eventRequest.annotations.first?.spotlight == true)
+    }
+
+    private func overlayContext(sampleGrid: PickyScreenshotColorSampleGrid) -> PickyContextPacket {
+        PickyContextPacket(
+            id: "context",
+            source: "cli",
+            capturedAt: now,
+            transcript: "show me",
+            selectedText: nil,
+            cwd: nil,
+            activeApp: nil,
+            activeWindow: nil,
+            browser: nil,
+            screenshots: [PickyScreenshotContext(
+                id: "shot-1",
+                label: "primary",
+                path: "/tmp/unused.jpg",
+                screenId: "screen",
+                bounds: PickyCGRect(x: 100, y: 200, width: 200, height: 100),
+                screenshotWidthInPixels: 400,
+                screenshotHeightInPixels: 200,
+                isCursorScreen: true,
+                annotationColorSampleGrid: sampleGrid
+            )],
+            warnings: []
+        )
+    }
+
+    private func uniformGrid(_ color: PickyScreenshotSampleColor) -> PickyScreenshotColorSampleGrid {
+        PickyScreenshotColorSampleGrid(width: 4, height: 4, pixels: Array(repeating: color, count: 16))!
+    }
+
+    private func labelBounds(center: CGPoint, size: CGSize) -> CGRect {
+        CGRect(
+            x: center.x - size.width / 2,
+            y: center.y - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
     }
 
     private func waitUntil(_ predicate: @escaping @MainActor () -> Bool) async throws {

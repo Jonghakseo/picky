@@ -307,6 +307,12 @@ final class CompanionManager: ObservableObject {
     /// guide the user against a newer desktop state.
     private var latestOverlayContextID: String?
     private var latestOverlayContextGeneration = 0
+    /// Exact app-local screenshot samples for the latest overlay context, keyed
+    /// by both screen id and screenshot id. Never serialized to agentd.
+    private var latestOverlayScreenshotsByID: [String: PickyScreenshotContext] = [:]
+    /// Stable base palette for each streamed context-generation/screen. Individual
+    /// shapes may override it only when local contrast falls below the threshold.
+    private var annotationBasePaletteByTurnScreen: [String: PickyAnnotationPaletteRole] = [:]
 
     let buddyDictationManager: BuddyDictationManager
     let globalPushToTalkShortcutMonitor = GlobalPushToTalkShortcutMonitor()
@@ -2371,6 +2377,7 @@ final class CompanionManager: ObservableObject {
 
     private func applyAnnotationOverlayRequest(_ request: PickyAnnotationOverlayRequest) {
         if request.mode == .clear {
+            annotationBasePaletteByTurnScreen.removeAll()
             interactionCoordinator.accept(
                 .agentAnnotationsRequested(mode: .clear, annotations: []),
                 correlation: PickyInteractionCorrelation(source: .agent)
@@ -2379,7 +2386,28 @@ final class CompanionManager: ObservableObject {
         }
         guard shouldApplyOverlay(contextID: request.contextId, generation: request.contextGeneration) else { return }
         do {
-            let annotations = try PickyAnnotationOverlayResolver.resolve(request)
+            let screenshotSize = request.screenshotSize.map { CGSize(width: $0.width, height: $0.height) }
+            let sampleGrid = overlayScreenshot(for: request)?.annotationColorSampleGrid
+            let paletteKey = annotationPaletteKey(for: request)
+            if request.mode == .replace {
+                annotationBasePaletteByTurnScreen[paletteKey] = nil
+            }
+            let basePalette = annotationBasePaletteByTurnScreen[paletteKey]
+                ?? screenshotSize.flatMap {
+                    PickyAnnotationPaletteResolver.basePalette(
+                        for: request.annotations,
+                        screenshotSize: $0,
+                        sampleGrid: sampleGrid
+                    )
+                }
+            let annotations = try PickyAnnotationOverlayResolver.resolve(
+                request,
+                sampleGrid: sampleGrid,
+                preferredBasePalette: basePalette
+            )
+            if let basePalette {
+                annotationBasePaletteByTurnScreen[paletteKey] = basePalette
+            }
             interactionCoordinator.accept(
                 .agentAnnotationsRequested(mode: request.mode, annotations: annotations),
                 correlation: PickyInteractionCorrelation(source: .agent)
@@ -2394,6 +2422,26 @@ final class CompanionManager: ObservableObject {
 
     private func noteMainOverlayContext(_ context: PickyContextPacket) {
         latestOverlayContextID = context.id
+        annotationBasePaletteByTurnScreen.removeAll()
+        latestOverlayScreenshotsByID = context.screenshots.reduce(into: [:]) { result, screenshot in
+            result[screenshot.id] = screenshot
+            if let screenID = screenshot.screenId {
+                result[screenID] = screenshot
+            }
+        }
+    }
+
+    private func annotationPaletteKey(for request: PickyAnnotationOverlayRequest) -> String {
+        "\(request.contextId ?? "none"):\(request.contextGeneration ?? -1):\(request.screenId ?? "default")"
+    }
+
+    private func overlayScreenshot(for request: PickyAnnotationOverlayRequest) -> PickyScreenshotContext? {
+        guard request.contextId == latestOverlayContextID else { return nil }
+        if let screenID = request.screenId, let screenshot = latestOverlayScreenshotsByID[screenID] {
+            return screenshot
+        }
+        return latestOverlayScreenshotsByID.values.first(where: { $0.isCursorScreen == true })
+            ?? latestOverlayScreenshotsByID.values.first
     }
 
     private func shouldApplyOverlay(contextID: String?, generation: Int?) -> Bool {

@@ -273,6 +273,7 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
     var rect: CGRect?
     let spotlight: Bool
     let label: String?
+    let visualStyle: PickyAnnotationVisualStyle
     var expiresAt: Date
     /// Non-nil while the overlay is waiting for the first response audio. Once
     /// audio starts, the reducer converts it into `expiresAt` and clears this value.
@@ -287,6 +288,7 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
         rect: CGRect? = nil,
         spotlight: Bool = false,
         label: String?,
+        visualStyle: PickyAnnotationVisualStyle = .fallback,
         expiresAt: Date,
         pendingTTL: TimeInterval? = nil
     ) {
@@ -298,12 +300,13 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
         self.rect = rect
         self.spotlight = spotlight
         self.label = label
+        self.visualStyle = visualStyle
         self.expiresAt = expiresAt
         self.pendingTTL = pendingTTL
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, shape, displayFrame, point, endPoint, rect, spotlight, label, expiresAt, pendingTTL
+        case id, shape, displayFrame, point, endPoint, rect, spotlight, label, visualStyle, expiresAt, pendingTTL
     }
 
     init(from decoder: Decoder) throws {
@@ -316,6 +319,7 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
         rect = try container.decodeIfPresent(CGRect.self, forKey: .rect)
         spotlight = try container.decodeIfPresent(Bool.self, forKey: .spotlight) ?? false
         label = try container.decodeIfPresent(String.self, forKey: .label)
+        visualStyle = try container.decodeIfPresent(PickyAnnotationVisualStyle.self, forKey: .visualStyle) ?? .fallback
         expiresAt = try container.decode(Date.self, forKey: .expiresAt)
         pendingTTL = try container.decodeIfPresent(TimeInterval.self, forKey: .pendingTTL)
     }

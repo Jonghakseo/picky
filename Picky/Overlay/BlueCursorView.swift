@@ -212,6 +212,7 @@ private struct PickyCursorMascotView: View {
     let voiceState: CompanionVoiceState
     let idleAnimationsEnabled: Bool
     let isStartled: Bool
+    let reduceMotion: Bool
 
     @ViewBuilder
     var body: some View {
@@ -231,12 +232,17 @@ private struct PickyCursorMascotView: View {
     }
 
     private var needsTimelineAnimation: Bool {
+        let requested: Bool
         switch voiceState {
         case .idle:
-            return idleAnimationsEnabled && !isStartled
+            requested = idleAnimationsEnabled && !isStartled
         case .listening, .processing, .responding:
-            return true
+            requested = true
         }
+        return PickyPointerMotionPolicy.shouldAnimateMascot(
+            reduceMotion: reduceMotion,
+            requested: requested
+        )
     }
 
     private func mascotBody(
@@ -372,6 +378,7 @@ private struct PickleTargetCursorMascotView: View {
     let voiceState: CompanionVoiceState
     let idleAnimationsEnabled: Bool
     let isStartled: Bool
+    let reduceMotion: Bool
 
     var body: some View {
         if needsTimelineAnimation {
@@ -389,12 +396,17 @@ private struct PickleTargetCursorMascotView: View {
     }
 
     private var needsTimelineAnimation: Bool {
+        let requested: Bool
         switch voiceState {
         case .idle:
-            idleAnimationsEnabled || isStartled
+            requested = idleAnimationsEnabled || isStartled
         case .listening, .processing, .responding:
-            true
+            requested = true
         }
+        return PickyPointerMotionPolicy.shouldAnimateMascot(
+            reduceMotion: reduceMotion,
+            requested: requested
+        )
     }
 
     private func targetIcon(scale: CGFloat, rotation: Double, processingPulse: Double) -> some View {
@@ -430,7 +442,7 @@ private struct PickleTargetCursorMascotView: View {
         .frame(width: frame, height: frame)
         .scaleEffect(scale)
         .rotationEffect(.degrees(rotation))
-        .animation(.easeInOut(duration: 0.18), value: voiceState)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: voiceState)
     }
 
     private func processingPulse(at time: TimeInterval) -> Double {
@@ -475,6 +487,7 @@ private struct PickleTargetCursorMascotView: View {
 struct BlueCursorView: View {
     let screenFrame: CGRect
     @ObservedObject var companionManager: CompanionManager
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @ObservedObject private var cursorStyleStore = PickyCursorStyleStore.shared
     @ObservedObject private var cursorPreferencesStore = PickyCursorPreferencesStore.shared
     @ObservedObject private var overlayBubblePreferencesStore = PickyOverlayBubblePreferencesStore.shared
@@ -568,7 +581,8 @@ struct BlueCursorView: View {
                 tint: moodColor,
                 voiceState: companionManager.voiceState,
                 idleAnimationsEnabled: cursorPreferencesStore.preferences.enableIdleAnimations,
-                isStartled: isShakeReactionActive
+                isStartled: isShakeReactionActive,
+                reduceMotion: accessibilityReduceMotion
             )
         } else {
             PickyCursorMascotView(
@@ -576,13 +590,15 @@ struct BlueCursorView: View {
                 tint: moodColor,
                 voiceState: companionManager.voiceState,
                 idleAnimationsEnabled: cursorPreferencesStore.preferences.enableIdleAnimations,
-                isStartled: isShakeReactionActive
+                isStartled: isShakeReactionActive,
+                reduceMotion: accessibilityReduceMotion
             )
         }
     }
 
     private var cursorFollowAnimation: Animation? {
-        cursorPreferencesStore.preferences.enableFollowSpringAnimation
+        guard !accessibilityReduceMotion else { return nil }
+        return cursorPreferencesStore.preferences.enableFollowSpringAnimation
             ? .spring(response: 0.3, dampingFraction: 0.65, blendDuration: 0)
             : nil
     }
@@ -613,6 +629,7 @@ struct BlueCursorView: View {
                     bubbleText: companionManager.detectedElementBubbleText,
                     screenSize: CGSize(width: screenFrame.width, height: screenFrame.height)
                 )
+                .id(companionManager.detectedElementPointerID)
                 .allowsHitTesting(false)
                 .transition(.opacity)
                 .animation(.easeOut(duration: 0.18), value: pointerTargetPosition)
@@ -789,8 +806,11 @@ struct BlueCursorView: View {
                     .opacity(navigationBubbleOpacity)
                     .position(cursorBubbleCenter(for: navigationBubbleSize, horizontalGap: 10, verticalGap: 18))
                     .animation(cursorFollowAnimation, value: cursorPosition)
-                    .animation(.spring(response: 0.4, dampingFraction: 0.6), value: navigationBubbleScale)
-                    .animation(.easeOut(duration: 0.5), value: navigationBubbleOpacity)
+                    .animation(
+                        accessibilityReduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.6),
+                        value: navigationBubbleScale
+                    )
+                    .animation(.easeOut(duration: DS.Animation.fast), value: navigationBubbleOpacity)
                     .onPreferenceChange(NavigationBubbleSizePreferenceKey.self) { newSize in
                         navigationBubbleSize = newSize
                     }
@@ -1130,7 +1150,11 @@ struct BlueCursorView: View {
         ) else { return nil }
 
         let localPoint = PickyOverlayGeometry.swiftUICoordinates(for: screenLocation, in: screenFrame)
-        return PickyOverlayGeometry.clamped(localPoint, to: CGSize(width: screenFrame.width, height: screenFrame.height))
+        return PickyHighlightGeometry.clampedTargetCenter(
+            localPoint,
+            targetSize: pointerTargetSizeInThisScreen,
+            screenSize: CGSize(width: screenFrame.width, height: screenFrame.height)
+        )
     }
 
     /// SwiftUI-space size of the highlighted element's bounding box. When the
@@ -1228,6 +1252,12 @@ struct BlueCursorView: View {
         buddyNavigationMode = .navigatingToTarget
         isReturningToCursor = false
 
+        guard PickyPointerMotionPolicy.shouldAnimateTravel(reduceMotion: accessibilityReduceMotion) else {
+            cursorPosition = clampedTarget
+            buddyFlightScale = 1
+            startPointingAtElement(pointerID: pointerID)
+            return
+        }
         animateBezierFlightArc(to: clampedTarget, pointerID: pointerID) {
             guard self.buddyNavigationMode == .navigatingToTarget,
                   self.pointerIsStillActive(pointerID) else { return }
@@ -1322,7 +1352,7 @@ struct BlueCursorView: View {
         navigationBubbleText = ""
         navigationBubbleOpacity = 1.0
         navigationBubbleSize = .zero
-        navigationBubbleScale = 0.5
+        navigationBubbleScale = accessibilityReduceMotion ? 1 : 0.5
 
         // Use custom bubble text from the companion manager when available.
         // if available, otherwise fall back to a random pointer phrase
@@ -1330,7 +1360,7 @@ struct BlueCursorView: View {
             ?? navigationPointerPhrases.randomElement()
             ?? "right here!"
 
-        streamNavigationBubbleCharacter(phrase: pointerPhrase, characterIndex: 0, pointerID: pointerID) {
+        let afterBubblePresented = {
             // All characters streamed — hold for the request duration, then fly back.
             let holdDuration = self.companionManager.detectedElementDisplayDuration ?? PickyPointerOverlayResolver.defaultDuration
             DispatchQueue.main.asyncAfter(deadline: .now() + holdDuration) {
@@ -1340,7 +1370,10 @@ struct BlueCursorView: View {
                     return
                 }
                 self.navigationBubbleOpacity = 0.0
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                let dismissalDelay = PickyPointerMotionPolicy.bubbleDismissalDelay(
+                    reduceMotion: self.accessibilityReduceMotion
+                )
+                DispatchQueue.main.asyncAfter(deadline: .now() + dismissalDelay) {
                     guard self.buddyNavigationMode == .pointingAtTarget,
                           self.pointerIsStillActive(pointerID) else {
                         self.cancelNavigationIfPointerCleared(stalePointerID: pointerID)
@@ -1355,6 +1388,17 @@ struct BlueCursorView: View {
                     }
                 }
             }
+        }
+        if accessibilityReduceMotion {
+            navigationBubbleText = pointerPhrase
+            afterBubblePresented()
+        } else {
+            streamNavigationBubbleCharacter(
+                phrase: pointerPhrase,
+                characterIndex: 0,
+                pointerID: pointerID,
+                onComplete: afterBubblePresented
+            )
         }
     }
 
@@ -1404,6 +1448,12 @@ struct BlueCursorView: View {
         buddyNavigationMode = .navigatingToTarget
         isReturningToCursor = true
 
+        guard PickyPointerMotionPolicy.shouldAnimateTravel(reduceMotion: accessibilityReduceMotion) else {
+            cursorPosition = cursorBuddyPosition(for: effectiveCursorGlobalPoint)
+            buddyFlightScale = 1
+            finishNavigationAndResumeFollowing(pointerID: pointerID)
+            return
+        }
         animateSpringChaseToLiveCursor(pointerID: pointerID) {
             self.finishNavigationAndResumeFollowing(pointerID: pointerID)
         }
@@ -1621,6 +1671,42 @@ private struct VoicePromptCursorBubbleView: View {
     }
 }
 
+enum PickyHighlightGeometry {
+    static let minimumRingRadius: CGFloat = 14
+    static let ringPadding: CGFloat = 4
+    static let keylinePaintInset: CGFloat = 2
+
+    static func ringInnerRadius(targetSize: CGSize) -> CGFloat {
+        max(max(targetSize.width, targetSize.height) / 2 + ringPadding, minimumRingRadius)
+    }
+
+    static func clampedTargetCenter(
+        _ center: CGPoint,
+        targetSize: CGSize,
+        screenSize: CGSize
+    ) -> CGPoint {
+        let paintedRadius = ringInnerRadius(targetSize: targetSize) + keylinePaintInset
+        let horizontalInset = min(paintedRadius, screenSize.width / 2)
+        let verticalInset = min(paintedRadius, screenSize.height / 2)
+        return CGPoint(
+            x: min(max(center.x, horizontalInset), max(horizontalInset, screenSize.width - horizontalInset)),
+            y: min(max(center.y, verticalInset), max(verticalInset, screenSize.height - verticalInset))
+        )
+    }
+}
+
+enum PickyPointerMotionPolicy {
+    static func shouldAnimateTravel(reduceMotion: Bool) -> Bool { !reduceMotion }
+
+    static func shouldAnimateMascot(reduceMotion: Bool, requested: Bool) -> Bool {
+        requested && !reduceMotion
+    }
+
+    static func bubbleDismissalDelay(reduceMotion: Bool) -> TimeInterval {
+        reduceMotion ? 0 : DS.Animation.fast
+    }
+}
+
 // MARK: - Pointer Target Highlight
 
 /// Pi-cursor-blue highlight overlay used when Picky points at something on
@@ -1634,10 +1720,12 @@ private struct PickyHighlightOverlayView: View {
     let bubbleText: String?
     let screenSize: CGSize
 
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var measuredTagSize: CGSize = CGSize(width: 132, height: 22)
+    @State private var arrivalProgress: CGFloat = 1
 
     private var ringInnerRadius: CGFloat {
-        max(max(targetSize.width, targetSize.height) / 2 + 4, 14)
+        PickyHighlightGeometry.ringInnerRadius(targetSize: targetSize)
     }
 
     private var ringOuterRadius: CGFloat { ringInnerRadius + 13 }
@@ -1676,8 +1764,24 @@ private struct PickyHighlightOverlayView: View {
                 .transition(.opacity)
             }
 
+            Circle()
+                .stroke(Color.white.opacity(0.92), lineWidth: 4)
+                .frame(width: ringInnerRadius * 2, height: ringInnerRadius * 2)
+                .position(targetCenter)
+                .opacity(0.35 + 0.65 * arrivalProgress)
+
+            Circle()
+                .stroke(DS.Colors.overlayCursorBlue, lineWidth: 1.6)
+                .frame(width: ringInnerRadius * 2, height: ringInnerRadius * 2)
+                .position(targetCenter)
+                .opacity(0.35 + 0.65 * arrivalProgress)
+
             if let bubbleText, !bubbleText.isEmpty {
-                PickyHighlightTagView(text: bubbleText, tailEdge: tagPlacement.tailEdge)
+                PickyHighlightTagView(
+                    text: bubbleText,
+                    tailEdge: tagPlacement.tailEdge,
+                    maxWidth: max(40, screenSize.width - DS.Spacing.xl * 2)
+                )
                     .background(
                         GeometryReader { proxy in
                             Color.clear.preference(key: PickyHighlightTagSizeKey.self, value: proxy.size)
@@ -1686,6 +1790,8 @@ private struct PickyHighlightOverlayView: View {
                     .offset(x: tagPlacement.topLeading.x, y: tagPlacement.topLeading.y)
             }
         }
+        .onAppear { runArrivalFeedback() }
+        .onChange(of: targetCenter) { _, _ in runArrivalFeedback() }
         .onPreferenceChange(PickyHighlightTagSizeKey.self) { newSize in
             if newSize.width > 0, newSize.height > 0 {
                 measuredTagSize = newSize
@@ -1693,6 +1799,16 @@ private struct PickyHighlightOverlayView: View {
         }
     }
 
+    private func runArrivalFeedback() {
+        guard !accessibilityReduceMotion else {
+            arrivalProgress = 1
+            return
+        }
+        arrivalProgress = 0
+        withAnimation(.easeOut(duration: DS.Animation.fast)) {
+            arrivalProgress = 1
+        }
+    }
 }
 
 private struct PickyHighlightTagSizeKey: PreferenceKey {
@@ -1705,6 +1821,7 @@ private struct PickyHighlightTagSizeKey: PreferenceKey {
 private struct PickyHighlightTagView: View {
     let text: String
     let tailEdge: PickyHighlightTagPlacement.TailEdge
+    let maxWidth: CGFloat
 
     private static let fillColor = Color(red: 230.0 / 255.0, green: 239.0 / 255.0, blue: 255.0 / 255.0)
     private static let textColor = Color(red: 14.0 / 255.0, green: 61.0 / 255.0, blue: 143.0 / 255.0)
@@ -1718,6 +1835,8 @@ private struct PickyHighlightTagView: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(Self.textColor)
                 .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: max(1, maxWidth - 31))
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
@@ -1729,7 +1848,8 @@ private struct PickyHighlightTagView: View {
             PickyHighlightTagShape(tailEdge: tailEdge)
                 .stroke(DS.Colors.overlayCursorBlue, lineWidth: 0.6)
         )
-        .fixedSize()
+        .frame(maxWidth: maxWidth)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 

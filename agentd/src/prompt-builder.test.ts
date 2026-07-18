@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { PICKLE_TOOL_NAMES } from "./application/picky-tool-names.js";
-import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPickleCompletionPrompt, buildMainAgentPrompt, buildMainAgentVisualOverlayGuidance, buildPicklePrompt } from "./prompt-builder.js";
+import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPickleCompletionPrompt, buildMainAgentPrompt, buildPicklePrompt } from "./prompt-builder.js";
 import { PickyContextPacketSchema } from "./protocol.js";
 
 const root = join(process.cwd(), "..", "contracts");
@@ -80,16 +80,6 @@ describe("neutral prompt builder", () => {
     expect(allEnabled.user).not.toContain("[SPOT" + "LIGHT:");
     expect(allEnabled.user).toContain("invisible in the user's transcript");
     expect(overlayDisabled.user).not.toContain("## Picky visual overlay DSL");
-  });
-
-  it("builds visual DSL guidance for resumed sessions unless the overlay is disabled", () => {
-    const enabled = buildMainAgentVisualOverlayGuidance(new Set());
-    const overlayDisabled = buildMainAgentVisualOverlayGuidance(new Set(["picky_screen_overlay"]));
-
-    expect(enabled?.user).toContain("## Picky visual overlay DSL");
-    expect(enabled?.user).toContain("[POINT: x=<number>");
-    expect(enabled?.user).toContain("[RECT: x=<number>");
-    expect(overlayDisabled).toBeUndefined();
   });
 
   it("places the handoff title before Pickle boilerplate so auto-name sees it early", () => {

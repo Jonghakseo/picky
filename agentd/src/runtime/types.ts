@@ -138,12 +138,6 @@ export interface RuntimeSessionHandle {
    * via their session manager so the messages survive a daemon restart.
    */
   injectInitialBootstrap?(messages: { user: string; assistant: string }): Promise<void>;
-  /**
-   * Append a compact synthetic user/assistant pair to an existing resumed
-   * transcript without invoking the model. The supervisor calls this at most
-   * once for each resumed runtime handle.
-   */
-  injectResumeGuidance?(messages: { user: string; assistant: string }): Promise<void>;
   setThinkingLevel?(level: ThinkingLevel): void;
   getAssistantRunMetadata?(): RuntimeAssistantRunMetadata | undefined;
   cycleThinkingLevel?(): RuntimeAssistantRunMetadata | undefined;

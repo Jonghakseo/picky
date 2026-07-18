@@ -8,7 +8,7 @@ import { extractChangedFilesFromExplicitText, extractSessionLinkArtifacts } from
 import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
 import { summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
-import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentPickleCompletionPrompt, buildMainAgentVisualOverlayGuidance, buildPicklePrompt, buildSteerPrompt, type BuiltPrompt } from "./prompt-builder.js";
+import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentPickleCompletionPrompt, buildPicklePrompt, buildSteerPrompt, type BuiltPrompt } from "./prompt-builder.js";
 import type { ModelCycleDirection, PickyActivitySummary, PickyAgentSession, PickyAnnotationOverlayRequest, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-overlay-request.js";
 import type { PickyShowAnnotationsRequest, PickyShowAnnotationsResult } from "./application/annotation-overlay-request.js";
@@ -1329,16 +1329,6 @@ export class SessionSupervisor extends EventEmitter {
     }
   }
 
-  private async injectMainResumeGuidance(handle: RuntimeSessionHandle): Promise<void> {
-    const guidance = buildMainAgentVisualOverlayGuidance(this.disabledBuiltinTools);
-    if (!guidance || !handle.injectResumeGuidance) return;
-    try {
-      await handle.injectResumeGuidance(guidance);
-    } catch (error) {
-      logAgentd("main resume guidance inject failed", { error: error instanceof Error ? error.message : String(error) });
-    }
-  }
-
   private async tryResumeMainHandle(cwd: string, generation = this.mainHandleGeneration): Promise<RuntimeSessionHandle | undefined> {
     const sessionFilePath = this.mainState.sessionFilePath?.trim();
     if (!sessionFilePath || !this.options.mainRuntime?.resume) return undefined;
@@ -1354,7 +1344,6 @@ export class SessionSupervisor extends EventEmitter {
       // reportDiagnostics finds a subscribed listener (matches createPrewarmedMainHandle).
       const attached = this.attachMainHandle(handle, generation);
       await this.patchMainState({ cwd });
-      await this.injectMainResumeGuidance(attached);
       return attached;
     } catch (error) {
       logAgentd("main resume failed", { sessionFilePath, error: error instanceof Error ? error.message : String(error) });

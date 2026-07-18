@@ -4263,7 +4263,7 @@ describe("SessionSupervisor", () => {
     expect(injection.assistant).toBe("OK");
   });
 
-  it("injects visual DSL guidance once when Picky resumes a persisted Pi session", async () => {
+  it("does not append synthetic guidance when Picky resumes a persisted Pi session", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const store = new SessionStore(dir);
     await store.saveMainAgentState({ sessionFilePath: "/tmp/main-pi-session.jsonl", cwd: "/tmp/project", messages: [] });
@@ -4274,8 +4274,7 @@ describe("SessionSupervisor", () => {
     await supervisor.route(context("재시작 후 질문"));
 
     expect(mainRuntime.handle?.bootstrapInjections).toEqual([]);
-    expect(mainRuntime.handle?.resumeGuidanceInjections).toHaveLength(1);
-    expect(mainRuntime.handle?.resumeGuidanceInjections[0]?.user).toContain("## Picky visual overlay DSL");
+    expect(mainRuntime.handle?.followUps).toHaveLength(1);
   });
 
   it("injects the bootstrap pair when the main runtime cannot prewarm and goes straight to create", async () => {
@@ -7009,7 +7008,6 @@ class ManualHandle implements RuntimeSessionHandle {
   queuedFollowUpTexts: string[] = [];
   interrupts: BuiltPrompt[] = [];
   bootstrapInjections: Array<{ user: string; assistant: string }> = [];
-  resumeGuidanceInjections: Array<{ user: string; assistant: string }> = [];
   extensionUiAnswers: Array<{ requestId: string; value: unknown; options?: AnswerExtensionUiOptions }> = [];
   /** Request ids whose runtime-side dialog has already been discarded; mirrors the bridge throwing "Unknown extension UI request". */
   stalePendingRequestIds = new Set<string>();
@@ -7098,9 +7096,6 @@ class ManualHandle implements RuntimeSessionHandle {
   }
   async injectInitialBootstrap(messages: { user: string; assistant: string }): Promise<void> {
     this.bootstrapInjections.push(messages);
-  }
-  async injectResumeGuidance(messages: { user: string; assistant: string }): Promise<void> {
-    this.resumeGuidanceInjections.push(messages);
   }
   setThinkingLevel(level: ThinkingLevel): void {
     this.thinkingLevels.push(level);

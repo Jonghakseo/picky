@@ -34,6 +34,18 @@ describe("AnnotationDslParser", () => {
     ]);
   });
 
+  it("treats empty and whitespace-only labels as omitted", () => {
+    const parser = new AnnotationDslParser();
+    const result = parser.feed('[POINT: x=1 y=2 label=""] [RECT: x=3 y=4 w=5 h=6 label="   "] [LINE: x1=7 y1=8 x2=9 y2=10 label=""]');
+
+    expect(result.completedTags).toEqual([
+      { kind: "point", x: 1, y: 2 },
+      { kind: "annotation", annotation: { id: "dsl-1", shape: "rect", x: 3, y: 4, w: 5, h: 6 } },
+      { kind: "annotation", annotation: { id: "dsl-2", shape: "line", x1: 7, y1: 8, x2: 9, y2: 10 } },
+    ]);
+    expect(result.droppedTags).toEqual([]);
+  });
+
   it("heals truthy spotlight values and ignores unknown bare arguments deterministically", () => {
     const parser = new AnnotationDslParser();
     const result = parser.feed("[RECT: x=1 y=2 w=3 h=4 spotlight=on extraneous]");

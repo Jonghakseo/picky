@@ -435,7 +435,9 @@ function optionalBoolean(args: Record<string, ParsedValue>, key: string, heals: 
 
 function optionalText(args: Record<string, ParsedValue>, key: string, heals: Set<HealReason>): string | undefined | null {
   if (!(key in args)) return undefined;
-  return textValue(args[key], heals);
+  const value = textValue(args[key], heals);
+  if (value === null) return null;
+  return value.trim() ? value : undefined;
 }
 
 function textValue(value: ParsedValue | undefined, heals: Set<HealReason>): string | null {

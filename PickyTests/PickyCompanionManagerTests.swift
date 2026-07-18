@@ -969,6 +969,46 @@ struct PickyCompanionManagerTests {
         }
     }
 
+    @Test func daemonErrorClearsResidentVisualNarrationAndProgressiveBubble() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider
+        )
+        let identity = visualNarrationIdentity(segmentID: "segment-error", ordinal: 0)
+
+        manager.applyAgentEvent(.mainVisualNarrationSegmentPrepared(
+            PickyVisualNarrationSegmentPreparedEvent(
+                identity: identity,
+                visual: .point(visualNarrationPointRequest(id: "point-error"))
+            )
+        ))
+        manager.applyAgentEvent(.mainVisualNarrationSegmentSentence(
+            PickyVisualNarrationSegmentSentenceEvent(
+                identity: identity,
+                index: 0,
+                text: "진행 중 문장.",
+                originSource: .voice,
+                replyKind: .main,
+                sessionId: nil
+            )
+        ))
+        try await waitUntil {
+            manager.hasActiveVisualNarration && manager.isProgressiveResponseVisible
+        }
+
+        // A terminal protocol error mid-response must clear the resident visual turn
+        // and progressive bubble instead of leaving them stuck until the next reply.
+        manager.applyAgentEvent(.error(PickyErrorEvent(code: "stream_failed", message: "agent stream failed", commandId: nil)))
+
+        try await waitUntil {
+            !manager.hasActiveVisualNarration
+                && !manager.isProgressiveResponseVisible
+                && manager.agentAnnotations.isEmpty
+        }
+    }
+
     @Test func incrementalVisualNarrationKeepsFutureSegmentBufferedUntilItsSpeechStarts() async throws {
         let speechProvider = FakeSpeechPlaybackProvider()
         speechProvider.supportsIncrementalPlayback = true

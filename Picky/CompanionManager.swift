@@ -2171,6 +2171,20 @@ final class CompanionManager: ObservableObject {
     }
 
     @discardableResult
+    /// Clear resident overlay, progressive, and visual-narration state when the daemon
+    /// connection drops or reports a terminal protocol error mid-response. Reuses the
+    /// local session-reset cleanup (annotations, progressive narration, active visual
+    /// turn, queued speech, speaking output) but does NOT clear persisted messages or
+    /// send a daemon command, so a later reconnect keeps the transcript intact.
+    private func clearInteractionStateForConnectionLoss() {
+        annotationSceneMonitor?.stop()
+        activeAnnotationSceneIdentity = nil
+        interactionCoordinator.accept(
+            .mainAgentSessionReset,
+            correlation: PickyInteractionCorrelation(source: .system)
+        )
+    }
+
     func resetMainAgentSession() async -> Bool {
         guard !isResettingMainAgentSession else { return false }
         isResettingMainAgentSession = true
@@ -2249,7 +2263,10 @@ final class CompanionManager: ObservableObject {
                 case .recoverableError(let message):
                     await MainActor.run { self.finishAwaitingAgentResponse(visibleText: "Agent event error: \(message)", spokenText: nil) }
                 case .disconnected:
-                    await MainActor.run { self.finishAwaitingAgentResponse(visibleText: "picky-agentd disconnected", spokenText: nil) }
+                    await MainActor.run {
+                        self.finishAwaitingAgentResponse(visibleText: "picky-agentd disconnected", spokenText: nil)
+                        self.clearInteractionStateForConnectionLoss()
+                    }
                 case .connected:
                     await MainActor.run {
                         self.latestAgentSessionSummary = "picky-agentd connected"
@@ -2313,6 +2330,7 @@ final class CompanionManager: ObservableObject {
             applyAnnotationOverlayRequest(request)
         case .error(let error):
             finishAwaitingAgentResponse(visibleText: error.message, spokenText: nil)
+            clearInteractionStateForConnectionLoss()
         case .hello, .sessionSnapshot, .artifactUpdated, .slashCommandsSnapshot,
              .autocompleteCapabilitiesSnapshot, .autocompleteSuggestionsSnapshot, .autocompleteCompletionApplied,
              .rewindTargetsSnapshot, .sessionRewound, .unknown,

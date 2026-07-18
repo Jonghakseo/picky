@@ -4454,6 +4454,45 @@ describe("SessionSupervisor", () => {
     expect(replies).toContainEqual({ contextId: pickleSession.id, text: "피클 작업 마쳤어요" });
   });
 
+  // Regression: a suppressed handoff turn may still stream prose, which leaks as
+  // progressive narration on the app. If the terminal only consumes the suppress
+  // flag without settling, that leaked cursor bubble stays resident. The suppress
+  // branch must emit `mainTurnSettled` so the app clears it.
+  it("settles a suppressed handoff turn so a leaked progressive bubble clears", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const sideRuntime = new ManualRuntime();
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), { mainRuntime });
+    const replies: Array<{ contextId: string; text: string }> = [];
+    const narrationChunks: string[] = [];
+    const settledContexts: string[] = [];
+    supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
+    supervisor.on("mainNarrationChunk", (chunk) => narrationChunks.push(chunk.text));
+    supervisor.on("mainTurnSettled", (contextId) => settledContexts.push(contextId));
+
+    const userCtx = context("작업 위임해줘");
+    await supervisor.route(userCtx);
+    mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Running" });
+    await settle();
+
+    supervisor.announceMainHandoff(userCtx.id, "위임할게요");
+    await settle();
+
+    // The suppressed turn keeps streaming prose, which leaks as progressive narration.
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "위임 준비 중이에요. " });
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    // The leak really happened (a narration sentence was emitted) ...
+    expect(narrationChunks).toContain("위임 준비 중이에요.");
+    // ... the streamed prose was NOT emitted as a final quickReply (suppressed) ...
+    expect(replies.filter((entry) => entry.contextId === userCtx.id)).toEqual([
+      { contextId: userCtx.id, text: "위임할게요" },
+    ]);
+    // ... and the turn settled so the app clears the leaked progressive bubble.
+    expect(settledContexts).toContain(userCtx.id);
+  });
+
   // Regression for the `/diff-review` follow-up: the previous fix synthesized a `completed`
   // runtime status with `noTurnRan: true` so the HUD spinner clears, but the Pickle session must
   // NOT also notify Picky (no real turn produced any progress). RuntimeEventHandler

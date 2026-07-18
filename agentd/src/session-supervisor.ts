@@ -1533,6 +1533,11 @@ export class SessionSupervisor extends EventEmitter {
         const rawReply = cleanFinalAnswer(this.mainAnnotationDslTagSeen ? normalizeDslWhitespace(draftSnapshot) : draftSnapshot) ?? (event.status === "failed" ? event.summary : undefined);
         if (this.suppressNextMainReply) {
           this.suppressNextMainReply = false;
+          // The reply is intentionally dropped (e.g. after a handoff ack), but any
+          // prose the turn streamed already emitted progressive narration/visual
+          // events. Settle the turn so the app clears that leaked bubble instead of
+          // leaving it resident until the next reply.
+          this.emit("mainTurnSettled", this.mainReplyContextId);
         } else if (rawReply) {
           const reply = cleanFinalAnswer(rawReply);
           if (reply) {

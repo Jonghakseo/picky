@@ -452,7 +452,6 @@ final class CompanionManager: ObservableObject {
     /// Scheduled hide for transient cursor mode — cancelled if the user
     /// speaks again before the delay elapses.
     private var transientHideTask: Task<Void, Never>?
-    private var annotationExpiryTask: Task<Void, Never>?
     private var responseStateTask: Task<Void, Never>?
     private var deferredInteractionSpeechTask: Task<Void, Never>?
     private var deferredFinishAwaitingAgentResponseTask: Task<Void, Never>?
@@ -681,8 +680,6 @@ final class CompanionManager: ObservableObject {
         buddyDictationManager.cancelCurrentDictation()
         overlayWindowManager.hideOverlay()
         transientHideTask?.cancel()
-        annotationExpiryTask?.cancel()
-        annotationExpiryTask = nil
 
         currentResponseTask?.cancel()
         currentResponseTask = nil
@@ -1643,7 +1640,6 @@ final class CompanionManager: ObservableObject {
         isSendingDirectMessage = projection.hasPendingTextSubmission
         isWaitingForCursorResponse = projection.isWaitingForCursorResponse
         agentAnnotations = projection.agentAnnotations
-        scheduleAnnotationExpiryIfNeeded(for: projection.agentAnnotations)
         setInteractionOverlayReasons(from: projection.state.overlay)
 
         switch projection.state.output {
@@ -2272,10 +2268,6 @@ final class CompanionManager: ObservableObject {
         let owner = interactionOwner(for: reply.contextId)
         let originSource = reply.originSource ?? owner.map { $0.isVoiceOwned ? .voice : .text }
         let replyKind = reply.replyKind ?? .main
-        interactionCoordinator.accept(
-            .agentAnnotationsStartTTL(now: Date()),
-            correlation: PickyInteractionCorrelation(contextID: reply.contextId, sessionID: reply.sessionId, source: .agent)
-        )
         if reply.didStreamNarration == true {
             interactionCoordinator.accept(
                 .streamedQuickReplyFinal(
@@ -2463,34 +2455,6 @@ final class CompanionManager: ObservableObject {
         latestOverlayContextID = contextID
         latestOverlayContextGeneration = generation
         return true
-    }
-
-    func scheduleAnnotationExpiryIfNeeded(for annotations: [PickyAgentAnnotation]) {
-        annotationExpiryTask?.cancel()
-        annotationExpiryTask = nil
-        // Only annotations whose ttl has been activated (pendingTTL == nil) carry a real
-        // expiry. Annotations still lingering through narration use a far-future sentinel
-        // (`expiresAt == .distantFuture`); converting that delay to UInt64 nanoseconds
-        // overflows and crashes, so those must be skipped entirely.
-        guard let expiresAt = annotations.lazy.filter({ $0.pendingTTL == nil }).map(\.expiresAt).min() else {
-            return
-        }
-        let delay = max(0, expiresAt.timeIntervalSinceNow)
-        // Defensive: never convert a non-finite or absurdly large delay to nanoseconds.
-        guard delay.isFinite, delay < 86_400 else { return }
-        let nanoseconds = UInt64(delay * 1_000_000_000)
-        annotationExpiryTask = Task { [weak self] in
-            if nanoseconds > 0 {
-                try? await Task.sleep(nanoseconds: nanoseconds)
-            }
-            guard !Task.isCancelled else { return }
-            await MainActor.run { [weak self] in
-                self?.interactionCoordinator.accept(
-                    .agentAnnotationsExpired(now: Date()),
-                    correlation: PickyInteractionCorrelation(source: .system)
-                )
-            }
-        }
     }
 
     private func updatePassiveAgentSummary(_ summary: String) {

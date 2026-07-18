@@ -1,6 +1,6 @@
 import type { AnnotationInput } from "./annotation-validation.js";
 
-const KNOWN_VERBS = ["POINT", "RECT", "LINE", "LABEL", "SCREEN"] as const;
+const KNOWN_VERBS = ["POINT", "RECT", "LINE", "SCREEN"] as const;
 type KnownVerb = typeof KNOWN_VERBS[number];
 
 /** Matches a complete DSL opener; partial openers are handled incrementally below. */
@@ -14,7 +14,6 @@ const HEAL_ORDER = [
   "numeric px unit",
   "rounded float",
   "boolean value",
-  "default ttl",
   "duplicate key last-wins",
   "unknown key ignored",
 ] as const;
@@ -26,7 +25,6 @@ export interface AnnotationDslPointTag {
   y: number;
   r?: number;
   label?: string;
-  ttlMs: number;
   screenId?: string;
 }
 
@@ -172,8 +170,6 @@ export class AnnotationDslParser {
       return { tag: { kind: "screen", screenId } };
     }
 
-    const ttlMs = ttlFrom(args, heals);
-    if (ttlMs === undefined) return { error: `${verb} has invalid ttl` };
     const label = optionalText(args, "label", heals);
     if (label === null) return { error: `${verb} has invalid label` };
     const screenId = this.screenId;
@@ -193,7 +189,7 @@ export class AnnotationDslParser {
       if (!fields) return { error: "POINT requires x and y" };
       const r = optionalNumber(args, "r", heals);
       if (r === null) return { error: "POINT has invalid r" };
-      return { tag: { kind: "point", x: fields.x!, y: fields.y!, ...(r === undefined ? {} : { r }), ...(label === undefined ? {} : { label }), ttlMs, ...(screenId ? { screenId } : {}) } };
+      return { tag: { kind: "point", x: fields.x!, y: fields.y!, ...(r === undefined ? {} : { r }), ...(label === undefined ? {} : { label }), ...(screenId ? { screenId } : {}) } };
     }
 
     const spotlight = verb === "RECT" || verb === "LINE"
@@ -206,20 +202,13 @@ export class AnnotationDslParser {
       case "RECT": {
         const fields = required("x", "y", "w", "h");
         if (!fields) return { error: "RECT requires x, y, w, and h" };
-        annotation = { ...this.annotationBase("rect", ttlMs, label), ...fields, ...(spotlight === undefined ? {} : { spotlight }) };
+        annotation = { ...this.annotationBase("rect", label), ...fields, ...(spotlight === undefined ? {} : { spotlight }) };
         break;
       }
       case "LINE": {
         const fields = required("x1", "y1", "x2", "y2");
         if (!fields) return { error: "LINE requires x1, y1, x2, and y2" };
-        annotation = { ...this.annotationBase("line", ttlMs, label), ...fields, ...(spotlight === undefined ? {} : { spotlight }) };
-        break;
-      }
-      case "LABEL": {
-        const fields = required("x", "y");
-        const text = requiredText(args, "text", heals);
-        if (!fields || text === undefined) return { error: "LABEL requires x, y, and text" };
-        annotation = { ...this.annotationBase("label", ttlMs, text), ...fields };
+        annotation = { ...this.annotationBase("line", label), ...fields, ...(spotlight === undefined ? {} : { spotlight }) };
         break;
       }
       default:
@@ -228,9 +217,9 @@ export class AnnotationDslParser {
     return { tag: { kind: "annotation", annotation, ...(screenId ? { screenId } : {}) } };
   }
 
-  private annotationBase(shape: AnnotationInput["shape"], ttlMs: number, label: string | undefined): Pick<AnnotationInput, "id" | "shape" | "ttlMs" | "label"> {
+  private annotationBase(shape: AnnotationInput["shape"], label: string | undefined): Pick<AnnotationInput, "id" | "shape" | "label"> {
     this.tagSequence += 1;
-    return { id: `dsl-${this.tagSequence}`, shape, ttlMs, ...(label === undefined ? {} : { label }) };
+    return { id: `dsl-${this.tagSequence}`, shape, ...(label === undefined ? {} : { label }) };
   }
 }
 
@@ -245,10 +234,9 @@ function healingSummary(verb: KnownVerb, heals: ReadonlySet<HealReason>): string
 
 function allowedKeysFor(verb: KnownVerb): ReadonlySet<string> {
   switch (verb) {
-    case "POINT": return new Set(["x", "y", "r", "ttl", "label"]);
-    case "RECT": return new Set(["x", "y", "w", "h", "ttl", "label", "spotlight"]);
-    case "LINE": return new Set(["x1", "y1", "x2", "y2", "ttl", "label", "spotlight"]);
-    case "LABEL": return new Set(["x", "y", "ttl", "text"]);
+    case "POINT": return new Set(["x", "y", "r", "label"]);
+    case "RECT": return new Set(["x", "y", "w", "h", "label", "spotlight"]);
+    case "LINE": return new Set(["x1", "y1", "x2", "y2", "label", "spotlight"]);
     case "SCREEN": return new Set(["id"]);
   }
 }
@@ -394,15 +382,6 @@ function parseArgumentValue(body: string, start: number, heals: Set<HealReason>)
   return { value: { value: body.slice(start, index), quoted: false }, nextIndex: index };
 }
 
-function ttlFrom(args: Record<string, ParsedValue>, heals: Set<HealReason>): number | undefined {
-  if (!args.ttl) {
-    heals.add("default ttl");
-    return 6000;
-  }
-  const ttl = finiteNumber(args.ttl, heals);
-  return ttl === undefined ? undefined : Math.max(500, Math.min(60_000, ttl));
-}
-
 function finiteNumber(value: ParsedValue | undefined, heals: Set<HealReason>): number | undefined {
   if (!value || value.quoted) return undefined;
   let raw = value.value;
@@ -443,10 +422,6 @@ function optionalBoolean(args: Record<string, ParsedValue>, key: string, heals: 
 function optionalText(args: Record<string, ParsedValue>, key: string, heals: Set<HealReason>): string | undefined | null {
   if (!(key in args)) return undefined;
   return textValue(args[key], heals);
-}
-
-function requiredText(args: Record<string, ParsedValue>, key: string, heals: Set<HealReason>): string | undefined {
-  return textValue(args[key], heals) ?? undefined;
 }
 
 function textValue(value: ParsedValue | undefined, heals: Set<HealReason>): string | null {

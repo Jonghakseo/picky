@@ -10,8 +10,7 @@
     "contextGeneration": 1,
     "screenId": "screen1",
     "annotations": [
-      { "id": "rect-1", "shape": "rect", "x": 640, "y": 360, "w": 120, "h": 60, "spotlight": true, "ttlMs": 3000 },
-      { "id": "label-1", "shape": "label", "x": 640, "y": 400, "label": "Start here" }
+      { "id": "rect-1", "shape": "rect", "x": 640, "y": 360, "w": 120, "h": 60, "spotlight": true, "label": "Start here" }
     ],
     "screenBounds": { "x": 0, "y": 0, "width": 1728, "height": 1117 },
     "screenshotSize": { "width": 1280, "height": 827 }

@@ -27,15 +27,10 @@ enum PickyAnnotationOverlayResolveError: LocalizedError, Equatable {
 }
 
 enum PickyAnnotationOverlayResolver {
-    static let defaultTTL: TimeInterval = 6
-    /// Safety bound when a turn never reaches audio/final-reply fallback.
-    static let maximumPendingTTLDeferral: TimeInterval = 60
-
     static func resolve(
         _ request: PickyAnnotationOverlayRequest,
         sampleGrid: PickyScreenshotColorSampleGrid? = nil,
-        preferredBasePalette: PickyAnnotationPaletteRole? = nil,
-        now: Date = Date()
+        preferredBasePalette: PickyAnnotationPaletteRole? = nil
     ) throws -> [PickyAgentAnnotation] {
         guard let screenBounds = request.screenBounds, screenBounds.width > 0, screenBounds.height > 0 else {
             throw PickyAnnotationOverlayResolveError.invalidDisplayBounds
@@ -61,8 +56,7 @@ enum PickyAnnotationOverlayResolver {
                 annotation,
                 displayFrame: displayFrame,
                 screenshotSize: screenshotSize,
-                visualStyle: visualStyles[annotation.id] ?? .fallback,
-                now: now
+                visualStyle: visualStyles[annotation.id] ?? .fallback
             )
         }
     }
@@ -71,8 +65,7 @@ enum PickyAnnotationOverlayResolver {
         _ annotation: PickyAnnotationOverlayAnnotation,
         displayFrame: CGRect,
         screenshotSize: PickyPointerScreenshotSize,
-        visualStyle: PickyAnnotationVisualStyle,
-        now: Date
+        visualStyle: PickyAnnotationVisualStyle
     ) throws -> PickyAgentAnnotation {
         let xScale = displayFrame.width / screenshotSize.width
         let yScale = displayFrame.height / screenshotSize.height
@@ -84,12 +77,6 @@ enum PickyAnnotationOverlayResolver {
                 y: displayFrame.maxY - sourceY * yScale
             )
         }
-        let ttl = (annotation.ttlMs ?? defaultTTL * 1_000) / 1_000
-        // The countdown is activated by the interaction reducer when the first
-        // narration utterance starts. Keep a finite safety deadline as well so a
-        // failed turn cannot leave an overlay on screen forever.
-        let expiresAt = now.addingTimeInterval(ttl + maximumPendingTTLDeferral)
-
         switch annotation.shape {
         case .rect:
             return PickyAgentAnnotation(
@@ -99,9 +86,7 @@ enum PickyAnnotationOverlayResolver {
                 rect: try rect(annotation, displayFrame: displayFrame, xScale: xScale, yScale: yScale),
                 spotlight: annotation.spotlight ?? false,
                 label: normalizedLabel(annotation.label),
-                visualStyle: visualStyle,
-                expiresAt: expiresAt,
-                pendingTTL: ttl
+                visualStyle: visualStyle
             )
         case .line:
             return PickyAgentAnnotation(
@@ -112,21 +97,7 @@ enum PickyAnnotationOverlayResolver {
                 endPoint: try point(annotation.x2, annotation.y2, "x2", "y2"),
                 spotlight: annotation.spotlight ?? false,
                 label: normalizedLabel(annotation.label),
-                visualStyle: visualStyle,
-                expiresAt: expiresAt,
-                pendingTTL: ttl
-            )
-        case .label:
-            return PickyAgentAnnotation(
-                id: annotation.id,
-                shape: annotation.shape,
-                displayFrame: displayFrame,
-                point: try point(annotation.x, annotation.y, "x", "y"),
-                spotlight: false,
-                label: normalizedLabel(annotation.label),
-                visualStyle: visualStyle,
-                expiresAt: expiresAt,
-                pendingTTL: ttl
+                visualStyle: visualStyle
             )
         }
     }

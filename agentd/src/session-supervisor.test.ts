@@ -1051,7 +1051,7 @@ describe("SessionSupervisor", () => {
       mode: "replace",
       annotations: [
         { id: "rect", shape: "rect", x: -20, y: 900, w: 80, h: 30, spotlight: true },
-        { id: "line", shape: "line", x1: 0, y1: 0, x2: 900, y2: 900, ttlMs: 500 },
+        { id: "line", shape: "line", x1: 0, y1: 0, x2: 900, y2: 900 },
       ],
     });
 
@@ -1065,7 +1065,7 @@ describe("SessionSupervisor", () => {
       screenshotSize: { width: 600, height: 800 },
       annotations: [
         { id: "rect", shape: "rect", x: 0, y: 800, w: 60, h: 0, spotlight: true, clamped: true },
-        { id: "line", shape: "line", x1: 0, y1: 0, x2: 600, y2: 800, ttlMs: 500, clamped: true },
+        { id: "line", shape: "line", x1: 0, y1: 0, x2: 600, y2: 800, clamped: true },
       ],
     });
   });
@@ -1128,8 +1128,10 @@ describe("SessionSupervisor", () => {
     const pointerEvents: unknown[] = [];
     const annotationEvents: unknown[] = [];
     const quickReplies: string[] = [];
-    supervisor.on("pointerOverlayRequested", (request) => pointerEvents.push(request));
-    supervisor.on("annotationOverlayRequested", (request) => annotationEvents.push(request));
+    const eventOrder: string[] = [];
+    supervisor.on("pointerOverlayRequested", (request) => { pointerEvents.push(request); eventOrder.push("pointer"); });
+    supervisor.on("annotationOverlayRequested", (request) => { annotationEvents.push(request); eventOrder.push("annotation"); });
+    supervisor.on("mainNarrationChunk", () => eventOrder.push("narration"));
     supervisor.on("quickReply", (_contextId, text) => quickReplies.push(text));
     const mainContext: PickyContextPacket = {
       ...context("화면에서 알려줘"),
@@ -1150,7 +1152,7 @@ describe("SessionSupervisor", () => {
     mainRuntime.handle?.emit({ type: "assistant_delta", delta: "여기를 먼저 보세요. [SCREEN: id=screen-main-dsl] [PO" });
     await settle();
     expect(pointerEvents).toEqual([]);
-    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "INT: x=120 y=340 r=24 ttl=6000 label=\"저장\"] [RECT: x=50 y=60 w=200 h=80 ttl=8000 label=\"영역\"] 다음입니다." });
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "INT: x=120 y=340 r=24 label=\"저장\"] [RECT: x=50 y=60 w=200 h=80 label=\"영역\"] 다음입니다." });
     await waitUntil(() => pointerEvents.length === 1 && annotationEvents.length === 1);
 
     // Overlay events arrive before completion, preserving the low-latency streaming path.
@@ -1160,8 +1162,9 @@ describe("SessionSupervisor", () => {
       mode: "append",
       screenId: "screen-main-dsl",
       contextGeneration: 1,
-      annotations: [{ shape: "rect", x: 50, y: 60, w: 200, h: 80, ttlMs: 8000, label: "영역" }],
+      annotations: [{ shape: "rect", x: 50, y: 60, w: 200, h: 80, label: "영역" }],
     });
+    expect(eventOrder.indexOf("narration")).toBeLessThan(eventOrder.indexOf("pointer"));
 
     mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await waitUntil(() => quickReplies.length === 1);
@@ -1194,7 +1197,7 @@ describe("SessionSupervisor", () => {
       }],
     });
 
-    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "[POINT: x=20 y=30 ttl=6000]" });
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "[POINT: x=20 y=30]" });
     await waitUntil(() => pointerEvents.length === 1);
     mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await waitUntil(() => settledContexts.length === 1);
@@ -1249,7 +1252,7 @@ describe("SessionSupervisor", () => {
       }],
     });
 
-    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "여기입니다. [POINT: x=20 y=30 ttl=6000]" });
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "여기입니다. [POINT: x=20 y=30]" });
     await settle();
     mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await waitUntil(() => quickReplies.length === 1);
@@ -1281,7 +1284,7 @@ describe("SessionSupervisor", () => {
       }],
     });
 
-    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "여기입니다. [RECT: x=20 y=30 w=10 h=10 ttl=6000]" });
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "여기입니다. [RECT: x=20 y=30 w=10 h=10]" });
     await settle();
     mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await waitUntil(() => quickReplies.length === 1);
@@ -1317,7 +1320,7 @@ describe("SessionSupervisor", () => {
     const internal = supervisor as unknown as { mainContext?: PickyContextPacket; mainContextGeneration: number };
     internal.mainContext = replacement;
     internal.mainContextGeneration += 1;
-    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "[POINT: x=20 y=30 ttl=6000]" });
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "[POINT: x=20 y=30]" });
     await settle();
 
     expect(pointerEvents).toEqual([]);

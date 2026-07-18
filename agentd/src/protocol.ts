@@ -279,7 +279,7 @@ export const PickyPointerOverlayRequestSchema = z.object({
 });
 export type PickyPointerOverlayRequest = z.infer<typeof PickyPointerOverlayRequestSchema>;
 
-const PickyAnnotationShapeSchema = z.enum(["rect", "line", "label"]);
+const PickyAnnotationShapeSchema = z.enum(["rect", "line"]);
 export const PickyAnnotationOverlayAnnotationSchema = z.object({
   id: z.string().min(1),
   shape: PickyAnnotationShapeSchema,
@@ -293,7 +293,6 @@ export const PickyAnnotationOverlayAnnotationSchema = z.object({
   y2: z.number().finite().optional(),
   spotlight: z.boolean().optional(),
   label: z.string().optional(),
-  ttlMs: z.number().nonnegative().finite().optional(),
   clamped: z.boolean().optional(),
 });
 export type PickyAnnotationOverlayAnnotation = z.infer<typeof PickyAnnotationOverlayAnnotationSchema>;

@@ -23,8 +23,8 @@ Picky has the full transport + rendering pipeline for "AI points here". The
 app-side events, `BlueCursorView`, and annotation renderer are fed by a streamed
 inline DSL rather than registered LLM tools:
 
-- **Pointing** uses `[POINT: x=… y=… ttl=…]` and maps to the pointer request path.
-- **Multi-shape drawing** uses tags such as `[CIRCLE: …]` and maps to the
+- **Pointing** uses `[POINT: x=… y=…]` and maps to the pointer request path.
+- **Shape drawing** uses `[RECT: …]` and `[LINE: …]` and maps to the
   versioned annotation protocol + dedicated AI-annotation renderer.
 
 ## What already exists (reusable)
@@ -76,7 +76,7 @@ windows, and capture infrastructure in reverse.
 
 ### Phase 1 — Streamed AI pointing
 
-1. `AnnotationDslParser` incrementally recognizes `[POINT: x=… y=… r=… ttl=…]`
+1. `AnnotationDslParser` incrementally recognizes `[POINT: x=… y=… r=…]`
    across assistant deltas, strips it from user-visible text, and emits the
    existing `SessionSupervisor.requestPointerOverlay()` path immediately.
 2. `prompt-builder.ts` injects the named-argument DSL grammar only when the
@@ -90,31 +90,31 @@ supplies coordinates, avoiding a second inference after a tool result.
 
 ### Phase 2 — Multi-shape drawing (the new work)
 
-Target shape scope (maintainer-selected): **point/target, circle/ellipse,
-rectangle, line, spotlight, label/tag.** (Arrow and freehand are intentionally
-out of scope for v1; revisit later.)
+Target shape scope (maintainer-selected): **point/target, rectangle, line, and
+optional spotlight.** Rectangle and line tags may carry a concise attached
+`label`; standalone label, arrow, circle, and freehand shapes are out of scope.
 
 5. **Versioned annotation protocol.** Do not overload `pointerOverlayRequested`.
    Add a new `annotationOverlayRequested` event. Fields per annotation:
-   `shape` (point | circle | rect | line | spotlight | label),
-   coordinates (screenshot px, matching existing convention), `screenId`,
-   `label`, `ttl`, optional style. Render fixed semantic layers rather than
+   `shape` (`rect` or `line`), coordinates (screenshot px, matching existing
+   convention), `screenId`, optional `label`, and optional `spotlight`. Render
+   fixed semantic layers rather than
    accepting model-controlled stacking. Mirror the Codable types across
    `agentd/src/protocol.ts:267-278` and `Picky/PickyAgentProtocol.swift:275,416-418`.
 6. **Dedicated AI-annotation renderer.** Keep transient AI annotations separate
    from user ink. Add `PickyAgentAnnotationOverlayView` mounted near the existing
    ink and point-highlight layers in `Picky/Overlay/BlueCursorView.swift:595-615`.
-   Render a collection of circles, rectangles, lines, spotlight regions, and
-   labels. Follow the Picky design system (Action Blue, semantic status) and
+   Render rectangles, lines, spotlight regions, and their attached labels.
+   Follow the Picky design system (Action Blue, semantic status) and
    apply a subtle deterministic hand-drawn stroke treatment for outline shapes.
-7. **Lifecycle semantics.** DSL tags append during a turn, auto-clear on a new
-   turn, and require a TTL; animation completion and deterministic per-id cleanup
-   remain app-owned.
+7. **Lifecycle semantics.** DSL tags append during a turn, reveal in step with
+   narration, and clear together after the final queued TTS utterance drains.
+   New user input also clears the active drawing collection.
    Add an annotation collection alongside — not inside — `PickyPointerTarget` in
    `Picky/Interaction/PickyInteractionState.swift`.
-8. **Use target bounds.** Populate `targetFrame` (currently always nil at
-   `Picky/CompanionManager.swift:2185-2203`) so ring/rect size can match the
-   referenced element.
+8. **Use target bounds.** Populate `targetFrame` for annotation navigation, but
+   suppress the generic circular pointer ring because RECT/LINE already render
+   their own precise geometry.
 9. **Tests.** Extend `annotation-dsl.test.ts`, `session-supervisor.test.ts`,
    `PickyTests/PickyPointerOverlayResolverTests.swift`; add compound-annotation,
    lifecycle-race, and concurrent-display tests plus pure-geometry renderer tests.
@@ -160,7 +160,7 @@ screenshot's real pixel dimensions, per-display keying.
 
 | Aspect | Comparable app | Picky recommendation |
 | --- | --- | --- |
-| LLM output format | text tags like `[POINT:x,y]` regex-parsed | **streamed named-argument DSL** (`[POINT: x=… y=… ttl=…]`), parsed incrementally and validated through existing request paths |
+| LLM output format | text tags like `[POINT:x,y]` regex-parsed | **streamed named-argument DSL** (`[POINT: x=… y=…]`), parsed incrementally and validated through existing request paths |
 | Event reuse | one multi-purpose tag | new `annotationOverlayRequested`, separate from pointer |
 | Shape style | hand-drawn / sketchy | Picky design system (Action Blue, semantic status) |
 | Coordinates | screenshot px + `:screenN` | keep existing px + `screenId`; extend `pointer-validation.ts` |

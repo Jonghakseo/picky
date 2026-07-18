@@ -4,7 +4,7 @@ import { AnnotationDslParser, ANNOTATION_DSL_TAG_OPEN_PATTERN } from "./annotati
 describe("AnnotationDslParser", () => {
   it("extracts valid tags and removes them from clean text", () => {
     const parser = new AnnotationDslParser();
-    const result = parser.feed('먼저 여기예요. [RECT: x=200 y=100 w=30 h=30 ttl=8000 label="저장"] 다음을 보세요.');
+    const result = parser.feed('먼저 여기예요. [RECT: x=200 y=100 w=30 h=30 label="저장"] 다음을 보세요.');
 
     expect(result.cleanText).toBe("먼저 여기예요. 다음을 보세요.");
     expect(result.droppedTags).toEqual([]);
@@ -12,49 +12,49 @@ describe("AnnotationDslParser", () => {
     expect(result.completedTags).toEqual([
       {
         kind: "annotation",
-        annotation: { id: "dsl-1", shape: "rect", x: 200, y: 100, w: 30, h: 30, ttlMs: 8000, label: "저장" },
+        annotation: { id: "dsl-1", shape: "rect", x: 200, y: 100, w: 30, h: 30, label: "저장" },
       },
     ]);
   });
 
-  it("parses optional RECT and LINE spotlight flags without a dedicated spotlight shape", () => {
+  it("parses optional RECT and LINE spotlight flags", () => {
     const parser = new AnnotationDslParser();
-    const result = parser.feed("[RECT: x=95 y=157 w=120 h=35 ttl=12000 spotlight] [LINE: x1=1 y1=2 x2=3 y2=4 ttl=6000 spotlight=true] [RECT: x=5 y=6 w=7 h=8 ttl=6000 spotlight=false] [LINE: x1=1 y1=2 x2=3 y2=4 ttl=6000]");
+    const result = parser.feed("[RECT: x=95 y=157 w=120 h=35 spotlight] [LINE: x1=1 y1=2 x2=3 y2=4 spotlight=true] [RECT: x=5 y=6 w=7 h=8 spotlight=false] [LINE: x1=1 y1=2 x2=3 y2=4]");
 
     expect(result.completedTags).toEqual([
-      { kind: "annotation", annotation: { id: "dsl-1", shape: "rect", x: 95, y: 157, w: 120, h: 35, ttlMs: 12000, spotlight: true } },
-      { kind: "annotation", annotation: { id: "dsl-2", shape: "line", x1: 1, y1: 2, x2: 3, y2: 4, ttlMs: 6000, spotlight: true } },
-      { kind: "annotation", annotation: { id: "dsl-3", shape: "rect", x: 5, y: 6, w: 7, h: 8, ttlMs: 6000, spotlight: false } },
-      { kind: "annotation", annotation: { id: "dsl-4", shape: "line", x1: 1, y1: 2, x2: 3, y2: 4, ttlMs: 6000 } },
+      { kind: "annotation", annotation: { id: "dsl-1", shape: "rect", x: 95, y: 157, w: 120, h: 35, spotlight: true } },
+      { kind: "annotation", annotation: { id: "dsl-2", shape: "line", x1: 1, y1: 2, x2: 3, y2: 4, spotlight: true } },
+      { kind: "annotation", annotation: { id: "dsl-3", shape: "rect", x: 5, y: 6, w: 7, h: 8, spotlight: false } },
+      { kind: "annotation", annotation: { id: "dsl-4", shape: "line", x1: 1, y1: 2, x2: 3, y2: 4 } },
     ]);
   });
 
   it("heals truthy spotlight values and ignores unknown bare arguments deterministically", () => {
     const parser = new AnnotationDslParser();
-    const result = parser.feed("[RECT: x=1 y=2 w=3 h=4 ttl=6000 spotlight=on extraneous]");
+    const result = parser.feed("[RECT: x=1 y=2 w=3 h=4 spotlight=on extraneous]");
 
     expect(result.completedTags[0]).toMatchObject({ kind: "annotation", annotation: { shape: "rect", spotlight: true } });
     expect(result.healedTags).toEqual(["RECT: boolean value, unknown key ignored"]);
   });
 
-  it("buffers a tag split across three deltas and supports quoted brackets and escapes", () => {
+  it("buffers a tag split across deltas and supports quoted brackets and escapes", () => {
     const parser = new AnnotationDslParser();
     expect(parser.feed("설명을 ")).toMatchObject({ cleanText: "설명을 ", completedTags: [] });
-    expect(parser.feed('[RECT: x=20 y=30 w=40 h=40 ttl=')).toMatchObject({ cleanText: "", completedTags: [] });
-    const result = parser.feed('6000 label="A ] \\"B\\""] 계속');
+    expect(parser.feed("[RECT: x=20 y=30 w=40")).toMatchObject({ cleanText: "", completedTags: [] });
+    const result = parser.feed(' h=40 label="A ] \\"B\\""] 계속');
 
     expect(result.cleanText).toBe(" 계속");
     expect(result.completedTags).toEqual([
       {
         kind: "annotation",
-        annotation: { id: "dsl-1", shape: "rect", x: 20, y: 30, w: 40, h: 40, ttlMs: 6000, label: 'A ] "B"' },
+        annotation: { id: "dsl-1", shape: "rect", x: 20, y: 30, w: 40, h: 40, label: 'A ] "B"' },
       },
     ]);
   });
 
   it("drops unknown and malformed tags without exposing them", () => {
     const parser = new AnnotationDslParser();
-    const result = parser.feed("A [POINT: x=1] B [UNKNOWN: x=1] C [LABEL: x=1 y=2 ttl=500]");
+    const result = parser.feed("A [POINT: x=1] B [UNKNOWN: x=1] C [LINE: x1=1 y1=2 x2=3]");
 
     expect(result.cleanText).toBe("A B C");
     expect(result.completedTags).toEqual([]);
@@ -67,32 +67,32 @@ describe("AnnotationDslParser", () => {
     expect(parser.finish()).toEqual({ cleanText: "", completedTags: [], droppedTags: ["unclosed DSL tag at turn end"], healedTags: [] });
   });
 
-  it("keeps SCREEN state for subsequent tags and clamps ttl", () => {
+  it("keeps SCREEN state for subsequent tags", () => {
     const parser = new AnnotationDslParser();
-    const result = parser.feed("[SCREEN: id=screen-2] [POINT: x=1 y=2 ttl=1] [RECT: x=3 y=4 w=5 h=6 ttl=999999]");
+    const result = parser.feed("[SCREEN: id=screen-2] [POINT: x=1 y=2] [RECT: x=3 y=4 w=5 h=6]");
 
     expect(result.cleanText).toBe("");
     expect(result.healedTags).toEqual([]);
     expect(result.completedTags).toEqual([
       { kind: "screen", screenId: "screen-2" },
-      { kind: "point", x: 1, y: 2, ttlMs: 500, screenId: "screen-2" },
-      { kind: "annotation", screenId: "screen-2", annotation: { id: "dsl-1", shape: "rect", x: 3, y: 4, w: 5, h: 6, ttlMs: 60000 } },
+      { kind: "point", x: 1, y: 2, screenId: "screen-2" },
+      { kind: "annotation", screenId: "screen-2", annotation: { id: "dsl-1", shape: "rect", x: 3, y: 4, w: 5, h: 6 } },
     ]);
   });
 
   it("heals verb case and surrounding whitespace, while unknown verbs still drop", () => {
     const parser = new AnnotationDslParser();
-    const result = parser.feed("[ Point : x=1 y=2 ttl=6000 ] [ARROW: x=1 y=2 ttl=6000]");
+    const result = parser.feed("[ Point : x=1 y=2 ] [ARROW: x=1 y=2]");
 
-    expect(result.completedTags).toEqual([{ kind: "point", x: 1, y: 2, ttlMs: 6000 }]);
+    expect(result.completedTags).toEqual([{ kind: "point", x: 1, y: 2 }]);
     expect(result.healedTags).toEqual(["POINT: verb case/whitespace"]);
     expect(result.droppedTags).toEqual(["unknown verb ARROW"]);
   });
 
   it("heals argument spacing and single separators but rejects consecutive separators", () => {
     const parser = new AnnotationDslParser();
-    const healed = parser.feed("[RECT: x = 120, y = 340, w=20; h=30, ttl=6000]");
-    const dropped = parser.feed("[RECT: x=1,, y=2 w=3 h=4 ttl=6000]");
+    const healed = parser.feed("[RECT: x = 120, y = 340, w=20; h=30]");
+    const dropped = parser.feed("[RECT: x=1,, y=2 w=3 h=4]");
 
     expect(healed.completedTags[0]).toMatchObject({ kind: "annotation", annotation: { shape: "rect", x: 120, y: 340, w: 20, h: 30 } });
     expect(healed.healedTags).toEqual(["RECT: argument spacing/separator"]);
@@ -100,11 +100,11 @@ describe("AnnotationDslParser", () => {
     expect(dropped.droppedTags).toHaveLength(1);
   });
 
-  it("heals smart quotes and unquoted single-token label values but rejects multi-word bare labels", () => {
+  it("heals smart quotes and unquoted single-token labels but rejects multi-word bare labels", () => {
     const parser = new AnnotationDslParser();
-    const smart = parser.feed("[POINT: x=1 y=2 ttl=6000 label=“저장”]");
-    const bare = parser.feed("[POINT: x=3 y=4 ttl=6000 label=저장버튼]");
-    const multiWord = parser.feed("[POINT: x=5 y=6 ttl=6000 label=저장 버튼]");
+    const smart = parser.feed("[POINT: x=1 y=2 label=“저장”]");
+    const bare = parser.feed("[POINT: x=3 y=4 label=저장버튼]");
+    const multiWord = parser.feed("[POINT: x=5 y=6 label=저장 버튼]");
 
     expect(smart.completedTags[0]).toMatchObject({ kind: "point", label: "저장" });
     expect(smart.healedTags).toEqual(["POINT: smart quotes"]);
@@ -116,8 +116,8 @@ describe("AnnotationDslParser", () => {
 
   it("heals px units and rounds float coordinates while rejecting unparseable coordinates", () => {
     const parser = new AnnotationDslParser();
-    const healed = parser.feed("[RECT: x=120.5px y=340.4px w=24.5 h=10 ttl=6000]");
-    const dropped = parser.feed("[RECT: x=left y=340 w=24 h=10 ttl=6000]");
+    const healed = parser.feed("[RECT: x=120.5px y=340.4px w=24.5 h=10]");
+    const dropped = parser.feed("[RECT: x=left y=340 w=24 h=10]");
 
     expect(healed.completedTags[0]).toMatchObject({ kind: "annotation", annotation: { x: 121, y: 340, w: 25, h: 10 } });
     expect(healed.healedTags).toEqual(["RECT: numeric px unit, rounded float"]);
@@ -125,27 +125,21 @@ describe("AnnotationDslParser", () => {
     expect(dropped.droppedTags).toHaveLength(1);
   });
 
-  it("defaults missing ttl, clamps explicit ttl, and lets the last duplicate key win", () => {
+  it("lets the last duplicate key win", () => {
     const parser = new AnnotationDslParser();
-    const defaulted = parser.feed("[POINT: x=1 y=2]");
-    const duplicate = parser.feed("[POINT: x=1 x=9 y=2 ttl=999999]");
-    const invalidTtl = parser.feed("[POINT: x=1 y=2 ttl=forever]");
+    const duplicate = parser.feed("[POINT: x=1 x=9 y=2]");
 
-    expect(defaulted.completedTags).toEqual([{ kind: "point", x: 1, y: 2, ttlMs: 6000 }]);
-    expect(defaulted.healedTags).toEqual(["POINT: default ttl"]);
-    expect(duplicate.completedTags).toEqual([{ kind: "point", x: 9, y: 2, ttlMs: 60000 }]);
+    expect(duplicate.completedTags).toEqual([{ kind: "point", x: 9, y: 2 }]);
     expect(duplicate.healedTags).toEqual(["POINT: duplicate key last-wins"]);
-    expect(invalidTtl.completedTags).toEqual([]);
-    expect(invalidTtl.droppedTags).toHaveLength(1);
   });
 
   it("ignores unknown extra keys but hard-drops nested tags and unterminated quotes", () => {
     const parser = new AnnotationDslParser();
-    const extra = parser.feed("[POINT: x=1 y=2 ttl=6000 confidence=high]");
-    const nested = parser.feed("[POINT: x=1 y=[RECT: x=2 y=3 w=4 h=4 ttl=6000] ttl=6000]");
-    const unterminated = parser.feed("[POINT: x=1 y=2 ttl=6000 label=\"broken]");
+    const extra = parser.feed("[POINT: x=1 y=2 confidence=high]");
+    const nested = parser.feed("[POINT: x=1 y=[RECT: x=2 y=3 w=4 h=4]]");
+    const unterminated = parser.feed("[POINT: x=1 y=2 label=\"broken]");
 
-    expect(extra.completedTags).toEqual([{ kind: "point", x: 1, y: 2, ttlMs: 6000 }]);
+    expect(extra.completedTags).toEqual([{ kind: "point", x: 1, y: 2 }]);
     expect(extra.healedTags).toEqual(["POINT: unknown key ignored"]);
     expect(nested.completedTags).toEqual([]);
     expect(nested.droppedTags).toHaveLength(1);
@@ -162,14 +156,14 @@ describe("AnnotationDslParser", () => {
 
     expect(first).toEqual(second);
     expect(first.cleanText).toBe("앞 중간 뒤");
-    expect(first.completedTags).toEqual([{ kind: "point", x: 2, y: 2, label: "저장", ttlMs: 6000 }]);
+    expect(first.completedTags).toEqual([{ kind: "point", x: 2, y: 2, label: "저장" }]);
     expect(first.droppedTags).toEqual(["unknown verb ARROW"]);
-    expect(first.healedTags).toEqual(["POINT: verb case/whitespace, argument spacing/separator, unquoted single-token label, numeric px unit, rounded float, default ttl"]);
+    expect(first.healedTags).toEqual(["POINT: verb case/whitespace, argument spacing/separator, unquoted single-token label, numeric px unit, rounded float"]);
   });
 
   it("preserves one trailing separator space when the next delta begins with a word", () => {
     const parser = new AnnotationDslParser();
-    const first = parser.feed("먼저 [POINT: x=1 y=2 ttl=6000] ");
+    const first = parser.feed("먼저 [POINT: x=1 y=2] ");
     const second = parser.feed("다음");
 
     expect(`${first.cleanText}${second.cleanText}`).toBe("먼저 다음");

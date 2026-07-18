@@ -111,30 +111,18 @@ struct PickyScreenshotColorSampleGrid: Equatable, Sendable {
 }
 
 enum PickyAnnotationPaletteRole: String, Codable, Equatable, CaseIterable, Sendable {
-    case electricCyan
-    case signalMagenta
     case signalYellow
-    case brightViolet
-    case fallbackBlue
-
-    static let adaptiveCandidates: [Self] = [
-        .electricCyan,
-        .signalMagenta,
-        .signalYellow,
-        .brightViolet,
-    ]
+    case actionBlue
 
     var sampleColor: PickyScreenshotSampleColor {
         switch self {
-        case .electricCyan: .init(red: 0.00, green: 0.78, blue: 1.00)
-        case .signalMagenta: .init(red: 1.00, green: 0.18, blue: 0.58)
         case .signalYellow: .init(red: 1.00, green: 0.84, blue: 0.04)
-        case .brightViolet: .init(red: 0.75, green: 0.35, blue: 0.95)
-        case .fallbackBlue: .init(red: 0.20, green: 0.50, blue: 1.00)
+        case .actionBlue: .init(red: 37.0 / 255.0, green: 99.0 / 255.0, blue: 235.0 / 255.0)
         }
     }
 
     var color: Color {
+        if self == .actionBlue { return DS.Colors.accent }
         let sample = sampleColor
         return Color(red: sample.red, green: sample.green, blue: sample.blue)
     }
@@ -163,11 +151,13 @@ struct PickyAnnotationVisualStyle: Equatable, Codable, Sendable {
     let palette: PickyAnnotationPaletteRole
     let keyline: PickyAnnotationKeylineTone
 
-    static let fallback = Self(palette: .fallbackBlue, keyline: .light)
+    static let fallback = Self(palette: .actionBlue, keyline: .light)
 }
 
 enum PickyAnnotationPaletteResolver {
-    static let localContrastOverrideThreshold = 3.0
+    /// Keep Picky Action Blue unless the sampled stroke area fails the 3:1
+    /// non-text contrast target. The keyline remains a second safety layer.
+    static let blueContrastThreshold = 3.0
 
     static func basePalette(
         for annotations: [PickyAnnotationOverlayAnnotation],
@@ -181,7 +171,7 @@ enum PickyAnnotationPaletteResolver {
                 screenshotSize: screenshotSize
             )
         }
-        return samples.isEmpty ? nil : bestPalette(for: samples)
+        return samples.isEmpty ? nil : preferredPalette(for: samples)
     }
 
     static func styles(
@@ -202,17 +192,23 @@ enum PickyAnnotationPaletteResolver {
         let allSamples = annotations.flatMap { localSamples[$0.id] ?? [] }
         guard !allSamples.isEmpty else { return fallbackStyles(for: annotations) }
 
-        let requestPalette = preferredBasePalette ?? bestPalette(for: allSamples)
+        let requestPalette = preferredBasePalette ?? preferredPalette(for: allSamples)
         return annotations.reduce(into: [String: PickyAnnotationVisualStyle]()) { result, annotation in
             let samples = localSamples[annotation.id] ?? []
             guard !samples.isEmpty else {
                 result[annotation.id] = .fallback
                 return
             }
+            let blueScore = robustContrastScore(palette: .actionBlue, samples: samples)
             let requestScore = robustContrastScore(palette: requestPalette, samples: samples)
-            let localPalette = requestScore < localContrastOverrideThreshold
-                ? bestPalette(for: samples)
-                : requestPalette
+            let localPalette: PickyAnnotationPaletteRole
+            if blueScore >= blueContrastThreshold {
+                localPalette = .actionBlue
+            } else if requestScore >= blueContrastThreshold {
+                localPalette = requestPalette
+            } else {
+                localPalette = .signalYellow
+            }
             result[annotation.id] = PickyAnnotationVisualStyle(
                 palette: localPalette,
                 keyline: bestKeyline(for: samples, palette: localPalette)
@@ -253,18 +249,14 @@ enum PickyAnnotationPaletteResolver {
                     y: CGFloat(y1) + CGFloat(y2 - y1) * progress
                 )
             }
-        case .label:
-            guard let x = annotation.x, let y = annotation.y else { return [] }
-            return [CGPoint(x: x, y: y)]
         }
     }
 
-    private static func bestPalette(for samples: [PickyScreenshotSampleColor]) -> PickyAnnotationPaletteRole {
-        PickyAnnotationPaletteRole.adaptiveCandidates.reduce(.electricCyan) { best, candidate in
-            robustContrastScore(palette: candidate, samples: samples) > robustContrastScore(palette: best, samples: samples)
-                ? candidate
-                : best
+    private static func preferredPalette(for samples: [PickyScreenshotSampleColor]) -> PickyAnnotationPaletteRole {
+        if robustContrastScore(palette: .actionBlue, samples: samples) >= blueContrastThreshold {
+            return .actionBlue
         }
+        return .signalYellow
     }
 
     private static func bestKeyline(

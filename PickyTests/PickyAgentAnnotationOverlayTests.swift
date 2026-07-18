@@ -10,166 +10,79 @@ struct PickyAgentAnnotationOverlayTests {
     @Test func resolvesSupportedOverlayShapesFromScreenshotPixels() throws {
         let resolved = try PickyAnnotationOverlayResolver.resolve(request(annotations: [
             annotation(id: "rect", shape: .rect, x: 200, y: 50, w: 100, h: 100, spotlight: true),
-            annotation(id: "line", shape: .line, x1: 0, y1: 0, x2: 400, y2: 200, spotlight: false),
-            annotation(id: "label", shape: .label, x: 200, y: 100, label: " Save "),
-        ]), now: now)
+            annotation(id: "line", shape: .line, x1: 0, y1: 0, x2: 400, y2: 200, spotlight: false, label: " Save "),
+        ]))
 
         #expect(resolved.first { $0.id == "rect" }?.rect == CGRect(x: 200, y: 225, width: 50, height: 50))
         #expect(resolved.first { $0.id == "rect" }?.spotlight == true)
         #expect(resolved.first { $0.id == "line" }?.point == CGPoint(x: 100, y: 300))
         #expect(resolved.first { $0.id == "line" }?.endPoint == CGPoint(x: 300, y: 200))
         #expect(resolved.first { $0.id == "line" }?.spotlight == false)
-        #expect(resolved.first { $0.id == "label" }?.label == "Save")
-        #expect(resolved.allSatisfy { $0.expiresAt == now.addingTimeInterval(66) && $0.pendingTTL == 6 })
+        #expect(resolved.first { $0.id == "line" }?.label == "Save")
     }
 
-    @Test func bufferedAnnotationsRevealAfterSpeechAndExpireAfterTheirTtl() {
-        let pending = resolvedAnnotation(id: "a", expiresAt: now.addingTimeInterval(66), pendingTTL: 6)
-        // Streamed annotations are buffered, not shown, until narration reaches them.
-        let buffered = reduce(PickyInteractionState(), .agentAnnotationsRequested(mode: .append, annotations: [pending]))
+    @Test func bufferedAnnotationsStayVisibleUntilTheFinalTTSUtteranceDrains() {
+        let annotation = resolvedAnnotation(id: "a")
+        let buffered = reduce(PickyInteractionState(), .agentAnnotationsRequested(mode: .append, annotations: [annotation]))
         #expect(buffered.agentAnnotations.isEmpty)
         #expect(buffered.pendingAgentAnnotations.count == 1)
 
-        // First speech schedules the reveal; it is still not shown until the timer fires.
-        let spoke = reduce(buffered, .speechStarted(text: "Look here.", speechID: UUID(), sourceContextID: "context"))
-        #expect(spoke.agentAnnotations.isEmpty)
-        let pendingID = spoke.pendingAgentAnnotations.first!.id
-
-        // Reveal shows it and starts its ttl countdown from the moment it appears.
-        let revealed = reduce(spoke, .agentAnnotationRevealDue(id: pendingID))
+        let speechID = UUID()
+        var speaking = reduce(buffered, .speechStarted(text: "Look here.", speechID: speechID, sourceContextID: "context"))
+        speaking.output = .speaking(
+            contextID: "context",
+            speechID: speechID,
+            text: "Look here.",
+            minimumDisplayTimerID: nil,
+            minimumDisplayUntil: nil,
+            finishPending: false
+        )
+        let pendingID = speaking.pendingAgentAnnotations.first!.id
+        let revealed = reduce(speaking, .agentAnnotationRevealDue(id: pendingID))
         #expect(revealed.agentAnnotations.map(\.id) == ["a"])
-        #expect(revealed.agentAnnotations.first?.expiresAt == now.addingTimeInterval(6))
-        #expect(revealed.agentAnnotations.first?.pendingTTL == nil)
 
-        // It stays for its ttl, then expires.
-        let notYet = reduce(revealed, .agentAnnotationsExpired(now: now.addingTimeInterval(5.9)))
-        #expect(notYet.agentAnnotations.count == 1)
-        let expired = reduce(notYet, .agentAnnotationsExpired(now: now.addingTimeInterval(6.1)))
-        #expect(expired.agentAnnotations.isEmpty)
+        let settled = reduce(revealed, .mainTurnSettled(contextID: "context"))
+        #expect(settled.agentAnnotations.map(\.id) == ["a"])
+
+        let drained = reduce(settled, .speechFinished(speechID: speechID))
+        #expect(drained.agentAnnotations.isEmpty)
+        #expect(drained.pendingAgentAnnotations.isEmpty)
     }
 
-    @Test func companionManagerAppliesAnnotationOverlayEvent() async throws {
+    @Test func companionManagerClearsSilentAnnotationsWhenTheTurnSettles() async throws {
         let manager = CompanionManager(agentClient: FakePickyAgentClient())
         let sequenceBeforeEvent = manager.interactionProjectionSequence
         manager.applyAgentEvent(.annotationOverlayRequested(request(annotations: [
             annotation(id: "manager-rect", shape: .rect, x: 200, y: 100, w: 40, h: 20),
         ])))
-        // Annotations are buffered until narration reaches them; a silent turn settle
-        // reveals whatever remains buffered.
-        manager.applyAgentEvent(.mainTurnSettled(contextId: "context"))
-        try await waitUntil { manager.interactionProjectionSequence > sequenceBeforeEvent && manager.agentAnnotations.count == 1 }
-
-        #expect(manager.agentAnnotations.count == 1)
-        #expect(manager.agentAnnotations.first?.id == "manager-rect")
-        #expect(manager.agentAnnotations.first?.rect == CGRect(x: 200, y: 240, width: 20, height: 10))
-        #expect(manager.agentAnnotations.first?.visualStyle == .fallback)
-    }
-
-    @Test func companionManagerUsesTheMatchingCapturedScreenshotSamples() async throws {
-        let manager = CompanionManager(agentClient: FakePickyAgentClient())
-        let sampleGrid = uniformGrid(.init(red: 1, green: 1, blue: 1))
-        let context = PickyContextPacket(
-            id: "context",
-            source: "cli",
-            capturedAt: now,
-            transcript: "show me",
-            selectedText: nil,
-            cwd: nil,
-            activeApp: nil,
-            activeWindow: nil,
-            browser: nil,
-            screenshots: [PickyScreenshotContext(
-                id: "shot-1",
-                label: "primary",
-                path: "/tmp/unused.jpg",
-                screenId: "screen",
-                bounds: PickyCGRect(x: 100, y: 200, width: 200, height: 100),
-                screenshotWidthInPixels: 400,
-                screenshotHeightInPixels: 200,
-                isCursorScreen: true,
-                annotationColorSampleGrid: sampleGrid
-            )],
-            warnings: []
-        )
-        manager.noteExternalSubmission(kind: .submitMain, text: "show me", context: context)
-        manager.applyAgentEvent(.annotationOverlayRequested(request(
-            annotations: [annotation(id: "adaptive", shape: .line, x1: 0, y1: 0, x2: 400, y2: 200)],
-            contextGeneration: 1
-        )))
         manager.applyAgentEvent(.mainTurnSettled(contextId: "context"))
 
-        try await waitUntil { manager.agentAnnotations.first?.id == "adaptive" }
-
-        #expect(manager.agentAnnotations.first?.visualStyle.palette == .brightViolet)
-    }
-
-    @Test func companionManagerKeepsBasePaletteAcrossSequentialAppendEvents() async throws {
-        let manager = CompanionManager(agentClient: FakePickyAgentClient())
-        let white = PickyScreenshotSampleColor(red: 1, green: 1, blue: 1)
-        let black = PickyScreenshotSampleColor(red: 0, green: 0, blue: 0)
-        let sampleGrid = PickyScreenshotColorSampleGrid(
-            width: 10,
-            height: 10,
-            pixels: Array(repeating: white, count: 50) + Array(repeating: black, count: 50)
-        )!
-        let context = overlayContext(sampleGrid: sampleGrid)
-        manager.noteExternalSubmission(kind: .submitMain, text: "show me", context: context)
-        manager.applyAgentEvent(.annotationOverlayRequested(request(
-            annotations: [annotation(id: "first", shape: .line, x1: 0, y1: 0, x2: 400, y2: 0)],
-            mode: .replace,
-            contextGeneration: 1
-        )))
-        manager.applyAgentEvent(.annotationOverlayRequested(request(
-            annotations: [annotation(id: "second", shape: .line, x1: 0, y1: 200, x2: 400, y2: 200)],
-            mode: .append,
-            contextGeneration: 1
-        )))
-        manager.applyAgentEvent(.mainTurnSettled(contextId: "context"))
-
-        try await waitUntil { manager.agentAnnotations.count == 2 }
-
-        #expect(manager.agentAnnotations.map(\.visualStyle.palette) == [.brightViolet, .brightViolet])
-    }
-
-    @Test func schedulingExpiryIgnoresPersistingAnnotationsWithoutOverflow() {
-        let manager = CompanionManager(agentClient: FakePickyAgentClient())
-        // A lingering annotation persists through narration with a far-future sentinel
-        // expiry and no activated ttl. Converting that delay to UInt64 nanoseconds used
-        // to overflow and crash; scheduling must simply skip it.
-        let persisting = PickyAgentAnnotation(
-            id: "persisting",
-            shape: .rect,
-            displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100),
-            rect: CGRect(x: 10, y: 10, width: 20, height: 20),
-            label: nil,
-            expiresAt: .distantFuture,
-            pendingTTL: 6
-        )
-        manager.scheduleAnnotationExpiryIfNeeded(for: [persisting])
-
-        // A finite (activated) expiry alongside a persisting one still schedules safely.
-        let active = PickyAgentAnnotation(
-            id: "active",
-            shape: .rect,
-            displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100),
-            rect: CGRect(x: 30, y: 30, width: 20, height: 20),
-            label: nil,
-            expiresAt: now.addingTimeInterval(2)
-        )
-        manager.scheduleAnnotationExpiryIfNeeded(for: [persisting, active])
-
-        // Reaching here without a runtime trap is the regression assertion.
+        try await waitUntil { manager.interactionProjectionSequence > sequenceBeforeEvent }
         #expect(manager.agentAnnotations.isEmpty)
     }
 
-    @Test func clearsAnnotationOverlayWithoutScreenGeometry() async throws {
+    @Test func resolverUsesActionBlueOnOrdinaryLightAndDarkScreens() throws {
+        let request = request(annotations: [
+            annotation(id: "adaptive", shape: .line, x1: 0, y1: 0, x2: 400, y2: 200),
+        ])
+        let light = try PickyAnnotationOverlayResolver.resolve(
+            request,
+            sampleGrid: uniformGrid(.init(red: 1, green: 1, blue: 1))
+        )
+        let dark = try PickyAnnotationOverlayResolver.resolve(
+            request,
+            sampleGrid: uniformGrid(.init(red: 0, green: 0, blue: 0))
+        )
+
+        #expect(light.first?.visualStyle.palette == .actionBlue)
+        #expect(dark.first?.visualStyle.palette == .actionBlue)
+    }
+
+    @Test func clearsBufferedAnnotationOverlayWithoutScreenGeometry() async throws {
         let manager = CompanionManager(agentClient: FakePickyAgentClient())
         manager.applyAgentEvent(.annotationOverlayRequested(request(annotations: [
-            annotation(id: "visible", shape: .rect, x: 200, y: 100, w: 20, h: 20),
+            annotation(id: "buffered", shape: .rect, x: 200, y: 100, w: 20, h: 20),
         ])))
-        manager.applyAgentEvent(.mainTurnSettled(contextId: "context"))
-        try await waitUntil { manager.agentAnnotations.count == 1 }
-
         manager.applyAgentEvent(.annotationOverlayRequested(PickyAnnotationOverlayRequest(
             id: "annotations-clear",
             mode: .clear,
@@ -180,31 +93,33 @@ struct PickyAgentAnnotationOverlayTests {
             screenBounds: nil,
             screenshotSize: nil
         )))
-        try await waitUntil { manager.agentAnnotations.isEmpty }
 
+        try await waitUntil { manager.agentAnnotations.isEmpty }
         #expect(manager.agentAnnotations.isEmpty)
     }
 
     @Test func dropsAnnotationOverlayFromAnOlderCaptureGeneration() async throws {
         let manager = CompanionManager(agentClient: FakePickyAgentClient())
+        let sequenceBeforeEvent = manager.interactionProjectionSequence
         manager.applyAgentEvent(.annotationOverlayRequested(request(
             annotations: [annotation(id: "current", shape: .rect, x: 200, y: 100, w: 20, h: 20)],
             contextGeneration: 2
         )))
-        manager.applyAgentEvent(.mainTurnSettled(contextId: "context"))
-        try await waitUntil { manager.agentAnnotations.first?.id == "current" }
+        try await waitUntil { manager.interactionProjectionSequence > sequenceBeforeEvent }
+        let sequenceAfterCurrent = manager.interactionProjectionSequence
+
         manager.applyAgentEvent(.annotationOverlayRequested(request(
             annotations: [annotation(id: "stale", shape: .rect, x: 100, y: 100, w: 20, h: 20)],
             contextGeneration: 1
         )))
 
-        #expect(manager.agentAnnotations.map(\.id) == ["current"])
+        #expect(manager.interactionProjectionSequence == sequenceAfterCurrent)
     }
 
     @Test func reducerBuffersReplacesAppendsAndClearsAnnotations() {
         let initial = PickyInteractionState()
-        let original = resolvedAnnotation(id: "original", expiresAt: now.addingTimeInterval(10), pendingTTL: 6)
-        let additional = resolvedAnnotation(id: "additional", expiresAt: now.addingTimeInterval(5), pendingTTL: 6)
+        let original = resolvedAnnotation(id: "original")
+        let additional = resolvedAnnotation(id: "additional")
 
         // Replace buffers without showing anything.
         let replaced = reduce(initial, .agentAnnotationsRequested(mode: .replace, annotations: [original, additional]))
@@ -214,7 +129,7 @@ struct PickyAgentAnnotationOverlayTests {
 
         // Append buffers more.
         let appended = reduce(replaced, .agentAnnotationsRequested(mode: .append, annotations: [
-            resolvedAnnotation(id: "third", expiresAt: now, pendingTTL: 6),
+            resolvedAnnotation(id: "third"),
         ]))
         #expect(appended.pendingAgentAnnotations.count == 3)
 
@@ -226,10 +141,10 @@ struct PickyAgentAnnotationOverlayTests {
 
     @Test func reducerBoundsBufferedAnnotationsAndClearsThemForCLIInput() {
         let existing = (0..<PickyInteractionReducer.maximumAgentAnnotationCount)
-            .map { resolvedAnnotation(id: "existing-\($0)", expiresAt: now.addingTimeInterval(10), pendingTTL: 6) }
+            .map { resolvedAnnotation(id: "existing-\($0)") }
         let initial = reduce(PickyInteractionState(), .agentAnnotationsRequested(mode: .replace, annotations: existing))
         let appended = reduce(initial, .agentAnnotationsRequested(mode: .append, annotations: [
-            resolvedAnnotation(id: "new", expiresAt: now.addingTimeInterval(10), pendingTTL: 6),
+            resolvedAnnotation(id: "new"),
         ]))
 
         #expect(appended.pendingAgentAnnotations.count == PickyInteractionReducer.maximumAgentAnnotationCount)
@@ -274,13 +189,12 @@ struct PickyAgentAnnotationOverlayTests {
         #expect(first != other)
     }
 
-    @Test func legacyPersistedAnnotationsDecodeWithFallbackVisualStyle() throws {
+    @Test func persistedAnnotationsDecodeWithFallbackVisualStyle() throws {
         let data = """
         {
-          "id":"legacy","shape":"label",
+          "id":"persisted","shape":"rect",
           "displayFrame":[[0,0],[100,100]],
-          "point":[10,20],"spotlight":false,"label":"Legacy",
-          "expiresAt":1800000000
+          "spotlight":false,"label":"Area"
         }
         """.data(using: .utf8)!
 
@@ -292,24 +206,23 @@ struct PickyAgentAnnotationOverlayTests {
     @Test func paletteFallsBackToOverlayBlueAndLightKeylineWithoutScreenshotSamples() throws {
         let resolved = try PickyAnnotationOverlayResolver.resolve(request(annotations: [
             annotation(id: "fallback", shape: .line, x1: 0, y1: 0, x2: 100, y2: 100),
-        ]), sampleGrid: nil, now: now)
+        ]), sampleGrid: nil)
 
         #expect(resolved.first?.visualStyle == .fallback)
-        #expect(resolved.first?.visualStyle.palette != .signalMagenta)
     }
 
-    @Test func paletteChoosesVioletOnLightPixelsAndYellowOnDarkPixels() throws {
+    @Test func paletteKeepsActionBlueOnLightAndDarkPixels() throws {
         let lightGrid = uniformGrid(.init(red: 1, green: 1, blue: 1))
         let darkGrid = uniformGrid(.init(red: 0, green: 0, blue: 0))
         let request = request(annotations: [
             annotation(id: "line", shape: .line, x1: 0, y1: 0, x2: 400, y2: 200),
         ])
 
-        let light = try PickyAnnotationOverlayResolver.resolve(request, sampleGrid: lightGrid, now: now)
-        let dark = try PickyAnnotationOverlayResolver.resolve(request, sampleGrid: darkGrid, now: now)
+        let light = try PickyAnnotationOverlayResolver.resolve(request, sampleGrid: lightGrid)
+        let dark = try PickyAnnotationOverlayResolver.resolve(request, sampleGrid: darkGrid)
 
-        #expect(light.first?.visualStyle == .init(palette: .brightViolet, keyline: .dark))
-        #expect(dark.first?.visualStyle == .init(palette: .signalYellow, keyline: .light))
+        #expect(light.first?.visualStyle == .init(palette: .actionBlue, keyline: .dark))
+        #expect(dark.first?.visualStyle == .init(palette: .actionBlue, keyline: .light))
     }
 
     @Test func streamedAppendKeepsTheTurnBasePaletteWhenContrastRemainsSufficient() {
@@ -331,13 +244,13 @@ struct PickyAgentAnnotationOverlayTests {
             preferredBasePalette: basePalette
         )
 
-        #expect(basePalette == .brightViolet)
-        #expect(appendedStyles["second"]?.palette == .brightViolet)
+        #expect(basePalette == .actionBlue)
+        #expect(appendedStyles["second"]?.palette == .actionBlue)
     }
 
     @Test func lowContrastShapeOverridesTheRequestPaletteWithoutChangingOtherShapes() {
         let white = PickyScreenshotSampleColor(red: 1, green: 1, blue: 1)
-        let overlayBlue = PickyAnnotationPaletteRole.fallbackBlue.sampleColor
+        let overlayBlue = PickyAnnotationPaletteRole.actionBlue.sampleColor
         let grid = PickyScreenshotColorSampleGrid(
             width: 10,
             height: 10,
@@ -354,14 +267,14 @@ struct PickyAgentAnnotationOverlayTests {
             sampleGrid: grid
         )
 
-        #expect(styles["light"]?.palette == .brightViolet)
-        #expect(styles["blue"]?.palette == .signalYellow)
+        #expect(styles["light"]?.palette == .actionBlue)
+        #expect(styles["blue"]?.palette != .actionBlue)
     }
 
     @Test func duplicateAnnotationIDsDoNotCrashPaletteFallback() {
         let duplicates = [
-            annotation(id: "same", shape: .label, x: 10, y: 10, label: "First"),
-            annotation(id: "same", shape: .label, x: 20, y: 20, label: "Second"),
+            annotation(id: "same", shape: .line, x1: 0, y1: 0, x2: 10, y2: 10, label: "First"),
+            annotation(id: "same", shape: .line, x1: 10, y1: 10, x2: 20, y2: 20, label: "Second"),
         ]
 
         let styles = PickyAnnotationPaletteResolver.styles(
@@ -371,6 +284,11 @@ struct PickyAgentAnnotationOverlayTests {
         )
 
         #expect(styles == ["same": .fallback])
+    }
+
+    @Test func annotationTargetsDoNotRenderTheGenericPointerRing() {
+        #expect(!PickyPointerHighlightPolicy.showsRing(for: .annotation))
+        #expect(PickyPointerHighlightPolicy.showsRing(for: .screenElement))
     }
 
     @Test func pointerRingClampsItsPaintedBoundsInsideTheScreen() {
@@ -399,8 +317,7 @@ struct PickyAgentAnnotationOverlayTests {
             shape: .rect,
             displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100),
             rect: CGRect(x: 20, y: 30, width: 40, height: 20),
-            label: "Save",
-            expiresAt: now
+            label: "Save"
         )
         let labelSize = CGSize(width: 56, height: 26)
 
@@ -420,8 +337,7 @@ struct PickyAgentAnnotationOverlayTests {
             shape: .rect,
             displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100),
             rect: CGRect(x: 20, y: 90, width: 30, height: 8),
-            label: "Top",
-            expiresAt: now
+            label: "Top"
         )
         let labelSize = CGSize(width: 47, height: 26)
 
@@ -442,8 +358,7 @@ struct PickyAgentAnnotationOverlayTests {
             displayFrame: CGRect(x: 0, y: 0, width: 200, height: 100),
             point: CGPoint(x: 80, y: 50),
             endPoint: CGPoint(x: 150, y: 50),
-            label: "Flow",
-            expiresAt: now
+            label: "Flow"
         )
 
         let anchor = PickyAnnotationLabelGeometry.outlineAnchor(
@@ -462,8 +377,7 @@ struct PickyAgentAnnotationOverlayTests {
             displayFrame: CGRect(x: 0, y: 0, width: 200, height: 100),
             point: CGPoint(x: 10, y: 50),
             endPoint: CGPoint(x: 150, y: 50),
-            label: "Edge",
-            expiresAt: now
+            label: "Edge"
         )
         let labelSize = CGSize(width: 56, height: 26)
 
@@ -477,7 +391,12 @@ struct PickyAgentAnnotationOverlayTests {
         #expect(labelBounds(center: anchor!, size: labelSize).maxX <= annotation.displayFrame.width)
     }
 
-    @Test func standaloneAndOversizedLabelsClampInsideTheScreen() {
+    @Test func oversizedShapeLabelsClampInsideTheScreen() {
+        #expect(PickyAnnotationLabelGeometry.boundedLabelSize(
+            measuredSize: CGSize(width: 800, height: 30),
+            screenSize: CGSize(width: 1_000, height: 500)
+        ).width == PickyAnnotationLabelGeometry.maximumLabelWidth)
+
         let screenSize = CGSize(width: 100, height: 100)
         let boundedSize = PickyAnnotationLabelGeometry.boundedLabelSize(
             measuredSize: CGSize(width: 180, height: 30),
@@ -489,11 +408,11 @@ struct PickyAgentAnnotationOverlayTests {
             labelSize: boundedSize
         )
 
-        #expect(boundedSize == CGSize(width: 80, height: 30))
-        #expect(anchor == CGPoint(x: 42, y: 83))
-        let paintedBounds = labelBounds(center: anchor, size: boundedSize).insetBy(dx: -2, dy: -2)
-        #expect(paintedBounds.minX >= 0 && paintedBounds.maxX <= screenSize.width)
-        #expect(paintedBounds.minY >= 0 && paintedBounds.maxY <= screenSize.height)
+        #expect(boundedSize == CGSize(width: 84, height: 30))
+        #expect(anchor == CGPoint(x: 42, y: 85))
+        let bounds = labelBounds(center: anchor, size: boundedSize)
+        #expect(bounds.minX >= 0 && bounds.maxX <= screenSize.width)
+        #expect(bounds.minY >= 0 && bounds.maxY <= screenSize.height)
     }
 
     @Test func spotlightMaskUsesShapeMatchedHolesAndOmitsPlainAnnotations() {
@@ -505,8 +424,7 @@ struct PickyAgentAnnotationOverlayTests {
                 displayFrame: screenFrame,
                 rect: CGRect(x: 60, y: 30, width: 20, height: 10),
                 spotlight: true,
-                label: nil,
-                expiresAt: now
+                label: nil
             ),
             PickyAgentAnnotation(
                 id: "line-hole",
@@ -515,16 +433,14 @@ struct PickyAgentAnnotationOverlayTests {
                 point: CGPoint(x: 20, y: 20),
                 endPoint: CGPoint(x: 40, y: 50),
                 spotlight: true,
-                label: nil,
-                expiresAt: now
+                label: nil
             ),
             PickyAgentAnnotation(
                 id: "plain-rect",
                 shape: .rect,
                 displayFrame: screenFrame,
                 rect: CGRect(x: 0, y: 0, width: 10, height: 10),
-                label: nil,
-                expiresAt: now
+                label: nil
             ),
         ]
 
@@ -560,32 +476,6 @@ struct PickyAgentAnnotationOverlayTests {
         #expect(eventRequest.mode == .append)
         #expect(eventRequest.annotations.first?.shape == .line)
         #expect(eventRequest.annotations.first?.spotlight == true)
-    }
-
-    private func overlayContext(sampleGrid: PickyScreenshotColorSampleGrid) -> PickyContextPacket {
-        PickyContextPacket(
-            id: "context",
-            source: "cli",
-            capturedAt: now,
-            transcript: "show me",
-            selectedText: nil,
-            cwd: nil,
-            activeApp: nil,
-            activeWindow: nil,
-            browser: nil,
-            screenshots: [PickyScreenshotContext(
-                id: "shot-1",
-                label: "primary",
-                path: "/tmp/unused.jpg",
-                screenId: "screen",
-                bounds: PickyCGRect(x: 100, y: 200, width: 200, height: 100),
-                screenshotWidthInPixels: 400,
-                screenshotHeightInPixels: 200,
-                isCursorScreen: true,
-                annotationColorSampleGrid: sampleGrid
-            )],
-            warnings: []
-        )
     }
 
     private func uniformGrid(_ color: PickyScreenshotSampleColor) -> PickyScreenshotColorSampleGrid {
@@ -642,10 +532,10 @@ struct PickyAgentAnnotationOverlayTests {
         w: Double? = nil, h: Double? = nil, x1: Double? = nil, y1: Double? = nil, x2: Double? = nil, y2: Double? = nil,
         spotlight: Bool? = nil, label: String? = nil
     ) -> PickyAnnotationOverlayAnnotation {
-        PickyAnnotationOverlayAnnotation(id: id, shape: shape, x: x, y: y, w: w, h: h, x1: x1, y1: y1, x2: x2, y2: y2, spotlight: spotlight, label: label, ttlMs: nil, clamped: nil)
+        PickyAnnotationOverlayAnnotation(id: id, shape: shape, x: x, y: y, w: w, h: h, x1: x1, y1: y1, x2: x2, y2: y2, spotlight: spotlight, label: label, clamped: nil)
     }
 
-    private func resolvedAnnotation(id: String, expiresAt: Date, pendingTTL: TimeInterval? = nil) -> PickyAgentAnnotation {
-        PickyAgentAnnotation(id: id, shape: .rect, displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100), rect: CGRect(x: 40, y: 40, width: 20, height: 20), label: nil, expiresAt: expiresAt, pendingTTL: pendingTTL)
+    private func resolvedAnnotation(id: String) -> PickyAgentAnnotation {
+        PickyAgentAnnotation(id: id, shape: .rect, displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100), rect: CGRect(x: 40, y: 40, width: 20, height: 20), label: nil)
     }
 }

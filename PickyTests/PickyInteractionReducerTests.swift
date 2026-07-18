@@ -689,24 +689,22 @@ struct PickyInteractionReducerTests {
 
         // When speech drains, narration is over and the buddy flies back.
         let drained = reduce(settled.state, .speechFinished(speechID: speechID), id: timerB)
+        #expect(drained.state.agentAnnotations.isEmpty)
         #expect(drained.effects.contains(.setPointerReturnsToCursor(pointerID: "annotation-rect", returnsToCursor: true)))
     }
 
-    @Test func turnEndFinishesQueuedShapesBeforeReturningToCursor() {
+    @Test func turnEndDropsQueuedAnnotationVisitsAndReturnsToCursor() {
         let rectReveal = revealAnnotation(id: "rect", into: PickyInteractionState())
         let firstTarget = pointerTarget(from: rectReveal)
         let queued = revealAnnotation(id: "line", into: rectReveal.state)
         let settled = reduce(queued.state, .mainTurnSettled(contextID: "ctx"), id: timerB)
 
+        #expect(settled.state.agentAnnotations.isEmpty)
+        #expect(settled.state.pendingAnnotationPointerTargets.isEmpty)
         #expect(settled.effects == [
             .setPointerParksAtTarget(pointerID: firstTarget.id, parksAtTarget: false),
-            .setPointerReturnsToCursor(pointerID: firstTarget.id, returnsToCursor: false),
+            .setPointerReturnsToCursor(pointerID: firstTarget.id, returnsToCursor: true),
         ])
-
-        let finalTarget = pointerTarget(from: reduce(settled.state, .pointerAnimationFinished(pointerID: firstTarget.id), id: UUID()))
-        #expect(finalTarget.id == "annotation-line")
-        #expect(finalTarget.returnsToCursor)
-        #expect(!finalTarget.parksAtTarget)
     }
 
     @Test func turnEndWithoutActiveAnnotationPointerDoesNotRequestFlyBack() {
@@ -742,8 +740,7 @@ struct PickyInteractionReducerTests {
             shape: .rect,
             displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100),
             rect: CGRect(x: 10, y: 20, width: 20, height: 10),
-            label: nil,
-            expiresAt: baseDate
+            label: nil
         )
     }
 

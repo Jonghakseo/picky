@@ -1,6 +1,6 @@
 import type { ScreenshotSize } from "./pointer-validation.js";
 
-export const ANNOTATION_SHAPES = ["rect", "line", "label"] as const;
+export const ANNOTATION_SHAPES = ["rect", "line"] as const;
 export type AnnotationShape = typeof ANNOTATION_SHAPES[number];
 export type AnnotationMode = "replace" | "append" | "clear";
 
@@ -17,7 +17,6 @@ export interface AnnotationInput {
   y2?: number;
   spotlight?: boolean;
   label?: string;
-  ttlMs?: number;
 }
 
 export interface ClampedAnnotation extends AnnotationInput {
@@ -43,9 +42,6 @@ export function clampAnnotation(annotation: AnnotationInput, screenshotSize: Scr
         x2: coordinate(input.x2, "x", "x2"),
         y2: coordinate(input.y2, "y", "y2"),
       }, clamped);
-    case "label":
-      if (!input.label) throw new Error("label annotations need non-empty label text.");
-      return withClamped(input, { x: coordinate(input.x, "x", "x"), y: coordinate(input.y, "y", "y") }, clamped);
   }
 }
 
@@ -80,7 +76,6 @@ function normalizeAnnotation(annotation: AnnotationInput): AnnotationInput {
     ...annotation,
     id,
     label: label || undefined,
-    ...(annotation.ttlMs !== undefined ? { ttlMs: nonNegativeFinite(annotation.ttlMs, "ttlMs") } : {}),
   };
 }
 
@@ -91,12 +86,6 @@ function withClamped(input: AnnotationInput, fields: Partial<AnnotationInput>, c
 function requiredFinite(value: number | undefined, field: string): number {
   if (value === undefined || !Number.isFinite(value)) throw new Error(`${field} must be a finite number.`);
   return value;
-}
-
-function nonNegativeFinite(value: number, field: string): number {
-  const finite = requiredFinite(value, field);
-  if (finite < 0) throw new Error(`${field} must be non-negative.`);
-  return finite;
 }
 
 function clamp(value: number, min: number, max: number): number {

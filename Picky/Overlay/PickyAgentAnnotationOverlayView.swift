@@ -33,10 +33,6 @@ struct PickyAgentAnnotationOverlayView: View {
         }
     }
 
-    private var labels: [PickyAgentAnnotation] {
-        annotationsForScreen.filter { $0.shape == .label }
-    }
-
     private var accessibilitySummary: String {
         let labelTexts = annotationsForScreen.compactMap(\.label)
         guard !labelTexts.isEmpty else { return "Screen guidance is visible." }
@@ -55,20 +51,9 @@ struct PickyAgentAnnotationOverlayView: View {
                         screenFrame: screenFrame,
                         labelSize: labelSize
                     ) {
-                        annotationLabel(label, visualStyle: annotation.visualStyle)
+                        annotationLabel(label, size: labelSize)
                             .position(x: anchor.x, y: anchor.y)
                     }
-                }
-            }
-            ForEach(labels) { annotation in
-                if let point = localPoint(annotation.point), let label = annotation.label {
-                    let anchor = PickyAnnotationLabelGeometry.clampedAnchor(
-                        preferred: point,
-                        screenSize: screenFrame.size,
-                        labelSize: annotationLabelSize(label)
-                    )
-                    annotationLabel(label, visualStyle: annotation.visualStyle)
-                        .position(x: anchor.x, y: anchor.y)
                 }
             }
         }
@@ -96,8 +81,6 @@ struct PickyAgentAnnotationOverlayView: View {
                     visualStyle: annotation.visualStyle
                 )
             }
-        case .label:
-            EmptyView()
         }
     }
 
@@ -125,23 +108,24 @@ struct PickyAgentAnnotationOverlayView: View {
         }
     }
 
-    private func annotationLabel(_ label: String, visualStyle: PickyAnnotationVisualStyle) -> some View {
-        let shape = RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
+    private func annotationLabel(_ label: String, size: CGSize) -> some View {
+        let textWidth = max(1, size.width - DS.Spacing.sm * 2)
         return Text(label)
-            .font(PickyHUDTypography.supportingSemibold)
+            .font(PickyHUDTypography.metaSemibold)
             .foregroundStyle(DS.Colors.textPrimary)
             .lineLimit(1)
             .truncationMode(.tail)
-            .frame(maxWidth: max(1, screenFrame.width - DS.Spacing.sm * 4))
+            .frame(width: textWidth, alignment: .leading)
             .padding(.horizontal, DS.Spacing.sm)
             .padding(.vertical, DS.Spacing.xs)
-            .background(DS.Colors.surface1, in: shape)
-            .overlay(shape.stroke(visualStyle.keyline.color, lineWidth: PickyAgentAnnotationOverlayStyle.labelKeylineWidth))
-            .overlay(shape.stroke(visualStyle.palette.color, lineWidth: PickyAgentAnnotationOverlayStyle.labelBorderWidth))
+            .background(
+                DS.Colors.surface1,
+                in: RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
+            )
     }
 
     private func annotationLabelSize(_ label: String) -> CGSize {
-        let font = NSFont.systemFont(ofSize: PickyHUDTypography.Size.supporting, weight: .semibold)
+        let font = NSFont.systemFont(ofSize: PickyHUDTypography.Size.meta, weight: .semibold)
         let textSize = (label as NSString).size(withAttributes: [.font: font])
         return PickyAnnotationLabelGeometry.boundedLabelSize(
             measuredSize: CGSize(
@@ -168,9 +152,8 @@ struct PickyAgentAnnotationOverlayView: View {
 /// labels clear of the stroke; the final clamp guarantees the full measured chip stays
 /// inside its display even for large font scales, long strings, and CJK text.
 enum PickyAnnotationLabelGeometry {
+    static let maximumLabelWidth: CGFloat = 240
     private static let labelGap: CGFloat = DS.Spacing.sm
-    /// Half of the 3pt neutral keyline, rounded up so painted bounds stay visible.
-    private static let paintInset: CGFloat = 2
 
     static func outlineAnchor(
         for annotation: PickyAgentAnnotation,
@@ -205,8 +188,6 @@ enum PickyAnnotationLabelGeometry {
                 CGPoint(x: midpoint.x, y: midpoint.y - labelGap - halfHeight),
                 CGPoint(x: midpoint.x, y: midpoint.y + labelGap + halfHeight),
             ]
-        case .label:
-            return nil
         }
 
         return candidates.first(where: { fits($0, screenSize: screenSize, labelSize: labelSize) })
@@ -215,14 +196,14 @@ enum PickyAnnotationLabelGeometry {
 
     static func boundedLabelSize(measuredSize: CGSize, screenSize: CGSize) -> CGSize {
         CGSize(
-            width: min(measuredSize.width, max(1, screenSize.width - (labelGap + paintInset) * 2)),
-            height: min(measuredSize.height, max(1, screenSize.height - (labelGap + paintInset) * 2))
+            width: min(measuredSize.width, maximumLabelWidth, max(1, screenSize.width - labelGap * 2)),
+            height: min(measuredSize.height, max(1, screenSize.height - labelGap * 2))
         )
     }
 
     static func clampedAnchor(preferred: CGPoint, screenSize: CGSize, labelSize: CGSize) -> CGPoint {
-        let halfWidth = min(labelSize.width / 2 + paintInset, screenSize.width / 2)
-        let halfHeight = min(labelSize.height / 2 + paintInset, screenSize.height / 2)
+        let halfWidth = min(labelSize.width / 2, screenSize.width / 2)
+        let halfHeight = min(labelSize.height / 2, screenSize.height / 2)
         return CGPoint(
             x: min(max(preferred.x, halfWidth), max(halfWidth, screenSize.width - halfWidth)),
             y: min(max(preferred.y, halfHeight), max(halfHeight, screenSize.height - halfHeight))
@@ -230,10 +211,10 @@ enum PickyAnnotationLabelGeometry {
     }
 
     private static func fits(_ center: CGPoint, screenSize: CGSize, labelSize: CGSize) -> Bool {
-        center.x - labelSize.width / 2 - paintInset >= 0
-            && center.x + labelSize.width / 2 + paintInset <= screenSize.width
-            && center.y - labelSize.height / 2 - paintInset >= 0
-            && center.y + labelSize.height / 2 + paintInset <= screenSize.height
+        center.x - labelSize.width / 2 >= 0
+            && center.x + labelSize.width / 2 <= screenSize.width
+            && center.y - labelSize.height / 2 >= 0
+            && center.y + labelSize.height / 2 <= screenSize.height
     }
 
     private static func localRect(_ rect: CGRect, in screenFrame: CGRect) -> CGRect {
@@ -253,8 +234,6 @@ private enum PickyAgentAnnotationOverlayStyle {
     static let dimmingColor = Color.black.opacity(dimmingOpacity)
     static let keylineWidth: CGFloat = 5
     static let outlineLineWidth: CGFloat = 2
-    static let labelKeylineWidth: CGFloat = 3
-    static let labelBorderWidth: CGFloat = 1
 }
 
 private struct PickyRoughStrokeView: View {
@@ -329,8 +308,6 @@ enum PickyAnnotationSpotlightMaskGeometry {
                     width: abs(localEnd.x - localStart.x) + linePadding * 2,
                     height: abs(localEnd.y - localStart.y) + linePadding * 2
                 ))
-            case .label:
-                return nil
             }
         }
     }

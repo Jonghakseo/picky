@@ -1580,8 +1580,10 @@ export class SessionSupervisor extends EventEmitter {
     for (const reason of result.droppedTags) {
       logAgentd("main annotation DSL tag dropped", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, reason });
     }
-    for (const tag of result.completedTags) await this.emitMainAnnotationDslTag(tag);
+    // Broadcast preceding narration before its inline drawing tag. The app uses
+    // this order to delay reveal until TTS reaches the described screen area.
     this.emitMainNarrationSentences(result.cleanText);
+    for (const tag of result.completedTags) this.emitMainAnnotationDslTag(tag);
     return result.cleanText;
   }
 
@@ -1625,7 +1627,7 @@ export class SessionSupervisor extends EventEmitter {
     }
   }
 
-  private async emitMainAnnotationDslTag(tag: AnnotationDslTag): Promise<void> {
+  private emitMainAnnotationDslTag(tag: AnnotationDslTag): void {
     if (tag.kind === "screen") return;
     if (this.disabledBuiltinTools.has("picky_screen_overlay")) return;
 

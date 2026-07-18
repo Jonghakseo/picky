@@ -1707,6 +1707,12 @@ enum PickyPointerMotionPolicy {
     }
 }
 
+enum PickyPointerHighlightPolicy {
+    static func showsRing(for kind: PickyDetectedHighlightKind) -> Bool {
+        kind != .annotation
+    }
+}
+
 // MARK: - Pointer Target Highlight
 
 /// Pi-cursor-blue highlight overlay used when Picky points at something on
@@ -1764,17 +1770,21 @@ private struct PickyHighlightOverlayView: View {
                 .transition(.opacity)
             }
 
-            Circle()
-                .stroke(Color.white.opacity(0.92), lineWidth: 4)
-                .frame(width: ringInnerRadius * 2, height: ringInnerRadius * 2)
-                .position(targetCenter)
-                .opacity(0.35 + 0.65 * arrivalProgress)
+            // RECT/LINE annotations already provide their own precise shape. Reusing
+            // the generic pointer ring here turns a large rectangle into a huge circle.
+            if PickyPointerHighlightPolicy.showsRing(for: kind) {
+                Circle()
+                    .stroke(Color.white.opacity(0.92), lineWidth: 4)
+                    .frame(width: ringInnerRadius * 2, height: ringInnerRadius * 2)
+                    .position(targetCenter)
+                    .opacity(0.35 + 0.65 * arrivalProgress)
 
-            Circle()
-                .stroke(DS.Colors.overlayCursorBlue, lineWidth: 1.6)
-                .frame(width: ringInnerRadius * 2, height: ringInnerRadius * 2)
-                .position(targetCenter)
-                .opacity(0.35 + 0.65 * arrivalProgress)
+                Circle()
+                    .stroke(DS.Colors.overlayCursorBlue, lineWidth: 1.6)
+                    .frame(width: ringInnerRadius * 2, height: ringInnerRadius * 2)
+                    .position(targetCenter)
+                    .opacity(0.35 + 0.65 * arrivalProgress)
+            }
 
             if let bubbleText, !bubbleText.isEmpty {
                 PickyHighlightTagView(

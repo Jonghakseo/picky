@@ -1582,6 +1582,10 @@ struct PickyCompanionManagerTests {
         manager.noteExternalSubmission(kind: .submitMain, text: "silent overlay turn", context: context)
         try await waitUntil { manager.isWaitingForCursorResponse }
         manager.beginAwaitingAgentResponse(recognizedTranscript: "show the setting")
+        manager.handleAgentSubmissionAccepted(
+            receipt: PickyAgentSubmissionReceipt(sessionID: "deferred-settle-session", message: ""),
+            source: "voice-follow-up"
+        )
 
         #expect(manager.voiceState == .processing)
         #expect(manager.voicePromptBubbleState == .recognized("show the setting"))
@@ -1612,6 +1616,9 @@ struct PickyCompanionManagerTests {
         #expect(manager.voiceState == settledVoiceState)
         #expect(manager.voicePromptBubbleState == settledPromptBubbleState)
         #expect(manager.isWaitingForCursorResponse == settledWaitingProjection)
+
+        try await sleepPast(CompanionManager.minimumVoiceProcessingDisplayDuration)
+        #expect(manager.latestAgentSessionSummary == L10n.t("agent.summary.preparingResponse"))
     }
 
     @Test func annotationPointerParkAppendAndSettleUpdatesOnlyCurrentPointer() async throws {

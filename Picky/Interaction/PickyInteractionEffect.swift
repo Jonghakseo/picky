@@ -24,5 +24,7 @@ enum PickyInteractionEffect: Equatable {
     case cancelTransientHide(timerID: UUID?)
     case startPointerAnimation(target: PickyPointerTarget)
     case setPointerReturnsToCursor(pointerID: String, returnsToCursor: Bool)
+    case setPointerParksAtTarget(pointerID: String, parksAtTarget: Bool)
+    case advancePointerAnimation(pointerID: String)
     case cancelPointerAnimation(pointerID: String?)
 }

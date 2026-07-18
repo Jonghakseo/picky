@@ -640,45 +640,126 @@ struct PickyInteractionReducerTests {
         #expect(duplicate.state.agentAnnotations.first?.expiresAt == baseDate.addingTimeInterval(6))
     }
 
-    @Test func annotationPointersVisitAnchorsFIFOAndReturnOnlyAfterTheLastShape() {
-        let displayFrame = CGRect(x: 0, y: 0, width: 100, height: 100)
-        let annotations = [
-            PickyAgentAnnotation(id: "rect", shape: .rect, displayFrame: displayFrame, rect: CGRect(x: 10, y: 20, width: 20, height: 10), spotlightShape: nil, label: nil, expiresAt: baseDate),
-            PickyAgentAnnotation(id: "line", shape: .line, displayFrame: displayFrame, point: CGPoint(x: 30, y: 30), endPoint: CGPoint(x: 70, y: 50), spotlightShape: nil, label: nil, expiresAt: baseDate),
-            PickyAgentAnnotation(id: "label", shape: .label, displayFrame: displayFrame, point: CGPoint(x: 80, y: 60), spotlightShape: nil, label: "Save", expiresAt: baseDate),
-        ]
-
-        let first = reduce(PickyInteractionState(), .agentAnnotationsRequested(mode: .append, annotations: annotations), id: timerA)
-        guard case .startPointerAnimation(let firstTarget) = first.effects.first else {
-            Issue.record("expected the first annotation pointer animation")
-            return
-        }
+    @Test func annotationPointerParksAcrossStreamGapThenHopsToNextShape() {
+        let first = reduce(PickyInteractionState(), .agentAnnotationsRequested(mode: .append, annotations: [annotation(id: "rect")]), id: timerA)
+        let firstTarget = pointerTarget(from: first)
         #expect(firstTarget.id == "annotation-rect")
-        #expect(firstTarget.screenLocation == CGPoint(x: 20, y: 25))
         #expect(firstTarget.returnsToCursor == false)
+        #expect(firstTarget.parksAtTarget)
 
-        let second = reduce(first.state, .pointerAnimationFinished(pointerID: firstTarget.id), id: timerB)
-        guard case .startPointerAnimation(let secondTarget) = second.effects.first else {
-            Issue.record("expected the second annotation pointer animation")
-            return
-        }
+        let parked = reduce(first.state, .pointerAnimationParked(pointerID: firstTarget.id), id: timerB)
+        #expect(parked.state.annotationPointerIsParked)
+        #expect(parked.state.activeAnnotationPointerID == firstTarget.id)
+
+        let appended = reduce(parked.state, .agentAnnotationsRequested(mode: .append, annotations: [annotation(id: "line")]), id: UUID())
+        #expect(appended.effects == [
+            .setPointerParksAtTarget(pointerID: firstTarget.id, parksAtTarget: false),
+            .advancePointerAnimation(pointerID: firstTarget.id),
+        ])
+
+        let hopped = reduce(appended.state, .pointerAnimationFinished(pointerID: firstTarget.id), id: UUID())
+        let secondTarget = pointerTarget(from: hopped)
         #expect(secondTarget.id == "annotation-line")
-        #expect(secondTarget.screenLocation == CGPoint(x: 50, y: 40))
         #expect(secondTarget.returnsToCursor == false)
+        #expect(secondTarget.parksAtTarget)
+    }
 
-        let third = reduce(second.state, .pointerAnimationFinished(pointerID: secondTarget.id), id: UUID())
-        guard case .startPointerAnimation(let thirdTarget) = third.effects.first else {
-            Issue.record("expected the final annotation pointer animation")
-            return
+    @Test func annotationPointerReturnsOnlyWhenQuickReplyEndsParkedTurn() {
+        let parked = parkedAnnotationPointerState()
+        let ended = reduce(parked, .quickReply(contextID: "ctx", text: "Done", originSource: .text, replyKind: .main, sessionID: nil, inputID: inputA), id: timerA)
+
+        #expect(ended.state.annotationPointerTurnActive == false)
+        #expect(ended.state.activeAnnotationPointerReturnsToCursor)
+        #expect(ended.effects.contains(.setPointerParksAtTarget(pointerID: "annotation-rect", parksAtTarget: false)))
+        #expect(ended.effects.contains(.setPointerReturnsToCursor(pointerID: "annotation-rect", returnsToCursor: true)))
+        #expect(!ended.effects.contains(.advancePointerAnimation(pointerID: "annotation-rect")))
+    }
+
+    @Test func annotationPointerReturnsOnlyWhenMainTurnSettledEndsParkedTurn() {
+        let parked = parkedAnnotationPointerState()
+        let ended = reduce(parked, .mainTurnSettled(contextID: "ctx"), id: timerA)
+
+        #expect(ended.state.annotationPointerTurnActive == false)
+        #expect(ended.state.activeAnnotationPointerReturnsToCursor)
+        #expect(ended.effects.contains(.setPointerParksAtTarget(pointerID: "annotation-rect", parksAtTarget: false)))
+        #expect(ended.effects.contains(.setPointerReturnsToCursor(pointerID: "annotation-rect", returnsToCursor: true)))
+        #expect(!ended.effects.contains(.advancePointerAnimation(pointerID: "annotation-rect")))
+    }
+
+    @Test func turnEndFinishesQueuedShapesBeforeReturningToCursor() {
+        let requested = reduce(
+            PickyInteractionState(),
+            .agentAnnotationsRequested(mode: .append, annotations: [annotation(id: "rect"), annotation(id: "line")]),
+            id: timerA
+        )
+        let firstTarget = pointerTarget(from: requested)
+        let settled = reduce(requested.state, .mainTurnSettled(contextID: "ctx"), id: timerB)
+
+        #expect(settled.effects == [
+            .setPointerParksAtTarget(pointerID: firstTarget.id, parksAtTarget: false),
+            .setPointerReturnsToCursor(pointerID: firstTarget.id, returnsToCursor: false),
+        ])
+
+        let finalTarget = pointerTarget(from: reduce(settled.state, .pointerAnimationFinished(pointerID: firstTarget.id), id: UUID()))
+        #expect(finalTarget.id == "annotation-line")
+        #expect(finalTarget.returnsToCursor)
+        #expect(!finalTarget.parksAtTarget)
+    }
+
+    @Test func turnEndWithoutActiveAnnotationPointerDoesNotRequestFlyBack() {
+        let settled = reduce(PickyInteractionState(), .mainTurnSettled(contextID: "ctx"), id: timerA)
+
+        #expect(!settled.effects.contains { effect in
+            if case .setPointerReturnsToCursor = effect { return true }
+            return false
+        })
+        #expect(!settled.effects.contains { effect in
+            if case .setPointerParksAtTarget = effect { return true }
+            return false
+        })
+    }
+
+    @Test func newTextInputClearsParkedAnnotationsAndRequestsFlyBack() {
+        let parked = parkedAnnotationPointerState()
+        let submitted = reduce(parked, .textSubmitted(text: "next", inputID: inputA), id: timerA)
+
+        #expect(submitted.state.agentAnnotations.isEmpty)
+        #expect(submitted.state.annotationPointerTurnActive == false)
+        #expect(submitted.state.activeAnnotationPointerID == "annotation-rect")
+        #expect(submitted.effects.contains(.setPointerReturnsToCursor(pointerID: "annotation-rect", returnsToCursor: true)))
+        #expect(!submitted.effects.contains { effect in
+            if case .cancelPointerAnimation = effect { return true }
+            return false
+        })
+    }
+
+    private func annotation(id: String) -> PickyAgentAnnotation {
+        PickyAgentAnnotation(
+            id: id,
+            shape: .rect,
+            displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100),
+            rect: CGRect(x: 10, y: 20, width: 20, height: 10),
+            spotlightShape: nil,
+            label: nil,
+            expiresAt: baseDate
+        )
+    }
+
+    private func parkedAnnotationPointerState() -> PickyInteractionState {
+        let requested = reduce(
+            PickyInteractionState(),
+            .agentAnnotationsRequested(mode: .append, annotations: [annotation(id: "rect")]),
+            id: timerA
+        )
+        let target = pointerTarget(from: requested)
+        return reduce(requested.state, .pointerAnimationParked(pointerID: target.id), id: timerB).state
+    }
+
+    private func pointerTarget(from transition: PickyInteractionTransition) -> PickyPointerTarget {
+        guard case .startPointerAnimation(let target) = transition.effects.first else {
+            fatalError("Expected annotation pointer animation")
         }
-        #expect(thirdTarget.id == "annotation-label")
-        #expect(thirdTarget.screenLocation == CGPoint(x: 80, y: 60))
-        #expect(thirdTarget.returnsToCursor == true)
-
-        let completed = reduce(third.state, .pointerAnimationFinished(pointerID: thirdTarget.id), id: UUID())
-        #expect(completed.state.pointer == .idle)
-        #expect(completed.state.pendingAnnotationPointerTargets.isEmpty)
-        #expect(completed.state.overlay == .visible(reason: [.activeAgentAnnotations]))
+        return target
     }
 
     private func reduce(

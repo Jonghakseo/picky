@@ -295,6 +295,8 @@ final class CompanionManager: ObservableObject {
     @Published var detectedElementHighlightKind: PickyDetectedHighlightKind?
     /// Whether this visit is the last in its sequence and should spring back to the real cursor.
     @Published var detectedElementReturnsToCursor = true
+    /// Keeps the final annotation target in place until its streamed turn settles.
+    @Published var detectedElementParksAtTarget = false
     /// Stable id for the active pointer animation. Every delayed BlueCursorView
     /// callback validates this id before mutating or clearing pointer state.
     @Published var detectedElementPointerID: String?
@@ -589,6 +591,7 @@ final class CompanionManager: ObservableObject {
         detectedElementTargetFrame = target.targetFrame
         detectedElementHighlightKind = target.highlightKind
         detectedElementReturnsToCursor = target.returnsToCursor
+        detectedElementParksAtTarget = target.parksAtTarget
         detectedElementScreenLocation = target.screenLocation
         detectedElementPointerID = target.id
         setLocalOverlayReason(.activePointerAnimation, visible: true)
@@ -597,6 +600,20 @@ final class CompanionManager: ObservableObject {
     func setPointerReturnsToCursor(pointerID: String, returnsToCursor: Bool) {
         guard detectedElementPointerID == pointerID else { return }
         detectedElementReturnsToCursor = returnsToCursor
+    }
+
+    func setPointerParksAtTarget(pointerID: String, parksAtTarget: Bool) {
+        guard detectedElementPointerID == pointerID else { return }
+        detectedElementParksAtTarget = parksAtTarget
+    }
+
+    /// Records that the view has finished hovering and is holding this annotation target.
+    func parkPointerAnimation(pointerID: String) {
+        guard detectedElementPointerID == pointerID else { return }
+        interactionCoordinator.accept(
+            .pointerAnimationParked(pointerID: pointerID),
+            correlation: PickyInteractionCorrelation(pointerID: pointerID, source: .pointer)
+        )
     }
 
     /// Advances an annotation sequence without clearing visual target properties, so the
@@ -618,6 +635,7 @@ final class CompanionManager: ObservableObject {
         detectedElementTargetFrame = nil
         detectedElementHighlightKind = nil
         detectedElementReturnsToCursor = true
+        detectedElementParksAtTarget = false
         detectedElementPointerID = nil
         setLocalOverlayReason(.activePointerAnimation, visible: false)
         scheduleTransientHideIfNeeded()
@@ -635,6 +653,7 @@ final class CompanionManager: ObservableObject {
         detectedElementTargetFrame = nil
         detectedElementHighlightKind = nil
         detectedElementReturnsToCursor = true
+        detectedElementParksAtTarget = false
         detectedElementPointerID = nil
         if let clearedPointerID {
             interactionCoordinator.accept(
@@ -2839,6 +2858,10 @@ private final class CompanionInteractionEffectRunner: PickyInteractionEffectRunn
                 manager?.startPointerAnimation(target: target)
             case .setPointerReturnsToCursor(let pointerID, let returnsToCursor):
                 manager?.setPointerReturnsToCursor(pointerID: pointerID, returnsToCursor: returnsToCursor)
+            case .setPointerParksAtTarget(let pointerID, let parksAtTarget):
+                manager?.setPointerParksAtTarget(pointerID: pointerID, parksAtTarget: parksAtTarget)
+            case .advancePointerAnimation(let pointerID):
+                manager?.advancePointerAnimation(pointerID: pointerID)
             case .cancelPointerAnimation(let pointerID):
                 manager?.cancelPointerAnimation(pointerID: pointerID)
             case .showOverlay, .scheduleTransientHide, .cancelTransientHide:

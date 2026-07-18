@@ -856,6 +856,17 @@ struct BlueCursorView: View {
             }
             startNavigatingToPointerTargetIfPresent(screenLocation: companionManager.detectedElementScreenLocation)
         }
+        .onChange(of: companionManager.detectedElementReturnsToCursor) { _, returnsToCursor in
+            // A parked annotation has already completed its hold callback, so a later
+            // turn-end must actively start the existing spring rather than wait for it.
+            guard returnsToCursor,
+                  buddyNavigationMode == .pointingAtTarget,
+                  let pointerID = activePointerID,
+                  pointerIsStillActive(pointerID) else {
+                return
+            }
+            startFlyingBackToCursor(pointerID: pointerID)
+        }
         .onChange(of: companionManager.latestAgentSessionSummary) { _, _ in
             syncResponseBubbleLayout()
         }
@@ -1335,7 +1346,9 @@ struct BlueCursorView: View {
                         self.cancelNavigationIfPointerCleared(stalePointerID: pointerID)
                         return
                     }
-                    if self.companionManager.detectedElementReturnsToCursor {
+                    if self.companionManager.detectedElementParksAtTarget {
+                        self.companionManager.parkPointerAnimation(pointerID: pointerID)
+                    } else if self.companionManager.detectedElementReturnsToCursor {
                         self.startFlyingBackToCursor(pointerID: pointerID)
                     } else {
                         self.companionManager.advancePointerAnimation(pointerID: pointerID)

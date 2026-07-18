@@ -10,6 +10,13 @@ struct PickyInteractionState: Equatable, Codable {
     var pendingAnnotationPointerTargets: [PickyPointerTarget]
     var activeAnnotationPointerID: String?
     var activeAnnotationPointerReturnsToCursor: Bool
+    /// True while a streamed annotation turn may still add targets. Its final target parks
+    /// rather than returning until a reply, settlement, or clear explicitly ends the turn.
+    var annotationPointerTurnActive: Bool
+    /// Set by the view after the active target's hover completes and it remains in place.
+    var annotationPointerIsParked: Bool
+    /// Mirrors the active target's hold policy so the reducer can change it when a turn ends.
+    var activeAnnotationPointerParksAtTarget: Bool
     /// Transient AI visual guidance. Kept separate from pointer animations and user ink.
     var agentAnnotations: [PickyAgentAnnotation]
     var overlay: PickyOverlayPhase
@@ -38,6 +45,9 @@ struct PickyInteractionState: Equatable, Codable {
         pendingAnnotationPointerTargets: [PickyPointerTarget] = [],
         activeAnnotationPointerID: String? = nil,
         activeAnnotationPointerReturnsToCursor: Bool = true,
+        annotationPointerTurnActive: Bool = false,
+        annotationPointerIsParked: Bool = false,
+        activeAnnotationPointerParksAtTarget: Bool = false,
         agentAnnotations: [PickyAgentAnnotation] = [],
         overlay: PickyOverlayPhase = .hidden,
         pendingTextInputs: [UUID: PickyTextInputState] = [:],
@@ -55,6 +65,9 @@ struct PickyInteractionState: Equatable, Codable {
         self.pendingAnnotationPointerTargets = pendingAnnotationPointerTargets
         self.activeAnnotationPointerID = activeAnnotationPointerID
         self.activeAnnotationPointerReturnsToCursor = activeAnnotationPointerReturnsToCursor
+        self.annotationPointerTurnActive = annotationPointerTurnActive
+        self.annotationPointerIsParked = annotationPointerIsParked
+        self.activeAnnotationPointerParksAtTarget = activeAnnotationPointerParksAtTarget
         self.agentAnnotations = agentAnnotations
         self.overlay = overlay
         self.pendingTextInputs = pendingTextInputs
@@ -75,6 +88,9 @@ struct PickyInteractionState: Equatable, Codable {
         self.pendingAnnotationPointerTargets = try container.decodeIfPresent([PickyPointerTarget].self, forKey: .pendingAnnotationPointerTargets) ?? []
         self.activeAnnotationPointerID = try container.decodeIfPresent(String.self, forKey: .activeAnnotationPointerID)
         self.activeAnnotationPointerReturnsToCursor = try container.decodeIfPresent(Bool.self, forKey: .activeAnnotationPointerReturnsToCursor) ?? true
+        self.annotationPointerTurnActive = try container.decodeIfPresent(Bool.self, forKey: .annotationPointerTurnActive) ?? false
+        self.annotationPointerIsParked = try container.decodeIfPresent(Bool.self, forKey: .annotationPointerIsParked) ?? false
+        self.activeAnnotationPointerParksAtTarget = try container.decodeIfPresent(Bool.self, forKey: .activeAnnotationPointerParksAtTarget) ?? false
         self.agentAnnotations = try container.decodeIfPresent([PickyAgentAnnotation].self, forKey: .agentAnnotations) ?? []
         self.overlay = try container.decode(PickyOverlayPhase.self, forKey: .overlay)
         self.pendingTextInputs = try container.decode([UUID: PickyTextInputState].self, forKey: .pendingTextInputs)
@@ -298,6 +314,8 @@ struct PickyPointerTarget: Equatable, Codable, Identifiable {
     /// False only for an annotation visit that has another queued anchor; that visit
     /// hops directly to the next shape instead of returning to the real cursor.
     let returnsToCursor: Bool
+    /// Keeps a final annotation target hovering until its streaming turn settles.
+    let parksAtTarget: Bool
 
     init(
         id: String,
@@ -308,7 +326,8 @@ struct PickyPointerTarget: Equatable, Codable, Identifiable {
         duration: TimeInterval,
         targetFrame: CGRect? = nil,
         highlightKind: PickyDetectedHighlightKind = .screenElement,
-        returnsToCursor: Bool = true
+        returnsToCursor: Bool = true,
+        parksAtTarget: Bool = false
     ) {
         self.id = id
         self.source = source
@@ -319,10 +338,11 @@ struct PickyPointerTarget: Equatable, Codable, Identifiable {
         self.targetFrame = targetFrame
         self.highlightKind = highlightKind
         self.returnsToCursor = returnsToCursor
+        self.parksAtTarget = parksAtTarget
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, source, screenLocation, displayFrame, bubbleText, duration, targetFrame, highlightKind, returnsToCursor
+        case id, source, screenLocation, displayFrame, bubbleText, duration, targetFrame, highlightKind, returnsToCursor, parksAtTarget
     }
 
     init(from decoder: Decoder) throws {
@@ -336,6 +356,7 @@ struct PickyPointerTarget: Equatable, Codable, Identifiable {
         targetFrame = try container.decodeIfPresent(CGRect.self, forKey: .targetFrame)
         highlightKind = try container.decode(PickyDetectedHighlightKind.self, forKey: .highlightKind)
         returnsToCursor = try container.decodeIfPresent(Bool.self, forKey: .returnsToCursor) ?? true
+        parksAtTarget = try container.decodeIfPresent(Bool.self, forKey: .parksAtTarget) ?? false
     }
 }
 

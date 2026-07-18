@@ -186,6 +186,8 @@ enum PickyInteractionEvent: Equatable, Codable {
 
     case pointerRequested(PickyPointerTarget)
     case pointerCancelled(pointerID: String, reason: PickyPointerCancelReason)
+    /// The view completed an annotation hover and is holding position for more streamed shapes.
+    case pointerAnimationParked(pointerID: String)
     case pointerAnimationFinished(pointerID: String)
     case agentAnnotationsRequested(mode: PickyAnnotationOverlayMode, annotations: [PickyAgentAnnotation])
     /// Starts deferred annotation expiry when final-reply fallback has no incremental audio.
@@ -207,7 +209,7 @@ enum PickyInteractionEvent: Equatable, Codable {
         case voicePressed, voiceStartFailed, voiceReleased, transcriptFinal, transcriptFailed
         case textSubmitted, textContextCaptured, textSubmissionAccepted, textSubmissionFailed
         case voiceContextCaptured, externalContextCaptured, agentSubmissionAccepted, quickReply, narrationChunk, streamedQuickReplyFinal, passiveAgentSummary, pickleCompleted, mainTurnSettled, sessionTerminated
-        case pointerRequested, pointerCancelled, pointerAnimationFinished
+        case pointerRequested, pointerCancelled, pointerAnimationParked, pointerAnimationFinished
         case agentAnnotationsRequested, agentAnnotationsStartTTL, agentAnnotationsExpired, agentAnnotationsClearedForUserInput
         case speechStarted, speechFinished, speechFailed, minimumDisplayTimerFired
         case overlayShown, overlayHidden, transientHideTimerFired
@@ -330,6 +332,9 @@ enum PickyInteractionEvent: Equatable, Codable {
         case .pointerCancelled:
             let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
             self = .pointerCancelled(pointerID: try payload.decodeFlexibleString(primary: .pointerID, fallback: .pointerId), reason: try payload.decode(PickyPointerCancelReason.self, forKey: .reason))
+        case .pointerAnimationParked:
+            let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
+            self = .pointerAnimationParked(pointerID: try payload.decodeFlexibleString(primary: .pointerID, fallback: .pointerId))
         case .pointerAnimationFinished:
             let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
             self = .pointerAnimationFinished(pointerID: try payload.decodeFlexibleString(primary: .pointerID, fallback: .pointerId))
@@ -447,6 +452,9 @@ enum PickyInteractionEvent: Equatable, Codable {
         case .pointerCancelled(let pointerID, let reason):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .pointerCancelled)
             try payload.encode(pointerID, forKey: .pointerID); try payload.encode(reason, forKey: .reason)
+        case .pointerAnimationParked(let pointerID):
+            var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .pointerAnimationParked)
+            try payload.encode(pointerID, forKey: .pointerID)
         case .pointerAnimationFinished(let pointerID):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .pointerAnimationFinished)
             try payload.encode(pointerID, forKey: .pointerID)

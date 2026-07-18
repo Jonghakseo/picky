@@ -52,7 +52,11 @@ private enum PickyAnnotationPointerTarget {
         )
     }
 
-    static func settingReturnBehavior(_ target: PickyPointerTarget, returnsToCursor: Bool) -> PickyPointerTarget {
+    static func settingHoldBehavior(
+        _ target: PickyPointerTarget,
+        returnsToCursor: Bool,
+        parksAtTarget: Bool
+    ) -> PickyPointerTarget {
         PickyPointerTarget(
             id: target.id,
             source: target.source,
@@ -62,7 +66,8 @@ private enum PickyAnnotationPointerTarget {
             duration: target.duration,
             targetFrame: target.targetFrame,
             highlightKind: target.highlightKind,
-            returnsToCursor: returnsToCursor
+            returnsToCursor: returnsToCursor,
+            parksAtTarget: parksAtTarget
         )
     }
 }
@@ -149,6 +154,8 @@ private struct PickyInteractionReducing {
             applyPointerRequested(target: target)
         case .pointerCancelled(let pointerID, _):
             applyPointerCancelled(pointerID: pointerID)
+        case .pointerAnimationParked(let pointerID):
+            applyPointerAnimationParked(pointerID: pointerID)
         case .pointerAnimationFinished(let pointerID):
             applyPointerAnimationFinished(pointerID: pointerID)
         case .agentAnnotationsRequested(let mode, let annotations):
@@ -208,7 +215,11 @@ private struct PickyInteractionReducing {
         state.pendingVoiceInputs[inputID] = PickyVoiceInputState(targetSessionID: targetSessionID)
         state = state.addingOverlayReason(.activeVoiceInput)
         effects.append(.stopSpeech(reason: .userInterrupted, speechID: preemptedSpeechID))
-        effects.append(.cancelPointerAnimation(pointerID: state.pointer.target?.id))
+        // An annotation turn has already been asked to fly back by
+        // clearAgentAnnotationsForUserInput(); do not snap it away mid-flight.
+        if state.activeAnnotationPointerID == nil {
+            effects.append(.cancelPointerAnimation(pointerID: state.pointer.target?.id))
+        }
         effects.append(.showOverlay(reason: .activeVoiceInput))
         effects.append(.startDictation(inputID: inputID))
         record(.stateChanged, "Voice input started")
@@ -451,6 +462,7 @@ private struct PickyInteractionReducing {
         sessionID: String?,
         inputID: UUID?
     ) {
+        endAnnotationPointerTurn()
         if let sessionID { state.pendingAgentRequestsBySession[sessionID] = nil }
         let timerID = envelope.id
         let deadline = envelope.occurredAt.addingTimeInterval(minimumDisplayDuration)
@@ -507,6 +519,7 @@ private struct PickyInteractionReducing {
         sessionID: String?,
         inputID: UUID?
     ) {
+        endAnnotationPointerTurn()
         if let sessionID { state.pendingAgentRequestsBySession[sessionID] = nil }
         guard state.streamedNarrationContextIDs.contains(contextID) else {
             applyQuickReply(contextID: contextID, text: text, originSource: originSource, replyKind: replyKind, sessionID: sessionID, inputID: inputID)
@@ -613,6 +626,7 @@ private struct PickyInteractionReducing {
     /// `.waitingForAgent` output here; otherwise the projection keeps reporting
     /// `isWaitingForCursorResponse = true` and the cursor stays yellow forever.
     private mutating func applyMainTurnSettled(contextID: String) {
+        endAnnotationPointerTurn()
         // A DSL-only main turn has no quickReply, so it cannot otherwise release a
         // cursor-owned request or start annotation TTLs. Do not create a bubble or TTS.
         activatePendingAnnotationTTLs(now: envelope.occurredAt)
@@ -659,6 +673,9 @@ private struct PickyInteractionReducing {
         state.pendingAnnotationPointerTargets = []
         state.activeAnnotationPointerID = nil
         state.activeAnnotationPointerReturnsToCursor = true
+        state.annotationPointerTurnActive = false
+        state.annotationPointerIsParked = false
+        state.activeAnnotationPointerParksAtTarget = false
         if let previous = state.pointer.target?.id, previous != target.id {
             effects.append(.cancelPointerAnimation(pointerID: previous))
         }
@@ -677,9 +694,23 @@ private struct PickyInteractionReducing {
         state.pendingAnnotationPointerTargets = []
         state.activeAnnotationPointerID = nil
         state.activeAnnotationPointerReturnsToCursor = true
+        state.annotationPointerTurnActive = false
+        state.annotationPointerIsParked = false
+        state.activeAnnotationPointerParksAtTarget = false
         state = state.removingOverlayReason(.activePointerAnimation)
         effects.append(.cancelPointerAnimation(pointerID: pointerID))
         record(.stateChanged, "Pointer cancelled")
+    }
+
+    private mutating func applyPointerAnimationParked(pointerID: String) {
+        guard state.activeAnnotationPointerID == pointerID,
+              state.activeAnnotationPointerParksAtTarget,
+              state.annotationPointerTurnActive else {
+            record(.staleEvent, "Ignored stale annotation pointer park")
+            return
+        }
+        state.annotationPointerIsParked = true
+        record(.stateChanged, "Annotation pointer parked")
     }
 
     private mutating func applyPointerAnimationFinished(pointerID: String) {
@@ -690,6 +721,8 @@ private struct PickyInteractionReducing {
         if state.activeAnnotationPointerID == pointerID {
             state.activeAnnotationPointerID = nil
             state.activeAnnotationPointerReturnsToCursor = true
+            state.annotationPointerIsParked = false
+            state.activeAnnotationPointerParksAtTarget = false
             state.pointer = .idle
             startNextAnnotationPointerIfPossible()
             if state.activeAnnotationPointerID != nil {
@@ -740,7 +773,7 @@ private struct PickyInteractionReducing {
             : state.addingOverlayReason(.activeAgentAnnotations)
         switch mode {
         case .clear:
-            clearAnnotationPointerChoreography()
+            endAnnotationPointerTurn(discardingPendingTargets: true)
         case .replace, .append:
             enqueueAnnotationPointerTargets(resolvedAnnotations)
         }
@@ -762,7 +795,7 @@ private struct PickyInteractionReducing {
 
     private mutating func clearAgentAnnotationsForUserInput() {
         state.annotationTTLsStarted = false
-        clearAnnotationPointerChoreography()
+        endAnnotationPointerTurn(discardingPendingTargets: true)
         guard !state.agentAnnotations.isEmpty else { return }
         state.agentAnnotations = []
         state = state.removingOverlayReason(.activeAgentAnnotations)
@@ -784,11 +817,21 @@ private struct PickyInteractionReducing {
     private mutating func enqueueAnnotationPointerTargets(_ annotations: [PickyAgentAnnotation]) {
         let targets = annotations.compactMap(PickyAnnotationPointerTarget.make)
         guard !targets.isEmpty else { return }
+        state.annotationPointerTurnActive = true
         state.pendingAnnotationPointerTargets.append(contentsOf: targets)
-        if let activeID = state.activeAnnotationPointerID,
-           state.activeAnnotationPointerReturnsToCursor {
-            state.activeAnnotationPointerReturnsToCursor = false
-            effects.append(.setPointerReturnsToCursor(pointerID: activeID, returnsToCursor: false))
+        if let activeID = state.activeAnnotationPointerID {
+            // A final target may still be approaching or hovering when another DSL tag
+            // arrives. Convert it into a direct hop instead of allowing a fly-back.
+            state.activeAnnotationPointerParksAtTarget = false
+            effects.append(.setPointerParksAtTarget(pointerID: activeID, parksAtTarget: false))
+            if state.activeAnnotationPointerReturnsToCursor {
+                state.activeAnnotationPointerReturnsToCursor = false
+                effects.append(.setPointerReturnsToCursor(pointerID: activeID, returnsToCursor: false))
+            }
+            if state.annotationPointerIsParked {
+                state.annotationPointerIsParked = false
+                effects.append(.advancePointerAnimation(pointerID: activeID))
+            }
         }
         startNextAnnotationPointerIfPossible()
     }
@@ -797,25 +840,43 @@ private struct PickyInteractionReducing {
         guard case .idle = state.pointer,
               !state.pendingAnnotationPointerTargets.isEmpty else { return }
         var target = state.pendingAnnotationPointerTargets.removeFirst()
-        target = PickyAnnotationPointerTarget.settingReturnBehavior(
+        let isFinalTarget = state.pendingAnnotationPointerTargets.isEmpty
+        let parksAtTarget = state.annotationPointerTurnActive && isFinalTarget
+        target = PickyAnnotationPointerTarget.settingHoldBehavior(
             target,
-            returnsToCursor: state.pendingAnnotationPointerTargets.isEmpty
+            returnsToCursor: !state.annotationPointerTurnActive && isFinalTarget,
+            parksAtTarget: parksAtTarget
         )
         state.pointer = .requested(target)
         state.activeAnnotationPointerID = target.id
         state.activeAnnotationPointerReturnsToCursor = target.returnsToCursor
+        state.activeAnnotationPointerParksAtTarget = target.parksAtTarget
+        state.annotationPointerIsParked = false
         state = state.addingOverlayReason(.activePointerAnimation)
         effects.append(.startPointerAnimation(target: target))
     }
 
-    private mutating func clearAnnotationPointerChoreography() {
-        state.pendingAnnotationPointerTargets = []
-        guard let activeID = state.activeAnnotationPointerID else { return }
-        state.activeAnnotationPointerID = nil
-        state.activeAnnotationPointerReturnsToCursor = true
-        state.pointer = .idle
-        state = state.removingOverlayReason(.activePointerAnimation)
-        effects.append(.cancelPointerAnimation(pointerID: activeID))
+    /// Ends the current annotation stream without interrupting the buddy's current flight.
+    /// Normal turn endings finish queued shapes before returning; user input/clear drops
+    /// not-yet-visited anchors but still lets the active target spring back naturally.
+    private mutating func endAnnotationPointerTurn(discardingPendingTargets: Bool = false) {
+        guard state.annotationPointerTurnActive || state.activeAnnotationPointerID != nil else { return }
+        state.annotationPointerTurnActive = false
+        if discardingPendingTargets {
+            state.pendingAnnotationPointerTargets = []
+        }
+        guard let activeID = state.activeAnnotationPointerID else {
+            state.annotationPointerIsParked = false
+            state.activeAnnotationPointerParksAtTarget = false
+            return
+        }
+
+        let shouldReturnAfterCurrentTarget = state.pendingAnnotationPointerTargets.isEmpty
+        state.annotationPointerIsParked = false
+        state.activeAnnotationPointerParksAtTarget = false
+        state.activeAnnotationPointerReturnsToCursor = shouldReturnAfterCurrentTarget
+        effects.append(.setPointerParksAtTarget(pointerID: activeID, parksAtTarget: false))
+        effects.append(.setPointerReturnsToCursor(pointerID: activeID, returnsToCursor: shouldReturnAfterCurrentTarget))
     }
 
     private func uniqueAnnotations(_ annotations: [PickyAgentAnnotation]) -> [PickyAgentAnnotation] {

@@ -104,6 +104,17 @@ enum PickyAnnotationSceneVisualPolicy {
     static let matchingGlobalMeanDifference = 8.0
     static let mismatchingGlobalChangedFraction = 0.48
     static let mismatchingGlobalMeanDifference = 26.0
+    /// Initial validation fails closed only for a near-full-screen transition.
+    /// ROI-only changes are intentionally ignored here so carousel, video, and
+    /// other self-updating content can reveal annotations. Workspace, window,
+    /// and scroll observers still schedule visual confirmation independently.
+    static let initialHardMismatchGlobalChangedFraction = 0.70
+    static let initialHardMismatchGlobalMeanDifference = 40.0
+
+    static func isInitialHardMismatch(_ metrics: PickyAnnotationSceneDifferenceMetrics) -> Bool {
+        metrics.globalChangedFraction >= initialHardMismatchGlobalChangedFraction
+            || metrics.globalMeanDifference >= initialHardMismatchGlobalMeanDifference
+    }
 
     static func compare(
         baseline: PickyAnnotationSceneFingerprint,
@@ -259,7 +270,12 @@ struct PickyAnnotationSceneStabilityTracker: Equatable, Sendable {
             }
             reset()
             return .show
-        case .mismatching:
+        case .mismatching(let metrics):
+            if phase == .validating,
+               !PickyAnnotationSceneVisualPolicy.isInitialHardMismatch(metrics) {
+                reset()
+                return .none
+            }
             consecutiveMismatches += 1
             consecutiveMatches = 0
             guard (phase == .visible || phase == .validating),

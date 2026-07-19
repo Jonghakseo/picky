@@ -95,6 +95,7 @@ final class PickyAnnotationSceneMonitor {
         var confirmationNotBefore: Date?
         var semanticBlock: PickyAnnotationSceneMismatchReason?
         var lastMismatchReason: PickyAnnotationSceneMismatchReason?
+        var hasObservedInitialHardMismatch = false
         var allowsTolerantRestoration: Bool
 
         init(
@@ -322,6 +323,11 @@ final class PickyAnnotationSceneMonitor {
                   !Task.isCancelled else { return }
             if suspendInitialValidationIfExpired(session) { return }
 
+            if session.phase == .validating,
+               case .mismatching(let metrics) = sample.observation,
+               PickyAnnotationSceneVisualPolicy.isInitialHardMismatch(metrics) {
+                session.hasObservedInitialHardMismatch = true
+            }
             let decision = PickyPerf.interval("annotation_scene_stability") {
                 session.stability.observe(
                     sample.observation,
@@ -335,18 +341,7 @@ final class PickyAnnotationSceneMonitor {
             case .none:
                 session.retry = session.phase == .suspended ? session.retry + 1 : 0
             case .show:
-                session.phase = .visible
-                session.retry = 0
-                session.semanticBlock = nil
-                session.lastMismatchReason = nil
-                onOutput?(.matched(identity))
-                PickyLog.noticeRateLimited(
-                    .annotationScene,
-                    key: "annotation-scene-transition-\(identity.contextID)-visible",
-                    cooldown: 1,
-                    prefix: "🖍️",
-                    message: "annotation scene visible context=\(identity.contextID) generation=\(identity.generation)"
-                )
+                transitionToVisible(session)
             case .suspend:
                 transitionToSuspended(session, reason: .visual)
             }
@@ -446,8 +441,31 @@ final class PickyAnnotationSceneMonitor {
 
     private func suspendInitialValidationIfExpired(_ session: Session) -> Bool {
         guard session.phase == .validating, now() >= session.initialValidationDeadline else { return false }
-        transitionToSuspended(session, reason: .validationTimeout)
+        if session.hasObservedInitialHardMismatch {
+            transitionToSuspended(session, reason: .visual)
+        } else {
+            // Initial validation is fail-open: normal page animation and localized
+            // content drift must not make annotations disappear before first reveal.
+            session.stability.reset()
+            session.confirmationNotBefore = nil
+            transitionToVisible(session)
+        }
         return true
+    }
+
+    private func transitionToVisible(_ session: Session) {
+        session.phase = .visible
+        session.retry = 0
+        session.semanticBlock = nil
+        session.lastMismatchReason = nil
+        onOutput?(.matched(session.identity))
+        PickyLog.noticeRateLimited(
+            .annotationScene,
+            key: "annotation-scene-transition-\(session.identity.contextID)-visible",
+            cooldown: 1,
+            prefix: "🖍️",
+            message: "annotation scene visible context=\(session.identity.contextID) generation=\(session.identity.generation)"
+        )
     }
 
     private func transitionToSuspended(_ session: Session, reason: PickyAnnotationSceneMismatchReason) {

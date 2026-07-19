@@ -17,6 +17,16 @@ function client(overrides: Partial<EdgeTTSClient> = {}): EdgeTTSClient {
 }
 
 describe("patched msedge-tts", () => {
+  it("ignores late WebSocket frames after a canceled request removes its streams", () => {
+    const tts = new MsEdgeTTS() as unknown as {
+      _pushAudioData: (data: Buffer, requestId: string) => void;
+      _pushMetadata: (data: Buffer, requestId: string) => void;
+    };
+
+    expect(() => tts._pushAudioData(Buffer.from("late audio"), "canceled-request")).not.toThrow();
+    expect(() => tts._pushMetadata(Buffer.from("late metadata"), "canceled-request")).not.toThrow();
+  });
+
   it("rejects synchronous and callback WebSocket send failures", async () => {
     const tts = new MsEdgeTTS() as unknown as {
       _ws: { readyState: number; OPEN: number; send: (message: string, callback: (error?: Error) => void) => void };

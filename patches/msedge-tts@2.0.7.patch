@@ -1,5 +1,5 @@
 diff --git a/dist/MsEdgeTTS.js b/dist/MsEdgeTTS.js
-index b1bc3b0d..1a555154 100644
+index b1bc3b0d04de068a7ef6283bb9cc3d0ae7bf69ab..c0942880c2bc7ababa3c71f0d7bac8af9220cc79 100644
 --- a/dist/MsEdgeTTS.js
 +++ b/dist/MsEdgeTTS.js
 @@ -126,7 +126,7 @@ class MsEdgeTTS {
@@ -11,7 +11,25 @@ index b1bc3b0d..1a555154 100644
              };
              this._ws.onmessage = (m) => {
                  const buffer = index_1.Buffer.from(m.data);
-@@ -217,8 +217,20 @@ class MsEdgeTTS {
+@@ -137,10 +137,15 @@ class MsEdgeTTS {
+                     this._log("->", message);
+                 }
+                 else if (message.includes(`Path:${messageTypes.TURN_END}`)) {
++                    // A canceled request destroys and removes its stream while the shared
++                    // Edge WebSocket can still deliver late frames for that request.
++                    const stream = this._streams[requestId];
++                    if (!stream)
++                        return;
+                     // end of turn, close stream
+                     this._log("->", message);
+-                    this._streams[requestId].turnEnded = true;
+-                    this._streams[requestId].audio.push(null);
++                    stream.turnEnded = true;
++                    stream.audio.push(null);
+                 }
+                 else if (message.includes(`Path:${messageTypes.RESPONSE}`)) {
+                     // context response, ignore
+@@ -217,15 +222,34 @@ class MsEdgeTTS {
              this._log("connecting: ", i);
              await this._initClient();
          }
@@ -34,7 +52,23 @@ index b1bc3b0d..1a555154 100644
          });
      }
      _pushAudioData(data, requestId) {
-@@ -430,7 +442,13 @@ class MsEdgeTTS {
+-        this._streams[requestId].audio.push(data);
++        const stream = this._streams[requestId];
++        // Cancellation can remove the stream before Edge stops sending frames.
++        if (!stream || stream.turnEnded || stream.audio.destroyed)
++            return;
++        stream.audio.push(data);
+     }
+     _pushMetadata(data, requestId) {
+-        this._streams[requestId].metadata.push(data);
++        const stream = this._streams[requestId];
++        if (!stream || !stream.metadata || stream.metadata.destroyed)
++            return;
++        stream.metadata.push(data);
+     }
+     _SSMLTemplate(input, options = {}) {
+         // in case future updates to the edge API block these elements, we'll be concatenating strings.
+@@ -430,7 +454,13 @@ class MsEdgeTTS {
              metadata: metadataStream,
              turnEnded: false,
          };

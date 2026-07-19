@@ -6,7 +6,7 @@ settings:
 
 patchedDependencies:
   msedge-tts@2.0.7:
-    hash: 5b4663b903e42bcf5f30b7163fdfa49394bd0c2b21bd859da872b9d51f0c8e35
+    hash: 8da09d18bc1fe00d9317de8ef8dd9dc93e03db75be52ca683b5fa9aa1664615d
     path: patches/msedge-tts@2.0.7.patch
 
 importers:
@@ -36,7 +36,7 @@ importers:
         version: 14.0.3
       msedge-tts:
         specifier: 2.0.7
-        version: 2.0.7(patch_hash=5b4663b903e42bcf5f30b7163fdfa49394bd0c2b21bd859da872b9d51f0c8e35)
+        version: 2.0.7(patch_hash=8da09d18bc1fe00d9317de8ef8dd9dc93e03db75be52ca683b5fa9aa1664615d)
       typebox:
         specifier: ^1.1.37
         version: 1.1.37
@@ -3732,7 +3732,7 @@ snapshots:
 
   ms@2.1.3: {}
 
-  msedge-tts@2.0.7(patch_hash=5b4663b903e42bcf5f30b7163fdfa49394bd0c2b21bd859da872b9d51f0c8e35):
+  msedge-tts@2.0.7(patch_hash=8da09d18bc1fe00d9317de8ef8dd9dc93e03db75be52ca683b5fa9aa1664615d):
     dependencies:
       axios: 1.18.1
       buffer: 6.0.3

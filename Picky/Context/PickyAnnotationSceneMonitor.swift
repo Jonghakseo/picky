@@ -67,6 +67,7 @@ final class PickyAnnotationSceneMonitor {
 
     private struct VisualSample {
         let observation: PickyAnnotationSceneVisualObservation
+        let invalidationProfile: PickyAnnotationSceneInvalidationProfile
         let captureMilliseconds: Double
         let comparisonMilliseconds: Double
     }
@@ -97,6 +98,7 @@ final class PickyAnnotationSceneMonitor {
         var lastMismatchReason: PickyAnnotationSceneMismatchReason?
         var hasObservedInitialHardMismatch = false
         var allowsTolerantRestoration: Bool
+        var narrationActive = false
 
         init(
             identity: PickyAnnotationSceneIdentity,
@@ -199,6 +201,15 @@ final class PickyAnnotationSceneMonitor {
                 requestSample(after: 0)
             }
         }
+    }
+
+    func setNarrationActive(_ narrationActive: Bool) {
+        guard let session, session.narrationActive != narrationActive else { return }
+        session.narrationActive = narrationActive
+        // Do not combine confirmations collected under different invalidation profiles.
+        session.stability.reset()
+        session.confirmationNotBefore = nil
+        requestSample(after: 0)
     }
 
     /// Test hook and event-driven fast path. Production polling still goes through
@@ -352,6 +363,7 @@ final class PickyAnnotationSceneMonitor {
                 captureMilliseconds: sample.captureMilliseconds,
                 compareMilliseconds: sample.comparisonMilliseconds,
                 metrics: metrics,
+                invalidationProfile: sample.invalidationProfile,
                 totalStartedAt: sampleStartedAt
             )
         } catch {
@@ -372,6 +384,9 @@ final class PickyAnnotationSceneMonitor {
         identity: PickyAnnotationSceneIdentity,
         captureEpoch: Int
     ) async throws -> VisualSample {
+        let invalidationProfile: PickyAnnotationSceneInvalidationProfile = session.narrationActive
+            ? .lenient
+            : .strict
         var observations: [PickyAnnotationSceneVisualObservation] = []
         var captureMilliseconds = 0.0
         var comparisonMilliseconds = 0.0
@@ -402,7 +417,8 @@ final class PickyAnnotationSceneMonitor {
                 PickyAnnotationSceneVisualPolicy.compare(
                     baseline: baselineFingerprint,
                     current: current,
-                    normalizedRegions: target.normalizedRegions
+                    normalizedRegions: target.normalizedRegions,
+                    invalidationProfile: invalidationProfile
                 )
             }
             comparisonMilliseconds += (CFAbsoluteTimeGetCurrent() - comparisonStartedAt) * 1_000
@@ -410,6 +426,7 @@ final class PickyAnnotationSceneMonitor {
         }
         return VisualSample(
             observation: Self.aggregate(observations),
+            invalidationProfile: invalidationProfile,
             captureMilliseconds: captureMilliseconds,
             comparisonMilliseconds: comparisonMilliseconds
         )
@@ -514,6 +531,7 @@ final class PickyAnnotationSceneMonitor {
         captureMilliseconds: Double,
         compareMilliseconds: Double,
         metrics: PickyAnnotationSceneDifferenceMetrics?,
+        invalidationProfile: PickyAnnotationSceneInvalidationProfile,
         totalStartedAt: CFAbsoluteTime
     ) {
         let totalMilliseconds = (CFAbsoluteTimeGetCurrent() - totalStartedAt) * 1_000
@@ -521,7 +539,7 @@ final class PickyAnnotationSceneMonitor {
         let globalMean = metrics.map { String(format: "%.2f", $0.globalMeanDifference) } ?? "n/a"
         let roiChanged = metrics?.roiChangedFraction.map { String(format: "%.3f", $0) } ?? "n/a"
         let roiMean = metrics?.roiMeanDifference.map { String(format: "%.2f", $0) } ?? "n/a"
-        let message = "sample context=\(session.identity.contextID) phase=\(session.phase.rawValue) outcome=\(outcome) count=\(session.sampleCount) captureMs=\(String(format: "%.2f", captureMilliseconds)) compareMs=\(String(format: "%.2f", compareMilliseconds)) totalMs=\(String(format: "%.2f", totalMilliseconds)) globalChanged=\(globalChanged) globalMean=\(globalMean) roiChanged=\(roiChanged) roiMean=\(roiMean)"
+        let message = "sample context=\(session.identity.contextID) phase=\(session.phase.rawValue) profile=\(invalidationProfile.rawValue) outcome=\(outcome) count=\(session.sampleCount) captureMs=\(String(format: "%.2f", captureMilliseconds)) compareMs=\(String(format: "%.2f", compareMilliseconds)) totalMs=\(String(format: "%.2f", totalMilliseconds)) globalChanged=\(globalChanged) globalMean=\(globalMean) roiChanged=\(roiChanged) roiMean=\(roiMean)"
         switch session.phase {
         case .validating, .suspended:
             PickyLog.noticeRateLimited(

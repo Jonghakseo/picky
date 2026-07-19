@@ -81,6 +81,41 @@ struct PickyAnnotationSceneFingerprint: Equatable, Sendable {
     }
 }
 
+enum PickyAnnotationSceneInvalidationProfile: String, Equatable, Sendable {
+    /// TTS can cause bounded animation and highlight drift while annotations are visible.
+    case lenient
+    /// Once TTS ends, return to prompt invalidation of stale annotation geometry.
+    case strict
+
+    var mismatchingROIChangedFraction: Double {
+        switch self {
+        case .lenient: 0.53
+        case .strict: 0.38
+        }
+    }
+
+    var mismatchingROIMeanDifference: Double {
+        switch self {
+        case .lenient: 31.0
+        case .strict: 22.0
+        }
+    }
+
+    var mismatchingGlobalChangedFraction: Double {
+        switch self {
+        case .lenient: 0.47
+        case .strict: 0.40
+        }
+    }
+
+    var mismatchingGlobalMeanDifference: Double {
+        switch self {
+        case .lenient: 25.0
+        case .strict: 20.0
+        }
+    }
+}
+
 enum PickyAnnotationSceneVisualPolicy {
     /// Per-pixel luminance noise below this value is ignored. This absorbs JPEG,
     /// color-management, and subpixel rendering differences without hiding real UI changes.
@@ -94,16 +129,8 @@ enum PickyAnnotationSceneVisualPolicy {
     /// hard mismatch so localized content changes still block stale geometry.
     static let initialValidationROIChangedFraction = 0.20
     static let initialValidationROIMeanDifference = 12.0
-    /// ROI invalidation is intentionally forgiving: a light scroll, cursor-adjacent
-    /// hover repaint, or small content update should keep the drawing on screen.
-    /// Only a substantial change to the pointed-at region (large occlusion, a real
-    /// scroll that moves the target away) crosses these thresholds.
-    static let mismatchingROIChangedFraction = 0.55
-    static let mismatchingROIMeanDifference = 32.0
     static let matchingGlobalChangedFraction = 0.18
     static let matchingGlobalMeanDifference = 8.0
-    static let mismatchingGlobalChangedFraction = 0.48
-    static let mismatchingGlobalMeanDifference = 26.0
     /// Initial validation fails closed only for a near-full-screen transition.
     /// ROI-only changes are intentionally ignored here so carousel, video, and
     /// other self-updating content can reveal annotations. Workspace, window,
@@ -119,7 +146,8 @@ enum PickyAnnotationSceneVisualPolicy {
     static func compare(
         baseline: PickyAnnotationSceneFingerprint,
         current: PickyAnnotationSceneFingerprint,
-        normalizedRegions: [CGRect]
+        normalizedRegions: [CGRect],
+        invalidationProfile: PickyAnnotationSceneInvalidationProfile = .strict
     ) -> PickyAnnotationSceneVisualObservation {
         guard baseline.width == current.width,
               baseline.height == current.height,
@@ -158,11 +186,11 @@ enum PickyAnnotationSceneVisualPolicy {
         )
 
         let roiMismatches = roi.map {
-            $0.changedFraction >= mismatchingROIChangedFraction
-                || $0.meanDifference >= mismatchingROIMeanDifference
+            $0.changedFraction >= invalidationProfile.mismatchingROIChangedFraction
+                || $0.meanDifference >= invalidationProfile.mismatchingROIMeanDifference
         } ?? false
-        let globalMismatches = global.changedFraction >= mismatchingGlobalChangedFraction
-            || global.meanDifference >= mismatchingGlobalMeanDifference
+        let globalMismatches = global.changedFraction >= invalidationProfile.mismatchingGlobalChangedFraction
+            || global.meanDifference >= invalidationProfile.mismatchingGlobalMeanDifference
         if roiMismatches || globalMismatches {
             return .mismatching(metrics)
         }

@@ -133,7 +133,7 @@ struct PickyAnnotationScenePolicyTests {
         #expect(metrics.roiChangedFraction == 0)
     }
 
-    @Test func visualPolicyKeepsROILocalChangesBelowRelaxedInvalidationThresholdIndeterminate() throws {
+    @Test func visualPolicyKeepsROILocalChangesBelowNarrationInvalidationThresholdIndeterminate() throws {
         let baseline = try #require(fingerprint(width: 10, height: 10))
         var pixels = baseline.luminance
         for index in [44, 45, 46, 47, 54, 55, 56, 57] { pixels[index] = 83 }
@@ -142,35 +142,133 @@ struct PickyAnnotationScenePolicyTests {
         let observation = PickyAnnotationSceneVisualPolicy.compare(
             baseline: baseline,
             current: current,
-            normalizedRegions: [CGRect(x: 0.4, y: 0.4, width: 0.4, height: 0.4)]
+            normalizedRegions: [CGRect(x: 0.4, y: 0.4, width: 0.4, height: 0.4)],
+            invalidationProfile: .lenient
         )
 
         guard case .indeterminate(let metrics) = observation else {
-            Issue.record("Expected a 50% ROI repaint to remain below the relaxed invalidation threshold")
+            Issue.record("Expected a 50% ROI repaint to remain below the narration invalidation threshold")
             return
         }
         #expect(metrics.roiChangedFraction == 0.5)
         #expect(metrics.roiMeanDifference == 9.5)
     }
 
-    @Test func visualPolicyKeepsGlobalChangesBelowRelaxedInvalidationThresholdIndeterminate() throws {
+    @Test func visualPolicyKeepsGlobalChangesBelowNarrationInvalidationThresholdIndeterminate() throws {
         let baseline = try #require(fingerprint(width: 10, height: 10))
         var pixels = baseline.luminance
-        for index in 0..<47 { pixels[index] = 83 }
+        for index in 0..<46 { pixels[index] = 83 }
         let current = try #require(PickyAnnotationSceneFingerprint(width: 10, height: 10, luminance: pixels))
 
         let observation = PickyAnnotationSceneVisualPolicy.compare(
             baseline: baseline,
             current: current,
-            normalizedRegions: []
+            normalizedRegions: [],
+            invalidationProfile: .lenient
         )
 
         guard case .indeterminate(let metrics) = observation else {
-            Issue.record("Expected a 47% global repaint to remain below the relaxed invalidation threshold")
+            Issue.record("Expected a 46% global repaint to remain below the narration invalidation threshold")
             return
         }
-        #expect(metrics.globalChangedFraction == 0.47)
-        #expect(metrics.globalMeanDifference == 8.93)
+        #expect(metrics.globalChangedFraction == 0.46)
+        #expect(metrics.globalMeanDifference == 8.74)
+    }
+
+    @Test func visualPolicyInvalidatesROIFractionChangesAfterNarrationEnds() throws {
+        let baseline = try #require(fingerprint(width: 10, height: 10))
+        var pixels = baseline.luminance
+        for index in [44, 45, 46, 47, 54, 55, 56, 57] { pixels[index] = 83 }
+        let current = try #require(PickyAnnotationSceneFingerprint(width: 10, height: 10, luminance: pixels))
+
+        let observation = PickyAnnotationSceneVisualPolicy.compare(
+            baseline: baseline,
+            current: current,
+            normalizedRegions: [CGRect(x: 0.4, y: 0.4, width: 0.4, height: 0.4)],
+            invalidationProfile: .strict
+        )
+
+        guard case .mismatching = observation else {
+            Issue.record("Expected a 50% ROI repaint to invalidate after narration ends")
+            return
+        }
+    }
+
+    @Test func visualPolicyInvalidatesGlobalFractionChangesAfterNarrationEnds() throws {
+        let baseline = try #require(fingerprint(width: 10, height: 10))
+        var pixels = baseline.luminance
+        for index in 0..<46 { pixels[index] = 83 }
+        let current = try #require(PickyAnnotationSceneFingerprint(width: 10, height: 10, luminance: pixels))
+
+        let observation = PickyAnnotationSceneVisualPolicy.compare(
+            baseline: baseline,
+            current: current,
+            normalizedRegions: [],
+            invalidationProfile: .strict
+        )
+
+        guard case .mismatching = observation else {
+            Issue.record("Expected a 46% global repaint to invalidate after narration ends")
+            return
+        }
+    }
+
+    @Test func visualPolicyInvalidatesROIMeanDifferenceAfterNarrationEnds() throws {
+        let baseline = try #require(fingerprint(width: 10, height: 10))
+        var pixels = baseline.luminance
+        for index in [44, 45, 54, 55] { pixels[index] = 164 }
+        let current = try #require(PickyAnnotationSceneFingerprint(width: 10, height: 10, luminance: pixels))
+
+        let lenient = PickyAnnotationSceneVisualPolicy.compare(
+            baseline: baseline,
+            current: current,
+            normalizedRegions: [CGRect(x: 0.4, y: 0.4, width: 0.4, height: 0.4)],
+            invalidationProfile: .lenient
+        )
+        let strict = PickyAnnotationSceneVisualPolicy.compare(
+            baseline: baseline,
+            current: current,
+            normalizedRegions: [CGRect(x: 0.4, y: 0.4, width: 0.4, height: 0.4)],
+            invalidationProfile: .strict
+        )
+
+        guard case .indeterminate = lenient else {
+            Issue.record("Expected a 25-point ROI mean difference to remain tolerated during narration")
+            return
+        }
+        guard case .mismatching = strict else {
+            Issue.record("Expected a 25-point ROI mean difference to invalidate after narration ends")
+            return
+        }
+    }
+
+    @Test func visualPolicyInvalidatesGlobalMeanDifferenceAfterNarrationEnds() throws {
+        let baseline = try #require(fingerprint(width: 10, height: 10))
+        var pixels = baseline.luminance
+        for index in 0..<12 { pixels[index] = 240 }
+        let current = try #require(PickyAnnotationSceneFingerprint(width: 10, height: 10, luminance: pixels))
+
+        let lenient = PickyAnnotationSceneVisualPolicy.compare(
+            baseline: baseline,
+            current: current,
+            normalizedRegions: [],
+            invalidationProfile: .lenient
+        )
+        let strict = PickyAnnotationSceneVisualPolicy.compare(
+            baseline: baseline,
+            current: current,
+            normalizedRegions: [],
+            invalidationProfile: .strict
+        )
+
+        guard case .indeterminate = lenient else {
+            Issue.record("Expected a 21-point global mean difference to remain tolerated during narration")
+            return
+        }
+        guard case .mismatching = strict else {
+            Issue.record("Expected a 21-point global mean difference to invalidate after narration ends")
+            return
+        }
     }
 
     @Test func visualPolicyRejectsChangesInsideAnAnnotationRegion() throws {
@@ -581,6 +679,52 @@ struct PickyAnnotationScenePolicyTests {
 
         await monitor.sampleNow()
         #expect(outputs.isEmpty)
+
+    @Test func monitorUsesLenientInvalidationOnlyWhileNarrationIsActive() async throws {
+        let baselineFingerprint = try #require(fingerprint(width: 10, height: 10))
+        var changedPixels = baselineFingerprint.luminance
+        for index in 0..<46 { changedPixels[index] = 83 }
+        let changedFingerprint = try #require(PickyAnnotationSceneFingerprint(
+            width: 10,
+            height: 10,
+            luminance: changedPixels
+        ))
+        let monitor = PickyAnnotationSceneMonitor(
+            capturer: FakeAnnotationSceneCapturer(
+                baseline: baselineFingerprint,
+                current: [
+                    baselineFingerprint, baselineFingerprint,
+                    changedFingerprint, changedFingerprint,
+                    changedFingerprint, changedFingerprint,
+                ]
+            ),
+            automaticallySchedulesSamples: false
+        )
+        let identity = PickyAnnotationSceneIdentity(
+            contextID: "context",
+            generation: 9,
+            token: UUID(uuidString: "A0000000-0000-0000-0000-000000000009")!
+        )
+        var outputs: [PickyAnnotationSceneMonitorOutput] = []
+        monitor.onOutput = { outputs.append($0) }
+        monitor.start(identity: identity, baseline: sceneBaseline(contextID: "context"))
+        monitor.updateTarget(screenshot: screenshot(), annotations: [], mode: .append)
+
+        await monitor.sampleNow()
+        await monitor.sampleNow()
+        #expect(outputs == [.matched(identity)])
+
+        monitor.setNarrationActive(true)
+        await monitor.sampleNow()
+        await monitor.sampleNow()
+        #expect(outputs == [.matched(identity)])
+
+        monitor.setNarrationActive(false)
+        await monitor.sampleNow()
+        await monitor.sampleNow()
+        #expect(outputs == [.matched(identity), .mismatched(identity, .visual)])
+        monitor.stop()
+    }
 
         currentTime = currentTime.addingTimeInterval(2)
         await monitor.sampleNow()

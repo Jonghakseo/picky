@@ -1554,6 +1554,9 @@ final class CompanionManager: ObservableObject {
         annotationSceneMonitor?.setAllowsTolerantRestoration(
             projection.state.annotationSceneRecoveryAllowed
         )
+        annotationSceneMonitor?.setNarrationActive(
+            projection.isSpeaking || projection.state.activeVisualNarrationSentenceCount > 0
+        )
         if previousProjectedSceneIdentity != nil,
            projection.state.annotationSceneIdentity == nil,
            activeAnnotationSceneIdentity == previousProjectedSceneIdentity {

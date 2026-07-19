@@ -5,18 +5,16 @@ import { extractChangedFilesFromExplicitText, extractSessionLinkArtifacts } from
 import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
 import { makeAnnotationOverlayRequestForContext, makePointerOverlayRequestForContext, type MainTurnOverlayContext } from "./application/overlay-context-resolver.js";
+import { MainVisualNarrationCoordinator } from "./application/main-visual-narration-coordinator.js";
 import { awaitPendingRuntimeHandle, createPendingRuntimeHandle } from "./application/pending-runtime-handle.js";
 import { readRecentPinnedSourceState, snapshotPiSessionFile } from "./application/pinned-session-source.js";
 import { TerminalSessionCoordinator } from "./application/terminal-session-coordinator.js";
 import { summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
 import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentPickleCompletionPrompt, buildPicklePrompt, buildSteerPrompt, type BuiltPrompt } from "./prompt-builder.js";
-import type { ModelCycleDirection, PickyActivitySummary, PickyAgentSession, PickyAnnotationOverlayRequest, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyPreparedVisualNarrationVisual, PickyQueueItem, PickyQueueMode, PickySessionMessage, PickyVisualNarrationSegmentIdentity } from "./protocol.js";
+import type { ModelCycleDirection, PickyActivitySummary, PickyAgentSession, PickyAnnotationOverlayRequest, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-overlay-request.js";
 import type { PickyShowAnnotationsRequest, PickyShowAnnotationsResult } from "./application/annotation-overlay-request.js";
-import { AnnotationDslParser, type AnnotationDslTag } from "./domain/annotation-dsl.js";
 import { PickleVisualDslCoordinator, type PickleVisualDslLease } from "./application/pickle-visual-dsl-coordinator.js";
-import { NarrationSentenceChunker } from "./domain/narration-sentence-chunker.js";
-import { VisualNarrationSegmentAssembler, type VisualNarrationSegmentAction } from "./domain/visual-narration-segment.js";
 import { readPiSessionInfoName } from "./application/pi-session-syncer.js";
 import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY } from "./session-store.js";
 import type { SessionStore } from "./session-store.js";
@@ -79,11 +77,6 @@ interface SessionSupervisorOptions {
 const ARCHIVED_SESSION_RETENTION_DAYS = 7;
 const ARCHIVED_SESSION_RETENTION_MS = ARCHIVED_SESSION_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
-type MainVisualNarrationSegment = {
-  identity: PickyVisualNarrationSegmentIdentity;
-  visual: PickyPreparedVisualNarrationVisual;
-};
-
 export class SessionSupervisor extends EventEmitter {
   private sessions = new Map<string, PickyAgentSession>();
   private runtimeHandles = new Map<string, RuntimeSessionHandle>();
@@ -104,13 +97,8 @@ export class SessionSupervisor extends EventEmitter {
   private mainAssistantDeltaSeen = false;
   private mainFirstAssistantDeltaLogged = false;
   private mainPromptDeliveredAt?: number;
-  private mainAnnotationDslTagSeen = false;
-  private readonly mainAnnotationDslParser = new AnnotationDslParser();
-  private readonly mainNarrationSentenceChunker = new NarrationSentenceChunker();
-  private readonly mainVisualNarrationSegments = new VisualNarrationSegmentAssembler<MainVisualNarrationSegment>();
   private mainVisualNarrationTurnToken = "main-turn-0";
-  private mainVisualNarrationOrdinal = 0;
-  private mainNarrationChunkCount = 0;
+  private readonly mainVisualNarration: MainVisualNarrationCoordinator;
   private mainContext?: PickyContextPacket;
   private mainContextGeneration = 0;
   // DSL tags must resolve against the screenshot context the streaming turn saw,
@@ -201,6 +189,19 @@ export class SessionSupervisor extends EventEmitter {
 
   constructor(private readonly runtime: AgentRuntime, private readonly store: SessionStore, private readonly options: SessionSupervisorOptions = {}) {
     super();
+    this.mainVisualNarration = new MainVisualNarrationCoordinator({
+      currentTurn: () => ({
+        contextId: this.mainReplyContextId,
+        turnId: this.mainTurnId,
+        turnToken: this.mainVisualNarrationTurnToken,
+        context: this.mainContext,
+        overlayContext: this.mainTurnOverlayContext,
+        screenOverlayDisabled: this.disabledBuiltinTools.has("picky_screen_overlay"),
+      }),
+      narrationMetadata: () => this.mainNarrationMetadata(),
+      emit: (event, payload) => this.emit(event, payload),
+      log: (message, data) => logAgentd(message, data),
+    });
     this.sessionIdFactory = options.sessionIdFactory ?? (() => `session-${randomUUID()}`);
     this.artifactMaterializer = new ArtifactMaterializer();
     this.pickleVisualDslCoordinator = new PickleVisualDslCoordinator((event) => {
@@ -782,12 +783,7 @@ export class SessionSupervisor extends EventEmitter {
     this.mainHandlePromise = undefined;
     this.mainDraft = "";
     this.mainAssistantDeltaSeen = false;
-    this.mainAnnotationDslTagSeen = false;
-    this.mainAnnotationDslParser.reset();
-    this.mainNarrationSentenceChunker.reset();
-    this.mainVisualNarrationSegments.reset();
-    this.mainVisualNarrationOrdinal = 0;
-    this.mainNarrationChunkCount = 0;
+    this.mainVisualNarration.reset();
     this.mainContext = undefined;
     this.mainTurnOverlayContext = undefined;
     this.mainReplyContextId = "main";
@@ -1309,8 +1305,7 @@ export class SessionSupervisor extends EventEmitter {
   private beginMainTurn(contextId: string, overlayContext: MainTurnOverlayContext): void {
     this.mainTurnId += 1;
     this.mainVisualNarrationTurnToken = `main-turn-${this.mainTurnId}`;
-    this.mainVisualNarrationOrdinal = 0;
-    this.mainVisualNarrationSegments.reset();
+    this.mainVisualNarration.beginTurn();
     this.mainReplyContextId = contextId;
     this.mainTurnOverlayContext = overlayContext;
     this.mainPromptDeliveredAt = undefined;
@@ -1318,10 +1313,6 @@ export class SessionSupervisor extends EventEmitter {
     this.mainDraft = "";
     this.mainAssistantDeltaSeen = false;
     this.mainFirstAssistantDeltaLogged = false;
-    this.mainAnnotationDslTagSeen = false;
-    this.mainAnnotationDslParser.reset();
-    this.mainNarrationSentenceChunker.reset();
-    this.mainNarrationChunkCount = 0;
     this.mainTerminalProcessed = false;
   }
 
@@ -1494,7 +1485,7 @@ export class SessionSupervisor extends EventEmitter {
         this.mainFirstAssistantDeltaLogged = true;
       }
       this.mainAssistantDeltaSeen = true;
-      this.mainDraft += await this.consumeMainAssistantDsl(event.delta);
+      this.mainDraft += this.mainVisualNarration.consume(event.delta);
       return;
     }
     if (event.type === "turn_text_complete") {
@@ -1508,27 +1499,26 @@ export class SessionSupervisor extends EventEmitter {
         logAgentd("main interrupted turn text suppressed", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, inputId: event.inputId, pending: this.interruptedMainInputIds.size });
         return;
       }
-      await this.finishMainAssistantDsl();
+      this.mainVisualNarration.finishAssistantDsl();
       let draftSnapshot = this.mainDraft;
       this.mainDraft = "";
       // Prefer the streamed draft so any deltas that the normalizer trimmed
       // out of the final assistant message are preserved, but parse the event
       // payload when a runtime delivers the whole turn without deltas.
       if (!draftSnapshot && !this.mainAssistantDeltaSeen) {
-        draftSnapshot = await this.consumeMainAssistantDsl(event.text);
-        await this.finishMainAssistantDsl();
+        draftSnapshot = this.mainVisualNarration.consume(event.text);
+        this.mainVisualNarration.finishAssistantDsl();
       }
       // Flush any buffered sentence and compute the streamed-narration flag AFTER
       // the no-delta fallback consume, so a whole-turn `turn_text_complete` that
       // emitted chunks via the fallback is not also re-spoken by the final reply.
-      this.flushMainNarrationSentences();
-      const didStreamNarration = this.mainNarrationChunkCount > 0;
-      const reply = cleanFinalAnswer(this.mainAnnotationDslTagSeen ? normalizeDslWhitespace(draftSnapshot) : draftSnapshot);
+      this.mainVisualNarration.flushNarrationSentences();
+      const didStreamNarration = this.mainVisualNarration.didStreamNarration;
+      const reply = cleanFinalAnswer(this.mainVisualNarration.hasAnnotationDslTag ? normalizeDslWhitespace(draftSnapshot) : draftSnapshot);
       if (!reply) {
         logAgentd("main turn text complete with empty draft", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, eventTextChars: event.text.length });
         this.emit("mainTurnSettled", this.mainReplyContextId);
-        this.mainAnnotationDslParser.reset();
-        this.mainAnnotationDslTagSeen = false;
+        this.mainVisualNarration.reset();
         this.mainAssistantDeltaSeen = false;
         return;
       }
@@ -1544,10 +1534,7 @@ export class SessionSupervisor extends EventEmitter {
           ...(didStreamNarration ? { didStreamNarration: true } : {}),
         });
       }
-      this.mainAnnotationDslParser.reset();
-      this.mainNarrationSentenceChunker.reset();
-      this.mainNarrationChunkCount = 0;
-      this.mainAnnotationDslTagSeen = false;
+      this.mainVisualNarration.reset();
       this.mainAssistantDeltaSeen = false;
       return;
     }
@@ -1579,14 +1566,13 @@ export class SessionSupervisor extends EventEmitter {
         // so a racing terminal event that slipped past Guard A (e.g. via a custom
         // runtime that does not flip `mainTerminalProcessed`) cannot read the
         // still-populated draft and double-emit the reply.
-        await this.finishMainAssistantDsl();
-        this.flushMainNarrationSentences();
-        const didStreamNarration = this.mainNarrationChunkCount > 0;
+        this.mainVisualNarration.finishAssistantDsl();
+        this.mainVisualNarration.flushNarrationSentences();
+        const didStreamNarration = this.mainVisualNarration.didStreamNarration;
         const draftSnapshot = this.mainDraft;
         this.mainDraft = "";
-        this.mainAnnotationDslParser.reset();
         logAgentd("main status", { status: event.status, contextId: this.mainReplyContextId, draftChars: draftSnapshot.length });
-        const rawReply = cleanFinalAnswer(this.mainAnnotationDslTagSeen ? normalizeDslWhitespace(draftSnapshot) : draftSnapshot) ?? (event.status === "failed" ? event.summary : undefined);
+        const rawReply = cleanFinalAnswer(this.mainVisualNarration.hasAnnotationDslTag ? normalizeDslWhitespace(draftSnapshot) : draftSnapshot) ?? (event.status === "failed" ? event.summary : undefined);
         if (this.suppressNextMainReply) {
           this.suppressNextMainReply = false;
           // The reply is intentionally dropped (e.g. after a handoff ack), but any
@@ -1630,163 +1616,8 @@ export class SessionSupervisor extends EventEmitter {
           this.emit("mainTurnSettled", this.mainReplyContextId);
         }
         this.schedulePickleCompletionDrain();
-        this.mainNarrationSentenceChunker.reset();
-        this.mainVisualNarrationSegments.reset();
-        this.mainNarrationChunkCount = 0;
-        this.mainAnnotationDslTagSeen = false;
+        this.mainVisualNarration.reset();
         this.mainAssistantDeltaSeen = false;
-      }
-    }
-  }
-
-  private async consumeMainAssistantDsl(text: string): Promise<string> {
-    const result = this.mainAnnotationDslParser.feed(text);
-    this.mainAnnotationDslTagSeen ||= result.completedTags.length > 0 || result.droppedTags.length > 0;
-    for (const summary of result.healedTags) {
-      logAgentd("main annotation DSL tag healed", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, summary });
-    }
-    for (const reason of result.droppedTags) {
-      logAgentd("main annotation DSL tag dropped", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, reason });
-    }
-    for (const item of result.streamItems) {
-      if (item.kind === "text") {
-        this.applyMainVisualNarrationActions(this.mainVisualNarrationSegments.appendText(item.text));
-      } else if (item.kind === "visualBoundary") {
-        // Finish any ordinary prose that preceded the new visual before closing
-        // the current visual segment at the opener colon.
-        this.flushMainNarrationSentences();
-        this.applyMainVisualNarrationActions(this.mainVisualNarrationSegments.boundary());
-      } else {
-        this.prepareMainVisualNarrationSegment(item.tag);
-      }
-    }
-    return result.cleanText;
-  }
-
-  private emitMainNarrationSentences(cleanText: string): void {
-    for (const text of this.mainNarrationSentenceChunker.feed(cleanText)) {
-      this.emitMainNarrationChunk(text);
-    }
-  }
-
-  private flushMainNarrationSentences(): void {
-    for (const text of this.mainNarrationSentenceChunker.finish()) {
-      this.emitMainNarrationChunk(text);
-    }
-  }
-
-  private emitMainNarrationChunk(text: string): void {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    const contextId = this.mainReplyContextId;
-    this.mainNarrationChunkCount += 1;
-    this.emit("mainNarrationChunk", {
-      contextId,
-      text: trimmed,
-      ...this.mainNarrationMetadata(),
-    });
-  }
-
-  private async finishMainAssistantDsl(): Promise<void> {
-    const result = this.mainAnnotationDslParser.finish();
-    this.mainAnnotationDslTagSeen ||= result.droppedTags.length > 0;
-    for (const summary of result.healedTags) {
-      logAgentd("main annotation DSL tag healed", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, summary });
-    }
-    for (const reason of result.droppedTags) {
-      logAgentd("main annotation DSL tag dropped", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, reason });
-    }
-    this.applyMainVisualNarrationActions(this.mainVisualNarrationSegments.finish());
-  }
-
-  private prepareMainVisualNarrationSegment(tag: AnnotationDslTag): void {
-    if (tag.kind === "screen") return;
-    if (this.disabledBuiltinTools.has("picky_screen_overlay")) return;
-
-    const captured = this.mainTurnOverlayContext;
-    if (!captured || this.mainContext?.id !== captured.context.id) {
-      logAgentd("stale DSL overlay dropped", {
-        contextId: this.mainReplyContextId,
-        turnId: this.mainTurnId,
-        capturedContextId: captured?.context.id,
-        currentContextId: this.mainContext?.id,
-        kind: tag.kind,
-      });
-      return;
-    }
-
-    try {
-      const visual: PickyPreparedVisualNarrationVisual = {
-        kind: "annotations",
-        request: makeAnnotationOverlayRequestForContext(captured.context, {
-          mode: "append",
-          annotations: [tag.annotation],
-          ...(tag.screenId === undefined ? {} : { screenId: tag.screenId }),
-        }, captured.generation),
-      };
-      const segment: MainVisualNarrationSegment = {
-        identity: {
-          contextId: captured.context.id,
-          contextGeneration: captured.generation,
-          turnToken: this.mainVisualNarrationTurnToken,
-          segmentId: `segment-${randomUUID()}`,
-          ordinal: this.mainVisualNarrationOrdinal,
-        },
-        visual,
-      };
-      this.mainVisualNarrationOrdinal += 1;
-      this.applyMainVisualNarrationActions(this.mainVisualNarrationSegments.prepare(segment));
-    } catch (error) {
-      logAgentd("main annotation DSL overlay unavailable", {
-        contextId: this.mainReplyContextId,
-        turnId: this.mainTurnId,
-        kind: tag.kind,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  private applyMainVisualNarrationActions(actions: VisualNarrationSegmentAction<MainVisualNarrationSegment>[]): void {
-    for (const action of actions) {
-      if (action.kind === "orphanText") {
-        this.emitMainNarrationSentences(action.text);
-      } else if (action.kind === "prepared") {
-        this.emit("mainVisualNarrationSegmentPrepared", action.segment);
-        logAgentd("visual narration segment prepared", {
-          contextId: action.segment.identity.contextId,
-          turnToken: action.segment.identity.turnToken,
-          ordinal: action.segment.identity.ordinal,
-          kind: action.segment.visual.kind,
-        });
-      } else if (action.kind === "sentence") {
-        this.mainNarrationChunkCount += 1;
-        this.emit("mainVisualNarrationSegmentSentence", {
-          identity: action.segment.identity,
-          index: action.index,
-          text: action.text,
-          ...this.mainNarrationMetadata(),
-        });
-        logAgentd("visual narration segment sentence", {
-          contextId: action.segment.identity.contextId,
-          turnToken: action.segment.identity.turnToken,
-          ordinal: action.segment.identity.ordinal,
-          index: action.index,
-          textChars: action.text.length,
-        });
-      } else {
-        this.emit("mainVisualNarrationSegmentCommitted", {
-          identity: action.segment.identity,
-          ...(action.text ? { text: action.text } : {}),
-          sentenceCount: action.sentenceCount,
-          ...this.mainNarrationMetadata(),
-        });
-        logAgentd("visual narration segment committed", {
-          contextId: action.segment.identity.contextId,
-          turnToken: action.segment.identity.turnToken,
-          ordinal: action.segment.identity.ordinal,
-          sentenceCount: action.sentenceCount,
-          textChars: action.text?.length ?? 0,
-        });
       }
     }
   }
@@ -1842,10 +1673,7 @@ export class SessionSupervisor extends EventEmitter {
       this.mainTurnOverlayContext = undefined;
       this.mainDraft = "";
       this.mainAssistantDeltaSeen = false;
-      this.mainAnnotationDslTagSeen = false;
-      this.mainAnnotationDslParser.reset();
-      this.mainVisualNarrationSegments.reset();
-      this.mainVisualNarrationOrdinal = 0;
+      this.mainVisualNarration.reset();
       const delivery = await this.preparePickyCompletionDelivery(prompt, session.cwd);
       if (!delivery) {
         // Child daemons have no local main runtime; forward the prebuilt prompt to the primary
@@ -1894,10 +1722,7 @@ export class SessionSupervisor extends EventEmitter {
     this.mainTurnOverlayContext = undefined;
     this.mainDraft = "";
     this.mainAssistantDeltaSeen = false;
-    this.mainAnnotationDslTagSeen = false;
-    this.mainAnnotationDslParser.reset();
-    this.mainVisualNarrationSegments.reset();
-    this.mainVisualNarrationOrdinal = 0;
+    this.mainVisualNarration.reset();
     this.externalPickleReplyContexts.add(sessionId);
     const delivery = await this.preparePickyCompletionDelivery(prompt, cwd);
     if (!delivery) {

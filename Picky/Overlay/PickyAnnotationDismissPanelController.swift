@@ -10,7 +10,9 @@ import AppKit
 import SwiftUI
 
 enum PickyAnnotationDismissPanelLayout {
-    static let panelSize = CGSize(width: 160, height: 44)
+    // Extra room around the capsule so the button's drop shadow isn't clipped by the
+    // panel bounds. The capsule stays centered, so the visible control size is unchanged.
+    static let panelSize = CGSize(width: 220, height: 80)
     /// Vertical placement measured from the top of the visible frame. 0.8 keeps the
     /// control in the lower third where it stays legible over most desktop content.
     static let verticalPositionFromTop: CGFloat = 0.85
@@ -173,7 +175,6 @@ private struct PickyAnnotationDismissButton: View {
         .buttonStyle(PickyAnnotationDismissButtonStyle())
         .accessibilityLabel(Text("annotation.dismiss.accessibility"))
         .help(L10n.t("annotation.dismiss.accessibility"))
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

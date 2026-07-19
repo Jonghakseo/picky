@@ -156,10 +156,12 @@ final class PickyAnnotationSceneMonitor {
         if automaticallySchedulesSamples {
             installEventObservers(for: baseline, identity: identity)
         }
-        PickyLog.notice(
+        PickyLog.noticeRateLimited(
             .annotationScene,
+            key: "annotation-scene-transition-\(baseline.contextID)-validating",
+            cooldown: 1,
             prefix: "🖍️",
-            message: "annotation scene monitor started context=\(baseline.contextID) generation=\(identity.generation)"
+            message: "annotation scene validating context=\(baseline.contextID) generation=\(identity.generation)"
         )
         requestSample(after: 0)
     }
@@ -230,10 +232,12 @@ final class PickyAnnotationSceneMonitor {
         session = nil
         resetCapturerWhenIdle()
         if let previous, let logReason {
-            PickyLog.notice(
+            PickyLog.noticeRateLimited(
                 .annotationScene,
+                key: "annotation-scene-transition-\(previous.identity.contextID)-inactive",
+                cooldown: 1,
                 prefix: "🖍️",
-                message: "annotation scene monitor \(logReason) context=\(previous.identity.contextID) samples=\(previous.sampleCount)"
+                message: "annotation scene inactive context=\(previous.identity.contextID) reason=\(logReason) samples=\(previous.sampleCount)"
             )
         }
     }
@@ -336,8 +340,10 @@ final class PickyAnnotationSceneMonitor {
                 session.semanticBlock = nil
                 session.lastMismatchReason = nil
                 onOutput?(.matched(identity))
-                PickyLog.notice(
+                PickyLog.noticeRateLimited(
                     .annotationScene,
+                    key: "annotation-scene-transition-\(identity.contextID)-visible",
+                    cooldown: 1,
                     prefix: "🖍️",
                     message: "annotation scene visible context=\(identity.contextID) generation=\(identity.generation)"
                 )
@@ -440,7 +446,7 @@ final class PickyAnnotationSceneMonitor {
 
     private func suspendInitialValidationIfExpired(_ session: Session) -> Bool {
         guard session.phase == .validating, now() >= session.initialValidationDeadline else { return false }
-        transitionToSuspended(session, reason: .visual)
+        transitionToSuspended(session, reason: .validationTimeout)
         return true
     }
 
@@ -453,8 +459,10 @@ final class PickyAnnotationSceneMonitor {
         if !alreadySuspendedForReason {
             session.retry = 0
             onOutput?(.mismatched(session.identity, reason))
-            PickyLog.notice(
+            PickyLog.noticeRateLimited(
                 .annotationScene,
+                key: "annotation-scene-transition-\(session.identity.contextID)-suspended-\(reason.rawValue)",
+                cooldown: 1,
                 prefix: "🖍️",
                 message: "annotation scene suspended context=\(session.identity.contextID) reason=\(reason.rawValue)"
             )
@@ -469,7 +477,7 @@ final class PickyAnnotationSceneMonitor {
             // prevents a missed Workspace/AX event from suspending annotations forever.
             requestSample(after: 5)
             return
-        case .scroll, .display, .visual, .none:
+        case .scroll, .display, .visual, .validationTimeout, .none:
             break
         }
         let elapsed = now().timeIntervalSince(session.startedAt)
@@ -492,10 +500,22 @@ final class PickyAnnotationSceneMonitor {
     ) {
         let totalMilliseconds = (CFAbsoluteTimeGetCurrent() - totalStartedAt) * 1_000
         let globalChanged = metrics.map { String(format: "%.3f", $0.globalChangedFraction) } ?? "n/a"
+        let globalMean = metrics.map { String(format: "%.2f", $0.globalMeanDifference) } ?? "n/a"
         let roiChanged = metrics?.roiChangedFraction.map { String(format: "%.3f", $0) } ?? "n/a"
-        PickyLog.logger(.annotationScene).debug(
-            "sample context=\(session.identity.contextID, privacy: .public) phase=\(session.phase.rawValue, privacy: .public) outcome=\(outcome, privacy: .public) count=\(session.sampleCount) captureMs=\(captureMilliseconds, format: .fixed(precision: 2)) compareMs=\(compareMilliseconds, format: .fixed(precision: 2)) totalMs=\(totalMilliseconds, format: .fixed(precision: 2)) globalChanged=\(globalChanged, privacy: .public) roiChanged=\(roiChanged, privacy: .public)"
-        )
+        let roiMean = metrics?.roiMeanDifference.map { String(format: "%.2f", $0) } ?? "n/a"
+        let message = "sample context=\(session.identity.contextID) phase=\(session.phase.rawValue) outcome=\(outcome) count=\(session.sampleCount) captureMs=\(String(format: "%.2f", captureMilliseconds)) compareMs=\(String(format: "%.2f", compareMilliseconds)) totalMs=\(String(format: "%.2f", totalMilliseconds)) globalChanged=\(globalChanged) globalMean=\(globalMean) roiChanged=\(roiChanged) roiMean=\(roiMean)"
+        switch session.phase {
+        case .validating, .suspended:
+            PickyLog.noticeRateLimited(
+                .annotationScene,
+                key: "annotation-scene-sample-\(session.identity.contextID)-\(session.phase.rawValue)-\(outcome)",
+                cooldown: 1,
+                prefix: "🖍️",
+                message: message
+            )
+        case .visible, .inactive:
+            PickyLog.logger(.annotationScene).debug("\(message, privacy: .public)")
+        }
     }
 
     private static func aggregate(

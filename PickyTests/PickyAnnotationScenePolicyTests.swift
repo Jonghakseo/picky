@@ -231,6 +231,7 @@ struct PickyAnnotationScenePolicyTests {
             .agentAnnotationScenePrepared(identity: identity),
             .agentAnnotationSceneMatched(identity: identity),
             .agentAnnotationSceneMismatched(identity: identity, reason: .window),
+            .agentAnnotationSceneMismatched(identity: identity, reason: .validationTimeout),
         ]
         for event in events {
             let data = try JSONEncoder().encode(event)
@@ -500,7 +501,7 @@ struct PickyAnnotationScenePolicyTests {
         monitor.stop()
     }
 
-    @Test func monitorSuspendsInitialValidationAtTwoSecondsWhenObservationsRemainIndeterminate() async throws {
+    @Test func monitorMarksExpiredInitialValidationAsValidationTimeout() async throws {
         let baselineFingerprint = try #require(fingerprint(width: 10, height: 10))
         let indeterminateFingerprint = try #require(PickyAnnotationSceneFingerprint(
             width: 10,
@@ -531,7 +532,7 @@ struct PickyAnnotationScenePolicyTests {
 
         currentTime = currentTime.addingTimeInterval(2)
         await monitor.sampleNow()
-        #expect(outputs == [.mismatched(identity, .visual)])
+        #expect(outputs == [.mismatched(identity, .validationTimeout)])
         monitor.stop()
     }
 

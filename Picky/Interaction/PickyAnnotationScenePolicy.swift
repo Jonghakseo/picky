@@ -24,6 +24,7 @@ enum PickyAnnotationSceneMismatchReason: String, Equatable, Codable, Sendable {
     case scroll
     case display
     case visual
+    case validationTimeout
 }
 
 enum PickyAnnotationSceneVisualObservation: Equatable, Sendable {

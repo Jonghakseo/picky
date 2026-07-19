@@ -889,6 +889,21 @@ private final class ManagerAnnotationSceneCapturer: PickyAnnotationSceneSnapshot
         return current.removeFirst()
     }
 
+    func baselineRegionFingerprint(
+        for screenshot: PickyScreenshotContext,
+        normalizedRegion: CGRect
+    ) async throws -> PickyAnnotationSceneFingerprint {
+        baseline
+    }
+
+    func currentRegionFingerprint(
+        for screenshot: PickyScreenshotContext,
+        normalizedRegion: CGRect
+    ) async throws -> PickyAnnotationSceneFingerprint {
+        guard !current.isEmpty else { throw PickyAnnotationSceneCaptureError.fingerprintCreationFailed }
+        return current.removeFirst()
+    }
+
     func reset() {}
 }
 

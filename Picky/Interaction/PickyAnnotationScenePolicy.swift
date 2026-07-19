@@ -87,10 +87,16 @@ enum PickyAnnotationSceneInvalidationProfile: String, Equatable, Sendable {
     /// Once TTS ends, return to prompt invalidation of stale annotation geometry.
     case strict
 
+    /// A semantic signal (such as a scroll or app switch) permits a sensitive
+    /// high-resolution comparison. It deliberately does not inherit narration-time
+    /// tolerance because it runs only when an external event may have moved the anchor.
+    case semantic
+
     var mismatchingROIChangedFraction: Double {
         switch self {
         case .lenient: 0.53
         case .strict: 0.38
+        case .semantic: 0.08
         }
     }
 
@@ -98,6 +104,7 @@ enum PickyAnnotationSceneInvalidationProfile: String, Equatable, Sendable {
         switch self {
         case .lenient: 31.0
         case .strict: 22.0
+        case .semantic: 7.0
         }
     }
 
@@ -105,6 +112,7 @@ enum PickyAnnotationSceneInvalidationProfile: String, Equatable, Sendable {
         switch self {
         case .lenient: 0.47
         case .strict: 0.40
+        case .semantic: 0.08
         }
     }
 
@@ -112,6 +120,7 @@ enum PickyAnnotationSceneInvalidationProfile: String, Equatable, Sendable {
         switch self {
         case .lenient: 25.0
         case .strict: 20.0
+        case .semantic: 7.0
         }
     }
 }

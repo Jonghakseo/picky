@@ -175,6 +175,25 @@ struct PickyAnnotationScenePolicyTests {
         #expect(metrics.globalMeanDifference == 8.74)
     }
 
+    @Test func semanticProfileDetectsSmallHighResolutionROIChanges() throws {
+        let baseline = try #require(fingerprint(width: 10, height: 10))
+        var pixels = baseline.luminance
+        for index in 0..<10 { pixels[index] = 100 }
+        let current = try #require(PickyAnnotationSceneFingerprint(width: 10, height: 10, luminance: pixels))
+
+        let observation = PickyAnnotationSceneVisualPolicy.compare(
+            baseline: baseline,
+            current: current,
+            normalizedRegions: [],
+            invalidationProfile: .semantic
+        )
+
+        guard case .mismatching = observation else {
+            Issue.record("Expected a semantic high-resolution comparison to reject a 10% ROI change")
+            return
+        }
+    }
+
     @Test func visualPolicyInvalidatesROIFractionChangesAfterNarrationEnds() throws {
         let baseline = try #require(fingerprint(width: 10, height: 10))
         var pixels = baseline.luminance
@@ -381,12 +400,70 @@ struct PickyAnnotationScenePolicyTests {
         ) == nil)
     }
 
-    @Test func monitorSuspendsImmediatelyWhenAnotherApplicationActivates() {
-        let monitor = PickyAnnotationSceneMonitor(automaticallySchedulesSamples: false)
+    @Test func semanticROIChangeSuspendsImmediatelyForApplicationSwitches() async throws {
+        let baselineFingerprint = try #require(fingerprint(width: 10, height: 10))
+        let changedFingerprint = try #require(PickyAnnotationSceneFingerprint(
+            width: 10,
+            height: 10,
+            luminance: [UInt8](repeating: 255, count: 100)
+        ))
+        let monitor = PickyAnnotationSceneMonitor(
+            capturer: FakeAnnotationSceneCapturer(
+                baseline: baselineFingerprint,
+                current: [],
+                regionCurrent: [changedFingerprint]
+            ),
+            automaticallySchedulesSamples: false
+        )
         let identity = PickyAnnotationSceneIdentity(
             contextID: "context",
             generation: 1,
             token: UUID(uuidString: "A0000000-0000-0000-0000-000000000101")!
+        )
+        var outputs: [PickyAnnotationSceneMonitorOutput] = []
+        monitor.onOutput = { outputs.append($0) }
+        monitor.start(identity: identity, baseline: sceneBaseline(contextID: "context"))
+        monitor.updateTarget(screenshot: screenshot(), annotations: [annotation()], mode: .append)
+        monitor.setNarrationActive(true)
+
+        await monitor.verifyRegionsAfterSemanticSignalNow(identity: identity, reason: .application)
+
+        #expect(outputs == [.mismatched(identity, .application)])
+        monitor.stop()
+    }
+
+    @Test func semanticROIComparisonKeepsAnnotationsWhenScrollDoesNotMoveTheirAnchor() async throws {
+        let baselineFingerprint = try #require(fingerprint(width: 10, height: 10))
+        let monitor = PickyAnnotationSceneMonitor(
+            capturer: FakeAnnotationSceneCapturer(
+                baseline: baselineFingerprint,
+                current: [],
+                regionCurrent: [baselineFingerprint]
+            ),
+            automaticallySchedulesSamples: false
+        )
+        let identity = PickyAnnotationSceneIdentity(
+            contextID: "context",
+            generation: 1,
+            token: UUID(uuidString: "A0000000-0000-0000-0000-000000000111")!
+        )
+        var outputs: [PickyAnnotationSceneMonitorOutput] = []
+        monitor.onOutput = { outputs.append($0) }
+        monitor.start(identity: identity, baseline: sceneBaseline(contextID: "context"))
+        monitor.updateTarget(screenshot: screenshot(), annotations: [annotation()], mode: .append)
+
+        await monitor.verifyRegionsAfterSemanticSignalNow(identity: identity, reason: .scroll)
+
+        #expect(outputs.isEmpty)
+        monitor.stop()
+    }
+
+    @Test func hidingTheBaselineApplicationHardClearsWithoutCapturing() {
+        let monitor = PickyAnnotationSceneMonitor(automaticallySchedulesSamples: false)
+        let identity = PickyAnnotationSceneIdentity(
+            contextID: "context",
+            generation: 1,
+            token: UUID(uuidString: "A0000000-0000-0000-0000-000000000112")!
         )
         var outputs: [PickyAnnotationSceneMonitorOutput] = []
         monitor.onOutput = { outputs.append($0) }
@@ -400,11 +477,7 @@ struct PickyAnnotationScenePolicyTests {
             )
         )
 
-        monitor.handleActivatedApplication(
-            identity: identity,
-            applicationPID: 202,
-            applicationBundleID: "com.example.destination"
-        )
+        monitor.handleHiddenApplication(identity: identity, applicationPID: 101)
 
         #expect(outputs == [.mismatched(identity, .application)])
         monitor.stop()
@@ -439,40 +512,20 @@ struct PickyAnnotationScenePolicyTests {
         monitor.stop()
     }
 
-    @Test func monitorSuspendsImmediatelyWhenFocusedWindowChangesWithinBaselineApplication() {
+    @Test func focusedWindowSignalsDoNotClearWithoutAChangedROI() {
         let monitor = PickyAnnotationSceneMonitor(automaticallySchedulesSamples: false)
         let identity = PickyAnnotationSceneIdentity(
             contextID: "context",
             generation: 1,
             token: UUID(uuidString: "A0000000-0000-0000-0000-000000000103")!
         )
-        let baselineWindow = PickyAnnotationSceneWindowSignature(
-            ownerPID: 101,
-            windowID: 1,
-            frame: CGRect(x: 0, y: 0, width: 100, height: 100)
-        )
         var outputs: [PickyAnnotationSceneMonitorOutput] = []
         monitor.onOutput = { outputs.append($0) }
-        monitor.start(
-            identity: identity,
-            baseline: PickyAnnotationSceneBaseline(
-                contextID: "context",
-                applicationPID: 101,
-                applicationBundleID: "com.example.source",
-                window: baselineWindow
-            )
-        )
+        monitor.start(identity: identity, baseline: sceneBaseline(contextID: "context"))
 
-        monitor.handleFocusedWindowChange(
-            identity: identity,
-            focusedWindow: PickyAnnotationSceneWindowSignature(
-                ownerPID: 101,
-                windowID: 2,
-                frame: CGRect(x: 0, y: 0, width: 100, height: 100)
-            )
-        )
+        monitor.handleFocusedWindowChange(identity: identity, focusedWindow: nil)
 
-        #expect(outputs == [.mismatched(identity, .window)])
+        #expect(outputs.isEmpty)
         monitor.stop()
     }
 
@@ -1012,10 +1065,19 @@ struct PickyAnnotationScenePolicyTests {
 private final class FakeAnnotationSceneCapturer: PickyAnnotationSceneSnapshotCapturing {
     let baseline: PickyAnnotationSceneFingerprint
     var current: [PickyAnnotationSceneFingerprint]
+    let regionBaseline: PickyAnnotationSceneFingerprint
+    var regionCurrent: [PickyAnnotationSceneFingerprint]
 
-    init(baseline: PickyAnnotationSceneFingerprint, current: [PickyAnnotationSceneFingerprint]) {
+    init(
+        baseline: PickyAnnotationSceneFingerprint,
+        current: [PickyAnnotationSceneFingerprint],
+        regionBaseline: PickyAnnotationSceneFingerprint? = nil,
+        regionCurrent: [PickyAnnotationSceneFingerprint] = []
+    ) {
         self.baseline = baseline
         self.current = current
+        self.regionBaseline = regionBaseline ?? baseline
+        self.regionCurrent = regionCurrent
     }
 
     func baselineFingerprint(for screenshot: PickyScreenshotContext) async throws -> PickyAnnotationSceneFingerprint {
@@ -1025,6 +1087,21 @@ private final class FakeAnnotationSceneCapturer: PickyAnnotationSceneSnapshotCap
     func currentFingerprint(for screenshot: PickyScreenshotContext) async throws -> PickyAnnotationSceneFingerprint {
         guard !current.isEmpty else { throw PickyAnnotationSceneCaptureError.fingerprintCreationFailed }
         return current.removeFirst()
+    }
+
+    func baselineRegionFingerprint(
+        for screenshot: PickyScreenshotContext,
+        normalizedRegion: CGRect
+    ) async throws -> PickyAnnotationSceneFingerprint {
+        regionBaseline
+    }
+
+    func currentRegionFingerprint(
+        for screenshot: PickyScreenshotContext,
+        normalizedRegion: CGRect
+    ) async throws -> PickyAnnotationSceneFingerprint {
+        guard !regionCurrent.isEmpty else { throw PickyAnnotationSceneCaptureError.fingerprintCreationFailed }
+        return regionCurrent.removeFirst()
     }
 
     func reset() {}
@@ -1057,6 +1134,22 @@ private final class SuspendingAnnotationSceneCapturer: PickyAnnotationSceneSnaps
     }
 
     func currentFingerprint(for screenshot: PickyScreenshotContext) async throws -> PickyAnnotationSceneFingerprint {
+        beginCapture()
+        defer { endCapture() }
+        return fingerprint
+    }
+
+    func baselineRegionFingerprint(
+        for screenshot: PickyScreenshotContext,
+        normalizedRegion: CGRect
+    ) async throws -> PickyAnnotationSceneFingerprint {
+        fingerprint
+    }
+
+    func currentRegionFingerprint(
+        for screenshot: PickyScreenshotContext,
+        normalizedRegion: CGRect
+    ) async throws -> PickyAnnotationSceneFingerprint {
         beginCapture()
         defer { endCapture() }
         return fingerprint

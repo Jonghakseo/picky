@@ -39,6 +39,14 @@ enum PickyAnnotationSceneMonitorOutput: Equatable, Sendable {
 protocol PickyAnnotationSceneSnapshotCapturing: AnyObject {
     func baselineFingerprint(for screenshot: PickyScreenshotContext) async throws -> PickyAnnotationSceneFingerprint
     func currentFingerprint(for screenshot: PickyScreenshotContext) async throws -> PickyAnnotationSceneFingerprint
+    func baselineRegionFingerprint(
+        for screenshot: PickyScreenshotContext,
+        normalizedRegion: CGRect
+    ) async throws -> PickyAnnotationSceneFingerprint
+    func currentRegionFingerprint(
+        for screenshot: PickyScreenshotContext,
+        normalizedRegion: CGRect
+    ) async throws -> PickyAnnotationSceneFingerprint
     func reset()
 }
 
@@ -53,6 +61,7 @@ final class PickyAnnotationSceneMonitor {
     private final class Target {
         let screenshot: PickyScreenshotContext
         var baselineFingerprint: PickyAnnotationSceneFingerprint?
+        var regionBaselineFingerprints: [String: PickyAnnotationSceneFingerprint] = [:]
         var normalizedRegionsByAnnotationID: [String: CGRect]
 
         var normalizedRegions: [CGRect] {
@@ -126,6 +135,8 @@ final class PickyAnnotationSceneMonitor {
     private var capturerResetPending = false
     private var needsImmediateSample = false
     private var workspaceObserver: NSObjectProtocol?
+    private var workspaceHideObserver: NSObjectProtocol?
+    private var activeSpaceObserver: NSObjectProtocol?
     private var screenObserver: NSObjectProtocol?
     private var globalScrollMonitor: Any?
     private var localScrollMonitor: Any?
@@ -133,6 +144,7 @@ final class PickyAnnotationSceneMonitor {
     private var accessibilityObserverContext: AccessibilityObserverContext?
     private var accessibilityObservedApplication: AXUIElement?
     private var accessibilityObservedWindow: AXUIElement?
+    private var semanticVerificationTask: Task<Void, Never>?
 
     init(
         capturer: (any PickyAnnotationSceneSnapshotCapturing)? = nil,
@@ -179,7 +191,12 @@ final class PickyAnnotationSceneMonitor {
         let key = screenshot.screenId ?? screenshot.id
         let regions = Self.normalizedRegions(for: annotations, screenshot: screenshot)
         if let target = session.targets[key] {
-            target.normalizedRegionsByAnnotationID.merge(regions) { _, replacement in replacement }
+            for (annotationID, region) in regions {
+                if target.normalizedRegionsByAnnotationID[annotationID] != region {
+                    target.regionBaselineFingerprints[annotationID] = nil
+                }
+                target.normalizedRegionsByAnnotationID[annotationID] = region
+            }
         } else {
             session.targets[key] = Target(screenshot: screenshot, normalizedRegionsByAnnotationID: regions)
         }
@@ -225,6 +242,7 @@ final class PickyAnnotationSceneMonitor {
             session.captureEpoch &+= 1
             for target in session.targets.values {
                 target.baselineFingerprint = nil
+                target.regionBaselineFingerprints = [:]
             }
             resetCapturerWhenIdle()
         }
@@ -239,6 +257,8 @@ final class PickyAnnotationSceneMonitor {
         let previous = session
         pollingTask?.cancel()
         pollingTask = nil
+        semanticVerificationTask?.cancel()
+        semanticVerificationTask = nil
         needsImmediateSample = false
         removeEventObservers()
         session = nil
@@ -319,10 +339,10 @@ final class PickyAnnotationSceneMonitor {
         }
 
         let sampleStartedAt = CFAbsoluteTimeGetCurrent()
-        // Visual-only policy: annotations are tied to the pixels they were drawn over,
-        // not to which app/window is focused. Semantic changes (app switch, window
-        // move, scroll, display) never suspend on their own; only an actual change in
-        // the captured region does. Working on another screen leaves this drawing alone.
+        // Annotations are tied to the pixels they were drawn over, not focus alone.
+        // Low-resolution polling remains a gradual-change safety net; semantic signals
+        // independently verify high-resolution ROIs and suspend only on an actual change.
+        // Working on another screen therefore leaves this drawing alone.
         session.semanticBlock = nil
 
         do {
@@ -404,6 +424,22 @@ final class PickyAnnotationSceneMonitor {
                 target.baselineFingerprint = baselineFingerprint
             }
             guard let baselineFingerprint = target.baselineFingerprint else { continue }
+            for annotationID in target.normalizedRegionsByAnnotationID.keys.sorted() {
+                guard target.regionBaselineFingerprints[annotationID] == nil,
+                      let region = target.normalizedRegionsByAnnotationID[annotationID] else { continue }
+                let baselineStartedAt = CFAbsoluteTimeGetCurrent()
+                let regionBaseline = try await capturer.baselineRegionFingerprint(
+                    for: target.screenshot,
+                    normalizedRegion: region
+                )
+                captureMilliseconds += (CFAbsoluteTimeGetCurrent() - baselineStartedAt) * 1_000
+                guard self.session?.identity == identity,
+                      session.captureEpoch == captureEpoch,
+                      !Task.isCancelled else {
+                    throw CancellationError()
+                }
+                target.regionBaselineFingerprints[annotationID] = regionBaseline
+            }
             let captureStartedAt = CFAbsoluteTimeGetCurrent()
             let current = try await capturer.currentFingerprint(for: target.screenshot)
             captureMilliseconds += (CFAbsoluteTimeGetCurrent() - captureStartedAt) * 1_000
@@ -621,6 +657,115 @@ final class PickyAnnotationSceneMonitor {
         }
     }
 
+    private func verifyRegionsAfterSemanticSignal(
+        identity: PickyAnnotationSceneIdentity,
+        reason: PickyAnnotationSceneMismatchReason,
+        debounce: TimeInterval = 0
+    ) {
+        guard session?.identity == identity else { return }
+        semanticVerificationTask?.cancel()
+        semanticVerificationTask = Task { @MainActor [weak self] in
+            if debounce > 0 {
+                try? await Task.sleep(for: .seconds(debounce))
+            }
+            guard !Task.isCancelled, let self else { return }
+            await self.performSemanticRegionVerification(identity: identity, reason: reason)
+        }
+    }
+
+    /// Test hook for the same path used by workspace and accessibility notifications.
+    func verifyRegionsAfterSemanticSignalNow(
+        identity: PickyAnnotationSceneIdentity,
+        reason: PickyAnnotationSceneMismatchReason
+    ) async {
+        await performSemanticRegionVerification(identity: identity, reason: reason)
+    }
+
+    private func performSemanticRegionVerification(
+        identity: PickyAnnotationSceneIdentity,
+        reason: PickyAnnotationSceneMismatchReason
+    ) async {
+        guard let session, session.identity == identity, !session.targets.isEmpty else { return }
+        guard samplingIdentity == nil else {
+            verifyRegionsAfterSemanticSignal(identity: identity, reason: reason, debounce: 0.05)
+            return
+        }
+        let captureEpoch = session.captureEpoch
+        samplingIdentity = identity
+        defer {
+            if samplingIdentity == identity {
+                samplingIdentity = nil
+                if capturerResetPending {
+                    capturer.reset()
+                    capturerResetPending = false
+                }
+                if needsImmediateSample {
+                    needsImmediateSample = false
+                    requestSample(after: 0)
+                } else if self.session?.identity == identity {
+                    scheduleNextSample(for: session)
+                }
+            }
+        }
+
+        do {
+            for key in session.targets.keys.sorted() {
+                guard let target = session.targets[key] else { continue }
+                for annotationID in target.normalizedRegionsByAnnotationID.keys.sorted() {
+                    guard let region = target.normalizedRegionsByAnnotationID[annotationID] else { continue }
+                    let baseline: PickyAnnotationSceneFingerprint
+                    if let cached = target.regionBaselineFingerprints[annotationID] {
+                        baseline = cached
+                    } else {
+                        baseline = try await capturer.baselineRegionFingerprint(
+                            for: target.screenshot,
+                            normalizedRegion: region
+                        )
+                        guard self.session?.identity == identity,
+                              session.captureEpoch == captureEpoch,
+                              !Task.isCancelled else { return }
+                        target.regionBaselineFingerprints[annotationID] = baseline
+                    }
+                    let current = try await capturer.currentRegionFingerprint(
+                        for: target.screenshot,
+                        normalizedRegion: region
+                    )
+                    guard self.session?.identity == identity,
+                          session.captureEpoch == captureEpoch,
+                          !Task.isCancelled else { return }
+                    let observation = PickyAnnotationSceneVisualPolicy.compare(
+                        baseline: baseline,
+                        current: current,
+                        normalizedRegions: [],
+                        invalidationProfile: .semantic
+                    )
+                    let metrics = observation.metrics
+                    let changed = if case .mismatching = observation { true } else { false }
+                    PickyLog.noticeRateLimited(
+                        .annotationScene,
+                        key: "annotation-scene-semantic-\(identity.contextID)-\(reason.rawValue)-\(annotationID)",
+                        cooldown: 0.2,
+                        prefix: "🖍️",
+                        message: "semantic roi context=\(identity.contextID) reason=\(reason.rawValue) annotation=\(annotationID) changed=\(changed) changedFraction=\(String(format: "%.3f", metrics.globalChangedFraction)) meanDifference=\(String(format: "%.2f", metrics.globalMeanDifference)) decision=\(changed ? "clear" : "keep")"
+                    )
+                    if changed {
+                        suspendImmediately(reason: reason)
+                        return
+                    }
+                }
+            }
+        } catch {
+            guard self.session?.identity == identity, !Task.isCancelled else { return }
+            PickyLog.noticeRateLimited(
+                .annotationScene,
+                key: "annotation-scene-semantic-capture-\(identity.contextID)-\(reason.rawValue)",
+                cooldown: 10,
+                prefix: "⚠️",
+                message: "annotation scene semantic ROI capture failed context=\(identity.contextID) reason=\(reason.rawValue) error=\(error.localizedDescription)"
+            )
+        }
+    }
+
     private func installEventObservers(
         for baseline: PickyAnnotationSceneBaseline,
         identity: PickyAnnotationSceneIdentity
@@ -637,6 +782,25 @@ final class PickyAnnotationSceneMonitor {
                     applicationPID: application?.processIdentifier,
                     applicationBundleID: application?.bundleIdentifier
                 )
+            }
+        }
+        workspaceHideObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didHideApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            Task { @MainActor [weak self] in
+                self?.handleHiddenApplication(identity: identity, applicationPID: application?.processIdentifier)
+            }
+        }
+        activeSpaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.verifyRegionsAfterSemanticSignal(identity: identity, reason: .window)
             }
         }
         screenObserver = NotificationCenter.default.addObserver(
@@ -677,6 +841,18 @@ final class PickyAnnotationSceneMonitor {
             requestSample(after: 0)
             return
         }
+        verifyRegionsAfterSemanticSignal(identity: identity, reason: .application)
+    }
+
+    func handleHiddenApplication(
+        identity: PickyAnnotationSceneIdentity,
+        applicationPID: pid_t?
+    ) {
+        guard let session,
+              session.identity == identity,
+              let baselinePID = session.baseline.applicationPID,
+              applicationPID == baselinePID,
+              baselinePID != ProcessInfo.processInfo.processIdentifier else { return }
         suspendImmediately(reason: .application)
     }
 
@@ -687,10 +863,8 @@ final class PickyAnnotationSceneMonitor {
 
     private func handleScroll(identity: PickyAnnotationSceneIdentity) {
         guard self.session?.identity == identity else { return }
-        // Scrolling may or may not change the drawn region; let the visual sampler decide
-        // instead of blindly suspending.
-        self.session?.semanticBlock = nil
-        requestSample(after: 0)
+        // Momentum scrolling emits many events; inspect the final settled ROI once.
+        verifyRegionsAfterSemanticSignal(identity: identity, reason: .scroll, debounce: 0.20)
     }
 
     private func refreshCaptureGeometryAfterDisplayChange() {
@@ -701,6 +875,7 @@ final class PickyAnnotationSceneMonitor {
         session.captureEpoch &+= 1
         for target in session.targets.values {
             target.baselineFingerprint = nil
+            target.regionBaselineFingerprints = [:]
         }
         resetCapturerWhenIdle()
         session.semanticBlock = nil
@@ -733,8 +908,13 @@ final class PickyAnnotationSceneMonitor {
                         identity: context.identity,
                         refreshObservedWindow: false
                     )
-                case kAXTitleChangedNotification as String:
-                    monitor.requestSample(after: 0)
+                case kAXTitleChangedNotification as String,
+                     kAXLayoutChangedNotification as String,
+                     kAXValueChangedNotification as String:
+                    monitor.verifyRegionsAfterSemanticSignal(identity: context.identity, reason: .window)
+                case kAXWindowMiniaturizedNotification as String,
+                     kAXUIElementDestroyedNotification as String:
+                    monitor.suspendImmediately(reason: .window)
                 default:
                     break
                 }
@@ -745,6 +925,8 @@ final class PickyAnnotationSceneMonitor {
         let context = AccessibilityObserverContext(monitor: self, identity: identity)
         let refcon = Unmanaged.passUnretained(context).toOpaque()
         _ = AXObserverAddNotification(observer, application, kAXFocusedWindowChangedNotification as CFString, refcon)
+        _ = AXObserverAddNotification(observer, application, kAXLayoutChangedNotification as CFString, refcon)
+        _ = AXObserverAddNotification(observer, application, kAXValueChangedNotification as CFString, refcon)
         accessibilityObserver = observer
         accessibilityObserverContext = context
         accessibilityObservedApplication = application
@@ -759,6 +941,8 @@ final class PickyAnnotationSceneMonitor {
             _ = AXObserverRemoveNotification(observer, oldWindow, kAXWindowMovedNotification as CFString)
             _ = AXObserverRemoveNotification(observer, oldWindow, kAXWindowResizedNotification as CFString)
             _ = AXObserverRemoveNotification(observer, oldWindow, kAXTitleChangedNotification as CFString)
+            _ = AXObserverRemoveNotification(observer, oldWindow, kAXWindowMiniaturizedNotification as CFString)
+            _ = AXObserverRemoveNotification(observer, oldWindow, kAXUIElementDestroyedNotification as CFString)
         }
         var focused: AnyObject?
         guard AXUIElementCopyAttributeValue(application, kAXFocusedWindowAttribute as CFString, &focused) == .success,
@@ -771,6 +955,8 @@ final class PickyAnnotationSceneMonitor {
         _ = AXObserverAddNotification(observer, window, kAXWindowMovedNotification as CFString, refcon)
         _ = AXObserverAddNotification(observer, window, kAXWindowResizedNotification as CFString, refcon)
         _ = AXObserverAddNotification(observer, window, kAXTitleChangedNotification as CFString, refcon)
+        _ = AXObserverAddNotification(observer, window, kAXWindowMiniaturizedNotification as CFString, refcon)
+        _ = AXObserverAddNotification(observer, window, kAXUIElementDestroyedNotification as CFString, refcon)
     }
 
     private func handleAccessibilityWindowChange(
@@ -782,40 +968,30 @@ final class PickyAnnotationSceneMonitor {
            let context = accessibilityObserverContext,
            context.identity == identity {
             observeFocusedWindow(refcon: Unmanaged.passUnretained(context).toOpaque())
-            let focusedWindow = session.baseline.applicationPID.flatMap { pid in
-                accessibilityObservedWindow.flatMap {
-                    PickyAnnotationSceneSemanticProvider.windowSignature(for: pid, accessibilityWindow: $0)
-                }
-            }
-            handleFocusedWindowChange(identity: identity, focusedWindow: focusedWindow)
-            return
         }
-        // Window moves/resizes only matter if they change the captured pixels; re-sample
-        // visually instead of suspending on the geometry change alone.
-        session.semanticBlock = nil
-        requestSample(after: 0)
+        // Window geometry and focus are only hints; the high-resolution ROI decides
+        // whether the annotation's anchor actually changed.
+        verifyRegionsAfterSemanticSignal(identity: identity, reason: .window)
     }
 
     func handleFocusedWindowChange(
         identity: PickyAnnotationSceneIdentity,
-        focusedWindow: PickyAnnotationSceneWindowSignature?
+        focusedWindow _: PickyAnnotationSceneWindowSignature?
     ) {
         guard let session, session.identity == identity else { return }
-        guard session.baseline.applicationPID != ProcessInfo.processInfo.processIdentifier,
-              let baselineWindow = session.baseline.window,
-              let focusedWindow,
-              focusedWindow.ownerPID == baselineWindow.ownerPID,
-              focusedWindow.windowID != baselineWindow.windowID else {
-            session.semanticBlock = nil
-            requestSample(after: 0)
-            return
-        }
-        suspendImmediately(reason: .window)
+        guard session.baseline.applicationPID != ProcessInfo.processInfo.processIdentifier else { return }
+        verifyRegionsAfterSemanticSignal(identity: identity, reason: .window)
     }
 
     private func removeEventObservers() {
         if let workspaceObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver)
+        }
+        if let workspaceHideObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(workspaceHideObserver)
+        }
+        if let activeSpaceObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(activeSpaceObserver)
         }
         if let screenObserver {
             NotificationCenter.default.removeObserver(screenObserver)
@@ -823,6 +999,8 @@ final class PickyAnnotationSceneMonitor {
         if let globalScrollMonitor { NSEvent.removeMonitor(globalScrollMonitor) }
         if let localScrollMonitor { NSEvent.removeMonitor(localScrollMonitor) }
         workspaceObserver = nil
+        workspaceHideObserver = nil
+        activeSpaceObserver = nil
         screenObserver = nil
         globalScrollMonitor = nil
         localScrollMonitor = nil
@@ -923,6 +1101,7 @@ final class PickyScreenCaptureAnnotationSceneCapturer: PickyAnnotationSceneSnaps
     private struct PreparedDisplay {
         let filter: SCContentFilter
         let configuration: SCStreamConfiguration
+        let nativePixelSize: CGSize
     }
 
     private let maximumDimension: Int
@@ -953,18 +1132,33 @@ final class PickyScreenCaptureAnnotationSceneCapturer: PickyAnnotationSceneSnaps
 
     func currentFingerprint(for screenshot: PickyScreenshotContext) async throws -> PickyAnnotationSceneFingerprint {
         let prepared = try await preparedDisplay(for: screenshot)
-        let image = try await PickySystemPermissionGateway.shared.captureScreenshot(
+        return try await fingerprint(
             contentFilter: prepared.filter,
             configuration: prepared.configuration
         )
-        guard let fingerprint = PickyAnnotationSceneFingerprint.make(
-            from: image,
-            width: prepared.configuration.width,
-            height: prepared.configuration.height
-        ) else {
-            throw PickyAnnotationSceneCaptureError.fingerprintCreationFailed
-        }
-        return fingerprint
+    }
+
+    func baselineRegionFingerprint(
+        for screenshot: PickyScreenshotContext,
+        normalizedRegion: CGRect
+    ) async throws -> PickyAnnotationSceneFingerprint {
+        let path = screenshot.path
+        return try await Task.detached(priority: .utility) {
+            try Self.regionFingerprintFromImage(atPath: path, normalizedRegion: normalizedRegion)
+        }.value
+    }
+
+    func currentRegionFingerprint(
+        for screenshot: PickyScreenshotContext,
+        normalizedRegion: CGRect
+    ) async throws -> PickyAnnotationSceneFingerprint {
+        let prepared = try await preparedDisplay(for: screenshot)
+        let configuration = try regionConfiguration(
+            for: screenshot,
+            normalizedRegion: normalizedRegion,
+            prepared: prepared
+        )
+        return try await fingerprint(contentFilter: prepared.filter, configuration: configuration)
     }
 
     func reset() {
@@ -1003,7 +1197,11 @@ final class PickyScreenCaptureAnnotationSceneCapturer: PickyAnnotationSceneSnaps
         configuration.height = size.height
         configuration.showsCursor = false
         configuration.capturesAudio = false
-        let prepared = PreparedDisplay(filter: filter, configuration: configuration)
+        let prepared = PreparedDisplay(
+            filter: filter,
+            configuration: configuration,
+            nativePixelSize: CGSize(width: display.width, height: display.height)
+        )
         preparedDisplays[key] = prepared
         return prepared
     }
@@ -1021,6 +1219,46 @@ final class PickyScreenCaptureAnnotationSceneCapturer: PickyAnnotationSceneSnaps
         return fingerprint
     }
 
+    private func fingerprint(
+        contentFilter: SCContentFilter,
+        configuration: SCStreamConfiguration
+    ) async throws -> PickyAnnotationSceneFingerprint {
+        let image = try await PickySystemPermissionGateway.shared.captureScreenshot(
+            contentFilter: contentFilter,
+            configuration: configuration
+        )
+        guard let fingerprint = PickyAnnotationSceneFingerprint.make(
+            from: image,
+            width: configuration.width,
+            height: configuration.height
+        ) else {
+            throw PickyAnnotationSceneCaptureError.fingerprintCreationFailed
+        }
+        return fingerprint
+    }
+
+    private func regionConfiguration(
+        for screenshot: PickyScreenshotContext,
+        normalizedRegion: CGRect,
+        prepared: PreparedDisplay
+    ) throws -> SCStreamConfiguration {
+        guard let boundsValue = screenshot.bounds else { throw PickyAnnotationSceneCaptureError.missingDisplayBounds }
+        let region = normalizedRegion.standardized.intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+        guard !region.isNull, !region.isEmpty else { throw PickyAnnotationSceneCaptureError.fingerprintCreationFailed }
+        let configuration = SCStreamConfiguration()
+        configuration.sourceRect = CGRect(
+            x: region.minX * boundsValue.width,
+            y: region.minY * boundsValue.height,
+            width: region.width * boundsValue.width,
+            height: region.height * boundsValue.height
+        )
+        configuration.width = max(1, Int((region.width * prepared.nativePixelSize.width).rounded()))
+        configuration.height = max(1, Int((region.height * prepared.nativePixelSize.height).rounded()))
+        configuration.showsCursor = false
+        configuration.capturesAudio = false
+        return configuration
+    }
+
     private nonisolated static func fingerprintFromImage(
         atPath path: String,
         width: Int,
@@ -1030,6 +1268,35 @@ final class PickyScreenCaptureAnnotationSceneCapturer: PickyAnnotationSceneSnaps
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
               let fingerprint = PickyAnnotationSceneFingerprint.make(from: image, width: width, height: height) else {
+            throw PickyAnnotationSceneCaptureError.baselineUnavailable
+        }
+        return fingerprint
+    }
+
+    private nonisolated static func regionFingerprintFromImage(
+        atPath path: String,
+        normalizedRegion: CGRect
+    ) throws -> PickyAnnotationSceneFingerprint {
+        let url = URL(fileURLWithPath: path)
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            throw PickyAnnotationSceneCaptureError.baselineUnavailable
+        }
+        let region = normalizedRegion.standardized.intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+        let crop = CGRect(
+            x: floor(region.minX * CGFloat(image.width)),
+            y: floor(region.minY * CGFloat(image.height)),
+            width: ceil(region.width * CGFloat(image.width)),
+            height: ceil(region.height * CGFloat(image.height))
+        ).intersection(CGRect(x: 0, y: 0, width: image.width, height: image.height)).integral
+        guard !crop.isNull,
+              !crop.isEmpty,
+              let croppedImage = image.cropping(to: crop),
+              let fingerprint = PickyAnnotationSceneFingerprint.make(
+                from: croppedImage,
+                width: croppedImage.width,
+                height: croppedImage.height
+              ) else {
             throw PickyAnnotationSceneCaptureError.baselineUnavailable
         }
         return fingerprint

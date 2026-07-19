@@ -181,8 +181,14 @@ extension PickyInteractionReducing {
         // context switch hides and then restores the drawings instead of clearing them
         // outright. If the scene was suspended when narration ended, hold it suspended
         // rather than clearing immediately. A timer lapses the window later.
+        let hadSpeech = state.annotationSpeechAnchor != nil
         while !state.pendingAgentAnnotations.isEmpty {
             revealAnnotation(state.pendingAgentAnnotations.removeFirst().annotation, animatePointer: false)
+        }
+        if hadSpeech {
+            for index in state.agentAnnotations.indices {
+                state.agentAnnotations[index].spotlight = false
+            }
         }
         state.dueAgentAnnotationIDs = []
         state.annotationNarrationWeight = 0

@@ -438,7 +438,7 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
     var point: CGPoint?
     var endPoint: CGPoint?
     var rect: CGRect?
-    let spotlight: Bool
+    var spotlight: Bool
     let label: String?
     let visualStyle: PickyAnnotationVisualStyle
 

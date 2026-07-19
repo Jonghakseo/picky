@@ -21,8 +21,8 @@ struct PickyAgentAnnotationOverlayTests {
         #expect(resolved.first { $0.id == "line" }?.label == "Save")
     }
 
-    @Test func bufferedAnnotationsRemainVisibleAfterTheFinalTTSUtteranceDrains() {
-        let annotation = resolvedAnnotation(id: "a")
+    @Test func bufferedAnnotationsRemainVisibleWithoutSpotlightAfterTheFinalTTSUtteranceDrains() {
+        let annotation = resolvedAnnotation(id: "a", spotlight: true)
         let buffered = reduce(PickyInteractionState(), .agentAnnotationsRequested(mode: .append, annotations: [annotation]))
         #expect(buffered.agentAnnotations.isEmpty)
         #expect(buffered.pendingAgentAnnotations.count == 1)
@@ -40,6 +40,7 @@ struct PickyAgentAnnotationOverlayTests {
         let pendingID = speaking.pendingAgentAnnotations.first!.id
         let revealed = reduce(speaking, .agentAnnotationRevealDue(id: pendingID))
         #expect(revealed.agentAnnotations.map(\.id) == ["a"])
+        #expect(revealed.agentAnnotations.first?.spotlight == true)
         #expect(!PickyInteractionProjection(state: revealed).showsAgentAnnotationDismissControl)
 
         let settled = reduce(revealed, .mainTurnSettled(contextID: "context"))
@@ -48,8 +49,20 @@ struct PickyAgentAnnotationOverlayTests {
 
         let drained = reduce(settled, .speechFinished(speechID: speechID))
         #expect(drained.agentAnnotations.map(\.id) == ["a"])
+        #expect(drained.agentAnnotations.first?.rect == annotation.rect)
+        #expect(drained.agentAnnotations.first?.spotlight == false)
         #expect(drained.pendingAgentAnnotations.isEmpty)
         #expect(PickyInteractionProjection(state: drained).showsAgentAnnotationDismissControl)
+    }
+
+    @Test func silentAnnotationKeepsSpotlightWhenTheTurnSettlesWithoutTTS() {
+        let annotation = resolvedAnnotation(id: "a", spotlight: true)
+        let buffered = reduce(PickyInteractionState(), .agentAnnotationsRequested(mode: .append, annotations: [annotation]))
+
+        let settled = reduce(buffered, .mainTurnSettled(contextID: "context"))
+
+        #expect(settled.agentAnnotations.map(\.id) == ["a"])
+        #expect(settled.agentAnnotations.first?.spotlight == true)
     }
 
     @Test func sceneValidationSuspendsWithoutDiscardingAndRestoresOnlyMatchingIdentity() {
@@ -788,8 +801,8 @@ struct PickyAgentAnnotationOverlayTests {
         PickyAnnotationOverlayAnnotation(id: id, shape: shape, x: x, y: y, w: w, h: h, x1: x1, y1: y1, x2: x2, y2: y2, spotlight: spotlight, label: label, clamped: nil)
     }
 
-    private func resolvedAnnotation(id: String) -> PickyAgentAnnotation {
-        PickyAgentAnnotation(id: id, shape: .rect, displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100), rect: CGRect(x: 40, y: 40, width: 20, height: 20), label: nil)
+    private func resolvedAnnotation(id: String, spotlight: Bool = false) -> PickyAgentAnnotation {
+        PickyAgentAnnotation(id: id, shape: .rect, displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100), rect: CGRect(x: 40, y: 40, width: 20, height: 20), spotlight: spotlight, label: nil)
     }
 }
 

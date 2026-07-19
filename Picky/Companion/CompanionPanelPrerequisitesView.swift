@@ -263,7 +263,17 @@ struct CompanionPanelPrerequisitesView: View {
                     // first attempt. If already denied, opens System Settings.
                     let status = AVCaptureDevice.authorizationStatus(for: .audio)
                     if status == .notDetermined {
-                        AVCaptureDevice.requestAccess(for: .audio) { _ in }
+                        Task {
+                            do {
+                                _ = try await PickySystemPermissionGateway.shared.requestMicrophoneAccess()
+                            } catch {
+                                PickyLog.notice(
+                                    .permission,
+                                    prefix: "🔐 Picky permission —",
+                                    message: "capability=microphone requestFailed=true error=\(error.localizedDescription)"
+                                )
+                            }
+                        }
                     } else {
                         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
                             NSWorkspace.shared.open(url)

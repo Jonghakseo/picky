@@ -46,17 +46,20 @@ class WindowPositionManager {
             hasAttemptedSystemPrompt: hasAttemptedAccessibilitySystemPromptDuringCurrentLaunch
         )
 
-        guard !PickyRuntimeEnvironment.isRunningUnitTests else {
-            return presentationDestination
-        }
-
         switch presentationDestination {
         case .alreadyGranted:
             return .alreadyGranted
         case .systemPrompt:
             hasAttemptedAccessibilitySystemPromptDuringCurrentLaunch = true
-            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
-            _ = AXIsProcessTrustedWithOptions(options)
+            do {
+                _ = try PickySystemPermissionGateway.shared.requestAccessibilityAccess()
+            } catch {
+                PickyLog.notice(
+                    .permission,
+                    prefix: "🔐 Picky permission —",
+                    message: "capability=accessibility requestFailed=true error=\(error.localizedDescription)"
+                )
+            }
         case .systemSettings:
             openAccessibilitySettings()
         }
@@ -120,16 +123,20 @@ class WindowPositionManager {
             hasAttemptedSystemPrompt: hasAttemptedScreenRecordingSystemPromptDuringCurrentLaunch
         )
 
-        guard !PickyRuntimeEnvironment.isRunningUnitTests else {
-            return presentationDestination
-        }
-
         switch presentationDestination {
         case .alreadyGranted:
             return .alreadyGranted
         case .systemPrompt:
             hasAttemptedScreenRecordingSystemPromptDuringCurrentLaunch = true
-            _ = CGRequestScreenCaptureAccess()
+            do {
+                _ = try PickySystemPermissionGateway.shared.requestScreenRecordingAccess()
+            } catch {
+                PickyLog.notice(
+                    .permission,
+                    prefix: "🔐 Picky permission —",
+                    message: "capability=screenRecording requestFailed=true error=\(error.localizedDescription)"
+                )
+            }
         case .systemSettings:
             openScreenRecordingSettings()
         }

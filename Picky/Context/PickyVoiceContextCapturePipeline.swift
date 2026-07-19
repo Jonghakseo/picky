@@ -4,19 +4,30 @@
 //
 
 import Foundation
-import ScreenCaptureKit
 
 /// Owns the PTT-scoped neutral context task lifecycle. It overlaps all
 /// transcript-independent collection with transcription while keeping
 /// cancellation and stale input protection keyed to the originating voice input.
 @MainActor
 final class PickyVoiceContextCapturePipeline {
+    typealias ScreenShareableContentWarmup = @MainActor () async throws -> Void
+
     private let coordinator: PickyVoiceContextCaptureCoordinator
+    private let isRunningUnitTests: () -> Bool
+    private let screenShareableContentWarmup: ScreenShareableContentWarmup
     private var pendingTasks: [UUID: Task<PickyPreparedVoiceContextCapture?, Error>] = [:]
     private var inputStartedAt: Date?
 
-    init(coordinator: PickyVoiceContextCaptureCoordinator) {
+    init(
+        coordinator: PickyVoiceContextCaptureCoordinator,
+        isRunningUnitTests: @escaping () -> Bool = { PickyRuntimeEnvironment.isRunningUnitTests },
+        screenShareableContentWarmup: @escaping ScreenShareableContentWarmup = {
+            _ = try await PickySystemPermissionGateway.shared.screenShareableContent()
+        }
+    ) {
         self.coordinator = coordinator
+        self.isRunningUnitTests = isRunningUnitTests
+        self.screenShareableContentWarmup = screenShareableContentWarmup
     }
 
     func beginInput() {
@@ -93,10 +104,21 @@ final class PickyVoiceContextCapturePipeline {
 
     private func warmScreenShareableContent() {
         // ScreenCaptureKit's first content enumeration is noticeably slower.
-        // The result is intentionally discarded while PTT is held, and
-        // permission failures remain non-fatal.
+        // Do not create a Task in unit tests: even content enumeration can
+        // prompt for Screen Recording access on macOS.
+        guard !isRunningUnitTests() else { return }
+
+        let screenShareableContentWarmup = screenShareableContentWarmup
         Task {
-            _ = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            do {
+                try await screenShareableContentWarmup()
+            } catch {
+                PickyLog.notice(
+                    .permission,
+                    prefix: "🔐 Picky permission —",
+                    message: "capability=screenContent warmupFailed=true error=\(error.localizedDescription)"
+                )
+            }
         }
     }
 }

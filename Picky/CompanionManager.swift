@@ -662,17 +662,12 @@ final class CompanionManager: ObservableObject {
     /// screenshot capture. Once the user approves, we persist the grant
     /// so they're not asked again on later launches.
     @Published private(set) var isRequestingScreenContent = false
-
     func requestScreenContentPermission() {
         guard !isRequestingScreenContent else { return }
-        guard !PickyRuntimeEnvironment.isRunningUnitTests else {
-            print("🔑 Screen content permission request skipped during unit tests")
-            return
-        }
         isRequestingScreenContent = true
         Task {
             do {
-                let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+                let content = try await PickySystemPermissionGateway.shared.screenShareableContent()
                 guard let display = content.displays.first else {
                     await MainActor.run { isRequestingScreenContent = false }
                     return
@@ -681,7 +676,7 @@ final class CompanionManager: ObservableObject {
                 let config = SCStreamConfiguration()
                 config.width = 320
                 config.height = 240
-                let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+                let image = try await PickySystemPermissionGateway.shared.captureScreenshot(contentFilter: filter, configuration: config)
                 // Verify the capture actually returned real content — a 0x0 or
                 // fully-empty image means the user denied the prompt.
                 let didCapture = image.width > 0 && image.height > 0
@@ -800,10 +795,11 @@ final class CompanionManager: ObservableObject {
     /// Once granted/denied the status sticks and polling picks it up.
     private func promptForMicrophoneIfNotDetermined() {
         guard AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined else { return }
-        AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
-            Task { @MainActor [weak self] in
+        Task { [weak self] in
+            do {
+                let granted = try await PickySystemPermissionGateway.shared.requestMicrophoneAccess()
                 self?.hasMicrophonePermission = granted
-            }
+            } catch { self?.hasMicrophonePermission = false }
         }
     }
 

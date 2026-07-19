@@ -87,6 +87,153 @@ function checkGuardPatternFixtures() {
   }
 }
 
+function stripSwiftCommentsAndStrings(source) {
+  let result = "";
+  let index = 0;
+  let blockCommentDepth = 0;
+  let state = "code";
+
+  while (index < source.length) {
+    const character = source[index];
+    const next = source[index + 1];
+    const nextTwo = source.slice(index, index + 3);
+
+    if (state === "code") {
+      if (character === "/" && next === "/") {
+        state = "lineComment";
+        result += "  ";
+        index += 2;
+      } else if (character === "/" && next === "*") {
+        state = "blockComment";
+        blockCommentDepth = 1;
+        result += "  ";
+        index += 2;
+      } else if (nextTwo === '\"\"\"') {
+        state = "multilineString";
+        result += "   ";
+        index += 3;
+      } else if (character === '\"') {
+        state = "string";
+        result += " ";
+        index += 1;
+      } else {
+        result += character;
+        index += 1;
+      }
+    } else if (state === "lineComment") {
+      if (character === "\n") {
+        state = "code";
+        result += "\n";
+      } else {
+        result += " ";
+      }
+      index += 1;
+    } else if (state === "blockComment") {
+      if (character === "/" && next === "*") {
+        blockCommentDepth += 1;
+        result += "  ";
+        index += 2;
+      } else if (character === "*" && next === "/") {
+        blockCommentDepth -= 1;
+        if (blockCommentDepth === 0) state = "code";
+        result += "  ";
+        index += 2;
+      } else {
+        result += character === "\n" ? "\n" : " ";
+        index += 1;
+      }
+    } else if (state === "string") {
+      if (character === "\\") {
+        result += "  ";
+        index += 2;
+      } else if (character === '\"') {
+        state = "code";
+        result += " ";
+        index += 1;
+      } else {
+        result += character === "\n" ? "\n" : " ";
+        index += 1;
+      }
+    } else if (state === "multilineString") {
+      if (nextTwo === '\"\"\"') {
+        state = "code";
+        result += "   ";
+        index += 3;
+      } else {
+        result += character === "\n" ? "\n" : " ";
+        index += 1;
+      }
+    }
+  }
+
+  return result;
+}
+
+const permissionPromptAPIs = [
+  { capability: "screenRecording", api: "CGRequestScreenCaptureAccess", pattern: /\bCGRequestScreenCaptureAccess\s*\(/ },
+  { capability: "screenContent", api: "SCShareableContent.excludingDesktopWindows", pattern: /\bSCShareableContent\s*\.\s*excludingDesktopWindows\s*\(/ },
+  { capability: "screenContent", api: "SCScreenshotManager.captureImage", pattern: /\bSCScreenshotManager\s*\.\s*captureImage\s*\(/ },
+  { capability: "microphone", api: "AVCaptureDevice.requestAccess", pattern: /\bAVCaptureDevice\s*\.\s*requestAccess(?:\s*\(|\s*\{)/ },
+  { capability: "speechRecognition", api: "SFSpeechRecognizer.requestAuthorization", pattern: /\bSFSpeechRecognizer\s*\.\s*requestAuthorization(?:\s*\(|\s*\{)/ },
+  { capability: "accessibility", api: "AXIsProcessTrustedWithOptions", pattern: /\bAXIsProcessTrustedWithOptions\s*\(/ },
+];
+
+function checkPermissionPromptAPIUsage() {
+  const gateway = "Picky/Context/PickySystemPermissionGateway.swift";
+  const productionFiles = walk("Picky", (file) => file.endsWith(".swift"));
+  const testFiles = [
+    ...walk("PickyTests", (file) => file.endsWith(".swift")),
+    ...walk("PickyUITests", (file) => file.endsWith(".swift")),
+  ];
+
+  for (const file of productionFiles) {
+    const relative = rel(file);
+    if (relative === gateway) continue;
+    const source = stripSwiftCommentsAndStrings(fs.readFileSync(file, "utf8"));
+    for (const { capability, api, pattern } of permissionPromptAPIs) {
+      if (pattern.test(source)) {
+        addError(`${relative} directly invokes ${api} for ${capability}; route permission prompts through ${gateway}.`);
+      }
+    }
+  }
+
+  for (const file of testFiles) {
+    const relative = rel(file);
+    const source = stripSwiftCommentsAndStrings(fs.readFileSync(file, "utf8"));
+    for (const { capability, api, pattern } of permissionPromptAPIs) {
+      if (pattern.test(source)) {
+        addError(`${relative} invokes ${api} for ${capability}; unit tests must use PickySystemPermissionGateway fakes instead.`);
+      }
+    }
+  }
+
+  const blockedFixtures = [
+    "let granted = CGRequestScreenCaptureAccess()",
+    "let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)",
+    "SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)",
+    "AVCaptureDevice.requestAccess(for: .audio) { _ in }",
+    "SFSpeechRecognizer.requestAuthorization { _ in }",
+    "AXIsProcessTrustedWithOptions(options)",
+  ];
+  const allowedFixtures = [
+    "// CGRequestScreenCaptureAccess()",
+    "let documentation = \"SCScreenshotManager.captureImage(...)\"",
+    "let hasAccess = CGPreflightScreenCaptureAccess()",
+  ];
+  for (const fixture of blockedFixtures) {
+    const source = stripSwiftCommentsAndStrings(fixture);
+    if (!permissionPromptAPIs.some(({ pattern }) => pattern.test(source))) {
+      addError(`Permission prompt architecture guard self-test failed to block: ${fixture}`);
+    }
+  }
+  for (const fixture of allowedFixtures) {
+    const source = stripSwiftCommentsAndStrings(fixture);
+    if (permissionPromptAPIs.some(({ pattern }) => pattern.test(source))) {
+      addError(`Permission prompt architecture guard self-test incorrectly blocked: ${fixture}`);
+    }
+  }
+}
+
 function checkProtocolParity() {
   const swift = read("Picky/PickyAgentProtocol.swift").match(/pickyAgentProtocolVersion\s*=\s*"([^"]+)"/);
   const ts = read("agentd/src/protocol.ts").match(/PROTOCOL_VERSION\s*=\s*"([^"]+)"/);
@@ -243,6 +390,7 @@ function main() {
     addError("Run this script from the repository root.");
   } else {
     checkGuardPatternFixtures();
+    checkPermissionPromptAPIUsage();
     checkProtocolParity();
     checkSwiftDomainImports();
     checkAgentdDomainImports();

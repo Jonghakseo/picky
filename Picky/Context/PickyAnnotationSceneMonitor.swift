@@ -823,7 +823,7 @@ final class PickyScreenCaptureAnnotationSceneCapturer: PickyAnnotationSceneSnaps
 
     func currentFingerprint(for screenshot: PickyScreenshotContext) async throws -> PickyAnnotationSceneFingerprint {
         let prepared = try await preparedDisplay(for: screenshot)
-        let image = try await SCScreenshotManager.captureImage(
+        let image = try await PickySystemPermissionGateway.shared.captureScreenshot(
             contentFilter: prepared.filter,
             configuration: prepared.configuration
         )
@@ -851,7 +851,7 @@ final class PickyScreenCaptureAnnotationSceneCapturer: PickyAnnotationSceneSnaps
             .flatMap { $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID }
         guard let displayID else { throw PickyAnnotationSceneCaptureError.displayUnavailable }
 
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        let content = try await PickySystemPermissionGateway.shared.screenShareableContent()
         guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
             throw PickyAnnotationSceneCaptureError.displayUnavailable
         }

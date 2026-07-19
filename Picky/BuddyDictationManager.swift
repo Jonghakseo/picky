@@ -800,13 +800,14 @@ final class BuddyDictationManager: NSObject, ObservableObject {
             currentPermissionProblem = nil
             return true
         case .notDetermined:
-            let isGranted = await withCheckedContinuation { continuation in
-                AVCaptureDevice.requestAccess(for: .audio) { isGranted in
-                    continuation.resume(returning: isGranted)
-                }
+            do {
+                let isGranted = try await PickySystemPermissionGateway.shared.requestMicrophoneAccess()
+                currentPermissionProblem = isGranted ? nil : .microphoneAccessDenied
+                return isGranted
+            } catch {
+                currentPermissionProblem = .microphoneAccessDenied
+                return false
             }
-            currentPermissionProblem = isGranted ? nil : .microphoneAccessDenied
-            return isGranted
         case .denied, .restricted:
             currentPermissionProblem = .microphoneAccessDenied
             return false
@@ -822,13 +823,15 @@ final class BuddyDictationManager: NSObject, ObservableObject {
             currentPermissionProblem = nil
             return true
         case .notDetermined:
-            let isGranted = await withCheckedContinuation { continuation in
-                SFSpeechRecognizer.requestAuthorization { authorizationStatus in
-                    continuation.resume(returning: authorizationStatus == .authorized)
-                }
+            do {
+                let authorizationStatus = try await PickySystemPermissionGateway.shared.requestSpeechRecognitionAuthorization()
+                let isGranted = authorizationStatus == .authorized
+                currentPermissionProblem = isGranted ? nil : .speechRecognitionDenied
+                return isGranted
+            } catch {
+                currentPermissionProblem = .speechRecognitionDenied
+                return false
             }
-            currentPermissionProblem = isGranted ? nil : .speechRecognitionDenied
-            return isGranted
         case .denied, .restricted:
             currentPermissionProblem = .speechRecognitionDenied
             return false

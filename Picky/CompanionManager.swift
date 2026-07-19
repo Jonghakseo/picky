@@ -2043,7 +2043,13 @@ final class CompanionManager: ObservableObject {
 
         deferredInteractionSpeechTask?.cancel()
         deferredInteractionSpeechTask = nil
-        stopCurrentSpeech()
+        // Queue transitions already completed the preceding utterance. Do not
+        // call stopSpeaking here: Edge's explicit stop clears its warmed-audio
+        // cache before speak() can reclaim the next sentence's prefetch.
+        // Providers own replacement inside speak(), while reducer preemption
+        // continues to use the explicit .stopSpeech effect.
+        responseStateTask?.cancel()
+        responseStateTask = nil
         activeSpeechID = speechID
         interactionSpeechID = speechID
         reduceVoiceInteraction(.agentReply(text: text, shouldSpeak: true, speechID: speechID, timerID: speechID, inputID: interactionVoiceInputID, now: Date()))

@@ -874,9 +874,13 @@ struct PickyCompanionManagerTests {
             didStreamNarration: true
         )))
         try await waitUntil { speechProvider.spokenUtterances == ["첫 문장."] }
+        let stopCountBeforeQueuedSentenceStarts = speechProvider.stopCount
 
         speechProvider.finishSpeaking()
         try await waitUntil { speechProvider.spokenUtterances == ["첫 문장.", "둘째 문장."] }
+        // A normal queued transition must not issue an explicit stop: remote
+        // providers use that stop boundary to clear their prefetched audio.
+        #expect(speechProvider.stopCount == stopCountBeforeQueuedSentenceStarts)
         manager.interruptSpokenResponseForVoiceInput()
         #expect(speechProvider.stopCount > 0)
         speechProvider.finishSpeaking()

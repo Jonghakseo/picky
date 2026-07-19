@@ -804,7 +804,7 @@ Each provider's relevant settings appear only when that provider is selected.
 | Setting | Values / behavior |
 | --- | --- |
 | STT provider | Apple Speech (default), OpenAI, Azure OpenAI, ElevenLabs. Apple Speech uses the on-device `SFSpeechRecognizer` (offline). OpenAI uses `gpt-4o-transcribe` against `api.openai.com`. Azure OpenAI uses your deployment URL. ElevenLabs uses `scribe_v2` against `api.elevenlabs.io` (the legacy `scribe_v1` is deprecated as of 2026). |
-| Enable spoken replies (TTS) | On/off. When off, text replies still appear but audio playback is skipped. Long narrated replies can begin playing sentence by sentence while the remaining response is still streaming. |
+| Enable spoken replies (TTS) | On/off. When off, text replies still appear but audio playback is skipped. Long narrated replies can begin playing sentence by sentence while the remaining response is still streaming. TTS reads rendered Markdown text rather than syntax markers (`**`, headings, list prefixes, or link destinations); inline code text is read, while fenced code blocks are skipped. |
 | TTS provider | macOS Speech (default), OpenAI, Azure OpenAI, ElevenLabs, Edge TTS (Online, explicit opt-in; playback only). macOS Speech uses the system `NSSpeechSynthesizer` voice. OpenAI uses `gpt-4o-mini-tts` against `api.openai.com`. ElevenLabs uses `eleven_multilingual_v2` against `api.elevenlabs.io` by default. Edge TTS sends spoken response text to Microsoft Edge Read Aloud through local `picky-agentd`. |
 | Open macOS Speech Settings | Opens the system Spoken Content settings for local TTS voice selection. |
 

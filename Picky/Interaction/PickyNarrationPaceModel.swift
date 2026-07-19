@@ -10,7 +10,7 @@ enum PickyNarrationPaceModel {
     static let secondsPerWeightUnit: TimeInterval = 0.0837
 
     static func weightedUnits(forNarration text: String) -> Double {
-        stripParentheticalsForSpeech(text).unicodeScalars.reduce(0) { partialResult, scalar in
+        sanitizedTextForSpeech(text).unicodeScalars.reduce(0) { partialResult, scalar in
             partialResult + weight(of: scalar)
         }
     }

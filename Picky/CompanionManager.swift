@@ -1940,21 +1940,17 @@ final class CompanionManager: ObservableObject {
     private func runSpeakEffect(speechID: UUID, text: String, contextID: String?) {
         deferredInteractionSpeechTask?.cancel()
         deferredInteractionSpeechTask = nil
-        // Strip parenthesised supplementary detail right before synthesis so
-        // every interaction-coordinator-routed reply (the modern path through
-        // PickyQueuedSpeechReply) skips URLs, paths, and identifiers that
-        // Picky placed in `(...)`. Visible text keeps the parens intact — the
-        // queued reply still holds the original `text`. Legacy callers go
-        // through `speakSystemMessage` and pre-strip there, so this is the
-        // only remaining funnel that needed the transform.
-        let spoken = stripParentheticalsForSpeech(text)
+        // Convert Markdown to visible prose and strip speech-hostile supplementary
+        // detail immediately before synthesis. The queued reply keeps the original
+        // text so cursor and conversation UI still render full Markdown.
+        let spoken = sanitizedTextForSpeech(text)
         startOrDeferInteractionSpeech(speechID: speechID, text: spoken, contextID: contextID, requestedAt: Date())
     }
 
     private func runPrefetchSpeechEffect(text: String) {
         // Apply the same speech transform runSpeakEffect uses so the warmed
         // audio is keyed by the exact string the provider will later synthesize.
-        speechPlaybackProvider.prefetch(stripParentheticalsForSpeech(text))
+        speechPlaybackProvider.prefetch(sanitizedTextForSpeech(text))
     }
 
     private func startOrDeferInteractionSpeech(speechID: UUID, text: String, contextID: String?, requestedAt: Date) {
@@ -2293,7 +2289,7 @@ final class CompanionManager: ObservableObject {
                 correlation: PickyInteractionCorrelation(contextID: reply.contextId, sessionID: reply.sessionId, source: .agent)
             )
         } else {
-            let spoken = stripParentheticalsForSpeech(reply.text)
+            let spoken = sanitizedTextForSpeech(reply.text)
             finishAwaitingAgentResponse(visibleText: reply.text, spokenText: spoken, enforceMinimumProcessingDuration: true)
         }
     }

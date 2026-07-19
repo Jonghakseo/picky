@@ -1800,33 +1800,59 @@ struct PickyCompanionManagerTests {
         manager.stop()
     }
 
-    @Test func stripParentheticalsRemovesAsciiAndFullWidthBracketsForSpeech() async throws {
+    @Test func speechSanitizerRemovesAsciiAndFullWidthParentheticals() async throws {
         let asciiInput = "배포는 완료됐어요 (https://example.com/run/123)."
-        #expect(stripParentheticalsForSpeech(asciiInput) == "배포는 완료됐어요.")
+        #expect(sanitizedTextForSpeech(asciiInput) == "배포는 완료됐어요.")
 
         let fullWidthInput = "세션 아이디는 잘 저장됐습니다（session-abc-123）."
-        #expect(stripParentheticalsForSpeech(fullWidthInput) == "세션 아이디는 잘 저장됐습니다.")
+        #expect(sanitizedTextForSpeech(fullWidthInput) == "세션 아이디는 잘 저장됐습니다.")
 
         let multipleInput = "PR (#123) 을 머지했고 (development 브랜치) 로 돌아갔어요."
-        #expect(stripParentheticalsForSpeech(multipleInput) == "PR 을 머지했고 로 돌아갔어요.")
+        #expect(sanitizedTextForSpeech(multipleInput) == "PR 을 머지했고 로 돌아갔어요.")
     }
 
-    @Test func stripParentheticalsKeepsTextWhenNoParenthesesPresent() async throws {
+    @Test func speechSanitizerKeepsPlainText() async throws {
         let plain = "프로덕션으로 올린 명령을 몇 분 안에 모니터링해볼게요."
-        #expect(stripParentheticalsForSpeech(plain) == plain)
+        #expect(sanitizedTextForSpeech(plain) == plain)
     }
 
     @Test func speechSanitizerNeutralizesInlinePathsAndUrls() async throws {
         let pathHeavy = "pi-extension 분석은 ~/Documents/pi-extension, agent 분석은 ~/.pi/agent, product 분석은 ~/product 에서 돌렸어요."
-        #expect(stripParentheticalsForSpeech(pathHeavy) == "pi-extension 분석은 해당 경로, agent 분석은 해당 경로, product 분석은 해당 경로에서 돌렸어요.")
+        #expect(sanitizedTextForSpeech(pathHeavy) == "pi-extension 분석은 해당 경로, agent 분석은 해당 경로, product 분석은 해당 경로에서 돌렸어요.")
 
         let withURL = "결과는 https://example.com/report/123 에 있어요."
-        #expect(stripParentheticalsForSpeech(withURL) == "결과는 링크에 있어요.")
+        #expect(sanitizedTextForSpeech(withURL) == "결과는 링크에 있어요.")
     }
 
-    @Test func stripParentheticalsFallsBackWhenWholeMessageIsParenthesised() async throws {
+    @Test func speechSanitizerReadsMarkdownTextWithoutInlineSyntax() {
+        let markdown = "**회원 상세모달**에서 [설명 문서](https://example.com/guide)와 ![구조도](diagram.png)를 확인합니다."
+        #expect(sanitizedTextForSpeech(markdown) == "회원 상세모달에서 설명 문서와 구조도를 확인합니다.")
+    }
+
+    @Test func speechSanitizerRemovesMarkdownBlockMarkersButKeepsTextOrder() {
+        let markdown = """
+        # 핵심 흐름
+        - **첫 번째** 단계
+        1. [두 번째 단계](https://example.com/two)
+        > 마지막 참고
+        """
+        #expect(sanitizedTextForSpeech(markdown) == "핵심 흐름 첫 번째 단계 두 번째 단계 마지막 참고")
+    }
+
+    @Test func speechSanitizerSkipsFencedCodeButReadsInlineCode() {
+        let markdown = """
+        설정은 `visualDslEnabled`입니다.
+        ```swift
+        print("**읽지 않음**")
+        ```
+        이제 완료됐습니다.
+        """
+        #expect(sanitizedTextForSpeech(markdown) == "설정은 visualDslEnabled입니다. 이제 완료됐습니다.")
+    }
+
+    @Test func speechSanitizerFallsBackWhenWholeMessageIsParenthesised() async throws {
         let allParens = "(seed bootstrap rules)"
-        #expect(stripParentheticalsForSpeech(allParens) == allParens)
+        #expect(sanitizedTextForSpeech(allParens) == allParens)
     }
 
     // MARK: - Interaction orchestration

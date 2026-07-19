@@ -44,10 +44,6 @@ struct PickyInteractionProjection: Equatable {
         if let identity = state.activeVisualNarrationIdentity,
            let segment = state.visualNarrationSegments[identity.segmentId],
            segment.identity == identity {
-            if case .annotations = segment.visual,
-               !state.annotationScenePhase.presentsAnnotations {
-                return nil
-            }
             let sentences = segment.sentences
                 .sorted { $0.index < $1.index }
                 .prefix(state.activeVisualNarrationSentenceCount)

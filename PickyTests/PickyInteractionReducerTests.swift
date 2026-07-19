@@ -523,7 +523,7 @@ struct PickyInteractionReducerTests {
         #expect(state.agentAnnotations.map(\.id) == ["rect-0", "rect-1", "rect-2", "rect-3"])
     }
 
-    @Test func suspendedVisualAnnotationHidesItsProgressiveBubbleUntilSceneResumes() {
+    @Test func suspendedVisualAnnotationKeepsItsProgressiveBubbleWhileHidingGeometry() {
         var state = PickyInteractionState()
         state.contextOwnership["visual-context"] = .quickInputText(inputID: inputA)
         state.annotationScenePhase = .suspended
@@ -540,7 +540,8 @@ struct PickyInteractionReducerTests {
         ).state
 
         #expect(state.activeVisualNarrationIdentity == identity)
-        #expect(PickyInteractionProjection(state: state).latestDisplayText == nil)
+        #expect(PickyInteractionProjection(state: state).latestDisplayText == "숨겨진 설명.")
+        #expect(PickyInteractionProjection(state: state).agentAnnotations.isEmpty)
         #expect(PickyInteractionProjection(state: state).hasActivePointVisualNarration == false)
 
         state.annotationScenePhase = .visible

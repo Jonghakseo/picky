@@ -74,8 +74,8 @@ describe("neutral prompt builder", () => {
     const overlayDisabled = buildMainAgentBootstrapPair({ disabledBuiltinTools: new Set(["picky_screen_overlay"]) });
 
     expect(allEnabled.user).toContain("## Picky visual overlay DSL");
-    expect(allEnabled.user).toContain("[POINT: x=<number>");
     expect(allEnabled.user).toContain("[RECT: x=<number>");
+    expect(allEnabled.user).toContain("[LINE: x1=<number>");
     expect(allEnabled.user).toContain("spotlight=true");
     expect(allEnabled.user).not.toContain("[SPOT" + "LIGHT:");
     expect(allEnabled.user).toContain("invisible in the user's transcript");

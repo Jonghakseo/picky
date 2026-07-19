@@ -1649,24 +1649,14 @@ export class SessionSupervisor extends EventEmitter {
     }
 
     try {
-      const visual: PickyPreparedVisualNarrationVisual = tag.kind === "point"
-        ? {
-          kind: "point",
-          request: makePointerOverlayRequestForContext(captured.context, {
-            x: tag.x,
-            y: tag.y,
-            ...(tag.label === undefined ? {} : { label: tag.label }),
-            ...(tag.screenId === undefined ? {} : { screenId: tag.screenId }),
-          }, captured.generation),
-        }
-        : {
-          kind: "annotations",
-          request: makeAnnotationOverlayRequestForContext(captured.context, {
-            mode: "append",
-            annotations: [tag.annotation],
-            ...(tag.screenId === undefined ? {} : { screenId: tag.screenId }),
-          }, captured.generation),
-        };
+      const visual: PickyPreparedVisualNarrationVisual = {
+        kind: "annotations",
+        request: makeAnnotationOverlayRequestForContext(captured.context, {
+          mode: "append",
+          annotations: [tag.annotation],
+          ...(tag.screenId === undefined ? {} : { screenId: tag.screenId }),
+        }, captured.generation),
+      };
       const segment: MainVisualNarrationSegment = {
         identity: {
           contextId: captured.context.id,

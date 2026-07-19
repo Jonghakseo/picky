@@ -62,7 +62,6 @@ Playback behavior:
 - Non-incremental TTS displays visual sentences progressively as generation completes, then clears sentence activation and synthesizes the final full reply once. This supersedes the earlier weighted-FIFO playback activation proposal for non-incremental providers; showing a stale final visual while audio restarts from the beginning is not permitted.
 - TTS-off mode displays visual sentences progressively without creating speech effects.
 - Annotation `validating`/`suspended` phases hide both the annotation and its active visual narration bubble.
-- An active POINT visual narration bubble suppresses the separate navigation-label bubble.
 
 Implementation outcome:
 
@@ -77,12 +76,11 @@ Picky's visual overlay DSL already requires the main agent to place a visual tag
 ```text
 [RECT: ...] The first explanation.
 [LINE: ...] The second explanation.
-[POINT: ...] The third explanation.
 ```
 
-Today, the visual request and narration are transported and scheduled separately. The cursor response bubble is driven by sentence-sized TTS chunks, while RECT/LINE reveal is driven by weighted timers and POINT uses a separate pointer path. As a result, a fast stream can prepare several visuals before the first utterance finishes, generic overlay status text can overwrite the current response bubble, and the bubble has no durable identity connecting it to the visual that is actually active.
+Today, the visual request and narration are transported and scheduled separately. The cursor response bubble is driven by sentence-sized TTS chunks, while RECT/LINE reveal is driven by weighted timers. As a result, a fast stream can prepare several visuals before the first utterance finishes, generic overlay status text can overwrite the current response bubble, and the bubble has no durable identity connecting it to the visual that is actually active.
 
-This plan introduces a canonical **Visual Narration Segment** owned by `picky-agentd`. One segment binds exactly one POINT/RECT/LINE visual to all prose after that tag and before the next visual tag. Picky.app prepares geometry early, commits prose as soon as the next visual opener is lexically known, and activates the visual and response bubble together at the correct playback/reveal point.
+This plan introduces a canonical **Visual Narration Segment** owned by `picky-agentd`. One segment binds exactly one RECT/LINE visual to all prose after that tag and before the next visual tag. Picky.app prepares geometry early, commits prose as soon as the next visual opener is lexically known, and activates the visual and response bubble together at the correct playback/reveal point.
 
 The intended lifecycle is:
 
@@ -159,14 +157,13 @@ Visual boundary verbs:
 
 - `RECT`
 - `LINE`
-- `POINT`
 
 Transparent selector:
 
 - `SCREEN` changes the selected screenshot for subsequent tags.
 - `SCREEN` does not close or open a narration segment.
 
-A segment starts after a valid POINT/RECT/LINE tag and ends immediately before the next POINT/RECT/LINE opener, or at main-turn completion.
+A segment starts after a valid RECT/LINE tag and ends immediately before the next RECT/LINE opener, or at main-turn completion.
 
 ### Early opener boundary
 
@@ -177,7 +174,6 @@ The previous segment becomes immutable as soon as the parser recognizes a comple
 ```text
 [RECT:
 [LINE:
-[POINT:
 ```
 
 The recognition must use the same case/whitespace healing rules as the existing opener grammar. Examples that establish a boundary:
@@ -185,7 +181,6 @@ The recognition must use the same case/whitespace healing rules as the existing 
 ```text
 [RECT:
 [ Rect :
-[POINT :
 ```
 
 Prefixes that are not yet unambiguous do not establish a boundary:
@@ -258,14 +253,14 @@ The `[LINE:` opener is still a hard barrier:
 #### Last segment
 
 ```text
-[POINT: ...] 마지막 설명.
+[RECT: ...] 마지막 설명.
 ```
 
 No later opener exists, so commit the segment during main-turn finalization before `quickReply` / `mainTurnSettled` is emitted.
 
 ## Goals
 
-1. Bind every DSL POINT/RECT/LINE to a stable narration segment in agentd.
+1. Bind every DSL RECT/LINE annotation to a stable narration segment in agentd.
 2. Show only the active segment's prose in the cursor response bubble.
 3. Switch the visual and bubble in one reducer transition.
 4. Prevent a future segment arriving early from overwriting the currently active bubble.
@@ -320,12 +315,6 @@ Preparation must not change visible UI.
 
 The standard cursor response bubble in `BlueCursorView` remains the presentation component. The active segment is a new canonical text source, not a new overlapping bubble.
 
-When a POINT visual segment is active:
-
-- visual narration prose takes precedence over the existing POINT navigation label bubble;
-- do not render both bubbles simultaneously;
-- keep the POINT label in the resolved target for accessibility/logical identity, but suppress the navigation label presentation while segment prose is active.
-
 ## Latency analysis
 
 ### Unavoidable cost
@@ -346,7 +335,7 @@ Consequences:
 
 ### Latency recovered by this plan
 
-- Commit at `[RECT:` / `[LINE:` / `[POINT:` rather than waiting for the full next tag.
+- Commit at `[RECT:` / `[LINE:` rather than waiting for the full next tag.
 - Prepare geometry and begin annotation scene validation while prose is still streaming.
 - Let segment A play while the model continues generating and preparing segment B.
 - Keep non-incremental providers on their existing final-full-reply synthesis path.
@@ -444,7 +433,7 @@ Introduce three explicit events rather than giving existing overlay events hidde
 
 ### `mainVisualNarrationSegmentPrepared`
 
-Emitted when a complete, valid POINT/RECT/LINE tag has been validated against captured context.
+Emitted when a complete, valid RECT/LINE tag has been validated against captured context.
 
 ```json
 {
@@ -542,7 +531,7 @@ Per `docs/refactoring-principles.md`, update as one atomic protocol set:
 Extend `AnnotationDslStreamItem` with a source-ordered visual boundary item:
 
 ```ts
-| { kind: "visualBoundary"; verb: "POINT" | "RECT" | "LINE" }
+| { kind: "visualBoundary"; verb: "RECT" | "LINE" }
 ```
 
 For a complete tag in one delta, output order is:
@@ -631,7 +620,6 @@ In `Picky/CompanionManager.swift`:
 #### Prepared event
 
 - reject stale context/generation using `shouldApplyOverlay` before expensive work;
-- POINT: resolve with `PickyPointerOverlayResolver`, but do not start pointer animation;
 - RECT/LINE: resolve with `PickyAnnotationOverlayResolver` and existing palette logic;
 - prepare/start annotation scene validation using the existing monitor path;
 - submit one `.visualNarrationSegmentPrepared(...)` reducer event;
@@ -773,7 +761,6 @@ RECT/LINE segments must preserve the current scene policy:
 - post-TTS mismatch: existing permanent clear behavior wins;
 - explicit dismiss: clears visual-segment state and monitor state together.
 
-POINT does not use annotation scene fingerprinting. Its visual segment follows pointer lifecycle and stale context checks.
 
 ### Bubble projection
 
@@ -788,7 +775,6 @@ Additional rules:
 - A committed but inactive segment cannot appear.
 - A hidden/suspended annotation segment cannot appear.
 - An empty segment cannot create `...` or synthetic text.
-- While a POINT visual narration segment is active, suppress the separate navigation label bubble to avoid two cursor bubbles.
 - Keep `PickyCursorResponseBubbleView` typography, wrapping, max-line, accessibility, and layout unchanged.
 
 `CompanionResponseOverlayManager` currently has no producer. Do not add a second visual-segment state path there. If that panel is revived later, it must consume the same projection rather than independently infer segments.
@@ -914,11 +900,9 @@ Do not add per-frame logs or a new polling worker.
 
 | File | Change |
 |---|---|
-| `Picky/Overlay/BlueCursorView.swift` | Consume projection/manager state and suppress POINT navigation bubble conflict; no new style. |
 | `PickyTests/ProtocolContractTests.swift` | Decode both new fixtures. |
 | `PickyTests/PickyInteractionReducerTests.swift` | Pure state/race/TTS mode tests. |
 | `PickyTests/PickyCompanionManagerTests.swift` | Prepared/commit routing and fake provider orchestration. |
-| `PickyTests/PickyPointerOverlayResolverTests.swift` | Only add coverage if prepared POINT adaptation changes resolver inputs. |
 | `PickyTests/PickyAgentAnnotationOverlayTests.swift` | Projection visibility only if existing reducer coverage cannot prove it. |
 | `docs/annotation-scene-profiling.md` | Add visual-segment activation and bubble synchronization manual checks after implementation. |
 | `design/COMPONENTS.md` | Document response-bubble precedence for visual narration segments after implementation. |
@@ -926,7 +910,7 @@ Do not add per-frame logs or a new polling worker.
 ## Test Plan Card
 
 - **Change target:** agentd visual segmentation, app-daemon protocol, Swift interaction reducer, cursor response bubble projection.
-- **User/system contract:** the active POINT/RECT/LINE and response bubble always represent the same immutable prose segment.
+- **User/system contract:** the active RECT/LINE annotation and response bubble always represent the same immutable prose segment.
 - **Picky invariants:** reducer owns state; protocol evolves in both languages; stale/duplicate/race events cannot resurrect old UI; TTS continues during scene suspension; running app and real user environment are untouched by tests.
 - **Selected layers:**
   - agentd pure unit for boundary/segment policy;
@@ -948,7 +932,7 @@ Do not add per-frame logs or a new polling worker.
 2. `[LI` + `NE:` across deltas emits one boundary only.
 3. Case/whitespace-healed opener emits one boundary.
 4. SCREEN does not split a segment.
-5. POINT, RECT, and LINE all split segments.
+5. RECT and LINE both split segments.
 6. Unknown verbs do not split.
 7. Malformed known visual opener splits the previous segment but opens no new segment.
 8. Consecutive visual tags produce an empty first segment without borrowed prose.
@@ -971,7 +955,6 @@ Do not add per-frame logs or a new polling worker.
 8. Stale context/generation/turnToken events are ignored.
 9. Commit-before-prepare joins safely.
 10. Empty segment reveals visual with no response bubble.
-11. POINT segment suppresses duplicate navigation bubble presentation.
 12. Incremental provider activates on matching speech start and queues each full segment once.
 13. Non-incremental provider keeps one final full-reply utterance and uses weighted activation.
 14. TTS-disabled path does not create speech effects.
@@ -985,7 +968,6 @@ Do not add per-frame logs or a new polling worker.
 ### Required CompanionManager cases
 
 1. Prepared RECT/LINE resolves geometry and starts scene validation without projection.
-2. Prepared POINT resolves target without starting animation.
 3. Stale prepared event is rejected before resolver/monitor work.
 4. Commit chooses incremental/finalReply/silent mode correctly.
 5. Incremental segment uses fake provider once per segment.
@@ -1136,7 +1118,7 @@ xcodebuild -project Picky.xcodeproj -scheme Picky \
 **Steps:**
 
 1. Add fake-provider tests for mode selection and exact utterance count.
-2. Resolve prepared POINT/RECT/LINE without visual activation.
+2. Resolve prepared RECT/LINE without visual activation.
 3. Submit reducer events with full identities.
 4. Route speak/timer/pointer/annotation effects through existing runners.
 5. Remove generic summary overwrite only for segment-prepared events.
@@ -1155,7 +1137,6 @@ xcodebuild -project Picky.xcodeproj -scheme Picky \
 1. Add failing projection tests for inactive/active/suspended/empty states.
 2. Give active visual narration text explicit precedence.
 3. Suppress premature queued `.speaking` text until activation.
-4. Suppress POINT navigation label bubble while visual prose is active.
 5. Keep existing layout/style/accessibility unchanged.
 
 ### Task 9: Update product and profiling documentation
@@ -1260,12 +1241,6 @@ Do not automate these against the user's running app. After the user explicitly 
 3. Confirm annotations remain with the explicit close control.
 4. Confirm later mismatch permanently clears them as currently specified.
 
-### POINT
-
-1. Produce POINT followed by prose, then RECT.
-2. Confirm POINT is its own visual segment.
-3. Confirm only the visual narration response bubble appears; the short navigation label bubble does not overlap it.
-
 ## Rollout and rollback
 
 ### Rollout
@@ -1292,7 +1267,7 @@ A temporary feature flag is optional during development, but do not add a perman
 Implementation is complete only when all are true:
 
 - [x] Agentd owns visual segment boundaries; Swift performs no DSL/text inference.
-- [x] POINT/RECT/LINE are boundaries; SCREEN is transparent.
+- [x] RECT/LINE are boundaries; SCREEN is transparent.
 - [x] Early opener detection commits at the colon exactly once across split deltas.
 - [x] Prepared geometry is invisible and can start validation early.
 - [x] Canonical segment prose is immutable after commit; sentence progress is emitted exactly once before commit.
@@ -1305,7 +1280,6 @@ Implementation is complete only when all are true:
 - [x] Full turn identity/tombstones reject delayed stale segments after user input or reset.
 - [x] Empty visual-only segments reveal without borrowing prose or leaking an invisible scene monitor.
 - [x] Scene validating/suspended/resume/final-drain policies remain correct.
-- [x] POINT navigation bubble does not overlap active visual narration prose; RECT/LINE do not suppress standalone navigation labels.
 - [x] Explicit legacy pointer/annotation tools remain unchanged.
 - [x] Protocol schemas, fixtures, Swift decoding, and both contract suites agree.
 - [x] Focused and full agentd/Swift suites pass.

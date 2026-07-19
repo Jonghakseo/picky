@@ -1135,8 +1135,8 @@ describe("SessionSupervisor", () => {
 
     const bootstrap = mainRuntime.handle?.bootstrapInjections[0]?.user ?? "";
     expect(bootstrap).toContain("## Picky visual overlay DSL");
-    expect(bootstrap).toContain("[POINT: x=<number>");
     expect(bootstrap).toContain("[RECT: x=<number>");
+    expect(bootstrap).toContain("[LINE: x1=<number>");
   });
 
   it("prepares visual segments, streams their sentences, and commits at the next opener colon", async () => {
@@ -1236,18 +1236,15 @@ describe("SessionSupervisor", () => {
 
     await supervisor.route(mainContext);
     mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Running" });
-    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "여기를 먼저 보세요. [SCREEN: id=screen-main-dsl] [PO" });
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "여기를 먼저 보세요. [SCREEN: id=screen-main-dsl] [RECT:" });
     await settle();
     expect(preparedSegments).toEqual([]);
-    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "INT: x=120 y=340 label=\"저장\"] [RECT: x=50 y=60 w=200 h=80 label=\"영역\"] 다음입니다." });
-    await waitUntil(() => preparedSegments.length === 2);
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: " x=50 y=60 w=200 h=80 label=\"영역\"] 다음입니다." });
+    await waitUntil(() => preparedSegments.length === 1);
 
     // Prepared geometry arrives before completion without using legacy overlay events.
     expect(quickReplies).toEqual([]);
     expect(preparedSegments[0]).toMatchObject({
-      visual: { kind: "point", request: { screenId: "screen-main-dsl", x: 120, y: 340, label: "저장", contextGeneration: 1 } },
-    });
-    expect(preparedSegments[1]).toMatchObject({
       visual: {
         kind: "annotations",
         request: {
@@ -1258,7 +1255,7 @@ describe("SessionSupervisor", () => {
         },
       },
     });
-    expect(eventOrder.indexOf("narration")).toBeLessThan(eventOrder.indexOf("prepared:point"));
+    expect(eventOrder.indexOf("narration")).toBeLessThan(eventOrder.indexOf("prepared:annotations"));
 
     mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await waitUntil(() => quickReplies.length === 1);
@@ -1334,7 +1331,7 @@ describe("SessionSupervisor", () => {
       }],
     });
 
-    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "[POINT: x=20 y=30]" });
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "[RECT: x=20 y=30 w=10 h=10]" });
     await waitUntil(() => preparedSegments.length === 1);
     mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await waitUntil(() => settledContexts.length === 1);
@@ -1367,7 +1364,7 @@ describe("SessionSupervisor", () => {
         isCursorScreen: true,
       }],
     });
-    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "먼저 저장하세요. [POINT: x=10 y=20] 다음 화면을 확인" });
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "먼저 저장하세요. [RECT: x=10 y=20 w=30 h=20] 다음 화면을 확인" });
     await waitUntil(() => chunks.length === 1);
     expect(chunks).toEqual([expect.objectContaining({ contextId: "context-narrate this", text: "먼저 저장하세요." })]);
 
@@ -1379,38 +1376,6 @@ describe("SessionSupervisor", () => {
     expect(chunks.map((chunk) => chunk.text)).toEqual(["먼저 저장하세요."]);
     expect(visualSentences.map((sentence) => sentence.text)).toEqual(["다음 화면을 확인하세요."]);
     expect(replies[0]).toEqual({ text: "먼저 저장하세요. 다음 화면을 확인하세요.", metadata: expect.objectContaining({ didStreamNarration: true }) });
-  });
-
-  it("strips disabled pointer DSL tags without emitting an overlay", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-dsl-pointer-disabled-"));
-    const mainRuntime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
-    const pointerEvents: unknown[] = [];
-    const quickReplies: string[] = [];
-    supervisor.on("pointerOverlayRequested", (request) => pointerEvents.push(request));
-    supervisor.on("quickReply", (_contextId, text) => quickReplies.push(text));
-    await supervisor.setDisabledBuiltinTools(["picky_screen_overlay"]);
-    await supervisor.route({
-      ...context("pointer disabled"),
-      screenshots: [{
-        id: "shot-pointer-disabled",
-        label: "cursor screen",
-        path: "/tmp/shot-pointer-disabled.jpg",
-        screenId: "screen-pointer-disabled",
-        bounds: { x: 0, y: 0, width: 100, height: 100 },
-        screenshotWidthInPixels: 100,
-        screenshotHeightInPixels: 100,
-        isCursorScreen: true,
-      }],
-    });
-
-    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "여기입니다. [POINT: x=20 y=30]" });
-    await settle();
-    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    await waitUntil(() => quickReplies.length === 1);
-
-    expect(pointerEvents).toEqual([]);
-    expect(quickReplies).toEqual(["여기입니다."]);
   });
 
   it("strips disabled annotation DSL tags without emitting an overlay", async () => {
@@ -1449,8 +1414,8 @@ describe("SessionSupervisor", () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-dsl-stale-context-"));
     const mainRuntime = new ManualRuntime();
     const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
-    const pointerEvents: unknown[] = [];
-    supervisor.on("pointerOverlayRequested", (request) => pointerEvents.push(request));
+    const annotationEvents: unknown[] = [];
+    supervisor.on("annotationOverlayRequested", (request) => annotationEvents.push(request));
     const initialContext: PickyContextPacket = {
       ...context("initial DSL context"),
       screenshots: [{
@@ -1472,10 +1437,10 @@ describe("SessionSupervisor", () => {
     const internal = supervisor as unknown as { mainContext?: PickyContextPacket; mainContextGeneration: number };
     internal.mainContext = replacement;
     internal.mainContextGeneration += 1;
-    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "[POINT: x=20 y=30]" });
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "[RECT: x=20 y=30 w=10 h=10]" });
     await settle();
 
-    expect(pointerEvents).toEqual([]);
+    expect(annotationEvents).toEqual([]);
   });
 
   it("derives screenshot pixel dimensions from image files when context metadata is missing", async () => {

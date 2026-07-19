@@ -1,6 +1,6 @@
 import type { AnnotationInput } from "./annotation-validation.js";
 
-const KNOWN_VERBS = ["POINT", "RECT", "LINE", "SCREEN"] as const;
+const KNOWN_VERBS = ["RECT", "LINE", "SCREEN"] as const;
 type KnownVerb = typeof KNOWN_VERBS[number];
 export type AnnotationDslVisualVerb = Exclude<KnownVerb, "SCREEN">;
 
@@ -20,14 +20,6 @@ const HEAL_ORDER = [
 ] as const;
 type HealReason = typeof HEAL_ORDER[number];
 
-export interface AnnotationDslPointTag {
-  kind: "point";
-  x: number;
-  y: number;
-  label?: string;
-  screenId?: string;
-}
-
 export interface AnnotationDslAnnotationTag {
   kind: "annotation";
   annotation: AnnotationInput;
@@ -39,7 +31,7 @@ export interface AnnotationDslScreenTag {
   screenId: string;
 }
 
-export type AnnotationDslTag = AnnotationDslPointTag | AnnotationDslAnnotationTag | AnnotationDslScreenTag;
+export type AnnotationDslTag = AnnotationDslAnnotationTag | AnnotationDslScreenTag;
 
 export type AnnotationDslStreamItem =
   | { kind: "text"; text: string }
@@ -213,12 +205,6 @@ export class AnnotationDslParser {
       return fields;
     };
 
-    if (verb === "POINT") {
-      const fields = required("x", "y");
-      if (!fields) return { error: "POINT requires x and y" };
-      return { tag: { kind: "point", x: fields.x!, y: fields.y!, ...(label === undefined ? {} : { label }), ...(screenId ? { screenId } : {}) } };
-    }
-
     const spotlight = verb === "RECT" || verb === "LINE"
       ? optionalBoolean(args, "spotlight", heals)
       : undefined;
@@ -261,7 +247,6 @@ function healingSummary(verb: KnownVerb, heals: ReadonlySet<HealReason>): string
 
 function allowedKeysFor(verb: KnownVerb): ReadonlySet<string> {
   switch (verb) {
-    case "POINT": return new Set(["x", "y", "label"]);
     case "RECT": return new Set(["x", "y", "w", "h", "label", "spotlight"]);
     case "LINE": return new Set(["x1", "y1", "x2", "y2", "label", "spotlight"]);
     case "SCREEN": return new Set(["id"]);
@@ -269,7 +254,7 @@ function allowedKeysFor(verb: KnownVerb): ReadonlySet<string> {
 }
 
 function isVisualVerb(value: string): value is AnnotationDslVisualVerb {
-  return value === "POINT" || value === "RECT" || value === "LINE";
+  return value === "RECT" || value === "LINE";
 }
 
 function isPartialKnownOpener(value: string): boolean {

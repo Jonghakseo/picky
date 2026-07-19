@@ -37,10 +37,9 @@ describe("AnnotationDslParser", () => {
 
   it("treats empty and whitespace-only labels as omitted", () => {
     const parser = new AnnotationDslParser();
-    const result = parser.feed('[POINT: x=1 y=2 label=""] [RECT: x=3 y=4 w=5 h=6 label="   "] [LINE: x1=7 y1=8 x2=9 y2=10 label=""]');
+    const result = parser.feed('[RECT: x=3 y=4 w=5 h=6 label="   "] [LINE: x1=7 y1=8 x2=9 y2=10 label=""]');
 
     expect(result.completedTags).toEqual([
-      { kind: "point", x: 1, y: 2 },
       { kind: "annotation", annotation: { id: "dsl-1", shape: "rect", x: 3, y: 4, w: 5, h: 6 } },
       { kind: "annotation", annotation: { id: "dsl-2", shape: "line", x1: 7, y1: 8, x2: 9, y2: 10 } },
     ]);
@@ -70,46 +69,36 @@ describe("AnnotationDslParser", () => {
     ]);
   });
 
-  it("drops unknown and malformed tags without exposing them", () => {
+  it("passes markdown and incomplete non-DSL text through as ordinary text", () => {
     const parser = new AnnotationDslParser();
-    const result = parser.feed("A [POINT: x=1] B [UNKNOWN: x=1] C [LINE: x1=1 y1=2 x2=3]");
-
-    expect(result.cleanText).toBe("A B C");
-    expect(result.completedTags).toEqual([]);
-    expect(result.droppedTags).toHaveLength(3);
-  });
-
-  it("passes markdown through and drops a partial DSL tag at turn end", () => {
-    const parser = new AnnotationDslParser();
-    expect(parser.feed("[guide](https://example.test) and [POI")).toEqual({
-      cleanText: "[guide](https://example.test) and ",
+    expect(parser.feed("[guide](https://example.test) and [AR")).toEqual({
+      cleanText: "[guide](https://example.test) and [AR",
       completedTags: [],
-      streamItems: [{ kind: "text", text: "[guide](https://example.test) and " }],
+      streamItems: [{ kind: "text", text: "[guide](https://example.test) and [AR" }],
       droppedTags: [],
       healedTags: [],
     });
-    expect(parser.finish()).toEqual({ cleanText: "", completedTags: [], streamItems: [], droppedTags: ["unclosed DSL tag at turn end"], healedTags: [] });
+    expect(parser.finish()).toEqual({ cleanText: "", completedTags: [], streamItems: [], droppedTags: [], healedTags: [] });
   });
 
   it("keeps SCREEN state for subsequent tags", () => {
     const parser = new AnnotationDslParser();
-    const result = parser.feed("[SCREEN: id=screen-2] [POINT: x=1 y=2] [RECT: x=3 y=4 w=5 h=6]");
+    const result = parser.feed("[SCREEN: id=screen-2] [RECT: x=3 y=4 w=5 h=6]");
 
     expect(result.cleanText).toBe("");
     expect(result.healedTags).toEqual([]);
     expect(result.completedTags).toEqual([
       { kind: "screen", screenId: "screen-2" },
-      { kind: "point", x: 1, y: 2, screenId: "screen-2" },
       { kind: "annotation", screenId: "screen-2", annotation: { id: "dsl-1", shape: "rect", x: 3, y: 4, w: 5, h: 6 } },
     ]);
   });
 
   it("heals verb case and surrounding whitespace, while unknown verbs still drop", () => {
     const parser = new AnnotationDslParser();
-    const result = parser.feed("[ Point : x=1 y=2 ] [ARROW: x=1 y=2]");
+    const result = parser.feed("[ Rect : x=1 y=2 w=3 h=4 ] [ARROW: x=1 y=2]");
 
-    expect(result.completedTags).toEqual([{ kind: "point", x: 1, y: 2 }]);
-    expect(result.healedTags).toEqual(["POINT: verb case/whitespace"]);
+    expect(result.completedTags).toEqual([{ kind: "annotation", annotation: { id: "dsl-1", shape: "rect", x: 1, y: 2, w: 3, h: 4 } }]);
+    expect(result.healedTags).toEqual(["RECT: verb case/whitespace"]);
     expect(result.droppedTags).toEqual(["unknown verb ARROW"]);
   });
 
@@ -126,14 +115,14 @@ describe("AnnotationDslParser", () => {
 
   it("heals smart quotes and unquoted single-token labels but rejects multi-word bare labels", () => {
     const parser = new AnnotationDslParser();
-    const smart = parser.feed("[POINT: x=1 y=2 label=“저장”]");
-    const bare = parser.feed("[POINT: x=3 y=4 label=저장버튼]");
-    const multiWord = parser.feed("[POINT: x=5 y=6 label=저장 버튼]");
+    const smart = parser.feed("[RECT: x=1 y=2 w=3 h=4 label=“저장”]");
+    const bare = parser.feed("[RECT: x=3 y=4 w=5 h=6 label=저장버튼]");
+    const multiWord = parser.feed("[RECT: x=5 y=6 w=7 h=8 label=저장 버튼]");
 
-    expect(smart.completedTags[0]).toMatchObject({ kind: "point", label: "저장" });
-    expect(smart.healedTags).toEqual(["POINT: smart quotes"]);
-    expect(bare.completedTags[0]).toMatchObject({ kind: "point", label: "저장버튼" });
-    expect(bare.healedTags).toEqual(["POINT: unquoted single-token label"]);
+    expect(smart.completedTags[0]).toMatchObject({ kind: "annotation", annotation: { label: "저장" } });
+    expect(smart.healedTags).toEqual(["RECT: smart quotes"]);
+    expect(bare.completedTags[0]).toMatchObject({ kind: "annotation", annotation: { label: "저장버튼" } });
+    expect(bare.healedTags).toEqual(["RECT: unquoted single-token label"]);
     expect(multiWord.completedTags).toEqual([]);
     expect(multiWord.droppedTags).toHaveLength(1);
   });
@@ -151,20 +140,20 @@ describe("AnnotationDslParser", () => {
 
   it("lets the last duplicate key win", () => {
     const parser = new AnnotationDslParser();
-    const duplicate = parser.feed("[POINT: x=1 x=9 y=2]");
+    const duplicate = parser.feed("[RECT: x=1 x=9 y=2 w=3 h=4]");
 
-    expect(duplicate.completedTags).toEqual([{ kind: "point", x: 9, y: 2 }]);
-    expect(duplicate.healedTags).toEqual(["POINT: duplicate key last-wins"]);
+    expect(duplicate.completedTags).toEqual([{ kind: "annotation", annotation: { id: "dsl-1", shape: "rect", x: 9, y: 2, w: 3, h: 4 } }]);
+    expect(duplicate.healedTags).toEqual(["RECT: duplicate key last-wins"]);
   });
 
   it("ignores unknown extra keys but hard-drops nested tags and unterminated quotes", () => {
     const parser = new AnnotationDslParser();
-    const extra = parser.feed("[POINT: x=1 y=2 confidence=high]");
-    const nested = parser.feed("[POINT: x=1 y=[RECT: x=2 y=3 w=4 h=4]]");
-    const unterminated = parser.feed("[POINT: x=1 y=2 label=\"broken]");
+    const extra = parser.feed("[RECT: x=1 y=2 w=3 h=4 confidence=high]");
+    const nested = parser.feed("[RECT: x=1 y=[LINE: x1=2 y1=3 x2=4 y2=5] w=4 h=4]");
+    const unterminated = parser.feed("[RECT: x=1 y=2 w=3 h=4 label=\"broken]");
 
-    expect(extra.completedTags).toEqual([{ kind: "point", x: 1, y: 2 }]);
-    expect(extra.healedTags).toEqual(["POINT: unknown key ignored"]);
+    expect(extra.completedTags).toEqual([{ kind: "annotation", annotation: { id: "dsl-1", shape: "rect", x: 1, y: 2, w: 3, h: 4 } }]);
+    expect(extra.healedTags).toEqual(["RECT: unknown key ignored"]);
     expect(nested.completedTags).toEqual([]);
     expect(nested.droppedTags).toHaveLength(1);
     expect(nested.cleanText).toBe("");
@@ -174,20 +163,20 @@ describe("AnnotationDslParser", () => {
   });
 
   it("is deterministic and can mix a healed tag with a dropped tag", () => {
-    const input = "앞 [point: x=1.5 y=2px label=저장,] 중간 [ARROW: x=1 y=2] 뒤";
+    const input = "앞 [rect: x=1.5 y=2px w=3 h=4 label=저장,] 중간 [ARROW: x=1 y=2] 뒤";
     const first = new AnnotationDslParser().feed(input);
     const second = new AnnotationDslParser().feed(input);
 
     expect(first).toEqual(second);
     expect(first.cleanText).toBe("앞 중간 뒤");
-    expect(first.completedTags).toEqual([{ kind: "point", x: 2, y: 2, label: "저장" }]);
+    expect(first.completedTags).toEqual([{ kind: "annotation", annotation: { id: "dsl-1", shape: "rect", x: 2, y: 2, w: 3, h: 4, label: "저장" } }]);
     expect(first.droppedTags).toEqual(["unknown verb ARROW"]);
-    expect(first.healedTags).toEqual(["POINT: verb case/whitespace, argument spacing/separator, unquoted single-token label, numeric px unit, rounded float"]);
+    expect(first.healedTags).toEqual(["RECT: verb case/whitespace, argument spacing/separator, unquoted single-token label, numeric px unit, rounded float"]);
   });
 
   it("preserves one trailing separator space when the next delta begins with a word", () => {
     const parser = new AnnotationDslParser();
-    const first = parser.feed("먼저 [POINT: x=1 y=2] ");
+    const first = parser.feed("먼저 [RECT: x=1 y=2 w=3 h=4] ");
     const second = parser.feed("다음");
 
     expect(`${first.cleanText}${second.cleanText}`).toBe("먼저 다음");
@@ -216,11 +205,11 @@ describe("AnnotationDslParser", () => {
 
   it("uses healed opener grammar for boundaries while SCREEN remains transparent", () => {
     const parser = new AnnotationDslParser();
-    const result = parser.feed("[ Rect : x=1 y=2 w=3 h=4][SCREEN: id=secondary][ Point : x=5 y=6]");
+    const result = parser.feed("[ Rect : x=1 y=2 w=3 h=4][SCREEN: id=secondary][ Line : x1=5 y1=6 x2=7 y2=8]");
 
     expect(result.streamItems.filter((item) => item.kind === "visualBoundary")).toEqual([
       { kind: "visualBoundary", verb: "RECT" },
-      { kind: "visualBoundary", verb: "POINT" },
+      { kind: "visualBoundary", verb: "LINE" },
     ]);
   });
 
@@ -236,7 +225,7 @@ describe("AnnotationDslParser", () => {
   });
 
   it("recognizes lowercase and whitespace-tolerant bracketed DSL tags", () => {
-    expect(ANNOTATION_DSL_TAG_OPEN_PATTERN.test("[ POINT : x=1]")).toBe(true);
-    expect(ANNOTATION_DSL_TAG_OPEN_PATTERN.test("[point: x=1]")).toBe(true);
+    expect(ANNOTATION_DSL_TAG_OPEN_PATTERN.test("[ RECT : x=1]")).toBe(true);
+    expect(ANNOTATION_DSL_TAG_OPEN_PATTERN.test("[rect: x=1]")).toBe(true);
   });
 });

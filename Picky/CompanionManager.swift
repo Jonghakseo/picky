@@ -198,10 +198,7 @@ final class CompanionManager: ObservableObject {
     private var ttsPlaybackEnabled: Bool
     private let speechWatchdogTimeoutOverride: TimeInterval?
     private let voiceContextCaptureCoordinator: PickyVoiceContextCaptureCoordinator
-    /// Screen captures begun at PTT release and joined when STT finishes.
-    /// Keying by input ID prevents a stale turn from submitting a later turn's context.
-    private var pendingVoiceContextCaptureTasks: [UUID: Task<PickyPreparedVoiceContextCapture?, Error>] = [:]
-    private var voiceInputStartedAt: Date?
+    let voiceContextCapturePipeline: PickyVoiceContextCapturePipeline
     private var armedPickleDispatchMode: PickyArmedPickleDispatchMode
 
     init(
@@ -242,7 +239,11 @@ final class CompanionManager: ObservableObject {
         self.appliedVoiceProviderSettings = PickyVoiceProviderSettings(resolvedInitialSettings)
         self.ttsPlaybackEnabled = speechPlaybackProvider == nil ? resolvedInitialSettings.ttsEnabled : true
         self.speechWatchdogTimeoutOverride = speechWatchdogTimeout
-        self.voiceContextCaptureCoordinator = voiceContextCaptureCoordinator ?? PickyVoiceContextCaptureCoordinator()
+        let resolvedVoiceContextCaptureCoordinator = voiceContextCaptureCoordinator ?? PickyVoiceContextCaptureCoordinator()
+        self.voiceContextCaptureCoordinator = resolvedVoiceContextCaptureCoordinator
+        self.voiceContextCapturePipeline = PickyVoiceContextCapturePipeline(
+            coordinator: resolvedVoiceContextCaptureCoordinator
+        )
         self.armedPickleDispatchMode = armedPickleDispatchMode ?? resolvedInitialSettings.armedPickleDispatchMode
         self.annotationSceneMonitor = annotationSceneMonitor
             ?? (PickyRuntimeEnvironment.isRunningUnitTests ? nil : PickyAnnotationSceneMonitor())
@@ -270,15 +271,15 @@ final class CompanionManager: ObservableObject {
 
     /// The currently running AI response task, if any. Cancelled when the user
     /// speaks again so a new response can begin immediately.
-    private var currentResponseTask: Task<Void, Never>?
+    var currentResponseTask: Task<Void, Never>?
     private var agentEventTask: Task<Void, Never>?
     private var directMessageContinuations: [UUID: CheckedContinuation<Bool, Never>] = [:]
-    private let inkCaptureCoordinator: any PickyInkCaptureCoordinating
-    private var pendingInkCapturesByInputID: [UUID: PickyInkCapture] = [:]
-    private var screenContextVoiceTargetByInputID: [UUID: String] = [:]
+    let inkCaptureCoordinator: any PickyInkCaptureCoordinating
+    let pendingInkCaptures = PickyPendingInkCaptureStore()
+    var screenContextVoiceTargetByInputID: [UUID: String] = [:]
     /// Monotonic marker for observing when queued interaction events have published.
     private(set) var interactionProjectionSequence: UInt64 = 0
-    private lazy var interactionCoordinator: PickyInteractionCoordinator = {
+    lazy var interactionCoordinator: PickyInteractionCoordinator = {
         let effectRunner = CompanionInteractionEffectRunner(
             manager: self,
             captureTextContext: { [weak self] in self?.runCaptureTextContextEffect(inputID: $0, text: $1) },
@@ -550,7 +551,7 @@ final class CompanionManager: ObservableObject {
 
         currentResponseTask?.cancel()
         currentResponseTask = nil
-        cancelPendingVoiceContextCaptures()
+        voiceContextCapturePipeline.cancelAll()
         responseStateTask?.cancel()
         responseStateTask = nil
         deferredFinishAwaitingAgentResponseTask?.cancel()
@@ -718,7 +719,7 @@ final class CompanionManager: ObservableObject {
 
     // MARK: - Private
 
-    private func setLocalOverlayReason(_ reason: PickyOverlayReason, visible: Bool) {
+    func setLocalOverlayReason(_ reason: PickyOverlayReason, visible: Bool) {
         if visible {
             localOverlayVisibilityReasons.insert(reason)
         } else {
@@ -747,57 +748,11 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    private func finishInkCapture(inputID: UUID?) {
-        let capture = inkCaptureCoordinator.finish()
-        if let inputID, let capture, capture.hasVisibleInk {
-            pendingInkCapturesByInputID[inputID] = capture
-        }
-        setLocalOverlayReason(.activeInkCapture, visible: false)
-    }
-
-    private func finishInkCaptureForDeferredTextSubmission() -> PickyInkCapture? {
-        let capture = inkCaptureCoordinator.finish()
-        setLocalOverlayReason(.activeInkCapture, visible: false)
-        return capture?.hasVisibleInk == true ? capture : nil
-    }
-
     private func cancelInkCapture() {
         inkCaptureCoordinator.cancel()
         setLocalOverlayReason(.activeInkCapture, visible: false)
     }
 
-    private func consumePendingInkCapture(inputID: UUID) -> PickyInkCapture? {
-        pendingInkCapturesByInputID.removeValue(forKey: inputID)
-    }
-
-    private func warmScreenShareableContent() {
-        // ScreenCaptureKit's first content enumeration is noticeably slower. The
-        // result is intentionally discarded: this only warms its service while
-        // the user is holding PTT, and permission failures remain non-fatal.
-        Task {
-            _ = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        }
-    }
-
-    private func startVoiceContextCapture(inputID: UUID) {
-        cancelPendingVoiceContextCapture(inputID: inputID)
-        let source = voiceFollowUpSessionIDForCurrentUtterance == nil ? "voice" : "voice-follow-up"
-        let inkCapture = consumePendingInkCapture(inputID: inputID)
-        let coordinator = voiceContextCaptureCoordinator
-        pendingVoiceContextCaptureTasks[inputID] = Task { @MainActor in
-            try await coordinator.prepareContext(source: source, inkCapture: inkCapture)
-        }
-    }
-
-    private func cancelPendingVoiceContextCapture(inputID: UUID) {
-        pendingVoiceContextCaptureTasks.removeValue(forKey: inputID)?.cancel()
-    }
-
-    private func cancelPendingVoiceContextCaptures() {
-        for task in pendingVoiceContextCaptureTasks.values { task.cancel() }
-        pendingVoiceContextCaptureTasks.removeAll()
-        voiceInputStartedAt = nil
-    }
 
     private func setInteractionOverlayReasons(from phase: PickyOverlayPhase) {
         switch phase {
@@ -877,7 +832,7 @@ final class CompanionManager: ObservableObject {
             .filter { !$0.isEmpty }
             .receive(on: DispatchQueue.main)
             .sink { [weak self] message in
-                self?.cancelPendingVoiceContextCaptures()
+                self?.voiceContextCapturePipeline.cancelAll()
                 self?.selectionStore.screenContextTargetSessionID = nil
                 self?.applyScreenContextTarget(nil)
                 self?.setVoiceFollowUpSessionIDForCurrentUtterance(nil)
@@ -1240,9 +1195,7 @@ final class CompanionManager: ObservableObject {
         case .pressed:
             isPushToTalkShortcutHeld = true
             guard !buddyDictationManager.isDictationInProgress else { return }
-            cancelPendingVoiceContextCaptures()
-            voiceInputStartedAt = Date()
-            warmScreenShareableContent()
+            voiceContextCapturePipeline.beginInput()
             interruptSpokenResponseForVoiceInput()
             pendingAgentResponseStartedAt = nil
             currentVoicePromptPreview = nil
@@ -1312,20 +1265,21 @@ final class CompanionManager: ObservableObject {
             pendingKeyboardShortcutStartTask = nil
             if let interactionVoiceInputID {
                 finishInkCapture(inputID: interactionVoiceInputID)
-                if let startedAt = voiceInputStartedAt,
-                   !BuddyDictationManager.shouldIgnoreRecording(startedAt: startedAt, stoppedAt: Date()) {
-                    startVoiceContextCapture(inputID: interactionVoiceInputID)
-                } else {
-                    cancelPendingVoiceContextCapture(inputID: interactionVoiceInputID)
+                let unusedInkCapture = voiceContextCapturePipeline.finishInput(
+                    inputID: interactionVoiceInputID,
+                    voiceFollowUpSessionID: voiceFollowUpSessionIDForCurrentUtterance,
+                    inkCapture: pendingInkCaptures.consume(for: interactionVoiceInputID)
+                )
+                if let unusedInkCapture {
+                    pendingInkCaptures.store(unusedInkCapture, for: interactionVoiceInputID)
                 }
-                voiceInputStartedAt = nil
                 interactionCoordinator.accept(
                     .voiceReleased(inputID: interactionVoiceInputID),
                     correlation: PickyInteractionCorrelation(inputID: interactionVoiceInputID, source: .voice)
                 )
             } else {
                 finishInkCapture(inputID: nil)
-                voiceInputStartedAt = nil
+                voiceContextCapturePipeline.clearInputTiming()
             }
             if let releasedInputID = interactionVoiceInputID {
                 reduceVoiceInteraction(.pttReleased(inputID: releasedInputID))
@@ -1482,7 +1436,7 @@ final class CompanionManager: ObservableObject {
         PickyVoiceTranscriptRoutingPolicy.normalizedSessionID(sessionID)
     }
 
-    private func clearScreenContextTargetIfCurrent(_ sessionID: String?) {
+    func clearScreenContextTargetIfCurrent(_ sessionID: String?) {
         guard let sessionID, selectionStore.screenContextTargetSessionID == sessionID else { return }
         // Sticky armed Pickles persist across follow-up/steer dispatches; only
         // an explicit user gesture (re-tap, arming another Pickle) or a hard
@@ -1575,7 +1529,7 @@ final class CompanionManager: ObservableObject {
 
         let inputID = UUID()
         if let inkCapture, inkCapture.hasVisibleInk {
-            pendingInkCapturesByInputID[inputID] = inkCapture
+            pendingInkCaptures.store(inkCapture, for: inputID)
         }
         return await withCheckedContinuation { continuation in
             directMessageContinuations[inputID] = continuation
@@ -1737,7 +1691,7 @@ final class CompanionManager: ObservableObject {
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                let inkCapture = consumePendingInkCapture(inputID: inputID)
+                let inkCapture = pendingInkCaptures.consume(for: inputID)
                 guard let captureResult = try await voiceContextCaptureCoordinator.captureContext(transcript: text, source: "text", inkCapture: inkCapture) else {
                     interactionCoordinator.effectCompleted(
                         .textSubmissionFailed(message: "Context capture returned no packet.", inputID: inputID),
@@ -1779,70 +1733,6 @@ final class CompanionManager: ObservableObject {
                     correlation: PickyInteractionCorrelation(inputID: inputID, contextID: context.id, source: .agent)
                 )
                 failDirectMessage(inputID: inputID, message: message)
-            }
-        }
-    }
-
-    private func runCaptureVoiceContextEffect(inputID: UUID, transcript: String, targetSessionID: String?) {
-        currentResponseTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                let captureResult: PickyVoiceContextCaptureResult?
-                if let preparedTask = pendingVoiceContextCaptureTasks.removeValue(forKey: inputID) {
-                    let joinStartedAt = Date()
-                    guard let prepared = try await preparedTask.value else { return }
-                    let joinWaitMilliseconds = Int(Date().timeIntervalSince(joinStartedAt) * 1_000)
-                    PickyLog.notice(
-                        .latency,
-                        prefix: "⏱️ Picky latency —",
-                        message: "event=captureJoinWaitMs inputID=\(inputID) source=\(prepared.source) ms=\(joinWaitMilliseconds)"
-                    )
-                    captureResult = try await voiceContextCaptureCoordinator.assembleContext(prepared, transcript: transcript)
-                } else {
-                    let inkCapture = consumePendingInkCapture(inputID: inputID)
-                    captureResult = try await voiceContextCaptureCoordinator.captureContext(
-                        transcript: transcript,
-                        voiceFollowUpSessionID: targetSessionID,
-                        inkCapture: inkCapture
-                    )
-                }
-                guard let captureResult else {
-                    guard !Task.isCancelled else { return }
-                    screenContextVoiceTargetByInputID.removeValue(forKey: inputID)
-                    interactionCoordinator.effectCompleted(
-                        .transcriptFailed(message: "Context capture returned no packet.", inputID: inputID),
-                        correlation: PickyInteractionCorrelation(inputID: inputID, source: .voice)
-                    )
-                    if completeVoiceInteractionIfCurrent(inputID: inputID) {
-                        clearScreenContextTargetIfCurrent(targetSessionID)
-                        setVoiceFollowUpSessionIDForCurrentUtterance(nil)
-                    }
-                    return
-                }
-                guard !Task.isCancelled else { return }
-                interactionCoordinator.effectCompleted(
-                    .voiceContextCaptured(
-                        inputID: inputID,
-                        transcript: transcript,
-                        context: captureResult.contextPacket,
-                        targetSessionID: targetSessionID
-                    ),
-                    correlation: PickyInteractionCorrelation(inputID: inputID, contextID: captureResult.contextPacket.id, source: .voice)
-                )
-            } catch is CancellationError {
-                screenContextVoiceTargetByInputID.removeValue(forKey: inputID)
-                // User spoke again — response was interrupted.
-            } catch {
-                screenContextVoiceTargetByInputID.removeValue(forKey: inputID)
-                let message = error.localizedDescription
-                PickyAnalytics.trackResponseError(error: message)
-                print("⚠️ Picky context capture error: \(error)")
-                interactionCoordinator.effectCompleted(
-                    .transcriptFailed(message: message, inputID: inputID),
-                    correlation: PickyInteractionCorrelation(inputID: inputID, source: .voice)
-                )
-                finishAwaitingAgentResponse(visibleText: "I captured that, but the local agent client is not ready yet.", spokenText: "I captured that, but the local agent client is not ready yet.")
-                completeVoiceInteractionIfCurrent(inputID: inputID)
             }
         }
     }
@@ -1964,7 +1854,7 @@ final class CompanionManager: ObservableObject {
     }
 
     @discardableResult
-    private func completeVoiceInteractionIfCurrent(inputID: UUID) -> Bool {
+    func completeVoiceInteractionIfCurrent(inputID: UUID) -> Bool {
         guard interactionVoiceInputID == inputID else { return false }
         interactionVoiceInputID = nil
         return true
@@ -2913,7 +2803,7 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    private func finishAwaitingAgentResponse(
+    func finishAwaitingAgentResponse(
         visibleText: String,
         spokenText: String?,
         enforceMinimumProcessingDuration: Bool = false,

@@ -5238,8 +5238,16 @@ describe("SessionSupervisor", () => {
     const runtime = new ManualRuntime();
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-armed-pickle-visual-dsl-"));
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
-    const overlays: unknown[] = [];
-    supervisor.on("annotationOverlayRequested", (request) => overlays.push(request));
+    const narrationChunks: unknown[] = [];
+    const preparedSegments: unknown[] = [];
+    const sentences: unknown[] = [];
+    const committedSegments: unknown[] = [];
+    const quickReplies: Array<{ contextId: string; text: string; metadata: Record<string, unknown> }> = [];
+    supervisor.on("mainNarrationChunk", (event) => narrationChunks.push(event));
+    supervisor.on("mainVisualNarrationSegmentPrepared", (event) => preparedSegments.push(event));
+    supervisor.on("mainVisualNarrationSegmentSentence", (event) => sentences.push(event));
+    supervisor.on("mainVisualNarrationSegmentCommitted", (event) => committedSegments.push(event));
+    supervisor.on("quickReply", (contextId, text, metadata) => quickReplies.push({ contextId, text, metadata }));
     await supervisor.load();
     const session = await supervisor.createPickleFromHandoff(context("create visual pickle"), {
       title: "Visual Pickle",
@@ -5270,15 +5278,36 @@ describe("SessionSupervisor", () => {
       summary: "Completed",
       finalAnswer: "여기입니다. [RECT: x=10 y=20 w=30 h=40 label=\"영역\"] 확인하세요.",
     });
-    await waitUntil(() => supervisor.get(session.id)?.status === "completed");
+    await waitUntil(() => quickReplies.length === 1);
 
-    expect(overlays).toHaveLength(1);
-    expect(overlays[0]).toMatchObject({
-      contextId: "context-armed-visual",
-      contextGeneration: 0,
-      screenId: "screen-armed",
-      annotations: [{ shape: "rect", x: 10, y: 20, w: 30, h: 40, label: "영역" }],
+    expect(narrationChunks).toEqual([
+      expect.objectContaining({ contextId: "context-armed-visual", text: "여기입니다.", originSource: "text", sessionId: session.id }),
+    ]);
+    expect(preparedSegments).toHaveLength(1);
+    expect(preparedSegments[0]).toMatchObject({
+      identity: { contextId: "context-armed-visual", contextGeneration: 0, ordinal: 0 },
+      visual: {
+        kind: "annotations",
+        request: {
+          contextId: "context-armed-visual",
+          contextGeneration: 0,
+          screenId: "screen-armed",
+          annotations: [{ shape: "rect", x: 10, y: 20, w: 30, h: 40, label: "영역" }],
+        },
+      },
     });
+    expect(sentences).toEqual([
+      expect.objectContaining({ index: 0, text: "확인하세요.", originSource: "text", replyKind: "main", sessionId: session.id }),
+    ]);
+    expect(committedSegments).toEqual([
+      expect.objectContaining({ text: "확인하세요.", sentenceCount: 1, sessionId: session.id }),
+    ]);
+    expect(quickReplies).toEqual([{
+      contextId: "context-armed-visual",
+      text: "여기입니다. 확인하세요.",
+      metadata: expect.objectContaining({ originSource: "text", replyKind: "main", sessionId: session.id, didStreamNarration: true }),
+    }]);
+    expect(supervisor.get(session.id)?.status).toBe("completed");
     expect(supervisor.get(session.id)?.finalAnswer).toBe("여기입니다. 확인하세요.");
     expect(supervisor.get(session.id)?.messages?.filter((message) => message.kind === "agent_text").at(-1)?.text).toBe("여기입니다. 확인하세요.");
   });
@@ -5287,8 +5316,8 @@ describe("SessionSupervisor", () => {
     const runtime = new ManualRuntime();
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-armed-pickle-no-screenshot-dsl-"));
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
-    const overlays: unknown[] = [];
-    supervisor.on("annotationOverlayRequested", (request) => overlays.push(request));
+    const preparedSegments: unknown[] = [];
+    supervisor.on("mainVisualNarrationSegmentPrepared", (event) => preparedSegments.push(event));
     await supervisor.load();
     const session = await supervisor.createPickleFromHandoff(context("create plain pickle"), {
       title: "Plain Pickle",
@@ -5301,7 +5330,7 @@ describe("SessionSupervisor", () => {
     runtime.handle?.emit({ type: "assistant_delta", delta: "[RECT: x=1 y=2 w=3 h=4] raw" });
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await waitUntil(() => supervisor.get(session.id)?.status === "completed");
-    expect(overlays).toEqual([]);
+    expect(preparedSegments).toEqual([]);
     expect(supervisor.get(session.id)?.finalAnswer).toBe("[RECT: x=1 y=2 w=3 h=4] raw");
   });
 
@@ -5309,8 +5338,8 @@ describe("SessionSupervisor", () => {
     const runtime = new ManualRuntime();
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-busy-pickle-visual-dsl-"));
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
-    const overlays: unknown[] = [];
-    supervisor.on("annotationOverlayRequested", (request) => overlays.push(request));
+    const preparedSegments: unknown[] = [];
+    supervisor.on("mainVisualNarrationSegmentPrepared", (event) => preparedSegments.push(event));
     await supervisor.load();
     const session = await supervisor.createPickleFromHandoff(context("create busy pickle"), {
       title: "Busy Pickle",
@@ -5337,16 +5366,19 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(session.id)?.status).toBe("running");
 
     runtime.handle?.emit({ type: "assistant_delta", delta: "[RECT: x=1 y=2 w=3 h=4] still active" });
-    await waitUntil(() => overlays.length === 1);
-    expect(overlays[0]).toMatchObject({ contextId: "context-busy-visual", annotations: [{ shape: "rect" }] });
+    await waitUntil(() => preparedSegments.length === 1);
+    expect(preparedSegments[0]).toMatchObject({
+      identity: { contextId: "context-busy-visual" },
+      visual: { kind: "annotations", request: { annotations: [{ shape: "rect" }] } },
+    });
   });
 
   it("activates queued Pickle visual DSL only when the matching input is delivered", async () => {
     const runtime = new ManualRuntime();
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-queued-pickle-visual-dsl-"));
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
-    const overlays: unknown[] = [];
-    supervisor.on("annotationOverlayRequested", (request) => overlays.push(request));
+    const preparedSegments: unknown[] = [];
+    supervisor.on("mainVisualNarrationSegmentPrepared", (event) => preparedSegments.push(event));
     await supervisor.load();
     const session = await supervisor.createPickleFromHandoff(context("create queued pickle"), {
       title: "Queued Pickle",
@@ -5371,12 +5403,15 @@ describe("SessionSupervisor", () => {
     await supervisor.followUp(session.id, "queued show", armedContext, true);
     runtime.handle?.emit({ type: "assistant_delta", delta: "[RECT: x=1 y=2 w=3 h=4] old turn" });
     await settle();
-    expect(overlays).toEqual([]);
+    expect(preparedSegments).toEqual([]);
 
     runtime.handle?.emit({ type: "input_delivery", role: "user", text: "queued show", originatedBy: "user", queueKind: "followUp" });
     runtime.handle?.emit({ type: "assistant_delta", delta: "[LINE: x1=1 y1=2 x2=3 y2=4] new turn" });
-    await waitUntil(() => overlays.length === 1);
-    expect(overlays[0]).toMatchObject({ contextId: "context-queued-visual", annotations: [{ shape: "line" }] });
+    await waitUntil(() => preparedSegments.length === 1);
+    expect(preparedSegments[0]).toMatchObject({
+      identity: { contextId: "context-queued-visual" },
+      visual: { kind: "annotations", request: { annotations: [{ shape: "line" }] } },
+    });
   });
 
   it("carries attachedImagesCount from the context screenshots to the journaled user_text on steer", async () => {

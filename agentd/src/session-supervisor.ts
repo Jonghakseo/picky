@@ -203,7 +203,20 @@ export class SessionSupervisor extends EventEmitter {
     super();
     this.sessionIdFactory = options.sessionIdFactory ?? (() => `session-${randomUUID()}`);
     this.artifactMaterializer = new ArtifactMaterializer();
-    this.pickleVisualDslCoordinator = new PickleVisualDslCoordinator((request) => this.emit("annotationOverlayRequested", request));
+    this.pickleVisualDslCoordinator = new PickleVisualDslCoordinator((event) => {
+      if (event.type === "quickReply") {
+        this.emitQuickReply(event.contextId, event.text, {
+          originSource: event.originSource,
+          replyKind: event.replyKind,
+          sessionId: event.sessionId,
+          inputId: event.inputId,
+          didStreamNarration: event.didStreamNarration,
+        });
+        return;
+      }
+      const { type, ...payload } = event;
+      this.emit(type, payload);
+    });
     this.messageBuilder = new SessionMessageBuilder({
       emitAppended: async (sessionId, message, seq) => { await this.chainEmit(sessionId, async () => { this.emit("messageAppended", sessionId, message, seq); }); },
       emitImported: async (sessionId, messages, seq) => { await this.chainEmit(sessionId, async () => { this.emit("messagesImported", sessionId, messages, seq); }); },
@@ -241,7 +254,10 @@ export class SessionSupervisor extends EventEmitter {
       transformAssistantDelta: (sessionId, delta) => this.pickleVisualDslCoordinator.consumeAssistantDelta(sessionId, delta),
       sanitizeAssistantText: (sessionId, text) => this.pickleVisualDslCoordinator.sanitizeCompleteText(sessionId, text),
       finishAssistantMessage: (sessionId) => this.pickleVisualDslCoordinator.finishAssistantMessage(sessionId),
-      finishAssistantRun: (sessionId) => this.pickleVisualDslCoordinator.deactivate(sessionId, "runtime terminal"),
+      finishAssistantRun: (sessionId, finalAnswer) => {
+        this.pickleVisualDslCoordinator.completeAssistantRun(sessionId, finalAnswer);
+        this.pickleVisualDslCoordinator.deactivate(sessionId, "runtime terminal");
+      },
       messageBuilder: this.messageBuilder,
     });
   }

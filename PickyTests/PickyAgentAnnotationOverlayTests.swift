@@ -284,32 +284,6 @@ struct PickyAgentAnnotationOverlayTests {
         #expect(manager.interactionProjectionSequence == sequenceAfterCurrent)
     }
 
-    @Test func silentPickleAnnotationSettlesWithoutWaitingForSpeech() {
-        let annotation = resolvedAnnotation(id: "silent")
-        let buffered = reduce(PickyInteractionState(), .agentAnnotationsRequested(mode: .append, annotations: [annotation]))
-        #expect(buffered.pendingAgentAnnotations.count == 1)
-        #expect(buffered.agentAnnotations.isEmpty)
-
-        let settled = reduce(buffered, .agentAnnotationsSettled(annotationIDs: ["silent"]))
-
-        #expect(settled.pendingAgentAnnotations.isEmpty)
-        #expect(settled.agentAnnotations.map(\.id) == ["silent"])
-        #expect(settled.agentAnnotationsDismissible)
-    }
-
-    @Test func silentPickleAnnotationDoesNotRevealAnnotationsWaitingOnUnrelatedSpeech() {
-        let narrated = resolvedAnnotation(id: "narrated")
-        let silent = resolvedAnnotation(id: "silent")
-        var state = reduce(PickyInteractionState(), .agentAnnotationsRequested(mode: .append, annotations: [narrated]))
-        state = reduce(state, .speechStarted(text: "narration", speechID: UUID(), sourceContextID: "main"))
-        state = reduce(state, .agentAnnotationsRequested(mode: .append, annotations: [silent]))
-
-        let settled = reduce(state, .agentAnnotationsSettled(annotationIDs: ["silent"]))
-
-        #expect(settled.agentAnnotations.map(\.id) == ["silent"])
-        #expect(settled.pendingAgentAnnotations.map(\.annotation.id) == ["narrated"])
-    }
-
     @Test func reducerBuffersReplacesAppendsAndClearsAnnotations() {
         let initial = PickyInteractionState()
         let original = resolvedAnnotation(id: "original")

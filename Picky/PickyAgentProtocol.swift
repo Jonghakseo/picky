@@ -594,8 +594,6 @@ struct PickyAnnotationOverlayRequest: Codable, Equatable, Identifiable {
     let screenId: String?
     let screenBounds: PickyCGRect?
     let screenshotSize: PickyPointerScreenshotSize?
-    /// Silent Pickle DSL annotations bypass narration-relative buffering after scene validation.
-    let revealImmediately: Bool?
 
     init(
         id: String,
@@ -605,8 +603,7 @@ struct PickyAnnotationOverlayRequest: Codable, Equatable, Identifiable {
         contextGeneration: Int? = nil,
         screenId: String? = nil,
         screenBounds: PickyCGRect? = nil,
-        screenshotSize: PickyPointerScreenshotSize? = nil,
-        revealImmediately: Bool? = nil
+        screenshotSize: PickyPointerScreenshotSize? = nil
     ) {
         self.id = id
         self.mode = mode
@@ -616,7 +613,6 @@ struct PickyAnnotationOverlayRequest: Codable, Equatable, Identifiable {
         self.screenId = screenId
         self.screenBounds = screenBounds
         self.screenshotSize = screenshotSize
-        self.revealImmediately = revealImmediately
     }
 }
 

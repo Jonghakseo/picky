@@ -2,7 +2,7 @@ import type { EventEnvelope, PickyMainAgentState } from "../protocol.js";
 import { sliceUtf16Safe } from "./safe-truncate.js";
 
 export type QuickReplyEvent = Extract<EventEnvelope, { type: "quickReply" }>;
-export type QuickReplyMetadata = Pick<QuickReplyEvent, "originSource" | "replyKind" | "sessionId" | "inputId">;
+export type QuickReplyMetadata = Pick<QuickReplyEvent, "originSource" | "replyKind" | "sessionId" | "inputId" | "didStreamNarration">;
 
 export const MAIN_AGENT_MESSAGE_LIMIT = 100;
 export const MAIN_AGENT_ROLLOVER_TURN_LIMIT = 40;

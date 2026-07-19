@@ -45,7 +45,7 @@ interface RuntimeEventHandlerDependencies {
   transformAssistantDelta?(sessionId: string, delta: string): string;
   sanitizeAssistantText?(sessionId: string, text: string): string;
   finishAssistantMessage?(sessionId: string): void;
-  finishAssistantRun?(sessionId: string): void;
+  finishAssistantRun?(sessionId: string, finalAnswer?: string): void;
   messageBuilder: RuntimeMessageJournal;
 }
 
@@ -66,11 +66,13 @@ export class RuntimeEventHandler {
   private readonly pendingThinkingFlushes = new Map<string, PendingThinkingFlush>();
   private readonly activeThinkingFlushes = new Map<string, Promise<void>>();
   private readonly seenToolCallIds = new Map<string, Set<string>>();
+  private readonly processedTerminalRuns = new Set<string>();
 
   constructor(private readonly dependencies: RuntimeEventHandlerDependencies) {}
 
   resetAssistantDraft(sessionId: string): void {
     this.assistantDrafts.set(sessionId, "");
+    this.processedTerminalRuns.delete(sessionId);
     this.thinkingDrafts.set(sessionId, "");
     this.thinkingActive.set(sessionId, false);
     this.clearPendingThinkingFlush(sessionId);
@@ -108,7 +110,7 @@ export class RuntimeEventHandler {
       if (!ignoredTransientBusy && (terminal || event.status === "waiting_for_input")) this.dependencies.finishAssistantMessage?.(sessionId);
       await this.applyStatusEvent(sessionId, event);
       if (!ignoredTransientBusy && terminal && isTerminalStatus(this.dependencies.getSession(sessionId).status)) {
-        this.dependencies.finishAssistantRun?.(sessionId);
+        this.dependencies.finishAssistantRun?.(sessionId, event.finalAnswer);
       }
       return;
     }
@@ -190,7 +192,16 @@ export class RuntimeEventHandler {
     // successful terminal agent_end (threshold compaction), and the HUD should still show that brief state.
     // Do not allow compaction tail events to resurrect cancelled/failed/blocked sessions.
     const terminalCompactionUpdate = currentSession.status === "completed" && (event.compactionStarted || event.compactionCompleted || event.compactionFailed);
-    if (isTerminalStatus(currentSession.status) && !terminalCompactionUpdate) {
+    // The optional Pi terminal tail can observe the assistant JSONL entry a few milliseconds
+    // before the runtime emits its terminal status and pre-patch this session to completed. That
+    // status is observational only: the runtime event still owns assistant-draft flush, finalAnswer,
+    // artifacts, and completion notification. Process the first matching completed runtime event
+    // even when the tail won the race, while continuing to ignore the duplicate turn_end/agent_end
+    // terminal event and any late completion after cancellation/failure.
+    const precompletedRuntimeTerminal = currentSession.status === "completed"
+      && event.status === "completed"
+      && !this.processedTerminalRuns.has(sessionId);
+    if (isTerminalStatus(currentSession.status) && !terminalCompactionUpdate && !precompletedRuntimeTerminal) {
       if (event.noTurnRan) this.dependencies.consumeNoTurnRanSessionStateRestore?.(sessionId);
       return;
     }
@@ -199,6 +210,7 @@ export class RuntimeEventHandler {
       if (restore) await this.dependencies.patchSession(sessionId, restore);
       return;
     }
+    if (terminal) this.processedTerminalRuns.add(sessionId);
 
     if (event.compactionCompleted && !hasLatestCompactCompletionMessage(currentSession)) {
       await this.dependencies.messageBuilder.recordSystemMessage(sessionId, event.compactionReason === "overflow" ? "Session compacted after context overflow" : "Session compacted");

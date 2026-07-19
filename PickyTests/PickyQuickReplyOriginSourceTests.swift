@@ -49,12 +49,19 @@ struct PickyQuickReplyOriginSourceTests {
         let owner: PickyContextOwner
         switch PickyQuickReplyOriginSource.cli {
         case .voice, .voiceFollowUp: owner = .metadataVoice
-        case .text, .textFollowUp: owner = .metadataText
+        case .text: owner = .metadataText
+        case .textFollowUp: owner = .metadataQuickInput
         case .cli: owner = .cli
         case .system: owner = .system
         case .unknown: owner = .unknown
         }
         #expect(owner == .cli)
         #expect(owner.usesCursorResponsePresentation == true)
+    }
+
+    @Test func textFollowUpMetadataUsesQuickInputPresentation() {
+        let owner = PickyContextOwner.metadataQuickInput
+        #expect(owner.isTextOwned)
+        #expect(owner.usesCursorResponsePresentation)
     }
 }

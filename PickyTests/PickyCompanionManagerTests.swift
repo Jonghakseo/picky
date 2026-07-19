@@ -1067,6 +1067,45 @@ struct PickyCompanionManagerTests {
         }
     }
 
+    @Test func incrementalPickleVisualNarrationSpeaksAndRevealsItsAnnotationTogether() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        speechProvider.supportsIncrementalPlayback = true
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider
+        )
+        let identity = visualNarrationIdentity(segmentID: "pickle-segment", ordinal: 0)
+
+        manager.applyAgentEvent(.mainVisualNarrationSegmentPrepared(
+            PickyVisualNarrationSegmentPreparedEvent(
+                identity: identity,
+                visual: .annotations(annotationRequest(
+                    id: "pickle-rect",
+                    mode: .append,
+                    contextID: identity.contextId,
+                    x: 20
+                ))
+            )
+        ))
+        manager.applyAgentEvent(.mainVisualNarrationSegmentSentence(
+            PickyVisualNarrationSegmentSentenceEvent(
+                identity: identity,
+                index: 0,
+                text: "Pickle 설명입니다.",
+                originSource: .voiceFollowUp,
+                replyKind: .main,
+                sessionId: "pickle-session"
+            )
+        ))
+
+        try await waitUntil {
+            speechProvider.spokenUtterances == ["Pickle 설명입니다."]
+                && manager.latestAgentSessionSummary == "Pickle 설명입니다."
+                && manager.agentAnnotations.map(\.id) == ["pickle-rect"]
+        }
+    }
+
     @Test func unsupportedIncrementalProviderKeepsAnnotationOffsetsForFinalReplyTTS() async throws {
         let speechProvider = FakeSpeechPlaybackProvider()
         let timerScheduler = FakeInteractionTimerScheduler()
@@ -1227,10 +1266,13 @@ struct PickyCompanionManagerTests {
     @Test func quickInputWithScreenContextTargetSendsFollowUpWithContextAndClearsTargetByDefault() async throws {
         let client = FakeVoiceClient()
         let selection = FakeVoiceSelectionStore()
+        let speechProvider = FakeSpeechPlaybackProvider()
+        speechProvider.supportsIncrementalPlayback = true
         selection.screenContextTargetSessionID = "pickle-target"
         let manager = CompanionManager(
             agentClient: client,
             selectionStore: selection,
+            speechPlaybackProvider: speechProvider,
             voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(screenshots: [screenshot(path: "/tmp/picky/shot-1.jpg")]),
             armedPickleDispatchMode: .followUp
         )
@@ -1250,6 +1292,41 @@ struct PickyCompanionManagerTests {
         #expect(command.visualDslEnabled == true)
         #expect(command.context?.warnings == [])
         #expect(selection.screenContextTargetSessionID == nil)
+
+        let context = try #require(command.context)
+        let identity = PickyVisualNarrationSegmentIdentity(
+            contextId: context.id,
+            contextGeneration: 0,
+            turnToken: "pickle-turn",
+            segmentId: "pickle-text-segment",
+            ordinal: 0
+        )
+        manager.applyAgentEvent(.mainVisualNarrationSegmentPrepared(
+            PickyVisualNarrationSegmentPreparedEvent(
+                identity: identity,
+                visual: .annotations(annotationRequest(
+                    id: "pickle-text-rect",
+                    mode: .append,
+                    contextID: context.id,
+                    x: 20
+                ))
+            )
+        ))
+        manager.applyAgentEvent(.mainVisualNarrationSegmentSentence(
+            PickyVisualNarrationSegmentSentenceEvent(
+                identity: identity,
+                index: 0,
+                text: "Quick Input 설명입니다.",
+                originSource: .textFollowUp,
+                replyKind: .main,
+                sessionId: "pickle-target"
+            )
+        ))
+
+        try await waitUntil {
+            speechProvider.spokenUtterances == ["Quick Input 설명입니다."]
+                && manager.latestAgentSessionSummary == "Quick Input 설명입니다."
+        }
     }
 
     @Test func quickInputWithScreenContextTargetSendsSteerWhenConfigured() async throws {

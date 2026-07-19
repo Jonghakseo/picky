@@ -322,7 +322,6 @@ export const PickyAnnotationOverlayRequestSchema = z.object({
   screenId: z.string().optional(),
   screenBounds: BoundsSchema.optional(),
   screenshotSize: z.object({ width: z.number().positive(), height: z.number().positive() }).optional(),
-  revealImmediately: z.boolean().optional(),
 });
 export type PickyAnnotationOverlayRequest = z.infer<typeof PickyAnnotationOverlayRequestSchema>;
 

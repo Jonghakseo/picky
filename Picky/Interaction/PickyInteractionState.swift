@@ -376,6 +376,9 @@ enum PickyContextOwner: Equatable, Codable {
     case voice(inputID: UUID)
     case metadataText
     case metadataVoice
+    /// Armed Quick Input bypasses the ordinary text capture reducer and is recovered from
+    /// the protocol's dedicated text-follow-up origin so its reply still uses cursor + TTS.
+    case metadataQuickInput
     /// Synthetic owner attached when a quick reply carries the "cli" originSource. The
     /// picky CLI does not register a local interactionOwner before submitting (the
     /// submission originates outside the app), so the reducer's ownerFromMetadata maps
@@ -389,14 +392,14 @@ enum PickyContextOwner: Equatable, Codable {
         switch self {
         case .voice, .metadataVoice:
             true
-        case .text, .quickInputText, .metadataText, .cli, .system, .unknown:
+        case .text, .quickInputText, .metadataText, .metadataQuickInput, .cli, .system, .unknown:
             false
         }
     }
 
     var isTextOwned: Bool {
         switch self {
-        case .text, .quickInputText, .metadataText, .cli:
+        case .text, .quickInputText, .metadataText, .metadataQuickInput, .cli:
             true
         case .voice, .metadataVoice, .system, .unknown:
             false
@@ -405,7 +408,7 @@ enum PickyContextOwner: Equatable, Codable {
 
     var usesCursorResponsePresentation: Bool {
         switch self {
-        case .quickInputText, .cli:
+        case .quickInputText, .metadataQuickInput, .cli:
             true
         case .text, .voice, .metadataText, .metadataVoice, .system, .unknown:
             false

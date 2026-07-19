@@ -2495,12 +2495,6 @@ final class CompanionManager: ObservableObject {
                 .agentAnnotationsRequested(mode: request.mode, annotations: annotations),
                 correlation: PickyInteractionCorrelation(contextID: request.contextId, source: .agent)
             )
-            if request.revealImmediately == true {
-                interactionCoordinator.accept(
-                    .agentAnnotationsSettled(annotationIDs: annotations.map(\.id)),
-                    correlation: PickyInteractionCorrelation(contextID: request.contextId, source: .agent)
-                )
-            }
             if request.mode != .clear {
                 latestAgentSessionSummary = "Showing \(annotations.count) screen annotation\(annotations.count == 1 ? "" : "s")."
             }

@@ -63,18 +63,18 @@ enum PickyAnnotationSceneVisualPolicy {
     static let matchingROIMeanDifference = 7.0
     /// Initial reveal allowance for transient highlight/color drift. Kept well below
     /// hard mismatch so localized content changes still block stale geometry.
-    static let initialValidationROIChangedFraction = 0.15
-    static let initialValidationROIMeanDifference = 10.0
+    static let initialValidationROIChangedFraction = 0.20
+    static let initialValidationROIMeanDifference = 12.0
     /// ROI invalidation is intentionally forgiving: a light scroll, cursor-adjacent
     /// hover repaint, or small content update should keep the drawing on screen.
     /// Only a substantial change to the pointed-at region (large occlusion, a real
     /// scroll that moves the target away) crosses these thresholds.
-    static let mismatchingROIChangedFraction = 0.40
-    static let mismatchingROIMeanDifference = 24.0
+    static let mismatchingROIChangedFraction = 0.55
+    static let mismatchingROIMeanDifference = 32.0
     static let matchingGlobalChangedFraction = 0.18
     static let matchingGlobalMeanDifference = 8.0
-    static let mismatchingGlobalChangedFraction = 0.42
-    static let mismatchingGlobalMeanDifference = 22.0
+    static let mismatchingGlobalChangedFraction = 0.48
+    static let mismatchingGlobalMeanDifference = 26.0
 
     static func compare(
         baseline: PickyAnnotationSceneFingerprint,

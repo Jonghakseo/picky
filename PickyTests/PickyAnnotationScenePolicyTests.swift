@@ -56,9 +56,9 @@ struct PickyAnnotationScenePolicyTests {
                 roiMeanDifference: 12
             )
         )
-        var conservativeValidation = PickyAnnotationSceneStabilityTracker()
-        #expect(conservativeValidation.observe(largerLocalizedChange, phase: .validating) == .none)
-        #expect(conservativeValidation.observe(largerLocalizedChange, phase: .validating) == .none)
+        var tolerantValidation = PickyAnnotationSceneStabilityTracker()
+        #expect(tolerantValidation.observe(largerLocalizedChange, phase: .validating) == .none)
+        #expect(tolerantValidation.observe(largerLocalizedChange, phase: .validating) == .show)
     }
 
     @Test func suspendedRestorationUsesInitialToleranceWhileNarrationAllowsRecovery() {
@@ -114,6 +114,46 @@ struct PickyAnnotationScenePolicyTests {
         }
         #expect(metrics.globalChangedFraction == 0.02)
         #expect(metrics.roiChangedFraction == 0)
+    }
+
+    @Test func visualPolicyKeepsROILocalChangesBelowRelaxedInvalidationThresholdIndeterminate() throws {
+        let baseline = try #require(fingerprint(width: 10, height: 10))
+        var pixels = baseline.luminance
+        for index in [44, 45, 46, 47, 54, 55, 56, 57] { pixels[index] = 83 }
+        let current = try #require(PickyAnnotationSceneFingerprint(width: 10, height: 10, luminance: pixels))
+
+        let observation = PickyAnnotationSceneVisualPolicy.compare(
+            baseline: baseline,
+            current: current,
+            normalizedRegions: [CGRect(x: 0.4, y: 0.4, width: 0.4, height: 0.4)]
+        )
+
+        guard case .indeterminate(let metrics) = observation else {
+            Issue.record("Expected a 50% ROI repaint to remain below the relaxed invalidation threshold")
+            return
+        }
+        #expect(metrics.roiChangedFraction == 0.5)
+        #expect(metrics.roiMeanDifference == 9.5)
+    }
+
+    @Test func visualPolicyKeepsGlobalChangesBelowRelaxedInvalidationThresholdIndeterminate() throws {
+        let baseline = try #require(fingerprint(width: 10, height: 10))
+        var pixels = baseline.luminance
+        for index in 0..<47 { pixels[index] = 83 }
+        let current = try #require(PickyAnnotationSceneFingerprint(width: 10, height: 10, luminance: pixels))
+
+        let observation = PickyAnnotationSceneVisualPolicy.compare(
+            baseline: baseline,
+            current: current,
+            normalizedRegions: []
+        )
+
+        guard case .indeterminate(let metrics) = observation else {
+            Issue.record("Expected a 47% global repaint to remain below the relaxed invalidation threshold")
+            return
+        }
+        #expect(metrics.globalChangedFraction == 0.47)
+        #expect(metrics.globalMeanDifference == 8.93)
     }
 
     @Test func visualPolicyRejectsChangesInsideAnAnnotationRegion() throws {

@@ -433,6 +433,41 @@ struct PickyAnnotationScenePolicyTests {
         monitor.stop()
     }
 
+    @Test func monitorSuspendsInitialValidationAtTwoSecondsWhenObservationsRemainIndeterminate() async throws {
+        let baselineFingerprint = try #require(fingerprint(width: 10, height: 10))
+        let indeterminateFingerprint = try #require(PickyAnnotationSceneFingerprint(
+            width: 10,
+            height: 10,
+            luminance: [UInt8](repeating: 79, count: 100)
+        ))
+        var currentTime = Date(timeIntervalSinceReferenceDate: 0)
+        let monitor = PickyAnnotationSceneMonitor(
+            capturer: FakeAnnotationSceneCapturer(
+                baseline: baselineFingerprint,
+                current: [indeterminateFingerprint, indeterminateFingerprint]
+            ),
+            now: { currentTime },
+            automaticallySchedulesSamples: false
+        )
+        let identity = PickyAnnotationSceneIdentity(
+            contextID: "context",
+            generation: 7,
+            token: UUID(uuidString: "A0000000-0000-0000-0000-000000000007")!
+        )
+        var outputs: [PickyAnnotationSceneMonitorOutput] = []
+        monitor.onOutput = { outputs.append($0) }
+        monitor.start(identity: identity, baseline: sceneBaseline(contextID: "context"))
+        monitor.updateTarget(screenshot: screenshot(), annotations: [annotation()], mode: .append)
+
+        await monitor.sampleNow()
+        #expect(outputs.isEmpty)
+
+        currentTime = currentTime.addingTimeInterval(2)
+        await monitor.sampleNow()
+        #expect(outputs == [.mismatched(identity, .visual)])
+        monitor.stop()
+    }
+
     @Test func replacingAContextSerializesCanceledAndNewSceneSamples() async throws {
         let referenceFingerprint = try #require(fingerprint(width: 10, height: 10))
         let capturer = SuspendingAnnotationSceneCapturer(fingerprint: referenceFingerprint)

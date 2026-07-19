@@ -46,6 +46,10 @@ protocol PickyAnnotationSceneSnapshotCapturing: AnyObject {
 final class PickyAnnotationSceneMonitor {
     typealias OutputHandler = @MainActor (PickyAnnotationSceneMonitorOutput) -> Void
 
+    /// Do not leave visual narration hidden while an ambiguous initial fingerprint
+    /// comparison retries indefinitely. The fail-safe outcome remains suspension.
+    static let initialValidationTimeout: TimeInterval = 2
+
     private final class Target {
         let screenshot: PickyScreenshotContext
         var baselineFingerprint: PickyAnnotationSceneFingerprint?
@@ -81,6 +85,7 @@ final class PickyAnnotationSceneMonitor {
         let identity: PickyAnnotationSceneIdentity
         let baseline: PickyAnnotationSceneBaseline
         let startedAt: Date
+        let initialValidationDeadline: Date
         var phase: PickyAnnotationScenePhase = .validating
         var targets: [String: Target] = [:]
         var stability = PickyAnnotationSceneStabilityTracker()
@@ -101,6 +106,7 @@ final class PickyAnnotationSceneMonitor {
             self.identity = identity
             self.baseline = baseline
             self.startedAt = now
+            self.initialValidationDeadline = now.addingTimeInterval(PickyAnnotationSceneMonitor.initialValidationTimeout)
             self.allowsTolerantRestoration = allowsTolerantRestoration
         }
     }
@@ -272,6 +278,10 @@ final class PickyAnnotationSceneMonitor {
             scheduleNextSample(for: session)
             return
         }
+        if suspendInitialValidationIfExpired(session) {
+            scheduleNextSample(for: session)
+            return
+        }
         let captureEpoch = session.captureEpoch
         samplingIdentity = identity
         defer {
@@ -306,6 +316,7 @@ final class PickyAnnotationSceneMonitor {
             guard self.session?.identity == identity,
                   session.captureEpoch == captureEpoch,
                   !Task.isCancelled else { return }
+            if suspendInitialValidationIfExpired(session) { return }
 
             let decision = PickyPerf.interval("annotation_scene_stability") {
                 session.stability.observe(
@@ -425,6 +436,12 @@ final class PickyAnnotationSceneMonitor {
         case .inactive:
             false
         }
+    }
+
+    private func suspendInitialValidationIfExpired(_ session: Session) -> Bool {
+        guard session.phase == .validating, now() >= session.initialValidationDeadline else { return false }
+        transitionToSuspended(session, reason: .visual)
+        return true
     }
 
     private func transitionToSuspended(_ session: Session, reason: PickyAnnotationSceneMismatchReason) {

@@ -156,9 +156,8 @@ struct PickyContextPacketTests {
         do {
             _ = try await CompanionScreenCaptureUtility.captureScreensAsJPEG(scope: .focusedScreen)
             Issue.record("Expected real screen capture to be disabled during unit tests")
-        } catch let error as NSError {
-            #expect(error.domain == "CompanionScreenCapture")
-            #expect(error.code == -1000)
+        } catch let error as PickySystemPermissionAccessError {
+            #expect(error == .unavailableInUnitTests(.screenContent))
         }
     }
 

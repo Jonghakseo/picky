@@ -133,6 +133,9 @@ struct PickyScreenshotContext: Codable, Equatable, Identifiable {
     /// App-local color samples for annotation contrast. Excluded from Codable so
     /// the neutral app-agentd context payload remains unchanged.
     let annotationColorSampleGrid: PickyScreenshotColorSampleGrid?
+    /// Capture-time baseline for visual annotation-scene validation. This stays
+    /// app-local so the model context payload and persisted protocol remain neutral.
+    let annotationSceneFingerprint: PickyAnnotationSceneFingerprint?
 
     init(
         id: String,
@@ -144,7 +147,8 @@ struct PickyScreenshotContext: Codable, Equatable, Identifiable {
         screenshotHeightInPixels: Int? = nil,
         isCursorScreen: Bool? = nil,
         cursor: PickyCursorContext? = nil,
-        annotationColorSampleGrid: PickyScreenshotColorSampleGrid? = nil
+        annotationColorSampleGrid: PickyScreenshotColorSampleGrid? = nil,
+        annotationSceneFingerprint: PickyAnnotationSceneFingerprint? = nil
     ) {
         self.id = id
         self.label = label
@@ -156,6 +160,7 @@ struct PickyScreenshotContext: Codable, Equatable, Identifiable {
         self.isCursorScreen = isCursorScreen
         self.cursor = cursor
         self.annotationColorSampleGrid = annotationColorSampleGrid
+        self.annotationSceneFingerprint = annotationSceneFingerprint
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -174,6 +179,7 @@ struct PickyScreenshotContext: Codable, Equatable, Identifiable {
         isCursorScreen = try container.decodeIfPresent(Bool.self, forKey: .isCursorScreen)
         cursor = try container.decodeIfPresent(PickyCursorContext.self, forKey: .cursor)
         annotationColorSampleGrid = nil
+        annotationSceneFingerprint = nil
     }
 
     func encode(to encoder: Encoder) throws {
@@ -209,6 +215,7 @@ struct PickyScreenContext: Equatable {
     let inkMarks: [PickyInkMarkContext]
     let imageData: Data?
     let annotationColorSampleGrid: PickyScreenshotColorSampleGrid?
+    let annotationSceneFingerprint: PickyAnnotationSceneFingerprint?
 
     init(
         label: String,
@@ -219,7 +226,8 @@ struct PickyScreenContext: Equatable {
         cursor: PickyCursorContext?,
         inkMarks: [PickyInkMarkContext] = [],
         imageData: Data?,
-        annotationColorSampleGrid: PickyScreenshotColorSampleGrid? = nil
+        annotationColorSampleGrid: PickyScreenshotColorSampleGrid? = nil,
+        annotationSceneFingerprint: PickyAnnotationSceneFingerprint? = nil
     ) {
         self.label = label
         self.frame = frame
@@ -230,6 +238,7 @@ struct PickyScreenContext: Equatable {
         self.inkMarks = inkMarks
         self.imageData = imageData
         self.annotationColorSampleGrid = annotationColorSampleGrid
+        self.annotationSceneFingerprint = annotationSceneFingerprint
     }
 }
 

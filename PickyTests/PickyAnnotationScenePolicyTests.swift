@@ -238,6 +238,33 @@ struct PickyAnnotationScenePolicyTests {
         }
     }
 
+    @Test func monitorPrefersOnlyDimensionMatchedStoredBaselineFingerprint() throws {
+        let stored = try #require(PickyAnnotationSceneFingerprint(
+            width: 256,
+            height: 128,
+            luminance: [UInt8](repeating: 64, count: 256 * 128)
+        ))
+        let screenshot = PickyScreenshotContext(
+            id: "shot-1",
+            label: "screen",
+            path: "/tmp/fallback.jpg",
+            screenId: "screen1",
+            bounds: PickyCGRect(x: 0, y: 0, width: 100, height: 50),
+            annotationSceneFingerprint: stored
+        )
+
+        #expect(PickyScreenCaptureAnnotationSceneCapturer.storedBaselineFingerprint(
+            for: screenshot,
+            width: 256,
+            height: 128
+        ) == stored)
+        #expect(PickyScreenCaptureAnnotationSceneCapturer.storedBaselineFingerprint(
+            for: screenshot,
+            width: 255,
+            height: 128
+        ) == nil)
+    }
+
     @Test func monitorValidatesSuspendsAndResumesWithoutDiscardingItsIdentity() async throws {
         let baselineFingerprint = try #require(fingerprint(width: 10, height: 10))
         let changedFingerprint = try #require(PickyAnnotationSceneFingerprint(

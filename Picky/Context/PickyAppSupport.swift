@@ -94,7 +94,8 @@ struct PickyAppSupportScreenshotStore: PickyScreenshotStoring {
             screenshotHeightInPixels: screen.screenshotHeightInPixels,
             isCursorScreen: screen.isCursorScreen,
             cursor: screen.cursor,
-            annotationColorSampleGrid: annotationColorSampleGrid
+            annotationColorSampleGrid: annotationColorSampleGrid,
+            annotationSceneFingerprint: screen.annotationSceneFingerprint
         )
     }
 

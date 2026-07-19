@@ -43,7 +43,8 @@ struct StaticPickyScreenContextProvider: PickyScreenContextProviding {
                 cursor: capture.cursor,
                 inkMarks: PickyInkMarkMapper.map(capture: inkCapture, to: capture, screenId: screenId),
                 imageData: capture.imageData,
-                annotationColorSampleGrid: capture.annotationColorSampleGrid
+                annotationColorSampleGrid: capture.annotationColorSampleGrid,
+                annotationSceneFingerprint: capture.annotationSceneFingerprint
             )
         }
     }

@@ -50,6 +50,34 @@ struct PickyAnnotationSceneFingerprint: Equatable, Sendable {
         self.height = height
         self.luminance = luminance
     }
+
+    /// Produces the common single-resample luminance representation used for both
+    /// capture-time baselines and live annotation-scene samples.
+    static func make(from image: CGImage, width: Int, height: Int) -> Self? {
+        var luminance = [UInt8](repeating: 0, count: width * height)
+        guard width > 0,
+              height > 0,
+              let colorSpace = CGColorSpace(name: CGColorSpace.linearGray) else {
+            return nil
+        }
+        let drew = luminance.withUnsafeMutableBytes { buffer -> Bool in
+            guard let address = buffer.baseAddress,
+                  let context = CGContext(
+                    data: address,
+                    width: width,
+                    height: height,
+                    bitsPerComponent: 8,
+                    bytesPerRow: width,
+                    space: colorSpace,
+                    bitmapInfo: CGImageAlphaInfo.none.rawValue
+                  ) else { return false }
+            context.interpolationQuality = .medium
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard drew else { return nil }
+        return Self(width: width, height: height, luminance: luminance)
+    }
 }
 
 enum PickyAnnotationSceneVisualPolicy {

@@ -761,7 +761,7 @@ final class PickyScreenCaptureAnnotationSceneCapturer: PickyAnnotationSceneSnaps
     private var preparedDisplays: [String: PreparedDisplay] = [:]
     private var baselineFingerprints: [String: PickyAnnotationSceneFingerprint] = [:]
 
-    init(maximumDimension: Int = 256) {
+    init(maximumDimension: Int = CompanionScreenCaptureUtility.annotationSceneFingerprintMaximumDimension) {
         self.maximumDimension = maximumDimension
     }
 
@@ -771,6 +771,10 @@ final class PickyScreenCaptureAnnotationSceneCapturer: PickyAnnotationSceneSnaps
         let prepared = try await preparedDisplay(for: screenshot)
         let width = prepared.configuration.width
         let height = prepared.configuration.height
+        if let stored = Self.storedBaselineFingerprint(for: screenshot, width: width, height: height) {
+            baselineFingerprints[key] = stored
+            return stored
+        }
         let path = screenshot.path
         let fingerprint = try await Task.detached(priority: .utility) {
             try Self.fingerprintFromImage(atPath: path, width: width, height: height)
@@ -785,7 +789,11 @@ final class PickyScreenCaptureAnnotationSceneCapturer: PickyAnnotationSceneSnaps
             contentFilter: prepared.filter,
             configuration: prepared.configuration
         )
-        guard let fingerprint = Self.fingerprint(from: image, width: prepared.configuration.width, height: prepared.configuration.height) else {
+        guard let fingerprint = PickyAnnotationSceneFingerprint.make(
+            from: image,
+            width: prepared.configuration.width,
+            height: prepared.configuration.height
+        ) else {
             throw PickyAnnotationSceneCaptureError.fingerprintCreationFailed
         }
         return fingerprint
@@ -812,11 +820,16 @@ final class PickyScreenCaptureAnnotationSceneCapturer: PickyAnnotationSceneSnaps
         let excludedIDs = CompanionScreenCaptureUtility.contextCaptureExcludedWindowIDs(in: NSApp.windows)
         let excludedWindows = content.windows.filter { excludedIDs.contains($0.windowID) }
         let filter = SCContentFilter(display: display, excludingWindows: excludedWindows)
-        let size = CompanionScreenCaptureUtility.capturePixelSize(
-            displayWidth: display.width,
-            displayHeight: display.height,
-            maximumDimension: maximumDimension
-        )
+        let size = maximumDimension == CompanionScreenCaptureUtility.annotationSceneFingerprintMaximumDimension
+            ? CompanionScreenCaptureUtility.annotationSceneFingerprintPixelSize(
+                displayWidth: display.width,
+                displayHeight: display.height
+            )
+            : CompanionScreenCaptureUtility.capturePixelSize(
+                displayWidth: display.width,
+                displayHeight: display.height,
+                maximumDimension: maximumDimension
+            )
         let configuration = SCStreamConfiguration()
         configuration.width = size.width
         configuration.height = size.height
@@ -827,6 +840,19 @@ final class PickyScreenCaptureAnnotationSceneCapturer: PickyAnnotationSceneSnaps
         return prepared
     }
 
+    static func storedBaselineFingerprint(
+        for screenshot: PickyScreenshotContext,
+        width: Int,
+        height: Int
+    ) -> PickyAnnotationSceneFingerprint? {
+        guard let fingerprint = screenshot.annotationSceneFingerprint,
+              fingerprint.width == width,
+              fingerprint.height == height else {
+            return nil
+        }
+        return fingerprint
+    }
+
     private nonisolated static func fingerprintFromImage(
         atPath path: String,
         width: Int,
@@ -835,36 +861,10 @@ final class PickyScreenCaptureAnnotationSceneCapturer: PickyAnnotationSceneSnaps
         let url = URL(fileURLWithPath: path)
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
-              let fingerprint = fingerprint(from: image, width: width, height: height) else {
+              let fingerprint = PickyAnnotationSceneFingerprint.make(from: image, width: width, height: height) else {
             throw PickyAnnotationSceneCaptureError.baselineUnavailable
         }
         return fingerprint
-    }
-
-    private nonisolated static func fingerprint(
-        from image: CGImage,
-        width: Int,
-        height: Int
-    ) -> PickyAnnotationSceneFingerprint? {
-        var luminance = [UInt8](repeating: 0, count: width * height)
-        guard let colorSpace = CGColorSpace(name: CGColorSpace.linearGray) else { return nil }
-        let drew = luminance.withUnsafeMutableBytes { buffer -> Bool in
-            guard let address = buffer.baseAddress,
-                  let context = CGContext(
-                    data: address,
-                    width: width,
-                    height: height,
-                    bitsPerComponent: 8,
-                    bytesPerRow: width,
-                    space: colorSpace,
-                    bitmapInfo: CGImageAlphaInfo.none.rawValue
-                  ) else { return false }
-            context.interpolationQuality = .medium
-            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-            return true
-        }
-        guard drew else { return nil }
-        return PickyAnnotationSceneFingerprint(width: width, height: height, luminance: luminance)
     }
 
     private static func framesMatch(_ lhs: CGRect, _ rhs: CGRect, tolerance: CGFloat = 1) -> Bool {

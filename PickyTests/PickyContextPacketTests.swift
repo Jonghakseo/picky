@@ -29,6 +29,12 @@ private struct FakeBrowserProvider: PickyBrowserContextProviding {
 }
 
 private struct FakeScreenProvider: PickyScreenContextProviding {
+    let annotationSceneFingerprint: PickyAnnotationSceneFingerprint?
+
+    init(annotationSceneFingerprint: PickyAnnotationSceneFingerprint? = nil) {
+        self.annotationSceneFingerprint = annotationSceneFingerprint
+    }
+
     func screenContexts() -> [PickyScreenContext] {
         [
             PickyScreenContext(
@@ -42,7 +48,8 @@ private struct FakeScreenProvider: PickyScreenContextProviding {
                     displayPoint: PickyCGPoint(x: 200, y: 682),
                     screenshotPixel: PickyCGPoint(x: 400, y: 1364)
                 ),
-                imageData: Data("jpeg".utf8)
+                imageData: Data("jpeg".utf8),
+                annotationSceneFingerprint: annotationSceneFingerprint
             )
         ]
     }
@@ -93,6 +100,11 @@ struct PickyContextPacketTests {
             intent: .defaultIntent
         ))
 
+        let fingerprint = try #require(PickyAnnotationSceneFingerprint.make(from: image, width: 1, height: 1))
+        #expect(fingerprint.width == 1)
+        #expect(fingerprint.height == 1)
+        #expect(fingerprint.luminance.count == 1)
+
         let grid = try #require(PickyScreenshotColorSampleGrid.make(from: image, maximumDimension: 2))
         let topLeft = grid.samples(
             nearScreenshotPoints: [CGPoint(x: 0, y: 0)],
@@ -115,13 +127,19 @@ struct PickyContextPacketTests {
             height: 1,
             pixels: [.init(red: 1, green: 0, blue: 0)]
         )!
+        let fingerprint = try #require(PickyAnnotationSceneFingerprint(
+            width: 2,
+            height: 1,
+            luminance: [10, 20]
+        ))
         let screenshot = PickyScreenshotContext(
             id: "shot-1",
             label: "primary",
             path: "/tmp/shot.jpg",
             screenId: "screen1",
             bounds: PickyCGRect(x: 0, y: 0, width: 100, height: 100),
-            annotationColorSampleGrid: samples
+            annotationColorSampleGrid: samples,
+            annotationSceneFingerprint: fingerprint
         )
 
         let data = try JSONEncoder().encode(screenshot)
@@ -129,7 +147,9 @@ struct PickyContextPacketTests {
         let decoded = try JSONDecoder().decode(PickyScreenshotContext.self, from: data)
 
         #expect(!json.contains("annotationColorSampleGrid"))
+        #expect(!json.contains("annotationSceneFingerprint"))
         #expect(decoded.annotationColorSampleGrid == nil)
+        #expect(decoded.annotationSceneFingerprint == nil)
     }
 
     @Test @MainActor func realScreenCaptureIsDisabledInUnitTests() async throws {
@@ -174,11 +194,16 @@ struct PickyContextPacketTests {
 
     @Test func assemblesNeutralVoiceContextPacketAndStoresScreenshots() async throws {
         let screenshotsRoot = FileManager.default.temporaryDirectory.appendingPathComponent("picky-context-\(UUID().uuidString)", isDirectory: true)
+        let fingerprint = try #require(PickyAnnotationSceneFingerprint(
+            width: 256,
+            height: 167,
+            luminance: [UInt8](repeating: 64, count: 256 * 167)
+        ))
         let assembler = PickyContextPacketAssembler(
             appProvider: FakeAppProvider(),
             windowProvider: FakeWindowProvider(),
             browserProvider: FakeBrowserProvider(url: URL(string: "https://example.com/issue/123")!),
-            screenProvider: FakeScreenProvider(),
+            screenProvider: FakeScreenProvider(annotationSceneFingerprint: fingerprint),
             screenshotStore: PickyAppSupportScreenshotStore(screenshotsRoot: screenshotsRoot),
             defaultCwd: "/Users/test/project",
             now: { Date(timeIntervalSince1970: 1_800_000_000) },
@@ -201,6 +226,7 @@ struct PickyContextPacketTests {
         #expect(packet.screenshots.first?.cursor?.globalPoint == PickyCGPoint(x: 200, y: 300))
         #expect(packet.screenshots.first?.cursor?.displayPoint == PickyCGPoint(x: 200, y: 682))
         #expect(packet.screenshots.first?.cursor?.screenshotPixel == PickyCGPoint(x: 400, y: 1364))
+        #expect(packet.screenshots.first?.annotationSceneFingerprint == fingerprint)
         #expect(FileManager.default.fileExists(atPath: packet.screenshots.first?.path ?? ""))
         #expect(packet.cwd == "/Users/test/project")
     }

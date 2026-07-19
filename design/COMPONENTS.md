@@ -188,7 +188,7 @@ Composer는 첫 디자인 시스템 파일럿 대상으로 삼는다.
 상태 계약:
 
 - main-agent 일반 prose는 완성된 문장마다 누적해 표시하며 TTS provider의 incremental 지원 여부와 분리한다.
-- `POINT`/`RECT`/`LINE` visual narration은 agentd가 부여한 segment·sentence identity를 사용하고 UI에서 DSL을 재파싱하지 않는다.
+- `RECT`/`LINE`/`PATH` visual narration은 agentd가 부여한 segment·sentence identity를 사용하고 UI에서 DSL을 재파싱하지 않는다. `PATH`는 agentd가 검증·정규화한 SVG v1 subset command 배열만 렌더링한다.
 - incremental TTS에서는 실제 sentence speech start에 맞춰 visual과 설명 bubble을 함께 전환한다.
 - non-incremental TTS와 TTS-off에서는 생성된 문장을 즉시 누적한다. non-incremental provider는 terminal에서 active visual sentence를 정리한 뒤 최종 응답을 한 번만 합성하고, TTS-off는 기존 text-reply minimum-display 경로로 settle한다.
 - 미래 visual이 준비되거나 문장이 도착해도 현재 incremental sentence가 재생되기 전에는 active visual bubble을 덮지 않는다.

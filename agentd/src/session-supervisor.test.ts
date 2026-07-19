@@ -1137,6 +1137,7 @@ describe("SessionSupervisor", () => {
     expect(bootstrap).toContain("## Picky visual overlay DSL");
     expect(bootstrap).toContain("[RECT: x=<number>");
     expect(bootstrap).toContain("[LINE: x1=<number>");
+    expect(bootstrap).toContain("[PATH: d=\"M <x> <y>");
   });
 
   it("prepares visual segments, streams their sentences, and commits at the next opener colon", async () => {
@@ -1169,18 +1170,34 @@ describe("SessionSupervisor", () => {
     await waitUntil(() => prepared.length === 1 && sentences.length === 1);
     expect(sentences[0]).toMatchObject({ index: 0, text: "첫 문장.", originSource: "voice", replyKind: "main" });
 
-    mainRuntime.handle?.emit({ type: "assistant_delta", delta: " 문장! [LI" });
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: " 문장! [PA" });
     await settle();
     expect(committed).toEqual([]);
 
-    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "NE:" });
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "TH:" });
     await waitUntil(() => committed.length === 1 && sentences.length === 2);
     expect(sentences[1]).toMatchObject({ index: 1, text: "둘째 문장!" });
     expect(committed[0]).toMatchObject({ text: "첫 문장. 둘째 문장!", sentenceCount: 2 });
     expect(prepared[0].identity).toEqual(committed[0].identity);
 
-    mainRuntime.handle?.emit({ type: "assistant_delta", delta: " x1=1 y1=2 x2=3 y2=4] 마지막 설명" });
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: " d=\"M 10 20 L 30 40 C 50 60 70 80 90 100\" label=\"Trend\"] 마지막 설명" });
     await waitUntil(() => prepared.length === 2);
+    expect(prepared[1]).toMatchObject({
+      visual: {
+        kind: "annotations",
+        request: {
+          annotations: [{
+            shape: "path",
+            commands: [
+              { type: "move", x: 10, y: 20 },
+              { type: "line", x: 30, y: 40 },
+              { type: "cubic", c1x: 50, c1y: 60, c2x: 70, c2y: 80, x: 90, y: 100 },
+            ],
+            label: "Trend",
+          }],
+        },
+      },
+    });
     expect(prepared[1].identity.ordinal).toBe(1);
     expect(prepared[1].identity.turnToken).toBe(prepared[0].identity.turnToken);
 

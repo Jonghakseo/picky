@@ -7,7 +7,7 @@
 
 import Foundation
 
-let pickyAgentProtocolVersion = "2026-07-17"
+let pickyAgentProtocolVersion = "2026-07-19"
 
 /// Identifiers for Picky's built-in tools exposed to the main agent.
 /// These names mirror `name:` on each `defineTool(...)` call in
@@ -496,7 +496,39 @@ enum PickyAnnotationOverlayMode: String, Codable, Equatable {
 }
 
 enum PickyAnnotationOverlayShape: String, Codable, Equatable {
-    case rect, line
+    case rect, line, path
+}
+
+enum PickyAnnotationPathCommandType: String, Codable, Equatable {
+    case move, line, cubic
+}
+
+struct PickyAnnotationPathCommand: Codable, Equatable {
+    let type: PickyAnnotationPathCommandType
+    let x: Double
+    let y: Double
+    let c1x: Double?
+    let c1y: Double?
+    let c2x: Double?
+    let c2y: Double?
+
+    init(
+        type: PickyAnnotationPathCommandType,
+        x: Double,
+        y: Double,
+        c1x: Double? = nil,
+        c1y: Double? = nil,
+        c2x: Double? = nil,
+        c2y: Double? = nil
+    ) {
+        self.type = type
+        self.x = x
+        self.y = y
+        self.c1x = c1x
+        self.c1y = c1y
+        self.c2x = c2x
+        self.c2y = c2y
+    }
 }
 
 struct PickyAnnotationOverlayAnnotation: Codable, Equatable, Identifiable {
@@ -510,9 +542,42 @@ struct PickyAnnotationOverlayAnnotation: Codable, Equatable, Identifiable {
     let y1: Double?
     let x2: Double?
     let y2: Double?
+    let commands: [PickyAnnotationPathCommand]?
     let spotlight: Bool?
     let label: String?
     let clamped: Bool?
+
+    init(
+        id: String,
+        shape: PickyAnnotationOverlayShape,
+        x: Double? = nil,
+        y: Double? = nil,
+        w: Double? = nil,
+        h: Double? = nil,
+        x1: Double? = nil,
+        y1: Double? = nil,
+        x2: Double? = nil,
+        y2: Double? = nil,
+        commands: [PickyAnnotationPathCommand]? = nil,
+        spotlight: Bool? = nil,
+        label: String? = nil,
+        clamped: Bool? = nil
+    ) {
+        self.id = id
+        self.shape = shape
+        self.x = x
+        self.y = y
+        self.w = w
+        self.h = h
+        self.x1 = x1
+        self.y1 = y1
+        self.x2 = x2
+        self.y2 = y2
+        self.commands = commands
+        self.spotlight = spotlight
+        self.label = label
+        self.clamped = clamped
+    }
 }
 
 struct PickyAnnotationOverlayRequest: Codable, Equatable, Identifiable {

@@ -1,6 +1,7 @@
 import type { AnnotationInput } from "./annotation-validation.js";
+import { parseAnnotationSvgPath } from "./annotation-svg-path.js";
 
-const KNOWN_VERBS = ["RECT", "LINE", "SCREEN"] as const;
+const KNOWN_VERBS = ["RECT", "LINE", "PATH", "SCREEN"] as const;
 type KnownVerb = typeof KNOWN_VERBS[number];
 export type AnnotationDslVisualVerb = Exclude<KnownVerb, "SCREEN">;
 
@@ -14,6 +15,7 @@ const HEAL_ORDER = [
   "unquoted single-token label",
   "numeric px unit",
   "rounded float",
+  "SVG path normalized",
   "boolean value",
   "duplicate key last-wins",
   "unknown key ignored",
@@ -224,6 +226,18 @@ export class AnnotationDslParser {
         annotation = { ...this.annotationBase("line", label), ...fields, ...(spotlight === undefined ? {} : { spotlight }) };
         break;
       }
+      case "PATH": {
+        const pathData = args.d;
+        if (!pathData?.quoted || !pathData.value.trim() || pathData.value.length > 4_096) {
+          return { error: "PATH requires quoted d data" };
+        }
+        const parsedPath = parseAnnotationSvgPath(pathData.value);
+        if (!parsedPath) return { error: "PATH has invalid or unsupported path data" };
+        if (parsedPath.normalized) heals.add("SVG path normalized");
+        if (parsedPath.rounded) heals.add("rounded float");
+        annotation = { ...this.annotationBase("path", label), commands: parsedPath.commands };
+        break;
+      }
       default:
         return { error: `unsupported ${verb} tag` };
     }
@@ -249,12 +263,13 @@ function allowedKeysFor(verb: KnownVerb): ReadonlySet<string> {
   switch (verb) {
     case "RECT": return new Set(["x", "y", "w", "h", "label", "spotlight"]);
     case "LINE": return new Set(["x1", "y1", "x2", "y2", "label", "spotlight"]);
+    case "PATH": return new Set(["d", "label"]);
     case "SCREEN": return new Set(["id"]);
   }
 }
 
 function isVisualVerb(value: string): value is AnnotationDslVisualVerb {
-  return value === "RECT" || value === "LINE";
+  return value === "RECT" || value === "LINE" || value === "PATH";
 }
 
 function isPartialKnownOpener(value: string): boolean {

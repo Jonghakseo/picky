@@ -1,6 +1,6 @@
 {
   "id": "cmd-create-empty-pickle-session-001",
-  "protocolVersion": "2026-07-17",
+  "protocolVersion": "2026-07-19",
   "type": "createEmptyPickleSession",
   "context": {
     "id": "context-manual-pickle-001",

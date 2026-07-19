@@ -1,5 +1,5 @@
 {
   "id": "cmd-abort-picky-001",
-  "protocolVersion": "2026-07-17",
+  "protocolVersion": "2026-07-19",
   "type": "abortMainAgent"
 }

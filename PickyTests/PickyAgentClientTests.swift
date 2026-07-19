@@ -39,7 +39,7 @@ private final class FakeWebSocketFactory: PickyWebSocketTaskMaking {
 private enum EventJSON {
     static func hello() -> String {
         """
-        {"id":"event-hello","protocolVersion":"2026-07-17","timestamp":"2026-05-01T00:00:00.000Z","type":"hello","serverName":"picky-agentd","supportedProtocolVersions":["2026-07-17"]}
+        {"id":"event-hello","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:00.000Z","type":"hello","serverName":"picky-agentd","supportedProtocolVersions":["2026-07-19"]}
         """
     }
 }
@@ -97,7 +97,7 @@ struct PickyAgentClientTests {
         let listJSON = try #require(String(data: listData, encoding: .utf8))
         #expect(listJSON.contains("\"type\":\"listRewindTargets\"") || listJSON.contains("\"type\" : \"listRewindTargets\""))
         #expect(listJSON.contains("\"sessionId\":\"session-1\"") || listJSON.contains("\"sessionId\" : \"session-1\""))
-        #expect(listJSON.contains("\"protocolVersion\":\"2026-07-17\"") || listJSON.contains("\"protocolVersion\" : \"2026-07-17\""))
+        #expect(listJSON.contains("\"protocolVersion\":\"2026-07-19\"") || listJSON.contains("\"protocolVersion\" : \"2026-07-19\""))
 
         let rewindData = try encoder.encode(PickyCommandEnvelope(id: "cmd-rewind", type: .rewindSession, sessionId: "session-1", entryId: "entry-3"))
         let rewindJSON = try #require(String(data: rewindData, encoding: .utf8))
@@ -109,7 +109,7 @@ struct PickyAgentClientTests {
     @Test func decodesRewindEvents() throws {
         let decoder = JSONDecoder.pickyAgentProtocolDecoder()
         let targets = try decoder.decode(PickyEventEnvelope.self, from: Data("""
-        {"id":"event-rewind-targets","protocolVersion":"2026-07-17","timestamp":"2026-05-01T00:00:02.000Z","type":"rewindTargetsSnapshot","sessionId":"session-1","requestId":"cmd-rewind-list","targets":[{"entryId":"entry-1","text":"첫 요청","createdAt":"2026-05-01T00:00:00.000Z"},{"entryId":"entry-2","text":"다음 요청","createdAt":null}]}
+        {"id":"event-rewind-targets","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:02.000Z","type":"rewindTargetsSnapshot","sessionId":"session-1","requestId":"cmd-rewind-list","targets":[{"entryId":"entry-1","text":"첫 요청","createdAt":"2026-05-01T00:00:00.000Z"},{"entryId":"entry-2","text":"다음 요청","createdAt":null}]}
         """.utf8))
         if case .rewindTargetsSnapshot(let sessionId, let requestId, let rewindTargets) = targets.event {
             #expect(sessionId == "session-1")
@@ -121,7 +121,7 @@ struct PickyAgentClientTests {
         } else { Issue.record("Expected rewindTargetsSnapshot") }
 
         let rewound = try decoder.decode(PickyEventEnvelope.self, from: Data("""
-        {"id":"event-rewound","protocolVersion":"2026-07-17","timestamp":"2026-05-01T00:00:03.000Z","type":"sessionRewound","sessionId":"session-1","editorText":"다시 작성할 요청","removedIds":["message-2","message-3"]}
+        {"id":"event-rewound","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:03.000Z","type":"sessionRewound","sessionId":"session-1","editorText":"다시 작성할 요청","removedIds":["message-2","message-3"]}
         """.utf8))
         if case .sessionRewound(let sessionId, let editorText, let removedIds) = rewound.event {
             #expect(sessionId == "session-1")
@@ -180,7 +180,7 @@ struct PickyAgentClientTests {
         task.receiveResults = [
             .success(.string(EventJSON.hello())),
             .success(.string("""
-            {"id":"event-session","protocolVersion":"2026-07-17","timestamp":"2026-05-01T00:00:01.000Z","type":"sessionUpdated","session":{"id":"session-1","title":"Work","status":"running","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:01.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}}
+            {"id":"event-session","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:01.000Z","type":"sessionUpdated","session":{"id":"session-1","title":"Work","status":"running","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:01.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}}
             """))
         ]
         let client = WebSocketPickyAgentClient(configuration: .init(port: 19001, token: "secret", reconnectDelay: 0.01), factory: FakeWebSocketFactory(task: task))
@@ -193,7 +193,7 @@ struct PickyAgentClientTests {
         let session = await iterator.next()
 
         if case .protocolEvent(let event)? = hello {
-            #expect(event.event == .hello(PickyHelloEvent(serverName: "picky-agentd", supportedProtocolVersions: ["2026-07-17"])))
+            #expect(event.event == .hello(PickyHelloEvent(serverName: "picky-agentd", supportedProtocolVersions: ["2026-07-19"])))
         } else { Issue.record("Expected hello") }
 
         if case .protocolEvent(let event)? = session,

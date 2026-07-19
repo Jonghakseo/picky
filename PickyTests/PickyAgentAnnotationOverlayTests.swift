@@ -21,6 +21,50 @@ struct PickyAgentAnnotationOverlayTests {
         #expect(resolved.first { $0.id == "line" }?.label == "Save")
     }
 
+    @Test func resolvesPATHCommandsAndUsesArcLengthMidpointForPointerGuidance() throws {
+        let commands = [
+            PickyAnnotationPathCommand(type: .move, x: 0, y: 0),
+            PickyAnnotationPathCommand(type: .line, x: 200, y: 100),
+            PickyAnnotationPathCommand(type: .cubic, x: 400, y: 200, c1x: 240, c1y: 120, c2x: 360, c2y: 180),
+        ]
+        let resolved = try #require(PickyAnnotationOverlayResolver.resolve(request(annotations: [
+            annotation(id: "path", shape: .path, commands: commands, label: "Trend"),
+        ])).first)
+
+        #expect(resolved.pathCommands == [
+            .move(CGPoint(x: 100, y: 300)),
+            .line(CGPoint(x: 200, y: 250)),
+            .cubic(
+                to: CGPoint(x: 300, y: 200),
+                control1: CGPoint(x: 220, y: 240),
+                control2: CGPoint(x: 280, y: 210)
+            ),
+        ])
+        #expect(resolved.spotlight == false)
+        #expect(resolved.label == "Trend")
+
+        let target = try #require(PickyAnnotationPointerTarget.make(resolved))
+        #expect(resolved.displayFrame.contains(target.screenLocation))
+        #expect(target.screenLocation.x > 190)
+        #expect(target.screenLocation.x < 210)
+    }
+
+    @Test func rejectsPATHSpotlightInTheSwiftResolver() {
+        #expect(throws: PickyAnnotationOverlayResolveError.self) {
+            _ = try PickyAnnotationOverlayResolver.resolve(request(annotations: [
+                annotation(
+                    id: "path",
+                    shape: .path,
+                    commands: [
+                        PickyAnnotationPathCommand(type: .move, x: 0, y: 0),
+                        PickyAnnotationPathCommand(type: .line, x: 10, y: 10),
+                    ],
+                    spotlight: true
+                ),
+            ]))
+        }
+    }
+
     @Test func bufferedAnnotationsRemainVisibleWithoutSpotlightAfterTheFinalTTSUtteranceDrains() {
         let annotation = resolvedAnnotation(id: "a", spotlight: true)
         let buffered = reduce(PickyInteractionState(), .agentAnnotationsRequested(mode: .append, annotations: [annotation]))
@@ -311,6 +355,25 @@ struct PickyAgentAnnotationOverlayTests {
 
         #expect(first == repeated)
         #expect(first != other)
+    }
+
+    @Test func roughPATHGeometryUsesTwoStableDistinctPasses() {
+        let commands: [PickyAgentAnnotationPathCommand] = [
+            .move(CGPoint(x: 10, y: 20)),
+            .line(CGPoint(x: 30, y: 40)),
+            .cubic(
+                to: CGPoint(x: 90, y: 100),
+                control1: CGPoint(x: 50, y: 60),
+                control2: CGPoint(x: 70, y: 80)
+            ),
+        ]
+        let first = PickyAnnotationRoughGeometry.pathPaths(id: "path", commands: commands)
+        let repeated = PickyAnnotationRoughGeometry.pathPaths(id: "path", commands: commands)
+
+        #expect(first == repeated)
+        #expect(first.count == 2)
+        #expect(first[0] != first[1])
+        #expect(first.allSatisfy { $0.commands.count == commands.count })
     }
 
     @Test func roughLinesAndRectangleEdgesUseTwoDistinctPasses() {
@@ -662,8 +725,8 @@ struct PickyAgentAnnotationOverlayTests {
         let json = """
         {
           "id":"event-annotations-001",
-          "protocolVersion":"2026-07-17",
-          "timestamp":"2026-07-17T00:00:00.000Z",
+          "protocolVersion":"2026-07-19",
+          "timestamp":"2026-07-19T00:00:00.000Z",
           "type":"annotationOverlayRequested",
           "request":{
             "id":"annotations-001","mode":"append","annotations":[{"id":"line-1","shape":"line","x1":0,"y1":0,"x2":10,"y2":10,"spotlight":true}],
@@ -796,9 +859,10 @@ struct PickyAgentAnnotationOverlayTests {
         shape: PickyAnnotationOverlayShape,
         x: Double? = nil, y: Double? = nil,
         w: Double? = nil, h: Double? = nil, x1: Double? = nil, y1: Double? = nil, x2: Double? = nil, y2: Double? = nil,
+        commands: [PickyAnnotationPathCommand]? = nil,
         spotlight: Bool? = nil, label: String? = nil
     ) -> PickyAnnotationOverlayAnnotation {
-        PickyAnnotationOverlayAnnotation(id: id, shape: shape, x: x, y: y, w: w, h: h, x1: x1, y1: y1, x2: x2, y2: y2, spotlight: spotlight, label: label, clamped: nil)
+        PickyAnnotationOverlayAnnotation(id: id, shape: shape, x: x, y: y, w: w, h: h, x1: x1, y1: y1, x2: x2, y2: y2, commands: commands, spotlight: spotlight, label: label, clamped: nil)
     }
 
     private func resolvedAnnotation(id: String, spotlight: Bool = false) -> PickyAgentAnnotation {

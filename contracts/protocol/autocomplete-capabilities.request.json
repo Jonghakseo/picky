@@ -1,6 +1,6 @@
 {
   "id": "cmd-autocomplete-capabilities",
-  "protocolVersion": "2026-07-17",
+  "protocolVersion": "2026-07-19",
   "type": "getAutocompleteCapabilities",
   "sessionId": "session-1"
 }

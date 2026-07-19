@@ -15,6 +15,10 @@ enum PickyAnnotationPointerTarget {
         case .line:
             guard let start = annotation.point, let end = annotation.endPoint else { return nil }
             anchor = CGPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
+        case .path:
+            guard let commands = annotation.pathCommands,
+                  let midpoint = PickyAnnotationPathGeometry.arcLengthMidpoint(for: commands) else { return nil }
+            anchor = midpoint
         }
         return PickyPointerTarget(
             id: "annotation-\(annotation.id)",

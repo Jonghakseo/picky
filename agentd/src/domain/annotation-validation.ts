@@ -1,8 +1,12 @@
 import type { ScreenshotSize } from "./pointer-validation.js";
 
-export const ANNOTATION_SHAPES = ["rect", "line"] as const;
+export const ANNOTATION_SHAPES = ["rect", "line", "path"] as const;
 export type AnnotationShape = typeof ANNOTATION_SHAPES[number];
 export type AnnotationMode = "replace" | "append" | "clear";
+
+export type AnnotationPathCommand =
+  | { type: "move" | "line"; x: number; y: number }
+  | { type: "cubic"; c1x: number; c1y: number; c2x: number; c2y: number; x: number; y: number };
 
 export interface AnnotationInput {
   id: string;
@@ -15,6 +19,7 @@ export interface AnnotationInput {
   y1?: number;
   x2?: number;
   y2?: number;
+  commands?: AnnotationPathCommand[];
   spotlight?: boolean;
   label?: string;
 }
@@ -42,7 +47,48 @@ export function clampAnnotation(annotation: AnnotationInput, screenshotSize: Scr
         x2: coordinate(input.x2, "x", "x2"),
         y2: coordinate(input.y2, "y", "y2"),
       }, clamped);
+    case "path":
+      return clampPath(input, coordinate, clamped);
   }
+}
+
+function clampPath(
+  input: AnnotationInput,
+  coordinate: (value: number | undefined, axis: "x" | "y", field: string) => number,
+  initialClamped: boolean,
+): ClampedAnnotation {
+  if (input.spotlight !== undefined) throw new Error("path does not support spotlight.");
+  const commands = input.commands;
+  if (!commands || commands.length < 2 || commands.length > 32 || commands[0]?.type !== "move") {
+    throw new Error("path requires 2 to 32 commands beginning with move.");
+  }
+  let clamped = initialClamped;
+  const bounded = commands.map((command, index): AnnotationPathCommand => {
+    const x = coordinate(command.x, "x", `commands[${index}].x`);
+    const y = coordinate(command.y, "y", `commands[${index}].y`);
+    clamped ||= x !== command.x || y !== command.y;
+    if (command.type !== "cubic") return { type: command.type, x, y };
+    const c1x = coordinate(command.c1x, "x", `commands[${index}].c1x`);
+    const c1y = coordinate(command.c1y, "y", `commands[${index}].c1y`);
+    const c2x = coordinate(command.c2x, "x", `commands[${index}].c2x`);
+    const c2y = coordinate(command.c2y, "y", `commands[${index}].c2y`);
+    clamped ||= c1x !== command.c1x || c1y !== command.c1y || c2x !== command.c2x || c2y !== command.c2y;
+    return { type: "cubic", c1x, c1y, c2x, c2y, x, y };
+  });
+  if (bounded.slice(1).some((command) => command.type === "move")) {
+    throw new Error("path supports one connected subpath.");
+  }
+  if (!hasPathExtent(bounded)) throw new Error("path must contain visible geometry.");
+  return withClamped(input, { commands: bounded }, clamped);
+}
+
+function hasPathExtent(commands: AnnotationPathCommand[]): boolean {
+  const first = commands[0];
+  if (!first) return false;
+  return commands.some((command) => command.x !== first.x || command.y !== first.y || (
+    command.type === "cubic"
+      && (command.c1x !== first.x || command.c1y !== first.y || command.c2x !== first.x || command.c2y !== first.y)
+  ));
 }
 
 function clampRect(

@@ -182,13 +182,44 @@ describe("AnnotationDslParser", () => {
     expect(`${first.cleanText}${second.cleanText}`).toBe("먼저 다음");
   });
 
+  it("parses PATH d data and strips unsupported spotlight arguments", () => {
+    const parser = new AnnotationDslParser();
+    const result = parser.feed('[PATH: d="M 10 20 L 30 40 C 50 60 70 80 90 100" label="Trend" spotlight]');
+
+    expect(result.completedTags).toEqual([{
+      kind: "annotation",
+      annotation: {
+        id: "dsl-1",
+        shape: "path",
+        commands: [
+          { type: "move", x: 10, y: 20 },
+          { type: "line", x: 30, y: 40 },
+          { type: "cubic", c1x: 50, c1y: 60, c2x: 70, c2y: 80, x: 90, y: 100 },
+        ],
+        label: "Trend",
+      },
+    }]);
+    expect(result.healedTags).toEqual(["PATH: unknown key ignored"]);
+  });
+
+  it("normalizes supported noncanonical SVG commands and drops paths containing arcs", () => {
+    const parser = new AnnotationDslParser();
+    const healed = parser.feed('[PATH: d="m 10 10 h 20 v 30 q 10 10 20 0 z"]');
+    const dropped = parser.feed('[PATH: d="M 0 0 A 10 10 0 0 1 20 20"]');
+
+    expect(healed.completedTags[0]).toMatchObject({ kind: "annotation", annotation: { shape: "path" } });
+    expect(healed.healedTags).toEqual(["PATH: SVG path normalized"]);
+    expect(dropped.completedTags).toEqual([]);
+    expect(dropped.droppedTags).toEqual(["PATH has invalid or unsupported path data"]);
+  });
+
   it("emits visual boundaries at the opener colon before a tag closes", () => {
     const parser = new AnnotationDslParser();
 
-    const first = parser.feed("[RECT:");
-    const second = parser.feed(" x=1 y=2 w=3 h=4]");
+    const first = parser.feed("[PATH:");
+    const second = parser.feed(' d="M 1 2 L 3 4"]');
 
-    expect(first.streamItems).toEqual([{ kind: "visualBoundary", verb: "RECT" }]);
+    expect(first.streamItems).toEqual([{ kind: "visualBoundary", verb: "PATH" }]);
     expect(first.completedTags).toEqual([]);
     expect(second.streamItems).toEqual([{ kind: "tag", tag: second.completedTags[0] }]);
   });

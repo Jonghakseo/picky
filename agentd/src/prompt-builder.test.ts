@@ -76,6 +76,10 @@ describe("neutral prompt builder", () => {
     expect(allEnabled.user).toContain("## Picky visual overlay DSL");
     expect(allEnabled.user).toContain("[RECT: x=<number>");
     expect(allEnabled.user).toContain("[LINE: x1=<number>");
+    expect(allEnabled.user).toContain("[PATH: d=\"M <x> <y> L <x> <y> C");
+    expect(allEnabled.user).toContain("canonical v1 subset is uppercase M (move), L (line), and C (cubic Bézier)");
+    expect(allEnabled.user).toContain("Elliptical arc A/a is unsupported");
+    expect(allEnabled.user).toContain("PATH does not support `spotlight`");
     expect(allEnabled.user).toContain("spotlight=true");
     expect(allEnabled.user).not.toContain("[SPOT" + "LIGHT:");
     expect(allEnabled.user).toContain("invisible in the user's transcript");

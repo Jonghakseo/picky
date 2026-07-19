@@ -28,7 +28,7 @@ struct PickyAgentAnnotationOverlayView: View {
 
     /// Semantic layers are intentionally fixed: agents cannot control stacking.
     private var outlineShapes: [PickyAgentAnnotation] {
-        [.rect, .line].flatMap { shape in
+        [.rect, .line, .path].flatMap { shape in
             annotationsForScreen.filter { $0.shape == shape }
         }
     }
@@ -78,6 +78,13 @@ struct PickyAgentAnnotationOverlayView: View {
             if let start = localPoint(annotation.point), let end = localPoint(annotation.endPoint) {
                 PickyRoughStrokeView(
                     paths: PickyAnnotationRoughGeometry.linePaths(id: annotation.id, start: start, end: end),
+                    visualStyle: annotation.visualStyle
+                )
+            }
+        case .path:
+            if let commands = localPathCommands(annotation.pathCommands) {
+                PickyRoughStrokeView(
+                    paths: PickyAnnotationRoughGeometry.pathPaths(id: annotation.id, commands: commands),
                     visualStyle: annotation.visualStyle
                 )
             }
@@ -146,6 +153,25 @@ struct PickyAgentAnnotationOverlayView: View {
         let topLeft = PickyOverlayGeometry.swiftUICoordinates(for: CGPoint(x: rect.minX, y: rect.maxY), in: screenFrame)
         return CGRect(origin: topLeft, size: rect.size)
     }
+
+    private func localPathCommands(
+        _ commands: [PickyAgentAnnotationPathCommand]?
+    ) -> [PickyAgentAnnotationPathCommand]? {
+        guard let commands else { return nil }
+        return commands.compactMap { command in
+            switch command {
+            case .move(let point):
+                return localPoint(point).map(PickyAgentAnnotationPathCommand.move)
+            case .line(let point):
+                return localPoint(point).map(PickyAgentAnnotationPathCommand.line)
+            case .cubic(to: let destination, control1: let control1, control2: let control2):
+                guard let localDestination = localPoint(destination),
+                      let localControl1 = localPoint(control1),
+                      let localControl2 = localPoint(control2) else { return nil }
+                return .cubic(to: localDestination, control1: localControl1, control2: localControl2)
+            }
+        }
+    }
 }
 
 /// Boundary-safe text-chip anchors for outline annotations. Candidate positions keep
@@ -187,6 +213,16 @@ enum PickyAnnotationLabelGeometry {
                 CGPoint(x: rightPoint.x + labelGap + halfWidth, y: rightPoint.y),
                 CGPoint(x: midpoint.x, y: midpoint.y - labelGap - halfHeight),
                 CGPoint(x: midpoint.x, y: midpoint.y + labelGap + halfHeight),
+            ]
+        case .path:
+            guard let commands = annotation.pathCommands,
+                  let pathBounds = PickyAnnotationPathGeometry.bounds(for: commands) else { return nil }
+            let localBounds = localRect(pathBounds, in: screenFrame)
+            candidates = [
+                CGPoint(x: localBounds.maxX + labelGap + halfWidth, y: localBounds.midY),
+                CGPoint(x: localBounds.minX - labelGap - halfWidth, y: localBounds.midY),
+                CGPoint(x: localBounds.midX, y: localBounds.minY - labelGap - halfHeight),
+                CGPoint(x: localBounds.midX, y: localBounds.maxY + labelGap + halfHeight),
             ]
         }
 
@@ -322,6 +358,8 @@ enum PickyAnnotationSpotlightMaskGeometry {
                     width: abs(localEnd.x - localStart.x) + linePadding * 2,
                     height: abs(localEnd.y - localStart.y) + linePadding * 2
                 ))
+            case .path:
+                return nil
             }
         }
     }
@@ -372,6 +410,36 @@ enum PickyAnnotationRoughGeometry {
     static func linePaths(id: String, start: CGPoint, end: CGPoint) -> [PickyRoughPath] {
         (0..<passCount).map { pass in
             roughLine(id: id, shape: .line, seedIndex: pass, start: start, end: end, overshoot: 0)
+        }
+    }
+
+    static func pathPaths(
+        id: String,
+        commands: [PickyAgentAnnotationPathCommand]
+    ) -> [PickyRoughPath] {
+        (0..<passCount).map { pass in
+            var random = PickySeededRandom(seed: seed(id: id, shape: .path, pass: pass))
+            let jitter = { (point: CGPoint, random: inout PickySeededRandom) -> CGPoint in
+                offset(point, by: CGPoint(
+                    x: random.offset(maximum: roughness * 0.45),
+                    y: random.offset(maximum: roughness * 0.45)
+                ))
+            }
+            let roughCommands = commands.map { command -> PickyRoughPathCommand in
+                switch command {
+                case .move(let point):
+                    return .move(jitter(point, &random))
+                case .line(let point):
+                    return .line(jitter(point, &random))
+                case .cubic(to: let destination, control1: let control1, control2: let control2):
+                    return .curve(
+                        to: jitter(destination, &random),
+                        control1: jitter(control1, &random),
+                        control2: jitter(control2, &random)
+                    )
+                }
+            }
+            return PickyRoughPath(commands: roughCommands)
         }
     }
 

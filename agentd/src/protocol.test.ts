@@ -54,8 +54,8 @@ function unknownFixtureKeys(schema: z.ZodTypeAny, fixture: unknown, path = ""): 
 function pointerOverlayEvent(extraRequestFields: Record<string, unknown> = {}) {
   return {
     id: "event-pointer-legacy",
-    protocolVersion: "2026-07-17",
-    timestamp: "2026-07-17T00:00:00.000Z",
+    protocolVersion: "2026-07-19",
+    timestamp: "2026-07-19T00:00:00.000Z",
     type: "pointerOverlayRequested",
     request: {
       id: "pointer-legacy",
@@ -71,8 +71,8 @@ function pointerOverlayEvent(extraRequestFields: Record<string, unknown> = {}) {
 function annotationOverlayEvent(annotation: Record<string, unknown>) {
   return {
     id: "event-annotation-legacy",
-    protocolVersion: "2026-07-17",
-    timestamp: "2026-07-17T00:00:00.000Z",
+    protocolVersion: "2026-07-19",
+    timestamp: "2026-07-19T00:00:00.000Z",
     type: "annotationOverlayRequested",
     request: {
       id: "annotation-legacy",
@@ -112,8 +112,8 @@ describe("protocol contract fixtures", () => {
   it("detects nested unknown keys in event fixtures", () => {
     const fixture = {
       id: "event-pointer-overlay",
-      protocolVersion: "2026-07-17",
-      timestamp: "2026-07-17T00:00:00.000Z",
+      protocolVersion: "2026-07-19",
+      timestamp: "2026-07-19T00:00:00.000Z",
       type: "pointerOverlayRequested",
       request: {
         id: "pointer-001",
@@ -200,6 +200,23 @@ describe("protocol contract fixtures", () => {
     expect(legacy).toEqual(current);
   });
 
+  it("accepts structured PATH commands and rejects PATH spotlight", () => {
+    const annotation = {
+      id: "annotation-path",
+      shape: "path",
+      commands: [
+        { type: "move", x: 10, y: 20 },
+        { type: "cubic", c1x: 30, c1y: 40, c2x: 50, c2y: 60, x: 70, y: 80 },
+      ],
+    } as const;
+
+    expect(EventEnvelopeSchema.parse(annotationOverlayEvent(annotation))).toMatchObject({
+      type: "annotationOverlayRequested",
+      request: { annotations: [annotation] },
+    });
+    expect(() => EventEnvelopeSchema.parse(annotationOverlayEvent({ ...annotation, spotlight: true }))).toThrow("path does not support spotlight");
+  });
+
   it("rejects retired annotation circle and target shapes", () => {
     for (const shape of ["circle", "target"]) {
       expect(() => EventEnvelopeSchema.parse(annotationOverlayEvent({ id: `annotation-${shape}`, shape }))).toThrow();
@@ -218,7 +235,7 @@ describe("protocol contract fixtures", () => {
     expect(() =>
       CommandEnvelopeSchema.parse({
         id: "cmd-pin",
-        protocolVersion: "2026-07-17",
+        protocolVersion: "2026-07-19",
         type: "pinPickleSession",
         title: "Pinned Pi session",
         context: {
@@ -238,7 +255,7 @@ describe("protocol contract fixtures", () => {
     expect(() =>
       CommandEnvelopeSchema.parse({
         id: "cmd-empty-pickle",
-        protocolVersion: "2026-07-17",
+        protocolVersion: "2026-07-19",
         type: "createEmptyPickleSession",
         context: {
           id: "context-empty-pickle",
@@ -261,7 +278,7 @@ describe("protocol contract fixtures", () => {
       expect(() =>
         CommandEnvelopeSchema.parse({
           id: `cmd-pickle-${command.type}`,
-          protocolVersion: "2026-07-17",
+          protocolVersion: "2026-07-19",
           ...command,
         }),
       ).not.toThrow();
@@ -271,7 +288,7 @@ describe("protocol contract fixtures", () => {
   it("parses steer commands with optional captured context", () => {
     const parsed = CommandEnvelopeSchema.parse({
       id: "cmd-steer-context",
-      protocolVersion: "2026-07-17",
+      protocolVersion: "2026-07-19",
       type: "steer",
       sessionId: "session-001",
       text: "look at this screenshot",
@@ -296,7 +313,7 @@ describe("protocol contract fixtures", () => {
       expect(() =>
         CommandEnvelopeSchema.parse({
           id: `cmd-clear-${kind}`,
-          protocolVersion: "2026-07-17",
+          protocolVersion: "2026-07-19",
           type: "clearQueue",
           sessionId: "session-001",
           kind,
@@ -308,7 +325,7 @@ describe("protocol contract fixtures", () => {
   it("parses slim todo state updates including authoritative clears", () => {
     expect(EventEnvelopeSchema.parse({
       id: "event-todo-state",
-      protocolVersion: "2026-07-17",
+      protocolVersion: "2026-07-19",
       timestamp: "2026-07-14T01:00:00.000Z",
       type: "sessionTodoStateUpdated",
       sessionId: "session-001",
@@ -320,14 +337,14 @@ describe("protocol contract fixtures", () => {
   it("parses message rewind commands and events", () => {
     expect(CommandEnvelopeSchema.parse({
       id: "cmd-list-rewind",
-      protocolVersion: "2026-07-17",
+      protocolVersion: "2026-07-19",
       type: "listRewindTargets",
       sessionId: "session-001",
     })).toMatchObject({ type: "listRewindTargets", sessionId: "session-001" });
 
     expect(CommandEnvelopeSchema.parse({
       id: "cmd-rewind",
-      protocolVersion: "2026-07-17",
+      protocolVersion: "2026-07-19",
       type: "rewindSession",
       sessionId: "session-001",
       entryId: "entry-user-2",
@@ -335,18 +352,18 @@ describe("protocol contract fixtures", () => {
 
     expect(EventEnvelopeSchema.parse({
       id: "event-rewind-targets",
-      protocolVersion: "2026-07-17",
-      timestamp: "2026-07-17T00:00:00.000Z",
+      protocolVersion: "2026-07-19",
+      timestamp: "2026-07-19T00:00:00.000Z",
       type: "rewindTargetsSnapshot",
       sessionId: "session-001",
       requestId: "cmd-list-rewind",
-      targets: [{ entryId: "entry-user-1", text: "A", createdAt: "2026-07-17T00:00:00.000Z" }],
+      targets: [{ entryId: "entry-user-1", text: "A", createdAt: "2026-07-19T00:00:00.000Z" }],
     })).toMatchObject({ type: "rewindTargetsSnapshot", targets: [{ entryId: "entry-user-1", text: "A" }] });
 
     expect(EventEnvelopeSchema.parse({
       id: "event-rewound",
-      protocolVersion: "2026-07-17",
-      timestamp: "2026-07-17T00:00:00.000Z",
+      protocolVersion: "2026-07-19",
+      timestamp: "2026-07-19T00:00:00.000Z",
       type: "sessionRewound",
       sessionId: "session-001",
       editorText: "B",
@@ -357,22 +374,22 @@ describe("protocol contract fixtures", () => {
   it("parses external push-to-talk control command and events", () => {
     expect(CommandEnvelopeSchema.parse({
       id: "cmd-ptt-press",
-      protocolVersion: "2026-07-17",
+      protocolVersion: "2026-07-19",
       type: "controlPushToTalkFromExternal",
       action: "press",
     })).toMatchObject({ type: "controlPushToTalkFromExternal", action: "press" });
 
     expect(CommandEnvelopeSchema.parse({
       id: "cmd-ptt-complete",
-      protocolVersion: "2026-07-17",
+      protocolVersion: "2026-07-19",
       type: "completePushToTalkControlRequest",
       requestId: "ptt-control-1",
     })).toMatchObject({ type: "completePushToTalkControlRequest", requestId: "ptt-control-1" });
 
     expect(EventEnvelopeSchema.parse({
       id: "event-ptt-request",
-      protocolVersion: "2026-07-17",
-      timestamp: "2026-07-17T00:00:00.000Z",
+      protocolVersion: "2026-07-19",
+      timestamp: "2026-07-19T00:00:00.000Z",
       type: "pushToTalkControlRequested",
       requestId: "ptt-control-1",
       action: "release",
@@ -380,8 +397,8 @@ describe("protocol contract fixtures", () => {
 
     expect(EventEnvelopeSchema.parse({
       id: "event-ptt-ack",
-      protocolVersion: "2026-07-17",
-      timestamp: "2026-07-17T00:00:00.000Z",
+      protocolVersion: "2026-07-19",
+      timestamp: "2026-07-19T00:00:00.000Z",
       type: "pushToTalkControlAck",
       commandId: "cmd-ptt-release",
       action: "release",
@@ -392,7 +409,7 @@ describe("protocol contract fixtures", () => {
     expect(() =>
       EventEnvelopeSchema.parse({
         id: "event-message-appended",
-        protocolVersion: "2026-07-17",
+        protocolVersion: "2026-07-19",
         timestamp: "2026-05-05T00:00:00.000Z",
         type: "sessionMessageAppended",
         sessionId: "session-001",
@@ -413,7 +430,7 @@ describe("protocol contract fixtures", () => {
     expect(() =>
       EventEnvelopeSchema.parse({
         id: "event-notify-message",
-        protocolVersion: "2026-07-17",
+        protocolVersion: "2026-07-19",
         timestamp: "2026-05-05T00:00:00.000Z",
         type: "sessionMessageAppended",
         sessionId: "session-001",
@@ -433,7 +450,7 @@ describe("protocol contract fixtures", () => {
     expect(() =>
       EventEnvelopeSchema.parse({
         id: "event-activity-message",
-        protocolVersion: "2026-07-17",
+        protocolVersion: "2026-07-19",
         timestamp: "2026-05-05T00:00:00.000Z",
         type: "sessionMessageAppended",
         sessionId: "session-001",
@@ -451,7 +468,7 @@ describe("protocol contract fixtures", () => {
   it("parses session queue updates with optional mode fields", () => {
     const base = {
       id: "event-queue-updated",
-      protocolVersion: "2026-07-17",
+      protocolVersion: "2026-07-19",
       timestamp: "2026-05-05T00:00:00.000Z",
       type: "sessionQueueUpdated",
       sessionId: "session-001",

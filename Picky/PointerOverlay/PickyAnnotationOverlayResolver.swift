@@ -99,6 +99,43 @@ enum PickyAnnotationOverlayResolver {
                 label: normalizedLabel(annotation.label),
                 visualStyle: visualStyle
             )
+        case .path:
+            guard annotation.spotlight == nil else {
+                throw PickyAnnotationOverlayResolveError.invalidGeometry(annotationID: annotation.id, field: "spotlight")
+            }
+            return PickyAgentAnnotation(
+                id: annotation.id,
+                shape: annotation.shape,
+                displayFrame: displayFrame,
+                pathCommands: try pathCommands(annotation, point: point),
+                label: normalizedLabel(annotation.label),
+                visualStyle: visualStyle
+            )
+        }
+    }
+
+    private static func pathCommands(
+        _ annotation: PickyAnnotationOverlayAnnotation,
+        point: (Double?, Double?, String, String) throws -> CGPoint
+    ) throws -> [PickyAgentAnnotationPathCommand] {
+        guard let commands = annotation.commands,
+              (2...32).contains(commands.count),
+              commands.first?.type == .move,
+              !commands.dropFirst().contains(where: { $0.type == .move }) else {
+            throw PickyAnnotationOverlayResolveError.invalidGeometry(annotationID: annotation.id, field: "commands")
+        }
+        return try commands.enumerated().map { index, command in
+            let destination = try point(command.x, command.y, "commands[\(index)].x", "commands[\(index)].y")
+            switch command.type {
+            case .move:
+                return .move(destination)
+            case .line:
+                return .line(destination)
+            case .cubic:
+                let control1 = try point(command.c1x, command.c1y, "commands[\(index)].c1x", "commands[\(index)].c1y")
+                let control2 = try point(command.c2x, command.c2y, "commands[\(index)].c2x", "commands[\(index)].c2y")
+                return .cubic(to: destination, control1: control1, control2: control2)
+            }
         }
     }
 

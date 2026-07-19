@@ -1,6 +1,6 @@
 {
   "id": "cmd-steer-001",
-  "protocolVersion": "2026-07-17",
+  "protocolVersion": "2026-07-19",
   "type": "steer",
   "sessionId": "session-001",
   "text": "Prefer read-only investigation for now."

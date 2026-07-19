@@ -249,7 +249,54 @@ enum PickyAnnotationPaletteResolver {
                     y: CGFloat(y1) + CGFloat(y2 - y1) * progress
                 )
             }
+        case .path:
+            return pathSamplePoints(annotation.commands ?? [])
         }
+    }
+
+    private static func pathSamplePoints(_ commands: [PickyAnnotationPathCommand]) -> [CGPoint] {
+        var points: [CGPoint] = []
+        var current: CGPoint?
+        for command in commands {
+            let destination = CGPoint(x: CGFloat(command.x), y: CGFloat(command.y))
+            switch command.type {
+            case .move:
+                current = destination
+                points.append(destination)
+            case .line:
+                guard let start = current else { continue }
+                for index in 1...8 {
+                    let progress = CGFloat(index) / 8
+                    points.append(CGPoint(
+                        x: start.x + (destination.x - start.x) * progress,
+                        y: start.y + (destination.y - start.y) * progress
+                    ))
+                }
+                current = destination
+            case .cubic:
+                guard let start = current,
+                      let c1x = command.c1x, let c1y = command.c1y,
+                      let c2x = command.c2x, let c2y = command.c2y else { continue }
+                let control1 = CGPoint(x: CGFloat(c1x), y: CGFloat(c1y))
+                let control2 = CGPoint(x: CGFloat(c2x), y: CGFloat(c2y))
+                for index in 1...16 {
+                    let progress = CGFloat(index) / 16
+                    let inverse = 1 - progress
+                    points.append(CGPoint(
+                        x: start.x * inverse * inverse * inverse
+                            + control1.x * 3 * inverse * inverse * progress
+                            + control2.x * 3 * inverse * progress * progress
+                            + destination.x * progress * progress * progress,
+                        y: start.y * inverse * inverse * inverse
+                            + control1.y * 3 * inverse * inverse * progress
+                            + control2.y * 3 * inverse * progress * progress
+                            + destination.y * progress * progress * progress
+                    ))
+                }
+                current = destination
+            }
+        }
+        return points
     }
 
     private static func preferredPalette(for samples: [PickyScreenshotSampleColor]) -> PickyAnnotationPaletteRole {

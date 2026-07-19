@@ -547,6 +547,8 @@ final class PickyAnnotationSceneMonitor {
                 } else {
                     geometry = nil
                 }
+            case .path:
+                geometry = annotation.pathCommands.flatMap(PickyAnnotationPathGeometry.bounds)
             }
             guard var geometry else { return }
             geometry = geometry.insetBy(dx: -16, dy: -16)

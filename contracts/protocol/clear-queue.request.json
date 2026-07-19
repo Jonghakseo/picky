@@ -1,6 +1,6 @@
 {
   "id": "cmd-clear-queue",
-  "protocolVersion": "2026-07-17",
+  "protocolVersion": "2026-07-19",
   "type": "clearQueue",
   "sessionId": "session-001",
   "kind": "all"

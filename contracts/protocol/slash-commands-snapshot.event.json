@@ -1,6 +1,6 @@
 {
   "id": "event-slash-commands-001",
-  "protocolVersion": "2026-07-17",
+  "protocolVersion": "2026-07-19",
   "timestamp": "2026-05-01T00:00:00.000Z",
   "type": "slashCommandsSnapshot",
   "sessionId": "session-001",

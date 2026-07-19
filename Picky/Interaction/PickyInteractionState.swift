@@ -438,6 +438,7 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
     var point: CGPoint?
     var endPoint: CGPoint?
     var rect: CGRect?
+    var pathCommands: [PickyAgentAnnotationPathCommand]?
     var spotlight: Bool
     let label: String?
     let visualStyle: PickyAnnotationVisualStyle
@@ -449,6 +450,7 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
         point: CGPoint? = nil,
         endPoint: CGPoint? = nil,
         rect: CGRect? = nil,
+        pathCommands: [PickyAgentAnnotationPathCommand]? = nil,
         spotlight: Bool = false,
         label: String?,
         visualStyle: PickyAnnotationVisualStyle = .fallback
@@ -459,13 +461,14 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
         self.point = point
         self.endPoint = endPoint
         self.rect = rect
+        self.pathCommands = pathCommands
         self.spotlight = spotlight
         self.label = label
         self.visualStyle = visualStyle
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, shape, displayFrame, point, endPoint, rect, spotlight, label, visualStyle
+        case id, shape, displayFrame, point, endPoint, rect, pathCommands, spotlight, label, visualStyle
     }
 
     init(from decoder: Decoder) throws {
@@ -476,6 +479,7 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
         point = try container.decodeIfPresent(CGPoint.self, forKey: .point)
         endPoint = try container.decodeIfPresent(CGPoint.self, forKey: .endPoint)
         rect = try container.decodeIfPresent(CGRect.self, forKey: .rect)
+        pathCommands = try container.decodeIfPresent([PickyAgentAnnotationPathCommand].self, forKey: .pathCommands)
         spotlight = try container.decodeIfPresent(Bool.self, forKey: .spotlight) ?? false
         label = try container.decodeIfPresent(String.self, forKey: .label)
         visualStyle = try container.decodeIfPresent(PickyAnnotationVisualStyle.self, forKey: .visualStyle) ?? .fallback

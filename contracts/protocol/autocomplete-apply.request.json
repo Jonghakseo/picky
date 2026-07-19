@@ -1,6 +1,6 @@
 {
   "id": "cmd-autocomplete-apply",
-  "protocolVersion": "2026-07-17",
+  "protocolVersion": "2026-07-19",
   "type": "autocompleteApply",
   "sessionId": "session-1",
   "generation": 3,

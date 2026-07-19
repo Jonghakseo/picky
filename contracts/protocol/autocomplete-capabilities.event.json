@@ -1,7 +1,7 @@
 {
   "id": "event-autocomplete-capabilities",
-  "protocolVersion": "2026-07-17",
-  "timestamp": "2026-07-17T00:00:00.000Z",
+  "protocolVersion": "2026-07-19",
+  "timestamp": "2026-07-19T00:00:00.000Z",
   "type": "autocompleteCapabilitiesSnapshot",
   "sessionId": "session-1",
   "requestId": "cmd-autocomplete-capabilities",

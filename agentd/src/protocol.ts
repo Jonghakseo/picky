@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const PROTOCOL_VERSION = "2026-07-17";
+export const PROTOCOL_VERSION = "2026-07-19";
 
 const isoTimestamp = z.string().datetime({ offset: true });
 
@@ -278,7 +278,16 @@ export const PickyPointerOverlayRequestSchema = z.object({
 });
 export type PickyPointerOverlayRequest = z.infer<typeof PickyPointerOverlayRequestSchema>;
 
-const PickyAnnotationShapeSchema = z.enum(["rect", "line"]);
+const PickyAnnotationShapeSchema = z.enum(["rect", "line", "path"]);
+const PickyAnnotationPathCommandSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.enum(["move", "line"]), x: z.number().finite(), y: z.number().finite() }),
+  z.object({
+    type: z.literal("cubic"),
+    c1x: z.number().finite(), c1y: z.number().finite(),
+    c2x: z.number().finite(), c2y: z.number().finite(),
+    x: z.number().finite(), y: z.number().finite(),
+  }),
+]);
 export const PickyAnnotationOverlayAnnotationSchema = z.object({
   id: z.string().min(1),
   shape: PickyAnnotationShapeSchema,
@@ -290,9 +299,17 @@ export const PickyAnnotationOverlayAnnotationSchema = z.object({
   y1: z.number().finite().optional(),
   x2: z.number().finite().optional(),
   y2: z.number().finite().optional(),
+  commands: z.array(PickyAnnotationPathCommandSchema).min(2).max(32).optional(),
   spotlight: z.boolean().optional(),
   label: z.string().optional(),
   clamped: z.boolean().optional(),
+}).superRefine((annotation, context) => {
+  if (annotation.shape === "path") {
+    if (!annotation.commands) context.addIssue({ code: z.ZodIssueCode.custom, message: "path requires commands", path: ["commands"] });
+    if (annotation.spotlight !== undefined) context.addIssue({ code: z.ZodIssueCode.custom, message: "path does not support spotlight", path: ["spotlight"] });
+  } else if (annotation.commands !== undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: `${annotation.shape} does not support commands`, path: ["commands"] });
+  }
 });
 export type PickyAnnotationOverlayAnnotation = z.infer<typeof PickyAnnotationOverlayAnnotationSchema>;
 

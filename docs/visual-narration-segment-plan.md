@@ -78,9 +78,9 @@ Picky's visual overlay DSL already requires the main agent to place a visual tag
 [LINE: ...] The second explanation.
 ```
 
-Today, the visual request and narration are transported and scheduled separately. The cursor response bubble is driven by sentence-sized TTS chunks, while RECT/LINE reveal is driven by weighted timers. As a result, a fast stream can prepare several visuals before the first utterance finishes, generic overlay status text can overwrite the current response bubble, and the bubble has no durable identity connecting it to the visual that is actually active.
+Today, the visual request and narration are transported and scheduled separately. The cursor response bubble is driven by sentence-sized TTS chunks, while RECT/LINE/PATH reveal is driven by weighted timers. As a result, a fast stream can prepare several visuals before the first utterance finishes, generic overlay status text can overwrite the current response bubble, and the bubble has no durable identity connecting it to the visual that is actually active.
 
-This plan introduces a canonical **Visual Narration Segment** owned by `picky-agentd`. One segment binds exactly one RECT/LINE visual to all prose after that tag and before the next visual tag. Picky.app prepares geometry early, commits prose as soon as the next visual opener is lexically known, and activates the visual and response bubble together at the correct playback/reveal point.
+This plan introduces a canonical **Visual Narration Segment** owned by `picky-agentd`. One segment binds exactly one RECT/LINE/PATH visual to all prose after that tag and before the next visual tag. Picky.app prepares geometry early, commits prose as soon as the next visual opener is lexically known, and activates the visual and response bubble together at the correct playback/reveal point.
 
 The intended lifecycle is:
 
@@ -157,13 +157,14 @@ Visual boundary verbs:
 
 - `RECT`
 - `LINE`
+- `PATH`
 
 Transparent selector:
 
 - `SCREEN` changes the selected screenshot for subsequent tags.
 - `SCREEN` does not close or open a narration segment.
 
-A segment starts after a valid RECT/LINE tag and ends immediately before the next RECT/LINE opener, or at main-turn completion.
+A segment starts after a valid RECT/LINE/PATH tag and ends immediately before the next RECT/LINE/PATH opener, or at main-turn completion.
 
 ### Early opener boundary
 
@@ -174,6 +175,7 @@ The previous segment becomes immutable as soon as the parser recognizes a comple
 ```text
 [RECT:
 [LINE:
+[PATH:
 ```
 
 The recognition must use the same case/whitespace healing rules as the existing opener grammar. Examples that establish a boundary:
@@ -181,6 +183,8 @@ The recognition must use the same case/whitespace healing rules as the existing 
 ```text
 [RECT:
 [ Rect :
+[PATH:
+[ Path :
 ```
 
 Prefixes that are not yet unambiguous do not establish a boundary:
@@ -188,7 +192,7 @@ Prefixes that are not yet unambiguous do not establish a boundary:
 ```text
 [
 [RE
-[POI
+[PA
 ```
 
 This is a parser-level lexical boundary, not UI string matching.
@@ -260,7 +264,7 @@ No later opener exists, so commit the segment during main-turn finalization befo
 
 ## Goals
 
-1. Bind every DSL RECT/LINE annotation to a stable narration segment in agentd.
+1. Bind every DSL RECT/LINE/PATH annotation to a stable narration segment in agentd.
 2. Show only the active segment's prose in the cursor response bubble.
 3. Switch the visual and bubble in one reducer transition.
 4. Prevent a future segment arriving early from overwriting the currently active bubble.
@@ -433,7 +437,7 @@ Introduce three explicit events rather than giving existing overlay events hidde
 
 ### `mainVisualNarrationSegmentPrepared`
 
-Emitted when a complete, valid RECT/LINE tag has been validated against captured context.
+Emitted when a complete, valid RECT/LINE/PATH tag has been validated against captured context.
 
 ```json
 {
@@ -531,7 +535,7 @@ Per `docs/refactoring-principles.md`, update as one atomic protocol set:
 Extend `AnnotationDslStreamItem` with a source-ordered visual boundary item:
 
 ```ts
-| { kind: "visualBoundary"; verb: "RECT" | "LINE" }
+| { kind: "visualBoundary"; verb: "RECT" | "LINE" | "PATH" }
 ```
 
 For a complete tag in one delta, output order is:
@@ -620,7 +624,7 @@ In `Picky/CompanionManager.swift`:
 #### Prepared event
 
 - reject stale context/generation using `shouldApplyOverlay` before expensive work;
-- RECT/LINE: resolve with `PickyAnnotationOverlayResolver` and existing palette logic;
+- RECT/LINE/PATH: resolve with `PickyAnnotationOverlayResolver` and existing palette logic;
 - prepare/start annotation scene validation using the existing monitor path;
 - submit one `.visualNarrationSegmentPrepared(...)` reducer event;
 - do not set `latestAgentSessionSummary` to `Showing n screen annotations` for this path;
@@ -750,7 +754,7 @@ Implemented behavior:
 
 ### Annotation scene lifecycle
 
-RECT/LINE segments must preserve the current scene policy:
+RECT/LINE/PATH segments must preserve the current scene policy:
 
 - `validating`: geometry and active segment remain resident, projection hides annotation and segment bubble;
 - `visible`: active visual and bubble may project;
@@ -910,7 +914,7 @@ Do not add per-frame logs or a new polling worker.
 ## Test Plan Card
 
 - **Change target:** agentd visual segmentation, app-daemon protocol, Swift interaction reducer, cursor response bubble projection.
-- **User/system contract:** the active RECT/LINE annotation and response bubble always represent the same immutable prose segment.
+- **User/system contract:** the active RECT/LINE/PATH annotation and response bubble always represent the same immutable prose segment.
 - **Picky invariants:** reducer owns state; protocol evolves in both languages; stale/duplicate/race events cannot resurrect old UI; TTS continues during scene suspension; running app and real user environment are untouched by tests.
 - **Selected layers:**
   - agentd pure unit for boundary/segment policy;
@@ -932,7 +936,7 @@ Do not add per-frame logs or a new polling worker.
 2. `[LI` + `NE:` across deltas emits one boundary only.
 3. Case/whitespace-healed opener emits one boundary.
 4. SCREEN does not split a segment.
-5. RECT and LINE both split segments.
+5. RECT, LINE, and PATH split segments.
 6. Unknown verbs do not split.
 7. Malformed known visual opener splits the previous segment but opens no new segment.
 8. Consecutive visual tags produce an empty first segment without borrowed prose.
@@ -967,7 +971,7 @@ Do not add per-frame logs or a new polling worker.
 
 ### Required CompanionManager cases
 
-1. Prepared RECT/LINE resolves geometry and starts scene validation without projection.
+1. Prepared RECT/LINE/PATH resolves geometry and starts scene validation without projection.
 3. Stale prepared event is rejected before resolver/monitor work.
 4. Commit chooses incremental/finalReply/silent mode correctly.
 5. Incremental segment uses fake provider once per segment.
@@ -1118,7 +1122,7 @@ xcodebuild -project Picky.xcodeproj -scheme Picky \
 **Steps:**
 
 1. Add fake-provider tests for mode selection and exact utterance count.
-2. Resolve prepared RECT/LINE without visual activation.
+2. Resolve prepared RECT/LINE/PATH without visual activation.
 3. Submit reducer events with full identities.
 4. Route speak/timer/pointer/annotation effects through existing runners.
 5. Remove generic summary overwrite only for segment-prepared events.
@@ -1267,7 +1271,7 @@ A temporary feature flag is optional during development, but do not add a perman
 Implementation is complete only when all are true:
 
 - [x] Agentd owns visual segment boundaries; Swift performs no DSL/text inference.
-- [x] RECT/LINE are boundaries; SCREEN is transparent.
+- [x] RECT/LINE/PATH are boundaries; SCREEN is transparent.
 - [x] Early opener detection commits at the colon exactly once across split deltas.
 - [x] Prepared geometry is invisible and can start validation early.
 - [x] Canonical segment prose is immutable after commit; sentence progress is emitted exactly once before commit.

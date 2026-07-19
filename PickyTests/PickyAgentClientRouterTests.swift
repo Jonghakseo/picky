@@ -233,7 +233,7 @@ private func makePickleBridgeRequestEvent(operation: String, sessionId: String? 
     let json = """
     {
       "id": "event-bridge",
-      "protocolVersion": "2026-07-17",
+      "protocolVersion": "2026-07-19",
       "timestamp": "2026-05-01T00:00:00.000Z",
       "type": "pickleBridgeRequested",
       "requestId": "bridge-request-1",
@@ -253,7 +253,7 @@ private func makeExternalEntryRequestEvent(
 ) throws -> PickyEventEnvelope {
     let payload: [String: Any] = [
         "id": "event-external-entry",
-        "protocolVersion": "2026-07-17",
+        "protocolVersion": "2026-07-19",
         "timestamp": "2026-05-01T00:00:00.000Z",
         "type": "externalEntryRequested",
         "requestId": requestId,
@@ -274,7 +274,7 @@ private func makePushToTalkControlRequestEvent(
 ) throws -> PickyEventEnvelope {
     let payload: [String: Any] = [
         "id": "event-ptt-control",
-        "protocolVersion": "2026-07-17",
+        "protocolVersion": "2026-07-19",
         "timestamp": "2026-05-01T00:00:00.000Z",
         "type": "pushToTalkControlRequested",
         "requestId": requestId,
@@ -288,7 +288,7 @@ private func makePickleHandoffRequestEvent() throws -> PickyEventEnvelope {
     let json = """
     {
       "id": "event-handoff",
-      "protocolVersion": "2026-07-17",
+      "protocolVersion": "2026-07-19",
       "timestamp": "2026-05-01T00:00:00.000Z",
       "type": "pickleHandoffRequested",
       "requestId": "handoff-request-1",

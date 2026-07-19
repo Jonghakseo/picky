@@ -115,7 +115,7 @@ struct PickySessionViewModelDockGroupCLITests {
         viewModel.apply(.protocolEvent(try Self.decodeEnvelope("""
         {
           "id": "snapshot-cli-group",
-          "protocolVersion": "2026-07-17",
+          "protocolVersion": "2026-07-19",
           "timestamp": "2026-05-01T00:00:30.000Z",
           "type": "sessionSnapshot",
           "sessions": [
@@ -157,7 +157,7 @@ struct PickySessionViewModelDockGroupCLITests {
         viewModel.apply(.protocolEvent(try Self.decodeEnvelope("""
         {
           "id": "snapshot-created-pickle",
-          "protocolVersion": "2026-07-17",
+          "protocolVersion": "2026-07-19",
           "timestamp": "2026-05-01T00:00:30.000Z",
           "type": "sessionSnapshot",
           "sessions": [

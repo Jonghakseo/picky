@@ -1,7 +1,7 @@
 {
   "id": "event-main-narration-001",
-  "protocolVersion": "2026-07-17",
-  "timestamp": "2026-07-17T00:00:00.000Z",
+  "protocolVersion": "2026-07-19",
+  "timestamp": "2026-07-19T00:00:00.000Z",
   "type": "mainNarrationChunk",
   "contextId": "context-main-001",
   "text": "먼저 저장 버튼을 선택하세요.",

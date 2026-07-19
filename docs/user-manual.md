@@ -229,7 +229,7 @@ Details:
 
 ### 6.1 Picky screen guidance
 
-When a reply refers to a concrete location in a captured screenshot, Picky can point at that location or draw rough rectangles and lines with optional spotlights and labels over the matching display. Visual narration is revealed sentence by sentence, so each pointer or drawing appears alongside the part of the spoken/text response that describes it.
+When a reply refers to a concrete location in a captured screenshot, Picky can point at that location or draw rough rectangles, lines, and freeform paths with labels over the matching display. Rectangles and lines may also use spotlights; paths can combine straight and cubic Bézier segments for trends or graph-like guidance. Visual narration is revealed sentence by sentence, so each pointer or drawing appears alongside the part of the spoken/text response that describes it.
 
 These overlays are grounded in the screenshot captured for the current turn. Picky validates the current screen pixels before revealing them, hides drawings when the referenced area changes substantially, and can restore them if the original scene returns during narration or within the roughly 30-second recovery window afterward. Drawings that remain after narration show a lower-center **Clear drawing** control. Agent-authored overlays are visual-only and are not added to the conversation transcript.
 

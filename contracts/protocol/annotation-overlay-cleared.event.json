@@ -1,7 +1,7 @@
 {
   "id": "event-annotations-cleared-001",
-  "protocolVersion": "2026-07-17",
-  "timestamp": "2026-07-17T00:00:07.000Z",
+  "protocolVersion": "2026-07-19",
+  "timestamp": "2026-07-19T00:00:07.000Z",
   "type": "annotationOverlayRequested",
   "request": {
     "id": "annotations-clear-001",

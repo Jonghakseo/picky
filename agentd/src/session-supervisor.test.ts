@@ -3956,6 +3956,38 @@ describe("SessionSupervisor", () => {
     ]);
   });
 
+  it("prewarms a resumed Picky handle after abort before the next voice route", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-abort-resume-"));
+    const store = new SessionStore(dir);
+    const mainRuntime = new DeferredResumeRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), store, { mainRuntime });
+
+    await supervisor.route(context("이전 음성 입력"));
+    const interruptedHandle = mainRuntime.handle;
+    interruptedHandle?.emit({ type: "log", line: "pi session: /tmp/picky-main-after-abort.jsonl" });
+    await settle();
+
+    await supervisor.abortMainAgent();
+    await waitUntil(() => mainRuntime.resumeCalls.length === 1);
+    expect(mainRuntime.resumeCalls).toEqual([{
+      sessionFilePath: "/tmp/picky-main-after-abort.jsonl",
+      cwd: "/tmp/project",
+      sessionId: "picky",
+    }]);
+
+    const nextRoute = supervisor.route(context("다음 음성 입력"));
+    // The next route joins the already-started resume instead of issuing a
+    // second one (or creating a fresh runtime) after STT has finished.
+    expect(mainRuntime.resumeCalls).toHaveLength(1);
+    mainRuntime.resolvePendingResume();
+    await nextRoute;
+
+    expect(mainRuntime.resumeCalls).toHaveLength(1);
+    expect(mainRuntime.handle).not.toBe(interruptedHandle);
+    expect(mainRuntime.handle?.followUps).toHaveLength(1);
+    expect(mainRuntime.handle?.followUps[0]?.text).toContain("다음 음성 입력");
+  });
+
   it("aborts a pending prewarmed Picky handle after voice input cancels it", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const mainRuntime = new DeferredPrewarmRuntime();

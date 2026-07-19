@@ -628,8 +628,30 @@ export class SessionSupervisor extends EventEmitter {
     const currentHandle = this.mainHandle;
     const pendingHandlePromise = this.mainHandlePromise;
     this.detachMainHandleForInterruption();
+    const generation = this.mainHandleGeneration;
+    const cwd = this.mainState.cwd?.trim() || process.cwd();
 
-    if (currentHandle) await this.abortResetMainHandle(currentHandle, "voice-input");
+    // PTT aborts the active turn while the user is about to record the next
+    // one. Once the runtime has acknowledged that interruption, immediately
+    // resume the persisted Pi session in the background. A following route
+    // shares mainHandlePromise rather than paying resume latency after STT.
+    const prewarmAfterAbort = async (): Promise<void> => {
+      if (generation !== this.mainHandleGeneration) return;
+      if (!this.mainState.sessionFilePath?.trim() || !this.options.mainRuntime?.resume) return;
+      try {
+        logAgentd("main resume prewarm after abort", { cwd, generation });
+        await this.ensurePrewarmedMainHandle(cwd);
+      } catch (error) {
+        logAgentd("main resume prewarm after abort failed", { error: error instanceof Error ? error.message : String(error) });
+      }
+    };
+
+    if (currentHandle) {
+      await this.abortResetMainHandle(currentHandle, "voice-input");
+      void prewarmAfterAbort();
+    } else {
+      void prewarmAfterAbort();
+    }
     if (pendingHandlePromise) {
       void pendingHandlePromise.catch((error) => {
         logAgentd("main abort pending handle failed", { error: error instanceof Error ? error.message : String(error) });

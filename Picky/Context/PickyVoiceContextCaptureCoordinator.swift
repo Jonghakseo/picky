@@ -53,14 +53,29 @@ struct PickyVoiceContextCaptureCoordinator {
         source: String,
         inkCapture: PickyInkCapture? = nil
     ) async throws -> PickyVoiceContextCaptureResult? {
+        let captureID = UUID()
         let settings = settingsProvider()
+        let screenCaptureStartedAt = Date()
         let screenCaptures = try await screenCapture(
             settings.screenContextScope,
             settings.screenshotQuality.maximumDimension
         )
+        let screenCaptureMilliseconds = Int(Date().timeIntervalSince(screenCaptureStartedAt) * 1_000)
+        PickyLog.notice(
+            .latency,
+            prefix: "⏱️ Picky latency —",
+            message: "event=screenCaptureFinished captureID=\(captureID) source=\(source) ms=\(screenCaptureMilliseconds) screens=\(screenCaptures.count)"
+        )
         guard !Task.isCancelled else { return nil }
 
+        let contextAssemblyStartedAt = Date()
         let assembled = try await contextAssembler(screenCaptures, source, transcript, inkCapture)
+        let contextAssemblyMilliseconds = Int(Date().timeIntervalSince(contextAssemblyStartedAt) * 1_000)
+        PickyLog.notice(
+            .latency,
+            prefix: "⏱️ Picky latency —",
+            message: "event=contextAssemblerFinished captureID=\(captureID) contextID=\(assembled.id) source=\(source) ms=\(contextAssemblyMilliseconds)"
+        )
         let gated = Self.applyInkOnlyAttachmentGate(assembled, settings: settings)
         return PickyVoiceContextCaptureResult(contextPacket: gated, source: source)
     }

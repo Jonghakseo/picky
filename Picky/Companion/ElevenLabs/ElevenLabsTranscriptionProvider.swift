@@ -219,8 +219,15 @@ private final class ElevenLabsTranscriptionSession: BuddyStreamingTranscriptionS
             fromPCM16MonoAudio: audioData,
             sampleRate: targetSampleRate
         )
+        let requestStartedAt = Date()
+        let audioByteCount = wavData.count
+        PickyLog.notice(
+            .latency,
+            prefix: "⏱️ Picky latency —",
+            message: "event=sttRequestStarted provider=elevenlabs audioBytes=\(audioByteCount)"
+        )
 
-        transcriptionTask = Task { [configuration, transcriptionURL, modelID, preferredLanguage, urlSession, onFinalTranscriptReady] in
+        transcriptionTask = Task { [configuration, transcriptionURL, modelID, preferredLanguage, urlSession, onFinalTranscriptReady, requestStartedAt, audioByteCount] in
             do {
                 let transcript = try await Self.transcribe(
                     wavData: wavData,
@@ -230,9 +237,21 @@ private final class ElevenLabsTranscriptionSession: BuddyStreamingTranscriptionS
                     preferredLanguage: preferredLanguage,
                     urlSession: urlSession
                 )
+                let requestMilliseconds = Int(Date().timeIntervalSince(requestStartedAt) * 1_000)
+                PickyLog.notice(
+                    .latency,
+                    prefix: "⏱️ Picky latency —",
+                    message: "event=sttRequestFinished provider=elevenlabs ms=\(requestMilliseconds) audioBytes=\(audioByteCount) chars=\(transcript.count)"
+                )
                 guard !Task.isCancelled else { return }
                 self.deliverFinalTranscriptIfNeeded(transcript, onFinalTranscriptReady: onFinalTranscriptReady)
             } catch {
+                let requestMilliseconds = Int(Date().timeIntervalSince(requestStartedAt) * 1_000)
+                PickyLog.notice(
+                    .latency,
+                    prefix: "⏱️ Picky latency —",
+                    message: "event=sttRequestFailed provider=elevenlabs ms=\(requestMilliseconds) audioBytes=\(audioByteCount)"
+                )
                 guard !Task.isCancelled else { return }
                 self.deliverErrorIfNeeded(error)
             }

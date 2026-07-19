@@ -332,6 +332,11 @@ final class BuddyDictationManager: NSObject, ObservableObject {
                 microphoneButtonRecordingStartedAt = recordingStartedAt
             }
             isPreparingToRecord = false
+            PickyLog.notice(
+                .latency,
+                prefix: "⏱️ Picky latency —",
+                message: "event=recordingStarted source=\(startSource)"
+            )
             print("🎙️ BuddyDictationManager: recognition session started")
         } catch {
             isPreparingToRecord = false
@@ -356,6 +361,12 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         print("🎙️ BuddyDictationManager: stop requested (\(expectedStartSource))")
 
         let stoppedAt = Date()
+        let recordingDurationMilliseconds = Int((activeRecordingStartedAt.map { stoppedAt.timeIntervalSince($0) } ?? 0) * 1_000)
+        PickyLog.notice(
+            .latency,
+            prefix: "⏱️ Picky latency —",
+            message: "event=recordingStopRequested source=\(expectedStartSource) recordingMs=\(recordingDurationMilliseconds)"
+        )
         if Self.shouldIgnoreRecording(startedAt: activeRecordingStartedAt, stoppedAt: stoppedAt) {
             let duration = activeRecordingStartedAt.map { stoppedAt.timeIntervalSince($0) } ?? 0
             ignoreCurrentShortRecording(duration: duration)

@@ -238,6 +238,7 @@ final class EdgeTTSSpeechPlaybackProvider: NSObject, PickySpeechPlaybackProvider
     private var speechTask: Task<Void, Never>?
     private var audioPlayer: AVAudioPlayer?
     private var activeSpeechID: UUID?
+    private var activeSpeechCharacterCount: Int?
     private var onFinish: ((Bool) -> Void)?
     private var isPlaybackInProgress = false
     // Warmed audio for upcoming sentences, keyed by normalized text. Prefetching
@@ -266,9 +267,18 @@ final class EdgeTTSSpeechPlaybackProvider: NSObject, PickySpeechPlaybackProvider
         stopSpeaking()
 
         let speechID = UUID()
+        let characterCount = input.count
+        let prefetchedAudioHit = prefetched != nil
+        let synthesisStartedAt = Date()
         activeSpeechID = speechID
+        activeSpeechCharacterCount = characterCount
         isPlaybackInProgress = true
         self.onFinish = onFinish
+        PickyLog.notice(
+            .latency,
+            prefix: "⏱️ Picky latency —",
+            message: "event=ttsSpeakRequested provider=edge speechID=\(speechID) chars=\(characterCount) prefetchHit=\(prefetchedAudioHit)"
+        )
         speechTask = Task { [connectionInfoStore, urlSession, voice] in
             do {
                 let audio: Data
@@ -278,9 +288,21 @@ final class EdgeTTSSpeechPlaybackProvider: NSObject, PickySpeechPlaybackProvider
                     let connection = try connectionInfoStore.readConnectionInfo()
                     audio = try await Self.generateSpeechAudio(input: input, voice: voice, connection: connection, urlSession: urlSession)
                 }
+                let synthesisMilliseconds = Int(Date().timeIntervalSince(synthesisStartedAt) * 1_000)
+                PickyLog.notice(
+                    .latency,
+                    prefix: "⏱️ Picky latency —",
+                    message: "event=ttsSynthFinished provider=edge speechID=\(speechID) ms=\(synthesisMilliseconds) chars=\(characterCount) audioBytes=\(audio.count) prefetchHit=\(prefetchedAudioHit)"
+                )
                 guard !Task.isCancelled else { return }
-                self.playAudioData(audio, speechID: speechID)
+                self.playAudioData(audio, speechID: speechID, characterCount: characterCount)
             } catch {
+                let synthesisMilliseconds = Int(Date().timeIntervalSince(synthesisStartedAt) * 1_000)
+                PickyLog.notice(
+                    .latency,
+                    prefix: "⏱️ Picky latency —",
+                    message: "event=ttsSynthFailed provider=edge speechID=\(speechID) ms=\(synthesisMilliseconds) chars=\(characterCount) prefetchHit=\(prefetchedAudioHit)"
+                )
                 guard !Task.isCancelled else { return }
                 self.finishPlaybackIfActive(speechID: speechID, didFinish: false)
             }
@@ -308,6 +330,7 @@ final class EdgeTTSSpeechPlaybackProvider: NSObject, PickySpeechPlaybackProvider
         audioPlayer?.stop()
         audioPlayer = nil
         activeSpeechID = nil
+        activeSpeechCharacterCount = nil
         onFinish = nil
         isPlaybackInProgress = false
         for task in prefetchTasks.values { task.cancel() }
@@ -332,7 +355,7 @@ final class EdgeTTSSpeechPlaybackProvider: NSObject, PickySpeechPlaybackProvider
         return data
     }
 
-    private func playAudioData(_ data: Data, speechID: UUID) {
+    private func playAudioData(_ data: Data, speechID: UUID, characterCount: Int) {
         guard activeSpeechID == speechID else { return }
         do {
             let player = try AVAudioPlayer(data: data)
@@ -343,6 +366,11 @@ final class EdgeTTSSpeechPlaybackProvider: NSObject, PickySpeechPlaybackProvider
                 return
             }
             audioPlayer = player
+            PickyLog.notice(
+                .latency,
+                prefix: "⏱️ Picky latency —",
+                message: "event=ttsPlaybackStarted provider=edge speechID=\(speechID) chars=\(characterCount) audioBytes=\(data.count)"
+            )
         } catch {
             finishPlaybackIfActive(speechID: speechID, didFinish: false)
         }
@@ -355,7 +383,14 @@ final class EdgeTTSSpeechPlaybackProvider: NSObject, PickySpeechPlaybackProvider
         audioPlayer?.delegate = nil
         audioPlayer = nil
         activeSpeechID = nil
+        let characterCount = activeSpeechCharacterCount ?? 0
+        activeSpeechCharacterCount = nil
         isPlaybackInProgress = false
+        PickyLog.notice(
+            .latency,
+            prefix: "⏱️ Picky latency —",
+            message: "event=ttsPlaybackFinished provider=edge speechID=\(speechID) chars=\(characterCount) didFinish=\(didFinish)"
+        )
         let callback = onFinish
         onFinish = nil
         callback?(didFinish)

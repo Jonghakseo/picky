@@ -102,6 +102,8 @@ export class SessionSupervisor extends EventEmitter {
   private mainThinkingLevel?: ThinkingLevel;
   private mainDraft = "";
   private mainAssistantDeltaSeen = false;
+  private mainFirstAssistantDeltaLogged = false;
+  private mainPromptDeliveredAt?: number;
   private mainAnnotationDslTagSeen = false;
   private readonly mainAnnotationDslParser = new AnnotationDslParser();
   private readonly mainNarrationSentenceChunker = new NarrationSentenceChunker();
@@ -1247,6 +1249,7 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   private async deliverMainPrompt(handle: RuntimeSessionHandle, prompt: ReturnType<typeof buildMainAgentPrompt>): Promise<void> {
+    this.recordMainPromptDelivery();
     if (this.mainIsProcessing && handle.interrupt) {
       logAgentd("main interrupt", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, inputId: this.activeMainRuntimeInputId });
       if (this.activeMainRuntimeInputId) this.interruptedMainInputIds.add(this.activeMainRuntimeInputId);
@@ -1257,8 +1260,12 @@ export class SessionSupervisor extends EventEmitter {
       return;
     }
     this.mainIsProcessing = true;
-    logAgentd("main prompt delivered", { contextId: this.mainReplyContextId, turnId: this.mainTurnId });
     await handle.followUp(prompt);
+  }
+
+  private recordMainPromptDelivery(): void {
+    this.mainPromptDeliveredAt = Date.now();
+    logAgentd("main prompt delivered", { contextId: this.mainReplyContextId, turnId: this.mainTurnId });
   }
 
   private beginMainTurn(contextId: string, overlayContext: MainTurnOverlayContext): void {
@@ -1268,9 +1275,11 @@ export class SessionSupervisor extends EventEmitter {
     this.mainVisualNarrationSegments.reset();
     this.mainReplyContextId = contextId;
     this.mainTurnOverlayContext = overlayContext;
+    this.mainPromptDeliveredAt = undefined;
     this.activeMainRuntimeInputId = `main-turn-${this.mainTurnId}`;
     this.mainDraft = "";
     this.mainAssistantDeltaSeen = false;
+    this.mainFirstAssistantDeltaLogged = false;
     this.mainAnnotationDslTagSeen = false;
     this.mainAnnotationDslParser.reset();
     this.mainNarrationSentenceChunker.reset();
@@ -1313,6 +1322,7 @@ export class SessionSupervisor extends EventEmitter {
   private async createInitialMainHandle(prompt: ReturnType<typeof buildMainAgentPrompt>, cwd?: string, generation = this.mainHandleGeneration): Promise<{ handle: RuntimeSessionHandle; initialPromptAlreadySent: boolean }> {
     const resumed = await this.tryResumeMainHandle(cwd ?? process.cwd(), generation);
     if (resumed) return { handle: resumed, initialPromptAlreadySent: false };
+    this.recordMainPromptDelivery();
     const handle = await this.options.mainRuntime!.create(prompt, { cwd, sessionId: "picky" });
     if (generation !== this.mainHandleGeneration) {
       await this.abortResetMainHandle(handle, "stale-initial");
@@ -1434,6 +1444,17 @@ export class SessionSupervisor extends EventEmitter {
       // skip it). Without this, a Pickle-completion follow-up turn whose `running`
       // is omitted would be silently swallowed by the prior turn's guard.
       this.mainTerminalProcessed = false;
+      if (!this.mainFirstAssistantDeltaLogged) {
+        const msSincePrompt = this.mainPromptDeliveredAt === undefined
+          ? undefined
+          : Date.now() - this.mainPromptDeliveredAt;
+        logAgentd("main first delta", {
+          contextId: this.mainReplyContextId,
+          turnId: this.mainTurnId,
+          msSincePrompt,
+        });
+        this.mainFirstAssistantDeltaLogged = true;
+      }
       this.mainAssistantDeltaSeen = true;
       this.mainDraft += await this.consumeMainAssistantDsl(event.delta);
       return;

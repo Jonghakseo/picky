@@ -1798,7 +1798,7 @@ final class CompanionManager: ObservableObject {
                     .agentSubmissionAccepted(contextID: context.id, sessionID: receipt.sessionID, inputID: inputID),
                     correlation: PickyInteractionCorrelation(inputID: inputID, contextID: context.id, sessionID: receipt.sessionID, source: .agent)
                 )
-                handleAgentSubmissionAccepted(receipt: receipt, source: "voice")
+                handleAgentSubmissionAccepted(receipt: receipt, source: "voice", contextID: context.id)
                 finishVoiceSubmissionIfIdle(inputID: inputID)
             } catch is CancellationError {
                 // User spoke again — response was interrupted.
@@ -1847,7 +1847,7 @@ final class CompanionManager: ObservableObject {
                         .agentSubmissionAccepted(contextID: context.id, sessionID: sessionID, inputID: inputID),
                         correlation: PickyInteractionCorrelation(inputID: inputID, contextID: context.id, sessionID: sessionID, source: .agent)
                     )
-                    handleAgentSubmissionAccepted(receipt: receipt, source: source)
+                    handleAgentSubmissionAccepted(receipt: receipt, source: source, contextID: context.id)
                     finishVoiceSubmissionIfIdle(inputID: inputID)
                 } catch is CancellationError {
                     // User spoke again — response was interrupted.
@@ -1865,7 +1865,7 @@ final class CompanionManager: ObservableObject {
                     .agentSubmissionAccepted(contextID: context.id, sessionID: sessionID, inputID: inputID),
                     correlation: PickyInteractionCorrelation(inputID: inputID, contextID: context.id, sessionID: sessionID, source: .agent)
                 )
-                handleAgentSubmissionAccepted(receipt: receipt, source: "voice-follow-up")
+                handleAgentSubmissionAccepted(receipt: receipt, source: "voice-follow-up", contextID: context.id)
                 finishVoiceSubmissionIfIdle(inputID: inputID)
             } catch is CancellationError {
                 // User spoke again — response was interrupted.
@@ -2143,9 +2143,14 @@ final class CompanionManager: ObservableObject {
         )
     }
 
-    func handleAgentSubmissionAccepted(receipt: PickyAgentSubmissionReceipt, source: String) {
+    func handleAgentSubmissionAccepted(receipt: PickyAgentSubmissionReceipt, source: String, contextID: String? = nil) {
         PickyAnalytics.trackAgentSubmissionAccepted(sessionID: receipt.sessionID)
         print("🧠 Picky local agent submission accepted: \(receipt.sessionID)")
+        PickyLog.notice(
+            .latency,
+            prefix: "⏱️ Picky latency —",
+            message: "event=packetSubmitted contextID=\(contextID ?? "none") sessionID=\(receipt.sessionID) source=\(source)"
+        )
 
         let receiptMessage = receipt.message.trimmingCharacters(in: .whitespacesAndNewlines)
         if !receiptMessage.isEmpty {
@@ -2203,6 +2208,11 @@ final class CompanionManager: ObservableObject {
         case .extensionUiRequest(let request):
             latestAgentSessionSummary = request.prompt ?? request.title ?? "Agent is waiting for input"
         case .quickReply(let reply):
+            PickyLog.notice(
+                .latency,
+                prefix: "⏱️ Picky latency —",
+                message: "event=quickReplyReceived contextID=\(reply.contextId) sessionID=\(reply.sessionId ?? "none") chars=\(reply.text.count)"
+            )
             applyQuickReplyEvent(reply)
         case .mainTurnSettled(let contextID):
             applyMainTurnSettled(contextID: contextID)
@@ -2314,6 +2324,11 @@ final class CompanionManager: ObservableObject {
     }
 
     private func applyMainNarrationChunk(_ chunk: PickyMainNarrationChunkEvent) {
+        PickyLog.notice(
+            .latency,
+            prefix: "⏱️ Picky latency —",
+            message: "event=mainNarrationChunkReceived contextID=\(chunk.contextId) sessionID=\(chunk.sessionId ?? "none") chars=\(chunk.text.count)"
+        )
         let owner = interactionOwner(for: chunk.contextId)
         let originSource = chunk.originSource ?? owner.map { $0.isVoiceOwned ? .voice : .text }
         let supportsIncrementalPlayback = ttsPlaybackEnabled && speechPlaybackProvider.supportsIncrementalPlayback
@@ -2378,6 +2393,11 @@ final class CompanionManager: ObservableObject {
     private func applyVisualNarrationSegmentSentence(
         _ sentence: PickyVisualNarrationSegmentSentenceEvent
     ) {
+        PickyLog.notice(
+            .latency,
+            prefix: "⏱️ Picky latency —",
+            message: "event=visualNarrationSentenceReceived contextID=\(sentence.identity.contextId) sessionID=\(sentence.sessionId ?? "none") ordinal=\(sentence.identity.ordinal) index=\(sentence.index) chars=\(sentence.text.count)"
+        )
         guard shouldApplyOverlay(
             contextID: sentence.identity.contextId,
             generation: sentence.identity.contextGeneration

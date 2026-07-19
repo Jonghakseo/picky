@@ -10,6 +10,17 @@ struct PickyVoiceContextCaptureResult {
     let source: String
 }
 
+/// Screen capture is independent of transcription. A prepared capture lets the
+/// PTT release path overlap that expensive work with STT, then adds the final
+/// transcript only when it is available.
+struct PickyPreparedVoiceContextCapture {
+    let captureID: UUID
+    let settings: PickySettings
+    let screenCaptures: [CompanionScreenCapture]
+    let source: String
+    let inkCapture: PickyInkCapture?
+}
+
 @MainActor
 struct PickyVoiceContextCaptureCoordinator {
     typealias ScreenCapture = @MainActor (_ scope: PickyScreenContextScope, _ maximumDimension: Int) async throws -> [CompanionScreenCapture]
@@ -53,6 +64,16 @@ struct PickyVoiceContextCaptureCoordinator {
         source: String,
         inkCapture: PickyInkCapture? = nil
     ) async throws -> PickyVoiceContextCaptureResult? {
+        guard let prepared = try await prepareContext(source: source, inkCapture: inkCapture) else { return nil }
+        return try await assembleContext(prepared, transcript: transcript)
+    }
+
+    /// Starts the screen portion of a neutral context capture. Call this as
+    /// soon as PTT is released, before transcription has finished.
+    func prepareContext(
+        source: String,
+        inkCapture: PickyInkCapture? = nil
+    ) async throws -> PickyPreparedVoiceContextCapture? {
         let captureID = UUID()
         let settings = settingsProvider()
         let screenCaptureStartedAt = Date()
@@ -67,17 +88,37 @@ struct PickyVoiceContextCaptureCoordinator {
             message: "event=screenCaptureFinished captureID=\(captureID) source=\(source) ms=\(screenCaptureMilliseconds) screens=\(screenCaptures.count)"
         )
         guard !Task.isCancelled else { return nil }
+        return PickyPreparedVoiceContextCapture(
+            captureID: captureID,
+            settings: settings,
+            screenCaptures: screenCaptures,
+            source: source,
+            inkCapture: inkCapture
+        )
+    }
 
+    /// Joins a prepared screen capture with the final STT transcript and
+    /// assembles the packet that is sent to the agent.
+    func assembleContext(
+        _ prepared: PickyPreparedVoiceContextCapture,
+        transcript: String
+    ) async throws -> PickyVoiceContextCaptureResult? {
+        guard !Task.isCancelled else { return nil }
         let contextAssemblyStartedAt = Date()
-        let assembled = try await contextAssembler(screenCaptures, source, transcript, inkCapture)
+        let assembled = try await contextAssembler(
+            prepared.screenCaptures,
+            prepared.source,
+            transcript,
+            prepared.inkCapture
+        )
         let contextAssemblyMilliseconds = Int(Date().timeIntervalSince(contextAssemblyStartedAt) * 1_000)
         PickyLog.notice(
             .latency,
             prefix: "⏱️ Picky latency —",
-            message: "event=contextAssemblerFinished captureID=\(captureID) contextID=\(assembled.id) source=\(source) ms=\(contextAssemblyMilliseconds)"
+            message: "event=contextAssemblerFinished captureID=\(prepared.captureID) contextID=\(assembled.id) source=\(prepared.source) ms=\(contextAssemblyMilliseconds)"
         )
-        let gated = Self.applyInkOnlyAttachmentGate(assembled, settings: settings)
-        return PickyVoiceContextCaptureResult(contextPacket: gated, source: source)
+        let gated = Self.applyInkOnlyAttachmentGate(assembled, settings: prepared.settings)
+        return PickyVoiceContextCaptureResult(contextPacket: gated, source: prepared.source)
     }
 
     /// Honors `PickySettings.attachScreenshotsOnlyWhenInked` by stripping

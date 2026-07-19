@@ -44,6 +44,26 @@ struct PickyVoiceContextCaptureCoordinatorTests {
         #expect(!didAssemble)
     }
 
+    @Test func preparedCaptureDefersTranscriptAssemblyUntilSTTCompletes() async throws {
+        var assembledTranscripts: [String] = []
+        let coordinator = PickyVoiceContextCaptureCoordinator(
+            screenCapture: { _, _ in [] },
+            contextAssembler: { _, source, transcript, _ in
+                assembledTranscripts.append(transcript)
+                return Self.stubPacket(source: source, transcript: transcript, screenshotPaths: [], inkMarks: [])
+            }
+        )
+
+        let maybePrepared = try await coordinator.prepareContext(source: "voice")
+        let prepared = try #require(maybePrepared)
+        #expect(assembledTranscripts.isEmpty)
+
+        let result = try await coordinator.assembleContext(prepared, transcript: "transcript arrived later")
+
+        #expect(result?.contextPacket.transcript == "transcript arrived later")
+        #expect(assembledTranscripts == ["transcript arrived later"])
+    }
+
     @Test func usesConfiguredScreenContextScopeWhenCapturing() async throws {
         var capturedScope: PickyScreenContextScope?
         var capturedMaximumDimension: Int?

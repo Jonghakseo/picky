@@ -63,6 +63,15 @@ struct PickyContextPacketAssembler {
     var idGenerator: () -> String = { "context-\(UUID().uuidString)" }
 
     func assemble(source: String, transcript: String) async throws -> PickyContextPacket {
+        // Browser/AX and selected-text collection do not depend on screenshot
+        // persistence. Start them together so the latter does not sit behind
+        // screenshot file I/O on the voice critical path.
+        async let advancedBrowserResult: PickyContextCaptureResult<PickyBrowserContext>? = {
+            guard let advancedBrowserProvider else { return nil }
+            return await advancedBrowserProvider.browserContextResult()
+        }()
+        async let selectedTextResult = selectedTextProvider.selectedTextResult()
+
         let contextID = idGenerator()
         let screens = screenProvider.screenContexts()
         let screenshots = try screens.enumerated().map { index, screen in
@@ -71,16 +80,15 @@ struct PickyContextPacketAssembler {
         let inkMarks = screens.flatMap(\.inkMarks)
         var warnings: [String] = []
         let browser: PickyBrowserContext?
-        if let advancedBrowserProvider {
-            let result = await advancedBrowserProvider.browserContextResult()
-            browser = result.value
-            warnings.append(contentsOf: result.warnings)
+        if let advancedResult = await advancedBrowserResult {
+            browser = advancedResult.value
+            warnings.append(contentsOf: advancedResult.warnings)
         } else {
             browser = browserProvider.browserContext()
         }
-        let selectedTextResult = selectedTextProvider.selectedTextResult()
-        warnings.append(contentsOf: selectedTextResult.warnings)
-        let selectedText = browser?.selectedText ?? selectedTextResult.value?.text
+        let resolvedSelectedTextResult = await selectedTextResult
+        warnings.append(contentsOf: resolvedSelectedTextResult.warnings)
+        let selectedText = browser?.selectedText ?? resolvedSelectedTextResult.value?.text
 
         return PickyContextPacket(
             id: contextID,

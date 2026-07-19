@@ -381,6 +381,101 @@ struct PickyAnnotationScenePolicyTests {
         ) == nil)
     }
 
+    @Test func monitorSuspendsImmediatelyWhenAnotherApplicationActivates() {
+        let monitor = PickyAnnotationSceneMonitor(automaticallySchedulesSamples: false)
+        let identity = PickyAnnotationSceneIdentity(
+            contextID: "context",
+            generation: 1,
+            token: UUID(uuidString: "A0000000-0000-0000-0000-000000000101")!
+        )
+        var outputs: [PickyAnnotationSceneMonitorOutput] = []
+        monitor.onOutput = { outputs.append($0) }
+        monitor.start(
+            identity: identity,
+            baseline: PickyAnnotationSceneBaseline(
+                contextID: "context",
+                applicationPID: 101,
+                applicationBundleID: "com.example.source",
+                window: nil
+            )
+        )
+
+        monitor.handleActivatedApplication(
+            identity: identity,
+            applicationPID: 202,
+            applicationBundleID: "com.example.destination"
+        )
+
+        #expect(outputs == [.mismatched(identity, .application)])
+        monitor.stop()
+    }
+
+    @Test func monitorIgnoresPickyApplicationActivation() {
+        let monitor = PickyAnnotationSceneMonitor(automaticallySchedulesSamples: false)
+        let identity = PickyAnnotationSceneIdentity(
+            contextID: "context",
+            generation: 1,
+            token: UUID(uuidString: "A0000000-0000-0000-0000-000000000102")!
+        )
+        var outputs: [PickyAnnotationSceneMonitorOutput] = []
+        monitor.onOutput = { outputs.append($0) }
+        monitor.start(
+            identity: identity,
+            baseline: PickyAnnotationSceneBaseline(
+                contextID: "context",
+                applicationPID: 101,
+                applicationBundleID: "com.example.source",
+                window: nil
+            )
+        )
+
+        monitor.handleActivatedApplication(
+            identity: identity,
+            applicationPID: ProcessInfo.processInfo.processIdentifier,
+            applicationBundleID: "com.example.picky"
+        )
+
+        #expect(outputs.isEmpty)
+        monitor.stop()
+    }
+
+    @Test func monitorSuspendsImmediatelyWhenFocusedWindowChangesWithinBaselineApplication() {
+        let monitor = PickyAnnotationSceneMonitor(automaticallySchedulesSamples: false)
+        let identity = PickyAnnotationSceneIdentity(
+            contextID: "context",
+            generation: 1,
+            token: UUID(uuidString: "A0000000-0000-0000-0000-000000000103")!
+        )
+        let baselineWindow = PickyAnnotationSceneWindowSignature(
+            ownerPID: 101,
+            windowID: 1,
+            frame: CGRect(x: 0, y: 0, width: 100, height: 100)
+        )
+        var outputs: [PickyAnnotationSceneMonitorOutput] = []
+        monitor.onOutput = { outputs.append($0) }
+        monitor.start(
+            identity: identity,
+            baseline: PickyAnnotationSceneBaseline(
+                contextID: "context",
+                applicationPID: 101,
+                applicationBundleID: "com.example.source",
+                window: baselineWindow
+            )
+        )
+
+        monitor.handleFocusedWindowChange(
+            identity: identity,
+            focusedWindow: PickyAnnotationSceneWindowSignature(
+                ownerPID: 101,
+                windowID: 2,
+                frame: CGRect(x: 0, y: 0, width: 100, height: 100)
+            )
+        )
+
+        #expect(outputs == [.mismatched(identity, .window)])
+        monitor.stop()
+    }
+
     @Test func monitorValidatesSuspendsAndResumesWithoutDiscardingItsIdentity() async throws {
         let baselineFingerprint = try #require(fingerprint(width: 10, height: 10))
         let changedFingerprint = try #require(PickyAnnotationSceneFingerprint(
@@ -585,6 +680,52 @@ struct PickyAnnotationScenePolicyTests {
         monitor.stop()
     }
 
+    @Test func monitorUsesLenientInvalidationOnlyWhileNarrationIsActive() async throws {
+        let baselineFingerprint = try #require(fingerprint(width: 10, height: 10))
+        var changedPixels = baselineFingerprint.luminance
+        for index in 0..<46 { changedPixels[index] = 83 }
+        let changedFingerprint = try #require(PickyAnnotationSceneFingerprint(
+            width: 10,
+            height: 10,
+            luminance: changedPixels
+        ))
+        let monitor = PickyAnnotationSceneMonitor(
+            capturer: FakeAnnotationSceneCapturer(
+                baseline: baselineFingerprint,
+                current: [
+                    baselineFingerprint, baselineFingerprint,
+                    changedFingerprint, changedFingerprint,
+                    changedFingerprint, changedFingerprint,
+                ]
+            ),
+            automaticallySchedulesSamples: false
+        )
+        let identity = PickyAnnotationSceneIdentity(
+            contextID: "context",
+            generation: 9,
+            token: UUID(uuidString: "A0000000-0000-0000-0000-000000000009")!
+        )
+        var outputs: [PickyAnnotationSceneMonitorOutput] = []
+        monitor.onOutput = { outputs.append($0) }
+        monitor.start(identity: identity, baseline: sceneBaseline(contextID: "context"))
+        monitor.updateTarget(screenshot: screenshot(), annotations: [], mode: .append)
+
+        await monitor.sampleNow()
+        await monitor.sampleNow()
+        #expect(outputs == [.matched(identity)])
+
+        monitor.setNarrationActive(true)
+        await monitor.sampleNow()
+        await monitor.sampleNow()
+        #expect(outputs == [.matched(identity)])
+
+        monitor.setNarrationActive(false)
+        await monitor.sampleNow()
+        await monitor.sampleNow()
+        #expect(outputs == [.matched(identity), .mismatched(identity, .visual)])
+        monitor.stop()
+    }
+
     @Test func monitorSuspendsAnInitialHardMismatchInsteadOfValidatingForever() async throws {
         let baselineFingerprint = try #require(fingerprint(width: 10, height: 10))
         let changedFingerprint = try #require(PickyAnnotationSceneFingerprint(
@@ -679,52 +820,6 @@ struct PickyAnnotationScenePolicyTests {
 
         await monitor.sampleNow()
         #expect(outputs.isEmpty)
-
-    @Test func monitorUsesLenientInvalidationOnlyWhileNarrationIsActive() async throws {
-        let baselineFingerprint = try #require(fingerprint(width: 10, height: 10))
-        var changedPixels = baselineFingerprint.luminance
-        for index in 0..<46 { changedPixels[index] = 83 }
-        let changedFingerprint = try #require(PickyAnnotationSceneFingerprint(
-            width: 10,
-            height: 10,
-            luminance: changedPixels
-        ))
-        let monitor = PickyAnnotationSceneMonitor(
-            capturer: FakeAnnotationSceneCapturer(
-                baseline: baselineFingerprint,
-                current: [
-                    baselineFingerprint, baselineFingerprint,
-                    changedFingerprint, changedFingerprint,
-                    changedFingerprint, changedFingerprint,
-                ]
-            ),
-            automaticallySchedulesSamples: false
-        )
-        let identity = PickyAnnotationSceneIdentity(
-            contextID: "context",
-            generation: 9,
-            token: UUID(uuidString: "A0000000-0000-0000-0000-000000000009")!
-        )
-        var outputs: [PickyAnnotationSceneMonitorOutput] = []
-        monitor.onOutput = { outputs.append($0) }
-        monitor.start(identity: identity, baseline: sceneBaseline(contextID: "context"))
-        monitor.updateTarget(screenshot: screenshot(), annotations: [], mode: .append)
-
-        await monitor.sampleNow()
-        await monitor.sampleNow()
-        #expect(outputs == [.matched(identity)])
-
-        monitor.setNarrationActive(true)
-        await monitor.sampleNow()
-        await monitor.sampleNow()
-        #expect(outputs == [.matched(identity)])
-
-        monitor.setNarrationActive(false)
-        await monitor.sampleNow()
-        await monitor.sampleNow()
-        #expect(outputs == [.matched(identity), .mismatched(identity, .visual)])
-        monitor.stop()
-    }
 
         currentTime = currentTime.addingTimeInterval(2)
         await monitor.sampleNow()

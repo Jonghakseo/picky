@@ -629,13 +629,14 @@ final class PickyAnnotationSceneMonitor {
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
+        ) { [weak self] notification in
+            let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
             Task { @MainActor [weak self] in
-                guard let self, self.session?.identity == identity else { return }
-                // Focus changes do not touch the drawn pixels; take a fresh visual
-                // sample so a real change is still detected promptly.
-                self.session?.semanticBlock = nil
-                self.requestSample(after: 0)
+                self?.handleActivatedApplication(
+                    identity: identity,
+                    applicationPID: application?.processIdentifier,
+                    applicationBundleID: application?.bundleIdentifier
+                )
             }
         }
         screenObserver = NotificationCenter.default.addObserver(
@@ -656,6 +657,32 @@ final class PickyAnnotationSceneMonitor {
             return event
         }
         installAccessibilityObserver(pid: baseline.applicationPID, identity: identity)
+    }
+
+    func handleActivatedApplication(
+        identity: PickyAnnotationSceneIdentity,
+        applicationPID: pid_t?,
+        applicationBundleID: String?
+    ) {
+        guard let session, session.identity == identity else { return }
+        guard let applicationPID else {
+            session.semanticBlock = nil
+            requestSample(after: 0)
+            return
+        }
+        guard !isPickyApplication(pid: applicationPID, bundleID: applicationBundleID),
+              let baselinePID = session.baseline.applicationPID,
+              applicationPID != baselinePID else {
+            session.semanticBlock = nil
+            requestSample(after: 0)
+            return
+        }
+        suspendImmediately(reason: .application)
+    }
+
+    private func isPickyApplication(pid: pid_t, bundleID: String?) -> Bool {
+        if pid == ProcessInfo.processInfo.processIdentifier { return true }
+        return bundleID == Bundle.main.bundleIdentifier
     }
 
     private func handleScroll(identity: PickyAnnotationSceneIdentity) {
@@ -750,17 +777,40 @@ final class PickyAnnotationSceneMonitor {
         identity: PickyAnnotationSceneIdentity,
         refreshObservedWindow: Bool
     ) {
-        guard let session,
-              session.identity == identity else { return }
+        guard let session, session.identity == identity else { return }
         if refreshObservedWindow,
            let context = accessibilityObserverContext,
            context.identity == identity {
             observeFocusedWindow(refcon: Unmanaged.passUnretained(context).toOpaque())
+            let focusedWindow = session.baseline.applicationPID.flatMap { pid in
+                accessibilityObservedWindow.flatMap {
+                    PickyAnnotationSceneSemanticProvider.windowSignature(for: pid, accessibilityWindow: $0)
+                }
+            }
+            handleFocusedWindowChange(identity: identity, focusedWindow: focusedWindow)
+            return
         }
         // Window moves/resizes only matter if they change the captured pixels; re-sample
         // visually instead of suspending on the geometry change alone.
         session.semanticBlock = nil
         requestSample(after: 0)
+    }
+
+    func handleFocusedWindowChange(
+        identity: PickyAnnotationSceneIdentity,
+        focusedWindow: PickyAnnotationSceneWindowSignature?
+    ) {
+        guard let session, session.identity == identity else { return }
+        guard session.baseline.applicationPID != ProcessInfo.processInfo.processIdentifier,
+              let baselineWindow = session.baseline.window,
+              let focusedWindow,
+              focusedWindow.ownerPID == baselineWindow.ownerPID,
+              focusedWindow.windowID != baselineWindow.windowID else {
+            session.semanticBlock = nil
+            requestSample(after: 0)
+            return
+        }
+        suspendImmediately(reason: .window)
     }
 
     private func removeEventObservers() {
@@ -796,13 +846,75 @@ enum PickyAnnotationSceneSemanticProvider {
         let window = windows.first(where: { info in
             (info[kCGWindowOwnerPID as String] as? pid_t) == pid
                 && (info[kCGWindowLayer as String] as? Int) == 0
-        }),
-        let windowNumber = window[kCGWindowNumber as String] as? CGWindowID,
-        let boundsDictionary = window[kCGWindowBounds as String] as? [String: CGFloat],
-        let frame = CGRect(dictionaryRepresentation: boundsDictionary as CFDictionary) else {
+        }) else {
             return nil
         }
-        return PickyAnnotationSceneWindowSignature(ownerPID: pid, windowID: windowNumber, frame: frame)
+        return windowSignature(from: window, ownerPID: pid)
+    }
+
+    static func windowSignature(
+        for pid: pid_t,
+        accessibilityWindow: AXUIElement
+    ) -> PickyAnnotationSceneWindowSignature? {
+        guard let accessibilityFrame = accessibilityFrame(for: accessibilityWindow),
+              let windows = CGWindowListCopyWindowInfo(
+                [.optionOnScreenOnly, .excludeDesktopElements],
+                kCGNullWindowID
+              ) as? [[String: Any]] else {
+            return nil
+        }
+        let matches = windows.compactMap { window -> PickyAnnotationSceneWindowSignature? in
+            guard (window[kCGWindowOwnerPID as String] as? pid_t) == pid,
+                  (window[kCGWindowLayer as String] as? Int) == 0,
+                  let signature = windowSignature(from: window, ownerPID: pid),
+                  framesMatch(signature.frame, accessibilityFrame) else {
+                return nil
+            }
+            return signature
+        }
+        // Overlapping or transient windows can share geometry. Do not make a semantic
+        // decision unless AX and CG identify one focused window unambiguously.
+        guard matches.count == 1 else { return nil }
+        return matches[0]
+    }
+
+    private static func accessibilityFrame(for window: AXUIElement) -> CGRect? {
+        var rawPosition: CFTypeRef?
+        var rawSize: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &rawPosition) == .success,
+              AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &rawSize) == .success,
+              let rawPosition,
+              let rawSize else {
+            return nil
+        }
+        let positionValue = rawPosition as! AXValue
+        let sizeValue = rawSize as! AXValue
+        var position = CGPoint.zero
+        var size = CGSize.zero
+        guard AXValueGetValue(positionValue, .cgPoint, &position),
+              AXValueGetValue(sizeValue, .cgSize, &size) else {
+            return nil
+        }
+        return CGRect(origin: position, size: size)
+    }
+
+    private static func framesMatch(_ lhs: CGRect, _ rhs: CGRect, tolerance: CGFloat = 2) -> Bool {
+        abs(lhs.minX - rhs.minX) <= tolerance
+            && abs(lhs.minY - rhs.minY) <= tolerance
+            && abs(lhs.width - rhs.width) <= tolerance
+            && abs(lhs.height - rhs.height) <= tolerance
+    }
+
+    private static func windowSignature(
+        from window: [String: Any],
+        ownerPID: pid_t
+    ) -> PickyAnnotationSceneWindowSignature? {
+        guard let windowNumber = window[kCGWindowNumber as String] as? CGWindowID,
+              let boundsDictionary = window[kCGWindowBounds as String] as? [String: CGFloat],
+              let frame = CGRect(dictionaryRepresentation: boundsDictionary as CFDictionary) else {
+            return nil
+        }
+        return PickyAnnotationSceneWindowSignature(ownerPID: ownerPID, windowID: windowNumber, frame: frame)
     }
 }
 

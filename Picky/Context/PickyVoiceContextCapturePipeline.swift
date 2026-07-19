@@ -6,9 +6,9 @@
 import Foundation
 import ScreenCaptureKit
 
-/// Owns the PTT-scoped screen capture task lifecycle. It overlaps neutral
-/// screen capture with transcription while keeping cancellation and stale input
-/// protection keyed to the originating voice input.
+/// Owns the PTT-scoped neutral context task lifecycle. It overlaps all
+/// transcript-independent collection with transcription while keeping
+/// cancellation and stale input protection keyed to the originating voice input.
 @MainActor
 final class PickyVoiceContextCapturePipeline {
     private let coordinator: PickyVoiceContextCaptureCoordinator
@@ -25,7 +25,7 @@ final class PickyVoiceContextCapturePipeline {
         warmScreenShareableContent()
     }
 
-    /// Starts the screen portion of capture only for a valid PTT recording.
+    /// Starts transcript-independent capture only for a valid PTT recording.
     /// Returns ink to its caller when no prepared task was started so the
     /// synchronous fallback capture can preserve it if a transcript arrives.
     func finishInput(

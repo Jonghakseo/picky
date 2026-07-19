@@ -10,7 +10,7 @@ import Testing
 @MainActor
 struct PickyVoiceContextCaptureCoordinatorTests {
     @Test func cancellationAfterScreenCaptureSkipsContextAssembly() async throws {
-        var didAssemble = false
+        var didPrepare = false
         let coordinator = PickyVoiceContextCaptureCoordinator(
             screenCapture: { _, _ in
                 withUnsafeCurrentTask { task in
@@ -18,21 +18,10 @@ struct PickyVoiceContextCaptureCoordinatorTests {
                 }
                 return []
             },
-            contextAssembler: { _, _, _, _ in
-                didAssemble = true
-                return PickyContextPacket(
-                    id: "context-cancelled",
-                    source: "voice",
-                    capturedAt: Date(timeIntervalSince1970: 1_800_000_000),
-                    transcript: "cancel me",
-                    selectedText: nil,
-                    cwd: nil,
-                    activeApp: nil,
-                    activeWindow: nil,
-                    browser: nil,
-                    screenshots: [],
-                    warnings: []
-                )
+            contextPreflightCapture: { Self.preflight() },
+            contextPreparer: { _, _, _, _ in
+                didPrepare = true
+                return Self.preparedPacket(source: "voice", screenshotPaths: [], inkMarks: [])
             }
         )
 
@@ -41,27 +30,48 @@ struct PickyVoiceContextCaptureCoordinatorTests {
         if let result {
             Issue.record("Expected cancelled capture to return nil before assembly, got context \(result.contextPacket.id)")
         }
-        #expect(!didAssemble)
+        #expect(!didPrepare)
     }
 
-    @Test func preparedCaptureDefersTranscriptAssemblyUntilSTTCompletes() async throws {
-        var assembledTranscripts: [String] = []
+    @Test func preflightStartsWhileScreenCaptureIsPending() async throws {
+        var didStartPreflight = false
+        let coordinator = PickyVoiceContextCaptureCoordinator(
+            screenCapture: { _, _ in
+                await Task.yield()
+                #expect(didStartPreflight)
+                return []
+            },
+            contextPreflightCapture: {
+                didStartPreflight = true
+                return Self.preflight()
+            },
+            contextPreparer: { _, source, _, _ in
+                Self.preparedPacket(source: source, screenshotPaths: [], inkMarks: [])
+            }
+        )
+
+        _ = try await coordinator.prepareContext(source: "voice")
+    }
+
+    @Test func preparedCaptureCollectsContextBeforeTranscriptArrives() async throws {
+        var preparationCount = 0
         let coordinator = PickyVoiceContextCaptureCoordinator(
             screenCapture: { _, _ in [] },
-            contextAssembler: { _, source, transcript, _ in
-                assembledTranscripts.append(transcript)
-                return Self.stubPacket(source: source, transcript: transcript, screenshotPaths: [], inkMarks: [])
+            contextPreflightCapture: { Self.preflight() },
+            contextPreparer: { _, source, _, _ in
+                preparationCount += 1
+                return Self.preparedPacket(source: source, screenshotPaths: [], inkMarks: [])
             }
         )
 
         let maybePrepared = try await coordinator.prepareContext(source: "voice")
         let prepared = try #require(maybePrepared)
-        #expect(assembledTranscripts.isEmpty)
+        #expect(preparationCount == 1)
 
         let result = try await coordinator.assembleContext(prepared, transcript: "transcript arrived later")
 
         #expect(result?.contextPacket.transcript == "transcript arrived later")
-        #expect(assembledTranscripts == ["transcript arrived later"])
+        #expect(preparationCount == 1)
     }
 
     @Test func usesConfiguredScreenContextScopeWhenCapturing() async throws {
@@ -77,20 +87,9 @@ struct PickyVoiceContextCaptureCoordinatorTests {
                 return []
             },
             settingsProvider: { settings },
-            contextAssembler: { _, source, transcript, _ in
-                PickyContextPacket(
-                    id: "context-focused-screen",
-                    source: source,
-                    capturedAt: Date(timeIntervalSince1970: 1_800_000_000),
-                    transcript: transcript,
-                    selectedText: nil,
-                    cwd: nil,
-                    activeApp: nil,
-                    activeWindow: nil,
-                    browser: nil,
-                    screenshots: [],
-                    warnings: []
-                )
+            contextPreflightCapture: { Self.preflight() },
+            contextPreparer: { _, source, _, _ in
+                Self.preparedPacket(source: source, screenshotPaths: [], inkMarks: [])
             }
         )
 
@@ -111,8 +110,9 @@ struct PickyVoiceContextCaptureCoordinatorTests {
         let coordinator = PickyVoiceContextCaptureCoordinator(
             screenCapture: { _, _ in [] },
             settingsProvider: { settings },
-            contextAssembler: { _, source, transcript, _ in
-                Self.stubPacket(source: source, transcript: transcript, screenshotPaths: ["/tmp/shot-1.jpg"], inkMarks: [])
+            contextPreflightCapture: { Self.preflight() },
+            contextPreparer: { _, source, _, _ in
+                Self.preparedPacket(source: source, screenshotPaths: ["/tmp/shot-1.jpg"], inkMarks: [])
             }
         )
 
@@ -128,8 +128,9 @@ struct PickyVoiceContextCaptureCoordinatorTests {
         let coordinator = PickyVoiceContextCaptureCoordinator(
             screenCapture: { _, _ in [] },
             settingsProvider: { settings },
-            contextAssembler: { _, source, transcript, _ in
-                Self.stubPacket(source: source, transcript: transcript, screenshotPaths: ["/tmp/shot-1.jpg"], inkMarks: [])
+            contextPreflightCapture: { Self.preflight() },
+            contextPreparer: { _, source, _, _ in
+                Self.preparedPacket(source: source, screenshotPaths: ["/tmp/shot-1.jpg"], inkMarks: [])
             }
         )
 
@@ -158,8 +159,9 @@ struct PickyVoiceContextCaptureCoordinatorTests {
         let coordinator = PickyVoiceContextCaptureCoordinator(
             screenCapture: { _, _ in [] },
             settingsProvider: { settings },
-            contextAssembler: { _, source, transcript, _ in
-                Self.stubPacket(source: source, transcript: transcript, screenshotPaths: ["/tmp/shot-1.jpg"], inkMarks: [inkMark])
+            contextPreflightCapture: { Self.preflight() },
+            contextPreparer: { _, source, _, _ in
+                Self.preparedPacket(source: source, screenshotPaths: ["/tmp/shot-1.jpg"], inkMarks: [inkMark])
             }
         )
 
@@ -169,17 +171,26 @@ struct PickyVoiceContextCaptureCoordinatorTests {
         #expect(result?.contextPacket.inkMarks.count == 1)
     }
 
-    private static func stubPacket(
+    private static func preflight() -> PickyContextPacketPreflight {
+        PickyContextPacketPreflight(
+            capturedAt: Date(timeIntervalSince1970: 1_800_000_000),
+            activeApp: nil,
+            activeWindow: nil,
+            browser: nil,
+            selectedText: nil,
+            warnings: []
+        )
+    }
+
+    private static func preparedPacket(
         source: String,
-        transcript: String,
         screenshotPaths: [String],
         inkMarks: [PickyInkMarkContext]
-    ) -> PickyContextPacket {
-        PickyContextPacket(
+    ) -> PickyPreparedContextPacket {
+        PickyPreparedContextPacket(
             id: "context-test",
             source: source,
             capturedAt: Date(timeIntervalSince1970: 1_800_000_000),
-            transcript: transcript,
             selectedText: nil,
             cwd: nil,
             activeApp: nil,

@@ -50,6 +50,50 @@ struct StaticPickyScreenContextProvider: PickyScreenContextProviding {
     }
 }
 
+/// Transcript-independent context collected at a single point in time.
+/// Voice capture collects this at PTT release so browser and accessibility work
+/// can overlap transcription, then attaches the final transcript at submission.
+struct PickyContextPacketPreflight {
+    let capturedAt: Date
+    let activeApp: PickyApplicationContext?
+    let activeWindow: PickyWindowContext?
+    let browser: PickyBrowserContext?
+    let selectedText: String?
+    let warnings: [String]
+}
+
+/// A complete neutral context packet except for the final user transcript.
+struct PickyPreparedContextPacket {
+    let id: String
+    let source: String
+    let capturedAt: Date
+    let selectedText: String?
+    let cwd: String?
+    let activeApp: PickyApplicationContext?
+    let activeWindow: PickyWindowContext?
+    let browser: PickyBrowserContext?
+    let screenshots: [PickyScreenshotContext]
+    let inkMarks: [PickyInkMarkContext]
+    let warnings: [String]
+
+    func attaching(transcript: String) -> PickyContextPacket {
+        PickyContextPacket(
+            id: id,
+            source: source,
+            capturedAt: capturedAt,
+            transcript: transcript,
+            selectedText: selectedText,
+            cwd: cwd,
+            activeApp: activeApp,
+            activeWindow: activeWindow,
+            browser: browser,
+            screenshots: screenshots,
+            inkMarks: inkMarks,
+            warnings: warnings
+        )
+    }
+}
+
 struct PickyContextPacketAssembler {
     let appProvider: PickyApplicationContextProviding
     var windowProvider: PickyWindowContextProviding = NullPickyWindowContextProvider()
@@ -62,47 +106,69 @@ struct PickyContextPacketAssembler {
     var now: () -> Date = Date.init
     var idGenerator: () -> String = { "context-\(UUID().uuidString)" }
 
-    func assemble(source: String, transcript: String) async throws -> PickyContextPacket {
-        // Browser/AX and selected-text collection do not depend on screenshot
-        // persistence. Start them together so the latter does not sit behind
-        // screenshot file I/O on the voice critical path.
+    /// Collects the parts of context that do not require a transcript. This is
+    /// intentionally separate from screenshot persistence so voice capture can
+    /// begin browser/AX work at PTT release alongside screen capture and STT.
+    func capturePreflight() async -> PickyContextPacketPreflight {
+        let capturedAt = now()
+        let activeApp = appProvider.activeApplicationContext()
+        let activeWindow = windowProvider.activeWindowContext()
+        let fallbackBrowser = advancedBrowserProvider == nil ? browserProvider.browserContext() : nil
         async let advancedBrowserResult: PickyContextCaptureResult<PickyBrowserContext>? = {
             guard let advancedBrowserProvider else { return nil }
             return await advancedBrowserProvider.browserContextResult()
         }()
         async let selectedTextResult = selectedTextProvider.selectedTextResult()
 
-        let contextID = idGenerator()
-        let screens = screenProvider.screenContexts()
-        let screenshots = try screens.enumerated().map { index, screen in
-            try screenshotStore.store(screen, contextID: contextID, index: index)
-        }
-        let inkMarks = screens.flatMap(\.inkMarks)
         var warnings: [String] = []
         let browser: PickyBrowserContext?
         if let advancedResult = await advancedBrowserResult {
             browser = advancedResult.value
             warnings.append(contentsOf: advancedResult.warnings)
         } else {
-            browser = browserProvider.browserContext()
+            browser = fallbackBrowser
         }
         let resolvedSelectedTextResult = await selectedTextResult
         warnings.append(contentsOf: resolvedSelectedTextResult.warnings)
-        let selectedText = browser?.selectedText ?? resolvedSelectedTextResult.value?.text
 
-        return PickyContextPacket(
-            id: contextID,
-            source: source,
-            capturedAt: now(),
-            transcript: transcript,
-            selectedText: selectedText,
-            cwd: defaultCwd,
-            activeApp: appProvider.activeApplicationContext(),
-            activeWindow: windowProvider.activeWindowContext(),
+        return PickyContextPacketPreflight(
+            capturedAt: capturedAt,
+            activeApp: activeApp,
+            activeWindow: activeWindow,
             browser: browser,
-            screenshots: screenshots,
-            inkMarks: inkMarks,
+            selectedText: browser?.selectedText ?? resolvedSelectedTextResult.value?.text,
             warnings: warnings
         )
+    }
+
+    /// Persists screen context and joins it with previously collected metadata.
+    func prepare(source: String, preflight: PickyContextPacketPreflight) throws -> PickyPreparedContextPacket {
+        let contextID = idGenerator()
+        let screens = screenProvider.screenContexts()
+        let screenshots = try screens.enumerated().map { index, screen in
+            try screenshotStore.store(screen, contextID: contextID, index: index)
+        }
+
+        return PickyPreparedContextPacket(
+            id: contextID,
+            source: source,
+            capturedAt: preflight.capturedAt,
+            selectedText: preflight.selectedText,
+            cwd: defaultCwd,
+            activeApp: preflight.activeApp,
+            activeWindow: preflight.activeWindow,
+            browser: preflight.browser,
+            screenshots: screenshots,
+            inkMarks: screens.flatMap(\.inkMarks),
+            warnings: preflight.warnings
+        )
+    }
+
+    func prepare(source: String) async throws -> PickyPreparedContextPacket {
+        try prepare(source: source, preflight: await capturePreflight())
+    }
+
+    func assemble(source: String, transcript: String) async throws -> PickyContextPacket {
+        try await prepare(source: source).attaching(transcript: transcript)
     }
 }

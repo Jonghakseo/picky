@@ -2044,18 +2044,28 @@ struct PickyCompanionManagerTests {
     private func fakeContextCaptureCoordinator(screenshots: [PickyScreenshotContext] = []) -> PickyVoiceContextCaptureCoordinator {
         PickyVoiceContextCaptureCoordinator(
             screenCapture: { _, _ in [] },
-            contextAssembler: { _, source, transcript, _ in
-                PickyContextPacket(
+            contextPreflightCapture: {
+                PickyContextPacketPreflight(
+                    capturedAt: Date(timeIntervalSince1970: 1_800_000_000),
+                    activeApp: nil,
+                    activeWindow: nil,
+                    browser: nil,
+                    selectedText: nil,
+                    warnings: []
+                )
+            },
+            contextPreparer: { _, source, _, _ in
+                PickyPreparedContextPacket(
                     id: "typed-context",
                     source: source,
                     capturedAt: Date(timeIntervalSince1970: 1_800_000_000),
-                    transcript: transcript,
                     selectedText: nil,
                     cwd: "/tmp/project",
                     activeApp: nil,
                     activeWindow: nil,
                     browser: nil,
                     screenshots: screenshots,
+                    inkMarks: [],
                     warnings: []
                 )
             }

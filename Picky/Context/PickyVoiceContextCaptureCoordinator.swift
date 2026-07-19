@@ -16,20 +16,21 @@ struct PickyVoiceContextCaptureResult {
 struct PickyPreparedVoiceContextCapture {
     let captureID: UUID
     let settings: PickySettings
-    let screenCaptures: [CompanionScreenCapture]
+    let contextPacket: PickyPreparedContextPacket
     let source: String
-    let inkCapture: PickyInkCapture?
 }
 
 @MainActor
 struct PickyVoiceContextCaptureCoordinator {
     typealias ScreenCapture = @MainActor (_ scope: PickyScreenContextScope, _ maximumDimension: Int) async throws -> [CompanionScreenCapture]
     typealias SettingsProvider = @MainActor () -> PickySettings
-    typealias ContextAssembler = @MainActor (_ screenCaptures: [CompanionScreenCapture], _ source: String, _ transcript: String, _ inkCapture: PickyInkCapture?) async throws -> PickyContextPacket
+    typealias ContextPreflightCapture = @MainActor () async -> PickyContextPacketPreflight
+    typealias ContextPreparer = @MainActor (_ screenCaptures: [CompanionScreenCapture], _ source: String, _ inkCapture: PickyInkCapture?, _ preflight: PickyContextPacketPreflight) async throws -> PickyPreparedContextPacket
 
     private let screenCapture: ScreenCapture
     private let settingsProvider: SettingsProvider
-    private let contextAssembler: ContextAssembler
+    private let contextPreflightCapture: ContextPreflightCapture
+    private let contextPreparer: ContextPreparer
 
     init(
         screenCapture: @escaping ScreenCapture = { scope, maximumDimension in
@@ -39,11 +40,13 @@ struct PickyVoiceContextCaptureCoordinator {
             )
         },
         settingsProvider: @escaping SettingsProvider = { PickySettingsStore().load() },
-        contextAssembler: @escaping ContextAssembler = PickyVoiceContextCaptureCoordinator.assembleContextPacket
+        contextPreflightCapture: @escaping ContextPreflightCapture = PickyVoiceContextCaptureCoordinator.captureContextPreflight,
+        contextPreparer: @escaping ContextPreparer = PickyVoiceContextCaptureCoordinator.prepareContextPacket
     ) {
         self.screenCapture = screenCapture
         self.settingsProvider = settingsProvider
-        self.contextAssembler = contextAssembler
+        self.contextPreflightCapture = contextPreflightCapture
+        self.contextPreparer = contextPreparer
     }
 
     func captureContext(
@@ -68,55 +71,53 @@ struct PickyVoiceContextCaptureCoordinator {
         return try await assembleContext(prepared, transcript: transcript)
     }
 
-    /// Starts the screen portion of a neutral context capture. Call this as
-    /// soon as PTT is released, before transcription has finished.
+    /// Starts transcript-independent context capture as soon as PTT is
+    /// released. Browser/AX state intentionally reflects the release moment,
+    /// matching the screen snapshot while transcription is still in progress.
     func prepareContext(
         source: String,
         inkCapture: PickyInkCapture? = nil
     ) async throws -> PickyPreparedVoiceContextCapture? {
         let captureID = UUID()
         let settings = settingsProvider()
-        let screenCaptureStartedAt = Date()
+        let contextPreparationStartedAt = Date()
+        let screenCapture = screenCapture
+        let contextPreflightCapture = contextPreflightCapture
+        async let preflight = contextPreflightCapture()
         let screenCaptures = try await screenCapture(
             settings.screenContextScope,
             settings.screenshotQuality.maximumDimension
         )
-        let screenCaptureMilliseconds = Int(Date().timeIntervalSince(screenCaptureStartedAt) * 1_000)
+        let screenCaptureMilliseconds = Int(Date().timeIntervalSince(contextPreparationStartedAt) * 1_000)
         PickyLog.notice(
             .latency,
             prefix: "⏱️ Picky latency —",
             message: "event=screenCaptureFinished captureID=\(captureID) source=\(source) ms=\(screenCaptureMilliseconds) screens=\(screenCaptures.count)"
         )
         guard !Task.isCancelled else { return nil }
+        let preparedPacket = try await contextPreparer(screenCaptures, source, inkCapture, await preflight)
+        let contextPreparationMilliseconds = Int(Date().timeIntervalSince(contextPreparationStartedAt) * 1_000)
+        PickyLog.notice(
+            .latency,
+            prefix: "⏱️ Picky latency —",
+            message: "event=contextAssemblerFinished captureID=\(captureID) contextID=\(preparedPacket.id) source=\(source) phase=preTranscript ms=\(contextPreparationMilliseconds)"
+        )
+        guard !Task.isCancelled else { return nil }
         return PickyPreparedVoiceContextCapture(
             captureID: captureID,
             settings: settings,
-            screenCaptures: screenCaptures,
-            source: source,
-            inkCapture: inkCapture
+            contextPacket: preparedPacket,
+            source: source
         )
     }
 
-    /// Joins a prepared screen capture with the final STT transcript and
-    /// assembles the packet that is sent to the agent.
+    /// Joins the prepared neutral context with the final STT transcript.
     func assembleContext(
         _ prepared: PickyPreparedVoiceContextCapture,
         transcript: String
     ) async throws -> PickyVoiceContextCaptureResult? {
         guard !Task.isCancelled else { return nil }
-        let contextAssemblyStartedAt = Date()
-        let assembled = try await contextAssembler(
-            prepared.screenCaptures,
-            prepared.source,
-            transcript,
-            prepared.inkCapture
-        )
-        let contextAssemblyMilliseconds = Int(Date().timeIntervalSince(contextAssemblyStartedAt) * 1_000)
-        PickyLog.notice(
-            .latency,
-            prefix: "⏱️ Picky latency —",
-            message: "event=contextAssemblerFinished captureID=\(prepared.captureID) contextID=\(assembled.id) source=\(prepared.source) ms=\(contextAssemblyMilliseconds)"
-        )
+        let assembled = prepared.contextPacket.attaching(transcript: transcript)
         let gated = Self.applyInkOnlyAttachmentGate(assembled, settings: prepared.settings)
         return PickyVoiceContextCaptureResult(contextPacket: gated, source: prepared.source)
     }
@@ -134,13 +135,25 @@ struct PickyVoiceContextCaptureCoordinator {
         return packet.withScreenshotsCleared()
     }
 
-    private static func assembleContextPacket(
+    private static func captureContextPreflight() async -> PickyContextPacketPreflight {
+        await makeContextAssembler(screenCaptures: [], inkCapture: nil).capturePreflight()
+    }
+
+    private static func prepareContextPacket(
         screenCaptures: [CompanionScreenCapture],
         source: String,
-        transcript: String,
+        inkCapture: PickyInkCapture?,
+        preflight: PickyContextPacketPreflight
+    ) async throws -> PickyPreparedContextPacket {
+        try makeContextAssembler(screenCaptures: screenCaptures, inkCapture: inkCapture)
+            .prepare(source: source, preflight: preflight)
+    }
+
+    private static func makeContextAssembler(
+        screenCaptures: [CompanionScreenCapture],
         inkCapture: PickyInkCapture?
-    ) async throws -> PickyContextPacket {
-        let assembler = PickyContextPacketAssembler(
+    ) -> PickyContextPacketAssembler {
+        PickyContextPacketAssembler(
             appProvider: WorkspacePickyApplicationContextProvider(),
             windowProvider: CGWindowPickyWindowContextProvider(),
             advancedBrowserProvider: ChainedBrowserContextProvider(providers: [
@@ -154,6 +167,5 @@ struct PickyVoiceContextCaptureCoordinator {
             screenProvider: StaticPickyScreenContextProvider(captures: screenCaptures, inkCapture: inkCapture),
             defaultCwd: PickySettingsStore().load().mainAgentCwd
         )
-        return try await assembler.assemble(source: source, transcript: transcript)
     }
 }

@@ -129,7 +129,7 @@ Most toggles and pickers save immediately. Directory and provider text fields sh
 Footer controls are always visible:
 
 - **Quit**: asks for confirmation before terminating Picky.
-- **Hide Dock / Show Dock**: hides or restores the HUD dock on every display without stopping Pickles or disconnecting their sessions. The choice persists across relaunches. Clicking a Pickle notification explicitly restores the Dock so the requested conversation can open.
+- **Hide Dock / Show Dock**: hides or restores only the HUD dock on the display where the companion panel is open, without stopping Pickles or disconnecting their sessions. Each display's choice persists independently across relaunches. Clicking a Pickle notification explicitly restores the Dock so the requested conversation can open.
 - **Send feedback (bug glyph)**: opens the feedback form regardless of which tab you are on. Routes the panel to Status → Send feedback so the back chevron lands on a familiar surface afterward.
 - **Light/Dark icons**: click the sun or moon directly to select and persist the Picky UI appearance. The selected icon uses a quiet highlighted background.
 
@@ -229,7 +229,9 @@ Details:
 
 ### 6.1 Picky screen guidance
 
-When a reply refers to a concrete location in a captured screenshot, Picky can temporarily point at that location or draw targets, circles, rectangles, lines, spotlights, and labels over the matching display. These overlays are grounded in the screenshot captured for the current turn, disappear automatically, and are not added to the conversation transcript.
+When a reply refers to a concrete location in a captured screenshot, Picky can point at that location or draw rough rectangles and lines with optional spotlights and labels over the matching display. Visual narration is revealed sentence by sentence, so each pointer or drawing appears alongside the part of the spoken/text response that describes it.
+
+These overlays are grounded in the screenshot captured for the current turn. Picky validates the current screen pixels before revealing them, hides drawings when the referenced area changes substantially, and can restore them if the original scene returns during narration or within the roughly 30-second recovery window afterward. Drawings that remain after narration show a lower-center **Clear drawing** control. Agent-authored overlays are visual-only and are not added to the conversation transcript.
 
 Turn **Screen pointing & drawing** off under Settings → Agents → Tools to disable all agent-authored screen overlays. This does not disable the marks you draw yourself during Push-to-Talk or Quick Input.
 

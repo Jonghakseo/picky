@@ -190,7 +190,9 @@ You can explicitly arm a Pickle as the target for the next Picky screen-context 
 4. Use Push-to-Talk or Quick Input.
 5. The next screen-context input is sent directly to that Pickle.
 6. By default, the input is delivered as a **follow-up** so it waits for the Pickle's current turn to finish. Change **Settings → Picky → Armed Pickle delivery** to **Steer** if you want armed Push-to-Talk and Quick Input to interrupt the current turn instead.
-7. The target clears after delivery.
+7. A one-shot target clears after delivery; a locked target stays armed.
+8. When that armed delivery includes at least one screenshot, the Pickle receives the visual annotation DSL for that response only and may draw grounded `RECT`, `LINE`, or `PATH` annotations on the captured screen. Text-only deliveries never enable the DSL.
+9. Clearing the one-shot armed badge does not cancel the response already in flight. Its turn-scoped visual capability remains valid unless a newer screen-context submission supersedes it, the turn is cancelled, or the captured scene no longer matches.
 
 ## 5. Quick Input text input
 

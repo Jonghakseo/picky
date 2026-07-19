@@ -42,6 +42,10 @@ interface RuntimeEventHandlerDependencies {
   isPickleSession(sessionId: string): boolean;
   emitExtensionUiRequest(request: PickyExtensionUiRequest): void;
   onInputMessage?(sessionId: string, event: Extract<RuntimeEvent, { type: "input_message" }>): Promise<void>;
+  transformAssistantDelta?(sessionId: string, delta: string): string;
+  sanitizeAssistantText?(sessionId: string, text: string): string;
+  finishAssistantMessage?(sessionId: string): void;
+  finishAssistantRun?(sessionId: string): void;
   messageBuilder: RuntimeMessageJournal;
 }
 
@@ -87,8 +91,11 @@ export class RuntimeEventHandler {
     if (event.type === "assistant_delta") {
       await this.drainPendingThinkingFlush(sessionId);
       this.thinkingActive.set(sessionId, false);
-      this.dependencies.messageBuilder.appendAssistantDelta(sessionId, event.delta);
-      this.assistantDrafts.set(sessionId, `${this.assistantDrafts.get(sessionId) ?? ""}${event.delta}`);
+      const delta = this.dependencies.transformAssistantDelta?.(sessionId, event.delta) ?? event.delta;
+      if (delta) {
+        this.dependencies.messageBuilder.appendAssistantDelta(sessionId, delta);
+        this.assistantDrafts.set(sessionId, `${this.assistantDrafts.get(sessionId) ?? ""}${delta}`);
+      }
       return;
     }
     if (event.type === "thinking_delta") return this.applyThinkingEvent(sessionId, event);
@@ -96,7 +103,14 @@ export class RuntimeEventHandler {
     if (event.type === "status") {
       await this.drainPendingThinkingFlush(sessionId);
       this.thinkingActive.set(sessionId, false);
-      return this.applyStatusEvent(sessionId, event);
+      const terminal = ["completed", "failed", "cancelled"].includes(event.status);
+      const ignoredTransientBusy = this.isIgnoredTransientBusyStatus(sessionId, event);
+      if (!ignoredTransientBusy && (terminal || event.status === "waiting_for_input")) this.dependencies.finishAssistantMessage?.(sessionId);
+      await this.applyStatusEvent(sessionId, event);
+      if (!ignoredTransientBusy && terminal && isTerminalStatus(this.dependencies.getSession(sessionId).status)) {
+        this.dependencies.finishAssistantRun?.(sessionId);
+      }
+      return;
     }
     if (event.type === "extension_ui") {
       if (isIgnoredFireAndForgetExtensionUi(event)) return;
@@ -122,6 +136,7 @@ export class RuntimeEventHandler {
   private async applyInputMessageEvent(sessionId: string, event: Extract<RuntimeEvent, { type: "input_message" }>): Promise<void> {
     if (event.originatedBy === "internal" || event.display === false) return;
     await this.dependencies.onInputMessage?.(sessionId, event);
+    this.dependencies.finishAssistantMessage?.(sessionId);
     await this.dependencies.messageBuilder.flushAssistantText(sessionId);
     await this.dependencies.messageBuilder.flushThinking(sessionId);
     await this.dependencies.commitTurnActivity(sessionId);
@@ -156,10 +171,13 @@ export class RuntimeEventHandler {
     // intermediate message in a multi-turn ReAct loop. Failed runtime events often carry only a
     // diagnostic summary while the draft is merely partial output, so do not promote the draft to
     // finalAnswer for failures unless Pi explicitly provides event.finalAnswer.
-    const explicitFinalAnswer = cleanFinalAnswer(event.finalAnswer);
+    const sanitizedFinalAnswer = event.finalAnswer === undefined
+      ? undefined
+      : this.dependencies.sanitizeAssistantText?.(sessionId, event.finalAnswer) ?? event.finalAnswer;
+    const explicitFinalAnswer = cleanFinalAnswer(sanitizedFinalAnswer);
     const finalAnswer = explicitFinalAnswer ?? (terminal ? (event.status === "failed" ? undefined : cleanFinalAnswer(this.assistantDrafts.get(sessionId))) : undefined);
     const currentSession = this.dependencies.getSession(sessionId);
-    if (currentSession.status === "running" && event.status === "failed" && !event.compactionFailed && isTransientAgentBusyError(event.summary)) {
+    if (this.isIgnoredTransientBusyStatus(sessionId, event)) {
       logAgentd("session transient busy status ignored", { sessionId, summary: event.summary });
       await this.dependencies.appendLog(sessionId, `runtime busy ignored: ${event.summary ?? "Agent is already processing"}`);
       return;
@@ -258,6 +276,13 @@ export class RuntimeEventHandler {
     }
   }
 
+  private isIgnoredTransientBusyStatus(sessionId: string, event: Extract<RuntimeEvent, { type: "status" }>): boolean {
+    return this.dependencies.getSession(sessionId).status === "running"
+      && event.status === "failed"
+      && !event.compactionFailed
+      && isTransientAgentBusyError(event.summary);
+  }
+
   private async applyThinkingEvent(sessionId: string, event: Extract<RuntimeEvent, { type: "thinking_delta" }>): Promise<void> {
     if (!event.delta) return;
 
@@ -352,6 +377,7 @@ export class RuntimeEventHandler {
       if (request.method === "set_editor_text") this.dependencies.emitExtensionUiRequest(request);
       return;
     }
+    this.dependencies.finishAssistantMessage?.(sessionId);
     await this.dependencies.messageBuilder.flushAssistantText(sessionId);
     await this.dependencies.messageBuilder.flushThinking(sessionId);
     await this.dependencies.commitTurnActivity(sessionId);
@@ -382,6 +408,7 @@ export class RuntimeEventHandler {
       this.seenToolCallIds.set(sessionId, seen);
     }
     if (event.status === "running") {
+      this.dependencies.finishAssistantMessage?.(sessionId);
       await this.dependencies.messageBuilder.flushAssistantText(sessionId);
       await this.dependencies.messageBuilder.flushThinking(sessionId);
     }

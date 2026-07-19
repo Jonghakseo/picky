@@ -445,8 +445,8 @@ export class AgentdServer {
       clearQueue: (cmd) => this.options.supervisor.clearQueue(cmd.sessionId, cmd.kind),
       syncTerminalSession: (cmd) => this.options.supervisor.syncTerminalSession(cmd.sessionId, cmd.baselinePiMessageId),
       setTerminalSessionTailEnabled: (cmd) => this.options.supervisor.setTerminalSessionTailEnabled(cmd.sessionId, cmd.enabled),
-      followUp: (cmd) => this.options.supervisor.followUp(cmd.sessionId, cmd.text, cmd.context),
-      steer: (cmd) => this.options.supervisor.steer(cmd.sessionId, cmd.text, cmd.context),
+      followUp: (cmd) => this.options.supervisor.followUp(cmd.sessionId, cmd.text, cmd.context, cmd.visualDslEnabled === true),
+      steer: (cmd) => this.options.supervisor.steer(cmd.sessionId, cmd.text, cmd.context, cmd.visualDslEnabled === true),
       abort: (cmd) => this.options.supervisor.abort(cmd.sessionId),
       answerExtensionUi: (cmd) => this.options.supervisor.answerExtensionUi(cmd.sessionId, cmd.requestId, cmd.value),
       reloadPlugins: async (cmd) => {

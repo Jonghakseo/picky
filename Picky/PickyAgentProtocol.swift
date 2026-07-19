@@ -87,6 +87,9 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var draftFingerprint: String?
     var item: PickyAutocompleteItem?
     var prefix: String?
+    /// Enables turn-scoped visual annotation DSL parsing for an explicitly armed Pickle input.
+    /// Agentd still requires at least one screenshot before activating the capability.
+    var visualDslEnabled: Bool?
 
     init(
         id: String = "cmd-\(UUID().uuidString)",
@@ -126,7 +129,8 @@ struct PickyCommandEnvelope: Codable, Equatable {
         draftRevision: Int? = nil,
         draftFingerprint: String? = nil,
         item: PickyAutocompleteItem? = nil,
-        prefix: String? = nil
+        prefix: String? = nil,
+        visualDslEnabled: Bool? = nil
     ) {
         self.id = id
         self.protocolVersion = pickyAgentProtocolVersion
@@ -167,6 +171,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.draftFingerprint = draftFingerprint
         self.item = item
         self.prefix = prefix
+        self.visualDslEnabled = visualDslEnabled
     }
 }
 
@@ -589,6 +594,30 @@ struct PickyAnnotationOverlayRequest: Codable, Equatable, Identifiable {
     let screenId: String?
     let screenBounds: PickyCGRect?
     let screenshotSize: PickyPointerScreenshotSize?
+    /// Silent Pickle DSL annotations bypass narration-relative buffering after scene validation.
+    let revealImmediately: Bool?
+
+    init(
+        id: String,
+        mode: PickyAnnotationOverlayMode,
+        annotations: [PickyAnnotationOverlayAnnotation],
+        contextId: String? = nil,
+        contextGeneration: Int? = nil,
+        screenId: String? = nil,
+        screenBounds: PickyCGRect? = nil,
+        screenshotSize: PickyPointerScreenshotSize? = nil,
+        revealImmediately: Bool? = nil
+    ) {
+        self.id = id
+        self.mode = mode
+        self.annotations = annotations
+        self.contextId = contextId
+        self.contextGeneration = contextGeneration
+        self.screenId = screenId
+        self.screenBounds = screenBounds
+        self.screenshotSize = screenshotSize
+        self.revealImmediately = revealImmediately
+    }
 }
 
 struct PickyVisualNarrationSegmentIdentity: Codable, Equatable, Hashable {

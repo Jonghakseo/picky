@@ -14,6 +14,7 @@ import type { ModelCycleDirection, PickyActivitySummary, PickyAgentSession, Pick
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-overlay-request.js";
 import type { PickyShowAnnotationsRequest, PickyShowAnnotationsResult } from "./application/annotation-overlay-request.js";
 import { AnnotationDslParser, type AnnotationDslTag } from "./domain/annotation-dsl.js";
+import { PickleVisualDslCoordinator, type PickleVisualDslLease } from "./application/pickle-visual-dsl-coordinator.js";
 import { NarrationSentenceChunker } from "./domain/narration-sentence-chunker.js";
 import { VisualNarrationSegmentAssembler, type VisualNarrationSegmentAction } from "./domain/visual-narration-segment.js";
 import { readPiSessionInfoName } from "./application/pi-session-syncer.js";
@@ -185,6 +186,8 @@ export class SessionSupervisor extends EventEmitter {
   // items as pending bubbles instead of (incorrectly) hiding them behind a duplicate user bubble.
   private pendingQueueDeliveries = new Map<string, PendingQueueDelivery[]>();
   private materializedQueueDeliveries = new Map<string, PendingQueueDelivery[]>();
+  private readonly pendingPickleVisualDslLeases = new Map<string, PickleVisualDslLease>();
+  private readonly pickleVisualDslCoordinator: PickleVisualDslCoordinator;
   // Serialize all session-state writes per session id. Without this, concurrent patch/sync calls
   // capture stale snapshots in their `{ ...mustGet(), ...patch }` spread and overwrite each
   // other's in-memory cache + persisted state. The status:running patch and the synthetic
@@ -198,6 +201,7 @@ export class SessionSupervisor extends EventEmitter {
     super();
     this.sessionIdFactory = options.sessionIdFactory ?? (() => `session-${randomUUID()}`);
     this.artifactMaterializer = new ArtifactMaterializer();
+    this.pickleVisualDslCoordinator = new PickleVisualDslCoordinator((request) => this.emit("annotationOverlayRequested", request));
     this.messageBuilder = new SessionMessageBuilder({
       emitAppended: async (sessionId, message, seq) => { await this.chainEmit(sessionId, async () => { this.emit("messageAppended", sessionId, message, seq); }); },
       emitImported: async (sessionId, messages, seq) => { await this.chainEmit(sessionId, async () => { this.emit("messagesImported", sessionId, messages, seq); }); },
@@ -232,6 +236,10 @@ export class SessionSupervisor extends EventEmitter {
       isPickleSession: (sessionId) => this.pickleSessionIds.has(sessionId),
       emitExtensionUiRequest: (request) => this.emit("extensionUiRequest", request),
       onInputMessage: (sessionId, event) => this.handleRuntimeInputMessage(sessionId, event),
+      transformAssistantDelta: (sessionId, delta) => this.pickleVisualDslCoordinator.consumeAssistantDelta(sessionId, delta),
+      sanitizeAssistantText: (sessionId, text) => this.pickleVisualDslCoordinator.sanitizeCompleteText(sessionId, text),
+      finishAssistantMessage: (sessionId) => this.pickleVisualDslCoordinator.finishAssistantMessage(sessionId),
+      finishAssistantRun: (sessionId) => this.pickleVisualDslCoordinator.deactivate(sessionId, "runtime terminal"),
       messageBuilder: this.messageBuilder,
     });
   }
@@ -1924,7 +1932,8 @@ export class SessionSupervisor extends EventEmitter {
     this.pickleSessionIds.delete(sessionId);
     this.sessionContexts.delete(sessionId);
     this.sessionSeq.delete(sessionId);
-    this.pendingQueueDeliveries.delete(sessionId);
+    this.clearPendingQueueDeliveries(sessionId);
+    this.pickleVisualDslCoordinator.deactivate(sessionId, "session deleted");
     this.materializedQueueDeliveries.delete(sessionId);
     this.turnActivity.delete(sessionId);
     this.noTurnRanSessionStateRestores.delete(sessionId);
@@ -1985,7 +1994,7 @@ export class SessionSupervisor extends EventEmitter {
       handle: (id, action) => this.runtimeHandleForSessionCommand(id, action),
       session: (id) => this.mustGet(id),
       removeMessages: (id, ids) => this.messageBuilder.removeMessages(id, ids),
-      drainQueue: async (id, handle) => { this.pendingQueueDeliveries.delete(id); this.materializedQueueDeliveries.delete(id); handle.clearQueue(); await this.applyQueueUpdate(id, [], []); },
+      drainQueue: async (id, handle) => { this.clearPendingQueueDeliveries(id); this.materializedQueueDeliveries.delete(id); handle.clearQueue(); await this.applyQueueUpdate(id, [], []); },
       patch: (id, patch) => this.patch(id, patch),
       updateTodoState: (id, todoState) => this.updateTodoState(id, todoState),
       emitRewound: (id, editorText, removedIds) => this.emit("sessionRewound", id, editorText, removedIds),
@@ -2043,7 +2052,7 @@ export class SessionSupervisor extends EventEmitter {
     return this.terminalSessionCoordinator.sync(sessionId, baselinePiMessageId);
   }
 
-  async followUp(sessionId: string, text: string, context?: PickyContextPacket): Promise<PickyAgentSession> {
+  async followUp(sessionId: string, text: string, context?: PickyContextPacket, visualDslEnabled = false): Promise<PickyAgentSession> {
     const session = this.mustGet(sessionId);
     if (session.archived === true) throw new Error("Cannot follow up an archived session");
     if (["failed", "cancelled"].includes(session.status)) throw new Error(`Cannot follow up ${session.status} session`);
@@ -2076,15 +2085,18 @@ export class SessionSupervisor extends EventEmitter {
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
     if (isNoTurnStateRestoringSlashCommand(text)) this.rememberNoTurnRanSessionState(sessionId);
     if (isReloadSlashCommand(text)) this.pendingResourceReloadSessionIDs.add(sessionId);
-    const prompt: BuiltPrompt = buildFollowUpPrompt(text, context);
-    logAgentd("follow-up requested", { sessionId, textChars: text.length, contextId: context?.id, images: prompt.imagePaths.length });
+    const visualDslLease = this.makePickleVisualDslLease(sessionId, text, context, visualDslEnabled);
+    const prompt: BuiltPrompt = buildFollowUpPrompt(text, context, { visualDslEnabled: visualDslLease !== undefined });
+    logAgentd("follow-up requested", { sessionId, textChars: text.length, contextId: context?.id, images: prompt.imagePaths.length, visualDsl: visualDslLease ? 1 : 0 });
     await this.appendLog(sessionId, `${FOLLOWUP_PREFIX}${text}`);
     const commandReceiptId = await this.recordNonSkillSlashCommandReceipt(sessionId, text);
     await this.patch(sessionId, { status: "running", lastSummary: "Follow-up queued", finalAnswer: undefined, thinkingPreview: undefined });
-    this.pushPendingQueueDelivery(sessionId, text, "user", {
+    const delivery = this.pushPendingQueueDelivery(sessionId, text, "user", {
       kind: "followUp",
       attachedImagesCount: prompt.imagePaths.length,
+      visualDslLease,
     });
+    this.activateImmediatePickleVisualDslDelivery(sessionId, delivery, visualDslLease, handle.isStreaming);
     this.queueFollowUpDelivery(sessionId, handle, prompt, text, commandReceiptId);
     return this.mustGet(sessionId);
   }
@@ -2241,12 +2253,20 @@ export class SessionSupervisor extends EventEmitter {
     }
   }
 
+  private clearPendingQueueDeliveries(sessionId: string): void {
+    const pending = this.pendingQueueDeliveries.get(sessionId) ?? [];
+    for (const delivery of pending) {
+      if (delivery.visualDslLeaseId) this.pendingPickleVisualDslLeases.delete(delivery.visualDslLeaseId);
+    }
+    this.pendingQueueDeliveries.delete(sessionId);
+  }
+
   async clearQueue(sessionId: string, _kind: "steering" | "followUp" | "all"): Promise<void> {
     const handle = this.runtimeHandles.get(sessionId);
     if (!handle) throw new Error(`Session has no attached runtime: ${sessionId}`);
     // Drop pending deliveries BEFORE applyQueueUpdate so the [] -> [] transition is not
     // mis-interpreted as Pi delivering the prompts; user explicitly discarded them.
-    this.pendingQueueDeliveries.delete(sessionId);
+    this.clearPendingQueueDeliveries(sessionId);
     this.materializedQueueDeliveries.delete(sessionId);
     handle.clearQueue();
     await this.applyQueueUpdate(sessionId, [], []);
@@ -2271,7 +2291,11 @@ export class SessionSupervisor extends EventEmitter {
     await this.drainPendingQueueDeliveryOnce(sessionId, (entry) => entry.text === text);
   }
 
-  private async drainPendingQueueDeliveryOnce(sessionId: string, matches: (entry: PendingQueueDelivery) => boolean): Promise<PendingQueueDelivery | undefined> {
+  private async drainPendingQueueDeliveryOnce(
+    sessionId: string,
+    matches: (entry: PendingQueueDelivery) => boolean,
+    options: { activateVisualDsl?: boolean } = {},
+  ): Promise<PendingQueueDelivery | undefined> {
     const pending = this.pendingQueueDeliveries.get(sessionId);
     if (!pending || pending.length === 0) return undefined;
     const index = pending.findIndex(matches);
@@ -2279,6 +2303,7 @@ export class SessionSupervisor extends EventEmitter {
     const [entry] = pending.splice(index, 1);
     if (!entry) return undefined;
     if (pending.length === 0) this.pendingQueueDeliveries.delete(sessionId);
+    if (options.activateVisualDsl) this.activatePickleVisualDslDelivery(sessionId, entry);
     this.rememberMaterializedQueueDelivery(sessionId, entry);
     await this.removeMaterializedQueueItem(sessionId, entry);
     await this.messageBuilder.recordUserText(sessionId, entry.text, entry.originatedBy, {
@@ -2292,7 +2317,8 @@ export class SessionSupervisor extends EventEmitter {
     if (!pending || pending.length === 0) return;
     const index = pending.findIndex((entry) => entry.text === text);
     if (index < 0) return;
-    pending.splice(index, 1);
+    const [entry] = pending.splice(index, 1);
+    this.discardPickleVisualDslLease(sessionId, entry);
     if (pending.length === 0) this.pendingQueueDeliveries.delete(sessionId);
   }
 
@@ -2346,12 +2372,51 @@ export class SessionSupervisor extends EventEmitter {
     return restore;
   }
 
+  private makePickleVisualDslLease(
+    sessionId: string,
+    text: string,
+    context: PickyContextPacket | undefined,
+    requested: boolean,
+  ): PickleVisualDslLease | undefined {
+    if (!requested || !this.pickleSessionIds.has(sessionId) || !context || context.screenshots.length === 0) return undefined;
+    if (isNonSkillSlashCommand(text) || this.disabledBuiltinTools.has("picky_screen_overlay")) return undefined;
+    return this.pickleVisualDslCoordinator.createLease(sessionId, context);
+  }
+
+  private activateImmediatePickleVisualDslDelivery(
+    sessionId: string,
+    delivery: PendingQueueDelivery | undefined,
+    lease: PickleVisualDslLease | undefined,
+    isStreaming: boolean,
+  ): void {
+    if (delivery && !isStreaming) this.activatePickleVisualDslDelivery(sessionId, delivery);
+    if (!delivery && lease) this.pickleVisualDslCoordinator.deactivate(sessionId, "visual DSL delivery unavailable", lease.id);
+  }
+
+  private activatePickleVisualDslDelivery(sessionId: string, delivery: PendingQueueDelivery): void {
+    const leaseId = delivery.visualDslLeaseId;
+    if (!leaseId) {
+      this.pickleVisualDslCoordinator.deactivate(sessionId, "non-visual input delivered");
+      return;
+    }
+    const lease = this.pendingPickleVisualDslLeases.get(leaseId);
+    if (!lease) return;
+    this.pendingPickleVisualDslLeases.delete(leaseId);
+    this.pickleVisualDslCoordinator.activate(lease);
+  }
+
+  private discardPickleVisualDslLease(sessionId: string, delivery: PendingQueueDelivery | undefined): void {
+    if (!delivery?.visualDslLeaseId) return;
+    this.pendingPickleVisualDslLeases.delete(delivery.visualDslLeaseId);
+    this.pickleVisualDslCoordinator.deactivate(sessionId, "delivery discarded", delivery.visualDslLeaseId);
+  }
+
   private pushPendingQueueDelivery(
     sessionId: string,
     text: string,
     originatedBy: "user" | "main_agent",
-    options: { kind: "steering" | "followUp"; attachedImagesCount?: number },
-  ): void {
+    options: { kind: "steering" | "followUp"; attachedImagesCount?: number; visualDslLease?: PickleVisualDslLease },
+  ): PendingQueueDelivery | undefined {
     // Slash commands like /diff, /fix-tests, /name, /compact are not really chat input — they
     // either run an extension overlay, fire a prompt template, or trigger a Picky-intercepted
     // built-in. Recording them as user_text adds a misleading bubble to the conversation card.
@@ -2364,9 +2429,9 @@ export class SessionSupervisor extends EventEmitter {
     // raw text before they reach the supervisor, so `isPromptInRuntimeQueue` and
     // `drainDeliveredQueueItems` both see the raw text and exactly one user_text gets recorded
     // per submission.
-    if (isNonSkillSlashCommand(text)) return;
+    if (isNonSkillSlashCommand(text)) return undefined;
     const list = this.pendingQueueDeliveries.get(sessionId) ?? [];
-    list.push({
+    const entry: PendingQueueDelivery = {
       id: randomUUID(),
       kind: options.kind,
       text,
@@ -2374,8 +2439,12 @@ export class SessionSupervisor extends EventEmitter {
       ...(options.attachedImagesCount && options.attachedImagesCount > 0
         ? { attachedImagesCount: options.attachedImagesCount }
         : {}),
-    });
+      ...(options.visualDslLease ? { visualDslLeaseId: options.visualDslLease.id } : {}),
+    };
+    list.push(entry);
+    if (options.visualDslLease) this.pendingPickleVisualDslLeases.set(options.visualDslLease.id, options.visualDslLease);
     this.pendingQueueDeliveries.set(sessionId, list);
+    return entry;
   }
 
   private async drainDeliveredQueueItems(sessionId: string, removedItems: readonly PickyQueueItem[]): Promise<void> {
@@ -2387,6 +2456,7 @@ export class SessionSupervisor extends EventEmitter {
       if (index < 0) continue;
       const [entry] = pending.splice(index, 1);
       if (!entry) continue;
+      this.activatePickleVisualDslDelivery(sessionId, entry);
       await this.messageBuilder.recordUserText(sessionId, entry.text, entry.originatedBy, {
         attachedImagesCount: entry.attachedImagesCount,
       });
@@ -2455,7 +2525,7 @@ export class SessionSupervisor extends EventEmitter {
     const exactMatch = await this.drainPendingQueueDeliveryOnce(sessionId, (entry) => {
       if (event.queueKind && entry.kind !== event.queueKind) return false;
       return entry.text === deliveredText || entry.text === event.text;
-    });
+    }, { activateVisualDsl: true });
     if (exactMatch || !event.queueKind) return;
 
     // Some Pi SDK paths can surface the built prompt as the message_start text while Picky tracks
@@ -2464,7 +2534,7 @@ export class SessionSupervisor extends EventEmitter {
     // that pending input even when no trailing queue_update [] is emitted.
     const sameKindPending = (this.pendingQueueDeliveries.get(sessionId) ?? []).filter((entry) => entry.kind === event.queueKind);
     if (sameKindPending.length === 1) {
-      await this.drainPendingQueueDeliveryOnce(sessionId, (entry) => entry.id === sameKindPending[0]!.id);
+      await this.drainPendingQueueDeliveryOnce(sessionId, (entry) => entry.id === sameKindPending[0]!.id, { activateVisualDsl: true });
     }
   }
 
@@ -2594,7 +2664,7 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   // eslint-disable-next-line complexity -- Steer owns one transactional flow across runtime attachment, rollback, queue journaling, and synchronous slash handling.
-  async steer(sessionId: string, text: string, context?: PickyContextPacket): Promise<PickyAgentSession> {
+  async steer(sessionId: string, text: string, context?: PickyContextPacket, visualDslEnabled = false): Promise<PickyAgentSession> {
     const pendingAbort = this.pendingAbortOperations.get(sessionId);
     if (pendingAbort) {
       logAgentd("steer waiting for abort", { sessionId, textChars: text.length });
@@ -2620,19 +2690,22 @@ export class SessionSupervisor extends EventEmitter {
     if (await this.executeCompactCommandIfSupported(sessionId, text, handle)) return this.mustGet(sessionId);
     await this.cancelPendingExtensionUiForUserInput(sessionId, handle);
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
-    const prompt = buildSteerPrompt(text, context);
+    const visualDslLease = this.makePickleVisualDslLease(sessionId, text, context, visualDslEnabled);
+    const prompt = buildSteerPrompt(text, context, { visualDslEnabled: visualDslLease !== undefined });
     const previousSession = this.mustGet(sessionId);
     if (isNoTurnStateRestoringSlashCommand(text)) this.rememberNoTurnRanSessionState(sessionId, previousSession);
     const revivedTerminalSession = isTerminalStatus(previousSession.status);
     if (revivedTerminalSession) {
       await this.patch(sessionId, { status: "running", lastSummary: "Steering message sent", thinkingPreview: undefined });
     }
-    logAgentd("steer requested", { sessionId, textChars: text.length, contextId: context?.id, images: prompt.imagePaths.length, isStreaming: handle.isStreaming });
+    logAgentd("steer requested", { sessionId, textChars: text.length, contextId: context?.id, images: prompt.imagePaths.length, isStreaming: handle.isStreaming, visualDsl: visualDslLease ? 1 : 0 });
     const commandReceiptId = await this.recordNonSkillSlashCommandReceipt(sessionId, text);
-    this.pushPendingQueueDelivery(sessionId, text, "user", {
+    const delivery = this.pushPendingQueueDelivery(sessionId, text, "user", {
       kind: "steering",
       attachedImagesCount: prompt.imagePaths.length,
+      visualDslLease,
     });
+    this.activateImmediatePickleVisualDslDelivery(sessionId, delivery, visualDslLease, handle.isStreaming);
     let outcome: RuntimeSteerResult | undefined;
     try {
       outcome = await handle.steer(prompt);
@@ -2705,7 +2778,8 @@ export class SessionSupervisor extends EventEmitter {
     }
     // Pending follow-up/steer prompts that were waiting for Pi to dequeue them will never be
     // processed after an abort, so drop their journal placeholders too.
-    this.pendingQueueDeliveries.delete(sessionId);
+    this.clearPendingQueueDeliveries(sessionId);
+    this.pickleVisualDslCoordinator.deactivate(sessionId, "session aborted");
     this.materializedQueueDeliveries.delete(sessionId);
     const current = this.mustGet(sessionId);
     if (current.pendingExtensionUiRequest) await this.messageBuilder.cancelExtensionQuestion(sessionId, current.pendingExtensionUiRequest.id);
@@ -2825,7 +2899,8 @@ export class SessionSupervisor extends EventEmitter {
     const context = this.sessionContexts.get(sessionId);
     const nextContext = context ? { ...context, cwd, transcript: undefined, screenshots: [] } : undefined;
     if (nextContext) this.sessionContexts.set(sessionId, nextContext);
-    this.pendingQueueDeliveries.delete(sessionId);
+    this.clearPendingQueueDeliveries(sessionId);
+    this.pickleVisualDslCoordinator.deactivate(sessionId, "runtime session replaced");
     this.materializedQueueDeliveries.delete(sessionId);
     this.queueUpdateChains.delete(sessionId);
     this.turnActivity.delete(sessionId);

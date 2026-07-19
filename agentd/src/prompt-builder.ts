@@ -29,16 +29,22 @@ export function buildMainAgentPrompt(context: PickyContextPacket): BuiltPrompt {
   return { text: lines.join("\n"), imagePaths: context.screenshots.map((s) => s.path) };
 }
 
-export function buildSteerPrompt(text: string, context?: PickyContextPacket): BuiltPrompt {
+export interface PickleTurnPromptOptions {
+  visualDslEnabled?: boolean;
+}
+
+export function buildSteerPrompt(text: string, context?: PickyContextPacket, options: PickleTurnPromptOptions = {}): BuiltPrompt {
   if (!context) return { text, imagePaths: [] };
   const lines = ["# Picky steering message", "", neutralInstruction, "", "## User steering instruction", `- Source: ${context.source}`, "", text];
+  appendPickleVisualOverlayDslPrompt(lines, context, options);
   appendContext(lines, context);
   return { text: lines.join("\n"), imagePaths: context.screenshots.map((s) => s.path) };
 }
 
-export function buildFollowUpPrompt(text: string, context?: PickyContextPacket): BuiltPrompt {
+export function buildFollowUpPrompt(text: string, context?: PickyContextPacket, options: PickleTurnPromptOptions = {}): BuiltPrompt {
   if (!context || !hasGroundingContext(context)) return { text, imagePaths: [] };
   const lines = ["# Picky follow-up", "", neutralInstruction, "", "## User follow-up", `- Source: ${context.source}`, "", text];
+  appendPickleVisualOverlayDslPrompt(lines, context, options);
   appendContext(lines, context);
   return { text: lines.join("\n"), imagePaths: context.screenshots.map((s) => s.path) };
 }
@@ -158,6 +164,24 @@ export function buildMainAgentBootstrapPair(
   ].join("\n");
   const assistant = "OK";
   return { user, assistant };
+}
+
+function appendPickleVisualOverlayDslPrompt(lines: string[], context: PickyContextPacket, options: PickleTurnPromptOptions): void {
+  if (options.visualDslEnabled !== true || context.screenshots.length === 0) return;
+  lines.push(
+    "",
+    "## Picky visual overlay DSL for this turn",
+    "",
+    "This turn is allowed to draw RECT, LINE, and PATH annotations on the screenshots attached below. Use the DSL only when a concrete screenshot location makes the answer clearer. The tags are removed from the Pickle transcript and rendered silently on the user's current screen.",
+    "Place each tag immediately before the sentence that describes it. Use screenshot pixels with a top-left origin and the supplied screenshot dimensions. Every argument is named; `label` is optional and double-quoted labels support \\\" and \\\\ escapes.",
+    "[SCREEN: id=<screenId>] selects the captured display for following tags; omit it to use the cursor/primary display.",
+    "- [RECT: x=<number> y=<number> w=<number> h=<number> label=\"short label\" spotlight]",
+    "- [LINE: x1=<number> y1=<number> x2=<number> y2=<number> label=\"short label\" spotlight=true]",
+    "- [PATH: d=\"M <x> <y> L <x> <y> C <c1x> <c1y> <c2x> <c2y> <x> <y>\" label=\"short label\"]",
+    "- PATH supports the canonical uppercase M (move), L (line), and C (cubic Bézier) subset only and does not support `spotlight`.",
+    "- `spotlight` is optional for RECT and LINE. Use it (or `spotlight=true`) to dim around the annotation; omit it or use `spotlight=false` for an outline without dimming.",
+    "Do not emit these tags when the attached screenshots do not ground the location.",
+  );
 }
 
 function buildVisualOverlayDslPrompt(disabledBuiltinTools: ReadonlySet<string>): string[] {

@@ -102,6 +102,25 @@ extension PickyInteractionReducing {
         }
     }
 
+    /// Reveals only the annotations from a silent Pickle DSL request. Other buffered
+    /// annotations keep their own narration timing, even when unrelated speech is active.
+    mutating func revealSilentAnnotations(annotationIDs: [String]) {
+        let ids = Set(annotationIDs)
+        guard !ids.isEmpty else { return }
+        var remaining: [PickyPendingAgentAnnotation] = []
+        for pending in state.pendingAgentAnnotations {
+            if ids.contains(pending.annotation.id) {
+                state.dueAgentAnnotationIDs.remove(pending.id)
+                revealAnnotation(pending.annotation, animatePointer: false)
+            } else {
+                remaining.append(pending)
+            }
+        }
+        state.pendingAgentAnnotations = remaining
+        state.agentAnnotationsDismissible = state.annotationScenePhase != .suspended && !state.agentAnnotations.isEmpty
+        record(.stateChanged, "Silent annotations revealed")
+    }
+
     /// First accepted TTS start anchors reveal timing; schedule every buffered reveal.
     mutating func applyAnnotationSpeechStarted(now: Date) {
         guard state.annotationSpeechAnchor == nil else { return }

@@ -5234,6 +5234,151 @@ describe("SessionSupervisor", () => {
     expect(userTexts(supervisor.get(session.id))).toEqual(["idle text"]);
   });
 
+  it("enables Pickle visual DSL only for an explicitly enabled turn with screenshots", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-armed-pickle-visual-dsl-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    const overlays: unknown[] = [];
+    supervisor.on("annotationOverlayRequested", (request) => overlays.push(request));
+    await supervisor.load();
+    const session = await supervisor.createPickleFromHandoff(context("create visual pickle"), {
+      title: "Visual Pickle",
+      instructions: "wait for follow-up",
+    });
+    const armedContext = {
+      ...context("show the screenshot"),
+      id: "context-armed-visual",
+      screenshots: [{
+        id: "shot-armed",
+        label: "Main",
+        path: "/tmp/armed.png",
+        screenId: "screen-armed",
+        bounds: { x: 0, y: 0, width: 800, height: 600 },
+        screenshotWidthInPixels: 1600,
+        screenshotHeightInPixels: 1200,
+        isCursorScreen: true,
+      }],
+    };
+
+    await supervisor.followUp(session.id, "show this", armedContext, true);
+    expect(runtime.handle?.followUps.at(-1)?.text).toContain("## Picky visual overlay DSL for this turn");
+
+    runtime.handle?.emit({ type: "assistant_delta", delta: "여기입니다. [RECT: x=10 y=20 w=30 h=40 label=\"영역\"] 확인하세요." });
+    runtime.handle?.emit({
+      type: "status",
+      status: "completed",
+      summary: "Completed",
+      finalAnswer: "여기입니다. [RECT: x=10 y=20 w=30 h=40 label=\"영역\"] 확인하세요.",
+    });
+    await waitUntil(() => supervisor.get(session.id)?.status === "completed");
+
+    expect(overlays).toHaveLength(1);
+    expect(overlays[0]).toMatchObject({
+      contextId: "context-armed-visual",
+      contextGeneration: 0,
+      screenId: "screen-armed",
+      annotations: [{ shape: "rect", x: 10, y: 20, w: 30, h: 40, label: "영역" }],
+    });
+    expect(supervisor.get(session.id)?.finalAnswer).toBe("여기입니다. 확인하세요.");
+    expect(supervisor.get(session.id)?.messages?.filter((message) => message.kind === "agent_text").at(-1)?.text).toBe("여기입니다. 확인하세요.");
+  });
+
+  it("does not enable Pickle visual DSL when the armed context has no screenshots", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-armed-pickle-no-screenshot-dsl-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    const overlays: unknown[] = [];
+    supervisor.on("annotationOverlayRequested", (request) => overlays.push(request));
+    await supervisor.load();
+    const session = await supervisor.createPickleFromHandoff(context("create plain pickle"), {
+      title: "Plain Pickle",
+      instructions: "wait for follow-up",
+    });
+
+    await supervisor.followUp(session.id, "plain turn", { ...context("plain turn"), screenshots: [] }, true);
+
+    expect(runtime.handle?.followUps.at(-1)?.text).not.toContain("## Picky visual overlay DSL for this turn");
+    runtime.handle?.emit({ type: "assistant_delta", delta: "[RECT: x=1 y=2 w=3 h=4] raw" });
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await waitUntil(() => supervisor.get(session.id)?.status === "completed");
+    expect(overlays).toEqual([]);
+    expect(supervisor.get(session.id)?.finalAnswer).toBe("[RECT: x=1 y=2 w=3 h=4] raw");
+  });
+
+  it("keeps the Pickle visual lease active after an ignored transient busy status", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-busy-pickle-visual-dsl-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    const overlays: unknown[] = [];
+    supervisor.on("annotationOverlayRequested", (request) => overlays.push(request));
+    await supervisor.load();
+    const session = await supervisor.createPickleFromHandoff(context("create busy pickle"), {
+      title: "Busy Pickle",
+      instructions: "wait for follow-up",
+    });
+    const armedContext = {
+      ...context("busy visual turn"),
+      id: "context-busy-visual",
+      screenshots: [{
+        id: "shot-busy",
+        label: "Main",
+        path: "/tmp/busy.png",
+        screenId: "screen-busy",
+        bounds: { x: 0, y: 0, width: 800, height: 600 },
+        screenshotWidthInPixels: 1600,
+        screenshotHeightInPixels: 1200,
+        isCursorScreen: true,
+      }],
+    };
+
+    await supervisor.followUp(session.id, "busy show", armedContext, true);
+    runtime.handle?.emit({ type: "status", status: "failed", summary: "Agent is already processing" });
+    await settle();
+    expect(supervisor.get(session.id)?.status).toBe("running");
+
+    runtime.handle?.emit({ type: "assistant_delta", delta: "[RECT: x=1 y=2 w=3 h=4] still active" });
+    await waitUntil(() => overlays.length === 1);
+    expect(overlays[0]).toMatchObject({ contextId: "context-busy-visual", annotations: [{ shape: "rect" }] });
+  });
+
+  it("activates queued Pickle visual DSL only when the matching input is delivered", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-queued-pickle-visual-dsl-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    const overlays: unknown[] = [];
+    supervisor.on("annotationOverlayRequested", (request) => overlays.push(request));
+    await supervisor.load();
+    const session = await supervisor.createPickleFromHandoff(context("create queued pickle"), {
+      title: "Queued Pickle",
+      instructions: "wait for follow-up",
+    });
+    runtime.handle!.isStreaming = true;
+    const armedContext = {
+      ...context("queued visual turn"),
+      id: "context-queued-visual",
+      screenshots: [{
+        id: "shot-queued",
+        label: "Main",
+        path: "/tmp/queued.png",
+        screenId: "screen-queued",
+        bounds: { x: 0, y: 0, width: 800, height: 600 },
+        screenshotWidthInPixels: 1600,
+        screenshotHeightInPixels: 1200,
+        isCursorScreen: true,
+      }],
+    };
+
+    await supervisor.followUp(session.id, "queued show", armedContext, true);
+    runtime.handle?.emit({ type: "assistant_delta", delta: "[RECT: x=1 y=2 w=3 h=4] old turn" });
+    await settle();
+    expect(overlays).toEqual([]);
+
+    runtime.handle?.emit({ type: "input_delivery", role: "user", text: "queued show", originatedBy: "user", queueKind: "followUp" });
+    runtime.handle?.emit({ type: "assistant_delta", delta: "[LINE: x1=1 y1=2 x2=3 y2=4] new turn" });
+    await waitUntil(() => overlays.length === 1);
+    expect(overlays[0]).toMatchObject({ contextId: "context-queued-visual", annotations: [{ shape: "line" }] });
+  });
+
   it("carries attachedImagesCount from the context screenshots to the journaled user_text on steer", async () => {
     // PTT / QuickInput on an armed Pickle ships screenshots via the structured
     // context channel, not in the message body. The HUD needs the count back

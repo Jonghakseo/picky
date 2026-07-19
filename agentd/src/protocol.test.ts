@@ -292,6 +292,7 @@ describe("protocol contract fixtures", () => {
       type: "steer",
       sessionId: "session-001",
       text: "look at this screenshot",
+      visualDslEnabled: true,
       context: {
         id: "context-steer",
         source: "text-follow-up",
@@ -304,7 +305,10 @@ describe("protocol contract fixtures", () => {
     });
 
     expect(parsed.type).toBe("steer");
-    if (parsed.type === "steer") expect(parsed.context?.screenshots[0]?.path).toBe("/tmp/shot.png");
+    if (parsed.type === "steer") {
+      expect(parsed.context?.screenshots[0]?.path).toBe("/tmp/shot.png");
+      expect(parsed.visualDslEnabled).toBe(true);
+    }
   });
 
 

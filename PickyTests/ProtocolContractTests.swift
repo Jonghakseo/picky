@@ -102,6 +102,35 @@ struct ProtocolContractTests {
         #expect(decoded.context?.id == "context-test-001")
     }
 
+    @Test func encodesArmedPickleVisualDslCapability() throws {
+        let context = PickyContextPacket(
+            id: "context-armed-pickle",
+            source: "text-follow-up",
+            capturedAt: Date(timeIntervalSince1970: 1_800_000_000),
+            transcript: "show this",
+            selectedText: nil,
+            cwd: "/tmp/project",
+            activeApp: nil,
+            activeWindow: nil,
+            browser: nil,
+            screenshots: [],
+            warnings: []
+        )
+        let command = PickyCommandEnvelope(
+            id: "cmd-armed-pickle",
+            type: .followUp,
+            context: context,
+            sessionId: "pickle-1",
+            text: "show this",
+            visualDslEnabled: true
+        )
+        let data = try JSONEncoder.pickyAgentProtocolEncoder().encode(command)
+        let decoded = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyCommandEnvelope.self, from: data)
+
+        #expect(decoded.visualDslEnabled == true)
+        #expect(decoded.context?.id == "context-armed-pickle")
+    }
+
     @Test func encodesAutocompleteQueryAndApplyCommandsWithUTF16CursorMetadata() throws {
         let query = PickyCommandEnvelope(
             id: "cmd-autocomplete-query",

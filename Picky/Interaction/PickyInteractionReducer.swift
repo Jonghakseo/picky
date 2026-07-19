@@ -152,6 +152,8 @@ struct PickyInteractionReducing {
             applyPointerAnimationFinished(pointerID: pointerID)
         case .agentAnnotationsRequested(let mode, let annotations):
             applyAgentAnnotationsRequested(mode: mode, annotations: annotations)
+        case .agentAnnotationsSettled(let annotationIDs):
+            revealSilentAnnotations(annotationIDs: annotationIDs)
         case .agentAnnotationScenePrepared(let identity):
             applyAgentAnnotationScenePrepared(identity: identity)
         case .agentAnnotationSceneMatched(let identity):

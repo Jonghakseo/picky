@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { PICKLE_TOOL_NAMES } from "./application/picky-tool-names.js";
-import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPickleCompletionPrompt, buildMainAgentPrompt, buildPicklePrompt } from "./prompt-builder.js";
+import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPickleCompletionPrompt, buildMainAgentPrompt, buildPicklePrompt, buildSteerPrompt } from "./prompt-builder.js";
 import { PickyContextPacketSchema } from "./protocol.js";
 
 const root = join(process.cwd(), "..", "contracts");
@@ -84,6 +84,23 @@ describe("neutral prompt builder", () => {
     expect(allEnabled.user).not.toContain("[SPOT" + "LIGHT:");
     expect(allEnabled.user).toContain("invisible in the user's transcript");
     expect(overlayDisabled.user).not.toContain("## Picky visual overlay DSL");
+  });
+
+  it("adds Pickle visual DSL guidance only for an enabled turn with screenshots", () => {
+    const withScreenshots = PickyContextPacketSchema.parse(readJson("context/multi-screen.context.json"));
+    const withoutScreenshots = PickyContextPacketSchema.parse(readJson("context/plain-text.context.json"));
+
+    const enabledFollowUp = buildFollowUpPrompt("show this", withScreenshots, { visualDslEnabled: true });
+    const enabledSteer = buildSteerPrompt("show this", withScreenshots, { visualDslEnabled: true });
+    const disabled = buildFollowUpPrompt("show this", withScreenshots);
+    const missingScreenshot = buildFollowUpPrompt("show this", withoutScreenshots, { visualDslEnabled: true });
+
+    expect(enabledFollowUp.text).toContain("## Picky visual overlay DSL for this turn");
+    expect(enabledFollowUp.text).toContain("[RECT: x=<number>");
+    expect(enabledFollowUp.text).toContain("[PATH: d=\"M <x> <y>");
+    expect(enabledSteer.text).toContain("## Picky visual overlay DSL for this turn");
+    expect(disabled.text).not.toContain("## Picky visual overlay DSL for this turn");
+    expect(missingScreenshot.text).not.toContain("## Picky visual overlay DSL for this turn");
   });
 
   it("places the handoff title before Pickle boilerplate so auto-name sees it early", () => {

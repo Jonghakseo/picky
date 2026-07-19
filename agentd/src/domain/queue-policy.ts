@@ -12,6 +12,7 @@ export interface MaterializedQueueDeliveryIdentity extends PendingQueueDeliveryI
 export interface PendingQueueDelivery extends MaterializedQueueDeliveryIdentity {
   originatedBy: "user" | "main_agent";
   attachedImagesCount?: number;
+  visualDslLeaseId?: string;
 }
 
 export function dropAlreadyMaterializedQueueEntries<T extends MaterializedQueueDeliveryIdentity>(

@@ -196,6 +196,8 @@ enum PickyInteractionEvent: Equatable, Codable {
     case pointerAnimationParked(pointerID: String)
     case pointerAnimationFinished(pointerID: String)
     case agentAnnotationsRequested(mode: PickyAnnotationOverlayMode, annotations: [PickyAgentAnnotation])
+    /// Reveals only the listed buffered annotations without waiting for unrelated narration.
+    case agentAnnotationsSettled(annotationIDs: [String])
     /// Starts app-local scene validation before resolved annotations may be projected.
     case agentAnnotationScenePrepared(identity: PickyAnnotationSceneIdentity)
     /// Emitted only after two low-resolution samples independently match the original context.
@@ -227,7 +229,7 @@ enum PickyInteractionEvent: Equatable, Codable {
         case visualNarrationSegmentPrepared, visualNarrationSegmentSentence, visualNarrationSegmentCommitted
         case streamedQuickReplyFinal, passiveAgentSummary, pickleCompleted, mainTurnSettled, mainAgentSessionReset, sessionTerminated
         case pointerRequested, pointerCancelled, pointerAnimationParked, pointerAnimationFinished
-        case agentAnnotationsRequested, agentAnnotationScenePrepared, agentAnnotationSceneMatched, agentAnnotationSceneMismatched
+        case agentAnnotationsRequested, agentAnnotationsSettled, agentAnnotationScenePrepared, agentAnnotationSceneMatched, agentAnnotationSceneMismatched
         case agentAnnotationRecoveryExpired
         case agentAnnotationRevealDue, agentAnnotationsClearedForUserInput
         case speechStarted, speechFinished, speechFailed, minimumDisplayTimerFired
@@ -237,7 +239,7 @@ enum PickyInteractionEvent: Equatable, Codable {
     fileprivate enum FieldKey: String, CodingKey {
         case enabled, targetSessionID, message, inputID, text, context, contextID, contextId, transcript, sessionID, sessionId
         case originSource, replyKind, source, summary, pointerID, pointerId, reason, speechID, speechId, sourceContextID
-        case timerID, timerId, mode, annotations, id, shouldSpeak, shouldSpeakFinalReply, identity, mismatchReason
+        case timerID, timerId, mode, annotations, annotationIDs, id, shouldSpeak, shouldSpeakFinalReply, identity, mismatchReason
         case visual, index, sentenceCount, playbackMode
     }
 
@@ -392,6 +394,9 @@ enum PickyInteractionEvent: Equatable, Codable {
                 mode: try payload.decode(PickyAnnotationOverlayMode.self, forKey: .mode),
                 annotations: try payload.decode([PickyAgentAnnotation].self, forKey: .annotations)
             )
+        case .agentAnnotationsSettled:
+            let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
+            self = .agentAnnotationsSettled(annotationIDs: try payload.decode([String].self, forKey: .annotationIDs))
         case .agentAnnotationScenePrepared:
             let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
             self = .agentAnnotationScenePrepared(identity: try payload.decode(PickyAnnotationSceneIdentity.self, forKey: .identity))
@@ -532,6 +537,9 @@ enum PickyInteractionEvent: Equatable, Codable {
         case .agentAnnotationsRequested(let mode, let annotations):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .agentAnnotationsRequested)
             try payload.encode(mode, forKey: .mode); try payload.encode(annotations, forKey: .annotations)
+        case .agentAnnotationsSettled(let annotationIDs):
+            var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .agentAnnotationsSettled)
+            try payload.encode(annotationIDs, forKey: .annotationIDs)
         case .agentAnnotationScenePrepared(let identity):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .agentAnnotationScenePrepared)
             try payload.encode(identity, forKey: .identity)

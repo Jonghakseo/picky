@@ -255,11 +255,16 @@ describe("AgentdServer", () => {
       screenshots: [{ id: "shot-1", label: "Main", path: "/tmp/shot.png" }],
     };
     const { ws } = await connectWithHello();
-    ws.send(JSON.stringify({ id: "cmd-steer", protocolVersion: PROTOCOL_VERSION, type: "steer", sessionId: session.id, text: "inspect this", context: steerContext }));
+    ws.send(JSON.stringify({ id: "cmd-steer", protocolVersion: PROTOCOL_VERSION, type: "steer", sessionId: session.id, text: "inspect this", context: steerContext, visualDslEnabled: true }));
 
     await waitUntil(() => steer.mock.calls.length > 0);
 
-    expect(steer).toHaveBeenCalledWith(session.id, "inspect this", expect.objectContaining({ id: "context-visual-steer", screenshots: [expect.objectContaining({ path: "/tmp/shot.png" })] }));
+    expect(steer).toHaveBeenCalledWith(
+      session.id,
+      "inspect this",
+      expect.objectContaining({ id: "context-visual-steer", screenshots: [expect.objectContaining({ path: "/tmp/shot.png" })] }),
+      true,
+    );
     ws.close();
   });
 

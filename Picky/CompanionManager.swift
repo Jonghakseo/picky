@@ -1342,12 +1342,27 @@ final class CompanionManager: ObservableObject {
         ) {
         case .steerPickle(let targetSessionID):
             print("🎙️ Picky voice route — STEER Pickle=\(targetSessionID)")
-            try await agentClient.send(PickyCommandEnvelope(type: .steer, context: contextPacket, sessionId: targetSessionID, text: transcript))
+            let visualDslEnabled = prepareArmedPickleVisualDslContext(contextPacket, sessionID: targetSessionID)
+            try await agentClient.send(PickyCommandEnvelope(
+                type: .steer,
+                context: contextPacket,
+                sessionId: targetSessionID,
+                text: transcript,
+                visualDslEnabled: visualDslEnabled
+            ))
             clearScreenContextTargetIfCurrent(targetSessionID)
             return PickyAgentSubmissionReceipt(sessionID: targetSessionID, message: "")
         case .followUpPickle(let targetSessionID):
             print("🎙️ Picky voice route — FOLLOW-UP Pickle=\(targetSessionID)")
-            try await agentClient.send(PickyCommandEnvelope(type: .followUp, context: pickleFollowUpContext(contextPacket, sessionID: targetSessionID), sessionId: targetSessionID, text: transcript))
+            let context = pickleFollowUpContext(contextPacket, sessionID: targetSessionID)
+            let visualDslEnabled = prepareArmedPickleVisualDslContext(context, sessionID: targetSessionID)
+            try await agentClient.send(PickyCommandEnvelope(
+                type: .followUp,
+                context: context,
+                sessionId: targetSessionID,
+                text: transcript,
+                visualDslEnabled: visualDslEnabled
+            ))
             clearScreenContextTargetIfCurrent(targetSessionID)
             return PickyAgentSubmissionReceipt(sessionID: targetSessionID, message: "")
         case .submitToMain:
@@ -1368,6 +1383,17 @@ final class CompanionManager: ObservableObject {
             return receipt
         }
         return try await agentClient.submit(submission)
+    }
+
+    private func prepareArmedPickleVisualDslContext(_ context: PickyContextPacket, sessionID: String) -> Bool {
+        guard selectionStore.screenContextTargetSessionID == sessionID,
+              !context.screenshots.isEmpty else { return false }
+        interactionCoordinator.accept(
+            .agentAnnotationsClearedForUserInput,
+            correlation: PickyInteractionCorrelation(contextID: context.id, sessionID: sessionID, source: .agent)
+        )
+        noteMainOverlayContext(context)
+        return true
     }
 
     private func pickleFollowUpContext(_ context: PickyContextPacket, sessionID: String) -> PickyContextPacket {
@@ -1453,12 +1479,14 @@ final class CompanionManager: ObservableObject {
                 commandType = .followUp
                 context = pickleFollowUpContext(captureResult.contextPacket, sessionID: targetSessionID)
             }
+            let visualDslEnabled = prepareArmedPickleVisualDslContext(context, sessionID: targetSessionID)
             let rejection = try await agentClient.sendAwaitingError(
                 PickyCommandEnvelope(
                     type: commandType,
                     context: context,
                     sessionId: targetSessionID,
-                    text: text
+                    text: text,
+                    visualDslEnabled: visualDslEnabled
                 ),
                 timeout: 1.0
             )
@@ -1789,10 +1817,25 @@ final class CompanionManager: ObservableObject {
                 let source: String
                 switch armedPickleDispatchMode {
                 case .steer:
-                    command = PickyCommandEnvelope(type: .steer, context: context, sessionId: sessionID, text: transcript)
+                    let visualDslEnabled = prepareArmedPickleVisualDslContext(context, sessionID: sessionID)
+                    command = PickyCommandEnvelope(
+                        type: .steer,
+                        context: context,
+                        sessionId: sessionID,
+                        text: transcript,
+                        visualDslEnabled: visualDslEnabled
+                    )
                     source = "voice-steer"
                 case .followUp:
-                    command = PickyCommandEnvelope(type: .followUp, context: pickleFollowUpContext(context, sessionID: sessionID), sessionId: sessionID, text: transcript)
+                    let followUpContext = pickleFollowUpContext(context, sessionID: sessionID)
+                    let visualDslEnabled = prepareArmedPickleVisualDslContext(followUpContext, sessionID: sessionID)
+                    command = PickyCommandEnvelope(
+                        type: .followUp,
+                        context: followUpContext,
+                        sessionId: sessionID,
+                        text: transcript,
+                        visualDslEnabled: visualDslEnabled
+                    )
                     source = "voice-follow-up"
                 }
                 do {
@@ -2432,6 +2475,12 @@ final class CompanionManager: ObservableObject {
                 .agentAnnotationsRequested(mode: request.mode, annotations: annotations),
                 correlation: PickyInteractionCorrelation(contextID: request.contextId, source: .agent)
             )
+            if request.revealImmediately == true {
+                interactionCoordinator.accept(
+                    .agentAnnotationsSettled(annotationIDs: annotations.map(\.id)),
+                    correlation: PickyInteractionCorrelation(contextID: request.contextId, source: .agent)
+                )
+            }
             if request.mode != .clear {
                 latestAgentSessionSummary = "Showing \(annotations.count) screen annotation\(annotations.count == 1 ? "" : "s")."
             }

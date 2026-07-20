@@ -15,47 +15,91 @@ struct PickyHUDArchiveUndoToast: Identifiable, Equatable {
 
 enum PickyHUDArchiveUndoToastPolicy {
     static let durationNanoseconds: UInt64 = 6_000_000_000
-    /// Logical size of the visible toast card used for corner placement.
     static let panelSize = CGSize(width: 304, height: 78)
     static let screenMargin: CGFloat = 18
-    /// Radius/offset of the card drop shadow (see `PickyHUDArchiveUndoToastView`).
-    static let shadowRadius: CGFloat = 12
-    static let shadowYOffset: CGFloat = 8
-    /// Transparent breathing room the host window adds around the card on all
-    /// sides so the drop shadow renders without being clipped at the window
-    /// bounds. The window is outset by this amount from the placed card frame.
-    static let shadowInset: CGFloat = shadowRadius + shadowYOffset
-    /// Full host window size, including the shadow breathing room.
-    static var windowSize: CGSize {
-        CGSize(
-            width: panelSize.width + shadowInset * 2,
-            height: panelSize.height + shadowInset * 2
-        )
-    }
 }
 
 enum PickyHUDArchiveUndoToastLayout {
-    /// Frame for the visible toast card, centered over the HUD dock so the undo
-    /// affordance always appears where the user is already looking. The result
-    /// is clamped fully inside `visibleFrame` with a standard margin. The toast
-    /// panel's window level sits above the dock, so overlapping the dock is
-    /// intended and keeps the affordance discoverable regardless of dock side.
-    ///
-    /// When `dockFrame` is null (no HUD panel yet) the card falls back to the
-    /// center of the visible frame.
-    static func cardFrame(
-        visibleFrame: CGRect,
+    /// Screen corners are named from the user's reading direction: `leading`
+    /// is the visible frame's minimum X and `top` is its maximum Y in AppKit
+    /// screen coordinates.
+    enum Anchor: Equatable {
+        case bottomLeading
+        case bottomTrailing
+        case topLeading
+        case topTrailing
+    }
+
+    /// Prefer the corner opposite the dock: right → bottom-leading, left →
+    /// bottom-trailing, bottom → top-trailing, top → bottom-trailing. If the
+    /// preferred corner is occupied by the current HUD panel, continue around
+    /// the remaining corners on that side before accepting an overlap.
+    static func anchor(
+        dockSide: PickyHUDDockSide,
         dockFrame: CGRect,
-        cardSize: CGSize = PickyHUDArchiveUndoToastPolicy.panelSize,
-        margin: CGFloat = PickyHUDArchiveUndoToastPolicy.screenMargin
+        visibleFrame: CGRect,
+        panelSize: CGSize = PickyHUDArchiveUndoToastPolicy.panelSize
+    ) -> Anchor {
+        let candidates: [Anchor]
+        switch dockSide {
+        case .right:
+            candidates = [.bottomLeading, .topLeading, .bottomTrailing, .topTrailing]
+        case .left:
+            candidates = [.bottomTrailing, .topTrailing, .bottomLeading, .topLeading]
+        case .bottom:
+            candidates = [.topTrailing, .topLeading, .bottomTrailing, .bottomLeading]
+        case .top:
+            candidates = [.bottomTrailing, .bottomLeading, .topTrailing, .topLeading]
+        }
+
+        return candidates.first {
+            !dockFrame.intersects(panelFrame(visibleFrame: visibleFrame, anchor: $0, panelSize: panelSize))
+        } ?? candidates[0]
+    }
+
+    static func panelFrame(
+        visibleFrame: CGRect,
+        dockSide: PickyHUDDockSide,
+        dockFrame: CGRect,
+        panelSize: CGSize = PickyHUDArchiveUndoToastPolicy.panelSize
     ) -> CGRect {
-        let width = min(cardSize.width, max(0, visibleFrame.width - (margin * 2)))
-        let height = min(cardSize.height, max(0, visibleFrame.height - (margin * 2)))
-        let anchor = dockFrame.isNull ? visibleFrame : dockFrame
-        var x = anchor.midX - (width / 2)
-        var y = anchor.midY - (height / 2)
-        x = min(max(x, visibleFrame.minX + margin), visibleFrame.maxX - width - margin)
-        y = min(max(y, visibleFrame.minY + margin), visibleFrame.maxY - height - margin)
+        panelFrame(
+            visibleFrame: visibleFrame,
+            anchor: anchor(
+                dockSide: dockSide,
+                dockFrame: dockFrame,
+                visibleFrame: visibleFrame,
+                panelSize: panelSize
+            ),
+            panelSize: panelSize
+        )
+    }
+
+    /// Compatibility fallback for callers without HUD placement context.
+    static func panelFrame(visibleFrame: CGRect, panelSize: CGSize = PickyHUDArchiveUndoToastPolicy.panelSize) -> CGRect {
+        panelFrame(visibleFrame: visibleFrame, anchor: .bottomTrailing, panelSize: panelSize)
+    }
+
+    private static func panelFrame(visibleFrame: CGRect, anchor: Anchor, panelSize: CGSize) -> CGRect {
+        let margin = PickyHUDArchiveUndoToastPolicy.screenMargin
+        let width = min(panelSize.width, max(0, visibleFrame.width - (margin * 2)))
+        let height = min(panelSize.height, max(0, visibleFrame.height - (margin * 2)))
+        let x: CGFloat
+        let y: CGFloat
+        switch anchor {
+        case .bottomLeading:
+            x = visibleFrame.minX + margin
+            y = visibleFrame.minY + margin
+        case .bottomTrailing:
+            x = visibleFrame.maxX - width - margin
+            y = visibleFrame.minY + margin
+        case .topLeading:
+            x = visibleFrame.minX + margin
+            y = visibleFrame.maxY - height - margin
+        case .topTrailing:
+            x = visibleFrame.maxX - width - margin
+            y = visibleFrame.maxY - height - margin
+        }
         return CGRect(x: x, y: y, width: width, height: height)
     }
 }
@@ -66,15 +110,10 @@ struct PickyHUDArchiveUndoToastPanelRoot: View {
 
     var body: some View {
         PickyHUDArchiveUndoToastView(toast: toast, onUndo: onUndo)
+            .padding(16)
             .frame(
                 width: PickyHUDArchiveUndoToastPolicy.panelSize.width,
                 height: PickyHUDArchiveUndoToastPolicy.panelSize.height,
-                alignment: .center
-            )
-            .padding(PickyHUDArchiveUndoToastPolicy.shadowInset)
-            .frame(
-                width: PickyHUDArchiveUndoToastPolicy.windowSize.width,
-                height: PickyHUDArchiveUndoToastPolicy.windowSize.height,
                 alignment: .center
             )
             .transition(.opacity.combined(with: .move(edge: .trailing)))
@@ -128,12 +167,7 @@ struct PickyHUDArchiveUndoToastView: View {
                 .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).fill(DS.Colors.surface1.opacity(0.28)))
                 .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).strokeBorder(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8))
         )
-        .shadow(
-            color: Color.black.opacity(0.18),
-            radius: PickyHUDArchiveUndoToastPolicy.shadowRadius,
-            x: 0,
-            y: PickyHUDArchiveUndoToastPolicy.shadowYOffset
-        )
+        .shadow(color: Color.black.opacity(0.18), radius: 12, x: 0, y: 8)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Session archived. Undo available.")
     }

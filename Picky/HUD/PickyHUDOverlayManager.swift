@@ -762,7 +762,7 @@ final class PickyHUDOverlayManager {
 
     private func makeArchiveUndoToastEntry() -> ArchiveUndoToastEntry {
         let panel = PickyHUDPanel(
-            contentRect: NSRect(origin: .zero, size: PickyHUDArchiveUndoToastPolicy.windowSize),
+            contentRect: NSRect(origin: .zero, size: PickyHUDArchiveUndoToastPolicy.panelSize),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -789,25 +789,23 @@ final class PickyHUDOverlayManager {
             .modifier(PickyPreferredColorSchemeModifier(store: self.appearanceStore))
         }
         let hostingView = NSHostingView(rootView: LocalizedHostingRoot { root })
-        hostingView.frame = NSRect(origin: .zero, size: PickyHUDArchiveUndoToastPolicy.windowSize)
+        hostingView.frame = NSRect(origin: .zero, size: PickyHUDArchiveUndoToastPolicy.panelSize)
         hostingView.autoresizingMask = [.width, .height]
         return hostingView
     }
 
     private func positionArchiveUndoToast(displayID: CGDirectDisplayID) {
         guard let screen = screen(for: displayID), let entry = archiveUndoToastsByDisplayID[displayID] else { return }
-        // Anchor the toast over the HUD dock panel so it always appears where
-        // the user is already looking, regardless of dock side. The toast panel
-        // sits above the dock's window level, so overlapping is intended.
+        let position = position(for: displayID)
+        // The HUD panel frame includes its dock rail and any open conversation
+        // card. Treating that live frame as occupied keeps the six-second undo
+        // affordance out from under the dock even while the panel moves/resizes.
         let dockFrame = panelsByDisplayID[displayID]?.panel.frame ?? .null
-        let cardFrame = PickyHUDArchiveUndoToastLayout.cardFrame(
+        let frame = PickyHUDArchiveUndoToastLayout.panelFrame(
             visibleFrame: screen.visibleFrame,
+            dockSide: position.side,
             dockFrame: dockFrame
         )
-        // Outset the host window so the drop shadow has room to render; the
-        // visible card still lands exactly on `cardFrame`.
-        let inset = PickyHUDArchiveUndoToastPolicy.shadowInset
-        let frame = cardFrame.insetBy(dx: -inset, dy: -inset)
         if entry.panel.frame.integral != frame.integral {
             entry.panel.setFrame(frame, display: true)
         }

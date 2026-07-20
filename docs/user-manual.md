@@ -187,13 +187,14 @@ You can explicitly arm a Pickle as the target for the next Picky screen-context 
 1. Open a Pickle card.
 2. Click the Pickle/Pi badge in the header, or press `Cmd + K`.
 3. The composer shows: “Next Picky screen input will go to this Pickle”.
-4. Use Push-to-Talk or Quick Input.
-5. The next screen-context input is sent directly to that Pickle.
-6. By default, the input is delivered as a **follow-up** so it waits for the Pickle's current turn to finish. Change **Settings → Picky → Armed Pickle delivery** to **Steer** if you want armed Push-to-Talk and Quick Input to interrupt the current turn instead.
-7. A one-shot target clears after delivery; a locked target stays armed.
-8. When that armed delivery includes at least one screenshot, the Pickle receives the visual annotation DSL for that response only and may draw grounded `RECT`, `LINE`, or `PATH` annotations on the captured screen. Text-only deliveries never enable the DSL.
-9. Visual Pickle replies use the same narration pipeline as main Picky: when TTS is enabled, each completed sentence is read in source order and its annotation is revealed when that sentence starts. Providers without incremental playback read the clean final reply once; with TTS disabled, sentences and annotations still appear progressively without audio. The DSL tags themselves never appear in the Pickle conversation.
-10. Clearing the one-shot armed badge does not cancel the response already in flight. Its turn-scoped visual capability remains valid unless a newer screen-context submission supersedes it, the turn is cancelled, or the captured scene no longer matches.
+4. To keep targeting the Pickle until you clear it, press and hold that badge for about one second, or right-click / Control-click its Dock icon and choose **Pin Picky Input to This Pickle**.
+5. Use Push-to-Talk or Quick Input.
+6. The next screen-context input is sent directly to that Pickle.
+7. By default, the input is delivered as a **follow-up** so it waits for the Pickle's current turn to finish. Change **Settings → Picky → Armed Pickle delivery** to **Steer** if you want armed Push-to-Talk and Quick Input to interrupt the current turn instead.
+8. A one-shot target clears after delivery. A pinned target stays armed until you click the badge again, choose **Unpin Picky Input** from its Dock context menu, or pin another Pickle.
+9. When that armed delivery includes at least one screenshot, the Pickle receives the visual annotation DSL for that response only and may draw grounded `RECT`, `LINE`, or `PATH` annotations on the captured screen. Text-only deliveries never enable the DSL.
+10. Visual Pickle replies use the same narration pipeline as main Picky: when TTS is enabled, each completed sentence is read in source order and its annotation is revealed when that sentence starts. Providers without incremental playback read the clean final reply once; with TTS disabled, sentences and annotations still appear progressively without audio. The DSL tags themselves never appear in the Pickle conversation.
+11. Clearing the one-shot armed badge does not cancel the response already in flight. Its turn-scoped visual capability remains valid unless a newer screen-context submission supersedes it, the turn is cancelled, or the captured scene no longer matches.
 
 ## 5. Quick Input text input
 
@@ -268,7 +269,7 @@ The dock icon color, glyph, unread dot, and completion flash reflect these state
 | Click a Pickle | Opens or closes its conversation card. |
 | Press and hold a Pickle | Archives it after a ~1.2s hold timer; a progress ring fills around the dock icon, and moving the cursor more than ~10pt away cancels the archive before it fires. Archives are recoverable from the undo toast or Settings → Pickle → Archived sessions. |
 | Drag a Pickle | Reorders dock Pickles, or drags one into / out of a group. The move is committed when you release. Hold it clearly **outside** the dock for a moment and an **Archive** label appears; release there to archive it (macOS Dock style). |
-| Right-click / Control-click | Opens the dock context menu (Send Context / Compact / Archive / Stop). |
+| Right-click / Control-click | Opens the dock context menu. Use **Pin Picky Input to This Pickle** to keep routing voice and Quick Input here, or **Send Next Picky Input to This Pickle** for one message only. The menu also provides Compact, Archive, and Stop; Stop is disabled when the Pickle can no longer be stopped. |
 | Click the `+` slot | Opens a popover with pinned/recent folders, **Choose Folder…**, and **New Group…**. |
 | Drag the dock handle | Move the dock along or across screen edges. The dock may tuck partly off-screen, but its handle slot stays visible so it remains grabbable. |
 | Double-click the dock handle | Toggle the dock between vertical and horizontal layouts. |
@@ -550,12 +551,13 @@ The archived Pickle list lives in **Settings → Pickle → Archived sessions**,
 
 ### 9.2 Dock right-click menu
 
-Right-click or Control-click a Pickle dock icon to open a smaller context menu:
+Right-click or Control-click a Pickle dock icon to open a smaller context menu. Labels follow Picky's selected app language:
 
-- Send Context to This Pickle / Stop Sending Context to This Pickle
-- Compact
-- Archive
-- Stop
+- **Pin Picky Input to This Pickle** / **Unpin Picky Input**: Route all subsequent Picky voice and Quick Input messages to this Pickle until you unpin it. The pinned item shows a checkmark.
+- **Send Next Picky Input to This Pickle** / **Cancel Next Picky Input Target**: Route only one Picky voice or Quick Input message to this Pickle.
+- **Compact**: Ask Pi to compress older session context.
+- **Archive**: Archive the Pickle.
+- **Stop**: Abort the Pickle when its current status allows stopping. It is disabled for terminal sessions.
 
 Compaction is available only when the session is not currently running and not already compacting.
 
@@ -926,11 +928,13 @@ Alpha builds replace the controls above with a one-line reinstall notice because
 
 ### 14.4 Send next screen context to a specific Pickle
 
-1. Open the Pickle card.
-2. Click the status/Pickle badge or press `Cmd + K`.
+1. Open the Pickle card, or right-click / Control-click its Dock icon.
+2. Click the status/Pickle badge, press `Cmd + K`, or choose **Send Next Picky Input to This Pickle**.
 3. Trigger Push-to-Talk or Quick Input.
 4. Send the request.
 5. Picky routes that input directly to the Pickle and clears the target.
+
+To continue a longer conversation through voice or Quick Input, right-click / Control-click the Pickle in the Dock and choose **Pin Picky Input to This Pickle**. It remains the input target until you choose **Unpin Picky Input**, click the header badge again, or pin another Pickle.
 
 ### 14.5 Inspect or resume in terminal
 

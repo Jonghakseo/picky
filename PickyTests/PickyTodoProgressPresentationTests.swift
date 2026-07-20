@@ -158,18 +158,25 @@ struct PickyTodoProgressPresentationTests {
         #expect(resolved == 250)
     }
 
-    @Test func expandedListOnlyScrollsAfterSixTasks() throws {
-        let threeTasks = PickyTodoState(
-            tasks: (1...3).map { PickyTodoTask(id: "todo-\($0)", content: "Task \($0)", status: .pending) },
+    @Test func expandedListScrollsWhenTaskCountExceedsFive() throws {
+        let fiveTasks = PickyTodoState(
+            tasks: (1...5).map { PickyTodoTask(id: "todo-\($0)", content: "Task \($0)", status: .pending) },
             updatedAt: Date(timeIntervalSince1970: 1_800_000_003)
         )
-        let sevenTasks = PickyTodoState(
-            tasks: (1...7).map { PickyTodoTask(id: "todo-\($0)", content: "Task \($0)", status: .pending) },
+        let sixTasks = PickyTodoState(
+            tasks: (1...6).map { PickyTodoTask(id: "todo-\($0)", content: "Task \($0)", status: .pending) },
             updatedAt: Date(timeIntervalSince1970: 1_800_000_004)
         )
 
-        #expect(try #require(PickyTodoProgressPresentation(state: threeTasks)).usesScrollableExpandedList == false)
-        #expect(try #require(PickyTodoProgressPresentation(state: sevenTasks)).usesScrollableExpandedList)
+        #expect(try #require(PickyTodoProgressPresentation(state: fiveTasks)).usesScrollableExpandedList == false)
+        #expect(try #require(PickyTodoProgressPresentation(state: sixTasks)).usesScrollableExpandedList)
+    }
+
+    @Test func inProgressTodoMarkerAnimatesOnlyWhenSessionIsRunning() {
+        #expect(PickyTodoProgressMarkerPolicy.shouldAnimateInProgressMarker(taskStatus: .inProgress, isSessionRunning: true))
+        #expect(!PickyTodoProgressMarkerPolicy.shouldAnimateInProgressMarker(taskStatus: .inProgress, isSessionRunning: false))
+        #expect(!PickyTodoProgressMarkerPolicy.shouldAnimateInProgressMarker(taskStatus: .pending, isSessionRunning: false))
+        #expect(!PickyTodoProgressMarkerPolicy.shouldAnimateInProgressMarker(taskStatus: .completed, isSessionRunning: true))
     }
 
     @Test func daemonSessionUpdateCanAuthoritativelyClearTodoState() {

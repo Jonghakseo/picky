@@ -126,6 +126,7 @@ struct PickyConversationCardView: View {
                     if let todoPresentation {
                         PickyTodoProgressOverlayView(
                             presentation: todoPresentation,
+                            isSessionRunning: session.status == .running,
                             isExpanded: todoExpansionBinding(for: todoPresentation)
                         )
                         .padding(.horizontal, 4)

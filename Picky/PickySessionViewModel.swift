@@ -1978,7 +1978,14 @@ final class PickySessionListViewModel: ObservableObject {
             todoProgressExpandedBySessionID.removeValue(forKey: sessionID)
             return
         }
+
         let previousIsComplete = PickyTodoProgressPresentation(state: previousState)?.isComplete
+        let isTransitioningToIncomplete = previousIsComplete == true && !currentPresentation.isComplete
+
+        if isTransitioningToIncomplete {
+            todoProgressExpandedBySessionID.removeValue(forKey: sessionID)
+        }
+
         guard PickyTodoProgressExpansionPolicy.shouldCollapse(
             previousIsComplete: previousIsComplete,
             currentIsComplete: currentPresentation.isComplete

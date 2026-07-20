@@ -69,7 +69,7 @@ struct PickyTodoProgressPresentation: Equatable {
     }
 
     var usesScrollableExpandedList: Bool {
-        tasks.count > 6
+        tasks.count > 5
     }
 }
 

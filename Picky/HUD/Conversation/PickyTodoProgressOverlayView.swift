@@ -155,6 +155,7 @@ struct PickyTodoProgressOverlayView: View {
     static let maximumCardWidth: CGFloat = 700
 
     let presentation: PickyTodoProgressPresentation
+    let isSessionRunning: Bool
     @Binding var isExpanded: Bool
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
 
@@ -280,14 +281,30 @@ struct PickyTodoProgressOverlayView: View {
                 .pickyFont(size: 13, weight: .semibold)
                 .foregroundColor(DS.Colors.successText)
         case .inProgress:
-            ProgressView()
-                .controlSize(.small)
-                .tint(DS.Colors.info)
+            if PickyTodoProgressMarkerPolicy.shouldAnimateInProgressMarker(
+                taskStatus: task.status,
+                isSessionRunning: isSessionRunning
+            ) {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(DS.Colors.info)
+            } else {
+                staticTodoInProgressMarker
+            }
         case .pending:
             Circle()
                 .stroke(DS.Colors.textTertiary.opacity(0.8), lineWidth: 1.3)
                 .frame(width: 12, height: 12)
         }
+    }
+
+    @ViewBuilder
+    private var staticTodoInProgressMarker: some View {
+        Circle()
+            .trim(from: 0, to: 0.72)
+            .stroke(DS.Colors.info, style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+            .rotationEffect(.degrees(-90))
+            .frame(width: 12, height: 12)
     }
 
     private func taskTextColor(_ task: PickyTodoTask) -> Color {
@@ -333,5 +350,11 @@ struct PickyTodoProgressOverlayView: View {
         }
         .frame(width: side, height: side)
         .accessibilityHidden(true)
+    }
+}
+
+enum PickyTodoProgressMarkerPolicy {
+    static func shouldAnimateInProgressMarker(taskStatus: PickyTodoStatus, isSessionRunning: Bool) -> Bool {
+        isSessionRunning && taskStatus == .inProgress
     }
 }

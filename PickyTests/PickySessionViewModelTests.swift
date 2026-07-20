@@ -538,6 +538,21 @@ struct PickySessionViewModelTests {
         #expect(viewModel.isTodoProgressExpanded(sessionID: "session-1", isComplete: true))
     }
 
+    @MainActor @Test func todoExpansionAutoExpandsWhenTodoRestartsAfterCompletion() {
+        let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionTodoStateUpdated(seq: 1))))
+
+        #expect(viewModel.isTodoProgressExpanded(sessionID: "session-1", isComplete: false))
+        viewModel.setTodoProgressExpanded(false, sessionID: "session-1")
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionTodoStateUpdated(seq: 2, taskStatus: "completed"))))
+
+        #expect(!viewModel.isTodoProgressExpanded(sessionID: "session-1", isComplete: true))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionTodoStateUpdated(seq: 3, taskStatus: "in_progress"))))
+
+        #expect(viewModel.isTodoProgressExpanded(sessionID: "session-1", isComplete: false))
+    }
+
     @MainActor @Test func todoExpansionDefaultsCompletedWorkToCollapsedAndClearsWithTodoState() {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed"))))

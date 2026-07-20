@@ -440,8 +440,8 @@ private extension PickyEventEnvelope {
             return "type=mainAgentModelsSnapshot id=\(id) models=\(models.count)"
         case .mainAgentSessionInfoUpdated(let sessionFilePath, let cwd):
             return "type=mainAgentSessionInfoUpdated id=\(id) hasSessionFile=\(sessionFilePath != nil ? 1 : 0) hasCwd=\(cwd != nil ? 1 : 0)"
-        case .sessionSnapshot(let sessions):
-            return "type=sessionSnapshot id=\(id) sessions=\(sessions.count)"
+        case .sessionSnapshot(let snapshot):
+            return "type=sessionSnapshot id=\(id) sessions=\(snapshot.sessions.count) complete=\(snapshot.isComplete) skipped=\(snapshot.skippedSessionCount)"
         case .sessionUpdated(let session):
             return "type=sessionUpdated id=\(id) session=\(session.id) status=\(session.status.rawValue)"
         case .sessionArchivedAuthoritative(let sessionId, let archived):

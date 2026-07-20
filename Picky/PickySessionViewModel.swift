@@ -1575,22 +1575,40 @@ final class PickySessionListViewModel: ObservableObject {
 
     // MARK: - Protocol event handlers
 
-    private func applySessionSnapshot(_ snapshot: [PickyAgentSession]) {
+    private func applySessionSnapshot(_ snapshot: PickySessionSnapshot) {
         PickyPerf.event("vm_event_session_snapshot")
         let elapsedSinceConnectedMs = lastConnectedAt.map { Int(Date().timeIntervalSince($0) * 1000) } ?? -1
-        pickySessionLog("snapshot sessions=\(snapshot.count) elapsedSinceConnectedMs=\(elapsedSinceConnectedMs)")
+        pickySessionLog("snapshot sessions=\(snapshot.sessions.count) complete=\(snapshot.isComplete) skipped=\(snapshot.skippedSessionCount) elapsedSinceConnectedMs=\(elapsedSinceConnectedMs)")
         disarmInitialSnapshotWatchdog()
         isLoadingInitialSessionSnapshot = false
         let previousCardsByID = Dictionary(uniqueKeysWithValues: (sessions + archivedSessions).map { ($0.id, $0) })
-        let cards = snapshot.map(SessionCard.fromAgentSession)
-        // Hydrate manuallyArchivedSessionIDs from the daemon's persisted `archived`
-        // flag so a Picky restart with empty/cleared local UserDefaults still
-        // partitions archived Pickles correctly. The union preserves any locally
-        // archived ID that has not round-tripped yet; the intersection with the
-        // snapshot universe prunes stale IDs (e.g. daemon-side purged sessions).
-        // Skip when cards is empty so a partial/empty snapshot cannot wipe the
-        // local archive set — the next non-empty snapshot will repopulate it.
-        if !cards.isEmpty {
+
+        // Retain the input order for valid daemon records while deduplicating
+        // defensively. A partial snapshot then appends only cards that failed
+        // to decode, preserving their last known local projection without
+        // allowing a duplicate session ID into either HUD list.
+        var incomingCardsByID: [String: SessionCard] = [:]
+        var incomingCardIDs: [String] = []
+        for session in snapshot.sessions {
+            let card = SessionCard.fromAgentSession(session)
+            if incomingCardsByID[card.id] == nil {
+                incomingCardIDs.append(card.id)
+            }
+            incomingCardsByID[card.id] = card
+        }
+        let incomingCards = incomingCardIDs.compactMap { incomingCardsByID[$0] }
+        let cards: [SessionCard]
+        if snapshot.isComplete {
+            cards = incomingCards
+        } else {
+            let retainedCards = previousCardsByID.values.filter { incomingCardsByID[$0.id] == nil }
+            cards = incomingCards + retainedCards
+        }
+
+        // Only a complete snapshot is authoritative for archive reconciliation.
+        // A partial snapshot may be missing an undecodable session, so it may
+        // add a valid daemon archive flag but must not remove existing IDs.
+        if snapshot.isComplete, !cards.isEmpty {
             let daemonArchivedIDs = Set(cards.filter(\.archived).map(\.id))
             let universe = Set(cards.map(\.id))
             let reconciled = archiveStore.manuallyArchivedSessionIDs
@@ -1599,9 +1617,21 @@ final class PickySessionListViewModel: ObservableObject {
             if reconciled != archiveStore.manuallyArchivedSessionIDs {
                 archiveStore.manuallyArchivedSessionIDs = reconciled
             }
+        } else if !snapshot.isComplete, !incomingCards.isEmpty {
+            let daemonArchivedIDs = Set(incomingCards.filter(\.archived).map(\.id))
+            let reconciled = archiveStore.manuallyArchivedSessionIDs.union(daemonArchivedIDs)
+            if reconciled != archiveStore.manuallyArchivedSessionIDs {
+                archiveStore.manuallyArchivedSessionIDs = reconciled
+            }
         }
         let archivedIDs = effectiveArchivedSessionIDs(for: cards)
-        lastIncrementalSeqBySessionID.removeAll()
+        if snapshot.isComplete {
+            lastIncrementalSeqBySessionID.removeAll()
+        } else {
+            for card in incomingCards {
+                lastIncrementalSeqBySessionID[card.id] = nil
+            }
+        }
         PickyPerf.interval("vm_snapshot_publish_session_lists") {
             sessions = cards.filter { !archivedIDs.contains($0.id) }
             archivedSessions = cards.filter { archivedIDs.contains($0.id) }.sortedForHUD()
@@ -1613,7 +1643,14 @@ final class PickySessionListViewModel: ObservableObject {
             PickyGitRepositoryStatus.prefetchIfNeeded(cwd: card.cwd)
             PickyGitHubPullRequestStatus.prefetchIfNeeded(cwd: card.cwd)
         }
-        pruneSlashCommandCache(knownSessionIDs: Set(cards.map(\.id)))
+        if snapshot.isComplete {
+            pruneSlashCommandCache(knownSessionIDs: Set(cards.map(\.id)))
+        } else {
+            // Missing IDs in a partial snapshot are not evidence that their
+            // drafts, terminal state, unread badges, or command caches are stale.
+            // Keep all local state until a complete snapshot reconciles it.
+            syncSlashCommands()
+        }
         syncThinkingBlockVisibility()
         syncSelectionAfterSessionListChange()
         syncVoiceFollowUpAfterSessionListChange()

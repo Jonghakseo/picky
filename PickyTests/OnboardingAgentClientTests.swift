@@ -22,7 +22,8 @@ struct OnboardingAgentClientTests {
             Issue.record("Expected sessionSnapshot follow-up, got \(firstTwo[1])")
             return
         }
-        #expect(snapshot.isEmpty)
+        #expect(snapshot.sessions.isEmpty)
+        #expect(snapshot.isComplete)
     }
 
     @Test func submitPlaysScenarioBeatsInOrderWithStableSessionId() async throws {

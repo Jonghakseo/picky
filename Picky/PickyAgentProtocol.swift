@@ -269,7 +269,7 @@ enum PickyEvent: Equatable {
     case mainMessageAppended(PickyMainAgentMessage)
     case mainAgentSessionInfoUpdated(sessionFilePath: String?, cwd: String?)
     case mainAgentModelsSnapshot([PickyMainAgentModelOption])
-    case sessionSnapshot([PickyAgentSession])
+    case sessionSnapshot(PickySessionSnapshot)
     case sessionUpdated(PickyAgentSession)
     /// Authoritative archive-flag change signaled by agentd. Picky's session
     /// view model trusts THIS event to update its local
@@ -362,7 +362,7 @@ enum PickyEvent: Equatable {
         switch type {
         case "sessionSnapshot":
             let payload = try PickySessionSnapshotPayload(from: decoder)
-            return .sessionSnapshot(payload.sessions)
+            return .sessionSnapshot(payload.snapshot)
         case "sessionUpdated":
             let payload = try PickySessionUpdatedPayload(from: decoder)
             return .sessionUpdated(payload.session)
@@ -467,8 +467,26 @@ private struct PickyMainMessageAppendedPayload: Decodable { let message: PickyMa
 private struct PickyMainAgentSessionInfoUpdatedPayload: Decodable { let sessionFilePath: String?; let cwd: String? }
 private struct PickyMainAgentModelsSnapshotPayload: Decodable { let models: [PickyMainAgentModelOption] }
 private struct PickyMainTurnSettledPayload: Decodable { let contextId: String }
-private struct PickySessionSnapshotPayload: Decodable {
+/// A daemon session snapshot plus local decode completeness metadata.
+///
+/// `skippedSessionCount` is intentionally not a wire field: it describes
+/// whether Picky had to omit malformed records while decoding this envelope.
+/// Consumers must treat incomplete snapshots as non-authoritative so an
+/// undecodable session cannot erase its already-rendered local state.
+struct PickySessionSnapshot: Equatable {
     let sessions: [PickyAgentSession]
+    let skippedSessionCount: Int
+
+    var isComplete: Bool { skippedSessionCount == 0 }
+
+    init(sessions: [PickyAgentSession], skippedSessionCount: Int = 0) {
+        self.sessions = sessions
+        self.skippedSessionCount = skippedSessionCount
+    }
+}
+
+private struct PickySessionSnapshotPayload: Decodable {
+    let snapshot: PickySessionSnapshot
 
     private enum CodingKeys: String, CodingKey { case sessions }
 
@@ -498,7 +516,7 @@ private struct PickySessionSnapshotPayload: Decodable {
         if skipped > 0 {
             PickyLog.notice(.agentClient, prefix: "\u{1F50C} Picky agent client \u{2014}", message: "session snapshot decoded with \(decoded.count) kept, \(skipped) skipped")
         }
-        sessions = decoded
+        snapshot = PickySessionSnapshot(sessions: decoded, skippedSessionCount: skipped)
     }
 }
 

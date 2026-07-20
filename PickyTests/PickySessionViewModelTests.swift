@@ -849,6 +849,44 @@ struct PickySessionViewModelTests {
         #expect(draftStore.drafts == ["session-1": "keep me"])
     }
 
+    @MainActor @Test func partialSessionSnapshotPreservesSkippedSessionAndItsComposerDraftUntilCompleteSnapshot() throws {
+        let draftStore = FakeComposerDraftStore()
+        let viewModel = PickySessionListViewModel(
+            client: FakePickyAgentClient(),
+            notificationCenter: PickyNoopNotificationCenter(),
+            composerDraftStore: draftStore
+        )
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-a", title: "A original", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-b", title: "B original", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-c", title: "C original", status: "running"))))
+        draftStore.drafts["session-b"] = "keep this draft"
+
+        let validA = #"{"id":"session-a","title":"A refreshed","status":"completed","cwd":"/tmp/a","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:10.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}"#
+        let malformedB = #"{"id":"session-b","title":"B malformed","status":42,"cwd":"/tmp/b","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:10.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}"#
+        let validC = #"{"id":"session-c","title":"C refreshed","status":"completed","cwd":"/tmp/c","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:10.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}"#
+        let partialSnapshot = #"{"id":"partial-snapshot","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:10.000Z","type":"sessionSnapshot","sessions":["#
+            + validA + "," + malformedB + "," + validC + "]}"
+
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: partialSnapshot)))
+
+        let cardsAfterPartial = viewModel.sessions + viewModel.archivedSessions
+        #expect(Set(cardsAfterPartial.map(\.id)) == ["session-a", "session-b", "session-c"])
+        #expect(cardsAfterPartial.first(where: { $0.id == "session-a" })?.title == "A refreshed")
+        #expect(cardsAfterPartial.first(where: { $0.id == "session-b" })?.title == "B original")
+        #expect(cardsAfterPartial.first(where: { $0.id == "session-c" })?.title == "C refreshed")
+        #expect(draftStore.drafts["session-b"] == "keep this draft")
+        #expect(draftStore.prunedKnownSessionIDs == nil)
+
+        let completeSnapshot = #"{"id":"complete-snapshot","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:20.000Z","type":"sessionSnapshot","sessions":["#
+            + validA + "," + validC + "]}"
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: completeSnapshot)))
+
+        let cardsAfterComplete = viewModel.sessions + viewModel.archivedSessions
+        #expect(Set(cardsAfterComplete.map(\.id)) == ["session-a", "session-c"])
+        #expect(draftStore.drafts["session-b"] == nil)
+        #expect(draftStore.prunedKnownSessionIDs == ["session-a", "session-c"])
+    }
+
     @MainActor @Test func askUserQuestionRequestStoresQuestionsAndSendsCompositeAnswer() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())

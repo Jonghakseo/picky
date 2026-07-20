@@ -829,16 +829,18 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         switch event {
         case .sessionUpdated(let session):
             rememberSession(session, ownerKey: ownerKey)
-        case .sessionSnapshot(let sessions):
-            let snapshotSessionIds = Set(sessions.map(\.id))
-            let removedSessionIds = sessionOwnerKeys.compactMap { sessionId, sessionOwnerKey in
-                sessionOwnerKey == ownerKey && !snapshotSessionIds.contains(sessionId) ? sessionId : nil
+        case .sessionSnapshot(let snapshot):
+            let snapshotSessionIDs = Set(snapshot.sessions.map(\.id))
+            if snapshot.isComplete {
+                let removedSessionIDs = sessionOwnerKeys.compactMap { sessionID, sessionOwnerKey in
+                    sessionOwnerKey == ownerKey && !snapshotSessionIDs.contains(sessionID) ? sessionID : nil
+                }
+                for sessionID in removedSessionIDs {
+                    sessionCache[sessionID] = nil
+                    sessionOwnerKeys[sessionID] = nil
+                }
             }
-            for sessionId in removedSessionIds {
-                sessionCache[sessionId] = nil
-                sessionOwnerKeys[sessionId] = nil
-            }
-            for session in sessions { rememberSession(session, ownerKey: ownerKey) }
+            for session in snapshot.sessions { rememberSession(session, ownerKey: ownerKey) }
         default:
             break
         }

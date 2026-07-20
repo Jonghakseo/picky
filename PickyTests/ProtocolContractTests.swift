@@ -83,12 +83,40 @@ struct ProtocolContractTests {
 
         let envelope = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: json)
 
-        guard case .sessionSnapshot(let sessions) = envelope.event else {
+        guard case .sessionSnapshot(let snapshot) = envelope.event else {
             Issue.record("Expected sessionSnapshot")
             return
         }
-        #expect(sessions.map(\.id) == ["session-healthy", "session-backtick-url"])
-        #expect(sessions[1].artifacts.count == 1)
+        #expect(snapshot.isComplete)
+        #expect(snapshot.skippedSessionCount == 0)
+        #expect(snapshot.sessions.map(\.id) == ["session-healthy", "session-backtick-url"])
+        #expect(snapshot.sessions[1].artifacts.count == 1)
+    }
+
+    @Test func marksSnapshotsPartialWhenAContainedSessionCannotDecode() throws {
+        let json = """
+        {
+          "id":"event-snapshot-partial",
+          "protocolVersion":"2026-07-19",
+          "timestamp":"2026-05-01T00:00:01.000Z",
+          "type":"sessionSnapshot",
+          "sessions":[
+            {"id":"session-a","title":"A","status":"running","cwd":"/tmp/a","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:01.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]},
+            {"id":"session-b","title":"B","status":42,"cwd":"/tmp/b","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:01.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]},
+            {"id":"session-c","title":"C","status":"completed","cwd":"/tmp/c","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:01.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}
+          ]
+        }
+        """.data(using: .utf8)!
+
+        let envelope = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: json)
+
+        guard case .sessionSnapshot(let snapshot) = envelope.event else {
+            Issue.record("Expected sessionSnapshot")
+            return
+        }
+        #expect(snapshot.isComplete == false)
+        #expect(snapshot.skippedSessionCount == 1)
+        #expect(snapshot.sessions.map(\.id) == ["session-a", "session-c"])
     }
 
     @Test func ignoresUnknownFutureFields() throws {

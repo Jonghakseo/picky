@@ -198,7 +198,7 @@ private func makeSessionSnapshotEvent(id: String, title: String = "Pickle", stat
         id: "event-snapshot-\(id)",
         protocolVersion: pickyAgentProtocolVersion,
         timestamp: Date(),
-        event: .sessionSnapshot([
+        event: .sessionSnapshot(PickySessionSnapshot(sessions: [
             PickyAgentSession(
                 id: id,
                 title: title,
@@ -211,7 +211,7 @@ private func makeSessionSnapshotEvent(id: String, title: String = "Pickle", stat
                 artifacts: [],
                 changedFiles: []
             )
-        ])
+        ]))
     )
 }
 
@@ -220,7 +220,7 @@ private func makeEmptySessionSnapshotEvent() -> PickyEventEnvelope {
         id: "event-snapshot-empty",
         protocolVersion: pickyAgentProtocolVersion,
         timestamp: Date(),
-        event: .sessionSnapshot([])
+        event: .sessionSnapshot(PickySessionSnapshot(sessions: []))
     )
 }
 
@@ -902,8 +902,8 @@ struct PickyAgentClientRouterTests {
         let sawSnapshot = Task<Bool, Never> {
             for await event in router.events {
                 if case .protocolEvent(let envelope) = event,
-                   case .sessionSnapshot(let sessions) = envelope.event,
-                   sessions.contains(where: { $0.id == "legacy-pickle" }) {
+                   case .sessionSnapshot(let snapshot) = envelope.event,
+                   snapshot.sessions.contains(where: { $0.id == "legacy-pickle" }) {
                     return true
                 }
             }
@@ -955,6 +955,31 @@ struct PickyAgentClientRouterTests {
         let sessions = try #require(primary.sentCommands.last { $0.type == .completePickleBridgeRequest }?.sessions)
         #expect(!sessions.contains { $0.id == "primary-session" })
         #expect(sessions.contains { $0.id == "child-session" })
+    }
+
+    @Test func partialSnapshotDoesNotEvictSessionsFromEmittingDaemon() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(
+            configuration: PickyAgentDaemonPool.Configuration(token: "tok", appSupportRoot: root)
+        )
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+
+        await router.connect()
+        primary.emit(.protocolEvent(makeSessionUpdatedEvent(id: "primary-session")))
+        primary.emit(.protocolEvent(PickyEventEnvelope(
+            id: "partial-snapshot",
+            protocolVersion: pickyAgentProtocolVersion,
+            timestamp: Date(),
+            event: .sessionSnapshot(PickySessionSnapshot(sessions: [], skippedSessionCount: 1))
+        )))
+        primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(operation: "listSessions")))
+
+        try await waitUntil {
+            primary.sentCommands.contains { $0.type == .completePickleBridgeRequest }
+        }
+        let sessions = try #require(primary.sentCommands.last { $0.type == .completePickleBridgeRequest }?.sessions)
+        #expect(sessions.contains { $0.id == "primary-session" })
     }
 
     @Test func handlesPickleBridgeListAndSteerThroughChildSessionCache() async throws {

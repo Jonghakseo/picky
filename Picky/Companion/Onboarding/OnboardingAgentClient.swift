@@ -65,7 +65,7 @@ final class OnboardingAgentClient: PickyAgentClient, @unchecked Sendable {
         // connect. An empty snapshot is what a fresh Picky install would see
         // anyway, and it clears the "loading initial sessions" watchdog so the
         // dock is responsive while the user works through the takeover.
-        emit(.sessionSnapshot([]))
+        emit(.sessionSnapshot(PickySessionSnapshot(sessions: [])))
     }
 
     func submit(_ submission: PickyAgentSubmission) async throws -> PickyAgentSubmissionReceipt {

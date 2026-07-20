@@ -354,7 +354,7 @@ The card contains:
 - Conversation history with Markdown-rendered replies. The latest Picky reply is shown in full in the HUD, including Markdown tables rendered as cell grids; older replies may stay compact and can still be opened as reports.
 - Composer for steer/follow-up input.
 - Inline question forms when Pi/tools need user input.
-- A read-only task-progress indicator when Pi shares a checklist for the active task. Click it to expand or collapse the task list; completed tasks are marked, and the current task shows its in-progress state.
+- A read-only task-progress indicator at the top of the conversation when Pi shares a checklist for the active task. Click it to expand or collapse the task list; completed tasks are marked, the current task shows its in-progress state only while the Pickle is running, and lists with six or more tasks scroll within the expanded panel.
 - Optional inline Pi terminal mode.
 - Optional private note add-on.
 

@@ -15,8 +15,23 @@ struct PickyHUDArchiveUndoToast: Identifiable, Equatable {
 
 enum PickyHUDArchiveUndoToastPolicy {
     static let durationNanoseconds: UInt64 = 6_000_000_000
+    /// Logical size of the visible toast card used for corner placement.
     static let panelSize = CGSize(width: 304, height: 78)
     static let screenMargin: CGFloat = 18
+    /// Radius/offset of the card drop shadow (see `PickyHUDArchiveUndoToastView`).
+    static let shadowRadius: CGFloat = 12
+    static let shadowYOffset: CGFloat = 8
+    /// Transparent breathing room the host window adds around the card on all
+    /// sides so the drop shadow renders without being clipped at the window
+    /// bounds. The window is outset by this amount from the placed card frame.
+    static let shadowInset: CGFloat = shadowRadius + shadowYOffset
+    /// Full host window size, including the shadow breathing room.
+    static var windowSize: CGSize {
+        CGSize(
+            width: panelSize.width + shadowInset * 2,
+            height: panelSize.height + shadowInset * 2
+        )
+    }
 }
 
 enum PickyHUDArchiveUndoToastLayout {
@@ -30,10 +45,10 @@ enum PickyHUDArchiveUndoToastLayout {
         case topTrailing
     }
 
-    /// Prefer the corner opposite the dock: right → bottom-leading, left →
-    /// bottom-trailing, bottom → top-trailing, top → bottom-trailing. If the
-    /// preferred corner is occupied by the current HUD panel, continue around
-    /// the remaining corners on that side before accepting an overlap.
+    /// Prefer the corner on the same side as the dock: right → bottom-trailing,
+    /// left → bottom-leading, bottom → bottom-trailing, top → top-trailing. If
+    /// the preferred corner is occupied by the current HUD panel, continue
+    /// around the remaining corners on that side before accepting an overlap.
     static func anchor(
         dockSide: PickyHUDDockSide,
         dockFrame: CGRect,
@@ -43,13 +58,13 @@ enum PickyHUDArchiveUndoToastLayout {
         let candidates: [Anchor]
         switch dockSide {
         case .right:
-            candidates = [.bottomLeading, .topLeading, .bottomTrailing, .topTrailing]
-        case .left:
             candidates = [.bottomTrailing, .topTrailing, .bottomLeading, .topLeading]
+        case .left:
+            candidates = [.bottomLeading, .topLeading, .bottomTrailing, .topTrailing]
         case .bottom:
-            candidates = [.topTrailing, .topLeading, .bottomTrailing, .bottomLeading]
-        case .top:
             candidates = [.bottomTrailing, .bottomLeading, .topTrailing, .topLeading]
+        case .top:
+            candidates = [.topTrailing, .topLeading, .bottomTrailing, .bottomLeading]
         }
 
         return candidates.first {
@@ -110,10 +125,15 @@ struct PickyHUDArchiveUndoToastPanelRoot: View {
 
     var body: some View {
         PickyHUDArchiveUndoToastView(toast: toast, onUndo: onUndo)
-            .padding(16)
             .frame(
                 width: PickyHUDArchiveUndoToastPolicy.panelSize.width,
                 height: PickyHUDArchiveUndoToastPolicy.panelSize.height,
+                alignment: .center
+            )
+            .padding(PickyHUDArchiveUndoToastPolicy.shadowInset)
+            .frame(
+                width: PickyHUDArchiveUndoToastPolicy.windowSize.width,
+                height: PickyHUDArchiveUndoToastPolicy.windowSize.height,
                 alignment: .center
             )
             .transition(.opacity.combined(with: .move(edge: .trailing)))
@@ -167,7 +187,12 @@ struct PickyHUDArchiveUndoToastView: View {
                 .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).fill(DS.Colors.surface1.opacity(0.28)))
                 .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).strokeBorder(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8))
         )
-        .shadow(color: Color.black.opacity(0.18), radius: 12, x: 0, y: 8)
+        .shadow(
+            color: Color.black.opacity(0.18),
+            radius: PickyHUDArchiveUndoToastPolicy.shadowRadius,
+            x: 0,
+            y: PickyHUDArchiveUndoToastPolicy.shadowYOffset
+        )
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Session archived. Undo available.")
     }

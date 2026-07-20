@@ -312,14 +312,24 @@ struct PickyTests {
         #expect(QuickInputPanelLayout.estimatedPanelHeight >= QuickInputPanelLayout.capsuleHeight + outset * 2)
     }
 
-    @Test func archiveUndoToastLayoutPrefersCornerOppositeDock() throws {
+    @Test func archiveUndoToastWindowReservesRoomForItsShadow() throws {
+        // The host window is outset from the placed card frame so the drop
+        // shadow renders without being clipped at the window bounds. The inset
+        // must cover the shadow blur radius plus its vertical offset.
+        let inset = PickyHUDArchiveUndoToastPolicy.shadowInset
+        #expect(inset >= PickyHUDArchiveUndoToastPolicy.shadowRadius + abs(PickyHUDArchiveUndoToastPolicy.shadowYOffset))
+        #expect(PickyHUDArchiveUndoToastPolicy.windowSize.width == PickyHUDArchiveUndoToastPolicy.panelSize.width + inset * 2)
+        #expect(PickyHUDArchiveUndoToastPolicy.windowSize.height == PickyHUDArchiveUndoToastPolicy.panelSize.height + inset * 2)
+    }
+
+    @Test func archiveUndoToastLayoutPrefersCornerOnDockSide() throws {
         let visibleFrame = CGRect(x: 100, y: 80, width: 1440, height: 900)
         let panelSize = CGSize(width: 304, height: 78)
         let dockFrames: [(PickyHUDDockSide, CGRect, PickyHUDArchiveUndoToastLayout.Anchor)] = [
-            (.right, CGRect(x: 1450, y: 180, width: 72, height: 520), .bottomLeading),
-            (.left, CGRect(x: 118, y: 180, width: 72, height: 520), .bottomTrailing),
-            (.bottom, CGRect(x: 480, y: 98, width: 600, height: 72), .topTrailing),
-            (.top, CGRect(x: 480, y: 890, width: 600, height: 72), .bottomTrailing)
+            (.right, CGRect(x: 1450, y: 180, width: 72, height: 520), .bottomTrailing),
+            (.left, CGRect(x: 118, y: 180, width: 72, height: 520), .bottomLeading),
+            (.bottom, CGRect(x: 480, y: 98, width: 600, height: 72), .bottomTrailing),
+            (.top, CGRect(x: 480, y: 890, width: 600, height: 72), .topTrailing)
         ]
 
         for (side, dockFrame, expectedAnchor) in dockFrames {
@@ -344,9 +354,10 @@ struct PickyTests {
     @Test func archiveUndoToastLayoutFallsBackWhenPreferredCornerIsOccupied() throws {
         let visibleFrame = CGRect(x: 100, y: 80, width: 1440, height: 900)
         let panelSize = CGSize(width: 304, height: 78)
-        // A right-side dock normally chooses bottom-leading. This HUD frame
-        // occupies that corner, so the policy must move to the next safe one.
-        let dockFrame = CGRect(x: 100, y: 80, width: 400, height: 220)
+        // A right-side dock normally chooses bottom-trailing. This HUD frame
+        // occupies that corner, so the policy must move to the next safe one on
+        // the same side (top-trailing).
+        let dockFrame = CGRect(x: 1040, y: 80, width: 500, height: 220)
 
         let anchor = PickyHUDArchiveUndoToastLayout.anchor(
             dockSide: .right,
@@ -361,7 +372,7 @@ struct PickyTests {
             panelSize: panelSize
         )
 
-        #expect(anchor == .topLeading)
+        #expect(anchor == .topTrailing)
         #expect(!dockFrame.intersects(frame))
         #expect(frame.size == panelSize)
     }

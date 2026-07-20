@@ -75,15 +75,15 @@ final class PickyHUDVisibilityStore: ObservableObject {
 }
 
 /// Resolves the display affected by the Companion footer's Dock action.
-/// The panel's screen is authoritative: menu-bar status items can be mirrored
-/// across displays while the global mouse location may belong to a different
-/// screen by the time SwiftUI evaluates the action.
+/// The display captured from the menu-bar icon is authoritative: both the
+/// global mouse location and `NSPanel.screen` can change while the panel is
+/// visible.
 enum PickyHUDDockVisibilityTarget {
     static func resolve(
-        panelDisplayID: CGDirectDisplayID?,
+        companionDisplayID: CGDirectDisplayID?,
         cursorDisplayID: CGDirectDisplayID?
     ) -> CGDirectDisplayID? {
-        panelDisplayID ?? cursorDisplayID
+        companionDisplayID ?? cursorDisplayID
     }
 }
 

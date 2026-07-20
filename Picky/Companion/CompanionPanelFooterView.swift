@@ -17,9 +17,8 @@ struct CompanionPanelFooterView: View {
     /// runtime/daemon environment. When present, the left footer action becomes
     /// Restart instead of Quit.
     var restartRequirement: PickyRestartRequirement = .none
-    /// Resolves the display that physically contains the menu-bar panel. This
-    /// keeps the Dock action scoped to the panel's screen even if menu extras
-    /// are mirrored or the global cursor reports a different display.
+    /// Resolves the display captured from the menu-bar icon that presented
+    /// this panel, keeping the Dock action stable while it remains open.
     var dockDisplayIDProvider: () -> CGDirectDisplayID? = { nil }
     /// Tapped when the user hits the bug glyph next to the appearance controls.
     /// Hoisted to the parent so the footer stays a leaf view; the parent
@@ -123,13 +122,13 @@ private struct CompanionPanelDockVisibilityButton: View {
     @EnvironmentObject private var visibilityStore: PickyHUDVisibilityStore
     let displayIDProvider: () -> CGDirectDisplayID?
 
-    /// The panel's physical screen is authoritative. The cursor remains a
-    /// fallback only while the panel is being created or detached.
+    /// The display captured when the panel opened is authoritative. The cursor
+    /// remains a fallback only while the panel is being created or detached.
     private var companionDisplayID: CGDirectDisplayID? {
         let cursorDisplayID = (NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }
             ?? NSScreen.main)?.pickyDisplayID
         return PickyHUDDockVisibilityTarget.resolve(
-            panelDisplayID: displayIDProvider(),
+            companionDisplayID: displayIDProvider(),
             cursorDisplayID: cursorDisplayID
         )
     }

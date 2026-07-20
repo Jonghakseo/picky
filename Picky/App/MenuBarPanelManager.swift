@@ -33,6 +33,10 @@ private class KeyablePanel: NSPanel, PickyScreenCaptureExcludedWindow {
 final class MenuBarPanelManager: NSObject {
     private var statusItem: NSStatusItem?
     private var panel: NSPanel?
+    /// Captured when the menu-bar item opens the Companion. `NSPanel.screen`
+    /// may be re-resolved as overlay panels are ordered in/out, so it cannot
+    /// safely choose which display the footer's Dock action controls.
+    private var companionDisplayID: CGDirectDisplayID?
     private var clickOutsideMonitor: Any?
     private var dismissPanelObserver: NSObjectProtocol?
     private var autoDismissSuspensionObserver: NSObjectProtocol?
@@ -185,6 +189,10 @@ final class MenuBarPanelManager: NSObject {
             createPanel()
         }
 
+        // Bind footer actions to the display of the menu-bar icon that opened
+        // this panel. Unlike the mouse position or `NSPanel.screen`, this
+        // remains stable for the entire visible Companion interaction.
+        companionDisplayID = statusItem?.button?.window?.screen?.pickyDisplayID
         positionPanelBelowStatusItem()
 
         // Use orderFront (not makeKeyAndOrderFront) so the panel doesn't
@@ -210,7 +218,7 @@ final class MenuBarPanelManager: NSObject {
                 sessionListViewModel: self.sessionListViewModel,
                 navigator: self.navigator,
                 dockDisplayIDProvider: { [weak self] in
-                    self?.panel?.screen?.pickyDisplayID
+                    self?.companionDisplayID
                 }
             )
             .frame(width: self.panelWidth, height: self.panelHeight)

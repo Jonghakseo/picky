@@ -415,16 +415,16 @@ struct PickySettingsPolishTests {
         #expect(!rehydrated.isVisible(for: displayB))
     }
 
-    @Test func hudDockVisibilityTargetPrefersCompanionPanelDisplayOverCursorDisplay() {
-        let panelDisplayID: CGDirectDisplayID = 101
+    @Test func hudDockVisibilityTargetPrefersCapturedCompanionDisplayOverCursorDisplay() {
+        let companionDisplayID: CGDirectDisplayID = 101
         let cursorDisplayID: CGDirectDisplayID = 202
 
         #expect(PickyHUDDockVisibilityTarget.resolve(
-            panelDisplayID: panelDisplayID,
+            companionDisplayID: companionDisplayID,
             cursorDisplayID: cursorDisplayID
-        ) == panelDisplayID)
+        ) == companionDisplayID)
         #expect(PickyHUDDockVisibilityTarget.resolve(
-            panelDisplayID: nil,
+            companionDisplayID: nil,
             cursorDisplayID: cursorDisplayID
         ) == cursorDisplayID)
     }

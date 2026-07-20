@@ -60,8 +60,8 @@ struct CompanionPanelView: View {
     /// `MenuBarPanelManager` (and, by extension, `picky://` deep links from
     /// the conversation) can drive the panel from outside the view.
     @ObservedObject var navigator: PickyPanelNavigator
-    /// The menu-bar panel's physical display. Its value is resolved at action
-    /// time because the panel may move when the status item is opened elsewhere.
+    /// The display captured from the menu-bar icon when this panel opened.
+    /// It stays stable until the panel is presented again.
     var dockDisplayIDProvider: () -> CGDirectDisplayID? = { nil }
     @StateObject private var settingsViewModel = PickySettingsViewModel()
 

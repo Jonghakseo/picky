@@ -1625,13 +1625,10 @@ final class PickySessionListViewModel: ObservableObject {
             }
         }
         let archivedIDs = effectiveArchivedSessionIDs(for: cards)
-        if snapshot.isComplete {
-            lastIncrementalSeqBySessionID.removeAll()
-        } else {
-            for card in incomingCards {
-                lastIncrementalSeqBySessionID[card.id] = nil
-            }
-        }
+        // Every snapshot begins a new daemon incremental-event epoch. Even a
+        // partial snapshot may follow an agentd restart, whose counters start
+        // at one; retained undecodable cards must accept those new events.
+        lastIncrementalSeqBySessionID.removeAll()
         PickyPerf.interval("vm_snapshot_publish_session_lists") {
             sessions = cards.filter { !archivedIDs.contains($0.id) }
             archivedSessions = cards.filter { archivedIDs.contains($0.id) }.sortedForHUD()

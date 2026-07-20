@@ -3,6 +3,7 @@
 //  PickyTests
 //
 
+import Combine
 import CoreGraphics
 import Foundation
 import Testing
@@ -413,6 +414,40 @@ struct PickySettingsPolishTests {
         let rehydrated = PickyHUDVisibilityStore(settingsStore: settingsStore)
         #expect(rehydrated.isVisible(for: displayA))
         #expect(!rehydrated.isVisible(for: displayB))
+    }
+
+    /// The HUD overlay manager syncs panels from the store's change emissions.
+    /// `@Published` emits during `willSet`, so the emitted snapshot payload —
+    /// not the store property — must already describe the post-change state.
+    /// Regression: applying the pre-change state lagged every dock toggle by
+    /// one mutation, so toggling display A visibly toggled display B first.
+    @MainActor @Test func hudVisibilityChangeEmissionsCarryPostChangeStateForPanelSync() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let settingsStore = PickySettingsStore(appSupportRoot: root)
+        var seed = PickySettings.defaults(appSupportRoot: root)
+        seed.defaultCwd = project.path
+        seed.mainAgentCwd = project.path
+        seed.worktreeParent = project.path
+        try settingsStore.save(seed)
+
+        let store = PickyHUDVisibilityStore(settingsStore: settingsStore)
+        let displayA: CGDirectDisplayID = 101
+        let displayB: CGDirectDisplayID = 202
+        var emissions: [(a: Bool, b: Bool)] = []
+        let cancellable = store.$snapshot.sink { snapshot in
+            emissions.append((a: snapshot.isVisible(for: displayA), b: snapshot.isVisible(for: displayB)))
+        }
+        defer { cancellable.cancel() }
+
+        store.toggle(for: displayA)
+        store.toggle(for: displayA)
+        store.toggle(for: displayB)
+
+        #expect(emissions.map(\.a) == [true, false, true, true])
+        #expect(emissions.map(\.b) == [true, true, true, false])
     }
 
     @Test func hudDockVisibilityTargetPrefersCapturedCompanionDisplayOverCursorDisplay() {

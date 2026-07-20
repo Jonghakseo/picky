@@ -232,9 +232,12 @@ final class PickyHUDOverlayManager {
 
     func start() {
         viewModel.start()
-        visibilityCancellable = visibilityStore.$visibilityByDisplayID
-            .sink { [weak self] _ in
-                self?.applyDockVisibility()
+        visibilityCancellable = visibilityStore.$snapshot
+            .sink { [weak self] visibility in
+                // Apply the EMITTED snapshot. `@Published` emits during `willSet`,
+                // so re-reading the store here would observe the pre-change state
+                // and permanently lag every dock toggle by one mutation.
+                self?.applyDockVisibility(visibility)
             }
         startScreenParametersObserver()
         startSettingsObserver()
@@ -279,11 +282,11 @@ final class PickyHUDOverlayManager {
         tearDownPanels()
     }
 
-    private func applyDockVisibility() {
-        syncPanelsForCurrentScreens()
+    private func applyDockVisibility(_ visibility: PickyHUDDockVisibilitySnapshot) {
+        syncPanelsForCurrentScreens(visibility: visibility)
         for (displayID, entry) in archiveUndoToastsByDisplayID {
             guard entry.toast != nil else { continue }
-            if visibilityStore.isVisible(for: displayID) {
+            if visibility.isVisible(for: displayID) {
                 entry.panel.orderFrontRegardless()
             } else {
                 entry.panel.orderOut(nil)
@@ -308,7 +311,11 @@ final class PickyHUDOverlayManager {
 
     // MARK: - Panel sync
 
-    private func syncPanelsForCurrentScreens() {
+    /// `visibility` carries the just-published snapshot when the sync runs from
+    /// the store's change emission; other callers omit it to read the current
+    /// settled state.
+    private func syncPanelsForCurrentScreens(visibility: PickyHUDDockVisibilitySnapshot? = nil) {
+        let visibility = visibility ?? visibilityStore.snapshot
         let screens = NSScreen.screens
         let liveDisplayIDs = Set(screens.compactMap(\.pickyDisplayID))
 
@@ -334,7 +341,7 @@ final class PickyHUDOverlayManager {
                 panelsByDisplayID[displayID] = makePanelEntry(displayID: displayID)
             }
             positionPanel(on: screen, displayID: displayID)
-            if visibilityStore.isVisible(for: displayID) {
+            if visibility.isVisible(for: displayID) {
                 panelsByDisplayID[displayID]?.panel.orderFrontRegardless()
             } else {
                 panelsByDisplayID[displayID]?.panel.orderOut(nil)

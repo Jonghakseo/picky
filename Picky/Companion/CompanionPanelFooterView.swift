@@ -17,6 +17,10 @@ struct CompanionPanelFooterView: View {
     /// runtime/daemon environment. When present, the left footer action becomes
     /// Restart instead of Quit.
     var restartRequirement: PickyRestartRequirement = .none
+    /// Resolves the display that physically contains the menu-bar panel. This
+    /// keeps the Dock action scoped to the panel's screen even if menu extras
+    /// are mirrored or the global cursor reports a different display.
+    var dockDisplayIDProvider: () -> CGDirectDisplayID? = { nil }
     /// Tapped when the user hits the bug glyph next to the appearance controls.
     /// Hoisted to the parent so the footer stays a leaf view; the parent
     /// routes the panel to `Status → Feedback` regardless of which tab is
@@ -50,7 +54,7 @@ struct CompanionPanelFooterView: View {
 
             CompanionPanelFooterDivider()
 
-            CompanionPanelDockVisibilityButton()
+            CompanionPanelDockVisibilityButton(displayIDProvider: dockDisplayIDProvider)
 
             Spacer(minLength: 8)
 
@@ -117,15 +121,17 @@ private struct CompanionPanelFooterDivider: View {
 
 private struct CompanionPanelDockVisibilityButton: View {
     @EnvironmentObject private var visibilityStore: PickyHUDVisibilityStore
+    let displayIDProvider: () -> CGDirectDisplayID?
 
-    /// The footer is hosted in the menu-bar companion panel. Resolve the screen
-    /// under its click location so this action only affects the dock alongside
-    /// the display where the companion is open.
+    /// The panel's physical screen is authoritative. The cursor remains a
+    /// fallback only while the panel is being created or detached.
     private var companionDisplayID: CGDirectDisplayID? {
-        let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }
-            ?? NSApp.keyWindow?.screen
-            ?? NSScreen.main
-        return screen?.pickyDisplayID
+        let cursorDisplayID = (NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }
+            ?? NSScreen.main)?.pickyDisplayID
+        return PickyHUDDockVisibilityTarget.resolve(
+            panelDisplayID: displayIDProvider(),
+            cursorDisplayID: cursorDisplayID
+        )
     }
 
     private var presentation: CompanionPanelDockActionPresentation {

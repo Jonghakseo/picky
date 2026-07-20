@@ -5,6 +5,7 @@
 //  The SwiftUI content hosted inside the menu bar panel.
 //
 
+import CoreGraphics
 import SwiftUI
 
 enum CompanionPanelMetrics {
@@ -59,6 +60,9 @@ struct CompanionPanelView: View {
     /// `MenuBarPanelManager` (and, by extension, `picky://` deep links from
     /// the conversation) can drive the panel from outside the view.
     @ObservedObject var navigator: PickyPanelNavigator
+    /// The menu-bar panel's physical display. Its value is resolved at action
+    /// time because the panel may move when the status item is opened elsewhere.
+    var dockDisplayIDProvider: () -> CGDirectDisplayID? = { nil }
     @StateObject private var settingsViewModel = PickySettingsViewModel()
 
     private var selectedTab: CompanionPanelTab { navigator.selectedTab }
@@ -122,6 +126,7 @@ struct CompanionPanelView: View {
 
             CompanionPanelFooterView(
                 restartRequirement: restartRequirement,
+                dockDisplayIDProvider: dockDisplayIDProvider,
                 onFeedbackTapped: openFeedback
             )
             .padding(.horizontal, 16)

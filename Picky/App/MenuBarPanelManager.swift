@@ -208,7 +208,10 @@ final class MenuBarPanelManager: NSObject {
             CompanionPanelView(
                 companionManager: self.companionManager,
                 sessionListViewModel: self.sessionListViewModel,
-                navigator: self.navigator
+                navigator: self.navigator,
+                dockDisplayIDProvider: { [weak self] in
+                    self?.panel?.screen?.pickyDisplayID
+                }
             )
             .frame(width: self.panelWidth, height: self.panelHeight)
             .environmentObject(self.appearanceStore)

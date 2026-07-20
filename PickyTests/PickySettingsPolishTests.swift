@@ -404,9 +404,29 @@ struct PickySettingsPolishTests {
         #expect(visibility.isVisible(for: displayB))
         #expect(settingsStore.load().hudDockVisibilityByDisplayID[String(displayA)] == false)
 
+        visibility.toggle(for: displayB)
+        visibility.toggle(for: displayA)
+        #expect(visibility.isVisible(for: displayA))
+        #expect(!visibility.isVisible(for: displayB))
+        #expect(settingsStore.load().hudDockVisibilityByDisplayID == [String(displayB): false])
+
         let rehydrated = PickyHUDVisibilityStore(settingsStore: settingsStore)
-        #expect(!rehydrated.isVisible(for: displayA))
-        #expect(rehydrated.isVisible(for: displayB))
+        #expect(rehydrated.isVisible(for: displayA))
+        #expect(!rehydrated.isVisible(for: displayB))
+    }
+
+    @Test func hudDockVisibilityTargetPrefersCompanionPanelDisplayOverCursorDisplay() {
+        let panelDisplayID: CGDirectDisplayID = 101
+        let cursorDisplayID: CGDirectDisplayID = 202
+
+        #expect(PickyHUDDockVisibilityTarget.resolve(
+            panelDisplayID: panelDisplayID,
+            cursorDisplayID: cursorDisplayID
+        ) == panelDisplayID)
+        #expect(PickyHUDDockVisibilityTarget.resolve(
+            panelDisplayID: nil,
+            cursorDisplayID: cursorDisplayID
+        ) == cursorDisplayID)
     }
 
     @Test func settingsLoadIgnoresRemovedHUDDockMinimizedField() throws {

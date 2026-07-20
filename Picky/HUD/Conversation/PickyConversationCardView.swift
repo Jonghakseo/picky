@@ -130,7 +130,7 @@ struct PickyConversationCardView: View {
                             isExpanded: $isTodoExpanded
                         )
                         .padding(.horizontal, 4)
-                        .padding(.top, 2)
+                        .padding(.top, DS.Spacing.sm)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                     }
                 }

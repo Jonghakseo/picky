@@ -24,6 +24,7 @@ struct PickyHUDDockRailView: View {
     let openedSessionID: String?
     let previewSessionID: String?
     let screenContextTargetSessionID: String?
+    let screenContextTargetSticky: Bool
     let dockSide: PickyHUDDockSide
     let isCommandShortcutHintVisible: Bool
     let pendingDoneFlashSessionIDs: Set<String>
@@ -34,6 +35,7 @@ struct PickyHUDDockRailView: View {
     let onHoverSession: (String) -> Void
     let onOpenSession: (String) -> Void
     let onToggleScreenContextTarget: (String) -> Void
+    let onToggleStickyScreenContextTarget: (String) -> Void
     let onCompactSession: (String) -> Void
     let onArchiveSession: (String) -> Void
     let onStopSession: (String) -> Void
@@ -505,6 +507,7 @@ struct PickyHUDDockRailView: View {
                 isOpened: openedSessionID == session.id,
                 isPreviewed: previewSessionID == session.id,
                 isScreenContextArmed: screenContextTargetSessionID == session.id,
+                isScreenContextSticky: screenContextTargetSessionID == session.id && screenContextTargetSticky,
                 dockSide: dockSide,
                 shortcutNumber: PickyHUDDockLayout.numberShortcutForSessionIndex(slot.visibleIndex),
                 isCommandShortcutHintVisible: isCommandShortcutHintVisible,
@@ -516,6 +519,7 @@ struct PickyHUDDockRailView: View {
                 onHover: { onHoverSession(session.id) },
                 onOpen: { onOpenSession(session.id) },
                 onToggleScreenContextTarget: { onToggleScreenContextTarget(session.id) },
+                onToggleStickyScreenContextTarget: { onToggleStickyScreenContextTarget(session.id) },
                 onCompact: { onCompactSession(session.id) },
                 onArchive: { onArchiveSession(session.id) },
                 onStop: { onStopSession(session.id) },
@@ -551,6 +555,7 @@ struct PickyHUDDockRailView: View {
                     isOpened: false,
                     isPreviewed: false,
                     isScreenContextArmed: false,
+                    isScreenContextSticky: false,
                     dockSide: dockSide,
                     shortcutNumber: nil,
                     isCommandShortcutHintVisible: false,
@@ -562,6 +567,7 @@ struct PickyHUDDockRailView: View {
                     onHover: {},
                     onOpen: {},
                     onToggleScreenContextTarget: {},
+                    onToggleStickyScreenContextTarget: {},
                     onCompact: {},
                     onArchive: {},
                     onStop: {},

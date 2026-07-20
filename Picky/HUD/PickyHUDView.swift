@@ -466,6 +466,7 @@ struct PickyHUDView: View {
                 openedSessionID: openedSessionID,
                 previewSessionID: hoverPreviewSessionID,
                 screenContextTargetSessionID: viewModel.screenContextTargetSessionID,
+                screenContextTargetSticky: viewModel.screenContextTargetSticky,
                 dockSide: placement.dockSide,
                 isCommandShortcutHintVisible: isCommandShortcutHintVisible,
                 pendingDoneFlashSessionIDs: viewModel.pendingDoneFlashSessionIDs,
@@ -475,6 +476,7 @@ struct PickyHUDView: View {
                 onHoverSession: previewDockSession,
                 onOpenSession: toggleOpenSession,
                 onToggleScreenContextTarget: toggleScreenContextTarget,
+                onToggleStickyScreenContextTarget: toggleStickyScreenContextTarget,
                 onCompactSession: compactSession,
                 onArchiveSession: archiveSession,
                 onStopSession: stopSession,
@@ -749,6 +751,11 @@ struct PickyHUDView: View {
         // to do here. Disarm taps leave the card visible so users can keep
         // reading.
         viewModel.toggleScreenContextTarget(sessionID: sessionID)
+    }
+
+    private func toggleStickyScreenContextTarget(_ sessionID: String) {
+        cancelPendingClose()
+        viewModel.toggleStickyScreenContextTarget(sessionID: sessionID)
     }
 
     private func compactSession(_ sessionID: String) {

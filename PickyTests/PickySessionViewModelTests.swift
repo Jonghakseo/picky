@@ -2568,6 +2568,35 @@ struct PickySessionViewModelTests {
         #expect(afterTap != afterSticky)
     }
 
+    @MainActor @Test func toggleStickyScreenContextTargetPromotesOneShotTarget() {
+        let client = FakePickyAgentClient()
+        let selection = FakeSelectionStore()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter(), selectionStore: selection)
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-menu", status: "completed"))))
+
+        viewModel.toggleScreenContextTarget(sessionID: "pickle-menu")
+        viewModel.toggleStickyScreenContextTarget(sessionID: "pickle-menu")
+
+        #expect(viewModel.screenContextTargetSessionID == "pickle-menu")
+        #expect(viewModel.screenContextTargetSticky == true)
+        #expect(selection.screenContextTargetSticky == true)
+    }
+
+    @MainActor @Test func toggleStickyScreenContextTargetClearsCurrentStickyTarget() {
+        let client = FakePickyAgentClient()
+        let selection = FakeSelectionStore()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter(), selectionStore: selection)
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-menu", status: "completed"))))
+        viewModel.armScreenContextTarget(sessionID: "pickle-menu", sticky: true)
+
+        viewModel.toggleStickyScreenContextTarget(sessionID: "pickle-menu")
+
+        #expect(viewModel.screenContextTargetSessionID == nil)
+        #expect(viewModel.screenContextTargetSticky == false)
+        #expect(selection.screenContextTargetSessionID == nil)
+        #expect(selection.screenContextTargetSticky == false)
+    }
+
     @MainActor @Test func armingAnotherPickleReplacesStickyTarget() {
         let client = FakePickyAgentClient()
         let selection = FakeSelectionStore()

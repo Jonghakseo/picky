@@ -8,6 +8,7 @@ struct PickyHUDDockIconView: View {
     let isOpened: Bool
     let isPreviewed: Bool
     let isScreenContextArmed: Bool
+    let isScreenContextSticky: Bool
     let dockSide: PickyHUDDockSide
     let shortcutNumber: Int?
     let isCommandShortcutHintVisible: Bool
@@ -21,6 +22,7 @@ struct PickyHUDDockIconView: View {
     let onHover: () -> Void
     let onOpen: () -> Void
     let onToggleScreenContextTarget: () -> Void
+    let onToggleStickyScreenContextTarget: () -> Void
     let onCompact: () -> Void
     let onArchive: () -> Void
     let onStop: () -> Void
@@ -110,9 +112,11 @@ struct PickyHUDDockIconView: View {
                 onHover: onHover,
                 onOpen: onOpen,
                 isScreenContextArmed: isScreenContextArmed,
+                isScreenContextSticky: isScreenContextSticky,
                 canCompact: session.canRequestDockCompaction,
                 canStop: !session.status.isTerminal,
                 onToggleScreenContextTarget: onToggleScreenContextTarget,
+                onToggleStickyScreenContextTarget: onToggleStickyScreenContextTarget,
                 onCompact: onCompact,
                 onArchivePressing: handleArchivePressing,
                 onArchive: completeArchiveHold,
@@ -554,9 +558,11 @@ struct PickyHUDDockIconClickHost: NSViewRepresentable {
     var onHover: () -> Void
     var onOpen: () -> Void
     var isScreenContextArmed: Bool
+    var isScreenContextSticky: Bool
     var canCompact: Bool
     var canStop: Bool
     var onToggleScreenContextTarget: () -> Void
+    var onToggleStickyScreenContextTarget: () -> Void
     var onCompact: () -> Void
     var onArchivePressing: (Bool) -> Void
     var onArchive: () -> Void
@@ -574,9 +580,11 @@ struct PickyHUDDockIconClickHost: NSViewRepresentable {
         var onHover: (() -> Void)?
         var onOpen: (() -> Void)?
         var isScreenContextArmed = false
+        var isScreenContextSticky = false
         var canCompact = false
         var canStop = false
         var onToggleScreenContextTarget: (() -> Void)?
+        var onToggleStickyScreenContextTarget: (() -> Void)?
         var onCompact: (() -> Void)?
         var onArchivePressing: ((Bool) -> Void)?
         var onArchive: (() -> Void)?
@@ -587,6 +595,7 @@ struct PickyHUDDockIconClickHost: NSViewRepresentable {
             onHover = nil
             onOpen = nil
             onToggleScreenContextTarget = nil
+            onToggleStickyScreenContextTarget = nil
             onCompact = nil
             onArchivePressing = nil
             onArchive = nil
@@ -596,6 +605,10 @@ struct PickyHUDDockIconClickHost: NSViewRepresentable {
 
         @objc func toggleScreenContextTarget(_ sender: NSMenuItem) {
             onToggleScreenContextTarget?()
+        }
+
+        @objc func toggleStickyScreenContextTarget(_ sender: NSMenuItem) {
+            onToggleStickyScreenContextTarget?()
         }
 
         @objc func compact(_ sender: NSMenuItem) {
@@ -630,9 +643,11 @@ struct PickyHUDDockIconClickHost: NSViewRepresentable {
         coordinator.onHover = onHover
         coordinator.onOpen = onOpen
         coordinator.isScreenContextArmed = isScreenContextArmed
+        coordinator.isScreenContextSticky = isScreenContextSticky
         coordinator.canCompact = canCompact
         coordinator.canStop = canStop
         coordinator.onToggleScreenContextTarget = onToggleScreenContextTarget
+        coordinator.onToggleStickyScreenContextTarget = onToggleStickyScreenContextTarget
         coordinator.onCompact = onCompact
         coordinator.onArchivePressing = onArchivePressing
         coordinator.onArchive = onArchive
@@ -725,11 +740,24 @@ final class PickyHUDDockIconClickNSView: NSView {
         guard let coordinator else { return }
 
         let menu = NSMenu()
-        menu.addItem(menuItem(
-            title: coordinator.isScreenContextArmed ? "Stop Sending Context to This Pickle" : "Send Context to This Pickle",
-            action: #selector(PickyHUDDockIconClickHost.Coordinator.toggleScreenContextTarget(_:)),
+        let stickyConversationItem = menuItem(
+            title: coordinator.isScreenContextSticky ? "Stop Talking to This Pickle" : "Keep Talking to This Pickle",
+            action: #selector(PickyHUDDockIconClickHost.Coordinator.toggleStickyScreenContextTarget(_:)),
             target: coordinator
-        ))
+        )
+        stickyConversationItem.state = coordinator.isScreenContextSticky ? .on : .off
+        menu.addItem(stickyConversationItem)
+
+        // A sticky conversation target already owns the screen-context route,
+        // so its explicit stop action above replaces the otherwise duplicate
+        // one-shot context toggle.
+        if !coordinator.isScreenContextSticky {
+            menu.addItem(menuItem(
+                title: coordinator.isScreenContextArmed ? "Stop Sending Context to This Pickle" : "Send Context to This Pickle",
+                action: #selector(PickyHUDDockIconClickHost.Coordinator.toggleScreenContextTarget(_:)),
+                target: coordinator
+            ))
+        }
         menu.addItem(menuItem(
             title: "Compact",
             action: #selector(PickyHUDDockIconClickHost.Coordinator.compact(_:)),

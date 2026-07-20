@@ -443,6 +443,18 @@ final class PickySessionListViewModel: ObservableObject {
         armScreenContextTarget(sessionID: sessionID, sticky: false)
     }
 
+    /// Toggles the explicit, persistent conversation target exposed by the
+    /// Dock context menu. A non-sticky target is promoted; tapping an already
+    /// sticky target clears it.
+    func toggleStickyScreenContextTarget(sessionID: String) {
+        guard sessions.contains(where: { $0.id == sessionID }) else { return }
+        if screenContextTargetSessionID == sessionID, screenContextTargetSticky {
+            clearScreenContextTarget(sessionID: sessionID)
+            return
+        }
+        armScreenContextTarget(sessionID: sessionID, sticky: true)
+    }
+
     /// Promotes (or replaces) the armed Pickle. `sticky=true` keeps the Pickle
     /// armed across follow-up/steer dispatches; `sticky=false` matches the
     /// existing one-shot tap behavior. Used by the header long-press gesture.

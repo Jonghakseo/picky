@@ -29,7 +29,6 @@ struct PickyConversationCardView: View {
     @State private var droppedFilePaths: [String] = []
     @State private var isFileDropTargeted = false
     @State private var showingRewindPicker = false
-    @State private var isTodoExpanded = true
 
     var body: some View {
         let _ = PickyPerf.event("conversation_card_body")
@@ -73,9 +72,6 @@ struct PickyConversationCardView: View {
         .sheet(isPresented: $showingRewindPicker) {
             PickyRewindPickerView(session: session, viewModel: viewModel)
         }
-        .onChange(of: session.id) { _, _ in
-            isTodoExpanded = true
-        }
     }
 
     private static let minimumHeight: CGFloat = 320
@@ -87,6 +83,9 @@ struct PickyConversationCardView: View {
 
     private func chatContent(fillsAvailableHeight: Bool) -> some View {
         let todoPresentation = PickyTodoProgressPresentation(state: session.todoState)
+        let isTodoExpanded = todoPresentation.map {
+            viewModel.isTodoProgressExpanded(sessionID: session.id, isComplete: $0.isComplete)
+        } ?? false
         return VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: DS.Spacing.xs) {
                 PickyConversationHeaderView(
@@ -127,7 +126,7 @@ struct PickyConversationCardView: View {
                     if let todoPresentation {
                         PickyTodoProgressOverlayView(
                             presentation: todoPresentation,
-                            isExpanded: $isTodoExpanded
+                            isExpanded: todoExpansionBinding(for: todoPresentation)
                         )
                         .padding(.horizontal, 4)
                         .padding(.top, DS.Spacing.sm)
@@ -152,8 +151,19 @@ struct PickyConversationCardView: View {
         }
     }
 
+    private func todoExpansionBinding(for presentation: PickyTodoProgressPresentation) -> Binding<Bool> {
+        Binding(
+            get: {
+                viewModel.isTodoProgressExpanded(sessionID: session.id, isComplete: presentation.isComplete)
+            },
+            set: { viewModel.setTodoProgressExpanded($0, sessionID: session.id) }
+        )
+    }
+
     private func collapseTodoIfNeeded() {
-        if isTodoExpanded { isTodoExpanded = false }
+        guard let presentation = PickyTodoProgressPresentation(state: session.todoState) else { return }
+        guard viewModel.isTodoProgressExpanded(sessionID: session.id, isComplete: presentation.isComplete) else { return }
+        viewModel.setTodoProgressExpanded(false, sessionID: session.id)
     }
 
     private func terminalModeHeight(resolvedHeight: CGFloat?, maxHeight: CGFloat) -> CGFloat? {

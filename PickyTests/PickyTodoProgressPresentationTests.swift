@@ -89,9 +89,18 @@ struct PickyTodoProgressPresentationTests {
         #expect(presentation.stepText == L10n.t("hud.todo.completedCount", Int64(0), Int64(2)))
     }
 
-    @Test func overlayShouldCollapseOnlyWhenComplete() {
-        #expect(PickyTodoProgressOverlayPolicy.shouldCollapse(isComplete: true))
-        #expect(!PickyTodoProgressOverlayPolicy.shouldCollapse(isComplete: false))
+    @Test func expansionDefaultsToCurrentWorkExpandedAndCompletedWorkCollapsed() {
+        #expect(PickyTodoProgressExpansionPolicy.isExpanded(savedValue: nil, isComplete: false))
+        #expect(!PickyTodoProgressExpansionPolicy.isExpanded(savedValue: nil, isComplete: true))
+        #expect(PickyTodoProgressExpansionPolicy.isExpanded(savedValue: true, isComplete: true))
+        #expect(!PickyTodoProgressExpansionPolicy.isExpanded(savedValue: false, isComplete: false))
+    }
+
+    @Test func completionCollapsesOnlyOnTheTransitionIntoDone() {
+        #expect(PickyTodoProgressExpansionPolicy.shouldCollapse(previousIsComplete: nil, currentIsComplete: true))
+        #expect(PickyTodoProgressExpansionPolicy.shouldCollapse(previousIsComplete: false, currentIsComplete: true))
+        #expect(!PickyTodoProgressExpansionPolicy.shouldCollapse(previousIsComplete: true, currentIsComplete: true))
+        #expect(!PickyTodoProgressExpansionPolicy.shouldCollapse(previousIsComplete: false, currentIsComplete: false))
     }
 
     @Test func adaptiveWidthResolvesShortWidthToMinimum() {

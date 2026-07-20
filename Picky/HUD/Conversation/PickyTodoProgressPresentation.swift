@@ -8,9 +8,13 @@
 
 import Foundation
 
-enum PickyTodoProgressOverlayPolicy {
-    static func shouldCollapse(isComplete: Bool) -> Bool {
-        isComplete
+enum PickyTodoProgressExpansionPolicy {
+    static func isExpanded(savedValue: Bool?, isComplete: Bool) -> Bool {
+        savedValue ?? !isComplete
+    }
+
+    static func shouldCollapse(previousIsComplete: Bool?, currentIsComplete: Bool) -> Bool {
+        currentIsComplete && previousIsComplete != true
     }
 }
 

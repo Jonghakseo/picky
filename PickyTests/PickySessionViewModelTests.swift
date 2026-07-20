@@ -520,6 +520,36 @@ struct PickySessionViewModelTests {
         #expect(viewModel.sessions.first?.todoState == nil)
     }
 
+    @MainActor @Test func todoExpansionPersistsPerSessionAndCollapsesOnceWhenWorkCompletes() {
+        let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionTodoStateUpdated(seq: 1))))
+
+        #expect(viewModel.isTodoProgressExpanded(sessionID: "session-1", isComplete: false))
+        viewModel.setTodoProgressExpanded(false, sessionID: "session-1")
+        #expect(!viewModel.isTodoProgressExpanded(sessionID: "session-1", isComplete: false))
+        viewModel.setTodoProgressExpanded(true, sessionID: "session-1")
+
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionTodoStateUpdated(seq: 2, taskStatus: "completed"))))
+        #expect(!viewModel.isTodoProgressExpanded(sessionID: "session-1", isComplete: true))
+
+        viewModel.setTodoProgressExpanded(true, sessionID: "session-1")
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionTodoStateUpdated(seq: 3, taskStatus: "completed"))))
+        #expect(viewModel.isTodoProgressExpanded(sessionID: "session-1", isComplete: true))
+    }
+
+    @MainActor @Test func todoExpansionDefaultsCompletedWorkToCollapsedAndClearsWithTodoState() {
+        let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionTodoStateUpdated(seq: 1, taskStatus: "completed"))))
+
+        #expect(!viewModel.isTodoProgressExpanded(sessionID: "session-1", isComplete: true))
+        viewModel.setTodoProgressExpanded(true, sessionID: "session-1")
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionTodoStateUpdated(seq: 2, cleared: true))))
+
+        #expect(viewModel.todoProgressExpandedBySessionID["session-1"] == nil)
+    }
+
     /// Cancellation-then-resume regression test. Reducer-direct: the legacy
     /// emit-based pilot was removed after Phase 3 once every other test was
     /// migrated and the dedicated transport smoke (`transportForwards...`)
@@ -5047,10 +5077,15 @@ private enum EventJSON {
         """
     }
 
-    static func sessionTodoStateUpdated(sessionId: String = "session-1", seq: Int, cleared: Bool = false) -> String {
+    static func sessionTodoStateUpdated(
+        sessionId: String = "session-1",
+        seq: Int,
+        cleared: Bool = false,
+        taskStatus: String = "in_progress"
+    ) -> String {
         let todoState = cleared
             ? "null"
-            : "{\"tasks\":[{\"id\":\"todo-1\",\"content\":\"Implement HUD\",\"status\":\"in_progress\",\"activeForm\":\"Implementing HUD\"}],\"updatedAt\":\"2026-07-14T01:00:00.000Z\"}"
+            : "{\"tasks\":[{\"id\":\"todo-1\",\"content\":\"Implement HUD\",\"status\":\"\(taskStatus)\",\"activeForm\":\"Implementing HUD\"}],\"updatedAt\":\"2026-07-14T01:00:00.000Z\"}"
         return """
         {"id":"event-todo-\(seq)","protocolVersion":"2026-07-19","timestamp":"2026-07-14T01:00:00.000Z","type":"sessionTodoStateUpdated","sessionId":"\(sessionId)","todoState":\(todoState),"seq":\(seq)}
         """

@@ -170,11 +170,6 @@ struct PickyTodoProgressOverlayView: View {
                 )
             }
         }
-        .onChange(of: presentation.isComplete) { _, isComplete in
-            if PickyTodoProgressOverlayPolicy.shouldCollapse(isComplete: isComplete) {
-                isExpanded = false
-            }
-        }
         .animation(
             accessibilityReduceMotion ? nil : .easeOut(duration: DS.Animation.normal),
             value: isExpanded

@@ -30,6 +30,8 @@ final class PickySessionListViewModel: ObservableObject {
     /// so every controller mutation path must call `syncComposerDraftRequests()`.
     @Published private(set) var composerDraftRequestsBySessionID: [String: PickyComposerDraftRequest] = [:]
     @Published private(set) var thinkingBlocksHiddenBySessionID: [String: Bool] = [:]
+    /// Per-session TODO expansion choice survives Conversation Card teardown while the HUD is closed.
+    @Published private(set) var todoProgressExpandedBySessionID: [String: Bool] = [:]
     @Published private(set) var pendingDoneFlashSessionIDs: Set<String> = []
     /// Sessions whose detail card is currently presented as an inline Pi TUI instead of
     /// the SwiftUI chat/composer. This is intentionally UI-only state: the daemon and
@@ -487,6 +489,7 @@ final class PickySessionListViewModel: ObservableObject {
         deliveredNotificationKeys.remove("\(sessionID):completed")
         deliveredNotificationKeys.remove("\(sessionID):failed")
         thinkingBlocksHiddenBySessionID.removeValue(forKey: sessionID)
+        todoProgressExpandedBySessionID.removeValue(forKey: sessionID)
         slashCommandController.clear(sessionID: sessionID)
         syncSlashCommands()
         lastIncrementalSeqBySessionID.removeValue(forKey: sessionID)
@@ -702,6 +705,18 @@ final class PickySessionListViewModel: ObservableObject {
         } catch {
             lastError = error.localizedDescription
         }
+    }
+
+    func isTodoProgressExpanded(sessionID: String, isComplete: Bool) -> Bool {
+        PickyTodoProgressExpansionPolicy.isExpanded(
+            savedValue: todoProgressExpandedBySessionID[sessionID],
+            isComplete: isComplete
+        )
+    }
+
+    func setTodoProgressExpanded(_ isExpanded: Bool, sessionID: String) {
+        guard todoProgressExpandedBySessionID[sessionID] != isExpanded else { return }
+        todoProgressExpandedBySessionID[sessionID] = isExpanded
     }
 
     func markDoneFlashConsumed(sessionID: String) {
@@ -1445,6 +1460,7 @@ final class PickySessionListViewModel: ObservableObject {
         deliveredNotificationKeys.remove("\(sessionID):completed")
         deliveredNotificationKeys.remove("\(sessionID):failed")
         thinkingBlocksHiddenBySessionID.removeValue(forKey: sessionID)
+        todoProgressExpandedBySessionID.removeValue(forKey: sessionID)
         slashCommandController.clear(sessionID: sessionID)
         syncSlashCommands()
         lastIncrementalSeqBySessionID.removeValue(forKey: sessionID)
@@ -1641,6 +1657,13 @@ final class PickySessionListViewModel: ObservableObject {
         // partial snapshot may follow an agentd restart, whose counters start
         // at one; retained undecodable cards must accept those new events.
         lastIncrementalSeqBySessionID.removeAll()
+        for card in cards {
+            reconcileTodoProgressExpansion(
+                sessionID: card.id,
+                previousState: previousCardsByID[card.id]?.todoState,
+                currentState: card.todoState
+            )
+        }
         PickyPerf.interval("vm_snapshot_publish_session_lists") {
             sessions = cards.filter { !archivedIDs.contains($0.id) }
             archivedSessions = cards.filter { archivedIDs.contains($0.id) }.sortedForHUD()
@@ -1681,6 +1704,11 @@ final class PickySessionListViewModel: ObservableObject {
             SessionCard.fromAgentSession(session)
         }
         let previousCard = (sessions + archivedSessions).first { $0.id == session.id }
+        reconcileTodoProgressExpansion(
+            sessionID: session.id,
+            previousState: previousCard?.todoState,
+            currentState: incomingCard.todoState
+        )
         if shouldInvalidateSlashCommandCache(previous: previousCard, incoming: incomingCard) {
             invalidateSlashCommandCache(sessionID: session.id)
         }
@@ -1769,6 +1797,11 @@ final class PickySessionListViewModel: ObservableObject {
     private func applyTodoStateUpdated(sessionID sessionId: String, todoState: PickyTodoState?, seq: Int) {
         PickyPerf.event("vm_event_todo_state_updated")
         guard acceptIncrementalEvent(sessionID: sessionId, seq: seq) else { return }
+        reconcileTodoProgressExpansion(
+            sessionID: sessionId,
+            previousState: card(sessionID: sessionId)?.todoState,
+            currentState: todoState
+        )
         update(sessionID: sessionId) { card in
             card.todoState = todoState
             card.updatedAt = todoState?.updatedAt ?? Date()
@@ -1936,12 +1969,30 @@ final class PickySessionListViewModel: ObservableObject {
         slashCommandController.refreshIfStillLoading(sessionID: sessionID)
     }
 
+    private func reconcileTodoProgressExpansion(
+        sessionID: String,
+        previousState: PickyTodoState?,
+        currentState: PickyTodoState?
+    ) {
+        guard let currentPresentation = PickyTodoProgressPresentation(state: currentState) else {
+            todoProgressExpandedBySessionID.removeValue(forKey: sessionID)
+            return
+        }
+        let previousIsComplete = PickyTodoProgressPresentation(state: previousState)?.isComplete
+        guard PickyTodoProgressExpansionPolicy.shouldCollapse(
+            previousIsComplete: previousIsComplete,
+            currentIsComplete: currentPresentation.isComplete
+        ) else { return }
+        setTodoProgressExpanded(false, sessionID: sessionID)
+    }
+
     private func pruneSlashCommandCache(knownSessionIDs: Set<String>) {
         slashCommandController.prune(knownSessionIDs: knownSessionIDs)
         syncSlashCommands()
         composerDraftController.prune(knownSessionIDs: knownSessionIDs)
         syncComposerDraftRequests()
         thinkingBlocksHiddenBySessionID = thinkingBlocksHiddenBySessionID.filter { knownSessionIDs.contains($0.key) }
+        todoProgressExpandedBySessionID = todoProgressExpandedBySessionID.filter { knownSessionIDs.contains($0.key) }
         pendingDoneFlashSessionIDs = pendingDoneFlashSessionIDs.filter { knownSessionIDs.contains($0) }
         unreadSessionIDs = unreadSessionIDs.filter { knownSessionIDs.contains($0) }
         releasedArchivedChildSessionIDs = releasedArchivedChildSessionIDs.filter { knownSessionIDs.contains($0) }

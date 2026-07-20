@@ -518,7 +518,6 @@ struct BlueCursorView: View {
         _systemCursorVisible = State(initialValue: systemMouseCursorIsVisible())
     }
     @State private var timer: Timer?
-    @State private var responseBubbleSize: CGSize = .zero
     @State private var voicePromptBubbleSize: CGSize = .zero
     @State private var onboardingBubbleSize: CGSize = .zero
     @State private var shakeReactionBubbleSize: CGSize = .zero
@@ -716,19 +715,16 @@ struct BlueCursorView: View {
                !responseText.isEmpty,
                let responseBubbleLayout = responseBubbleLayoutCache.layout(for: responseText),
                companionManager.onboardingBubbleText == nil {
-                PickyCursorResponseBubbleView(layout: responseBubbleLayout)
-                    .overlay(
-                        GeometryReader { geo in
-                            Color.clear
-                                .preference(key: ResponseBubbleSizePreferenceKey.self, value: geo.size)
-                        }
-                    )
-                    .position(cursorChromeBubbleCenter(for: responseBubbleSize))
-                    .animation(cursorFollowAnimation, value: cursorPosition)
-                    .animation(.easeOut(duration: 0.2), value: companionManager.voiceState)
-                    .onPreferenceChange(ResponseBubbleSizePreferenceKey.self) { newSize in
-                        responseBubbleSize = newSize
-                    }
+                PickyCursorBubblePlacementLayout(
+                    cursorPosition: compactCursorChromePlacementIsPreferred ? systemCursorPosition : cursorPosition,
+                    screenSize: CGSize(width: screenFrame.width, height: screenFrame.height),
+                    horizontalGap: compactCursorChromePlacementIsPreferred ? 14 : 12,
+                    verticalGap: compactCursorChromePlacementIsPreferred ? 16 : 20
+                ) {
+                    PickyCursorResponseBubbleView(layout: responseBubbleLayout)
+                }
+                .animation(cursorFollowAnimation, value: cursorPosition)
+                .animation(.easeOut(duration: 0.2), value: companionManager.voiceState)
             }
 
             if hiddenCursorWaitingIndicatorIsVisible {

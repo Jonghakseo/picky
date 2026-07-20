@@ -58,6 +58,25 @@ struct PickyCursorBubblePlacementTests {
         #expect(placement.topLeading.y == CGFloat(880 - 20 - 40))
     }
 
+    @Test func usesCurrentLargerBubbleSizeWhenChoosingSide() {
+        let cursorPosition = CGPoint(x: 1_250, y: 400)
+        let previousPlacement = PickyCursorBubblePlacement.compute(
+            cursorPosition: cursorPosition,
+            bubbleSize: CGSize(width: 100, height: 40),
+            screenSize: screenSize
+        )
+        let currentPlacement = PickyCursorBubblePlacement.compute(
+            cursorPosition: cursorPosition,
+            bubbleSize: CGSize(width: 240, height: 80),
+            screenSize: screenSize
+        )
+
+        #expect(previousPlacement.side == .bottomRight)
+        #expect(currentPlacement.side == .bottomLeft)
+        #expect(currentPlacement.topLeading.x == CGFloat(1_250 - 12 - 240))
+        #expect(currentPlacement.topLeading.y == CGFloat(420))
+    }
+
     @Test func clampsToScreenWhenNoCornerFits() {
         let cramped = CGSize(width: 180, height: 200)
         let placement = PickyCursorBubblePlacement.compute(

@@ -6,6 +6,59 @@
 //
 
 import CoreGraphics
+import SwiftUI
+
+/// Measures the current bubble and places it around the cursor in the same
+/// layout pass. Keeping measurement and placement together avoids the
+/// one-frame size mismatch produced by GeometryReader preference feedback.
+struct PickyCursorBubblePlacementLayout: Layout {
+    var cursorPosition: CGPoint
+    let screenSize: CGSize
+    var horizontalGap: CGFloat = 12
+    var verticalGap: CGFloat = 20
+
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(cursorPosition.x, cursorPosition.y) }
+        set { cursorPosition = CGPoint(x: newValue.first, y: newValue.second) }
+    }
+
+    func sizeThatFits(
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout Void
+    ) -> CGSize {
+        CGSize(
+            width: proposal.width ?? screenSize.width,
+            height: proposal.height ?? screenSize.height
+        )
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout Void
+    ) {
+        guard let bubble = subviews.first else { return }
+        let bubbleProposal = ProposedViewSize.unspecified
+        let bubbleSize = bubble.sizeThatFits(bubbleProposal)
+        let placement = PickyCursorBubblePlacement.compute(
+            cursorPosition: cursorPosition,
+            bubbleSize: bubbleSize,
+            screenSize: screenSize,
+            horizontalGap: horizontalGap,
+            verticalGap: verticalGap
+        )
+        bubble.place(
+            at: CGPoint(
+                x: bounds.minX + placement.topLeading.x,
+                y: bounds.minY + placement.topLeading.y
+            ),
+            anchor: .topLeading,
+            proposal: ProposedViewSize(width: bubbleSize.width, height: bubbleSize.height)
+        )
+    }
+}
 
 /// Picks a placement for a cursor-anchored bubble that stays within the host
 /// screen. The function tries the four corners around the cursor in priority

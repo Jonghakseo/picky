@@ -467,7 +467,58 @@ private struct PickyMainMessageAppendedPayload: Decodable { let message: PickyMa
 private struct PickyMainAgentSessionInfoUpdatedPayload: Decodable { let sessionFilePath: String?; let cwd: String? }
 private struct PickyMainAgentModelsSnapshotPayload: Decodable { let models: [PickyMainAgentModelOption] }
 private struct PickyMainTurnSettledPayload: Decodable { let contextId: String }
-private struct PickySessionSnapshotPayload: Decodable { let sessions: [PickyAgentSession] }
+private struct PickySessionSnapshotPayload: Decodable {
+    let sessions: [PickyAgentSession]
+
+    private enum CodingKeys: String, CodingKey { case sessions }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // Decode sessions element-by-element and drop any that fail rather than
+        // failing the entire snapshot. One poisoned record must never blank the
+        // whole dock; the app stays usable and the skip is logged for triage.
+        // `PickyFailableSession.init` never throws, so the unkeyed container
+        // always advances exactly once per element regardless of Foundation's
+        // error-advancement behavior.
+        var unkeyed = try container.nestedUnkeyedContainer(forKey: .sessions)
+        var decoded: [PickyAgentSession] = []
+        if let count = unkeyed.count { decoded.reserveCapacity(count) }
+        var skipped = 0
+        while !unkeyed.isAtEnd {
+            let element = try unkeyed.decode(PickyFailableSession.self)
+            if let session = element.session {
+                decoded.append(session)
+            } else {
+                skipped += 1
+                if let error = element.error {
+                    PickyLog.notice(.agentClient, prefix: "\u{1F50C} Picky agent client \u{2014}", message: "skipped undecodable session in snapshot: \(error)")
+                }
+            }
+        }
+        if skipped > 0 {
+            PickyLog.notice(.agentClient, prefix: "\u{1F50C} Picky agent client \u{2014}", message: "session snapshot decoded with \(decoded.count) kept, \(skipped) skipped")
+        }
+        sessions = decoded
+    }
+}
+
+/// Wraps a single session decode so failures are captured instead of thrown.
+/// A non-throwing `init(from:)` guarantees the enclosing unkeyed container
+/// advances exactly one element per iteration.
+private struct PickyFailableSession: Decodable {
+    let session: PickyAgentSession?
+    let error: Error?
+
+    init(from decoder: Decoder) throws {
+        do {
+            session = try PickyAgentSession(from: decoder)
+            error = nil
+        } catch {
+            session = nil
+            self.error = error
+        }
+    }
+}
 private struct PickySessionUpdatedPayload: Decodable { let session: PickyAgentSession }
 private struct PickySessionArchivedAuthoritativePayload: Decodable { let sessionId: String; let archived: Bool }
 private struct PickySessionResourcesReloadedPayload: Decodable { let sessionId: String }
@@ -1166,6 +1217,44 @@ struct PickyArtifact: Codable, Equatable, Identifiable {
     let path: String?
     let url: URL?
     let updatedAt: Date
+
+    init(id: String, kind: String, title: String, path: String?, url: URL?, updatedAt: Date) {
+        self.id = id
+        self.kind = kind
+        self.title = title
+        self.path = path
+        self.url = url
+        self.updatedAt = updatedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, kind, title, path, url, updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        kind = try container.decode(String.self, forKey: .kind)
+        title = try container.decode(String.self, forKey: .title)
+        path = try container.decodeIfPresent(String.self, forKey: .path)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        // Decode the URL leniently. A single artifact URL that Foundation
+        // rejects (e.g. a stray backtick captured from markdown) must not
+        // fail the whole session — that would blank the entire dock. Fall
+        // back to percent-encoding the raw string, then to `nil`.
+        url = PickyArtifact.lenientURL(from: try container.decodeIfPresent(String.self, forKey: .url))
+    }
+
+    static func lenientURL(from raw: String?) -> URL? {
+        guard let raw, !raw.isEmpty else { return nil }
+        if let url = URL(string: raw) { return url }
+        let allowed = CharacterSet.urlQueryAllowed.union(CharacterSet(charactersIn: "#%"))
+        if let encoded = raw.addingPercentEncoding(withAllowedCharacters: allowed),
+           let url = URL(string: encoded) {
+            return url
+        }
+        return nil
+    }
 }
 
 struct PickyChangedFile: Codable, Equatable {

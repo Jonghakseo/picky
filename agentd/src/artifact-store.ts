@@ -82,7 +82,7 @@ function extractRawLinkCandidates(text: string): string[] {
         continue;
       }
       if (char === "\\" && next === "n") break;
-      if (isLinkDelimiter(char)) break;
+      if (isLinkDelimiter(char, next, match.index, text)) break;
       rawUrl += char;
     }
     candidates.push(rawUrl);
@@ -90,8 +90,17 @@ function extractRawLinkCandidates(text: string): string[] {
   return candidates;
 }
 
-function isLinkDelimiter(char: string): boolean {
-  return /[\s<>"{}|\\^[\]]/.test(char);
+function isLinkDelimiter(char: string, next: string | undefined, urlStart: number, text: string): boolean {
+  if (/[\s<>"{}|\\^[\]]/.test(char)) return true;
+
+  // A closing quote/backtick ends a URL only when it pairs with a wrapper
+  // immediately before the URL (for example, `https://example.com`). Keeping
+  // this contextual avoids truncating valid path characters such as
+  // `abc'def` and `foo`bar`.
+  if ((char === "'" || char === "`") && text[urlStart - 1] === char) {
+    return next === undefined || /[\s<>"'`{}|\\^[\],.;:!?)]/.test(next);
+  }
+  return false;
 }
 
 export function extractSessionLinkArtifacts(text: string, updatedAt = new Date().toISOString()): PickyArtifact[] {

@@ -23,6 +23,74 @@ struct ProtocolContractTests {
         }
     }
 
+    @Test func decodesArtifactWithRawBacktickURL() throws {
+        let json = """
+        {
+          "id":"artifact-preview",
+          "kind":"link",
+          "title":"Preview",
+          "url":"https://pull-request-web-4483.preview.creatrip.com`/`",
+          "updatedAt":"2026-05-01T00:00:00.000Z"
+        }
+        """.data(using: .utf8)!
+
+        let artifact = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyArtifact.self, from: json)
+
+        #expect(artifact.id == "artifact-preview")
+    }
+
+    @Test func keepsSessionsWithArtifactsContainingRawBacktickURLsInSnapshots() throws {
+        let json = """
+        {
+          "id":"event-snapshot-backtick-url",
+          "protocolVersion":"2026-07-19",
+          "timestamp":"2026-05-01T00:00:01.000Z",
+          "type":"sessionSnapshot",
+          "sessions":[
+            {
+              "id":"session-healthy",
+              "title":"Healthy session",
+              "status":"completed",
+              "cwd":"/tmp/healthy",
+              "createdAt":"2026-05-01T00:00:00.000Z",
+              "updatedAt":"2026-05-01T00:00:01.000Z",
+              "logs":[],
+              "tools":[],
+              "artifacts":[],
+              "changedFiles":[]
+            },
+            {
+              "id":"session-backtick-url",
+              "title":"Session with preview link",
+              "status":"completed",
+              "cwd":"/tmp/backtick",
+              "createdAt":"2026-05-01T00:00:00.000Z",
+              "updatedAt":"2026-05-01T00:00:01.000Z",
+              "logs":[],
+              "tools":[],
+              "artifacts":[{
+                "id":"artifact-preview",
+                "kind":"link",
+                "title":"Preview",
+                "url":"https://pull-request-web-4483.preview.creatrip.com`/`",
+                "updatedAt":"2026-05-01T00:00:00.000Z"
+              }],
+              "changedFiles":[]
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+
+        let envelope = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: json)
+
+        guard case .sessionSnapshot(let sessions) = envelope.event else {
+            Issue.record("Expected sessionSnapshot")
+            return
+        }
+        #expect(sessions.map(\.id) == ["session-healthy", "session-backtick-url"])
+        #expect(sessions[1].artifacts.count == 1)
+    }
+
     @Test func ignoresUnknownFutureFields() throws {
         let json = """
         {

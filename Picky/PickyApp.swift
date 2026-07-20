@@ -144,6 +144,9 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         visibilityStore: hudVisibilityStore,
         settingsStore: settingsStore
     )
+    /// Orders Picky's own always-on-top windows out while a macOS secure
+    /// authorization surface (such as App Store download confirmation) is active.
+    private let secureSurfaceWindowCoordinator = PickySecureSurfaceWindowCoordinator()
     /// Shared with the plugin manager UI. Subscribes to the agent client for
     /// `pluginsReloaded` broadcasts and exposes a single async `reload()` the
     /// extensions section invokes after install/uninstall.
@@ -232,6 +235,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             Task.detached(priority: .background) {
                 PickyGeneratedReportsPruner().prune()
             }
+            secureSurfaceWindowCoordinator.start()
             hudOverlayManager.start()
             // Best-effort install of /usr/local/bin/picky when we can do it
             // without prompting for credentials. Anything that would require
@@ -362,6 +366,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             settingsSaveObserver = nil
         }
         stopMainThreadWatchdog()
+        secureSurfaceWindowCoordinator.stop()
         companionManager.stop()
         hudOverlayManager.stop()
         agentDaemonPool.terminateAllChildren()

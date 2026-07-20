@@ -322,59 +322,51 @@ struct PickyTests {
         #expect(PickyHUDArchiveUndoToastPolicy.windowSize.height == PickyHUDArchiveUndoToastPolicy.panelSize.height + inset * 2)
     }
 
-    @Test func archiveUndoToastLayoutPrefersCornerOnDockSide() throws {
+    @Test func archiveUndoToastCentersOverDockFrame() throws {
         let visibleFrame = CGRect(x: 100, y: 80, width: 1440, height: 900)
-        let panelSize = CGSize(width: 304, height: 78)
-        let dockFrames: [(PickyHUDDockSide, CGRect, PickyHUDArchiveUndoToastLayout.Anchor)] = [
-            (.right, CGRect(x: 1450, y: 180, width: 72, height: 520), .bottomTrailing),
-            (.left, CGRect(x: 118, y: 180, width: 72, height: 520), .bottomLeading),
-            (.bottom, CGRect(x: 480, y: 98, width: 600, height: 72), .bottomTrailing),
-            (.top, CGRect(x: 480, y: 890, width: 600, height: 72), .topTrailing)
-        ]
+        let cardSize = CGSize(width: 304, height: 78)
+        // A dock rail parked in the middle-right of the screen: the toast card
+        // centers on it so it lands right where the user is looking.
+        let dockFrame = CGRect(x: 1200, y: 400, width: 72, height: 260)
 
-        for (side, dockFrame, expectedAnchor) in dockFrames {
-            let anchor = PickyHUDArchiveUndoToastLayout.anchor(
-                dockSide: side,
-                dockFrame: dockFrame,
-                visibleFrame: visibleFrame,
-                panelSize: panelSize
-            )
-            let frame = PickyHUDArchiveUndoToastLayout.panelFrame(
-                visibleFrame: visibleFrame,
-                dockSide: side,
-                dockFrame: dockFrame,
-                panelSize: panelSize
-            )
+        let frame = PickyHUDArchiveUndoToastLayout.cardFrame(
+            visibleFrame: visibleFrame,
+            dockFrame: dockFrame
+        )
 
-            #expect(anchor == expectedAnchor)
-            #expect(!dockFrame.intersects(frame))
-        }
+        #expect(frame.size == cardSize)
+        #expect(abs(frame.midX - dockFrame.midX) < 0.5)
+        #expect(abs(frame.midY - dockFrame.midY) < 0.5)
     }
 
-    @Test func archiveUndoToastLayoutFallsBackWhenPreferredCornerIsOccupied() throws {
+    @Test func archiveUndoToastCardStaysFullyOnScreenNearEdges() throws {
         let visibleFrame = CGRect(x: 100, y: 80, width: 1440, height: 900)
-        let panelSize = CGSize(width: 304, height: 78)
-        // A right-side dock normally chooses bottom-trailing. This HUD frame
-        // occupies that corner, so the policy must move to the next safe one on
-        // the same side (top-trailing).
-        let dockFrame = CGRect(x: 1040, y: 80, width: 500, height: 220)
+        let margin = PickyHUDArchiveUndoToastPolicy.screenMargin
+        // A dock hugging the top-right corner would push a centered card off
+        // screen; the card must clamp back inside the visible frame.
+        let dockFrame = CGRect(x: 1500, y: 950, width: 40, height: 30)
 
-        let anchor = PickyHUDArchiveUndoToastLayout.anchor(
-            dockSide: .right,
-            dockFrame: dockFrame,
+        let frame = PickyHUDArchiveUndoToastLayout.cardFrame(
             visibleFrame: visibleFrame,
-            panelSize: panelSize
-        )
-        let frame = PickyHUDArchiveUndoToastLayout.panelFrame(
-            visibleFrame: visibleFrame,
-            dockSide: .right,
-            dockFrame: dockFrame,
-            panelSize: panelSize
+            dockFrame: dockFrame
         )
 
-        #expect(anchor == .topTrailing)
-        #expect(!dockFrame.intersects(frame))
-        #expect(frame.size == panelSize)
+        #expect(frame.minX >= visibleFrame.minX + margin - 0.5)
+        #expect(frame.maxX <= visibleFrame.maxX - margin + 0.5)
+        #expect(frame.minY >= visibleFrame.minY + margin - 0.5)
+        #expect(frame.maxY <= visibleFrame.maxY - margin + 0.5)
+    }
+
+    @Test func archiveUndoToastFallsBackToScreenCenterWithoutDock() throws {
+        let visibleFrame = CGRect(x: 100, y: 80, width: 1440, height: 900)
+
+        let frame = PickyHUDArchiveUndoToastLayout.cardFrame(
+            visibleFrame: visibleFrame,
+            dockFrame: .null
+        )
+
+        #expect(abs(frame.midX - visibleFrame.midX) < 0.5)
+        #expect(abs(frame.midY - visibleFrame.midY) < 0.5)
     }
 
     @Test func archiveHoldFeedbackStartsAfterShortGracePeriod() throws {

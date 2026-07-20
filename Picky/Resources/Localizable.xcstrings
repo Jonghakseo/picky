@@ -7737,6 +7737,125 @@
         }
       }
     },
+    "dock.contextMenu.archive": {
+      "comment": "Archive action in a Pickle Dock icon context menu.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archive"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아카이브"
+          }
+        }
+      }
+    },
+    "dock.contextMenu.cancelNextInput": {
+      "comment": "Clears the one-shot next-input route to a Pickle from its Dock icon context menu.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel Next Picky Input Target"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다음 Picky 입력 대상 해제"
+          }
+        }
+      }
+    },
+    "dock.contextMenu.compact": {
+      "comment": "Compact action in a Pickle Dock icon context menu.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compact"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "압축"
+          }
+        }
+      }
+    },
+    "dock.contextMenu.pinInput": {
+      "comment": "Locks all Picky voice and Quick Input messages to this Pickle from its Dock icon context menu.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pin Picky Input to This Pickle"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky 입력을 이 피클에 고정"
+          }
+        }
+      }
+    },
+    "dock.contextMenu.sendNextInput": {
+      "comment": "Routes only the next Picky voice or Quick Input message to this Pickle from its Dock icon context menu.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send Next Picky Input to This Pickle"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다음 Picky 입력을 이 피클로 보내기"
+          }
+        }
+      }
+    },
+    "dock.contextMenu.stop": {
+      "comment": "Stop action in a Pickle Dock icon context menu.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중지"
+          }
+        }
+      }
+    },
+    "dock.contextMenu.unpinInput": {
+      "comment": "Unlocks the persistent Picky input route to this Pickle from its Dock icon context menu.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unpin Picky Input"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky 입력 고정 해제"
+          }
+        }
+      }
+    },
     "dock.drag.archive.label": {
       "comment": "Shown over a Pickle dragged out of the dock; release archives it.",
       "localizations": {

@@ -741,7 +741,11 @@ final class PickyHUDDockIconClickNSView: NSView {
 
         let menu = NSMenu()
         let stickyConversationItem = menuItem(
-            title: coordinator.isScreenContextSticky ? "Stop Talking to This Pickle" : "Keep Talking to This Pickle",
+            title: L10n.t(
+                coordinator.isScreenContextSticky
+                    ? "dock.contextMenu.unpinInput"
+                    : "dock.contextMenu.pinInput"
+            ),
             action: #selector(PickyHUDDockIconClickHost.Coordinator.toggleStickyScreenContextTarget(_:)),
             target: coordinator
         )
@@ -753,25 +757,29 @@ final class PickyHUDDockIconClickNSView: NSView {
         // one-shot context toggle.
         if !coordinator.isScreenContextSticky {
             menu.addItem(menuItem(
-                title: coordinator.isScreenContextArmed ? "Stop Sending Context to This Pickle" : "Send Context to This Pickle",
+                title: L10n.t(
+                    coordinator.isScreenContextArmed
+                        ? "dock.contextMenu.cancelNextInput"
+                        : "dock.contextMenu.sendNextInput"
+                ),
                 action: #selector(PickyHUDDockIconClickHost.Coordinator.toggleScreenContextTarget(_:)),
                 target: coordinator
             ))
         }
         menu.addItem(menuItem(
-            title: "Compact",
+            title: L10n.t("dock.contextMenu.compact"),
             action: #selector(PickyHUDDockIconClickHost.Coordinator.compact(_:)),
             target: coordinator,
             isEnabled: coordinator.canCompact
         ))
         menu.addItem(.separator())
         menu.addItem(menuItem(
-            title: "Archive",
+            title: L10n.t("dock.contextMenu.archive"),
             action: #selector(PickyHUDDockIconClickHost.Coordinator.archive(_:)),
             target: coordinator
         ))
         menu.addItem(menuItem(
-            title: "Stop",
+            title: L10n.t("dock.contextMenu.stop"),
             action: #selector(PickyHUDDockIconClickHost.Coordinator.stop(_:)),
             target: coordinator,
             isEnabled: coordinator.canStop

@@ -8,6 +8,41 @@ import Testing
 @testable import Picky
 
 struct PickyComposerAutocompletePolicyTests {
+    @Test func autocompleteInputCoalescesEquivalentNativeCallbacksWithoutNewRevision() {
+        let initial = PickyComposerAutocompleteInput.empty.updating(
+            text: ">worker",
+            cursorLocation: 7,
+            isComposing: false,
+            fingerprint: "first"
+        )
+        let repeated = initial.updating(
+            text: ">worker",
+            cursorLocation: 7,
+            isComposing: false,
+            fingerprint: "ignored"
+        )
+
+        #expect(repeated == initial)
+        #expect(repeated.revision == 1)
+        #expect(repeated.fingerprint == "first")
+    }
+
+    @Test func autocompleteInputAdvancesOneRevisionForCombinedTextSelectionAndIMEChange() {
+        let initial = PickyComposerAutocompleteInput.empty
+        let updated = initial.updating(
+            text: "한",
+            cursorLocation: 1,
+            isComposing: true,
+            fingerprint: "logical-edit"
+        )
+
+        #expect(updated.text == "한")
+        #expect(updated.cursorLocation == 1)
+        #expect(updated.isComposing)
+        #expect(updated.revision == initial.revision + 1)
+        #expect(updated.fingerprint == "logical-edit")
+    }
+
     @Test func convertsUTF16CursorPositionsAcrossEmojiAndNewlines() throws {
         let text = "😀 >w\nnext"
         let cursor = "😀 >w".utf16.count

@@ -7,6 +7,45 @@
 
 import Foundation
 
+/// A coalesced editor snapshot used to debounce autocomplete. Keeping text,
+/// selection, and IME state together prevents a single native edit from
+/// restarting the query task once per delegate callback.
+struct PickyComposerAutocompleteInput: Equatable {
+    let text: String
+    let cursorLocation: Int?
+    let isComposing: Bool
+    let revision: Int
+    let fingerprint: String
+
+    static let empty = Self(
+        text: "",
+        cursorLocation: nil,
+        isComposing: false,
+        revision: 0,
+        fingerprint: "initial"
+    )
+
+    func updating(
+        text: String,
+        cursorLocation: Int?,
+        isComposing: Bool,
+        fingerprint: String
+    ) -> Self {
+        guard self.text != text
+            || self.cursorLocation != cursorLocation
+            || self.isComposing != isComposing
+        else { return self }
+
+        return Self(
+            text: text,
+            cursorLocation: cursorLocation,
+            isComposing: isComposing,
+            revision: revision &+ 1,
+            fingerprint: fingerprint
+        )
+    }
+}
+
 nonisolated enum PickyComposerAutocompletePolicy {
     struct CursorPosition: Equatable, Sendable {
         let lines: [String]

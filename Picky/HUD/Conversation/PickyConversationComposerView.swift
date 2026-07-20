@@ -116,11 +116,10 @@ struct PickyConversationComposerView: View {
     @State private var autocompleteCapabilitiesRequestID: String?
     @State private var autocompleteQueryRequestID: String?
     @State private var autocompleteApplyRequestID: String?
-    @State private var autocompleteDraftRevision: Int = 0
-    @State private var autocompleteDraftFingerprint: String = UUID().uuidString
-    @State private var composerCursorLocation: Int?
+    /// TextKit reports text, selection, and IME marked-text changes separately.
+    /// This is the one coalesced value allowed to restart the query task.
+    @State private var autocompleteInput = PickyComposerAutocompleteInput.empty
     @State private var composerSelectionOverride: NSRange?
-    @State private var isIMEComposing: Bool = false
     @State private var appliedComposerDraftRequestID: String?
     @State private var keyDownMonitor: Any?
     @State private var measuredEditorContentHeight: CGFloat = Self.minimumEditorHeight
@@ -171,6 +170,7 @@ struct PickyConversationComposerView: View {
             restorePersistedDraftIfNeeded()
             restorePersistedAttachmentsIfNeeded()
             applyComposerDraftRequestIfNeeded(viewModel.composerDraftRequest(for: session.id))
+            synchronizeAutocompleteInput(text: draft)
         }
         .onDisappear {
             viewModel.updateComposerDraft(draft, sessionID: session.id)
@@ -194,6 +194,7 @@ struct PickyConversationComposerView: View {
             attachments = viewModel.persistedComposerAttachmentPaths(for: session.id)
                 .map { PickyComposerAttachment(path: $0) }
             resetAutocompleteState()
+            synchronizeAutocompleteInput(text: draft)
             requestAutocompleteCapabilities()
         }
         .onChange(of: attachments) { _, _ in
@@ -204,29 +205,23 @@ struct PickyConversationComposerView: View {
         }
         .task(id: AutocompleteQueryKey(
             sessionID: session.id,
-            draft: draft,
-            cursorLocation: composerCursorLocation,
+            input: autocompleteInput,
             generation: autocompleteCapabilities?.generation,
             triggerCharacters: autocompleteCapabilities?.triggerCharacters ?? [],
-            draftRevision: autocompleteDraftRevision,
-            draftFingerprint: autocompleteDraftFingerprint,
-            isComposing: isIMEComposing,
             isDismissed: isAutocompleteDismissed
         )) {
+            let input = autocompleteInput
             guard let capabilities = autocompleteCapabilities,
                   capabilities.generation > 0,
-                  !isIMEComposing,
+                  !input.isComposing,
                   !isAutocompleteDismissed,
                   PickyComposerAutocompletePolicy.shouldQuery(
-                    text: draft,
-                    cursorLocation: composerCursorLocation,
+                    text: input.text,
+                    cursorLocation: input.cursorLocation,
                     triggerCharacters: capabilities.triggerCharacters
                   )
-            else {
-                autocompleteQueryRequestID = nil
-                autocompleteSuggestions = nil
-                return
-            }
+            else { return }
+            PickyPerf.event("composer_autocomplete_query_task_started")
             do {
                 try await Task.sleep(nanoseconds: Self.autocompleteDebounceNanoseconds)
             } catch {
@@ -234,31 +229,28 @@ struct PickyConversationComposerView: View {
             }
             guard !Task.isCancelled,
                   let position = PickyComposerAutocompletePolicy.cursorPosition(
-                    in: draft,
-                    utf16Offset: composerCursorLocation
+                    in: input.text,
+                    utf16Offset: input.cursorLocation
                   )
             else { return }
+            PickyPerf.event("composer_autocomplete_query_sent")
             autocompleteQueryRequestID = viewModel.queryAutocomplete(
                 sessionID: session.id,
                 generation: capabilities.generation,
                 lines: position.lines,
                 cursorLine: position.line,
                 cursorCol: position.column,
-                draftRevision: autocompleteDraftRevision,
-                draftFingerprint: autocompleteDraftFingerprint
+                draftRevision: input.revision,
+                draftFingerprint: input.fingerprint
             )
         }
     }
 
     private struct AutocompleteQueryKey: Equatable {
         let sessionID: String
-        let draft: String
-        let cursorLocation: Int?
+        let input: PickyComposerAutocompleteInput
         let generation: Int?
         let triggerCharacters: [String]
-        let draftRevision: Int
-        let draftFingerprint: String
-        let isComposing: Bool
         let isDismissed: Bool
     }
 
@@ -417,15 +409,8 @@ struct PickyConversationComposerView: View {
                 selectionOverride: $composerSelectionOverride,
                 temporaryHighlightRange: autocompleteHighlightRange,
                 temporaryHighlightColor: NSColor(DS.Colors.accentText),
-                onSelectionChange: { composerCursorLocation = $0.location },
                 onMeasuredContentHeight: { measuredEditorContentHeight = $0 },
-                onMarkedTextChange: { isMarked in
-                    isIMEComposing = isMarked
-                    if isMarked {
-                        autocompleteSuggestions = nil
-                        autocompleteQueryRequestID = nil
-                    }
-                },
+                onInputChange: applyAutocompleteInput,
                 onReturn: handleComposerReturnKey,
                 onUpArrow: handleComposerUpArrowKey,
                 onDownArrow: { moveAutocompleteSelection(.down) },
@@ -435,13 +420,6 @@ struct PickyConversationComposerView: View {
             )
             .frame(height: editorHeight)
             .onChange(of: draft) { _, newValue in
-                selectedAutocompleteIndex = 0
-                isAutocompleteDismissed = false
-                autocompleteSuggestions = nil
-                autocompleteQueryRequestID = nil
-                autocompleteApplyRequestID = nil
-                autocompleteDraftRevision &+= 1
-                autocompleteDraftFingerprint = UUID().uuidString
                 viewModel.updateComposerDraft(newValue, sessionID: session.id)
             }
         }
@@ -508,7 +486,7 @@ struct PickyConversationComposerView: View {
 
     private var autocompleteIsVisible: Bool {
         !isComposerInputDisabled
-            && !isIMEComposing
+            && !autocompleteInput.isComposing
             && !isAutocompleteDismissed
             && autocompleteSuggestions?.items.isEmpty == false
     }
@@ -599,11 +577,11 @@ struct PickyConversationComposerView: View {
     }
 
     private var autocompleteHighlightRange: NSRange? {
-        guard !isIMEComposing else { return nil }
+        guard !autocompleteInput.isComposing else { return nil }
         return PickyComposerAutocompletePolicy.highlightRange(
             prefix: autocompleteSuggestions?.prefix,
-            cursorLocation: composerCursorLocation ?? draft.utf16.count,
-            text: draft
+            cursorLocation: autocompleteInput.cursorLocation ?? autocompleteInput.text.utf16.count,
+            text: autocompleteInput.text
         )
     }
 
@@ -642,8 +620,8 @@ struct PickyConversationComposerView: View {
         guard autocompleteApplyRequestID == nil,
               let prefix = snapshot.prefix,
               let position = PickyComposerAutocompletePolicy.cursorPosition(
-                in: draft,
-                utf16Offset: composerCursorLocation
+                in: autocompleteInput.text,
+                utf16Offset: autocompleteInput.cursorLocation
               )
         else { return }
         autocompleteApplyRequestID = viewModel.applyAutocomplete(
@@ -652,8 +630,8 @@ struct PickyConversationComposerView: View {
             lines: position.lines,
             cursorLine: position.line,
             cursorCol: position.column,
-            draftRevision: autocompleteDraftRevision,
-            draftFingerprint: autocompleteDraftFingerprint,
+            draftRevision: autocompleteInput.revision,
+            draftFingerprint: autocompleteInput.fingerprint,
             item: item,
             prefix: prefix
         )
@@ -672,6 +650,32 @@ struct PickyConversationComposerView: View {
         autocompleteCapabilitiesRequestID = viewModel.requestAutocompleteCapabilities(sessionID: session.id)
     }
 
+    private func applyAutocompleteInput(_ input: PickyIMETextInput) {
+        let nextInput = autocompleteInput.updating(
+            text: input.text,
+            cursorLocation: input.selection.location,
+            isComposing: input.hasMarkedText,
+            fingerprint: UUID().uuidString
+        )
+        guard nextInput != autocompleteInput else { return }
+
+        autocompleteInput = nextInput
+        selectedAutocompleteIndex = 0
+        isAutocompleteDismissed = false
+        autocompleteSuggestions = nil
+        autocompleteQueryRequestID = nil
+        autocompleteApplyRequestID = nil
+        PickyPerf.event("composer_autocomplete_input_changed")
+    }
+
+    private func synchronizeAutocompleteInput(text: String, cursorLocation: Int? = nil) {
+        applyAutocompleteInput(PickyIMETextInput(
+            text: text,
+            selection: NSRange(location: cursorLocation ?? text.utf16.count, length: 0),
+            hasMarkedText: false
+        ))
+    }
+
     private func resetAutocompleteState() {
         autocompleteCapabilities = nil
         autocompleteSuggestions = nil
@@ -680,7 +684,7 @@ struct PickyConversationComposerView: View {
         autocompleteApplyRequestID = nil
         selectedAutocompleteIndex = 0
         isAutocompleteDismissed = false
-        autocompleteDraftFingerprint = UUID().uuidString
+        autocompleteInput = .empty
     }
 
     private func applyAutocompleteEvent(_ event: PickyAutocompleteClientEvent) {
@@ -703,15 +707,15 @@ struct PickyConversationComposerView: View {
             guard snapshot.sessionId == session.id,
                   snapshot.requestId == autocompleteQueryRequestID,
                   snapshot.generation == autocompleteCapabilities?.generation,
-                  snapshot.draftRevision == autocompleteDraftRevision,
-                  snapshot.draftFingerprint == autocompleteDraftFingerprint,
+                  snapshot.draftRevision == autocompleteInput.revision,
+                  snapshot.draftFingerprint == autocompleteInput.fingerprint,
                   let position = PickyComposerAutocompletePolicy.cursorPosition(
-                    in: draft,
-                    utf16Offset: composerCursorLocation
+                    in: autocompleteInput.text,
+                    utf16Offset: autocompleteInput.cursorLocation
                   ),
                   position.line == snapshot.cursorLine,
                   position.column == snapshot.cursorCol,
-                  !isIMEComposing
+                  !autocompleteInput.isComposing
             else { return }
             autocompleteQueryRequestID = nil
             autocompleteSuggestions = snapshot.items.isEmpty ? nil : snapshot
@@ -720,22 +724,22 @@ struct PickyConversationComposerView: View {
             guard completion.sessionId == session.id,
                   completion.requestId == autocompleteApplyRequestID,
                   completion.generation == autocompleteCapabilities?.generation,
-                  completion.draftRevision == autocompleteDraftRevision,
-                  completion.draftFingerprint == autocompleteDraftFingerprint,
+                  completion.draftRevision == autocompleteInput.revision,
+                  completion.draftFingerprint == autocompleteInput.fingerprint,
                   let cursorOffset = PickyComposerAutocompletePolicy.utf16Offset(
                     lines: completion.lines,
                     line: completion.cursorLine,
                     column: completion.cursorCol
                   ),
-                  !isIMEComposing
+                  !autocompleteInput.isComposing
             else { return }
             autocompleteApplyRequestID = nil
             autocompleteSuggestions = nil
             selectedAutocompleteIndex = 0
             let completedText = PickyComposerAutocompletePolicy.text(from: completion.lines)
             draft = completedText
+            synchronizeAutocompleteInput(text: completedText, cursorLocation: cursorOffset)
             composerSelectionOverride = NSRange(location: cursorOffset, length: 0)
-            composerCursorLocation = cursorOffset
             isFocused = true
         }
     }
@@ -1093,6 +1097,7 @@ struct PickyConversationComposerView: View {
         let persistedDraft = viewModel.persistedComposerDraft(for: session.id)
         guard !persistedDraft.isEmpty else { return }
         draft = persistedDraft
+        synchronizeAutocompleteInput(text: persistedDraft)
     }
 
     private func restorePersistedAttachmentsIfNeeded() {
@@ -1109,6 +1114,7 @@ struct PickyConversationComposerView: View {
     private func applyComposerDraftRequestIfNeeded(_ request: PickyComposerDraftRequest?) {
         guard let request, appliedComposerDraftRequestID != request.id else { return }
         draft = request.text
+        synchronizeAutocompleteInput(text: request.text)
         viewModel.updateComposerDraft(request.text, sessionID: session.id)
         selectedAutocompleteIndex = 0
         autocompleteSuggestions = nil
@@ -1233,6 +1239,7 @@ struct PickyConversationComposerView: View {
         if attachmentPaths.isEmpty && draft.trimmingCharacters(in: .whitespacesAndNewlines) == "/tree" {
             onRequestRewind()
             draft = ""
+            synchronizeAutocompleteInput(text: "")
             viewModel.clearComposerDraft(sessionID: submittedSessionID)
             return
         }
@@ -1249,6 +1256,7 @@ struct PickyConversationComposerView: View {
                 let shouldClearSubmittedDraft = draft == originalDraft
                 if shouldClearSubmittedDraft {
                     draft = ""
+                    synchronizeAutocompleteInput(text: "")
                 }
                 attachments.removeAll { attachment in
                     submittedAttachmentIDs.contains(attachment.id)
@@ -1272,6 +1280,7 @@ struct PickyConversationComposerView: View {
         guard draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         guard let previousText = Self.previousUserMessageText(in: session.messages) else { return false }
         draft = previousText
+        synchronizeAutocompleteInput(text: previousText)
         isFocused = true
         return true
     }
@@ -1407,6 +1416,7 @@ struct AttachmentViewportWidthKey: PreferenceKey {
 private struct PickyComposerAttachmentChipView: View {
     let attachment: PickyComposerAttachment
     let onRemove: () -> Void
+    @ObservedObject private var thumbnailLoader = PickyConversationAttachmentThumbnailLoader.shared
 
     var body: some View {
         HStack(spacing: 5) {
@@ -1435,11 +1445,15 @@ private struct PickyComposerAttachmentChipView: View {
         .background(Capsule().fill(DS.Colors.surface2.opacity(0.75)))
         .overlay(Capsule().stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.5))
         .help(attachment.path)
+        .task(id: attachment.url) {
+            guard attachment.isImage else { return }
+            _ = thumbnailLoader.loadThumbnail(for: attachment.url)
+        }
     }
 
     @ViewBuilder
     private var leading: some View {
-        if attachment.isImage, let image = NSImage(contentsOf: attachment.url) {
+        if let image = thumbnailLoader.thumbnail(for: attachment.url) {
             Image(nsImage: image)
                 .resizable()
                 .interpolation(.medium)

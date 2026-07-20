@@ -14,6 +14,15 @@ enum PickyIMETextSynchronization {
     }
 }
 
+/// A coalesced native-editor snapshot. TextKit can notify text, selection, and
+/// marked-text changes separately for one keystroke, so SwiftUI consumers use
+/// this to publish one logical editor update on the next main-loop turn.
+struct PickyIMETextInput: Equatable {
+    let text: String
+    let selection: NSRange
+    let hasMarkedText: Bool
+}
+
 struct PickyIMETextView: NSViewRepresentable {
     @Binding var text: String
     var isFocused: Binding<Bool>? = nil
@@ -27,6 +36,7 @@ struct PickyIMETextView: NSViewRepresentable {
     var temporaryHighlightColor: NSColor? = nil
     var onSelectionChange: ((NSRange) -> Void)?
     var onMeasuredContentHeight: ((CGFloat) -> Void)?
+    var onInputChange: ((PickyIMETextInput) -> Void)?
     var onMarkedTextChange: ((Bool) -> Void)?
     var onReturn: ((NSEvent.ModifierFlags) -> Bool)?
     var onUpArrow: ((NSEvent.ModifierFlags) -> Bool)?
@@ -40,7 +50,8 @@ struct PickyIMETextView: NSViewRepresentable {
             text: $text,
             isFocused: isFocused,
             onSelectionChange: onSelectionChange,
-            onMeasuredContentHeight: onMeasuredContentHeight
+            onMeasuredContentHeight: onMeasuredContentHeight,
+            onInputChange: onInputChange
         )
     }
 
@@ -89,6 +100,8 @@ struct PickyIMETextView: NSViewRepresentable {
         context.coordinator.isFocused = isFocused
         context.coordinator.onSelectionChange = onSelectionChange
         context.coordinator.onMeasuredContentHeight = onMeasuredContentHeight
+        context.coordinator.onInputChange = onInputChange
+        PickyPerf.event("ime_text_view_update")
 
         if PickyIMETextSynchronization.shouldOverwriteNativeText(
             nativeText: textView.string,
@@ -128,6 +141,9 @@ struct PickyIMETextView: NSViewRepresentable {
             context.coordinator.measure(textView: textView)
         }
         textView.onMarkedTextChange = onMarkedTextChange
+        textView.onNativeInputStateChange = { [weak coordinator = context.coordinator] textView in
+            coordinator?.scheduleInputChange(from: textView)
+        }
         textView.onReturn = onReturn
         textView.onUpArrow = onUpArrow
         textView.onDownArrow = onDownArrow
@@ -157,32 +173,56 @@ struct PickyIMETextView: NSViewRepresentable {
         var isFocused: Binding<Bool>?
         var onSelectionChange: ((NSRange) -> Void)?
         var onMeasuredContentHeight: ((CGFloat) -> Void)?
+        var onInputChange: ((PickyIMETextInput) -> Void)?
         private var lastReportedContentHeight: CGFloat = 0
+        private var inputChangeScheduled = false
 
         init(
             text: Binding<String>,
             isFocused: Binding<Bool>?,
             onSelectionChange: ((NSRange) -> Void)?,
-            onMeasuredContentHeight: ((CGFloat) -> Void)?
+            onMeasuredContentHeight: ((CGFloat) -> Void)?,
+            onInputChange: ((PickyIMETextInput) -> Void)?
         ) {
             self.text = text
             self.isFocused = isFocused
             self.onSelectionChange = onSelectionChange
             self.onMeasuredContentHeight = onMeasuredContentHeight
+            self.onInputChange = onInputChange
         }
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             text.wrappedValue = textView.string
             measure(textView: textView)
+            scheduleInputChange(from: textView)
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
-            guard let textView = notification.object as? NSTextView, !textView.hasMarkedText(),
-                  let onSelectionChange else { return }
-            let selectedRange = textView.selectedRange()
-            DispatchQueue.main.async {
-                onSelectionChange(selectedRange)
+            guard let textView = notification.object as? NSTextView else { return }
+            if !textView.hasMarkedText(), let onSelectionChange {
+                let selectedRange = textView.selectedRange()
+                DispatchQueue.main.async {
+                    onSelectionChange(selectedRange)
+                }
+            }
+            scheduleInputChange(from: textView)
+        }
+
+        func scheduleInputChange(from textView: NSTextView) {
+            guard !inputChangeScheduled else { return }
+            inputChangeScheduled = true
+            DispatchQueue.main.async { [weak self, weak textView] in
+                guard let self, let textView else { return }
+                self.inputChangeScheduled = false
+                PickyPerf.event("ime_text_input_coalesced")
+                self.onInputChange?(
+                    PickyIMETextInput(
+                        text: textView.string,
+                        selection: textView.selectedRange(),
+                        hasMarkedText: textView.hasMarkedText()
+                    )
+                )
             }
         }
 
@@ -220,6 +260,7 @@ final class PickyIMENSTextView: NSTextView {
     var onFocusChange: ((Bool) -> Void)?
     var onLayout: ((PickyIMENSTextView) -> Void)?
     var onMarkedTextChange: ((Bool) -> Void)?
+    var onNativeInputStateChange: ((PickyIMENSTextView) -> Void)?
     var onReturn: ((NSEvent.ModifierFlags) -> Bool)?
     var onUpArrow: ((NSEvent.ModifierFlags) -> Bool)?
     var onDownArrow: (() -> Bool)?
@@ -275,6 +316,7 @@ final class PickyIMENSTextView: NSTextView {
         guard lastReportedMarkedTextState != isMarked else { return }
         lastReportedMarkedTextState = isMarked
         onMarkedTextChange?(isMarked)
+        onNativeInputStateChange?(self)
     }
 
     func setTemporaryHighlight(range: NSRange?, color: NSColor?) {

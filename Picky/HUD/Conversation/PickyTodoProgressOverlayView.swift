@@ -151,7 +151,6 @@ struct PickyTodoProgressRestoreButton: View {
 }
 
 struct PickyTodoProgressOverlayView: View {
-    static let topContentInset: CGFloat = 42
     static let minimumCardWidth: CGFloat = 280
     static let maximumCardWidth: CGFloat = 700
 

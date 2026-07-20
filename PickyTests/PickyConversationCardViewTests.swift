@@ -1296,17 +1296,17 @@ struct PickyConversationCardViewTests {
         let firstTrigger = PickyConversationListView(
             session: first,
             viewModel: viewModel,
-            bottomOverlayInset: PickyTodoProgressOverlayView.bottomContentInset
+            hasTodoOverlay: true
         ).bottomScrollTrigger
         let updatedTrigger = PickyConversationListView(
             session: updated,
             viewModel: viewModel,
-            bottomOverlayInset: PickyTodoProgressOverlayView.bottomContentInset
+            hasTodoOverlay: true
         ).bottomScrollTrigger
         let clearedTrigger = PickyConversationListView(
             session: updated,
             viewModel: viewModel,
-            bottomOverlayInset: 0
+            hasTodoOverlay: false
         ).bottomScrollTrigger
 
         #expect(firstTrigger == updatedTrigger)

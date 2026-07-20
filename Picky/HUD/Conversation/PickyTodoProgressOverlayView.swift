@@ -46,9 +46,79 @@ private struct PickyTodoProgressButtonStyle: ButtonStyle {
     }
 }
 
-struct PickyTodoProgressRestoreButton: View {
-    static let bottomContentInset: CGFloat = 38
+private struct PickyTodoProgressAdaptiveWidthLayout: Layout {
+    let minimumWidth: CGFloat
+    let maximumWidth: CGFloat
 
+    func sizeThatFits(
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout Void
+    ) -> CGSize {
+        guard let first = subviews.first else { return .zero }
+
+        let availableWidth = proposal.width ?? CGFloat.greatestFiniteMagnitude
+        let naturalWidth = first.sizeThatFits(ProposedViewSize(width: nil, height: nil)).width
+        let resolvedWidth = PickyTodoProgressAdaptiveWidthPolicy.resolveWidth(
+            idealWidth: naturalWidth,
+            availableWidth: availableWidth,
+            minimumWidth: minimumWidth,
+            maximumWidth: maximumWidth
+        )
+        let size = first.sizeThatFits(ProposedViewSize(width: resolvedWidth, height: proposal.height))
+
+        return CGSize(width: resolvedWidth, height: size.height)
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout Void
+    ) {
+        guard let first = subviews.first else { return }
+
+        let availableWidth = bounds.width
+        let naturalWidth = first.sizeThatFits(ProposedViewSize(width: nil, height: nil)).width
+        let resolvedWidth = PickyTodoProgressAdaptiveWidthPolicy.resolveWidth(
+            idealWidth: naturalWidth,
+            availableWidth: availableWidth,
+            minimumWidth: minimumWidth,
+            maximumWidth: maximumWidth
+        )
+        let size = first.sizeThatFits(ProposedViewSize(width: resolvedWidth, height: nil))
+        let x = bounds.maxX - resolvedWidth
+        first.place(
+            at: CGPoint(x: x, y: bounds.minY),
+            anchor: .topLeading,
+            proposal: ProposedViewSize(width: resolvedWidth, height: size.height)
+        )
+    }
+}
+
+enum PickyTodoProgressAdaptiveWidthPolicy {
+    static func resolveWidth(
+        idealWidth: CGFloat,
+        availableWidth: CGFloat,
+        minimumWidth: CGFloat,
+        maximumWidth: CGFloat
+    ) -> CGFloat {
+        guard availableWidth.isFinite else {
+            return min(max(idealWidth, minimumWidth), maximumWidth)
+        }
+
+        let boundedMaxWidth = min(availableWidth, maximumWidth)
+        guard boundedMaxWidth > 0 else { return 0 }
+
+        if boundedMaxWidth <= minimumWidth {
+            return boundedMaxWidth
+        }
+
+        return max(minimumWidth, min(idealWidth, boundedMaxWidth))
+    }
+}
+
+struct PickyTodoProgressRestoreButton: View {
     let presentation: PickyTodoProgressPresentation
     let onRestore: () -> Void
 
@@ -76,24 +146,30 @@ struct PickyTodoProgressRestoreButton: View {
         .help(L10n.t("hud.todo.show"))
         .accessibilityLabel(L10n.t("hud.todo.show"))
         .accessibilityValue(presentation.stepText)
+        .accessibilityHint(L10n.t("hud.todo.expand"))
     }
 }
 
 struct PickyTodoProgressOverlayView: View {
-    static let bottomContentInset: CGFloat = 48
+    static let topContentInset: CGFloat = 42
+    static let minimumCardWidth: CGFloat = 280
+    static let maximumCardWidth: CGFloat = 700
 
     let presentation: PickyTodoProgressPresentation
-    let onHide: () -> Void
     @Binding var isExpanded: Bool
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: 8) {
+        Group {
             if isExpanded {
                 expandedCard
                     .transition(expandedTransition)
+            } else {
+                PickyTodoProgressRestoreButton(
+                    presentation: presentation,
+                    onRestore: { isExpanded = true }
+                )
             }
-            compactPill
         }
         .onChange(of: presentation.isComplete) { _, isComplete in
             if PickyTodoProgressOverlayPolicy.shouldCollapse(isComplete: isComplete) {
@@ -106,106 +182,67 @@ struct PickyTodoProgressOverlayView: View {
         )
     }
 
-    private var compactPill: some View {
-        HStack(spacing: 0) {
-            Button {
-                isExpanded.toggle()
-            } label: {
-                HStack(spacing: 9) {
-                    progressRing(side: 19, lineWidth: 2.4)
-
-                    Text(presentation.stepText)
-                        .font(PickyHUDTypography.statusMonospacedMedium)
-                        .foregroundColor(DS.Colors.textPrimary)
-                        .fixedSize(horizontal: true, vertical: false)
-
-                    Text(compactSummary)
-                        .font(PickyHUDTypography.statusMedium)
-                        .foregroundColor(presentation.isComplete ? DS.Colors.successText : DS.Colors.textSecondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.up")
-                        .pickyFont(size: 9.5, weight: .semibold)
-                        .foregroundColor(DS.Colors.textTertiary)
-                        .frame(width: 12)
-                }
-                .padding(.leading, 11)
-                .padding(.trailing, 8)
-                .frame(height: 38)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(PickyTodoProgressButtonStyle())
-            .help(L10n.t("hud.todo.toggle.help"))
-            .accessibilityLabel("\(presentation.stepText), \(compactSummary)")
-            .accessibilityValue(isExpanded ? L10n.t("hud.todo.state.expanded") : L10n.t("hud.todo.state.collapsed"))
-            .accessibilityHint(isExpanded ? L10n.t("hud.todo.collapse") : L10n.t("hud.todo.expand"))
-
-            Rectangle()
-                .fill(DS.Colors.borderSubtle.opacity(0.65))
-                .frame(width: 0.5, height: 16)
-                .accessibilityHidden(true)
-
-            Button(action: onHide) {
-                Image(systemName: "minus")
-                    .pickyFont(size: 8.5, weight: .semibold)
-                    .foregroundColor(DS.Colors.textTertiary)
-                    .frame(width: 29, height: 38)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(PickyTodoProgressButtonStyle())
-            .help(L10n.t("hud.todo.hide"))
-            .accessibilityLabel(L10n.t("hud.todo.hide"))
-        }
-        .background(
-            Capsule(style: .continuous)
-                .fill(DS.Colors.surface1.opacity(0.97))
-                .overlay(
-                    Capsule(style: .continuous)
-                        .stroke(progressColor.opacity(0.5), lineWidth: 0.8)
-                )
-        )
-        .clipShape(Capsule(style: .continuous))
-    }
-
     private var expandedCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                Text(L10n.t("hud.todo.title"))
-                    .font(PickyHUDTypography.supportingSemibold)
-                    .foregroundColor(DS.Colors.textPrimary)
-                Spacer(minLength: 8)
-                Text(presentation.stepText)
-                    .font(PickyHUDTypography.statusMonospacedMedium)
-                    .foregroundColor(DS.Colors.textSecondary)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+        PickyTodoProgressAdaptiveWidthLayout(
+            minimumWidth: Self.minimumCardWidth,
+            maximumWidth: Self.maximumCardWidth
+        ) {
+            VStack(alignment: .leading, spacing: 0) {
+                Button(action: { isExpanded = false }) {
+                    expandedHeader
+                }
+                .buttonStyle(PickyTodoProgressButtonStyle())
+                .help(L10n.t("hud.todo.collapse"))
+                .accessibilityLabel("\(presentation.stepText), \(L10n.t("hud.todo.collapse"))")
+                .accessibilityValue(L10n.t("hud.todo.state.expanded"))
+                .accessibilityHint(L10n.t("hud.todo.collapse"))
 
-            Divider()
-                .overlay(DS.Colors.borderSubtle.opacity(0.65))
+                Divider()
+                    .overlay(DS.Colors.borderSubtle.opacity(0.65))
 
-            if presentation.usesScrollableExpandedList {
-                ScrollView(.vertical, showsIndicators: true) {
+                if presentation.usesScrollableExpandedList {
+                    ScrollView(.vertical, showsIndicators: true) {
+                        expandedTaskRows
+                    }
+                    .frame(maxHeight: 224)
+                } else {
                     expandedTaskRows
                 }
-                .frame(maxHeight: 224)
-            } else {
-                expandedTaskRows
             }
+            .background(
+                RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous)
+                    .fill(DS.Colors.surface1.opacity(0.98))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous)
+                            .stroke(DS.Colors.borderSubtle.opacity(0.75), lineWidth: 0.8)
+                    )
+                    // `elevation.transient`: the expanded card floats above transcript content.
+                    .shadow(color: .black.opacity(0.18), radius: 12, y: 8)
+            )
         }
-        .background(
-            RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous)
-                .fill(DS.Colors.surface1.opacity(0.98))
-                .overlay(
-                    RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous)
-                        .stroke(DS.Colors.borderSubtle.opacity(0.75), lineWidth: 0.8)
-                )
-                // `elevation.transient`: this card floats above transcript content.
-                .shadow(color: .black.opacity(0.18), radius: 12, y: 8)
-        )
         .accessibilityElement(children: .contain)
+    }
+
+    private var expandedHeader: some View {
+        HStack(alignment: .center, spacing: 8) {
+            progressRing(side: 19, lineWidth: 2.4)
+
+            Text(presentation.stepText)
+                .font(PickyHUDTypography.statusMonospacedMedium)
+                .foregroundColor(DS.Colors.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 8)
+
+            Image(systemName: "chevron.down")
+                .pickyFont(size: 9.5, weight: .semibold)
+                .foregroundColor(DS.Colors.textTertiary)
+                .frame(width: 12)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
     }
 
     private var expandedTaskRows: some View {
@@ -278,11 +315,7 @@ struct PickyTodoProgressOverlayView: View {
     private var expandedTransition: AnyTransition {
         accessibilityReduceMotion
             ? .opacity
-            : .scale(scale: 0.97, anchor: .bottom).combined(with: .opacity)
-    }
-
-    private var compactSummary: String {
-        presentation.isComplete ? L10n.t("hud.todo.complete") : presentation.activeText
+            : .scale(scale: 0.97, anchor: .top).combined(with: .opacity)
     }
 
     private var progressColor: Color {

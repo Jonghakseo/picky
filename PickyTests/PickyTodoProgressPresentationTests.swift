@@ -89,26 +89,64 @@ struct PickyTodoProgressPresentationTests {
         #expect(presentation.stepText == L10n.t("hud.todo.completedCount", Int64(0), Int64(2)))
     }
 
-    @Test func hiddenTodoSnapshotReturnsWhenTheTodoStateUpdates() {
-        let hiddenSnapshot = PickyTodoProgressSnapshotID(
-            sessionID: "session-1",
-            updatedAt: Date(timeIntervalSince1970: 1_800_000_002)
-        )
-        let updatedSnapshot = PickyTodoProgressSnapshotID(
-            sessionID: "session-1",
-            updatedAt: Date(timeIntervalSince1970: 1_800_000_003)
-        )
-
-        #expect(!PickyTodoProgressOverlayPolicy.shouldShow(
-            snapshotID: hiddenSnapshot,
-            hiddenSnapshotID: hiddenSnapshot
-        ))
-        #expect(PickyTodoProgressOverlayPolicy.shouldShow(
-            snapshotID: updatedSnapshot,
-            hiddenSnapshotID: hiddenSnapshot
-        ))
+    @Test func overlayShouldCollapseOnlyWhenComplete() {
         #expect(PickyTodoProgressOverlayPolicy.shouldCollapse(isComplete: true))
         #expect(!PickyTodoProgressOverlayPolicy.shouldCollapse(isComplete: false))
+    }
+
+    @Test func adaptiveWidthResolvesShortWidthToMinimum() {
+        let resolved = PickyTodoProgressAdaptiveWidthPolicy.resolveWidth(
+            idealWidth: 120,
+            availableWidth: 1024,
+            minimumWidth: PickyTodoProgressOverlayView.minimumCardWidth,
+            maximumWidth: PickyTodoProgressOverlayView.maximumCardWidth
+        )
+
+        #expect(resolved == PickyTodoProgressOverlayView.minimumCardWidth)
+    }
+
+    @Test func adaptiveWidthResolvesMediumWidthToIdeal() {
+        let resolved = PickyTodoProgressAdaptiveWidthPolicy.resolveWidth(
+            idealWidth: 480,
+            availableWidth: 1024,
+            minimumWidth: PickyTodoProgressOverlayView.minimumCardWidth,
+            maximumWidth: PickyTodoProgressOverlayView.maximumCardWidth
+        )
+
+        #expect(resolved == 480)
+    }
+
+    @Test func adaptiveWidthResolvesOverwideToClampedMaximum() {
+        let resolved = PickyTodoProgressAdaptiveWidthPolicy.resolveWidth(
+            idealWidth: 1200,
+            availableWidth: 1024,
+            minimumWidth: PickyTodoProgressOverlayView.minimumCardWidth,
+            maximumWidth: PickyTodoProgressOverlayView.maximumCardWidth
+        )
+
+        #expect(resolved == PickyTodoProgressOverlayView.maximumCardWidth)
+    }
+
+    @Test func adaptiveWidthUsesAvailableWidthWhenBelowMaximum() {
+        let resolved = PickyTodoProgressAdaptiveWidthPolicy.resolveWidth(
+            idealWidth: 1200,
+            availableWidth: 520,
+            minimumWidth: PickyTodoProgressOverlayView.minimumCardWidth,
+            maximumWidth: PickyTodoProgressOverlayView.maximumCardWidth
+        )
+
+        #expect(resolved == 520)
+    }
+
+    @Test func adaptiveWidthUsesAvailableWidthWhenNarrowerThanMinimum() {
+        let resolved = PickyTodoProgressAdaptiveWidthPolicy.resolveWidth(
+            idealWidth: 1200,
+            availableWidth: 250,
+            minimumWidth: PickyTodoProgressOverlayView.minimumCardWidth,
+            maximumWidth: PickyTodoProgressOverlayView.maximumCardWidth
+        )
+
+        #expect(resolved == 250)
     }
 
     @Test func expandedListOnlyScrollsAfterSixTasks() throws {

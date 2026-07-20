@@ -29,8 +29,7 @@ struct PickyConversationCardView: View {
     @State private var droppedFilePaths: [String] = []
     @State private var isFileDropTargeted = false
     @State private var showingRewindPicker = false
-    @State private var hiddenTodoSnapshotID: PickyTodoProgressSnapshotID?
-    @State private var isTodoExpanded = false
+    @State private var isTodoExpanded = true
 
     var body: some View {
         let _ = PickyPerf.event("conversation_card_body")
@@ -75,8 +74,7 @@ struct PickyConversationCardView: View {
             PickyRewindPickerView(session: session, viewModel: viewModel)
         }
         .onChange(of: session.id) { _, _ in
-            isTodoExpanded = false
-            hiddenTodoSnapshotID = nil
+            isTodoExpanded = true
         }
     }
 
@@ -89,20 +87,8 @@ struct PickyConversationCardView: View {
 
     private func chatContent(fillsAvailableHeight: Bool) -> some View {
         let todoPresentation = PickyTodoProgressPresentation(state: session.todoState)
-        let todoSnapshotID = todoPresentation.map {
-            PickyTodoProgressSnapshotID(sessionID: session.id, updatedAt: $0.updatedAt)
-        }
-        let visibleTodoPresentation = todoSnapshotID.flatMap { snapshotID in
-            PickyTodoProgressOverlayPolicy.shouldShow(
-                snapshotID: snapshotID,
-                hiddenSnapshotID: hiddenTodoSnapshotID
-            ) ? todoPresentation : nil
-        }
-        let isTodoHidden = todoPresentation != nil && visibleTodoPresentation == nil
-        let todoBottomInset: CGFloat = if visibleTodoPresentation != nil {
-            PickyTodoProgressOverlayView.bottomContentInset
-        } else if isTodoHidden {
-            PickyTodoProgressRestoreButton.bottomContentInset
+        let todoTopInset: CGFloat = if todoPresentation != nil {
+            PickyTodoProgressOverlayView.topContentInset
         } else {
             0
         }
@@ -131,11 +117,12 @@ struct PickyConversationCardView: View {
                 viewModel: viewModel,
                 isCommandShortcutHintVisible: isCommandShortcutHintVisible,
                 fillsAvailableHeight: fillsAvailableHeight,
-                bottomOverlayInset: todoBottomInset
+                hasTodoOverlay: todoPresentation != nil
             )
-            .overlay(alignment: .bottom) {
-                ZStack(alignment: .bottom) {
-                    if isTodoExpanded, visibleTodoPresentation != nil {
+            .padding(.top, todoTopInset)
+            .overlay(alignment: .top) {
+                ZStack(alignment: .topTrailing) {
+                    if isTodoExpanded && todoPresentation != nil {
                         Color.clear
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .contentShape(Rectangle())
@@ -143,25 +130,14 @@ struct PickyConversationCardView: View {
                             .accessibilityHidden(true)
                     }
 
-                    if let visibleTodoPresentation, let todoSnapshotID {
+                    if let todoPresentation {
                         PickyTodoProgressOverlayView(
-                            presentation: visibleTodoPresentation,
-                            onHide: {
-                                isTodoExpanded = false
-                                hiddenTodoSnapshotID = todoSnapshotID
-                            },
+                            presentation: todoPresentation,
                             isExpanded: $isTodoExpanded
                         )
                         .padding(.horizontal, 4)
-                        .padding(.bottom, 3)
-                    } else if isTodoHidden, let todoPresentation {
-                        PickyTodoProgressRestoreButton(
-                            presentation: todoPresentation,
-                            onRestore: { hiddenTodoSnapshotID = nil }
-                        )
+                        .padding(.top, 2)
                         .frame(maxWidth: .infinity, alignment: .trailing)
-                        .padding(.horizontal, 4)
-                        .padding(.bottom, 3)
                     }
                 }
             }

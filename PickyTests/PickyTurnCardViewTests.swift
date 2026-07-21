@@ -452,6 +452,61 @@ struct PickyTurnCardViewTests {
         #expect(groups[1].summary.toolCount == 7)
     }
 
+    // MARK: - Thinking phase merging
+
+    @Test func mergeConsecutiveThinkingMergesAdjacentPhasesIntoSingleBubble() {
+        let messages: [PickySessionMessage] = [
+            msg("u1", kind: .userText, secondsOffset: 0),
+            msg("t1", kind: .agentThinking, secondsOffset: 1, text: "first pass"),
+            msg("t2", kind: .agentThinking, secondsOffset: 2, text: "second pass"),
+            msg("a1", kind: .agentText, secondsOffset: 3, text: "done")
+        ]
+
+        let groups = PickyTurnGrouper.groups(from: messages, sessionStatus: .completed)
+
+        #expect(groups.count == 1)
+        let body = groups[0].bodyMessages
+        #expect(body.map(\.id) == ["t1", "a1"])
+        #expect(body.first?.text == "first pass\n\nsecond pass")
+        #expect(body.first?.createdAt == originDate.addingTimeInterval(2))
+    }
+
+    @Test func mergeConsecutiveThinkingStopsAtNonThinkingMessage() {
+        let messages: [PickySessionMessage] = [
+            msg("u1", kind: .userText, secondsOffset: 0),
+            msg("t1", kind: .agentThinking, secondsOffset: 1, text: "thinking start"),
+            msg("a1", kind: .agentText, secondsOffset: 2, text: "response"),
+            msg("t2", kind: .agentThinking, secondsOffset: 3, text: "extra thought"),
+            msg("t3", kind: .agentThinking, secondsOffset: 4, text: "final thought")
+        ]
+
+        let groups = PickyTurnGrouper.groups(from: messages, sessionStatus: .completed)
+
+        #expect(groups.count == 1)
+        let body = groups[0].bodyMessages
+        #expect(body.map(\.id) == ["t1", "a1", "t2"])
+        #expect(body[2].text == "extra thought\n\nfinal thought")
+    }
+
+    @Test func mergeConsecutiveThinkingDoesNotCrossTurnBoundary() {
+        let messages: [PickySessionMessage] = [
+            msg("u1", kind: .userText, secondsOffset: 0),
+            msg("t1", kind: .agentThinking, secondsOffset: 1, text: "first run"),
+            msg("t2", kind: .agentThinking, secondsOffset: 2, text: "same run"),
+            msg("u2", kind: .userText, secondsOffset: 10),
+            msg("t3", kind: .agentThinking, secondsOffset: 11, text: "second run"),
+            msg("t4", kind: .agentThinking, secondsOffset: 12, text: "also second run")
+        ]
+
+        let groups = PickyTurnGrouper.groups(from: messages, sessionStatus: .completed)
+
+        #expect(groups.count == 2)
+        #expect(groups[0].bodyMessages.map(\.id) == ["t1"])
+        #expect(groups[1].bodyMessages.map(\.id) == ["t3"])
+        #expect(groups[0].bodyMessages.first?.text == "first run\n\nsame run")
+        #expect(groups[1].bodyMessages.first?.text == "second run\n\nalso second run")
+    }
+
     // MARK: - Active tool indicator
 
     @Test func mergeActivitySnapshotsCollapsesPerEntryActivityIntoOneChip() {

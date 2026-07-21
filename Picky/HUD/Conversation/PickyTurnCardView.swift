@@ -246,6 +246,54 @@ enum PickyTurnGrouper {
         return result
     }
 
+    /// Collapses adjacent `agentThinking` messages inside a turn into a single,
+    /// chronologically anchored message. The first message id is preserved so
+    /// SwiftUI identity remains stable while the final timestamp is used for
+    /// elapsed/summary ordering.
+    static func mergeConsecutiveThinking(_ messages: [PickySessionMessage]) -> [PickySessionMessage] {
+        guard messages.count > 1 else { return messages }
+
+        var output: [PickySessionMessage] = []
+        output.reserveCapacity(messages.count)
+
+        for message in messages {
+            guard
+                let last = output.last,
+                last.kind == .agentThinking,
+                message.kind == .agentThinking
+            else {
+                output.append(message)
+                continue
+            }
+
+            let mergedTextPieces = [last.text, message.text].compactMap { text -> String? in
+                let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                return trimmed.isEmpty ? nil : text
+            }
+            let mergedText = mergedTextPieces.isEmpty ? nil : mergedTextPieces.joined(separator: "\n\n")
+
+            let merged = PickySessionMessage(
+                id: last.id,
+                kind: .agentThinking,
+                createdAt: message.createdAt,
+                originatedBy: last.originatedBy,
+                text: mergedText,
+                question: last.question,
+                cancelledAt: last.cancelledAt,
+                activitySnapshot: last.activitySnapshot,
+                assistantRun: last.assistantRun,
+                errorContext: last.errorContext,
+                errorMessage: last.errorMessage,
+                notifyType: last.notifyType,
+                commandReceipt: last.commandReceipt,
+                attachedImagesCount: last.attachedImagesCount
+            )
+            output[output.count - 1] = merged
+        }
+
+        return output
+    }
+
     static func groups(
         from messages: [PickySessionMessage],
         sessionStatus: PickySessionStatus,
@@ -263,7 +311,7 @@ enum PickyTurnGrouper {
             // Skip the implicit pre-turn slice when it carries no body messages.
             if currentUser == nil && currentBody.isEmpty { return }
             let id = currentUser?.id ?? PickyTurnGroup.preTurnID
-            let merged = mergeActivitySnapshots(currentBody)
+            let merged = mergeConsecutiveThinking(mergeActivitySnapshots(currentBody))
             var (body, trailing) = splitCompactSystemMessages(merged)
             // Hoist the pending extension-ui question out of the card body so an
             // active INPUT NEEDED bubble can never hide behind a collapsed turn

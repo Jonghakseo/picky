@@ -28,8 +28,10 @@ struct PickyCaptureContextBorderView: View {
     /// Focus-glow strength (0...1).
     private let glowStrength: Double = 0.55
 
-    private var glowBlur: CGFloat { 14 + CGFloat(glowStrength) * 34 }
-    private var glowLineWidth: CGFloat { 8 + CGFloat(glowStrength) * 10 }
+    /// How far the edge bloom reaches toward screen center, in points.
+    private var glowDepth: CGFloat { 24 + CGFloat(glowStrength) * 80 }
+    /// Peak bloom opacity right at the screen edge.
+    private var glowPeakOpacity: Double { glowStrength }
 
     private var borderShape: RoundedRectangle {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -45,13 +47,28 @@ struct PickyCaptureContextBorderView: View {
         .allowsHitTesting(false)
     }
 
-    /// Soft blue bloom bleeding inward from the edges. Clipped to the border
-    /// shape so the blur only spills toward screen center, drawing the eye in.
+    /// Soft blue bloom bleeding inward from the four edges. Built from four
+    /// cheap linear gradients instead of a full-screen `.blur()` so the
+    /// compositor never runs a Gaussian filter over the whole overlay window
+    /// every frame (that pass was the source of the HUD lag). Corners brighten
+    /// where two edge gradients overlap, which reads as an intentional frame.
     private var focusGlow: some View {
-        borderShape
-            .strokeBorder(DS.Colors.overlayCursorBlue.opacity(0.55), lineWidth: glowLineWidth)
-            .blur(radius: glowBlur)
-            .clipShape(borderShape)
+        let color = DS.Colors.overlayCursorBlue.opacity(glowPeakOpacity)
+        return ZStack {
+            LinearGradient(colors: [color, .clear], startPoint: .top, endPoint: .bottom)
+                .frame(height: glowDepth)
+                .frame(maxHeight: .infinity, alignment: .top)
+            LinearGradient(colors: [color, .clear], startPoint: .bottom, endPoint: .top)
+                .frame(height: glowDepth)
+                .frame(maxHeight: .infinity, alignment: .bottom)
+            LinearGradient(colors: [color, .clear], startPoint: .leading, endPoint: .trailing)
+                .frame(width: glowDepth)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            LinearGradient(colors: [color, .clear], startPoint: .trailing, endPoint: .leading)
+                .frame(width: glowDepth)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .allowsHitTesting(false)
     }
 
     private var rotatingBorder: some View {

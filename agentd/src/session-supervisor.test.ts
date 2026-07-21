@@ -4036,7 +4036,7 @@ describe("SessionSupervisor", () => {
     const mainRuntime = new ManualRuntime();
     const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
 
-    for (let index = 0; index < 40; index += 1) {
+    for (let index = 0; index < 15; index += 1) {
       await supervisor.route(context(`질문 ${index}`));
       mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
       await settle();
@@ -4049,7 +4049,7 @@ describe("SessionSupervisor", () => {
     expect(mainRuntime.createCalls).toBe(2);
     expect(mainRuntime.handle).not.toBe(previousHandle);
     expect(mainRuntime.handle?.bootstrapInjections.at(-1)?.user).toContain("Previous Picky epoch summary");
-    expect(mainRuntime.handle?.bootstrapInjections.at(-1)?.user).toContain("질문 39");
+    expect(mainRuntime.handle?.bootstrapInjections.at(-1)?.user).toContain("질문 14");
     expect(supervisor.listMainMessages().at(-1)).toMatchObject({ role: "user", text: "롤오버 후 질문" });
   });
 
@@ -4061,7 +4061,7 @@ describe("SessionSupervisor", () => {
     await supervisor.route(context("첫 질문"));
     const previousHandle = mainRuntime.handle;
     previousHandle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    previousHandle?.emit({ type: "context_usage", usage: { tokens: 150_000, contextWindow: 200_000, percent: 75 } });
+    previousHandle?.emit({ type: "context_usage", usage: { tokens: 80_000, contextWindow: 200_000, percent: 40 } });
     await settle();
 
     await supervisor.route(context("다음 질문"));
@@ -4069,7 +4069,7 @@ describe("SessionSupervisor", () => {
     expect(previousHandle?.aborts).toBe(1);
     expect(mainRuntime.createCalls).toBe(2);
     expect(mainRuntime.handle).not.toBe(previousHandle);
-    expect(mainRuntime.handle?.bootstrapInjections.at(-1)?.user).toContain("context:75%");
+    expect(mainRuntime.handle?.bootstrapInjections.at(-1)?.user).toContain("context:40%");
   });
 
   it("does not roll over the main Pi session solely because the persisted session file is large", async () => {

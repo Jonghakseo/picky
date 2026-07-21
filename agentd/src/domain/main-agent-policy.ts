@@ -5,8 +5,8 @@ export type QuickReplyEvent = Extract<EventEnvelope, { type: "quickReply" }>;
 export type QuickReplyMetadata = Pick<QuickReplyEvent, "originSource" | "replyKind" | "sessionId" | "inputId" | "didStreamNarration">;
 
 export const MAIN_AGENT_MESSAGE_LIMIT = 100;
-export const MAIN_AGENT_ROLLOVER_TURN_LIMIT = 40;
-export const MAIN_AGENT_ROLLOVER_CONTEXT_PERCENT = 70;
+export const MAIN_AGENT_ROLLOVER_TURN_LIMIT = 15;
+export const MAIN_AGENT_ROLLOVER_CONTEXT_PERCENT = 40;
 export const MAIN_AGENT_COMPACT_SUMMARY_LIMIT = 4_000;
 export const MAIN_AGENT_SUMMARY_MESSAGE_LIMIT = 16;
 export const MAIN_AGENT_SUMMARY_PICKLE_SESSION_LIMIT = 10;

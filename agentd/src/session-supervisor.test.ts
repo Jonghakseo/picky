@@ -1948,6 +1948,234 @@ describe("SessionSupervisor", () => {
     expect((supervisor.get(pickle.id)?.messages ?? []).some((message) => message.kind === "system" && message.text === "Session compacted")).toBe(true);
   });
 
+  it("shows manual compaction for a cancelled session and restores its cancelled state", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
+    const statusTransitions: string[] = [];
+    supervisor.on("session", (session: PickyAgentSession) => {
+      if (session.id === pickle.id) statusTransitions.push(`${session.status}:${session.lastSummary}`);
+    });
+
+    runtime.handle?.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
+    await settle();
+    expect(supervisor.get(pickle.id)?.status).toBe("cancelled");
+
+    await supervisor.steer(pickle.id, "/compact focus on current changes");
+    await settle();
+
+    const updated = supervisor.get(pickle.id)!;
+    expect(runtime.handle!.compactCalls).toEqual(["focus on current changes"]);
+    expect(statusTransitions).toContain("running:Compacting session…");
+    expect(updated.status).toBe("cancelled");
+    expect(updated.lastSummary).toBe("Session compacted");
+    expect((updated.messages ?? []).some((message) => message.kind === "system" && message.text === "Session compacted")).toBe(true);
+  });
+
+  it("ignores automatic compaction events while terminal manual compaction is active", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
+    let resolveCompact!: () => void;
+    runtime.handle!.onCompact = () => new Promise<void>((resolve) => { resolveCompact = resolve; });
+
+    runtime.handle?.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
+    await settle();
+    const compact = supervisor.steer(pickle.id, "/compact");
+    await waitUntil(() => runtime.handle!.compactCalls.length === 1);
+
+    runtime.handle?.emit({ type: "status", status: "running", summary: "Compacting session…", compactionStarted: true, compactionReason: "manual" });
+    await settle();
+    expect(supervisor.get(pickle.id)?.status).toBe("running");
+
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, compactionReason: "threshold" });
+    await settle();
+    expect(supervisor.get(pickle.id)?.status).toBe("running");
+    expect((supervisor.get(pickle.id)?.messages ?? []).some((message) => message.kind === "system" && message.text === "Session compacted")).toBe(false);
+
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, compactionReason: "manual" });
+    resolveCompact();
+    await compact;
+    expect(supervisor.get(pickle.id)?.status).toBe("cancelled");
+    expect((supervisor.get(pickle.id)?.messages ?? []).some((message) => message.kind === "system" && message.text === "Session compacted")).toBe(true);
+  });
+
+  it("ignores delayed manual compaction events after abort", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
+    runtime.handle!.onCompact = () => {};
+
+    runtime.handle?.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
+    await settle();
+    await supervisor.steer(pickle.id, "/compact");
+    await supervisor.abort(pickle.id);
+
+    runtime.handle?.emit({ type: "status", status: "running", summary: "Compacting session…", compactionStarted: true, compactionReason: "manual" });
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, compactionReason: "manual" });
+    await settle();
+
+    const updated = supervisor.get(pickle.id)!;
+    expect(updated.status).toBe("cancelled");
+    expect(updated.lastSummary).toBe("Cancelled");
+    expect((updated.messages ?? []).some((message) => message.kind === "system" && message.text === "Session compacted")).toBe(false);
+  });
+
+  it("suppresses manual completion emitted while abort is settling", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
+    const statusTransitions: string[] = [];
+    supervisor.on("session", (session: PickyAgentSession) => {
+      if (session.id === pickle.id) statusTransitions.push(`${session.status}:${session.lastSummary}`);
+    });
+    let resolveCompact!: () => void;
+    runtime.handle!.onCompact = () => new Promise<void>((resolve) => { resolveCompact = resolve; });
+
+    runtime.handle?.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
+    await settle();
+    const compact = supervisor.steer(pickle.id, "/compact");
+    await waitUntil(() => runtime.handle!.compactCalls.length === 1);
+    runtime.handle?.emit({ type: "status", status: "running", summary: "Compacting session…", compactionStarted: true, compactionReason: "manual" });
+    await settle();
+    expect(supervisor.get(pickle.id)?.status).toBe("running");
+
+    const abort = supervisor.abort(pickle.id);
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, compactionReason: "manual" });
+    await abort;
+    resolveCompact();
+    await compact;
+
+    const updated = supervisor.get(pickle.id)!;
+    expect(updated.status).toBe("cancelled");
+    expect((updated.messages ?? []).some((message) => message.kind === "system" && message.text === "Session compacted")).toBe(false);
+    expect(statusTransitions).not.toContain("completed:Session compacted");
+  });
+
+  it("rejects duplicate terminal manual compaction while the first request is active", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
+    let resolveCompact!: () => void;
+    runtime.handle!.onCompact = () => new Promise<void>((resolve) => { resolveCompact = resolve; });
+
+    runtime.handle?.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
+    await settle();
+    const first = supervisor.steer(pickle.id, "/compact");
+    await waitUntil(() => runtime.handle!.compactCalls.length === 1);
+    runtime.handle?.emit({ type: "status", status: "running", summary: "Compacting session…", compactionStarted: true, compactionReason: "manual" });
+    await settle();
+    expect(supervisor.get(pickle.id)?.status).toBe("running");
+
+    await expect(supervisor.steer(pickle.id, "/compact")).rejects.toThrow("Manual compaction is already in progress");
+    expect(runtime.handle!.compactCalls).toHaveLength(1);
+
+    resolveCompact();
+    await first;
+  });
+
+  it("blocks retry until an aborted terminal manual compaction settles", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
+    let resolveCompact!: () => void;
+    runtime.handle!.onCompact = () => new Promise<void>((resolve) => { resolveCompact = resolve; });
+
+    runtime.handle?.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
+    await settle();
+    const first = supervisor.steer(pickle.id, "/compact");
+    await waitUntil(() => runtime.handle!.compactCalls.length === 1);
+    await supervisor.abort(pickle.id);
+
+    runtime.handle?.emit({ type: "status", status: "running", summary: "Compacting session…", compactionStarted: true, compactionReason: "manual" });
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, compactionReason: "manual" });
+    await settle();
+    await expect(supervisor.steer(pickle.id, "/compact")).rejects.toThrow("Manual compaction is already in progress");
+
+    resolveCompact();
+    await first;
+    runtime.handle!.onCompact = undefined;
+    await supervisor.steer(pickle.id, "/compact");
+    await settle();
+
+    expect(runtime.handle!.compactCalls).toHaveLength(2);
+    expect(supervisor.get(pickle.id)?.status).toBe("cancelled");
+  });
+
+  it("restores failed state after terminal manual compaction", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
+
+    runtime.handle?.emit({ type: "status", status: "failed", summary: "Initial failure" });
+    await settle();
+    await supervisor.steer(pickle.id, "/compact");
+    await settle();
+
+    const updated = supervisor.get(pickle.id)!;
+    expect(updated.status).toBe("failed");
+    expect(updated.lastSummary).toBe("Session compacted");
+    expect((updated.messages ?? []).some((message) => message.kind === "system" && message.text === "Session compacted")).toBe(true);
+  });
+
+  it("accepts only one same-tick terminal manual compaction request", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
+    let resolveCompact!: () => void;
+    runtime.handle!.onCompact = () => new Promise<void>((resolve) => { resolveCompact = resolve; });
+
+    runtime.handle?.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
+    await settle();
+    const outcomesPromise = Promise.allSettled([supervisor.steer(pickle.id, "/compact"), supervisor.steer(pickle.id, "/compact")]);
+    await waitUntil(() => runtime.handle!.compactCalls.length === 1);
+    resolveCompact();
+    const outcomes = await outcomesPromise;
+
+    expect(runtime.handle!.compactCalls).toHaveLength(1);
+    expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
+    expect(outcomes.filter((outcome) => outcome.status === "rejected")).toHaveLength(1);
+  });
+
+  it("restores terminal state when Pi reports a reasonless manual compaction failure", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
+    let resolveCompact!: () => void;
+    runtime.handle!.onCompact = () => new Promise<void>((resolve) => { resolveCompact = resolve; });
+
+    runtime.handle?.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
+    await settle();
+    const compact = supervisor.steer(pickle.id, "/compact");
+    await waitUntil(() => runtime.handle!.compactCalls.length === 1);
+
+    runtime.handle?.emit({ type: "status", status: "failed", summary: "/compact failed: unavailable", noTurnRan: true });
+    resolveCompact();
+    await compact;
+
+    const updated = supervisor.get(pickle.id)!;
+    expect(updated.status).toBe("cancelled");
+    expect(updated.lastSummary).toBe("/compact failed: unavailable");
+  });
+
   it("shows /reload loading state and settles without an agent turn", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
@@ -7451,6 +7679,7 @@ class ManualHandle implements RuntimeSessionHandle {
   todoStateResolution?: RuntimeTodoStateResolution;
   onFollowUp?: (handle: ManualHandle, prompt: BuiltPrompt) => void;
   onSteer?: (handle: ManualHandle, prompt: BuiltPrompt) => void;
+  onCompact?: (handle: ManualHandle, customInstructions?: string) => void | Promise<void>;
   onUserBash?: (handle: ManualHandle, command: string, options?: { excludeFromContext?: boolean; onOutputChunk?: (chunk: string) => void }) => void | Promise<void>;
   compactCalls: Array<string | undefined> = [];
   constructor(readonly id: string) {}
@@ -7492,6 +7721,7 @@ class ManualHandle implements RuntimeSessionHandle {
       this.aborts += 1;
       this.isStreaming = false;
     }
+    if (this.onCompact) return await this.onCompact(this, customInstructions);
     this.isCompacting = true;
     this.emit({ type: "status", status: "running", summary: "Compacting session…", compactionStarted: true, compactionReason: "manual" });
     this.isCompacting = false;

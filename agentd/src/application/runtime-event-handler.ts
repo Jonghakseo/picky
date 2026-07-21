@@ -67,6 +67,8 @@ export class RuntimeEventHandler {
   private readonly activeThinkingFlushes = new Map<string, Promise<void>>();
   private readonly seenToolCallIds = new Map<string, Set<string>>();
   private readonly processedTerminalRuns = new Set<string>();
+  private readonly manualTerminalCompactionStatuses = new Map<string, "cancelled" | "failed">();
+  private readonly suppressedManualTerminalCompactions = new Set<string>();
 
   constructor(private readonly dependencies: RuntimeEventHandlerDependencies) {}
 
@@ -77,6 +79,24 @@ export class RuntimeEventHandler {
     this.thinkingActive.set(sessionId, false);
     this.clearPendingThinkingFlush(sessionId);
     this.seenToolCallIds.delete(sessionId);
+  }
+
+  beginManualTerminalCompaction(sessionId: string, status: "cancelled" | "failed"): void {
+    this.manualTerminalCompactionStatuses.set(sessionId, status);
+  }
+
+  clearManualTerminalCompaction(sessionId: string): void {
+    this.manualTerminalCompactionStatuses.delete(sessionId);
+  }
+
+  suppressManualTerminalCompaction(sessionId: string): void {
+    this.suppressedManualTerminalCompactions.add(sessionId);
+    this.manualTerminalCompactionStatuses.delete(sessionId);
+  }
+
+  finishManualTerminalCompaction(sessionId: string): void {
+    this.manualTerminalCompactionStatuses.delete(sessionId);
+    this.suppressedManualTerminalCompactions.delete(sessionId);
   }
 
   // eslint-disable-next-line complexity -- This is the exhaustive runtime-event router; splitting it would duplicate ordering and terminal-state guards.
@@ -179,6 +199,21 @@ export class RuntimeEventHandler {
     const explicitFinalAnswer = cleanFinalAnswer(sanitizedFinalAnswer);
     const finalAnswer = explicitFinalAnswer ?? (terminal ? (event.status === "failed" ? undefined : cleanFinalAnswer(this.assistantDrafts.get(sessionId))) : undefined);
     const currentSession = this.dependencies.getSession(sessionId);
+    const manualTerminalCompactionStatus = this.manualTerminalCompactionStatuses.get(sessionId);
+    const isReasonlessManualCompactionFailure = event.status === "failed"
+      && event.noTurnRan === true
+      && /^\/compact (is not supported|failed:)/.test(event.summary ?? "");
+    const isManualTerminalCompactionEvent = manualTerminalCompactionStatus !== undefined
+      && ((event.compactionReason === "manual" && (event.compactionStarted || event.compactionCompleted || event.compactionFailed || (event.noTurnRan && terminal)))
+        || isReasonlessManualCompactionFailure);
+    if (this.suppressedManualTerminalCompactions.has(sessionId) && (event.compactionReason === "manual" || isReasonlessManualCompactionFailure)) {
+      logAgentd("manual compaction status ignored after abort", { sessionId, status: event.status });
+      return;
+    }
+    if (manualTerminalCompactionStatus !== undefined && !isManualTerminalCompactionEvent) {
+      logAgentd("non-manual status ignored while terminal manual compaction is active", { sessionId, status: event.status, compactionReason: event.compactionReason });
+      return;
+    }
     if (this.isIgnoredTransientBusyStatus(sessionId, event)) {
       logAgentd("session transient busy status ignored", { sessionId, summary: event.summary });
       await this.dependencies.appendLog(sessionId, `runtime busy ignored: ${event.summary ?? "Agent is already processing"}`);
@@ -190,8 +225,10 @@ export class RuntimeEventHandler {
     // resurrect the session out of `cancelled`/`failed`/`completed` and re-open the HUD
     // loading state. Completed sessions are the exception: Pi may auto-compact immediately after a
     // successful terminal agent_end (threshold compaction), and the HUD should still show that brief state.
-    // Do not allow compaction tail events to resurrect cancelled/failed/blocked sessions.
-    const terminalCompactionUpdate = currentSession.status === "completed" && (event.compactionStarted || event.compactionCompleted || event.compactionFailed);
+    // A manual compaction explicitly requested from a cancelled/failed session is also surfaced,
+    // then restored to its original terminal state when it finishes.
+    const terminalCompactionUpdate = (currentSession.status === "completed" && (event.compactionStarted || event.compactionCompleted || event.compactionFailed))
+      || isManualTerminalCompactionEvent;
     // The optional Pi terminal tail can observe the assistant JSONL entry a few milliseconds
     // before the runtime emits its terminal status and pre-patch this session to completed. That
     // status is observational only: the runtime event still owns assistant-draft flush, finalAnswer,
@@ -219,7 +256,12 @@ export class RuntimeEventHandler {
       await this.dependencies.messageBuilder.recordSystemMessage(sessionId, compactFailureMessage(event.summary, currentSession.contextUsage));
     }
 
-    const patch: Partial<PickyAgentSession> = { status: event.status, lastSummary: finalAnswer ? summaryFromFinalAnswer(finalAnswer) : event.summary };
+    const restoreManualTerminalStatus = isManualTerminalCompactionEvent
+      && (event.compactionCompleted || event.compactionFailed || (event.noTurnRan && terminal));
+    const patch: Partial<PickyAgentSession> = {
+      status: restoreManualTerminalStatus ? manualTerminalCompactionStatus : event.status,
+      lastSummary: finalAnswer ? summaryFromFinalAnswer(finalAnswer) : event.summary,
+    };
     if (event.assistantRun) patch.currentAssistantRun = event.assistantRun;
     // Post-compaction token count is unknown until the next model response. Mirror the
     // main agent runtime (session-supervisor.ts applyMainRuntimeEvent on compactionCompleted)
@@ -270,6 +312,7 @@ export class RuntimeEventHandler {
       }
     }
     await this.dependencies.patchSession(sessionId, patch);
+    if (restoreManualTerminalStatus) this.manualTerminalCompactionStatuses.delete(sessionId);
     if (terminal) {
       this.assistantDrafts.set(sessionId, "");
       this.thinkingDrafts.set(sessionId, "");

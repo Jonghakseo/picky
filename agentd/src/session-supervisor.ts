@@ -163,6 +163,7 @@ export class SessionSupervisor extends EventEmitter {
   private pendingRuntimeHandles = new Map<string, Promise<RuntimeSessionHandle>>();
   private pendingRuntimeAbortControllers = new Map<string, AbortController>();
   private pendingAbortOperations = new Map<string, Promise<PickyAgentSession>>();
+  private pendingTerminalManualCompactions = new Map<string, Promise<void>>();
   private sessionSeq = new Map<string, number>();
   private queueUpdateChains = new Map<string, Promise<void>>();
   private activityUpdateChains = new Map<string, Promise<void>>();
@@ -2157,15 +2158,36 @@ export class SessionSupervisor extends EventEmitter {
 
   private async executeCompactCommandIfSupported(sessionId: string, text: string, handle: RuntimeSessionHandle): Promise<boolean> {
     if (!isCompactSlashCommand(text) || !handle.compact) return false;
-    await this.cancelPendingExtensionUiForUserInput(sessionId, handle);
-    this.runtimeEventHandler.resetAssistantDraft(sessionId);
-    const customInstructions = text.trim().replace(/^\/compact\s*/, "").trim() || undefined;
-    logAgentd("compact requested", {
-      sessionId,
-      wasStreaming: handle.isStreaming,
-      instructionChars: customInstructions?.length ?? 0,
-    });
-    await handle.compact(customInstructions);
+    if (this.pendingTerminalManualCompactions.has(sessionId)) {
+      throw new Error("Manual compaction is already in progress");
+    }
+    const terminalStatus = this.mustGet(sessionId).status;
+    const restoresTerminalStatus = terminalStatus === "cancelled" || terminalStatus === "failed";
+    // Reserve before the first await so concurrent WebSocket commands cannot both pass the
+    // terminal-state check while extension UI cleanup is suspended.
+    const reservation = restoresTerminalStatus ? Promise.resolve() : undefined;
+    if (reservation) this.pendingTerminalManualCompactions.set(sessionId, reservation);
+    try {
+      await this.cancelPendingExtensionUiForUserInput(sessionId, handle);
+      this.runtimeEventHandler.resetAssistantDraft(sessionId);
+      const customInstructions = text.trim().replace(/^\/compact\s*/, "").trim() || undefined;
+      if (restoresTerminalStatus) this.runtimeEventHandler.beginManualTerminalCompaction(sessionId, terminalStatus);
+      logAgentd("compact requested", {
+        sessionId,
+        wasStreaming: handle.isStreaming,
+        instructionChars: customInstructions?.length ?? 0,
+      });
+      await handle.compact(customInstructions);
+      await this.waitForRuntimeEvents(sessionId);
+    } catch (error) {
+      if (restoresTerminalStatus) this.runtimeEventHandler.clearManualTerminalCompaction(sessionId);
+      throw error;
+    } finally {
+      if (reservation && this.pendingTerminalManualCompactions.get(sessionId) === reservation) {
+        this.pendingTerminalManualCompactions.delete(sessionId);
+        this.runtimeEventHandler.finishManualTerminalCompaction(sessionId);
+      }
+    }
     return true;
   }
 
@@ -2700,6 +2722,11 @@ export class SessionSupervisor extends EventEmitter {
   private async performAbort(sessionId: string): Promise<PickyAgentSession> {
     const beforeAbort = this.mustGet(sessionId);
     if (beforeAbort.archived === true) throw new Error("Cannot abort an archived session");
+    if (this.pendingTerminalManualCompactions.has(sessionId)) {
+      this.runtimeEventHandler.suppressManualTerminalCompaction(sessionId);
+    } else {
+      this.runtimeEventHandler.clearManualTerminalCompaction(sessionId);
+    }
     const handle = this.runtimeHandles.get(sessionId);
     const cancellationMessagesBefore = countSystemMessages(beforeAbort, "Cancelled by user");
     logAgentd("abort requested", { sessionId, hasHandle: Boolean(handle) });

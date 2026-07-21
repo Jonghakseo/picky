@@ -335,6 +335,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     }
     this.pendingAbortAcknowledgements += 1;
     this.uiBridge.cancelAll();
+    this.runtime.session.abortCompaction();
     await this.runtime.session.abort();
     this.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
   }

@@ -10,6 +10,8 @@ class FakeSession extends EventEmitter {
   followUps: string[] = [];
   steers: string[] = [];
   aborts = 0;
+  compactionAborts = 0;
+  abortOrder: string[] = [];
   newSessions = 0;
   reloads = 0;
   compactCalls: Array<string | undefined> = [];
@@ -87,7 +89,14 @@ class FakeSession extends EventEmitter {
 
   async abort(): Promise<void> {
     this.aborts += 1;
+    this.abortOrder.push("session");
     this.isStreaming = false;
+  }
+
+  abortCompaction(): void {
+    this.compactionAborts += 1;
+    this.abortOrder.push("compaction");
+    this.isCompacting = false;
   }
 
   async reload(): Promise<void> {
@@ -1091,6 +1100,19 @@ describe("PiSdkRuntime", () => {
     await expect(Promise.all([first, second])).resolves.toEqual([false, false]);
     expect(fakeSession.aborts).toBe(1);
     expect(statusEvents(events).at(-1)).toMatchObject({ status: "cancelled", summary: "Cancelled" });
+  });
+
+  it("cancels Pi compaction before aborting the session", async () => {
+    const fakeSession = new FakeSession();
+    fakeSession.isCompacting = true;
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-abort-compaction" });
+
+    await handle.abort();
+
+    expect(fakeSession.compactionAborts).toBe(1);
+    expect(fakeSession.aborts).toBe(1);
+    expect(fakeSession.abortOrder).toEqual(["compaction", "session"]);
   });
 
   it("does not send the delayed initial prompt after abort", async () => {

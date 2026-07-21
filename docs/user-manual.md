@@ -229,7 +229,9 @@ Details:
 - A drag must cross the threshold before becoming a visible mark.
 - The app underneath does not receive mouse events while Picky owns ink capture. The Quick Input panel and the HUD card stay click-through during **Quick Input** ink capture so you can still interact with them; Push-to-Talk ink capture blocks every surface, Picky's own panels included.
 - Marks are neutral context; Picky does not infer workflows from them.
-- If **Send screenshots only when drawn** (Settings → Picky) is enabled, the screenshot is sent to the model only after you actually draw a mark. Without a mark, only the transcript and non-visual context fields are sent; the screen capture itself still runs locally so the ink overlay can render.
+- Any display whose pixels are about to be sent as context shows a subtle blue edge glow and an **This screen is being shared as context** pill while you record or type, so you always know which screens are captured. A display stops showing it the moment it is no longer part of the context.
+- With **Focused screen only** scope, drawing on a second monitor also pulls that monitor into the context for this turn (its edge glow appears as soon as your mark lands on it), so a highlight on a non-focused display is never lost.
+- If **Send screenshots only when drawn** (Settings → Picky) is enabled, a display's screenshot is sent only after you actually draw on that display — the edge glow follows the same rule and appears only once you start drawing. Displays you did not draw on send only the transcript and non-visual context fields; screen capture still runs locally so the ink overlay can render.
 
 ### 6.1 Picky screen guidance
 
@@ -743,7 +745,7 @@ Use **Change**, then **Save** or **Cancel**. Conflicts are rejected. **Reset to 
 | PI_CODING_AGENT_DIR | Optional Pi coding-agent directory for Pi sessions and extension/skill installs. Leave empty to use the launch environment's `PI_CODING_AGENT_DIR`, then fallback to `~/.pi/agent`. Must be an existing directory when set. Extension/skill installs pick it up immediately; running Picky/Pi sessions apply it after restarting Picky. |
 | Pi model | Automatic or a pinned model pattern. |
 | Reasoning level | Off, Minimal, Low, Medium, High, Extra High, Maximum. Maximum appears only for Pi models that support it. |
-| Screen context | All screens or Focused screen only. Default is **Focused screen only** so Picky captures only the display the cursor is on. |
+| Screen context | All screens or Focused screen only. Default is **Focused screen only** so Picky captures only the display the cursor is on — plus any display you draw on during that turn. |
 | Armed Pickle delivery | Follow-up (default) or Steer. Controls how Push-to-Talk and Quick Input are delivered when a Pickle is explicitly armed as the screen-context target. Follow-up waits until the Pickle is idle; Steer interrupts the current turn at the next steering point. |
 | Send screenshots only when drawn | Off (default) or On. When **On**, Picky attaches a screenshot to the model turn only if you marked the screen with click and drag during Push-to-Talk or Quick Input. Screen capture still runs locally so the ink overlay can render on top, but the screenshot is omitted from what the model sees. Off keeps the always-attach behavior. |
 | Screenshot quality | 1× 1280 px, 1.5× 1920 px, 2× 2560 px longest edge. Captured screenshots are written to the per-user temporary directory (`FileManager.default.temporaryDirectory/Picky/Screenshots`), not the durable Application Support tree. |

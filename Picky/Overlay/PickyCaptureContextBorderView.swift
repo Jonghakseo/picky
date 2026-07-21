@@ -3,10 +3,17 @@
 //  Picky
 //
 //  Full-screen edge treatment shown while a display is being captured as
-//  neutral model context (PTT recording / Quick Input open). A slowly rotating
-//  angular-gradient border plus a soft inward focus glow signal "this screen is
+//  neutral model context (PTT recording / Quick Input open). A static angular-
+//  gradient edge line plus a soft inward focus glow signal "this screen is
 //  going to Pi as context", with a small pill spelling it out in text so the
 //  cue never relies on color alone.
+//
+//  Deliberately static: an earlier version rotated the gradient via
+//  `TimelineView(.animation)`, which kept the full-screen overlay window
+//  continuously invalidated and re-composited above the Quick Input panel,
+//  stuttering typing (confirmed by A/B signpost profiling — see
+//  docs/perf-profiling.md). The border now renders once and only re-renders
+//  when it appears/disappears, so it adds no per-frame compositing cost.
 //
 //  Rendered inside OverlayWindow, which conforms to
 //  PickyScreenCaptureExcludedWindow, so this chrome is visible to the user but
@@ -17,19 +24,16 @@ import SwiftUI
 
 struct PickyCaptureContextBorderView: View {
     let screenFrame: CGRect
-    let reduceMotion: Bool
 
-    /// Border ring thickness in points.
+    /// Border edge-line thickness in points.
     private let lineWidth: CGFloat = 1
     /// Corner radius hugging the display edge.
     private let cornerRadius: CGFloat = 0
-    /// Seconds per full rotation of the angular gradient sweep.
-    private let rotationPeriod: TimeInterval = 7
     /// Focus-glow strength (0...1).
     private let glowStrength: Double = 0.55
 
     /// How far the edge bloom reaches toward screen center, in points.
-    private var glowDepth: CGFloat { 24 + CGFloat(glowStrength) * 80 }
+    private let glowDepth: CGFloat = 28
     /// Peak bloom opacity right at the screen edge.
     private var glowPeakOpacity: Double { glowStrength }
 
@@ -40,7 +44,7 @@ struct PickyCaptureContextBorderView: View {
     var body: some View {
         ZStack {
             focusGlow
-            rotatingBorder
+            edgeBorder
             contextPill
         }
         .frame(width: screenFrame.width, height: screenFrame.height)
@@ -48,10 +52,9 @@ struct PickyCaptureContextBorderView: View {
     }
 
     /// Soft blue bloom bleeding inward from the four edges. Built from four
-    /// cheap linear gradients instead of a full-screen `.blur()` so the
-    /// compositor never runs a Gaussian filter over the whole overlay window
-    /// every frame (that pass was the source of the HUD lag). Corners brighten
-    /// where two edge gradients overlap, which reads as an intentional frame.
+    /// cheap linear gradients (no full-screen `.blur()`), so the compositor
+    /// never runs a Gaussian filter over the whole overlay window. Corners
+    /// brighten where two edge gradients overlap, which reads as a frame.
     private var focusGlow: some View {
         let color = DS.Colors.overlayCursorBlue.opacity(glowPeakOpacity)
         return ZStack {
@@ -71,17 +74,12 @@ struct PickyCaptureContextBorderView: View {
         .allowsHitTesting(false)
     }
 
-    private var rotatingBorder: some View {
-        TimelineView(.animation(paused: reduceMotion)) { timeline in
-            let angle = reduceMotion ? .zero : rotation(at: timeline.date)
-            borderShape
-                .strokeBorder(angularGradient(rotation: angle), lineWidth: lineWidth)
-        }
+    private var edgeBorder: some View {
+        borderShape.strokeBorder(angularGradient, lineWidth: lineWidth)
     }
 
     private var contextPill: some View {
         VStack {
-            Spacer(minLength: 0)
             HStack(spacing: 6) {
                 Circle()
                     .fill(DS.Colors.overlayCursorBlue)
@@ -100,16 +98,12 @@ struct PickyCaptureContextBorderView: View {
                 Capsule(style: .continuous)
                     .stroke(DS.Colors.overlayCursorBlue.opacity(0.35), lineWidth: 0.8)
             )
-            .padding(.bottom, 20)
+            .padding(.top, 64)
+            Spacer(minLength: 0)
         }
     }
 
-    private func rotation(at date: Date) -> Angle {
-        let seconds = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: rotationPeriod)
-        return .degrees(seconds / rotationPeriod * 360)
-    }
-
-    private func angularGradient(rotation: Angle) -> AngularGradient {
+    private var angularGradient: AngularGradient {
         AngularGradient(
             gradient: Gradient(stops: [
                 .init(color: DS.Colors.overlayCursorBlue, location: 0.0),
@@ -118,8 +112,7 @@ struct PickyCaptureContextBorderView: View {
                 .init(color: Color(hex: "#5B93FF"), location: 0.75),
                 .init(color: DS.Colors.overlayCursorBlue, location: 1.0)
             ]),
-            center: .center,
-            angle: rotation
+            center: .center
         )
     }
 }

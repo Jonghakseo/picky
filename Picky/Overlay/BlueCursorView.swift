@@ -636,12 +636,9 @@ struct BlueCursorView: View {
             }
 
             if showsCaptureContextBorder {
-                PickyCaptureContextBorderView(
-                    screenFrame: screenFrame,
-                    reduceMotion: accessibilityReduceMotion
-                )
-                .transition(.opacity)
-                .allowsHitTesting(false)
+                PickyCaptureContextBorderView(screenFrame: screenFrame)
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
             }
 
             if !companionManager.agentAnnotations.isEmpty {

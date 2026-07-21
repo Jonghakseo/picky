@@ -29,6 +29,9 @@ struct PickyCursorResponseBubbleLayout {
     let sourceText: String
     let attributedText: AttributedString
     let textWidth: CGFloat
+    /// Number of visual lines the truncated text wraps to at `textWidth`. Used by the
+    /// cache to reject transient renders that are shorter than what is already shown.
+    let lineCount: Int
 
     init(sourceText: String) {
         self.sourceText = sourceText
@@ -40,12 +43,19 @@ struct PickyCursorResponseBubbleLayout {
             maxWidth: Metrics.maxTextWidth
         )
         textWidth = measuredWidth
-        attributedText = PickyBubbleLayout.truncatedAttributedText(
+        let truncated = PickyBubbleLayout.truncatedAttributedText(
             rawAttributed,
             font: Metrics.font,
             lineSpacing: 0,
             width: measuredWidth,
             maxLines: Metrics.maxLines
+        )
+        attributedText = truncated
+        lineCount = PickyBubbleLayout.visualLineCount(
+            truncated,
+            font: Metrics.font,
+            lineSpacing: 0,
+            width: measuredWidth
         )
     }
 }
@@ -65,11 +75,8 @@ final class PickyCursorResponseBubbleLayoutCache: ObservableObject {
         guard !sourceText.isEmpty else { return nil }
         if let cachedLayout {
             if cachedLayout.sourceText == sourceText { return cachedLayout }
-            // Streaming is append-only, so a shorter text that is a prefix of what we already
-            // show is a transient regression (a TTS/narration state race briefly hands back
-            // the leading sentences). Keep the fuller layout instead of shrinking for a frame.
-            // Without this the bubble flickers to a shorter height and back as TTS starts.
-            if cachedLayout.sourceText.hasPrefix(sourceText) { return cachedLayout }
+            let candidate = PickyCursorResponseBubbleLayout(sourceText: sourceText)
+            return stabilized(candidate, against: cachedLayout)
         }
         return PickyCursorResponseBubbleLayout(sourceText: sourceText)
     }
@@ -80,9 +87,24 @@ final class PickyCursorResponseBubbleLayoutCache: ObservableObject {
             return
         }
         guard cachedLayout?.sourceText != sourceText else { return }
-        // Mirror `layout(for:)`: never persist a prefix regression of the current text.
-        if let cachedLayout, cachedLayout.sourceText.hasPrefix(sourceText) { return }
-        cachedLayout = PickyCursorResponseBubbleLayout(sourceText: sourceText)
+        let candidate = PickyCursorResponseBubbleLayout(sourceText: sourceText)
+        if let current = cachedLayout {
+            cachedLayout = stabilized(candidate, against: current)
+        } else {
+            cachedLayout = candidate
+        }
+    }
+
+    /// The response is append-only, so a candidate that wraps to fewer visual lines than the
+    /// layout already on screen is a transient regression: a TTS/narration state race briefly
+    /// hands back a shorter text variant (streamed vs spoken/narration text differ in
+    /// whitespace, so a plain prefix check misses it). Keep the fuller layout instead of
+    /// shrinking for a frame, which is what made the bubble flicker as TTS started.
+    private func stabilized(
+        _ candidate: PickyCursorResponseBubbleLayout,
+        against current: PickyCursorResponseBubbleLayout
+    ) -> PickyCursorResponseBubbleLayout {
+        candidate.lineCount < current.lineCount ? current : candidate
     }
 
     func clear() {

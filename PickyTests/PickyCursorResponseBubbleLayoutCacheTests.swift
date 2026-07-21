@@ -30,28 +30,36 @@ struct PickyCursorResponseBubbleLayoutCacheTests {
         #expect(next?.sourceText == "첫 문장. 둘째 문장.")
     }
 
-    // Regression: when TTS starts, `latestAgentSessionSummary` briefly reverts to the
-    // leading sentences (a prefix of the fully streamed text) for one frame before
-    // returning to the full text. Since the response is append-only, a prefix regression
-    // must not shrink the bubble; the fuller layout stays put so it does not flicker.
-    @Test func prefixRegressionKeepsFullerLayout() {
+    // A tall four-line answer, and a shorter two-line variant of it. TTS/narration state
+    // races briefly hand the shorter variant back for one frame as speech starts.
+    private let fourLineAnswer = "프로모션 준비를 마치고, 로컬 화면도 꽼꽼히 확인해요. 모든 변경은 안전하게 담아, 션하게 배포까지 갑시다."
+    private let twoLineVariant = "프로모션 준비를 마치고, 로컬 화면도 꽼꽼히 확인해요."
+
+    // Regression: when TTS starts, the bubble briefly rendered a shorter variant of the
+    // fully streamed text and back, causing a one-frame flicker. Because the response is
+    // append-only, a candidate that wraps to fewer lines than what is shown is a transient
+    // regression and must not shrink the bubble.
+    @Test func shorterRenderKeepsFullerLayout() {
         let cache = PickyCursorResponseBubbleLayoutCache()
-        let full = "첫 문장. 둘째 문장. 셋째 문장. 넷째 문장."
-        cache.update(for: full)
+        cache.update(for: fourLineAnswer)
+        // Guard only makes sense if the variant genuinely renders fewer lines.
+        #expect(
+            PickyCursorResponseBubbleLayout(sourceText: twoLineVariant).lineCount
+                < PickyCursorResponseBubbleLayout(sourceText: fourLineAnswer).lineCount
+        )
 
-        let regressed = cache.layout(for: "첫 문장. 둘째 문장.")
+        let regressed = cache.layout(for: twoLineVariant)
 
-        #expect(regressed?.sourceText == full)
+        #expect(regressed?.sourceText == fourLineAnswer)
     }
 
-    @Test func prefixRegressionDoesNotOverwriteCachedLayout() {
+    @Test func shorterRenderDoesNotOverwriteCachedLayout() {
         let cache = PickyCursorResponseBubbleLayoutCache()
-        let full = "첫 문장. 둘째 문장. 셋째 문장. 넷째 문장."
-        cache.update(for: full)
+        cache.update(for: fourLineAnswer)
 
-        cache.update(for: "첫 문장.")
+        cache.update(for: twoLineVariant)
 
-        #expect(cache.layout(for: "첫 문장.")?.sourceText == full)
+        #expect(cache.layout(for: twoLineVariant)?.sourceText == fourLineAnswer)
     }
 
     @Test func emptyTextHasNoLayout() {

@@ -63,7 +63,14 @@ final class PickyCursorResponseBubbleLayoutCache: ObservableObject {
     /// cache so steady-state renders reuse the stored layout.
     func layout(for sourceText: String) -> PickyCursorResponseBubbleLayout? {
         guard !sourceText.isEmpty else { return nil }
-        if let cachedLayout, cachedLayout.sourceText == sourceText { return cachedLayout }
+        if let cachedLayout {
+            if cachedLayout.sourceText == sourceText { return cachedLayout }
+            // Streaming is append-only, so a shorter text that is a prefix of what we already
+            // show is a transient regression (a TTS/narration state race briefly hands back
+            // the leading sentences). Keep the fuller layout instead of shrinking for a frame.
+            // Without this the bubble flickers to a shorter height and back as TTS starts.
+            if cachedLayout.sourceText.hasPrefix(sourceText) { return cachedLayout }
+        }
         return PickyCursorResponseBubbleLayout(sourceText: sourceText)
     }
 
@@ -73,6 +80,8 @@ final class PickyCursorResponseBubbleLayoutCache: ObservableObject {
             return
         }
         guard cachedLayout?.sourceText != sourceText else { return }
+        // Mirror `layout(for:)`: never persist a prefix regression of the current text.
+        if let cachedLayout, cachedLayout.sourceText.hasPrefix(sourceText) { return }
         cachedLayout = PickyCursorResponseBubbleLayout(sourceText: sourceText)
     }
 

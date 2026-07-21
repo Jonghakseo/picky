@@ -18,6 +18,7 @@ Useful fields:
 - `compareMs`: grayscale fingerprint comparison time
 - `totalMs`: semantic check plus capture and comparison time
 - `globalChanged`, `roiChanged`: changed-pixel fractions, never pixel data
+- `stableFraction`: weighted fraction of structurally-identical grid cells (higher = more of the layout is pixel-identical); drives restoration and is the main knob to watch when tuning `restoreFloor`/`breakFloor`
 - `delayMs`: next adaptive polling delay
 - `samples`: total samples when a monitor stops
 

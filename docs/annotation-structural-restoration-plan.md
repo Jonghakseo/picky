@@ -54,46 +54,58 @@ To absorb ±1px edge jitter from anti-aliasing and resampling, dilate the edge m
 
 Divide the frame into an `N × N` grid of cells (starting point `12 × 12 = 144`; tunable at runtime — see Tuning). Each cell covers roughly `256/N ≈ 21px`.
 
-### 3. Per-cell structural stability
+### 3. Per-cell structural stability (edge-centric)
 
-A cell is **stable** when its structure is essentially unchanged between baseline and current:
-
-```
-stableCell ⇔ (fraction of pixels where edgeMaskBaseline == edgeMaskCurrent
-                       AND |Δluminance| < changedPixelThreshold) ≥ cellStabilityRatio (≈ 0.9)
-```
-
-This is a strict "structurally identical" test per cell, not a tone test.
-
-### 4. Structural persistence score
+A cell is scored by **edge correspondence**, not by raw pixel matching. Counting matching flat
+pixels as "stable" would let a wide flat background dominate and dilute sparse edge changes
+(the exact sparse-page false-restore failure). Instead:
 
 ```
-stableFraction = Σ weight(cell) · [cell stable] / Σ weight(cell)
+edgeUnion        = pixels that are an edge in baseline OR current
+edgeIntersection = pixels that are an edge in baseline AND current
 ```
 
-Peripheral cells get a higher `weight` than central cells, because banners/videos live in the center while persistent chrome (title bar, sidebar, tab strip, dock-adjacent edges) lives at the periphery. This makes "same window, different center content" score high, and "different window entirely" score low. Weighting is a tunable curve (see Tuning); default is a mild edge boost, not an extreme one.
+- A cell is **neutral** (skipped) when it has too little edge material: `edgeUnion < max(1, cellPixels · minCellEdgeCoverage)`. Flat background is therefore neither positive nor negative evidence.
+- Otherwise the cell is **structural**, and **stable** when `edgeIntersection / edgeUnion ≥ minCellEdgeCorrespondence`. Moved/lost/added edges drop the ratio and mark the cell unstable. The 1px dilation keeps a genuine ±1px jitter above the ratio.
+
+### 4. Structural persistence score (non-anchor grid only)
+
+```
+stableFraction = Σ weight(cell) · [cell stable] / Σ weight(cell)   over NON-anchor structural cells
+```
+
+The anchor regions are judged separately (below), so the global `stableFraction` is computed over the **non-anchor** grid — this keeps a bounded local anchor drift from being confused with a broad layout change. Peripheral cells get a higher `weight` than central cells (banners/videos live centrally; persistent chrome lives at the periphery). When there are no structural non-anchor cells (a flat frame), `stableFraction` is `1.0`.
 
 ### 5. Decision — maps onto existing 3-state observation
 
-Let `annotationAnchorStable` = all grid cells overlapping the annotation ROI are stable (this replaces / complements the current ROI drift check for the restore direction).
+Two anchor signals are computed **per annotation region** (not unioned, so one changed annotation among several is not averaged away):
 
-- **matching (restore-eligible)** when `stableFraction ≥ restoreFloor` (start `0.35`, your 30–40%) **and** `annotationAnchorStable`.
-- **mismatching (break)** when `stableFraction < breakFloor` (start `0.20`).
-- **indeterminate** otherwise — hold the current phase to avoid flicker.
+- `anchorStructurallyStable` = no region contains an unstable structural cell.
+- `anchorBroke` = some region contains an unstable structural cell **and** that region's own luminance drift exceeds the bounded `initialValidationROI*` allowance.
+
+`hasEvidence` = the non-anchor grid carries at least `minStructuralCoverage` weighted structural cells. The `.strict` decision:
+
+- `anchorBroke` → **mismatching**.
+- `!hasEvidence` → defer to luminance: **matching** if luminance matches, else **indeterminate** (a near-flat frame cannot claim a structural layout change; this protects tiny incidental changes).
+- `stableFraction ≥ restoreFloor` **and** `anchorStructurallyStable` → **matching**.
+- `stableFraction < breakFloor` → **mismatching**.
+- otherwise → **indeterminate** (hold phase, avoid flicker).
 
 The existing `PickyAnnotationSceneStabilityTracker` still requires **2 consecutive** confirmations, so a single noisy frame cannot flip state.
 
-### Why both scenarios resolve
+### Why the scenarios resolve
 
-- **Banner / video**: only central cells change; periphery chrome cells stay pixel-identical → high `stableFraction` → restore, as long as the annotation anchor is not on the banner itself.
-- **Tone-similar different layout**: edge positions differ almost everywhere → few stable cells → low `stableFraction` → break. This is exactly the case current luminance aggregates miss.
+- **Banner / video**: only central cells change; periphery chrome cells persist → high non-anchor `stableFraction` → restore, as long as the annotation anchor is not on the banner.
+- **Tone-similar different layout (with real structure)**: edges reorganize → few stable structural cells → low `stableFraction` → break. Because flat pixels are neutral, this holds even for pages with a mostly-uniform background.
+- **Bounded anchor drift** (highlight/color): the anchor region is structurally touched but its luminance drift stays within the bounded allowance → `anchorBroke` false → deferred to the initial/narration tolerance rather than an outright break.
+- **Honest scope**: a genuinely near-blank page (almost no structure) has no distributed edges to judge, so `hasEvidence` is false and the decision defers to luminance. Structural rejection needs a real amount of on-screen structure.
 
 ## Integration points
 
 - `PickyAnnotationSceneFingerprint` (`Picky/Interaction/PickyAnnotationScenePolicy.swift`): add a cached/derived binary edge mask alongside `luminance`. Derive lazily so the `init?` and persisted-baseline load paths are unchanged.
-- `PickyAnnotationSceneVisualPolicy` (same file): add the grid/edge structural comparison and the `restoreFloor` / `breakFloor` / `cellStabilityRatio` / `edgeThreshold` / `gridSize` / periphery-weight constants. Feed the structural verdict into the **restore direction** of `compare`, keeping the existing invalidation-profile logic for the break direction and the narration/initial paths intact.
-- The 3-state result and `PickyAnnotationSceneStabilityTracker` are unchanged in shape — only the criteria that produce `matching` vs `mismatching` vs `indeterminate` on the restore path change.
-- No change to `PickyAnnotationSceneMonitor` orchestration, semantic scroll/app/window/display paths, or polling policy.
+- `PickyAnnotationSceneVisualPolicy` (same file): the grid/edge structural comparison plus the `minCellEdgeCorrespondence` / `minCellEdgeCoverage` / `minStructuralCoverage` / `restoreFloor` / `breakFloor` / `edgeThreshold` / `gridSize` / periphery-weight constants. The structural verdict gates only the **`.strict`** profile (the visual restoration polling path). `.lenient` (narration) keeps its bounded-drift tolerance and `.semantic` (scroll/app) stays luminance-only.
+- The 3-state result and `PickyAnnotationSceneStabilityTracker` are unchanged in shape — only the criteria that produce `matching` vs `mismatching` vs `indeterminate` on the `.strict` path change.
+- `PickyAnnotationSceneMonitor` gains a `stableFraction` log field only (observability for tuning); orchestration, semantic scroll/app/window/display paths, and polling policy are unchanged.
 
 ## Scroll interaction
 
@@ -107,7 +119,9 @@ Expose as policy constants so runtime testing can iterate without structural cha
 | --- | --- | --- |
 | `gridSize` | `12` | N in the N×N grid |
 | `edgeThreshold` | `24` | gradient magnitude → edge |
-| `cellStabilityRatio` | `0.90` | per-cell structural-match ratio to call a cell stable |
+| `minCellEdgeCorrespondence` | `0.5` | edge intersection/union for a cell to count as unchanged |
+| `minCellEdgeCoverage` | `0.03` | min edge fraction (min 1px) before a cell is structural vs neutral |
+| `minStructuralCoverage` | `0.10` | non-anchor structural coverage required before the structural verdict is trusted |
 | `restoreFloor` | `0.35` | weighted stable fraction required to restore |
 | `breakFloor` | `0.20` | below this, break instead of holding |
 | periphery weight | mild edge boost (e.g. center `1.0` → edge `1.6`) | de-emphasize central banner/video area |

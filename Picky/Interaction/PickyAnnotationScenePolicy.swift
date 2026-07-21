@@ -44,12 +44,22 @@ struct PickyAnnotationSceneFingerprint: Equatable, Sendable {
     let width: Int
     let height: Int
     let luminance: [UInt8]
+    let dilatedEdgeMask: [UInt8]
 
     init?(width: Int, height: Int, luminance: [UInt8]) {
         guard width > 0, height > 0, luminance.count == width * height else { return nil }
         self.width = width
         self.height = height
         self.luminance = luminance
+        self.dilatedEdgeMask = Self.computeDilatedEdgeMask(
+            luminance: luminance,
+            width: width,
+            height: height
+        )
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.width == rhs.width && lhs.height == rhs.height && lhs.luminance == rhs.luminance
     }
 
     /// Produces the common single-resample luminance representation used for both
@@ -78,6 +88,54 @@ struct PickyAnnotationSceneFingerprint: Equatable, Sendable {
         }
         guard drew else { return nil }
         return Self(width: width, height: height, luminance: luminance)
+    }
+
+    private static func computeDilatedEdgeMask(
+        luminance: [UInt8],
+        width: Int,
+        height: Int
+    ) -> [UInt8] {
+        let pixelCount = luminance.count
+        guard pixelCount > 0 else { return [] }
+
+        var edgeMask = [UInt8](repeating: 0, count: pixelCount)
+        for y in 0..<height {
+            let rowStart = y * width
+            for x in 0..<width {
+                let index = rowStart + x
+                let current = Int(luminance[index])
+                var gradientMagnitude = 0
+                if x + 1 < width {
+                    gradientMagnitude += abs(current - Int(luminance[index + 1]))
+                }
+                if y + 1 < height {
+                    gradientMagnitude += abs(current - Int(luminance[index + width]))
+                }
+                edgeMask[index] = gradientMagnitude >= PickyAnnotationSceneVisualPolicy.edgeThreshold ? 1 : 0
+            }
+        }
+
+        var dilatedEdgeMask = [UInt8](repeating: 0, count: pixelCount)
+        for y in 0..<height {
+            let rowStart = y * width
+            for x in 0..<width {
+                let index = rowStart + x
+                var isEdge = edgeMask[index] == 1
+                if !isEdge {
+                    if x > 0 && edgeMask[index - 1] == 1 {
+                        isEdge = true
+                    } else if x + 1 < width && edgeMask[index + 1] == 1 {
+                        isEdge = true
+                    } else if y > 0 && edgeMask[index - width] == 1 {
+                        isEdge = true
+                    } else if y + 1 < height && edgeMask[index + width] == 1 {
+                        isEdge = true
+                    }
+                }
+                dilatedEdgeMask[index] = isEdge ? 1 : 0
+            }
+        }
+        return dilatedEdgeMask
     }
 }
 
@@ -129,6 +187,25 @@ enum PickyAnnotationSceneVisualPolicy {
     /// Per-pixel luminance noise below this value is ignored. This absorbs JPEG,
     /// color-management, and subpixel rendering differences without hiding real UI changes.
     static let changedPixelThreshold = 18
+
+    /// Gradient magnitude threshold used to mark a luminance pixel as an edge.
+    static let edgeThreshold = 24
+
+    // MARK: - Structural restoration tuning
+    static let gridSize = 12
+    /// Minimum edge overlap (intersection over union of a cell's edge pixels) for the cell's
+    /// structure to count as unchanged. Edge-free cells are neutral, so flat background never
+    /// dilutes the edge evidence the way raw pixel matching would.
+    static let minCellEdgeCorrespondence = 0.5
+    /// A cell needs at least this fraction of its pixels on an edge (min 1 pixel) before it is
+    /// judged structural; sparser cells stay neutral to resist single-pixel noise.
+    static let minCellEdgeCoverage = 0.03
+    /// The non-anchor grid must carry at least this weighted fraction of structural cells before
+    /// the structural verdict is trusted; flatter frames defer to the luminance decision.
+    static let minStructuralCoverage = 0.10
+    static let restoreFloor = 0.35
+    static let breakFloor = 0.20
+    static let peripheralEdgeWeightBoost = 0.60
 
     /// A strict threshold is used to prove restoration; a looser one is used to prove
     /// invalidation. Values in between are deliberately indeterminate to prevent flicker.
@@ -210,10 +287,219 @@ enum PickyAnnotationSceneVisualPolicy {
         } ?? true
         let globalMatches = global.changedFraction <= matchingGlobalChangedFraction
             && global.meanDifference <= matchingGlobalMeanDifference
-        if roiMatches && globalMatches {
+
+        // Structural persistence gates only the visual restoration polling path (.strict).
+        // Narration (.lenient) keeps its bounded-drift tolerance and scroll/app (.semantic)
+        // stays luminance-only, both by design.
+        if invalidationProfile != .strict {
+            if roiMatches && globalMatches {
+                return .matching(metrics)
+            }
+            return .indeterminate(metrics)
+        }
+
+        let structural = structuralAnalysis(
+            baseline: baseline,
+            current: current,
+            normalizedRegions: normalizedRegions
+        )
+        let luminanceMatches = roiMatches && globalMatches
+
+        // A moved anchor whose luminance drift exceeds the bounded allowance breaks outright.
+        if structural.anchorBroke {
+            return .mismatching(metrics)
+        }
+        // Too little distributed structure to judge a layout change: defer to luminance.
+        if !structural.hasEvidence {
+            return luminanceMatches ? .matching(metrics) : .indeterminate(metrics)
+        }
+        if structural.stableFraction >= restoreFloor && structural.anchorStructurallyStable {
             return .matching(metrics)
         }
+        if structural.stableFraction < breakFloor {
+            return .mismatching(metrics)
+        }
         return .indeterminate(metrics)
+    }
+
+    static func structuralStableFraction(
+        baseline: PickyAnnotationSceneFingerprint,
+        current: PickyAnnotationSceneFingerprint,
+        normalizedRegions: [CGRect]
+    ) -> Double {
+        guard baseline.width == current.width,
+              baseline.height == current.height else { return 0 }
+        return structuralAnalysis(
+            baseline: baseline,
+            current: current,
+            normalizedRegions: normalizedRegions
+        ).stableFraction
+    }
+
+    private static func structuralAnalysis(
+        baseline: PickyAnnotationSceneFingerprint,
+        current: PickyAnnotationSceneFingerprint,
+        normalizedRegions: [CGRect]
+    ) -> (stableFraction: Double, anchorStructurallyStable: Bool, anchorBroke: Bool, hasEvidence: Bool) {
+        let gridColumns = min(gridSize, baseline.width)
+        let gridRows = min(gridSize, baseline.height)
+
+        guard baseline.width == current.width,
+              baseline.height == current.height,
+              gridColumns > 0,
+              gridRows > 0 else {
+            return (0, false, true, true)
+        }
+
+        let anchorCells = annotationCells(
+            normalizedRegions: normalizedRegions,
+            columns: gridColumns,
+            rows: gridRows
+        )
+        // The anchor is judged per-region below, so keep the global structural verdict to the
+        // non-anchor grid; that lets a bounded local anchor drift stay separate from a broad
+        // layout change.
+        var weightedStableOutside = 0.0
+        var weightedStructuralOutside = 0.0
+        var weightedTotalOutside = 0.0
+        var unstableStructuralCells: Set<Int> = []
+
+        for row in 0..<gridRows {
+            let rowStartIndex = rowStart(y: row, rows: gridRows, height: baseline.height)
+            let rowEndIndex = rowStart(y: row + 1, rows: gridRows, height: baseline.height)
+            for column in 0..<gridColumns {
+                let cellIndex = row * gridColumns + column
+                let columnStartIndex = columnStart(x: column, columns: gridColumns, width: baseline.width)
+                let columnEndIndex = columnStart(x: column + 1, columns: gridColumns, width: baseline.width)
+
+                var edgeUnion = 0
+                var edgeIntersection = 0
+                var totalPixels = 0
+                for y in rowStartIndex..<rowEndIndex {
+                    let rowOffset = y * baseline.width
+                    for x in columnStartIndex..<columnEndIndex {
+                        let index = rowOffset + x
+                        let baselineEdge = baseline.dilatedEdgeMask[index] != 0
+                        let currentEdge = current.dilatedEdgeMask[index] != 0
+                        if baselineEdge || currentEdge { edgeUnion += 1 }
+                        if baselineEdge && currentEdge { edgeIntersection += 1 }
+                        totalPixels += 1
+                    }
+                }
+
+                let weight = structuralCellWeight(row: row, column: column, rows: gridRows, columns: gridColumns)
+                let isAnchorCell = anchorCells.contains(cellIndex)
+                if !isAnchorCell { weightedTotalOutside += weight }
+
+                let minEdgePixels = max(1, Int(Double(totalPixels) * minCellEdgeCoverage))
+                guard edgeUnion >= minEdgePixels else { continue } // neutral (flat) cell
+
+                let correspondence = Double(edgeIntersection) / Double(edgeUnion)
+                let structurallyStable = correspondence >= minCellEdgeCorrespondence
+                if !structurallyStable { unstableStructuralCells.insert(cellIndex) }
+                if isAnchorCell { continue }
+                weightedStructuralOutside += weight
+                if structurallyStable { weightedStableOutside += weight }
+            }
+        }
+
+        let stableFraction = weightedStructuralOutside > 0
+            ? (weightedStableOutside / weightedStructuralOutside)
+            : 1.0
+        let hasEvidence = weightedTotalOutside > 0
+            && (weightedStructuralOutside / weightedTotalOutside) >= minStructuralCoverage
+
+        var anchorStructurallyStable = true
+        var anchorBroke = false
+        for region in normalizedRegions {
+            let cells = annotationCells(normalizedRegions: [region], columns: gridColumns, rows: gridRows)
+            guard !cells.isDisjoint(with: unstableStructuralCells) else { continue }
+            anchorStructurallyStable = false
+            let drift = regionLuminanceDrift(baseline: baseline, current: current, region: region)
+            let withinAllowance = drift.changedFraction <= initialValidationROIChangedFraction
+                && drift.meanDifference <= initialValidationROIMeanDifference
+            if !withinAllowance { anchorBroke = true }
+        }
+
+        return (stableFraction, anchorStructurallyStable, anchorBroke, hasEvidence)
+    }
+
+    private static func regionLuminanceDrift(
+        baseline: PickyAnnotationSceneFingerprint,
+        current: PickyAnnotationSceneFingerprint,
+        region: CGRect
+    ) -> (changedFraction: Double, meanDifference: Double) {
+        let indexes = pixelIndexes(
+            normalizedRegions: [region],
+            width: baseline.width,
+            height: baseline.height
+        )
+        guard !indexes.isEmpty else { return (0, 0) }
+        return difference(baseline: baseline.luminance, current: current.luminance, indexes: indexes)
+    }
+
+    private static func structuralCellWeight(
+        row: Int,
+        column: Int,
+        rows: Int,
+        columns: Int
+    ) -> Double {
+        guard columns > 1, rows > 1 else { return 1 }
+        let maxXDistance = Double(columns - 1) / 2
+        let maxYDistance = Double(rows - 1) / 2
+        guard maxXDistance > 0, maxYDistance > 0 else { return 1 }
+
+        let distanceFromEdgeX = abs(Double(column) - maxXDistance) / maxXDistance
+        let distanceFromEdgeY = abs(Double(row) - maxYDistance) / maxYDistance
+        let peripheral = max(distanceFromEdgeX, distanceFromEdgeY)
+        return 1 + (peripheral * peripheralEdgeWeightBoost)
+    }
+
+    private static func rowStart(y: Int, rows: Int, height: Int) -> Int {
+        Int((Double(y) / Double(rows)) * Double(height))
+    }
+
+    private static func columnStart(x: Int, columns: Int, width: Int) -> Int {
+        Int((Double(x) / Double(columns)) * Double(width))
+    }
+
+    private static func annotationCells(
+        normalizedRegions: [CGRect],
+        columns: Int,
+        rows: Int
+    ) -> Set<Int> {
+        guard !normalizedRegions.isEmpty,
+              columns > 0,
+              rows > 0 else { return [] }
+        var result: Set<Int> = []
+        for rawRegion in normalizedRegions {
+            let region = rawRegion.standardized.intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+            guard !region.isNull, !region.isEmpty else { continue }
+
+            let minColumn = max(
+                0,
+                min(columns - 1, Int(floor(region.minX * CGFloat(columns))))
+            )
+            let maxColumn = max(
+                minColumn,
+                min(columns - 1, Int(ceil(region.maxX * CGFloat(columns))) - 1)
+            )
+            let minRow = max(
+                0,
+                min(rows - 1, Int(floor(region.minY * CGFloat(rows))))
+            )
+            let maxRow = max(
+                minRow,
+                min(rows - 1, Int(ceil(region.maxY * CGFloat(rows))) - 1)
+            )
+
+            for row in minRow...maxRow {
+                for column in minColumn...maxColumn {
+                    result.insert(row * columns + column)
+                }
+            }
+        }
+        return result
     }
 
     /// Initial reveal and narration-time restoration can tolerate bounded localized

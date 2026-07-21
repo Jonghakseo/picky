@@ -290,6 +290,362 @@ struct PickyAnnotationScenePolicyTests {
         }
     }
 
+    @Test func structuralRestoreMatchesWhenBannerOrVideoBandDrifts() throws {
+        let baseline = try #require(structuredFingerprint(width: 12, height: 12))
+        let width = baseline.width
+        let height = baseline.height
+
+        let centralBand = try #require(fingerprint(width: width, height: height) { pixels, _, _ in
+            let bandHeight = max(1, height / 3)
+            let bandWidth = max(1, width / 2)
+            let bandX = (width - bandWidth) / 2
+            let bandY = (height - bandHeight) / 2
+
+            for y in bandY..<min(height, bandY + bandHeight) {
+                let rowOffset = y * width
+                for x in bandX..<min(width, bandX + bandWidth) {
+                    let index = rowOffset + x
+                    let boosted = Int(baseline.luminance[index]) + 30
+                    pixels[index] = UInt8(min(255, boosted))
+                }
+            }
+        })
+        let current = withCenterRegion(baseline, replacedBy: centralBand)
+
+        let annotationOnPeriphery = PickyAnnotationSceneVisualPolicy.compare(
+            baseline: baseline,
+            current: current,
+            normalizedRegions: [CGRect(x: 0.02, y: 0.02, width: 0.16, height: 0.2)]
+        )
+
+        guard case .matching = annotationOnPeriphery else {
+            Issue.record("Expected banner-like center band movement to keep annotation restore matched")
+            return
+        }
+    }
+
+    @Test func structuralRestoreMatchesForVideoStyleCenterBandChurn() throws {
+        let baseline = try #require(structuredFingerprint(width: 12, height: 12))
+        let width = baseline.width
+        let height = baseline.height
+
+        let churnedCenter = try #require(fingerprint(width: width, height: height) { pixels, _, _ in
+            let bandHeight = max(1, height / 3)
+            let bandWidth = max(1, width / 2)
+            let bandX = (width - bandWidth) / 2
+            let bandY = (height - bandHeight) / 2
+
+            for y in bandY..<min(height, bandY + bandHeight) {
+                let rowOffset = y * width
+                for x in bandX..<min(width, bandX + bandWidth) {
+                    let index = rowOffset + x
+                    let phase = ((x + y) & 1)
+                    let boost = 34 + (phase % 2)
+                    let boosted = Int(baseline.luminance[index]) + boost
+                    pixels[index] = UInt8(min(255, boosted))
+                }
+            }
+        })
+        let current = withCenterRegion(baseline, replacedBy: churnedCenter)
+
+        let annotationInStableChrome = PickyAnnotationSceneVisualPolicy.compare(
+            baseline: baseline,
+            current: current,
+            normalizedRegions: [CGRect(x: 0.02, y: 0.02, width: 0.16, height: 0.2)]
+        )
+
+        guard case .matching = annotationInStableChrome else {
+            Issue.record("Expected a central video-band churn to keep restore eligible")
+            return
+        }
+    }
+
+    @Test func structuralRestoreRejectsStructureLossThatLuminanceWouldNotReject() throws {
+        // Dense vertical texture (an edge at every column) versus a flat repaint at the same
+        // mean. Per-pixel luminance change stays below the strict mismatch thresholds, so the
+        // luminance policy alone would NOT reject this frame; only the structural gate catches
+        // that the layout structure disappeared. This is the tone-similar regression the
+        // feature exists to fix, isolated from the luminance mismatch path.
+        let baseline = try #require(fingerprint(width: 12, height: 12) { pixels, width, height in
+            for y in 0..<height {
+                for x in 0..<width where x % 2 == 0 {
+                    pixels[y * width + x] = 90
+                }
+            }
+        })
+        let flatRepaint = try #require(fingerprint(width: 12, height: 12, baseValue: 77))
+
+        let observation = PickyAnnotationSceneVisualPolicy.compare(
+            baseline: baseline,
+            current: flatRepaint,
+            normalizedRegions: []
+        )
+
+        guard case .mismatching(let metrics) = observation else {
+            Issue.record("Expected structural analysis to reject a same-tone frame that lost its layout structure")
+            return
+        }
+        // Prove the luminance policy alone would not have rejected this: both global metrics
+        // sit below the strict luminance mismatch thresholds, so the structural gate drove it.
+        #expect(metrics.globalChangedFraction == 0)
+        #expect(metrics.globalMeanDifference == 13)
+        #expect(metrics.globalChangedFraction < PickyAnnotationSceneInvalidationProfile.strict.mismatchingGlobalChangedFraction)
+        #expect(metrics.globalMeanDifference < PickyAnnotationSceneInvalidationProfile.strict.mismatchingGlobalMeanDifference)
+    }
+
+    @Test func structuralRestoreRejectsNoisyCentralDriftUnderAnnotationAnchor() throws {
+        let baseline = try #require(structuredFingerprint(width: 12, height: 12))
+        var pixels = baseline.luminance
+        let width = baseline.width
+        let height = baseline.height
+        let changeX = width / 2
+        let changeY = height / 2
+        // A meaningful content change under the anchor (beyond the bounded localized-drift
+        // allowance, yet below a hard luminance mismatch) must reject structural restoration.
+        for offsetX in -1...1 {
+            let index = changeY * width + (changeX + offsetX)
+            pixels[index] = UInt8(max(0, Int(pixels[index]) - 80))
+        }
+        let current = try #require(PickyAnnotationSceneFingerprint(width: width, height: height, luminance: pixels))
+
+        let observation = PickyAnnotationSceneVisualPolicy.compare(
+            baseline: baseline,
+            current: current,
+            normalizedRegions: [CGRect(x: 0.4, y: 0.35, width: 0.2, height: 0.2)]
+        )
+
+        guard case .mismatching = observation else {
+            Issue.record("Expected anchor-on-change to break structural restoration")
+            return
+        }
+    }
+
+    @Test func structuralRestoreKeepsUnchangedFlatRegionsStable() throws {
+        let baseline = try #require(fingerprint(width: 12, height: 12, baseValue: 64))
+        let current = try #require(fingerprint(width: 12, height: 12, baseValue: 64))
+
+        let observation = PickyAnnotationSceneVisualPolicy.compare(
+            baseline: baseline,
+            current: current,
+            normalizedRegions: []
+        )
+
+        guard case .matching = observation else {
+            Issue.record("Expected flat identical regions to stay matched")
+            return
+        }
+    }
+
+    @Test func structuralRestoreRespectsTwoConsecutiveTrackerGuardAcrossSingleNoisyFrame() throws {
+        let baseline = try #require(structuredFingerprint(width: 12, height: 12))
+        let noisyCurrent = sameMeanDifferentLayout(baseline)
+        let stableObservation = PickyAnnotationSceneVisualPolicy.compare(
+            baseline: baseline,
+            current: baseline,
+            normalizedRegions: []
+        )
+        let noisyObservation = PickyAnnotationSceneVisualPolicy.compare(
+            baseline: baseline,
+            current: noisyCurrent,
+            normalizedRegions: []
+        )
+
+        guard case .matching = stableObservation else {
+            Issue.record("Expected baseline-to-baseline comparison to remain matching")
+            return
+        }
+        guard case .mismatching = noisyObservation else {
+            Issue.record("Expected the noisy frame to be mismatching")
+            return
+        }
+
+        var tracker = PickyAnnotationSceneStabilityTracker()
+        #expect(tracker.observe(stableObservation, phase: .suspended) == .none)
+        #expect(tracker.observe(noisyObservation, phase: .suspended) == .none)
+        #expect(tracker.observe(stableObservation, phase: .suspended) == .none)
+        #expect(tracker.observe(stableObservation, phase: .suspended) == .show)
+    }
+
+    @Test func structuralRestoreRejectsToneSimilarLayoutMoveAtProductionResolution() throws {
+        // Production-sized fingerprint (real multi-pixel grid cells, not the degenerate 1px
+        // cells of the small fixtures). A text-like block on a light page moves to a different,
+        // non-overlapping location while keeping the same background tone and contrast. Global
+        // luminance stays below the strict mismatch thresholds, so only the structural gate
+        // rejects this tone-similar different layout.
+        let width = 256
+        let height = 144
+        func drawTextBlock(_ pixels: inout [UInt8], _ w: Int, originX: Int, originY: Int) {
+            for line in 0..<10 {
+                let y = originY + line * 5
+                guard y + 2 <= height else { break }
+                for yy in y..<(y + 2) {
+                    for x in originX..<min(width, originX + 80) {
+                        pixels[yy * w + x] = 90
+                    }
+                }
+            }
+        }
+        let baseline = try #require(fingerprint(width: width, height: height, baseValue: 220) { pixels, w, _ in
+            drawTextBlock(&pixels, w, originX: 16, originY: 16)
+        })
+        let moved = try #require(fingerprint(width: width, height: height, baseValue: 220) { pixels, w, _ in
+            drawTextBlock(&pixels, w, originX: 160, originY: 84)
+        })
+
+        let observation = PickyAnnotationSceneVisualPolicy.compare(
+            baseline: baseline,
+            current: moved,
+            normalizedRegions: []
+        )
+
+        guard case .mismatching(let metrics) = observation else {
+            Issue.record("Expected a moved layout at production resolution to be rejected")
+            return
+        }
+        #expect(metrics.globalChangedFraction < PickyAnnotationSceneInvalidationProfile.strict.mismatchingGlobalChangedFraction)
+        #expect(metrics.globalMeanDifference < PickyAnnotationSceneInvalidationProfile.strict.mismatchingGlobalMeanDifference)
+    }
+
+    @Test func structuralRestoreMatchesBannerChurnAtProductionResolution() throws {
+        // Stable window chrome (top bar + sidebar) at the periphery with churning center content,
+        // at real cell sizes. The periphery structure persists, so the scene stays matched even
+        // though the center band's structure changes (banner/video tolerance).
+        let width = 256
+        let height = 144
+        func drawChrome(_ pixels: inout [UInt8], _ w: Int) {
+            for y in 0..<18 where y < height { for x in 0..<width { pixels[y * w + x] = 120 } }
+            for y in 18..<height { for x in 0..<48 { pixels[y * w + x] = 100 } }
+        }
+        let baseline = try #require(fingerprint(width: width, height: height, baseValue: 210) { pixels, w, _ in
+            drawChrome(&pixels, w)
+            for y in 52..<96 { for x in 104..<176 where (x / 8) % 2 == 0 { pixels[y * w + x] = 150 } }
+        })
+        let churned = try #require(fingerprint(width: width, height: height, baseValue: 210) { pixels, w, _ in
+            drawChrome(&pixels, w)
+            for y in 52..<96 { for x in 104..<176 where (y / 8) % 2 == 0 { pixels[y * w + x] = 150 } }
+        })
+
+        let observation = PickyAnnotationSceneVisualPolicy.compare(
+            baseline: baseline,
+            current: churned,
+            normalizedRegions: []
+        )
+
+        guard case .matching = observation else {
+            Issue.record("Expected stable chrome with churning center content to keep matching")
+            return
+        }
+    }
+
+    @Test func structuralRestoreBreaksWhenOneOfSeveralAnchorsChangesBeyondDrift() throws {
+        // Two annotations on one screen. Only the first anchor's content changes (beyond the
+        // bounded drift allowance); the second is untouched. Per-region evaluation must break
+        // the scene instead of averaging the change away across both regions.
+        let width = 256
+        let height = 144
+        let regionA = CGRect(x: 0.08, y: 0.12, width: 0.24, height: 0.30)
+        let regionB = CGRect(x: 0.68, y: 0.60, width: 0.24, height: 0.30)
+        func drawAnchors(_ pixels: inout [UInt8], _ w: Int, changeA: Bool) {
+            for y in 20..<58 { for x in 24..<80 where (x / 6) % 2 == 0 { pixels[y * w + x] = changeA ? 215 : 90 } }
+            for y in 90..<128 { for x in 180..<236 where (x / 6) % 2 == 0 { pixels[y * w + x] = 90 } }
+        }
+        let baseline = try #require(fingerprint(width: width, height: height, baseValue: 220) { pixels, w, _ in
+            drawAnchors(&pixels, w, changeA: false)
+        })
+        let current = try #require(fingerprint(width: width, height: height, baseValue: 220) { pixels, w, _ in
+            drawAnchors(&pixels, w, changeA: true)
+        })
+
+        let observation = PickyAnnotationSceneVisualPolicy.compare(
+            baseline: baseline,
+            current: current,
+            normalizedRegions: [regionA, regionB]
+        )
+
+        guard case .mismatching = observation else {
+            Issue.record("Expected one changed anchor among several to break the scene without dilution")
+            return
+        }
+    }
+
+    @Test func edgeMapForUniformFingerprintIsAllZeros() throws {
+        let uniform = try #require(fingerprint(width: 16, height: 12))
+
+        #expect(uniform.dilatedEdgeMask.allSatisfy { $0 == 0 })
+    }
+
+    @Test func edgeMapFromSingleVerticalLineContainsOnlyTheLineAndDilatedBand() throws {
+        let width = 10
+        let height = 10
+        let lineX = 4
+        var luminance = [UInt8](repeating: 64, count: width * height)
+        for y in 0..<height {
+            luminance[y * width + lineX] = 192
+        }
+        let fingerprint = try #require(PickyAnnotationSceneFingerprint(width: width, height: height, luminance: luminance))
+
+        let expectedColumns: Set<Int> = [lineX - 2, lineX - 1, lineX, lineX + 1]
+        for y in 0..<height {
+            for x in 0..<width {
+                let value = fingerprint.dilatedEdgeMask[y * width + x]
+                if expectedColumns.contains(x) {
+                    #expect(value == 1)
+                } else {
+                    #expect(value == 0)
+                }
+            }
+        }
+    }
+
+    @Test func edgeMapIsDerivedFromLuminanceOnly() throws {
+        let width = 10
+        let height = 10
+        var luminance = [UInt8](repeating: 64, count: width * height)
+        for y in 0..<height {
+            luminance[y * width + 5] = 220
+        }
+        let directlyBuilt = try #require(PickyAnnotationSceneFingerprint(width: width, height: height, luminance: luminance))
+
+        // Simulate a persisted baseline that only stores luminance and rehydrates the edge mask.
+        let rehydrated = try #require(PickyAnnotationSceneFingerprint(width: width, height: height, luminance: directlyBuilt.luminance))
+
+        #expect(directlyBuilt.dilatedEdgeMask == rehydrated.dilatedEdgeMask)
+    }
+
+    @Test func edgeMapDilationAbsorbsOnePixelLineShift() throws {
+        let width = 9
+        let height = 9
+        let baseLineX = 3
+        let shiftedLineX = baseLineX + 1
+
+        let baseLine = try #require(fingerprint(
+            width: width,
+            height: height,
+            baseValue: 64,
+            variant: { pixels, strideWidth, strideHeight in
+                for y in 0..<strideHeight {
+                    pixels[y * strideWidth + baseLineX] = 220
+                }
+            }
+        ))
+        let shiftedLine = try #require(fingerprint(
+            width: width,
+            height: height,
+            baseValue: 64,
+            variant: { pixels, strideWidth, strideHeight in
+                for y in 0..<strideHeight {
+                    pixels[y * strideWidth + shiftedLineX] = 220
+                }
+            }
+        ))
+
+        for y in 0..<height {
+            let baseEdgeIndex = y * width + shiftedLineX
+            #expect(baseLine.dilatedEdgeMask[baseEdgeIndex] == 1)
+            #expect(shiftedLine.dilatedEdgeMask[baseEdgeIndex] == 1)
+        }
+    }
+
     @Test func visualPolicyRejectsChangesInsideAnAnnotationRegion() throws {
         let baseline = try #require(fingerprint(width: 10, height: 10))
         var pixels = baseline.luminance
@@ -1052,11 +1408,166 @@ struct PickyAnnotationScenePolicyTests {
         )
     }
 
-    private func fingerprint(width: Int, height: Int) -> PickyAnnotationSceneFingerprint? {
-        PickyAnnotationSceneFingerprint(
+    private func structuredFingerprint(
+        width: Int,
+        height: Int,
+        draw: (_ pixels: inout [UInt8], _ width: Int, _ height: Int) -> Void = { pixels, width, height in
+            let background = UInt8(64)
+            let topBarHeight = max(1, height / 8)
+            let sidebarWidth = max(1, width / 4)
+            let dividerX = max(0, sidebarWidth - 1)
+
+            for y in 0..<topBarHeight {
+                for x in 0..<width {
+                    pixels[y * width + x] = 106
+                }
+            }
+            for y in topBarHeight..<height {
+                for x in 0..<sidebarWidth {
+                    pixels[y * width + x] = 84
+                }
+            }
+            for y in 0..<height {
+                pixels[y * width + dividerX] = 132
+            }
+
+            let blockWidth = max(1, (width - sidebarWidth) / 3)
+            let blockHeight = max(1, (height - topBarHeight) / 3)
+            let leftBlockX = sidebarWidth + 1
+            let leftBlockY = topBarHeight + 1
+            for y in leftBlockY..<min(height, leftBlockY + blockHeight) {
+                for x in leftBlockX..<min(width, leftBlockX + blockWidth) {
+                    pixels[y * width + x] = 118
+                }
+            }
+
+            let rightBlockX = width - blockWidth - 1
+            let rightBlockY = max(topBarHeight + 1, height - blockHeight - 1)
+            for y in rightBlockY..<min(height, rightBlockY + blockHeight) {
+                for x in rightBlockX..<width {
+                    if x >= 0 { pixels[y * width + x] = 132 }
+                }
+            }
+
+            for x in stride(from: sidebarWidth + 2, through: min(width - 1, sidebarWidth + blockWidth - 1), by: 2) {
+                for y in leftBlockY..<height {
+                    pixels[y * width + x] = 118
+                }
+            }
+
+            for y in stride(from: leftBlockY + 1, to: min(height, leftBlockY + blockHeight + 1), by: 2) {
+                for x in leftBlockX..<min(width, leftBlockX + blockWidth) {
+                    pixels[y * width + x] = 104
+                }
+            }
+
+            for x in 0..<width {
+                let horizontalY = min(height - 1, topBarHeight + blockHeight)
+                pixels[horizontalY * width + x] = background
+            }
+
+            for y in topBarHeight..<min(height, topBarHeight + 2) {
+                for x in (sidebarWidth + 1)..<width {
+                    pixels[y * width + x] = background
+                }
+            }
+
+            for y in 0..<height {
+                pixels[y * width + (width - 1)] = 84
+            }
+        }
+    ) -> PickyAnnotationSceneFingerprint? {
+        fingerprint(width: width, height: height, baseValue: 64, variant: draw)
+    }
+
+    private func withCenterRegion(
+        _ baseline: PickyAnnotationSceneFingerprint,
+        replacedBy replacement: PickyAnnotationSceneFingerprint
+    ) -> PickyAnnotationSceneFingerprint {
+        guard baseline.width == replacement.width,
+              baseline.height == replacement.height else { return baseline }
+
+        var luminance = baseline.luminance
+        let width = baseline.width
+        let height = baseline.height
+        let bandHeight = max(1, height / 3)
+        let bandWidth = max(1, width / 2)
+        let bandX = (width - bandWidth) / 2
+        let bandY = (height - bandHeight) / 2
+
+        for y in bandY..<min(height, bandY + bandHeight) {
+            let rowOffset = y * width
+            for x in bandX..<min(width, bandX + bandWidth) {
+                luminance[rowOffset + x] = replacement.luminance[rowOffset + x]
+            }
+        }
+
+        return PickyAnnotationSceneFingerprint(
             width: width,
             height: height,
-            luminance: [UInt8](repeating: 64, count: width * height)
+            luminance: luminance
+        )!
+    }
+
+    private func sameMeanDifferentLayout(_ base: PickyAnnotationSceneFingerprint) -> PickyAnnotationSceneFingerprint {
+        let width = base.width
+        let height = base.height
+        let pixelCount = width * height
+        let totalLuminance = base.luminance.reduce(0) { $0 + Int($1) }
+        let baseValue = totalLuminance / pixelCount
+        let delta = min(30, max(1, min(baseValue, 255 - baseValue)))
+        let highValue = UInt8(min(255, baseValue + delta))
+        let lowValue = UInt8(max(0, baseValue - delta))
+
+        var luminance = [UInt8](repeating: UInt8(baseValue), count: pixelCount)
+        let blockHeight = max(1, height / 4)
+        let blockWidth = max(1, width / 3)
+
+        let leftBlockX = max(0, width / 5)
+        let leftBlockY = height / 6
+        let rightBlockX = max(0, width - width / 5 - blockWidth)
+        let rightBlockY = max(0, height - height / 6 - blockHeight)
+
+        for y in leftBlockY..<min(height, leftBlockY + blockHeight) {
+            let offset = y * width
+            for x in leftBlockX..<min(width, leftBlockX + blockWidth) {
+                luminance[offset + x] = highValue
+            }
+        }
+        for y in rightBlockY..<min(height, rightBlockY + blockHeight) {
+            let offset = y * width
+            for x in rightBlockX..<min(width, rightBlockX + blockWidth) {
+                luminance[offset + x] = lowValue
+            }
+        }
+
+        let dividerTop = max(0, height / 2 - 1)
+        let dividerBottom = min(height - 1, dividerTop + 1)
+        for y in dividerTop...dividerBottom {
+            for x in width / 3..<(width / 3 + blockWidth / 2) {
+                luminance[y * width + x] = highValue
+            }
+            for x in (width - width / 3 - blockWidth / 2) ..< (width - width / 3) {
+                if x >= 0 {
+                    luminance[y * width + x] = lowValue
+                }
+            }
+        }
+
+        return PickyAnnotationSceneFingerprint(width: width, height: height, luminance: luminance)!
+    }
+
+    private func fingerprint(width: Int, height: Int, baseValue: UInt8 = 64, variant: (
+        _ pixels: inout [UInt8],
+        _ width: Int,
+        _ height: Int
+    ) -> Void = { _, _, _ in }) -> PickyAnnotationSceneFingerprint? {
+        var luminance = [UInt8](repeating: baseValue, count: width * height)
+        variant(&luminance, width, height)
+        return PickyAnnotationSceneFingerprint(
+            width: width,
+            height: height,
+            luminance: luminance
         )
     }
 }

@@ -79,6 +79,7 @@ final class PickyAnnotationSceneMonitor {
         let invalidationProfile: PickyAnnotationSceneInvalidationProfile
         let captureMilliseconds: Double
         let comparisonMilliseconds: Double
+        let stableFraction: Double?
     }
 
     private final class AccessibilityObserverContext {
@@ -384,6 +385,7 @@ final class PickyAnnotationSceneMonitor {
                 compareMilliseconds: sample.comparisonMilliseconds,
                 metrics: metrics,
                 invalidationProfile: sample.invalidationProfile,
+                stableFraction: sample.stableFraction,
                 totalStartedAt: sampleStartedAt
             )
         } catch {
@@ -410,6 +412,7 @@ final class PickyAnnotationSceneMonitor {
         var observations: [PickyAnnotationSceneVisualObservation] = []
         var captureMilliseconds = 0.0
         var comparisonMilliseconds = 0.0
+        var minStableFraction: Double?
         for key in session.targets.keys.sorted() {
             guard let target = session.targets[key] else { continue }
             if target.baselineFingerprint == nil {
@@ -457,14 +460,21 @@ final class PickyAnnotationSceneMonitor {
                     invalidationProfile: invalidationProfile
                 )
             }
+            let stableFraction = PickyAnnotationSceneVisualPolicy.structuralStableFraction(
+                baseline: baselineFingerprint,
+                current: current,
+                normalizedRegions: target.normalizedRegions
+            )
             comparisonMilliseconds += (CFAbsoluteTimeGetCurrent() - comparisonStartedAt) * 1_000
             observations.append(observation)
+            minStableFraction = Swift.min(minStableFraction ?? stableFraction, stableFraction)
         }
         return VisualSample(
             observation: Self.aggregate(observations),
             invalidationProfile: invalidationProfile,
             captureMilliseconds: captureMilliseconds,
-            comparisonMilliseconds: comparisonMilliseconds
+            comparisonMilliseconds: comparisonMilliseconds,
+            stableFraction: minStableFraction
         )
     }
 
@@ -568,6 +578,7 @@ final class PickyAnnotationSceneMonitor {
         compareMilliseconds: Double,
         metrics: PickyAnnotationSceneDifferenceMetrics?,
         invalidationProfile: PickyAnnotationSceneInvalidationProfile,
+        stableFraction: Double?,
         totalStartedAt: CFAbsoluteTime
     ) {
         let totalMilliseconds = (CFAbsoluteTimeGetCurrent() - totalStartedAt) * 1_000
@@ -575,7 +586,8 @@ final class PickyAnnotationSceneMonitor {
         let globalMean = metrics.map { String(format: "%.2f", $0.globalMeanDifference) } ?? "n/a"
         let roiChanged = metrics?.roiChangedFraction.map { String(format: "%.3f", $0) } ?? "n/a"
         let roiMean = metrics?.roiMeanDifference.map { String(format: "%.2f", $0) } ?? "n/a"
-        let message = "sample context=\(session.identity.contextID) phase=\(session.phase.rawValue) profile=\(invalidationProfile.rawValue) outcome=\(outcome) count=\(session.sampleCount) captureMs=\(String(format: "%.2f", captureMilliseconds)) compareMs=\(String(format: "%.2f", compareMilliseconds)) totalMs=\(String(format: "%.2f", totalMilliseconds)) globalChanged=\(globalChanged) globalMean=\(globalMean) roiChanged=\(roiChanged) roiMean=\(roiMean)"
+        let stable = stableFraction.map { String(format: "%.3f", $0) } ?? "n/a"
+        let message = "sample context=\(session.identity.contextID) phase=\(session.phase.rawValue) profile=\(invalidationProfile.rawValue) outcome=\(outcome) count=\(session.sampleCount) captureMs=\(String(format: "%.2f", captureMilliseconds)) compareMs=\(String(format: "%.2f", compareMilliseconds)) totalMs=\(String(format: "%.2f", totalMilliseconds)) globalChanged=\(globalChanged) globalMean=\(globalMean) roiChanged=\(roiChanged) roiMean=\(roiMean) stableFraction=\(stable)"
         switch session.phase {
         case .validating, .suspended:
             PickyLog.noticeRateLimited(

@@ -5,6 +5,7 @@ import { stat } from "node:fs/promises";
 import { extractChangedFilesFromExplicitText, extractSessionLinkArtifacts } from "./artifact-store.js";
 import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
+import { TerminalManualCompactionCoordinator } from "./application/terminal-manual-compaction.js";
 import { makeAnnotationOverlayRequestForContext, makePointerOverlayRequestForContext, type MainTurnOverlayContext } from "./application/overlay-context-resolver.js";
 import { MainVisualNarrationCoordinator } from "./application/main-visual-narration-coordinator.js";
 import { awaitPendingRuntimeHandle, createPendingRuntimeHandle } from "./application/pending-runtime-handle.js";
@@ -37,7 +38,7 @@ import { isTransientAgentBusyError } from "./domain/transient-runtime-error.js";
 import { titleFromContext } from "./domain/session-title.js";
 import { normalizeOptionalString } from "./domain/strings.js";
 import { appendLiveBashOutput, formatUserBashFailureSystemMessage, formatUserBashRunningSystemMessage, formatUserBashSystemMessage, parseUserBashInput, userBashSummary, type UserBashInput } from "./domain/user-bash-format.js";
-import { isCompactSlashCommand, isNonSkillSlashCommand, isNoTurnStateRestoringSlashCommand, isReloadSlashCommand, normalizeSlashCommands } from "./domain/slash-commands.js";
+import { isNonSkillSlashCommand, isNoTurnStateRestoringSlashCommand, isReloadSlashCommand, normalizeSlashCommands } from "./domain/slash-commands.js";
 import { appendUniqueLog, hasPickleSessionMarkerLog, piSessionFilePathForSession, piSessionFilePathFromLogLine, withPiSessionFileFromLogs } from "./domain/pi-session-files.js";
 import { buildPinnedPickleSessionLogs, piSessionFilePathFromHandoffTranscript, titleForEmptyPickleSession } from "./domain/pickle-handoff-context.js";
 import { extractPickyPromptUserInstruction, queueTextMatchesUserText } from "./domain/queue-policy.js";
@@ -163,7 +164,6 @@ export class SessionSupervisor extends EventEmitter {
   private pendingRuntimeHandles = new Map<string, Promise<RuntimeSessionHandle>>();
   private pendingRuntimeAbortControllers = new Map<string, AbortController>();
   private pendingAbortOperations = new Map<string, Promise<PickyAgentSession>>();
-  private pendingTerminalManualCompactions = new Map<string, Promise<void>>();
   private sessionSeq = new Map<string, number>();
   private queueUpdateChains = new Map<string, Promise<void>>();
   private activityUpdateChains = new Map<string, Promise<void>>();
@@ -198,7 +198,7 @@ export class SessionSupervisor extends EventEmitter {
   private patchChains = new Map<string, Promise<void>>();
   private mainStateWriteChain = Promise.resolve();
   private readonly terminalSessionCoordinator: TerminalSessionCoordinator;
-
+  private readonly terminalManualCompactionCoordinator: TerminalManualCompactionCoordinator;
   constructor(private readonly runtime: AgentRuntime, private readonly store: SessionStore, private readonly options: SessionSupervisorOptions = {}) {
     super();
     this.mainVisualNarration = new MainVisualNarrationCoordinator({
@@ -273,8 +273,15 @@ export class SessionSupervisor extends EventEmitter {
       },
       messageBuilder: this.messageBuilder,
     });
+    this.terminalManualCompactionCoordinator = new TerminalManualCompactionCoordinator({
+      sessionStatus: (sessionId) => this.mustGet(sessionId).status,
+      cancelPendingExtensionUi: (sessionId, handle) => this.cancelPendingExtensionUiForUserInput(sessionId, handle),
+      resetAssistantDraft: (sessionId) => this.runtimeEventHandler.resetAssistantDraft(sessionId),
+      beginTerminalManualCompaction: (sessionId, status) => this.runtimeEventHandler.beginManualTerminalCompaction(sessionId, status),
+      clearTerminalManualCompaction: (sessionId) => this.runtimeEventHandler.clearManualTerminalCompaction(sessionId), finishTerminalManualCompaction: (sessionId) => this.runtimeEventHandler.finishManualTerminalCompaction(sessionId),
+      waitForRuntimeEvents: (sessionId) => this.waitForRuntimeEvents(sessionId),
+    });
   }
-
   async load(): Promise<void> {
     this.mainState = normalizeMainAgentState(await this.store.loadMainAgentState());
     const persisted = await this.store.loadAll();
@@ -2157,38 +2164,7 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   private async executeCompactCommandIfSupported(sessionId: string, text: string, handle: RuntimeSessionHandle): Promise<boolean> {
-    if (!isCompactSlashCommand(text) || !handle.compact) return false;
-    if (this.pendingTerminalManualCompactions.has(sessionId)) {
-      throw new Error("Manual compaction is already in progress");
-    }
-    const terminalStatus = this.mustGet(sessionId).status;
-    const restoresTerminalStatus = terminalStatus === "cancelled" || terminalStatus === "failed";
-    // Reserve before the first await so concurrent WebSocket commands cannot both pass the
-    // terminal-state check while extension UI cleanup is suspended.
-    const reservation = restoresTerminalStatus ? Promise.resolve() : undefined;
-    if (reservation) this.pendingTerminalManualCompactions.set(sessionId, reservation);
-    try {
-      await this.cancelPendingExtensionUiForUserInput(sessionId, handle);
-      this.runtimeEventHandler.resetAssistantDraft(sessionId);
-      const customInstructions = text.trim().replace(/^\/compact\s*/, "").trim() || undefined;
-      if (restoresTerminalStatus) this.runtimeEventHandler.beginManualTerminalCompaction(sessionId, terminalStatus);
-      logAgentd("compact requested", {
-        sessionId,
-        wasStreaming: handle.isStreaming,
-        instructionChars: customInstructions?.length ?? 0,
-      });
-      await handle.compact(customInstructions);
-      await this.waitForRuntimeEvents(sessionId);
-    } catch (error) {
-      if (restoresTerminalStatus) this.runtimeEventHandler.clearManualTerminalCompaction(sessionId);
-      throw error;
-    } finally {
-      if (reservation && this.pendingTerminalManualCompactions.get(sessionId) === reservation) {
-        this.pendingTerminalManualCompactions.delete(sessionId);
-        this.runtimeEventHandler.finishManualTerminalCompaction(sessionId);
-      }
-    }
-    return true;
+    return await this.terminalManualCompactionCoordinator.execute(sessionId, text, handle);
   }
 
   private async cancelPendingExtensionUiForUserInput(sessionId: string, handle: RuntimeSessionHandle): Promise<void> {
@@ -2722,11 +2698,8 @@ export class SessionSupervisor extends EventEmitter {
   private async performAbort(sessionId: string): Promise<PickyAgentSession> {
     const beforeAbort = this.mustGet(sessionId);
     if (beforeAbort.archived === true) throw new Error("Cannot abort an archived session");
-    if (this.pendingTerminalManualCompactions.has(sessionId)) {
-      this.runtimeEventHandler.suppressManualTerminalCompaction(sessionId);
-    } else {
-      this.runtimeEventHandler.clearManualTerminalCompaction(sessionId);
-    }
+    if (this.terminalManualCompactionCoordinator.hasPending(sessionId)) this.runtimeEventHandler.suppressManualTerminalCompaction(sessionId);
+    else this.runtimeEventHandler.clearManualTerminalCompaction(sessionId);
     const handle = this.runtimeHandles.get(sessionId);
     const cancellationMessagesBefore = countSystemMessages(beforeAbort, "Cancelled by user");
     logAgentd("abort requested", { sessionId, hasHandle: Boolean(handle) });

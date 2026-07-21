@@ -41,7 +41,7 @@ import { isCompactSlashCommand, isNonSkillSlashCommand, isNoTurnStateRestoringSl
 import { appendUniqueLog, hasPickleSessionMarkerLog, piSessionFilePathForSession, piSessionFilePathFromLogLine, withPiSessionFileFromLogs } from "./domain/pi-session-files.js";
 import { buildPinnedPickleSessionLogs, piSessionFilePathFromHandoffTranscript, titleForEmptyPickleSession } from "./domain/pickle-handoff-context.js";
 import { extractPickyPromptUserInstruction, queueTextMatchesUserText } from "./domain/queue-policy.js";
-import { MAIN_AGENT_COMPACT_IDLE_MS, MAIN_AGENT_COMPACT_SUMMARY_LIMIT, MAIN_AGENT_MESSAGE_LIMIT, MAIN_AGENT_RESTART_TEARDOWN_SESSION_BYTES, MAIN_AGENT_ROLLOVER_CONTEXT_PERCENT, MAIN_AGENT_ROLLOVER_TURN_LIMIT, MAIN_AGENT_SUMMARY_MESSAGE_LIMIT, MAIN_AGENT_SUMMARY_PICKLE_SESSION_LIMIT, normalizeMainAgentState, quickReplyOriginFromContextSource, truncateMainSummaryText, type QuickReplyMetadata } from "./domain/main-agent-policy.js";
+import { buildMainAgentRolloverSummary, MAIN_AGENT_COMPACT_IDLE_MS, MAIN_AGENT_MESSAGE_LIMIT, MAIN_AGENT_RESTART_TEARDOWN_SESSION_BYTES, MAIN_AGENT_SUMMARY_PICKLE_SESSION_LIMIT, mainRolloverReason, normalizeMainAgentState, quickReplyOriginFromContextSource, type MainRolloverPickleSession, type QuickReplyMetadata } from "./domain/main-agent-policy.js";
 import type { ToolCategory } from "./domain/tool-categorizer.js";
 import { logAgentd } from "./local-log.js";
 import { SessionMessageBuilder } from "./session-message-builder.js";
@@ -111,13 +111,11 @@ export class SessionSupervisor extends EventEmitter {
   private mainState: PickyMainAgentState = { messages: [] };
   private mainReplyContextId = "main";
   private mainIsProcessing = false;
-  // Idle-triggered in-place compaction. The timer is (re)armed whenever a main turn
-  // settles and a rollover threshold is met, and cancelled on any fresh activity, so
-  // compaction only ever runs after the user has been quiet for the idle window.
+  // Idle-triggered in-place compaction: timer (re)armed on turn settle when a threshold is met,
+  // cancelled on fresh activity, so compaction only runs after the idle window of quiet.
   private mainCompactionIdleTimer?: ReturnType<typeof setTimeout>;
-  // True while `handle.compact()` is in flight. User input that arrives during this
-  // window is buffered (FIFO) and delivered once compaction settles, so a compaction
-  // never swallows a user message.
+  // True while `handle.compact()` is in flight; input that arrives is buffered (FIFO) and
+  // delivered once compaction settles, so a compaction never swallows a user message.
   private mainInFlightCompaction = false;
   private mainPendingCompactionContexts: PickyContextPacket[] = [];
   // Pi emits both `turn_end` and `agent_end` for a single agent run, both of which
@@ -1193,10 +1191,9 @@ export class SessionSupervisor extends EventEmitter {
 
   private async routeThroughMainAgent(context: PickyContextPacket): Promise<void> {
     logAgentd("main route requested", { contextId: context.id, source: context.source, transcriptChars: context.transcript?.length });
-    // Fresh activity: cancel any pending idle compaction so it never fires mid-use.
+    // Fresh activity cancels any pending idle compaction; input during an in-flight compaction is
+    // buffered and delivered once it settles (drainMainPendingInput) instead of interrupting it.
     this.cancelMainIdleCompaction();
-    // If an in-place compaction is running, buffer the input and deliver it once the
-    // compaction settles (drainMainPendingInput) instead of interrupting the compaction.
     if (this.mainInFlightCompaction || this.mainHandle?.isCompacting === true) {
       this.mainPendingCompactionContexts.push(context);
       logAgentd("main input buffered during compaction", { contextId: context.id, queued: this.mainPendingCompactionContexts.length });
@@ -1235,29 +1232,25 @@ export class SessionSupervisor extends EventEmitter {
     }
   }
 
-  // Threshold-triggered in-place compaction. Unlike a session teardown, `handle.compact()`
-  // keeps the same Pi runtime/session alive (no session_shutdown), so extension in-memory
-  // state such as scheduled `delay` timers survives. Only fires from the idle timer, never
-  // mid-turn, so active use is never interrupted.
+  // Threshold-triggered in-place compaction. `handle.compact()` keeps the same Pi session/process
+  // alive (no session_shutdown), so extension in-memory state such as scheduled `delay` timers
+  // survives. Only fires from the idle timer, never mid-turn, so active use is never interrupted.
   private async runMainIdleCompaction(): Promise<void> {
     this.mainCompactionIdleTimer = undefined;
     if (!this.options.mainRuntime || this.mainIsProcessing || this.mainInFlightCompaction) return;
-    const reason = this.mainRolloverReason();
+    const reason = mainRolloverReason(this.mainState);
     if (!reason) return;
     const handle = this.mainHandle;
-    // Without a live handle that supports compact there is nothing to compact in place;
-    // disk growth is still bounded by the restart teardown, so skip quietly here.
+    // No live compact-capable handle: skip; restart teardown still bounds disk growth.
     if (!handle?.compact || handle.isCompacting === true) return;
-    const summary = this.buildMainAgentRolloverSummary(reason);
+    const summary = buildMainAgentRolloverSummary(reason, this.mainState, this.mainRolloverPickleSessions());
     const now = new Date().toISOString();
     logAgentd("main idle compaction", { reason, messages: this.mainState.messages.length, turns: this.mainState.epochTurnCount ?? 0 });
     this.mainInFlightCompaction = true;
     try {
       await handle.compact();
-      // Reset only the epoch counters so the threshold does not immediately re-fire. The
-      // Pi session, its file, and the message mirror stay intact. contextUsage is cleared
-      // by the compactionCompleted runtime event. The rebuilt summary is stored so the
-      // eventual restart teardown carries fresh context.
+      // Reset only epoch counters so the threshold does not immediately re-fire; the Pi session,
+      // its file, and the message mirror stay intact. contextUsage is cleared by compactionCompleted.
       await this.patchMainState({
         compactSummary: summary,
         epochStartedAt: now,
@@ -1276,7 +1269,7 @@ export class SessionSupervisor extends EventEmitter {
   private scheduleMainIdleCompaction(): void {
     this.cancelMainIdleCompaction();
     if (!this.options.mainRuntime || this.mainInFlightCompaction || this.mainIsProcessing) return;
-    if (!this.mainRolloverReason()) return;
+    if (!mainRolloverReason(this.mainState)) return;
     const idleMs = this.options.mainCompactionIdleMs ?? MAIN_AGENT_COMPACT_IDLE_MS;
     this.mainCompactionIdleTimer = setTimeout(() => {
       void this.runMainIdleCompaction();
@@ -1289,8 +1282,7 @@ export class SessionSupervisor extends EventEmitter {
     this.mainCompactionIdleTimer = undefined;
   }
 
-  // Deliver one buffered input that arrived while a compaction was in flight. Runs one at a
-  // time; the next item drains when that turn settles, preserving order without interrupts.
+  // Deliver one buffered input that arrived during a compaction; the next drains on turn settle.
   private drainMainPendingInput(): void {
     if (this.mainInFlightCompaction || this.mainIsProcessing || this.mainHandle?.isCompacting === true) return;
     const next = this.mainPendingCompactionContexts.shift();
@@ -1301,25 +1293,20 @@ export class SessionSupervisor extends EventEmitter {
     });
   }
 
-  // On daemon/app restart we deliberately do NOT resume the (possibly large, repeatedly
-  // in-place-compacted) main Pi session file. In-memory session state is already gone with the
-  // old process, so resuming would only carry unbounded on-disk history forward. Instead we
-  // tear down: clear sessionFilePath so the next handle starts a fresh session file, and carry
-  // a compact summary as a bootstrap memo. This bounds long-lived main-session disk growth.
+  // On restart, tear down a bloated main Pi session file (clear sessionFilePath so the next handle
+  // starts fresh, carry a summary memo) to bound disk growth; short sessions resume normally.
   private async rolloverMainAgentForRestart(): Promise<void> {
     const sessionFilePath = this.mainState.sessionFilePath?.trim();
     if (!this.options.mainRuntime || !sessionFilePath) return;
-    // Only long-lived sessions (whose on-disk file bloated from repeated in-place compactions)
-    // are torn down. A short session resumes normally, so a quick restart keeps full context.
     let sessionFileBytes: number;
     try {
       sessionFileBytes = (await stat(sessionFilePath)).size;
     } catch {
-      return; // Missing/unreadable file: nothing to bound here; the resume path handles it.
+      return; // Missing/unreadable file: nothing to bound; the resume path handles it.
     }
     if (sessionFileBytes < MAIN_AGENT_RESTART_TEARDOWN_SESSION_BYTES) return;
     const reason = "restart";
-    const summary = this.buildMainAgentRolloverSummary(reason);
+    const summary = buildMainAgentRolloverSummary(reason, this.mainState, this.mainRolloverPickleSessions());
     const now = new Date().toISOString();
     logAgentd("main restart teardown", { previousSessionFilePath: this.mainState.sessionFilePath, turns: this.mainState.epochTurnCount ?? 0, summaryChars: summary.length });
     await this.patchMainState({
@@ -1333,43 +1320,13 @@ export class SessionSupervisor extends EventEmitter {
     });
   }
 
-  private mainRolloverReason(): string | undefined {
-    const turns = this.mainState.epochTurnCount ?? 0;
-    if (turns >= MAIN_AGENT_ROLLOVER_TURN_LIMIT) return `turn-limit:${turns}`;
-    const percent = this.mainState.contextUsage?.percent;
-    if (typeof percent === "number" && Number.isFinite(percent) && percent >= MAIN_AGENT_ROLLOVER_CONTEXT_PERCENT) return `context:${Math.round(percent)}%`;
-    return undefined;
-  }
-
-  private buildMainAgentRolloverSummary(reason: string): string {
-    const lines = [
-      `Rollover reason: ${reason}`,
-      `Previous epoch turns: ${this.mainState.epochTurnCount ?? 0}`,
-    ];
-    const previousSummary = this.mainState.compactSummary?.trim();
-    if (previousSummary) {
-      lines.push("", "Prior rollover summary:", truncateMainSummaryText(previousSummary, 1_200));
-    }
-    const recentMessages = this.mainState.messages.slice(-MAIN_AGENT_SUMMARY_MESSAGE_LIMIT);
-    if (recentMessages.length > 0) {
-      lines.push("", "Recent visible Picky messages:");
-      for (const message of recentMessages) {
-        const role = message.role === "user" ? "User" : "Picky";
-        lines.push(`- ${role}: ${truncateMainSummaryText(message.text, 360)}`);
-      }
-    }
-    const pickleSessions = [...this.pickleSessionIds]
+  private mainRolloverPickleSessions(): MainRolloverPickleSession[] {
+    return [...this.pickleSessionIds]
       .map((sessionId) => this.sessions.get(sessionId))
       .filter((session): session is PickyAgentSession => Boolean(session))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-      .slice(0, MAIN_AGENT_SUMMARY_PICKLE_SESSION_LIMIT);
-    if (pickleSessions.length > 0) {
-      lines.push("", "Recent Pickle sessions:");
-      for (const session of pickleSessions) {
-        lines.push(`- ${session.id} | ${session.title} | status=${session.status}`);
-      }
-    }
-    return truncateMainSummaryText(lines.join("\n"), MAIN_AGENT_COMPACT_SUMMARY_LIMIT);
+      .slice(0, MAIN_AGENT_SUMMARY_PICKLE_SESSION_LIMIT)
+      .map((session) => ({ id: session.id, title: session.title, status: session.status }));
   }
 
   private async deliverMainPrompt(handle: RuntimeSessionHandle, prompt: ReturnType<typeof buildMainAgentPrompt>): Promise<void> {
@@ -1550,8 +1507,7 @@ export class SessionSupervisor extends EventEmitter {
     }
     if (event.type === "context_usage") {
       await this.patchMainState({ contextUsage: event.usage });
-      // If usage just crossed the threshold while idle, arm the idle-compaction timer.
-      // No-ops mid-turn (guarded on mainIsProcessing); the turn-completion path re-arms.
+      // Arm the idle timer if usage just crossed the threshold; no-ops mid-turn, re-armed on settle.
       this.scheduleMainIdleCompaction();
       return;
     }
@@ -1711,8 +1667,7 @@ export class SessionSupervisor extends EventEmitter {
         this.schedulePickleCompletionDrain();
         this.mainVisualNarration.reset();
         this.mainAssistantDeltaSeen = false;
-        // Deliver any input buffered during a compaction, then re-arm the idle-compaction
-        // timer if a rollover threshold is now met. Both no-op when not applicable.
+        // Drain input buffered during a compaction, then re-arm the idle timer if a threshold is met.
         this.drainMainPendingInput();
         this.scheduleMainIdleCompaction();
       }

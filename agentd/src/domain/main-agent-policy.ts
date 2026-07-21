@@ -31,6 +31,41 @@ export function truncateMainSummaryText(value: string, maxChars: number): string
   return `${sliceUtf16Safe(normalized, Math.max(0, maxChars - 1))}…`;
 }
 
+export interface MainRolloverPickleSession {
+  id: string;
+  title: string;
+  status: string;
+}
+
+// Returns the reason a threshold-triggered main rollover should fire, or undefined if none.
+export function mainRolloverReason(state: PickyMainAgentState): string | undefined {
+  const turns = state.epochTurnCount ?? 0;
+  if (turns >= MAIN_AGENT_ROLLOVER_TURN_LIMIT) return `turn-limit:${turns}`;
+  const percent = state.contextUsage?.percent;
+  if (typeof percent === "number" && Number.isFinite(percent) && percent >= MAIN_AGENT_ROLLOVER_CONTEXT_PERCENT) return `context:${Math.round(percent)}%`;
+  return undefined;
+}
+
+// Builds the carried-forward memo (recent messages + Pickle sessions) for a main rollover.
+export function buildMainAgentRolloverSummary(reason: string, state: PickyMainAgentState, pickleSessions: readonly MainRolloverPickleSession[]): string {
+  const lines = [`Rollover reason: ${reason}`, `Previous epoch turns: ${state.epochTurnCount ?? 0}`];
+  const previousSummary = state.compactSummary?.trim();
+  if (previousSummary) lines.push("", "Prior rollover summary:", truncateMainSummaryText(previousSummary, 1_200));
+  const recentMessages = state.messages.slice(-MAIN_AGENT_SUMMARY_MESSAGE_LIMIT);
+  if (recentMessages.length > 0) {
+    lines.push("", "Recent visible Picky messages:");
+    for (const message of recentMessages) {
+      const role = message.role === "user" ? "User" : "Picky";
+      lines.push(`- ${role}: ${truncateMainSummaryText(message.text, 360)}`);
+    }
+  }
+  if (pickleSessions.length > 0) {
+    lines.push("", "Recent Pickle sessions:");
+    for (const session of pickleSessions) lines.push(`- ${session.id} | ${session.title} | status=${session.status}`);
+  }
+  return truncateMainSummaryText(lines.join("\n"), MAIN_AGENT_COMPACT_SUMMARY_LIMIT);
+}
+
 export function quickReplyOriginFromContextSource(source: string | undefined): QuickReplyMetadata["originSource"] {
   switch (source) {
     case "voice":

@@ -451,23 +451,25 @@ final class PickyAnnotationSceneMonitor {
                   !Task.isCancelled else {
                 throw CancellationError()
             }
+            // The comparison is pure array math over Sendable fingerprints; run it off the main
+            // actor so structural analysis never blocks UI during rapid screen-transition polling.
+            let regions = target.normalizedRegions
             let comparisonStartedAt = CFAbsoluteTimeGetCurrent()
-            let observation = PickyPerf.interval("annotation_scene_compare") {
-                PickyAnnotationSceneVisualPolicy.compare(
-                    baseline: baselineFingerprint,
-                    current: current,
-                    normalizedRegions: target.normalizedRegions,
-                    invalidationProfile: invalidationProfile
-                )
-            }
-            let stableFraction = PickyAnnotationSceneVisualPolicy.structuralStableFraction(
-                baseline: baselineFingerprint,
-                current: current,
-                normalizedRegions: target.normalizedRegions
-            )
+            let result = await Task.detached(priority: .utility) {
+                PickyPerf.interval("annotation_scene_compare") {
+                    PickyAnnotationSceneVisualPolicy.evaluate(
+                        baseline: baselineFingerprint,
+                        current: current,
+                        normalizedRegions: regions,
+                        invalidationProfile: invalidationProfile
+                    )
+                }
+            }.value
             comparisonMilliseconds += (CFAbsoluteTimeGetCurrent() - comparisonStartedAt) * 1_000
-            observations.append(observation)
-            minStableFraction = Swift.min(minStableFraction ?? stableFraction, stableFraction)
+            observations.append(result.observation)
+            if let stableFraction = result.stableFraction {
+                minStableFraction = Swift.min(minStableFraction ?? stableFraction, stableFraction)
+            }
         }
         return VisualSample(
             observation: Self.aggregate(observations),
@@ -1231,6 +1233,12 @@ final class PickyScreenCaptureAnnotationSceneCapturer: PickyAnnotationSceneSnaps
         return fingerprint
     }
 
+    /// The captured CGImage is immutable and only read; boxing lets the resample + edge-mask
+    /// derivation run off the main actor without a data race.
+    private struct CapturedImage: @unchecked Sendable {
+        let image: CGImage
+    }
+
     private func fingerprint(
         contentFilter: SCContentFilter,
         configuration: SCStreamConfiguration
@@ -1239,14 +1247,16 @@ final class PickyScreenCaptureAnnotationSceneCapturer: PickyAnnotationSceneSnaps
             contentFilter: contentFilter,
             configuration: configuration
         )
-        guard let fingerprint = PickyAnnotationSceneFingerprint.make(
-            from: image,
-            width: configuration.width,
-            height: configuration.height
-        ) else {
+        let captured = CapturedImage(image: image)
+        let width = configuration.width
+        let height = configuration.height
+        let made = await Task.detached(priority: .utility) {
+            PickyAnnotationSceneFingerprint.make(from: captured.image, width: width, height: height)
+        }.value
+        guard let made else {
             throw PickyAnnotationSceneCaptureError.fingerprintCreationFailed
         }
-        return fingerprint
+        return made
     }
 
     private func regionConfiguration(

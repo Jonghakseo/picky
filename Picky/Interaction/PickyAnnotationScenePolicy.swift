@@ -235,6 +235,24 @@ enum PickyAnnotationSceneVisualPolicy {
         normalizedRegions: [CGRect],
         invalidationProfile: PickyAnnotationSceneInvalidationProfile = .strict
     ) -> PickyAnnotationSceneVisualObservation {
+        evaluate(
+            baseline: baseline,
+            current: current,
+            normalizedRegions: normalizedRegions,
+            invalidationProfile: invalidationProfile
+        ).observation
+    }
+
+    /// Single-pass evaluation returning the observation plus, on the `.strict` restoration path,
+    /// the structural stable fraction for logging. It is pure array math over `Sendable` inputs
+    /// and is deliberately safe to run off the main actor. Structural analysis runs only on the
+    /// `.strict` path (once), so narration/semantic samples stay cheap.
+    static func evaluate(
+        baseline: PickyAnnotationSceneFingerprint,
+        current: PickyAnnotationSceneFingerprint,
+        normalizedRegions: [CGRect],
+        invalidationProfile: PickyAnnotationSceneInvalidationProfile = .strict
+    ) -> (observation: PickyAnnotationSceneVisualObservation, stableFraction: Double?) {
         guard baseline.width == current.width,
               baseline.height == current.height,
               baseline.luminance.count == current.luminance.count else {
@@ -244,7 +262,7 @@ enum PickyAnnotationSceneVisualPolicy {
                 roiChangedFraction: normalizedRegions.isEmpty ? nil : 1,
                 roiMeanDifference: normalizedRegions.isEmpty ? nil : 255
             )
-            return .mismatching(metrics)
+            return (.mismatching(metrics), nil)
         }
 
         let regionIndexes = pixelIndexes(
@@ -278,7 +296,7 @@ enum PickyAnnotationSceneVisualPolicy {
         let globalMismatches = global.changedFraction >= invalidationProfile.mismatchingGlobalChangedFraction
             || global.meanDifference >= invalidationProfile.mismatchingGlobalMeanDifference
         if roiMismatches || globalMismatches {
-            return .mismatching(metrics)
+            return (.mismatching(metrics), nil)
         }
 
         let roiMatches = roi.map {
@@ -290,12 +308,12 @@ enum PickyAnnotationSceneVisualPolicy {
 
         // Structural persistence gates only the visual restoration polling path (.strict).
         // Narration (.lenient) keeps its bounded-drift tolerance and scroll/app (.semantic)
-        // stays luminance-only, both by design.
+        // stays luminance-only, both by design, so they skip structural analysis entirely.
         if invalidationProfile != .strict {
-            if roiMatches && globalMatches {
-                return .matching(metrics)
-            }
-            return .indeterminate(metrics)
+            let observation: PickyAnnotationSceneVisualObservation = (roiMatches && globalMatches)
+                ? .matching(metrics)
+                : .indeterminate(metrics)
+            return (observation, nil)
         }
 
         let structural = structuralAnalysis(
@@ -304,36 +322,21 @@ enum PickyAnnotationSceneVisualPolicy {
             normalizedRegions: normalizedRegions
         )
         let luminanceMatches = roiMatches && globalMatches
-
-        // A moved anchor whose luminance drift exceeds the bounded allowance breaks outright.
+        let observation: PickyAnnotationSceneVisualObservation
         if structural.anchorBroke {
-            return .mismatching(metrics)
+            // A moved anchor whose luminance drift exceeds the bounded allowance breaks outright.
+            observation = .mismatching(metrics)
+        } else if !structural.hasEvidence {
+            // Too little distributed structure to judge a layout change: defer to luminance.
+            observation = luminanceMatches ? .matching(metrics) : .indeterminate(metrics)
+        } else if structural.stableFraction >= restoreFloor && structural.anchorStructurallyStable {
+            observation = .matching(metrics)
+        } else if structural.stableFraction < breakFloor {
+            observation = .mismatching(metrics)
+        } else {
+            observation = .indeterminate(metrics)
         }
-        // Too little distributed structure to judge a layout change: defer to luminance.
-        if !structural.hasEvidence {
-            return luminanceMatches ? .matching(metrics) : .indeterminate(metrics)
-        }
-        if structural.stableFraction >= restoreFloor && structural.anchorStructurallyStable {
-            return .matching(metrics)
-        }
-        if structural.stableFraction < breakFloor {
-            return .mismatching(metrics)
-        }
-        return .indeterminate(metrics)
-    }
-
-    static func structuralStableFraction(
-        baseline: PickyAnnotationSceneFingerprint,
-        current: PickyAnnotationSceneFingerprint,
-        normalizedRegions: [CGRect]
-    ) -> Double {
-        guard baseline.width == current.width,
-              baseline.height == current.height else { return 0 }
-        return structuralAnalysis(
-            baseline: baseline,
-            current: current,
-            normalizedRegions: normalizedRegions
-        ).stableFraction
+        return (observation, structural.stableFraction)
     }
 
     private static func structuralAnalysis(

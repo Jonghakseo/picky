@@ -1,6 +1,7 @@
 /* eslint-disable max-lines -- SessionSupervisor remains the single mutable session owner; scripts/check-architecture-rules.js enforces its no-growth ratchet. */
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
+import { stat } from "node:fs/promises";
 import { extractChangedFilesFromExplicitText, extractSessionLinkArtifacts } from "./artifact-store.js";
 import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
@@ -40,7 +41,7 @@ import { isCompactSlashCommand, isNonSkillSlashCommand, isNoTurnStateRestoringSl
 import { appendUniqueLog, hasPickleSessionMarkerLog, piSessionFilePathForSession, piSessionFilePathFromLogLine, withPiSessionFileFromLogs } from "./domain/pi-session-files.js";
 import { buildPinnedPickleSessionLogs, piSessionFilePathFromHandoffTranscript, titleForEmptyPickleSession } from "./domain/pickle-handoff-context.js";
 import { extractPickyPromptUserInstruction, queueTextMatchesUserText } from "./domain/queue-policy.js";
-import { MAIN_AGENT_COMPACT_SUMMARY_LIMIT, MAIN_AGENT_MESSAGE_LIMIT, MAIN_AGENT_ROLLOVER_CONTEXT_PERCENT, MAIN_AGENT_ROLLOVER_TURN_LIMIT, MAIN_AGENT_SUMMARY_MESSAGE_LIMIT, MAIN_AGENT_SUMMARY_PICKLE_SESSION_LIMIT, normalizeMainAgentState, quickReplyOriginFromContextSource, truncateMainSummaryText, type QuickReplyMetadata } from "./domain/main-agent-policy.js";
+import { MAIN_AGENT_COMPACT_IDLE_MS, MAIN_AGENT_COMPACT_SUMMARY_LIMIT, MAIN_AGENT_MESSAGE_LIMIT, MAIN_AGENT_RESTART_TEARDOWN_SESSION_BYTES, MAIN_AGENT_ROLLOVER_CONTEXT_PERCENT, MAIN_AGENT_ROLLOVER_TURN_LIMIT, MAIN_AGENT_SUMMARY_MESSAGE_LIMIT, MAIN_AGENT_SUMMARY_PICKLE_SESSION_LIMIT, normalizeMainAgentState, quickReplyOriginFromContextSource, truncateMainSummaryText, type QuickReplyMetadata } from "./domain/main-agent-policy.js";
 import type { ToolCategory } from "./domain/tool-categorizer.js";
 import { logAgentd } from "./local-log.js";
 import { SessionMessageBuilder } from "./session-message-builder.js";
@@ -61,6 +62,9 @@ interface SessionSupervisorOptions {
   sessionIdFactory?: () => string;
   // Defaults to 1s; tests may lower it to avoid waiting on real-time intervals.
   userBashLiveUpdateIntervalMs?: number;
+  // Idle window before a threshold-triggered in-place main compaction runs. Defaults to
+  // MAIN_AGENT_COMPACT_IDLE_MS; tests lower it to avoid waiting on real-time timers.
+  mainCompactionIdleMs?: number;
   // Child daemons have no `mainRuntime` of their own, so they cannot followUp the main Picky
   // agent directly. When set, `deliverPickleCompletionToMain` falls back to this callback to
   // forward the prebuilt prompt through the Picky app to the primary daemon, which owns the
@@ -107,6 +111,15 @@ export class SessionSupervisor extends EventEmitter {
   private mainState: PickyMainAgentState = { messages: [] };
   private mainReplyContextId = "main";
   private mainIsProcessing = false;
+  // Idle-triggered in-place compaction. The timer is (re)armed whenever a main turn
+  // settles and a rollover threshold is met, and cancelled on any fresh activity, so
+  // compaction only ever runs after the user has been quiet for the idle window.
+  private mainCompactionIdleTimer?: ReturnType<typeof setTimeout>;
+  // True while `handle.compact()` is in flight. User input that arrives during this
+  // window is buffered (FIFO) and delivered once compaction settles, so a compaction
+  // never swallows a user message.
+  private mainInFlightCompaction = false;
+  private mainPendingCompactionContexts: PickyContextPacket[] = [];
   // Pi emits both `turn_end` and `agent_end` for a single agent run, both of which
   // normalize to `status:"completed"` (see pi-event-normalizer.ts). They arrive
   // back-to-back through the same fire-and-forget subscriber, and the first call's
@@ -334,6 +347,8 @@ export class SessionSupervisor extends EventEmitter {
         await this.tryResumeRuntimeHandle(session);
       }
     }
+    // Run after Pickle sessions are hydrated so the carried summary can reference them.
+    await this.rolloverMainAgentForRestart();
     await this.purgeStaleArchivedSessions();
   }
 
@@ -796,6 +811,9 @@ export class SessionSupervisor extends EventEmitter {
     this.interruptedMainInputIds.clear();
     if (this.pendingPickleCompletions.length > 0) logAgentd("Picky pending Pickle completions cleared", { count: this.pendingPickleCompletions.length });
     this.pendingPickleCompletions = [];
+    this.cancelMainIdleCompaction();
+    this.mainInFlightCompaction = false;
+    this.mainPendingCompactionContexts = [];
   }
 
   private async abortResetMainHandle(handle: RuntimeSessionHandle, label: string): Promise<void> {
@@ -1175,7 +1193,15 @@ export class SessionSupervisor extends EventEmitter {
 
   private async routeThroughMainAgent(context: PickyContextPacket): Promise<void> {
     logAgentd("main route requested", { contextId: context.id, source: context.source, transcriptChars: context.transcript?.length });
-    await this.maybeRolloverMainAgent(context);
+    // Fresh activity: cancel any pending idle compaction so it never fires mid-use.
+    this.cancelMainIdleCompaction();
+    // If an in-place compaction is running, buffer the input and deliver it once the
+    // compaction settles (drainMainPendingInput) instead of interrupting the compaction.
+    if (this.mainInFlightCompaction || this.mainHandle?.isCompacting === true) {
+      this.mainPendingCompactionContexts.push(context);
+      logAgentd("main input buffered during compaction", { contextId: context.id, queued: this.mainPendingCompactionContexts.length });
+      return;
+    }
     const generation = this.mainHandleGeneration;
     this.mainContext = context;
     this.mainContextGeneration += 1;
@@ -1209,20 +1235,95 @@ export class SessionSupervisor extends EventEmitter {
     }
   }
 
-  private async maybeRolloverMainAgent(context: PickyContextPacket): Promise<void> {
-    if (!this.options.mainRuntime || this.mainIsProcessing) return;
-    const reason = await this.mainRolloverReason();
+  // Threshold-triggered in-place compaction. Unlike a session teardown, `handle.compact()`
+  // keeps the same Pi runtime/session alive (no session_shutdown), so extension in-memory
+  // state such as scheduled `delay` timers survives. Only fires from the idle timer, never
+  // mid-turn, so active use is never interrupted.
+  private async runMainIdleCompaction(): Promise<void> {
+    this.mainCompactionIdleTimer = undefined;
+    if (!this.options.mainRuntime || this.mainIsProcessing || this.mainInFlightCompaction) return;
+    const reason = this.mainRolloverReason();
     if (!reason) return;
-
-    const currentHandle = this.mainHandle;
-    const pendingHandlePromise = this.mainHandlePromise;
+    const handle = this.mainHandle;
+    // Without a live handle that supports compact there is nothing to compact in place;
+    // disk growth is still bounded by the restart teardown, so skip quietly here.
+    if (!handle?.compact || handle.isCompacting === true) return;
     const summary = this.buildMainAgentRolloverSummary(reason);
     const now = new Date().toISOString();
-    logAgentd("main rollover", { reason, messages: this.mainState.messages.length, turns: this.mainState.epochTurnCount ?? 0, summaryChars: summary.length });
-    this.detachMainHandleForInterruption();
+    logAgentd("main idle compaction", { reason, messages: this.mainState.messages.length, turns: this.mainState.epochTurnCount ?? 0 });
+    this.mainInFlightCompaction = true;
+    try {
+      await handle.compact();
+      // Reset only the epoch counters so the threshold does not immediately re-fire. The
+      // Pi session, its file, and the message mirror stay intact. contextUsage is cleared
+      // by the compactionCompleted runtime event. The rebuilt summary is stored so the
+      // eventual restart teardown carries fresh context.
+      await this.patchMainState({
+        compactSummary: summary,
+        epochStartedAt: now,
+        epochTurnCount: 0,
+        lastRolloverAt: now,
+        lastRolloverReason: reason,
+      });
+    } catch (error) {
+      logAgentd("main idle compaction failed", { reason, error: error instanceof Error ? error.message : String(error) });
+    } finally {
+      this.mainInFlightCompaction = false;
+      this.drainMainPendingInput();
+    }
+  }
+
+  private scheduleMainIdleCompaction(): void {
+    this.cancelMainIdleCompaction();
+    if (!this.options.mainRuntime || this.mainInFlightCompaction || this.mainIsProcessing) return;
+    if (!this.mainRolloverReason()) return;
+    const idleMs = this.options.mainCompactionIdleMs ?? MAIN_AGENT_COMPACT_IDLE_MS;
+    this.mainCompactionIdleTimer = setTimeout(() => {
+      void this.runMainIdleCompaction();
+    }, idleMs);
+  }
+
+  private cancelMainIdleCompaction(): void {
+    if (!this.mainCompactionIdleTimer) return;
+    clearTimeout(this.mainCompactionIdleTimer);
+    this.mainCompactionIdleTimer = undefined;
+  }
+
+  // Deliver one buffered input that arrived while a compaction was in flight. Runs one at a
+  // time; the next item drains when that turn settles, preserving order without interrupts.
+  private drainMainPendingInput(): void {
+    if (this.mainInFlightCompaction || this.mainIsProcessing || this.mainHandle?.isCompacting === true) return;
+    const next = this.mainPendingCompactionContexts.shift();
+    if (!next) return;
+    logAgentd("main buffered input drained", { contextId: next.id, remaining: this.mainPendingCompactionContexts.length });
+    void this.routeThroughMainAgent(next).catch((error) => {
+      logAgentd("main buffered input route failed", { contextId: next.id, error: error instanceof Error ? error.message : String(error) });
+    });
+  }
+
+  // On daemon/app restart we deliberately do NOT resume the (possibly large, repeatedly
+  // in-place-compacted) main Pi session file. In-memory session state is already gone with the
+  // old process, so resuming would only carry unbounded on-disk history forward. Instead we
+  // tear down: clear sessionFilePath so the next handle starts a fresh session file, and carry
+  // a compact summary as a bootstrap memo. This bounds long-lived main-session disk growth.
+  private async rolloverMainAgentForRestart(): Promise<void> {
+    const sessionFilePath = this.mainState.sessionFilePath?.trim();
+    if (!this.options.mainRuntime || !sessionFilePath) return;
+    // Only long-lived sessions (whose on-disk file bloated from repeated in-place compactions)
+    // are torn down. A short session resumes normally, so a quick restart keeps full context.
+    let sessionFileBytes: number;
+    try {
+      sessionFileBytes = (await stat(sessionFilePath)).size;
+    } catch {
+      return; // Missing/unreadable file: nothing to bound here; the resume path handles it.
+    }
+    if (sessionFileBytes < MAIN_AGENT_RESTART_TEARDOWN_SESSION_BYTES) return;
+    const reason = "restart";
+    const summary = this.buildMainAgentRolloverSummary(reason);
+    const now = new Date().toISOString();
+    logAgentd("main restart teardown", { previousSessionFilePath: this.mainState.sessionFilePath, turns: this.mainState.epochTurnCount ?? 0, summaryChars: summary.length });
     await this.patchMainState({
       sessionFilePath: undefined,
-      cwd: context.cwd ?? this.mainState.cwd,
       compactSummary: summary,
       epochStartedAt: now,
       epochTurnCount: 0,
@@ -1230,20 +1331,9 @@ export class SessionSupervisor extends EventEmitter {
       lastRolloverReason: reason,
       contextUsage: undefined,
     });
-
-    if (currentHandle) await this.abortResetMainHandle(currentHandle, "main-rollover");
-    if (pendingHandlePromise) {
-      void pendingHandlePromise
-        .then(async (pendingHandle) => {
-          if (pendingHandle !== currentHandle) await this.abortResetMainHandle(pendingHandle, "main-rollover-pending");
-        })
-        .catch((error) => {
-          logAgentd("main rollover pending handle failed", { error: error instanceof Error ? error.message : String(error) });
-        });
-    }
   }
 
-  private async mainRolloverReason(): Promise<string | undefined> {
+  private mainRolloverReason(): string | undefined {
     const turns = this.mainState.epochTurnCount ?? 0;
     if (turns >= MAIN_AGENT_ROLLOVER_TURN_LIMIT) return `turn-limit:${turns}`;
     const percent = this.mainState.contextUsage?.percent;
@@ -1460,6 +1550,9 @@ export class SessionSupervisor extends EventEmitter {
     }
     if (event.type === "context_usage") {
       await this.patchMainState({ contextUsage: event.usage });
+      // If usage just crossed the threshold while idle, arm the idle-compaction timer.
+      // No-ops mid-turn (guarded on mainIsProcessing); the turn-completion path re-arms.
+      this.scheduleMainIdleCompaction();
       return;
     }
     if (event.type === "assistant_delta") {
@@ -1618,6 +1711,10 @@ export class SessionSupervisor extends EventEmitter {
         this.schedulePickleCompletionDrain();
         this.mainVisualNarration.reset();
         this.mainAssistantDeltaSeen = false;
+        // Deliver any input buffered during a compaction, then re-arm the idle-compaction
+        // timer if a rollover threshold is now met. Both no-op when not applicable.
+        this.drainMainPendingInput();
+        this.scheduleMainIdleCompaction();
       }
     }
   }

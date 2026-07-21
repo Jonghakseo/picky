@@ -5,8 +5,17 @@ export type QuickReplyEvent = Extract<EventEnvelope, { type: "quickReply" }>;
 export type QuickReplyMetadata = Pick<QuickReplyEvent, "originSource" | "replyKind" | "sessionId" | "inputId" | "didStreamNarration">;
 
 export const MAIN_AGENT_MESSAGE_LIMIT = 100;
-export const MAIN_AGENT_ROLLOVER_TURN_LIMIT = 15;
-export const MAIN_AGENT_ROLLOVER_CONTEXT_PERCENT = 40;
+export const MAIN_AGENT_ROLLOVER_TURN_LIMIT = 20;
+export const MAIN_AGENT_ROLLOVER_CONTEXT_PERCENT = 60;
+// Minimum idle time (no main-agent activity) required before a threshold-triggered
+// in-place compaction may run. Compaction never interrupts active use; it only fires
+// once the user has been quiet for this long, so delay timers and other in-memory
+// session state survive the compaction instead of being lost to a session teardown.
+export const MAIN_AGENT_COMPACT_IDLE_MS = 5 * 60 * 1000;
+// On restart, only tear down (start a fresh session file) when the persisted main Pi
+// session file has grown past this size. In-place compaction appends to the same file, so a
+// long-lived session bloats over time; a fresh short session stays small and resumes normally.
+export const MAIN_AGENT_RESTART_TEARDOWN_SESSION_BYTES = 2_000_000;
 export const MAIN_AGENT_COMPACT_SUMMARY_LIMIT = 4_000;
 export const MAIN_AGENT_SUMMARY_MESSAGE_LIMIT = 16;
 export const MAIN_AGENT_SUMMARY_PICKLE_SESSION_LIMIT = 10;

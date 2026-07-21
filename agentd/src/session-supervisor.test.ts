@@ -4031,45 +4031,100 @@ describe("SessionSupervisor", () => {
     expect(messages.at(-1)).toMatchObject({ role: "user", text: "메시지 100" });
   });
 
-  it("rolls over the main Pi session after the bounded epoch turn limit and carries a compact summary", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-rollover-turns-"));
+  it("compacts the main Pi session in place after the idle window once the turn limit is reached", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-idle-compaction-turns-"));
+    const store = new SessionStore(dir);
     const mainRuntime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), store, { mainRuntime, mainCompactionIdleMs: 20 });
 
-    for (let index = 0; index < 15; index += 1) {
+    for (let index = 0; index < 20; index += 1) {
       await supervisor.route(context(`질문 ${index}`));
       mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
       await settle();
     }
-    const previousHandle = mainRuntime.handle;
+    const handle = mainRuntime.handle;
 
-    await supervisor.route(context("롤오버 후 질문"));
+    // No teardown at route time: the same live handle is kept, so in-memory session state
+    // (e.g. scheduled delay timers) survives instead of being lost to a session shutdown.
+    expect(mainRuntime.createCalls).toBe(1);
+    expect(handle?.aborts).toBe(0);
+    expect(handle?.compactCalls).toHaveLength(0);
 
-    expect(previousHandle?.aborts).toBe(1);
-    expect(mainRuntime.createCalls).toBe(2);
-    expect(mainRuntime.handle).not.toBe(previousHandle);
-    expect(mainRuntime.handle?.bootstrapInjections.at(-1)?.user).toContain("Previous Picky epoch summary");
-    expect(mainRuntime.handle?.bootstrapInjections.at(-1)?.user).toContain("질문 14");
-    expect(supervisor.listMainMessages().at(-1)).toMatchObject({ role: "user", text: "롤오버 후 질문" });
+    // The idle timer fires an in-place compaction on the same handle/session.
+    await waitUntil(() => (handle?.compactCalls.length ?? 0) > 0);
+    expect(mainRuntime.createCalls).toBe(1);
+    expect(mainRuntime.handle).toBe(handle);
+
+    let state = await store.loadMainAgentState();
+    for (let attempt = 0; attempt < 50 && state.lastRolloverReason !== "turn-limit:20"; attempt += 1) {
+      await settle();
+      state = await store.loadMainAgentState();
+    }
+    expect(state.lastRolloverReason).toBe("turn-limit:20");
+    expect(state.epochTurnCount).toBe(0);
   });
 
-  it("rolls over the main Pi session when context usage crosses the proactive threshold", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-rollover-context-"));
+  it("does not compact the main Pi session while it is still being actively used", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-active-no-compaction-"));
     const mainRuntime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
+    // Idle window longer than the test's active turns so compaction never becomes eligible mid-use.
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime, mainCompactionIdleMs: 10_000 });
+
+    for (let index = 0; index < 22; index += 1) {
+      await supervisor.route(context(`질문 ${index}`));
+      mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+      await settle();
+    }
+
+    // Threshold is met, but the user never went idle, so no compaction ran.
+    expect(mainRuntime.handle?.compactCalls).toHaveLength(0);
+    expect(mainRuntime.createCalls).toBe(1);
+    expect(mainRuntime.handle?.aborts).toBe(0);
+  });
+
+  it("compacts in place once context usage crosses the proactive threshold and the session goes idle", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-idle-compaction-context-"));
+    const store = new SessionStore(dir);
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), store, { mainRuntime, mainCompactionIdleMs: 20 });
 
     await supervisor.route(context("첫 질문"));
-    const previousHandle = mainRuntime.handle;
-    previousHandle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    previousHandle?.emit({ type: "context_usage", usage: { tokens: 80_000, contextWindow: 200_000, percent: 40 } });
+    const handle = mainRuntime.handle;
+    handle?.emit({ type: "context_usage", usage: { tokens: 120_000, contextWindow: 200_000, percent: 60 } });
+    handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+
+    await waitUntil(() => (handle?.compactCalls.length ?? 0) > 0);
+    expect(mainRuntime.createCalls).toBe(1);
+    expect(mainRuntime.handle).toBe(handle);
+    let contextState = await store.loadMainAgentState();
+    for (let attempt = 0; attempt < 50 && contextState.lastRolloverReason !== "context:60%"; attempt += 1) {
+      await settle();
+      contextState = await store.loadMainAgentState();
+    }
+    expect(contextState.lastRolloverReason).toBe("context:60%");
+  });
+
+  it("buffers user input that arrives during an in-place compaction and delivers it afterward", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-compaction-buffer-"));
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime, mainCompactionIdleMs: 20 });
+
+    await supervisor.route(context("첫 질문"));
+    const handle = mainRuntime.handle!;
+    handle.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
 
-    await supervisor.route(context("다음 질문"));
+    // Simulate an in-flight compaction, then route input while it is running.
+    handle.isCompacting = true;
+    handle.emit({ type: "status", status: "running", summary: "Compacting session…", compactionStarted: true, compactionReason: "threshold" });
+    await supervisor.route(context("압축 중 입력"));
+    expect(handle.followUps.map((prompt) => prompt.text).some((text) => text.includes("압축 중 입력"))).toBe(false);
 
-    expect(previousHandle?.aborts).toBe(1);
-    expect(mainRuntime.createCalls).toBe(2);
-    expect(mainRuntime.handle).not.toBe(previousHandle);
-    expect(mainRuntime.handle?.bootstrapInjections.at(-1)?.user).toContain("context:40%");
+    // Compaction settles: the buffered input is delivered as a follow-up turn.
+    handle.isCompacting = false;
+    handle.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, compactionReason: "threshold" });
+    await waitUntil(() => handle.followUps.some((prompt) => prompt.text.includes("압축 중 입력")));
+    expect(supervisor.listMainMessages().at(-1)).toMatchObject({ role: "user", text: "압축 중 입력" });
   });
 
   it("does not roll over the main Pi session solely because the persisted session file is large", async () => {
@@ -4108,6 +4163,36 @@ describe("SessionSupervisor", () => {
     expect(mainRuntime.handle?.followUps).toHaveLength(1);
     expect(mainRuntime.handle?.followUps[0].text).toContain("재시작 후 질문");
     expect(supervisor.listMainMessages().map((message) => message.text)).toEqual(["재시작 후 질문"]);
+  });
+
+  it("tears down a bloated persisted main Pi session on restart instead of resuming it", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-restart-teardown-"));
+    const store = new SessionStore(dir);
+    const bloatedSessionFile = join(dir, "bloated-main-session.jsonl");
+    // Simulate a long-lived session whose file bloated past the teardown threshold from
+    // repeated in-place compactions.
+    await writeFile(bloatedSessionFile, "x".repeat(2_100_000), "utf8");
+    await store.saveMainAgentState({
+      sessionFilePath: bloatedSessionFile,
+      cwd: "/tmp/project",
+      messages: [{ role: "user", text: "이전 질문", createdAt: new Date().toISOString() }],
+    });
+    const mainRuntime = new ResumableRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), store, { mainRuntime });
+    await supervisor.load();
+
+    // Teardown cleared the session file pointer and carried a compact summary as a memo.
+    const afterLoad = await store.loadMainAgentState();
+    expect(afterLoad.sessionFilePath).toBeUndefined();
+    expect(afterLoad.lastRolloverReason).toBe("restart");
+    expect(afterLoad.compactSummary).toContain("이전 질문");
+
+    await supervisor.route(context("재시작 후 질문"));
+
+    // No resume: a fresh session is created and seeded with the carried summary.
+    expect(mainRuntime.resumeCalls).toEqual([]);
+    expect(mainRuntime.handle?.bootstrapInjections.at(-1)?.user).toContain("이전 질문");
+    expect(supervisor.listMainMessages().map((message) => message.text)).toEqual(["이전 질문", "재시작 후 질문"]);
   });
 
   it("reuses the same Picky handle for later voice turns", async () => {

@@ -754,6 +754,12 @@ struct BlueCursorView: View {
                 }
                 .animation(cursorFollowAnimation, value: cursorPosition)
                 .animation(.easeOut(duration: 0.2), value: companionManager.voiceState)
+                // Sentence-by-sentence streaming grows the bubble height. Without an
+                // explicit nil animation for the text change, that height delta rides the
+                // bouncy cursor-follow spring transaction and the bubble visibly wobbles
+                // vertically on every appended sentence. Keep position smoothing, but apply
+                // size changes from new text instantly.
+                .animation(nil, value: responseText)
             }
 
             if hiddenCursorWaitingIndicatorIsVisible {

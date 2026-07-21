@@ -20,13 +20,13 @@ struct PickyCaptureContextBorderView: View {
     let reduceMotion: Bool
 
     /// Border ring thickness in points.
-    private let lineWidth: CGFloat = 4
+    private let lineWidth: CGFloat = 1
     /// Corner radius hugging the display edge.
-    private let cornerRadius: CGFloat = 22
+    private let cornerRadius: CGFloat = 0
     /// Seconds per full rotation of the angular gradient sweep.
     private let rotationPeriod: TimeInterval = 7
-    /// Focus-glow strength (0...1). Locked to 30% for a subtle inward bloom.
-    private let glowStrength: Double = 0.30
+    /// Focus-glow strength (0...1).
+    private let glowStrength: Double = 0.55
 
     private var glowBlur: CGFloat { 14 + CGFloat(glowStrength) * 34 }
     private var glowLineWidth: CGFloat { 8 + CGFloat(glowStrength) * 10 }

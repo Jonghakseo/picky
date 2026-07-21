@@ -205,6 +205,10 @@ enum PickyAnnotationSceneVisualPolicy {
     static let minStructuralCoverage = 0.10
     static let restoreFloor = 0.35
     static let breakFloor = 0.20
+    /// Overriding a whole-frame luminance mismatch (e.g. a full-width hero banner rotating over
+    /// stable chrome) demands stronger structural persistence than an ordinary restore, so the
+    /// tone change alone cannot keep a genuinely different layout on screen.
+    static let structuralOverrideFloor = 0.65
     static let peripheralEdgeWeightBoost = 0.60
 
     /// A strict threshold is used to prove restoration; a looser one is used to prove
@@ -295,10 +299,6 @@ enum PickyAnnotationSceneVisualPolicy {
         } ?? false
         let globalMismatches = global.changedFraction >= invalidationProfile.mismatchingGlobalChangedFraction
             || global.meanDifference >= invalidationProfile.mismatchingGlobalMeanDifference
-        if roiMismatches || globalMismatches {
-            return (.mismatching(metrics), nil)
-        }
-
         let roiMatches = roi.map {
             $0.changedFraction <= matchingROIChangedFraction
                 && $0.meanDifference <= matchingROIMeanDifference
@@ -310,27 +310,47 @@ enum PickyAnnotationSceneVisualPolicy {
         // Narration (.lenient) keeps its bounded-drift tolerance and scroll/app (.semantic)
         // stays luminance-only, both by design, so they skip structural analysis entirely.
         if invalidationProfile != .strict {
+            if roiMismatches || globalMismatches {
+                return (.mismatching(metrics), nil)
+            }
             let observation: PickyAnnotationSceneVisualObservation = (roiMatches && globalMatches)
                 ? .matching(metrics)
                 : .indeterminate(metrics)
             return (observation, nil)
         }
 
+        // A large change in the annotation's own anchor always breaks. A global tone change
+        // (e.g. a full-width hero banner rotating) does not, as long as the surrounding structure
+        // still identifies the same screen -- so the global luminance mismatch is deferred until
+        // after the structural verdict rather than short-circuiting it here.
+        if roiMismatches {
+            return (.mismatching(metrics), nil)
+        }
         let structural = structuralAnalysis(
             baseline: baseline,
             current: current,
             normalizedRegions: normalizedRegions
         )
         let luminanceMatches = roiMatches && globalMatches
+        // A whole-frame tone change may still be the same screen, but only when the surrounding
+        // structure is strongly intact; an ordinary restore needs just the normal floor.
+        let requiredStableFraction = globalMismatches ? structuralOverrideFloor : restoreFloor
         let observation: PickyAnnotationSceneVisualObservation
         if structural.anchorBroke {
             // A moved anchor whose luminance drift exceeds the bounded allowance breaks outright.
             observation = .mismatching(metrics)
+        } else if structural.hasEvidence
+            && structural.stableFraction >= requiredStableFraction
+            && structural.anchorStructurallyStable {
+            // The surrounding structure still matches: same screen even if the global tone shifted
+            // a lot (banner/video rotating over stable chrome). This overrides globalMismatches.
+            observation = .matching(metrics)
+        } else if globalMismatches {
+            // No structural evidence to rescue it and the whole frame changed: break.
+            observation = .mismatching(metrics)
         } else if !structural.hasEvidence {
             // Too little distributed structure to judge a layout change: defer to luminance.
             observation = luminanceMatches ? .matching(metrics) : .indeterminate(metrics)
-        } else if structural.stableFraction >= restoreFloor && structural.anchorStructurallyStable {
-            observation = .matching(metrics)
         } else if structural.stableFraction < breakFloor {
             observation = .mismatching(metrics)
         } else {

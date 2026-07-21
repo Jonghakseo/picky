@@ -1,6 +1,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
+import ImageIO
 import Testing
 @testable import Picky
 
@@ -564,6 +565,38 @@ struct PickyAnnotationScenePolicyTests {
 
         guard case .mismatching = observation else {
             Issue.record("Expected one changed anchor among several to break the scene without dilution")
+            return
+        }
+    }
+
+    @Test func structuralRestoreKeepsAnnotationWhenOnlyHeroBannerRotates() throws {
+        // Two real captures of the same creatrip page where only the center hero-carousel banner
+        // rotated (BIAS/MONSTA X -> K-Trekking). Chrome, nav, search box, and footer are identical.
+        // The whole-frame tone shift is large (mean luminance difference ~30), which the coarse
+        // global luminance mismatch alone would reject; the surrounding structure still identifies
+        // the same screen, so the annotation is kept as long as its anchor is not on the banner.
+        let baseline = try bannerFingerprint("creatrip-banner-bias")
+        let rotated = try bannerFingerprint("creatrip-banner-trekking")
+
+        // Anchored on the stable search box below the banner -> keep.
+        let onSearchBox = PickyAnnotationSceneVisualPolicy.compare(
+            baseline: baseline,
+            current: rotated,
+            normalizedRegions: [CGRect(x: 0.30, y: 0.72, width: 0.40, height: 0.16)]
+        )
+        guard case .matching = onSearchBox else {
+            Issue.record("Expected a rotating hero banner over identical chrome to keep the annotation")
+            return
+        }
+
+        // Anchored directly on the changed banner graphic -> break.
+        let onBanner = PickyAnnotationSceneVisualPolicy.compare(
+            baseline: baseline,
+            current: rotated,
+            normalizedRegions: [CGRect(x: 0.45, y: 0.30, width: 0.35, height: 0.22)]
+        )
+        guard case .mismatching = onBanner else {
+            Issue.record("Expected an annotation anchored on the changed banner to break")
             return
         }
     }
@@ -1555,6 +1588,19 @@ struct PickyAnnotationScenePolicyTests {
         }
 
         return PickyAnnotationSceneFingerprint(width: width, height: height, luminance: luminance)!
+    }
+
+    /// Loads a real screenshot fixture from PickyTests/Fixtures and reduces it through the same
+    /// resample + edge-mask pipeline the live capturer uses, at the annotation fingerprint size.
+    private func bannerFingerprint(_ name: String) throws -> PickyAnnotationSceneFingerprint {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures", isDirectory: true)
+            .appendingPathComponent(name)
+            .appendingPathExtension("png")
+        let source = try #require(CGImageSourceCreateWithURL(url as CFURL, nil))
+        let image = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        return try #require(PickyAnnotationSceneFingerprint.make(from: image, width: 256, height: 144))
     }
 
     private func fingerprint(width: Int, height: Int, baseValue: UInt8 = 64, variant: (

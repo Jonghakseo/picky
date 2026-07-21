@@ -110,6 +110,7 @@ When the user asks about a feature, start here before broad searching:
 5. For daemon behavior, trace `server.ts -> session-supervisor.ts -> runtime/* -> prompt-builder.ts`.
 6. Before editing, run `git status --short` and protect unrelated user changes.
 7. For daemon debugging, check `~/Library/Application Support/Picky/Logs/agentd.stdout.log` and `agentd.stderr.log`; launcher lifecycle messages are printed to the app console with `Picky agentd launcher`.
+8. When an issue matches a known operational procedure, follow the runbooks under `runbook/` first: `runbook/release.md` (release flow), `runbook/log-debugging.md` (session hang/crash log investigation).
 
 ## Build, test, package
 

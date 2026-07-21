@@ -602,6 +602,14 @@ struct BlueCursorView: View {
             : nil
     }
 
+    /// True when this display should show the capture-context border: Picky is
+    /// actively capturing screen context and this screen is within the
+    /// configured capture scope (all screens, or the cursor's screen only).
+    private var showsCaptureContextBorder: Bool {
+        guard companionManager.isCapturingScreenContext else { return false }
+        return companionManager.screenContextScope == .allScreens || isCursorOnThisScreen
+    }
+
     var body: some View {
         ZStack {
             // Nearly transparent background (helps with compositing)
@@ -610,6 +618,15 @@ struct BlueCursorView: View {
             if companionManager.inkOverlayState.isActive || !companionManager.inkOverlayState.strokes.isEmpty {
                 PickyInkOverlayView(screenFrame: screenFrame, state: companionManager.inkOverlayState)
                     .allowsHitTesting(false)
+            }
+
+            if showsCaptureContextBorder {
+                PickyCaptureContextBorderView(
+                    screenFrame: screenFrame,
+                    reduceMotion: accessibilityReduceMotion
+                )
+                .transition(.opacity)
+                .allowsHitTesting(false)
             }
 
             if !companionManager.agentAnnotations.isEmpty {
@@ -830,6 +847,7 @@ struct BlueCursorView: View {
         }
         .frame(width: screenFrame.width, height: screenFrame.height)
         .ignoresSafeArea()
+        .animation(.easeInOut(duration: 0.3), value: showsCaptureContextBorder)
         .onAppear {
             // Set initial cursor position immediately before starting animation
             let mouseLocation = effectiveCursorGlobalPoint

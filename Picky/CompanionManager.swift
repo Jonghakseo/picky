@@ -200,6 +200,16 @@ final class CompanionManager: ObservableObject {
     private let voiceContextCaptureCoordinator: PickyVoiceContextCaptureCoordinator
     let voiceContextCapturePipeline: PickyVoiceContextCapturePipeline
     private var armedPickleDispatchMode: PickyArmedPickleDispatchMode
+    /// Mirrors the persisted screen-context scope so overlay views can gate the
+    /// capture-context border to the display(s) that will actually be captured.
+    @Published private(set) var screenContextScope: PickyScreenContextScope
+
+    /// True while Picky is actively capturing (or about to capture) the screen
+    /// as neutral model context — during PTT recording or while the Quick Input
+    /// panel is open. Drives the capture-context border on in-scope overlays.
+    var isCapturingScreenContext: Bool {
+        voiceState == .listening || isQuickInputPanelVisible
+    }
 
     init(
         agentClient: any PickyAgentClient = LocalStubPickyAgentClient(),
@@ -245,6 +255,7 @@ final class CompanionManager: ObservableObject {
             coordinator: resolvedVoiceContextCaptureCoordinator
         )
         self.armedPickleDispatchMode = armedPickleDispatchMode ?? resolvedInitialSettings.armedPickleDispatchMode
+        self.screenContextScope = resolvedInitialSettings.screenContextScope
         self.annotationSceneMonitor = annotationSceneMonitor
             ?? (PickyRuntimeEnvironment.isRunningUnitTests ? nil : PickyAnnotationSceneMonitor())
         self.inkCaptureCoordinator = inkCaptureCoordinator
@@ -856,6 +867,7 @@ final class CompanionManager: ObservableObject {
                 self?.applyCursorPreferenceFromSettings(settings)
                 self?.reloadVoiceProvidersFromSettings(settings)
                 self?.armedPickleDispatchMode = settings.armedPickleDispatchMode
+                self?.screenContextScope = settings.screenContextScope
                 self?.syncDaemonSettings(settings)
                 self?.applyShortcutSpecsFromSettings(settings)
                 self?.pushQuickInputScreenshotStateIfPanelVisible()

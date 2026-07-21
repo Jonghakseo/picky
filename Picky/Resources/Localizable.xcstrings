@@ -1,6 +1,22 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "overlay.captureBorder.contextLabel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This screen is being shared as context"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 화면이 맥락으로 전달됩니다"
+          }
+        }
+      }
+    },
     "agent.summary.pointingScreen": {
       "comment": "Format: 'Pointing at: <label>'. Arg is the element label.",
       "localizations": {

@@ -189,6 +189,30 @@ When bumping pi (`agentd/package.json` `@earendil-works/pi-coding-agent`):
 - No changelog entry removes or changes Picky's T1-T4 `AgentSession`, extension
   UI, tool definition, command registration, or event surfaces.
 
+### 0.80.7 -> 0.81.1
+
+- Pi 0.80.8 replaces `AgentSessionServices.modelRegistry` with the async
+  `modelRuntime` facade. Picky now resolves available models through
+  `modelRuntime.getAvailable()` and checks provider-scoped authentication with
+  `modelRuntime.hasConfiguredAuth(model.provider)`.
+- Pi 0.81.0 adds full provider extension registration, model refresh, filtering,
+  authentication, and custom streaming. Picky creates sessions through Pi's
+  public service/runtime factories, so loaded user extensions inherit the new
+  provider support after the `modelRuntime` migration.
+- Tool, compaction, and branch-summary usage is now persisted in Pi sessions and
+  included in Pi's session totals. Picky's HUD context meter intentionally keeps
+  using `AgentSession.getContextUsage()` because it represents the active context
+  window rather than cumulative session cost.
+- Pi 0.81.1 adds summarization retry lifecycle events. Picky's existing
+  `compaction_start`/`compaction_end` handling keeps the HUD in a running state
+  while Pi retries internally; the finer-grained events are currently ignored
+  fail-closed and can be surfaced later if retry-attempt UI is desired.
+- Pi 0.81.1 restores the default stream fallback for extensions built against
+  the pre-0.81 agent-core API, improving compatibility for user-installed
+  extensions without requiring another daemon adapter.
+- The hard/soft SDK contract test and remaining runtime adapter types pass on
+  0.81.1; no additional T1-T4 compatibility shim is required for this bump.
+
 ## Backward-compatibility policy
 
 - **Capability sniffs (T2) MUST stay non-fatal.** A pi version that drops

@@ -1429,7 +1429,7 @@ describe("PiSdkRuntime", () => {
       createServices: vi.fn(async () => ({
         diagnostics: [],
         settingsManager: { getEnabledModels: () => ["openai-codex/gpt-5.5"] },
-        modelRegistry: { getAvailable: async () => [codexModel] },
+        modelRuntime: { getAvailable: async () => [codexModel], hasConfiguredAuth: () => true },
       })) as never,
       createSessionFromServices: createSessionFromServices as never,
       createRuntime: vi.fn(async (factory, options) => {
@@ -1460,7 +1460,7 @@ describe("PiSdkRuntime", () => {
       createServices: vi.fn(async () => ({
         diagnostics: [],
         settingsManager: { getEnabledModels: () => [] },
-        modelRegistry: { getAvailable: async () => [codexModel] },
+        modelRuntime: { getAvailable: async () => [codexModel], hasConfiguredAuth: () => true },
       })) as never,
       createSessionFromServices: createSessionFromServices as never,
       createRuntime: vi.fn(async (factory, options) => {
@@ -1490,7 +1490,7 @@ describe("PiSdkRuntime", () => {
       createServices: vi.fn(async () => ({
         diagnostics: [],
         settingsManager: { getEnabledModels: () => [] },
-        modelRegistry: { getAvailable: async () => [codexModel] },
+        modelRuntime: { getAvailable: async () => [codexModel], hasConfiguredAuth: () => true },
       })) as never,
       createSessionFromServices: vi.fn(async () => ({ session: fakeSession, extensionsResult: { extensions: [], errors: [], runtime: {} } })) as never,
       createRuntime: vi.fn(async (factory, options) => {
@@ -1524,7 +1524,7 @@ describe("PiSdkRuntime", () => {
           getDefaultModel: () => "anthropic/claude-opus-4-7",
           getEnabledModels: () => ["openai-codex/gpt-5.5"],
         },
-        modelRegistry: { getAvailable: async () => [codexModel, defaultModel] },
+        modelRuntime: { getAvailable: async () => [codexModel, defaultModel], hasConfiguredAuth: () => true },
       })) as never,
       createSessionFromServices: vi.fn(async () => ({ session: fakeSession, extensionsResult: { extensions: [], errors: [], runtime: {} } })) as never,
       createRuntime: vi.fn(async (factory, options) => {

@@ -28,7 +28,7 @@ export async function scopedModelsFromServices(services: AgentSessionServices): 
 }
 
 export async function availableModelsFromServices(services: AgentSessionServices): Promise<RuntimeModel[]> {
-  return services.modelRegistry?.getAvailable?.() ?? [];
+  return [...await services.modelRuntime.getAvailable()];
 }
 
 export async function modelFromServices(services: AgentSessionServices, pattern: string | undefined): Promise<RuntimeModel | undefined> {
@@ -50,7 +50,7 @@ export async function automaticModelFromServices(
   if (scopedModel) return scopedModel;
 
   const available = await availableModelsFromServices(services);
-  return available.find((model) => services.modelRegistry?.hasConfiguredAuth?.(model)) ?? available[0];
+  return available.find((model) => services.modelRuntime.hasConfiguredAuth(model.provider)) ?? available[0];
 }
 
 export function runtimeModelOptionFromModel(model: RuntimeModel): RuntimeModelOption {

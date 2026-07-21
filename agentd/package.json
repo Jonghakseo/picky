@@ -19,9 +19,9 @@
     "test:contracts": "vitest run src/protocol.test.ts src/prompt-builder.test.ts src/pi-event-normalizer.test.ts"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "0.80.7",
-    "@earendil-works/pi-coding-agent": "0.80.7",
-    "@earendil-works/pi-tui": "0.80.7",
+    "@earendil-works/pi-ai": "0.81.1",
+    "@earendil-works/pi-coding-agent": "0.81.1",
+    "@earendil-works/pi-tui": "0.81.1",
     "commander": "^14.0.3",
     "msedge-tts": "2.0.7",
     "typebox": "^1.1.37",

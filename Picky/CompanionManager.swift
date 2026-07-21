@@ -203,6 +203,9 @@ final class CompanionManager: ObservableObject {
     /// Mirrors the persisted screen-context scope so overlay views can gate the
     /// capture-context border to the display(s) that will actually be captured.
     @Published private(set) var screenContextScope: PickyScreenContextScope
+    /// Mirrors the persisted "attach screenshots only when drawn" toggle so the
+    /// capture-context border tracks the per-screen ink attachment gate.
+    @Published private(set) var attachScreenshotsOnlyWhenInked: Bool
 
     /// True while Picky is actively capturing (or about to capture) the screen
     /// as neutral model context — during PTT recording or while the Quick Input
@@ -256,6 +259,7 @@ final class CompanionManager: ObservableObject {
         )
         self.armedPickleDispatchMode = armedPickleDispatchMode ?? resolvedInitialSettings.armedPickleDispatchMode
         self.screenContextScope = resolvedInitialSettings.screenContextScope
+        self.attachScreenshotsOnlyWhenInked = resolvedInitialSettings.attachScreenshotsOnlyWhenInked
         self.annotationSceneMonitor = annotationSceneMonitor
             ?? (PickyRuntimeEnvironment.isRunningUnitTests ? nil : PickyAnnotationSceneMonitor())
         self.inkCaptureCoordinator = inkCaptureCoordinator
@@ -868,6 +872,7 @@ final class CompanionManager: ObservableObject {
                 self?.reloadVoiceProvidersFromSettings(settings)
                 self?.armedPickleDispatchMode = settings.armedPickleDispatchMode
                 self?.screenContextScope = settings.screenContextScope
+                self?.attachScreenshotsOnlyWhenInked = settings.attachScreenshotsOnlyWhenInked
                 self?.syncDaemonSettings(settings)
                 self?.applyShortcutSpecsFromSettings(settings)
                 self?.pushQuickInputScreenshotStateIfPanelVisible()

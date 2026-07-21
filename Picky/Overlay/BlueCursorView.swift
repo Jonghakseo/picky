@@ -602,12 +602,27 @@ struct BlueCursorView: View {
             : nil
     }
 
-    /// True when this display should show the capture-context border: Picky is
-    /// actively capturing screen context and this screen is within the
-    /// configured capture scope (all screens, or the cursor's screen only).
+    /// True when any live ink stroke lands on this display. Used so drawing on a
+    /// secondary monitor pulls it into context (and shows the border) even under
+    /// focused scope, matching the capture pipeline.
+    private var hasInkOnThisScreen: Bool {
+        let region = screenFrame.insetBy(dx: -1, dy: -1)
+        return companionManager.inkOverlayState.strokes.contains { stroke in
+            stroke.points.contains { region.contains($0) }
+        }
+    }
+
+    /// True when this display's pixels are actually sent as context this turn.
+    /// Shares `PickyScreenContextInclusionPolicy` with the capture pipeline so
+    /// the border is shown exactly when the screen is handed to the model.
     private var showsCaptureContextBorder: Bool {
         guard companionManager.isCapturingScreenContext else { return false }
-        return companionManager.screenContextScope == .allScreens || isCursorOnThisScreen
+        return PickyScreenContextInclusionPolicy.isSentAsContext(
+            scope: companionManager.screenContextScope,
+            onlyWhenInked: companionManager.attachScreenshotsOnlyWhenInked,
+            isFocused: isCursorOnThisScreen,
+            hasInk: hasInkOnThisScreen
+        )
     }
 
     var body: some View {

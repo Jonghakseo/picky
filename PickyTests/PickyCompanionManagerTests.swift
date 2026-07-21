@@ -2043,7 +2043,7 @@ struct PickyCompanionManagerTests {
 
     private func fakeContextCaptureCoordinator(screenshots: [PickyScreenshotContext] = []) -> PickyVoiceContextCaptureCoordinator {
         PickyVoiceContextCaptureCoordinator(
-            screenCapture: { _, _ in [] },
+            screenCapture: { _, _, _ in [] },
             contextPreflightCapture: {
                 PickyContextPacketPreflight(
                     capturedAt: Date(timeIntervalSince1970: 1_800_000_000),

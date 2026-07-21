@@ -3,6 +3,7 @@
 //  Picky
 //
 
+import CoreGraphics
 import Foundation
 
 struct PickyVoiceContextCaptureResult {
@@ -22,7 +23,7 @@ struct PickyPreparedVoiceContextCapture {
 
 @MainActor
 struct PickyVoiceContextCaptureCoordinator {
-    typealias ScreenCapture = @MainActor (_ scope: PickyScreenContextScope, _ maximumDimension: Int) async throws -> [CompanionScreenCapture]
+    typealias ScreenCapture = @MainActor (_ scope: PickyScreenContextScope, _ maximumDimension: Int, _ inkGlobalPoints: [CGPoint]) async throws -> [CompanionScreenCapture]
     typealias SettingsProvider = @MainActor () -> PickySettings
     typealias ContextPreflightCapture = @MainActor () async -> PickyContextPacketPreflight
     typealias ContextPreparer = @MainActor (_ screenCaptures: [CompanionScreenCapture], _ source: String, _ inkCapture: PickyInkCapture?, _ preflight: PickyContextPacketPreflight) async throws -> PickyPreparedContextPacket
@@ -33,10 +34,11 @@ struct PickyVoiceContextCaptureCoordinator {
     private let contextPreparer: ContextPreparer
 
     init(
-        screenCapture: @escaping ScreenCapture = { scope, maximumDimension in
+        screenCapture: @escaping ScreenCapture = { scope, maximumDimension, inkGlobalPoints in
             try await CompanionScreenCaptureUtility.captureScreensAsJPEG(
                 scope: scope,
-                maximumDimension: maximumDimension
+                maximumDimension: maximumDimension,
+                inkGlobalPoints: inkGlobalPoints
             )
         },
         settingsProvider: @escaping SettingsProvider = { PickySettingsStore().load() },
@@ -84,9 +86,13 @@ struct PickyVoiceContextCaptureCoordinator {
         let screenCapture = screenCapture
         let contextPreflightCapture = contextPreflightCapture
         async let preflight = contextPreflightCapture()
+        let inkGlobalPoints = (inkCapture?.strokes ?? []).flatMap { stroke in
+            stroke.points.map { CGPoint(x: $0.x, y: $0.y) }
+        }
         let screenCaptures = try await screenCapture(
             settings.screenContextScope,
-            settings.screenshotQuality.maximumDimension
+            settings.screenshotQuality.maximumDimension,
+            inkGlobalPoints
         )
         let screenCaptureMilliseconds = Int(Date().timeIntervalSince(contextPreparationStartedAt) * 1_000)
         PickyLog.notice(
@@ -122,17 +128,30 @@ struct PickyVoiceContextCaptureCoordinator {
         return PickyVoiceContextCaptureResult(contextPacket: gated, source: prepared.source)
     }
 
-    /// Honors `PickySettings.attachScreenshotsOnlyWhenInked` by stripping
-    /// screenshots/ink from the model-bound packet when the user did not draw
-    /// during this turn. Screen capture and on-disk persistence have already
+    /// Honors `PickySettings.attachScreenshotsOnlyWhenInked` by keeping only the
+    /// displays the user actually drew on. Which displays were captured is
+    /// already decided by scope + ink at capture time; this is the per-screen
+    /// attachment gate. Screen capture and on-disk persistence have already
     /// happened by this point — only the model payload is gated.
     static func applyInkOnlyAttachmentGate(
         _ packet: PickyContextPacket,
         settings: PickySettings
     ) -> PickyContextPacket {
         guard settings.attachScreenshotsOnlyWhenInked else { return packet }
-        guard packet.inkMarks.isEmpty else { return packet }
-        return packet.withScreenshotsCleared()
+        let inkedScreenIds = Set(packet.inkMarks.compactMap(\.screenId))
+        let keptScreenshots = packet.screenshots.filter { screenshot in
+            let hasInk = screenshot.screenId.map(inkedScreenIds.contains) ?? false
+            return PickyScreenContextInclusionPolicy.passesInkAttachmentGate(
+                onlyWhenInked: true,
+                hasInk: hasInk
+            )
+        }
+        guard keptScreenshots.count != packet.screenshots.count else { return packet }
+        let keptScreenIds = Set(keptScreenshots.compactMap(\.screenId))
+        let keptInkMarks = packet.inkMarks.filter { mark in
+            mark.screenId.map(keptScreenIds.contains) ?? false
+        }
+        return packet.replacingVisualContext(screenshots: keptScreenshots, inkMarks: keptInkMarks)
     }
 
     private static func captureContextPreflight() async -> PickyContextPacketPreflight {

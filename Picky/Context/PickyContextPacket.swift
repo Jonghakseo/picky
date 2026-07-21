@@ -77,6 +77,16 @@ struct PickyContextPacket: Codable, Equatable, Identifiable {
     /// model-bound payload while keeping everything else (transcript, app,
     /// browser, selected text, cwd, warnings) intact.
     func withScreenshotsCleared() -> PickyContextPacket {
+        replacingVisualContext(screenshots: [], inkMarks: [])
+    }
+
+    /// Returns a copy with the visual context (`screenshots` + `inkMarks`)
+    /// replaced. Used by the per-screen ink-only attachment gate to keep only
+    /// the displays that survive, leaving all other context intact.
+    func replacingVisualContext(
+        screenshots: [PickyScreenshotContext],
+        inkMarks: [PickyInkMarkContext]
+    ) -> PickyContextPacket {
         PickyContextPacket(
             id: id,
             source: source,
@@ -87,8 +97,8 @@ struct PickyContextPacket: Codable, Equatable, Identifiable {
             activeApp: activeApp,
             activeWindow: activeWindow,
             browser: browser,
-            screenshots: [],
-            inkMarks: [],
+            screenshots: screenshots,
+            inkMarks: inkMarks,
             warnings: warnings
         )
     }

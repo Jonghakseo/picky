@@ -120,9 +120,15 @@ enum CompanionScreenCaptureUtility {
 
     /// Captures the user-configured screen context scope as JPEG data.
     /// The focused screen is the display containing the physical cursor at capture time.
+    ///
+    /// `inkGlobalPoints` are global AppKit points the user drew this turn. Under
+    /// `.focusedScreen` scope, any display carrying ink is captured in addition
+    /// to the cursor display so drawing on a secondary monitor pulls it into
+    /// context (matching `PickyScreenContextInclusionPolicy.isCaptureCandidate`).
     static func captureScreensAsJPEG(
         scope: PickyScreenContextScope,
-        maximumDimension: Int = PickyScreenshotQuality.defaultMaximumDimension
+        maximumDimension: Int = PickyScreenshotQuality.defaultMaximumDimension,
+        inkGlobalPoints: [CGPoint] = []
     ) async throws -> [CompanionScreenCapture] {
         let content = try await PickySystemPermissionGateway.shared.screenShareableContent()
 
@@ -169,11 +175,17 @@ enum CompanionScreenCaptureUtility {
         case .allScreens:
             displaysToCapture = sortedDisplays
         case .focusedScreen:
-            let focusedDisplays = sortedDisplays.filter { display in
+            let candidateDisplays = sortedDisplays.filter { display in
                 let frame = nsScreenByDisplayID[display.displayID]?.frame ?? display.frame
-                return frame.contains(mouseLocation)
+                let isFocused = frame.contains(mouseLocation)
+                let hasInk = inkGlobalPoints.contains { frame.contains($0) }
+                return PickyScreenContextInclusionPolicy.isCaptureCandidate(
+                    scope: .focusedScreen,
+                    isFocused: isFocused,
+                    hasInk: hasInk
+                )
             }
-            displaysToCapture = focusedDisplays.isEmpty ? Array(sortedDisplays.prefix(1)) : focusedDisplays
+            displaysToCapture = candidateDisplays.isEmpty ? Array(sortedDisplays.prefix(1)) : candidateDisplays
         }
 
         var capturedScreens: [CompanionScreenCapture] = []

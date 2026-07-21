@@ -1354,7 +1354,7 @@ struct PickyInteractionReducerTests {
         })
     }
 
-    @Test func sceneMismatchDuringRecoveryGraceSuspendsAndExpiryClears() {
+    @Test func sceneMismatchAfterNarrationClearsImmediatelyWithoutRestore() {
         let identity = PickyAnnotationSceneIdentity(
             contextID: "ctx",
             generation: 1,
@@ -1377,33 +1377,29 @@ struct PickyInteractionReducerTests {
             finishPending: false
         )
 
-        // Narration drains while the scene is visible: the geometry stays recoverable
-        // for a grace window and a recovery-expiry timer is scheduled.
+        // EXPERIMENT (usability): narration drains while visible -> recovery locks immediately
+        // with no grace timer, so the drawing stays put but can no longer suspend/restore.
         let drained = reduce(initial, .speechFinished(speechID: speechID), id: timerA)
         #expect(drained.state.agentAnnotations.map(\.id) == ["rect"])
-        #expect(drained.state.annotationSceneRecoveryAllowed == true)
-        #expect(drained.effects.contains { effect in
-            if case .scheduleAnnotationRecoveryExpiry(identity, _) = effect { return true }
+        #expect(drained.state.annotationScenePhase == .visible)
+        #expect(drained.state.annotationSceneRecoveryAllowed == false)
+        #expect(!drained.effects.contains { effect in
+            if case .scheduleAnnotationRecoveryExpiry = effect { return true }
             return false
         })
 
-        // A scene change within the grace hides but keeps the drawings.
-        let suspended = reduce(
+        // A post-narration scene change now clears the drawings for good (no suspend/restore).
+        let cleared = reduce(
             drained.state,
             .agentAnnotationSceneMismatched(identity: identity, reason: .visual),
             id: timerB
         )
-        #expect(suspended.state.annotationScenePhase == .suspended)
-        #expect(suspended.state.agentAnnotations.map(\.id) == ["rect"])
-
-        // When the grace lapses without returning, they are cleared for good.
-        let cleared = reduce(suspended.state, .agentAnnotationRecoveryExpired(identity: identity), id: UUID())
         #expect(cleared.state.agentAnnotations.isEmpty)
         #expect(cleared.state.annotationSceneIdentity == nil)
         #expect(cleared.state.annotationScenePhase == .inactive)
     }
 
-    @Test func finalSpeechDrainKeepsSuspendedAnnotationsRecoverableThroughGrace() {
+    @Test func finalSpeechDrainWhileSuspendedClearsImmediately() {
         let identity = PickyAnnotationSceneIdentity(
             contextID: "ctx",
             generation: 1,
@@ -1434,24 +1430,16 @@ struct PickyInteractionReducerTests {
         )
         #expect(suspended.state.annotationScenePhase == .suspended)
 
-        // Final speech drains while suspended: geometry is kept (not cleared) and a
-        // recovery-expiry timer is scheduled.
+        // EXPERIMENT (usability): final speech drains while suspended -> recovery locks
+        // immediately, clearing the drawings now instead of holding them through a grace window.
         let drained = reduce(suspended.state, .speechFinished(speechID: speechID), id: timerB)
-        #expect(drained.state.agentAnnotations.map(\.id) == ["rect"])
-        #expect(drained.state.annotationScenePhase == .suspended)
-        #expect(drained.effects.contains { effect in
-            if case .scheduleAnnotationRecoveryExpiry(identity, _) = effect { return true }
+        #expect(drained.state.agentAnnotations.isEmpty)
+        #expect(drained.state.annotationSceneIdentity == nil)
+        #expect(drained.state.annotationScenePhase == .inactive)
+        #expect(!drained.effects.contains { effect in
+            if case .scheduleAnnotationRecoveryExpiry = effect { return true }
             return false
         })
-
-        // Returning to the original scene within the grace restores the drawings.
-        let restored = reduce(drained.state, .agentAnnotationSceneMatched(identity: identity), id: UUID())
-        #expect(restored.state.annotationScenePhase == .visible)
-        #expect(restored.state.agentAnnotations.map(\.id) == ["rect"])
-
-        // But if the grace elapses while still suspended, they clear.
-        let expired = reduce(drained.state, .agentAnnotationRecoveryExpired(identity: identity), id: UUID())
-        #expect(expired.state.agentAnnotations.isEmpty)
     }
 
     @Test func newTextInputClearsParkedAnnotationsAndRequestsFlyBack() {

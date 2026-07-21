@@ -197,12 +197,19 @@ extension PickyInteractionReducing {
         state.annotationArrivalSequence = 0
         state.agentAnnotationsDismissible = state.annotationScenePhase != .suspended && !state.agentAnnotations.isEmpty
         endAnnotationPointerTurn(discardingPendingTargets: true)
-        if state.annotationSceneRecoveryAllowed, let identity = state.annotationSceneIdentity {
-            effects.append(.scheduleAnnotationRecoveryExpiry(
-                identity: identity,
-                delay: PickyInteractionReducer.annotationRecoveryGraceAfterNarration
-            ))
+        // EXPERIMENT (usability): lock recovery immediately when narration ends, so a post-TTS
+        // scene change clears the drawing for good with no suspend->restore cycle. A suspended
+        // scene clears now; a visible one stays until its first change. To revert to the previous
+        // 30s recovery grace, remove the immediate lock below and uncomment the scheduled block.
+        if let identity = state.annotationSceneIdentity {
+            applyAnnotationRecoveryExpired(identity: identity)
         }
+        // if state.annotationSceneRecoveryAllowed, let identity = state.annotationSceneIdentity {
+        //     effects.append(.scheduleAnnotationRecoveryExpiry(
+        //         identity: identity,
+        //         delay: PickyInteractionReducer.annotationRecoveryGraceAfterNarration
+        //     ))
+        // }
     }
 
     /// The post-narration recovery grace has elapsed. A scene the user never returned to

@@ -750,16 +750,19 @@ struct BlueCursorView: View {
                     horizontalGap: compactCursorChromePlacementIsPreferred ? 14 : 12,
                     verticalGap: compactCursorChromePlacementIsPreferred ? 16 : 20
                 ) {
+                    // Streaming (and the final/TTS text swaps after it) resizes this bubble.
+                    // The cursor-follow spring below overshoots (damping 0.65), so any size
+                    // delta that lands inside its transaction makes the bubble grow-then-shrink
+                    // vertically. A value-scoped `.animation(nil, value:)` loses the race when
+                    // cursorPosition changes on the same frame (innermost spring wins), so strip
+                    // animation unconditionally on the content subtree instead. Position stays
+                    // smooth because the Layout springs its `animatableData` (cursorPosition),
+                    // which is independent of this content transaction.
                     PickyCursorResponseBubbleView(layout: responseBubbleLayout)
+                        .transaction { $0.animation = nil }
                 }
                 .animation(cursorFollowAnimation, value: cursorPosition)
                 .animation(.easeOut(duration: 0.2), value: companionManager.voiceState)
-                // Sentence-by-sentence streaming grows the bubble height. Without an
-                // explicit nil animation for the text change, that height delta rides the
-                // bouncy cursor-follow spring transaction and the bubble visibly wobbles
-                // vertically on every appended sentence. Keep position smoothing, but apply
-                // size changes from new text instantly.
-                .animation(nil, value: responseText)
             }
 
             if hiddenCursorWaitingIndicatorIsVisible {

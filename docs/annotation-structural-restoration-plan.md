@@ -78,18 +78,23 @@ The anchor regions are judged separately (below), so the global `stableFraction`
 
 ### 5. Decision — maps onto existing 3-state observation
 
-Two anchor signals are computed **per annotation region** (not unioned, so one changed annotation among several is not averaged away):
+Per-annotation-region signals (not unioned, so one changed annotation among several is not averaged away):
 
 - `anchorStructurallyStable` = no region contains an unstable structural cell.
+- `anchorHasStructure` = some anchor region carries its own persistent structure (edges), not just a trivially-matching flat area.
 - `anchorBroke` = some region contains an unstable structural cell **and** that region's own luminance drift exceeds the bounded `initialValidationROI*` allowance.
 
-`hasEvidence` = the non-anchor grid carries at least `minStructuralCoverage` weighted structural cells. The `.strict` decision:
+`hasEvidence` = the non-anchor grid carries at least `minStructuralCoverage` weighted structural cells. A whole-frame luminance mismatch (`globalMismatches`) is deferred until after the structural verdict rather than short-circuiting it. The `.strict` decision (an anchor ROI that itself changed a lot — `roiMismatches` — always breaks first):
 
 - `anchorBroke` → **mismatching**.
-- `!hasEvidence` → defer to luminance: **matching** if luminance matches, else **indeterminate** (a near-flat frame cannot claim a structural layout change; this protects tiny incidental changes).
-- `stableFraction ≥ restoreFloor` **and** `anchorStructurallyStable` → **matching**.
+- **Anchor-centric keep**: the annotation's own ROI is unchanged (`roiMatches`) **and** `anchorStructurallyStable` **and** `anchorHasStructure` → **matching**, even if the rest of the frame changed a lot. This keeps an annotation pinned to an unchanged region (e.g. a YouTube sidebar) while a full-screen video plays beside it.
+- `stableFraction ≥ requiredStableFraction` **and** `anchorStructurallyStable` → **matching**, where `requiredStableFraction` is `structuralOverrideFloor` when `globalMismatches` (a full-frame tone change such as a rotating hero banner needs strong surrounding structure to override) and `restoreFloor` otherwise.
+- `globalMismatches` → **mismatching** (whole frame changed with no structural rescue).
+- `!hasEvidence` → defer to luminance: **matching** if luminance matches, else **indeterminate** (a near-flat frame cannot claim a structural layout change; protects tiny incidental changes).
 - `stableFraction < breakFloor` → **mismatching**.
 - otherwise → **indeterminate** (hold phase, avoid flicker).
+
+Limitation: when the changing region dominates the frame (e.g. a near-full-screen video), the global `stableFraction` (~0.55) is indistinguishable from a genuinely different screen, so global structure alone cannot rescue it — the anchor-centric keep is what preserves an annotation pinned to the still-unchanged part.
 
 The existing `PickyAnnotationSceneStabilityTracker` still requires **2 consecutive** confirmations, so a single noisy frame cannot flip state.
 
@@ -123,6 +128,7 @@ Expose as policy constants so runtime testing can iterate without structural cha
 | `minCellEdgeCoverage` | `0.03` | min edge fraction (min 1px) before a cell is structural vs neutral |
 | `minStructuralCoverage` | `0.10` | non-anchor structural coverage required before the structural verdict is trusted |
 | `restoreFloor` | `0.35` | weighted stable fraction required to restore |
+| `structuralOverrideFloor` | `0.65` | higher stable fraction required to override a whole-frame luminance mismatch (banner) |
 | `breakFloor` | `0.20` | below this, break instead of holding |
 | periphery weight | mild edge boost (e.g. center `1.0` → edge `1.6`) | de-emphasize central banner/video area |
 

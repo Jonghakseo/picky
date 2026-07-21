@@ -575,8 +575,8 @@ struct PickyAnnotationScenePolicyTests {
         // The whole-frame tone shift is large (mean luminance difference ~30), which the coarse
         // global luminance mismatch alone would reject; the surrounding structure still identifies
         // the same screen, so the annotation is kept as long as its anchor is not on the banner.
-        let baseline = try bannerFingerprint("creatrip-banner-bias")
-        let rotated = try bannerFingerprint("creatrip-banner-trekking")
+        let baseline = try fixtureFingerprint("creatrip-banner-bias")
+        let rotated = try fixtureFingerprint("creatrip-banner-trekking")
 
         // Anchored on the stable search box below the banner -> keep.
         let onSearchBox = PickyAnnotationSceneVisualPolicy.compare(
@@ -597,6 +597,39 @@ struct PickyAnnotationScenePolicyTests {
         )
         guard case .mismatching = onBanner else {
             Issue.record("Expected an annotation anchored on the changed banner to break")
+            return
+        }
+    }
+
+    @Test func structuralRestoreKeepsAnnotationOnStableSidebarWhileVideoPlays() throws {
+        // Two real captures of the same YouTube watch page while the video plays: the player fills
+        // most of the screen and its content changes completely (news graphic -> on-scene
+        // reporter), but the right related-videos sidebar and page chrome are identical. Because
+        // the video dominates the frame, global structural persistence alone is ambiguous; the
+        // annotation is kept only because its own anchor (the sidebar) is unchanged, and it breaks
+        // when anchored on the video itself.
+        let baseline = try fixtureFingerprint("youtube-news-graphic")
+        let laterFrame = try fixtureFingerprint("youtube-news-interview")
+
+        // Anchored on the unchanged related-videos sidebar -> keep.
+        let onSidebar = PickyAnnotationSceneVisualPolicy.compare(
+            baseline: baseline,
+            current: laterFrame,
+            normalizedRegions: [CGRect(x: 0.75, y: 0.20, width: 0.20, height: 0.35)]
+        )
+        guard case .matching = onSidebar else {
+            Issue.record("Expected an annotation on the unchanged sidebar to survive video playback")
+            return
+        }
+
+        // Anchored on the changing video player -> break.
+        let onVideo = PickyAnnotationSceneVisualPolicy.compare(
+            baseline: baseline,
+            current: laterFrame,
+            normalizedRegions: [CGRect(x: 0.15, y: 0.30, width: 0.35, height: 0.30)]
+        )
+        guard case .mismatching = onVideo else {
+            Issue.record("Expected an annotation anchored on the changing video to break")
             return
         }
     }
@@ -1592,7 +1625,7 @@ struct PickyAnnotationScenePolicyTests {
 
     /// Loads a real screenshot fixture from PickyTests/Fixtures and reduces it through the same
     /// resample + edge-mask pipeline the live capturer uses, at the annotation fingerprint size.
-    private func bannerFingerprint(_ name: String) throws -> PickyAnnotationSceneFingerprint {
+    private func fixtureFingerprint(_ name: String) throws -> PickyAnnotationSceneFingerprint {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .appendingPathComponent("Fixtures", isDirectory: true)

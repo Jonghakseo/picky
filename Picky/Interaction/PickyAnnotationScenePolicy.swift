@@ -335,10 +335,21 @@ enum PickyAnnotationSceneVisualPolicy {
         // A whole-frame tone change may still be the same screen, but only when the surrounding
         // structure is strongly intact; an ordinary restore needs just the normal floor.
         let requiredStableFraction = globalMismatches ? structuralOverrideFloor : restoreFloor
+        // Anchor-centric keep: when the annotation's own target is unchanged (its ROI luminance
+        // matches and its structure persists), keep it even if the rest of the frame changed a
+        // lot -- e.g. a video player filling most of the screen while the annotation points at the
+        // still-identical sidebar. Requiring anchor structure avoids keeping on a trivially-
+        // matching flat region of an otherwise different screen.
+        let anchorCentricKeep = !normalizedRegions.isEmpty
+            && roiMatches
+            && structural.anchorStructurallyStable
+            && structural.anchorHasStructure
         let observation: PickyAnnotationSceneVisualObservation
         if structural.anchorBroke {
             // A moved anchor whose luminance drift exceeds the bounded allowance breaks outright.
             observation = .mismatching(metrics)
+        } else if anchorCentricKeep {
+            observation = .matching(metrics)
         } else if structural.hasEvidence
             && structural.stableFraction >= requiredStableFraction
             && structural.anchorStructurallyStable {
@@ -363,7 +374,13 @@ enum PickyAnnotationSceneVisualPolicy {
         baseline: PickyAnnotationSceneFingerprint,
         current: PickyAnnotationSceneFingerprint,
         normalizedRegions: [CGRect]
-    ) -> (stableFraction: Double, anchorStructurallyStable: Bool, anchorBroke: Bool, hasEvidence: Bool) {
+    ) -> (
+        stableFraction: Double,
+        anchorStructurallyStable: Bool,
+        anchorBroke: Bool,
+        hasEvidence: Bool,
+        anchorHasStructure: Bool
+    ) {
         let gridColumns = min(gridSize, baseline.width)
         let gridRows = min(gridSize, baseline.height)
 
@@ -371,7 +388,7 @@ enum PickyAnnotationSceneVisualPolicy {
               baseline.height == current.height,
               gridColumns > 0,
               gridRows > 0 else {
-            return (0, false, true, true)
+            return (0, false, true, true, false)
         }
 
         let anchorCells = annotationCells(
@@ -386,6 +403,7 @@ enum PickyAnnotationSceneVisualPolicy {
         var weightedStructuralOutside = 0.0
         var weightedTotalOutside = 0.0
         var unstableStructuralCells: Set<Int> = []
+        var structuralCells: Set<Int> = []
 
         for row in 0..<gridRows {
             let rowStartIndex = rowStart(y: row, rows: gridRows, height: baseline.height)
@@ -416,6 +434,7 @@ enum PickyAnnotationSceneVisualPolicy {
 
                 let minEdgePixels = max(1, Int(Double(totalPixels) * minCellEdgeCoverage))
                 guard edgeUnion >= minEdgePixels else { continue } // neutral (flat) cell
+                structuralCells.insert(cellIndex)
 
                 let correspondence = Double(edgeIntersection) / Double(edgeUnion)
                 let structurallyStable = correspondence >= minCellEdgeCorrespondence
@@ -444,7 +463,12 @@ enum PickyAnnotationSceneVisualPolicy {
             if !withinAllowance { anchorBroke = true }
         }
 
-        return (stableFraction, anchorStructurallyStable, anchorBroke, hasEvidence)
+        // The anchor carries its own persistent structure when at least one of its cells has
+        // structure; combined with anchorStructurallyStable this means the annotation's target
+        // is present and unchanged (as opposed to a trivially-matching flat region).
+        let anchorHasStructure = !anchorCells.isDisjoint(with: structuralCells)
+
+        return (stableFraction, anchorStructurallyStable, anchorBroke, hasEvidence, anchorHasStructure)
     }
 
     private static func regionLuminanceDrift(

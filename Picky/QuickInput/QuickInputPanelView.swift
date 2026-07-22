@@ -145,7 +145,6 @@ struct QuickInputPanelView: View {
         }
         .buttonStyle(.plain)
         .disabled(isSendDisabled)
-        .keyboardShortcut(.return, modifiers: [])
         .accessibilityLabel("Send")
         .accessibilityValue(viewModel.isSending ? "Sending" : "")
     }

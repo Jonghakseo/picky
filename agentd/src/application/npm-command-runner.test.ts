@@ -59,7 +59,8 @@ describe("npm command runner", () => {
     ].join("\n");
     try {
       const exitCode = await runNpmCommandWithTimeout({
-        timeoutMs: 50,
+        // Child Node startup can exceed 50ms under a loaded full-suite run.
+        timeoutMs: 500,
         command: [process.execPath, "-e", leaderScript, childPIDPath],
         npmArgs: [],
       }, spawn, 25);

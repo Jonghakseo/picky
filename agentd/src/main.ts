@@ -4,6 +4,7 @@ import { removeConnectionInfo, writeConnectionInfo } from "./connection-info-sto
 import { PROTOCOL_VERSION } from "./protocol.js";
 import { logAgentd } from "./local-log.js";
 import { parseParentPid, startParentExitWatcher } from "./parent-watchdog.js";
+import { PARENT_EXIT_FORCE_SHUTDOWN_MS } from "./domain/shutdown-policy.js";
 
 // pi extensions run in-process within agentd. A throw from a passive hook
 // (e.g. an idle-timer screensaver calling `ctx.ui.custom`, or an extension
@@ -36,7 +37,7 @@ let shuttingDown = false;
 const parentWatcher = startParentExitWatcher({
   parentPid: parseParentPid(process.env.PICKY_AGENTD_PARENT_PID),
   onParentExit: () => {
-    void shutdown(0, { forceExitAfterMs: 1_000 });
+    void shutdown(0, { forceExitAfterMs: PARENT_EXIT_FORCE_SHUTDOWN_MS });
   },
 });
 

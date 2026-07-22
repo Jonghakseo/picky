@@ -1,8 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-
-// Longer than the nested npm runner's 500ms grace, shorter than the app
-// launcher's 2s daemon shutdown deadline.
-const DEFAULT_FORCE_KILL_GRACE_MS = 1_250;
+import { PACKAGE_PROCESS_FORCE_KILL_GRACE_MS } from "../domain/shutdown-policy.js";
 const DEFAULT_POLL_INTERVAL_MS = 25;
 
 interface CommandOptions {
@@ -33,7 +30,7 @@ export class CancellablePackageProcessController {
   private cancelled = false;
 
   constructor(options: CancellablePackageProcessControllerOptions = {}) {
-    this.forceKillGraceMs = options.forceKillGraceMs ?? DEFAULT_FORCE_KILL_GRACE_MS;
+    this.forceKillGraceMs = options.forceKillGraceMs ?? PACKAGE_PROCESS_FORCE_KILL_GRACE_MS;
     this.pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
   }
 

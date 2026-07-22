@@ -1,11 +1,9 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
+import { NPM_COMMAND_FORCE_KILL_GRACE_MS } from "../domain/shutdown-policy.js";
 
 export const NPM_COMMAND_TIMEOUT_EXIT_CODE = 124;
-// Must remain shorter than the outer package controller and the app launcher's
-// shutdown deadline so this runner can reap its detached npm group first.
-const FORCE_KILL_GRACE_MS = 500;
 
 export interface NpmCommandRunnerInvocation {
   timeoutMs: number;
@@ -43,7 +41,7 @@ export function parseNpmCommandRunnerArguments(args: string[]): NpmCommandRunner
 export async function runNpmCommandWithTimeout(
   invocation: NpmCommandRunnerInvocation,
   spawnCommand: typeof spawn = spawn,
-  forceKillGraceMs = FORCE_KILL_GRACE_MS,
+  forceKillGraceMs = NPM_COMMAND_FORCE_KILL_GRACE_MS,
 ): Promise<number> {
   const [executable, ...baseArgs] = invocation.command;
   const usesProcessGroup = process.platform !== "win32";

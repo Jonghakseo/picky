@@ -25,15 +25,29 @@ enum PickySecureSurfaceOverlayPolicy {
 protocol PickySecureSurfaceManagedWindow: AnyObject {
     var isVisible: Bool { get }
     var isSecureSurfaceSuppressionCandidate: Bool { get }
-    func orderOut(_ sender: Any?)
+    var secureSurfaceVisibilityRevision: UInt64 { get }
+    func orderOutForSecureSurfaceSuppression()
     func orderFrontRegardless()
 }
 
-extension NSWindow: PickySecureSurfaceManagedWindow {
-    /// Normal-level Picky windows already sit behind the frontmost App Store
-    /// window and must not be restored above whichever app activates next.
+/// Common base for Picky's elevated panels. Owner-driven `orderOut` calls
+/// advance a revision, while coordinator-driven suppression does not. This
+/// lets restoration distinguish "temporarily hidden" from "dismissed while
+/// hidden" even though both states have `isVisible == false`.
+class PickySecureSurfacePanel: NSPanel, PickySecureSurfaceManagedWindow {
+    private(set) var secureSurfaceVisibilityRevision: UInt64 = 0
+
     var isSecureSurfaceSuppressionCandidate: Bool {
         level.rawValue > NSWindow.Level.normal.rawValue
+    }
+
+    override func orderOut(_ sender: Any?) {
+        secureSurfaceVisibilityRevision &+= 1
+        super.orderOut(sender)
+    }
+
+    func orderOutForSecureSurfaceSuppression() {
+        super.orderOut(nil)
     }
 }
 
@@ -48,7 +62,12 @@ final class PickySecureSurfaceWindowCoordinator {
     private var activationObserver: NSObjectProtocol?
     private var applicationUpdateObserver: NSObjectProtocol?
     private var windowClosedObserver: NSObjectProtocol?
-    private var suppressedWindows: [ObjectIdentifier: PickySecureSurfaceManagedWindow] = [:]
+    private struct SuppressedWindow {
+        let window: PickySecureSurfaceManagedWindow
+        let visibilityRevision: UInt64
+    }
+
+    private var suppressedWindows: [ObjectIdentifier: SuppressedWindow] = [:]
     private(set) var isSuppressed = false
 
     init(
@@ -56,7 +75,7 @@ final class PickySecureSurfaceWindowCoordinator {
             NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         },
         windowsProvider: @escaping @MainActor () -> [PickySecureSurfaceManagedWindow] = {
-            NSApp.windows.map { $0 as PickySecureSurfaceManagedWindow }
+            NSApp.windows.compactMap { $0 as? PickySecureSurfaceManagedWindow }
         }
     ) {
         self.frontmostBundleIDProvider = frontmostBundleIDProvider
@@ -90,7 +109,7 @@ final class PickySecureSurfaceWindowCoordinator {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            guard let window = notification.object as? NSWindow else { return }
+            guard let window = notification.object as? PickySecureSurfaceManagedWindow else { return }
             Task { @MainActor [weak self] in
                 self?.handleWindowClosed(window)
             }
@@ -146,15 +165,19 @@ final class PickySecureSurfaceWindowCoordinator {
     }
 
     private func suppress(_ window: PickySecureSurfaceManagedWindow) {
-        suppressedWindows[ObjectIdentifier(window)] = window
-        window.orderOut(nil)
+        suppressedWindows[ObjectIdentifier(window)] = SuppressedWindow(
+            window: window,
+            visibilityRevision: window.secureSurfaceVisibilityRevision
+        )
+        window.orderOutForSecureSurfaceSuppression()
     }
 
     private func restoreSuppressedWindows() {
         let windowsToRestore = suppressedWindows.values
         suppressedWindows.removeAll()
-        for window in windowsToRestore {
-            window.orderFrontRegardless()
+        for suppressedWindow in windowsToRestore
+        where suppressedWindow.window.secureSurfaceVisibilityRevision == suppressedWindow.visibilityRevision {
+            suppressedWindow.window.orderFrontRegardless()
         }
     }
 }

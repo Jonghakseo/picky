@@ -14,7 +14,7 @@ import SwiftUI
 
 /// NSPanel subclass that can take key window status while still using the
 /// `.nonactivatingPanel` style so the host app does not lose foreground focus.
-private final class QuickInputKeyablePanel: NSPanel, PickyScreenCaptureExcludedWindow {
+private final class QuickInputKeyablePanel: PickySecureSurfacePanel, PickyScreenCaptureExcludedWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }

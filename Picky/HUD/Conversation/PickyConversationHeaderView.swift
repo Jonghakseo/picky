@@ -23,6 +23,31 @@ enum PickyConversationStickyArmHoldPolicy {
     }
 }
 
+/// Restricts delayed inline-rename selection to the originating title field.
+/// SwiftUI focus routing is asynchronous, so every identity and focus condition
+/// must still match when the field editor finally becomes first responder.
+enum PickyTitleFieldSelectionPolicy {
+    static func eligibleEditor(
+        expectedWindow: NSWindow?,
+        currentKeyWindow: NSWindow?,
+        firstResponder: NSResponder?,
+        isEditing: Bool,
+        isFocused: Bool,
+        isCurrentRequest: Bool
+    ) -> NSTextView? {
+        guard isEditing,
+              isFocused,
+              isCurrentRequest,
+              let expectedWindow,
+              currentKeyWindow === expectedWindow,
+              let editor = firstResponder as? NSTextView,
+              editor.isFieldEditor else {
+            return nil
+        }
+        return editor
+    }
+}
+
 struct PickyConversationHeaderView: View {
     @ObservedObject var viewModel: PickySessionListViewModel
     /// Observed separately from `viewModel` so cursor enter/exit on the
@@ -56,6 +81,7 @@ struct PickyConversationHeaderView: View {
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
     @State private var isEditingTitle = false
     @State private var titleDraft = ""
+    @State private var titleSelectionRequestID: UUID?
     @State private var isTitleHovered = false
     @State private var stickyHoldFeedbackStartTask: Task<Void, Never>?
     @State private var isStickyHolding = false
@@ -150,6 +176,7 @@ struct PickyConversationHeaderView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .focused($isTitleFieldFocused)
                 .onAppear { focusAndSelectTitleField() }
+                .onDisappear { titleSelectionRequestID = nil }
                 .onSubmit { commitTitleEdit() }
                 .onExitCommand { cancelTitleEdit() }
                 .onChange(of: isTitleFieldFocused) { _, focused in
@@ -191,12 +218,25 @@ struct PickyConversationHeaderView: View {
         // Route focus on the next runloop tick so the TextField is in the
         // hierarchy when @FocusState applies. Then wait one more tick so the
         // backing NSTextField has installed its field editor as the window's
-        // first responder, and select the prefilled title so a single keystroke
-        // replaces it (matches Finder/macOS native inline-rename UX).
+        // first responder. The delayed callback validates the original window,
+        // request, focus state, and AppKit field-editor identity before selecting
+        // so it cannot target a composer or a newly activated panel.
+        let expectedWindow = NSApp.keyWindow
+        let requestID = UUID()
+        titleSelectionRequestID = requestID
         DispatchQueue.main.async {
+            guard isEditingTitle, titleSelectionRequestID == requestID else { return }
             isTitleFieldFocused = true
             DispatchQueue.main.async {
-                (NSApp.keyWindow?.firstResponder as? NSText)?.selectAll(nil)
+                let editor = PickyTitleFieldSelectionPolicy.eligibleEditor(
+                    expectedWindow: expectedWindow,
+                    currentKeyWindow: NSApp.keyWindow,
+                    firstResponder: expectedWindow?.firstResponder,
+                    isEditing: isEditingTitle,
+                    isFocused: isTitleFieldFocused,
+                    isCurrentRequest: titleSelectionRequestID == requestID
+                )
+                editor?.selectAll(nil)
             }
         }
     }
@@ -204,6 +244,7 @@ struct PickyConversationHeaderView: View {
     private func cancelTitleEdit() {
         isEditingTitle = false
         isTitleFieldFocused = false
+        titleSelectionRequestID = nil
         titleDraft = ""
     }
 
@@ -214,6 +255,7 @@ struct PickyConversationHeaderView: View {
         let status = session.status
         isEditingTitle = false
         isTitleFieldFocused = false
+        titleSelectionRequestID = nil
         titleDraft = ""
         guard let command else { return }
         Task { try? await sendRenameCommand(command, sessionID: sessionID, status: status) }

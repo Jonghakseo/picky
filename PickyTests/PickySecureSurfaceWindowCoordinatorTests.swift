@@ -3,6 +3,7 @@
 //  PickyTests
 //
 
+import AppKit
 import Testing
 @testable import Picky
 
@@ -61,6 +62,48 @@ struct PickySecureSurfaceWindowCoordinatorTests {
         #expect(!quickInput.isVisible)
     }
 
+    @Test func doesNotRestoreWindowDismissedByOwnerWhileSuppressed() {
+        let quickInput = FakeSecureSurfaceWindow(isVisible: true)
+        let coordinator = makeCoordinator(windows: [quickInput])
+
+        coordinator.apply(frontmostBundleID: "com.apple.AppStore")
+        quickInput.orderOut(nil)
+        coordinator.apply(frontmostBundleID: "com.apple.Safari")
+
+        #expect(quickInput.orderFrontCallCount == 0)
+        #expect(!quickInput.isVisible)
+    }
+
+    @Test func restoresWindowWhenOwnerShowsItAgainDuringSuppression() {
+        let quickInput = FakeSecureSurfaceWindow(isVisible: true)
+        let coordinator = makeCoordinator(windows: [quickInput])
+
+        coordinator.apply(frontmostBundleID: "com.apple.AppStore")
+        quickInput.orderOut(nil)
+        quickInput.isVisible = true
+        coordinator.apply(frontmostBundleID: "com.apple.AppStore")
+        coordinator.apply(frontmostBundleID: "com.apple.Safari")
+
+        #expect(quickInput.orderOutCallCount == 2)
+        #expect(quickInput.orderFrontCallCount == 1)
+        #expect(quickInput.isVisible)
+    }
+
+    @Test func secureSurfacePanelTracksOnlyOwnerDrivenOrderOut() {
+        let panel = PickySecureSurfacePanel(
+            contentRect: .zero,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+
+        panel.orderOutForSecureSurfaceSuppression()
+        #expect(panel.secureSurfaceVisibilityRevision == 0)
+
+        panel.orderOut(nil)
+        #expect(panel.secureSurfaceVisibilityRevision == 1)
+    }
+
     private func makeCoordinator(
         windows: [FakeSecureSurfaceWindow]
     ) -> PickySecureSurfaceWindowCoordinator {
@@ -75,6 +118,7 @@ struct PickySecureSurfaceWindowCoordinatorTests {
 private final class FakeSecureSurfaceWindow: PickySecureSurfaceManagedWindow {
     var isVisible: Bool
     let isSecureSurfaceSuppressionCandidate: Bool
+    private(set) var secureSurfaceVisibilityRevision: UInt64 = 0
     private(set) var orderOutCallCount = 0
     private(set) var orderFrontCallCount = 0
 
@@ -84,6 +128,11 @@ private final class FakeSecureSurfaceWindow: PickySecureSurfaceManagedWindow {
     }
 
     func orderOut(_ sender: Any?) {
+        secureSurfaceVisibilityRevision &+= 1
+        isVisible = false
+    }
+
+    func orderOutForSecureSurfaceSuppression() {
         orderOutCallCount += 1
         isVisible = false
     }

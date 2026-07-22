@@ -291,13 +291,9 @@ private struct PickyInlineTerminalStatusLine: View {
 private struct PickyInlineSwiftTermViewRepresentable: NSViewRepresentable {
     @ObservedObject var terminalSession: PickyInlineTerminalSession
 
-    func makeCoordinator() -> PickySwiftTermViewRepresentable.Coordinator {
-        PickySwiftTermViewRepresentable.Coordinator(model: terminalSession.model)
-    }
-
     func makeNSView(context: Context) -> PickySwiftTermView {
         let terminalView = terminalSession.terminalView
-        terminalView.processDelegate = context.coordinator
+        terminalView.processDelegate = terminalSession.model.processDelegate
         terminalView.configurePickyAppearance(fontScale: terminalSession.model.fontScale)
         terminalSession.attachIfNeeded()
         DispatchQueue.main.async {
@@ -307,7 +303,7 @@ private struct PickyInlineSwiftTermViewRepresentable: NSViewRepresentable {
     }
 
     func updateNSView(_ terminalView: PickySwiftTermView, context: Context) {
-        terminalView.processDelegate = context.coordinator
+        terminalView.processDelegate = terminalSession.model.processDelegate
         terminalView.applyFontScale(terminalSession.model.fontScale)
         if terminalView.window?.firstResponder == nil {
             DispatchQueue.main.async {

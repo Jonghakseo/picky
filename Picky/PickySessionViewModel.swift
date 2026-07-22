@@ -120,6 +120,7 @@ final class PickySessionListViewModel: ObservableObject {
     private var releasedArchivedChildSessionIDs = Set<String>()
     private let manualPickleSessionIdFactory: () -> String
     private var terminalSessionCommandChains: [String: Task<Void, Never>] = [:]
+    private var terminalOverlayHandlesBySessionID: [String: PickyTerminalOverlayHandle] = [:]
     private var terminalSessionCommandChainIDs: [String: UUID] = [:]
     private var eventTask: Task<Void, Never>?
     /// Safety watchdog that flips `isLoadingInitialSessionSnapshot` to `false`
@@ -1261,19 +1262,24 @@ final class PickySessionListViewModel: ObservableObject {
         let baselineSnapshot = terminalSessionSnapshotIfAvailable(sessionFilePath: piSessionFilePath)
 
         do {
-            try terminalPresenter.openTerminal(
+            let handle = try terminalPresenter.openTerminal(
                 sessionID: session.id,
                 title: session.title,
                 sessionFilePath: piSessionFilePath,
                 cwd: session.cwd,
-                onClose: { [weak self] in
-                    guard let self else { return }
+                onClose: { [weak self] closedHandle in
+                    guard let self,
+                          self.terminalOverlayHandlesBySessionID[session.id] == closedHandle else {
+                        return
+                    }
+                    self.terminalOverlayHandlesBySessionID[session.id] = nil
                     // Stop the daemon-side tail BEFORE the reconcile so we don't race the
                     // post-close `syncTerminalSession` for the same final JSONL entries.
                     self.setTerminalSessionTailEnabled(sessionID: session.id, enabled: false)
                     self.syncTerminalSessionOnce(sessionID: session.id, baselineSnapshot: baselineSnapshot)
                 }
             )
+            terminalOverlayHandlesBySessionID[session.id] = handle
             setTerminalSessionTailEnabled(sessionID: session.id, enabled: true)
             lastError = nil
         } catch {

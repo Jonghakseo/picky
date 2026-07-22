@@ -218,8 +218,15 @@ private final class FakeTerminalOverlayPresenter: PickyTerminalOverlayPresenting
         let cwd: String?
     }
 
+    private struct CloseHandler {
+        let sessionID: String
+        let handle: PickyTerminalOverlayHandle
+        let callback: @MainActor (PickyTerminalOverlayHandle) -> Void
+    }
+
     private(set) var calls: [Call] = []
-    private var closeHandlers: [String: @MainActor () -> Void] = [:]
+    private var closeHandlers: [CloseHandler] = []
+    private var activeCloseHandlerIndexBySessionID: [String: Int] = [:]
     var error: Error?
 
     func openTerminal(
@@ -227,15 +234,32 @@ private final class FakeTerminalOverlayPresenter: PickyTerminalOverlayPresenting
         title: String,
         sessionFilePath: String,
         cwd: String?,
-        onClose: @escaping @MainActor () -> Void
-    ) throws {
+        onClose: @escaping @MainActor (PickyTerminalOverlayHandle) -> Void
+    ) throws -> PickyTerminalOverlayHandle {
         if let error { throw error }
         calls.append(Call(sessionID: sessionID, title: title, sessionFilePath: sessionFilePath, cwd: cwd))
-        closeHandlers[sessionID] = onClose
+        if let activeIndex = activeCloseHandlerIndexBySessionID[sessionID] {
+            return closeHandlers[activeIndex].handle
+        }
+        let handle = PickyTerminalOverlayHandle()
+        closeHandlers.append(CloseHandler(sessionID: sessionID, handle: handle, callback: onClose))
+        activeCloseHandlerIndexBySessionID[sessionID] = closeHandlers.indices.last
+        return handle
+    }
+
+    @discardableResult
+    func beginClose(sessionID: String) -> Int? {
+        activeCloseHandlerIndexBySessionID.removeValue(forKey: sessionID)
     }
 
     func close(sessionID: String) {
-        closeHandlers[sessionID]?()
+        guard let closeHandlerIndex = beginClose(sessionID: sessionID) else { return }
+        closeCall(at: closeHandlerIndex)
+    }
+
+    func closeCall(at index: Int) {
+        let closeHandler = closeHandlers[index]
+        closeHandler.callback(closeHandler.handle)
     }
 }
 
@@ -3503,6 +3527,88 @@ struct PickySessionViewModelTests {
         let terminalCommands = client.sentCommands.filter { $0.type == .setTerminalSessionTailEnabled || $0.type == .syncTerminalSession }
         #expect(terminalCommands.map(\.type) == [.setTerminalSessionTailEnabled, .setTerminalSessionTailEnabled, .syncTerminalSession])
         #expect(terminalCommands.map(\.enabled) == [true, false, nil])
+    }
+
+    @Test func duplicateTerminalOverlayOpenReusesCloseGeneration() async throws {
+        let client = FakePickyAgentClient()
+        let presenter = FakeTerminalOverlayPresenter()
+        let syncer = FakeTerminalSessionSyncer()
+        syncer.snapshotSequences["/tmp/pi-session.jsonl"] = [
+            PickyTerminalSessionSnapshot(lastMessageId: "original-baseline"),
+            PickyTerminalSessionSnapshot(lastMessageId: "duplicate-open-baseline"),
+        ]
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            terminalPresenter: presenter,
+            terminalSessionSyncer: syncer
+        )
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "pickle-1",
+            title: "Pickle",
+            status: "completed",
+            logs: ["pi session: /tmp/pi-session.jsonl"]
+        ))))
+
+        viewModel.openTerminalOverlay(sessionID: "pickle-1")
+        viewModel.openTerminalOverlay(sessionID: "pickle-1")
+        presenter.close(sessionID: "pickle-1")
+
+        try await wait { client.sentCommands.contains { $0.type == .syncTerminalSession } }
+
+        let terminalCommands = client.sentCommands.filter {
+            $0.type == .setTerminalSessionTailEnabled || $0.type == .syncTerminalSession
+        }
+        #expect(terminalCommands.map(\.type) == [
+            .setTerminalSessionTailEnabled,
+            .setTerminalSessionTailEnabled,
+            .setTerminalSessionTailEnabled,
+            .syncTerminalSession,
+        ])
+        #expect(terminalCommands.map(\.enabled) == [true, true, false, nil])
+        #expect(terminalCommands.last?.baselinePiMessageId == "original-baseline")
+    }
+
+    @Test func staleTerminalOverlayCloseDoesNotDisableReplacementTail() async throws {
+        let client = FakePickyAgentClient()
+        let presenter = FakeTerminalOverlayPresenter()
+        let syncer = FakeTerminalSessionSyncer()
+        syncer.snapshotSequences["/tmp/pi-session.jsonl"] = [
+            PickyTerminalSessionSnapshot(lastMessageId: "old-baseline"),
+            PickyTerminalSessionSnapshot(lastMessageId: "replacement-baseline"),
+        ]
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            terminalPresenter: presenter,
+            terminalSessionSyncer: syncer
+        )
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "pickle-1",
+            title: "Pickle",
+            status: "completed",
+            logs: ["pi session: /tmp/pi-session.jsonl"]
+        ))))
+
+        viewModel.openTerminalOverlay(sessionID: "pickle-1")
+        let staleCloseIndex = try #require(presenter.beginClose(sessionID: "pickle-1"))
+        viewModel.openTerminalOverlay(sessionID: "pickle-1")
+        presenter.closeCall(at: staleCloseIndex)
+        presenter.close(sessionID: "pickle-1")
+
+        try await wait { client.sentCommands.contains { $0.type == .syncTerminalSession } }
+
+        let terminalCommands = client.sentCommands.filter {
+            $0.type == .setTerminalSessionTailEnabled || $0.type == .syncTerminalSession
+        }
+        #expect(terminalCommands.map(\.type) == [
+            .setTerminalSessionTailEnabled,
+            .setTerminalSessionTailEnabled,
+            .setTerminalSessionTailEnabled,
+            .syncTerminalSession,
+        ])
+        #expect(terminalCommands.map(\.enabled) == [true, true, false, nil])
+        #expect(terminalCommands.last?.baselinePiMessageId == "replacement-baseline")
     }
 
     @Test func terminalOverlayCloseRequestsCanonicalDaemonSyncWithoutBaselineWhenSnapshotUnavailable() async throws {

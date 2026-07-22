@@ -103,7 +103,7 @@ final class PickyShellTerminalSession: ObservableObject {
 }
 
 @MainActor
-final class PickyShellTerminalModel: ObservableObject {
+final class PickyShellTerminalModel: ObservableObject, PickyTerminalProcessEventHandling {
     @Published private(set) var statusText: String
     @Published private(set) var fontScale: Double
 
@@ -112,6 +112,7 @@ final class PickyShellTerminalModel: ObservableObject {
 
     private weak var terminalView: LocalProcessTerminalView?
     private var didStartProcess = false
+    private(set) lazy var processDelegate = PickyTerminalProcessDelegate(handler: self)
     private let fontScalePersister: PickyTerminalFontScalePersister?
 
     init(
@@ -295,13 +296,9 @@ private struct PickySessionExtendedTerminalContentView: View {
 private struct PickyShellTerminalViewRepresentable: NSViewRepresentable {
     @ObservedObject var terminalSession: PickyShellTerminalSession
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(model: terminalSession.model)
-    }
-
     func makeNSView(context: Context) -> PickySwiftTermView {
         let terminalView = terminalSession.terminalView
-        terminalView.processDelegate = context.coordinator
+        terminalView.processDelegate = terminalSession.model.processDelegate
         terminalView.configurePickyAppearance(fontScale: terminalSession.model.fontScale)
         terminalSession.attach()
         DispatchQueue.main.async {
@@ -311,35 +308,11 @@ private struct PickyShellTerminalViewRepresentable: NSViewRepresentable {
     }
 
     func updateNSView(_ terminalView: PickySwiftTermView, context: Context) {
-        terminalView.processDelegate = context.coordinator
+        terminalView.processDelegate = terminalSession.model.processDelegate
         terminalView.applyFontScale(terminalSession.model.fontScale)
         if terminalView.window?.firstResponder == nil {
             DispatchQueue.main.async {
                 terminalView.window?.makeFirstResponder(terminalView)
-            }
-        }
-    }
-
-    final class Coordinator: NSObject, LocalProcessTerminalViewDelegate {
-        weak var model: PickyShellTerminalModel?
-
-        init(model: PickyShellTerminalModel) {
-            self.model = model
-        }
-
-        func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
-
-        func setTerminalTitle(source: LocalProcessTerminalView, title: String) {
-            Task { @MainActor [weak self] in
-                self?.model?.updateTerminalTitle(title)
-            }
-        }
-
-        func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
-
-        func processTerminated(source: TerminalView, exitCode: Int32?) {
-            Task { @MainActor [weak self] in
-                self?.model?.processExited(exitCode: exitCode)
             }
         }
     }

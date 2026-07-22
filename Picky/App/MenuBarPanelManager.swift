@@ -25,7 +25,7 @@ enum PickyPanelAutoDismissSuspension {
 
 /// Custom NSPanel subclass that can become the key window even with
 /// .nonactivatingPanel style, allowing text fields to receive focus.
-private class KeyablePanel: NSPanel, PickyScreenCaptureExcludedWindow {
+private class KeyablePanel: PickySecureSurfacePanel, PickyScreenCaptureExcludedWindow {
     override var canBecomeKey: Bool { true }
 }
 

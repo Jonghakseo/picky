@@ -17,7 +17,7 @@ extension NSWindow.Level {
     static let pickyCursorOverlay = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue - 1)
 }
 
-class OverlayWindow: NSPanel, PickyScreenCaptureExcludedWindow {
+class OverlayWindow: PickySecureSurfacePanel, PickyScreenCaptureExcludedWindow {
     init(screen: NSScreen) {
         // Create a non-activating panel covering the entire screen. A plain
         // NSWindow can interfere with command-key keyDown dispatch while the

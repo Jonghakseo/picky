@@ -18,7 +18,7 @@ import AppKit
 import Combine
 import SwiftUI
 
-private final class OnboardingSkipPanel: NSPanel, PickyScreenCaptureExcludedWindow {
+private final class OnboardingSkipPanel: PickySecureSurfacePanel, PickyScreenCaptureExcludedWindow {
     override var canBecomeKey: Bool { true }
 }
 

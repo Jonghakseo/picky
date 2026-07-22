@@ -225,12 +225,12 @@ struct CompanionPanelMessagesView: View {
         let info = companionManager.mainAgentSessionInfo
         guard let path = info.sessionFilePath, !path.isEmpty else { return }
         do {
-            try PickyTerminalOverlayPresenter.shared.openTerminal(
+            _ = try PickyTerminalOverlayPresenter.shared.openTerminal(
                 sessionID: "picky-main",
                 title: "Picky",
                 sessionFilePath: path,
                 cwd: info.cwd,
-                onClose: {}
+                onClose: { _ in }
             )
         } catch {
             NSSound.beep()

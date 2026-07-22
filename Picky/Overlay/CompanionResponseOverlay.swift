@@ -11,7 +11,7 @@ import AppKit
 import Combine
 import SwiftUI
 
-private final class CompanionResponsePanel: NSPanel, PickyScreenCaptureExcludedWindow {}
+private final class CompanionResponsePanel: PickySecureSurfacePanel, PickyScreenCaptureExcludedWindow {}
 
 /// Single source of truth for the cursor response bubble's typography and line budget.
 /// Shared by the SwiftUI view (truncation + lineLimit) and the panel sizing path

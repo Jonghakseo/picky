@@ -50,7 +50,7 @@ enum PickyAnnotationDismissPanelLayout {
     }
 }
 
-private final class PickyAnnotationDismissPanel: NSPanel, PickyScreenCaptureExcludedWindow {
+private final class PickyAnnotationDismissPanel: PickySecureSurfacePanel, PickyScreenCaptureExcludedWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }

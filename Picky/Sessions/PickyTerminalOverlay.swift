@@ -12,6 +12,14 @@ import Foundation
 import SwiftTerm
 import SwiftUI
 
+struct PickyTerminalOverlayHandle: Hashable {
+    let id: UUID
+
+    init(id: UUID = UUID()) {
+        self.id = id
+    }
+}
+
 @MainActor
 protocol PickyTerminalOverlayPresenting: AnyObject {
     func openTerminal(
@@ -19,8 +27,8 @@ protocol PickyTerminalOverlayPresenting: AnyObject {
         title: String,
         sessionFilePath: String,
         cwd: String?,
-        onClose: @escaping @MainActor () -> Void
-    ) throws
+        onClose: @escaping @MainActor (PickyTerminalOverlayHandle) -> Void
+    ) throws -> PickyTerminalOverlayHandle
 }
 
 enum PickyTerminalOverlayError: LocalizedError, Equatable {
@@ -106,11 +114,52 @@ struct PickyTerminalFontScalePersister {
     }
 }
 
+/// Keeps terminal panels reopening independently from records that are only
+/// retained while their child process flushes and exits.
+@MainActor
+final class PickyTerminalOverlayRecordStore<Record> {
+    private struct ActiveRecord {
+        let recordID: ObjectIdentifier
+        let record: Record
+    }
+
+    private var activeRecordsBySessionID: [String: ActiveRecord] = [:]
+    private var closingRecordsByID: [ObjectIdentifier: Record] = [:]
+
+    func activeRecord(sessionID: String) -> Record? {
+        activeRecordsBySessionID[sessionID]?.record
+    }
+
+    func insert(_ record: Record, sessionID: String, recordID: ObjectIdentifier) {
+        activeRecordsBySessionID[sessionID] = ActiveRecord(recordID: recordID, record: record)
+    }
+
+    @discardableResult
+    func beginClosing(sessionID: String, recordID: ObjectIdentifier) -> Bool {
+        guard let activeRecord = activeRecordsBySessionID[sessionID],
+              activeRecord.recordID == recordID else {
+            return false
+        }
+        activeRecordsBySessionID[sessionID] = nil
+        closingRecordsByID[recordID] = activeRecord.record
+        return true
+    }
+
+    func finishClosing(recordID: ObjectIdentifier) {
+        closingRecordsByID[recordID] = nil
+    }
+
+    func isClosing(recordID: ObjectIdentifier) -> Bool {
+        closingRecordsByID[recordID] != nil
+    }
+}
+
 @MainActor
 final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
     static let shared = PickyTerminalOverlayPresenter()
 
     private struct TerminalRecord {
+        let handle: PickyTerminalOverlayHandle
         let panel: NSPanel
         let model: PickyTerminalModel
         let delegate: PickyTerminalPanelDelegate
@@ -119,7 +168,7 @@ final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
         let frameAutosaver: PickyDetachedPanelFrameAutosaver
     }
 
-    private var records: [String: TerminalRecord] = [:]
+    private let recordStore = PickyTerminalOverlayRecordStore<TerminalRecord>()
     /// Held by the presenter for the lifetime of the app once `configure(appearanceStore:)`
     /// runs from `CompanionAppDelegate`. The fallback default keeps unit tests and
     /// previews working without crashing if `configure` was never called.
@@ -148,13 +197,13 @@ final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
         title: String,
         sessionFilePath: String,
         cwd: String?,
-        onClose: @escaping @MainActor () -> Void
-    ) throws {
-        if let existing = records[sessionID] {
+        onClose: @escaping @MainActor (PickyTerminalOverlayHandle) -> Void
+    ) throws -> PickyTerminalOverlayHandle {
+        if let existing = recordStore.activeRecord(sessionID: sessionID) {
             NSApp.activate(ignoringOtherApps: true)
             existing.panel.orderFrontRegardless()
             existing.panel.makeKey()
-            return
+            return existing.handle
         }
 
         let model = PickyTerminalModel(
@@ -200,14 +249,17 @@ final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
         panel.contentView = hostingView
 
         // Defer the post-overlay sync until pi's child process actually exits so the
-        // session jsonl is fully flushed before the daemon reads it. The model has to
-        // outlive the panel close so SwiftTerm can still deliver `processTerminated`,
-        // so we drop the panel record on the next runloop tick rather than inline.
-        let delegate = PickyTerminalPanelDelegate { [weak self, weak model, weak panel] in
-            let cleanup: @MainActor () -> Void = { [weak self, weak panel] in
-                onClose()
+        // session jsonl is fully flushed before the daemon reads it. Closing moves the
+        // record out of the active lookup immediately, while a separate closing bucket
+        // keeps the model alive long enough for SwiftTerm to deliver `processTerminated`.
+        let handle = PickyTerminalOverlayHandle()
+        let panelID = ObjectIdentifier(panel)
+        let delegate = PickyTerminalPanelDelegate { [weak self, weak model] in
+            self?.recordStore.beginClosing(sessionID: sessionID, recordID: panelID)
+            let cleanup: @MainActor () -> Void = { [weak self] in
+                onClose(handle)
                 DispatchQueue.main.async {
-                    if let panel { self?.remove(panel: panel) }
+                    self?.recordStore.finishClosing(recordID: panelID)
                 }
             }
             guard let model else {
@@ -218,14 +270,12 @@ final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
             model.close()
         }
         panel.delegate = delegate
-        records[sessionID] = TerminalRecord(panel: panel, model: model, delegate: delegate, frameAutosaver: frameAutosaver)
+        let record = TerminalRecord(handle: handle, panel: panel, model: model, delegate: delegate, frameAutosaver: frameAutosaver)
+        recordStore.insert(record, sessionID: sessionID, recordID: panelID)
         NSApp.activate(ignoringOtherApps: true)
         panel.orderFrontRegardless()
         panel.makeKey()
-    }
-
-    private func remove(panel: NSPanel) {
-        records = records.filter { $0.value.panel !== panel }
+        return handle
     }
 
     private func makeFontScalePersister() -> PickyTerminalFontScalePersister {
@@ -354,7 +404,40 @@ final class PickyTerminalExitSyncScheduler {
 }
 
 @MainActor
-final class PickyTerminalModel: ObservableObject {
+protocol PickyTerminalProcessEventHandling: AnyObject {
+    func updateTerminalTitle(_ terminalTitle: String)
+    func processExited(exitCode: Int32?)
+}
+
+/// SwiftTerm keeps this delegate weakly. The terminal model owns this adapter
+/// so process-exit delivery survives SwiftUI representable replacement.
+final class PickyTerminalProcessDelegate: NSObject, LocalProcessTerminalViewDelegate {
+    private weak var handler: (any PickyTerminalProcessEventHandling)?
+
+    @MainActor
+    init(handler: any PickyTerminalProcessEventHandling) {
+        self.handler = handler
+    }
+
+    func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
+
+    func setTerminalTitle(source: LocalProcessTerminalView, title: String) {
+        Task { @MainActor [weak self] in
+            self?.handler?.updateTerminalTitle(title)
+        }
+    }
+
+    func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
+
+    func processTerminated(source: TerminalView, exitCode: Int32?) {
+        Task { @MainActor [weak self] in
+            self?.handler?.processExited(exitCode: exitCode)
+        }
+    }
+}
+
+@MainActor
+final class PickyTerminalModel: ObservableObject, PickyTerminalProcessEventHandling {
     @Published private(set) var statusText = "Starting pi --session…"
     /// Live zoom multiplier for the SwiftTerm grid font. Bound to
     /// `PickyFontScales.minimum/maximum` and rounded to one decimal so ⌘+ taps
@@ -367,6 +450,7 @@ final class PickyTerminalModel: ObservableObject {
 
     private weak var terminalView: LocalProcessTerminalView?
     private var didStartProcess = false
+    private(set) lazy var processDelegate = PickyTerminalProcessDelegate(handler: self)
     private let exitSync: PickyTerminalExitSyncScheduler
     private let fontScalePersister: PickyTerminalFontScalePersister?
 
@@ -521,13 +605,9 @@ struct PickyTerminalOverlayView: View {
 struct PickySwiftTermViewRepresentable: NSViewRepresentable {
     @ObservedObject var model: PickyTerminalModel
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(model: model)
-    }
-
     func makeNSView(context: Context) -> PickySwiftTermView {
         let terminalView = PickySwiftTermView(frame: .zero)
-        terminalView.processDelegate = context.coordinator
+        terminalView.processDelegate = model.processDelegate
         terminalView.autoresizingMask = [.width, .height]
         terminalView.configurePickyAppearance(fontScale: model.fontScale)
         DispatchQueue.main.async {
@@ -538,7 +618,7 @@ struct PickySwiftTermViewRepresentable: NSViewRepresentable {
     }
 
     func updateNSView(_ terminalView: PickySwiftTermView, context: Context) {
-        terminalView.processDelegate = context.coordinator
+        terminalView.processDelegate = model.processDelegate
         // Re-applies font sizing whenever the model's `fontScale` changes (⌘+ / ⌘- / ⌘0).
         // `applyFontScale` is idempotent for unchanged scales so SwiftUI updates do not
         // trigger SwiftTerm font resets/resizes.
@@ -546,30 +626,6 @@ struct PickySwiftTermViewRepresentable: NSViewRepresentable {
         if terminalView.window?.firstResponder == nil {
             DispatchQueue.main.async {
                 terminalView.window?.makeFirstResponder(terminalView)
-            }
-        }
-    }
-
-    final class Coordinator: NSObject, LocalProcessTerminalViewDelegate {
-        weak var model: PickyTerminalModel?
-
-        init(model: PickyTerminalModel) {
-            self.model = model
-        }
-
-        func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
-
-        func setTerminalTitle(source: LocalProcessTerminalView, title: String) {
-            Task { @MainActor [weak self] in
-                self?.model?.updateTerminalTitle(title)
-            }
-        }
-
-        func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
-
-        func processTerminated(source: TerminalView, exitCode: Int32?) {
-            Task { @MainActor [weak self] in
-                self?.model?.processExited(exitCode: exitCode)
             }
         }
     }

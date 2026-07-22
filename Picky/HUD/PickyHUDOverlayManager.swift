@@ -12,7 +12,7 @@ import AppKit
 import Combine
 import SwiftUI
 
-final class PickyHUDPanel: NSPanel, PickyScreenCaptureExcludedWindow {
+final class PickyHUDPanel: PickySecureSurfacePanel, PickyScreenCaptureExcludedWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 

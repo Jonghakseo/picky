@@ -1,4 +1,4 @@
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 
 export interface NpmCommandResolutionOptions {
   configured: string[] | undefined;
@@ -19,4 +19,12 @@ export function resolveNpmCommand({ configured, execPath, fileExists }: NpmComma
 
   const bundledNpmCli = bundledNpmCliPath(execPath);
   return fileExists(bundledNpmCli) ? [execPath, bundledNpmCli] : configured;
+}
+
+/** Ensures npm lifecycle scripts resolve the daemon's Node binary first. */
+export function prependNodeBinToPath(pathValue: string | undefined, execPath: string): string {
+  const nodeBin = dirname(execPath);
+  const entries = (pathValue ?? "").split(delimiter).filter(Boolean);
+  if (entries.includes(nodeBin)) return pathValue ?? nodeBin;
+  return [nodeBin, ...entries].join(delimiter);
 }

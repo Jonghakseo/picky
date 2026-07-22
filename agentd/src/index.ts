@@ -32,4 +32,8 @@ if (!isNodeVersionAtLeast(currentNodeVersion, minimumSupportedNodeVersion)) {
   process.exit(2);
 }
 
+// npm lifecycle scripts inherit this PATH, so they use the daemon's bundled Node.
+const { prependNodeBinToPath } = await import("./domain/npm-command.js");
+process.env.PATH = prependNodeBinToPath(process.env.PATH, process.execPath);
+
 await import("./main.js");

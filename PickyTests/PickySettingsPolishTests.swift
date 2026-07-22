@@ -218,6 +218,23 @@ struct PickySettingsPolishTests {
         #expect(saved.pinnedPickleCwds == [pinnedProject.path])
     }
 
+    @Test func reorderPinnedPickleCwdsAppliesNewOrderAndPreservesUnlistedPins() {
+        var settings = PickySettings.defaults()
+        settings.pinPickleCwd("/pickytest/a")
+        settings.pinPickleCwd("/pickytest/b")
+        settings.pinPickleCwd("/pickytest/c")
+        #expect(settings.pinnedPickleCwds == ["/pickytest/a", "/pickytest/b", "/pickytest/c"])
+
+        // Reorder using only the visible subset (b, c) while a stays hidden;
+        // hidden pins are preserved at the end so nothing is silently dropped.
+        settings.reorderPinnedPickleCwds(["/pickytest/c", "/pickytest/b"])
+        #expect(settings.pinnedPickleCwds == ["/pickytest/c", "/pickytest/b", "/pickytest/a"])
+
+        // Unknown or duplicate paths in the requested order are ignored.
+        settings.reorderPinnedPickleCwds(["/pickytest/b", "/pickytest/unknown", "/pickytest/b", "/pickytest/a", "/pickytest/c"])
+        #expect(settings.pinnedPickleCwds == ["/pickytest/b", "/pickytest/a", "/pickytest/c"])
+    }
+
     @MainActor @Test func settingsViewModelSavePreservesFooterControlledPreferences() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }

@@ -7,6 +7,7 @@ protocol PickyRecentPickleFolderStoring {
     func remove(cwd: String) throws -> [String]
     func pin(cwd: String) throws -> (pinned: [String], recent: [String])
     func unpin(cwd: String) throws -> (pinned: [String], recent: [String])
+    func reorderPinned(cwds: [String]) throws -> [String]
 }
 
 struct PickyNoopRecentPickleFolderStore: PickyRecentPickleFolderStoring {
@@ -16,6 +17,7 @@ struct PickyNoopRecentPickleFolderStore: PickyRecentPickleFolderStoring {
     func remove(cwd: String) throws -> [String] { [] }
     func pin(cwd: String) throws -> (pinned: [String], recent: [String]) { ([], []) }
     func unpin(cwd: String) throws -> (pinned: [String], recent: [String]) { ([], []) }
+    func reorderPinned(cwds: [String]) throws -> [String] { [] }
 }
 
 struct PickySettingsRecentPickleFolderStore: PickyRecentPickleFolderStoring {
@@ -59,5 +61,13 @@ struct PickySettingsRecentPickleFolderStore: PickyRecentPickleFolderStoring {
         settings = settings.normalizedPaths()
         try settingsStore.save(settings)
         return (settings.pinnedPickleCwds, settings.recentPickleCwds)
+    }
+
+    func reorderPinned(cwds: [String]) throws -> [String] {
+        var settings = settingsStore.load()
+        settings.reorderPinnedPickleCwds(cwds)
+        settings = settings.normalizedPaths()
+        try settingsStore.save(settings)
+        return settings.pinnedPickleCwds
     }
 }

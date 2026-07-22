@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct PickyRecentPickleFolderPolicy {
     static func visibleCwds(_ cwds: [String], exists: (String) -> Bool) -> [String] {
@@ -32,6 +33,7 @@ extension View {
         onRemoveRecentPickleFolder: @escaping (String) -> Void,
         onPinPickleFolder: @escaping (String) -> Void,
         onUnpinPickleFolder: @escaping (String) -> Void,
+        onReorderPinnedPickleFolders: @escaping ([String]) -> Void = { _ in },
         availableSessionsForGroupCreation: [PickySessionListViewModel.SessionCard] = [],
         suggestedGroupColor: PickyDockGroupColor = .teal,
         onCreateGroup: ((_ name: String, _ memberIDs: [String]) -> Void)? = nil
@@ -46,6 +48,7 @@ extension View {
                 onRemoveRecentPickleFolder: onRemoveRecentPickleFolder,
                 onPinPickleFolder: onPinPickleFolder,
                 onUnpinPickleFolder: onUnpinPickleFolder,
+                onReorderPinnedPickleFolders: onReorderPinnedPickleFolders,
                 availableSessionsForGroupCreation: availableSessionsForGroupCreation,
                 suggestedGroupColor: suggestedGroupColor,
                 onCreateGroup: onCreateGroup
@@ -63,6 +66,7 @@ struct PickyRecentPickleFolderPickerView: View {
     let onRemoveRecentPickleFolder: (String) -> Void
     let onPinPickleFolder: (String) -> Void
     let onUnpinPickleFolder: (String) -> Void
+    let onReorderPinnedPickleFolders: ([String]) -> Void
     let availableSessionsForGroupCreation: [PickySessionListViewModel.SessionCard]
     let suggestedGroupColor: PickyDockGroupColor
     let onCreateGroup: ((_ name: String, _ memberIDs: [String]) -> Void)?
@@ -72,6 +76,13 @@ struct PickyRecentPickleFolderPickerView: View {
     /// user picks a name and initial members in one step instead of
     /// being kicked into an inline rename of an empty group.
     @State private var isShowingGroupCreator = false
+
+    /// Local, mutable copy of the pinned order so drag reordering animates
+    /// smoothly while the popover is open. The persisted order is committed via
+    /// `onReorderPinnedPickleFolders` when a drag finishes; `pinnedPickleCwds`
+    /// stays the source of truth and re-syncs this copy on change.
+    @State private var pinnedOrder: [String] = []
+    @State private var draggingPinnedCwd: String?
 
     var body: some View {
         if isShowingGroupCreator, let onCreateGroup {
@@ -145,10 +156,12 @@ struct PickyRecentPickleFolderPickerView: View {
                 if !pinnedPickleCwds.isEmpty {
                     sectionTitle(L10n.t("dock.recentFolders.pinned.title"), systemImage: "pin.fill")
                     VStack(spacing: 2) {
-                        ForEach(pinnedPickleCwds, id: \.self) { cwd in
+                        ForEach(pinnedOrder, id: \.self) { cwd in
                             PickyRecentPickleFolderRow(
                                 cwd: cwd,
                                 isPinned: true,
+                                isReorderable: pinnedOrder.count > 1,
+                                isDragging: draggingPinnedCwd == cwd,
                                 onCreate: {
                                     isPresented = false
                                     onCreatePickleInRecentFolder(cwd)
@@ -158,6 +171,19 @@ struct PickyRecentPickleFolderPickerView: View {
                                     onUnpinPickleFolder(cwd)
                                 },
                                 onRemove: {}
+                            )
+                            .onDrag {
+                                draggingPinnedCwd = cwd
+                                return NSItemProvider(object: cwd as NSString)
+                            }
+                            .onDrop(
+                                of: [UTType.text],
+                                delegate: PickyPinnedFolderReorderDropDelegate(
+                                    item: cwd,
+                                    order: $pinnedOrder,
+                                    dragging: $draggingPinnedCwd,
+                                    onCommit: { onReorderPinnedPickleFolders(pinnedOrder) }
+                                )
                             )
                         }
                     }
@@ -195,6 +221,10 @@ struct PickyRecentPickleFolderPickerView: View {
             }
         }
         .frame(maxHeight: 320)
+        .onAppear { pinnedOrder = pinnedPickleCwds }
+        .onChange(of: pinnedPickleCwds) { _, newValue in
+            if draggingPinnedCwd == nil { pinnedOrder = newValue }
+        }
     }
 
     private func sectionTitle(_ title: String, systemImage: String) -> some View {
@@ -218,6 +248,8 @@ struct PickyRecentPickleFolderPickerView: View {
 private struct PickyRecentPickleFolderRow: View {
     let cwd: String
     let isPinned: Bool
+    var isReorderable: Bool = false
+    var isDragging: Bool = false
     let onCreate: () -> Void
     let onPin: () -> Void
     let onUnpin: () -> Void
@@ -253,6 +285,9 @@ private struct PickyRecentPickleFolderRow: View {
             .accessibilityHint(compactPath)
 
             if isPinned {
+                if isReorderable {
+                    reorderHandle
+                }
                 rowActionButton(
                     systemImage: "pin.slash",
                     accessibilityLabel: L10n.t("dock.recentFolders.unpin"),
@@ -276,7 +311,20 @@ private struct PickyRecentPickleFolderRow: View {
         }
         .background(isHovered ? DS.Colors.surface2 : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous))
+        .opacity(isDragging ? 0.5 : 1)
         .onHover { isHovered = $0 }
+    }
+
+    private var reorderHandle: some View {
+        Image(systemName: "line.3.horizontal")
+            .pickyFont(size: 10, weight: .medium)
+            .foregroundStyle(DS.Colors.textTertiary)
+            .frame(width: 22, height: 22)
+            .contentShape(Rectangle())
+            .opacity(isHovered ? 0.9 : 0.35)
+            .help(L10n.t("dock.recentFolders.reorder.hint"))
+            .accessibilityLabel(L10n.t("dock.recentFolders.reorder"))
+            .accessibilityHint(L10n.t("dock.recentFolders.reorder.hint"))
     }
 
     private func rowActionButton(
@@ -311,5 +359,39 @@ private struct PickyRecentPickleFolderRow: View {
             return "~" + String(standardizedPath.dropFirst(homePath.count))
         }
         return cwd
+    }
+}
+
+/// Reorders the pinned-folder list as a dragged row hovers over its peers.
+/// The visual order is mutated locally on `dropEntered`; the final order is
+/// persisted once, on `performDrop`, so a single reorder produces a single
+/// settings write.
+private struct PickyPinnedFolderReorderDropDelegate: DropDelegate {
+    let item: String
+    @Binding var order: [String]
+    @Binding var dragging: String?
+    let onCommit: () -> Void
+
+    func validateDrop(info: DropInfo) -> Bool {
+        dragging != nil
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func dropEntered(info: DropInfo) {
+        guard let dragging, dragging != item,
+              let from = order.firstIndex(of: dragging),
+              let to = order.firstIndex(of: item) else { return }
+        withAnimation(.easeInOut(duration: 0.18)) {
+            order.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+        }
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        dragging = nil
+        onCommit()
+        return true
     }
 }

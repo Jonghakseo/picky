@@ -491,6 +491,7 @@ struct PickyHUDView: View {
                 onRemoveRecentPickleFolder: viewModel.removeRecentPickleFolder,
                 onPinPickleFolder: viewModel.pinPickleFolder,
                 onUnpinPickleFolder: viewModel.unpinPickleFolder,
+                onReorderPinnedPickleFolders: viewModel.reorderPinnedPickleFolders,
                 onCreateDockGroup: { name, memberIDs in
                     viewModel.createDockGroup(name: name, withMemberIDs: memberIDs)
                 },

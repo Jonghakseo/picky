@@ -371,6 +371,15 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
+    func reorderPinnedPickleFolders(_ cwds: [String]) {
+        do {
+            pinnedPickleCwds = try recentPickleFolderStore.reorderPinned(cwds: cwds)
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
     private func recordRecentPickleFolder(_ cwd: String) {
         do {
             recentPickleCwds = try recentPickleFolderStore.record(cwd: cwd)

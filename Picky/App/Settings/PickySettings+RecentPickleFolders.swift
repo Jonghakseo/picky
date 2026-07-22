@@ -53,6 +53,24 @@ extension PickySettings {
         recentPickleCwds.removeAll { $0 == path }
     }
 
+    /// Reorders the pinned folders to match `ordered`. Only paths that are
+    /// currently pinned are honored; any pinned path missing from `ordered`
+    /// (e.g. a folder filtered out of the visible picker because it no longer
+    /// exists) is preserved at the end so a reorder from the UI never silently
+    /// drops hidden pins.
+    mutating func reorderPinnedPickleCwds(_ ordered: [String]) {
+        let current = Self.normalizedPinnedPickleCwds(pinnedPickleCwds)
+        let currentSet = Set(current)
+        var result: [String] = []
+        for path in Self.normalizedPinnedPickleCwds(ordered) where currentSet.contains(path) {
+            result.append(path)
+        }
+        for path in current where !result.contains(path) {
+            result.append(path)
+        }
+        pinnedPickleCwds = result
+    }
+
     mutating func unpinPickleCwd(_ cwd: String) {
         guard let path = Self.normalizedRecentPickleCwd(cwd) else { return }
         pinnedPickleCwds = Self.normalizedPinnedPickleCwds(pinnedPickleCwds)

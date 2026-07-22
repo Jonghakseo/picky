@@ -35,6 +35,7 @@ private final class FakeRecentPickleFolderStore: PickyRecentPickleFolderStoring 
     private(set) var removed: [String] = []
     private(set) var pinned: [String] = []
     private(set) var unpinned: [String] = []
+    private(set) var reordered: [[String]] = []
     var recentPickleCwds: [String]
     var pinnedPickleCwds: [String]
 
@@ -75,6 +76,17 @@ private final class FakeRecentPickleFolderStore: PickyRecentPickleFolderStoring 
             recentPickleCwds.insert(cwd, at: 0)
         }
         return (pinnedPickleCwds, recentPickleCwds)
+    }
+
+    func reorderPinned(cwds: [String]) throws -> [String] {
+        reordered.append(cwds)
+        let known = Set(pinnedPickleCwds)
+        var result = cwds.filter { known.contains($0) }
+        for cwd in pinnedPickleCwds where !result.contains(cwd) {
+            result.append(cwd)
+        }
+        pinnedPickleCwds = result
+        return pinnedPickleCwds
     }
 }
 

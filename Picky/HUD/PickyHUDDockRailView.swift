@@ -48,6 +48,8 @@ struct PickyHUDDockRailView: View {
     let onRemoveRecentPickleFolder: (String) -> Void
     let onPinPickleFolder: (String) -> Void
     let onUnpinPickleFolder: (String) -> Void
+    /// Persist a new order for the pinned folders after a drag reorder.
+    let onReorderPinnedPickleFolders: ([String]) -> Void
     /// Create a new group with a name and (optionally) an initial set of
     /// member sessions. Returns the new group's id so callers can chain
     /// follow-up actions (e.g. focus the new group), though the dock
@@ -1023,6 +1025,7 @@ struct PickyHUDDockRailView: View {
             onRemoveRecentPickleFolder: onRemoveRecentPickleFolder,
             onPinPickleFolder: onPinPickleFolder,
             onUnpinPickleFolder: onUnpinPickleFolder,
+            onReorderPinnedPickleFolders: onReorderPinnedPickleFolders,
             // Use the full live list, not the collapsed projection slots, so
             // members hidden inside a collapsed group remain selectable.
             availableSessionsForGroupCreation: allSessions,
@@ -1083,6 +1086,7 @@ struct PickyHUDDockRailView: View {
             onRemoveRecentPickleFolder: onRemoveRecentPickleFolder,
             onPinPickleFolder: onPinPickleFolder,
             onUnpinPickleFolder: onUnpinPickleFolder,
+            onReorderPinnedPickleFolders: onReorderPinnedPickleFolders,
             // Use the full live list, not the collapsed projection slots, so
             // members hidden inside a collapsed group remain selectable.
             availableSessionsForGroupCreation: allSessions,
@@ -1161,6 +1165,7 @@ struct PickyHUDDockRailView: View {
             onRemoveRecentPickleFolder: onRemoveRecentPickleFolder,
             onPinPickleFolder: onPinPickleFolder,
             onUnpinPickleFolder: onUnpinPickleFolder,
+            onReorderPinnedPickleFolders: onReorderPinnedPickleFolders,
             // Use the full live list, not the collapsed projection slots, so
             // members hidden inside a collapsed group remain selectable.
             availableSessionsForGroupCreation: allSessions,

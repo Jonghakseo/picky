@@ -400,6 +400,7 @@ private extension PickyCommandEnvelope {
             parts.append("transcriptChars=\(context.transcript?.count ?? 0)")
         }
         if let text { parts.append("textChars=\(text.count)") }
+        if let source { parts.append("sourceChars=\(source.count)") }
         if let requestId { parts.append("request=\(requestId)") }
         if let artifactId { parts.append("artifact=\(artifactId)") }
         if let title { parts.append("titleChars=\(title.count)") }
@@ -450,6 +451,10 @@ private extension PickyEventEnvelope {
             return "type=sessionResourcesReloaded id=\(id) session=\(sessionId)"
         case .pluginsReloaded(let summary):
             return "type=pluginsReloaded id=\(id) request=\(summary.requestId ?? "none") picky=\(summary.pickyReloaded ? 1 : 0) reloaded=\(summary.pickleReloadedCount) aborted=\(summary.pickleAbortedCount) deferred=\(summary.pickleDeferredCount)"
+        case .packageOperationProgress(let progress):
+            return "type=packageOperationProgress id=\(id) request=\(progress.requestId) operation=\(progress.operation.rawValue) sourceChars=\(progress.source.count) messageChars=\(progress.message.count)"
+        case .packageOperationCompleted(let result):
+            return "type=packageOperationCompleted id=\(id) request=\(result.requestId) operation=\(result.operation.rawValue) sourceChars=\(result.source.count) ok=\(result.ok ? 1 : 0) errorChars=\(result.errorMessage?.count ?? 0)"
         case .sessionLogAppended(let sessionId, let line):
             return "type=sessionLogAppended id=\(id) session=\(sessionId) lineChars=\(line.count)"
         case .toolActivityUpdated(let sessionId, let tool):

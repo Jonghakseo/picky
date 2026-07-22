@@ -143,6 +143,84 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
+  it("runs package installs through an injected manager and relays progress to the requester", async () => {
+    let progressCallback: ((event: { type: "start"; action: "install"; source: string; message: string }) => void) | undefined;
+    let resolveInstall: (() => void) | undefined;
+    const installAndPersist = vi.fn(async (source: string) => {
+      progressCallback?.({ type: "start", action: "install", source, message: `Installing ${source}...` });
+      await new Promise<void>((resolve) => { resolveInstall = resolve; });
+    });
+    const flush = vi.fn(async () => {});
+
+    await server.stop();
+    server = new AgentdServer({
+      port: 0,
+      token: "test-token",
+      supervisor,
+      getAgentDir: () => "/tmp/picky-agent",
+      createPackageManager: () => ({
+        installAndPersist,
+        removeAndPersist: vi.fn(),
+        setProgressCallback: (callback) => { progressCallback = callback as typeof progressCallback; },
+        flush,
+      }),
+    });
+    port = await server.start();
+
+    const { ws } = await connectWithHello();
+    const received: EventEnvelope[] = [];
+    ws.on("message", (data) => received.push(JSON.parse(data.toString()) as EventEnvelope));
+    ws.send(JSON.stringify({ id: "cmd-package-install", protocolVersion: PROTOCOL_VERSION, type: "installPackage", source: "npm:@example/plugin" }));
+
+    await waitUntil(() => received.some((event) => event.type === "packageOperationProgress"));
+    expect(received.find((event) => event.type === "packageOperationProgress")).toMatchObject({
+      type: "packageOperationProgress",
+      requestId: "cmd-package-install",
+      operation: "install",
+      source: "npm:@example/plugin",
+      message: "Installing npm:@example/plugin...",
+    });
+    resolveInstall?.();
+    await waitUntil(() => received.some((event) => event.type === "packageOperationCompleted"));
+    expect(received.find((event) => event.type === "packageOperationCompleted")).toMatchObject({
+      type: "packageOperationCompleted",
+      requestId: "cmd-package-install",
+      operation: "install",
+      source: "npm:@example/plugin",
+      ok: true,
+    });
+    expect(installAndPersist).toHaveBeenCalledWith("npm:@example/plugin");
+    expect(flush).toHaveBeenCalledOnce();
+    ws.close();
+  });
+
+  it("returns package installation failures as completion events without crashing the daemon", async () => {
+    await server.stop();
+    server = new AgentdServer({
+      port: 0,
+      token: "test-token",
+      supervisor,
+      createPackageManager: () => ({
+        installAndPersist: vi.fn(async () => { throw new Error("npm was not found"); }),
+        removeAndPersist: vi.fn(),
+        setProgressCallback: vi.fn(),
+      }),
+    });
+    port = await server.start();
+
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({ id: "cmd-package-failure", protocolVersion: PROTOCOL_VERSION, type: "installPackage", source: "npm:@example/plugin" }));
+    await expect(waitForEvent(ws, "packageOperationCompleted")).resolves.toMatchObject({
+      type: "packageOperationCompleted",
+      requestId: "cmd-package-failure",
+      operation: "install",
+      source: "npm:@example/plugin",
+      ok: false,
+      errorMessage: "npm was not found",
+    });
+    ws.close();
+  });
+
   it("broadcasts mainTurnSettled with its contextId", async () => {
     const { ws } = await connectWithHello();
     const pendingSettled = waitForEvent(ws, "mainTurnSettled");

@@ -1605,7 +1605,8 @@ final class PickySessionListViewModel: ObservableObject {
              .mainVisualNarrationSegmentPrepared, .mainVisualNarrationSegmentSentence, .mainVisualNarrationSegmentCommitted,
              .mainMessagesSnapshot, .mainMessageAppended, .mainAgentSessionInfoUpdated, .mainAgentModelsSnapshot,
              .pointerOverlayRequested, .annotationOverlayRequested, .pickleHandoffRequested, .pickleBridgeRequested, .externalEntryRequested,
-             .dockGroupsRequested, .pushToTalkControlRequested, .hello, .pluginsReloaded, .unknown:
+             .dockGroupsRequested, .pushToTalkControlRequested, .hello, .pluginsReloaded,
+             .packageOperationProgress, .packageOperationCompleted, .unknown:
             break
         }
     }

@@ -203,6 +203,45 @@ struct PickyAgentClientTests {
         } else { Issue.record("Expected sessionUpdated") }
     }
 
+    @Test func encodesPackageOperationCommandsAndDecodesCompletionEvents() throws {
+        let encoder = JSONEncoder.pickyAgentProtocolEncoder()
+        let decoder = JSONDecoder.pickyAgentProtocolDecoder()
+
+        let install = try String(decoding: encoder.encode(PickyCommandEnvelope(
+            id: "cmd-package-install",
+            type: .installPackage,
+            source: "npm:@example/plugin"
+        )), as: UTF8.self)
+        let remove = try String(decoding: encoder.encode(PickyCommandEnvelope(
+            id: "cmd-package-remove",
+            type: .removePackage,
+            source: "npm:@example/plugin"
+        )), as: UTF8.self)
+        #expect(install.contains("\"type\":\"installPackage\"") || install.contains("\"type\" : \"installPackage\""))
+        #expect(remove.contains("\"type\":\"removePackage\"") || remove.contains("\"type\" : \"removePackage\""))
+        let decodedInstall = try decoder.decode(PickyCommandEnvelope.self, from: Data(install.utf8))
+        #expect(decodedInstall.source == "npm:@example/plugin")
+
+        let progress = try decoder.decode(PickyEventEnvelope.self, from: Data("""
+        {"id":"event-package-progress","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:02.000Z","type":"packageOperationProgress","requestId":"cmd-package-install","operation":"install","source":"npm:@example/plugin","message":"Installing npm:@example/plugin..."}
+        """.utf8))
+        if case .packageOperationProgress(let event) = progress.event {
+            #expect(event.requestId == "cmd-package-install")
+            #expect(event.operation == .install)
+            #expect(event.source == "npm:@example/plugin")
+        } else { Issue.record("Expected packageOperationProgress") }
+
+        let completion = try decoder.decode(PickyEventEnvelope.self, from: Data("""
+        {"id":"event-package-completed","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:03.000Z","type":"packageOperationCompleted","requestId":"cmd-package-remove","operation":"remove","source":"npm:@example/plugin","ok":false,"errorMessage":"npm was not found"}
+        """.utf8))
+        if case .packageOperationCompleted(let event) = completion.event {
+            #expect(event.requestId == "cmd-package-remove")
+            #expect(event.operation == .remove)
+            #expect(event.ok == false)
+            #expect(event.errorMessage == "npm was not found")
+        } else { Issue.record("Expected packageOperationCompleted") }
+    }
+
     @Test func malformedEventIsRecoverable() async throws {
         let task = FakeWebSocketTask()
         task.receiveResults = [.success(.string(EventJSON.hello())), .success(.string("not-json"))]

@@ -326,6 +326,45 @@ describe("protocol contract fixtures", () => {
     }
   });
 
+  it("parses package operation commands and progress/completion events", () => {
+    expect(CommandEnvelopeSchema.parse({
+      id: "cmd-package-install",
+      protocolVersion: "2026-07-19",
+      type: "installPackage",
+      source: "npm:@example/plugin",
+    })).toMatchObject({ type: "installPackage", source: "npm:@example/plugin" });
+
+    expect(CommandEnvelopeSchema.parse({
+      id: "cmd-package-remove",
+      protocolVersion: "2026-07-19",
+      type: "removePackage",
+      source: "npm:@example/plugin",
+    })).toMatchObject({ type: "removePackage", source: "npm:@example/plugin" });
+
+    expect(EventEnvelopeSchema.parse({
+      id: "event-package-progress",
+      protocolVersion: "2026-07-19",
+      timestamp: "2026-07-19T00:00:00.000Z",
+      type: "packageOperationProgress",
+      requestId: "cmd-package-install",
+      operation: "install",
+      source: "npm:@example/plugin",
+      message: "Installing npm:@example/plugin...",
+    })).toMatchObject({ type: "packageOperationProgress", operation: "install" });
+
+    expect(EventEnvelopeSchema.parse({
+      id: "event-package-completed",
+      protocolVersion: "2026-07-19",
+      timestamp: "2026-07-19T00:00:00.000Z",
+      type: "packageOperationCompleted",
+      requestId: "cmd-package-remove",
+      operation: "remove",
+      source: "npm:@example/plugin",
+      ok: false,
+      errorMessage: "npm was not found",
+    })).toMatchObject({ type: "packageOperationCompleted", operation: "remove", ok: false });
+  });
+
   it("parses slim todo state updates including authoritative clears", () => {
     expect(EventEnvelopeSchema.parse({
       id: "event-todo-state",

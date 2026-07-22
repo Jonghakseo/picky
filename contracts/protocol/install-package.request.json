@@ -1,0 +1,6 @@
+{
+  "id": "cmd-package-install-001",
+  "protocolVersion": "2026-07-19",
+  "type": "installPackage",
+  "source": "npm:@example/pi-extension"
+}

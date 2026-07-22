@@ -2,44 +2,35 @@
 //  PickyCuratedPluginInstaller.swift
 //  Picky
 //
-//  Installs curated third-party Pi packages through the Pi CLI. Unlike bundled
-//  extensions, curated packages are tracked by Pi's package settings and should
-//  be installed/removed through `pi install` / `pi remove` so Pi owns download,
-//  manifest resolution, and package directory layout.
+//  Installs curated third-party Pi packages through picky-agentd. The daemon
+//  uses its bundled Pi SDK package manager, so users do not need a separate
+//  `pi` CLI binary. Curated packages remain tracked in Pi's settings.json.
 //
 
 import Foundation
 
 enum PickyCuratedPluginInstaller {
-    struct CommandResult: Equatable {
-        let exitCode: Int32
-        let output: String
-    }
-
     enum Status: Equatable {
         case notInstalled
         case installed
     }
 
     enum CommandError: LocalizedError, Equatable {
-        case piMissing
-        case failed(command: String, exitCode: Int32, output: String)
+        case failed(String)
+        case timedOut
+        case disconnected
 
         var errorDescription: String? {
             switch self {
-            case .piMissing:
-                return "Pi CLI was not found. Set the Pi binary path in Settings or make `pi` discoverable on PATH."
-            case .failed(let command, let exitCode, let output):
-                let detail = output.trimmingCharacters(in: .whitespacesAndNewlines)
-                if detail.isEmpty {
-                    return "`pi \(command)` failed with exit code \(exitCode)."
-                }
-                return "`pi \(command)` failed with exit code \(exitCode): \(detail)"
+            case .failed(let message):
+                return message
+            case .timedOut:
+                return "Timed out waiting for package operation to finish."
+            case .disconnected:
+                return "picky-agentd disconnected while performing the package operation."
             }
         }
     }
-
-    typealias CommandRunner = (_ arguments: [String], _ homeURL: URL, _ fileManager: FileManager, _ preferences: PickyPiInstallationPreferences) throws -> CommandResult
 
     static func status(
         source: String,
@@ -53,43 +44,68 @@ enum PickyCuratedPluginInstaller {
     @discardableResult
     static func install(
         source: String,
-        homeURL: URL = FileManager.default.homeDirectoryForCurrentUser,
-        fileManager: FileManager = .default,
-        preferences: PickyPiInstallationPreferences? = nil,
-        commandRunner: CommandRunner = runPiCommand
-    ) -> Result<Void, CommandError> {
-        runPi(command: "install", source: source, homeURL: homeURL, fileManager: fileManager, preferences: resolvedPreferences(preferences, homeURL: homeURL), commandRunner: commandRunner)
+        client: any PickyAgentClient
+    ) async -> Result<Void, CommandError> {
+        await run(operation: .install, source: source, client: client)
     }
 
     @discardableResult
     static func remove(
         source: String,
-        homeURL: URL = FileManager.default.homeDirectoryForCurrentUser,
-        fileManager: FileManager = .default,
-        preferences: PickyPiInstallationPreferences? = nil,
-        commandRunner: CommandRunner = runPiCommand
-    ) -> Result<Void, CommandError> {
-        runPi(command: "remove", source: source, homeURL: homeURL, fileManager: fileManager, preferences: resolvedPreferences(preferences, homeURL: homeURL), commandRunner: commandRunner)
+        client: any PickyAgentClient
+    ) async -> Result<Void, CommandError> {
+        await run(operation: .remove, source: source, client: client)
     }
 
-    private static func runPi(
-        command: String,
+    private static func run(
+        operation: PickyPackageOperation,
         source: String,
-        homeURL: URL,
-        fileManager: FileManager,
-        preferences: PickyPiInstallationPreferences,
-        commandRunner: CommandRunner
-    ) -> Result<Void, CommandError> {
+        client: any PickyAgentClient
+    ) async -> Result<Void, CommandError> {
+        let commandType: PickyCommandType = operation == .install ? .installPackage : .removePackage
+        let command = PickyCommandEnvelope(type: commandType, source: source)
+        // Subscribe before sending so a fast daemon completion cannot be missed.
+        let stream = client.events
+        let completionTask = Task { () throws -> Void in
+            for await clientEvent in stream {
+                switch clientEvent {
+                case .protocolEvent(let envelope):
+                    guard case .packageOperationCompleted(let result) = envelope.event,
+                          result.requestId == command.id,
+                          result.operation == operation,
+                          result.source == source else {
+                        continue
+                    }
+                    guard result.ok else {
+                        throw CommandError.failed(result.errorMessage ?? "Package operation failed.")
+                    }
+                    return
+                case .disconnected:
+                    throw CommandError.disconnected
+                case .connected, .recoverableError:
+                    continue
+                }
+            }
+            throw CommandError.disconnected
+        }
+        defer { completionTask.cancel() }
+
         do {
-            let result = try commandRunner([command, source], homeURL, fileManager, preferences)
-            guard result.exitCode == 0 else {
-                return .failure(.failed(command: command, exitCode: result.exitCode, output: result.output))
+            try await client.send(command)
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask { try await completionTask.value }
+                group.addTask {
+                    try await Task.sleep(nanoseconds: 120_000_000_000)
+                    throw CommandError.timedOut
+                }
+                try await group.next()
+                group.cancelAll()
             }
             return .success(())
         } catch let error as CommandError {
             return .failure(error)
         } catch {
-            return .failure(.failed(command: command, exitCode: -1, output: error.localizedDescription))
+            return .failure(.failed(error.localizedDescription))
         }
     }
 
@@ -104,34 +120,6 @@ enum PickyCuratedPluginInstaller {
             return []
         }
         return Set(packages)
-    }
-
-    private static func runPiCommand(
-        arguments: [String],
-        homeURL: URL,
-        fileManager: FileManager,
-        preferences: PickyPiInstallationPreferences
-    ) throws -> CommandResult {
-        let resolved = PickyPiInstallation.resolve(preferences: preferences, homeURL: homeURL, fileManager: fileManager)
-        guard let piURL = resolved.binaryURL, fileManager.isExecutableFile(atPath: piURL.path) else {
-            throw CommandError.piMissing
-        }
-
-        let process = Process()
-        process.executableURL = piURL
-        process.arguments = arguments
-        process.environment = PickyPiInstallation.mergedEnvironment(preferences: preferences, homeURL: homeURL, fileManager: fileManager)
-
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-
-        try process.run()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-
-        let output = String(data: data, encoding: .utf8) ?? ""
-        return CommandResult(exitCode: process.terminationStatus, output: output)
     }
 
     private static func resolvedPreferences(_ preferences: PickyPiInstallationPreferences?, homeURL: URL) -> PickyPiInstallationPreferences {

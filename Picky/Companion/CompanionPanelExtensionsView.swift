@@ -144,12 +144,12 @@ private final class PickyCuratedPluginsViewModel: ObservableObject {
         }
     }
 
-    func install(_ plugin: PickyCuratedPlugin) {
-        mutate(plugin, operation: .install)
+    func install(_ plugin: PickyCuratedPlugin, pluginReloadController: PickyPluginReloadController) {
+        mutate(plugin, operation: .install, pluginReloadController: pluginReloadController)
     }
 
-    func remove(_ plugin: PickyCuratedPlugin) {
-        mutate(plugin, operation: .remove)
+    func remove(_ plugin: PickyCuratedPlugin, pluginReloadController: PickyPluginReloadController) {
+        mutate(plugin, operation: .remove, pluginReloadController: pluginReloadController)
     }
 
     private enum Operation {
@@ -157,25 +157,27 @@ private final class PickyCuratedPluginsViewModel: ObservableObject {
         case remove
     }
 
-    private func mutate(_ plugin: PickyCuratedPlugin, operation: Operation) {
+    private func mutate(
+        _ plugin: PickyCuratedPlugin,
+        operation: Operation,
+        pluginReloadController: PickyPluginReloadController
+    ) {
         let pluginID = plugin.id
         let source = plugin.source
         guard let index = rows.firstIndex(where: { $0.plugin.id == pluginID }) else { return }
         rows[index].isBusy = true
         lastError = nil
 
-        DispatchQueue.global(qos: .userInitiated).async {
+        Task { [weak self] in
             let result: Result<Void, PickyCuratedPluginInstaller.CommandError>
             switch operation {
             case .install:
-                result = PickyCuratedPluginInstaller.install(source: source)
+                result = await pluginReloadController.installCuratedPackage(source: source)
             case .remove:
-                result = PickyCuratedPluginInstaller.remove(source: source)
+                result = await pluginReloadController.removeCuratedPackage(source: source)
             }
-
-            DispatchQueue.main.async { [weak self] in
-                self?.applyMutationResult(pluginID: pluginID, source: source, result: result)
-            }
+            guard !Task.isCancelled else { return }
+            self?.applyMutationResult(pluginID: pluginID, source: source, result: result)
         }
     }
 
@@ -377,9 +379,9 @@ struct CompanionPanelExtensionsView: View {
         }
     }
 
-    /// Curated third-party Pi packages. These are installed through the Pi CLI
-    /// rather than copied from the app bundle, so Pi remains the source of truth
-    /// for package resolution and settings updates.
+    /// Curated third-party Pi packages. These are installed through agentd's
+    /// bundled Pi SDK rather than copied from the app bundle, so Pi remains the
+    /// source of truth for package resolution and settings updates.
     private var curatedSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("extensions.curated.heading")
@@ -488,14 +490,14 @@ struct CompanionPanelExtensionsView: View {
     private func curatedActionButton(for row: PickyCuratedPluginsViewModel.Row) -> some View {
         switch row.status {
         case .installed:
-            Button(action: { curatedViewModel.remove(row.plugin) }) {
+            Button(action: { curatedViewModel.remove(row.plugin, pluginReloadController: pluginReloadController) }) {
                 curatedButtonLabel(text: "status.extensions.action.remove", isBusy: row.isBusy)
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
             .disabled(row.isBusy)
         case .notInstalled:
-            Button(action: { curatedViewModel.install(row.plugin) }) {
+            Button(action: { curatedViewModel.install(row.plugin, pluginReloadController: pluginReloadController) }) {
                 curatedButtonLabel(text: "status.extensions.action.install", isBusy: row.isBusy)
             }
             .buttonStyle(.borderedProminent)

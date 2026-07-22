@@ -52,6 +52,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var context: PickyContextPacket?
     var sessionId: String?
     var text: String?
+    var source: String?
     var requestId: String?
     var value: JSONValue?
     var artifactId: String?
@@ -97,6 +98,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         context: PickyContextPacket? = nil,
         sessionId: String? = nil,
         text: String? = nil,
+        source: String? = nil,
         requestId: String? = nil,
         value: JSONValue? = nil,
         artifactId: String? = nil,
@@ -138,6 +140,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.context = context
         self.sessionId = sessionId
         self.text = text
+        self.source = source
         self.requestId = requestId
         self.value = value
         self.artifactId = artifactId
@@ -227,6 +230,8 @@ enum PickyCommandType: String, Codable, Equatable {
     case notifyMainOfPickleCompletion
     case setDisabledBuiltinTools
     case setMainAgentTTSEnabled
+    case installPackage
+    case removePackage
     case reloadPlugins
 
 }
@@ -281,6 +286,8 @@ enum PickyEvent: Equatable {
     case sessionArchivedAuthoritative(sessionId: String, archived: Bool)
     case sessionResourcesReloaded(sessionId: String)
     case pluginsReloaded(PickyPluginsReloadedEvent)
+    case packageOperationProgress(PickyPackageOperationProgressEvent)
+    case packageOperationCompleted(PickyPackageOperationCompletedEvent)
     case sessionLogAppended(sessionId: String, line: String)
     case toolActivityUpdated(sessionId: String, tool: PickyToolActivity)
     case sessionTodoStateUpdated(sessionId: String, todoState: PickyTodoState?, seq: Int)
@@ -435,6 +442,10 @@ enum PickyEvent: Equatable {
         switch type {
         case "pluginsReloaded":
             return .pluginsReloaded(try PickyPluginsReloadedEvent(from: decoder))
+        case "packageOperationProgress":
+            return .packageOperationProgress(try PickyPackageOperationProgressEvent(from: decoder))
+        case "packageOperationCompleted":
+            return .packageOperationCompleted(try PickyPackageOperationCompletedEvent(from: decoder))
         case "extensionUiRequest":
             let payload = try PickyExtensionUiRequestPayload(from: decoder)
             return .extensionUiRequest(payload.request)
@@ -547,6 +558,26 @@ struct PickyPluginsReloadedEvent: Decodable, Equatable {
     let pickleReloadedCount: Int
     let pickleAbortedCount: Int
     let pickleDeferredCount: Int
+}
+
+enum PickyPackageOperation: String, Decodable, Equatable {
+    case install
+    case remove
+}
+
+struct PickyPackageOperationProgressEvent: Decodable, Equatable {
+    let requestId: String
+    let operation: PickyPackageOperation
+    let source: String
+    let message: String
+}
+
+struct PickyPackageOperationCompletedEvent: Decodable, Equatable {
+    let requestId: String
+    let operation: PickyPackageOperation
+    let source: String
+    let ok: Bool
+    let errorMessage: String?
 }
 private struct PickySessionLogAppendedPayload: Decodable { let sessionId: String; let line: String }
 private struct PickyToolActivityUpdatedPayload: Decodable { let sessionId: String; let tool: PickyToolActivity }

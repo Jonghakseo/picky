@@ -1,0 +1,10 @@
+{
+  "id": "event-package-progress-001",
+  "protocolVersion": "2026-07-19",
+  "timestamp": "2026-07-19T00:00:00.000Z",
+  "type": "packageOperationProgress",
+  "requestId": "cmd-package-install-001",
+  "operation": "install",
+  "source": "npm:@example/pi-extension",
+  "message": "Installing npm:@example/pi-extension..."
+}

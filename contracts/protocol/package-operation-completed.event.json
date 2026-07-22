@@ -1,0 +1,10 @@
+{
+  "id": "event-package-completed-001",
+  "protocolVersion": "2026-07-19",
+  "timestamp": "2026-07-19T00:00:01.000Z",
+  "type": "packageOperationCompleted",
+  "requestId": "cmd-package-install-001",
+  "operation": "install",
+  "source": "npm:@example/pi-extension",
+  "ok": true
+}

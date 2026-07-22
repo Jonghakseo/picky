@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
+import { DefaultPackageManager, getAgentDir, SettingsManager, type ProgressEvent } from "@earendil-works/pi-coding-agent";
 import { isAuthorized } from "./auth.js";
 import { FOLLOWUP_PREFIX, HANDOFF_PREFIX, STEER_PREFIX } from "./domain/log-prefixes.js";
 import { sliceUtf16Safe } from "./domain/safe-truncate.js";
@@ -11,10 +12,27 @@ import { logAgentd } from "./local-log.js";
 import { EdgeTTSServiceError } from "./edge-tts-service.js";
 import type { EdgeTTSService } from "./edge-tts-service.js";
 
-interface AgentdServerOptions {
+export interface PackageManager {
+  installAndPersist(source: string): Promise<void>;
+  removeAndPersist(source: string): Promise<boolean>;
+  setProgressCallback(callback: ((event: ProgressEvent) => void) | undefined): void;
+  /** Waits until package settings changes are durable before completing the request. */
+  flush?(): Promise<void>;
+}
+
+export interface PackageManagerFactoryOptions {
+  cwd: string;
+  agentDir: string;
+}
+
+export interface AgentdServerOptions {
   port: number;
   token: string;
   supervisor: SessionSupervisor;
+  /** Creates a fresh user-scope Pi package manager for each package operation. */
+  createPackageManager?: (options: PackageManagerFactoryOptions) => PackageManager;
+  /** Overrides Pi's agent directory for package-manager isolation in tests. */
+  getAgentDir?: () => string;
   setDefaultCwd?: (cwd: string) => void;
   /** Primary-only. Child daemons intentionally omit the local Edge TTS routes. */
   edgeTTS?: EdgeTTSService;
@@ -449,6 +467,8 @@ export class AgentdServer {
       steer: (cmd) => this.options.supervisor.steer(cmd.sessionId, cmd.text, cmd.context, cmd.visualDslEnabled === true),
       abort: (cmd) => this.options.supervisor.abort(cmd.sessionId),
       answerExtensionUi: (cmd) => this.options.supervisor.answerExtensionUi(cmd.sessionId, cmd.requestId, cmd.value),
+      installPackage: (cmd) => this.runPackageOperation(ws, cmd.id, "install", cmd.source),
+      removePackage: (cmd) => this.runPackageOperation(ws, cmd.id, "remove", cmd.source),
       reloadPlugins: async (cmd) => {
         const summary = await this.options.supervisor.reloadPlugins();
         this.broadcast({
@@ -464,6 +484,44 @@ export class AgentdServer {
 
     const handler = handlers[command.type] as (command: ParsedCommand) => unknown;
     await handler(command);
+  }
+
+  private async runPackageOperation(
+    ws: WebSocket,
+    requestId: string,
+    operation: "install" | "remove",
+    source: string,
+  ): Promise<void> {
+    const agentDir = (this.options.getAgentDir ?? getAgentDir)();
+    const createPackageManager = this.options.createPackageManager ?? ((options: PackageManagerFactoryOptions) => {
+      const settingsManager = SettingsManager.create(options.cwd, options.agentDir);
+      const packageManager = new DefaultPackageManager({ ...options, settingsManager });
+      return {
+        installAndPersist: (packageSource) => packageManager.installAndPersist(packageSource),
+        removeAndPersist: (packageSource) => packageManager.removeAndPersist(packageSource),
+        setProgressCallback: (callback) => packageManager.setProgressCallback(callback),
+        flush: () => settingsManager.flush(),
+      };
+    });
+    const packageManager = createPackageManager({ cwd: process.cwd(), agentDir });
+    packageManager.setProgressCallback((event) => {
+      const message = event.message ?? `${event.action} ${event.source}`;
+      this.send(ws, { type: "packageOperationProgress", requestId, operation, source, message });
+    });
+    try {
+      if (operation === "install") {
+        await packageManager.installAndPersist(source);
+      } else {
+        await packageManager.removeAndPersist(source);
+      }
+      await packageManager.flush?.();
+      this.send(ws, { type: "packageOperationCompleted", requestId, operation, source, ok: true });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.send(ws, { type: "packageOperationCompleted", requestId, operation, source, ok: false, errorMessage });
+    } finally {
+      packageManager.setProgressCallback(undefined);
+    }
   }
 
   private registerAppCapabilities(ws: WebSocket, capabilities: string[]): void {
@@ -917,6 +975,9 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, entryId: command.entryId };
     case "answerExtensionUi":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, requestId: command.requestId };
+    case "installPackage":
+    case "removePackage":
+      return { commandId: command.id, type: command.type, sourceChars: command.source.length };
     case "setDefaultCwd":
       return { commandId: command.id, type: command.type, cwdChars: command.defaultCwd.length };
     case "setMainAgentModel":
@@ -973,6 +1034,10 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, sessionId: event.sessionId };
     case "pluginsReloaded":
       return { eventId: event.id, type: event.type, requestId: event.requestId, pickyReloaded: event.pickyReloaded ? 1 : 0, pickleReloadedCount: event.pickleReloadedCount, pickleAbortedCount: event.pickleAbortedCount, pickleDeferredCount: event.pickleDeferredCount };
+    case "packageOperationProgress":
+      return { eventId: event.id, type: event.type, requestId: event.requestId, operation: event.operation, sourceChars: event.source.length, messageChars: event.message.length };
+    case "packageOperationCompleted":
+      return { eventId: event.id, type: event.type, requestId: event.requestId, operation: event.operation, sourceChars: event.source.length, ok: event.ok ? 1 : 0, errorChars: event.errorMessage?.length };
     case "sessionLogAppended":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, lineChars: event.line.length };
     case "toolActivityUpdated":

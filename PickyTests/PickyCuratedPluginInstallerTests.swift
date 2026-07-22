@@ -49,58 +49,82 @@ struct PickyCuratedPluginInstallerTests {
         #expect(status == .installed)
     }
 
-    @Test func installRunsPiInstallForSource() throws {
-        let scratch = try ScratchCuratedPlugin()
-        var receivedArguments: [[String]] = []
-
-        let result = PickyCuratedPluginInstaller.install(
-            source: source,
-            homeURL: scratch.home,
-            commandRunner: { arguments, _, _, _ in
-                receivedArguments.append(arguments)
-                return PickyCuratedPluginInstaller.CommandResult(exitCode: 0, output: "installed")
-            }
-        )
-
-        #expect(receivedArguments == [["install", source]])
-        #expect(throws: Never.self) { try result.get() }
-    }
-
-    @Test func removeRunsPiRemoveForSource() throws {
-        let scratch = try ScratchCuratedPlugin()
-        var receivedArguments: [[String]] = []
-
-        let result = PickyCuratedPluginInstaller.remove(
-            source: source,
-            homeURL: scratch.home,
-            commandRunner: { arguments, _, _, _ in
-                receivedArguments.append(arguments)
-                return PickyCuratedPluginInstaller.CommandResult(exitCode: 0, output: "removed")
-            }
-        )
-
-        #expect(receivedArguments == [["remove", source]])
-        #expect(throws: Never.self) { try result.get() }
-    }
-
-    @Test func commandFailureSurfacesExitCodeAndOutput() throws {
-        let scratch = try ScratchCuratedPlugin()
-
-        let result = PickyCuratedPluginInstaller.install(
-            source: source,
-            homeURL: scratch.home,
-            commandRunner: { _, _, _, _ in
-                PickyCuratedPluginInstaller.CommandResult(exitCode: 2, output: "network failed")
-            }
-        )
-
-        if case .failure(.failed(let command, let exitCode, let output)) = result {
-            #expect(command == "install")
-            #expect(exitCode == 2)
-            #expect(output == "network failed")
-        } else {
-            Issue.record("expected command failure but got \(result)")
+    @Test func installSendsPackageCommandAndWaitsForDaemonCompletion() async throws {
+        let client = FakeCuratedPluginAgentClient()
+        var sentCommand: PickyCommandEnvelope?
+        client.sendHandler = { command in
+            sentCommand = command
+            client.complete(requestId: command.id, operation: .install, source: command.source ?? "", ok: true)
         }
+
+        let result = await PickyCuratedPluginInstaller.install(source: source, client: client)
+
+        #expect(sentCommand?.type == .installPackage)
+        #expect(sentCommand?.source == source)
+        #expect(throws: Never.self) { try result.get() }
+    }
+
+    @Test func removeSurfacesDaemonPackageFailure() async {
+        let client = FakeCuratedPluginAgentClient()
+        client.sendHandler = { command in
+            client.complete(
+                requestId: command.id,
+                operation: .remove,
+                source: command.source ?? "",
+                ok: false,
+                errorMessage: "npm was not found"
+            )
+        }
+
+        let result = await PickyCuratedPluginInstaller.remove(source: source, client: client)
+
+        if case .failure(.failed(let message)) = result {
+            #expect(message == "npm was not found")
+        } else {
+            Issue.record("Expected daemon package failure")
+        }
+    }
+}
+
+private final class FakeCuratedPluginAgentClient: PickyAgentClient {
+    private let continuation: AsyncStream<PickyClientEvent>.Continuation
+    let events: AsyncStream<PickyClientEvent>
+    var sendHandler: ((PickyCommandEnvelope) -> Void)?
+
+    init() {
+        var continuation: AsyncStream<PickyClientEvent>.Continuation!
+        events = AsyncStream { continuation = $0 }
+        self.continuation = continuation
+    }
+
+    func connect() async {}
+    func submit(_ submission: PickyAgentSubmission) async throws -> PickyAgentSubmissionReceipt {
+        PickyAgentSubmissionReceipt(sessionID: "fake", message: "")
+    }
+    func send(_ command: PickyCommandEnvelope) async throws {
+        sendHandler?(command)
+    }
+    func disconnect() {}
+
+    func complete(
+        requestId: String,
+        operation: PickyPackageOperation,
+        source: String,
+        ok: Bool,
+        errorMessage: String? = nil
+    ) {
+        continuation.yield(.protocolEvent(PickyEventEnvelope(
+            id: "event-package-\(requestId)",
+            protocolVersion: pickyAgentProtocolVersion,
+            timestamp: Date(),
+            event: .packageOperationCompleted(PickyPackageOperationCompletedEvent(
+                requestId: requestId,
+                operation: operation,
+                source: source,
+                ok: ok,
+                errorMessage: errorMessage
+            ))
+        )))
     }
 }
 

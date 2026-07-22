@@ -427,6 +427,8 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("rewindSession"), sessionId: z.string(), entryId: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("getSession"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("answerExtensionUi"), sessionId: z.string(), requestId: z.string(), value: z.unknown().optional() }),
+  CommandBaseSchema.extend({ type: z.literal("installPackage"), source: z.string().min(1) }),
+  CommandBaseSchema.extend({ type: z.literal("removePackage"), source: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("reloadPlugins") }),
 ]);
 
@@ -512,6 +514,21 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
     pickleReloadedCount: z.number().int().nonnegative(),
     pickleAbortedCount: z.number().int().nonnegative(),
     pickleDeferredCount: z.number().int().nonnegative(),
+  }),
+  EventBaseSchema.extend({
+    type: z.literal("packageOperationProgress"),
+    requestId: z.string().min(1),
+    operation: z.enum(["install", "remove"]),
+    source: z.string().min(1),
+    message: z.string().min(1),
+  }),
+  EventBaseSchema.extend({
+    type: z.literal("packageOperationCompleted"),
+    requestId: z.string().min(1),
+    operation: z.enum(["install", "remove"]),
+    source: z.string().min(1),
+    ok: z.boolean(),
+    errorMessage: z.string().min(1).optional(),
   }),
   EventBaseSchema.extend({ type: z.literal("sessionLogAppended"), sessionId: z.string(), line: z.string() }),
   EventBaseSchema.extend({ type: z.literal("toolActivityUpdated"), sessionId: z.string(), tool: PickyToolActivitySchema }),

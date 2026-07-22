@@ -27,6 +27,58 @@ struct PickyIMETextViewTests {
         ) == true)
     }
 
+    @Test func editorsKeepUndoHistoriesIndependentInsideTheSameWindow() throws {
+        let panel = PickyHUDPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 120),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        let first = PickyIMENSTextView(frame: NSRect(x: 0, y: 0, width: 160, height: 120))
+        let second = PickyIMENSTextView(frame: NSRect(x: 160, y: 0, width: 160, height: 120))
+        first.allowsUndo = true
+        second.allowsUndo = true
+        panel.contentView?.addSubview(first)
+        panel.contentView?.addSubview(second)
+        defer { panel.close() }
+
+        panel.makeFirstResponder(first)
+        first.insertText("first", replacementRange: NSRange(location: 0, length: 0))
+        panel.makeFirstResponder(second)
+        second.insertText("second", replacementRange: NSRange(location: 0, length: 0))
+
+        #expect(first.undoManager !== second.undoManager)
+        first.undoManager?.undo()
+        #expect(first.string.isEmpty)
+        #expect(second.string == "second")
+    }
+
+    @Test func bindingReplacementDropsNativeUndoOperations() throws {
+        let textView = PickyIMENSTextView()
+        textView.allowsUndo = true
+        textView.insertText("draft", replacementRange: NSRange(location: 0, length: 0))
+        #expect(textView.undoManager?.canUndo == true)
+
+        textView.replaceTextFromBinding("")
+
+        #expect(textView.string.isEmpty)
+        #expect(textView.undoManager?.canUndo == false)
+    }
+
+    @Test func removalDropsNativeUndoOperationsAndEditorCallbacks() throws {
+        let textView = PickyIMENSTextView()
+        textView.allowsUndo = true
+        textView.insertText("draft", replacementRange: NSRange(location: 0, length: 0))
+        textView.onReturn = { _ in true }
+        #expect(textView.undoManager?.canUndo == true)
+
+        textView.prepareForRemoval()
+
+        #expect(textView.allowsUndo == false)
+        #expect(textView.undoManager == nil)
+        #expect(textView.onReturn == nil)
+    }
+
     @Test func returnCommitsThroughSubmitHandlerWithoutInsertingNewline() throws {
         let textView = PickyIMENSTextView()
         textView.string = "ready"

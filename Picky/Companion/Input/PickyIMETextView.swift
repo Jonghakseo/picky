@@ -108,7 +108,7 @@ struct PickyIMETextView: NSViewRepresentable {
             bindingText: text,
             hasMarkedText: textView.hasMarkedText()
         ) {
-            textView.string = text
+            textView.replaceTextFromBinding(text)
         }
 
         if let selectionOverride, let override = selectionOverride.wrappedValue, !textView.hasMarkedText() {
@@ -131,6 +131,15 @@ struct PickyIMETextView: NSViewRepresentable {
             textView.window?.makeFirstResponder(nil)
         }
         context.coordinator.measure(textView: textView)
+    }
+
+    static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
+        guard let textView = scrollView.documentView as? PickyIMENSTextView else { return }
+        if textView.window?.firstResponder === textView {
+            textView.window?.makeFirstResponder(nil)
+        }
+        textView.prepareForRemoval()
+        scrollView.documentView = nil
     }
 
     private func configureCallbacks(on textView: PickyIMENSTextView, context: Context) {
@@ -257,6 +266,16 @@ struct PickyIMETextView: NSViewRepresentable {
 }
 
 final class PickyIMENSTextView: NSTextView {
+    /// AppKit normally resolves one UndoManager through the containing window.
+    /// SwiftUI replaces the composer when the selected Pickle changes, so a
+    /// window-shared stack can retain TextKit operations from removed editors.
+    /// Keep each editor's history isolated and clear it during dismantling.
+    private let editorUndoManager = UndoManager()
+
+    override var undoManager: UndoManager? {
+        allowsUndo ? editorUndoManager : nil
+    }
+
     var onFocusChange: ((Bool) -> Void)?
     var onLayout: ((PickyIMENSTextView) -> Void)?
     var onMarkedTextChange: ((Bool) -> Void)?
@@ -271,6 +290,34 @@ final class PickyIMENSTextView: NSTextView {
     private var isCommittingMarkedTextWithReturn = false
     private var temporaryHighlightRange: NSRange?
     private var lastReportedMarkedTextState = false
+
+    func replaceTextFromBinding(_ replacement: String) {
+        clearUndoHistory()
+        string = replacement
+        clearUndoHistory()
+    }
+
+    func prepareForRemoval() {
+        clearTemporaryHighlight()
+        clearUndoHistory()
+        allowsUndo = false
+        delegate = nil
+        onFocusChange = nil
+        onLayout = nil
+        onMarkedTextChange = nil
+        onNativeInputStateChange = nil
+        onReturn = nil
+        onUpArrow = nil
+        onDownArrow = nil
+        onTab = nil
+        onEscape = nil
+        onControlP = nil
+    }
+
+    private func clearUndoHistory() {
+        breakUndoCoalescing()
+        editorUndoManager.removeAllActions()
+    }
 
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()

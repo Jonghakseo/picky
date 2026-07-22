@@ -196,6 +196,14 @@ enum PickyDiagnosticsBundleBuilder {
     /// lifecycle summary is derived from it locally.
     static let defaultMaxLogBytes = 1_000_000
     static let defaultMaxWatchdogSampleBytes = 120_000
+    /// New crash/lifecycle evidence is bounded independently of existing
+    /// stderr/watchdog limits: 256 KiB OSLog + 384 KiB IPS + 64 KiB scalar
+    /// lifecycle/manifest data = 704 KiB maximum uncompressed.
+    static let maximumPreviousProcessOSLogBytes = 256 * 1024
+    static let maximumIPSExcerptBytes = 384 * 1024
+    static let maximumLifecycleAndManifestBytes = 64 * 1024
+    static let maximumLifecycleSnapshotBytes = 32 * 1024
+    static let maximumIPSManifestBytes = 32 * 1024
     private static let maxWatchdogSampleFiles = 3
 
     /// Builds a zip in a unique temp directory and returns its URL. Caller is
@@ -207,8 +215,10 @@ enum PickyDiagnosticsBundleBuilder {
         fileManager: FileManager = .default,
         maxLogBytes: Int = defaultMaxLogBytes,
         maxWatchdogSampleBytes: Int = defaultMaxWatchdogSampleBytes,
-        oslogProvider: () -> String = { PickyOSLogCollector.collectCurrentProcess() },
-        portOccupancyProvider: ([Int]) -> String = { PickyPortOccupancyCollector.collect(ports: $0) }
+        oslogProvider: () -> String = { PickyOSLogCollector.collectPreviousProcess() },
+        portOccupancyProvider: ([Int]) -> String = { PickyPortOccupancyCollector.collect(ports: $0) },
+        ipsReportsRoot: URL? = nil,
+        diagnosticsNow: Date = Date()
     ) throws -> PickyDiagnosticsBundle {
         let timestamp = filenameTimestamp(from: metadata.generatedAt)
         let bundleName = "picky-diagnostics-\(scope.fileSlug)-\(timestamp)"
@@ -231,7 +241,9 @@ enum PickyDiagnosticsBundleBuilder {
             maxLogBytes: maxLogBytes,
             maxWatchdogSampleBytes: maxWatchdogSampleBytes,
             oslogProvider: oslogProvider,
-            portOccupancyProvider: portOccupancyProvider
+            portOccupancyProvider: portOccupancyProvider,
+            ipsReportsRoot: ipsReportsRoot ?? PickyIPSCollector.defaultReportsRoot(fileManager: fileManager),
+            diagnosticsNow: diagnosticsNow
         )
 
         if scope == .full {
@@ -256,7 +268,9 @@ enum PickyDiagnosticsBundleBuilder {
         maxLogBytes: Int,
         maxWatchdogSampleBytes: Int,
         oslogProvider: () -> String,
-        portOccupancyProvider: ([Int]) -> String
+        portOccupancyProvider: ([Int]) -> String,
+        ipsReportsRoot: URL,
+        diagnosticsNow: Date
     ) throws {
         let logsDir = appSupportRoot.appendingPathComponent("Logs", isDirectory: true)
         // Always stage the agentd stderr tail — even if the source file is
@@ -317,7 +331,11 @@ enum PickyDiagnosticsBundleBuilder {
         try? lifecycleEvents.write(to: lifecycleEventsPath, atomically: true, encoding: .utf8)
 
         let oslogPath = stagingRoot.appendingPathComponent("picky-oslog.txt")
-        let oslogText = oslogProvider()
+        let oslogText = PickyDiagnosticTextRedactor.truncateUTF8(
+            PickyDiagnosticTextRedactor.redact(oslogProvider()),
+            maxBytes: maximumPreviousProcessOSLogBytes,
+            keepingNewest: true
+        )
         do {
             try oslogText.write(to: oslogPath, atomically: true, encoding: .utf8)
         } catch {
@@ -325,6 +343,40 @@ enum PickyDiagnosticsBundleBuilder {
                 to: oslogPath, atomically: true, encoding: .utf8
             )
         }
+
+        let lifecyclePath = stagingRoot.appendingPathComponent("picky-lifecycle.json")
+        let lifecycleText = PickyLifecycleDiagnosticsStore.boundedSnapshotText(
+            from: logsDir,
+            maxBytes: maximumLifecycleSnapshotBytes,
+            fileManager: fileManager
+        )
+        try? lifecycleText.write(to: lifecyclePath, atomically: true, encoding: .utf8)
+
+        let ips = PickyIPSCollector.collect(
+            reportsRoot: ipsReportsRoot,
+            now: diagnosticsNow,
+            fileManager: fileManager
+        )
+        let ipsManifest = PickyDiagnosticTextRedactor.truncateUTF8(
+            PickyDiagnosticTextRedactor.redact(ips.manifestText),
+            maxBytes: maximumIPSManifestBytes,
+            keepingNewest: false
+        )
+        try? ipsManifest.write(
+            to: stagingRoot.appendingPathComponent("picky-ips-manifest.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let ipsExcerpts = PickyDiagnosticTextRedactor.truncateUTF8(
+            PickyDiagnosticTextRedactor.redact(ips.excerptsText),
+            maxBytes: maximumIPSExcerptBytes,
+            keepingNewest: false
+        )
+        try? ipsExcerpts.write(
+            to: stagingRoot.appendingPathComponent("picky-ips-excerpts.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
 
         stageWatchdogDiagnostics(
             from: logsDir,

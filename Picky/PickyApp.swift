@@ -33,6 +33,11 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     private var menuBarPanelManager: MenuBarPanelManager?
     private let settingsStore = PickySettingsStore()
     private var settingsSaveObserver: NSObjectProtocol?
+    /// Single bounded snapshot used to distinguish the prior crash/force-quit
+    /// from a clean app termination after the next launch.
+    private lazy var lifecycleDiagnosticsStore = PickyLifecycleDiagnosticsStore(
+        logsDirectory: PickyAppSupport.defaultRoot().appendingPathComponent("Logs", isDirectory: true)
+    )
     /// Watches the main thread for spin (TextKit race, runaway SwiftUI body
     /// updates, etc.). When the UI stops responding for several seconds, the
     /// watchdog captures a `sample` snapshot and spawns the alert helper so
@@ -83,6 +88,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             automaticChecksEnabled: settings.updatesAutomaticChecksEnabled
         )
         controller.willRelaunchApplication = { [weak self] in
+            self?.lifecycleDiagnosticsStore.markCurrentRunClean(reason: .update)
             // Sparkle is about to swap the .app bundle. Stop bundled/child
             // picky-agentd processes first so their Node children don't crash on cwd.
             self?.agentDaemonPool.terminateAllChildren()
@@ -189,6 +195,11 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             print("🎯 Picky: Unit test host detected; skipping app services and permission probes")
             return
         }
+
+        _ = lifecycleDiagnosticsStore.recordLaunch(
+            appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown",
+            appBuild: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown"
+        )
 
         UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 0])
         UNUserNotificationCenter.current().delegate = self
@@ -361,6 +372,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         guard !Self.isRunningUnitTests else { return }
+        _ = lifecycleDiagnosticsStore.markCurrentRunClean(reason: .normal)
         if let observer = settingsSaveObserver {
             NotificationCenter.default.removeObserver(observer)
             settingsSaveObserver = nil

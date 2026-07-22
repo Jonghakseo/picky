@@ -4,9 +4,10 @@
 //
 //  Single entry point for Picky-internal log messages so every category lands
 //  in the unified logging system (OSLogStore) and the developer console alike.
-//  Picky's diagnostics bundle uses `OSLogStore(scope: .currentProcessIdentifier)`
-//  to collect `picky-oslog.txt`; before this helper existed every site used
-//  `print` and the bundle's oslog file showed almost nothing Picky-specific.
+//  Picky's diagnostics bundle prefers `OSLogStore(scope: .system)` to retain
+//  prior-process Picky entries and falls back to the current process; before
+//  this helper existed every site used `print` and the bundle's oslog file
+//  showed almost nothing Picky-specific.
 //
 
 import Foundation

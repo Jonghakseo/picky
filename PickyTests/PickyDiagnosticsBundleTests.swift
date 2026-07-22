@@ -63,6 +63,9 @@ struct PickyDiagnosticsBundleTests {
         #expect(!names.contains("agentd.stdout.tail.log"))
         #expect(!names.contains("agentd.stdout.log"))
         #expect(names.contains("picky-oslog.txt"))
+        #expect(names.contains("picky-lifecycle.json"))
+        #expect(names.contains("picky-ips-manifest.txt"))
+        #expect(names.contains("picky-ips-excerpts.txt"))
         #expect(names.contains("metadata.txt"))
         #expect(!names.contains("settings.sanitized.json"))
     }
@@ -413,6 +416,13 @@ struct PickyDiagnosticsBundleTests {
         let portDiagnostics = try extractZipEntryText(named: "agentd.port-occupants.txt", from: bundle.zipURL)
         #expect(portDiagnostics.contains("ports=17631"))
         #expect(portDiagnostics.contains("node 123 jane"))
+    }
+
+    @Test func crashDiagnosticsConstantsForm704KiBAggregateBudget() {
+        #expect(PickyDiagnosticsBundleBuilder.maximumPreviousProcessOSLogBytes == 256 * 1024)
+        #expect(PickyDiagnosticsBundleBuilder.maximumIPSExcerptBytes == 384 * 1024)
+        #expect(PickyDiagnosticsBundleBuilder.maximumLifecycleSnapshotBytes + PickyDiagnosticsBundleBuilder.maximumIPSManifestBytes == PickyDiagnosticsBundleBuilder.maximumLifecycleAndManifestBytes)
+        #expect(PickyDiagnosticsBundleBuilder.maximumPreviousProcessOSLogBytes + PickyDiagnosticsBundleBuilder.maximumIPSExcerptBytes + PickyDiagnosticsBundleBuilder.maximumLifecycleAndManifestBytes == 704 * 1024)
     }
 
     @Test func metadataIncludesScopeAndTailLimit() throws {

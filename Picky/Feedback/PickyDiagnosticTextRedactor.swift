@@ -62,4 +62,34 @@ enum PickyDiagnosticTextRedactor {
         guard let text = String(data: data, encoding: .utf8) else { return data }
         return Data(redact(text).utf8)
     }
+
+    /// Bounds valid UTF-8 without splitting a Unicode scalar. Keeping the
+    /// newest content is used for logs, while crash reports retain their
+    /// leading exception/header context.
+    static func truncateUTF8(_ text: String, maxBytes: Int, keepingNewest: Bool) -> String {
+        guard maxBytes > 0 else { return "" }
+        guard text.lengthOfBytes(using: .utf8) > maxBytes else { return text }
+        let scalars = Array(text.unicodeScalars)
+        if keepingNewest {
+            var selected: [Unicode.Scalar] = []
+            var usedBytes = 0
+            for scalar in scalars.reversed() {
+                let scalarBytes = String(scalar).lengthOfBytes(using: .utf8)
+                guard usedBytes + scalarBytes <= maxBytes else { break }
+                selected.append(scalar)
+                usedBytes += scalarBytes
+            }
+            return String(String.UnicodeScalarView(selected.reversed()))
+        }
+
+        var selected: [Unicode.Scalar] = []
+        var usedBytes = 0
+        for scalar in scalars {
+            let scalarBytes = String(scalar).lengthOfBytes(using: .utf8)
+            guard usedBytes + scalarBytes <= maxBytes else { break }
+            selected.append(scalar)
+            usedBytes += scalarBytes
+        }
+        return String(String.UnicodeScalarView(selected))
+    }
 }

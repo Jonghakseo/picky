@@ -53,6 +53,28 @@ struct PickyIMETextViewTests {
         #expect(second.string == "second")
     }
 
+    @Test func responderActionsUndoAndRedoTheFocusedEditorsPrivateHistory() throws {
+        let panel = PickyHUDPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 240, height: 120),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        let textView = PickyIMENSTextView(frame: NSRect(x: 0, y: 0, width: 240, height: 120))
+        textView.allowsUndo = true
+        panel.contentView = textView
+        panel.makeKeyAndOrderFront(nil)
+        panel.makeFirstResponder(textView)
+        defer { panel.close() }
+
+        textView.insertText("draft", replacementRange: NSRange(location: 0, length: 0))
+
+        #expect(NSApp.sendAction(Selector(("undo:")), to: nil, from: nil))
+        #expect(textView.string.isEmpty)
+        #expect(NSApp.sendAction(Selector(("redo:")), to: nil, from: nil))
+        #expect(textView.string == "draft")
+    }
+
     @Test func bindingReplacementDropsNativeUndoOperations() throws {
         let textView = PickyIMENSTextView()
         textView.allowsUndo = true

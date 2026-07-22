@@ -297,6 +297,14 @@ final class PickyIMENSTextView: NSTextView {
         clearUndoHistory()
     }
 
+    @objc func undo(_ sender: Any?) {
+        editorUndoManager.undo()
+    }
+
+    @objc func redo(_ sender: Any?) {
+        editorUndoManager.redo()
+    }
+
     func prepareForRemoval() {
         clearTemporaryHighlight()
         clearUndoHistory()

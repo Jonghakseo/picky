@@ -78,6 +78,37 @@ struct PickyTerminalLifecycleTests {
         #expect(callbackCount == 1)
     }
 
+    @Test func terminalClosedBeforeDelayedAttachmentNeverStartsAProcess() {
+        let model = PickyTerminalModel(
+            title: "Terminal",
+            sessionFilePath: "/tmp/session.jsonl",
+            cwd: "/tmp"
+        )
+        let host = TerminalProcessHostStub(processID: 42)
+
+        model.close()
+        model.attachProcessHostForTesting(host)
+
+        #expect(host.startCount == 0)
+        #expect(host.processDelegate == nil)
+    }
+
+    @Test func terminalStartWithoutAProcessIDDoesNotHoldTheClosingGate() {
+        let model = PickyTerminalModel(
+            title: "Terminal",
+            sessionFilePath: "/tmp/session.jsonl",
+            cwd: "/tmp"
+        )
+        let host = TerminalProcessHostStub(processID: 0)
+        var callbackCount = 0
+
+        model.attachProcessHostForTesting(host)
+        model.scheduleAfterActualProcessExit { callbackCount += 1 }
+
+        #expect(host.startCount == 1)
+        #expect(callbackCount == 1)
+    }
+
     @Test func terminalCloseRetainsExitObservationUntilTheProcessActuallyExits() {
         var signals: [Int32] = []
         let terminator = PickyTerminalProcessTerminator(
@@ -111,9 +142,11 @@ struct PickyTerminalLifecycleTests {
 
     @Test func terminalTerminatorEscalatesAndCancelsForceKillAfterObservedExit() async throws {
         var signals: [Int32] = []
+        let identity = PickyTerminalProcessIdentity(startSeconds: 1, startMicroseconds: 2)
         let terminator = PickyTerminalProcessTerminator(
             forceKillDelayNanoseconds: 10_000_000,
-            signalProcess: { _, signal in signals.append(signal) }
+            signalProcess: { _, signal in signals.append(signal) },
+            processIdentity: { _ in identity }
         )
         terminator.terminate(processID: 42)
         try await Task.sleep(nanoseconds: 30_000_000)
@@ -123,6 +156,22 @@ struct PickyTerminalLifecycleTests {
         terminator.terminate(processID: 43)
         terminator.processExited()
         try await Task.sleep(nanoseconds: 30_000_000)
+        #expect(signals == [SIGTERM])
+    }
+
+    @Test func terminalTerminatorDoesNotSignalAReusedPID() async throws {
+        var signals: [Int32] = []
+        var identity = PickyTerminalProcessIdentity(startSeconds: 1, startMicroseconds: 2)
+        let terminator = PickyTerminalProcessTerminator(
+            forceKillDelayNanoseconds: 10_000_000,
+            signalProcess: { _, signal in signals.append(signal) },
+            processIdentity: { _ in identity }
+        )
+
+        terminator.terminate(processID: 42)
+        identity = PickyTerminalProcessIdentity(startSeconds: 3, startMicroseconds: 4)
+        try await Task.sleep(nanoseconds: 30_000_000)
+
         #expect(signals == [SIGTERM])
     }
 

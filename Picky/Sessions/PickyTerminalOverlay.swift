@@ -465,30 +465,53 @@ extension LocalProcessTerminalView: PickyTerminalProcessHosting {
     }
 }
 
+struct PickyTerminalProcessIdentity: Equatable {
+    let startSeconds: UInt64
+    let startMicroseconds: UInt64
+}
+
+private func currentTerminalProcessIdentity(processID: pid_t) -> PickyTerminalProcessIdentity? {
+    var info = proc_bsdinfo()
+    let expectedSize = Int32(MemoryLayout<proc_bsdinfo>.size)
+    guard proc_pidinfo(processID, PROC_PIDTBSDINFO, 0, &info, expectedSize) == expectedSize else {
+        return nil
+    }
+    return PickyTerminalProcessIdentity(
+        startSeconds: UInt64(info.pbi_start_tvsec),
+        startMicroseconds: UInt64(info.pbi_start_tvusec)
+    )
+}
+
 @MainActor
 final class PickyTerminalProcessTerminator {
     private let forceKillDelayNanoseconds: UInt64
     private let signalProcess: (pid_t, Int32) -> Void
+    private let processIdentity: (pid_t) -> PickyTerminalProcessIdentity?
     private var forceKillTask: Task<Void, Never>?
 
     init(
         forceKillDelayNanoseconds: UInt64 = 2_000_000_000,
         signalProcess: @escaping (pid_t, Int32) -> Void = { processID, signal in
             _ = Darwin.kill(processID, signal)
-        }
+        },
+        processIdentity: @escaping (pid_t) -> PickyTerminalProcessIdentity? = currentTerminalProcessIdentity
     ) {
         self.forceKillDelayNanoseconds = forceKillDelayNanoseconds
         self.signalProcess = signalProcess
+        self.processIdentity = processIdentity
     }
 
     func terminate(processID: pid_t) {
         guard processID > 0 else { return }
         forceKillTask?.cancel()
+        let expectedIdentity = processIdentity(processID)
         signalProcess(processID, SIGTERM)
         forceKillTask = Task { [weak self] in
             guard let self else { return }
             try? await Task.sleep(nanoseconds: self.forceKillDelayNanoseconds)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled,
+                  let expectedIdentity,
+                  self.processIdentity(processID) == expectedIdentity else { return }
             self.signalProcess(processID, SIGKILL)
         }
     }
@@ -578,6 +601,7 @@ final class PickyTerminalModel: ObservableObject, PickyTerminalProcessEventHandl
     /// alive and signal its PID directly so `processTerminated` can still arrive.
     private var closingTerminalView: (any PickyTerminalProcessHosting)?
     private var didStartProcess = false
+    private var isClosed = false
     private var actualProcessExitCallbacks: [@MainActor () -> Void] = []
     private(set) lazy var processDelegate = PickyTerminalProcessDelegate(handler: self)
     private let exitSync: PickyTerminalExitSyncScheduler
@@ -627,12 +651,17 @@ final class PickyTerminalModel: ObservableObject, PickyTerminalProcessEventHandl
     }
 
     func attachProcessHostForTesting(_ terminalView: any PickyTerminalProcessHosting) {
+        guard !isClosed else {
+            terminalView.processDelegate = nil
+            return
+        }
         terminalView.processDelegate = processDelegate
         self.terminalView = terminalView
         startProcessIfNeeded(in: terminalView)
     }
 
     func close() {
+        isClosed = true
         processStartGate.cancelPendingStart()
         guard didStartProcess, let terminalView else {
             self.terminalView = nil
@@ -685,10 +714,12 @@ final class PickyTerminalModel: ObservableObject, PickyTerminalProcessEventHandl
             statusText = "Waiting for the previous Pi terminal to close…"
         }
         processStartGate.runWhenOpen { [weak self, weak terminalView] in
-            guard let self, let terminalView, self.terminalView === terminalView, !self.didStartProcess else { return }
-            self.didStartProcess = true
+            guard let self,
+                  let terminalView,
+                  !self.isClosed,
+                  self.terminalView === terminalView,
+                  !self.didStartProcess else { return }
             self.statusText = "Attached to \(self.compactPath(self.sessionFilePath))"
-            self.exitSync.markStarted()
             let command = PickyPiTerminalCommand.makeOverlayCommand(sessionFilePath: self.sessionFilePath, cwd: self.cwd)
             terminalView.startPickyProcess(
                 executable: "/bin/zsh",
@@ -696,6 +727,13 @@ final class PickyTerminalModel: ObservableObject, PickyTerminalProcessEventHandl
                 environment: PickyPiTerminalCommand.makeOverlayEnvironment(),
                 currentDirectory: PickyPiTerminalCommand.workingDirectory(from: self.cwd)
             )
+            guard terminalView.processID > 0 else {
+                self.statusText = "Pi terminal failed to start. Close and try again."
+                self.exitSync.markExited()
+                return
+            }
+            self.didStartProcess = true
+            self.exitSync.markStarted()
         }
     }
 

@@ -44,7 +44,7 @@ import { buildPinnedPickleSessionLogs, piSessionFilePathFromHandoffTranscript, t
 import { extractPickyPromptUserInstruction, queueTextMatchesUserText } from "./domain/queue-policy.js";
 import { buildMainAgentRolloverSummary, MAIN_AGENT_COMPACT_IDLE_MS, MAIN_AGENT_MESSAGE_LIMIT, MAIN_AGENT_RESTART_TEARDOWN_SESSION_BYTES, MAIN_AGENT_SUMMARY_PICKLE_SESSION_LIMIT, mainRolloverReason, normalizeMainAgentState, quickReplyOriginFromContextSource, type MainRolloverPickleSession, type QuickReplyMetadata } from "./domain/main-agent-policy.js";
 import type { ToolCategory } from "./domain/tool-categorizer.js";
-import { logAgentd } from "./local-log.js";
+import { logAgentd, logLifecycleEvent, type LogField } from "./local-log.js";
 import { SessionMessageBuilder } from "./session-message-builder.js";
 
 export interface ReloadPluginsSummary {
@@ -77,6 +77,12 @@ interface SessionSupervisorOptions {
   // owns the tool registry; supervisor only stores the disabled set and asks
   // for a refreshed list when it changes.
   mainCustomToolsBuilder?: (disabled: ReadonlySet<string>) => ToolDefinition[];
+  /** Test seam for privacy-safe lifecycle evidence; production defaults to logLifecycleEvent. */
+  lifecycleEventLogger?: (event: string, fields: Record<string, LogField>) => void;
+  /** Injectable timer boundary keeps follow-up stall detection deterministic in tests. */
+  followUpStallDelayMs?: number;
+  scheduleFollowUpStall?: (callback: () => void, delayMs: number) => unknown;
+  clearFollowUpStall?: (timer: unknown) => void;
 }
 
 const ARCHIVED_SESSION_RETENTION_DAYS = 7;
@@ -199,8 +205,11 @@ export class SessionSupervisor extends EventEmitter {
   private mainStateWriteChain = Promise.resolve();
   private readonly terminalSessionCoordinator: TerminalSessionCoordinator;
   private readonly terminalManualCompactionCoordinator: TerminalManualCompactionCoordinator;
+  private readonly lifecycleEventLogger: (event: string, fields: Record<string, LogField>) => void;
+  private readonly followUpStalls = new Map<string, { sessionId: string; text: string; enqueuedAt: number; timer: unknown }>();
   constructor(private readonly runtime: AgentRuntime, private readonly store: SessionStore, private readonly options: SessionSupervisorOptions = {}) {
     super();
+    this.lifecycleEventLogger = options.lifecycleEventLogger ?? logLifecycleEvent;
     this.mainVisualNarration = new MainVisualNarrationCoordinator({
       currentTurn: () => ({
         contextId: this.mainReplyContextId,
@@ -280,6 +289,7 @@ export class SessionSupervisor extends EventEmitter {
       beginTerminalManualCompaction: (sessionId, status) => this.runtimeEventHandler.beginManualTerminalCompaction(sessionId, status),
       clearTerminalManualCompaction: (sessionId) => this.runtimeEventHandler.clearManualTerminalCompaction(sessionId), finishTerminalManualCompaction: (sessionId) => this.runtimeEventHandler.finishManualTerminalCompaction(sessionId),
       waitForRuntimeEvents: (sessionId) => this.waitForRuntimeEvents(sessionId),
+      logLifecycle: (event, sessionId, handle, fields) => this.logLifecycle(event, sessionId, handle, fields),
     });
   }
   async load(): Promise<void> {
@@ -1996,6 +2006,43 @@ export class SessionSupervisor extends EventEmitter {
     return this.terminalSessionCoordinator.sync(sessionId, baselinePiMessageId);
   }
 
+  private lifecycleFields(sessionId: string, handle = this.runtimeHandles.get(sessionId)): Record<string, LogField> {
+    const session = this.sessions.get(sessionId);
+    return {
+      sessionStatus: session?.status,
+      isStreaming: handle?.isStreaming,
+      isCompacting: handle?.isCompacting ?? false,
+      queuedSteeringCount: handle?.getSteeringMessages().length ?? session?.queuedSteers?.length ?? 0,
+      queuedFollowUpCount: handle?.getFollowUpMessages().length ?? session?.queuedFollowUps?.length ?? 0,
+      pendingDeliveryCount: this.pendingQueueDeliveries.get(sessionId)?.length ?? 0,
+    };
+  }
+
+  private logLifecycle(event: string, sessionId: string, handle?: RuntimeSessionHandle, fields: Record<string, LogField> = {}): void {
+    this.lifecycleEventLogger(event, { sessionId, ...this.lifecycleFields(sessionId, handle), ...fields });
+  }
+
+  private logFollowUpRouting(
+    sessionId: string,
+    handle: RuntimeSessionHandle,
+    textChars: number,
+    imageCount: number,
+    source?: PickyContextPacket["source"],
+  ): boolean {
+    const statusAtRequest = this.mustGet(sessionId).status;
+    const runtimeActiveWhileTerminal = isTerminalStatus(statusAtRequest) && handle.isStreaming;
+    this.logLifecycle("followUpRequested", sessionId, handle, {
+      source: source ?? "none",
+      textChars,
+      imageCount,
+      runtimeActiveWhileTerminal,
+    });
+    if (runtimeActiveWhileTerminal) {
+      this.logLifecycle("followUpTerminalRuntimeMismatch", sessionId, handle, { statusAtRequest });
+    }
+    return runtimeActiveWhileTerminal;
+  }
+
   async followUp(sessionId: string, text: string, context?: PickyContextPacket, visualDslEnabled = false): Promise<PickyAgentSession> {
     const session = this.mustGet(sessionId);
     if (session.archived === true) throw new Error("Cannot follow up an archived session");
@@ -2031,6 +2078,13 @@ export class SessionSupervisor extends EventEmitter {
     if (isReloadSlashCommand(text)) this.pendingResourceReloadSessionIDs.add(sessionId);
     const visualDslLease = this.makePickleVisualDslLease(sessionId, text, context, visualDslEnabled);
     const prompt: BuiltPrompt = buildFollowUpPrompt(text, context, { visualDslEnabled: visualDslLease !== undefined });
+    const runtimeActiveWhileTerminal = this.logFollowUpRouting(
+      sessionId,
+      handle,
+      text.length,
+      prompt.imagePaths.length,
+      context?.source,
+    );
     logAgentd("follow-up requested", { sessionId, textChars: text.length, contextId: context?.id, images: prompt.imagePaths.length, visualDsl: visualDslLease ? 1 : 0 });
     await this.appendLog(sessionId, `${FOLLOWUP_PREFIX}${text}`);
     const commandReceiptId = await this.recordNonSkillSlashCommandReceipt(sessionId, text);
@@ -2041,7 +2095,7 @@ export class SessionSupervisor extends EventEmitter {
       visualDslLease,
     });
     this.activateImmediatePickleVisualDslDelivery(sessionId, delivery, visualDslLease, handle.isStreaming);
-    this.queueFollowUpDelivery(sessionId, handle, prompt, text, commandReceiptId);
+    this.queueFollowUpDelivery(sessionId, handle, prompt, text, commandReceiptId, runtimeActiveWhileTerminal);
     return this.mustGet(sessionId);
   }
 
@@ -2051,6 +2105,7 @@ export class SessionSupervisor extends EventEmitter {
     prompt: BuiltPrompt,
     rawText: string,
     commandReceiptId?: string,
+    runtimeActiveWhileTerminal = false,
   ): void {
     // Pi SDK followUp may resolve only after an idle session finishes its whole next turn.
     // Picky follow-ups are enqueue semantics, so do not hold the caller/Picky tool open.
@@ -2062,20 +2117,30 @@ export class SessionSupervisor extends EventEmitter {
     void handle.followUp(prompt)
       .then(async () => {
         logAgentd("follow-up delivery finished", { sessionId });
+        this.logLifecycle("followUpAccepted", sessionId, handle, { accepted: true });
         // Pi only fires queue_update when the prompt traverses the queue. For idle (non-streaming)
         // sessions Pi runs the prompt inline and never enqueues, so our deferred pending entry would
         // never get drained. Detect that by checking Pi's queue snapshot once the prompt is
         // accepted and drain explicitly when the prompt is not waiting in either queue.
         await this.waitForRuntimeEvents(sessionId);
         await this.waitForQueuedStateToSettle(sessionId);
-        if (!this.isPromptInRuntimeQueue(handle, rawText)) {
+        const stillQueued = this.isPromptInRuntimeQueue(handle, rawText);
+        this.logLifecycle(stillQueued ? "followUpQueued" : "followUpDelivered", sessionId, handle, {
+          accepted: true,
+          runtimeActiveWhileTerminal,
+        });
+        if (!stillQueued) {
           await this.drainPendingTextOnce(sessionId, rawText);
+          return;
         }
+        this.armFollowUpStall(sessionId, rawText, runtimeActiveWhileTerminal);
       })
       .catch((error) => void this.handleFollowUpDeliveryError(sessionId, rawText, error, commandReceiptId));
   }
 
   private async handleFollowUpDeliveryError(sessionId: string, text: string, error: unknown, commandReceiptId?: string): Promise<void> {
+    this.clearFollowUpStallForText(sessionId, text);
+    this.logLifecycle("followUpRejected", sessionId, undefined, { accepted: false });
     this.discardPendingTextOnce(sessionId, text);
     const message = error instanceof Error ? error.message : String(error);
     logAgentd("follow-up delivery failed", { sessionId, error: message });
@@ -2188,11 +2253,68 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   private clearPendingQueueDeliveries(sessionId: string): void {
+    this.clearFollowUpStalls(sessionId);
     const pending = this.pendingQueueDeliveries.get(sessionId) ?? [];
     for (const delivery of pending) {
       if (delivery.visualDslLeaseId) this.pendingPickleVisualDslLeases.delete(delivery.visualDslLeaseId);
     }
     this.pendingQueueDeliveries.delete(sessionId);
+  }
+
+  /**
+   * Stall warnings are deliberately limited to a terminal supervisor/runtime-streaming mismatch.
+   * A normal active Pi turn may hold a follow-up queue for longer than 30 seconds, so warning on
+   * every queued entry would create noisy, unactionable diagnostics.
+   */
+  private armFollowUpStall(sessionId: string, text: string, runtimeActiveWhileTerminal: boolean): void {
+    if (!runtimeActiveWhileTerminal) return;
+    const delivery = (this.pendingQueueDeliveries.get(sessionId) ?? []).find((entry) => entry.kind === "followUp" && entry.text === text);
+    if (!delivery || this.followUpStalls.has(delivery.id)) return;
+    const enqueuedAt = Date.now();
+    const delayMs = this.options.followUpStallDelayMs ?? 30_000;
+    const timer = (this.options.scheduleFollowUpStall ?? ((callback, delay) => setTimeout(callback, delay)))(() => {
+      const active = this.followUpStalls.get(delivery.id);
+      const handle = this.runtimeHandles.get(sessionId);
+      if (!active || !handle || !this.isPromptInRuntimeQueue(handle, active.text)) {
+        this.clearFollowUpStall(delivery.id);
+        return;
+      }
+      this.logLifecycle("followUpQueueStalled", sessionId, handle, {
+        ageMs: Date.now() - active.enqueuedAt,
+        runtimeActiveWhileTerminal: true,
+      });
+      this.clearFollowUpStall(delivery.id);
+    }, delayMs);
+    this.followUpStalls.set(delivery.id, { sessionId, text, enqueuedAt, timer });
+  }
+
+  private clearFollowUpStall(deliveryId: string): void {
+    const stall = this.followUpStalls.get(deliveryId);
+    if (!stall) return;
+    (this.options.clearFollowUpStall ?? ((timer) => clearTimeout(timer as ReturnType<typeof setTimeout>)))(stall.timer);
+    this.followUpStalls.delete(deliveryId);
+  }
+
+  private clearFollowUpStallForText(sessionId: string, text: string): void {
+    for (const [deliveryId, stall] of this.followUpStalls) {
+      if (stall.sessionId === sessionId && stall.text === text) this.clearFollowUpStall(deliveryId);
+    }
+  }
+
+  private clearFollowUpStallForQueueItem(sessionId: string, item: PickyQueueItem): void {
+    if (item.id && this.followUpStalls.has(item.id)) {
+      this.clearFollowUpStall(item.id);
+      return;
+    }
+    // Older persisted queue items may lack an id. In that compatibility path, text is the
+    // only available correlation key, so clear matching stall candidates conservatively.
+    this.clearFollowUpStallForText(sessionId, item.text);
+  }
+
+  private clearFollowUpStalls(sessionId: string): void {
+    for (const [deliveryId, stall] of this.followUpStalls) {
+      if (stall.sessionId === sessionId) this.clearFollowUpStall(deliveryId);
+    }
   }
 
   async clearQueue(sessionId: string, _kind: "steering" | "followUp" | "all"): Promise<void> {
@@ -2236,6 +2358,7 @@ export class SessionSupervisor extends EventEmitter {
     if (index < 0) return undefined;
     const [entry] = pending.splice(index, 1);
     if (!entry) return undefined;
+    this.clearFollowUpStall(entry.id);
     if (pending.length === 0) this.pendingQueueDeliveries.delete(sessionId);
     if (options.activateVisualDsl) this.activatePickleVisualDslDelivery(sessionId, entry);
     this.rememberMaterializedQueueDelivery(sessionId, entry);
@@ -2252,6 +2375,7 @@ export class SessionSupervisor extends EventEmitter {
     const index = pending.findIndex((entry) => entry.text === text);
     if (index < 0) return;
     const [entry] = pending.splice(index, 1);
+    this.clearFollowUpStall(entry?.id ?? "");
     this.discardPickleVisualDslLease(sessionId, entry);
     if (pending.length === 0) this.pendingQueueDeliveries.delete(sessionId);
   }
@@ -2390,6 +2514,7 @@ export class SessionSupervisor extends EventEmitter {
       if (index < 0) continue;
       const [entry] = pending.splice(index, 1);
       if (!entry) continue;
+      this.clearFollowUpStall(entry.id);
       this.activatePickleVisualDslDelivery(sessionId, entry);
       await this.messageBuilder.recordUserText(sessionId, entry.text, entry.originatedBy, {
         attachedImagesCount: entry.attachedImagesCount,
@@ -2439,7 +2564,13 @@ export class SessionSupervisor extends EventEmitter {
     const queueChanged = !sameQueueItems(current.queuedSteers ?? [], queuedSteers) || !sameQueueItems(current.queuedFollowUps ?? [], queuedFollowUps);
     const modeChanged = steeringMode !== (current.steeringMode ?? "one-at-a-time") || followUpMode !== (current.followUpMode ?? "one-at-a-time");
     const removedItems = diffQueueRemovedItems(current.queuedSteers ?? [], current.queuedFollowUps ?? [], nextRuntimeQueues.steering, nextRuntimeQueues.followUp);
+    for (const item of removedItems) this.clearFollowUpStallForQueueItem(sessionId, item);
     await this.patch(sessionId, { queuedSteers, queuedFollowUps, steeringMode, followUpMode });
+    this.logLifecycle("queueUpdateReconciled", sessionId, this.runtimeHandles.get(sessionId), {
+      steeringCount: nextRuntimeQueues.steering.length,
+      followUpCount: nextRuntimeQueues.followUp.length,
+      removedCount: removedItems.length,
+    });
     if (removedItems.length > 0 && !isTerminalStatus(current.status)) {
       await this.drainDeliveredQueueItems(sessionId, removedItems);
     }
@@ -2456,6 +2587,11 @@ export class SessionSupervisor extends EventEmitter {
   private async handleRuntimeInputDelivery(sessionId: string, event: Extract<RuntimeEvent, { type: "input_delivery" }>): Promise<void> {
     if (!this.sessions.has(sessionId)) return;
     const deliveredText = extractPickyPromptUserInstruction(event.text) ?? event.text;
+    this.logLifecycle("runtimeInputDelivery", sessionId, this.runtimeHandles.get(sessionId), {
+      queueKind: event.queueKind ?? "none",
+      originatedBy: event.originatedBy,
+      textChars: deliveredText.length,
+    });
     const exactMatch = await this.drainPendingQueueDeliveryOnce(sessionId, (entry) => {
       if (event.queueKind && entry.kind !== event.queueKind) return false;
       return entry.text === deliveredText || entry.text === event.text;
@@ -2746,6 +2882,7 @@ export class SessionSupervisor extends EventEmitter {
       await handle.abort();
       await this.waitForRuntimeEvents(sessionId);
     }
+    this.clearFollowUpStalls(sessionId);
     this.runtimeHandleUnsubscribes.get(sessionId)?.();
     this.runtimeHandleUnsubscribes.delete(sessionId);
     this.runtimeHandles.delete(sessionId);
@@ -2788,6 +2925,10 @@ export class SessionSupervisor extends EventEmitter {
         return;
       }
       await this.runtimeEventHandler.handle(sessionId, event);
+      if (event.type === "status" && ["failed", "cancelled"].includes(event.status)) this.clearFollowUpStalls(sessionId);
+      // `agent_start` normalizes to this status event; once Pi starts a new agent cycle the
+      // queued follow-up is no longer the stalled state this detector tracks.
+      if (event.type === "status" && event.status === "running" && event.summary === "Agent started") this.clearFollowUpStalls(sessionId);
       if (event.type === "status" && event.noTurnRan && ["completed", "failed", "cancelled"].includes(event.status)) {
         const wasPendingReload = this.pendingResourceReloadSessionIDs.delete(sessionId);
         if (wasPendingReload && event.status === "completed" && !event.preserveSessionState) {

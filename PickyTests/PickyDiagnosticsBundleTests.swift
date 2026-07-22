@@ -57,6 +57,7 @@ struct PickyDiagnosticsBundleTests {
         #expect(names.contains("agentd.port-occupants.txt"))
         #expect(names.contains("agentd.tool-events.txt"))
         #expect(names.contains("agentd.session-identity.txt"))
+        #expect(names.contains("agentd.lifecycle-events.txt"))
         #expect(names.contains("watchdog.summary.txt"))
         #expect(names.contains("watchdog.samples.txt"))
         #expect(!names.contains("agentd.stdout.tail.log"))
@@ -160,6 +161,43 @@ struct PickyDiagnosticsBundleTests {
         #expect(!toolSummary.contains("user chat should never appear"))
         #expect(!toolSummary.contains("rm -rf sensitive"))
         #expect(!toolSummary.contains("private output"))
+    }
+
+    @Test func lifecycleExtractIncludesOnlyAllowlistedScalarEvidence() throws {
+        let fixture = try makeFixture(scope: .logsOnly)
+        defer { try? FileManager.default.removeItem(at: fixture) }
+        let logsDir = fixture.appendingPathComponent("Logs", isDirectory: true)
+        let stdout = """
+        2026-07-22T01:00:00.000Z picky-agentd lifecycle event="followUpRequested" sessionId="private-session" sessionStatus="completed" isStreaming=true isCompacting=false queuedFollowUpCount=1 pendingDeliveryCount=1 textChars=42 source="voice-follow-up" prompt="private user request" path="/Users/jane/private"
+        2026-07-22T01:00:01.000Z picky-agentd lifecycle event="followUpQueueStalled" sessionId="private-session" sessionStatus="running" isStreaming=true ageMs=30000 queuedFollowUpCount=1 error="private error"
+        2026-07-22T01:00:01.500Z picky-agentd lifecycle event="manualCompactStarted" sessionId="private-session" sessionStatus="completed" wasStreaming=false instructionChars=17 outcome="resolved"
+        2026-07-22T01:00:02.000Z picky-agentd lifecycle event="unapprovedEvent" text="must not be included"
+        ordinary stdout with secret transcript
+        """
+        try stdout.write(to: logsDir.appendingPathComponent("agentd.stdout.log"), atomically: true, encoding: .utf8)
+
+        let bundle = try PickyDiagnosticsBundleBuilder.build(
+            scope: .logsOnly,
+            metadata: makeMetadata(),
+            appSupportRoot: fixture,
+            oslogProvider: { "" }
+        )
+        defer { try? FileManager.default.removeItem(at: bundle.zipURL.deletingLastPathComponent()) }
+
+        let lifecycle = try extractZipEntryText(named: "agentd.lifecycle-events.txt", from: bundle.zipURL)
+        #expect(lifecycle.contains("timestamp=2026-07-22T01:00:00.000Z event=followUpRequested sessionStatus=completed"))
+        #expect(lifecycle.contains("timestamp=2026-07-22T01:00:01.000Z event=followUpQueueStalled sessionStatus=running"))
+        #expect(lifecycle.contains("textChars=42"))
+        #expect(lifecycle.contains("source=voice-follow-up"))
+        #expect(lifecycle.contains("ageMs=30000"))
+        #expect(lifecycle.contains("wasStreaming=false"))
+        #expect(lifecycle.contains("instructionChars=17"))
+        #expect(!lifecycle.contains("private-session"))
+        #expect(!lifecycle.contains("private user request"))
+        #expect(!lifecycle.contains("/Users/jane/private"))
+        #expect(!lifecycle.contains("private error"))
+        #expect(!lifecycle.contains("unapprovedEvent"))
+        #expect(!lifecycle.contains("secret transcript"))
     }
 
     @Test func stderrTailFallsBackToPlaceholderWhenSourceIsMissing() throws {

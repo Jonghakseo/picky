@@ -19,7 +19,7 @@ import { resolveTodoStateFromPiSessionEntries } from "../domain/todo-state.js";
 import { isTransientAgentBusyError } from "../domain/transient-runtime-error.js";
 import type { AgentRuntime, AnswerExtensionUiOptions, RewindBranchMessage, RewindResult, RewindTarget, RuntimeAssistantRunMetadata, RuntimeAutocompleteApplyRequest, RuntimeAutocompleteCapabilities, RuntimeAutocompleteCompletion, RuntimeAutocompleteQuery, RuntimeAutocompleteSuggestions, RuntimeBashExecutionResult, RuntimeEvent, RuntimeModelOption, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
 import type { ModelCycleDirection, PickyQueueMode } from "../protocol.js";
-import { logAgentd } from "../local-log.js";
+import { logAgentd, logLifecycleEvent } from "../local-log.js";
 import {
   type ScopedModelOption,
   applyScopedModelsForCycling,
@@ -852,9 +852,23 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     return () => this.listeners.delete(listener);
   }
 
+  private lifecycleFields(): Record<string, boolean | number> {
+    return {
+      isStreaming: this.runtime.session.isStreaming,
+      isCompacting: piIsCompacting(this.runtime.session),
+      queuedSteeringCount: this.queuedSteeringCount,
+      queuedFollowUpCount: this.queuedFollowUpCount,
+      expectedInputDeliveryCount: this.expectedInputDeliveries.length,
+    };
+  }
+
   // eslint-disable-next-line complexity -- Queue translation, recovery interception, and terminal de-duplication must run in one ordered adapter pipeline.
   private runtimeEventFromPiEvent(event: unknown): RuntimeEvent | undefined {
     const record = asRecord(event);
+    const eventType = stringValue(record.type);
+    if (eventType && ["agent_start", "agent_end", "agent_settled", "compaction_start", "compaction_end"].includes(eventType)) {
+      logLifecycleEvent("piRuntimeEvent", { sessionId: this.id, piEvent: eventType, ...this.lifecycleFields() });
+    }
     // A new agent cycle starts: stop absorbing aborted drains from prior abort cycles so a
     // real cancellation of the freshly-started turn still surfaces as `cancelled`.
     if (record.type === "agent_start") this.pendingAbortAcknowledgements = 0;
@@ -872,6 +886,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       const followUp = rawFollowUp.map((entry) => this.translateQueueEntry(entry));
       this.queuedSteeringCount = steering.length;
       this.queuedFollowUpCount = followUp.length;
+      logLifecycleEvent("piRuntimeEvent", { sessionId: this.id, piEvent: "queue_update", ...this.lifecycleFields() });
       return { type: "queue_update", steering, followUp };
     }
 
@@ -1163,6 +1178,13 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     options: { images?: Awaited<ReturnType<typeof imageOptions>>; source: "rpc"; streamingBehavior?: "steer" | "followUp" },
   ): Promise<boolean> {
     const wasStreaming = this.runtime.session.isStreaming;
+    logLifecycleEvent("piPromptPreflight", {
+      sessionId: this.id,
+      wasStreaming,
+      streamingBehavior: options.streamingBehavior ?? "none",
+      textChars: text.length,
+      ...this.lifecycleFields(),
+    });
     let accepted = false;
     let promptResolved = false;
     let settled = false;
@@ -1191,11 +1213,13 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       ...options,
       preflightResult: (success: boolean) => {
         if (!success) {
+          logLifecycleEvent("piPromptPreflightRejected", { sessionId: this.id, ...this.lifecycleFields() });
           this.cancelExpectedInputDelivery(expected.id);
           this.removePendingSlashSubmission(pendingSlashSubmission);
           return;
         }
         accepted = true;
+        logLifecycleEvent("piPromptPreflightAccepted", { sessionId: this.id, ...this.lifecycleFields() });
         resolveOnce();
       },
     });
@@ -1203,10 +1227,12 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     void promptPromise
       .then(() => {
         promptResolved = true;
+        logLifecycleEvent("piPromptResolved", { sessionId: this.id, accepted, ...this.lifecycleFields() });
         resolveOnce();
       })
       .catch((error) => {
         promptResolved = true;
+        logLifecycleEvent("piPromptRejected", { sessionId: this.id, accepted, ...this.lifecycleFields() });
         this.cancelExpectedInputDelivery(expected.id);
         this.removePendingSlashSubmission(pendingSlashSubmission);
         if (accepted) {
@@ -1235,6 +1261,13 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     this.removePendingSlashSubmission(pendingSlashSubmission);
     const handledSynchronously = promptResolved ? this.maybeEmitImmediateCompletion(wasStreaming) : false;
     if (handledSynchronously || (promptResolved && !this.isExpectedInputQueued(text))) this.cancelExpectedInputDelivery(expected.id);
+    logLifecycleEvent("piPromptAccepted", {
+      sessionId: this.id,
+      accepted,
+      promptResolved,
+      handledSynchronously,
+      ...this.lifecycleFields(),
+    });
     return handledSynchronously;
   }
 

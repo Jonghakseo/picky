@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import type { AutocompleteItem, AutocompleteProvider } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
+import * as localLog from "../local-log.js";
 import { PiSdkRuntime } from "./pi-sdk-runtime.js";
 
 class FakeSession extends EventEmitter {
@@ -1604,6 +1605,31 @@ describe("PiSdkRuntime", () => {
     await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky" });
 
     expect(createSessionFromServices).toHaveBeenCalledWith(expect.objectContaining({ thinkingLevel: "medium" }));
+  });
+
+  it("records scalar prompt and Pi lifecycle evidence without prompt content", async () => {
+    const fakeSession = new FakeSession();
+    const runtime = makeRuntime(fakeSession);
+    const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+    const lifecycleSpy = vi.spyOn(localLog, "logLifecycleEvent").mockImplementation((event, fields) => {
+      events.push({ event, fields: fields ?? {} });
+    });
+    try {
+      const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "lifecycle" });
+      fakeSession.isStreaming = true;
+      await handle.followUp({ text: "do not expose this private request", imagePaths: [] });
+      fakeSession.emit("event", { type: "queue_update", steering: [], followUp: ["queued"] });
+      fakeSession.emit("event", { type: "agent_settled" });
+
+      expect(events.map(({ event }) => event)).toContain("piPromptPreflight");
+      expect(events.map(({ event }) => event)).toContain("piPromptPreflightAccepted");
+      expect(events.map(({ event }) => event)).toContain("piPromptResolved");
+      expect(events).toContainEqual(expect.objectContaining({ event: "piRuntimeEvent", fields: expect.objectContaining({ piEvent: "queue_update", queuedFollowUpCount: 1 }) }));
+      expect(events).toContainEqual(expect.objectContaining({ event: "piRuntimeEvent", fields: expect.objectContaining({ piEvent: "agent_settled" }) }));
+      expect(JSON.stringify(events)).not.toContain("do not expose this private request");
+    } finally {
+      lifecycleSpy.mockRestore();
+    }
   });
 
   it("gates real Pi integration behind PICKY_RUN_PI_INTEGRATION", async () => {

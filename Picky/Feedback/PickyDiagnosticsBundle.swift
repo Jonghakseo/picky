@@ -110,6 +110,85 @@ enum PickyPortOccupancyCollector {
     }
 }
 
+/// Produces a bounded scalar-only view of lifecycle evidence from agentd stdout.
+/// Raw stdout is intentionally never staged: this parser renders only predeclared
+/// event names, field keys, and enum/numeric/boolean values.
+enum PickyAgentdLifecycleEventSummarizer {
+    private static let maxEvents = 300
+    private static let allowedEvents: Set<String> = [
+        "manualCompactStarted", "manualCompactFinished", "manualCompactSettled",
+        "followUpRequested", "followUpTerminalRuntimeMismatch", "followUpAccepted",
+        "followUpQueued", "followUpDelivered", "followUpRejected", "followUpQueueStalled",
+        "queueUpdateReconciled", "runtimeInputDelivery",
+        "piPromptPreflight", "piPromptPreflightRejected", "piPromptPreflightAccepted",
+        "piPromptResolved", "piPromptRejected", "piPromptAccepted", "piRuntimeEvent"
+    ]
+    private static let allowedFieldOrder = [
+        "timestamp", "event", "sessionStatus", "statusAtRequest", "terminalStatus", "isStreaming", "isCompacting",
+        "runtimeActiveWhileTerminal", "queuedSteeringCount", "queuedFollowUpCount", "pendingDeliveryCount",
+        "expectedInputDeliveryCount", "steeringCount", "followUpCount", "removedCount", "textChars",
+        "instructionChars", "imageCount", "elapsedMs", "ageMs", "wasStreaming", "accepted",
+        "promptResolved", "handledSynchronously", "source", "queueKind", "originatedBy",
+        "streamingBehavior", "outcome", "piEvent"
+    ]
+    private static let allowedEnumValues: Set<String> = [
+        "queued", "running", "waiting_for_input", "blocked", "completed", "failed", "cancelled", "none",
+        "text", "voice", "voice-follow-up", "text-follow-up", "system", "cli",
+        "main_agent", "user", "internal", "pi_extension",
+        "steer", "steering", "followUp", "resolved", "rejected", "settled",
+        "agent_start", "agent_end", "agent_settled", "compaction_start", "compaction_end", "queue_update"
+    ]
+
+    static func summarize(from sourceURL: URL, fileManager: FileManager = .default) -> String {
+        guard fileManager.fileExists(atPath: sourceURL.path),
+              let text = try? String(contentsOf: sourceURL, encoding: .utf8) else {
+            return "# agentd lifecycle evidence\n# Privacy: allowlisted scalar fields only; raw stdout, identifiers, user text, prompts, paths, tool data, and errors are excluded.\n(absent — agentd stdout was not available when diagnostics were built)\n"
+        }
+
+        let rendered = text
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .compactMap { renderAllowlistedEvent(String($0)) }
+            .suffix(maxEvents)
+        let header = "# agentd lifecycle evidence\n# Privacy: allowlisted scalar fields only; raw stdout, identifiers, user text, prompts, paths, tool data, and errors are excluded.\n# Events: \(rendered.count) (latest \(maxEvents) maximum)\n"
+        return header + (rendered.isEmpty ? "(no allowlisted lifecycle events found)\n" : rendered.joined(separator: "\n") + "\n")
+    }
+
+    private static func renderAllowlistedEvent(_ line: String) -> String? {
+        guard let marker = line.range(of: "picky-agentd lifecycle ") else { return nil }
+        var fields: [String: String] = [:]
+        if let timestamp = line.split(separator: " ", maxSplits: 1).first {
+            fields["timestamp"] = String(timestamp)
+        }
+        for token in line[marker.upperBound...].split(separator: " ") {
+            let pair = token.split(separator: "=", maxSplits: 1).map(String.init)
+            guard pair.count == 2 else { continue }
+            fields[pair[0]] = pair[1].trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+        }
+        guard let event = fields["event"], allowedEvents.contains(event) else { return nil }
+        return allowedFieldOrder.compactMap { key in
+            guard let value = fields[key], isAllowed(value, for: key) else { return nil }
+            return "\(key)=\(value)"
+        }.joined(separator: " ")
+    }
+
+    private static func isAllowed(_ value: String, for key: String) -> Bool {
+        if key == "timestamp" {
+            return value.range(
+                of: #"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$"#,
+                options: .regularExpression
+            ) != nil
+        }
+        if key == "event" { return allowedEvents.contains(value) }
+        if ["isStreaming", "isCompacting", "runtimeActiveWhileTerminal", "wasStreaming", "accepted", "promptResolved", "handledSynchronously"].contains(key) {
+            return value == "true" || value == "false"
+        }
+        if ["queuedSteeringCount", "queuedFollowUpCount", "pendingDeliveryCount", "expectedInputDeliveryCount", "steeringCount", "followUpCount", "removedCount", "textChars", "instructionChars", "imageCount", "elapsedMs", "ageMs"].contains(key) {
+            return !value.isEmpty && value.allSatisfy(\.isNumber)
+        }
+        return allowedEnumValues.contains(value)
+    }
+}
+
 enum PickyDiagnosticsBundleBuilder {
     /// Keep diagnostics uploads small enough for Slack and quick enough for
     /// testers. The agentd stdout log is never attached because it can contain
@@ -229,6 +308,13 @@ enum PickyDiagnosticsBundleBuilder {
             fileManager: fileManager
         )
         try? sessionIdentity.write(to: sessionIdentityPath, atomically: true, encoding: .utf8)
+
+        let lifecycleEventsPath = stagingRoot.appendingPathComponent("agentd.lifecycle-events.txt")
+        let lifecycleEvents = PickyAgentdLifecycleEventSummarizer.summarize(
+            from: stdoutLogURL,
+            fileManager: fileManager
+        )
+        try? lifecycleEvents.write(to: lifecycleEventsPath, atomically: true, encoding: .utf8)
 
         let oslogPath = stagingRoot.appendingPathComponent("picky-oslog.txt")
         let oslogText = oslogProvider()

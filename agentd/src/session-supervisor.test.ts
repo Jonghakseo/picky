@@ -7415,6 +7415,108 @@ describe("SessionSupervisor deleteSession", () => {
   });
 });
 
+describe("SessionSupervisor lifecycle evidence", () => {
+  it("records scalar compaction boundaries and terminal-runtime follow-up mismatches", async () => {
+    const runtime = new ManualRuntime();
+    const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-lifecycle-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir), {
+      lifecycleEventLogger: (event, fields) => events.push({ event, fields }),
+    });
+    await supervisor.load();
+    const session = await supervisor.create(context("lifecycle"));
+    runtime.handle!.emit({ type: "status", status: "completed", summary: "done" });
+    await waitUntil(() => supervisor.get(session.id)?.status === "completed");
+
+    await supervisor.followUp(session.id, "/compact focus only");
+    expect(events.filter(({ event }) => event.startsWith("manualCompact")).map(({ event }) => event)).toEqual([
+      "manualCompactStarted", "manualCompactFinished", "manualCompactSettled",
+    ]);
+    expect(events.find(({ event }) => event === "manualCompactStarted")?.fields).toMatchObject({
+      sessionStatus: "completed", isStreaming: false, isCompacting: false,
+      queuedSteeringCount: 0, queuedFollowUpCount: 0, pendingDeliveryCount: 0,
+    });
+
+    runtime.handle!.isStreaming = true;
+    await supervisor.followUp(session.id, "private follow-up text");
+    await waitUntil(() => events.some(({ event }) => event === "followUpQueued"));
+    expect(events.find(({ event }) => event === "followUpRequested")?.fields).toMatchObject({
+      textChars: "private follow-up text".length,
+    });
+    expect(events.find(({ event }) => event === "followUpTerminalRuntimeMismatch")?.fields).toMatchObject({
+      statusAtRequest: "completed", isStreaming: true,
+    });
+    expect(JSON.stringify(events)).not.toContain("private follow-up text");
+  });
+
+  it("emits and clears terminal-runtime queue stall checks through the injected scheduler", async () => {
+    const runtime = new ManualRuntime();
+    const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+    const timers = new Map<number, () => void>();
+    const cleared: number[] = [];
+    let mostRecentCallback: (() => void) | undefined;
+    let nextTimer = 0;
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-lifecycle-stall-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir), {
+      lifecycleEventLogger: (event, fields) => events.push({ event, fields }),
+      followUpStallDelayMs: 30_000,
+      scheduleFollowUpStall: (callback) => {
+        nextTimer += 1;
+        mostRecentCallback = callback;
+        timers.set(nextTimer, callback);
+        return nextTimer;
+      },
+      clearFollowUpStall: (timer) => {
+        const id = timer as number;
+        cleared.push(id);
+        timers.delete(id);
+      },
+    });
+    await supervisor.load();
+    const session = await supervisor.create(context("stall"));
+    runtime.handle!.emit({ type: "status", status: "completed", summary: "done" });
+    await waitUntil(() => supervisor.get(session.id)?.status === "completed");
+    runtime.handle!.isStreaming = true;
+
+    await supervisor.followUp(session.id, "stalled input");
+    await waitUntil(() => timers.size === 1);
+    const firstTimer = timers.values().next().value as (() => void) | undefined;
+    expect(firstTimer).toBeTypeOf("function");
+    firstTimer!();
+    expect(events.find(({ event }) => event === "followUpQueueStalled")?.fields).toMatchObject({
+      runtimeActiveWhileTerminal: true, isStreaming: true, queuedFollowUpCount: 1,
+    });
+
+    runtime.handle!.emit({ type: "status", status: "completed", summary: "done again" });
+    await waitUntil(() => supervisor.get(session.id)?.status === "completed");
+    await supervisor.followUp(session.id, "delivered input");
+    await waitUntil(() => timers.size === 1);
+    runtime.handle!.queuedFollowUpTexts = [];
+    runtime.handle!.emit({ type: "queue_update", steering: [], followUp: [] });
+    await waitUntil(() => timers.size === 0);
+    expect(cleared).not.toEqual([]);
+    // A callback already queued by the scheduler must be harmless after delivery cleanup.
+    mostRecentCallback?.();
+    expect(events.filter(({ event }) => event === "followUpQueueStalled")).toHaveLength(1);
+
+    runtime.handle!.emit({ type: "status", status: "completed", summary: "ready again" });
+    await waitUntil(() => supervisor.get(session.id)?.status === "completed");
+    await supervisor.followUp(session.id, "starting input");
+    await waitUntil(() => timers.size === 1);
+    runtime.handle!.emit({ type: "status", status: "running", summary: "Agent started" });
+    await waitUntil(() => timers.size === 0);
+
+    runtime.handle!.emit({ type: "status", status: "completed", summary: "ready to abort" });
+    await waitUntil(() => supervisor.get(session.id)?.status === "completed");
+    await supervisor.followUp(session.id, "aborted input");
+    await waitUntil(() => timers.size === 1);
+    await supervisor.abort(session.id);
+    expect(timers.size).toBe(0);
+    mostRecentCallback?.();
+    expect(events.filter(({ event }) => event === "followUpQueueStalled")).toHaveLength(1);
+  });
+});
+
 class ThrowingRuntime implements AgentRuntime {
   async create(): Promise<never> {
     throw new Error("runtime unavailable");

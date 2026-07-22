@@ -8,6 +8,7 @@
 import AppKit
 import Combine
 import CoreText
+import Darwin
 import Foundation
 import SwiftTerm
 import SwiftUI
@@ -123,8 +124,14 @@ final class PickyTerminalOverlayRecordStore<Record> {
         let record: Record
     }
 
+    private struct ClosingRecord {
+        let sessionID: String
+        let record: Record
+    }
+
     private var activeRecordsBySessionID: [String: ActiveRecord] = [:]
-    private var closingRecordsByID: [ObjectIdentifier: Record] = [:]
+    private var closingRecordsByID: [ObjectIdentifier: ClosingRecord] = [:]
+    private var closingFinishedCallbacksBySessionID: [String: [() -> Void]] = [:]
 
     func activeRecord(sessionID: String) -> Record? {
         activeRecordsBySessionID[sessionID]?.record
@@ -141,16 +148,31 @@ final class PickyTerminalOverlayRecordStore<Record> {
             return false
         }
         activeRecordsBySessionID[sessionID] = nil
-        closingRecordsByID[recordID] = activeRecord.record
+        closingRecordsByID[recordID] = ClosingRecord(sessionID: sessionID, record: activeRecord.record)
         return true
     }
 
     func finishClosing(recordID: ObjectIdentifier) {
-        closingRecordsByID[recordID] = nil
+        guard let closingRecord = closingRecordsByID.removeValue(forKey: recordID) else { return }
+        guard !isClosing(sessionID: closingRecord.sessionID) else { return }
+        let callbacks = closingFinishedCallbacksBySessionID.removeValue(forKey: closingRecord.sessionID) ?? []
+        callbacks.forEach { $0() }
     }
 
     func isClosing(recordID: ObjectIdentifier) -> Bool {
         closingRecordsByID[recordID] != nil
+    }
+
+    func isClosing(sessionID: String) -> Bool {
+        closingRecordsByID.values.contains { $0.sessionID == sessionID }
+    }
+
+    func onceClosingFinished(sessionID: String, _ callback: @escaping () -> Void) {
+        guard isClosing(sessionID: sessionID) else {
+            callback()
+            return
+        }
+        closingFinishedCallbacksBySessionID[sessionID, default: []].append(callback)
     }
 }
 
@@ -206,11 +228,19 @@ final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
             return existing.handle
         }
 
+        let processStartGate = PickyTerminalProcessStartGate()
+        if recordStore.isClosing(sessionID: sessionID) {
+            processStartGate.hold()
+            recordStore.onceClosingFinished(sessionID: sessionID) {
+                processStartGate.open()
+            }
+        }
         let model = PickyTerminalModel(
             title: title,
             sessionFilePath: sessionFilePath,
             cwd: cwd,
-            fontScalePersister: makeFontScalePersister()
+            fontScalePersister: makeFontScalePersister(),
+            processStartGate: processStartGate
         )
         try model.prepare()
 
@@ -256,15 +286,16 @@ final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
         let panelID = ObjectIdentifier(panel)
         let delegate = PickyTerminalPanelDelegate { [weak self, weak model] in
             self?.recordStore.beginClosing(sessionID: sessionID, recordID: panelID)
-            let cleanup: @MainActor () -> Void = { [weak self] in
+            let cleanup: @MainActor () -> Void = {
                 onClose(handle)
-                DispatchQueue.main.async {
-                    self?.recordStore.finishClosing(recordID: panelID)
-                }
             }
             guard let model else {
+                self?.recordStore.finishClosing(recordID: panelID)
                 cleanup()
                 return
+            }
+            model.scheduleAfterActualProcessExit { [weak self] in
+                self?.recordStore.finishClosing(recordID: panelID)
             }
             model.scheduleSyncOnExit(cleanup)
             model.close()
@@ -404,6 +435,100 @@ final class PickyTerminalExitSyncScheduler {
 }
 
 @MainActor
+protocol PickyTerminalProcessHosting: AnyObject {
+    var processDelegate: LocalProcessTerminalViewDelegate? { get set }
+    var processID: pid_t { get }
+
+    func startPickyProcess(
+        executable: String,
+        args: [String],
+        environment: [String]?,
+        currentDirectory: String?
+    )
+}
+
+extension LocalProcessTerminalView: PickyTerminalProcessHosting {
+    var processID: pid_t { process.shellPid }
+
+    func startPickyProcess(
+        executable: String,
+        args: [String],
+        environment: [String]?,
+        currentDirectory: String?
+    ) {
+        startProcess(
+            executable: executable,
+            args: args,
+            environment: environment,
+            currentDirectory: currentDirectory
+        )
+    }
+}
+
+@MainActor
+final class PickyTerminalProcessTerminator {
+    private let forceKillDelayNanoseconds: UInt64
+    private let signalProcess: (pid_t, Int32) -> Void
+    private var forceKillTask: Task<Void, Never>?
+
+    init(
+        forceKillDelayNanoseconds: UInt64 = 2_000_000_000,
+        signalProcess: @escaping (pid_t, Int32) -> Void = { processID, signal in
+            _ = Darwin.kill(processID, signal)
+        }
+    ) {
+        self.forceKillDelayNanoseconds = forceKillDelayNanoseconds
+        self.signalProcess = signalProcess
+    }
+
+    func terminate(processID: pid_t) {
+        guard processID > 0 else { return }
+        forceKillTask?.cancel()
+        signalProcess(processID, SIGTERM)
+        forceKillTask = Task { [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(nanoseconds: self.forceKillDelayNanoseconds)
+            guard !Task.isCancelled else { return }
+            self.signalProcess(processID, SIGKILL)
+        }
+    }
+
+    func processExited() {
+        forceKillTask?.cancel()
+        forceKillTask = nil
+    }
+}
+
+@MainActor
+final class PickyTerminalProcessStartGate {
+    private(set) var isOpen = true
+    private var pendingStart: (@MainActor () -> Void)?
+
+    func hold() {
+        isOpen = false
+    }
+
+    func runWhenOpen(_ block: @escaping @MainActor () -> Void) {
+        guard !isOpen else {
+            block()
+            return
+        }
+        pendingStart = block
+    }
+
+    func open() {
+        isOpen = true
+        let block = pendingStart
+        pendingStart = nil
+        block?()
+    }
+
+    func cancelPendingStart() {
+        pendingStart = nil
+    }
+}
+
+@MainActor
 protocol PickyTerminalProcessEventHandling: AnyObject {
     func updateTerminalTitle(_ terminalTitle: String)
     func processExited(exitCode: Int32?)
@@ -448,10 +573,16 @@ final class PickyTerminalModel: ObservableObject, PickyTerminalProcessEventHandl
     let sessionFilePath: String
     let cwd: String?
 
-    private weak var terminalView: LocalProcessTerminalView?
+    private weak var terminalView: (any PickyTerminalProcessHosting)?
+    /// SwiftTerm cancels its process monitor inside `terminate()`. Keep the view
+    /// alive and signal its PID directly so `processTerminated` can still arrive.
+    private var closingTerminalView: (any PickyTerminalProcessHosting)?
     private var didStartProcess = false
+    private var actualProcessExitCallbacks: [@MainActor () -> Void] = []
     private(set) lazy var processDelegate = PickyTerminalProcessDelegate(handler: self)
     private let exitSync: PickyTerminalExitSyncScheduler
+    private let processStartGate: PickyTerminalProcessStartGate
+    private let processTerminator: PickyTerminalProcessTerminator
     private let fontScalePersister: PickyTerminalFontScalePersister?
 
     init(
@@ -459,13 +590,17 @@ final class PickyTerminalModel: ObservableObject, PickyTerminalProcessEventHandl
         sessionFilePath: String,
         cwd: String?,
         fontScalePersister: PickyTerminalFontScalePersister? = nil,
-        exitSync: PickyTerminalExitSyncScheduler? = nil
+        exitSync: PickyTerminalExitSyncScheduler? = nil,
+        processStartGate: PickyTerminalProcessStartGate? = nil,
+        processTerminator: PickyTerminalProcessTerminator? = nil
     ) {
         self.title = title
         self.sessionFilePath = sessionFilePath
         self.cwd = cwd
         self.fontScalePersister = fontScalePersister
         self.exitSync = exitSync ?? PickyTerminalExitSyncScheduler()
+        self.processStartGate = processStartGate ?? PickyTerminalProcessStartGate()
+        self.processTerminator = processTerminator ?? PickyTerminalProcessTerminator()
         self.fontScale = PickyFontScales.clamped(fontScalePersister?.load() ?? PickyFontScales.defaults.terminal)
     }
 
@@ -488,25 +623,49 @@ final class PickyTerminalModel: ObservableObject, PickyTerminalProcessEventHandl
     }
 
     func attach(_ terminalView: LocalProcessTerminalView) {
+        attachProcessHostForTesting(terminalView)
+    }
+
+    func attachProcessHostForTesting(_ terminalView: any PickyTerminalProcessHosting) {
+        terminalView.processDelegate = processDelegate
         self.terminalView = terminalView
         startProcessIfNeeded(in: terminalView)
     }
 
     func close() {
-        terminalView?.terminate()
-        terminalView = nil
-        didStartProcess = false
+        processStartGate.cancelPendingStart()
+        guard didStartProcess, let terminalView else {
+            self.terminalView = nil
+            didStartProcess = false
+            return
+        }
+        closingTerminalView = terminalView
+        self.terminalView = nil
+        processTerminator.terminate(processID: terminalView.processID)
     }
 
     func processExited(exitCode: Int32?) {
+        processTerminator.processExited()
         terminalView = nil
+        closingTerminalView = nil
         didStartProcess = false
         if let exitCode {
             statusText = "Pi terminal exited with code \(exitCode). Close to sync the session card."
         } else {
             statusText = "Pi terminal closed. Close to sync the session card."
         }
+        let callbacks = actualProcessExitCallbacks
+        actualProcessExitCallbacks.removeAll()
+        callbacks.forEach { $0() }
         exitSync.markExited()
+    }
+
+    func scheduleAfterActualProcessExit(_ block: @escaping @MainActor () -> Void) {
+        guard didStartProcess else {
+            block()
+            return
+        }
+        actualProcessExitCallbacks.append(block)
     }
 
     /// Defers the post-overlay sync until pi reports `processTerminated` so the
@@ -520,17 +679,24 @@ final class PickyTerminalModel: ObservableObject, PickyTerminalProcessEventHandl
         statusText = "Attached to \(compactPath(sessionFilePath))"
     }
 
-    private func startProcessIfNeeded(in terminalView: LocalProcessTerminalView) {
+    private func startProcessIfNeeded(in terminalView: any PickyTerminalProcessHosting) {
         guard !didStartProcess else { return }
-        didStartProcess = true
-        exitSync.markStarted()
-        let command = PickyPiTerminalCommand.makeOverlayCommand(sessionFilePath: sessionFilePath, cwd: cwd)
-        terminalView.startProcess(
-            executable: "/bin/zsh",
-            args: ["-lc", command],
-            environment: PickyPiTerminalCommand.makeOverlayEnvironment(),
-            currentDirectory: PickyPiTerminalCommand.workingDirectory(from: cwd)
-        )
+        if !processStartGate.isOpen {
+            statusText = "Waiting for the previous Pi terminal to close…"
+        }
+        processStartGate.runWhenOpen { [weak self, weak terminalView] in
+            guard let self, let terminalView, self.terminalView === terminalView, !self.didStartProcess else { return }
+            self.didStartProcess = true
+            self.statusText = "Attached to \(self.compactPath(self.sessionFilePath))"
+            self.exitSync.markStarted()
+            let command = PickyPiTerminalCommand.makeOverlayCommand(sessionFilePath: self.sessionFilePath, cwd: self.cwd)
+            terminalView.startPickyProcess(
+                executable: "/bin/zsh",
+                args: ["-lc", command],
+                environment: PickyPiTerminalCommand.makeOverlayEnvironment(),
+                currentDirectory: PickyPiTerminalCommand.workingDirectory(from: self.cwd)
+            )
+        }
     }
 
     private func compactPath(_ path: String) -> String {

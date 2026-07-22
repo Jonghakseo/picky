@@ -203,6 +203,73 @@ struct PickyDiagnosticsBundleTests {
         #expect(!lifecycle.contains("secret transcript"))
     }
 
+    @Test func lifecycleSummaryReadsOnlyNewestBoundedSourceTail() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-lifecycle-tail-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = root.appendingPathComponent("agentd.stdout.log")
+        let oldEvent = "2026-07-22T01:00:00.000Z picky-agentd lifecycle event=followUpRequested sessionStatus=running textChars=1\n"
+        let newestEvent = "2026-07-22T01:00:59.000Z picky-agentd lifecycle event=followUpDelivered sessionStatus=completed textChars=2\n"
+        try (oldEvent + String(repeating: "padding that is not lifecycle evidence\n", count: 80) + newestEvent)
+            .write(to: source, atomically: true, encoding: .utf8)
+
+        let summary = PickyAgentdLifecycleEventSummarizer.summarize(
+            from: source,
+            maxSourceBytes: 512
+        )
+
+        #expect(summary.contains("sourceTailTruncated=true"))
+        #expect(summary.contains("timestamp=2026-07-22T01:00:59.000Z"))
+        #expect(!summary.contains("timestamp=2026-07-22T01:00:00.000Z"))
+    }
+
+    @Test func lifecycleSummaryDropsAnIncompleteTrailingEvent() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-lifecycle-partial-tail-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = root.appendingPathComponent("agentd.stdout.log")
+        let complete = "2026-07-22T01:00:10.000Z picky-agentd lifecycle event=followUpDelivered sessionStatus=completed textChars=10\n"
+        let partial = "2026-07-22T01:00:11.000Z picky-agentd lifecycle event=followUpQueueStalled sessionStatus=running"
+        try (complete + partial).write(to: source, atomically: true, encoding: .utf8)
+
+        let summary = PickyAgentdLifecycleEventSummarizer.summarize(from: source)
+
+        #expect(summary.contains("timestamp=2026-07-22T01:00:10.000Z"))
+        #expect(!summary.contains("timestamp=2026-07-22T01:00:11.000Z"))
+        #expect(summary.contains("sourceTailTruncated=true"))
+    }
+
+    @Test func lifecycleSummaryKeepsNewestEventsWithinEventAndByteLimits() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-lifecycle-bounds-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = root.appendingPathComponent("agentd.stdout.log")
+        let events = (0..<12).map { index in
+            "2026-07-22T01:00:\(String(format: "%02d", index)).000Z picky-agentd lifecycle event=followUpDelivered sessionStatus=completed textChars=\(index)"
+        }.joined(separator: "\n") + "\n"
+        try events.write(to: source, atomically: true, encoding: .utf8)
+
+        let eventLimited = PickyAgentdLifecycleEventSummarizer.summarize(
+            from: source,
+            maxRenderedBytes: 4_096,
+            maxEvents: 2
+        )
+        #expect(eventLimited.contains("eventLimitTruncated=true"))
+        #expect(eventLimited.contains("timestamp=2026-07-22T01:00:10.000Z"))
+        #expect(eventLimited.contains("timestamp=2026-07-22T01:00:11.000Z"))
+        #expect(!eventLimited.contains("timestamp=2026-07-22T01:00:09.000Z"))
+
+        let byteLimited = PickyAgentdLifecycleEventSummarizer.summarize(
+            from: source,
+            maxRenderedBytes: 420,
+            maxEvents: 12
+        )
+        #expect(byteLimited.lengthOfBytes(using: .utf8) <= 420)
+        #expect(byteLimited.contains("outputTruncated=true"))
+        #expect(byteLimited.contains("timestamp=2026-07-22T01:00:11.000Z"))
+        #expect(!byteLimited.contains("timestamp=2026-07-22T01:00:00.000Z"))
+    }
+
     @Test func stderrTailFallsBackToPlaceholderWhenSourceIsMissing() throws {
         let fixture = try makeFixture(scope: .logsOnly)
         defer { try? FileManager.default.removeItem(at: fixture) }
@@ -418,11 +485,18 @@ struct PickyDiagnosticsBundleTests {
         #expect(portDiagnostics.contains("node 123 jane"))
     }
 
-    @Test func crashDiagnosticsConstantsForm704KiBAggregateBudget() {
+    @Test func crashDiagnosticsConstantsForm768KiBAggregateBudget() {
         #expect(PickyDiagnosticsBundleBuilder.maximumPreviousProcessOSLogBytes == 256 * 1024)
         #expect(PickyDiagnosticsBundleBuilder.maximumIPSExcerptBytes == 384 * 1024)
+        #expect(PickyDiagnosticsBundleBuilder.maximumAgentdLifecycleEventBytes == 64 * 1024)
         #expect(PickyDiagnosticsBundleBuilder.maximumLifecycleSnapshotBytes + PickyDiagnosticsBundleBuilder.maximumIPSManifestBytes == PickyDiagnosticsBundleBuilder.maximumLifecycleAndManifestBytes)
-        #expect(PickyDiagnosticsBundleBuilder.maximumPreviousProcessOSLogBytes + PickyDiagnosticsBundleBuilder.maximumIPSExcerptBytes + PickyDiagnosticsBundleBuilder.maximumLifecycleAndManifestBytes == 704 * 1024)
+        #expect(
+            PickyDiagnosticsBundleBuilder.maximumPreviousProcessOSLogBytes
+                + PickyDiagnosticsBundleBuilder.maximumIPSExcerptBytes
+                + PickyDiagnosticsBundleBuilder.maximumAgentdLifecycleEventBytes
+                + PickyDiagnosticsBundleBuilder.maximumLifecycleAndManifestBytes
+                == 768 * 1024
+        )
     }
 
     @Test func metadataIncludesScopeAndTailLimit() throws {

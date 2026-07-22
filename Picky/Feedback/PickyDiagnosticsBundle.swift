@@ -114,7 +114,9 @@ enum PickyPortOccupancyCollector {
 /// Raw stdout is intentionally never staged: this parser renders only predeclared
 /// event names, field keys, and enum/numeric/boolean values.
 enum PickyAgentdLifecycleEventSummarizer {
-    private static let maxEvents = 300
+    static let defaultMaxSourceBytes = 1 * 1024 * 1024
+    static let defaultMaxRenderedBytes = 64 * 1024
+    static let defaultMaxEvents = 300
     private static let allowedEvents: Set<String> = [
         "manualCompactStarted", "manualCompactFinished", "manualCompactSettled",
         "followUpRequested", "followUpTerminalRuntimeMismatch", "followUpAccepted",
@@ -139,18 +141,106 @@ enum PickyAgentdLifecycleEventSummarizer {
         "agent_start", "agent_end", "agent_settled", "compaction_start", "compaction_end", "queue_update"
     ]
 
-    static func summarize(from sourceURL: URL, fileManager: FileManager = .default) -> String {
-        guard fileManager.fileExists(atPath: sourceURL.path),
-              let text = try? String(contentsOf: sourceURL, encoding: .utf8) else {
-            return "# agentd lifecycle evidence\n# Privacy: allowlisted scalar fields only; raw stdout, identifiers, user text, prompts, paths, tool data, and errors are excluded.\n(absent — agentd stdout was not available when diagnostics were built)\n"
+    static func summarize(
+        from sourceURL: URL,
+        fileManager: FileManager = .default,
+        maxSourceBytes: Int = defaultMaxSourceBytes,
+        maxRenderedBytes: Int = defaultMaxRenderedBytes,
+        maxEvents: Int = defaultMaxEvents
+    ) -> String {
+        guard let source = readBoundedTail(
+            from: sourceURL,
+            fileManager: fileManager,
+            maxBytes: max(0, maxSourceBytes)
+        ) else {
+            return PickyDiagnosticTextRedactor.truncateUTF8(
+                "# agentd lifecycle evidence\n# Privacy: allowlisted scalar fields only; raw stdout, identifiers, user text, prompts, paths, tool data, and errors are excluded.\n(absent — agentd stdout was not available when diagnostics were built)\n",
+                maxBytes: max(0, maxRenderedBytes),
+                keepingNewest: false
+            )
         }
 
-        let rendered = text
+        let allRendered = source.text
             .split(separator: "\n", omittingEmptySubsequences: false)
             .compactMap { renderAllowlistedEvent(String($0)) }
-            .suffix(maxEvents)
-        let header = "# agentd lifecycle evidence\n# Privacy: allowlisted scalar fields only; raw stdout, identifiers, user text, prompts, paths, tool data, and errors are excluded.\n# Events: \(rendered.count) (latest \(maxEvents) maximum)\n"
-        return header + (rendered.isEmpty ? "(no allowlisted lifecycle events found)\n" : rendered.joined(separator: "\n") + "\n")
+        let boundedEventCount = max(0, maxEvents)
+        let rendered = Array(allRendered.suffix(boundedEventCount))
+        let eventLimitTruncated = allRendered.count > rendered.count
+        let baseHeader = { (outputTruncated: Bool) in
+            "# agentd lifecycle evidence\n"
+                + "# Privacy: allowlisted scalar fields only; raw stdout, identifiers, user text, prompts, paths, tool data, and errors are excluded.\n"
+                + "# Events: \(rendered.count) (latest \(boundedEventCount) maximum)\n"
+                + "sourceTailTruncated=\(source.truncated)\n"
+                + "eventLimitTruncated=\(eventLimitTruncated)\n"
+                + "outputTruncated=\(outputTruncated)\n"
+        }
+        let provisionalHeader = baseHeader(false)
+        let byteLimit = max(0, maxRenderedBytes)
+        let bodyLimit = max(0, byteLimit - provisionalHeader.lengthOfBytes(using: .utf8))
+        var remainingBodyBytes = bodyLimit
+        var keptNewestFirst: [String] = []
+        var outputTruncated = false
+        let candidateLines = rendered.isEmpty ? ["(no allowlisted lifecycle events found)"] : rendered
+        for line in candidateLines.reversed() {
+            let lineWithNewline = line + "\n"
+            let lineBytes = lineWithNewline.lengthOfBytes(using: .utf8)
+            guard lineBytes <= remainingBodyBytes else {
+                outputTruncated = true
+                break
+            }
+            keptNewestFirst.append(lineWithNewline)
+            remainingBodyBytes -= lineBytes
+        }
+        if keptNewestFirst.count < candidateLines.count { outputTruncated = true }
+        let result = baseHeader(outputTruncated) + keptNewestFirst.reversed().joined()
+        return PickyDiagnosticTextRedactor.truncateUTF8(
+            result,
+            maxBytes: byteLimit,
+            keepingNewest: false
+        )
+    }
+
+    private static func readBoundedTail(
+        from sourceURL: URL,
+        fileManager: FileManager,
+        maxBytes: Int
+    ) -> (text: String, truncated: Bool)? {
+        guard fileManager.fileExists(atPath: sourceURL.path),
+              let handle = try? FileHandle(forReadingFrom: sourceURL) else {
+            return nil
+        }
+        defer { try? handle.close() }
+        do {
+            // Snapshot the opened file's current end instead of statting before
+            // open, which could seek into the wrong range during append/rotation.
+            let fileSize = try handle.seekToEnd()
+            let byteCount = UInt64(maxBytes)
+            let offset = fileSize > byteCount ? fileSize - byteCount : 0
+            try handle.seek(toOffset: offset)
+            var data = try handle.read(upToCount: maxBytes) ?? Data()
+            var droppedPartialLine = false
+            if offset > 0 {
+                guard let newline = data.firstIndex(of: 0x0A) else {
+                    return ("", true)
+                }
+                data.removeSubrange(data.startIndex...newline)
+                droppedPartialLine = true
+            }
+            // Console log records are newline-terminated. If export races an
+            // append, discard the unfinished final record rather than letting
+            // it displace complete recent evidence.
+            if !data.isEmpty, data.last != 0x0A {
+                if let newline = data.lastIndex(of: 0x0A) {
+                    data.removeSubrange(data.index(after: newline)..<data.endIndex)
+                } else {
+                    data.removeAll()
+                }
+                droppedPartialLine = true
+            }
+            return (String(decoding: data, as: UTF8.self), offset > 0 || droppedPartialLine)
+        } catch {
+            return nil
+        }
     }
 
     private static func renderAllowlistedEvent(_ line: String) -> String? {
@@ -197,10 +287,11 @@ enum PickyDiagnosticsBundleBuilder {
     static let defaultMaxLogBytes = 1_000_000
     static let defaultMaxWatchdogSampleBytes = 120_000
     /// New crash/lifecycle evidence is bounded independently of existing
-    /// stderr/watchdog limits: 256 KiB OSLog + 384 KiB IPS + 64 KiB scalar
-    /// lifecycle/manifest data = 704 KiB maximum uncompressed.
+    /// stderr/watchdog limits: 256 KiB OSLog + 384 KiB IPS + 64 KiB agentd
+    /// lifecycle events + 64 KiB app lifecycle/manifest data = 768 KiB.
     static let maximumPreviousProcessOSLogBytes = 256 * 1024
     static let maximumIPSExcerptBytes = 384 * 1024
+    static let maximumAgentdLifecycleEventBytes = 64 * 1024
     static let maximumLifecycleAndManifestBytes = 64 * 1024
     static let maximumLifecycleSnapshotBytes = 32 * 1024
     static let maximumIPSManifestBytes = 32 * 1024
@@ -326,7 +417,8 @@ enum PickyDiagnosticsBundleBuilder {
         let lifecycleEventsPath = stagingRoot.appendingPathComponent("agentd.lifecycle-events.txt")
         let lifecycleEvents = PickyAgentdLifecycleEventSummarizer.summarize(
             from: stdoutLogURL,
-            fileManager: fileManager
+            fileManager: fileManager,
+            maxRenderedBytes: maximumAgentdLifecycleEventBytes
         )
         try? lifecycleEvents.write(to: lifecycleEventsPath, atomically: true, encoding: .utf8)
 

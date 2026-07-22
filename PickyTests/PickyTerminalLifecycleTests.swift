@@ -3,7 +3,9 @@
 //  PickyTests
 //
 
+import Darwin
 import Foundation
+import SwiftTerm
 import Testing
 @testable import Picky
 
@@ -59,6 +61,90 @@ struct PickyTerminalLifecycleTests {
         #expect(!store.isClosing(recordID: firstID))
     }
 
+    @Test func closingSessionCallbackWaitsForActualRecordCleanup() {
+        let store = PickyTerminalOverlayRecordStore<RecordToken>()
+        let record = RecordToken()
+        let recordID = ObjectIdentifier(record)
+        store.insert(record, sessionID: "session-1", recordID: recordID)
+        #expect(store.beginClosing(sessionID: "session-1", recordID: recordID))
+        var callbackCount = 0
+
+        store.onceClosingFinished(sessionID: "session-1") { callbackCount += 1 }
+
+        #expect(store.isClosing(sessionID: "session-1"))
+        #expect(callbackCount == 0)
+        store.finishClosing(recordID: recordID)
+        #expect(!store.isClosing(sessionID: "session-1"))
+        #expect(callbackCount == 1)
+    }
+
+    @Test func terminalCloseRetainsExitObservationUntilTheProcessActuallyExits() {
+        var signals: [Int32] = []
+        let terminator = PickyTerminalProcessTerminator(
+            forceKillDelayNanoseconds: 1_000_000_000,
+            signalProcess: { _, signal in signals.append(signal) }
+        )
+        let model = PickyTerminalModel(
+            title: "Terminal",
+            sessionFilePath: "/tmp/session.jsonl",
+            cwd: "/tmp",
+            processTerminator: terminator
+        )
+        var host: TerminalProcessHostStub? = TerminalProcessHostStub(processID: 42)
+        weak var weakHost = host
+        model.attachProcessHostForTesting(host!)
+        var exitCallbackCount = 0
+        model.scheduleAfterActualProcessExit { exitCallbackCount += 1 }
+
+        model.close()
+        host = nil
+
+        #expect(signals == [SIGTERM])
+        #expect(exitCallbackCount == 0)
+        #expect(weakHost != nil)
+
+        model.processExited(exitCode: 0)
+
+        #expect(exitCallbackCount == 1)
+        #expect(weakHost == nil)
+    }
+
+    @Test func terminalTerminatorEscalatesAndCancelsForceKillAfterObservedExit() async throws {
+        var signals: [Int32] = []
+        let terminator = PickyTerminalProcessTerminator(
+            forceKillDelayNanoseconds: 10_000_000,
+            signalProcess: { _, signal in signals.append(signal) }
+        )
+        terminator.terminate(processID: 42)
+        try await Task.sleep(nanoseconds: 30_000_000)
+        #expect(signals == [SIGTERM, SIGKILL])
+
+        signals.removeAll()
+        terminator.terminate(processID: 43)
+        terminator.processExited()
+        try await Task.sleep(nanoseconds: 30_000_000)
+        #expect(signals == [SIGTERM])
+    }
+
+    @Test func processStartGateDefersAndCancelsPendingStarts() {
+        let gate = PickyTerminalProcessStartGate()
+        var starts: [String] = []
+        gate.hold()
+
+        gate.runWhenOpen { starts.append("first") }
+        gate.runWhenOpen { starts.append("replacement") }
+        #expect(starts.isEmpty)
+
+        gate.open()
+        #expect(starts == ["replacement"])
+
+        gate.hold()
+        gate.runWhenOpen { starts.append("cancelled") }
+        gate.cancelPendingStart()
+        gate.open()
+        #expect(starts == ["replacement"])
+    }
+
     @Test func staleCloseCannotMoveReplacementRecordIntoClosingState() {
         let store = PickyTerminalOverlayRecordStore<RecordToken>()
         let firstRecord = RecordToken()
@@ -72,6 +158,26 @@ struct PickyTerminalLifecycleTests {
         #expect(!store.beginClosing(sessionID: "session-1", recordID: firstID))
         #expect(store.activeRecord(sessionID: "session-1") === replacement)
         #expect(!store.isClosing(recordID: firstID))
+    }
+}
+
+@MainActor
+private final class TerminalProcessHostStub: PickyTerminalProcessHosting {
+    weak var processDelegate: LocalProcessTerminalViewDelegate?
+    let processID: pid_t
+    private(set) var startCount = 0
+
+    init(processID: pid_t) {
+        self.processID = processID
+    }
+
+    func startPickyProcess(
+        executable: String,
+        args: [String],
+        environment: [String]?,
+        currentDirectory: String?
+    ) {
+        startCount += 1
     }
 }
 

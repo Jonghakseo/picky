@@ -73,11 +73,11 @@ enum PickyOSLogCollector {
                         try entryProvider(.currentProcess, start),
                         start: start,
                         end: now,
-                        preferredProcessID: preferredProcessID
+                        preferredProcessID: nil
                     ),
                     scope: .currentProcess,
                     window: window,
-                    preferredProcessID: preferredProcessID,
+                    preferredProcessID: nil,
                     fallbackReason: "system unavailable: \(reason)"
                 )
             } catch {
@@ -85,7 +85,7 @@ enum PickyOSLogCollector {
                     entries: [],
                     scope: .currentProcess,
                     window: window,
-                    preferredProcessID: preferredProcessID,
+                    preferredProcessID: nil,
                     fallbackReason: "system unavailable; current-process unavailable: \(PickyDiagnosticTextRedactor.redact(error.localizedDescription))"
                 )
             }

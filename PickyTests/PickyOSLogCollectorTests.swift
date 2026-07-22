@@ -48,6 +48,27 @@ struct PickyOSLogCollectorTests {
         #expect(rendered.contains("<redacted>"))
     }
 
+    @Test func systemFailureUsesUnfilteredCurrentProcessEvidence() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let rendered = PickyOSLogCollector.collect(window: 600, now: now, preferredProcessID: 42) { scope, _ in
+            if scope == .system { throw StoreError() }
+            return [
+                PickyOSLogCollector.Entry(
+                    date: now,
+                    level: "E",
+                    subsystem: PickyLog.subsystem,
+                    processID: 99,
+                    message: "CURRENT-PROCESS-FALLBACK-EVIDENCE"
+                )
+            ]
+        }
+
+        #expect(rendered.contains("scope=currentProcess"))
+        #expect(rendered.contains("processFilter=subsystem-only"))
+        #expect(rendered.contains("CURRENT-PROCESS-FALLBACK-EVIDENCE"))
+        #expect(!rendered.contains("processFilter=pid=42"))
+    }
+
     @Test func preferredLifecyclePIDFiltersPostRelaunchEntries() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let rendered = PickyOSLogCollector.collect(window: 600, now: now, preferredProcessID: 42) { _, _ in

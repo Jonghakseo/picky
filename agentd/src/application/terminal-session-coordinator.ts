@@ -2,6 +2,7 @@ import { PiSessionTailWatcher, type PiSessionTailEntry } from "./pi-session-tail
 import { readPiTerminalSessionMessages } from "./pi-session-syncer.js";
 import { inferTerminalStatusFromEntries } from "./terminal-tail-status.js";
 import { appendUniqueLog, piSessionFilePathForSession } from "../domain/pi-session-files.js";
+import { canonicalizeSubagentMentions } from "../domain/subagent-mention.js";
 import { FOLLOWUP_PREFIX } from "../domain/log-prefixes.js";
 import { logAgentd } from "../local-log.js";
 import type { PickyAgentSession, PickySessionMessage } from "../protocol.js";
@@ -111,11 +112,11 @@ export class TerminalSessionCoordinator {
     const hudUserTextsInWindow = existingMessages
       .filter((message) => message.kind === "user_text" && message.originatedBy === "user" && typeof message.text === "string" && message.text.trim().length > 0)
       .filter((message) => !baselineCreatedAt || message.createdAt >= baselineCreatedAt)
-      .map((message) => (message.text ?? "").trim());
+      .map((message) => canonicalizeSubagentMentions((message.text ?? "").trim()));
     const hudAgentTextsInWindow = existingMessages
       .filter((message) => message.kind === "agent_text" && typeof message.text === "string" && message.text.trim().length > 0)
       .filter((message) => !baselineCreatedAt || message.createdAt >= baselineCreatedAt)
-      .map((message) => (message.text ?? "").trim());
+      .map((message) => canonicalizeSubagentMentions((message.text ?? "").trim()));
     const messagesToImport = result.messages.filter((message) => {
       if (existingIds.has(message.id)) return false;
       const text = (message.text ?? "").trim();
@@ -126,7 +127,9 @@ export class TerminalSessionCoordinator {
           ? hudAgentTextsInWindow
           : undefined;
       if (!candidates) return true;
-      const index = candidates.indexOf(text);
+      // Pi rewrites `>name` subagent mentions to `subagent:name` in its JSONL, so compare on the
+      // canonicalized form to keep the expanded Pi copy from surviving as a duplicate bubble.
+      const index = candidates.indexOf(canonicalizeSubagentMentions(text));
       if (index < 0) return true;
       candidates.splice(index, 1);
       return false;

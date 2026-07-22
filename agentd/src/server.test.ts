@@ -4,10 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import WebSocket from "ws";
+import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PROTOCOL_VERSION, parseCommand, type EventEnvelope, type PickyAgentSession, type PickyContextPacket } from "./protocol.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
-import { AgentdServer, commandLogFields, compactSessionsForSnapshot, sanitizeForJson } from "./server.js";
+import { AgentdServer, commandLogFields, compactSessionsForSnapshot, createDefaultPackageManager, sanitizeForJson } from "./server.js";
 import { EdgeTTSService, type EdgeTTSClient } from "./edge-tts-service.js";
 import { SessionStore } from "./session-store.js";
 import { SessionSupervisor } from "./session-supervisor.js";
@@ -141,6 +142,33 @@ describe("AgentdServer", () => {
     const reloaded = await waitForEvent(ws, "pluginsReloaded");
     expect(reloaded).toMatchObject({ type: "pluginsReloaded", requestId: "cmd-reload-plugins" });
     ws.close();
+  });
+
+  it("wires the bundled npm command into the default package manager without persisting it", () => {
+    const configuredSettings = SettingsManager.inMemory();
+    const execPath = "/Applications/Picky.app/Contents/Resources/agentd-runtime/bin/node";
+    const bundledNpmCli = "/Applications/Picky.app/Contents/Resources/agentd-runtime/lib/node_modules/npm/bin/npm-cli.js";
+    const createPackageManager = vi.fn(({ settingsManager }) => {
+      expect(settingsManager.getNpmCommand()).toEqual([execPath, bundledNpmCli]);
+      return {
+        installAndPersist: async () => {},
+        removeAndPersist: async () => false,
+        setProgressCallback: () => {},
+      };
+    });
+
+    createDefaultPackageManager(
+      { cwd: "/tmp/project", agentDir: "/tmp/picky-agent" },
+      {
+        createSettingsManager: () => configuredSettings,
+        createPackageManager,
+        execPath,
+        fileExists: (path) => path === bundledNpmCli,
+      },
+    );
+
+    expect(createPackageManager).toHaveBeenCalledOnce();
+    expect(configuredSettings.getNpmCommand()).toBeUndefined();
   });
 
   it("runs package installs through an injected manager and relays progress to the requester", async () => {

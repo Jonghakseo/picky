@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 import { DefaultPackageManager, getAgentDir, SettingsManager, type ProgressEvent } from "@earendil-works/pi-coding-agent";
 import { isAuthorized } from "./auth.js";
 import { FOLLOWUP_PREFIX, HANDOFF_PREFIX, STEER_PREFIX } from "./domain/log-prefixes.js";
+import { resolveNpmCommand } from "./domain/npm-command.js";
 import { sliceUtf16Safe } from "./domain/safe-truncate.js";
 import { PROTOCOL_VERSION, PickyAgentSessionSchema, parseCommand, type DockGroup, type EventEnvelope, type PickyAgentSession, type PickyAgentSessionParsed, type PickyContextPacket, type PickyPushToTalkControlAction } from "./protocol.js";
 import type { SessionSupervisor } from "./session-supervisor.js";
@@ -23,6 +25,49 @@ export interface PackageManager {
 export interface PackageManagerFactoryOptions {
   cwd: string;
   agentDir: string;
+}
+
+type PiPackageManagerOptions = ConstructorParameters<typeof DefaultPackageManager>[0];
+
+export interface DefaultPackageManagerDependencies {
+  createSettingsManager?: (cwd: string, agentDir?: string) => SettingsManager;
+  createPackageManager?: (options: PiPackageManagerOptions) => PackageManager;
+  execPath?: string;
+  fileExists?: (path: string) => boolean;
+}
+
+/** Creates the Pi package manager with a runtime-only bundled npm fallback. */
+export function createDefaultPackageManager(
+  options: PackageManagerFactoryOptions,
+  dependencies: DefaultPackageManagerDependencies = {},
+): PackageManager {
+  const settingsManager = (dependencies.createSettingsManager ?? SettingsManager.create)(options.cwd, options.agentDir);
+  const execPath = dependencies.execPath ?? process.execPath;
+  const fileExists = dependencies.fileExists ?? existsSync;
+  const packageManagerSettings = new Proxy(settingsManager, {
+    get(target, property) {
+      if (property === "getNpmCommand") {
+        return () => resolveNpmCommand({
+          configured: target.getNpmCommand(),
+          execPath,
+          fileExists,
+        });
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const packageManager = (dependencies.createPackageManager ?? ((params) => new DefaultPackageManager(params)))({
+    ...options,
+    settingsManager: packageManagerSettings,
+  });
+
+  return {
+    installAndPersist: (packageSource) => packageManager.installAndPersist(packageSource),
+    removeAndPersist: (packageSource) => packageManager.removeAndPersist(packageSource),
+    setProgressCallback: (callback) => packageManager.setProgressCallback(callback),
+    flush: () => settingsManager.flush(),
+  };
 }
 
 export interface AgentdServerOptions {
@@ -493,16 +538,7 @@ export class AgentdServer {
     source: string,
   ): Promise<void> {
     const agentDir = (this.options.getAgentDir ?? getAgentDir)();
-    const createPackageManager = this.options.createPackageManager ?? ((options: PackageManagerFactoryOptions) => {
-      const settingsManager = SettingsManager.create(options.cwd, options.agentDir);
-      const packageManager = new DefaultPackageManager({ ...options, settingsManager });
-      return {
-        installAndPersist: (packageSource) => packageManager.installAndPersist(packageSource),
-        removeAndPersist: (packageSource) => packageManager.removeAndPersist(packageSource),
-        setProgressCallback: (callback) => packageManager.setProgressCallback(callback),
-        flush: () => settingsManager.flush(),
-      };
-    });
+    const createPackageManager = this.options.createPackageManager ?? createDefaultPackageManager;
     const packageManager = createPackageManager({ cwd: process.cwd(), agentDir });
     packageManager.setProgressCallback((event) => {
       const message = event.message ?? `${event.action} ${event.source}`;

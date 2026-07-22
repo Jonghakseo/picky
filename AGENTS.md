@@ -26,7 +26,7 @@ local ~/.pi/agent skills/extensions/MCP/tools
 
 Default daemon port is `127.0.0.1:17631`. Mock runtime is available via `PICKY_AGENTD_RUNTIME=mock`.
 
-Packaged Picky.app bundles a pinned Node 22.x arm64 runtime under `Contents/Resources/agentd-runtime/bin/node`, signed separately with `Picky/NodeRuntime.entitlements` for V8 JIT. The launcher (`Picky/PickyAgentDaemonLauncher.swift`) resolves Node in this order:
+Packaged Picky.app bundles a pinned Node 22.x arm64 runtime under `Contents/Resources/agentd-runtime/bin/node` and its npm CLI under `Contents/Resources/agentd-runtime/lib/node_modules/npm`; only Node is signed separately with `Picky/NodeRuntime.entitlements` for V8 JIT. The launcher (`Picky/PickyAgentDaemonLauncher.swift`) resolves Node in this order:
 
 1. `PICKY_NODE_PATH` env override (dev/debug).
 2. Bundled `Resources/agentd-runtime/bin/node`.

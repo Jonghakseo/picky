@@ -77,15 +77,26 @@ mkdir -p "${CACHE_DIR}"
 CACHE_DIR_ABS="$(cd "${CACHE_DIR}" && pwd -P)"
 TARGET_DIR="${CACHE_DIR_ABS}/${VERSION}-arm64"
 NODE_BIN="${TARGET_DIR}/bin/node"
+NPM_CLI="${TARGET_DIR}/lib/node_modules/npm/bin/npm-cli.js"
 
-if [[ -x "${NODE_BIN}" ]]; then
-  if validate_node_binary "${NODE_BIN}"; then
+validate_runtime() {
+  if ! validate_node_binary "$1"; then
+    return 1
+  fi
+  if [[ ! -f "$2" ]]; then
+    VALIDATION_ACTUAL="npm CLI missing at ${2}"
+    return 1
+  fi
+}
+
+if [[ -e "${TARGET_DIR}" ]]; then
+  if validate_runtime "${NODE_BIN}" "${NPM_CLI}"; then
     log "✅ Using cached Node v${VERSION} darwin-arm64 at ${NODE_BIN}"
     printf '%s\n' "${NODE_BIN}"
     exit 0
   fi
 
-  log "⚠️  Cached Node at ${NODE_BIN} failed validation (expected v${VERSION}, got ${VALIDATION_ACTUAL}). Refetching."
+  log "⚠️  Cached Node runtime at ${TARGET_DIR} failed validation (expected Node v${VERSION} and npm CLI, got ${VALIDATION_ACTUAL}). Refetching."
   rm -rf "${TARGET_DIR}"
 fi
 
@@ -119,20 +130,34 @@ log "✅ SHA256 verified"
 
 mkdir -p "${TMP_DIR}/extract"
 tar -xzf "${TMP_DIR}/${TARBALL}" -C "${TMP_DIR}/extract"
-EXTRACTED_NODE="${TMP_DIR}/extract/node-v${VERSION}-darwin-arm64/bin/node"
+EXTRACTED_RUNTIME_DIR="${TMP_DIR}/extract/node-v${VERSION}-darwin-arm64"
+EXTRACTED_NODE="${EXTRACTED_RUNTIME_DIR}/bin/node"
+EXTRACTED_NPM_DIR="${EXTRACTED_RUNTIME_DIR}/lib/node_modules/npm"
 if [[ ! -f "${EXTRACTED_NODE}" ]]; then
   error "Extracted node binary not found at ${EXTRACTED_NODE}"
   exit 1
 fi
+if [[ ! -f "${EXTRACTED_NPM_DIR}/bin/npm-cli.js" ]]; then
+  error "Extracted npm CLI not found at ${EXTRACTED_NPM_DIR}/bin/npm-cli.js"
+  exit 1
+fi
 
 rm -rf "${STAGING_DIR}"
-mkdir -p "${STAGING_DIR}/bin"
+mkdir -p "${STAGING_DIR}/bin" "${STAGING_DIR}/lib/node_modules"
 cp "${EXTRACTED_NODE}" "${STAGING_DIR}/bin/node"
 chmod +x "${STAGING_DIR}/bin/node"
+# Use tar rather than cp so npm's node_modules/.bin symlinks are preserved.
+(
+  cd "${EXTRACTED_RUNTIME_DIR}/lib/node_modules"
+  tar -cf - npm
+) | (
+  cd "${STAGING_DIR}/lib/node_modules"
+  tar -xpf -
+)
 
-if ! validate_node_binary "${STAGING_DIR}/bin/node"; then
-  rm -f "${STAGING_DIR}/bin/node"
-  error "Cached node version mismatch: expected v${VERSION}, got ${VALIDATION_ACTUAL}"
+if ! validate_runtime "${STAGING_DIR}/bin/node" "${STAGING_DIR}/lib/node_modules/npm/bin/npm-cli.js"; then
+  rm -rf "${STAGING_DIR}"
+  error "Cached Node runtime validation failed: expected Node v${VERSION} and npm CLI, got ${VALIDATION_ACTUAL}"
   exit 1
 fi
 

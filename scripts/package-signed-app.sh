@@ -387,11 +387,27 @@ if [[ "${PICKY_SKIP_NODE_BUNDLE:-0}" == "1" ]]; then
 else
   step_start "bundle_node_runtime"
   NODE_BIN_SRC=$("${ROOT_DIR}/scripts/fetch-node-runtime.sh" | tail -n1)
+  NODE_RUNTIME_SRC_DIR="$(cd "$(dirname "${NODE_BIN_SRC}")/.." && pwd -P)"
+  NPM_DIR_SRC="${NODE_RUNTIME_SRC_DIR}/lib/node_modules/npm"
+  if [[ ! -f "${NPM_DIR_SRC}/bin/npm-cli.js" ]]; then
+    echo "❌ Bundled npm CLI not found at ${NPM_DIR_SRC}/bin/npm-cli.js" >&2
+    exit 1
+  fi
   NODE_BIN_DST_DIR="${PACKAGED_APP}/Contents/Resources/agentd-runtime/bin"
-  mkdir -p "${NODE_BIN_DST_DIR}"
+  NPM_DIR_DST_PARENT="${PACKAGED_APP}/Contents/Resources/agentd-runtime/lib/node_modules"
+  mkdir -p "${NODE_BIN_DST_DIR}" "${NPM_DIR_DST_PARENT}"
   /bin/cp -f "${NODE_BIN_SRC}" "${NODE_BIN_DST_DIR}/node"
   chmod +x "${NODE_BIN_DST_DIR}/node"
-  echo "✅ Bundled Node runtime at ${NODE_BIN_DST_DIR}/node"
+  rm -rf "${NPM_DIR_DST_PARENT}/npm"
+  # Preserve npm's node_modules/.bin symlinks while copying it into the app bundle.
+  (
+    cd "$(dirname "${NPM_DIR_SRC}")"
+    tar -cf - npm
+  ) | (
+    cd "${NPM_DIR_DST_PARENT}"
+    tar -xpf -
+  )
+  echo "✅ Bundled Node runtime and npm CLI at ${NODE_BIN_DST_DIR}/node"
   step_end
 fi
 

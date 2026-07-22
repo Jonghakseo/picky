@@ -2,7 +2,6 @@ import { PiSessionTailWatcher, type PiSessionTailEntry } from "./pi-session-tail
 import { readPiTerminalSessionMessages } from "./pi-session-syncer.js";
 import { inferTerminalStatusFromEntries } from "./terminal-tail-status.js";
 import { appendUniqueLog, piSessionFilePathForSession } from "../domain/pi-session-files.js";
-import { canonicalizeSubagentMentions } from "../domain/subagent-mention.js";
 import { FOLLOWUP_PREFIX } from "../domain/log-prefixes.js";
 import { logAgentd } from "../local-log.js";
 import type { PickyAgentSession, PickySessionMessage } from "../protocol.js";
@@ -27,6 +26,13 @@ interface TerminalSessionCoordinatorDeps {
   updateTodoState(sessionId: string, todoState: PickyAgentSession["todoState"]): Promise<void>;
   messageRecorder: TerminalSessionMessageRecorder;
   emitSyncOutcome(sessionId: string, outcome: TerminalSessionSyncOutcome): void;
+  /**
+   * Reverse any Pi server-side input rewrite (slash-command / `>subagent` mention expansion) on
+   * an imported Pi transcript line back to the raw text the user submitted, so dedup can match it
+   * against the raw HUD bubble Picky already recorded. Falls back to identity when the runtime has
+   * not learned a mapping (e.g. reattached-from-history sessions with no live handle).
+   */
+  reverseInputExpansion(sessionId: string, text: string): string;
 }
 
 /**
@@ -112,11 +118,11 @@ export class TerminalSessionCoordinator {
     const hudUserTextsInWindow = existingMessages
       .filter((message) => message.kind === "user_text" && message.originatedBy === "user" && typeof message.text === "string" && message.text.trim().length > 0)
       .filter((message) => !baselineCreatedAt || message.createdAt >= baselineCreatedAt)
-      .map((message) => canonicalizeSubagentMentions((message.text ?? "").trim()));
+      .map((message) => (message.text ?? "").trim());
     const hudAgentTextsInWindow = existingMessages
       .filter((message) => message.kind === "agent_text" && typeof message.text === "string" && message.text.trim().length > 0)
       .filter((message) => !baselineCreatedAt || message.createdAt >= baselineCreatedAt)
-      .map((message) => canonicalizeSubagentMentions((message.text ?? "").trim()));
+      .map((message) => (message.text ?? "").trim());
     const messagesToImport = result.messages.filter((message) => {
       if (existingIds.has(message.id)) return false;
       const text = (message.text ?? "").trim();
@@ -127,9 +133,11 @@ export class TerminalSessionCoordinator {
           ? hudAgentTextsInWindow
           : undefined;
       if (!candidates) return true;
-      // Pi rewrites `>name` subagent mentions to `subagent:name` in its JSONL, so compare on the
-      // canonicalized form to keep the expanded Pi copy from surviving as a duplicate bubble.
-      const index = candidates.indexOf(canonicalizeSubagentMentions(text));
+      // Pi rewrites `>name` subagent mentions (and slash commands) into an expanded form in its
+      // JSONL. Reverse that rewrite via the runtime's learned mapping so the expanded import
+      // matches the raw HUD bubble instead of surviving as a duplicate.
+      const comparisonText = message.kind === "user_text" ? this.deps.reverseInputExpansion(sessionId, text) : text;
+      const index = candidates.indexOf(comparisonText);
       if (index < 0) return true;
       candidates.splice(index, 1);
       return false;

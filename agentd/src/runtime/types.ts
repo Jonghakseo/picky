@@ -164,6 +164,13 @@ export interface RuntimeSessionHandle {
   clearQueue(): { steering: string[]; followUp: string[] };
   getSteeringMessages(): readonly string[];
   getFollowUpMessages(): readonly string[];
+  /**
+   * Reverse a Pi server-side input rewrite (slash-command / `>subagent` mention expansion) back
+   * to the raw text the user submitted, using mappings the runtime learned while pairing echoes.
+   * Returns the input unchanged when no mapping is known. Optional: runtimes that never rewrite
+   * input (mock) may leave this unset.
+   */
+  reverseInputExpansion?(text: string): string;
   readonly steeringMode: PickyQueueMode;
   readonly followUpMode: PickyQueueMode;
   /**

@@ -257,6 +257,7 @@ export class SessionSupervisor extends EventEmitter {
       updateTodoState: (sessionId, todoState) => this.updateTodoState(sessionId, todoState),
       messageRecorder: this.messageBuilder,
       emitSyncOutcome: (sessionId, outcome) => this.emit("terminalSessionSyncOutcome", sessionId, outcome),
+      reverseInputExpansion: (sessionId, text) => this.runtimeHandles.get(sessionId)?.reverseInputExpansion?.(text) ?? text,
     });
     this.runtimeEventHandler = new RuntimeEventHandler({
       getSession: (sessionId) => this.mustGet(sessionId),

@@ -507,6 +507,42 @@ describe("PiSdkRuntime", () => {
     expect(events).not.toContainEqual({ type: "input_message", role: "user", text: "retry stopped session", originatedBy: "internal" });
   });
 
+  it("pairs a Pi server-side rewrite of our submitted prompt as the delivery of the raw text instead of a duplicate pi_extension bubble", async () => {
+    const fakeSession = new QueuedPromptStartSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-1" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+    fakeSession.isStreaming = true;
+
+    await handle.steer({ text: "delegate >worker now", imagePaths: [] });
+    // Pi rewrites the `>worker` mention to `subagent:worker` before echoing the user message back.
+    fakeSession.emit("event", { type: "message_start", message: { role: "user", content: "delegate subagent:worker now" } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(events).toContainEqual({ type: "input_delivery", role: "user", text: "delegate >worker now", originatedBy: "internal", queueKind: "steering" });
+    expect(events).not.toContainEqual({ type: "input_message", role: "user", text: "delegate subagent:worker now", originatedBy: "pi_extension" });
+    expect(handle.reverseInputExpansion?.("delegate subagent:worker now")).toBe("delegate >worker now");
+  });
+
+  it("still surfaces a genuine pi_extension user injection after our submitted prompt's echo consumed its delivery", async () => {
+    const fakeSession = new QueuedPromptStartSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-1" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+    fakeSession.isStreaming = true;
+
+    await handle.steer({ text: "delegate >worker now", imagePaths: [] });
+    // First user echo is our rewritten prompt: it consumes the pending expected delivery.
+    fakeSession.emit("event", { type: "message_start", message: { role: "user", content: "delegate subagent:worker now" } });
+    // Second user message has no matching expected delivery, so it must stay a pi_extension bubble.
+    fakeSession.emit("event", { type: "message_start", message: { role: "user", content: "extension injected follow-up" } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(events).toContainEqual({ type: "input_message", role: "user", text: "extension injected follow-up", originatedBy: "pi_extension" });
+  });
+
   it("interrupts an active Pi turn before sending replacement input", async () => {
     const fakeSession = new FakeSession();
     const runtime = makeRuntime(fakeSession);

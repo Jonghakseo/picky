@@ -988,9 +988,31 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private consumeExpectedInputDelivery(text: string): ExpectedInputDelivery {
     const exactIndex = this.expectedInputDeliveries.findIndex((delivery) => delivery.text === text);
     if (exactIndex >= 0) return this.expectedInputDeliveries.splice(exactIndex, 1)[0]!;
-    const slashIndex = this.expectedInputDeliveries.findIndex((delivery) => delivery.text.trim().startsWith("/"));
-    if (slashIndex >= 0) return this.expectedInputDeliveries.splice(slashIndex, 1)[0]!;
+    // No exact match: Pi may have rewritten our submitted prompt server-side before echoing it
+    // (slash-command expansion, `>subagent` mention expansion, or any future rewrite). Pi echoes
+    // our submissions in the order we sent them, so the oldest still-pending delivery is the
+    // causal owner of this echo. Pair it here so the echo stays suppressed and we learn the
+    // raw->expansion mapping, instead of surfacing Pi's rewrite as a duplicate pi_extension
+    // bubble. Genuine extension-injected user messages never register an expected delivery, so
+    // when none is pending we still surface them as pi_extension.
+    const pending = this.expectedInputDeliveries.shift();
+    if (pending) {
+      this.registerSlashExpansion(text, pending.text);
+      logAgentd("pi input delivery paired by order after server-side rewrite", {
+        sessionId: this.id,
+        rawChars: pending.text.length,
+        expandedChars: text.length,
+      });
+      return pending;
+    }
     return { id: "pi-extension", text, originatedBy: "pi_extension", suppress: false };
+  }
+
+  // Public view of the runtime's learned expansion mappings so the terminal-sync dedup can
+  // reverse Pi's server-side rewrite on an imported JSONL line back to the raw text Picky
+  // already recorded. Identity when nothing was learned.
+  reverseInputExpansion(text: string): string {
+    return this.translateQueueEntry(text);
   }
 
   private cancelExpectedInputDelivery(id: string): void {

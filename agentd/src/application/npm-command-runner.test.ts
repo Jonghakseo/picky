@@ -12,6 +12,8 @@ describe("npm command runner", () => {
       "90000",
       "--command-json",
       JSON.stringify(["/bundled/node", "/bundled/npm-cli.js"]),
+      "--",
+      "npm",
       "install",
       "--global",
       "fixture",

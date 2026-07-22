@@ -25,7 +25,12 @@ export function parseNpmCommandRunnerArguments(args: string[]): NpmCommandRunner
   if (!Array.isArray(parsed) || parsed.length === 0 || !parsed.every((value) => typeof value === "string")) {
     throw new Error("npm command runner command must be a non-empty string array");
   }
-  const consumedEnd = commandIndex + 2;
+  let consumedEnd = commandIndex + 2;
+  if (args[consumedEnd] === "--") {
+    const managerIdentity = args[consumedEnd + 1];
+    if (!managerIdentity) throw new Error("npm command runner manager identity is missing");
+    consumedEnd += 2;
+  }
   return {
     timeoutMs,
     command: parsed,

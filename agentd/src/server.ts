@@ -183,6 +183,8 @@ export class AgentdServer {
   private pendingDockGroupsRequests = new Map<string, DockGroupsPending>();
   /** Serializes package mutations that share a Pi agent settings directory. */
   private packageOperationChains = new Map<string, Promise<void>>();
+  /** Owns active external package commands so daemon shutdown can cancel them. */
+  private activePackageManagers = new Set<PackageManager>();
   /**
    * FIFO queue of external CLI submissions. Per the agreed Q3 policy, only one
    * `submitMainFromExternal` / `createPickleFromExternal` is processed at a time;
@@ -317,6 +319,17 @@ export class AgentdServer {
     }
     this.pendingDockGroupsRequests.clear();
     for (const client of this.clients) client.close();
+    const activePackageManagers = [...this.activePackageManagers];
+    await Promise.all(activePackageManagers.map(async (packageManager) => {
+      await packageManager.cancel?.().catch((error) => {
+        logAgentd("package operation shutdown cancellation failed", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }));
+    await Promise.all([...this.packageOperationChains.values()].map(async (operation) => {
+      await operation.catch(() => {});
+    }));
     this.options.edgeTTS?.dispose();
     await new Promise<void>((resolve) => this.wsServer?.close(() => resolve()) ?? resolve());
     await new Promise<void>((resolve) => this.httpServer?.close(() => resolve()) ?? resolve());
@@ -610,50 +623,53 @@ export class AgentdServer {
   ): Promise<void> {
     const createPackageManager = this.options.createPackageManager ?? createDefaultPackageManager;
     const packageManager = createPackageManager({ cwd: process.cwd(), agentDir });
+    this.activePackageManagers.add(packageManager);
     packageManager.setProgressCallback((event) => {
       const message = event.message ?? `${event.action} ${event.source}`;
       this.send(ws, { type: "packageOperationProgress", requestId, operation, source, message });
     });
-    const mutation = operation === "install"
-      ? packageManager.installAndPersist(source)
-      : packageManager.removeAndPersist(source).then(() => undefined);
-    const outcome = await waitForPackageMutation(
-      mutation,
-      this.options.packageOperationTimeoutMs ?? DEFAULT_PACKAGE_OPERATION_TIMEOUT_MS,
-    );
-    if (outcome.kind === "timedOut") {
-      packageManager.setProgressCallback(undefined);
-      this.send(ws, {
-        type: "packageOperationCompleted",
-        requestId,
-        operation,
-        source,
-        ok: false,
-        errorMessage: `Package operation timed out after ${outcome.timeoutMs}ms`,
-      });
-      // Cancel every external command owned by the default package mutation,
-      // then keep the per-agentDir queue held until the mutation settles. A
-      // custom manager without cancellation remains serialized rather than
-      // risking concurrent writes to the same package/settings directories.
-      await packageManager.cancel?.().catch((error) => {
-        logAgentd("package operation cancellation failed", {
+    try {
+      const mutation = operation === "install"
+        ? packageManager.installAndPersist(source)
+        : packageManager.removeAndPersist(source).then(() => undefined);
+      const outcome = await waitForPackageMutation(
+        mutation,
+        this.options.packageOperationTimeoutMs ?? DEFAULT_PACKAGE_OPERATION_TIMEOUT_MS,
+      );
+      if (outcome.kind === "timedOut") {
+        this.send(ws, {
+          type: "packageOperationCompleted",
+          requestId,
           operation,
           source,
-          error: error instanceof Error ? error.message : String(error),
+          ok: false,
+          errorMessage: `Package operation timed out after ${outcome.timeoutMs}ms`,
         });
-      });
-      await mutation.catch(() => {});
-      return;
-    }
-    try {
-      if (outcome.kind === "failed") throw outcome.error;
-      await packageManager.flush?.();
-      this.send(ws, { type: "packageOperationCompleted", requestId, operation, source, ok: true });
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      this.send(ws, { type: "packageOperationCompleted", requestId, operation, source, ok: false, errorMessage });
+        // Cancel every external command owned by the default package mutation,
+        // then keep the per-agentDir queue held until the mutation settles. A
+        // custom manager without cancellation remains serialized rather than
+        // risking concurrent writes to the same package/settings directories.
+        await packageManager.cancel?.().catch((error) => {
+          logAgentd("package operation cancellation failed", {
+            operation,
+            source,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+        await mutation.catch(() => {});
+        return;
+      }
+      try {
+        if (outcome.kind === "failed") throw outcome.error;
+        await packageManager.flush?.();
+        this.send(ws, { type: "packageOperationCompleted", requestId, operation, source, ok: true });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        this.send(ws, { type: "packageOperationCompleted", requestId, operation, source, ok: false, errorMessage });
+      }
     } finally {
       packageManager.setProgressCallback(undefined);
+      this.activePackageManagers.delete(packageManager);
     }
   }
 

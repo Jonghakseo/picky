@@ -1,4 +1,4 @@
-import { delimiter, dirname, join } from "node:path";
+import { basename, delimiter, dirname, join } from "node:path";
 
 export interface NpmCommandResolutionOptions {
   configured: string[] | undefined;
@@ -33,14 +33,25 @@ export function resolveNpmCommand({
       : undefined;
   if (!runnerPath || timeoutMs === undefined) return baseCommand;
 
+  const resolvedCommand = baseCommand ?? ["npm"];
   return [
     execPath,
     runnerPath,
     "--timeout-ms",
     String(timeoutMs),
     "--command-json",
-    JSON.stringify(baseCommand ?? ["npm"]),
+    JSON.stringify(resolvedCommand),
+    // Pi inspects the configured command to select npm/bun/pnpm-specific args.
+    // Keep that identity visible while the real argv stays in the JSON payload.
+    "--",
+    configured && configured.length > 0 ? packageManagerIdentity(configured) : "npm",
   ];
+}
+
+function packageManagerIdentity(command: string[]): string {
+  const separatorIndex = command.lastIndexOf("--");
+  const executable = separatorIndex >= 0 ? command[separatorIndex + 1] : command[0];
+  return executable ? basename(executable).replace(/\.(cmd|exe)$/i, "") : "npm";
 }
 
 /** Ensures npm lifecycle scripts resolve the daemon's Node binary first. */

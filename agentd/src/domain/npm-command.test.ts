@@ -46,6 +46,8 @@ describe("resolveNpmCommand", () => {
       "90000",
       "--command-json",
       JSON.stringify([execPath, bundledNpmCli]),
+      "--",
+      "npm",
     ]);
   });
 
@@ -63,7 +65,35 @@ describe("resolveNpmCommand", () => {
       "90000",
       "--command-json",
       JSON.stringify(["npm"]),
+      "--",
+      "npm",
     ]);
+  });
+
+  it("preserves configured pnpm and bun identities outside the opaque runner payload", () => {
+    expect(resolveNpmCommand({
+      configured: ["/usr/local/bin/pnpm", "--silent"],
+      execPath,
+      fileExists: () => true,
+      runnerPath: "/app/npm-command-runner.js",
+      timeoutMs: 90_000,
+    })).toEqual([
+      execPath,
+      "/app/npm-command-runner.js",
+      "--timeout-ms",
+      "90000",
+      "--command-json",
+      JSON.stringify(["/usr/local/bin/pnpm", "--silent"]),
+      "--",
+      "pnpm",
+    ]);
+    expect(resolveNpmCommand({
+      configured: ["mise", "exec", "bun@1", "--", "bun"],
+      execPath,
+      fileExists: () => true,
+      runnerPath: "/app/npm-command-runner.js",
+      timeoutMs: 90_000,
+    })?.slice(-2)).toEqual(["--", "bun"]);
   });
 });
 

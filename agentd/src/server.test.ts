@@ -156,6 +156,8 @@ describe("AgentdServer", () => {
         "90000",
         "--command-json",
         JSON.stringify([execPath, bundledNpmCli]),
+        "--",
+        "npm",
       ]);
       return {
         installAndPersist: async () => {},
@@ -365,6 +367,39 @@ describe("AgentdServer", () => {
       "start:npm:@example/next",
       "end:npm:@example/next",
     ]);
+    ws.close();
+  });
+
+  it("cancels active package mutations before daemon shutdown completes", async () => {
+    let releaseInstall: (() => void) | undefined;
+    let installStarted = false;
+    const cancel = vi.fn(async () => releaseInstall?.());
+
+    await server.stop();
+    server = new AgentdServer({
+      port: 0,
+      token: "test-token",
+      supervisor,
+      getAgentDir: () => "/tmp/picky-agent",
+      createPackageManager: () => ({
+        installAndPersist: async () => {
+          installStarted = true;
+          await new Promise<void>((resolve) => { releaseInstall = resolve; });
+        },
+        removeAndPersist: vi.fn(),
+        setProgressCallback: vi.fn(),
+        cancel,
+      }),
+    });
+    port = await server.start();
+
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({ id: "cmd-package-shutdown", protocolVersion: PROTOCOL_VERSION, type: "installPackage", source: "git:example.invalid/plugin" }));
+    await waitUntil(() => installStarted);
+
+    await server.stop();
+
+    expect(cancel).toHaveBeenCalledOnce();
     ws.close();
   });
 

@@ -60,6 +60,15 @@ struct PickyConversationCardView: View {
         // a hardcoded 1080. PickyConversationListView's ScrollView absorbs anything
         // taller than this cap.
         .frame(minHeight: Self.minimumHeight, maxHeight: effectiveMaxHeight, alignment: .top)
+        // The maxHeight frame above is a flexible frame. In the vertical HUD the
+        // card lives in an HStack(alignment: .top) next to the dock rail, which
+        // proposes the (taller) rail height to the card. Without this insulation
+        // the flexible frame stretches up to effectiveMaxHeight and top-aligns the
+        // content, leaving an empty bordered gap below the composer whenever the
+        // resolved card height is shorter than the dock. fixedSize pins the card
+        // to its ideal (content- or user-resized) height so it never stretches to
+        // match the rail; the maxHeight above still caps growth for scroll.
+        .fixedSize(horizontal: false, vertical: true)
         // During first hover the NSPanel grows after SwiftUI reports the measured
         // content size. Without clipping, children can render past the temporary
         // card frame while ScrollView/TextEditor settle into their final layout.

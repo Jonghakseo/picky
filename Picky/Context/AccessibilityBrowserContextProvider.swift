@@ -155,7 +155,7 @@ struct AccessibilityBrowserContextProvider: PickyAdvancedBrowserContextProviding
         return firstURLLikeTextFieldValue
     }
 
-    private static func elementSnapshot(_ element: AXUIElement) -> ElementSnapshot {
+    static func elementSnapshot(_ element: AXUIElement) -> ElementSnapshot {
         ElementSnapshot(
             role: stringAttribute(kAXRoleAttribute as CFString, from: element),
             identifier: stringAttribute(kAXIdentifierAttribute as CFString, from: element),

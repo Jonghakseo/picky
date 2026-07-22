@@ -133,8 +133,9 @@ struct PickyAdvancedContextTests {
         provider.ignoredBundleIds = []
         provider.axTrustChecker = { true }
         provider.candidateElementsProvider = { _ in [root] }
-        provider.selectedTextFinder = { elements in
+        provider.selectedTextFinder = { elements, bundleId in
             #expect(elements.count == 1)
+            #expect(bundleId == NSRunningApplication.current.bundleIdentifier)
             return "AX selected text"
         }
 
@@ -142,6 +143,44 @@ struct PickyAdvancedContextTests {
 
         #expect(result.value?.text == "AX selected text")
         #expect(result.warnings.isEmpty)
+    }
+
+    @Test func accessibilitySelectedTextIgnoresKnownBrowserOmnibox() {
+        let omnibox = AccessibilityBrowserContextProvider.ElementSnapshot(
+            role: kAXTextFieldRole as String,
+            identifier: "AddressAndSearchBar",
+            title: nil,
+            description: nil,
+            placeholder: nil,
+            value: "excalidraw.com"
+        )
+        let regularField = AccessibilityBrowserContextProvider.ElementSnapshot(
+            role: kAXTextFieldRole as String,
+            identifier: "page-url-input",
+            title: nil,
+            description: nil,
+            placeholder: nil,
+            value: "excalidraw.com"
+        )
+
+        #expect(
+            AccessibilitySelectedTextProvider.shouldIgnoreSelectedText(
+                from: omnibox,
+                frontmostBundleId: "com.google.Chrome"
+            )
+        )
+        #expect(
+            !AccessibilitySelectedTextProvider.shouldIgnoreSelectedText(
+                from: regularField,
+                frontmostBundleId: "com.google.Chrome"
+            )
+        )
+        #expect(
+            !AccessibilitySelectedTextProvider.shouldIgnoreSelectedText(
+                from: omnibox,
+                frontmostBundleId: "com.example.Editor"
+            )
+        )
     }
 
     @Test func accessibilitySelectedTextRequiresNonEmptySelectionRange() {

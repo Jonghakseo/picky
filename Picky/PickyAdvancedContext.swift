@@ -109,7 +109,7 @@ struct AccessibilitySelectedTextProvider: PickySelectedTextProviding {
     var axTrustChecker: () -> Bool = { AXIsProcessTrusted() }
     var ignoredBundleIds: Set<String> = Set([Bundle.main.bundleIdentifier].compactMap { $0 })
     var candidateElementsProvider: (pid_t) -> [AXUIElement] = AccessibilitySelectedTextProvider.defaultCandidateElements
-    var selectedTextFinder: ([AXUIElement]) -> String? = AccessibilitySelectedTextProvider.firstSelectedText
+    var selectedTextFinder: ([AXUIElement], String?) -> String? = AccessibilitySelectedTextProvider.firstSelectedText
     var truncator = PickySelectedTextTruncator()
 
     func selectedTextResult() -> PickyContextCaptureResult<PickySelectedTextCapture> {
@@ -120,7 +120,10 @@ struct AccessibilitySelectedTextProvider: PickySelectedTextProviding {
         guard axTrustChecker() else {
             return .unavailable(warnings: ["Selected text unavailable: Accessibility permission is required to read the focused element."])
         }
-        guard let capture = selectedTextFinder(candidateElementsProvider(app.processIdentifier)).flatMap(truncator.truncate) else {
+        guard let capture = selectedTextFinder(
+            candidateElementsProvider(app.processIdentifier),
+            app.bundleIdentifier
+        ).flatMap(truncator.truncate) else {
             return .unavailable()
         }
         var warnings: [String] = []
@@ -142,14 +145,19 @@ struct AccessibilitySelectedTextProvider: PickySelectedTextProviding {
         return candidates
     }
 
-    static func firstSelectedText(in roots: [AXUIElement]) -> String? {
+    static func firstSelectedText(in roots: [AXUIElement], frontmostBundleId: String?) -> String? {
         var queue = roots
         var visited = 0
         let maxNodes = 2_000
         while !queue.isEmpty && visited < maxNodes {
             let element = queue.removeFirst()
             visited += 1
-            if let text = selectedText(in: element) { return text }
+            if let text = selectedText(in: element) {
+                let snapshot = AccessibilityBrowserContextProvider.elementSnapshot(element)
+                if !shouldIgnoreSelectedText(from: snapshot, frontmostBundleId: frontmostBundleId) {
+                    return text
+                }
+            }
             var childrenAny: AnyObject?
             if AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenAny) == .success,
                let children = childrenAny as? [AXUIElement] {
@@ -157,6 +165,17 @@ struct AccessibilitySelectedTextProvider: PickySelectedTextProviding {
             }
         }
         return nil
+    }
+
+    static func shouldIgnoreSelectedText(
+        from snapshot: AccessibilityBrowserContextProvider.ElementSnapshot,
+        frontmostBundleId: String?
+    ) -> Bool {
+        guard let frontmostBundleId,
+              let target = AccessibilityBrowserContextProvider.omniboxTarget(for: frontmostBundleId) else {
+            return false
+        }
+        return AccessibilityBrowserContextProvider.isExplicitOmnibox(snapshot, target: target)
     }
 
     private static func selectedText(in element: AXUIElement) -> String? {

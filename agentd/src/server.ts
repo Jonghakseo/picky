@@ -185,6 +185,8 @@ export class AgentdServer {
   private packageOperationChains = new Map<string, Promise<void>>();
   /** Owns active external package commands so daemon shutdown can cancel them. */
   private activePackageManagers = new Set<PackageManager>();
+  /** Prevents queued package mutations from starting once daemon shutdown begins. */
+  private packageOperationsStopping = false;
   /**
    * FIFO queue of external CLI submissions. Per the agreed Q3 policy, only one
    * `submitMainFromExternal` / `createPickleFromExternal` is processed at a time;
@@ -202,6 +204,7 @@ export class AgentdServer {
   constructor(private readonly options: AgentdServerOptions) {}
 
   async start(): Promise<number> {
+    this.packageOperationsStopping = false;
     this.httpServer = createServer((request, response) => {
       void this.handleHttpRequest(request, response);
     });
@@ -292,6 +295,7 @@ export class AgentdServer {
   }
 
   async stop(): Promise<void> {
+    this.packageOperationsStopping = true;
     for (const pending of this.pendingPickleHandoffs.values()) {
       clearTimeout(pending.timer);
       pending.reject(new Error(APP_PICKLE_HANDOFF_UNAVAILABLE));
@@ -598,13 +602,27 @@ export class AgentdServer {
     operation: "install" | "remove",
     source: string,
   ): Promise<void> {
+    if (this.packageOperationsStopping) {
+      this.send(ws, {
+        type: "packageOperationCompleted",
+        requestId,
+        operation,
+        source,
+        ok: false,
+        errorMessage: "Package operation rejected because the daemon is stopping",
+      });
+      return;
+    }
     const agentDir = (this.options.getAgentDir ?? getAgentDir)();
     await this.enqueuePackageOperation(agentDir, () => this.executePackageOperation(ws, requestId, operation, source, agentDir));
   }
 
   private async enqueuePackageOperation(agentDir: string, operation: () => Promise<void>): Promise<void> {
     const previous = this.packageOperationChains.get(agentDir) ?? Promise.resolve();
-    const current = previous.catch(() => {}).then(operation);
+    const current = previous.catch(() => {}).then(async () => {
+      if (this.packageOperationsStopping) return;
+      await operation();
+    });
     this.packageOperationChains.set(agentDir, current);
     void current.finally(() => {
       if (this.packageOperationChains.get(agentDir) === current) {

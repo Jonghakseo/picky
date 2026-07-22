@@ -370,10 +370,21 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
-  it("cancels active package mutations before daemon shutdown completes", async () => {
+  it("cancels active package mutations and never starts queued work during shutdown", async () => {
     let releaseInstall: (() => void) | undefined;
-    let installStarted = false;
+    const startedSources: string[] = [];
     const cancel = vi.fn(async () => releaseInstall?.());
+    const createPackageManager = vi.fn(() => ({
+      installAndPersist: async (source: string) => {
+        startedSources.push(source);
+        if (source.endsWith("/active")) {
+          await new Promise<void>((resolve) => { releaseInstall = resolve; });
+        }
+      },
+      removeAndPersist: vi.fn(),
+      setProgressCallback: vi.fn(),
+      cancel,
+    }));
 
     await server.stop();
     server = new AgentdServer({
@@ -381,25 +392,21 @@ describe("AgentdServer", () => {
       token: "test-token",
       supervisor,
       getAgentDir: () => "/tmp/picky-agent",
-      createPackageManager: () => ({
-        installAndPersist: async () => {
-          installStarted = true;
-          await new Promise<void>((resolve) => { releaseInstall = resolve; });
-        },
-        removeAndPersist: vi.fn(),
-        setProgressCallback: vi.fn(),
-        cancel,
-      }),
+      createPackageManager,
     });
     port = await server.start();
 
     const { ws } = await connectWithHello();
-    ws.send(JSON.stringify({ id: "cmd-package-shutdown", protocolVersion: PROTOCOL_VERSION, type: "installPackage", source: "git:example.invalid/plugin" }));
-    await waitUntil(() => installStarted);
+    ws.send(JSON.stringify({ id: "cmd-package-shutdown-active", protocolVersion: PROTOCOL_VERSION, type: "installPackage", source: "git:example.invalid/active" }));
+    await waitUntil(() => startedSources.length === 1);
+    ws.send(JSON.stringify({ id: "cmd-package-shutdown-queued", protocolVersion: PROTOCOL_VERSION, type: "installPackage", source: "git:example.invalid/queued" }));
+    await sleep(20);
 
     await server.stop();
 
     expect(cancel).toHaveBeenCalledOnce();
+    expect(createPackageManager).toHaveBeenCalledOnce();
+    expect(startedSources).toEqual(["git:example.invalid/active"]);
     ws.close();
   });
 

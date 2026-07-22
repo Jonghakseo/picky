@@ -1,6 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process";
 
-const DEFAULT_FORCE_KILL_GRACE_MS = 2_000;
+// Longer than the nested npm runner's 500ms grace, shorter than the app
+// launcher's 2s daemon shutdown deadline.
+const DEFAULT_FORCE_KILL_GRACE_MS = 1_250;
 const DEFAULT_POLL_INTERVAL_MS = 25;
 
 interface CommandOptions {

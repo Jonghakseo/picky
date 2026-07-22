@@ -3,7 +3,9 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
 export const NPM_COMMAND_TIMEOUT_EXIT_CODE = 124;
-const FORCE_KILL_GRACE_MS = 2_000;
+// Must remain shorter than the outer package controller and the app launcher's
+// shutdown deadline so this runner can reap its detached npm group first.
+const FORCE_KILL_GRACE_MS = 500;
 
 export interface NpmCommandRunnerInvocation {
   timeoutMs: number;

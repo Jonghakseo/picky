@@ -149,17 +149,26 @@ struct AccessibilitySelectedTextProvider: PickySelectedTextProviding {
     }
 
     private static func selectedText(in element: AXUIElement) -> String? {
-        if let selected = stringAttribute(kAXSelectedTextAttribute as CFString, from: element),
-           !selected.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return selected
-        }
-        guard let value = stringAttribute(kAXValueAttribute as CFString, from: element) else { return nil }
+        let selected = stringAttribute(kAXSelectedTextAttribute as CFString, from: element)
+        let value = stringAttribute(kAXValueAttribute as CFString, from: element)
         var rangeAny: AnyObject?
         guard AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &rangeAny) == .success,
               let rangeObject = rangeAny else { return nil }
         let rangeValue = rangeObject as! AXValue
         var range = CFRange()
-        guard AXValueGetValue(rangeValue, .cfRange, &range), range.location >= 0, range.length > 0 else { return nil }
+        guard AXValueGetValue(rangeValue, .cfRange, &range) else { return nil }
+        return resolvedSelectedText(selected: selected, value: value, range: range)
+    }
+
+    /// Some apps expose their focused field value as `AXSelectedText` even when
+    /// the selected-text range is empty. The range is the authoritative signal
+    /// that a user actually selected text.
+    static func resolvedSelectedText(selected: String?, value: String?, range: CFRange) -> String? {
+        guard range.location >= 0, range.length > 0 else { return nil }
+        if let selected = selected?.trimmingCharacters(in: .whitespacesAndNewlines), !selected.isEmpty {
+            return selected
+        }
+        guard let value else { return nil }
         let nsValue = value as NSString
         let nsRange = NSRange(location: range.location, length: range.length)
         guard NSMaxRange(nsRange) <= nsValue.length else { return nil }

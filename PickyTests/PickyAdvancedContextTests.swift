@@ -144,6 +144,30 @@ struct PickyAdvancedContextTests {
         #expect(result.warnings.isEmpty)
     }
 
+    @Test func accessibilitySelectedTextRequiresNonEmptySelectionRange() {
+        #expect(
+            AccessibilitySelectedTextProvider.resolvedSelectedText(
+                selected: "excalidraw.com",
+                value: "excalidraw.com",
+                range: CFRange(location: 0, length: 0)
+            ) == nil
+        )
+        #expect(
+            AccessibilitySelectedTextProvider.resolvedSelectedText(
+                selected: "selected domain",
+                value: "selected domain",
+                range: CFRange(location: 0, length: 15)
+            ) == "selected domain"
+        )
+        #expect(
+            AccessibilitySelectedTextProvider.resolvedSelectedText(
+                selected: nil,
+                value: "prefix selection suffix",
+                range: CFRange(location: 7, length: 9)
+            ) == "selection"
+        )
+    }
+
     @Test func chainedSelectedTextProviderFallsBackAfterAXMiss() throws {
         let pasteboard = NSPasteboard(name: NSPasteboard.Name("picky-chain-\(UUID().uuidString)"))
         pasteboard.clearContents()

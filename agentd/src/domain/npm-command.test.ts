@@ -23,11 +23,11 @@ describe("resolveNpmCommand", () => {
     })).toEqual([execPath, bundledNpmCli]);
   });
 
-  it("preserves an empty configuration when no bundled npm CLI exists", () => {
+  it("preserves an absent configuration when no bundled npm CLI exists", () => {
     expect(resolveNpmCommand({
-      configured: [],
+      configured: undefined,
       execPath,
       fileExists: () => false,
-    })).toEqual([]);
+    })).toBeUndefined();
   });
 });

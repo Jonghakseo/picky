@@ -81,11 +81,22 @@ struct ChainedSelectedTextProvider: PickySelectedTextProviding {
     func selectedTextResult() -> PickyContextCaptureResult<PickySelectedTextCapture> {
         var accumulated: [String] = []
         for provider in providers {
+            let providerName = String(describing: type(of: provider))
             let result = provider.selectedTextResult()
             switch result {
             case .value(let value, let warnings):
+                PickyLog.notice(
+                    .contextCapture,
+                    prefix: "🧭 Picky context —",
+                    message: "event=selectedTextProviderResult provider=\(providerName) result=value chars=\(value.text.count) warnings=\(warnings.count)"
+                )
                 return .value(value, warnings: accumulated + warnings)
             case .unavailable(let warnings):
+                PickyLog.notice(
+                    .contextCapture,
+                    prefix: "🧭 Picky context —",
+                    message: "event=selectedTextProviderResult provider=\(providerName) result=unavailable warnings=\(warnings.count)"
+                )
                 accumulated.append(contentsOf: warnings)
             }
         }
@@ -551,11 +562,22 @@ struct ChainedBrowserContextProvider: PickyAdvancedBrowserContextProviding {
     func browserContextResult() async -> PickyContextCaptureResult<PickyBrowserContext> {
         var accumulated: [String] = []
         for provider in providers {
+            let providerName = String(describing: type(of: provider))
             let result = await provider.browserContextResult()
             switch result {
             case .value(let value, let warnings):
+                PickyLog.notice(
+                    .contextCapture,
+                    prefix: "🧭 Picky context —",
+                    message: "event=browserContextProviderResult provider=\(providerName) result=value selectedChars=\(value.selectedText?.count ?? 0) warnings=\(warnings.count)"
+                )
                 return .value(value, warnings: accumulated + warnings)
             case .unavailable(let warnings):
+                PickyLog.notice(
+                    .contextCapture,
+                    prefix: "🧭 Picky context —",
+                    message: "event=browserContextProviderResult provider=\(providerName) result=unavailable warnings=\(warnings.count)"
+                )
                 accumulated.append(contentsOf: warnings)
             }
         }

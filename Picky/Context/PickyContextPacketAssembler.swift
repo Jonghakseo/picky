@@ -130,13 +130,24 @@ struct PickyContextPacketAssembler {
         }
         let resolvedSelectedTextResult = await selectedTextResult
         warnings.append(contentsOf: resolvedSelectedTextResult.warnings)
+        let browserSelectedText = browser?.selectedText
+        let providerSelectedText = resolvedSelectedTextResult.value?.text
+        let selectedText = browserSelectedText ?? providerSelectedText
+        let selectedTextSource = browserSelectedText != nil
+            ? "browser"
+            : (providerSelectedText != nil ? "selectedTextProvider" : "none")
+        PickyLog.notice(
+            .contextCapture,
+            prefix: "🧭 Picky context —",
+            message: "event=contextPreflightResolved activeBundle=\(activeApp?.bundleId ?? "none") browserSelectedChars=\(browserSelectedText?.count ?? 0) providerSelectedChars=\(providerSelectedText?.count ?? 0) selectedSource=\(selectedTextSource) selectedChars=\(selectedText?.count ?? 0)"
+        )
 
         return PickyContextPacketPreflight(
             capturedAt: capturedAt,
             activeApp: activeApp,
             activeWindow: activeWindow,
             browser: browser,
-            selectedText: browser?.selectedText ?? resolvedSelectedTextResult.value?.text,
+            selectedText: selectedText,
             warnings: warnings
         )
     }

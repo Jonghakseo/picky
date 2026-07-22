@@ -167,8 +167,17 @@ struct AccessibilitySelectedTextProvider: PickySelectedTextProviding {
               let rangeObject = rangeAny else { return nil }
         let rangeValue = rangeObject as! AXValue
         var range = CFRange()
-        guard AXValueGetValue(rangeValue, .cfRange, &range) else { return nil }
-        return resolvedSelectedText(selected: selected, value: value, range: range)
+        guard AXValueGetValue(rangeValue, .cfRange, &range),
+              let resolved = resolvedSelectedText(selected: selected, value: value, range: range) else { return nil }
+        let role = stringAttribute(kAXRoleAttribute as CFString, from: element) ?? "none"
+        let subrole = stringAttribute(kAXSubroleAttribute as CFString, from: element) ?? "none"
+        let isFocused = boolAttribute(kAXFocusedAttribute as CFString, from: element)
+        PickyLog.notice(
+            .contextCapture,
+            prefix: "🧭 Picky context —",
+            message: "event=accessibilitySelectedTextMatch role=\(role) subrole=\(subrole) focused=\(isFocused.map(String.init) ?? "unknown") rangeLocation=\(range.location) rangeLength=\(range.length) selectedChars=\(selected?.count ?? 0) valueChars=\(value?.count ?? 0)"
+        )
+        return resolved
     }
 
     /// Some apps expose their focused field value as `AXSelectedText` even when
@@ -190,6 +199,12 @@ struct AccessibilitySelectedTextProvider: PickySelectedTextProviding {
         var anyValue: AnyObject?
         guard AXUIElementCopyAttributeValue(element, attribute, &anyValue) == .success else { return nil }
         return anyValue as? String
+    }
+
+    private static func boolAttribute(_ attribute: CFString, from element: AXUIElement) -> Bool? {
+        var anyValue: AnyObject?
+        guard AXUIElementCopyAttributeValue(element, attribute, &anyValue) == .success else { return nil }
+        return anyValue as? Bool
     }
 }
 

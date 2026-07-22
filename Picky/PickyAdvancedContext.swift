@@ -508,9 +508,18 @@ final class AppleScriptResolveOnce {
 struct ClipboardSelectedTextProvider: PickySelectedTextProviding {
     var pasteboard: NSPasteboard = .general
     var keyboardCopier: () -> Bool = ClipboardSelectedTextProvider.copySelectionWithKeyboardShortcut
+    var pickyOwnsKeyWindowProvider: () -> Bool = { NSApp.keyWindow != nil }
     var truncator = PickySelectedTextTruncator()
 
     func selectedTextResult() -> PickyContextCaptureResult<PickySelectedTextCapture> {
+        guard Self.shouldAttemptCopySelection(pickyOwnsKeyWindow: pickyOwnsKeyWindowProvider()) else {
+            PickyLog.notice(
+                .contextCapture,
+                prefix: "🧭 Picky context —",
+                message: "event=clipboardSelectedTextSkipped reason=pickyKeyWindow"
+            )
+            return .unavailable()
+        }
         let previousItems = pasteboard.pasteboardItems?.compactMap { item -> NSPasteboardItem? in
             let copy = NSPasteboardItem()
             for type in item.types {
@@ -539,6 +548,10 @@ struct ClipboardSelectedTextProvider: PickySelectedTextProviding {
         var warnings: [String] = []
         if capture.isTruncated { warnings.append("Selected text truncated from \(capture.originalLength) characters.") }
         return .value(capture, warnings: warnings)
+    }
+
+    static func shouldAttemptCopySelection(pickyOwnsKeyWindow: Bool) -> Bool {
+        !pickyOwnsKeyWindow
     }
 
     static func copySelectionWithKeyboardShortcut() -> Bool {

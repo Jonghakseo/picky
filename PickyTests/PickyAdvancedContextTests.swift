@@ -108,7 +108,7 @@ struct PickyAdvancedContextTests {
             pasteboard.clearContents()
             pasteboard.setString("copied selection", forType: .string)
             return true
-        }, truncator: PickySelectedTextTruncator(maxCharacters: 100))
+        }, pickyOwnsKeyWindowProvider: { false }, truncator: PickySelectedTextTruncator(maxCharacters: 100))
 
         let result = provider.selectedTextResult()
 
@@ -116,9 +116,37 @@ struct PickyAdvancedContextTests {
         #expect(pasteboard.string(forType: .string) == "original clipboard")
     }
 
+    @Test func clipboardSelectedTextSkipsCopyWhenPickyOwnsKeyWindow() {
+        #expect(!ClipboardSelectedTextProvider.shouldAttemptCopySelection(pickyOwnsKeyWindow: true))
+        #expect(ClipboardSelectedTextProvider.shouldAttemptCopySelection(pickyOwnsKeyWindow: false))
+
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("picky-test-key-window-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        pasteboard.setString("original clipboard", forType: .string)
+        var copyAttempted = false
+        let provider = ClipboardSelectedTextProvider(
+            pasteboard: pasteboard,
+            keyboardCopier: {
+                copyAttempted = true
+                return true
+            },
+            pickyOwnsKeyWindowProvider: { true }
+        )
+
+        let result = provider.selectedTextResult()
+
+        #expect(result.value == nil)
+        #expect(!copyAttempted)
+        #expect(pasteboard.string(forType: .string) == "original clipboard")
+    }
+
     @Test func selectedTextPermissionFailureReturnsWarning() {
         let pasteboard = NSPasteboard(name: NSPasteboard.Name("picky-test-denied-\(UUID().uuidString)"))
-        let provider = ClipboardSelectedTextProvider(pasteboard: pasteboard, keyboardCopier: { false })
+        let provider = ClipboardSelectedTextProvider(
+            pasteboard: pasteboard,
+            keyboardCopier: { false },
+            pickyOwnsKeyWindowProvider: { false }
+        )
 
         let result = provider.selectedTextResult()
 
@@ -212,11 +240,15 @@ struct PickyAdvancedContextTests {
         pasteboard.clearContents()
         let provider = ChainedSelectedTextProvider(providers: [
             FakeSelectedTextProvider(result: .unavailable()),
-            ClipboardSelectedTextProvider(pasteboard: pasteboard, keyboardCopier: {
-                pasteboard.clearContents()
-                pasteboard.setString("clipboard fallback text", forType: .string)
-                return true
-            })
+            ClipboardSelectedTextProvider(
+                pasteboard: pasteboard,
+                keyboardCopier: {
+                    pasteboard.clearContents()
+                    pasteboard.setString("clipboard fallback text", forType: .string)
+                    return true
+                },
+                pickyOwnsKeyWindowProvider: { false }
+            )
         ])
 
         let result = provider.selectedTextResult()

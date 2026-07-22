@@ -242,6 +242,35 @@ class QueuedPromptStartSession extends FakeSession {
   }
 }
 
+class RewriteInterleaveSession extends QueuedPromptStartSession {
+  finalInputHandler?: (event: { type: "input"; text: string; source: "rpc" }) => Promise<unknown> | unknown;
+
+  override async prompt(text: string, options?: unknown): Promise<void> {
+    this.prompts.push(text);
+    this.promptOptions.push(options);
+    await this.finalInputHandler?.({ type: "input", text: "delegate subagent:worker now", source: "rpc" });
+    this.emit("event", { type: "message_start", message: { role: "user", content: "extension injected follow-up" } });
+    this.emit("event", { type: "message_start", message: { role: "user", content: "delegate subagent:worker now" } });
+    (options as { preflightResult?: (success: boolean) => void } | undefined)?.preflightResult?.(true);
+    await new Promise<void>(() => undefined);
+  }
+}
+
+class SameTextRewriteInterleaveSession extends RewriteInterleaveSession {
+  override async prompt(text: string, options?: unknown): Promise<void> {
+    this.prompts.push(text);
+    this.promptOptions.push(options);
+    // Discovered extensions run before Picky's last-loaded observer. A user
+    // message they emit here must not consume the delivery even when its text
+    // equals the final RPC rewrite observed immediately afterward.
+    this.emit("event", { type: "message_start", message: { role: "user", content: "delegate subagent:worker now" } });
+    await this.finalInputHandler?.({ type: "input", text: "delegate subagent:worker now", source: "rpc" });
+    this.emit("event", { type: "message_start", message: { role: "user", content: "delegate subagent:worker now" } });
+    (options as { preflightResult?: (success: boolean) => void } | undefined)?.preflightResult?.(true);
+    await new Promise<void>(() => undefined);
+  }
+}
+
 class RaceSkillExpansionFakeSession extends SkillExpansionFakeSession {
   override async prompt(text: string, options?: unknown): Promise<void> {
     this.prompts.push(text);
@@ -313,6 +342,33 @@ function makeRuntime(fakeSession: FakeSession): PiSdkRuntime {
           fakeSession.newSessions += 1;
           return { cancelled: false };
         }),
+      };
+    }) as never,
+  });
+}
+
+function makeRuntimeWithInputObserver(fakeSession: RewriteInterleaveSession): PiSdkRuntime {
+  return new PiSdkRuntime({
+    getAgentDir: () => "/tmp/.pi/agent",
+    createServices: vi.fn(async (options) => {
+      const inline = options.resourceLoaderOptions?.extensionFactories?.at(-1);
+      const factory = typeof inline === "function" ? inline : inline?.factory;
+      await factory?.({
+        on: (event: string, handler: RewriteInterleaveSession["finalInputHandler"]) => {
+          if (event === "input") fakeSession.finalInputHandler = handler;
+        },
+      } as never);
+      return { diagnostics: [] };
+    }) as never,
+    createSessionFromServices: vi.fn(async () => ({ session: fakeSession, extensionsResult: { extensions: [], errors: [], runtime: {} } })) as never,
+    createRuntime: vi.fn(async (factory, options) => {
+      const result = await factory({ cwd: options.cwd, agentDir: options.agentDir, sessionManager: options.sessionManager });
+      return {
+        session: result.session,
+        services: result.services,
+        diagnostics: result.diagnostics,
+        setRebindSession: vi.fn(),
+        cwd: options.cwd,
       };
     }) as never,
   });
@@ -507,7 +563,7 @@ describe("PiSdkRuntime", () => {
     expect(events).not.toContainEqual({ type: "input_message", role: "user", text: "retry stopped session", originatedBy: "internal" });
   });
 
-  it("pairs a Pi server-side rewrite of our submitted prompt as the delivery of the raw text instead of a duplicate pi_extension bubble", async () => {
+  it("does not consume a pending delivery for an unobserved non-exact user event", async () => {
     const fakeSession = new QueuedPromptStartSession();
     const runtime = makeRuntime(fakeSession);
     const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-1" });
@@ -520,9 +576,71 @@ describe("PiSdkRuntime", () => {
     fakeSession.emit("event", { type: "message_start", message: { role: "user", content: "delegate subagent:worker now" } });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(events).toContainEqual({ type: "input_delivery", role: "user", text: "delegate >worker now", originatedBy: "internal", queueKind: "steering" });
-    expect(events).not.toContainEqual({ type: "input_message", role: "user", text: "delegate subagent:worker now", originatedBy: "pi_extension" });
+    expect(events).toContainEqual({ type: "input_message", role: "user", text: "delegate subagent:worker now", originatedBy: "pi_extension" });
+    expect(events).not.toContainEqual({ type: "input_delivery", role: "user", text: "delegate >worker now", originatedBy: "internal", queueKind: "steering" });
+    expect(handle.reverseInputExpansion?.("delegate subagent:worker now")).toBe("delegate subagent:worker now");
+  });
+
+  it("preserves a genuine extension user event that arrives before the observed rewritten RPC echo", async () => {
+    const fakeSession = new RewriteInterleaveSession();
+    const runtime = makeRuntimeWithInputObserver(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-1" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+    fakeSession.isStreaming = true;
+
+    await handle.steer({ text: "delegate >worker now", imagePaths: [] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(events).toContainEqual({
+      type: "input_message",
+      role: "user",
+      text: "extension injected follow-up",
+      originatedBy: "pi_extension",
+    });
+    expect(events).toContainEqual({
+      type: "input_delivery",
+      role: "user",
+      text: "delegate >worker now",
+      originatedBy: "internal",
+      queueKind: "steering",
+    });
+    expect(events).not.toContainEqual({
+      type: "input_message",
+      role: "user",
+      text: "delegate subagent:worker now",
+      originatedBy: "pi_extension",
+    });
     expect(handle.reverseInputExpansion?.("delegate subagent:worker now")).toBe("delegate >worker now");
+  });
+
+  it("does not let an earlier extension event with the same rewritten text consume the RPC delivery", async () => {
+    const fakeSession = new SameTextRewriteInterleaveSession();
+    const runtime = makeRuntimeWithInputObserver(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-1" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+    fakeSession.isStreaming = true;
+
+    await handle.steer({ text: "delegate >worker now", imagePaths: [] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(events.filter((event) => (
+      (event as { type?: string }).type === "input_message"
+      && (event as { text?: string }).text === "delegate subagent:worker now"
+    ))).toEqual([{
+      type: "input_message",
+      role: "user",
+      text: "delegate subagent:worker now",
+      originatedBy: "pi_extension",
+    }]);
+    expect(events).toContainEqual({
+      type: "input_delivery",
+      role: "user",
+      text: "delegate >worker now",
+      originatedBy: "internal",
+      queueKind: "steering",
+    });
   });
 
   it("still surfaces a genuine pi_extension user injection after our submitted prompt's echo consumed its delivery", async () => {

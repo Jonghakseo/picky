@@ -31,6 +31,40 @@ describe("resolveNpmCommand", () => {
       fileExists: () => false,
     })).toBeUndefined();
   });
+
+  it("wraps the resolved command in the process-tree timeout runner", () => {
+    expect(resolveNpmCommand({
+      configured: undefined,
+      execPath,
+      fileExists: (path) => path === bundledNpmCli,
+      runnerPath: "/app/npm-command-runner.js",
+      timeoutMs: 90_000,
+    })).toEqual([
+      execPath,
+      "/app/npm-command-runner.js",
+      "--timeout-ms",
+      "90000",
+      "--command-json",
+      JSON.stringify([execPath, bundledNpmCli]),
+    ]);
+  });
+
+  it("wraps system npm when no explicit or bundled command exists", () => {
+    expect(resolveNpmCommand({
+      configured: undefined,
+      execPath,
+      fileExists: () => false,
+      runnerPath: "/app/npm-command-runner.js",
+      timeoutMs: 90_000,
+    })).toEqual([
+      execPath,
+      "/app/npm-command-runner.js",
+      "--timeout-ms",
+      "90000",
+      "--command-json",
+      JSON.stringify(["npm"]),
+    ]);
+  });
 });
 
 describe("prependNodeBinToPath", () => {

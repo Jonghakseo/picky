@@ -149,7 +149,14 @@ describe("AgentdServer", () => {
     const execPath = "/Applications/Picky.app/Contents/Resources/agentd-runtime/bin/node";
     const bundledNpmCli = "/Applications/Picky.app/Contents/Resources/agentd-runtime/lib/node_modules/npm/bin/npm-cli.js";
     const createPackageManager = vi.fn(({ settingsManager }) => {
-      expect(settingsManager.getNpmCommand()).toEqual([execPath, bundledNpmCli]);
+      expect(settingsManager.getNpmCommand()).toEqual([
+        execPath,
+        "/Applications/Picky.app/Contents/Resources/agentd/application/npm-command-runner.js",
+        "--timeout-ms",
+        "90000",
+        "--command-json",
+        JSON.stringify([execPath, bundledNpmCli]),
+      ]);
       return {
         installAndPersist: async () => {},
         removeAndPersist: async () => false,
@@ -164,6 +171,8 @@ describe("AgentdServer", () => {
         createPackageManager,
         execPath,
         fileExists: (path) => path === bundledNpmCli,
+        npmCommandRunnerPath: "/Applications/Picky.app/Contents/Resources/agentd/application/npm-command-runner.js",
+        npmCommandTimeoutMs: 90_000,
       },
     );
 
@@ -246,6 +255,116 @@ describe("AgentdServer", () => {
       ok: false,
       errorMessage: "npm was not found",
     });
+    ws.close();
+  });
+
+  it("times out the requester but keeps the queue serialized until the underlying mutation exits", async () => {
+    const lifecycle: string[] = [];
+    let releaseFirstInstall: (() => void) | undefined;
+    const installAndPersist = vi.fn(async (source: string) => {
+      lifecycle.push(`start:${source}`);
+      if (source === "npm:@example/stuck") {
+        await new Promise<void>((resolve) => { releaseFirstInstall = resolve; });
+      }
+      lifecycle.push(`end:${source}`);
+    });
+    const flush = vi.fn(async () => {});
+
+    await server.stop();
+    server = new AgentdServer({
+      port: 0,
+      token: "test-token",
+      supervisor,
+      getAgentDir: () => "/tmp/picky-agent",
+      packageOperationTimeoutMs: 20,
+      createPackageManager: () => ({
+        installAndPersist,
+        removeAndPersist: vi.fn(),
+        setProgressCallback: vi.fn(),
+        flush,
+      }),
+    });
+    port = await server.start();
+
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({ id: "cmd-package-stuck", protocolVersion: PROTOCOL_VERSION, type: "installPackage", source: "npm:@example/stuck" }));
+    await expect(waitForEvent(ws, "packageOperationCompleted")).resolves.toMatchObject({
+      requestId: "cmd-package-stuck",
+      ok: false,
+      errorMessage: "Package operation timed out after 20ms",
+    });
+
+    ws.send(JSON.stringify({ id: "cmd-package-after-timeout", protocolVersion: PROTOCOL_VERSION, type: "installPackage", source: "npm:@example/next" }));
+    await sleep(20);
+    expect(lifecycle).toEqual(["start:npm:@example/stuck"]);
+    expect(flush).not.toHaveBeenCalled();
+
+    releaseFirstInstall?.();
+    await expect(waitForEvent(ws, "packageOperationCompleted")).resolves.toMatchObject({
+      requestId: "cmd-package-after-timeout",
+      ok: true,
+    });
+    expect(lifecycle).toEqual([
+      "start:npm:@example/stuck",
+      "end:npm:@example/stuck",
+      "start:npm:@example/next",
+      "end:npm:@example/next",
+    ]);
+    expect(flush).toHaveBeenCalledOnce();
+    ws.close();
+  });
+
+  it("cancels a timed-out package mutation before releasing the queue", async () => {
+    const lifecycle: string[] = [];
+    let releaseFirstInstall: (() => void) | undefined;
+    const cancel = vi.fn(async () => {
+      lifecycle.push("cancel:first");
+      releaseFirstInstall?.();
+    });
+
+    await server.stop();
+    server = new AgentdServer({
+      port: 0,
+      token: "test-token",
+      supervisor,
+      getAgentDir: () => "/tmp/picky-agent",
+      packageOperationTimeoutMs: 20,
+      createPackageManager: () => ({
+        installAndPersist: async (source) => {
+          lifecycle.push(`start:${source}`);
+          if (source === "npm:@example/stuck") {
+            await new Promise<void>((resolve) => { releaseFirstInstall = resolve; });
+          }
+          lifecycle.push(`end:${source}`);
+        },
+        removeAndPersist: vi.fn(),
+        setProgressCallback: vi.fn(),
+        cancel,
+      }),
+    });
+    port = await server.start();
+
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({ id: "cmd-package-cancel", protocolVersion: PROTOCOL_VERSION, type: "installPackage", source: "npm:@example/stuck" }));
+    await expect(waitForEvent(ws, "packageOperationCompleted")).resolves.toMatchObject({
+      requestId: "cmd-package-cancel",
+      ok: false,
+      errorMessage: "Package operation timed out after 20ms",
+    });
+
+    ws.send(JSON.stringify({ id: "cmd-package-after-cancel", protocolVersion: PROTOCOL_VERSION, type: "installPackage", source: "npm:@example/next" }));
+    await expect(waitForEvent(ws, "packageOperationCompleted")).resolves.toMatchObject({
+      requestId: "cmd-package-after-cancel",
+      ok: true,
+    });
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(lifecycle).toEqual([
+      "start:npm:@example/stuck",
+      "cancel:first",
+      "end:npm:@example/stuck",
+      "start:npm:@example/next",
+      "end:npm:@example/next",
+    ]);
     ws.close();
   });
 

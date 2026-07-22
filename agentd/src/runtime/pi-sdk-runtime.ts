@@ -19,6 +19,7 @@ import { resolveTodoStateFromPiSessionEntries } from "../domain/todo-state.js";
 import { isTransientAgentBusyError } from "../domain/transient-runtime-error.js";
 import type { AgentRuntime, AnswerExtensionUiOptions, RewindBranchMessage, RewindResult, RewindTarget, RuntimeAssistantRunMetadata, RuntimeAutocompleteApplyRequest, RuntimeAutocompleteCapabilities, RuntimeAutocompleteCompletion, RuntimeAutocompleteQuery, RuntimeAutocompleteSuggestions, RuntimeBashExecutionResult, RuntimeEvent, RuntimeModelOption, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
 import type { ModelCycleDirection, PickyQueueMode } from "../protocol.js";
+import { expectedInputDeliveryIndex, PiInputRewriteObserver } from "./pi-input-rewrite-observer.js";
 import { logAgentd, logLifecycleEvent } from "../local-log.js";
 import {
   type ScopedModelOption,
@@ -161,6 +162,10 @@ export class PiSdkRuntime implements AgentRuntime {
   private async createHandle(options: { cwd?: string; sessionId?: string; sessionFilePath?: string }): Promise<PiSdkRuntimeSession> {
     const cwd = options.cwd ?? process.cwd();
     const sessionId = options.sessionId ?? "picky-pi-session";
+    let sessionHandle: PiSdkRuntimeSession | undefined;
+    const inputRewriteObserver = new PiInputRewriteObserver((deliveryID, finalText) => {
+      sessionHandle?.recordExpectedInputAlias(deliveryID, finalText);
+    });
     const createServices = this.options.createServices ?? createAgentSessionServices;
     const createSessionFromServices = this.options.createSessionFromServices ?? createAgentSessionFromServices;
     const createRuntimeImpl = this.options.createRuntime ?? createAgentSessionRuntime;
@@ -168,7 +173,18 @@ export class PiSdkRuntime implements AgentRuntime {
     const customTools = this.customTools;
 
     const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd: runtimeCwd, sessionManager, sessionStartEvent }) => {
-      const services = await createServices({ cwd: runtimeCwd, agentDir, resourceLoaderOptions: this.options.resourceLoaderOptions });
+      const resourceLoaderOptions = this.options.resourceLoaderOptions;
+      const services = await createServices({
+        cwd: runtimeCwd,
+        agentDir,
+        resourceLoaderOptions: {
+          ...resourceLoaderOptions,
+          extensionFactories: [
+            ...(resourceLoaderOptions?.extensionFactories ?? []),
+            inputRewriteObserver.inlineExtension,
+          ],
+        },
+      });
       const fixedModel = await modelFromServices(services, this.modelPattern);
       const scopedModels = fixedModel
         ? [{ model: fixedModel, ...(this.thinkingLevel ? { thinkingLevel: this.thinkingLevel } : {}) }]
@@ -195,7 +211,14 @@ export class PiSdkRuntime implements AgentRuntime {
       sessionManager: options.sessionFilePath ? SessionManager.open(options.sessionFilePath, undefined, cwd) : SessionManager.create(cwd),
     });
 
-    const handle = new PiSdkRuntimeSession(sessionId, runtime, this.thinkingLevel, { disableBlockingDialogs: this.options.disableBlockingDialogs ?? false });
+    const handle = new PiSdkRuntimeSession(
+      sessionId,
+      runtime,
+      this.thinkingLevel,
+      { disableBlockingDialogs: this.options.disableBlockingDialogs ?? false },
+      inputRewriteObserver,
+    );
+    sessionHandle = handle;
     await handle.bindCurrentSession();
     return handle;
   }
@@ -207,6 +230,7 @@ interface ExpectedInputDelivery {
   originatedBy: "user" | "main_agent" | "internal" | "pi_extension";
   suppress: boolean;
   queueKind?: "steering" | "followUp";
+  aliases?: Set<string>;
 }
 
 class PiSdkRuntimeSession implements RuntimeSessionHandle {
@@ -244,7 +268,13 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private autocompleteGeneration = 0;
   private autocompleteQueryController: AbortController | undefined;
 
-  constructor(readonly id: string, private readonly runtime: AgentSessionRuntime, private configuredThinkingLevel?: ThinkingLevel, private readonly bridgeOptions: { disableBlockingDialogs?: boolean } = {}) {
+  constructor(
+    readonly id: string,
+    private readonly runtime: AgentSessionRuntime,
+    private configuredThinkingLevel?: ThinkingLevel,
+    private readonly bridgeOptions: { disableBlockingDialogs?: boolean } = {},
+    private readonly inputRewriteObserver: PiInputRewriteObserver = new PiInputRewriteObserver(() => {}),
+  ) {
     this.uiBridge = this.createBridge();
     this.transcriptRepairLogLine = repairDanglingToolCalls(runtime.session);
     this.runtime.setRebindSession(async () => this.bindCurrentSession());
@@ -265,7 +295,11 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     const wasStreaming = this.runtime.session.isStreaming;
     const expected = this.expectInputDelivery(prompt.text);
     try {
-      await this.runtime.session.prompt(prompt.text, { images: await imageOptions(prompt.imagePaths), source: "rpc" });
+      const images = await imageOptions(prompt.imagePaths);
+      await this.inputRewriteObserver.runWithDelivery(expected.id, () => this.runtime.session.prompt(
+        prompt.text,
+        { images, source: "rpc" },
+      ));
     } catch (error) {
       this.cancelExpectedInputDelivery(expected.id);
       this.emitPromptFailureStatus(error);
@@ -986,26 +1020,29 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   }
 
   private consumeExpectedInputDelivery(text: string): ExpectedInputDelivery {
-    const exactIndex = this.expectedInputDeliveries.findIndex((delivery) => delivery.text === text);
-    if (exactIndex >= 0) return this.expectedInputDeliveries.splice(exactIndex, 1)[0]!;
-    // No exact match: Pi may have rewritten our submitted prompt server-side before echoing it
-    // (slash-command expansion, `>subagent` mention expansion, or any future rewrite). Pi echoes
-    // our submissions in the order we sent them, so the oldest still-pending delivery is the
-    // causal owner of this echo. Pair it here so the echo stays suppressed and we learn the
-    // raw->expansion mapping, instead of surfacing Pi's rewrite as a duplicate pi_extension
-    // bubble. Genuine extension-injected user messages never register an expected delivery, so
-    // when none is pending we still surface them as pi_extension.
-    const pending = this.expectedInputDeliveries.shift();
-    if (pending) {
-      this.registerSlashExpansion(text, pending.text);
-      logAgentd("pi input delivery paired by order after server-side rewrite", {
-        sessionId: this.id,
-        rawChars: pending.text.length,
-        expandedChars: text.length,
-      });
-      return pending;
-    }
+    const matchedIndex = expectedInputDeliveryIndex(
+      this.expectedInputDeliveries,
+      text,
+      (candidate) => this.translateQueueEntry(candidate),
+    );
+    if (matchedIndex >= 0) return this.expectedInputDeliveries.splice(matchedIndex, 1)[0]!;
+
+    // Never consume an unmatched delivery by FIFO order. A genuine extension
+    // role=user event can interleave before Pi echoes Picky's transformed RPC
+    // prompt; treating that event as the echo would hide user-visible input and
+    // poison terminal reverse-expansion mapping.
     return { id: "pi-extension", text, originatedBy: "pi_extension", suppress: false };
+  }
+
+  recordExpectedInputAlias(deliveryID: string, finalText: string): void {
+    const delivery = this.expectedInputDeliveries.find((candidate) => candidate.id === deliveryID);
+    if (!delivery) return;
+    const alias = finalText.trim();
+    const raw = delivery.text.trim();
+    if (!alias || alias === raw) return;
+    delivery.aliases ??= new Set<string>();
+    delivery.aliases.add(alias);
+    this.registerSlashExpansion(alias, raw);
   }
 
   // Public view of the runtime's learned expansion mappings so the terminal-sync dedup can
@@ -1231,7 +1268,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     const queueBeforeSlashExpansion = this.snapshotQueueForSlashExpansion(text);
     const pendingSlashSubmission = queueBeforeSlashExpansion ? { raw: text.trim(), beforeQueue: queueBeforeSlashExpansion } : undefined;
     if (pendingSlashSubmission) this.pendingSlashSubmissions.push(pendingSlashSubmission);
-    const promptPromise = this.runtime.session.prompt(text, {
+    const promptPromise = this.inputRewriteObserver.runWithDelivery(expected.id, () => this.runtime.session.prompt(text, {
       ...options,
       preflightResult: (success: boolean) => {
         if (!success) {
@@ -1244,7 +1281,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
         logLifecycleEvent("piPromptPreflightAccepted", { sessionId: this.id, ...this.lifecycleFields() });
         resolveOnce();
       },
-    });
+    }));
 
     void promptPromise
       .then(() => {

@@ -4,6 +4,8 @@ export interface NpmCommandResolutionOptions {
   configured: string[] | undefined;
   execPath: string;
   fileExists: (path: string) => boolean;
+  runnerPath?: string;
+  timeoutMs?: number;
 }
 
 export function bundledNpmCliPath(execPath: string): string {
@@ -12,13 +14,33 @@ export function bundledNpmCliPath(execPath: string): string {
 
 /**
  * Uses an explicit user command when configured, otherwise runs the npm CLI
- * bundled alongside Picky's Node runtime when it is available.
+ * bundled alongside Picky's Node runtime when it is available. Production can
+ * wrap the resolved command in a process-tree timeout runner so a stuck npm
+ * lifecycle script cannot hold the package-operation queue forever.
  */
-export function resolveNpmCommand({ configured, execPath, fileExists }: NpmCommandResolutionOptions): string[] | undefined {
-  if (configured && configured.length > 0) return configured;
-
+export function resolveNpmCommand({
+  configured,
+  execPath,
+  fileExists,
+  runnerPath,
+  timeoutMs,
+}: NpmCommandResolutionOptions): string[] | undefined {
   const bundledNpmCli = bundledNpmCliPath(execPath);
-  return fileExists(bundledNpmCli) ? [execPath, bundledNpmCli] : configured;
+  const baseCommand = configured && configured.length > 0
+    ? configured
+    : fileExists(bundledNpmCli)
+      ? [execPath, bundledNpmCli]
+      : undefined;
+  if (!runnerPath || timeoutMs === undefined) return baseCommand;
+
+  return [
+    execPath,
+    runnerPath,
+    "--timeout-ms",
+    String(timeoutMs),
+    "--command-json",
+    JSON.stringify(baseCommand ?? ["npm"]),
+  ];
 }
 
 /** Ensures npm lifecycle scripts resolve the daemon's Node binary first. */

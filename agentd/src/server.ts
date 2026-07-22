@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
@@ -13,6 +14,7 @@ import type { SessionSupervisor } from "./session-supervisor.js";
 import { logAgentd } from "./local-log.js";
 import { EdgeTTSServiceError } from "./edge-tts-service.js";
 import type { EdgeTTSService } from "./edge-tts-service.js";
+import { CancellablePackageProcessController, installCancellablePackageCommands } from "./application/package-process-controller.js";
 
 export interface PackageManager {
   installAndPersist(source: string): Promise<void>;
@@ -20,6 +22,8 @@ export interface PackageManager {
   setProgressCallback(callback: ((event: ProgressEvent) => void) | undefined): void;
   /** Waits until package settings changes are durable before completing the request. */
   flush?(): Promise<void>;
+  /** Stops external commands and settles the active mutation before the queue is released. */
+  cancel?(): Promise<void>;
 }
 
 export interface PackageManagerFactoryOptions {
@@ -34,7 +38,13 @@ export interface DefaultPackageManagerDependencies {
   createPackageManager?: (options: PiPackageManagerOptions) => PackageManager;
   execPath?: string;
   fileExists?: (path: string) => boolean;
+  npmCommandRunnerPath?: string;
+  npmCommandTimeoutMs?: number;
 }
+
+const DEFAULT_NPM_COMMAND_TIMEOUT_MS = 90_000;
+const DEFAULT_PACKAGE_OPERATION_TIMEOUT_MS = 110_000;
+const DEFAULT_NPM_COMMAND_RUNNER_PATH = fileURLToPath(new URL("./application/npm-command-runner.js", import.meta.url));
 
 /** Creates the Pi package manager with a runtime-only bundled npm fallback. */
 export function createDefaultPackageManager(
@@ -51,21 +61,27 @@ export function createDefaultPackageManager(
           configured: target.getNpmCommand(),
           execPath,
           fileExists,
+          runnerPath: dependencies.npmCommandRunnerPath ?? DEFAULT_NPM_COMMAND_RUNNER_PATH,
+          timeoutMs: dependencies.npmCommandTimeoutMs ?? DEFAULT_NPM_COMMAND_TIMEOUT_MS,
         });
       }
       const value = Reflect.get(target, property, target);
       return typeof value === "function" ? value.bind(target) : value;
     },
   });
+  const usesDefaultPackageManager = dependencies.createPackageManager === undefined;
   const packageManager = (dependencies.createPackageManager ?? ((params) => new DefaultPackageManager(params)))({
     ...options,
     settingsManager: packageManagerSettings,
   });
+  const processController = usesDefaultPackageManager ? new CancellablePackageProcessController() : undefined;
+  if (processController) installCancellablePackageCommands(packageManager as object, processController);
 
   return {
     installAndPersist: (packageSource) => packageManager.installAndPersist(packageSource),
     removeAndPersist: (packageSource) => packageManager.removeAndPersist(packageSource),
     setProgressCallback: (callback) => packageManager.setProgressCallback(callback),
+    cancel: processController ? () => processController.cancelAll() : undefined,
     flush: async () => {
       await settingsManager.flush();
       const errors = settingsManager.drainErrors();
@@ -76,6 +92,28 @@ export function createDefaultPackageManager(
   };
 }
 
+type PackageMutationOutcome =
+  | { kind: "completed" }
+  | { kind: "failed"; error: unknown }
+  | { kind: "timedOut"; timeoutMs: number };
+
+async function waitForPackageMutation(mutation: Promise<void>, timeoutMs: number): Promise<PackageMutationOutcome> {
+  return await new Promise<PackageMutationOutcome>((resolveOutcome) => {
+    let settled = false;
+    const finish = (outcome: PackageMutationOutcome) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolveOutcome(outcome);
+    };
+    const timer = setTimeout(() => finish({ kind: "timedOut", timeoutMs }), timeoutMs);
+    void mutation.then(
+      () => finish({ kind: "completed" }),
+      (error: unknown) => finish({ kind: "failed", error }),
+    );
+  });
+}
+
 export interface AgentdServerOptions {
   port: number;
   token: string;
@@ -84,6 +122,8 @@ export interface AgentdServerOptions {
   createPackageManager?: (options: PackageManagerFactoryOptions) => PackageManager;
   /** Overrides Pi's agent directory for package-manager isolation in tests. */
   getAgentDir?: () => string;
+  /** Bounds client-visible package operations; the queue remains held until underlying mutation exits. */
+  packageOperationTimeoutMs?: number;
   setDefaultCwd?: (cwd: string) => void;
   /** Primary-only. Child daemons intentionally omit the local Edge TTS routes. */
   edgeTTS?: EdgeTTSService;
@@ -574,12 +614,39 @@ export class AgentdServer {
       const message = event.message ?? `${event.action} ${event.source}`;
       this.send(ws, { type: "packageOperationProgress", requestId, operation, source, message });
     });
+    const mutation = operation === "install"
+      ? packageManager.installAndPersist(source)
+      : packageManager.removeAndPersist(source).then(() => undefined);
+    const outcome = await waitForPackageMutation(
+      mutation,
+      this.options.packageOperationTimeoutMs ?? DEFAULT_PACKAGE_OPERATION_TIMEOUT_MS,
+    );
+    if (outcome.kind === "timedOut") {
+      packageManager.setProgressCallback(undefined);
+      this.send(ws, {
+        type: "packageOperationCompleted",
+        requestId,
+        operation,
+        source,
+        ok: false,
+        errorMessage: `Package operation timed out after ${outcome.timeoutMs}ms`,
+      });
+      // Cancel every external command owned by the default package mutation,
+      // then keep the per-agentDir queue held until the mutation settles. A
+      // custom manager without cancellation remains serialized rather than
+      // risking concurrent writes to the same package/settings directories.
+      await packageManager.cancel?.().catch((error) => {
+        logAgentd("package operation cancellation failed", {
+          operation,
+          source,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+      await mutation.catch(() => {});
+      return;
+    }
     try {
-      if (operation === "install") {
-        await packageManager.installAndPersist(source);
-      } else {
-        await packageManager.removeAndPersist(source);
-      }
+      if (outcome.kind === "failed") throw outcome.error;
       await packageManager.flush?.();
       this.send(ws, { type: "packageOperationCompleted", requestId, operation, source, ok: true });
     } catch (error) {

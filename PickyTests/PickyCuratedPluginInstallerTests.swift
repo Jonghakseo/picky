@@ -84,6 +84,21 @@ struct PickyCuratedPluginInstallerTests {
             Issue.record("Expected daemon package failure")
         }
     }
+
+    @Test func installReturnsTimedOutWhenDaemonCompletionNeverArrives() async {
+        let client = FakeCuratedPluginAgentClient()
+
+        let result = await PickyCuratedPluginInstaller.install(
+            source: source,
+            client: client,
+            timeoutNanoseconds: 10_000_000
+        )
+
+        if case .failure(.timedOut) = result {
+            return
+        }
+        Issue.record("Expected package operation timeout")
+    }
 }
 
 private final class FakeCuratedPluginAgentClient: PickyAgentClient {

@@ -249,6 +249,95 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
+  it("returns a package failure when settings persistence reports an error", async () => {
+    const settingsManager = SettingsManager.inMemory();
+    vi.spyOn(settingsManager, "drainErrors").mockReturnValue([{
+      scope: "global",
+      error: new Error("settings are read-only"),
+    }]);
+
+    await server.stop();
+    server = new AgentdServer({
+      port: 0,
+      token: "test-token",
+      supervisor,
+      createPackageManager: () => createDefaultPackageManager(
+        { cwd: "/tmp/project", agentDir: "/tmp/picky-agent" },
+        {
+          createSettingsManager: () => settingsManager,
+          createPackageManager: () => ({
+            installAndPersist: async () => {},
+            removeAndPersist: async () => false,
+            setProgressCallback: () => {},
+          }),
+        },
+      ),
+    });
+    port = await server.start();
+
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({ id: "cmd-package-persistence-failure", protocolVersion: PROTOCOL_VERSION, type: "installPackage", source: "npm:@example/plugin" }));
+    await expect(waitForEvent(ws, "packageOperationCompleted")).resolves.toMatchObject({
+      type: "packageOperationCompleted",
+      requestId: "cmd-package-persistence-failure",
+      operation: "install",
+      source: "npm:@example/plugin",
+      ok: false,
+      errorMessage: "Failed to persist global settings: settings are read-only",
+    });
+    ws.close();
+  });
+
+  it("serializes concurrent package operations for the same agent directory", async () => {
+    const lifecycle: string[] = [];
+    let releaseFirstInstall: (() => void) | undefined;
+    const installAndPersist = vi.fn(async (source: string) => {
+      lifecycle.push(`start:${source}`);
+      if (source === "npm:@example/first") {
+        await new Promise<void>((resolve) => { releaseFirstInstall = resolve; });
+      }
+      lifecycle.push(`end:${source}`);
+    });
+
+    await server.stop();
+    server = new AgentdServer({
+      port: 0,
+      token: "test-token",
+      supervisor,
+      getAgentDir: () => "/tmp/picky-agent",
+      createPackageManager: () => ({
+        installAndPersist,
+        removeAndPersist: vi.fn(),
+        setProgressCallback: vi.fn(),
+      }),
+    });
+    port = await server.start();
+
+    const { ws } = await connectWithHello();
+    const received: EventEnvelope[] = [];
+    ws.on("message", (data) => received.push(JSON.parse(data.toString()) as EventEnvelope));
+    ws.send(JSON.stringify({ id: "cmd-package-first", protocolVersion: PROTOCOL_VERSION, type: "installPackage", source: "npm:@example/first" }));
+    await waitUntil(() => releaseFirstInstall !== undefined);
+    ws.send(JSON.stringify({ id: "cmd-package-second", protocolVersion: PROTOCOL_VERSION, type: "installPackage", source: "npm:@example/second" }));
+
+    await sleep(20);
+    expect(lifecycle).toEqual(["start:npm:@example/first"]);
+    releaseFirstInstall?.();
+    await waitUntil(() => received.filter((event) => event.type === "packageOperationCompleted").length === 2);
+
+    expect(lifecycle).toEqual([
+      "start:npm:@example/first",
+      "end:npm:@example/first",
+      "start:npm:@example/second",
+      "end:npm:@example/second",
+    ]);
+    expect(received.filter((event) => event.type === "packageOperationCompleted")).toEqual(expect.arrayContaining([
+      expect.objectContaining({ requestId: "cmd-package-first", ok: true }),
+      expect.objectContaining({ requestId: "cmd-package-second", ok: true }),
+    ]));
+    ws.close();
+  });
+
   it("broadcasts mainTurnSettled with its contextId", async () => {
     const { ws } = await connectWithHello();
     const pendingSettled = waitForEvent(ws, "mainTurnSettled");

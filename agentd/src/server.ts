@@ -66,7 +66,13 @@ export function createDefaultPackageManager(
     installAndPersist: (packageSource) => packageManager.installAndPersist(packageSource),
     removeAndPersist: (packageSource) => packageManager.removeAndPersist(packageSource),
     setProgressCallback: (callback) => packageManager.setProgressCallback(callback),
-    flush: () => settingsManager.flush(),
+    flush: async () => {
+      await settingsManager.flush();
+      const errors = settingsManager.drainErrors();
+      if (errors.length > 0) {
+        throw new Error(errors.map(({ scope, error }) => `Failed to persist ${scope} settings: ${error.message}`).join("; "));
+      }
+    },
   };
 }
 
@@ -135,6 +141,8 @@ export class AgentdServer {
   private pendingExternalEntries = new Map<string, ExternalEntryPending>();
   private pendingPushToTalkControls = new Map<string, PushToTalkControlPending>();
   private pendingDockGroupsRequests = new Map<string, DockGroupsPending>();
+  /** Serializes package mutations that share a Pi agent settings directory. */
+  private packageOperationChains = new Map<string, Promise<void>>();
   /**
    * FIFO queue of external CLI submissions. Per the agreed Q3 policy, only one
    * `submitMainFromExternal` / `createPickleFromExternal` is processed at a time;
@@ -538,6 +546,28 @@ export class AgentdServer {
     source: string,
   ): Promise<void> {
     const agentDir = (this.options.getAgentDir ?? getAgentDir)();
+    await this.enqueuePackageOperation(agentDir, () => this.executePackageOperation(ws, requestId, operation, source, agentDir));
+  }
+
+  private async enqueuePackageOperation(agentDir: string, operation: () => Promise<void>): Promise<void> {
+    const previous = this.packageOperationChains.get(agentDir) ?? Promise.resolve();
+    const current = previous.catch(() => {}).then(operation);
+    this.packageOperationChains.set(agentDir, current);
+    void current.finally(() => {
+      if (this.packageOperationChains.get(agentDir) === current) {
+        this.packageOperationChains.delete(agentDir);
+      }
+    }).catch(() => {});
+    await current;
+  }
+
+  private async executePackageOperation(
+    ws: WebSocket,
+    requestId: string,
+    operation: "install" | "remove",
+    source: string,
+    agentDir: string,
+  ): Promise<void> {
     const createPackageManager = this.options.createPackageManager ?? createDefaultPackageManager;
     const packageManager = createPackageManager({ cwd: process.cwd(), agentDir });
     packageManager.setProgressCallback((event) => {

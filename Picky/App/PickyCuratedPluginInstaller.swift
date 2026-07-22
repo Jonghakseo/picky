@@ -44,62 +44,64 @@ enum PickyCuratedPluginInstaller {
     @discardableResult
     static func install(
         source: String,
-        client: any PickyAgentClient
+        client: any PickyAgentClient,
+        timeoutNanoseconds: UInt64 = 120_000_000_000
     ) async -> Result<Void, CommandError> {
-        await run(operation: .install, source: source, client: client)
+        await run(operation: .install, source: source, client: client, timeoutNanoseconds: timeoutNanoseconds)
     }
 
     @discardableResult
     static func remove(
         source: String,
-        client: any PickyAgentClient
+        client: any PickyAgentClient,
+        timeoutNanoseconds: UInt64 = 120_000_000_000
     ) async -> Result<Void, CommandError> {
-        await run(operation: .remove, source: source, client: client)
+        await run(operation: .remove, source: source, client: client, timeoutNanoseconds: timeoutNanoseconds)
     }
 
     private static func run(
         operation: PickyPackageOperation,
         source: String,
-        client: any PickyAgentClient
+        client: any PickyAgentClient,
+        timeoutNanoseconds: UInt64
     ) async -> Result<Void, CommandError> {
         let commandType: PickyCommandType = operation == .install ? .installPackage : .removePackage
         let command = PickyCommandEnvelope(type: commandType, source: source)
         // Subscribe before sending so a fast daemon completion cannot be missed.
         let stream = client.events
-        let completionTask = Task { () throws -> Void in
-            for await clientEvent in stream {
-                switch clientEvent {
-                case .protocolEvent(let envelope):
-                    guard case .packageOperationCompleted(let result) = envelope.event,
-                          result.requestId == command.id,
-                          result.operation == operation,
-                          result.source == source else {
-                        continue
-                    }
-                    guard result.ok else {
-                        throw CommandError.failed(result.errorMessage ?? "Package operation failed.")
-                    }
-                    return
-                case .disconnected:
-                    throw CommandError.disconnected
-                case .connected, .recoverableError:
-                    continue
-                }
-            }
-            throw CommandError.disconnected
-        }
-        defer { completionTask.cancel() }
 
         do {
             try await client.send(command)
             try await withThrowingTaskGroup(of: Void.self) { group in
-                group.addTask { try await completionTask.value }
+                defer { group.cancelAll() }
                 group.addTask {
-                    try await Task.sleep(nanoseconds: 120_000_000_000)
+                    for await clientEvent in stream {
+                        switch clientEvent {
+                        case .protocolEvent(let envelope):
+                            guard case .packageOperationCompleted(let result) = envelope.event,
+                                  result.requestId == command.id,
+                                  result.operation == operation,
+                                  result.source == source else {
+                                continue
+                            }
+                            guard result.ok else {
+                                throw CommandError.failed(result.errorMessage ?? "Package operation failed.")
+                            }
+                            return
+                        case .disconnected:
+                            throw CommandError.disconnected
+                        case .connected, .recoverableError:
+                            continue
+                        }
+                    }
+                    throw CommandError.disconnected
+                }
+                group.addTask {
+                    try await Task.sleep(nanoseconds: timeoutNanoseconds)
+                    try Task.checkCancellation()
                     throw CommandError.timedOut
                 }
-                try await group.next()
-                group.cancelAll()
+                _ = try await group.next()
             }
             return .success(())
         } catch let error as CommandError {

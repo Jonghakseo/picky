@@ -501,16 +501,19 @@ final class PickyTerminalProcessTerminator {
         self.processIdentity = processIdentity
     }
 
-    func terminate(processID: pid_t) {
-        guard processID > 0 else { return }
+    func captureIdentity(processID: pid_t) -> PickyTerminalProcessIdentity? {
+        guard processID > 0 else { return nil }
+        return processIdentity(processID)
+    }
+
+    func terminate(processID: pid_t, expectedIdentity: PickyTerminalProcessIdentity) {
+        guard processID > 0, processIdentity(processID) == expectedIdentity else { return }
         forceKillTask?.cancel()
-        let expectedIdentity = processIdentity(processID)
         signalProcess(processID, SIGTERM)
         forceKillTask = Task { [weak self] in
             guard let self else { return }
             try? await Task.sleep(nanoseconds: self.forceKillDelayNanoseconds)
             guard !Task.isCancelled,
-                  let expectedIdentity,
                   self.processIdentity(processID) == expectedIdentity else { return }
             self.signalProcess(processID, SIGKILL)
         }
@@ -601,6 +604,8 @@ final class PickyTerminalModel: ObservableObject, PickyTerminalProcessEventHandl
     /// alive and signal its PID directly so `processTerminated` can still arrive.
     private var closingTerminalView: (any PickyTerminalProcessHosting)?
     private var didStartProcess = false
+    private var startedProcessID: pid_t?
+    private var startedProcessIdentity: PickyTerminalProcessIdentity?
     private var isClosed = false
     private var actualProcessExitCallbacks: [@MainActor () -> Void] = []
     private(set) lazy var processDelegate = PickyTerminalProcessDelegate(handler: self)
@@ -670,7 +675,12 @@ final class PickyTerminalModel: ObservableObject, PickyTerminalProcessEventHandl
         }
         closingTerminalView = terminalView
         self.terminalView = nil
-        processTerminator.terminate(processID: terminalView.processID)
+        if let startedProcessID, let startedProcessIdentity {
+            processTerminator.terminate(
+                processID: startedProcessID,
+                expectedIdentity: startedProcessIdentity
+            )
+        }
     }
 
     func processExited(exitCode: Int32?) {
@@ -678,6 +688,8 @@ final class PickyTerminalModel: ObservableObject, PickyTerminalProcessEventHandl
         terminalView = nil
         closingTerminalView = nil
         didStartProcess = false
+        startedProcessID = nil
+        startedProcessIdentity = nil
         if let exitCode {
             statusText = "Pi terminal exited with code \(exitCode). Close to sync the session card."
         } else {
@@ -727,11 +739,14 @@ final class PickyTerminalModel: ObservableObject, PickyTerminalProcessEventHandl
                 environment: PickyPiTerminalCommand.makeOverlayEnvironment(),
                 currentDirectory: PickyPiTerminalCommand.workingDirectory(from: self.cwd)
             )
-            guard terminalView.processID > 0 else {
+            let processID = terminalView.processID
+            guard processID > 0 else {
                 self.statusText = "Pi terminal failed to start. Close and try again."
                 self.exitSync.markExited()
                 return
             }
+            self.startedProcessID = processID
+            self.startedProcessIdentity = self.processTerminator.captureIdentity(processID: processID)
             self.didStartProcess = true
             self.exitSync.markStarted()
         }

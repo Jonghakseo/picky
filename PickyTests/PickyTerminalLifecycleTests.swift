@@ -111,9 +111,11 @@ struct PickyTerminalLifecycleTests {
 
     @Test func terminalCloseRetainsExitObservationUntilTheProcessActuallyExits() {
         var signals: [Int32] = []
+        let identity = PickyTerminalProcessIdentity(startSeconds: 1, startMicroseconds: 2)
         let terminator = PickyTerminalProcessTerminator(
             forceKillDelayNanoseconds: 1_000_000_000,
-            signalProcess: { _, signal in signals.append(signal) }
+            signalProcess: { _, signal in signals.append(signal) },
+            processIdentity: { _ in identity }
         )
         let model = PickyTerminalModel(
             title: "Terminal",
@@ -140,6 +142,29 @@ struct PickyTerminalLifecycleTests {
         #expect(weakHost == nil)
     }
 
+    @Test func terminalCloseDoesNotSignalAPIDReusedSinceLaunch() {
+        var signals: [Int32] = []
+        var identity = PickyTerminalProcessIdentity(startSeconds: 1, startMicroseconds: 2)
+        let terminator = PickyTerminalProcessTerminator(
+            forceKillDelayNanoseconds: 1_000_000_000,
+            signalProcess: { _, signal in signals.append(signal) },
+            processIdentity: { _ in identity }
+        )
+        let model = PickyTerminalModel(
+            title: "Terminal",
+            sessionFilePath: "/tmp/session.jsonl",
+            cwd: "/tmp",
+            processTerminator: terminator
+        )
+        let host = TerminalProcessHostStub(processID: 42)
+        model.attachProcessHostForTesting(host)
+        identity = PickyTerminalProcessIdentity(startSeconds: 3, startMicroseconds: 4)
+
+        model.close()
+
+        #expect(signals.isEmpty)
+    }
+
     @Test func terminalTerminatorEscalatesAndCancelsForceKillAfterObservedExit() async throws {
         var signals: [Int32] = []
         let identity = PickyTerminalProcessIdentity(startSeconds: 1, startMicroseconds: 2)
@@ -148,12 +173,12 @@ struct PickyTerminalLifecycleTests {
             signalProcess: { _, signal in signals.append(signal) },
             processIdentity: { _ in identity }
         )
-        terminator.terminate(processID: 42)
+        terminator.terminate(processID: 42, expectedIdentity: identity)
         try await Task.sleep(nanoseconds: 30_000_000)
         #expect(signals == [SIGTERM, SIGKILL])
 
         signals.removeAll()
-        terminator.terminate(processID: 43)
+        terminator.terminate(processID: 43, expectedIdentity: identity)
         terminator.processExited()
         try await Task.sleep(nanoseconds: 30_000_000)
         #expect(signals == [SIGTERM])
@@ -162,13 +187,14 @@ struct PickyTerminalLifecycleTests {
     @Test func terminalTerminatorDoesNotSignalAReusedPID() async throws {
         var signals: [Int32] = []
         var identity = PickyTerminalProcessIdentity(startSeconds: 1, startMicroseconds: 2)
+        let launchIdentity = identity
         let terminator = PickyTerminalProcessTerminator(
             forceKillDelayNanoseconds: 10_000_000,
             signalProcess: { _, signal in signals.append(signal) },
             processIdentity: { _ in identity }
         )
 
-        terminator.terminate(processID: 42)
+        terminator.terminate(processID: 42, expectedIdentity: launchIdentity)
         identity = PickyTerminalProcessIdentity(startSeconds: 3, startMicroseconds: 4)
         try await Task.sleep(nanoseconds: 30_000_000)
 

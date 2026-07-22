@@ -65,22 +65,31 @@ struct PickyLifecycleDiagnosticsStoreTests {
         #expect(snapshot.previous?.exitReason == nil)
     }
 
-    @Test func boundedSnapshotTextCapsOversizedScalarVersionValues() throws {
+    @Test func persistedSnapshotSanitizesAndCapsOversizedScalarMetadata() throws {
         let root = try makeTemporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         let store = PickyLifecycleDiagnosticsStore(
             logsDirectory: root,
             now: { Date(timeIntervalSince1970: 1_700_000_000) },
-            makeRunID: { "large-run" },
+            makeRunID: { String(repeating: "run", count: 80 * 1024) },
             processID: { 101 }
         )
-        _ = store.recordLaunch(appVersion: String(repeating: "v", count: 80 * 1024), appBuild: "1")
-
+        let snapshot = try #require(store.recordLaunch(
+            appVersion: "apiKey=super-secret " + String(repeating: "v", count: 80 * 1024),
+            appBuild: String(repeating: "b", count: 80 * 1024)
+        ))
+        let persisted = try Data(contentsOf: store.snapshotURL)
+        let persistedText = try #require(String(data: persisted, encoding: .utf8))
         let rendered = PickyLifecycleDiagnosticsStore.boundedSnapshotText(
             from: root,
             maxBytes: PickyDiagnosticsBundleBuilder.maximumLifecycleSnapshotBytes
         )
 
+        #expect(persisted.count <= PickyLifecycleDiagnosticsStore.maximumPersistedSnapshotBytes)
+        #expect(snapshot.current.runID.lengthOfBytes(using: .utf8) <= PickyLifecycleDiagnosticsStore.maximumRunIDBytes)
+        #expect(snapshot.current.appVersion.lengthOfBytes(using: .utf8) <= PickyLifecycleDiagnosticsStore.maximumVersionScalarBytes)
+        #expect(snapshot.current.appBuild.lengthOfBytes(using: .utf8) <= PickyLifecycleDiagnosticsStore.maximumVersionScalarBytes)
+        #expect(!persistedText.contains("super-secret"))
         #expect(rendered.lengthOfBytes(using: .utf8) <= PickyDiagnosticsBundleBuilder.maximumLifecycleSnapshotBytes)
     }
 

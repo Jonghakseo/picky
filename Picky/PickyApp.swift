@@ -88,11 +88,11 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             automaticChecksEnabled: settings.updatesAutomaticChecksEnabled
         )
         controller.willRelaunchApplication = { [weak self] in
-            self?.lifecycleDiagnosticsStore.markCurrentRunClean(reason: .update)
             // Sparkle is about to swap the .app bundle. Stop bundled/child
             // picky-agentd processes first so their Node children don't crash on cwd.
             self?.agentDaemonPool.terminateAllChildren()
             self?.daemonLauncher.stop()
+            self?.lifecycleDiagnosticsStore.markCurrentRunClean(reason: .update)
         }
         return controller
     }()
@@ -372,7 +372,6 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         guard !Self.isRunningUnitTests else { return }
-        _ = lifecycleDiagnosticsStore.markCurrentRunClean(reason: .normal)
         if let observer = settingsSaveObserver {
             NotificationCenter.default.removeObserver(observer)
             settingsSaveObserver = nil
@@ -383,6 +382,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         hudOverlayManager.stop()
         agentDaemonPool.terminateAllChildren()
         daemonLauncher.stop()
+        _ = lifecycleDiagnosticsStore.markCurrentRunClean(reason: .normal)
     }
 
     private func startMainThreadWatchdog() {

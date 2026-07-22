@@ -13,6 +13,7 @@ enum PickyIPSCollector {
     static let maximumAge: TimeInterval = 7 * 24 * 60 * 60
     static let maximumBytesPerFile = 192 * 1024
     static let maximumTotalExcerptBytes = 384 * 1024
+    static let maximumHeaderBytes = 64 * 1024
 
     struct ManifestEntry: Codable, Equatable {
         let filename: String
@@ -61,7 +62,12 @@ enum PickyIPSCollector {
         for candidate in candidates {
             let sectionPrefix = "\n\n"
             let sectionHeader = "# \(candidate.url.lastPathComponent)\noriginalBytes=\(candidate.originalBytes)\n"
-            let headerBytes = sectionPrefix.lengthOfBytes(using: .utf8) + sectionHeader.lengthOfBytes(using: .utf8)
+            // Reserve enough space for the included-byte and truncation fields
+            // before reading the report body, so the aggregate cap is exact.
+            let metadataReservation = 64
+            let headerBytes = sectionPrefix.lengthOfBytes(using: .utf8)
+                + sectionHeader.lengthOfBytes(using: .utf8)
+                + metadataReservation
             guard remainingBytes > headerBytes else { break }
             let availableForText = min(maximumBytesPerFile, remainingBytes - headerBytes)
             let data = prefixData(
@@ -70,7 +76,7 @@ enum PickyIPSCollector {
                 fileManager: fileManager
             ) ?? Data()
             let text: String
-            if let decoded = String(data: data, encoding: .utf8) {
+            if let decoded = validUTF8Prefix(from: data) {
                 text = PickyDiagnosticTextRedactor.truncateUTF8(
                     PickyDiagnosticTextRedactor.redact(decoded),
                     maxBytes: availableForText,
@@ -84,9 +90,14 @@ enum PickyIPSCollector {
                 )
             }
             let includedBytes = text.lengthOfBytes(using: .utf8)
-            let truncated = UInt64(data.count) < candidate.originalBytes || includedBytes < Int(candidate.originalBytes)
-            excerpts += sectionPrefix + sectionHeader + "includedBytes=\(includedBytes)\ntruncated=\(truncated)\n\(text)"
-            remainingBytes -= headerBytes + includedBytes
+            let truncated = UInt64(data.count) < candidate.originalBytes
+                || UInt64(includedBytes) < candidate.originalBytes
+            let bodyMetadata = "includedBytes=\(includedBytes)\ntruncated=\(truncated)\n"
+            excerpts += sectionPrefix + sectionHeader + bodyMetadata + text
+            remainingBytes -= sectionPrefix.lengthOfBytes(using: .utf8)
+                + sectionHeader.lengthOfBytes(using: .utf8)
+                + bodyMetadata.lengthOfBytes(using: .utf8)
+                + includedBytes
             entries.append(ManifestEntry(
                 filename: candidate.url.lastPathComponent,
                 modifiedAt: candidate.modifiedAt,
@@ -125,7 +136,8 @@ enum PickyIPSCollector {
                   values.isSymbolicLink != true,
                   let modifiedAt = values.contentModificationDate,
                   modifiedAt >= cutoff,
-                  modifiedAt <= now else { return nil }
+                  modifiedAt <= now,
+                  hasPickyIdentityHeader(at: url, fileManager: fileManager) else { return nil }
             return Candidate(
                 url: url,
                 modifiedAt: modifiedAt,
@@ -140,11 +152,36 @@ enum PickyIPSCollector {
         .map { $0 }
     }
 
+    /// IPS reports start with a JSON header. Filename matching alone is not an
+    /// identity boundary: only reports emitted for this app and bundle qualify.
+    private static func hasPickyIdentityHeader(at url: URL, fileManager: FileManager) -> Bool {
+        guard let data = prefixData(from: url, maxBytes: maximumHeaderBytes, fileManager: fileManager),
+              let newline = data.firstIndex(of: 0x0A),
+              let header = String(data: data.prefix(upTo: newline), encoding: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: Data(header.utf8)),
+              let fields = object as? [String: Any],
+              fields["app_name"] as? String == "Picky",
+              fields["bundleID"] as? String == PickyLog.subsystem else { return false }
+        return true
+    }
+
     private static func prefixData(from url: URL, maxBytes: Int, fileManager: FileManager) -> Data? {
         guard maxBytes > 0, fileManager.fileExists(atPath: url.path),
               let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         return handle.readData(ofLength: maxBytes)
+    }
+
+    /// A bounded prefix of otherwise-valid UTF-8 can end partway through a
+    /// scalar. Discard only those trailing bytes, retaining preceding evidence.
+    private static func validUTF8Prefix(from data: Data) -> String? {
+        if let text = String(data: data, encoding: .utf8) { return text }
+        for bytesToDrop in 1...min(3, data.count) {
+            if let text = String(data: data.dropLast(bytesToDrop), encoding: .utf8) {
+                return text
+            }
+        }
+        return nil
     }
 
     private static func renderManifest(_ entries: [ManifestEntry]) -> String {

@@ -48,6 +48,51 @@ struct PickyOSLogCollectorTests {
         #expect(rendered.contains("<redacted>"))
     }
 
+    @Test func preferredLifecyclePIDFiltersPostRelaunchEntries() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let rendered = PickyOSLogCollector.collect(window: 600, now: now, preferredProcessID: 42) { _, _ in
+            [
+                PickyOSLogCollector.Entry(
+                    date: now.addingTimeInterval(-10),
+                    level: "E",
+                    subsystem: PickyLog.subsystem,
+                    processID: 42,
+                    message: "CRASHED-PROCESS-EVIDENCE"
+                ),
+                PickyOSLogCollector.Entry(
+                    date: now.addingTimeInterval(-1),
+                    level: "N",
+                    subsystem: PickyLog.subsystem,
+                    processID: 99,
+                    message: "POST-RELAUNCH-EVIDENCE"
+                )
+            ]
+        }
+
+        #expect(rendered.contains("processFilter=pid=42"))
+        #expect(rendered.contains("CRASHED-PROCESS-EVIDENCE"))
+        #expect(!rendered.contains("POST-RELAUNCH-EVIDENCE"))
+    }
+
+    @Test func boundedEntryPolicyKeepsNewestFixedWorkingSet() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let entries = (0..<(PickyOSLogCollector.maximumCollectedEntries + 3)).map { index in
+            PickyOSLogCollector.Entry(
+                date: now.addingTimeInterval(TimeInterval(index)),
+                level: "N",
+                subsystem: PickyLog.subsystem,
+                processID: 42,
+                message: "entry-\(index)"
+            )
+        }
+
+        let bounded = PickyOSLogCollector.boundedNewestEntries(from: entries)
+
+        #expect(bounded.count == PickyOSLogCollector.maximumCollectedEntries)
+        #expect(bounded.first?.message == "entry-3")
+        #expect(bounded.last?.message == "entry-\(PickyOSLogCollector.maximumCollectedEntries + 2)")
+    }
+
     @Test func rendererCapsOutputAndRetainsNewestPickyEntry() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let entries = (0..<100).map { index in

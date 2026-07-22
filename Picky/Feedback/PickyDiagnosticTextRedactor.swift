@@ -12,6 +12,10 @@ import Foundation
 
 enum PickyDiagnosticTextRedactor {
     private static let sensitiveAssignmentPatterns: [NSRegularExpression] = [
+        // JSON/IPS values with quoted keys, including a JSON string embedded in
+        // another log message (\"apiKey\":\"…\"). Redacting the complete pair
+        // avoids depending on the crash report's JSON escaping details.
+        try! NSRegularExpression(pattern: #"(?i)(?:\\?")(api[_-]?key|apikey|token|target_token|notifytoken|secret|password|authorization)(?:\\?")\s*:\s*(?:\\?")(?:\\.|[^"\\])*(?:\\?")"#),
         // key=value or key: value, including OSLog system fields like target_token / NotifyToken.
         try! NSRegularExpression(pattern: #"(?i)\b(api[_-]?key|apikey|token|target_token|notifytoken|secret|password|authorization)\s*[:=]\s*"?[^\s,"'}]+"?"#),
         // Authorization: Bearer ...

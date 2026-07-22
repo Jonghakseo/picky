@@ -215,7 +215,7 @@ enum PickyDiagnosticsBundleBuilder {
         fileManager: FileManager = .default,
         maxLogBytes: Int = defaultMaxLogBytes,
         maxWatchdogSampleBytes: Int = defaultMaxWatchdogSampleBytes,
-        oslogProvider: () -> String = { PickyOSLogCollector.collectPreviousProcess() },
+        oslogProvider: (() -> String)? = nil,
         portOccupancyProvider: ([Int]) -> String = { PickyPortOccupancyCollector.collect(ports: $0) },
         ipsReportsRoot: URL? = nil,
         diagnosticsNow: Date = Date()
@@ -267,7 +267,7 @@ enum PickyDiagnosticsBundleBuilder {
         fileManager: FileManager,
         maxLogBytes: Int,
         maxWatchdogSampleBytes: Int,
-        oslogProvider: () -> String,
+        oslogProvider: (() -> String)?,
         portOccupancyProvider: ([Int]) -> String,
         ipsReportsRoot: URL,
         diagnosticsNow: Date
@@ -331,8 +331,12 @@ enum PickyDiagnosticsBundleBuilder {
         try? lifecycleEvents.write(to: lifecycleEventsPath, atomically: true, encoding: .utf8)
 
         let oslogPath = stagingRoot.appendingPathComponent("picky-oslog.txt")
+        let previousProcessID = PickyLifecycleDiagnosticsStore.previousProcessID(from: logsDir)
+        let collectedOSLog = oslogProvider?() ?? PickyOSLogCollector.collectPreviousProcess(
+            preferredProcessID: previousProcessID
+        )
         let oslogText = PickyDiagnosticTextRedactor.truncateUTF8(
-            PickyDiagnosticTextRedactor.redact(oslogProvider()),
+            PickyDiagnosticTextRedactor.redact(collectedOSLog),
             maxBytes: maximumPreviousProcessOSLogBytes,
             keepingNewest: true
         )

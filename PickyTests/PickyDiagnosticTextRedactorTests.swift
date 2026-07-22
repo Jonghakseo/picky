@@ -27,6 +27,19 @@ struct PickyDiagnosticTextRedactorTests {
         #expect(!redacted.contains("sk-abcdefghijkl"))
     }
 
+    @Test func redactsQuotedAndEscapedJSONSecretPairsWithoutRemovingCrashContext() {
+        let text = #"{"incident":"useful-crash-id","apiKey":"super-secret","nested":{"password":"hunter2","token":"abc123"},"authorization":"Bearer private"} escaped=\"apiKey\":\"escaped-secret\""#
+        let redacted = PickyDiagnosticTextRedactor.redact(text)
+
+        #expect(!redacted.contains("super-secret"))
+        #expect(!redacted.contains("hunter2"))
+        #expect(!redacted.contains("abc123"))
+        #expect(!redacted.contains("private"))
+        #expect(!redacted.contains("escaped-secret"))
+        #expect(redacted.contains("useful-crash-id"))
+        #expect(redacted.contains("<redacted>"))
+    }
+
     @Test func leavesOrdinaryText() {
         let text = "normal log line with tool=bash status=running"
         #expect(PickyDiagnosticTextRedactor.redact(text) == text)

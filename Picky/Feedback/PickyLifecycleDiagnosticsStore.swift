@@ -37,6 +37,9 @@ struct PickyLifecycleDiagnosticsSnapshot: Codable, Equatable, Sendable {
 final class PickyLifecycleDiagnosticsStore {
     static let filename = "picky-lifecycle.json"
     static let schemaVersion = 1
+    static let maximumRunIDBytes = 128
+    static let maximumVersionScalarBytes = 256
+    static let maximumPersistedSnapshotBytes = 4 * 1024
 
     private let logsDirectory: URL
     private let fileManager: FileManager
@@ -68,14 +71,14 @@ final class PickyLifecycleDiagnosticsStore {
     @discardableResult
     func recordLaunch(appVersion: String, appBuild: String) -> PickyLifecycleDiagnosticsSnapshot? {
         let previous = readSnapshot()?.current
-        let runID = makeRunID()
+        let runID = Self.sanitizedScalar(makeRunID(), maxBytes: Self.maximumRunIDBytes)
         let snapshot = PickyLifecycleDiagnosticsSnapshot(
             schemaVersion: Self.schemaVersion,
             current: PickyLifecycleRun(
                 runID: runID,
                 processID: processID(),
-                appVersion: appVersion,
-                appBuild: appBuild,
+                appVersion: Self.sanitizedScalar(appVersion, maxBytes: Self.maximumVersionScalarBytes),
+                appBuild: Self.sanitizedScalar(appBuild, maxBytes: Self.maximumVersionScalarBytes),
                 launchedAt: now(),
                 cleanExit: false,
                 exitedAt: nil,
@@ -104,6 +107,15 @@ final class PickyLifecycleDiagnosticsStore {
         return write(snapshot) ? snapshot : nil
     }
 
+    static func previousProcessID(from logsDirectory: URL) -> Int32? {
+        let url = logsDirectory.appendingPathComponent(filename)
+        guard let data = try? Data(contentsOf: url),
+              let snapshot = try? JSONDecoder.diagnosticsDecoder.decode(PickyLifecycleDiagnosticsSnapshot.self, from: data) else {
+            return nil
+        }
+        return snapshot.previous?.processID
+    }
+
     static func boundedSnapshotText(
         from logsDirectory: URL,
         maxBytes: Int,
@@ -128,10 +140,19 @@ final class PickyLifecycleDiagnosticsStore {
         return try? JSONDecoder.diagnosticsDecoder.decode(PickyLifecycleDiagnosticsSnapshot.self, from: data)
     }
 
+    private static func sanitizedScalar(_ value: String, maxBytes: Int) -> String {
+        PickyDiagnosticTextRedactor.truncateUTF8(
+            PickyDiagnosticTextRedactor.redact(value),
+            maxBytes: maxBytes,
+            keepingNewest: false
+        )
+    }
+
     private func write(_ snapshot: PickyLifecycleDiagnosticsSnapshot) -> Bool {
         do {
             try fileManager.createDirectory(at: logsDirectory, withIntermediateDirectories: true)
             let data = try JSONEncoder.diagnosticsEncoder.encode(snapshot)
+            guard data.count <= Self.maximumPersistedSnapshotBytes else { return false }
             try data.write(to: snapshotURL, options: .atomic)
             return true
         } catch {

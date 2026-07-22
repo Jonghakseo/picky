@@ -283,7 +283,7 @@ Number shortcuts (`Cmd + 1`…`9`) apply to the first 9 visible dock slots, top 
 Click the `+` slot in the dock to open the **Recent folders** popover:
 
 - Pick a pinned or recent working folder to start an empty Pickle there immediately.
-- Use the pin button on a recent folder to keep it at the top of the list. Pinned folders stay visible ahead of recents and are not removed by the recent-folder cap.
+- Use the pin button on a recent folder to keep it at the top of the list. Pinned folders stay visible ahead of recents and are not removed by the recent-folder cap. Drag a pinned folder by its grip to change the pinned order.
 - Use the unpin button to move a pinned folder back into the regular recent list, or the remove button to hide an unpinned recent folder.
 - **Choose Folder…** opens the macOS folder picker for any other folder.
 - **New Group…** creates a dock group instead of a Pickle (see §7.4).

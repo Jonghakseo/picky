@@ -22,15 +22,17 @@ enum QuickInputPanelLayout {
     /// The card intentionally recedes into the desktop until the user scrolls.
     /// These component-level surface opacities preserve that hierarchy without
     /// changing transcript text contrast or the shared surface token.
-    static let historyLightweightSurfaceTopOpacity: Double = 0.35
+    static let historyLightweightTopFadeOpacity: Double = 0.35
     static let historySolidSurfaceOpacity: Double = 0.96
-    static let historyLightweightSurfaceBottomOpacity: Double = historySolidSurfaceOpacity
+    /// Surface tint layered over the blur material: airy at the top so the
+    /// desktop shows through, denser toward the pill for grounding.
+    static let historyLightweightTintTopOpacity: Double = 0.15
+    static let historyLightweightTintBottomOpacity: Double = 0.7
     static let historyLightweightBorderTopOpacity: Double = 0.18
     static let historyLightweightBorderBottomOpacity: Double = 0.55
     static let historyLightweightMainShadowOpacity: Double = 0.04
     static let historyLightweightTightShadowOpacity: Double = 0.02
     static let historyBackgroundTransitionDuration: Double = 0.15
-    static let historyAnchorSettlingDuration: Double = 0.1
     static let mainShadowOpacity: Double = 0.08
     static let mainShadowRadius: CGFloat = 4
     static let mainShadowYOffset: CGFloat = 2
@@ -56,6 +58,9 @@ final class QuickInputPanelViewModel: ObservableObject {
     /// Includes the card chrome and is reduced by the manager when the cursor
     /// has limited space above it on the active display.
     @Published var historyCardHeightLimit: CGFloat = QuickInputHistoryPolicy.defaultCardHeight
+    /// Lightweight until the user scrolls the history, then solid until the
+    /// next presentation (predictable, no fade-back).
+    @Published private(set) var historyBackgroundMode: QuickInputHistoryBackgroundMode = .lightweight
 
     var onSubmit: (String) -> Void = { _ in }
     var onClose: () -> Void = {}
@@ -75,6 +80,14 @@ final class QuickInputPanelViewModel: ObservableObject {
 
     func beginPresentation() {
         presentationID &+= 1
+        historyBackgroundMode.resetForPresentation()
+    }
+
+    /// Driven by the panel manager's scroll-wheel monitor so only genuine user
+    /// scrolls (never the programmatic anchor scroll) solidify the card.
+    func markHistoryUserScroll() {
+        guard historyBackgroundMode == .lightweight else { return }
+        historyBackgroundMode.recordUserScroll()
     }
 }
 
@@ -195,9 +208,6 @@ private struct QuickInputHistoryCard: View {
     @ObservedObject var viewModel: QuickInputPanelViewModel
     @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
     @State private var trailingTurnHeight: CGFloat = 0
-    @State private var backgroundMode: QuickInputHistoryBackgroundMode = .lightweight
-    @State private var isApplyingAnchorScroll = true
-    @State private var anchorScrollRequestID = 0
     /// Starts true so the initial scroll-to-last-turn presentation immediately
     /// shows the top fade when prior messages exist; the scroll offset
     /// preference clears it once the user reaches the transcript's actual top.
@@ -213,12 +223,12 @@ private struct QuickInputHistoryCard: View {
         hasEarlierMessages && hasContentAboveViewport
     }
     private var effectiveBackgroundMode: QuickInputHistoryBackgroundMode {
-        accessibilityReduceTransparency ? .solid : backgroundMode
+        accessibilityReduceTransparency ? .solid : viewModel.historyBackgroundMode
     }
     private var topFadeSurfaceOpacity: Double {
         effectiveBackgroundMode == .solid
             ? QuickInputPanelLayout.historySolidSurfaceOpacity
-            : QuickInputPanelLayout.historyLightweightSurfaceTopOpacity
+            : QuickInputPanelLayout.historyLightweightTopFadeOpacity
     }
     private var bottomFadeSurfaceOpacity: Double {
         QuickInputPanelLayout.historySolidSurfaceOpacity
@@ -336,7 +346,6 @@ private struct QuickInputHistoryCard: View {
             .onChange(of: viewModel.presentationID) { _ in
                 hasContentAboveViewport = true
                 hasContentBelowViewport = false
-                resetBackgroundForPresentation()
                 scrollToAnchor(proxy)
             }
             .onChange(of: viewModel.recentMessages.last?.id) { _ in
@@ -346,7 +355,6 @@ private struct QuickInputHistoryCard: View {
             }
             .onPreferenceChange(QuickInputHistoryScrollOffsetKey.self) { offset in
                 updateContentAboveViewport(offset)
-                recordUserScrollIfNeeded()
             }
             .onPreferenceChange(QuickInputHistoryContentBottomKey.self) { bottom in
                 updateContentBelowViewport(bottom)
@@ -384,38 +392,13 @@ private struct QuickInputHistoryCard: View {
         }
     }
 
-    private func recordUserScrollIfNeeded() {
-        // Offset changes from scroll wheels, trackpads, and scrollbars all flow
-        // through this preference. Anchor positioning is explicitly gated so
-        // the initial programmatic scroll cannot make the card solid.
-        guard !isApplyingAnchorScroll, backgroundMode == .lightweight else { return }
-        backgroundMode.recordUserScroll()
-    }
-
-    private func resetBackgroundForPresentation() {
-        var transaction = Transaction()
-        transaction.animation = nil
-        withTransaction(transaction) {
-            backgroundMode.resetForPresentation()
-        }
-    }
-
     private func scrollToAnchor(_ proxy: ScrollViewProxy) {
         guard let anchorMessageID else { return }
-        isApplyingAnchorScroll = true
-        anchorScrollRequestID &+= 1
-        let requestID = anchorScrollRequestID
         // Let the revised transcript finish laying out before resolving the
         // anchor. This keeps a freshly appended turn at its prompt rather than
         // at the previous content height.
         DispatchQueue.main.async {
             proxy.scrollTo(anchorMessageID, anchor: .top)
-            DispatchQueue.main.asyncAfter(
-                deadline: .now() + QuickInputPanelLayout.historyAnchorSettlingDuration
-            ) {
-                guard anchorScrollRequestID == requestID else { return }
-                isApplyingAnchorScroll = false
-            }
         }
     }
 }
@@ -443,15 +426,20 @@ private struct QuickInputHistoryCardBackground: View {
     }
 
     private var lightweightSurface: some View {
-        shape
-            .fill(
-                LinearGradient(
-                    colors: [
-                        DS.Colors.surface1.opacity(QuickInputPanelLayout.historyLightweightSurfaceTopOpacity),
-                        DS.Colors.surface1.opacity(QuickInputPanelLayout.historyLightweightSurfaceBottomOpacity)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
+        PickyHUDMaterialFill(
+            shape: shape,
+            fallback: DS.Colors.surface1.opacity(QuickInputPanelLayout.historySolidSurfaceOpacity)
+        )
+            .overlay(
+                shape.fill(
+                    LinearGradient(
+                        colors: [
+                            DS.Colors.surface1.opacity(QuickInputPanelLayout.historyLightweightTintTopOpacity),
+                            DS.Colors.surface1.opacity(QuickInputPanelLayout.historyLightweightTintBottomOpacity)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
                 )
             )
             .overlay(

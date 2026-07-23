@@ -33,6 +33,7 @@ final class QuickInputPanelManager {
     private let panelWidth: CGFloat = QuickInputPanelLayout.panelWidth
 
     private let viewModel = QuickInputPanelViewModel()
+    private var scrollWheelMonitor: Any?
     private let appearanceStore: PickyAppearanceStore
     private let fontScaleStore: PickyAppFontScaleStore
     private var panel: QuickInputKeyablePanel?
@@ -97,6 +98,7 @@ final class QuickInputPanelManager {
         panel?.makeKeyAndOrderFront(nil)
         panel?.orderFrontRegardless()
         viewModel.beginPresentation()
+        installScrollWheelMonitorIfNeeded()
         onVisibilityChange(true)
     }
 
@@ -105,8 +107,30 @@ final class QuickInputPanelManager {
         viewModel.draftText = ""
         viewModel.errorMessage = nil
         viewModel.isSending = false
+        removeScrollWheelMonitor()
         panel?.orderOut(nil)
         onVisibilityChange(false)
+    }
+
+    /// Solidifies the history card on genuine user scrolls. Scroll-wheel and
+    /// trackpad events over the panel are observed here because programmatic
+    /// `scrollTo` never produces `NSEvent`s, which cleanly separates the
+    /// initial anchor scroll from user intent.
+    private func installScrollWheelMonitorIfNeeded() {
+        guard scrollWheelMonitor == nil else { return }
+        scrollWheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            MainActor.assumeIsolated {
+                guard let self, let panel = self.panel, event.window === panel else { return }
+                self.viewModel.markHistoryUserScroll()
+            }
+            return event
+        }
+    }
+
+    private func removeScrollWheelMonitor() {
+        guard let scrollWheelMonitor else { return }
+        NSEvent.removeMonitor(scrollWheelMonitor)
+        self.scrollWheelMonitor = nil
     }
 
     /// Pushes the main-agent transcript into the panel. It is intentionally a

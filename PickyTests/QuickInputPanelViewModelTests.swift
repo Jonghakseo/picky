@@ -37,6 +37,21 @@ struct QuickInputPanelViewModelTests {
     }
 
     @Test
+    func historyBackgroundSolidifiesOnUserScrollAndResetsOnPresentation() {
+        let viewModel = QuickInputPanelViewModel()
+        #expect(viewModel.historyBackgroundMode == .lightweight)
+
+        viewModel.markHistoryUserScroll()
+        #expect(viewModel.historyBackgroundMode == .solid)
+
+        viewModel.markHistoryUserScroll()
+        #expect(viewModel.historyBackgroundMode == .solid)
+
+        viewModel.beginPresentation()
+        #expect(viewModel.historyBackgroundMode == .lightweight)
+    }
+
+    @Test
     func managerRemainsLogicallyVisibleWhileAnOptimisticSubmissionIsInFlight() {
         let manager = QuickInputPanelManager()
 

@@ -591,6 +591,10 @@ export class SessionSupervisor extends EventEmitter {
     return [...this.mainState.messages];
   }
 
+  mainPendingExtensionUi(): PickyExtensionUiRequest | undefined {
+    return this.mainPendingExtensionUiRequest;
+  }
+
   /// Public snapshot of the always-on Picky main agent's Pi session location.
   /// The Picky app uses this to expose "Open in Pi" / "Copy resume command"
   /// escape hatches in the Messages tab so users can drop into a real Pi TUI
@@ -902,11 +906,15 @@ export class SessionSupervisor extends EventEmitter {
     this.mainPendingCompactionContexts = [];
   }
 
-  private clearMainActivity(): void {
+  private discardQueuedMainThinkingActivity(): void {
     if (this.mainThinkingTimer) clearTimeout(this.mainThinkingTimer);
     this.mainThinkingTimer = undefined;
     this.mainThinkingBuffer = "";
     this.mainThinkingLastEmittedAt = undefined;
+  }
+
+  private clearMainActivity(): void {
+    this.discardQueuedMainThinkingActivity();
     if (!this.mainActivityVisible) return;
     this.mainActivityVisible = false;
     this.emit("mainActivity", undefined);
@@ -1645,6 +1653,9 @@ export class SessionSupervisor extends EventEmitter {
       return;
     }
     if (event.type === "tool") {
+      // A queued thinking update must not replace the more actionable tool
+      // activity after its throttle window expires.
+      this.discardQueuedMainThinkingActivity();
       this.mainActivityVisible = true;
       this.emit("mainActivity", {
         kind: "tool",

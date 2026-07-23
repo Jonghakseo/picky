@@ -67,6 +67,20 @@ struct PickyMainQuestionPanelPolicyTests {
         #expect(PickyMainQuestionPanelPolicy.shouldPresent(request: request()))
     }
 
+    @Test
+    func answerRejectionKeepsThePendingQuestionVisible() {
+        let rejection = PickyErrorEvent(code: "bad_message", message: "Unknown extension UI request", commandId: "answer-1")
+
+        #expect(!PickyMainQuestionPanelPolicy.shouldClearPendingQuestion(after: rejection))
+        #expect(PickyMainQuestionPanelPolicy.shouldClearPendingQuestion(after: nil))
+    }
+
+    @Test
+    func panelHeightIsCappedToTheVisibleScreen() {
+        #expect(PickyMainQuestionPanelLayout.cappedHeight(fittingHeight: 900, visibleScreenHeight: 800) == 560)
+        #expect(PickyMainQuestionPanelLayout.cappedHeight(fittingHeight: 300, visibleScreenHeight: 800) == PickyMainQuestionPanelLayout.estimatedPanelHeight)
+    }
+
     private func request() -> PickyExtensionUiRequest {
         PickyExtensionUiRequest(
             id: "main-question",

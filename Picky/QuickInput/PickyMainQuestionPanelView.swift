@@ -53,14 +53,17 @@ struct PickyMainQuestionPanelView: View {
         VStack(alignment: .leading, spacing: DS.Spacing.md) {
             if let request {
                 header(for: request)
-                if let description = request.description, !description.isEmpty {
-                    ScrollView {
-                        markdownText(description, color: DS.Colors.textSecondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                ScrollView(.vertical, showsIndicators: true) {
+                    VStack(alignment: .leading, spacing: DS.Spacing.md) {
+                        if let description = request.description, !description.isEmpty {
+                            markdownText(description, color: DS.Colors.textSecondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        questionControls
                     }
-                    .frame(maxHeight: 120)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                questionControls
+                .frame(maxHeight: .infinity, alignment: .top)
                 footer
             }
         }

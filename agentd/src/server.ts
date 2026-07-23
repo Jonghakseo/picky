@@ -441,6 +441,10 @@ export class AgentdServer {
         ...(initialMainInfo.cwd ? { cwd: initialMainInfo.cwd } : {}),
       });
     }
+    const pendingMainExtensionUi = this.options.supervisor.mainPendingExtensionUi();
+    if (pendingMainExtensionUi) {
+      this.send(ws, { type: "mainExtensionUiRequested", request: pendingMainExtensionUi });
+    }
   }
 
   private async handleMessage(ws: WebSocket, raw: string): Promise<void> {

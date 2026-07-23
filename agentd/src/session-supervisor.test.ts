@@ -3933,6 +3933,30 @@ describe("SessionSupervisor", () => {
     }
   });
 
+  it("does not emit queued thinking after main tool activity begins", async () => {
+    vi.useFakeTimers();
+    try {
+      const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-activity-tool-over-thinking-"));
+      const mainRuntime = new ManualRuntime();
+      const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
+      const activities: Array<Record<string, unknown> | undefined> = [];
+      supervisor.on("mainActivity", (activity) => activities.push(activity));
+
+      await supervisor.route(context("inspect the overlay"));
+      mainRuntime.handle?.emit({ type: "thinking_delta", delta: "first thought" });
+      mainRuntime.handle?.emit({ type: "thinking_delta", delta: "more thought" });
+      mainRuntime.handle?.emit({ type: "tool", toolCallId: "tool-main-1", name: "read", status: "running" });
+      await vi.advanceTimersByTimeAsync(400);
+
+      expect(activities).toEqual([
+        { kind: "thinking", thinkingPreview: "first thought" },
+        { kind: "tool", toolCallId: "tool-main-1", toolName: "read", status: "running", argsPreview: undefined },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("routes main extension UI requests to the main handle and cancels them for new input or abort", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-extension-ui-"));
     const mainRuntime = new ManualRuntime();

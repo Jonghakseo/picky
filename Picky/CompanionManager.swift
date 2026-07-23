@@ -330,6 +330,10 @@ final class CompanionManager: ObservableObject {
     private var shortcutTransitionCancellable: AnyCancellable?
     private var quickInputDoubleTapCancellable: AnyCancellable?
     private var mainQuestionPanelCancellable: AnyCancellable?
+    /// Command ids currently awaiting an answer rejection from agentd. Their
+    /// correlated error events keep the question panel open instead of taking
+    /// the global connection-loss cleanup path.
+    private var pendingMainQuestionAnswerCommandIDs = Set<String>()
     private var screenContextTargetCancellable: AnyCancellable?
     private var shortcutCaptureObserver: NSObjectProtocol?
     /// Tracks how many `ShortcutCaptureRecorder` instances are currently in
@@ -1019,12 +1023,18 @@ final class CompanionManager: ObservableObject {
     private func wireMainQuestionPanel() {
         mainQuestionPanelManager.onAnswer = { [weak self] requestID, value in
             guard let self else { return PickyAgentClientError.disconnected }
+            let command = PickyCommandEnvelope(
+                type: .answerMainExtensionUi,
+                requestId: requestID,
+                value: value
+            )
+            self.pendingMainQuestionAnswerCommandIDs.insert(command.id)
+            defer { self.pendingMainQuestionAnswerCommandIDs.remove(command.id) }
             do {
-                try await self.agentClient.send(PickyCommandEnvelope(
-                    type: .answerMainExtensionUi,
-                    requestId: requestID,
-                    value: value
-                ))
+                let answerError = try await self.agentClient.sendAwaitingError(command, timeout: 1.0)
+                guard PickyMainQuestionPanelPolicy.shouldClearPendingQuestion(after: answerError) else {
+                    return PickyMainQuestionPanelAnswerError(message: answerError?.message ?? "Failed to answer question")
+                }
                 if self.mainPendingQuestion?.id == requestID {
                     self.mainPendingQuestion = nil
                 }
@@ -2209,6 +2219,10 @@ final class CompanionManager: ObservableObject {
         case .annotationOverlayRequested(let request):
             applyAnnotationOverlayRequest(request)
         case .error(let error):
+            if let commandID = error.commandId,
+               pendingMainQuestionAnswerCommandIDs.contains(commandID) {
+                break
+            }
             finishAwaitingAgentResponse(visibleText: error.message, spokenText: nil)
             clearInteractionStateForConnectionLoss()
         case .hello, .sessionSnapshot, .artifactUpdated, .slashCommandsSnapshot,

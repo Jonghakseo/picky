@@ -6,7 +6,7 @@ import { Readable } from "node:stream";
 import WebSocket from "ws";
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PROTOCOL_VERSION, parseCommand, type EventEnvelope, type PickyAgentSession, type PickyContextPacket } from "./protocol.js";
+import { PROTOCOL_VERSION, parseCommand, type EventEnvelope, type PickyAgentSession, type PickyContextPacket, type PickyExtensionUiRequest } from "./protocol.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import { AgentdServer, commandLogFields, compactSessionsForSnapshot, createDefaultPackageManager, sanitizeForJson } from "./server.js";
 import { EdgeTTSService, type EdgeTTSClient } from "./edge-tts-service.js";
@@ -222,6 +222,30 @@ describe("AgentdServer", () => {
     const snapshot = await nextEvent(ws);
     expect(snapshot.type).toBe("mainMessagesSnapshot");
     if (snapshot.type === "mainMessagesSnapshot") expect(snapshot.messages).toEqual([]);
+    ws.close();
+  });
+
+  it("resends a pending main extension UI request to a newly connected client", async () => {
+    const pendingRequest = {
+      id: "main-ui-pending",
+      sessionId: "picky-main",
+      method: "askUserQuestion",
+      title: "Continue?",
+      questions: [],
+      createdAt: "2026-05-01T00:00:00.000Z",
+    } satisfies PickyExtensionUiRequest;
+    vi.spyOn(supervisor, "mainPendingExtensionUi").mockReturnValue(pendingRequest);
+
+    const received: EventEnvelope[] = [];
+    const ws = new WebSocket(`ws://127.0.0.1:${port}?token=test-token`);
+    ws.on("message", (data) => received.push(JSON.parse(data.toString()) as EventEnvelope));
+    await once(ws, "open");
+    await waitUntil(() => received.some((event) => event.type === "mainExtensionUiRequested"));
+
+    expect(received).toContainEqual(expect.objectContaining({
+      type: "mainExtensionUiRequested",
+      request: expect.objectContaining({ id: "main-ui-pending", method: "askUserQuestion" }),
+    }));
     ws.close();
   });
 

@@ -14,6 +14,16 @@ enum PickyMainQuestionPanelPolicy {
     static func shouldPresent(request: PickyExtensionUiRequest?) -> Bool {
         request != nil
     }
+
+    static func shouldClearPendingQuestion(after answerError: PickyErrorEvent?) -> Bool {
+        answerError == nil
+    }
+}
+
+struct PickyMainQuestionPanelAnswerError: LocalizedError {
+    let message: String
+
+    var errorDescription: String? { message }
 }
 
 private final class PickyMainQuestionKeyablePanel: PickySecureSurfacePanel, PickyScreenCaptureExcludedWindow {
@@ -38,6 +48,13 @@ enum PickyMainQuestionPanelLayout {
     static let estimatedPanelHeight: CGFloat = 360
     static let cursorOffsetX: CGFloat = 18
     static let cursorOffsetY: CGFloat = 12
+    static let maximumScreenHeightFraction: CGFloat = 0.7
+
+    static func cappedHeight(fittingHeight: CGFloat, visibleScreenHeight: CGFloat?) -> CGFloat {
+        let desiredHeight = max(fittingHeight, estimatedPanelHeight)
+        guard let visibleScreenHeight else { return desiredHeight }
+        return min(desiredHeight, visibleScreenHeight * maximumScreenHeightFraction)
+    }
 }
 
 @MainActor
@@ -131,16 +148,20 @@ final class PickyMainQuestionPanelManager {
 
     private func positionPanelNearCursor(_ cursorLocation: CGPoint) {
         guard let panel else { return }
+        let screen = NSScreen.screens.first(where: { $0.frame.contains(cursorLocation) }) ?? NSScreen.main
         let fittingSize = panel.contentView?.fittingSize
             ?? CGSize(width: PickyMainQuestionPanelLayout.panelWidth, height: PickyMainQuestionPanelLayout.estimatedPanelHeight)
         let panelSize = CGSize(
             width: PickyMainQuestionPanelLayout.panelWidth,
-            height: max(fittingSize.height, PickyMainQuestionPanelLayout.estimatedPanelHeight)
+            height: PickyMainQuestionPanelLayout.cappedHeight(
+                fittingHeight: fittingSize.height,
+                visibleScreenHeight: screen?.visibleFrame.height
+            )
         )
         var originX = cursorLocation.x + PickyMainQuestionPanelLayout.cursorOffsetX - PickyMainQuestionPanelLayout.shadowOutset
         var originY = cursorLocation.y - PickyMainQuestionPanelLayout.cursorOffsetY - (panelSize.height - PickyMainQuestionPanelLayout.shadowOutset)
 
-        if let screen = NSScreen.screens.first(where: { $0.frame.contains(cursorLocation) }) ?? NSScreen.main {
+        if let screen {
             let visibleFrame = screen.visibleFrame
             if originX + panelSize.width > visibleFrame.maxX {
                 originX = cursorLocation.x - PickyMainQuestionPanelLayout.cursorOffsetX - panelSize.width + PickyMainQuestionPanelLayout.shadowOutset

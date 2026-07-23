@@ -17,8 +17,8 @@ enum QuickInputPanelLayout {
     static let historyPillSpacing: CGFloat = 6
     /// Component-level optical fades: shallow enough to leave the anchored
     /// prompt legible while still indicating additional scrollable content.
-    static let historyTopFadeHeight: CGFloat = 14
-    static let historyTopFadeSurfaceOpacity: Double = 0.7
+    static let historyTopFadeHeight: CGFloat = 18
+    static let historyTopFadeSurfaceOpacity: Double = 0.9
     static let historyBottomFadeHeight: CGFloat = 24
     static let mainShadowOpacity: Double = 0.08
     static let mainShadowRadius: CGFloat = 4
@@ -274,8 +274,6 @@ private struct QuickInputHistoryCard: View {
             }
             .coordinateSpace(name: scrollCoordinateSpaceName)
             .frame(height: scrollHeight)
-            .padding(.vertical, 10)
-            .accessibilityLabel("Recent conversation")
             .overlay(alignment: .top) {
                 if showsTopFade {
                     LinearGradient(
@@ -301,6 +299,8 @@ private struct QuickInputHistoryCard: View {
                     .allowsHitTesting(false)
                 }
             }
+            .padding(.vertical, 10)
+            .accessibilityLabel("Recent conversation")
             .background(
                 RoundedRectangle(cornerRadius: DS.CornerRadius.panel, style: .continuous)
                     .fill(DS.Colors.surface1.opacity(0.96))

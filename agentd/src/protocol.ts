@@ -388,6 +388,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
     type: z.literal("completePickleBridgeRequest"),
     requestId: z.string().min(1),
     sessions: z.array(PickyAgentSessionSchema).optional(),
+    groups: z.array(DockGroupSchema).optional(),
     session: PickyAgentSessionSchema.optional(),
     delivered: z.boolean().optional(),
     errorMessage: z.string().min(1).optional(),

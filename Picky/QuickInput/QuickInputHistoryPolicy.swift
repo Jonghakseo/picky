@@ -16,9 +16,6 @@ enum QuickInputHistoryPolicy {
     /// One user turn + roughly three assistant text lines; kept intentionally
     /// compact so the card reads as a peek, not a chat window.
     static let defaultCardHeight: CGFloat = 123
-    /// Once the user scrolls (solid mode) the card doubles into a browsing
-    /// surface, still clamped by screen fraction and space above the pill.
-    static let solidCardHeight: CGFloat = defaultCardHeight * 2
     /// The history card must never claim more than this fraction of a screen.
     static let maximumScreenHeightFraction: CGFloat = 0.45
     /// Fixed top and bottom padding around the scroll viewport.
@@ -61,12 +58,11 @@ enum QuickInputHistoryPolicy {
     /// the default four-line presentation on normal displays.
     static func cardHeightLimit(
         visibleScreenHeight: CGFloat?,
-        spaceAbovePill: CGFloat?,
-        baseHeight: CGFloat = defaultCardHeight
+        spaceAbovePill: CGFloat?
     ) -> CGFloat {
-        let screenCap = visibleScreenHeight.map { $0 * maximumScreenHeightFraction } ?? baseHeight
-        let availableSpace = spaceAbovePill ?? baseHeight
-        return max(0, min(baseHeight, screenCap, availableSpace))
+        let screenCap = visibleScreenHeight.map { $0 * maximumScreenHeightFraction } ?? defaultCardHeight
+        let availableSpace = spaceAbovePill ?? defaultCardHeight
+        return max(0, min(defaultCardHeight, screenCap, availableSpace))
     }
 
     /// Reserves fixed card chrome before giving the scroll view its height cap,

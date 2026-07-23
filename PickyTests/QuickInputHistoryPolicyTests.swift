@@ -64,16 +64,6 @@ struct QuickInputHistoryPolicyTests {
             visibleScreenHeight: 240,
             spaceAbovePill: 200
         ) == 108)
-        #expect(QuickInputHistoryPolicy.cardHeightLimit(
-            visibleScreenHeight: nil,
-            spaceAbovePill: nil,
-            baseHeight: QuickInputHistoryPolicy.solidCardHeight
-        ) == QuickInputHistoryPolicy.solidCardHeight)
-        #expect(QuickInputHistoryPolicy.cardHeightLimit(
-            visibleScreenHeight: 800,
-            spaceAbovePill: 150,
-            baseHeight: QuickInputHistoryPolicy.solidCardHeight
-        ) == 150)
     }
 
     @Test

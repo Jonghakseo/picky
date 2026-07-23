@@ -30,6 +30,10 @@ final class PickyMainCancelPillPanelManager {
     private var escapeResetTask: Task<Void, Never>?
     private var cancelledDismissTask: Task<Void, Never>?
     private var cancellationAttemptID: UUID?
+    /// Invalidates an in-flight fade-out when the pill is re-presented before
+    /// the animation completes, so the completion handler cannot hide a panel
+    /// that should be visible again.
+    private var dismissGeneration = 0
 
     var onCancel: () async -> Bool = { false }
 
@@ -74,13 +78,33 @@ final class PickyMainCancelPillPanelManager {
         cancelledDismissTask?.cancel()
         cancelledDismissTask = nil
         cancellationAttemptID = nil
-        viewModel.state = .rest
-        panel?.orderOut(nil)
+        dismissGeneration += 1
+        let generation = dismissGeneration
+        guard let panel, panel.isVisible else {
+            viewModel.state = .rest
+            panel?.orderOut(nil)
+            return
+        }
+        // Fade out (keeps the current label — e.g. “Stopped” — visible during
+        // the transition), then reset for the next presentation.
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.25
+            panel.animator().alphaValue = 0
+        }, completionHandler: { [weak self, weak panel] in
+            Task { @MainActor [weak self, weak panel] in
+                guard let self, self.dismissGeneration == generation else { return }
+                panel?.orderOut(nil)
+                panel?.alphaValue = 1
+                self.viewModel.state = .rest
+            }
+        })
     }
 
     private func present() {
+        dismissGeneration += 1
         if panel == nil { createPanel() }
         positionPanelOnCursorScreen()
+        panel?.alphaValue = 1
         panel?.orderFrontRegardless()
     }
 

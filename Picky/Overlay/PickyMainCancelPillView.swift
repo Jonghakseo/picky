@@ -20,7 +20,17 @@ struct PickyMainCancelPillView: View {
                 pillLabel
                     .padding(.horizontal, 13)
                     .frame(minHeight: 30)
-                    .background(Capsule(style: .continuous).fill(backgroundColor))
+                    .background(
+                        // Dark base under the blue tint so the pill stays
+                        // legible over bright desktops (mirrors the capture
+                        // context pill's opaque dark capsule).
+                        ZStack {
+                            Capsule(style: .continuous)
+                                .fill(Color(hex: "#0A1423").opacity(0.72))
+                            Capsule(style: .continuous)
+                                .fill(tintColor)
+                        }
+                    )
                     .overlay(
                         Capsule(style: .continuous)
                             .stroke(borderColor, lineWidth: 0.8)
@@ -38,6 +48,9 @@ struct PickyMainCancelPillView: View {
             }
         }
         .fixedSize()
+        // Top-aligned within the fixed panel so the pill row does not jump
+        // vertically when the caption appears/disappears across states.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(reduceMotion ? nil : .easeOut(duration: DS.Animation.fast), value: state)
     }
 
@@ -46,34 +59,42 @@ struct PickyMainCancelPillView: View {
         switch state {
         case .rest:
             HStack(spacing: 7) {
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(.white)
-                    .frame(width: 8, height: 8)
+                stopIcon(.white)
                 Text(L10n.t("overlay.mainCancel.stop"))
             }
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(.white)
         case .hover:
-            Text(L10n.t("overlay.mainCancel.clickToStop"))
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white)
+            HStack(spacing: 7) {
+                stopIcon(.white)
+                Text(L10n.t("overlay.mainCancel.clickToStop"))
+            }
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.white)
         case .escapeArmed:
-            HStack(spacing: 5) {
-                keycap
-                Text(L10n.t("overlay.mainCancel.escapeArmed"))
+            HStack(spacing: 7) {
+                stopIcon(.white)
+                HStack(spacing: 5) {
+                    keycap
+                    Text(L10n.t("overlay.mainCancel.escapeArmed"))
+                }
             }
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(.white)
         case .cancelled:
             HStack(spacing: 7) {
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(Color(hex: "#CFE1FF").opacity(0.6))
-                    .frame(width: 8, height: 8)
+                stopIcon(Color(hex: "#CFE1FF").opacity(0.6))
                 Text(L10n.t("overlay.mainCancel.cancelled"))
             }
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(Color(hex: "#CFE1FF").opacity(0.75))
         }
+    }
+
+    private func stopIcon(_ color: Color) -> some View {
+        RoundedRectangle(cornerRadius: 2, style: .continuous)
+            .fill(color)
+            .frame(width: 8, height: 8)
     }
 
     private var caption: some View {
@@ -83,7 +104,15 @@ struct PickyMainCancelPillView: View {
             Text(L10n.t("overlay.mainCancel.escapeHintSuffix"))
         }
         .font(.system(size: 10.5, weight: .regular))
-        .foregroundStyle(Color(hex: "#CFE1FF").opacity(0.55))
+        .foregroundStyle(Color(hex: "#CFE1FF").opacity(0.65))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 2.5)
+        .background(
+            // Own backdrop: the caption floats over arbitrary desktops and
+            // needs contrast independent of what is behind it.
+            Capsule(style: .continuous)
+                .fill(Color(hex: "#0A1423").opacity(0.55))
+        )
         .accessibilityHidden(true)
     }
 
@@ -102,14 +131,14 @@ struct PickyMainCancelPillView: View {
             )
     }
 
-    private var backgroundColor: Color {
+    private var tintColor: Color {
         switch state {
         case .rest:
             DS.Colors.overlayCursorBlue.opacity(0.28)
         case .hover, .escapeArmed:
             DS.Colors.overlayCursorBlue.opacity(0.55)
         case .cancelled:
-            Color(hex: "#0A1423").opacity(0.72)
+            Color.clear
         }
     }
 

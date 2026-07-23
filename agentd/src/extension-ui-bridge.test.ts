@@ -78,8 +78,25 @@ describe("ExtensionUiBridge", () => {
     expect(bridge.cancelAll()).toBe(0);
   });
 
-  it("resolves askUserQuestion form requests with radio checkbox and text answers", async () => {
-    const bridge = new ExtensionUiBridge("session-1");
+  it("permits only askUserQuestion while main-runtime blocking dialogs are disabled", async () => {
+    const bridge = new ExtensionUiBridge("picky-main", {
+      disableBlockingDialogs: true,
+      allowedBlockingDialogMethods: ["askUserQuestion"],
+    });
+    const context = bridge.createContext() as ReturnType<ExtensionUiBridge["createContext"]> & {
+      askUserQuestion: (request: unknown) => Promise<Record<string, unknown> | undefined>;
+    };
+    const requestPromise = nextRequest(bridge);
+    const question = context.askUserQuestion({ questions: [{ id: "choice", type: "radio", options: ["continue"] }] });
+    const request = await requestPromise;
+
+    expect(request.method).toBe("askUserQuestion");
+    bridge.answer(request.id, { value: { choice: "continue" } });
+    await expect(question).resolves.toEqual({ choice: "continue" });
+    await expect(context.confirm("Continue?", "Proceed?")).rejects.toThrow("Interactive user dialogs (confirm) are not available for Picky");
+  });
+
+  it("resolves askUserQuestion form requests with radio checkbox and text answers", async () => {    const bridge = new ExtensionUiBridge("session-1");
     const context = bridge.createContext() as ReturnType<ExtensionUiBridge["createContext"]> & { askUserQuestion: (request: unknown) => Promise<Record<string, unknown> | undefined> };
     const requestPromise = nextRequest(bridge);
     const promise = context.askUserQuestion({

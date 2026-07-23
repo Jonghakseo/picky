@@ -225,8 +225,29 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
-  it("includes the reloadPlugins command id on pluginsReloaded broadcasts", async () => {
+  it("broadcasts main activity and routes main extension UI answers", async () => {
     const { ws } = await connectWithHello();
+    const answerMainExtensionUi = vi.spyOn(supervisor, "answerMainExtensionUi").mockResolvedValue();
+
+    supervisor.emit("mainActivity", { kind: "tool", toolCallId: "tool-main-1", toolName: "read", status: "running" });
+    await expect(nextEvent(ws)).resolves.toMatchObject({
+      type: "mainActivityUpdated",
+      activity: { kind: "tool", toolName: "read", status: "running" },
+    });
+
+    ws.send(JSON.stringify({
+      id: "cmd-main-ui-answer",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "answerMainExtensionUi",
+      requestId: "main-ui-1",
+      value: { choice: "continue" },
+    }));
+    await waitUntil(() => answerMainExtensionUi.mock.calls.length === 1);
+    expect(answerMainExtensionUi).toHaveBeenCalledWith("main-ui-1", { choice: "continue" });
+    ws.close();
+  });
+
+  it("includes the reloadPlugins command id on pluginsReloaded broadcasts", async () => {    const { ws } = await connectWithHello();
     ws.send(JSON.stringify({ id: "cmd-reload-plugins", protocolVersion: PROTOCOL_VERSION, type: "reloadPlugins" }));
     const reloaded = await waitForEvent(ws, "pluginsReloaded");
     expect(reloaded).toMatchObject({ type: "pluginsReloaded", requestId: "cmd-reload-plugins" });

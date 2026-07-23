@@ -109,8 +109,31 @@ describe("protocol contract fixtures", () => {
     });
   }
 
-  it("detects nested unknown keys in event fixtures", () => {
-    const fixture = {
+  it("parses main activity and extension UI protocol variants", () => {
+    expect(CommandEnvelopeSchema.parse({
+      id: "cmd-main-ui-answer",
+      protocolVersion: "2026-07-23",
+      type: "answerMainExtensionUi",
+      requestId: "main-ui-1",
+      value: { choice: "continue" },
+    })).toMatchObject({ type: "answerMainExtensionUi", requestId: "main-ui-1" });
+    expect(EventEnvelopeSchema.parse({
+      id: "event-main-activity",
+      protocolVersion: "2026-07-23",
+      timestamp: "2026-07-23T00:00:00.000Z",
+      type: "mainActivityUpdated",
+      activity: { kind: "tool", toolCallId: "tool-1", toolName: "read", status: "running" },
+    })).toMatchObject({ type: "mainActivityUpdated", activity: { toolName: "read" } });
+    expect(EventEnvelopeSchema.parse({
+      id: "event-main-ui-cancelled",
+      protocolVersion: "2026-07-23",
+      timestamp: "2026-07-23T00:00:00.000Z",
+      type: "mainExtensionUiCancelled",
+      requestId: "main-ui-1",
+    })).toMatchObject({ type: "mainExtensionUiCancelled", requestId: "main-ui-1" });
+  });
+
+  it("detects nested unknown keys in event fixtures", () => {    const fixture = {
       id: "event-pointer-overlay",
       protocolVersion: "2026-07-23",
       timestamp: "2026-07-19T00:00:00.000Z",

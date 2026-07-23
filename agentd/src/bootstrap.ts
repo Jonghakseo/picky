@@ -308,16 +308,16 @@ function buildPrimaryMainRuntime(
     return result.session;
   };
 
-  // Picky built-in tools registered to the main agent. ask_user_question is
-  // intentionally excluded — disableBlockingDialogs prevents it from working
-  // on the main runtime and it is registered separately on Pickle child
-  // runtimes. The user can disable individual entries from the settings UI;
-  // `toolsBuilder` returns the subset that should be active.
+  // Picky built-in tools registered to the main agent. The main runtime permits
+  // ask_user_question only; all other blocking dialog methods remain disabled.
+  // The user can disable individual entries from the settings UI; `toolsBuilder`
+  // returns the subset that should be active.
   const allBuiltinTools: ToolDefinition[] = [
     createPickyStartPickleTool(startPickleFromMainContext),
     createPickyPickleSessionsTool(listPickleSessions),
     createPickySteerPickleTool(steerPickleSession),
     createPickyAbortPickleTool(abortPickleSession),
+    createPickyAskUserQuestionTool(),
     createReadPickyUserGuideTool(readPickyUserGuide),
   ];
   const toolsBuilder = (disabled: ReadonlySet<string>) => allBuiltinTools.filter((tool) => !disabled.has(tool.name));
@@ -325,11 +325,10 @@ function buildPrimaryMainRuntime(
   const piMainRuntime = new PiSdkRuntime({
     thinkingLevel: config.mainAgentThinkingLevel,
     modelPattern: config.mainAgentModelPattern,
-    // Picky has no UI surface for blocking dialogs (ask_user_question/confirm/input/...).
-    // Without this flag, any extension or tool that calls `ctx.ui.<dialog>` would hang the Picky
-    // session forever (`applyMainRuntimeEvent` ignores `extension_ui` events). Reject blocking
-    // calls eagerly so the LLM gets a usable error and can fall back to picky_start_pickle.
+    // The main overlay can answer ask_user_question, but has no surface for other
+    // blocking dialogs. Keep those rejected so an unsupported extension call cannot hang.
     disableBlockingDialogs: true,
+    allowedBlockingDialogMethods: ["askUserQuestion"],
     customTools: toolsBuilder(new Set()),
   });
 

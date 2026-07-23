@@ -12,9 +12,9 @@ import { MainVisualNarrationCoordinator } from "./application/main-visual-narrat
 import { awaitPendingRuntimeHandle, createPendingRuntimeHandle } from "./application/pending-runtime-handle.js";
 import { readRecentPinnedSourceState, snapshotPiSessionFile } from "./application/pinned-session-source.js";
 import { TerminalSessionCoordinator } from "./application/terminal-session-coordinator.js";
-import { summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
+import { mapExtensionUiRequest, summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
 import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentPickleCompletionPrompt, buildPicklePrompt, buildSteerPrompt, type BuiltPrompt } from "./prompt-builder.js";
-import type { ModelCycleDirection, PickyActivitySummary, PickyAgentSession, PickyAnnotationOverlayRequest, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
+import type { ModelCycleDirection, PickyActivitySummary, PickyAgentSession, PickyAnnotationOverlayRequest, PickyContextPacket, PickyExtensionUiRequest, PickyMainActivity, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-overlay-request.js";
 import type { PickyShowAnnotationsRequest, PickyShowAnnotationsResult } from "./application/annotation-overlay-request.js";
 import { PickleVisualDslCoordinator, type PickleVisualDslLease } from "./application/pickle-visual-dsl-coordinator.js";
@@ -118,6 +118,11 @@ export class SessionSupervisor extends EventEmitter {
   private mainState: PickyMainAgentState = { messages: [] };
   private mainReplyContextId = "main";
   private mainIsProcessing = false;
+  private mainPendingExtensionUiRequest?: PickyExtensionUiRequest;
+  private mainThinkingBuffer = "";
+  private mainActivityVisible = false;
+  private mainThinkingLastEmittedAt?: number;
+  private mainThinkingTimer?: ReturnType<typeof setTimeout>;
   // Idle-triggered in-place compaction: timer (re)armed on turn settle when a threshold is met,
   // cancelled on fresh activity, so compaction only runs after the idle window of quiet.
   private mainCompactionIdleTimer?: ReturnType<typeof setTimeout>;
@@ -599,8 +604,17 @@ export class SessionSupervisor extends EventEmitter {
     };
   }
 
+  async answerMainExtensionUi(requestId: string, value: unknown): Promise<void> {
+    const handle = this.mainHandle;
+    if (!handle?.answerExtensionUi) throw new Error("Main runtime cannot answer extension UI requests");
+    await handle.answerExtensionUi(requestId, value);
+    if (this.mainPendingExtensionUiRequest?.id === requestId) this.mainPendingExtensionUiRequest = undefined;
+  }
+
   async resetMainAgent(): Promise<void> {
     logAgentd("main reset requested", { messages: this.mainState.messages.length, hadHandle: this.mainHandle ? 1 : 0 });
+    await this.cancelMainPendingExtensionUi();
+    this.clearMainActivity();
     const currentHandle = this.mainHandle;
     const pendingHandlePromise = this.mainHandlePromise;
     this.detachMainHandleForInterruption();
@@ -710,6 +724,8 @@ export class SessionSupervisor extends EventEmitter {
 
   async abortMainAgent(): Promise<void> {
     logAgentd("main abort requested", { messages: this.mainState.messages.length, hadHandle: this.mainHandle ? 1 : 0, hadPendingHandle: this.mainHandlePromise ? 1 : 0, wasProcessing: this.mainIsProcessing ? 1 : 0 });
+    await this.cancelMainPendingExtensionUi();
+    this.clearMainActivity();
     const currentHandle = this.mainHandle;
     const pendingHandlePromise = this.mainHandlePromise;
     this.detachMainHandleForInterruption();
@@ -860,6 +876,7 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   private detachMainHandleForInterruption(): void {
+    this.clearMainActivity();
     this.mainHandleGeneration += 1;
     this.mainHandleUnsubscribe?.();
     this.mainHandleUnsubscribe = undefined;
@@ -885,6 +902,50 @@ export class SessionSupervisor extends EventEmitter {
     this.mainPendingCompactionContexts = [];
   }
 
+  private clearMainActivity(): void {
+    if (this.mainThinkingTimer) clearTimeout(this.mainThinkingTimer);
+    this.mainThinkingTimer = undefined;
+    this.mainThinkingBuffer = "";
+    this.mainThinkingLastEmittedAt = undefined;
+    if (!this.mainActivityVisible) return;
+    this.mainActivityVisible = false;
+    this.emit("mainActivity", undefined);
+  }
+
+  private emitMainThinkingActivity(): void {
+    this.mainThinkingTimer = undefined;
+    const thinkingPreview = this.mainThinkingBuffer.slice(-200).replace(/\s+/g, " ").trim();
+    if (!thinkingPreview) return;
+    this.mainThinkingLastEmittedAt = Date.now();
+    this.mainActivityVisible = true;
+    this.emit("mainActivity", { kind: "thinking", thinkingPreview } satisfies PickyMainActivity);
+  }
+
+  private queueMainThinkingActivity(delta: string): void {
+    this.mainThinkingBuffer += delta;
+    const elapsed = Date.now() - (this.mainThinkingLastEmittedAt ?? 0);
+    if (this.mainThinkingLastEmittedAt === undefined || elapsed >= 400) {
+      this.emitMainThinkingActivity();
+      return;
+    }
+    if (!this.mainThinkingTimer) {
+      this.mainThinkingTimer = setTimeout(() => this.emitMainThinkingActivity(), 400 - elapsed);
+    }
+  }
+
+  private async cancelMainPendingExtensionUi(): Promise<void> {
+    const pending = this.mainPendingExtensionUiRequest;
+    if (!pending) return;
+    const handle = this.mainHandle;
+    if (handle?.answerExtensionUi) {
+      await handle.answerExtensionUi(pending.id, { cancelled: true }, { ignoreUnknown: true });
+    }
+    if (this.mainPendingExtensionUiRequest?.id === pending.id) {
+      this.mainPendingExtensionUiRequest = undefined;
+      this.emit("mainExtensionUiCancelled", pending.id);
+    }
+  }
+
   private async abortResetMainHandle(handle: RuntimeSessionHandle, label: string): Promise<void> {
     try {
       await handle.abort();
@@ -903,6 +964,7 @@ export class SessionSupervisor extends EventEmitter {
   async route(context: PickyContextPacket): Promise<PickyAgentSession | undefined> {
     logAgentd("route requested", { contextId: context.id, source: context.source, transcriptChars: context.transcript?.length, screenshots: context.screenshots.length });
     if (this.options.mainRuntime) {
+      await this.cancelMainPendingExtensionUi();
       await this.routeThroughMainAgent(context);
       return undefined;
     }
@@ -1582,6 +1644,38 @@ export class SessionSupervisor extends EventEmitter {
       this.scheduleMainIdleCompaction();
       return;
     }
+    if (event.type === "tool") {
+      this.mainActivityVisible = true;
+      this.emit("mainActivity", {
+        kind: "tool",
+        toolCallId: event.toolCallId,
+        toolName: event.name,
+        status: event.status,
+        argsPreview: event.argsPreview ?? event.preview,
+      } satisfies PickyMainActivity);
+      return;
+    }
+    if (event.type === "thinking_delta") {
+      this.queueMainThinkingActivity(event.delta);
+      return;
+    }
+    if (event.type === "extension_ui") {
+      if (!event.waitsForInput) return;
+      const sessionId = typeof event.request.sessionId === "string" && event.request.sessionId.trim()
+        ? event.request.sessionId
+        : "picky-main";
+      const request = mapExtensionUiRequest({ ...event.request, sessionId });
+      this.mainPendingExtensionUiRequest = request;
+      this.emit("mainExtensionUiRequest", request);
+      return;
+    }
+    if (event.type === "extension_ui_cancelled") {
+      if (this.mainPendingExtensionUiRequest?.id === event.requestId) {
+        this.mainPendingExtensionUiRequest = undefined;
+        this.emit("mainExtensionUiCancelled", event.requestId);
+      }
+      return;
+    }
     if (event.type === "assistant_delta") {
       if (event.inputId && this.interruptedMainInputIds.has(event.inputId)) {
         logAgentd("main interrupted delta suppressed", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, inputId: event.inputId, deltaChars: event.delta.length, pending: this.interruptedMainInputIds.size });
@@ -1682,6 +1776,7 @@ export class SessionSupervisor extends EventEmitter {
         // `agent_end` that follows `turn_end`). The first one wins.
         if (this.mainTerminalProcessed) return;
         this.mainTerminalProcessed = true;
+        this.clearMainActivity();
         // Guard B: snapshot and clear `mainDraft` synchronously before any await,
         // so a racing terminal event that slipped past Guard A (e.g. via a custom
         // runtime that does not flip `mainTerminalProcessed`) cannot read the

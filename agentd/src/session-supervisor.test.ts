@@ -1,7 +1,7 @@
 import { appendFile, mkdir, mkdtemp, readFile, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ModelCycleDirection, PickyAgentSession, PickyContextPacket, PickyMainAgentState, PickyPreparedVisualNarrationVisual, PickyVisualNarrationSegmentIdentity } from "./protocol.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import type { BuiltPrompt } from "./prompt-builder.js";
@@ -3886,8 +3886,95 @@ describe("SessionSupervisor", () => {
     ]);
   });
 
-  it("serializes concurrent first main-agent routes through one initial runtime", async () => {
-    const mainRuntime = new DeferredCreateRuntime();
+  it("emits main tool activity with the runtime preview", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-activity-tool-"));
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
+    const activities: Array<Record<string, unknown> | undefined> = [];
+    supervisor.on("mainActivity", (activity) => activities.push(activity));
+
+    await supervisor.route(context("inspect the overlay"));
+    mainRuntime.handle?.emit({ type: "tool", toolCallId: "tool-main-1", name: "read", status: "running", argsPreview: "{\"path\":\"Picky/Overlay/BlueCursorView.swift\"}" });
+    await settle();
+
+    expect(activities).toContainEqual({
+      kind: "tool",
+      toolCallId: "tool-main-1",
+      toolName: "read",
+      status: "running",
+      argsPreview: "{\"path\":\"Picky/Overlay/BlueCursorView.swift\"}",
+    });
+  });
+
+  it("throttles main thinking activity and clears it after a terminal status", async () => {
+    vi.useFakeTimers();
+    try {
+      const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-activity-thinking-"));
+      const mainRuntime = new ManualRuntime();
+      const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
+      const activities: Array<Record<string, unknown> | undefined> = [];
+      supervisor.on("mainActivity", (activity) => activities.push(activity));
+
+      await supervisor.route(context("reason about the overlay"));
+      mainRuntime.handle?.emit({ type: "thinking_delta", delta: "first thought\n" });
+      mainRuntime.handle?.emit({ type: "thinking_delta", delta: "second thought" });
+      expect(activities).toEqual([{ kind: "thinking", thinkingPreview: "first thought" }]);
+
+      await vi.advanceTimersByTimeAsync(400);
+      expect(activities).toEqual([
+        { kind: "thinking", thinkingPreview: "first thought" },
+        { kind: "thinking", thinkingPreview: "first thought second thought" },
+      ]);
+
+      mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+      expect(activities.at(-1)).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("routes main extension UI requests to the main handle and cancels them for new input or abort", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-extension-ui-"));
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
+    const requests: Array<Record<string, unknown>> = [];
+    const cancelled: string[] = [];
+    supervisor.on("mainExtensionUiRequest", (request) => requests.push(request));
+    supervisor.on("mainExtensionUiCancelled", (requestId) => cancelled.push(requestId));
+
+    await supervisor.route(context("ask for a decision"));
+    mainRuntime.handle?.emit({
+      type: "extension_ui",
+      waitsForInput: true,
+      request: { id: "main-ui-answer", method: "askUserQuestion", questions: [], createdAt: "2026-05-01T00:00:00.000Z" },
+    });
+    await supervisor.answerMainExtensionUi("main-ui-answer", { choice: "continue" });
+
+    expect(requests).toContainEqual(expect.objectContaining({ id: "main-ui-answer", sessionId: "picky-main", method: "askUserQuestion" }));
+    expect(mainRuntime.handle?.extensionUiAnswers).toContainEqual({ requestId: "main-ui-answer", value: { choice: "continue" }, options: undefined });
+
+    mainRuntime.handle?.emit({
+      type: "extension_ui",
+      waitsForInput: true,
+      request: { id: "main-ui-next", method: "askUserQuestion", questions: [], createdAt: "2026-05-01T00:00:00.000Z" },
+    });
+    await supervisor.route(context("replace the question"));
+    mainRuntime.handle?.emit({
+      type: "extension_ui",
+      waitsForInput: true,
+      request: { id: "main-ui-abort", method: "askUserQuestion", questions: [], createdAt: "2026-05-01T00:00:00.000Z" },
+    });
+    await supervisor.abortMainAgent();
+
+    expect(mainRuntime.handle?.extensionUiAnswers).toEqual([
+      { requestId: "main-ui-answer", value: { choice: "continue" }, options: undefined },
+      { requestId: "main-ui-next", value: { cancelled: true }, options: { ignoreUnknown: true } },
+      { requestId: "main-ui-abort", value: { cancelled: true }, options: { ignoreUnknown: true } },
+    ]);
+    expect(cancelled).toEqual(["main-ui-next", "main-ui-abort"]);
+  });
+
+  it("serializes concurrent first main-agent routes through one initial runtime", async () => {    const mainRuntime = new DeferredCreateRuntime();
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-initial-race-"));
     const supervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir), { mainRuntime });
     await supervisor.load();

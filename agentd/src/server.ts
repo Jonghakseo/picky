@@ -244,6 +244,9 @@ export class AgentdServer {
     this.options.supervisor.on("mainVisualNarrationSegmentSentence", (sentence) => this.broadcast({ type: "mainVisualNarrationSegmentSentence", ...sentence }));
     this.options.supervisor.on("mainVisualNarrationSegmentCommitted", (segment) => this.broadcast({ type: "mainVisualNarrationSegmentCommitted", ...segment }));
     this.options.supervisor.on("mainMessage", (message) => this.broadcast({ type: "mainMessageAppended", message }));
+    this.options.supervisor.on("mainActivity", (activity) => this.broadcast({ type: "mainActivityUpdated", ...(activity ? { activity } : {}) }));
+    this.options.supervisor.on("mainExtensionUiRequest", (request) => this.broadcast({ type: "mainExtensionUiRequested", request }));
+    this.options.supervisor.on("mainExtensionUiCancelled", (requestId) => this.broadcast({ type: "mainExtensionUiCancelled", requestId }));
     this.options.supervisor.on("mainAgentSessionInfo", (info: { sessionFilePath?: string; cwd?: string }) => this.broadcast({
       type: "mainAgentSessionInfoUpdated",
       ...(info.sessionFilePath ? { sessionFilePath: info.sessionFilePath } : {}),
@@ -636,6 +639,7 @@ export class AgentdServer {
       steer: (cmd) => this.options.supervisor.steer(cmd.sessionId, cmd.text, cmd.context, cmd.visualDslEnabled === true),
       abort: (cmd) => this.options.supervisor.abort(cmd.sessionId),
       answerExtensionUi: (cmd) => this.options.supervisor.answerExtensionUi(cmd.sessionId, cmd.requestId, cmd.value),
+      answerMainExtensionUi: (cmd) => this.options.supervisor.answerMainExtensionUi(cmd.requestId, cmd.value),
       installPackage: (cmd) => this.runPackageOperation(ws, cmd.id, "install", cmd.source),
       removePackage: (cmd) => this.runPackageOperation(ws, cmd.id, "remove", cmd.source),
       reloadPlugins: async (cmd) => {
@@ -1206,6 +1210,8 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, entryId: command.entryId };
     case "answerExtensionUi":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, requestId: command.requestId };
+    case "answerMainExtensionUi":
+      return { commandId: command.id, type: command.type, requestId: command.requestId };
     case "getPiOAuthStatus":
     case "signInPiOAuth":
       return { commandId: command.id, type: command.type, providerId: command.providerId };
@@ -1261,6 +1267,12 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, role: event.message.role, textChars: event.message.text.length };
     case "mainAgentModelsSnapshot":
       return { eventId: event.id, type: event.type, models: event.models.length };
+    case "mainActivityUpdated":
+      return { eventId: event.id, type: event.type, kind: event.activity?.kind, tool: event.activity?.toolName, status: event.activity?.status };
+    case "mainExtensionUiRequested":
+      return { eventId: event.id, type: event.type, sessionId: event.request.sessionId, requestId: event.request.id, method: event.request.method };
+    case "mainExtensionUiCancelled":
+      return { eventId: event.id, type: event.type, requestId: event.requestId };
     case "piOAuthStatus":
       return { eventId: event.id, type: event.type, requestId: event.requestId, providerId: event.providerId, configured: event.configured ? 1 : 0 };
     case "piOAuthUrlRequested":

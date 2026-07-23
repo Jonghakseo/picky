@@ -13,7 +13,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { CombinedAutocompleteProvider, type SlashCommand } from "@earendil-works/pi-tui";
 import type { BuiltPrompt } from "../prompt-builder.js";
-import { ExtensionUiBridge } from "../application/extension-ui-bridge.js";
+import { ExtensionUiBridge, type DialogMethod } from "../application/extension-ui-bridge.js";
 import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
 import { resolveTodoStateFromPiSessionEntries } from "../domain/todo-state.js";
 import { isTransientAgentBusyError } from "../domain/transient-runtime-error.js";
@@ -100,6 +100,7 @@ interface PiSdkRuntimeOptions {
   thinkingLevel?: ThinkingLevel;
   modelPattern?: string;
   disableBlockingDialogs?: boolean;
+  allowedBlockingDialogMethods?: readonly DialogMethod[];
 }
 
 export class PiSdkRuntime implements AgentRuntime {
@@ -216,7 +217,10 @@ export class PiSdkRuntime implements AgentRuntime {
       sessionId,
       runtime,
       this.thinkingLevel,
-      { disableBlockingDialogs: this.options.disableBlockingDialogs ?? false },
+      {
+        disableBlockingDialogs: this.options.disableBlockingDialogs ?? false,
+        allowedBlockingDialogMethods: this.options.allowedBlockingDialogMethods,
+      },
       inputRewriteObserver,
     );
     sessionHandle = handle;
@@ -273,7 +277,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     readonly id: string,
     private readonly runtime: AgentSessionRuntime,
     private configuredThinkingLevel?: ThinkingLevel,
-    private readonly bridgeOptions: { disableBlockingDialogs?: boolean } = {},
+    private readonly bridgeOptions: { disableBlockingDialogs?: boolean; allowedBlockingDialogMethods?: readonly DialogMethod[] } = {},
     private readonly inputRewriteObserver: PiInputRewriteObserver = new PiInputRewriteObserver(() => {}),
   ) {
     this.uiBridge = this.createBridge();
@@ -1389,6 +1393,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     const generation = ++this.autocompleteGeneration;
     const bridge = new ExtensionUiBridge(this.id, {
       disableBlockingDialogs: this.bridgeOptions.disableBlockingDialogs ?? false,
+      allowedBlockingDialogMethods: this.bridgeOptions.allowedBlockingDialogMethods,
       autocompleteGeneration: generation,
       createBaseAutocompleteProvider: () => this.createBaseAutocompleteProvider(),
     });

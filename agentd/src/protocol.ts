@@ -127,6 +127,15 @@ export const PickyArtifactSchema = z.object({ id: z.string(), kind: z.string(), 
 export type PickyArtifact = z.infer<typeof PickyArtifactSchema>;
 export const PickyToolActivitySchema = z.object({ toolCallId: z.string(), name: z.string(), status: z.enum(["running", "succeeded", "failed"]), preview: z.string().optional(), argsPreview: z.string().optional(), resultPreview: z.string().optional(), startedAt: isoTimestamp.optional(), endedAt: isoTimestamp.optional() });
 export type PickyToolActivity = z.infer<typeof PickyToolActivitySchema>;
+export const PickyMainActivitySchema = z.object({
+  kind: z.enum(["thinking", "tool"]),
+  toolCallId: z.string().optional(),
+  toolName: z.string().optional(),
+  status: z.enum(["running", "succeeded", "failed"]).optional(),
+  argsPreview: z.string().optional(),
+  thinkingPreview: z.string().optional(),
+});
+export type PickyMainActivity = z.infer<typeof PickyMainActivitySchema>;
 export const PickyTodoTaskSchema = z.object({
   id: z.string(),
   content: z.string(),
@@ -448,6 +457,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("rewindSession"), sessionId: z.string(), entryId: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("getSession"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("answerExtensionUi"), sessionId: z.string(), requestId: z.string(), value: z.unknown().optional() }),
+  CommandBaseSchema.extend({ type: z.literal("answerMainExtensionUi"), requestId: z.string().min(1), value: z.unknown().optional() }),
   CommandBaseSchema.extend({ type: z.literal("installPackage"), source: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("removePackage"), source: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("reloadPlugins") }),
@@ -517,6 +527,9 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
     cwd: z.string().optional(),
   }),
   EventBaseSchema.extend({ type: z.literal("mainAgentModelsSnapshot"), models: z.array(PickyMainAgentModelOptionSchema) }),
+  EventBaseSchema.extend({ type: z.literal("mainActivityUpdated"), activity: PickyMainActivitySchema.optional() }),
+  EventBaseSchema.extend({ type: z.literal("mainExtensionUiRequested"), request: PickyExtensionUiRequestSchema }),
+  EventBaseSchema.extend({ type: z.literal("mainExtensionUiCancelled"), requestId: z.string() }),
   EventBaseSchema.extend({
     type: z.literal("piOAuthStatus"),
     requestId: z.string().min(1),

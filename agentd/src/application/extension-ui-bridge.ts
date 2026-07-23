@@ -70,7 +70,7 @@ interface AskUserQuestionRequest {
   questions: AskUserQuestion[] | string;
 }
 
-type DialogMethod = "select" | "confirm" | "input" | "editor" | "askUserQuestion";
+export type DialogMethod = "select" | "confirm" | "input" | "editor" | "askUserQuestion";
 
 interface PendingDialog {
   method: DialogMethod;
@@ -104,6 +104,7 @@ export interface ExtensionAutocompleteCompletion {
 
 interface ExtensionUiBridgeOptions {
   disableBlockingDialogs?: boolean;
+  allowedBlockingDialogMethods?: readonly DialogMethod[];
   autocompleteGeneration?: number;
   createBaseAutocompleteProvider?: () => AutocompleteProvider;
 }
@@ -271,7 +272,7 @@ export class ExtensionUiBridge extends EventEmitter {
   }
 
   private dialog(method: DialogMethod, payload: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
-    if (this.options.disableBlockingDialogs) {
+    if (this.options.disableBlockingDialogs && !this.options.allowedBlockingDialogMethods?.includes(method)) {
       return Promise.reject(new Error(`Interactive user dialogs (${method}) are not available for Picky. Delegate to Pickle via picky_start_pickle if user input is required.`));
     }
     if (signal?.aborted) return Promise.resolve(this.mapAnswer(method, { cancelled: true }));

@@ -23,21 +23,27 @@ class OverlayWindowManager {
     private var screenParametersObserver: NSObjectProtocol?
     private var annotationDismissObservation: AnyCancellable?
     private let annotationDismissPanelController = PickyAnnotationDismissPanelController()
+    private let captureContextControlPanelController = PickyCaptureContextPanelController()
 
     func showOverlay(onScreens screens: [NSScreen], companionManager: CompanionManager) {
         // Rebinding can happen after display reconstruction; discard any panel whose
         // button closure still references the previous manager before observing again.
         annotationDismissPanelController.dismiss()
         currentCompanionManager = companionManager
+        companionManager.updateScreenContextFocusedDisplayID(
+            screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) })?.pickyDisplayID
+        )
         startScreenParametersObserverIfNeeded()
         rebuildOverlayWindows(onScreens: screens, companionManager: companionManager)
         startAnnotationDismissObservation(companionManager)
+        captureContextControlPanelController.bind(to: companionManager)
     }
 
     func hideOverlay() {
         stopScreenParametersObserver()
         stopAnnotationDismissObservation()
         annotationDismissPanelController.dismiss()
+        captureContextControlPanelController.unbind()
         currentCompanionManager = nil
         removeOverlayWindows()
     }
@@ -47,6 +53,7 @@ class OverlayWindowManager {
         stopScreenParametersObserver()
         stopAnnotationDismissObservation()
         annotationDismissPanelController.dismiss()
+        captureContextControlPanelController.unbind()
         currentCompanionManager = nil
 
         let windowsToFade = overlayWindows
@@ -79,6 +86,7 @@ class OverlayWindowManager {
 
             let contentView = BlueCursorView(
                 screenFrame: screen.frame,
+                displayID: screen.pickyDisplayID ?? 0,
                 companionManager: companionManager
             )
 
@@ -147,6 +155,7 @@ class OverlayWindowManager {
                 guard let self, let companionManager = self.currentCompanionManager else { return }
                 self.rebuildOverlayWindows(onScreens: NSScreen.screens, companionManager: companionManager)
                 self.refreshAnnotationDismissPanels(for: companionManager)
+                self.captureContextControlPanelController.refreshScreens(NSScreen.screens)
             }
         }
     }

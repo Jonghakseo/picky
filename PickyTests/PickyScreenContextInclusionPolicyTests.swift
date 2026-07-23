@@ -76,4 +76,41 @@ struct PickyScreenContextInclusionPolicyTests {
             ))
         }
     }
+
+    @Test func includedOverrideBypassesScopeAndInkGate() {
+        #expect(PickyScreenContextInclusionPolicy.isSentAsContext(
+            scope: .focusedScreen,
+            onlyWhenInked: true,
+            isFocused: false,
+            hasInk: false,
+            displayOverride: .included
+        ))
+    }
+
+    @Test func excludedOverrideWinsOverAutomaticInclusion() {
+        #expect(!PickyScreenContextInclusionPolicy.isSentAsContext(
+            scope: .allScreens,
+            onlyWhenInked: false,
+            isFocused: true,
+            hasInk: true,
+            displayOverride: .excluded
+        ))
+    }
+
+    @Test func nilOverrideRestoresAutomaticPolicy() {
+        #expect(PickyScreenContextInclusionPolicy.isSentAsContext(
+            scope: .focusedScreen,
+            onlyWhenInked: false,
+            isFocused: true,
+            hasInk: false,
+            displayOverride: nil
+        ))
+        #expect(!PickyScreenContextInclusionPolicy.isSentAsContext(
+            scope: .focusedScreen,
+            onlyWhenInked: false,
+            isFocused: false,
+            hasInk: false,
+            displayOverride: nil
+        ))
+    }
 }

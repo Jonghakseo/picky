@@ -18,6 +18,7 @@ import ScreenCaptureKit
 protocol PickyScreenCaptureExcludedWindow: AnyObject {}
 
 struct CompanionScreenCapture {
+    let displayID: CGDirectDisplayID
     let imageData: Data
     let label: String
     let isCursorScreen: Bool
@@ -35,6 +36,7 @@ struct CompanionScreenCapture {
     let annotationSceneFingerprint: PickyAnnotationSceneFingerprint?
 
     init(
+        displayID: CGDirectDisplayID = 0,
         imageData: Data,
         label: String,
         isCursorScreen: Bool,
@@ -47,6 +49,7 @@ struct CompanionScreenCapture {
         annotationColorSampleGrid: PickyScreenshotColorSampleGrid? = nil,
         annotationSceneFingerprint: PickyAnnotationSceneFingerprint? = nil
     ) {
+        self.displayID = displayID
         self.imageData = imageData
         self.label = label
         self.isCursorScreen = isCursorScreen
@@ -63,6 +66,13 @@ struct CompanionScreenCapture {
 
 @MainActor
 enum CompanionScreenCaptureUtility {
+    private struct DisplaySelection {
+        let scope: PickyScreenContextScope
+        let onlyWhenInked: Bool
+        let inkGlobalPoints: [CGPoint]
+        let displayOverrides: PickyScreenContextDisplayOverrides
+    }
+
     static let annotationSceneFingerprintMaximumDimension = 256
 
     static func shouldExcludeWindowFromContextCapture(_ window: NSWindow) -> Bool {
@@ -114,7 +124,9 @@ enum CompanionScreenCaptureUtility {
     /// Captures all connected displays as JPEG data, labeling each with
     /// whether the user's cursor is on that screen. This gives the AI
     /// full context across multiple monitors.
-    static func captureAllScreensAsJPEG(maximumDimension: Int = PickyScreenshotQuality.defaultMaximumDimension) async throws -> [CompanionScreenCapture] {
+    static func captureAllScreensAsJPEG(
+        maximumDimension: Int = PickyScreenshotQuality.defaultMaximumDimension
+    ) async throws -> [CompanionScreenCapture] {
         try await captureScreensAsJPEG(scope: .allScreens, maximumDimension: maximumDimension)
     }
 
@@ -128,7 +140,9 @@ enum CompanionScreenCaptureUtility {
     static func captureScreensAsJPEG(
         scope: PickyScreenContextScope,
         maximumDimension: Int = PickyScreenshotQuality.defaultMaximumDimension,
-        inkGlobalPoints: [CGPoint] = []
+        inkGlobalPoints: [CGPoint] = [],
+        onlyWhenInked: Bool = false,
+        displayOverrides: PickyScreenContextDisplayOverrides = [:]
     ) async throws -> [CompanionScreenCapture] {
         let content = try await PickySystemPermissionGateway.shared.screenShareableContent()
 
@@ -153,12 +167,7 @@ enum CompanionScreenCaptureUtility {
         // Core Graphics coordinates (top-left origin). On multi-display setups, the Y
         // origins differ for secondary displays, which breaks cursor-contains checks
         // and downstream coordinate conversions.
-        var nsScreenByDisplayID: [CGDirectDisplayID: NSScreen] = [:]
-        for screen in NSScreen.screens {
-            if let screenNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID {
-                nsScreenByDisplayID[screenNumber] = screen
-            }
-        }
+        let nsScreenByDisplayID = screenByDisplayID()
 
         // Sort displays so the cursor screen is always first
         let sortedDisplays = content.displays.sorted { displayA, displayB in
@@ -170,23 +179,19 @@ enum CompanionScreenCaptureUtility {
             return false
         }
 
-        let displaysToCapture: [SCDisplay]
-        switch scope {
-        case .allScreens:
-            displaysToCapture = sortedDisplays
-        case .focusedScreen:
-            let candidateDisplays = sortedDisplays.filter { display in
-                let frame = nsScreenByDisplayID[display.displayID]?.frame ?? display.frame
-                let isFocused = frame.contains(mouseLocation)
-                let hasInk = inkGlobalPoints.contains { frame.contains($0) }
-                return PickyScreenContextInclusionPolicy.isCaptureCandidate(
-                    scope: .focusedScreen,
-                    isFocused: isFocused,
-                    hasInk: hasInk
-                )
-            }
-            displaysToCapture = candidateDisplays.isEmpty ? Array(sortedDisplays.prefix(1)) : candidateDisplays
-        }
+        let displaysToCapture = captureDisplays(
+            from: sortedDisplays,
+            screenByDisplayID: nsScreenByDisplayID,
+            mouseLocation: mouseLocation,
+            selection: DisplaySelection(
+                scope: scope,
+                onlyWhenInked: onlyWhenInked,
+                inkGlobalPoints: inkGlobalPoints,
+                displayOverrides: displayOverrides
+            )
+        )
+
+        guard !displaysToCapture.isEmpty else { return [] }
 
         var capturedScreens: [CompanionScreenCapture] = []
 
@@ -263,12 +268,14 @@ enum CompanionScreenCaptureUtility {
             } else if displaysToCapture.count == 1 {
                 screenLabel = "user's screen (cursor is here)"
             } else if isCursorScreen {
-                screenLabel = "screen \(displayIndex + 1) of \(displaysToCapture.count) — cursor is on this screen (primary focus)"
+                screenLabel = "screen \(displayIndex + 1) of \(displaysToCapture.count) "
+                    + "— cursor is on this screen (primary focus)"
             } else {
                 screenLabel = "screen \(displayIndex + 1) of \(displaysToCapture.count) — secondary screen"
             }
 
             capturedScreens.append(CompanionScreenCapture(
+                displayID: display.displayID,
                 imageData: jpegData,
                 label: screenLabel,
                 isCursorScreen: isCursorScreen,
@@ -289,6 +296,44 @@ enum CompanionScreenCaptureUtility {
         }
 
         return capturedScreens
+    }
+
+    private static func screenByDisplayID() -> [CGDirectDisplayID: NSScreen] {
+        Dictionary(uniqueKeysWithValues: NSScreen.screens.compactMap { screen in
+            let key = NSDeviceDescriptionKey("NSScreenNumber")
+            guard let displayID = screen.deviceDescription[key] as? CGDirectDisplayID else { return nil }
+            return (displayID, screen)
+        })
+    }
+
+    private static func captureDisplays(
+        from displays: [SCDisplay],
+        screenByDisplayID: [CGDirectDisplayID: NSScreen],
+        mouseLocation: CGPoint,
+        selection: DisplaySelection
+    ) -> [SCDisplay] {
+        let hasAutomaticCandidate = displays.contains { display in
+            let frame = screenByDisplayID[display.displayID]?.frame ?? display.frame
+            return PickyScreenContextInclusionPolicy.isCaptureCandidate(
+                scope: selection.scope,
+                isFocused: frame.contains(mouseLocation),
+                hasInk: selection.inkGlobalPoints.contains { frame.contains($0) }
+            )
+        }
+        let fallbackDisplayID = selection.scope == .focusedScreen && !hasAutomaticCandidate
+            ? displays.first?.displayID
+            : nil
+
+        return displays.filter { display in
+            let frame = screenByDisplayID[display.displayID]?.frame ?? display.frame
+            return PickyScreenContextInclusionPolicy.isSentAsContext(
+                scope: selection.scope,
+                onlyWhenInked: selection.onlyWhenInked,
+                isFocused: frame.contains(mouseLocation) || fallbackDisplayID == display.displayID,
+                hasInk: selection.inkGlobalPoints.contains { frame.contains($0) },
+                displayOverride: selection.displayOverrides[display.displayID]
+            )
+        }
     }
 
     private static func imageWithCursorMarker(on image: CGImage, cursor: PickyCursorContext) -> CGImage {

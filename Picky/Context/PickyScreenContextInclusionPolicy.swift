@@ -15,7 +15,15 @@
 //      drew on survive the attachment gate.
 //
 
+import CoreGraphics
 import Foundation
+
+enum PickyScreenContextDisplayOverride: Equatable {
+    case included
+    case excluded
+}
+
+typealias PickyScreenContextDisplayOverrides = [CGDirectDisplayID: PickyScreenContextDisplayOverride]
 
 enum PickyScreenContextInclusionPolicy {
     /// Whether a display's pixels are eligible to be captured at all. Focused
@@ -45,9 +53,17 @@ enum PickyScreenContextInclusionPolicy {
         scope: PickyScreenContextScope,
         onlyWhenInked: Bool,
         isFocused: Bool,
-        hasInk: Bool
+        hasInk: Bool,
+        displayOverride: PickyScreenContextDisplayOverride? = nil
     ) -> Bool {
-        isCaptureCandidate(scope: scope, isFocused: isFocused, hasInk: hasInk)
-            && passesInkAttachmentGate(onlyWhenInked: onlyWhenInked, hasInk: hasInk)
+        switch displayOverride {
+        case .included:
+            return true
+        case .excluded:
+            return false
+        case nil:
+            return isCaptureCandidate(scope: scope, isFocused: isFocused, hasInk: hasInk)
+                && passesInkAttachmentGate(onlyWhenInked: onlyWhenInked, hasInk: hasInk)
+        }
     }
 }

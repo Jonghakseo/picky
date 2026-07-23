@@ -3,6 +3,7 @@
 //  PickyTests
 //
 
+import CoreGraphics
 import Foundation
 import Testing
 @testable import Picky
@@ -12,7 +13,7 @@ struct PickyVoiceContextCaptureCoordinatorTests {
     @Test func cancellationAfterScreenCaptureSkipsContextAssembly() async throws {
         var didPrepare = false
         let coordinator = PickyVoiceContextCaptureCoordinator(
-            screenCapture: { _, _, _ in
+            screenCapture: { _, _, _, _, _ in
                 withUnsafeCurrentTask { task in
                     task?.cancel()
                 }
@@ -36,7 +37,7 @@ struct PickyVoiceContextCaptureCoordinatorTests {
     @Test func preflightStartsWhileScreenCaptureIsPending() async throws {
         var didStartPreflight = false
         let coordinator = PickyVoiceContextCaptureCoordinator(
-            screenCapture: { _, _, _ in
+            screenCapture: { _, _, _, _, _ in
                 await Task.yield()
                 #expect(didStartPreflight)
                 return []
@@ -56,7 +57,7 @@ struct PickyVoiceContextCaptureCoordinatorTests {
     @Test func preparedCaptureCollectsContextBeforeTranscriptArrives() async throws {
         var preparationCount = 0
         let coordinator = PickyVoiceContextCaptureCoordinator(
-            screenCapture: { _, _, _ in [] },
+            screenCapture: { _, _, _, _, _ in [] },
             contextPreflightCapture: { Self.preflight() },
             contextPreparer: { _, source, _, _ in
                 preparationCount += 1
@@ -81,7 +82,7 @@ struct PickyVoiceContextCaptureCoordinatorTests {
         settings.screenContextScope = .focusedScreen
         settings.screenshotQuality = .onePointFive
         let coordinator = PickyVoiceContextCaptureCoordinator(
-            screenCapture: { scope, maximumDimension, _ in
+            screenCapture: { scope, maximumDimension, _, _, _ in
                 capturedScope = scope
                 capturedMaximumDimension = maximumDimension
                 return []
@@ -99,20 +100,19 @@ struct PickyVoiceContextCaptureCoordinatorTests {
         #expect(capturedMaximumDimension == 1920)
     }
 
-    // MARK: - attachScreenshotsOnlyWhenInked gate
+    // MARK: - Per-display attachment filtering
 
     @Test func attachScreenshotsOnlyWhenInked_offByDefault_keepsScreenshots() async throws {
         let settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
-        // Sanity: feature is opt-in. If the default flips, this test must be
-        // updated together with the matching user manual entry.
         #expect(settings.attachScreenshotsOnlyWhenInked == false)
+        let capture = Self.capture(displayID: 1, frame: CGRect(x: 0, y: 0, width: 100, height: 100))
 
         let coordinator = PickyVoiceContextCaptureCoordinator(
-            screenCapture: { _, _, _ in [] },
+            screenCapture: { _, _, _, _, _ in [capture] },
             settingsProvider: { settings },
             contextPreflightCapture: { Self.preflight() },
-            contextPreparer: { _, source, _, _ in
-                Self.preparedPacket(source: source, screenshotPaths: ["/tmp/shot-1.jpg"], inkMarks: [])
+            contextPreparer: { captures, source, _, _ in
+                Self.preparedPacketForCaptures(captures, source: source)
             }
         )
 
@@ -121,90 +121,139 @@ struct PickyVoiceContextCaptureCoordinatorTests {
         #expect(result?.contextPacket.screenshots.count == 1)
     }
 
-    @Test func attachScreenshotsOnlyWhenInked_onWithoutInk_dropsScreenshots() async throws {
+    @Test func attachScreenshotsOnlyWhenInked_onWithoutInk_dropsScreenshotsBeforeAssembly() async throws {
         var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
         settings.attachScreenshotsOnlyWhenInked = true
+        let capture = Self.capture(displayID: 1, frame: CGRect(x: 0, y: 0, width: 100, height: 100))
+        var assembledDisplayIDs: [CGDirectDisplayID] = []
 
         let coordinator = PickyVoiceContextCaptureCoordinator(
-            screenCapture: { _, _, _ in [] },
+            screenCapture: { _, _, _, _, _ in [capture] },
             settingsProvider: { settings },
             contextPreflightCapture: { Self.preflight() },
-            contextPreparer: { _, source, _, _ in
-                Self.preparedPacket(source: source, screenshotPaths: ["/tmp/shot-1.jpg"], inkMarks: [])
+            contextPreparer: { captures, source, _, _ in
+                assembledDisplayIDs = captures.map(\.displayID)
+                return Self.preparedPacketForCaptures(captures, source: source)
             }
         )
 
         let result = try await coordinator.captureContext(transcript: "no ink", voiceFollowUpSessionID: nil)
 
+        #expect(assembledDisplayIDs.isEmpty)
         #expect(result?.contextPacket.screenshots.isEmpty == true)
-        #expect(result?.contextPacket.inkMarks.isEmpty == true)
-        // Non-visual fields are untouched.
-        #expect(result?.contextPacket.transcript ?? "" == "no ink")
+        #expect(result?.contextPacket.transcript == "no ink")
     }
 
-    @Test func attachScreenshotsOnlyWhenInked_onWithInk_keepsScreenshots() async throws {
+    @Test func attachScreenshotsOnlyWhenInked_keepsOnlyTheInkedDisplay() async throws {
         var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
         settings.attachScreenshotsOnlyWhenInked = true
-
-        let inkMark = PickyInkMarkContext(
-            id: "ink-1",
-            source: .text,
-            screenId: "screen1",
-            points: [PickyCGPoint(x: 10, y: 10), PickyCGPoint(x: 20, y: 20)],
-            bounds: PickyCGRect(x: 10, y: 10, width: 10, height: 10),
-            strokeWidth: 6,
-            opacity: 0.5
-        )
+        let first = Self.capture(displayID: 1, frame: CGRect(x: 0, y: 0, width: 100, height: 100))
+        let second = Self.capture(displayID: 2, frame: CGRect(x: 100, y: 0, width: 100, height: 100))
+        let inkCapture = Self.inkCapture(points: [CGPoint(x: 120, y: 20), CGPoint(x: 140, y: 40)])
+        var assembledDisplayIDs: [CGDirectDisplayID] = []
 
         let coordinator = PickyVoiceContextCaptureCoordinator(
-            screenCapture: { _, _, _ in [] },
+            screenCapture: { _, _, _, _, _ in [first, second] },
             settingsProvider: { settings },
             contextPreflightCapture: { Self.preflight() },
-            contextPreparer: { _, source, _, _ in
-                Self.preparedPacket(source: source, screenshotPaths: ["/tmp/shot-1.jpg"], inkMarks: [inkMark])
+            contextPreparer: { captures, source, _, _ in
+                assembledDisplayIDs = captures.map(\.displayID)
+                return Self.preparedPacketForCaptures(captures, source: source)
             }
         )
 
-        let result = try await coordinator.captureContext(transcript: "with ink", voiceFollowUpSessionID: nil)
-
-        #expect(result?.contextPacket.screenshots.count == 1)
-        #expect(result?.contextPacket.inkMarks.count == 1)
-    }
-
-    @Test func attachScreenshotsOnlyWhenInked_onWithInk_keepsOnlyTheInkedScreen() async throws {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
-        settings.attachScreenshotsOnlyWhenInked = true
-
-        // Ink lives on screen2 only; screen1 must be stripped even though it was
-        // captured, so the border/context invariant holds per screen.
-        let inkMark = PickyInkMarkContext(
-            id: "ink-1",
-            source: .text,
-            screenId: "screen2",
-            points: [PickyCGPoint(x: 10, y: 10), PickyCGPoint(x: 20, y: 20)],
-            bounds: PickyCGRect(x: 10, y: 10, width: 10, height: 10),
-            strokeWidth: 6,
-            opacity: 0.5
+        let result = try await coordinator.captureContext(
+            transcript: "two screens",
+            source: "text",
+            inkCapture: inkCapture
         )
 
+        #expect(assembledDisplayIDs == [2])
+        #expect(result?.contextPacket.screenshots.count == 1)
+    }
+
+    @Test func includedOverrideKeepsUninkedDisplayAndExcludedOverrideDropsInkedDisplay() async throws {
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        settings.attachScreenshotsOnlyWhenInked = true
+        let included = Self.capture(displayID: 1, frame: CGRect(x: 0, y: 0, width: 100, height: 100))
+        let excluded = Self.capture(displayID: 2, frame: CGRect(x: 100, y: 0, width: 100, height: 100))
+        let inkCapture = Self.inkCapture(points: [CGPoint(x: 120, y: 20), CGPoint(x: 140, y: 40)])
+        var capturedOverrides: PickyScreenContextDisplayOverrides = [:]
+        var assembledDisplayIDs: [CGDirectDisplayID] = []
+
         let coordinator = PickyVoiceContextCaptureCoordinator(
-            screenCapture: { _, _, _ in [] },
+            screenCapture: { _, _, _, _, displayOverrides in
+                capturedOverrides = displayOverrides
+                return [included, excluded]
+            },
             settingsProvider: { settings },
             contextPreflightCapture: { Self.preflight() },
-            contextPreparer: { _, source, _, _ in
-                Self.preparedPacket(
-                    source: source,
-                    screenshotPaths: ["/tmp/shot-1.jpg", "/tmp/shot-2.jpg"],
-                    inkMarks: [inkMark]
+            contextPreparer: { captures, source, _, _ in
+                assembledDisplayIDs = captures.map(\.displayID)
+                return Self.preparedPacketForCaptures(captures, source: source)
+            }
+        )
+        let displayOverrides: PickyScreenContextDisplayOverrides = [
+            1: .included,
+            2: .excluded
+        ]
+
+        _ = try await coordinator.captureContext(
+            transcript: "manual display choices",
+            source: "text",
+            inkCapture: inkCapture,
+            displayOverrides: displayOverrides
+        )
+
+        #expect(capturedOverrides == displayOverrides)
+        #expect(assembledDisplayIDs == [1])
+    }
+
+    private static func capture(
+        displayID: CGDirectDisplayID,
+        frame: CGRect
+    ) -> CompanionScreenCapture {
+        CompanionScreenCapture(
+            displayID: displayID,
+            imageData: Data(),
+            label: "Display \(displayID)",
+            isCursorScreen: displayID == 1,
+            displayWidthInPoints: Int(frame.width),
+            displayHeightInPoints: Int(frame.height),
+            displayFrame: frame,
+            screenshotWidthInPixels: Int(frame.width),
+            screenshotHeightInPixels: Int(frame.height),
+            cursor: nil
+        )
+    }
+
+    private static func inkCapture(points: [CGPoint]) -> PickyInkCapture {
+        PickyInkCapture(
+            id: "ink-capture",
+            source: .text,
+            startedAt: Date(timeIntervalSince1970: 1_800_000_000),
+            endedAt: Date(timeIntervalSince1970: 1_800_000_001),
+            strokes: [
+                PickyInkCaptureStroke(
+                    id: "stroke",
+                    source: .text,
+                    points: points.map(PickyCGPoint.init),
+                    strokeWidth: 6,
+                    opacity: 0.5
                 )
-            }
+            ]
         )
+    }
 
-        let result = try await coordinator.captureContext(transcript: "two screens", voiceFollowUpSessionID: nil)
-
-        #expect(result?.contextPacket.screenshots.count == 1)
-        #expect(result?.contextPacket.screenshots.first?.screenId == "screen2")
-        #expect(result?.contextPacket.inkMarks.count == 1)
+    private static func preparedPacketForCaptures(
+        _ captures: [CompanionScreenCapture],
+        source: String
+    ) -> PickyPreparedContextPacket {
+        preparedPacket(
+            source: source,
+            screenshotPaths: captures.map { "/tmp/display-\($0.displayID).jpg" },
+            inkMarks: []
+        )
     }
 
     private static func preflight() -> PickyContextPacketPreflight {

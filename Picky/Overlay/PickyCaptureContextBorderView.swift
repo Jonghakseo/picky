@@ -5,8 +5,8 @@
 //  Full-screen edge treatment shown while a display is being captured as
 //  neutral model context (PTT recording / Quick Input open). A static angular-
 //  gradient edge line plus a soft inward focus glow signal "this screen is
-//  going to Pi as context", with a small pill spelling it out in text so the
-//  cue never relies on color alone.
+//  going to Pi as context". A separate compact panel provides the text status
+//  and per-display control while this full-screen overlay stays click-through.
 //
 //  Deliberately static: an earlier version rotated the gradient via
 //  `TimelineView(.animation)`, which kept the full-screen overlay window
@@ -45,7 +45,6 @@ struct PickyCaptureContextBorderView: View {
         ZStack {
             focusGlow
             edgeBorder
-            contextPill
         }
         .frame(width: screenFrame.width, height: screenFrame.height)
         .allowsHitTesting(false)
@@ -78,30 +77,6 @@ struct PickyCaptureContextBorderView: View {
         borderShape.strokeBorder(angularGradient, lineWidth: lineWidth)
     }
 
-    private var contextPill: some View {
-        VStack {
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(DS.Colors.overlayCursorBlue)
-                    .frame(width: 7, height: 7)
-                Text(L10n.t("overlay.captureBorder.contextLabel"))
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundColor(Color(hex: "#CFE1FF"))
-            }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 5)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(Color(hex: "#0A1423").opacity(0.72))
-            )
-            .overlay(
-                Capsule(style: .continuous)
-                    .stroke(DS.Colors.overlayCursorBlue.opacity(0.35), lineWidth: 0.8)
-            )
-            .padding(.top, 64)
-            Spacer(minLength: 0)
-        }
-    }
 
     private var angularGradient: AngularGradient {
         AngularGradient(

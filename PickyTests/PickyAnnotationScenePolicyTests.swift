@@ -1430,8 +1430,10 @@ struct PickyAnnotationScenePolicyTests {
         while capturer.baselineCallCount == 0 { await Task.yield() }
         monitor.updateTarget(screenshot: screenshot(), annotations: [annotation()], mode: .append)
         capturer.resumeFirstBaseline()
-        for _ in 0..<100 where scheduledDelays.last.map({ $0 < 0.29 }) ?? true {
-            await Task.yield()
+        try await waitUntil(
+            condition: "a >=0.29s confirmation schedule after resuming the suspended baseline"
+        ) {
+            scheduledDelays.last.map { $0 >= 0.29 } ?? false
         }
 
         #expect(scheduledDelays.last.map { $0 >= 0.29 } == true)
@@ -1441,6 +1443,20 @@ struct PickyAnnotationScenePolicyTests {
         #expect(scheduledDelays.last.map { $0 > 0.20 } == true)
         #expect(outputs.isEmpty)
         monitor.stop()
+    }
+
+    private func waitUntil(
+        timeout: TimeInterval = 2,
+        condition: String,
+        _ predicate: @escaping @MainActor () -> Bool
+    ) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !predicate() {
+            guard Date() < deadline else {
+                throw AnnotationSceneConditionTimeout(condition: condition)
+            }
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
     }
 
     private func sceneBaseline(contextID: String) -> PickyAnnotationSceneBaseline {
@@ -1648,6 +1664,14 @@ struct PickyAnnotationScenePolicyTests {
             height: height,
             luminance: luminance
         )
+    }
+}
+
+private struct AnnotationSceneConditionTimeout: LocalizedError {
+    let condition: String
+
+    var errorDescription: String? {
+        "Timed out waiting for \(condition)"
     }
 }
 

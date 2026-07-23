@@ -17,18 +17,11 @@ enum QuickInputHistoryPolicy {
     static let defaultCardHeight: CGFloat = 164
     /// The history card must never claim more than this fraction of a screen.
     static let maximumScreenHeightFraction: CGFloat = 0.45
-    /// Fixed vertical chrome shared by every history-card variant.
+    /// Fixed top and bottom padding around the scroll viewport.
     static let cardVerticalPadding: CGFloat = 20
-    static let historyHintHeight: CGFloat = 22
-    static let historyContentSpacing: CGFloat = 8
     /// Keeps a compact user prompt readable rather than showing a clipped card.
     static let minimumScrollContentHeight: CGFloat = 44
-    /// The minimum includes the hint row even for a one-turn transcript, so a
-    /// card never appears with insufficient room for its normal chrome.
-    static let minimumCardHeight: CGFloat = cardVerticalPadding
-        + historyHintHeight
-        + historyContentSpacing
-        + minimumScrollContentHeight
+    static let minimumCardHeight: CGFloat = cardVerticalPadding + minimumScrollContentHeight
 
     static func shouldShowCard(for messages: [PickyMainAgentMessage]) -> Bool {
         !messages.isEmpty
@@ -50,8 +43,8 @@ enum QuickInputHistoryPolicy {
         messages.last(where: { $0.role == .user })?.id ?? messages.last?.id
     }
 
-    /// The instructional affordance only appears when a prior transcript
-    /// exists above the starting turn; it is never rendered for a single turn.
+    /// Prior transcript exists above the starting turn and can therefore be
+    /// indicated with the non-interactive top fade.
     static func hasEarlierMessages(in messages: [PickyMainAgentMessage]) -> Bool {
         guard let anchorID = anchorMessageID(in: messages),
               let anchorIndex = messages.firstIndex(where: { $0.id == anchorID }) else {
@@ -73,13 +66,18 @@ enum QuickInputHistoryPolicy {
 
     /// Reserves fixed card chrome before giving the scroll view its height cap,
     /// ensuring the rendered card can never exceed `cardHeightLimit`.
-    static func scrollHeightLimit(
-        cardHeightLimit: CGFloat,
-        hasEarlierMessages: Bool
-    ) -> CGFloat? {
+    static func scrollHeightLimit(cardHeightLimit: CGFloat) -> CGFloat? {
         guard cardHeightLimit >= minimumCardHeight else { return nil }
-        let chromeHeight = cardVerticalPadding
-            + (hasEarlierMessages ? historyHintHeight + historyContentSpacing : 0)
-        return cardHeightLimit - chromeHeight
+        return cardHeightLimit - cardVerticalPadding
+    }
+
+    /// A gradient should only obscure the bottom edge while transcript content
+    /// remains below the scroll viewport. Both values are measured in the
+    /// scroll view's named coordinate space.
+    static func hasContentBelowViewport(
+        contentBottom: CGFloat,
+        viewportHeight: CGFloat
+    ) -> Bool {
+        contentBottom > viewportHeight + 0.5
     }
 }

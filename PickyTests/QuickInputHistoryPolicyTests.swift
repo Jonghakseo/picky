@@ -67,7 +67,7 @@ struct QuickInputHistoryPolicyTests {
     }
 
     @Test
-    func insufficientSpaceHidesCardAndReservesChromeBeforeScrollContent() {
+    func insufficientSpaceHidesCardAndReservesPaddingBeforeScrollContent() {
         let messages = [message(role: .user, text: "prompt", second: 1)]
         let insufficientHeight = QuickInputHistoryPolicy.minimumCardHeight - 1
 
@@ -80,9 +80,24 @@ struct QuickInputHistoryPolicyTests {
             cardHeightLimit: QuickInputHistoryPolicy.minimumCardHeight
         ))
         #expect(QuickInputHistoryPolicy.scrollHeightLimit(
-            cardHeightLimit: QuickInputHistoryPolicy.minimumCardHeight,
-            hasEarlierMessages: true
+            cardHeightLimit: QuickInputHistoryPolicy.minimumCardHeight
         ) == QuickInputHistoryPolicy.minimumScrollContentHeight)
+    }
+
+    @Test
+    func bottomFadeRequiresTranscriptContentBelowTheViewport() {
+        #expect(!QuickInputHistoryPolicy.hasContentBelowViewport(
+            contentBottom: 120,
+            viewportHeight: 120
+        ))
+        #expect(!QuickInputHistoryPolicy.hasContentBelowViewport(
+            contentBottom: 120.5,
+            viewportHeight: 120
+        ))
+        #expect(QuickInputHistoryPolicy.hasContentBelowViewport(
+            contentBottom: 121,
+            viewportHeight: 120
+        ))
     }
 
     @Test

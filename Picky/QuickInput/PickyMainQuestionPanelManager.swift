@@ -18,6 +18,14 @@ enum PickyMainQuestionPanelPolicy {
     static func shouldClearPendingQuestion(after answerError: PickyErrorEvent?) -> Bool {
         answerError == nil
     }
+
+    static func shouldReopenAfterAnswerFailure(
+        requestID: String,
+        activeRequestID: String?,
+        error: Error?
+    ) -> Bool {
+        error != nil && requestID == activeRequestID
+    }
 }
 
 struct PickyMainQuestionPanelAnswerError: LocalizedError {
@@ -45,7 +53,8 @@ enum PickyMainQuestionPanelLayout {
     static let contentWidth: CGFloat = 360
     static let shadowOutset: CGFloat = 10
     static let panelWidth: CGFloat = contentWidth + shadowOutset * 2
-    static let estimatedPanelHeight: CGFloat = 360
+    static let estimatedPanelHeight: CGFloat = 220
+    static let maximumScrollableContentHeight: CGFloat = 220
     static let cursorOffsetX: CGFloat = 18
     static let cursorOffsetY: CGFloat = 12
     static let maximumScreenHeightFraction: CGFloat = 0.7
@@ -99,14 +108,27 @@ final class PickyMainQuestionPanelManager {
     private func sendAnswer(requestID: String, value: JSONValue) {
         guard !viewModel.isSending else { return }
         viewModel.isSending = true
+        viewModel.errorMessage = nil
+        panel?.orderOut(nil)
+
         Task { @MainActor [weak self] in
             guard let self else { return }
-            if let error = await self.onAnswer(requestID, value) {
-                print("⚠️ Failed to answer main extension UI request \(requestID): \(error.localizedDescription)")
-                self.viewModel.isSending = false
+            let error = await self.onAnswer(requestID, value)
+            guard PickyMainQuestionPanelPolicy.shouldReopenAfterAnswerFailure(
+                requestID: requestID,
+                activeRequestID: self.viewModel.request?.id,
+                error: error
+            ) else {
                 return
             }
-            self.dismiss()
+
+            let message = error?.localizedDescription ?? "Failed to answer question"
+            print("⚠️ Failed to answer main extension UI request \(requestID): \(message)")
+            self.viewModel.isSending = false
+            self.viewModel.errorMessage = message
+            self.positionPanelNearCursor(NSEvent.mouseLocation)
+            self.panel?.makeKeyAndOrderFront(nil)
+            self.panel?.orderFrontRegardless()
         }
     }
 
@@ -130,7 +152,7 @@ final class PickyMainQuestionPanelManager {
             defer: false
         )
         questionPanel.isFloatingPanel = true
-        questionPanel.level = .pickyCursorOverlay
+        questionPanel.level = NSWindow.Level(rawValue: NSWindow.Level.pickyCursorOverlay.rawValue - 1)
         questionPanel.isOpaque = false
         questionPanel.backgroundColor = .clear
         questionPanel.hasShadow = false

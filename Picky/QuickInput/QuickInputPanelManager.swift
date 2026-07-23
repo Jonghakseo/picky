@@ -43,7 +43,9 @@ final class QuickInputPanelManager {
     var onSubmit: (String) -> Void = { _ in }
     var onVisibilityChange: (Bool) -> Void = { _ in }
 
-    var isPanelVisible: Bool { panel?.isVisible == true }
+    /// Logical visibility remains true while an optimistically hidden draft is
+    /// in flight so CompanionManager keeps its ink-capture lifecycle intact.
+    var isPanelVisible: Bool { viewModel.isSending || panel?.isVisible == true }
 
     func containsInteractiveGlobalPoint(_ point: CGPoint) -> Bool {
         guard let panel, panel.isVisible else { return false }
@@ -71,6 +73,7 @@ final class QuickInputPanelManager {
     /// coordinates). If the panel is already visible, it is repositioned and
     /// the field is re-focused.
     func presentPanel(near cursorLocation: CGPoint) {
+        guard !viewModel.isSending else { return }
         if panel == nil {
             createPanel()
         }
@@ -102,14 +105,15 @@ final class QuickInputPanelManager {
     var viewModelForTesting: QuickInputPanelViewModel { viewModel }
     #endif
 
-    /// Called by the host after the submission task finishes. On success the
-    /// panel auto-closes; on failure the error stays visible inside the pill
-    /// and the input is preserved so the user can retry.
+    /// Called by the host after the submission task finishes. The pill was
+    /// hidden optimistically at submit time. On success it is formally
+    /// dismissed; on failure it is restored with its draft intact for retry.
     func panelDidFinishSending(success: Bool, errorMessage: String?) {
         viewModel.isSending = false
         if success {
             dismiss()
         } else {
+            presentPanel(near: NSEvent.mouseLocation)
             viewModel.errorMessage = errorMessage ?? L10n.t("error.directMessage.fallback")
         }
     }
@@ -119,6 +123,9 @@ final class QuickInputPanelManager {
     private func handleSubmit(_ text: String) {
         viewModel.isSending = true
         viewModel.errorMessage = nil
+        // Keep the manager's visibility state (and its ink capture) alive
+        // until delivery completes, but remove the pill immediately.
+        panel?.orderOut(nil)
         onSubmit(text)
     }
 

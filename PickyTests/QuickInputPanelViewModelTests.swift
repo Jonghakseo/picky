@@ -39,4 +39,13 @@ struct QuickInputPanelViewModelTests {
         manager.updateScreenshotState(.attached)
         #expect(manager.viewModelForTesting.screenshotState == .attached)
     }
+
+    @Test
+    func managerRemainsLogicallyVisibleWhileAnOptimisticSubmissionIsInFlight() {
+        let manager = QuickInputPanelManager()
+
+        manager.viewModelForTesting.isSending = true
+
+        #expect(manager.isPanelVisible)
+    }
 }

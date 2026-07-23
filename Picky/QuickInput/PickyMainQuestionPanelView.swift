@@ -13,8 +13,28 @@ final class PickyMainQuestionPanelViewModel: ObservableObject {
     @Published private(set) var request: PickyExtensionUiRequest?
     @Published var formState = PickyAskUserQuestionFormState()
     @Published var isSending = false
+    @Published var errorMessage: String?
+    @Published private(set) var currentStepIndex = 0
 
     var onAnswer: (String, JSONValue) -> Void = { _, _ in }
+
+    var questions: [PickyExtensionUiQuestion] { request?.questions ?? [] }
+    var usesSteps: Bool { questions.count > 1 }
+    var isFirstStep: Bool { currentStepIndex == 0 }
+    var isLastStep: Bool { currentStepIndex >= questions.count - 1 }
+    var currentQuestion: (question: PickyExtensionUiQuestion, index: Int)? {
+        guard questions.indices.contains(currentStepIndex) else { return nil }
+        return (questions[currentStepIndex], currentStepIndex)
+    }
+    var isCurrentStepSubmittable: Bool {
+        guard let currentQuestion else { return true }
+        return formState.isRequiredSatisfied(question: currentQuestion.question, index: currentQuestion.index)
+    }
+    var isActionSubmittable: Bool {
+        usesSteps && !isLastStep
+            ? isCurrentStepSubmittable
+            : formState.isSubmittable(questions: questions)
+    }
 
     func configure(request: PickyExtensionUiRequest) {
         guard self.request?.id != request.id else { return }
@@ -22,18 +42,30 @@ final class PickyMainQuestionPanelViewModel: ObservableObject {
         formState = PickyAskUserQuestionFormState()
         formState.seedDefaults(for: request.questions ?? [])
         isSending = false
+        errorMessage = nil
+        currentStepIndex = 0
     }
 
     func clear() {
         request = nil
         formState = PickyAskUserQuestionFormState()
         isSending = false
+        errorMessage = nil
+        currentStepIndex = 0
+    }
+
+    func goNext() {
+        guard usesSteps, !isLastStep, isCurrentStepSubmittable else { return }
+        currentStepIndex += 1
+    }
+
+    func goBack() {
+        guard usesSteps, !isFirstStep else { return }
+        currentStepIndex -= 1
     }
 
     func submit() {
-        guard let request, !isSending else { return }
-        let questions = request.questions ?? []
-        guard formState.isSubmittable(questions: questions) else { return }
+        guard let request, !isSending, formState.isSubmittable(questions: questions) else { return }
         onAnswer(request.id, .object(["value": .object(formState.answerObject(for: questions))]))
     }
 
@@ -47,7 +79,9 @@ struct PickyMainQuestionPanelView: View {
     @ObservedObject var viewModel: PickyMainQuestionPanelViewModel
 
     private var request: PickyExtensionUiRequest? { viewModel.request }
-    private var questions: [PickyExtensionUiQuestion] { request?.questions ?? [] }
+    private var questions: [PickyExtensionUiQuestion] { viewModel.questions }
+    private var shouldShowDescription: Bool { !viewModel.usesSteps || viewModel.isFirstStep }
+    private var showsRequiredHint: Bool { !viewModel.isSending && !viewModel.isActionSubmittable }
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.md) {
@@ -55,15 +89,21 @@ struct PickyMainQuestionPanelView: View {
                 header(for: request)
                 ScrollView(.vertical, showsIndicators: true) {
                     VStack(alignment: .leading, spacing: DS.Spacing.md) {
-                        if let description = request.description, !description.isEmpty {
+                        if viewModel.usesSteps {
+                            stepIndicator
+                        }
+                        if shouldShowDescription,
+                           let description = request.description,
+                           !description.isEmpty {
                             markdownText(description, color: DS.Colors.textSecondary)
+                                .pickyFont(size: 10)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         questionControls
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxHeight: .infinity, alignment: .top)
+                .frame(maxHeight: PickyMainQuestionPanelLayout.maximumScrollableContentHeight, alignment: .top)
                 footer
             }
         }
@@ -94,32 +134,62 @@ struct PickyMainQuestionPanelView: View {
         }
     }
 
+    private var stepIndicator: some View {
+        Text("\(viewModel.currentStepIndex + 1) / \(questions.count)")
+            .pickyFont(size: 10, weight: .medium)
+            .foregroundStyle(DS.Colors.textSecondary)
+            .accessibilityLabel("Question \(viewModel.currentStepIndex + 1) of \(questions.count)")
+    }
+
     @ViewBuilder
     private var questionControls: some View {
         if questions.isEmpty {
             Text("질문 내용이 없습니다.")
                 .pickyFont(size: 11)
                 .foregroundStyle(DS.Colors.textSecondary)
-        } else {
-            VStack(alignment: .leading, spacing: DS.Spacing.md) {
-                ForEach(Array(questions.enumerated()), id: \.offset) { index, question in
-                    formQuestion(question, index: index)
-                }
-            }
+        } else if let currentQuestion = viewModel.currentQuestion {
+            formQuestion(currentQuestion.question, index: currentQuestion.index)
         }
     }
 
     private var footer: some View {
-        HStack(spacing: DS.Spacing.sm) {
-            Text("esc 취소")
-                .pickyFont(size: 10)
-                .foregroundStyle(DS.Colors.textPrimary.opacity(0.35))
-            Spacer(minLength: DS.Spacing.sm)
-            Button("제출") { viewModel.submit() }
-                .buttonStyle(PickyMainQuestionSubmitButtonStyle())
-                .disabled(viewModel.isSending || !viewModel.formState.isSubmittable(questions: questions))
-                .accessibilityLabel("Submit answer")
-                .accessibilityValue(viewModel.isSending ? "Sending" : "")
+        VStack(alignment: .leading, spacing: DS.Spacing.xs) {
+            if let errorMessage = viewModel.errorMessage {
+                Text(errorMessage)
+                    .pickyFont(size: 10)
+                    .foregroundStyle(DS.Colors.destructiveText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Answer delivery failed: \(errorMessage)")
+            } else if showsRequiredHint {
+                Text("필수 항목을 입력하세요")
+                    .pickyFont(size: 10)
+                    .foregroundStyle(DS.Colors.warningText)
+            }
+
+            HStack(spacing: DS.Spacing.sm) {
+                Text("esc 취소")
+                    .pickyFont(size: 10)
+                    .foregroundStyle(DS.Colors.textPrimary.opacity(0.35))
+                Spacer(minLength: DS.Spacing.sm)
+
+                if viewModel.usesSteps, !viewModel.isFirstStep {
+                    Button("이전") { viewModel.goBack() }
+                        .controlSize(.small)
+                }
+
+                if viewModel.usesSteps, !viewModel.isLastStep {
+                    Button("다음") { viewModel.goNext() }
+                        .buttonStyle(PickyMainQuestionSubmitButtonStyle())
+                        .disabled(viewModel.isSending || !viewModel.isActionSubmittable)
+                        .accessibilityLabel("Next question")
+                } else {
+                    Button("제출") { viewModel.submit() }
+                        .buttonStyle(PickyMainQuestionSubmitButtonStyle())
+                        .disabled(viewModel.isSending || !viewModel.isActionSubmittable)
+                        .accessibilityLabel("Submit answer")
+                        .accessibilityValue(viewModel.isSending ? "Sending" : "")
+                }
+            }
         }
     }
 
@@ -271,21 +341,27 @@ private enum PickyMainQuestionPanelMarkdown {
 
 private struct PickyMainQuestionSubmitButtonStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
     @State private var isHovered = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .pickyFont(size: 11, weight: .medium)
-            .foregroundStyle(DS.Colors.textOnAccent)
+            .foregroundStyle(isEnabled ? DS.Colors.textOnAccent : DS.Colors.disabledText)
             .padding(.horizontal, DS.Spacing.md)
             .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
-                    .fill(configuration.isPressed || isHovered ? DS.Colors.accentHover : DS.Colors.accent)
+                    .fill(backgroundColor(isPressed: configuration.isPressed))
             )
-            .opacity(configuration.isPressed ? 0.88 : 1)
-            .onHover { isHovered = $0 }
+            .opacity(isEnabled && configuration.isPressed ? 0.88 : 1)
+            .onHover { isHovered = isEnabled && $0 }
             .animation(reduceMotion ? nil : .easeOut(duration: DS.Animation.fast), value: isHovered)
             .animation(reduceMotion ? nil : .easeOut(duration: DS.Animation.fast), value: configuration.isPressed)
+    }
+
+    private func backgroundColor(isPressed: Bool) -> Color {
+        guard isEnabled else { return DS.Colors.disabledBackground }
+        return isPressed || isHovered ? DS.Colors.accentHover : DS.Colors.accent
     }
 }

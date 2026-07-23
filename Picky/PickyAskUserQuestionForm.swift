@@ -58,18 +58,23 @@ struct PickyAskUserQuestionFormState: Equatable {
     }
 
     func isSubmittable(questions: [PickyExtensionUiQuestion]) -> Bool {
-        for (index, question) in questions.enumerated() where question.required ?? true {
-            let key = Self.key(for: question, index: index)
-            switch question.type {
-            case .radio:
-                if radioAnswer(forKey: key).isEmpty { return false }
-            case .checkbox:
-                if checkboxAnswer(forKey: key).isEmpty { return false }
-            case .text:
-                if (textValues[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return false }
-            }
+        questions.enumerated().allSatisfy { index, question in
+            isRequiredSatisfied(question: question, index: index)
         }
-        return true
+    }
+
+    func isRequiredSatisfied(question: PickyExtensionUiQuestion, index: Int) -> Bool {
+        guard question.required ?? true else { return true }
+
+        let key = Self.key(for: question, index: index)
+        switch question.type {
+        case .radio:
+            return !radioAnswer(forKey: key).isEmpty
+        case .checkbox:
+            return !checkboxAnswer(forKey: key).isEmpty
+        case .text:
+            return !(textValues[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
     }
 
     func answerObject(for questions: [PickyExtensionUiQuestion]) -> [String: JSONValue] {

@@ -97,6 +97,38 @@ struct PickyAskUserQuestionFormTests {
         ])
     }
 
+    @Test func validatesEachRequiredQuestionIndependently() throws {
+        let requiredQuestion = PickyExtensionUiQuestion(
+            id: "required",
+            type: .text,
+            prompt: "Required",
+            label: nil,
+            options: nil,
+            allowOther: nil,
+            required: true,
+            placeholder: nil,
+            defaultValue: nil
+        )
+        let optionalQuestion = PickyExtensionUiQuestion(
+            id: "optional",
+            type: .text,
+            prompt: "Optional",
+            label: nil,
+            options: nil,
+            allowOther: nil,
+            required: false,
+            placeholder: nil,
+            defaultValue: nil
+        )
+        var state = PickyAskUserQuestionFormState()
+
+        #expect(!state.isRequiredSatisfied(question: requiredQuestion, index: 0))
+        #expect(state.isRequiredSatisfied(question: optionalQuestion, index: 1))
+
+        state.textValues["required"] = "answered"
+        #expect(state.isRequiredSatisfied(question: requiredQuestion, index: 0))
+    }
+
     @Test func fallsBackToStableQuestionIndexesWhenIdsAreMissing() throws {
         let questions = [
             PickyExtensionUiQuestion(id: nil, type: .text, prompt: "First", label: nil, options: nil, allowOther: nil, required: false, placeholder: nil, defaultValue: nil),

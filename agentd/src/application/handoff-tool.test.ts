@@ -81,7 +81,7 @@ describe("handoff tools", () => {
   it("reports each Pickle's dock group and the complete dock-group list", async () => {
     const sessions = [makeSession(1), makeSession(2)];
     const groups: DockGroup[] = [
-      { id: "research", name: "Research", color: 6, memberSessionIds: ["pickle-1"], collapsed: false },
+      { id: "research", name: "Research", color: 6, memberSessionIds: ["pickle-1", "archived-pickle"], collapsed: false },
       { id: "later", name: "Later", color: 2, memberSessionIds: [], collapsed: true },
     ];
     const tool = createPickyPickleSessionsTool(() => ({ sessions, groups }));
@@ -89,19 +89,23 @@ describe("handoff tools", () => {
     const result = await tool.execute("tool-1", {} as never, undefined, undefined, {} as never);
     const details = result.details as {
       sessions: Array<{ id: string; group: { id: string; name: string; color: number; collapsed: boolean } | null }>;
-      groups: DockGroup[];
+      groups: Array<{ id: string; name: string; color: number; collapsed: boolean }>;
     };
 
     expect(details.sessions).toEqual([
       expect.objectContaining({ id: "pickle-1", group: { id: "research", name: "Research", color: 6, collapsed: false } }),
       expect.objectContaining({ id: "pickle-2", group: null }),
     ]);
-    expect(details.groups).toEqual(groups);
+    expect(details.groups).toEqual([
+      { id: "research", name: "Research", color: 6, collapsed: false },
+      { id: "later", name: "Later", color: 2, collapsed: true },
+    ]);
     const content = result.content[0];
     if (content?.type !== "text") throw new Error("expected text content");
     expect(content.text).toContain("group=Research (research)");
     expect(content.text).toContain("group=none");
-    expect(content.text).toContain("later | Later | color=2; collapsed=true; members=none");
+    expect(content.text).toContain("later | Later | color=2; collapsed=true");
+    expect(content.text).not.toContain("archived-pickle");
   });
 
   it("always includes terminal Pickle sessions in paginated results", async () => {

@@ -130,11 +130,15 @@ function createPickyPickleSessionsToolWithNames(onList: () => PickyPickleSession
       const snapshot = await onList();
       const allSessions = snapshot.sessions.filter((session) => includeArchived || session.archived !== true);
       const sessions = allSessions.slice(start, end).map((session) => summarizePickleSession(session, snapshot.groups));
+      // The full dock layout includes archived and off-page member ids. The main agent only
+      // needs group metadata to interpret each paged session's `group`, so never leak those
+      // members through this bounded tool response.
+      const groups = snapshot.groups.map(summarizeDockGroup);
       const hasMore = allSessions.length > end;
       const nextPage = hasMore ? page + 1 : undefined;
       return {
-        content: [{ type: "text", text: formatPickleSessions(sessions, snapshot.groups, { page, pageSize, hasMore, nextPage }) }],
-        details: { sessions, groups: snapshot.groups, page, pageSize, hasMore, nextPage },
+        content: [{ type: "text", text: formatPickleSessions(sessions, groups, { page, pageSize, hasMore, nextPage }) }],
+        details: { sessions, groups, page, pageSize, hasMore, nextPage },
       };
     },
   });
@@ -212,6 +216,10 @@ function createPickyAbortPickleToolWithNames(
   });
 }
 
+function summarizeDockGroup(group: DockGroup): PickleDockGroupSummary {
+  return { id: group.id, name: group.name, color: group.color, collapsed: group.collapsed };
+}
+
 function summarizePickleSession(session: PickyAgentSession, groups: DockGroup[] = []): PickleSessionSummary {
   const assignedGroup = groups.find((group) => group.memberSessionIds.includes(session.id));
   return {
@@ -224,13 +232,11 @@ function summarizePickleSession(session: PickyAgentSession, groups: DockGroup[] 
     lastSummary: session.lastSummary ? truncate(session.lastSummary, 200) : undefined,
     changedFilesCount: session.changedFiles.length,
     archived: session.archived === true,
-    group: assignedGroup
-      ? { id: assignedGroup.id, name: assignedGroup.name, color: assignedGroup.color, collapsed: assignedGroup.collapsed }
-      : null,
+    group: assignedGroup ? summarizeDockGroup(assignedGroup) : null,
   };
 }
 
-function formatPickleSessions(sessions: PickleSessionSummary[], groups: DockGroup[], pagination: { page: number; pageSize: number; hasMore: boolean; nextPage?: number }): string {
+function formatPickleSessions(sessions: PickleSessionSummary[], groups: PickleDockGroupSummary[], pagination: { page: number; pageSize: number; hasMore: boolean; nextPage?: number }): string {
   const nextPageHint = pagination.hasMore && pagination.nextPage ? `; more available, request page ${pagination.nextPage}` : "";
   const lines = [sessions.length === 0
     ? `No Pickles returned on page ${pagination.page}.`
@@ -246,7 +252,7 @@ function formatPickleSessions(sessions: PickleSessionSummary[], groups: DockGrou
   }
   lines.push(groups.length === 0 ? "Dock groups: none." : "Dock groups:");
   for (const group of groups) {
-    lines.push(`- ${group.id} | ${group.name} | color=${group.color}; collapsed=${group.collapsed}; members=${group.memberSessionIds.join(",") || "none"}`);
+    lines.push(`- ${group.id} | ${group.name} | color=${group.color}; collapsed=${group.collapsed}`);
   }
   return lines.join("\n");
 }

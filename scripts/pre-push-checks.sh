@@ -70,6 +70,11 @@ run_swiftlint_warning_first() {
 
 require_command git "Install Git."
 require_command node "Install Node.js 22.19.0."
+
+# Fail fast on architectural regressions, including the file-size ratchet, before
+# invoking any slower dependency checks, builds, or test suites.
+run_step "architecture guard" node scripts/check-architecture-rules.js
+
 require_command pnpm "Install pnpm 10.15.1 or run Corepack setup."
 require_command swiftlint "Install it with: brew install swiftlint"
 require_command xcodebuild "Install Xcode command line tools / Xcode."
@@ -84,7 +89,6 @@ run_step "agentd: typecheck" pnpm --dir agentd run typecheck
 run_step "agentd: lint (zero warnings)" pnpm --dir agentd run lint
 run_step "ESLint suppression guard" pnpm run check:eslint-suppressions
 run_with_retry 5 "agentd: tests (serial)" pnpm --dir agentd run test:serial
-run_step "architecture guard" pnpm run check:architecture
 run_swiftlint_warning_first
 run_step "Picky app build" xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" build
 

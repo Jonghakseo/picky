@@ -5,6 +5,7 @@
 //  Covers Quick Input view-model state shared by history and submission flows.
 //
 
+import CoreGraphics
 import Foundation
 import Testing
 @testable import Picky
@@ -83,5 +84,27 @@ struct QuickInputPanelViewModelTests {
         viewModel.submit()
 
         #expect(submittedRecipient == recipient)
+    }
+
+    @Test
+    func failedSendRestoresPickleRecipientUntilAnExplicitMainPresentation() {
+        let manager = QuickInputPanelManager()
+        let recipient = QuickInputRecipientProjection.pickle(sessionID: "pickle-a", label: "Investigate logs")
+        let viewModel = manager.viewModelForTesting
+        viewModel.beginPresentation(recipient: recipient)
+        viewModel.isSending = true
+
+        manager.panelDidFinishSending(success: false, errorMessage: nil)
+
+        #expect(viewModel.recipient == recipient)
+        #expect(viewModel.recipient.prompt == "Message Investigate logs…")
+        #expect(!viewModel.recipient.showsMainAgentHistory)
+
+        manager.dismiss()
+        manager.presentPanel(near: .zero, recipient: .main)
+
+        #expect(viewModel.recipient == .main)
+
+        manager.dismiss()
     }
 }

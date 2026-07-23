@@ -153,11 +153,12 @@ final class QuickInputPanelManager {
     /// hidden optimistically at submit time. On success it is formally
     /// dismissed; on failure it is restored with its draft intact for retry.
     func panelDidFinishSending(success: Bool, errorMessage: String?) {
+        let recipient = viewModel.recipient
         viewModel.isSending = false
         if success {
             dismiss()
         } else {
-            presentPanel(near: NSEvent.mouseLocation)
+            presentPanel(near: NSEvent.mouseLocation, recipient: recipient)
             viewModel.errorMessage = errorMessage ?? L10n.t("error.directMessage.fallback")
         }
     }

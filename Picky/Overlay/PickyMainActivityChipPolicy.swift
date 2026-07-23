@@ -92,8 +92,14 @@ struct PickyMainActivityChipModel: Equatable {
             : rawDetail
         let withoutUserBashPrefix = detail.hasPrefix("$ ") ? String(detail.dropFirst(2)) : detail
         let normalized = oneLine(withoutUserBashPrefix)
-        guard !normalized.isEmpty else { return nil }
+        guard !normalized.isEmpty, !isEmptyStructure(normalized) else { return nil }
         return truncate(normalized, limit: maxDetailLength)
+    }
+
+    /// True when the string is empty or contains only structural punctuation of
+    /// an empty container (`{}`, `{ }`, `[]`, `()`), so it conveys no argument value.
+    private static func isEmptyStructure(_ text: String) -> Bool {
+        text.filter { !"{}[]() \t".contains($0) }.isEmpty
     }
 
     private static func oneLine(_ text: String) -> String {

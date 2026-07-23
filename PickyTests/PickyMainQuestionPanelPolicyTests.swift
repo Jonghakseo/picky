@@ -10,15 +10,29 @@ import Testing
 @MainActor
 struct PickyMainQuestionPanelPolicyTests {
     @Test
-    func activityOverlayShowsOnlyWhileProcessingWithLiveActivity() {
+    func activityOverlayShowsWheneverLiveActivityExistsExceptWhileResponding() {
         #expect(PickyMainActivityOverlayPolicy.shouldShow(
             voiceState: .processing,
             hasActivities: true,
             hasPendingQuestion: false
         ))
+        // Typed / external-submitted main turns keep the cursor idle; chips must
+        // still appear, otherwise tool activity is invisible for those turns.
+        #expect(PickyMainActivityOverlayPolicy.shouldShow(
+            voiceState: .idle,
+            hasActivities: true,
+            hasPendingQuestion: false
+        ))
+        // The response bubble owns the cursor while responding.
         #expect(!PickyMainActivityOverlayPolicy.shouldShow(
             voiceState: .responding,
             hasActivities: true,
+            hasPendingQuestion: false
+        ))
+        // Nothing to show.
+        #expect(!PickyMainActivityOverlayPolicy.shouldShow(
+            voiceState: .idle,
+            hasActivities: false,
             hasPendingQuestion: false
         ))
     }

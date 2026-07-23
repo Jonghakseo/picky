@@ -42,10 +42,15 @@ enum PickyMainActivityOverlayPolicy {
         hasActivities: Bool,
         hasPendingQuestion: Bool
     ) -> Bool {
-        if case .processing = voiceState {
-            return hasActivities || hasPendingQuestion
-        }
-        return false
+        // Activity/question state is populated only during an in-flight main turn
+        // and cleared on response start or turn settle, so it self-gates. Do NOT
+        // require `.processing`: main turns launched from typed input (Quick Input)
+        // or external submits keep the cursor `.idle`, and gating on `.processing`
+        // hid the chips entirely for those. Only suppress while the response bubble
+        // owns the cursor (`.responding`) to avoid stacking two surfaces.
+        guard hasActivities || hasPendingQuestion else { return false }
+        if case .responding = voiceState { return false }
+        return true
     }
 }
 

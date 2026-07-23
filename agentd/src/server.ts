@@ -446,6 +446,10 @@ export class AgentdServer {
     if (pendingMainExtensionUi) {
       this.send(ws, { type: "mainExtensionUiRequested", request: pendingMainExtensionUi });
     }
+    const activeMainActivity = this.options.supervisor.mainActiveActivity();
+    if (activeMainActivity) {
+      this.send(ws, { type: "mainActivityUpdated", activity: activeMainActivity });
+    }
   }
 
   private async handleMessage(ws: WebSocket, raw: string): Promise<void> {

@@ -121,6 +121,8 @@ export class SessionSupervisor extends EventEmitter {
   private mainPendingExtensionUiRequest?: PickyExtensionUiRequest;
   private mainThinkingBuffer = "";
   private mainActivityVisible = false;
+  // Retained while visible so newly connected app sockets can restore the live main-agent strip.
+  private mainActivity?: PickyMainActivity;
   private mainThinkingLastEmittedAt?: number;
   private mainThinkingTimer?: ReturnType<typeof setTimeout>;
   // Idle-triggered in-place compaction: timer (re)armed on turn settle when a threshold is met,
@@ -595,6 +597,11 @@ export class SessionSupervisor extends EventEmitter {
     return this.mainPendingExtensionUiRequest;
   }
 
+  /** Current live main-agent activity, if any, for app socket reconnect replay. */
+  mainActiveActivity(): PickyMainActivity | undefined {
+    return this.mainActivity;
+  }
+
   /// Public snapshot of the always-on Picky main agent's Pi session location.
   /// The Picky app uses this to expose "Open in Pi" / "Copy resume command"
   /// escape hatches in the Messages tab so users can drop into a real Pi TUI
@@ -915,9 +922,16 @@ export class SessionSupervisor extends EventEmitter {
 
   private clearMainActivity(): void {
     this.discardQueuedMainThinkingActivity();
-    if (!this.mainActivityVisible) return;
+    const wasVisible = this.mainActivityVisible || this.mainActivity !== undefined;
     this.mainActivityVisible = false;
-    this.emit("mainActivity", undefined);
+    this.mainActivity = undefined;
+    if (wasVisible) this.emit("mainActivity", undefined);
+  }
+
+  private showMainActivity(activity: PickyMainActivity): void {
+    this.mainActivityVisible = true;
+    this.mainActivity = activity;
+    this.emit("mainActivity", activity);
   }
 
   private emitMainThinkingActivity(): void {
@@ -925,8 +939,7 @@ export class SessionSupervisor extends EventEmitter {
     const thinkingPreview = this.mainThinkingBuffer.slice(-200).replace(/\s+/g, " ").trim();
     if (!thinkingPreview) return;
     this.mainThinkingLastEmittedAt = Date.now();
-    this.mainActivityVisible = true;
-    this.emit("mainActivity", { kind: "thinking", thinkingPreview } satisfies PickyMainActivity);
+    this.showMainActivity({ kind: "thinking", thinkingPreview });
   }
 
   private queueMainThinkingActivity(delta: string): void {
@@ -1656,14 +1669,13 @@ export class SessionSupervisor extends EventEmitter {
       // A queued thinking update must not replace the more actionable tool
       // activity after its throttle window expires.
       this.discardQueuedMainThinkingActivity();
-      this.mainActivityVisible = true;
-      this.emit("mainActivity", {
+      this.showMainActivity({
         kind: "tool",
         toolCallId: event.toolCallId,
         toolName: event.name,
         status: event.status,
         argsPreview: event.argsPreview ?? event.preview,
-      } satisfies PickyMainActivity);
+      });
       return;
     }
     if (event.type === "thinking_delta") {

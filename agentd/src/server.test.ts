@@ -7,7 +7,7 @@ import WebSocket from "ws";
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PROTOCOL_VERSION, parseCommand, type EventEnvelope, type PickyAgentSession, type PickyContextPacket, type PickyExtensionUiRequest } from "./protocol.js";
-import { MockRuntime } from "./runtime/mock-runtime.js";
+import { MockRuntime, type MockRuntimeSession } from "./runtime/mock-runtime.js";
 import { AgentdServer, commandLogFields, compactSessionsForSnapshot, createDefaultPackageManager, sanitizeForJson } from "./server.js";
 import { EdgeTTSService, type EdgeTTSClient } from "./edge-tts-service.js";
 import { SessionStore } from "./session-store.js";
@@ -17,6 +17,16 @@ import type { PiOAuthHandling } from "./application/pi-oauth-service.js";
 let server: AgentdServer;
 let port: number;
 let supervisor: SessionSupervisor;
+
+class TrackingMainRuntime extends MockRuntime {
+  handle?: MockRuntimeSession;
+
+  override async create(...args: Parameters<MockRuntime["create"]>): Promise<MockRuntimeSession> {
+    const handle = await super.create(...args) as MockRuntimeSession;
+    this.handle = handle;
+    return handle;
+  }
+}
 
 beforeEach(async () => {
   const dir = await mkdtemp(join(tmpdir(), "picky-agentd-server-test-"));
@@ -269,6 +279,48 @@ describe("AgentdServer", () => {
     await waitUntil(() => answerMainExtensionUi.mock.calls.length === 1);
     expect(answerMainExtensionUi).toHaveBeenCalledWith("main-ui-1", { choice: "continue" });
     ws.close();
+  });
+
+  it("replays active main activity after reconnect but not after it clears", async () => {
+    await server.stop();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-server-main-activity-reconnect-"));
+    const mainRuntime = new TrackingMainRuntime();
+    supervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir), { mainRuntime });
+    await supervisor.load();
+    server = new AgentdServer({ port: 0, token: "test-token", supervisor });
+    port = await server.start();
+
+    await supervisor.route(context("inspect the active task"));
+    mainRuntime.handle?.emit({ type: "tool", toolCallId: "tool-main-reconnect", name: "read", status: "running" });
+    await waitUntil(() => supervisor.mainActiveActivity()?.toolCallId === "tool-main-reconnect");
+
+    const connectRecordingEvents = async (): Promise<{ ws: WebSocket; events: EventEnvelope[] }> => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}?token=test-token`);
+      const events: EventEnvelope[] = [];
+      ws.on("message", (data) => events.push(JSON.parse(data.toString()) as EventEnvelope));
+      await once(ws, "open");
+      await waitUntil(() => events.some((event) => event.type === "hello"));
+      return { ws, events };
+    };
+
+    const first = await connectRecordingEvents();
+    await waitUntil(() => first.events.some((event) => event.type === "mainActivityUpdated" && event.activity?.toolCallId === "tool-main-reconnect"));
+    first.ws.close();
+    await once(first.ws, "close");
+
+    const reconnected = await connectRecordingEvents();
+    await waitUntil(() => reconnected.events.some((event) => event.type === "mainActivityUpdated" && event.activity?.toolCallId === "tool-main-reconnect"));
+
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await waitUntil(() => supervisor.mainActiveActivity() === undefined);
+    await waitUntil(() => reconnected.events.some((event) => event.type === "mainActivityUpdated" && event.activity === undefined));
+    reconnected.ws.close();
+    await once(reconnected.ws, "close");
+
+    const afterClear = await connectRecordingEvents();
+    await sleep(25);
+    expect(afterClear.events.filter((event) => event.type === "mainActivityUpdated")).toEqual([]);
+    afterClear.ws.close();
   });
 
   it("includes the reloadPlugins command id on pluginsReloaded broadcasts", async () => {    const { ws } = await connectWithHello();

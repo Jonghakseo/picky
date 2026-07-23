@@ -688,7 +688,7 @@ struct PickyConversationCardViewTests {
         }
     }
 
-    @Test func headerMetaPresentationKeepsFullInteractiveMetadataVisible() {
+    @Test func headerMetaPresentationKeepsFullInteractiveMetadataAvailableForTooltips() {
         let presentation = PickyConversationHeaderMetaPresentation(
             assistantRun: PickyAssistantRunMetadata(
                 model: "anthropic/claude-opus-4-7",

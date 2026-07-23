@@ -106,42 +106,22 @@ struct PickyConversationHeaderView: View {
 
     var body: some View {
         let _ = PickyPerf.event("conversation_header_body")
-        ViewThatFits(in: .horizontal) {
-            singleRowHeaderLayout
-            stackedHeaderLayout
-        }
-        .frame(width: PickyHUDDockLayout.detailContentWidth(for: pickyHUDDetailWidth), alignment: .leading)
-        .frame(minHeight: 26, alignment: .leading)
+        singleRowHeaderLayout
+            .frame(width: PickyHUDDockLayout.detailContentWidth(for: pickyHUDDetailWidth), alignment: .leading)
+            .frame(minHeight: 26, alignment: .leading)
     }
 
-    /// Metadata is never hidden or abbreviated. The compact tier moves the
-    /// same interactive context/model/thinking controls onto a wrapping second
-    /// row so model and thinking cycling remain available at every card width.
+    /// Keep metadata in the title row. Context usage and thinking level retain
+    /// their compact intrinsic widths while a long model identifier yields the
+    /// remaining space and truncates instead of moving the metadata to a new row.
     private var singleRowHeaderLayout: some View {
         HStack(alignment: .center, spacing: DS.Spacing.sm) {
             headerLeadingContent(prefersMiddleTruncation: false)
             Spacer(minLength: DS.Spacing.sm)
             if headerMetaPresentation.hasContent {
-                sessionMetaControls(layout: .inline)
-                    .fixedSize(horizontal: true, vertical: false)
+                sessionMetaControls()
             }
             conversationMenuButton
-        }
-    }
-
-    private var stackedHeaderLayout: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.xs) {
-            HStack(alignment: .center, spacing: DS.Spacing.sm) {
-                headerLeadingContent(prefersMiddleTruncation: true)
-                Spacer(minLength: DS.Spacing.sm)
-                conversationMenuButton
-            }
-
-            if headerMetaPresentation.hasContent {
-                sessionMetaControls(layout: .wrapping)
-                    .padding(.leading, 26 + DS.Spacing.sm)
-                    .padding(.trailing, 18 + DS.Spacing.sm)
-            }
         }
     }
 
@@ -156,10 +136,9 @@ struct PickyConversationHeaderView: View {
         }
     }
 
-    private func sessionMetaControls(layout: PickyHeaderSessionMetaPill.LayoutMode) -> some View {
+    private func sessionMetaControls() -> some View {
         PickyHeaderSessionMetaPill(
             presentation: headerMetaPresentation,
-            layout: layout,
             onCycleModel: { cycleModel() },
             onCycleThinkingLevel: { cycleThinkingLevel() }
         )
@@ -758,9 +737,9 @@ struct PickleLogoGlyph: Shape {
     }
 }
 
-/// Shared session metadata projection for the wide header and the narrow
-/// header's menu section. Keeping the strings here prevents the two tiers from
-/// drifting when a session's model, thinking level, or context usage changes.
+/// Shared session metadata projection for the conversation header. Keeping the
+/// strings here aligns visible controls, tooltips, and accessibility text when
+/// a session's model, thinking level, or context usage changes.
 struct PickyConversationHeaderMetaPresentation {
     let contextDisplay: PickyHeaderContextUsageDisplay?
     let modelText: String?
@@ -792,49 +771,26 @@ struct PickyConversationHeaderMetaPresentation {
 }
 
 private struct PickyHeaderSessionMetaPill: View {
-    enum LayoutMode {
-        case inline
-        case wrapping
-    }
-
     let presentation: PickyConversationHeaderMetaPresentation
-    let layout: LayoutMode
     let onCycleModel: () -> Void
     let onCycleThinkingLevel: () -> Void
 
     var body: some View {
-        Group {
-            switch layout {
-            case .inline:
-                HStack(spacing: DS.Spacing.xs) {
-                    if let contextDisplay = presentation.contextDisplay {
-                        contextControl(contextDisplay)
-                        if presentation.modelText != nil || presentation.thinkingLevelText != nil {
-                            separator
-                        }
-                    }
-                    if let modelText = presentation.modelText {
-                        modelControl(modelText)
-                    }
-                    if presentation.modelText != nil, presentation.thinkingLevelText != nil {
-                        separator
-                    }
-                    if let thinkingLevelText = presentation.thinkingLevelText {
-                        thinkingControl(thinkingLevelText)
-                    }
+        HStack(spacing: DS.Spacing.xs) {
+            if let contextDisplay = presentation.contextDisplay {
+                contextControl(contextDisplay)
+                if presentation.modelText != nil || presentation.thinkingLevelText != nil {
+                    separator
                 }
-            case .wrapping:
-                PickyFlowLayout(itemSpacing: DS.Spacing.sm, rowSpacing: DS.Spacing.xs) {
-                    if let contextDisplay = presentation.contextDisplay {
-                        contextControl(contextDisplay)
-                    }
-                    if let modelText = presentation.modelText {
-                        modelControl(modelText)
-                    }
-                    if let thinkingLevelText = presentation.thinkingLevelText {
-                        thinkingControl(thinkingLevelText)
-                    }
-                }
+            }
+            if let modelText = presentation.modelText {
+                modelControl(modelText)
+            }
+            if presentation.modelText != nil, presentation.thinkingLevelText != nil {
+                separator
+            }
+            if let thinkingLevelText = presentation.thinkingLevelText {
+                thinkingControl(thinkingLevelText)
             }
         }
         .font(PickyHUDTypography.metaMonospacedMedium)
@@ -858,10 +814,12 @@ private struct PickyHeaderSessionMetaPill: View {
             Text(modelText)
                 .foregroundColor(textColor.opacity(0.92))
                 .lineLimit(1)
+                .truncationMode(.tail)
         }
         .buttonStyle(.plain)
-        .fixedSize(horizontal: true, vertical: false)
-        .help("Cycle scoped model (⌃P)")
+        .frame(minWidth: 0, alignment: .leading)
+        .nativeTooltip("\(modelText)\nCycle scoped model (⌃P)")
+        .accessibilityHint("Cycle scoped model with Control-P")
         .hoverAffordance()
     }
 
@@ -959,9 +917,8 @@ struct PickyHeaderContextUsageDisplay {
 private extension PickyAssistantRunMetadata {
     var headerModelText: String? {
         guard let model else { return nil }
-        // The responsive header has only two tiers. Preserve the complete model
-        // identifier in the wide tier; the narrow tier moves it into the menu
-        // instead of abbreviating it.
+        // Preserve the complete identifier in the presentation. The header
+        // decides how much to render and exposes this full value on hover.
         let trimmed = model.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }

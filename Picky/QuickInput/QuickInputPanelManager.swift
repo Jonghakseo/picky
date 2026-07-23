@@ -36,6 +36,11 @@ final class QuickInputPanelManager {
     private let appearanceStore: PickyAppearanceStore
     private let fontScaleStore: PickyAppFontScaleStore
     private var panel: QuickInputKeyablePanel?
+    /// The original cursor anchor remains fixed while the transcript changes
+    /// height, so newly appended messages grow above the pill instead of
+    /// moving the composer away from where it was invoked.
+    private var lastCursorLocation: CGPoint?
+    private var isRepositionScheduled = false
 
     /// Called when the user submits a non-empty message. The host (typically
     /// CompanionManager) is responsible for performing the actual delivery and
@@ -46,6 +51,7 @@ final class QuickInputPanelManager {
     /// Logical visibility remains true while an optimistically hidden draft is
     /// in flight so CompanionManager keeps its ink-capture lifecycle intact.
     var isPanelVisible: Bool { viewModel.isSending || panel?.isVisible == true }
+    var isSending: Bool { viewModel.isSending }
 
     func containsInteractiveGlobalPoint(_ point: CGPoint) -> Bool {
         guard let panel, panel.isVisible else { return false }
@@ -67,6 +73,9 @@ final class QuickInputPanelManager {
         viewModel.onClose = { [weak self] in
             self?.dismiss()
         }
+        viewModel.onFittingSizeChanged = { [weak self] in
+            self?.scheduleRepositionForHistoryChangeIfNeeded()
+        }
     }
 
     /// Opens the pill anchored near `cursorLocation` (global AppKit screen
@@ -78,9 +87,12 @@ final class QuickInputPanelManager {
             createPanel()
         }
         viewModel.errorMessage = nil
+        lastCursorLocation = cursorLocation
+        updateHistoryCardHeightLimit(near: cursorLocation)
         positionPanelNearCursor(cursorLocation)
         panel?.makeKeyAndOrderFront(nil)
         panel?.orderFrontRegardless()
+        viewModel.beginPresentation()
         onVisibilityChange(true)
     }
 
@@ -93,10 +105,11 @@ final class QuickInputPanelManager {
         onVisibilityChange(false)
     }
 
-    /// Pushes the live screenshot-attachment state into the pill so the
-    /// trailing camera indicator reflects the current ink/settings combo.
-    func updateScreenshotState(_ state: QuickInputScreenshotState) {
-        viewModel.screenshotState = state
+    /// Pushes the main-agent transcript into the panel. It is intentionally a
+    /// snapshot: `CompanionManager` remains the sole owner of message state.
+    func updateRecentMessages(_ messages: [PickyMainAgentMessage]) {
+        viewModel.recentMessages = Array(messages.suffix(100))
+        scheduleRepositionForHistoryChangeIfNeeded()
     }
 
     #if DEBUG
@@ -159,9 +172,40 @@ final class QuickInputPanelManager {
         panel = quickInputPanel
     }
 
+    private func scheduleRepositionForHistoryChangeIfNeeded() {
+        guard panel?.isVisible == true,
+              let cursorLocation = lastCursorLocation,
+              !isRepositionScheduled else { return }
+        isRepositionScheduled = true
+        // Coalesce a snapshot plus appended-message update into one fitting-size
+        // pass after SwiftUI has laid out the revised transcript.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.isRepositionScheduled = false
+            self.updateHistoryCardHeightLimit(near: cursorLocation)
+            self.positionPanelNearCursor(cursorLocation)
+        }
+    }
+
+    private func updateHistoryCardHeightLimit(near cursorLocation: CGPoint) {
+        let screen = NSScreen.screens.first(where: { $0.frame.contains(cursorLocation) }) ?? NSScreen.main
+        let visibleFrame = screen?.visibleFrame
+        // The pill's top remains cursorOffsetY below the cursor. Everything
+        // above that point belongs to the history card, including its shadow.
+        let pillTop = cursorLocation.y - cursorOffsetY
+        let spaceAbovePill = visibleFrame.map {
+            max(0, $0.maxY - pillTop - QuickInputPanelLayout.historyPillSpacing - shadowOutset)
+        }
+        viewModel.historyCardHeightLimit = QuickInputHistoryPolicy.cardHeightLimit(
+            visibleScreenHeight: visibleFrame?.height,
+            spaceAbovePill: spaceAbovePill
+        )
+    }
+
     /// Positions the pill so its top-leading corner sits just below and to the
-    /// right of the cursor, then clamps to the visible frame of the screen
-    /// containing the cursor so the pill never goes off-screen.
+    /// right of the cursor. The transcript is stacked above it; increasing its
+    /// height therefore only expands the panel upward. The full panel remains
+    /// clamped to the visible frame of the screen containing the cursor.
     private func positionPanelNearCursor(_ cursorLocation: CGPoint) {
         guard let panel else { return }
 
@@ -173,10 +217,10 @@ final class QuickInputPanelManager {
             height: max(fittingSize.height, estimatedPanelHeight)
         )
 
-        // AppKit screen coordinates: y grows upward. Place the pill *below*
-        // the cursor so the user can keep glancing at the cursor while typing.
+        // AppKit coordinates grow upward. The pill is the bottom-most child in
+        // the SwiftUI stack, so this origin is independent of transcript height.
         var originX = cursorLocation.x + cursorOffsetX - shadowOutset
-        var originY = cursorLocation.y - cursorOffsetY - (panelSize.height - shadowOutset)
+        var originY = cursorLocation.y - cursorOffsetY - QuickInputPanelLayout.capsuleHeight - shadowOutset
 
         if let screen = NSScreen.screens.first(where: { $0.frame.contains(cursorLocation) })
             ?? NSScreen.main {
@@ -184,9 +228,6 @@ final class QuickInputPanelManager {
 
             if originX + panelSize.width > visibleFrame.maxX {
                 originX = cursorLocation.x - cursorOffsetX - panelSize.width + shadowOutset
-            }
-            if originY < visibleFrame.minY {
-                originY = cursorLocation.y + cursorOffsetY - shadowOutset
             }
             originX = max(visibleFrame.minX, min(originX, visibleFrame.maxX - panelSize.width))
             originY = max(visibleFrame.minY, min(originY, visibleFrame.maxY - panelSize.height))

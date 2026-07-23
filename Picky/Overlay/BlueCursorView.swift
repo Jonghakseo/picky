@@ -486,6 +486,7 @@ private struct PickleTargetCursorMascotView: View {
 // streaming text bubble (responding).
 struct BlueCursorView: View {
     let screenFrame: CGRect
+    let displayID: CGDirectDisplayID
     @ObservedObject var companionManager: CompanionManager
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @ObservedObject private var cursorStyleStore = PickyCursorStyleStore.shared
@@ -509,8 +510,13 @@ struct BlueCursorView: View {
     // system pointer does.
     @State private var systemCursorVisible: Bool
 
-    init(screenFrame: CGRect, companionManager: CompanionManager) {
+    init(
+        screenFrame: CGRect,
+        displayID: CGDirectDisplayID,
+        companionManager: CompanionManager
+    ) {
         self.screenFrame = screenFrame
+        self.displayID = displayID
         self.companionManager = companionManager
 
         // Seed the cursor position from the current mouse location so the
@@ -620,9 +626,8 @@ struct BlueCursorView: View {
     /// the border is shown exactly when the screen is handed to the model.
     private var showsCaptureContextBorder: Bool {
         guard companionManager.isCapturingScreenContext else { return false }
-        return PickyScreenContextInclusionPolicy.isSentAsContext(
-            scope: companionManager.screenContextScope,
-            onlyWhenInked: companionManager.attachScreenshotsOnlyWhenInked,
+        return companionManager.isScreenIncludedAsContext(
+            displayID: displayID,
             isFocused: isCursorOnThisScreen,
             hasInk: hasInkOnThisScreen
         )
@@ -770,7 +775,6 @@ struct BlueCursorView: View {
 
             if isCursorOnThisScreen,
                PickyMainActivityOverlayPolicy.shouldShow(
-                    voiceState: companionManager.voiceState,
                     hasActivities: !mainActivityChipPresentationCache.presentation.models.isEmpty,
                     hasPendingQuestion: mainActivityChipPresentationCache.presentation.isQuestionPending
                ) {
@@ -898,6 +902,9 @@ struct BlueCursorView: View {
             // Set initial cursor position immediately before starting animation
             let mouseLocation = effectiveCursorGlobalPoint
             isCursorOnThisScreen = screenFrame.contains(mouseLocation)
+            if isCursorOnThisScreen {
+                companionManager.updateScreenContextFocusedDisplayID(displayID)
+            }
 
             self.cursorPosition = cursorBuddyPosition(for: mouseLocation)
 
@@ -1060,7 +1067,13 @@ struct BlueCursorView: View {
     private func startTrackingCursor() {
         timer = Timer.scheduledTimer(withTimeInterval: Self.cursorTrackingInterval, repeats: true) { _ in
             let mouseLocation = self.effectiveCursorGlobalPoint
-            self.isCursorOnThisScreen = self.screenFrame.contains(mouseLocation)
+            let isOnThisScreen = self.screenFrame.contains(mouseLocation)
+            if isOnThisScreen != self.isCursorOnThisScreen {
+                self.isCursorOnThisScreen = isOnThisScreen
+                if isOnThisScreen {
+                    self.companionManager.updateScreenContextFocusedDisplayID(self.displayID)
+                }
+            }
 
             // Sync system cursor visibility into SwiftUI state. Reassigning
             // unconditionally would re-trigger body evaluation every frame,

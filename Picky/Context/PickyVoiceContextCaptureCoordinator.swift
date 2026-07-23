@@ -16,17 +16,27 @@ struct PickyVoiceContextCaptureResult {
 /// transcript only when it is available.
 struct PickyPreparedVoiceContextCapture {
     let captureID: UUID
-    let settings: PickySettings
     let contextPacket: PickyPreparedContextPacket
     let source: String
 }
 
 @MainActor
 struct PickyVoiceContextCaptureCoordinator {
-    typealias ScreenCapture = @MainActor (_ scope: PickyScreenContextScope, _ maximumDimension: Int, _ inkGlobalPoints: [CGPoint]) async throws -> [CompanionScreenCapture]
+    typealias ScreenCapture = @MainActor (
+        _ scope: PickyScreenContextScope,
+        _ maximumDimension: Int,
+        _ inkGlobalPoints: [CGPoint],
+        _ onlyWhenInked: Bool,
+        _ displayOverrides: PickyScreenContextDisplayOverrides
+    ) async throws -> [CompanionScreenCapture]
     typealias SettingsProvider = @MainActor () -> PickySettings
     typealias ContextPreflightCapture = @MainActor () async -> PickyContextPacketPreflight
-    typealias ContextPreparer = @MainActor (_ screenCaptures: [CompanionScreenCapture], _ source: String, _ inkCapture: PickyInkCapture?, _ preflight: PickyContextPacketPreflight) async throws -> PickyPreparedContextPacket
+    typealias ContextPreparer = @MainActor (
+        _ screenCaptures: [CompanionScreenCapture],
+        _ source: String,
+        _ inkCapture: PickyInkCapture?,
+        _ preflight: PickyContextPacketPreflight
+    ) async throws -> PickyPreparedContextPacket
 
     private let screenCapture: ScreenCapture
     private let settingsProvider: SettingsProvider
@@ -34,15 +44,10 @@ struct PickyVoiceContextCaptureCoordinator {
     private let contextPreparer: ContextPreparer
 
     init(
-        screenCapture: @escaping ScreenCapture = { scope, maximumDimension, inkGlobalPoints in
-            try await CompanionScreenCaptureUtility.captureScreensAsJPEG(
-                scope: scope,
-                maximumDimension: maximumDimension,
-                inkGlobalPoints: inkGlobalPoints
-            )
-        },
+        screenCapture: @escaping ScreenCapture = PickyVoiceContextCaptureCoordinator.captureScreens,
         settingsProvider: @escaping SettingsProvider = { PickySettingsStore().load() },
-        contextPreflightCapture: @escaping ContextPreflightCapture = PickyVoiceContextCaptureCoordinator.captureContextPreflight,
+        contextPreflightCapture: @escaping ContextPreflightCapture =
+            PickyVoiceContextCaptureCoordinator.captureContextPreflight,
         contextPreparer: @escaping ContextPreparer = PickyVoiceContextCaptureCoordinator.prepareContextPacket
     ) {
         self.screenCapture = screenCapture
@@ -54,22 +59,29 @@ struct PickyVoiceContextCaptureCoordinator {
     func captureContext(
         transcript: String,
         voiceFollowUpSessionID: String?,
-        inkCapture: PickyInkCapture? = nil
+        inkCapture: PickyInkCapture? = nil,
+        displayOverrides: PickyScreenContextDisplayOverrides = [:]
     ) async throws -> PickyVoiceContextCaptureResult? {
         let source = voiceFollowUpSessionID == nil ? "voice" : "voice-follow-up"
         return try await captureContext(
             transcript: transcript,
             source: source,
-            inkCapture: inkCapture
+            inkCapture: inkCapture,
+            displayOverrides: displayOverrides
         )
     }
 
     func captureContext(
         transcript: String,
         source: String,
-        inkCapture: PickyInkCapture? = nil
+        inkCapture: PickyInkCapture? = nil,
+        displayOverrides: PickyScreenContextDisplayOverrides = [:]
     ) async throws -> PickyVoiceContextCaptureResult? {
-        guard let prepared = try await prepareContext(source: source, inkCapture: inkCapture) else { return nil }
+        guard let prepared = try await prepareContext(
+            source: source,
+            inkCapture: inkCapture,
+            displayOverrides: displayOverrides
+        ) else { return nil }
         return try await assembleContext(prepared, transcript: transcript)
     }
 
@@ -78,7 +90,8 @@ struct PickyVoiceContextCaptureCoordinator {
     /// matching the screen snapshot while transcription is still in progress.
     func prepareContext(
         source: String,
-        inkCapture: PickyInkCapture? = nil
+        inkCapture: PickyInkCapture? = nil,
+        displayOverrides: PickyScreenContextDisplayOverrides = [:]
     ) async throws -> PickyPreparedVoiceContextCapture? {
         let captureID = UUID()
         let settings = settingsProvider()
@@ -92,26 +105,36 @@ struct PickyVoiceContextCaptureCoordinator {
         let screenCaptures = try await screenCapture(
             settings.screenContextScope,
             settings.screenshotQuality.maximumDimension,
-            inkGlobalPoints
+            inkGlobalPoints,
+            settings.attachScreenshotsOnlyWhenInked,
+            displayOverrides
+        )
+        let includedScreenCaptures = Self.filterScreenCapturesForAttachment(
+            screenCaptures,
+            onlyWhenInked: settings.attachScreenshotsOnlyWhenInked,
+            inkGlobalPoints: inkGlobalPoints,
+            displayOverrides: displayOverrides
         )
         let screenCaptureMilliseconds = Int(Date().timeIntervalSince(contextPreparationStartedAt) * 1_000)
         PickyLog.notice(
             .latency,
             prefix: "⏱️ Picky latency —",
-            message: "event=screenCaptureFinished captureID=\(captureID) source=\(source) ms=\(screenCaptureMilliseconds) screens=\(screenCaptures.count)"
+            message: "event=screenCaptureFinished captureID=\(captureID) source=\(source) "
+                + "ms=\(screenCaptureMilliseconds) screens=\(screenCaptures.count)"
         )
         guard !Task.isCancelled else { return nil }
-        let preparedPacket = try await contextPreparer(screenCaptures, source, inkCapture, await preflight)
+        let preparedPacket = try await contextPreparer(includedScreenCaptures, source, inkCapture, await preflight)
         let contextPreparationMilliseconds = Int(Date().timeIntervalSince(contextPreparationStartedAt) * 1_000)
         PickyLog.notice(
             .latency,
             prefix: "⏱️ Picky latency —",
-            message: "event=contextAssemblerFinished captureID=\(captureID) contextID=\(preparedPacket.id) source=\(source) phase=preTranscript ms=\(contextPreparationMilliseconds)"
+            message: "event=contextAssemblerFinished captureID=\(captureID) "
+                + "contextID=\(preparedPacket.id) source=\(source) phase=preTranscript "
+                + "ms=\(contextPreparationMilliseconds)"
         )
         guard !Task.isCancelled else { return nil }
         return PickyPreparedVoiceContextCapture(
             captureID: captureID,
-            settings: settings,
             contextPacket: preparedPacket,
             source: source
         )
@@ -124,34 +147,45 @@ struct PickyVoiceContextCaptureCoordinator {
     ) async throws -> PickyVoiceContextCaptureResult? {
         guard !Task.isCancelled else { return nil }
         let assembled = prepared.contextPacket.attaching(transcript: transcript)
-        let gated = Self.applyInkOnlyAttachmentGate(assembled, settings: prepared.settings)
-        return PickyVoiceContextCaptureResult(contextPacket: gated, source: prepared.source)
+        return PickyVoiceContextCaptureResult(contextPacket: assembled, source: prepared.source)
     }
 
-    /// Honors `PickySettings.attachScreenshotsOnlyWhenInked` by keeping only the
-    /// displays the user actually drew on. Which displays were captured is
-    /// already decided by scope + ink at capture time; this is the per-screen
-    /// attachment gate. Screen capture and on-disk persistence have already
-    /// happened by this point — only the model payload is gated.
-    static func applyInkOnlyAttachmentGate(
-        _ packet: PickyContextPacket,
-        settings: PickySettings
-    ) -> PickyContextPacket {
-        guard settings.attachScreenshotsOnlyWhenInked else { return packet }
-        let inkedScreenIds = Set(packet.inkMarks.compactMap(\.screenId))
-        let keptScreenshots = packet.screenshots.filter { screenshot in
-            let hasInk = screenshot.screenId.map(inkedScreenIds.contains) ?? false
-            return PickyScreenContextInclusionPolicy.passesInkAttachmentGate(
-                onlyWhenInked: true,
-                hasInk: hasInk
-            )
+    static func filterScreenCapturesForAttachment(
+        _ captures: [CompanionScreenCapture],
+        onlyWhenInked: Bool,
+        inkGlobalPoints: [CGPoint],
+        displayOverrides: PickyScreenContextDisplayOverrides
+    ) -> [CompanionScreenCapture] {
+        captures.filter { capture in
+            let hasInk = inkGlobalPoints.contains { capture.displayFrame.contains($0) }
+            switch displayOverrides[capture.displayID] {
+            case .included:
+                return true
+            case .excluded:
+                return false
+            case nil:
+                return PickyScreenContextInclusionPolicy.passesInkAttachmentGate(
+                    onlyWhenInked: onlyWhenInked,
+                    hasInk: hasInk
+                )
+            }
         }
-        guard keptScreenshots.count != packet.screenshots.count else { return packet }
-        let keptScreenIds = Set(keptScreenshots.compactMap(\.screenId))
-        let keptInkMarks = packet.inkMarks.filter { mark in
-            mark.screenId.map(keptScreenIds.contains) ?? false
-        }
-        return packet.replacingVisualContext(screenshots: keptScreenshots, inkMarks: keptInkMarks)
+    }
+
+    private static func captureScreens(
+        scope: PickyScreenContextScope,
+        maximumDimension: Int,
+        inkGlobalPoints: [CGPoint],
+        onlyWhenInked: Bool,
+        displayOverrides: PickyScreenContextDisplayOverrides
+    ) async throws -> [CompanionScreenCapture] {
+        try await CompanionScreenCaptureUtility.captureScreensAsJPEG(
+            scope: scope,
+            maximumDimension: maximumDimension,
+            inkGlobalPoints: inkGlobalPoints,
+            onlyWhenInked: onlyWhenInked,
+            displayOverrides: displayOverrides
+        )
     }
 
     private static func captureContextPreflight() async -> PickyContextPacketPreflight {

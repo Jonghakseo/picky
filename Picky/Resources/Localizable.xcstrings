@@ -77,6 +77,54 @@
         "ko": { "stringUnit": { "state": "translated", "value": "메인 에이전트 응답이 중지됨" } }
       }
     },
+    "overlay.captureBorder.notIncludedLabel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This screen is not included as context"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 화면은 맥락에 포함되지 않습니다"
+          }
+        }
+      }
+    },
+    "overlay.captureBorder.cancel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "취소"
+          }
+        }
+      }
+    },
+    "overlay.captureBorder.include": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Include"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "포함"
+          }
+        }
+      }
+    },
     "agent.summary.pointingScreen": {
       "comment": "Format: 'Pointing at: <label>'. Arg is the element label.",
       "localizations": {
@@ -7116,38 +7164,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "누르고 있으면 음성 세션이 시작되고, 떼면 전송돼요."
-          }
-        }
-      }
-    },
-    "quickInput.screenshot.attached": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Screenshot will be attached"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "스크린샷이 함께 전송돼요"
-          }
-        }
-      }
-    },
-    "quickInput.screenshot.gated": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No screenshot — draw on screen to attach"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "스크린샷 안 보냄 — 화면에 그린 다음 전송하면 돼요"
           }
         }
       }

@@ -1147,6 +1147,21 @@ struct PickyConversationCardViewTests {
         #expect(bubble.shouldOfferExpansion)
     }
 
+    @Test func activeToolRowShowsProjectSkillNameInsteadOfManifestFilename() {
+        let row = PickyToolCallInlineRow(
+            tool: PickyToolActivity(
+                toolCallId: "read-skill",
+                name: "read",
+                status: "running",
+                argsPreview: #"{"path":".agents/skills/picky-design-guide/SKILL.md"}"#
+            ),
+            onTap: {}
+        )
+
+        #expect(row.displayedToolName == "skill")
+        #expect(row.displayedDetail == "picky-design-guide")
+    }
+
     @Test func ordinaryPiExtensionMessageKeepsItsOriginalPreview() {
         let bubble = PickyUserBubbleView(
             message: message("m-pi-note", kind: .userText, text: "custom extension note", originatedBy: .piExtension)

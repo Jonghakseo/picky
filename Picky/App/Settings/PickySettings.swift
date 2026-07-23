@@ -623,12 +623,11 @@ struct PickySettings: Codable, Equatable {
     var screenContextScope: PickyScreenContextScope
     var armedPickleDispatchMode: PickyArmedPickleDispatchMode
     var screenshotQuality: PickyScreenshotQuality
-    /// When `true`, Picky drops the captured screenshots (and the otherwise
-    /// empty `inkMarks`) from the context packet sent to the model unless the
-    /// user actually drew a freehand mark during this turn. Screen capture
-    /// itself still runs locally so the ink overlay can render on top — only
-    /// the model-bound payload is gated. Default is `false` for parity with
-    /// the long-standing always-attach behavior.
+    /// When `true`, Picky includes screenshots only for displays where the user
+    /// drew a freehand mark during this turn. Per-display choices made from the
+    /// capture-context status control override this automatic gate. Displays
+    /// that do not survive the gate are skipped before screenshot capture.
+    /// Default is `false` for parity with the long-standing always-attach behavior.
     var attachScreenshotsOnlyWhenInked: Bool
     var useConversationCard: Bool
     var pushToTalkShortcut: PickyShortcutSpec

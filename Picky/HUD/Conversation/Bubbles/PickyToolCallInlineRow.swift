@@ -26,13 +26,13 @@ struct PickyToolCallInlineRow: View {
                     .pickyFont(size: 10.5, weight: .medium, design: .monospaced)
                     .foregroundColor(categoryColor)
                     .frame(width: 12, alignment: .center)
-                Text(tool.name)
+                Text(displayedToolName)
                     .font(PickyHUDTypography.labelMonospacedMedium)
                     .foregroundColor(DS.Colors.textSecondary)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
-                if let detailText, !detailText.isEmpty {
-                    Text(detailText)
+                if let displayedDetail, !displayedDetail.isEmpty {
+                    Text(displayedDetail)
                         .font(PickyHUDTypography.metaMonospacedMedium)
                         .foregroundColor(DS.Colors.textTertiary)
                         .lineLimit(1)
@@ -47,7 +47,7 @@ struct PickyToolCallInlineRow: View {
         }
         .buttonStyle(.plain)
         .help(helpText)
-        .accessibilityLabel("\(tool.name) tool call")
+        .accessibilityLabel([displayedToolName, displayedDetail, "tool call"].compactMap { $0 }.joined(separator: " "))
         .accessibilityHint("Open tool history")
         .hoverAffordance()
     }
@@ -97,11 +97,25 @@ struct PickyToolCallInlineRow: View {
         }
     }
 
+    var displayedToolName: String {
+        PickyToolActivityPresentation.skillName(forToolNamed: tool.name, argsPreview: tool.argsPreview) == nil
+            ? tool.name
+            : "skill"
+    }
+
     /// Compact second column. Pulls the most informative slice out of the
-    /// parsed detail — file path for read/edit/write, command head for bash,
-    /// truncated args preview for generic tools. Falls back to recovering the
-    /// `path` field directly from the raw args preview so a truncated JSON
-    /// payload still surfaces the file path the model called the tool with.
+    /// parsed detail — skill name for skill invocation, file path for
+    /// read/edit/write, command head for bash, truncated args preview for
+    /// generic tools. Falls back to recovering the `path` field directly from
+    /// the raw args preview so a truncated JSON payload still surfaces the file
+    /// path the model called the tool with.
+    var displayedDetail: String? {
+        if let skillName = PickyToolActivityPresentation.skillName(forToolNamed: tool.name, argsPreview: tool.argsPreview) {
+            return skillName
+        }
+        return detailText
+    }
+
     private var detailText: String? {
         switch entry.detail {
         case let .read(file, range, _):

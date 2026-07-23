@@ -72,6 +72,11 @@ final class PickyMainQuestionPanelManager {
     private let appearanceStore: PickyAppearanceStore
     private let fontScaleStore: PickyAppFontScaleStore
     private var panel: PickyMainQuestionKeyablePanel?
+    /// Set once the user drags the panel, so a later answer-failure reopen keeps
+    /// their chosen spot instead of snapping back to the cursor. Reset per request.
+    private var hasUserMovedPanel = false
+    private var isProgrammaticMove = false
+    private var panelMoveObserver: NSObjectProtocol?
 
     /// Returns nil when agentd accepted the answer, otherwise keeps the panel
     /// open and logs the transport failure for diagnosis.
@@ -88,14 +93,24 @@ final class PickyMainQuestionPanelManager {
         }
     }
 
+    deinit {
+        if let panelMoveObserver {
+            NotificationCenter.default.removeObserver(panelMoveObserver)
+        }
+    }
+
     func update(request: PickyExtensionUiRequest?) {
         guard PickyMainQuestionPanelPolicy.shouldPresent(request: request), let request else {
             dismiss()
             return
         }
+        let isNewRequest = viewModel.request?.id != request.id
         if panel == nil { createPanel() }
         viewModel.configure(request: request)
-        positionPanelNearCursor(NSEvent.mouseLocation)
+        if isNewRequest {
+            hasUserMovedPanel = false
+            positionPanelNearCursor(NSEvent.mouseLocation)
+        }
         panel?.makeKeyAndOrderFront(nil)
         panel?.orderFrontRegardless()
     }
@@ -126,7 +141,9 @@ final class PickyMainQuestionPanelManager {
             print("⚠️ Failed to answer main extension UI request \(requestID): \(message)")
             self.viewModel.isSending = false
             self.viewModel.errorMessage = message
-            self.positionPanelNearCursor(NSEvent.mouseLocation)
+            if !self.hasUserMovedPanel {
+                self.positionPanelNearCursor(NSEvent.mouseLocation)
+            }
             self.panel?.makeKeyAndOrderFront(nil)
             self.panel?.orderFrontRegardless()
         }
@@ -159,12 +176,22 @@ final class PickyMainQuestionPanelManager {
         questionPanel.hidesOnDeactivate = false
         questionPanel.isExcludedFromWindowsMenu = true
         questionPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        questionPanel.isMovableByWindowBackground = false
+        questionPanel.isMovableByWindowBackground = true
         questionPanel.titleVisibility = .hidden
         questionPanel.titlebarAppearsTransparent = true
         questionPanel.sharingType = .none
         questionPanel.contentView = hostingView
         questionPanel.onEscape = { [weak viewModel] in viewModel?.cancel() }
+        panelMoveObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didMoveNotification,
+            object: questionPanel,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, !self.isProgrammaticMove else { return }
+                self.hasUserMovedPanel = true
+            }
+        }
         panel = questionPanel
     }
 
@@ -195,7 +222,9 @@ final class PickyMainQuestionPanelManager {
             originY = max(visibleFrame.minY, min(originY, visibleFrame.maxY - panelSize.height))
         }
 
+        isProgrammaticMove = true
         panel.setFrame(NSRect(origin: CGPoint(x: originX, y: originY), size: panelSize), display: true)
+        isProgrammaticMove = false
     }
 
     #if DEBUG

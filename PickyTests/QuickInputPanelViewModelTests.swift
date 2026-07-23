@@ -2,8 +2,7 @@
 //  QuickInputPanelViewModelTests.swift
 //  PickyTests
 //
-//  Covers the screenshot-attachment indicator state on QuickInputPanelViewModel
-//  so the trailing camera icon's three modes stay distinguishable.
+//  Covers Quick Input view-model state shared by history and submission flows.
 //
 
 import Foundation
@@ -13,31 +12,28 @@ import Testing
 @MainActor
 struct QuickInputPanelViewModelTests {
     @Test
-    func defaultScreenshotStateIsAttached() {
-        let viewModel = QuickInputPanelViewModel()
-        #expect(viewModel.screenshotState == .attached)
-    }
-
-    @Test
-    func screenshotStateUpdatesArePublished() {
-        let viewModel = QuickInputPanelViewModel()
-
-        viewModel.screenshotState = .gated
-        #expect(viewModel.screenshotState == .gated)
-
-        viewModel.screenshotState = .attached
-        #expect(viewModel.screenshotState == .attached)
-    }
-
-    @Test
-    func managerUpdateScreenshotStatePropagatesToViewModel() {
+    func managerRecentMessagesPropagateToViewModel() {
         let manager = QuickInputPanelManager()
+        let message = PickyMainAgentMessage(
+            role: .user,
+            text: "Where did the last reply go?",
+            createdAt: Date(timeIntervalSince1970: 1)
+        )
 
-        manager.updateScreenshotState(.gated)
-        #expect(manager.viewModelForTesting.screenshotState == .gated)
+        manager.updateRecentMessages([message])
 
-        manager.updateScreenshotState(.attached)
-        #expect(manager.viewModelForTesting.screenshotState == .attached)
+        #expect(manager.viewModelForTesting.recentMessages == [message])
+    }
+
+    @Test
+    func presentationIDAdvancesForEveryPanelPresentation() {
+        let viewModel = QuickInputPanelViewModel()
+
+        viewModel.beginPresentation()
+        #expect(viewModel.presentationID == 1)
+
+        viewModel.beginPresentation()
+        #expect(viewModel.presentationID == 2)
     }
 
     @Test

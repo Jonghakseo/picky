@@ -206,7 +206,7 @@ final class CompanionManager: ObservableObject {
     private var appliedVoiceProviderSettings: PickyVoiceProviderSettings
     private var ttsPlaybackEnabled: Bool
     private let speechWatchdogTimeoutOverride: TimeInterval?
-    private let voiceContextCaptureCoordinator: PickyVoiceContextCaptureCoordinator
+    let voiceContextCaptureCoordinator: PickyVoiceContextCaptureCoordinator
     let voiceContextCapturePipeline: PickyVoiceContextCapturePipeline
     private var armedPickleDispatchMode: PickyArmedPickleDispatchMode
     /// Mirrors the persisted screen-context scope so overlay views can gate the
@@ -215,13 +215,12 @@ final class CompanionManager: ObservableObject {
     /// Mirrors the persisted "attach screenshots only when drawn" toggle so the
     /// capture-context border tracks the per-screen ink attachment gate.
     @Published private(set) var attachScreenshotsOnlyWhenInked: Bool
-
-    /// True while Picky is actively capturing (or about to capture) the screen
-    /// as neutral model context — during PTT recording or while the Quick Input
-    /// panel is open. Drives the capture-context border on in-scope overlays.
-    var isCapturingScreenContext: Bool {
-        voiceState == .listening || isQuickInputPanelVisible
-    }
+    /// Per-turn display choices from the status pill; manual choices override scope and ink gating.
+    @Published var screenContextDisplayOverrides: PickyScreenContextDisplayOverrides = [:]
+    /// True only while an open Quick Input draft can still change its screen choices.
+    @Published private(set) var isQuickInputScreenContextControlsVisible = false
+    /// Physical display containing the pointer, updated only when the pointer crosses displays.
+    @Published var screenContextFocusedDisplayID: CGDirectDisplayID?
 
     init(
         agentClient: any PickyAgentClient = LocalStubPickyAgentClient(),
@@ -286,7 +285,6 @@ final class CompanionManager: ObservableObject {
                 guard let self else { return }
                 self.inkOverlayState = state
                 self.setLocalOverlayReason(.activeInkCapture, visible: state.isActive)
-                self.pushQuickInputScreenshotStateIfPanelVisible()
             }
         }
         self.inkCaptureCoordinator.shouldPassThroughMouseEvent = { [weak self] point, source in
@@ -305,6 +303,8 @@ final class CompanionManager: ObservableObject {
     let inkCaptureCoordinator: any PickyInkCaptureCoordinating
     let pendingInkCaptures = PickyPendingInkCaptureStore()
     var screenContextVoiceTargetByInputID: [UUID: String] = [:]
+    var screenContextDisplayOverridesByTextInputID: [UUID: PickyScreenContextDisplayOverrides] = [:]
+    var screenContextControlHitTest: (CGPoint) -> Bool = { _ in false }
     /// Monotonic marker for observing when queued interaction events have published.
     private(set) var interactionProjectionSequence: UInt64 = 0
     lazy var interactionCoordinator: PickyInteractionCoordinator = {
@@ -350,6 +350,13 @@ final class CompanionManager: ObservableObject {
     /// ids prevents that later copy from being mistaken for a connection-wide
     /// failure without risking a future command collision.
     private var completedMainTurnCancellationCommandIDs = Set<String>()
+    /// Deferred clear for the cursor activity chips. The daemon emits a clear
+    /// (`mainActivityUpdated(nil)`) at turn terminal, right before the reply. We
+    /// hold the chips a short beat so they linger beside the response bubble and
+    /// fade, instead of vanishing the instant the response appears. A fresh
+    /// activity or a hard reset cancels it.
+    private var mainActivityClearTask: Task<Void, Never>?
+    private static let mainActivityLingerDelay: Duration = .seconds(2)
     private var screenContextTargetCancellable: AnyCancellable?
     private var shortcutCaptureObserver: NSObjectProtocol?
     /// Tracks how many `ShortcutCaptureRecorder` instances are currently in
@@ -719,7 +726,8 @@ final class CompanionManager: ObservableObject {
         syncOverlayVisibility()
     }
 
-    private func shouldPassThroughInkMouseEvent(point: CGPoint, source: PickyInkCaptureSource) -> Bool {
+    func shouldPassThroughInkMouseEvent(point: CGPoint, source: PickyInkCaptureSource) -> Bool {
+        if screenContextControlHitTest(point) { return true }
         guard source == .text else { return false }
         if quickInputPanelManager.containsInteractiveGlobalPoint(point) { return true }
         return NSApp.windows.contains { window in
@@ -856,7 +864,6 @@ final class CompanionManager: ObservableObject {
                 self?.attachScreenshotsOnlyWhenInked = settings.attachScreenshotsOnlyWhenInked
                 self?.syncDaemonSettings(settings)
                 self?.applyShortcutSpecsFromSettings(settings)
-                self?.pushQuickInputScreenshotStateIfPanelVisible()
             }
     }
 
@@ -1018,7 +1025,8 @@ final class CompanionManager: ObservableObject {
         applyVoiceInteractionProjection(transition.state.projection)
         if let responseText = transition.state.context.responseBubbleText,
            !responseText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            mainLiveActivities = []
+            // Do not wipe activity chips on response start — they intentionally
+            // linger beside the response bubble and fade via the deferred clear.
             latestAgentSessionSummary = responseText
         }
         return transition
@@ -1060,6 +1068,10 @@ final class CompanionManager: ObservableObject {
         }
         quickInputPanelManager.onVisibilityChange = { [weak self] isVisible in
             self?.isQuickInputPanelVisible = isVisible
+            self?.isQuickInputScreenContextControlsVisible = isVisible
+            if !isVisible {
+                self?.resetScreenContextDisplayOverrides()
+            }
             if !isVisible, self?.inkOverlayState.source == .text {
                 self?.cancelInkCapture()
             }
@@ -1088,11 +1100,15 @@ final class CompanionManager: ObservableObject {
     }
 
     private func updateMainCancelPillPresentation() {
+        // Lingering chips (deferred clear scheduled after turn settle) are a
+        // purely visual afterglow — they must not keep the cancel pill alive
+        // for an already-finished turn.
+        let hasLiveTurnActivities = mainActivityClearTask == nil && !mainLiveActivities.isEmpty
         let isMainTurnInFlight = PickyMainCancelPillPolicy.isMainTurnInFlight(
             hasPendingAgentResponse: pendingAgentResponseStartedAt != nil,
             voiceState: voiceState,
             isWaitingForCursorResponse: isWaitingForCursorResponse,
-            hasLiveActivities: !mainLiveActivities.isEmpty,
+            hasLiveActivities: hasLiveTurnActivities,
             hasActiveFollowUpTurn: activeMainTurnFollowUpSessionID != nil
         )
         // Picky's interactive panels are non-activating but become the key
@@ -1102,6 +1118,33 @@ final class CompanionManager: ObservableObject {
             isMainTurnInFlight: isMainTurnInFlight,
             isPickyPanelKeyWindow: NSApp.keyWindow != nil
         )
+    }
+
+    /// Defers clearing the cursor activity chips so they briefly linger beside the
+    /// response bubble, then fade. Cancelled by a fresh activity or a hard reset.
+    private func scheduleMainActivityClear() {
+        guard !mainLiveActivities.isEmpty else { return }
+        mainActivityClearTask?.cancel()
+        mainActivityClearTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.mainActivityLingerDelay)
+            guard !Task.isCancelled, let self else { return }
+            // Animate the removal so the chips fade via their `.transition(.opacity)`
+            // instead of cutting out. Only the presence changes here; chip layout is
+            // unaffected, so this does not reintroduce the height-bounce the chips
+            // otherwise guard against.
+            withAnimation(.easeOut(duration: 0.25)) {
+                self.mainLiveActivities = []
+            }
+            self.mainActivityClearTask = nil
+        }
+    }
+
+    /// Clears chips now and cancels any pending deferred clear (hard reset paths:
+    /// connection loss, new session).
+    private func clearMainActivitiesImmediately() {
+        mainActivityClearTask?.cancel()
+        mainActivityClearTask = nil
+        mainLiveActivities = []
     }
 
     private func wireMainQuestionPanel() {
@@ -1171,28 +1214,13 @@ final class CompanionManager: ObservableObject {
               !isPushToTalkShortcutHeld,
               !buddyDictationManager.isDictationInProgress else { return }
         if !quickInputPanelManager.isPanelVisible {
+            resetScreenContextDisplayOverrides()
             beginInkCapture(source: .text)
         }
-        quickInputPanelManager.updateScreenshotState(currentQuickInputScreenshotState())
+        // Push the current transcript before creating/showing the hosting view
+        // so the first Quick Input frame is already anchored at the last turn.
+        quickInputPanelManager.updateRecentMessages(mainAgentMessages)
         quickInputPanelManager.presentPanel(near: event.mouseLocation)
-    }
-
-    /// Recomputes the Quick Input screenshot-attachment state from live ink
-    /// state + persisted settings. Mirrors the gate applied later by
-    /// `PickyVoiceContextCaptureCoordinator.applyInkOnlyAttachmentGate` so the
-    /// pill indicator matches what the model actually receives.
-    private func currentQuickInputScreenshotState(
-        settings: PickySettings? = nil
-    ) -> QuickInputScreenshotState {
-        let resolved = settings ?? PickySettingsStore().load()
-        let hasInk = !inkOverlayState.strokes.isEmpty
-        if resolved.attachScreenshotsOnlyWhenInked, !hasInk { return .gated }
-        return .attached
-    }
-
-    private func pushQuickInputScreenshotStateIfPanelVisible() {
-        guard quickInputPanelManager.isPanelVisible else { return }
-        quickInputPanelManager.updateScreenshotState(currentQuickInputScreenshotState())
     }
 
     /// Wires the global "is anyone currently rebinding a shortcut?" signal so
@@ -1229,10 +1257,20 @@ final class CompanionManager: ObservableObject {
     }
 
     private func handleQuickInputSubmit(text: String) {
+        let displayOverrides = screenContextDisplayOverrides
+        let inkCapture = finishInkCaptureForDeferredTextSubmission()
+        // The context packet uses the snapshot above. Do not leave controls live
+        // while the Quick Input submission is in flight, or the status UI could
+        // imply a later choice changes an already-captured payload.
+        isQuickInputScreenContextControlsVisible = false
         Task { @MainActor [weak self] in
             guard let self else { return }
-            let inkCapture = self.finishInkCaptureForDeferredTextSubmission()
-            let success = await self.sendDirectMessage(text, source: .quickInput, inkCapture: inkCapture)
+            let success = await self.sendDirectMessage(
+                text,
+                source: .quickInput,
+                inkCapture: inkCapture,
+                displayOverrides: displayOverrides
+            )
             self.quickInputPanelManager.panelDidFinishSending(
                 success: success,
                 errorMessage: success ? nil : self.directMessageError
@@ -1266,7 +1304,12 @@ final class CompanionManager: ObservableObject {
         switch transition {
         case .pressed:
             isPushToTalkShortcutHeld = true
-            guard !buddyDictationManager.isDictationInProgress else { return }
+            guard !buddyDictationManager.isDictationInProgress,
+                  !quickInputPanelManager.isSending else { return }
+            // A draft and a voice turn must not share one display-choice map.
+            // Dismissing an open draft makes PTT the sole owner of the controls.
+            quickInputPanelManager.dismiss()
+            resetScreenContextDisplayOverrides()
             voiceContextCapturePipeline.beginInput()
             interruptSpokenResponseForVoiceInput()
             pendingAgentResponseStartedAt = nil
@@ -1336,11 +1379,13 @@ final class CompanionManager: ObservableObject {
             pendingKeyboardShortcutStartTask?.cancel()
             pendingKeyboardShortcutStartTask = nil
             if let interactionVoiceInputID {
+                let displayOverrides = screenContextDisplayOverrides
                 finishInkCapture(inputID: interactionVoiceInputID)
                 let unusedInkCapture = voiceContextCapturePipeline.finishInput(
                     inputID: interactionVoiceInputID,
                     voiceFollowUpSessionID: voiceFollowUpSessionIDForCurrentUtterance,
-                    inkCapture: pendingInkCaptures.consume(for: interactionVoiceInputID)
+                    inkCapture: pendingInkCaptures.consume(for: interactionVoiceInputID),
+                    displayOverrides: displayOverrides
                 )
                 if let unusedInkCapture {
                     pendingInkCaptures.store(unusedInkCapture, for: interactionVoiceInputID)
@@ -1353,6 +1398,7 @@ final class CompanionManager: ObservableObject {
                 finishInkCapture(inputID: nil)
                 voiceContextCapturePipeline.clearInputTiming()
             }
+            resetScreenContextDisplayOverrides()
             if let releasedInputID = interactionVoiceInputID {
                 reduceVoiceInteraction(.pttReleased(inputID: releasedInputID))
             }
@@ -1523,6 +1569,7 @@ final class CompanionManager: ObservableObject {
         text: String,
         source: String,
         inkCapture: PickyInkCapture?,
+        displayOverrides: PickyScreenContextDisplayOverrides,
         dispatchMode: PickyArmedPickleDispatchMode
     ) async -> Bool {
         activeMainTurnFollowUpSessionID = targetSessionID
@@ -1530,7 +1577,8 @@ final class CompanionManager: ObservableObject {
             guard let captureResult = try await voiceContextCaptureCoordinator.captureContext(
                 transcript: text,
                 source: source,
-                inkCapture: inkCapture
+                inkCapture: inkCapture,
+                displayOverrides: displayOverrides
             ) else {
                 directMessageError = L10n.t("error.directMessage.contextEmpty")
                 latestAgentSessionSummary = directMessageError
@@ -1587,7 +1635,12 @@ final class CompanionManager: ObservableObject {
     }
 
     @discardableResult
-    func sendDirectMessage(_ text: String, source: PickyInteractionSource = .text, inkCapture: PickyInkCapture? = nil) async -> Bool {
+    func sendDirectMessage(
+        _ text: String,
+        source: PickyInteractionSource = .text,
+        inkCapture: PickyInkCapture? = nil,
+        displayOverrides: PickyScreenContextDisplayOverrides = [:]
+    ) async -> Bool {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return false }
 
@@ -1603,12 +1656,16 @@ final class CompanionManager: ObservableObject {
                 text: trimmedText,
                 source: "text-follow-up",
                 inkCapture: inkCapture,
+                displayOverrides: displayOverrides,
                 dispatchMode: armedPickleDispatchMode
             )
         }
 
         activeMainTurnFollowUpSessionID = nil
         let inputID = UUID()
+        if source == .quickInput, !displayOverrides.isEmpty {
+            screenContextDisplayOverridesByTextInputID[inputID] = displayOverrides
+        }
         if let inkCapture, inkCapture.hasVisibleInk {
             pendingInkCaptures.store(inkCapture, for: inputID)
         }
@@ -1766,38 +1823,10 @@ final class CompanionManager: ObservableObject {
         directMessageContinuations.removeValue(forKey: inputID)?.resume(returning: success)
     }
 
-    private func failDirectMessage(inputID: UUID, message: String) {
+    func failDirectMessage(inputID: UUID, message: String) {
         directMessageError = L10n.t("error.directMessage.deliverFailed", message)
         latestAgentSessionSummary = directMessageError
         completeDirectMessage(inputID: inputID, success: false)
-    }
-
-    private func runCaptureTextContextEffect(inputID: UUID, text: String) {
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                let inkCapture = pendingInkCaptures.consume(for: inputID)
-                guard let captureResult = try await voiceContextCaptureCoordinator.captureContext(transcript: text, source: "text", inkCapture: inkCapture) else {
-                    interactionCoordinator.effectCompleted(
-                        .textSubmissionFailed(message: "Context capture returned no packet.", inputID: inputID),
-                        correlation: PickyInteractionCorrelation(inputID: inputID, source: .text)
-                    )
-                    failDirectMessage(inputID: inputID, message: "Context capture returned no packet.")
-                    return
-                }
-                interactionCoordinator.effectCompleted(
-                    .textContextCaptured(inputID: inputID, context: captureResult.contextPacket),
-                    correlation: PickyInteractionCorrelation(inputID: inputID, contextID: captureResult.contextPacket.id, source: .text)
-                )
-            } catch {
-                let message = error.localizedDescription
-                interactionCoordinator.effectCompleted(
-                    .textSubmissionFailed(message: message, inputID: inputID),
-                    correlation: PickyInteractionCorrelation(inputID: inputID, source: .text)
-                )
-                failDirectMessage(inputID: inputID, message: message)
-            }
-        }
     }
 
     private func runSubmitTextEffect(inputID: UUID, context: PickyContextPacket, text: String) {
@@ -2133,7 +2162,7 @@ final class CompanionManager: ObservableObject {
     /// turn, queued speech, speaking output) but does NOT clear persisted messages or
     /// send a daemon command, so a later reconnect keeps the transcript intact.
     private func clearInteractionStateForConnectionLoss() {
-        mainLiveActivities = []
+        clearMainActivitiesImmediately()
         mainPendingQuestion = nil
         annotationSceneMonitor?.stop()
         activeAnnotationSceneIdentity = nil
@@ -2159,7 +2188,8 @@ final class CompanionManager: ObservableObject {
                 correlation: PickyInteractionCorrelation(source: .system)
             )
             mainAgentMessages = []
-            mainLiveActivities = []
+            quickInputPanelManager.updateRecentMessages(mainAgentMessages)
+            clearMainActivitiesImmediately()
             mainPendingQuestion = nil
             latestAgentSessionSummary = "Started a new Messages session"
             return true
@@ -2275,7 +2305,7 @@ final class CompanionManager: ObservableObject {
             )
             applyQuickReplyEvent(reply)
         case .mainTurnSettled(let contextID):
-            mainLiveActivities = []
+            scheduleMainActivityClear()
             applyMainTurnSettled(contextID: contextID)
         case .mainNarrationChunk(let chunk):
             applyMainNarrationChunk(chunk)
@@ -2293,17 +2323,21 @@ final class CompanionManager: ObservableObject {
             )
         case .mainMessagesSnapshot(let messages):
             mainAgentMessages = Array(messages.suffix(100))
+            quickInputPanelManager.updateRecentMessages(mainAgentMessages)
             // Snapshot fires on session load/reset for the whole transcript,
             // so do not auto-dispatch deep links here — we would re-open
             // panels for stale replies the user already saw.
         case .mainMessageAppended(let message):
             mainAgentMessages = Array((mainAgentMessages + [message]).suffix(100))
+            quickInputPanelManager.updateRecentMessages(mainAgentMessages)
             autoDispatchPickyDeepLinkIfPresent(in: message)
         case .mainActivityUpdated(let activity):
             guard let activity else {
-                mainLiveActivities = []
+                scheduleMainActivityClear()
                 break
             }
+            mainActivityClearTask?.cancel()
+            mainActivityClearTask = nil
             mainLiveActivities = PickyMainActivityStack.apply(activity, to: mainLiveActivities)
         case .mainExtensionUiRequested(let request):
             mainPendingQuestion = request
@@ -2887,7 +2921,9 @@ final class CompanionManager: ObservableObject {
         responseStateTask?.cancel()
         responseStateTask = nil
         pendingAgentResponseStartedAt = nil
-        mainLiveActivities = []
+        // User-initiated cancellation: drop the chips immediately (and any
+        // pending linger) — there is no settled response to linger beside.
+        clearMainActivitiesImmediately()
         activeMainTurnFollowUpSessionID = nil
         currentVoicePromptPreview = nil
         voicePromptBubbleState = .hidden

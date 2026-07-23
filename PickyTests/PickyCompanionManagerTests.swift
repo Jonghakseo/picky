@@ -219,6 +219,77 @@ private final class FakeNSSpeechSynthesizer: PickyNSSpeechSynthesizing {
 
 @MainActor
 struct PickyCompanionManagerTests {
+    @Test func screenContextDisplayToggleExcludesAndReincludesOneDisplay() {
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore()
+        )
+        let displayID: CGDirectDisplayID = 42
+
+        #expect(manager.isScreenIncludedAsContext(
+            displayID: displayID,
+            isFocused: true,
+            hasInk: false
+        ))
+
+        manager.toggleScreenContextDisplay(
+            displayID: displayID,
+            isFocused: true,
+            hasInk: false
+        )
+        #expect(!manager.isScreenIncludedAsContext(
+            displayID: displayID,
+            isFocused: true,
+            hasInk: false
+        ))
+
+        manager.toggleScreenContextDisplay(
+            displayID: displayID,
+            isFocused: true,
+            hasInk: false
+        )
+        #expect(manager.isScreenIncludedAsContext(
+            displayID: displayID,
+            isFocused: true,
+            hasInk: false
+        ))
+    }
+
+    @Test func resetScreenContextDisplayOverridesRestoresAutomaticPolicy() {
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        settings.attachScreenshotsOnlyWhenInked = true
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            initialSettings: settings
+        )
+        let displayID: CGDirectDisplayID = 42
+
+        #expect(!manager.isScreenIncludedAsContext(
+            displayID: displayID,
+            isFocused: true,
+            hasInk: false
+        ))
+        manager.toggleScreenContextDisplay(
+            displayID: displayID,
+            isFocused: true,
+            hasInk: false
+        )
+        #expect(manager.isScreenIncludedAsContext(
+            displayID: displayID,
+            isFocused: true,
+            hasInk: false
+        ))
+
+        manager.resetScreenContextDisplayOverrides()
+
+        #expect(!manager.isScreenIncludedAsContext(
+            displayID: displayID,
+            isFocused: true,
+            hasInk: false
+        ))
+    }
+
     @Test func voiceTranscriptCreatesTaskWhenNoSessionIsSelected() async throws {
         let client = FakeVoiceClient()
         let selection = FakeVoiceSelectionStore()
@@ -286,6 +357,53 @@ struct PickyCompanionManagerTests {
         #expect(client.commands.first?.visualDslEnabled == false)
         #expect(client.submissions.isEmpty)
         #expect(selection.screenContextTargetSessionID == nil)
+    }
+
+    @Test func textInkCapturePassesThroughCaptureContextControlPanels() {
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore()
+        )
+        let controlPoint = CGPoint(x: 240, y: 160)
+        manager.setScreenContextControlHitTest { $0 == controlPoint }
+
+        #expect(manager.shouldPassThroughInkMouseEvent(point: controlPoint, source: .text))
+        #expect(manager.shouldPassThroughInkMouseEvent(point: controlPoint, source: .voice))
+    }
+
+    @Test func pttDoesNotOverlapAnInFlightQuickInputSubmission() {
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore()
+        )
+        manager.quickInputPanelManager.viewModelForTesting.isSending = true
+
+        manager.handleShortcutTransition(.pressed)
+
+        #expect(manager.voiceState == .idle)
+        manager.stop()
+    }
+
+    @Test func productionPTTPreservesDisplayOverridesAcrossReleaseAndFallbackCapture() async throws {
+        let client = FakeVoiceClient()
+        var capturedOverrides: PickyScreenContextDisplayOverrides = [:]
+        let manager = CompanionManager(
+            agentClient: client,
+            selectionStore: FakeVoiceSelectionStore(),
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator { overrides in
+                capturedOverrides = overrides
+            }
+        )
+
+        manager.handleShortcutTransition(.pressed)
+        manager.toggleScreenContextDisplay(displayID: 42, isFocused: true, hasInk: false)
+        manager.handleShortcutTransition(.released)
+        manager.submitTranscriptToPickyAgent(transcript: "화면 제외 확인")
+
+        try await waitUntil { !client.submissions.isEmpty }
+        #expect(capturedOverrides[42] == .excluded)
+        #expect(manager.screenContextDisplayOverrides.isEmpty)
+        manager.stop()
     }
 
     @Test func productionPTTWithScreenContextTargetSendsFollowUpWhenConfigured() async throws {
@@ -2255,9 +2373,15 @@ struct PickyCompanionManagerTests {
         )
     }
 
-    private func fakeContextCaptureCoordinator(screenshots: [PickyScreenshotContext] = []) -> PickyVoiceContextCaptureCoordinator {
+    private func fakeContextCaptureCoordinator(
+        screenshots: [PickyScreenshotContext] = [],
+        onScreenCapture: @escaping @MainActor (PickyScreenContextDisplayOverrides) -> Void = { _ in }
+    ) -> PickyVoiceContextCaptureCoordinator {
         PickyVoiceContextCaptureCoordinator(
-            screenCapture: { _, _, _ in [] },
+            screenCapture: { _, _, _, _, displayOverrides in
+                onScreenCapture(displayOverrides)
+                return []
+            },
             contextPreflightCapture: {
                 PickyContextPacketPreflight(
                     capturedAt: Date(timeIntervalSince1970: 1_800_000_000),

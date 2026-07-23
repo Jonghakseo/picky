@@ -114,6 +114,58 @@ struct PickyCompanionDirectMessageTests {
         #expect(speechProvider.spokenUtterances.isEmpty)
     }
 
+    @Test func quickInputPassesPerDisplayOverridesIntoContextCapture() async throws {
+        var capturedOverrides: PickyScreenContextDisplayOverrides = [:]
+        let coordinator = PickyVoiceContextCaptureCoordinator(
+            screenCapture: { _, _, _, _, displayOverrides in
+                capturedOverrides = displayOverrides
+                return []
+            },
+            contextPreflightCapture: {
+                PickyContextPacketPreflight(
+                    capturedAt: Date(timeIntervalSince1970: 1_800_000_000),
+                    activeApp: nil,
+                    activeWindow: nil,
+                    browser: nil,
+                    selectedText: nil,
+                    warnings: []
+                )
+            },
+            contextPreparer: { _, source, _, _ in
+                PickyPreparedContextPacket(
+                    id: "typed-context",
+                    source: source,
+                    capturedAt: Date(timeIntervalSince1970: 1_800_000_000),
+                    selectedText: nil,
+                    cwd: nil,
+                    activeApp: nil,
+                    activeWindow: nil,
+                    browser: nil,
+                    screenshots: [],
+                    inkMarks: [],
+                    warnings: []
+                )
+            }
+        )
+        let manager = CompanionManager(
+            agentClient: FakeDirectMessageClient(),
+            voiceContextCaptureCoordinator: coordinator
+        )
+        let displayOverrides: PickyScreenContextDisplayOverrides = [
+            1: .excluded,
+            2: .included
+        ]
+
+        let didSend = await manager.sendDirectMessage(
+            "screen choices",
+            source: .quickInput,
+            displayOverrides: displayOverrides
+        )
+
+        #expect(didSend)
+        #expect(capturedOverrides == displayOverrides)
+    }
+
     @Test func quickInputMessageShowsCursorLoadingAndSpeaksQuickReply() async throws {
         let client = FakeDirectMessageClient()
         let speechProvider = FakeDirectMessageSpeechPlaybackProvider()
@@ -150,7 +202,7 @@ struct PickyCompanionDirectMessageTests {
 
     private func fakeDirectMessageContextCaptureCoordinator() -> PickyVoiceContextCaptureCoordinator {
         PickyVoiceContextCaptureCoordinator(
-            screenCapture: { _, _, _ in [] },
+            screenCapture: { _, _, _, _, _ in [] },
             contextPreflightCapture: {
                 PickyContextPacketPreflight(
                     capturedAt: Date(timeIntervalSince1970: 1_800_000_000),

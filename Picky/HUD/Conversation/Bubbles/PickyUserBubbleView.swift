@@ -5,6 +5,7 @@
 //  User-authored message bubble for conversation cards.
 //
 
+import Foundation
 import SwiftUI
 
 struct PickyUserBubbleView: View {
@@ -41,28 +42,29 @@ struct PickyUserBubbleView: View {
 
     var displayedOriginLabel: String? { originLabel }
     var displayedMarkdownPreview: String {
-        PickyAgentResponsePreview.truncatedMarkdown(message.text ?? "")
+        PickySkillInvocationPresentation.compactMarkdown(for: message)
+            ?? PickyAgentResponsePreview.truncatedMarkdown(message.text ?? "")
     }
     var displayedMarkdown: String {
         isExpanded ? message.text ?? "" : displayedMarkdownPreview
     }
-
-    private var isTruncated: Bool {
-        PickyAgentResponsePreview.isTruncated(message.text ?? "")
+    var shouldOfferExpansion: Bool {
+        PickySkillInvocationPresentation.compactMarkdown(for: message) != nil
+            || PickyAgentResponsePreview.isTruncated(message.text ?? "")
     }
 
     private var expansionTitle: String? {
-        guard isTruncated else { return nil }
+        guard shouldOfferExpansion else { return nil }
         return isExpanded ? "접기" : "더 보기"
     }
 
     private var expansionSystemImageName: String? {
-        guard isTruncated else { return nil }
+        guard shouldOfferExpansion else { return nil }
         return isExpanded ? "chevron.up" : "chevron.down"
     }
 
     private var expansionAction: (() -> Void)? {
-        guard isTruncated else { return nil }
+        guard shouldOfferExpansion else { return nil }
         return {
             withAnimation(.easeInOut(duration: 0.16)) {
                 isExpanded.toggle()
@@ -93,8 +95,7 @@ struct PickyUserBubbleView: View {
     /// in-text right-click menu only offers the action when the bubble's
     /// content is actually truncated in the preview.
     private var textViewOpenAsReportAction: (() -> Void)? {
-        guard let onOpenAsReport,
-              PickyAgentResponsePreview.isTruncated(message.text ?? "") else { return nil }
+        guard let onOpenAsReport, shouldOfferExpansion else { return nil }
         return onOpenAsReport
     }
 
@@ -116,5 +117,30 @@ struct PickyUserBubbleView: View {
     var displayedAttachedImagesLabel: String? {
         guard let count = message.attachedImagesCount, count > 0 else { return nil }
         return "🖥️ \(count) attached"
+    }
+}
+
+enum PickySkillInvocationPresentation {
+    private static let openingTagPattern = try? NSRegularExpression(
+        pattern: #"\A\s*<skill\b[^>]*\bname\s*=\s*[\"']([A-Za-z0-9._-]+)[\"'][^>]*>"#,
+        options: [.caseInsensitive]
+    )
+
+    static func compactMarkdown(for message: PickySessionMessage) -> String? {
+        guard message.kind == .userText,
+              message.originatedBy == .piExtension,
+              let text = message.text,
+              let skillName = skillName(in: text)
+        else { return nil }
+        return "Skill · `\(skillName)`"
+    }
+
+    private static func skillName(in text: String) -> String? {
+        guard let openingTagPattern else { return nil }
+        let fullRange = NSRange(text.startIndex..<text.endIndex, in: text)
+        guard let match = openingTagPattern.firstMatch(in: text, range: fullRange),
+              let nameRange = Range(match.range(at: 1), in: text)
+        else { return nil }
+        return String(text[nameRange])
     }
 }

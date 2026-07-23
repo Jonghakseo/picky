@@ -1128,6 +1128,34 @@ struct PickyConversationCardViewTests {
         #expect(bubble.displayedOriginLabel == "from Pi terminal")
     }
 
+    @Test func piSkillInvocationCollapsesToSkillNameWhilePreservingExpansion() {
+        let skillMessage = """
+        <skill name="i18n-upload" location="/Users/example/.pi/skills/i18n-upload/SKILL.md">
+        References are relative to /Users/example/.pi/skills/i18n-upload.
+
+        # i18n Upload Skill
+
+        Upload local locale changes through the Admin API.
+        </skill>
+        """
+        let bubble = PickyUserBubbleView(
+            message: message("m-skill", kind: .userText, text: skillMessage, originatedBy: .piExtension)
+        )
+
+        #expect(bubble.displayedMarkdownPreview == "Skill · `i18n-upload`")
+        #expect(bubble.displayedMarkdown == "Skill · `i18n-upload`")
+        #expect(bubble.shouldOfferExpansion)
+    }
+
+    @Test func ordinaryPiExtensionMessageKeepsItsOriginalPreview() {
+        let bubble = PickyUserBubbleView(
+            message: message("m-pi-note", kind: .userText, text: "custom extension note", originatedBy: .piExtension)
+        )
+
+        #expect(bubble.displayedMarkdownPreview == "custom extension note")
+        #expect(!bubble.shouldOfferExpansion)
+    }
+
     @Test func userBubbleUsesDesktopEmojiForAttachedScreenContext() {
         let bubble = PickyUserBubbleView(message: message("m-screen", kind: .userText, text: "use this", attachedImagesCount: 1))
 

@@ -30,7 +30,6 @@ interface PickleDockGroupSummary {
   id: string;
   name: string;
   color: number;
-  collapsed: boolean;
 }
 
 interface PickleSessionSummary {
@@ -99,6 +98,8 @@ function createPickyStartPickleToolWithNames(
 
 const PICKLE_SESSIONS_DEFAULT_PAGE_SIZE = 10;
 const PICKLE_SESSIONS_MAX_PAGE_SIZE = 10;
+const PICKLE_GROUP_NAME_MAX_GRAPHEMES = 80;
+const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 export function createPickyPickleSessionsTool(onList: () => PickyPickleSessionsSnapshot | Promise<PickyPickleSessionsSnapshot>): ToolDefinition {
   return createPickyPickleSessionsToolWithNames(onList, PICKLE_TOOL_NAMES);
@@ -129,11 +130,14 @@ function createPickyPickleSessionsToolWithNames(onList: () => PickyPickleSession
       const end = start + pageSize;
       const snapshot = await onList();
       const allSessions = snapshot.sessions.filter((session) => includeArchived || session.archived !== true);
-      const sessions = allSessions.slice(start, end).map((session) => summarizePickleSession(session, snapshot.groups));
+      const pageSessions = allSessions.slice(start, end);
+      const pageSessionIds = new Set(pageSessions.map((session) => session.id));
       // The full dock layout includes archived and off-page member ids. The main agent only
-      // needs group metadata to interpret each paged session's `group`, so never leak those
-      // members through this bounded tool response.
-      const groups = snapshot.groups.map(summarizeDockGroup);
+      // needs group metadata to interpret each paged session's `group`, so return only groups
+      // that reference a session on this page and never expose their member lists.
+      const pageGroups = snapshot.groups.filter((group) => group.memberSessionIds.some((sessionId) => pageSessionIds.has(sessionId)));
+      const sessions = pageSessions.map((session) => summarizePickleSession(session, pageGroups));
+      const groups = pageGroups.map(summarizeDockGroup);
       const hasMore = allSessions.length > end;
       const nextPage = hasMore ? page + 1 : undefined;
       return {
@@ -217,7 +221,7 @@ function createPickyAbortPickleToolWithNames(
 }
 
 function summarizeDockGroup(group: DockGroup): PickleDockGroupSummary {
-  return { id: group.id, name: group.name, color: group.color, collapsed: group.collapsed };
+  return { id: group.id, name: truncateGraphemeSafe(group.name, PICKLE_GROUP_NAME_MAX_GRAPHEMES), color: group.color };
 }
 
 function summarizePickleSession(session: PickyAgentSession, groups: DockGroup[] = []): PickleSessionSummary {
@@ -252,7 +256,7 @@ function formatPickleSessions(sessions: PickleSessionSummary[], groups: PickleDo
   }
   lines.push(groups.length === 0 ? "Dock groups: none." : "Dock groups:");
   for (const group of groups) {
-    lines.push(`- ${group.id} | ${group.name} | color=${group.color}; collapsed=${group.collapsed}`);
+    lines.push(`- ${group.id} | ${group.name} | color=${group.color}`);
   }
   return lines.join("\n");
 }
@@ -274,4 +278,21 @@ function normalizeOptionalString(value: string | undefined): string | undefined 
 
 function truncate(value: string, maxChars: number): string {
   return value.length <= maxChars ? value : `${sliceUtf16Safe(value, Math.max(0, maxChars - 1))}…`;
+}
+
+function truncateGraphemeSafe(value: string, maxGraphemes: number): string {
+  if (maxGraphemes <= 0) return "";
+
+  const iterator = graphemeSegmenter.segment(value)[Symbol.iterator]();
+  let prefix = "";
+  for (let index = 0; index < maxGraphemes; index += 1) {
+    const next = iterator.next();
+    if (next.done) return prefix;
+
+    if (index === maxGraphemes - 1) {
+      return iterator.next().done ? `${prefix}${next.value.segment}` : `${prefix}…`;
+    }
+    prefix += next.value.segment;
+  }
+  return prefix;
 }

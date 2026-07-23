@@ -78,34 +78,74 @@ describe("handoff tools", () => {
     expect(details).toMatchObject({ page: 2, pageSize: 10, hasMore: true, nextPage: 3 });
   });
 
-  it("reports each Pickle's dock group and the complete dock-group list", async () => {
+  it("reports only dock groups referenced by the current Pickle page", async () => {
     const sessions = [makeSession(1), makeSession(2)];
     const groups: DockGroup[] = [
       { id: "research", name: "Research", color: 6, memberSessionIds: ["pickle-1", "archived-pickle"], collapsed: false },
-      { id: "later", name: "Later", color: 2, memberSessionIds: [], collapsed: true },
+      { id: "later", name: "Later", color: 2, memberSessionIds: ["pickle-2"], collapsed: true },
     ];
     const tool = createPickyPickleSessionsTool(() => ({ sessions, groups }));
 
-    const result = await tool.execute("tool-1", {} as never, undefined, undefined, {} as never);
-    const details = result.details as {
-      sessions: Array<{ id: string; group: { id: string; name: string; color: number; collapsed: boolean } | null }>;
-      groups: Array<{ id: string; name: string; color: number; collapsed: boolean }>;
+    const firstPageResult = await tool.execute("tool-1", { limit: 1 } as never, undefined, undefined, {} as never);
+    const firstPageDetails = firstPageResult.details as {
+      sessions: Array<{ id: string; group: { id: string; name: string; color: number; collapsed?: unknown } | null }>;
+      groups: Array<{ id: string; name: string; color: number; collapsed?: unknown }>;
     };
 
-    expect(details.sessions).toEqual([
-      expect.objectContaining({ id: "pickle-1", group: { id: "research", name: "Research", color: 6, collapsed: false } }),
-      expect.objectContaining({ id: "pickle-2", group: null }),
+    expect(firstPageDetails.sessions).toEqual([
+      expect.objectContaining({ id: "pickle-1", group: { id: "research", name: "Research", color: 6 } }),
     ]);
-    expect(details.groups).toEqual([
-      { id: "research", name: "Research", color: 6, collapsed: false },
-      { id: "later", name: "Later", color: 2, collapsed: true },
-    ]);
-    const content = result.content[0];
-    if (content?.type !== "text") throw new Error("expected text content");
-    expect(content.text).toContain("group=Research (research)");
-    expect(content.text).toContain("group=none");
-    expect(content.text).toContain("later | Later | color=2; collapsed=true");
-    expect(content.text).not.toContain("archived-pickle");
+    expect(firstPageDetails.groups).toEqual([{ id: "research", name: "Research", color: 6 }]);
+    expect(firstPageDetails.groups[0]?.collapsed).toBeUndefined();
+    expect(firstPageDetails.sessions[0]?.group?.collapsed).toBeUndefined();
+    const firstPageContent = firstPageResult.content[0];
+    if (firstPageContent?.type !== "text") throw new Error("expected text content");
+    expect(firstPageContent.text).toContain("group=Research (research)");
+    expect(firstPageContent.text).toContain("research | Research | color=6");
+    expect(firstPageContent.text).not.toContain("collapsed");
+    expect(firstPageContent.text).not.toContain("later");
+    expect(firstPageContent.text).not.toContain("archived-pickle");
+
+    const secondPageResult = await tool.execute("tool-2", { page: 2, limit: 1 } as never, undefined, undefined, {} as never);
+    const secondPageDetails = secondPageResult.details as typeof firstPageDetails;
+    expect(secondPageDetails.sessions[0]).toMatchObject({ id: "pickle-2", group: { id: "later", name: "Later", color: 2 } });
+    expect(secondPageDetails.groups).toEqual([{ id: "later", name: "Later", color: 2 }]);
+  });
+
+  it("bounds limit-one group output and truncates group names at grapheme boundaries", async () => {
+    const groupName = "👩‍💻e\u0301".repeat(50);
+    const irrelevantGroups: DockGroup[] = Array.from({ length: 500 }, (_, index) => ({
+      id: `irrelevant-${index}`,
+      name: "irrelevant group name ".repeat(100),
+      color: index % 8,
+      memberSessionIds: [`off-page-${index}`],
+      collapsed: true,
+    }));
+    const groups: DockGroup[] = [
+      { id: "current-page", name: groupName, color: 6, memberSessionIds: ["pickle-1"], collapsed: true },
+      ...irrelevantGroups,
+    ];
+    const tool = createPickyPickleSessionsTool(() => ({ sessions: [makeSession(1), makeSession(2)], groups }));
+
+    const result = await tool.execute("tool-1", { limit: 1 } as never, undefined, undefined, {} as never);
+    const details = result.details as {
+      sessions: Array<{ id: string; group: { id: string; name: string; collapsed?: unknown } | null }>;
+      groups: Array<{ id: string; name: string; collapsed?: unknown }>;
+    };
+    const serialized = JSON.stringify({ details, content: result.content });
+    const returnedName = details.groups[0]?.name;
+
+    expect(details.sessions).toHaveLength(1);
+    expect(details.sessions[0]?.group).toMatchObject({ id: "current-page" });
+    expect(details.groups).toHaveLength(1);
+    expect(details.groups[0]?.id).toBe("current-page");
+    expect(details.groups[0]?.collapsed).toBeUndefined();
+    expect(details.sessions[0]?.group?.collapsed).toBeUndefined();
+    expect(serialized).not.toContain("irrelevant-0");
+    expect(serialized).not.toContain("collapsed");
+    expect(serialized.length).toBeLessThan(2_000);
+    expect(returnedName).toBe(`${"👩‍💻e\u0301".repeat(39)}👩‍💻…`);
+    expect(Array.from(new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(returnedName ?? ""))).toHaveLength(80);
   });
 
   it("always includes terminal Pickle sessions in paginated results", async () => {

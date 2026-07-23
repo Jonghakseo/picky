@@ -140,6 +140,9 @@ struct PickyConversationHeaderView: View {
     private func sessionMetaControls() -> some View {
         PickyHeaderSessionMetaPill(
             presentation: headerMetaPresentation,
+            maximumModelLabelLength: PickyConversationHeaderLayoutPolicy.maximumModelLabelLength(
+                forContentWidth: PickyHUDDockLayout.detailContentWidth(for: pickyHUDDetailWidth)
+            ),
             onCycleModel: { cycleModel() },
             onCycleThinkingLevel: { cycleThinkingLevel() }
         )
@@ -738,6 +741,23 @@ struct PickleLogoGlyph: Shape {
     }
 }
 
+/// Determines the one-row header's only lossy metadata behavior. Session
+/// identity, status, context usage, thinking level, and the menu remain visible;
+/// the optional model identifier contracts first and is removed only at the
+/// narrowest tier.
+enum PickyConversationHeaderLayoutPolicy {
+    static func maximumModelLabelLength(forContentWidth contentWidth: CGFloat) -> Int? {
+        switch contentWidth {
+        case 422...:
+            return 22
+        case 390...:
+            return 12
+        default:
+            return nil
+        }
+    }
+}
+
 /// Shared session metadata projection for the conversation header. Keeping the
 /// strings here aligns visible controls, tooltips, and accessibility text when
 /// a session's model, thinking level, or context usage changes.
@@ -773,21 +793,29 @@ struct PickyConversationHeaderMetaPresentation {
 
 private struct PickyHeaderSessionMetaPill: View {
     let presentation: PickyConversationHeaderMetaPresentation
+    let maximumModelLabelLength: Int?
     let onCycleModel: () -> Void
     let onCycleThinkingLevel: () -> Void
+
+    private var displayedModelText: String? {
+        guard let modelText = presentation.modelText,
+              let maximumModelLabelLength
+        else { return nil }
+        return Self.displayModelLabel(modelText, maxLength: maximumModelLabelLength)
+    }
 
     var body: some View {
         HStack(spacing: DS.Spacing.xs) {
             if let contextDisplay = presentation.contextDisplay {
                 contextControl(contextDisplay)
-                if presentation.modelText != nil || presentation.thinkingLevelText != nil {
+                if displayedModelText != nil || presentation.thinkingLevelText != nil {
                     separator
                 }
             }
-            if let modelText = presentation.modelText {
-                modelControl(modelText)
+            if let displayedModelText, let modelText = presentation.modelText {
+                modelControl(displayedModelText, fullModelText: modelText)
             }
-            if presentation.modelText != nil, presentation.thinkingLevelText != nil {
+            if displayedModelText != nil, presentation.thinkingLevelText != nil {
                 separator
             }
             if let thinkingLevelText = presentation.thinkingLevelText {
@@ -810,16 +838,17 @@ private struct PickyHeaderSessionMetaPill: View {
         .fixedSize(horizontal: true, vertical: false)
     }
 
-    private func modelControl(_ modelText: String) -> some View {
+    private func modelControl(_ displayedModelText: String, fullModelText: String) -> some View {
         Button(action: onCycleModel) {
-            Text(Self.displayModelLabel(modelText))
+            Text(displayedModelText)
                 .foregroundColor(textColor.opacity(0.92))
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
         .buttonStyle(.plain)
         .fixedSize(horizontal: true, vertical: false)
-        .nativeTooltip("\(modelText)\nCycle scoped model (⌃P)")
+        .nativeTooltip("\(fullModelText)\nCycle scoped model (⌃P)")
+        .accessibilityLabel("Model \(fullModelText)")
         .accessibilityHint("Cycle scoped model with Control-P")
         .hoverAffordance()
     }

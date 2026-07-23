@@ -122,7 +122,11 @@ struct PickyUserBubbleView: View {
 
 enum PickySkillInvocationPresentation {
     private static let openingTagPattern = try? NSRegularExpression(
-        pattern: #"\A\s*<skill\b[^>]*\bname\s*=\s*[\"']([A-Za-z0-9._-]+)[\"'][^>]*>"#,
+        pattern: #"\A\s*<skill\b[^>]*\bname\s*=\s*[\"']([^\"']+)[\"'][^>]*>"#,
+        options: [.caseInsensitive]
+    )
+    private static let closingTagPattern = try? NSRegularExpression(
+        pattern: #"</skill\s*>"#,
         options: [.caseInsensitive]
     )
 
@@ -130,17 +134,30 @@ enum PickySkillInvocationPresentation {
         guard message.kind == .userText,
               message.originatedBy == .piExtension,
               let text = message.text,
-              let skillName = skillName(in: text)
+              let invocation = invocation(in: text)
         else { return nil }
-        return "Skill · `\(skillName)`"
+
+        let heading = "Skill · `\(invocation.name)`"
+        guard !invocation.instruction.isEmpty else { return heading }
+        return "\(heading)\n\n\(invocation.instruction)"
     }
 
-    private static func skillName(in text: String) -> String? {
-        guard let openingTagPattern else { return nil }
+    private static func invocation(in text: String) -> (name: String, instruction: String)? {
+        guard let openingTagPattern, let closingTagPattern else { return nil }
         let fullRange = NSRange(text.startIndex..<text.endIndex, in: text)
-        guard let match = openingTagPattern.firstMatch(in: text, range: fullRange),
-              let nameRange = Range(match.range(at: 1), in: text)
+        guard let openingMatch = openingTagPattern.firstMatch(in: text, range: fullRange),
+              let nameRange = Range(openingMatch.range(at: 1), in: text),
+              let openingEnd = Range(openingMatch.range, in: text)?.upperBound
         else { return nil }
-        return String(text[nameRange])
+
+        let name = String(text[nameRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return nil }
+
+        let suffixRange = NSRange(openingEnd..<text.endIndex, in: text)
+        guard let closingMatch = closingTagPattern.firstMatch(in: text, range: suffixRange),
+              let closingEnd = Range(closingMatch.range, in: text)?.upperBound
+        else { return nil }
+
+        return (name, String(text[closingEnd...]).trimmingCharacters(in: .whitespacesAndNewlines))
     }
 }

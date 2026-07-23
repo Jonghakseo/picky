@@ -705,6 +705,12 @@ struct PickyConversationCardViewTests {
         #expect(presentation.helpText.contains("xhigh"))
     }
 
+    @Test func headerLayoutPolicyTruncatesModelBeforeRemovingItAtNarrowWidths() {
+        #expect(PickyConversationHeaderLayoutPolicy.maximumModelLabelLength(forContentWidth: 422) == 22)
+        #expect(PickyConversationHeaderLayoutPolicy.maximumModelLabelLength(forContentWidth: 390) == 12)
+        #expect(PickyConversationHeaderLayoutPolicy.maximumModelLabelLength(forContentWidth: 389) == nil)
+    }
+
     @Test func headerRenameCommandBuilderTrimsAndDedupsAndRejectsEmpty() {
         // Empty input or whitespace-only input must cancel (no command emitted).
         #expect(PickyConversationHeaderView.renameCommandText(forNewTitle: "", current: "Old") == nil)
@@ -1128,7 +1134,7 @@ struct PickyConversationCardViewTests {
         #expect(bubble.displayedOriginLabel == "from Pi terminal")
     }
 
-    @Test func piSkillInvocationCollapsesToSkillNameWhilePreservingExpansion() {
+    @Test func piSkillInvocationShowsSkillNameAndInstructionSuffixWhilePreservingExpansion() {
         let skillMessage = """
         <skill name="i18n-upload" location="/Users/example/.pi/skills/i18n-upload/SKILL.md">
         References are relative to /Users/example/.pi/skills/i18n-upload.
@@ -1137,14 +1143,42 @@ struct PickyConversationCardViewTests {
 
         Upload local locale changes through the Admin API.
         </skill>
+
+        Upload the changed Korean strings now.
         """
         let bubble = PickyUserBubbleView(
             message: message("m-skill", kind: .userText, text: skillMessage, originatedBy: .piExtension)
         )
 
-        #expect(bubble.displayedMarkdownPreview == "Skill · `i18n-upload`")
-        #expect(bubble.displayedMarkdown == "Skill · `i18n-upload`")
+        let expected = "Skill · `i18n-upload`\n\nUpload the changed Korean strings now."
+        #expect(bubble.displayedMarkdownPreview == expected)
+        #expect(bubble.displayedMarkdown == expected)
         #expect(bubble.shouldOfferExpansion)
+    }
+
+    @Test func piSkillInvocationTrimsUnicodeInstructionSuffix() {
+        let skillMessage = """
+        <skill name="릴리즈-노트">
+        내부 skill 설명
+        </skill>
+
+          한국어 변경사항을 정리해줘 👩🏽‍💻
+        """
+        let bubble = PickyUserBubbleView(
+            message: message("m-unicode-skill", kind: .userText, text: skillMessage, originatedBy: .piExtension)
+        )
+
+        #expect(bubble.displayedMarkdownPreview == "Skill · `릴리즈-노트`\n\n한국어 변경사항을 정리해줘 👩🏽‍💻")
+    }
+
+    @Test func malformedPiSkillInvocationKeepsOriginalMessagePreview() {
+        let malformed = "<skill name=\"i18n-upload\">\nmissing closing marker"
+        let bubble = PickyUserBubbleView(
+            message: message("m-malformed-skill", kind: .userText, text: malformed, originatedBy: .piExtension)
+        )
+
+        #expect(bubble.displayedMarkdownPreview == malformed)
+        #expect(!bubble.shouldOfferExpansion)
     }
 
     @Test func activeToolRowShowsProjectSkillNameInsteadOfManifestFilename() {

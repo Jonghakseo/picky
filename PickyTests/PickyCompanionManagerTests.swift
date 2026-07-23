@@ -1514,6 +1514,7 @@ struct PickyCompanionManagerTests {
         try await waitUntil {
             speechProvider.spokenUtterances == ["A 설명."]
                 && manager.latestAgentSessionSummary == "A 설명."
+                && manager.activeVisualNarrationSegmentID == first.segmentId
         }
 
         manager.applyAgentEvent(.mainVisualNarrationSegmentSentence(
@@ -1528,11 +1529,13 @@ struct PickyCompanionManagerTests {
         ))
         try await settle()
         #expect(manager.latestAgentSessionSummary == "A 설명.")
+        #expect(manager.activeVisualNarrationSegmentID == first.segmentId)
 
         speechProvider.finishSpeaking()
         try await waitUntil {
             speechProvider.spokenUtterances == ["A 설명.", "B 설명."]
                 && manager.latestAgentSessionSummary == "B 설명."
+                && manager.activeVisualNarrationSegmentID == second.segmentId
         }
     }
 

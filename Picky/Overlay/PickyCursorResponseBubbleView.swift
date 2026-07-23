@@ -62,6 +62,7 @@ struct PickyCursorResponseBubbleLayout {
 
 final class PickyCursorResponseBubbleLayoutCache: ObservableObject {
     @Published private var cachedLayout: PickyCursorResponseBubbleLayout?
+    private var cachedContentIdentity: String?
 
     /// Returns a layout for the current text. On a cache miss the layout is
     /// computed synchronously instead of returning nil, so the response bubble
@@ -71,35 +72,48 @@ final class PickyCursorResponseBubbleLayoutCache: ObservableObject {
     /// Computed inline without mutating `@Published` state so this stays safe to
     /// call during a SwiftUI body evaluation; `update(for:)` still warms the
     /// cache so steady-state renders reuse the stored layout.
-    func layout(for sourceText: String) -> PickyCursorResponseBubbleLayout? {
+    func layout(
+        for sourceText: String,
+        contentIdentity: String? = nil
+    ) -> PickyCursorResponseBubbleLayout? {
         guard !sourceText.isEmpty else { return nil }
         if let cachedLayout {
-            if cachedLayout.sourceText == sourceText { return cachedLayout }
+            if cachedContentIdentity == contentIdentity,
+               cachedLayout.sourceText == sourceText {
+                return cachedLayout
+            }
             let candidate = PickyCursorResponseBubbleLayout(sourceText: sourceText)
+            guard cachedContentIdentity == contentIdentity else { return candidate }
             return stabilized(candidate, against: cachedLayout)
         }
         return PickyCursorResponseBubbleLayout(sourceText: sourceText)
     }
 
-    func update(for sourceText: String) {
+    func update(
+        for sourceText: String,
+        contentIdentity: String? = nil
+    ) {
         guard !sourceText.isEmpty else {
             clear()
             return
         }
-        guard cachedLayout?.sourceText != sourceText else { return }
+        guard cachedContentIdentity != contentIdentity
+                || cachedLayout?.sourceText != sourceText else { return }
         let candidate = PickyCursorResponseBubbleLayout(sourceText: sourceText)
-        if let current = cachedLayout {
+        if let current = cachedLayout,
+           cachedContentIdentity == contentIdentity {
             cachedLayout = stabilized(candidate, against: current)
         } else {
             cachedLayout = candidate
         }
+        cachedContentIdentity = contentIdentity
     }
 
-    /// The response is append-only, so a candidate that wraps to fewer visual lines than the
-    /// layout already on screen is a transient regression: a TTS/narration state race briefly
-    /// hands back a shorter text variant (streamed vs spoken/narration text differ in
-    /// whitespace, so a plain prefix check misses it). Keep the fuller layout instead of
-    /// shrinking for a frame, which is what made the bubble flicker as TTS started.
+    /// Within one content identity the response is append-only, so a candidate that wraps to
+    /// fewer visual lines than the layout already on screen is a transient regression: a
+    /// TTS/narration state race briefly hands back a shorter text variant (streamed vs
+    /// spoken/narration text differ in whitespace, so a plain prefix check misses it). A new
+    /// visual narration segment has a different identity and bypasses this stabilization.
     private func stabilized(
         _ candidate: PickyCursorResponseBubbleLayout,
         against current: PickyCursorResponseBubbleLayout
@@ -110,6 +124,7 @@ final class PickyCursorResponseBubbleLayoutCache: ObservableObject {
     func clear() {
         guard cachedLayout != nil else { return }
         cachedLayout = nil
+        cachedContentIdentity = nil
     }
 }
 

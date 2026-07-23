@@ -750,7 +750,10 @@ struct BlueCursorView: View {
                !(companionManager.hasActiveVisualNarration && !companionManager.isProgressiveResponseVisible),
                let responseText = companionManager.latestAgentSessionSummary,
                !responseText.isEmpty,
-               let responseBubbleLayout = responseBubbleLayoutCache.layout(for: responseText),
+               let responseBubbleLayout = responseBubbleLayoutCache.layout(
+                   for: responseText,
+                   contentIdentity: companionManager.activeVisualNarrationSegmentID
+               ),
                companionManager.onboardingBubbleText == nil {
                 PickyCursorBubblePlacementLayout(
                     cursorPosition: compactCursorChromePlacementIsPreferred ? systemCursorPosition : cursorPosition,
@@ -957,6 +960,9 @@ struct BlueCursorView: View {
         .onChange(of: companionManager.isProgressiveResponseVisible) { _, _ in
             syncResponseBubbleLayout()
         }
+        .onChange(of: companionManager.activeVisualNarrationSegmentID) { _, _ in
+            syncResponseBubbleLayout()
+        }
         .onChange(of: overlayBubblePreferencesStore.preferences.showPickyResponseBubble) { _, _ in
             syncResponseBubbleLayout()
         }
@@ -1013,7 +1019,10 @@ struct BlueCursorView: View {
             responseBubbleLayoutCache.clear()
             return
         }
-        responseBubbleLayoutCache.update(for: responseText)
+        responseBubbleLayoutCache.update(
+            for: responseText,
+            contentIdentity: companionManager.activeVisualNarrationSegmentID
+        )
     }
 
     /// Minimal in-flight affordance for users who intentionally hide the idle cursor buddy.

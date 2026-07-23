@@ -53,6 +53,7 @@ final class CompanionManager: ObservableObject {
     @Published private(set) var latestAgentSessionSummary: String?
     @Published private(set) var isProgressiveResponseVisible = false
     @Published private(set) var hasActiveVisualNarration = false
+    @Published private(set) var activeVisualNarrationSegmentID: String?
     @Published private(set) var hasActivePointVisualNarration = false
     @Published private(set) var mainAgentMessages: [PickyMainAgentMessage] = []
     @Published private(set) var mainLiveActivities: [PickyMainActivity] = [] {
@@ -1716,6 +1717,7 @@ final class CompanionManager: ObservableObject {
         agentAnnotations = projection.agentAnnotations
         showsAgentAnnotationDismissControl = projection.showsAgentAnnotationDismissControl
         hasActiveVisualNarration = projection.state.activeVisualNarrationIdentity != nil
+        activeVisualNarrationSegmentID = projection.state.activeVisualNarrationIdentity?.segmentId
         hasActivePointVisualNarration = projection.hasActivePointVisualNarration
         isProgressiveResponseVisible = projection.latestDisplayText != nil
             && (hasActiveVisualNarration || projection.state.streamedResponseText != nil)

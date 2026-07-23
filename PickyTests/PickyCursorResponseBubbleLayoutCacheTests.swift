@@ -62,6 +62,42 @@ struct PickyCursorResponseBubbleLayoutCacheTests {
         #expect(cache.layout(for: twoLineVariant)?.sourceText == fourLineAnswer)
     }
 
+    // Visual narration replaces the bubble at each annotation segment; it is not an
+    // append-only stream. A shorter sentence in a new segment must therefore replace the
+    // prior layout instead of being mistaken for a transient TTS regression.
+    @Test func shorterVisualNarrationSegmentsReplacePreviousLayouts() {
+        let cache = PickyCursorResponseBubbleLayoutCache()
+        let replacements = [
+            (
+                current: "삭제할 때는 연결 가격 행을 먼저 비활성화해 빈 옵션이 활성 상태로 남지 않게 합니다.",
+                currentSegmentID: "segment-disable-row",
+                next: "그 다음에 세부 옵션 자체를 삭제해요.",
+                nextSegmentID: "segment-delete-option"
+            ),
+            (
+                current: "저장할 때는 스팟을 잠그고 shell 행을 정리·동기화해 동시 저장으로 인한 중복을 막습니다.",
+                currentSegmentID: "segment-sync-shell",
+                next: "두 경로는 사용자 가격표를 조회하는 단계에서 합쳐집니다.",
+                nextSegmentID: "segment-read-price-list"
+            ),
+        ]
+
+        for replacement in replacements {
+            cache.update(for: replacement.current, contentIdentity: replacement.currentSegmentID)
+            #expect(
+                PickyCursorResponseBubbleLayout(sourceText: replacement.next).lineCount
+                    < PickyCursorResponseBubbleLayout(sourceText: replacement.current).lineCount
+            )
+
+            let layout = cache.layout(
+                for: replacement.next,
+                contentIdentity: replacement.nextSegmentID
+            )
+
+            #expect(layout?.sourceText == replacement.next)
+        }
+    }
+
     @Test func emptyTextHasNoLayout() {
         let cache = PickyCursorResponseBubbleLayoutCache()
         #expect(cache.layout(for: "") == nil)

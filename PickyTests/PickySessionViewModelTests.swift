@@ -4658,7 +4658,7 @@ struct PickySessionViewModelTests {
         ])
     }
 
-    @Test func reportOutlineIncludesOnlyFirstThreeHeadingLevelsWithStableBlockIDs() throws {
+    @Test func reportOutlineUsesDistinctRowIDsAndStableBlockTargetsForFirstThreeHeadingLevels() throws {
         let blocks = PickyReportBlockPresentation.blocks(from: """
         # Overview
         Intro
@@ -4671,7 +4671,8 @@ struct PickySessionViewModelTests {
 
         #expect(outline.map(\.title) == ["Overview", "Findings", "Accessibility"])
         #expect(outline.map(\.level) == [1, 2, 3])
-        #expect(outline.map(\.id) == [blocks[0].id, blocks[2].id, blocks[3].id])
+        #expect(outline.map(\.targetBlockID) == [blocks[0].id, blocks[2].id, blocks[3].id])
+        #expect(Set(outline.map(\.id)).isDisjoint(with: Set(outline.map(\.targetBlockID))))
         #expect(blocks[0].id == PickyReportBlockPresentation.blocks(from: "# Overview").first?.id)
     }
 

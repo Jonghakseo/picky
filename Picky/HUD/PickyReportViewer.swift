@@ -286,14 +286,24 @@ struct PickyReportBlockPresentation: Identifiable, Equatable {
 }
 
 struct PickyReportOutlineEntry: Identifiable, Equatable {
+    /// The outline row must not reuse the report block's identity. A
+    /// `ScrollViewReader` searches every enclosed scroll view for the target ID,
+    /// so duplicate IDs can route navigation back to the outline's own scroll
+    /// view instead of the report body.
     let id: String
+    let targetBlockID: String
     let level: Int
     let title: String
 
     static func entries(from blocks: [PickyReportBlockPresentation]) -> [Self] {
         blocks.compactMap { block in
             guard case .heading(let level, let title) = block.block, (1...3).contains(level) else { return nil }
-            return Self(id: block.id, level: level, title: title)
+            return Self(
+                id: "report-outline-\(block.id)",
+                targetBlockID: block.id,
+                level: level,
+                title: title
+            )
         }
     }
 }
@@ -1147,9 +1157,9 @@ struct PickyReportViewerWindowView: View {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(entries) { entry in
                     Button {
-                        activeSectionID = entry.id
+                        activeSectionID = entry.targetBlockID
                         withAnimation(.easeInOut(duration: 0.2)) {
-                            proxy.scrollTo(entry.id, anchor: .top)
+                            proxy.scrollTo(entry.targetBlockID, anchor: .top)
                         }
                         if outlinePresentationMode == .overlay {
                             model.dismissOutline()
@@ -1157,7 +1167,7 @@ struct PickyReportViewerWindowView: View {
                     } label: {
                         Text(entry.title)
                             .font(PickyHUDTypography.supporting)
-                            .foregroundStyle(activeSectionID == entry.id ? DS.Colors.accentText : DS.Colors.textSecondary)
+                            .foregroundStyle(activeSectionID == entry.targetBlockID ? DS.Colors.accentText : DS.Colors.textSecondary)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1166,7 +1176,7 @@ struct PickyReportViewerWindowView: View {
                             .padding(.vertical, 6)
                             .background(
                                 RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
-                                    .fill(activeSectionID == entry.id ? DS.Colors.accentSubtle : Color.clear)
+                                    .fill(activeSectionID == entry.targetBlockID ? DS.Colors.accentSubtle : Color.clear)
                             )
                     }
                     .buttonStyle(.plain)

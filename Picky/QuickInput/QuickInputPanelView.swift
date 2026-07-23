@@ -27,8 +27,11 @@ enum QuickInputPanelLayout {
     static let historySolidSurfaceOpacity: Double = 0.96
     /// Surface tint layered over the behind-window blur: airy at the top so
     /// the desktop shows through, denser toward the pill for grounding.
-    static let historyLightweightTintTopOpacity: Double = 0.08
-    static let historyLightweightTintBottomOpacity: Double = 0.45
+    static let historyLightweightTintTopOpacity: Double = 0.05
+    static let historyLightweightTintBottomOpacity: Double = 0.3
+    /// The system material's own tint is dense enough to read as opaque, so
+    /// the blur layer is faded to let the desktop actually show through.
+    static let historyLightweightBlurAlpha: Double = 0.6
     static let historyLightweightBottomFadeOpacity: Double = 0.6
     static let historyVerticalPadding: CGFloat = 10
     static let historyLightweightBorderTopOpacity: Double = 0.18
@@ -444,7 +447,10 @@ private struct QuickInputHistoryCardBackground: View {
     }
 
     private var lightweightSurface: some View {
-        QuickInputBehindWindowBlurView(cornerRadius: DS.CornerRadius.panel)
+        QuickInputBehindWindowBlurView(
+            cornerRadius: DS.CornerRadius.panel,
+            alpha: QuickInputPanelLayout.historyLightweightBlurAlpha
+        )
             .overlay(
                 shape.fill(
                     LinearGradient(
@@ -510,17 +516,21 @@ private struct QuickInputHistoryCardBackground: View {
 /// an `NSVisualEffectView` with behind-window blending.
 private struct QuickInputBehindWindowBlurView: NSViewRepresentable {
     let cornerRadius: CGFloat
+    var alpha: Double = 1
 
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
         view.blendingMode = .behindWindow
         view.material = .popover
         view.state = .active
+        view.alphaValue = alpha
         view.maskImage = Self.roundedMaskImage(cornerRadius: cornerRadius)
         return view
     }
 
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+        nsView.alphaValue = alpha
+    }
 
     /// AppKit-recommended rounded-corner masking for behind-window blur.
     /// Cap insets keep the corners crisp while the center stretches.

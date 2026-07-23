@@ -8,6 +8,7 @@
 //  trailing send (↑) glyph in a circle, and a dismissal × at the very right.
 //
 
+import AppKit
 import Combine
 import SwiftUI
 
@@ -24,10 +25,12 @@ enum QuickInputPanelLayout {
     /// changing transcript text contrast or the shared surface token.
     static let historyLightweightTopFadeOpacity: Double = 0.35
     static let historySolidSurfaceOpacity: Double = 0.96
-    /// Surface tint layered over the blur material: airy at the top so the
-    /// desktop shows through, denser toward the pill for grounding.
-    static let historyLightweightTintTopOpacity: Double = 0.15
-    static let historyLightweightTintBottomOpacity: Double = 0.7
+    /// Surface tint layered over the behind-window blur: airy at the top so
+    /// the desktop shows through, denser toward the pill for grounding.
+    static let historyLightweightTintTopOpacity: Double = 0.08
+    static let historyLightweightTintBottomOpacity: Double = 0.45
+    static let historyLightweightBottomFadeOpacity: Double = 0.6
+    static let historyVerticalPadding: CGFloat = 10
     static let historyLightweightBorderTopOpacity: Double = 0.18
     static let historyLightweightBorderBottomOpacity: Double = 0.55
     static let historyLightweightMainShadowOpacity: Double = 0.04
@@ -231,7 +234,9 @@ private struct QuickInputHistoryCard: View {
             : QuickInputPanelLayout.historyLightweightTopFadeOpacity
     }
     private var bottomFadeSurfaceOpacity: Double {
-        QuickInputPanelLayout.historySolidSurfaceOpacity
+        effectiveBackgroundMode == .solid
+            ? QuickInputPanelLayout.historySolidSurfaceOpacity
+            : QuickInputPanelLayout.historyLightweightBottomFadeOpacity
     }
 
     private var anchorIndex: Int {
@@ -310,6 +315,10 @@ private struct QuickInputHistoryCard: View {
             }
             .coordinateSpace(name: scrollCoordinateSpaceName)
             .frame(height: scrollHeight)
+            // Fades sit outside the vertical padding so they start at the
+            // card's actual edge — starting them at the viewport edge paints a
+            // visible seam 10pt below the rounded top.
+            .padding(.vertical, QuickInputPanelLayout.historyVerticalPadding)
             .overlay(alignment: .top) {
                 if showsTopFade {
                     LinearGradient(
@@ -320,7 +329,10 @@ private struct QuickInputHistoryCard: View {
                         startPoint: .top,
                         endPoint: .bottom
                     )
-                    .frame(height: min(QuickInputPanelLayout.historyTopFadeHeight, scrollHeight))
+                    .frame(height: min(
+                        QuickInputPanelLayout.historyTopFadeHeight + QuickInputPanelLayout.historyVerticalPadding,
+                        scrollHeight + QuickInputPanelLayout.historyVerticalPadding
+                    ))
                     .allowsHitTesting(false)
                 }
             }
@@ -334,11 +346,13 @@ private struct QuickInputHistoryCard: View {
                         startPoint: .top,
                         endPoint: .bottom
                     )
-                    .frame(height: min(QuickInputPanelLayout.historyBottomFadeHeight, scrollHeight))
+                    .frame(height: min(
+                        QuickInputPanelLayout.historyBottomFadeHeight + QuickInputPanelLayout.historyVerticalPadding,
+                        scrollHeight + QuickInputPanelLayout.historyVerticalPadding
+                    ))
                     .allowsHitTesting(false)
                 }
             }
-            .padding(.vertical, 10)
             .accessibilityLabel("Recent conversation")
             .background(QuickInputHistoryCardBackground(mode: effectiveBackgroundMode))
             .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.panel, style: .continuous))
@@ -426,10 +440,7 @@ private struct QuickInputHistoryCardBackground: View {
     }
 
     private var lightweightSurface: some View {
-        PickyHUDMaterialFill(
-            shape: shape,
-            fallback: DS.Colors.surface1.opacity(QuickInputPanelLayout.historySolidSurfaceOpacity)
-        )
+        QuickInputBehindWindowBlurView(cornerRadius: DS.CornerRadius.panel)
             .overlay(
                 shape.fill(
                     LinearGradient(
@@ -487,6 +498,29 @@ private struct QuickInputHistoryCardBackground: View {
                 x: 0,
                 y: QuickInputPanelLayout.tightShadowYOffset
             )
+    }
+}
+
+/// SwiftUI `Material` blends within the window inside `NSHostingView`, which
+/// shows nothing behind a transparent panel. Real desktop translucency needs
+/// an `NSVisualEffectView` with behind-window blending.
+private struct QuickInputBehindWindowBlurView: NSViewRepresentable {
+    let cornerRadius: CGFloat
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.blendingMode = .behindWindow
+        view.material = .popover
+        view.state = .active
+        view.wantsLayer = true
+        view.layer?.cornerRadius = cornerRadius
+        view.layer?.cornerCurve = .continuous
+        view.layer?.masksToBounds = true
+        return view
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+        nsView.layer?.cornerRadius = cornerRadius
     }
 }
 

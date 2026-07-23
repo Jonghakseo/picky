@@ -113,7 +113,6 @@ struct PickyConversationCardView: View {
             // composer visually connected. The list retains its own 2pt content
             // inset; it is transcript-internal spacing rather than card chrome.
             .padding(.bottom, DS.Spacing.md)
-            .simultaneousGesture(TapGesture().onEnded { collapseTodoIfNeeded() })
 
             PickyConversationListView(
                 session: session,
@@ -124,14 +123,6 @@ struct PickyConversationCardView: View {
             )
             .overlay(alignment: .top) {
                 ZStack(alignment: .topTrailing) {
-                    if isTodoExpanded && todoPresentation != nil {
-                        Color.clear
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .contentShape(Rectangle())
-                            .onTapGesture(perform: collapseTodoIfNeeded)
-                            .accessibilityHidden(true)
-                    }
-
                     if let todoPresentation {
                         PickyTodoProgressOverlayView(
                             presentation: todoPresentation,
@@ -157,7 +148,6 @@ struct PickyConversationCardView: View {
                 onToggleExtendedTerminal: onToggleExtendedTerminal,
                 onRequestRewind: { showingRewindPicker = true }
             )
-            .simultaneousGesture(TapGesture().onEnded { collapseTodoIfNeeded() })
         }
     }
 
@@ -168,12 +158,6 @@ struct PickyConversationCardView: View {
             },
             set: { viewModel.setTodoProgressExpanded($0, sessionID: session.id) }
         )
-    }
-
-    private func collapseTodoIfNeeded() {
-        guard let presentation = PickyTodoProgressPresentation(state: session.todoState) else { return }
-        guard viewModel.isTodoProgressExpanded(sessionID: session.id, isComplete: presentation.isComplete) else { return }
-        viewModel.setTodoProgressExpanded(false, sessionID: session.id)
     }
 
     private func terminalModeHeight(resolvedHeight: CGFloat?, maxHeight: CGFloat) -> CGFloat? {

@@ -3,6 +3,7 @@
 //  PickyTests
 //
 
+import AppKit
 import Foundation
 import Testing
 @testable import Picky
@@ -177,6 +178,62 @@ struct PickyTodoProgressPresentationTests {
         #expect(!PickyTodoProgressMarkerPolicy.shouldAnimateInProgressMarker(taskStatus: .inProgress, isSessionRunning: false))
         #expect(!PickyTodoProgressMarkerPolicy.shouldAnimateInProgressMarker(taskStatus: .pending, isSessionRunning: false))
         #expect(!PickyTodoProgressMarkerPolicy.shouldAnimateInProgressMarker(taskStatus: .completed, isSessionRunning: true))
+    }
+
+    @Test func todoOutsideClickPolicyCollapsesOnlyOutsideTrackedBounds() {
+        let bounds = CGRect(x: 0, y: 0, width: 300, height: 180)
+
+        #expect(!PickyTodoOutsideClickPolicy.shouldCollapse(
+            isSameWindow: true,
+            locationInTrackedView: CGPoint(x: 150, y: 90),
+            trackedBounds: bounds
+        ))
+        #expect(PickyTodoOutsideClickPolicy.shouldCollapse(
+            isSameWindow: true,
+            locationInTrackedView: CGPoint(x: 320, y: 90),
+            trackedBounds: bounds
+        ))
+        #expect(PickyTodoOutsideClickPolicy.shouldCollapse(
+            isSameWindow: false,
+            locationInTrackedView: nil,
+            trackedBounds: bounds
+        ))
+    }
+
+    @Test func todoOutsideClickMonitorReturnsEventAfterSchedulingCollapse() throws {
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 500, height: 300),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        let contentView = NSView(frame: panel.contentView?.bounds ?? NSRect(x: 0, y: 0, width: 500, height: 300))
+        let trackedView = NSView(frame: NSRect(x: 100, y: 80, width: 300, height: 180))
+        contentView.addSubview(trackedView)
+        panel.contentView = contentView
+        defer { panel.close() }
+
+        var collapseCount = 0
+        let coordinator = PickyTodoOutsideClickMonitor.Coordinator(
+            onOutsideClick: { collapseCount += 1 },
+            schedule: { action in action() }
+        )
+        let outsideEvent = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: NSPoint(x: 20, y: 20),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: panel.windowNumber,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1
+        ))
+
+        let returnedEvent = coordinator.handle(event: outsideEvent, relativeTo: trackedView)
+
+        #expect(returnedEvent === outsideEvent)
+        #expect(collapseCount == 1)
     }
 
     @Test func daemonSessionUpdateCanAuthoritativelyClearTodoState() {

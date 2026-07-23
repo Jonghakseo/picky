@@ -6,6 +6,7 @@
 //  the sole mutation owner; this view only presents its latest session snapshot.
 //
 
+import AppKit
 import SwiftUI
 
 private struct PickyTodoProgressButtonStyle: ButtonStyle {
@@ -150,6 +151,121 @@ struct PickyTodoProgressRestoreButton: View {
     }
 }
 
+/// Determines whether a mouse event should dismiss the expanded TODO card.
+/// The policy is separate from AppKit event dispatch so it can be regression-tested
+/// without a running HUD window.
+enum PickyTodoOutsideClickPolicy {
+    static func shouldCollapse(
+        isSameWindow: Bool,
+        locationInTrackedView: CGPoint?,
+        trackedBounds: CGRect
+    ) -> Bool {
+        guard isSameWindow, let locationInTrackedView else { return true }
+        return !trackedBounds.contains(locationInTrackedView)
+    }
+}
+
+/// Observes mouse clicks while its TODO card is expanded without participating in
+/// hit testing. Returning the original event is essential: transcript controls,
+/// text selection, scrolling, and the composer must receive the click normally.
+struct PickyTodoOutsideClickMonitor: NSViewRepresentable {
+    let isEnabled: Bool
+    let onOutsideClick: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onOutsideClick: onOutsideClick)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let trackingView = PickyTodoOutsideClickTrackingView()
+        context.coordinator.update(
+            isEnabled: isEnabled,
+            onOutsideClick: onOutsideClick,
+            trackingView: trackingView
+        )
+        return trackingView
+    }
+
+    func updateNSView(_ trackingView: NSView, context: Context) {
+        context.coordinator.update(
+            isEnabled: isEnabled,
+            onOutsideClick: onOutsideClick,
+            trackingView: trackingView
+        )
+    }
+
+    static func dismantleNSView(_ trackingView: NSView, coordinator: Coordinator) {
+        coordinator.stopMonitoring()
+    }
+
+    final class Coordinator {
+        private var monitor: Any?
+        private weak var trackingView: NSView?
+        private var onOutsideClick: () -> Void
+        private let schedule: (@escaping () -> Void) -> Void
+
+        init(
+            onOutsideClick: @escaping () -> Void,
+            schedule: @escaping (@escaping () -> Void) -> Void = { action in
+                DispatchQueue.main.async(execute: action)
+            }
+        ) {
+            self.onOutsideClick = onOutsideClick
+            self.schedule = schedule
+        }
+
+        func update(isEnabled: Bool, onOutsideClick: @escaping () -> Void, trackingView: NSView) {
+            self.onOutsideClick = onOutsideClick
+            self.trackingView = trackingView
+            if isEnabled {
+                startMonitoringIfNeeded()
+            } else {
+                stopMonitoring()
+            }
+        }
+
+        func handle(event: NSEvent, relativeTo trackingView: NSView) -> NSEvent {
+            let isSameWindow = event.window === trackingView.window
+            let location = isSameWindow
+                ? trackingView.convert(event.locationInWindow, from: nil)
+                : nil
+            guard PickyTodoOutsideClickPolicy.shouldCollapse(
+                isSameWindow: isSameWindow,
+                locationInTrackedView: location,
+                trackedBounds: trackingView.bounds
+            ) else {
+                return event
+            }
+
+            // Defer state mutation until AppKit finishes dispatching the event.
+            // The event itself must remain untouched for the clicked chat control.
+            schedule(onOutsideClick)
+            return event
+        }
+
+        func stopMonitoring() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+        }
+
+        private func startMonitoringIfNeeded() {
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+                guard let self, let trackingView = self.trackingView else { return event }
+                return self.handle(event: event, relativeTo: trackingView)
+            }
+        }
+
+        deinit { stopMonitoring() }
+    }
+}
+
+private final class PickyTodoOutsideClickTrackingView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+}
+
 struct PickyTodoProgressOverlayView: View {
     static let minimumCardWidth: CGFloat = 280
     static let maximumCardWidth: CGFloat = 700
@@ -213,6 +329,12 @@ struct PickyTodoProgressOverlayView: View {
                     )
                     // `elevation.transient`: the expanded card floats above transcript content.
                     .shadow(color: .black.opacity(0.18), radius: 12, y: 8)
+            )
+        }
+        .background {
+            PickyTodoOutsideClickMonitor(
+                isEnabled: isExpanded,
+                onOutsideClick: { isExpanded = false }
             )
         }
         .accessibilityElement(children: .contain)

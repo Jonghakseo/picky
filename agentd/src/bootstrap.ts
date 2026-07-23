@@ -287,7 +287,7 @@ function buildPrimaryMainRuntime(
   const listPickleSessions = async () => {
     if (!appPickleHandoffRef.bridge) throw new Error(APP_PICKLE_HANDOFF_UNAVAILABLE);
     const result = await appPickleHandoffRef.bridge({ operation: "listSessions" });
-    return result.sessions ?? [];
+    return { sessions: result.sessions ?? [], groups: result.groups ?? [] };
   };
 
   const steerPickleSession = async (request: PickyPickleSteerRequest) => {

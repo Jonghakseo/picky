@@ -158,6 +158,7 @@ export type AppPickleBridgeRequest =
 
 export interface AppPickleBridgeResult {
   sessions?: PickyAgentSession[];
+  groups?: DockGroup[];
   session?: PickyAgentSession;
   delivered?: boolean;
 }
@@ -800,7 +801,7 @@ export class AgentdServer {
       pending.reject(new Error(command.errorMessage));
       return;
     }
-    pending.resolve({ sessions: command.sessions, session: command.session, delivered: command.delivered });
+    pending.resolve({ sessions: command.sessions, groups: command.groups, session: command.session, delivered: command.delivered });
   }
 
   /**

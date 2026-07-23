@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { PickyAgentSession } from "../protocol.js";
+import type { DockGroup, PickyAgentSession } from "../protocol.js";
 import { createPickyAbortPickleTool, createPickyPickleSessionsTool, createPickyStartPickleTool, createPickySteerPickleTool, type PickyHandoffRequest } from "./handoff-tool.js";
 
 describe("handoff tools", () => {
@@ -49,7 +49,7 @@ describe("handoff tools", () => {
 
   it("caps Pickle session list requests to one small page without exposing totals", async () => {
     const sessions = Array.from({ length: 25 }, (_, index) => makeSession(index + 1));
-    const tool = createPickyPickleSessionsTool(() => sessions);
+    const tool = createPickyPickleSessionsTool(() => ({ sessions, groups: [] }));
 
     const result = await tool.execute("tool-1", { limit: 50 } as never, undefined, undefined, {} as never);
     const details = result.details as { sessions: Array<{ id: string }>; page: number; pageSize: number; hasMore: boolean; nextPage?: number; total?: number; omitted?: number };
@@ -68,7 +68,7 @@ describe("handoff tools", () => {
 
   it("returns subsequent Pickle session pages with the same maximum page size", async () => {
     const sessions = Array.from({ length: 25 }, (_, index) => makeSession(index + 1));
-    const tool = createPickyPickleSessionsTool(() => sessions);
+    const tool = createPickyPickleSessionsTool(() => ({ sessions, groups: [] }));
 
     const result = await tool.execute("tool-1", { page: 2, limit: 50 } as never, undefined, undefined, {} as never);
     const details = result.details as { sessions: Array<{ id: string }>; page: number; pageSize: number; hasMore: boolean; nextPage?: number };
@@ -76,6 +76,32 @@ describe("handoff tools", () => {
     expect(details.sessions).toHaveLength(10);
     expect(details.sessions.map((session) => session.id)).toEqual(["pickle-11", "pickle-12", "pickle-13", "pickle-14", "pickle-15", "pickle-16", "pickle-17", "pickle-18", "pickle-19", "pickle-20"]);
     expect(details).toMatchObject({ page: 2, pageSize: 10, hasMore: true, nextPage: 3 });
+  });
+
+  it("reports each Pickle's dock group and the complete dock-group list", async () => {
+    const sessions = [makeSession(1), makeSession(2)];
+    const groups: DockGroup[] = [
+      { id: "research", name: "Research", color: 6, memberSessionIds: ["pickle-1"], collapsed: false },
+      { id: "later", name: "Later", color: 2, memberSessionIds: [], collapsed: true },
+    ];
+    const tool = createPickyPickleSessionsTool(() => ({ sessions, groups }));
+
+    const result = await tool.execute("tool-1", {} as never, undefined, undefined, {} as never);
+    const details = result.details as {
+      sessions: Array<{ id: string; group: { id: string; name: string; color: number; collapsed: boolean } | null }>;
+      groups: DockGroup[];
+    };
+
+    expect(details.sessions).toEqual([
+      expect.objectContaining({ id: "pickle-1", group: { id: "research", name: "Research", color: 6, collapsed: false } }),
+      expect.objectContaining({ id: "pickle-2", group: null }),
+    ]);
+    expect(details.groups).toEqual(groups);
+    const content = result.content[0];
+    if (content?.type !== "text") throw new Error("expected text content");
+    expect(content.text).toContain("group=Research (research)");
+    expect(content.text).toContain("group=none");
+    expect(content.text).toContain("later | Later | color=2; collapsed=true; members=none");
   });
 
   it("always includes terminal Pickle sessions in paginated results", async () => {
@@ -87,7 +113,7 @@ describe("handoff tools", () => {
       makeSession(5, "cancelled"),
       makeSession(6, "blocked"),
     ];
-    const tool = createPickyPickleSessionsTool(() => sessions);
+    const tool = createPickyPickleSessionsTool(() => ({ sessions, groups: [] }));
     const definition = tool as unknown as { parameters?: unknown };
 
     const result = await tool.execute("tool-1", { limit: 2 } as never, undefined, undefined, {} as never);
@@ -101,7 +127,7 @@ describe("handoff tools", () => {
   it("hides archived Pickle sessions unless explicitly requested", async () => {
     const archived = { ...makeSession(2, "completed"), archived: true };
     const sessions = [makeSession(1, "running"), archived, makeSession(3, "blocked")];
-    const tool = createPickyPickleSessionsTool(() => sessions);
+    const tool = createPickyPickleSessionsTool(() => ({ sessions, groups: [] }));
 
     const defaultResult = await tool.execute("tool-1", {} as never, undefined, undefined, {} as never);
     const defaultDetails = defaultResult.details as { sessions: Array<{ id: string; archived?: boolean }> };

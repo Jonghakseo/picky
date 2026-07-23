@@ -901,9 +901,13 @@ describe("AgentdServer", () => {
     expect(request.operation).toBe("listSessions");
 
     const session = makeSession({ id: "child-pickle" });
-    ws.send(JSON.stringify({ id: "cmd-complete-bridge", protocolVersion: PROTOCOL_VERSION, type: "completePickleBridgeRequest", requestId: request.requestId, sessions: [session] }));
+    const groups = [{ id: "research", name: "Research", color: 6, memberSessionIds: ["child-pickle"], collapsed: false }];
+    ws.send(JSON.stringify({ id: "cmd-complete-bridge", protocolVersion: PROTOCOL_VERSION, type: "completePickleBridgeRequest", requestId: request.requestId, sessions: [session], groups }));
 
-    await expect(pending).resolves.toMatchObject({ sessions: [expect.objectContaining({ id: "child-pickle" })] });
+    await expect(pending).resolves.toMatchObject({
+      sessions: [expect.objectContaining({ id: "child-pickle" })],
+      groups: [expect.objectContaining({ id: "research", memberSessionIds: ["child-pickle"] })],
+    });
     ws.close();
   });
 

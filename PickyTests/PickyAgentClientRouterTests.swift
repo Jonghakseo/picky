@@ -916,6 +916,40 @@ struct PickyAgentClientRouterTests {
         try await waitUntil { primary.sentCommands.contains(where: { $0.type == .completePickleBridgeRequest && $0.sessions?.first?.id == "legacy-pickle" }) }
     }
 
+    @Test func pickleBridgeListIncludesDockGroupsWithCachedSessions() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(
+            configuration: PickyAgentDaemonPool.Configuration(token: "tok", appSupportRoot: root)
+        )
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        router.dockGroupsProvider = {
+            [PickyDockGroupPayload(
+                id: "research",
+                name: "Research",
+                color: 6,
+                memberSessionIds: ["grouped-pickle"],
+                collapsed: false
+            )]
+        }
+
+        await router.connect()
+        primary.emit(.protocolEvent(makeSessionUpdatedEvent(id: "grouped-pickle")))
+        primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(operation: "listSessions")))
+
+        try await waitUntil {
+            primary.sentCommands.contains { $0.type == .completePickleBridgeRequest && $0.groups?.first?.id == "research" }
+        }
+        let groups = try #require(primary.sentCommands.last { $0.type == .completePickleBridgeRequest }?.groups)
+        #expect(groups == [PickyDockGroupPayload(
+            id: "research",
+            name: "Research",
+            color: 6,
+            memberSessionIds: ["grouped-pickle"],
+            collapsed: false
+        )])
+    }
+
     @Test func pickleBridgeListEvictsOnlySessionsAbsentFromEmittingDaemonSnapshot() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
         let agentd = root.appendingPathComponent("agentd", isDirectory: true)

@@ -2,7 +2,7 @@ import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent
 import { Type } from "typebox";
 import { sliceUtf16Safe } from "../domain/safe-truncate.js";
 import { PICKLE_TOOL_NAMES } from "./picky-tool-names.js";
-import type { PickyAgentSession } from "../protocol.js";
+import type { DockGroup, PickyAgentSession } from "../protocol.js";
 
 export interface PickyHandoffRequest {
   title: string;
@@ -26,6 +26,13 @@ export interface PickyPickleAbortRequest {
 }
 
 
+interface PickleDockGroupSummary {
+  id: string;
+  name: string;
+  color: number;
+  collapsed: boolean;
+}
+
 interface PickleSessionSummary {
   id: string;
   title: string;
@@ -36,6 +43,12 @@ interface PickleSessionSummary {
   lastSummary?: string;
   changedFilesCount: number;
   archived: boolean;
+  group: PickleDockGroupSummary | null;
+}
+
+export interface PickyPickleSessionsSnapshot {
+  sessions: PickyAgentSession[];
+  groups: DockGroup[];
 }
 
 type PickleToolNames = typeof PICKLE_TOOL_NAMES;
@@ -87,12 +100,12 @@ function createPickyStartPickleToolWithNames(
 const PICKLE_SESSIONS_DEFAULT_PAGE_SIZE = 10;
 const PICKLE_SESSIONS_MAX_PAGE_SIZE = 10;
 
-export function createPickyPickleSessionsTool(onList: () => PickyAgentSession[] | Promise<PickyAgentSession[]>): ToolDefinition {
+export function createPickyPickleSessionsTool(onList: () => PickyPickleSessionsSnapshot | Promise<PickyPickleSessionsSnapshot>): ToolDefinition {
   return createPickyPickleSessionsToolWithNames(onList, PICKLE_TOOL_NAMES);
 }
 
 
-function createPickyPickleSessionsToolWithNames(onList: () => PickyAgentSession[] | Promise<PickyAgentSession[]>, names: PickleToolNames): ToolDefinition {
+function createPickyPickleSessionsToolWithNames(onList: () => PickyPickleSessionsSnapshot | Promise<PickyPickleSessionsSnapshot>, names: PickleToolNames): ToolDefinition {
   return defineTool({
     name: names.sessions,
     label: "Picky Pickle sessions",
@@ -114,13 +127,14 @@ function createPickyPickleSessionsToolWithNames(onList: () => PickyAgentSession[
       const pageSize = clampLimit(params.limit, PICKLE_SESSIONS_DEFAULT_PAGE_SIZE);
       const start = (page - 1) * pageSize;
       const end = start + pageSize;
-      const allSessions = (await onList()).filter((session) => includeArchived || session.archived !== true);
-      const sessions = allSessions.slice(start, end).map(summarizePickleSession);
+      const snapshot = await onList();
+      const allSessions = snapshot.sessions.filter((session) => includeArchived || session.archived !== true);
+      const sessions = allSessions.slice(start, end).map((session) => summarizePickleSession(session, snapshot.groups));
       const hasMore = allSessions.length > end;
       const nextPage = hasMore ? page + 1 : undefined;
       return {
-        content: [{ type: "text", text: formatPickleSessions(sessions, { page, pageSize, hasMore, nextPage }) }],
-        details: { sessions, page, pageSize, hasMore, nextPage },
+        content: [{ type: "text", text: formatPickleSessions(sessions, snapshot.groups, { page, pageSize, hasMore, nextPage }) }],
+        details: { sessions, groups: snapshot.groups, page, pageSize, hasMore, nextPage },
       };
     },
   });
@@ -198,7 +212,8 @@ function createPickyAbortPickleToolWithNames(
   });
 }
 
-function summarizePickleSession(session: PickyAgentSession): PickleSessionSummary {
+function summarizePickleSession(session: PickyAgentSession, groups: DockGroup[] = []): PickleSessionSummary {
+  const assignedGroup = groups.find((group) => group.memberSessionIds.includes(session.id));
   return {
     id: session.id,
     title: session.title,
@@ -209,20 +224,29 @@ function summarizePickleSession(session: PickyAgentSession): PickleSessionSummar
     lastSummary: session.lastSummary ? truncate(session.lastSummary, 200) : undefined,
     changedFilesCount: session.changedFiles.length,
     archived: session.archived === true,
+    group: assignedGroup
+      ? { id: assignedGroup.id, name: assignedGroup.name, color: assignedGroup.color, collapsed: assignedGroup.collapsed }
+      : null,
   };
 }
 
-function formatPickleSessions(sessions: PickleSessionSummary[], pagination: { page: number; pageSize: number; hasMore: boolean; nextPage?: number }): string {
-  if (sessions.length === 0) return `No Pickles returned on page ${pagination.page}.`;
+function formatPickleSessions(sessions: PickleSessionSummary[], groups: DockGroup[], pagination: { page: number; pageSize: number; hasMore: boolean; nextPage?: number }): string {
   const nextPageHint = pagination.hasMore && pagination.nextPage ? `; more available, request page ${pagination.nextPage}` : "";
-  const lines = [`Pickles page ${pagination.page} (${sessions.length} shown, page size ${pagination.pageSize}${nextPageHint}):`];
+  const lines = [sessions.length === 0
+    ? `No Pickles returned on page ${pagination.page}.`
+    : `Pickles page ${pagination.page} (${sessions.length} shown, page size ${pagination.pageSize}${nextPageHint}):`];
   for (const session of sessions) {
     const pendingInput = session.pendingInput ? "; waiting for input" : "";
     const summary = session.lastSummary ? `; summary=${session.lastSummary}` : "";
     const cwd = session.cwd ? `; cwd=${truncate(session.cwd, 120)}` : "";
     const changed = session.changedFilesCount > 0 ? `; changedFiles=${session.changedFilesCount}` : "";
     const archived = session.archived ? "; archived=true" : "";
-    lines.push(`- ${session.id} | ${session.title} | status=${session.status}${archived}${pendingInput}; updated=${session.updatedAt}${cwd}${changed}${summary}`);
+    const group = session.group ? `; group=${session.group.name} (${session.group.id})` : "; group=none";
+    lines.push(`- ${session.id} | ${session.title} | status=${session.status}${archived}${pendingInput}${group}; updated=${session.updatedAt}${cwd}${changed}${summary}`);
+  }
+  lines.push(groups.length === 0 ? "Dock groups: none." : "Dock groups:");
+  for (const group of groups) {
+    lines.push(`- ${group.id} | ${group.name} | color=${group.color}; collapsed=${group.collapsed}; members=${group.memberSessionIds.join(",") || "none"}`);
   }
   return lines.join("\n");
 }

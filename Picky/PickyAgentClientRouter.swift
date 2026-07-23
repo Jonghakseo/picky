@@ -638,7 +638,8 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         do {
             switch request.operation {
             case .listSessions:
-                await completePickleBridge(request, on: responseClient, sessions: cachedPickleSessions())
+                let groups = await dockGroupsProvider?() ?? []
+                await completePickleBridge(request, on: responseClient, sessions: cachedPickleSessions(), groups: groups)
             case .steer:
                 guard let sessionId = request.sessionId, let text = request.text else { throw PickyAgentClientRouterError.invalidBridgeRequest }
                 let client = try await connectedClient(for: sessionId)
@@ -676,6 +677,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         _ request: PickyPickleBridgeRequest,
         on responseClient: PickyAgentClient,
         sessions: [PickyAgentSession]? = nil,
+        groups: [PickyDockGroupPayload]? = nil,
         session: PickyAgentSession? = nil,
         delivered: Bool? = nil,
         errorMessage: String? = nil
@@ -686,6 +688,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                 requestId: request.requestId,
                 errorMessage: errorMessage,
                 sessions: sessions,
+                groups: groups,
                 session: session,
                 delivered: delivered
             ))

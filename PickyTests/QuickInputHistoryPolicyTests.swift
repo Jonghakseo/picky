@@ -61,9 +61,9 @@ struct QuickInputHistoryPolicyTests {
             spaceAbovePill: 100
         ) == 100)
         #expect(QuickInputHistoryPolicy.cardHeightLimit(
-            visibleScreenHeight: 300,
+            visibleScreenHeight: 240,
             spaceAbovePill: 200
-        ) == 135)
+        ) == 108)
     }
 
     @Test

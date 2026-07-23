@@ -7,6 +7,7 @@
 //  exposes observable voice state for the panel UI.
 //
 
+import AppKit
 import AVFoundation
 import Combine
 import Foundation
@@ -32,7 +33,9 @@ final class CompanionManager: ObservableObject {
     private static let recognizedTranscriptVisibleDuration: TimeInterval = 3.0
     private static let deferredSpeechRetryInterval: TimeInterval = 0.05
     private static let deferredSpeechMaximumWait: TimeInterval = 2.0
-    @Published private(set) var voiceState: CompanionVoiceState = .idle
+    @Published private(set) var voiceState: CompanionVoiceState = .idle {
+        didSet { updateMainCancelPillPresentation() }
+    }
     @Published private(set) var lastTranscript: String?
     @Published private(set) var currentVoicePromptPreview: String?
     @Published private(set) var voicePromptBubbleState: CompanionVoicePromptBubbleState = .hidden {
@@ -52,7 +55,9 @@ final class CompanionManager: ObservableObject {
     @Published private(set) var hasActiveVisualNarration = false
     @Published private(set) var hasActivePointVisualNarration = false
     @Published private(set) var mainAgentMessages: [PickyMainAgentMessage] = []
-    @Published private(set) var mainLiveActivities: [PickyMainActivity] = []
+    @Published private(set) var mainLiveActivities: [PickyMainActivity] = [] {
+        didSet { updateMainCancelPillPresentation() }
+    }
     @Published private(set) var mainPendingQuestion: PickyExtensionUiRequest?
     /// Most recent Picky main-agent Pi session location reported by
     /// picky-agentd. Used by the Status → Recent conversation sub-page to expose "Open in Pi" / "Copy
@@ -169,6 +174,7 @@ final class CompanionManager: ObservableObject {
     let quickInputDoubleTapDetector = QuickInputDoubleTapDetector()
     let quickInputPanelManager: QuickInputPanelManager
     let mainQuestionPanelManager: PickyMainQuestionPanelManager
+    let mainCancelPillPanelManager = PickyMainCancelPillPanelManager()
     // Response text is now displayed inline on the cursor overlay via
     // streamingResponseText, so no separate response overlay manager is needed.
 
@@ -330,6 +336,7 @@ final class CompanionManager: ObservableObject {
     private var shortcutTransitionCancellable: AnyCancellable?
     private var quickInputDoubleTapCancellable: AnyCancellable?
     private var mainQuestionPanelCancellable: AnyCancellable?
+    private var mainCancelPillKeyWindowObservers: [NSObjectProtocol] = []
     /// Command ids currently awaiting an answer rejection from agentd. Their
     /// correlated error events keep the question panel open instead of taking
     /// the global connection-loss cleanup path.
@@ -371,7 +378,13 @@ final class CompanionManager: ObservableObject {
     /// finalizing→idle transition, speech is deferred briefly rather than failed
     /// so fast agent replies are not dropped by the tail of the same utterance.
     private var isVoiceInputAudioSuppressionActive = false
-    private var pendingAgentResponseStartedAt: Date?
+    private var pendingAgentResponseStartedAt: Date? {
+        didSet { updateMainCancelPillPresentation() }
+    }
+    /// Follow-up destination for the currently cancellable turn. Voice uses its
+    /// utterance snapshot; Quick Input records its armed Pickle after agentd
+    /// accepts the dispatch so both cancellation surfaces stop the same work.
+    private var activeMainTurnFollowUpSessionID: String?
     /// Tracks the last status we saw per session so `applyAgentEvent(.sessionUpdated)`
     /// can detect the *transition* into a terminal status (cancelled/failed/completed)
     /// rather than reacting on every snapshot. Used by the HUD-abort cursor-cleanup path:
@@ -405,7 +418,9 @@ final class CompanionManager: ObservableObject {
     @Published private(set) var isOverlayVisible: Bool = false
     @Published private(set) var overlayVisibilityReasons: Set<PickyOverlayReason> = []
     @Published private(set) var isQuickInputPanelVisible: Bool = false
-    @Published private(set) var isWaitingForCursorResponse: Bool = false
+    @Published private(set) var isWaitingForCursorResponse: Bool = false {
+        didSet { updateMainCancelPillPresentation() }
+    }
     @Published private(set) var inkOverlayState: PickyInkOverlayState = .inactive
 
     private var localOverlayVisibilityReasons: Set<PickyOverlayReason> = []
@@ -470,6 +485,7 @@ final class CompanionManager: ObservableObject {
         }
         wireQuickInputPanel()
         wireMainQuestionPanel()
+        wireMainCancelPill()
         applyShortcutSpecsFromSettings()
         bindShortcutCaptureLifecycle()
         refreshAllPermissions()
@@ -495,6 +511,9 @@ final class CompanionManager: ObservableObject {
         quickInputDoubleTapDetector.reset()
         quickInputPanelManager.dismiss()
         mainQuestionPanelManager.dismiss()
+        mainCancelPillPanelManager.dismiss()
+        mainCancelPillKeyWindowObservers.forEach(NotificationCenter.default.removeObserver)
+        mainCancelPillKeyWindowObservers.removeAll()
         cancelInkCapture()
         inkCaptureCoordinator.teardownEventTap()
         buddyDictationManager.cancelCurrentDictation()
@@ -1008,6 +1027,8 @@ final class CompanionManager: ObservableObject {
                 keyCode: keyCode,
                 modifierFlagsRawValue: flagsRawValue
             )
+            guard eventType == .keyDown, keyCode == 53 else { return }
+            self.mainCancelPillPanelManager.handleEscape()
         }
         quickInputPanelManager.onSubmit = { [weak self] text in
             self?.handleQuickInputSubmit(text: text)
@@ -1018,6 +1039,39 @@ final class CompanionManager: ObservableObject {
                 self?.cancelInkCapture()
             }
         }
+    }
+
+    private func wireMainCancelPill() {
+        mainCancelPillPanelManager.onCancel = { [weak self] in
+            self?.cancelMainTurn()
+        }
+        let center = NotificationCenter.default
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+            mainCancelPillKeyWindowObservers.append(
+                center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                    Task { @MainActor [weak self] in
+                        self?.updateMainCancelPillPresentation()
+                    }
+                }
+            )
+        }
+        updateMainCancelPillPresentation()
+    }
+
+    private func updateMainCancelPillPresentation() {
+        let isMainTurnInFlight = PickyMainCancelPillPolicy.isMainTurnInFlight(
+            hasPendingAgentResponse: pendingAgentResponseStartedAt != nil,
+            voiceState: voiceState,
+            isWaitingForCursorResponse: isWaitingForCursorResponse,
+            hasLiveActivities: !mainLiveActivities.isEmpty
+        )
+        // Picky's interactive panels are non-activating but become the key
+        // window. While one owns keyboard input, ESC must retain its native
+        // close/cancel behavior instead of arming this global control.
+        mainCancelPillPanelManager.update(
+            isMainTurnInFlight: isMainTurnInFlight,
+            isPickyPanelKeyWindow: NSApp.keyWindow != nil
+        )
     }
 
     private func wireMainQuestionPanel() {
@@ -1441,6 +1495,7 @@ final class CompanionManager: ObservableObject {
         inkCapture: PickyInkCapture?,
         dispatchMode: PickyArmedPickleDispatchMode
     ) async -> Bool {
+        activeMainTurnFollowUpSessionID = targetSessionID
         do {
             guard let captureResult = try await voiceContextCaptureCoordinator.captureContext(
                 transcript: text,
@@ -1450,6 +1505,7 @@ final class CompanionManager: ObservableObject {
                 directMessageError = L10n.t("error.directMessage.contextEmpty")
                 latestAgentSessionSummary = directMessageError
                 clearScreenContextTargetIfCurrent(targetSessionID)
+                activeMainTurnFollowUpSessionID = nil
                 return false
             }
             // `sendAwaitingError` waits up to 1s for the daemon to emit a
@@ -1482,6 +1538,7 @@ final class CompanionManager: ObservableObject {
                 directMessageError = L10n.t("error.directMessage.sendFailed", rejection.message)
                 latestAgentSessionSummary = directMessageError
                 clearScreenContextTargetIfCurrent(targetSessionID)
+                activeMainTurnFollowUpSessionID = nil
                 return false
             }
             latestAgentSessionSummary = dispatchMode == .steer
@@ -1494,6 +1551,7 @@ final class CompanionManager: ObservableObject {
             directMessageError = L10n.t("error.directMessage.sendFailed", message)
             latestAgentSessionSummary = directMessageError
             clearScreenContextTargetIfCurrent(targetSessionID)
+            activeMainTurnFollowUpSessionID = nil
             return false
         }
     }
@@ -1515,6 +1573,7 @@ final class CompanionManager: ObservableObject {
             )
         }
 
+        activeMainTurnFollowUpSessionID = nil
         let inputID = UUID()
         if let inkCapture, inkCapture.hasVisibleInk {
             pendingInkCaptures.store(inkCapture, for: inputID)
@@ -1608,6 +1667,7 @@ final class CompanionManager: ObservableObject {
         deferredFinishAwaitingAgentResponseTask = nil
         deferredFinishAwaitingAgentResponseSessionID = nil
         pendingAgentResponseStartedAt = nil
+        activeMainTurnFollowUpSessionID = nil
     }
 
     private func speechWatchdogTimeout(for utterance: String) -> TimeInterval {
@@ -2275,6 +2335,7 @@ final class CompanionManager: ObservableObject {
     }
 
     private func applyMainTurnSettled(contextID: String) {
+        activeMainTurnFollowUpSessionID = nil
         let isMatchingWaitingTurn: Bool
         if case .waitingForAgent(_, let waitingContextID, _) = interactionCoordinator.projection.state.output {
             isMatchingWaitingTurn = waitingContextID == contextID
@@ -2675,43 +2736,50 @@ final class CompanionManager: ObservableObject {
     }
 
     func interruptSpokenResponseForVoiceInput() {
-        abortMainAgentForVoiceInput()
+        cancelMainTurn()
         updateVoiceInputAudioSuppression(isVoiceInputActive: true)
         reduceVoiceInteraction(.abort)
-        // Clear the pending timing marker AFTER `abortMainAgentForVoiceInput`
-        // has read it to decide whether to also dispatch a session-scoped
-        // abort for the in-flight Pickle.
-        pendingAgentResponseStartedAt = nil
     }
 
-    private func abortMainAgentForVoiceInput() {
-        // The previous utterance may have been routed to a Pickle via
-        // follow-up/steer; in that case `abortMainAgent` alone does not stop
-        // it, so we also dispatch a session-scoped `.abort` for the captured
-        // target. Gate that on a real in-flight response (loading) so a PTT
-        // press fired *after* the previous turn already finished does not
-        // overwrite a `done` Pickle's status back to `cancelled` on agentd.
-        let isAgentResponseInFlight = pendingAgentResponseStartedAt != nil || voiceState == .responding
-        let previousPickleSessionID = isAgentResponseInFlight ? voiceFollowUpSessionIDForCurrentUtterance : nil
+    /// Stops the current main turn regardless of whether it originated from
+    /// voice or typed Quick Input. A Pickle follow-up needs its own session
+    /// abort in addition to the main-agent abort.
+    func cancelMainTurn() {
+        let isAgentResponseInFlight = PickyMainCancelPillPolicy.isMainTurnInFlight(
+            hasPendingAgentResponse: pendingAgentResponseStartedAt != nil,
+            voiceState: voiceState,
+            isWaitingForCursorResponse: isWaitingForCursorResponse,
+            hasLiveActivities: !mainLiveActivities.isEmpty
+        )
+        let followUpSessionID = isAgentResponseInFlight
+            ? activeMainTurnFollowUpSessionID ?? voiceFollowUpSessionIDForCurrentUtterance
+            : nil
+
+        stopCurrentSpeech()
+        pendingAgentResponseStartedAt = nil
+        mainLiveActivities = []
+        activeMainTurnFollowUpSessionID = nil
+
         Task { [agentClient] in
             do {
                 try await agentClient.send(PickyCommandEnvelope(type: .abortMainAgent))
             } catch {
-                print("⚠️ Failed to abort Picky for voice input: \(error)")
+                print("⚠️ Failed to abort Picky main turn: \(error)")
             }
         }
-        if let previousPickleSessionID {
+        if let followUpSessionID {
             Task { [agentClient] in
                 do {
-                    try await agentClient.send(PickyCommandEnvelope(type: .abort, sessionId: previousPickleSessionID))
+                    try await agentClient.send(PickyCommandEnvelope(type: .abort, sessionId: followUpSessionID))
                 } catch {
-                    print("⚠️ Failed to abort Pickle session \(previousPickleSessionID) for voice input: \(error)")
+                    print("⚠️ Failed to abort Pickle session \(followUpSessionID): \(error)")
                 }
             }
         }
     }
 
     func beginAwaitingAgentResponse(recognizedTranscript: String? = nil) {
+        activeMainTurnFollowUpSessionID = voiceFollowUpSessionIDForCurrentUtterance
         deferredFinishAwaitingAgentResponseTask?.cancel()
         deferredFinishAwaitingAgentResponseTask = nil
         deferredFinishAwaitingAgentResponseSessionID = nil
@@ -2855,6 +2923,7 @@ final class CompanionManager: ObservableObject {
         responseStateTask?.cancel()
         responseStateTask = nil
         pendingAgentResponseStartedAt = nil
+        activeMainTurnFollowUpSessionID = nil
         latestAgentSessionSummary = visibleText
         currentVoicePromptPreview = nil
         let textToSpeak = spokenText?.trimmingCharacters(in: .whitespacesAndNewlines)

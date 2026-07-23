@@ -17,6 +17,54 @@
         }
       }
     },
+    "overlay.mainCancel.stop": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Stop" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "중지" } }
+      }
+    },
+    "overlay.mainCancel.clickToStop": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Click to stop" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "클릭해서 중지" } }
+      }
+    },
+    "overlay.mainCancel.escapeHintPrefix": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Or" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "혹은" } }
+      }
+    },
+    "overlay.mainCancel.escapeHintSuffix": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "×2 to stop" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "×2로 중지" } }
+      }
+    },
+    "overlay.mainCancel.escapeKey": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "esc" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "esc" } }
+      }
+    },
+    "overlay.mainCancel.escapeArmed": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "press once more to stop" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "한 번 더 눌러서 중지" } }
+      }
+    },
+    "overlay.mainCancel.cancelled": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Stopped" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "중지됨" } }
+      }
+    },
+    "overlay.mainCancel.accessibility": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Stop main-agent response" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "메인 에이전트 응답 중지" } }
+      }
+    },
     "agent.summary.pointingScreen": {
       "comment": "Format: 'Pointing at: <label>'. Arg is the element label.",
       "localizations": {

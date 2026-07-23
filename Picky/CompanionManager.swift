@@ -367,7 +367,12 @@ final class CompanionManager: ObservableObject {
     private struct MainTurnCancellation {
         let shouldSettleLocalState: Bool
         let followUpSessionID: String?
+        let generation: UInt64
     }
+
+    /// Increments when a new main turn starts so late cancellation completions
+    /// cannot reset that newer turn's local projection.
+    private var mainTurnGeneration: UInt64 = 0
 
     private var voiceInteractionState = PickyVoiceInteractionState()
     private var activeSpeechID: UUID?
@@ -2583,6 +2588,7 @@ final class CompanionManager: ObservableObject {
     }
 
     private func noteMainOverlayContext(_ context: PickyContextPacket) {
+        mainTurnGeneration &+= 1
         annotationSceneMonitor?.stop()
         activeAnnotationSceneIdentity = nil
         latestOverlayContextID = context.id
@@ -2784,9 +2790,12 @@ final class CompanionManager: ObservableObject {
         )
         return MainTurnCancellation(
             shouldSettleLocalState: shouldSettleLocalState,
-            followUpSessionID: shouldAbortFollowUpPickle
-                ? activeMainTurnFollowUpSessionID ?? voiceFollowUpSessionIDForCurrentUtterance
-                : nil
+            followUpSessionID: PickyMainCancelPillPolicy.followUpAbortTarget(
+                activeMainTurnFollowUpSessionID: activeMainTurnFollowUpSessionID,
+                voiceFollowUpSessionID: voiceFollowUpSessionIDForCurrentUtterance,
+                shouldAbortVoiceFollowUpPickle: shouldAbortFollowUpPickle
+            ),
+            generation: mainTurnGeneration
         )
     }
 
@@ -2801,12 +2810,24 @@ final class CompanionManager: ObservableObject {
             stopCurrentSpeech()
         }
         do {
-            let rejection = try await agentClient.sendAwaitingError(
+            async let mainAbortRejection = agentClient.sendAwaitingError(
                 PickyCommandEnvelope(type: .abortMainAgent),
                 timeout: 1.0
             )
-            if let rejection {
-                print("⚠️ Failed to abort Picky main turn: \(rejection.message)")
+            async let followUpAbortRejection: PickyErrorEvent? = {
+                guard let followUpSessionID = cancellation.followUpSessionID else { return nil }
+                return try await agentClient.sendAwaitingError(
+                    PickyCommandEnvelope(type: .abort, sessionId: followUpSessionID),
+                    timeout: 1.0
+                )
+            }()
+            let (mainRejection, followUpRejection) = try await (mainAbortRejection, followUpAbortRejection)
+            if let mainRejection {
+                print("⚠️ Failed to abort Picky main turn: \(mainRejection.message)")
+                return false
+            }
+            if let followUpRejection {
+                print("⚠️ Failed to abort Pickle session: \(followUpRejection.message)")
                 return false
             }
         } catch {
@@ -2814,17 +2835,12 @@ final class CompanionManager: ObservableObject {
             return false
         }
 
+        // A PTT or typed submission may have started another turn while the
+        // daemon was processing this cancellation. Never settle or confirm a
+        // cancellation result against that newer turn.
+        guard mainTurnGeneration == cancellation.generation else { return false }
         if cancellation.shouldSettleLocalState {
             settleMainTurnAfterCancellation()
-        }
-        if let followUpSessionID = cancellation.followUpSessionID {
-            Task { [agentClient] in
-                do {
-                    try await agentClient.send(PickyCommandEnvelope(type: .abort, sessionId: followUpSessionID))
-                } catch {
-                    print("⚠️ Failed to abort Pickle session \(followUpSessionID): \(error)")
-                }
-            }
         }
         return true
     }
@@ -2854,6 +2870,7 @@ final class CompanionManager: ObservableObject {
     }
 
     func beginAwaitingAgentResponse(recognizedTranscript: String? = nil) {
+        mainTurnGeneration &+= 1
         activeMainTurnFollowUpSessionID = voiceFollowUpSessionIDForCurrentUtterance
         deferredFinishAwaitingAgentResponseTask?.cancel()
         deferredFinishAwaitingAgentResponseTask = nil

@@ -108,6 +108,25 @@ struct PickyMainCancelPillPolicyTests {
     }
 
     @Test
+    func followUpAbortTargetPrefersActiveTurnAndRetainsVoiceStaleTargetGuard() {
+        #expect(PickyMainCancelPillPolicy.followUpAbortTarget(
+            activeMainTurnFollowUpSessionID: "armed-pickle",
+            voiceFollowUpSessionID: "stale-voice-pickle",
+            shouldAbortVoiceFollowUpPickle: false
+        ) == "armed-pickle")
+        #expect(PickyMainCancelPillPolicy.followUpAbortTarget(
+            activeMainTurnFollowUpSessionID: nil,
+            voiceFollowUpSessionID: "voice-pickle",
+            shouldAbortVoiceFollowUpPickle: true
+        ) == "voice-pickle")
+        #expect(PickyMainCancelPillPolicy.followUpAbortTarget(
+            activeMainTurnFollowUpSessionID: nil,
+            voiceFollowUpSessionID: "stale-voice-pickle",
+            shouldAbortVoiceFollowUpPickle: false
+        ) == nil)
+    }
+
+    @Test
     func hoverOnlyChangesTheRestingPresentation() {
         #expect(PickyMainCancelPillPolicy.stateAfterHover(true, currentState: .rest) == .hover)
         #expect(PickyMainCancelPillPolicy.stateAfterHover(false, currentState: .hover) == .rest)

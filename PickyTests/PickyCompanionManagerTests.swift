@@ -9,6 +9,22 @@ import Foundation
 import Testing
 @testable import Picky
 
+private actor FakeAbortGate {
+    private var didRelease = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        guard !didRelease else { return }
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func release() {
+        didRelease = true
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
 private final class FakeVoiceClient: PickyAgentClient, @unchecked Sendable {
     private let continuation: AsyncStream<PickyClientEvent>.Continuation
     let events: AsyncStream<PickyClientEvent>
@@ -22,6 +38,7 @@ private final class FakeVoiceClient: PickyAgentClient, @unchecked Sendable {
     private var _calls: [String] = []
     private var _disconnectCalls = 0
     private var _sendAwaitingErrorResult: PickyErrorEvent?
+    private var _abortMainAgentGate: FakeAbortGate?
     var submissions: [PickyAgentSubmission] { lock.withLock { _submissions } }
     var commands: [PickyCommandEnvelope] { lock.withLock { _commands } }
     var calls: [String] { lock.withLock { _calls } }
@@ -29,6 +46,10 @@ private final class FakeVoiceClient: PickyAgentClient, @unchecked Sendable {
     var sendAwaitingErrorResult: PickyErrorEvent? {
         get { lock.withLock { _sendAwaitingErrorResult } }
         set { lock.withLock { _sendAwaitingErrorResult = newValue } }
+    }
+    var abortMainAgentGate: FakeAbortGate? {
+        get { lock.withLock { _abortMainAgentGate } }
+        set { lock.withLock { _abortMainAgentGate = newValue } }
     }
 
     init() {
@@ -53,6 +74,9 @@ private final class FakeVoiceClient: PickyAgentClient, @unchecked Sendable {
     }
     func sendAwaitingError(_ command: PickyCommandEnvelope, timeout: TimeInterval) async throws -> PickyErrorEvent? {
         try await send(command)
+        if command.type == .abortMainAgent {
+            await abortMainAgentGate?.wait()
+        }
         return lock.withLock { _sendAwaitingErrorResult }
     }
     func disconnect() {
@@ -835,6 +859,40 @@ struct PickyCompanionManagerTests {
         #expect(!didCancel)
         #expect(manager.isWaitingForCursorResponse)
         #expect(client.commands.map(\.type) == [.abortMainAgent])
+    }
+
+    @Test func mainTurnCancelDispatchesPickleAbortBeforeMainAbortCompletes() async throws {
+        let client = FakeVoiceClient()
+        let gate = FakeAbortGate()
+        client.abortMainAgentGate = gate
+        let manager = CompanionManager(agentClient: client, selectionStore: FakeVoiceSelectionStore())
+        manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-in-flight")
+        manager.beginAwaitingAgentResponse(recognizedTranscript: "cancel this")
+
+        let cancellation = Task { await manager.cancelMainTurn() }
+        try await waitUntil {
+            Set(client.commands.map(\.type)) == Set([.abortMainAgent, .abort])
+        }
+
+        await gate.release()
+        #expect(await cancellation.value)
+    }
+
+    @Test func lateMainTurnCancellationDoesNotSettleANewerSubmission() async throws {
+        let client = FakeVoiceClient()
+        let gate = FakeAbortGate()
+        client.abortMainAgentGate = gate
+        let manager = CompanionManager(agentClient: client, selectionStore: FakeVoiceSelectionStore())
+        manager.noteExternalSubmission(kind: .submitMain, text: "first", context: context(source: "cli"))
+        try await waitUntil { manager.isWaitingForCursorResponse }
+
+        let cancellation = Task { await manager.cancelMainTurn() }
+        try await waitUntil { client.commands.map(\.type) == [.abortMainAgent] }
+        manager.noteExternalSubmission(kind: .submitMain, text: "second", context: context(source: "cli"))
+
+        await gate.release()
+        #expect(!(await cancellation.value))
+        #expect(manager.isWaitingForCursorResponse)
     }
 
     @Test func voiceInputSuppressesQuickReplySpeechWithoutQueueing() async throws {

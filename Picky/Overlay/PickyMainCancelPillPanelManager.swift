@@ -101,6 +101,14 @@ final class PickyMainCancelPillPanelManager {
     }
 
     private func present() {
+        // A new turn supersedes a completed cancellation confirmation. Cancel
+        // its delayed dismissal and restore an enabled control before showing
+        // the panel again; the generation invalidates any fade completion.
+        if cancellationAttemptID == nil, viewModel.state == .cancelled {
+            cancelledDismissTask?.cancel()
+            cancelledDismissTask = nil
+            viewModel.state = .rest
+        }
         dismissGeneration += 1
         if panel == nil { createPanel() }
         positionPanelOnCursorScreen()

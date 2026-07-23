@@ -65,6 +65,18 @@ enum PickyMainCancelPillPolicy {
         hasPendingAgentResponse || voiceState == .responding
     }
 
+    /// An armed follow-up belongs to the active main turn and is therefore
+    /// always cancelled. The voice snapshot remains narrow-gated so a stale
+    /// PTT target cannot cancel a Pickle after its response has settled.
+    static func followUpAbortTarget(
+        activeMainTurnFollowUpSessionID: String?,
+        voiceFollowUpSessionID: String?,
+        shouldAbortVoiceFollowUpPickle: Bool
+    ) -> String? {
+        activeMainTurnFollowUpSessionID
+            ?? (shouldAbortVoiceFollowUpPickle ? voiceFollowUpSessionID : nil)
+    }
+
     static func stateAfterCancellationAttempt(succeeded: Bool) -> PickyMainCancelPillState {
         succeeded ? .cancelled : .rest
     }

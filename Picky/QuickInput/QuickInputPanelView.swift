@@ -25,8 +25,9 @@ enum QuickInputPanelLayout {
     /// the top through one vertical mask, so it reads shorter than it is.
     static let historyLightweightSurfaceOpacity: Double = 0.55
     static let historyLightweightBottomFadeOpacity: Double = 0.6
-    /// Dissolve mask stops, measured from the top of the card: fully gone at
-    /// the edge, ~30% visible mid-fade, crisp only in the bottom 30%.
+    /// Dissolve mask stops, measured from the top of the card: the top 20%
+    /// band is fully invisible, ~30% visible mid-fade, crisp bottom 30%.
+    static let historyDissolveHiddenLocation: CGFloat = 0.2
     static let historyDissolveMidLocation: CGFloat = 0.45
     static let historyDissolveMidOpacity: Double = 0.3
     static let historyDissolveCrispLocation: CGFloat = 0.7
@@ -57,6 +58,7 @@ final class QuickInputPanelViewModel: ObservableObject {
     /// Includes the card chrome and is reduced by the manager when the cursor
     /// has limited space above it on the active display.
     @Published var historyCardHeightLimit: CGFloat = QuickInputHistoryPolicy.defaultCardHeight
+    @Published var historySolidCardHeightLimit: CGFloat = QuickInputHistoryPolicy.solidCardHeight
     /// Lightweight until the user scrolls the history, then solid until the
     /// next presentation (predictable, no fade-back).
     @Published private(set) var historyBackgroundMode: QuickInputHistoryBackgroundMode = .lightweight
@@ -207,6 +209,7 @@ private struct QuickInputHistoryCard: View {
     @ObservedObject var viewModel: QuickInputPanelViewModel
     @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
     @State private var trailingTurnHeight: CGFloat = 0
+    @State private var transcriptContentHeight: CGFloat = 0
     /// Starts true so the initial scroll-to-last-turn presentation immediately
     /// shows the top fade when prior messages exist; the scroll offset
     /// preference clears it once the user reaches the transcript's actual top.
@@ -239,6 +242,10 @@ private struct QuickInputHistoryCard: View {
         return LinearGradient(
             stops: [
                 .init(color: .black.opacity(isLightweight ? 0 : 1), location: 0),
+                .init(
+                    color: .black.opacity(isLightweight ? 0 : 1),
+                    location: QuickInputPanelLayout.historyDissolveHiddenLocation
+                ),
                 .init(
                     color: .black.opacity(isLightweight ? QuickInputPanelLayout.historyDissolveMidOpacity : 1),
                     location: QuickInputPanelLayout.historyDissolveMidLocation
@@ -275,13 +282,18 @@ private struct QuickInputHistoryCard: View {
 
     private var maximumScrollHeight: CGFloat {
         QuickInputHistoryPolicy.scrollHeightLimit(
-            cardHeightLimit: viewModel.historyCardHeightLimit
+            cardHeightLimit: effectiveBackgroundMode == .solid
+                ? viewModel.historySolidCardHeightLimit
+                : viewModel.historyCardHeightLimit
         ) ?? 0
     }
 
+    /// Lightweight sizes to the trailing turn (peek); solid sizes to the whole
+    /// transcript so scrolling opens up the doubled browsing height.
     private var scrollHeight: CGFloat {
-        guard trailingTurnHeight > 0 else { return maximumScrollHeight }
-        return min(trailingTurnHeight, maximumScrollHeight)
+        let referenceHeight = effectiveBackgroundMode == .solid ? transcriptContentHeight : trailingTurnHeight
+        guard referenceHeight > 0 else { return maximumScrollHeight }
+        return min(referenceHeight, maximumScrollHeight)
     }
 
     var body: some View {
@@ -323,10 +335,15 @@ private struct QuickInputHistoryCard: View {
                 .padding(.horizontal, 14)
                 .background(
                     GeometryReader { geometry in
-                        Color.clear.preference(
-                            key: QuickInputHistoryContentBottomKey.self,
-                            value: geometry.frame(in: .named(scrollCoordinateSpaceName)).maxY
-                        )
+                        Color.clear
+                            .preference(
+                                key: QuickInputHistoryContentBottomKey.self,
+                                value: geometry.frame(in: .named(scrollCoordinateSpaceName)).maxY
+                            )
+                            .preference(
+                                key: QuickInputHistoryContentHeightKey.self,
+                                value: geometry.size.height
+                            )
                     }
                 )
             }
@@ -391,6 +408,11 @@ private struct QuickInputHistoryCard: View {
                 hasContentBelowViewport = false
                 scrollToAnchor(proxy)
             }
+            .onChange(of: effectiveBackgroundMode) { _ in
+                // Solid doubles the viewport cap, so the panel must remeasure
+                // and re-clamp; the height change itself stays unanimated.
+                viewModel.onFittingSizeChanged()
+            }
             .onChange(of: viewModel.recentMessages.last?.id) { _ in
                 hasContentAboveViewport = true
                 hasContentBelowViewport = false
@@ -406,6 +428,13 @@ private struct QuickInputHistoryCard: View {
                 guard abs(trailingTurnHeight - height) > 0.5 else { return }
                 trailingTurnHeight = height
                 viewModel.onFittingSizeChanged()
+            }
+            .onPreferenceChange(QuickInputHistoryContentHeightKey.self) { height in
+                guard abs(transcriptContentHeight - height) > 0.5 else { return }
+                transcriptContentHeight = height
+                if effectiveBackgroundMode == .solid {
+                    viewModel.onFittingSizeChanged()
+                }
             }
         }
     }
@@ -519,6 +548,14 @@ private struct QuickInputHistoryContentBottomKey: PreferenceKey {
 }
 
 private struct QuickInputHistoryTrailingTurnHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+private struct QuickInputHistoryContentHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {

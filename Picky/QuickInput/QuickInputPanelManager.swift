@@ -228,6 +228,11 @@ final class QuickInputPanelManager {
             visibleScreenHeight: visibleFrame?.height,
             spaceAbovePill: spaceAbovePill
         )
+        viewModel.historySolidCardHeightLimit = QuickInputHistoryPolicy.cardHeightLimit(
+            visibleScreenHeight: visibleFrame?.height,
+            spaceAbovePill: spaceAbovePill,
+            baseHeight: QuickInputHistoryPolicy.solidCardHeight
+        )
     }
 
     /// Positions the pill so its top-leading corner sits just below and to the

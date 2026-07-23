@@ -40,8 +40,10 @@ struct PickyMainCancelPillView: View {
                         }
                     )
                     .overlay(
+                        // Keep the hairline fully within the top-aligned
+                        // hosting view rather than clipping its outer half.
                         Capsule(style: .continuous)
-                            .stroke(borderColor, lineWidth: 0.8)
+                            .strokeBorder(borderColor, lineWidth: 0.8)
                     )
             }
             .buttonStyle(.plain)

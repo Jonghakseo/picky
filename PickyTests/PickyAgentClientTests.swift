@@ -242,6 +242,64 @@ struct PickyAgentClientTests {
         } else { Issue.record("Expected packageOperationCompleted") }
     }
 
+    @Test func decodesMainActivityAndMainExtensionUiEvents() throws {
+        let decoder = JSONDecoder.pickyAgentProtocolDecoder()
+
+        let activity = try decoder.decode(PickyEventEnvelope.self, from: Data("""
+        {"id":"event-main-activity","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:00.000Z","type":"mainActivityUpdated","activity":{"kind":"tool","toolCallId":"tool-1","toolName":"read","status":"running","argsPreview":"{\\"path\\":\\"Picky/Overlay/BlueCursorView.swift\\"}"}}
+        """.utf8))
+        if case .mainActivityUpdated(let mainActivity) = activity.event {
+            #expect(mainActivity == PickyMainActivity(
+                kind: .tool,
+                toolCallId: "tool-1",
+                toolName: "read",
+                status: "running",
+                argsPreview: #"{"path":"Picky/Overlay/BlueCursorView.swift"}"#
+            ))
+        } else { Issue.record("Expected mainActivityUpdated") }
+
+        let clear = try decoder.decode(PickyEventEnvelope.self, from: Data("""
+        {"id":"event-main-activity-clear","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:00.000Z","type":"mainActivityUpdated"}
+        """.utf8))
+        if case .mainActivityUpdated(let mainActivity) = clear.event {
+            #expect(mainActivity == nil)
+        } else { Issue.record("Expected cleared mainActivityUpdated") }
+
+        let request = try decoder.decode(PickyEventEnvelope.self, from: Data("""
+        {"id":"event-main-question","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:00.000Z","type":"mainExtensionUiRequested","request":{"id":"question-1","sessionId":"picky-main","method":"askUserQuestion","title":"Proceed?","description":"Choose an option.","questions":[{"id":"choice","type":"radio","options":["yes","no"]}],"createdAt":"2026-05-01T00:00:00.000Z"}}
+        """.utf8))
+        if case .mainExtensionUiRequested(let mainRequest) = request.event {
+            #expect(mainRequest.id == "question-1")
+            #expect(mainRequest.sessionId == "picky-main")
+            #expect(mainRequest.method == "askUserQuestion")
+            #expect(mainRequest.questions?.first?.options?.map(\.value) == ["yes", "no"])
+        } else { Issue.record("Expected mainExtensionUiRequested") }
+
+        let cancelled = try decoder.decode(PickyEventEnvelope.self, from: Data("""
+        {"id":"event-main-question-cancelled","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:00.000Z","type":"mainExtensionUiCancelled","requestId":"question-1"}
+        """.utf8))
+        if case .mainExtensionUiCancelled(let requestId) = cancelled.event {
+            #expect(requestId == "question-1")
+        } else { Issue.record("Expected mainExtensionUiCancelled") }
+    }
+
+    @Test func encodesAnswerMainExtensionUiCommandWithoutSessionId() throws {
+        let data = try JSONEncoder.pickyAgentProtocolEncoder().encode(PickyCommandEnvelope(
+            id: "cmd-main-answer",
+            type: .answerMainExtensionUi,
+            requestId: "question-1",
+            value: .object(["choice": .string("yes")])
+        ))
+        let rawCommand = try #require(String(data: data, encoding: .utf8))
+        let command = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyCommandEnvelope.self, from: data)
+
+        #expect(rawCommand.contains("\"sessionId\"") == false)
+        #expect(command.type == .answerMainExtensionUi)
+        #expect(command.requestId == "question-1")
+        #expect(command.sessionId == nil)
+        #expect(command.value == .object(["choice": .string("yes")]))
+    }
+
     @Test func malformedEventIsRecoverable() async throws {
         let task = FakeWebSocketTask()
         task.receiveResults = [.success(.string(EventJSON.hello())), .success(.string("not-json"))]

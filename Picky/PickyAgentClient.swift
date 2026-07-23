@@ -439,6 +439,12 @@ private extension PickyEventEnvelope {
             return "type=mainMessagesSnapshot id=\(id) messages=\(messages.count)"
         case .mainMessageAppended(let message):
             return "type=mainMessageAppended id=\(id) role=\(message.role.rawValue) textChars=\(message.text.count)"
+        case .mainActivityUpdated(let activity):
+            return "type=mainActivityUpdated id=\(id) kind=\(activity?.kind.rawValue ?? "cleared")"
+        case .mainExtensionUiRequested(let request):
+            return "type=mainExtensionUiRequested id=\(id) request=\(request.id) method=\(request.method)"
+        case .mainExtensionUiCancelled(let requestId):
+            return "type=mainExtensionUiCancelled id=\(id) request=\(requestId)"
         case .mainAgentModelsSnapshot(let models):
             return "type=mainAgentModelsSnapshot id=\(id) models=\(models.count)"
         case .piOAuthStatus(let status):

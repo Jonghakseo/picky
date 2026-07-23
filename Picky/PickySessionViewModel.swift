@@ -1609,7 +1609,8 @@ final class PickySessionListViewModel: ObservableObject {
             }
         case .quickReply, .mainTurnSettled, .mainNarrationChunk,
              .mainVisualNarrationSegmentPrepared, .mainVisualNarrationSegmentSentence, .mainVisualNarrationSegmentCommitted,
-             .mainMessagesSnapshot, .mainMessageAppended, .mainAgentSessionInfoUpdated, .mainAgentModelsSnapshot,
+             .mainMessagesSnapshot, .mainMessageAppended, .mainActivityUpdated, .mainExtensionUiRequested, .mainExtensionUiCancelled,
+             .mainAgentSessionInfoUpdated, .mainAgentModelsSnapshot,
              .piOAuthStatus, .piOAuthUrlRequested, .piOAuthPromptRequested, .piAuthenticationReloaded,
              .pointerOverlayRequested, .annotationOverlayRequested, .pickleHandoffRequested, .pickleBridgeRequested, .externalEntryRequested,
              .dockGroupsRequested, .pushToTalkControlRequested, .hello, .pluginsReloaded,

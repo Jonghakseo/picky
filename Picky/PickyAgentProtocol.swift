@@ -238,6 +238,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case rewindSession
     case getSession
     case answerExtensionUi
+    case answerMainExtensionUi
     case setNotifyMainOnCompletion
     case setSessionArchived
     case deleteSession
@@ -286,6 +287,9 @@ enum PickyEvent: Equatable {
     case mainVisualNarrationSegmentCommitted(PickyVisualNarrationSegmentCommittedEvent)
     case mainMessagesSnapshot([PickyMainAgentMessage])
     case mainMessageAppended(PickyMainAgentMessage)
+    case mainActivityUpdated(PickyMainActivity?)
+    case mainExtensionUiRequested(PickyExtensionUiRequest)
+    case mainExtensionUiCancelled(requestId: String)
     case mainAgentSessionInfoUpdated(sessionFilePath: String?, cwd: String?)
     case mainAgentModelsSnapshot([PickyMainAgentModelOption])
     case piOAuthStatus(PickyPiOAuthStatusEvent)
@@ -371,6 +375,12 @@ enum PickyEvent: Equatable {
         case "mainMessageAppended":
             let payload = try PickyMainMessageAppendedPayload(from: decoder)
             return .mainMessageAppended(payload.message)
+        case "mainActivityUpdated":
+            return .mainActivityUpdated(try PickyMainActivityUpdatedPayload(from: decoder).activity)
+        case "mainExtensionUiRequested":
+            return .mainExtensionUiRequested(try PickyMainExtensionUiRequestedPayload(from: decoder).request)
+        case "mainExtensionUiCancelled":
+            return .mainExtensionUiCancelled(requestId: try PickyMainExtensionUiCancelledPayload(from: decoder).requestId)
         case "mainAgentSessionInfoUpdated":
             let payload = try PickyMainAgentSessionInfoUpdatedPayload(from: decoder)
             return .mainAgentSessionInfoUpdated(sessionFilePath: payload.sessionFilePath, cwd: payload.cwd)
@@ -497,6 +507,9 @@ enum PickyEvent: Equatable {
 
 private struct PickyMainMessagesSnapshotPayload: Decodable { let messages: [PickyMainAgentMessage] }
 private struct PickyMainMessageAppendedPayload: Decodable { let message: PickyMainAgentMessage }
+private struct PickyMainActivityUpdatedPayload: Decodable { let activity: PickyMainActivity? }
+private struct PickyMainExtensionUiRequestedPayload: Decodable { let request: PickyExtensionUiRequest }
+private struct PickyMainExtensionUiCancelledPayload: Decodable { let requestId: String }
 private struct PickyMainAgentSessionInfoUpdatedPayload: Decodable { let sessionFilePath: String?; let cwd: String? }
 private struct PickyMainAgentModelsSnapshotPayload: Decodable { let models: [PickyMainAgentModelOption] }
 
@@ -1304,6 +1317,36 @@ struct PickyContextUsage: Codable, Equatable {
         try container.encode(tokens, forKey: .tokens)
         try container.encode(contextWindow, forKey: .contextWindow)
         try container.encode(percent, forKey: .percent)
+    }
+}
+
+enum PickyMainActivityKind: String, Codable, Equatable {
+    case thinking
+    case tool
+}
+
+struct PickyMainActivity: Codable, Equatable {
+    let kind: PickyMainActivityKind
+    let toolCallId: String?
+    let toolName: String?
+    let status: String?
+    let argsPreview: String?
+    let thinkingPreview: String?
+
+    init(
+        kind: PickyMainActivityKind,
+        toolCallId: String? = nil,
+        toolName: String? = nil,
+        status: String? = nil,
+        argsPreview: String? = nil,
+        thinkingPreview: String? = nil
+    ) {
+        self.kind = kind
+        self.toolCallId = toolCallId
+        self.toolName = toolName
+        self.status = status
+        self.argsPreview = argsPreview
+        self.thinkingPreview = thinkingPreview
     }
 }
 

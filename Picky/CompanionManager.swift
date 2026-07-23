@@ -52,6 +52,8 @@ final class CompanionManager: ObservableObject {
     @Published private(set) var hasActiveVisualNarration = false
     @Published private(set) var hasActivePointVisualNarration = false
     @Published private(set) var mainAgentMessages: [PickyMainAgentMessage] = []
+    @Published private(set) var mainLiveActivities: [PickyMainActivity] = []
+    @Published private(set) var mainPendingQuestion: PickyExtensionUiRequest?
     /// Most recent Picky main-agent Pi session location reported by
     /// picky-agentd. Used by the Status → Recent conversation sub-page to expose "Open in Pi" / "Copy
     /// resume command" affordances so users can drop into a real Pi TUI
@@ -962,6 +964,7 @@ final class CompanionManager: ObservableObject {
         applyVoiceInteractionProjection(transition.state.projection)
         if let responseText = transition.state.context.responseBubbleText,
            !responseText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            mainLiveActivities = []
             latestAgentSessionSummary = responseText
         }
         return transition
@@ -1989,6 +1992,8 @@ final class CompanionManager: ObservableObject {
     /// turn, queued speech, speaking output) but does NOT clear persisted messages or
     /// send a daemon command, so a later reconnect keeps the transcript intact.
     private func clearInteractionStateForConnectionLoss() {
+        mainLiveActivities = []
+        mainPendingQuestion = nil
         annotationSceneMonitor?.stop()
         activeAnnotationSceneIdentity = nil
         interactionCoordinator.accept(
@@ -2013,6 +2018,8 @@ final class CompanionManager: ObservableObject {
                 correlation: PickyInteractionCorrelation(source: .system)
             )
             mainAgentMessages = []
+            mainLiveActivities = []
+            mainPendingQuestion = nil
             latestAgentSessionSummary = "Started a new Messages session"
             return true
         } catch {
@@ -2119,6 +2126,7 @@ final class CompanionManager: ObservableObject {
             )
             applyQuickReplyEvent(reply)
         case .mainTurnSettled(let contextID):
+            mainLiveActivities = []
             applyMainTurnSettled(contextID: contextID)
         case .mainNarrationChunk(let chunk):
             applyMainNarrationChunk(chunk)
@@ -2142,6 +2150,18 @@ final class CompanionManager: ObservableObject {
         case .mainMessageAppended(let message):
             mainAgentMessages = Array((mainAgentMessages + [message]).suffix(100))
             autoDispatchPickyDeepLinkIfPresent(in: message)
+        case .mainActivityUpdated(let activity):
+            guard let activity else {
+                mainLiveActivities = []
+                break
+            }
+            mainLiveActivities = PickyMainActivityStack.apply(activity, to: mainLiveActivities)
+        case .mainExtensionUiRequested(let request):
+            mainPendingQuestion = request
+        case .mainExtensionUiCancelled(let requestId):
+            if mainPendingQuestion?.id == requestId {
+                mainPendingQuestion = nil
+            }
         case .mainAgentSessionInfoUpdated(let sessionFilePath, let cwd):
             mainAgentSessionInfo = PickyMainAgentSessionInfo(sessionFilePath: sessionFilePath, cwd: cwd)
         case .mainAgentModelsSnapshot(let models):

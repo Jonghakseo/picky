@@ -120,6 +120,7 @@ struct PickyConversationHeaderView: View {
             Spacer(minLength: DS.Spacing.sm)
             if headerMetaPresentation.hasContent {
                 sessionMetaControls()
+                    .fixedSize(horizontal: true, vertical: false)
             }
             conversationMenuButton
         }
@@ -811,16 +812,25 @@ private struct PickyHeaderSessionMetaPill: View {
 
     private func modelControl(_ modelText: String) -> some View {
         Button(action: onCycleModel) {
-            Text(modelText)
+            Text(Self.displayModelLabel(modelText))
                 .foregroundColor(textColor.opacity(0.92))
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
         .buttonStyle(.plain)
-        .frame(minWidth: 0, alignment: .leading)
+        .fixedSize(horizontal: true, vertical: false)
         .nativeTooltip("\(modelText)\nCycle scoped model (⌃P)")
         .accessibilityHint("Cycle scoped model with Control-P")
         .hoverAffordance()
+    }
+
+    /// Deterministically shorten the model identifier for the fixed-width header
+    /// so a long id truncates predictably instead of overflowing the row. The
+    /// full value stays in the tooltip and accessibility text.
+    static func displayModelLabel(_ model: String, maxLength: Int = 22) -> String {
+        let leaf = model.split(separator: "/").last.map(String.init) ?? model
+        guard leaf.count > maxLength else { return leaf }
+        return String(leaf.prefix(maxLength - 1)) + "…"
     }
 
     private func thinkingControl(_ thinkingLevelText: String) -> some View {

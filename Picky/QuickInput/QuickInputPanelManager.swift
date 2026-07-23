@@ -51,6 +51,10 @@ final class QuickInputPanelManager {
     /// Logical visibility remains true while an optimistically hidden draft is
     /// in flight so CompanionManager keeps its ink-capture lifecycle intact.
     var isPanelVisible: Bool { viewModel.isSending || panel?.isVisible == true }
+
+    /// True while this panel visibly owns keyboard input (and therefore ESC as
+    /// its close key). A hidden panel that lingers as key window does not count.
+    var visiblyOwnsKeyWindow: Bool { panel?.isKeyWindow == true && panel?.isVisible == true }
     var isSending: Bool { viewModel.isSending }
 
     func containsInteractiveGlobalPoint(_ point: CGPoint) -> Bool {

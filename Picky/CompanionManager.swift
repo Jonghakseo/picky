@@ -1111,16 +1111,17 @@ final class CompanionManager: ObservableObject {
             hasLiveActivities: hasLiveTurnActivities,
             hasActiveFollowUpTurn: activeMainTurnFollowUpSessionID != nil
         )
-        // Picky's interactive panels are non-activating but become the key
-        // window. While one owns keyboard input, ESC must retain its native
-        // close/cancel behavior instead of arming this global control.
-        // Visibility matters: Quick Input hides via `orderOut` on submit but
-        // can linger as the key window until the user clicks elsewhere — a
-        // hidden panel no longer owns ESC, so it must not suppress the pill.
-        let visiblePanelOwnsKeyboard = NSApp.keyWindow?.isVisible == true
+        // Only the panels that use ESC as their own close/cancel key may
+        // suppress the pill, and only while they are visibly key. Checking
+        // `NSApp.keyWindow` broadly was wrong twice over: a submitted Quick
+        // Input lingers hidden as key window, and AppKit can hand key status
+        // to an unrelated visible Picky window (e.g. the HUD) that has no
+        // claim on ESC at all.
+        let escOwningPanelIsKey = quickInputPanelManager.visiblyOwnsKeyWindow
+            || mainQuestionPanelManager.visiblyOwnsKeyWindow
         mainCancelPillPanelManager.update(
             isMainTurnInFlight: isMainTurnInFlight,
-            isPickyPanelKeyWindow: visiblePanelOwnsKeyboard
+            isPickyPanelKeyWindow: escOwningPanelIsKey
         )
     }
 

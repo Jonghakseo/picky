@@ -82,6 +82,10 @@ final class PickyMainQuestionPanelManager {
     /// open and logs the transport failure for diagnosis.
     var onAnswer: (String, JSONValue) async -> Error? = { _, _ in nil }
 
+    /// True while this panel visibly owns keyboard input (and therefore ESC as
+    /// its cancel key). A hidden panel that lingers as key window does not count.
+    var visiblyOwnsKeyWindow: Bool { panel?.isKeyWindow == true && panel?.isVisible == true }
+
     init(
         appearanceStore: PickyAppearanceStore? = nil,
         fontScaleStore: PickyAppFontScaleStore? = nil

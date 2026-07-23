@@ -66,6 +66,38 @@ struct QuickInputHistoryPolicyTests {
         ) == 135)
     }
 
+    @Test
+    func insufficientSpaceHidesCardAndReservesChromeBeforeScrollContent() {
+        let messages = [message(role: .user, text: "prompt", second: 1)]
+        let insufficientHeight = QuickInputHistoryPolicy.minimumCardHeight - 1
+
+        #expect(!QuickInputHistoryPolicy.shouldDisplayCard(
+            for: messages,
+            cardHeightLimit: insufficientHeight
+        ))
+        #expect(QuickInputHistoryPolicy.shouldDisplayCard(
+            for: messages,
+            cardHeightLimit: QuickInputHistoryPolicy.minimumCardHeight
+        ))
+        #expect(QuickInputHistoryPolicy.scrollHeightLimit(
+            cardHeightLimit: QuickInputHistoryPolicy.minimumCardHeight,
+            hasEarlierMessages: true
+        ) == QuickInputHistoryPolicy.minimumScrollContentHeight)
+    }
+
+    @Test
+    func appendingNewUserPromptAdvancesHistoryAnchor() {
+        var messages = [
+            message(role: .user, text: "older prompt", second: 1),
+            message(role: .assistant, text: "older reply", second: 2)
+        ]
+        let newPrompt = message(role: .user, text: "new prompt", second: 3)
+
+        messages.append(newPrompt)
+
+        #expect(QuickInputHistoryPolicy.anchorMessageID(in: messages) == newPrompt.id)
+    }
+
     private func message(
         role: PickyMainAgentMessage.Role,
         text: String,

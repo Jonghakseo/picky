@@ -17,9 +17,31 @@ enum QuickInputHistoryPolicy {
     static let defaultCardHeight: CGFloat = 164
     /// The history card must never claim more than this fraction of a screen.
     static let maximumScreenHeightFraction: CGFloat = 0.45
+    /// Fixed vertical chrome shared by every history-card variant.
+    static let cardVerticalPadding: CGFloat = 20
+    static let historyHintHeight: CGFloat = 22
+    static let historyContentSpacing: CGFloat = 8
+    /// Keeps a compact user prompt readable rather than showing a clipped card.
+    static let minimumScrollContentHeight: CGFloat = 44
+    /// The minimum includes the hint row even for a one-turn transcript, so a
+    /// card never appears with insufficient room for its normal chrome.
+    static let minimumCardHeight: CGFloat = cardVerticalPadding
+        + historyHintHeight
+        + historyContentSpacing
+        + minimumScrollContentHeight
 
     static func shouldShowCard(for messages: [PickyMainAgentMessage]) -> Bool {
         !messages.isEmpty
+    }
+
+    /// Avoids rendering a clipped history card when the cursor leaves too
+    /// little room above the pill. The composer then remains anchored on its
+    /// own, rather than being shifted downward by card chrome.
+    static func shouldDisplayCard(
+        for messages: [PickyMainAgentMessage],
+        cardHeightLimit: CGFloat
+    ) -> Bool {
+        shouldShowCard(for: messages) && cardHeightLimit >= minimumCardHeight
     }
 
     /// Starts the compact view at the last prompt. A still-pending user prompt
@@ -47,5 +69,17 @@ enum QuickInputHistoryPolicy {
         let screenCap = visibleScreenHeight.map { $0 * maximumScreenHeightFraction } ?? defaultCardHeight
         let availableSpace = spaceAbovePill ?? defaultCardHeight
         return max(0, min(defaultCardHeight, screenCap, availableSpace))
+    }
+
+    /// Reserves fixed card chrome before giving the scroll view its height cap,
+    /// ensuring the rendered card can never exceed `cardHeightLimit`.
+    static func scrollHeightLimit(
+        cardHeightLimit: CGFloat,
+        hasEarlierMessages: Bool
+    ) -> CGFloat? {
+        guard cardHeightLimit >= minimumCardHeight else { return nil }
+        let chromeHeight = cardVerticalPadding
+            + (hasEarlierMessages ? historyHintHeight + historyContentSpacing : 0)
+        return cardHeightLimit - chromeHeight
     }
 }

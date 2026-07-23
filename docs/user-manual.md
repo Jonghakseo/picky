@@ -203,14 +203,22 @@ Default shortcut: double-tap Control.
 Behavior:
 
 1. Trigger Quick Input.
-2. A compact pill composer appears near the cursor.
+2. A compact pill composer appears near the cursor. For main-agent input, recent main-session messages appear in a lightweight history card above it; scrolling the history makes the card solid until the next presentation.
 3. Type a message.
 4. Press Return or click the up-arrow send button.
 5. Press Escape or click `x` to close.
 
 Quick Input captures the current context just like voice input.
 
+When a Pickle is armed for screen input, Quick Input names that Pickle in the placeholder, hides main-agent history, and keeps that recipient fixed for the submission. If delivery fails, the draft, recipient, and any drawn ink are restored so you can add more marks and retry. A fresh Quick Input presentation uses the currently armed recipient and never silently reuses an earlier failed target.
+
 Quick Input is suppressed while Push-to-Talk or dictation is active, and also while you are mid-rebind in the shortcut editor, so the two input modes do not fight for focus or hijack capture.
+
+### 5.1 Main-agent activity, questions, and cancellation
+
+While the main Picky agent is working, compact activity chips near the cursor show the tools or skills currently in use. If the agent calls `ask_user_question`, Picky opens an interactive cursor-side form. Multi-question requests advance one step at a time; radio and checkbox questions can offer an **Other** response, and text questions accept free-form input.
+
+An active main turn also shows a **Stop** pill near the cursor. Click it to abort the current turn, or press Escape twice within the confirmation window. Picky suppresses this shortcut while another visible panel owns Escape for its own close/cancel action. During Korean or other IME composition in the question form, Escape is first passed to the input method so it can cancel the marked text instead of dismissing the form.
 
 ## 6. Drawing screen highlights
 
@@ -229,7 +237,8 @@ Details:
 - A drag must cross the threshold before becoming a visible mark.
 - The app underneath does not receive mouse events while Picky owns ink capture. The Quick Input panel and the HUD card stay click-through during **Quick Input** ink capture so you can still interact with them; Push-to-Talk ink capture blocks every surface, Picky's own panels included.
 - Marks are neutral context; Picky does not infer workflows from them.
-- Any display whose pixels are about to be sent as context shows a subtle blue edge glow and an **This screen is being shared as context** pill while you record or type, so you always know which screens are captured. A display stops showing it the moment it is no longer part of the context.
+- Any display whose pixels are about to be sent as context shows a subtle blue edge glow and a **This screen is being shared as context** capsule while you record or type, so you always know which screens are captured. Use the capsule's action to exclude that display, or include a display that is currently omitted. Only the visible capsule is interactive; its transparent panel area does not block the app underneath.
+- The included display set is frozen when you release Push-to-Talk or submit Quick Input. Moving the pointer or changing display topology afterward cannot silently add another screen to that submission.
 - With **Focused screen only** scope, drawing on a second monitor also pulls that monitor into the context for this turn (its edge glow appears as soon as your mark lands on it), so a highlight on a non-focused display is never lost.
 - If **Send screenshots only when drawn** (Settings → Picky) is enabled, a display's screenshot is sent only after you actually draw on that display — the edge glow follows the same rule and appears only once you start drawing. Displays you did not draw on send only the transcript and non-visual context fields; screen capture still runs locally so the ink overlay can render.
 

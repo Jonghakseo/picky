@@ -11,9 +11,9 @@ the **pre-upgrade checklist for every pi version bump**.
 
 | Tier | Examples | What breaking means | Where it's enforced |
 |------|----------|---------------------|---------------------|
-| **T1 — Public API** | `defineTool`, `loadSkills`, `createAgentSessionServices`, `SettingsManager`, `DefaultPackageManager`, `AgentSession.prompt`, `AgentSession.subscribe`, `AgentSession.bindExtensions` | Daemon cannot boot or pi cannot answer at all | `src/__tests__/pi-contract.test.ts` (hard fail), TypeScript types |
+| **T1 — Public API** | `defineTool`, `loadSkills`, `createAgentSessionServices`, `ModelRuntime` provider auth/status/login, `SettingsManager`, `DefaultPackageManager`, `AgentSession.prompt`, `AgentSession.subscribe`, `AgentSession.bindExtensions` | Daemon cannot boot or pi cannot answer at all | `src/__tests__/pi-contract.test.ts` (hard fail), TypeScript types |
 | **T2 — Capability sniffs** | `setThinkingLevel`, `cycleThinkingLevel`, `cycleModel`, `getContextUsage`, `compact`, `reload`, `executeBash`, `recordBashResult`, `isCompacting`, `extensionRunner.emitUserBash` | One pi runtime feature silently no-ops (e.g. `/compact` becomes "not supported", thinking level cycling does nothing) | `src/runtime/pi-capabilities.ts` wraps each sniff, logs `pi capability absent` per session; `pi-contract.test.ts` warns (not fails) on absence so back-compat builds keep passing |
-| **T3 — Internal shapes** | `session.state.messages` array layout, `assistantMessage.content[]` blocks (`{type:"text"}` / `{type:"toolCall"}` / `{type:"toolResult"}`), `session.model.{api,provider,id}` with `state.model` fallback, pi `subscribe()` event types (`agent_start`, `message_update`, `turn_end`, `agent_end`, ...) and field names (`stopReason`, `toolCallId`, `toolName`) | Subtle, hard-to-detect regressions (lost session file path, dropped status events, malformed bootstrap, stale tool-call repair) | Centralised in `pi-event-normalizer.ts` + `pi-capabilities.ts.readModelMetadata`/`readThinkingLevel`; no compile-time gate yet (TODO — track in a "T3 hardening" issue) |
+| **T3 — Internal shapes** | `session.state.messages` array layout, `ModelRuntime.credentials.store.reload` compatibility bridge, `assistantMessage.content[]` blocks (`{type:"text"}` / `{type:"toolCall"}` / `{type:"toolResult"}`), `session.model.{api,provider,id}` with `state.model` fallback, pi `subscribe()` event types (`agent_start`, `message_update`, `turn_end`, `agent_end`, ...) and field names (`stopReason`, `toolCallId`, `toolName`) | Subtle, hard-to-detect regressions (lost session file path, stale live credentials, dropped status events, malformed bootstrap, stale tool-call repair) | Centralised in `pi-event-normalizer.ts` + `pi-capabilities.ts`; credential reload and state shape are hard-gated in `pi-contract.test.ts` |
 | **T4 — Lifecycle assumptions** | `runtime.session.sessionFile` exposed synchronously after `createHandle()`, `reportDiagnostics()` scheduled via `setTimeout(0)`, `setRebindSession` invoked when pi swaps the inner session | Race conditions that drop events between handle creation and subscription | Documented inline in `pi-sdk-runtime.ts` (`bindCurrentSession` race guard, `createPrewarmedMainHandle` early-attach comment); fragile, no automated guard |
 
 ## File-by-file inventory
@@ -102,6 +102,16 @@ unsupported because their factories consume raw terminal input and render ANSI
 components. The native HUD editor only projects the active completion prefix
 with temporary AppKit attributes.
 
+### Provider authentication: `agentd/src/application/pi-oauth-service.ts`
+
+Picky Settings OAuth uses the public async `ModelRuntime` facade (`getProvider`,
+`getProviderAuthStatus`, `login`) through an owner-bound interactive coordinator.
+The Swift app never imports Pi files or discovers a global `pi` executable. Active
+runtime handles reload the file-backed credential snapshot through the single
+`pi-capabilities.ts.reloadModelRuntimeCredentials` compatibility sniff, then call
+public `ModelRuntime.refresh({ allowNetwork: false })`. Remove the sniff when Pi
+publishes a first-class credential reload API.
+
 ### Tool definitions: `agentd/src/application/*-tool.ts`
 
 `handoff-tool.ts`, `ask-user-question-tool.ts`, `user-guide-tool.ts`,
@@ -118,7 +128,7 @@ Uses `loadSkills`, `SettingsManager`, `DefaultPackageManager`,
 
 When bumping pi (`agentd/package.json` `@earendil-works/pi-coding-agent`):
 
-1. **Run the contract test first**: `cd agentd && pnpm exec vitest run src/__tests__/pi-contract.test.ts`.
+1. **Run the contract tests first**: `cd agentd && pnpm exec vitest run src/__tests__/pi-contract.test.ts src/application/pi-oauth-service.test.ts`.
    - Hard-tier failures: investigate immediately. The bump is unsafe.
    - Soft-tier warnings: capture in the upgrade notes; verify the affected
      `pi-capabilities.ts` wrapper still has a sensible fallback. If the
@@ -210,8 +220,15 @@ When bumping pi (`agentd/package.json` `@earendil-works/pi-coding-agent`):
 - Pi 0.81.1 restores the default stream fallback for extensions built against
   the pre-0.81 agent-core API, improving compatibility for user-installed
   extensions without requiring another daemon adapter.
-- The hard/soft SDK contract test and remaining runtime adapter types pass on
-  0.81.1; no additional T1-T4 compatibility shim is required for this bump.
+- The SDK bump also removed OAuth orchestration from `AuthStorage`. Picky's
+  Settings helper previously deep-imported `dist/core/auth-storage.js`, so both
+  provider cards failed at runtime on `getOAuthProviders()`. OAuth now runs in
+  typed agentd code through public `ModelRuntime`; app-daemon contract tests and
+  a real pinned-SDK status smoke guard this path.
+- Existing sessions still need credential snapshot refresh after another
+  `ModelRuntime` writes `auth.json`. Pi 0.81.1 has no public reload method, so
+  Picky temporarily hard-gates the centralized
+  `ModelRuntime.credentials.store.reload` compatibility bridge.
 
 ## Backward-compatibility policy
 

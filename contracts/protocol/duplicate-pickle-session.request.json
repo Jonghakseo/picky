@@ -1,6 +1,6 @@
 {
   "id": "cmd-duplicate-pickle-session-001",
-  "protocolVersion": "2026-07-19",
+  "protocolVersion": "2026-07-23",
   "type": "duplicatePickleSession",
   "sessionId": "session-source-001"
 }

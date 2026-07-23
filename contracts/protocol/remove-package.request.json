@@ -1,6 +1,6 @@
 {
   "id": "cmd-package-remove-001",
-  "protocolVersion": "2026-07-19",
+  "protocolVersion": "2026-07-23",
   "type": "removePackage",
   "source": "npm:@example/pi-extension"
 }

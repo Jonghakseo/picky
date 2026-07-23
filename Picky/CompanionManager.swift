@@ -426,6 +426,10 @@ final class CompanionManager: ObservableObject {
         return settings
     }
 
+    func makePiOAuthLoginRunner() -> PickyPiOAuthLoginRunning {
+        PickyPiOAuthLoginAgentRunner(client: agentClient)
+    }
+
     /// Applies the "Show Picky cursor" preference to the overlay window
     /// lifecycle. Turning it off tears every overlay reason down immediately;
     /// turning it back on restores the always-on cursor once permissions allow.
@@ -2151,6 +2155,7 @@ final class CompanionManager: ObservableObject {
             finishAwaitingAgentResponse(visibleText: error.message, spokenText: nil)
             clearInteractionStateForConnectionLoss()
         case .hello, .sessionSnapshot, .artifactUpdated, .slashCommandsSnapshot,
+             .piOAuthStatus, .piOAuthUrlRequested, .piOAuthPromptRequested, .piAuthenticationReloaded,
              .autocompleteCapabilitiesSnapshot, .autocompleteSuggestionsSnapshot, .autocompleteCompletionApplied,
              .rewindTargetsSnapshot, .sessionRewound, .unknown,
              .sessionMessageAppended, .sessionMessagesImported, .sessionMessageReplaced, .sessionMessageRemoved, .sessionQueueUpdated, .sessionActivityUpdated, .terminalSessionSyncOutcome,

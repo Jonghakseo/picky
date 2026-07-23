@@ -671,6 +671,28 @@ export class SessionSupervisor extends EventEmitter {
     return { pickyReloaded, pickleReloadedCount, pickleAbortedCount, pickleDeferredCount };
   }
 
+  async reloadPiAuthentication(): Promise<number> {
+    const handles = new Set<RuntimeSessionHandle>();
+    if (this.mainHandle) handles.add(this.mainHandle);
+    if (this.mainHandlePromise) {
+      try {
+        handles.add(await this.mainHandlePromise);
+      } catch (error) {
+        logAgentd("pending main authentication reload skipped", { error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    for (const handle of this.runtimeHandles.values()) handles.add(handle);
+
+    let reloaded = 0;
+    for (const handle of handles) {
+      if (!handle.reloadAuthentication) continue;
+      await handle.reloadAuthentication();
+      reloaded += 1;
+    }
+    logAgentd("pi authentication reloaded", { handles: reloaded });
+    return reloaded;
+  }
+
   async abortMainAgent(): Promise<void> {
     logAgentd("main abort requested", { messages: this.mainState.messages.length, hadHandle: this.mainHandle ? 1 : 0, hadPendingHandle: this.mainHandlePromise ? 1 : 0, wasProcessing: this.mainIsProcessing ? 1 : 0 });
     const currentHandle = this.mainHandle;

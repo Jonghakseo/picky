@@ -46,6 +46,22 @@ type CommittedVisualNarrationTestEvent = {
 };
 
 describe("SessionSupervisor", () => {
+  it("reloads credentials on every attached Pickle and main runtime handle", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-auth-reload-"));
+    const pickleRuntime = new ManualRuntime();
+    const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
+    const supervisor = new SessionSupervisor(pickleRuntime, new SessionStore(dir), { mainRuntime });
+    await supervisor.load();
+    await supervisor.create(context("auth reload"));
+    await supervisor.prewarmMainAgent("/tmp/project");
+
+    const reloadedHandleCount = await supervisor.reloadPiAuthentication();
+
+    expect(reloadedHandleCount).toBe(2);
+    expect(pickleRuntime.handle?.reloadAuthenticationCalls).toBe(1);
+    expect(mainRuntime.handle?.reloadAuthenticationCalls).toBe(1);
+  });
+
   it("creates multiple mock sessions concurrently", async () => {
     const supervisor = await makeSupervisor();
     const [first, second] = await Promise.all([supervisor.create(context("first")), supervisor.create(context("second"))]);
@@ -7804,6 +7820,7 @@ class ManualHandle implements RuntimeSessionHandle {
   queuedSteerTexts: string[] = [];
   steerOutcome: { handledSynchronously: boolean } = { handledSynchronously: false };
   aborts = 0;
+  reloadAuthenticationCalls = 0;
   async steer(prompt: BuiltPrompt): Promise<{ handledSynchronously: boolean }> {
     this.steerPrompts.push(prompt);
     this.steers.push(prompt.text);
@@ -7816,6 +7833,9 @@ class ManualHandle implements RuntimeSessionHandle {
   }
   async abort(): Promise<void> {
     this.aborts += 1;
+  }
+  async reloadAuthentication(): Promise<void> {
+    this.reloadAuthenticationCalls += 1;
   }
   async compact(customInstructions?: string): Promise<void> {
     this.compactCalls.push(customInstructions);

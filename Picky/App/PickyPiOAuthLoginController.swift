@@ -24,7 +24,7 @@ enum PickyPiOAuthLoginStatus: Equatable {
     case failed(String)
 }
 
-enum PickyPiOAuthLoginProvider: String, CaseIterable, Identifiable {
+enum PickyPiOAuthLoginProvider: String, CaseIterable, Identifiable, Codable, Sendable {
     case openAICodex = "openai-codex"
     case anthropic = "anthropic"
 
@@ -66,8 +66,8 @@ final class PickyPiOAuthLoginController: ObservableObject {
     private let runner: PickyPiOAuthLoginRunning
     private var tasks: [PickyPiOAuthLoginProvider: Task<Void, Never>] = [:]
 
-    init(runner: PickyPiOAuthLoginRunning? = nil) {
-        self.runner = runner ?? PickyPiOAuthLoginProcessRunner()
+    init(runner: PickyPiOAuthLoginRunning) {
+        self.runner = runner
         self.statuses = Dictionary(uniqueKeysWithValues: PickyPiOAuthLoginProvider.allCases.map { ($0, .unknown) })
     }
 
@@ -153,276 +153,216 @@ final class PickyPiOAuthLoginController: ObservableObject {
 }
 
 @MainActor
-final class PickyPiOAuthLoginProcessRunner: PickyPiOAuthLoginRunning {
-    private enum Mode: String {
-        case status
-        case login
-    }
+final class PickyPiOAuthLoginAgentRunner: PickyPiOAuthLoginRunning {
+    typealias OpenURL = @MainActor (URL) -> Bool
 
-    private struct NodeInvocation {
-        let executableURL: URL
-        let argumentPrefix: [String]
-    }
+    private let client: any PickyAgentClient
+    private let openURL: OpenURL
+    private let statusTimeoutNanoseconds: UInt64
+    private let reloadTimeoutNanoseconds: UInt64
+    private var loginRequestIDs: [PickyPiOAuthLoginProvider: String] = [:]
 
-    private var processes: [PickyPiOAuthLoginProvider: Process] = [:]
+    init(
+        client: any PickyAgentClient,
+        openURL: @escaping OpenURL = { NSWorkspace.shared.open($0) },
+        statusTimeoutNanoseconds: UInt64 = 5_000_000_000,
+        reloadTimeoutNanoseconds: UInt64 = 10_000_000_000
+    ) {
+        self.client = client
+        self.openURL = openURL
+        self.statusTimeoutNanoseconds = statusTimeoutNanoseconds
+        self.reloadTimeoutNanoseconds = reloadTimeoutNanoseconds
+    }
 
     func authStatus(for provider: PickyPiOAuthLoginProvider) async throws -> PickyPiOAuthLoginAuthStatus {
-        try await runNode(provider: provider, mode: .status)
+        try await requestStatus(provider: provider, commandType: .getPiOAuthStatus, timeoutNanoseconds: statusTimeoutNanoseconds)
     }
 
     func signIn(provider: PickyPiOAuthLoginProvider) async throws -> PickyPiOAuthLoginAuthStatus {
-        try await runNode(provider: provider, mode: .login)
+        let command = PickyCommandEnvelope(type: .signInPiOAuth, providerId: provider)
+        loginRequestIDs[provider] = command.id
+        defer {
+            if loginRequestIDs[provider] == command.id {
+                loginRequestIDs[provider] = nil
+            }
+        }
+
+        let status = try await withTaskCancellationHandler(
+            operation: {
+                try await awaitStatus(command: command, provider: provider, timeoutNanoseconds: nil)
+            },
+            onCancel: { [weak self] in
+                Task { @MainActor in self?.cancelRequest(provider: provider, requestId: command.id) }
+            }
+        )
+        try await reloadAuthenticationAcrossDaemons()
+        return status
     }
 
     func cancel(provider: PickyPiOAuthLoginProvider) {
-        processes[provider]?.terminate()
-        processes[provider] = nil
+        guard let requestId = loginRequestIDs[provider] else { return }
+        cancelRequest(provider: provider, requestId: requestId)
     }
 
-    private func runNode(provider: PickyPiOAuthLoginProvider, mode: Mode) async throws -> PickyPiOAuthLoginAuthStatus {
-        try await withTaskCancellationHandler(
-            operation: {
-                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<PickyPiOAuthLoginAuthStatus, Error>) in
-                    do {
-                        let invocation = Self.nodeInvocation()
-                        let process = Process()
-                        let stdout = Pipe()
-                        let stderr = Pipe()
-                        let stdin = Pipe()
+    private func requestStatus(
+        provider: PickyPiOAuthLoginProvider,
+        commandType: PickyCommandType,
+        timeoutNanoseconds: UInt64
+    ) async throws -> PickyPiOAuthLoginAuthStatus {
+        let command = PickyCommandEnvelope(type: commandType, providerId: provider)
+        return try await awaitStatus(command: command, provider: provider, timeoutNanoseconds: timeoutNanoseconds)
+    }
 
-                        process.executableURL = invocation.executableURL
-                        process.arguments = invocation.argumentPrefix + ["--input-type=module", "-", provider.rawValue, mode.rawValue]
-                        process.standardInput = stdin
-                        process.standardOutput = stdout
-                        process.standardError = stderr
-                        process.environment = Self.processEnvironment()
-
-                        process.terminationHandler = { [weak self] process in
-                            let stdoutData = stdout.fileHandleForReading.readDataToEndOfFile()
-                            let stderrData = stderr.fileHandleForReading.readDataToEndOfFile()
-                            let stdoutText = String(data: stdoutData, encoding: .utf8) ?? ""
-                            let stderrText = String(data: stderrData, encoding: .utf8) ?? ""
-                            Task { @MainActor in
-                                self?.processes[provider] = nil
-                                if process.terminationStatus == 0 {
-                                    do {
-                                        continuation.resume(returning: try Self.parseResult(stdoutText))
-                                    } catch {
-                                        continuation.resume(throwing: error)
-                                    }
-                                } else {
-                                    let message = [stderrText, stdoutText]
-                                        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                                        .first { !$0.isEmpty }
-                                        ?? "Pi OAuth helper exited with code \(process.terminationStatus)."
-                                    continuation.resume(throwing: PickyPiOAuthLoginError.helperFailed(message))
-                                }
+    private func awaitStatus(
+        command: PickyCommandEnvelope,
+        provider: PickyPiOAuthLoginProvider,
+        timeoutNanoseconds: UInt64?
+    ) async throws -> PickyPiOAuthLoginAuthStatus {
+        let stream = client.events
+        let responseTask = Task { @MainActor [client, openURL] in
+            for await clientEvent in stream {
+                switch clientEvent {
+                case .connected:
+                    continue
+                case .disconnected:
+                    throw PickyPiOAuthLoginError.disconnected
+                case .recoverableError(let message):
+                    throw PickyPiOAuthLoginError.daemon(message)
+                case .protocolEvent(let envelope):
+                    switch envelope.event {
+                    case .piOAuthStatus(let event)
+                        where event.requestId == command.id && event.providerId == provider:
+                        return event.authStatus
+                    case .piOAuthUrlRequested(let event)
+                        where event.requestId == command.id && event.providerId == provider:
+                        guard let url = URL(string: event.url) else {
+                            throw PickyPiOAuthLoginError.invalidURL(event.url)
+                        }
+                        guard openURL(url) else {
+                            throw PickyPiOAuthLoginError.browserOpenFailed(event.url)
+                        }
+                    case .piOAuthPromptRequested(let event)
+                        where event.requestId == command.id && event.providerId == provider:
+                        switch event.promptType {
+                        case .select:
+                            guard let browser = event.options?.first(where: { $0.id == "browser" }) else {
+                                throw PickyPiOAuthLoginError.browserLoginUnavailable
                             }
+                            try await client.send(PickyCommandEnvelope(
+                                type: .answerPiOAuthPrompt,
+                                requestId: event.requestId,
+                                value: .string(browser.id),
+                                promptId: event.promptId
+                            ))
+                        case .manualCode:
+                            // Browser OAuth races this prompt against the local callback server.
+                            // Leave it pending so the callback can win; explicit user cancellation
+                            // rejects it through cancelPiOAuth and releases the callback port.
+                            continue
+                        case .text, .secret:
+                            try await client.send(PickyCommandEnvelope(
+                                type: .answerPiOAuthPrompt,
+                                requestId: event.requestId,
+                                promptId: event.promptId,
+                                cancelled: true
+                            ))
                         }
-
-                        try process.run()
-                        processes[provider] = process
-                        if let scriptData = Self.nodeScript.data(using: .utf8) {
-                            stdin.fileHandleForWriting.write(scriptData)
-                        }
-                        stdin.fileHandleForWriting.closeFile()
-                    } catch {
-                        continuation.resume(throwing: error)
+                    case .error(let error) where error.commandId == command.id:
+                        throw PickyPiOAuthLoginError.daemon(error.message)
+                    default:
+                        continue
                     }
                 }
-            },
-            onCancel: { [weak self] in
-                Task { @MainActor in self?.cancel(provider: provider) }
             }
-        )
+            try Task.checkCancellation()
+            throw PickyPiOAuthLoginError.disconnected
+        }
+        defer { responseTask.cancel() }
+
+        try await client.send(command)
+        guard let timeoutNanoseconds else {
+            return try await withTaskCancellationHandler(
+                operation: { try await responseTask.value },
+                onCancel: { responseTask.cancel() }
+            )
+        }
+        return try await withThrowingTaskGroup(of: PickyPiOAuthLoginAuthStatus.self) { group in
+            group.addTask { try await responseTask.value }
+            group.addTask {
+                try await Task.sleep(nanoseconds: timeoutNanoseconds)
+                throw PickyPiOAuthLoginError.timedOut
+            }
+            let status = try await group.next()!
+            group.cancelAll()
+            return status
+        }
     }
 
-    nonisolated static func parseResult(_ output: String) throws -> PickyPiOAuthLoginAuthStatus {
-        let prefix = "PICKY_PI_OAUTH_RESULT "
-        guard let line = output
-            .split(whereSeparator: \.isNewline)
-            .last(where: { $0.hasPrefix(prefix) })
-        else {
-            throw PickyPiOAuthLoginError.missingResult(output)
+    private func reloadAuthenticationAcrossDaemons() async throws {
+        let command = PickyCommandEnvelope(type: .reloadPiAuthentication)
+        let stream = client.events
+        let deliveredCount = try await client.broadcast(command)
+        guard deliveredCount > 0 else { throw PickyPiOAuthLoginError.disconnected }
+
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask { @MainActor in
+                var receivedCount = 0
+                for await clientEvent in stream {
+                    switch clientEvent {
+                    case .protocolEvent(let envelope):
+                        switch envelope.event {
+                        case .piAuthenticationReloaded(let event) where event.requestId == command.id:
+                            receivedCount += 1
+                            if receivedCount >= deliveredCount { return }
+                        case .error(let error) where error.commandId == command.id:
+                            throw PickyPiOAuthLoginError.daemon(error.message)
+                        default:
+                            continue
+                        }
+                    case .disconnected:
+                        throw PickyPiOAuthLoginError.disconnected
+                    case .recoverableError(let message):
+                        throw PickyPiOAuthLoginError.daemon(message)
+                    case .connected:
+                        continue
+                    }
+                }
+                throw PickyPiOAuthLoginError.disconnected
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: self.reloadTimeoutNanoseconds)
+                throw PickyPiOAuthLoginError.timedOut
+            }
+            _ = try await group.next()
+            group.cancelAll()
         }
-        let jsonText = String(line.dropFirst(prefix.count))
-        guard let data = jsonText.data(using: .utf8) else {
-            throw PickyPiOAuthLoginError.missingResult(output)
-        }
-        return try JSONDecoder().decode(PickyPiOAuthLoginAuthStatus.self, from: data)
     }
 
-    private static func nodeInvocation() -> NodeInvocation {
-        let fileManager = FileManager.default
-        let environment = ProcessInfo.processInfo.environment
-
-        if let override = environment["PICKY_NODE_PATH"], fileManager.isExecutableFile(atPath: override) {
-            return NodeInvocation(executableURL: URL(fileURLWithPath: override), argumentPrefix: [])
+    private func cancelRequest(provider: PickyPiOAuthLoginProvider, requestId: String) {
+        guard loginRequestIDs[provider] == requestId else { return }
+        loginRequestIDs[provider] = nil
+        Task { [client] in
+            try? await client.send(PickyCommandEnvelope(type: .cancelPiOAuth, requestId: requestId))
         }
-
-        if let resourceURL = Bundle.main.resourceURL {
-            let bundledNode = resourceURL.appendingPathComponent("agentd-runtime/bin/node").path
-            if fileManager.isExecutableFile(atPath: bundledNode) {
-                return NodeInvocation(executableURL: URL(fileURLWithPath: bundledNode), argumentPrefix: [])
-            }
-        }
-
-        return NodeInvocation(executableURL: URL(fileURLWithPath: "/usr/bin/env"), argumentPrefix: ["node"])
     }
-
-    nonisolated private static let defaultPATHEntries = [
-        "/opt/homebrew/bin",
-        "/usr/local/bin",
-        "/usr/bin",
-        "/bin",
-        "/usr/sbin",
-        "/sbin",
-    ]
-
-    nonisolated static func mergedPATH(existingPATH: String?) -> String {
-        var entries = existingPATH?
-            .split(separator: ":", omittingEmptySubsequences: true)
-            .map(String.init) ?? []
-        for entry in defaultPATHEntries where !entries.contains(entry) {
-            entries.append(entry)
-        }
-        return entries.joined(separator: ":")
-    }
-
-    private static func processEnvironment() -> [String: String] {
-        var environment = ProcessInfo.processInfo.environment
-        environment["PATH"] = mergedPATH(existingPATH: environment["PATH"])
-        if environment["LANG"]?.isEmpty ?? true {
-            environment["LANG"] = "en_US.UTF-8"
-        }
-        if environment["LC_CTYPE"]?.isEmpty ?? true {
-            environment["LC_CTYPE"] = "en_US.UTF-8"
-        }
-        return environment
-    }
-
-    nonisolated static let nodeScript = #"""
-        import { execFileSync, spawn } from "node:child_process";
-        import { existsSync, realpathSync } from "node:fs";
-        import { dirname, join } from "node:path";
-        import { pathToFileURL } from "node:url";
-
-        const providerId = process.argv[2];
-        const mode = process.argv[3] ?? "status";
-
-        function providerModuleCandidates() {
-          const candidates = [];
-          if (process.env.PICKY_PI_AUTH_STORAGE_MODULE) {
-            candidates.push(process.env.PICKY_PI_AUTH_STORAGE_MODULE);
-          }
-          try {
-            const piBin = execFileSync("/usr/bin/env", ["bash", "-lc", "command -v pi"], { encoding: "utf8" }).trim();
-            if (piBin) {
-              const realPiBin = realpathSync(piBin);
-              const distDir = dirname(realPiBin);
-              candidates.push(join(distDir, "core", "auth-storage.js"));
-            }
-          } catch {}
-          candidates.push(
-            "/usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/auth-storage.js",
-            "/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/auth-storage.js"
-          );
-          return [...new Set(candidates)].filter(Boolean);
-        }
-
-        async function loadAuthStorage() {
-          const tried = [];
-          for (const candidate of providerModuleCandidates()) {
-            tried.push(candidate);
-            if (!existsSync(candidate)) continue;
-            try {
-              return await import(pathToFileURL(candidate).href);
-            } catch (error) {
-              console.error(`Failed to import ${candidate}: ${error.message}`);
-            }
-          }
-          throw new Error(`Could not find Pi auth-storage.js. Tried:\n${tried.join("\n")}`);
-        }
-
-        function emitResult(status) {
-          console.log(`PICKY_PI_OAUTH_RESULT ${JSON.stringify(status)}`);
-        }
-
-        function readStatus(authStorage, providerId) {
-          const status = authStorage.getAuthStatus(providerId);
-          return {
-            configured: Boolean(status.configured),
-            source: status.source ?? null,
-            label: status.label ?? null,
-          };
-        }
-
-        function openBrowser(url) {
-          try {
-            const child = spawn("/usr/bin/open", [url], { detached: true, stdio: "ignore" });
-            child.unref();
-          } catch (error) {
-            console.error(`Could not open the browser automatically: ${error.message}`);
-            console.error(url);
-          }
-        }
-
-        const { AuthStorage } = await loadAuthStorage();
-        const authStorage = AuthStorage.create();
-        const provider = authStorage.getOAuthProviders().find((item) => item.id === providerId);
-        if (!provider) {
-          const known = authStorage.getOAuthProviders().map((item) => item.id).join(", ");
-          throw new Error(`Unknown OAuth provider '${providerId}'. Known providers: ${known}`);
-        }
-
-        if (mode === "status") {
-          emitResult(readStatus(authStorage, providerId));
-          process.exit(0);
-        }
-
-        await authStorage.login(providerId, {
-          onAuth: ({ url }) => openBrowser(url),
-          onDeviceCode: ({ verificationUri, userCode }) => {
-            openBrowser(verificationUri);
-            console.error(`Enter device code: ${userCode}`);
-          },
-          onProgress: (message) => {
-            if (message) console.error(message);
-          },
-          onPrompt: async ({ message }) => {
-            throw new Error(`${message}\nAutomatic browser callback did not complete. Run 'pi /login' and choose this provider for the manual paste fallback.`);
-          },
-          onSelect: async ({ options }) => {
-            const browserLogin = options.find((option) => option.id === "browser");
-            if (!browserLogin) {
-              throw new Error("Picky only supports browser-based OAuth login from Settings.");
-            }
-            return browserLogin.id;
-          }
-        });
-
-        authStorage.reload();
-        const nextStatus = readStatus(authStorage, providerId);
-        if (!nextStatus.configured) {
-          throw new Error("OAuth flow ended, but Pi auth storage still does not report configured credentials.");
-        }
-        emitResult(nextStatus);
-        """#
 }
 
 enum PickyPiOAuthLoginError: LocalizedError, Equatable {
-    case helperFailed(String)
-    case missingResult(String)
+    case daemon(String)
+    case disconnected
+    case timedOut
+    case invalidURL(String)
+    case browserOpenFailed(String)
+    case browserLoginUnavailable
 
     var errorDescription: String? {
         switch self {
-        case .helperFailed(let message):
-            return message
-        case .missingResult(let output):
-            let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty
-                ? "Pi OAuth helper did not return a status."
-                : "Pi OAuth helper did not return a status: \(trimmed)"
+        case .daemon(let message): message
+        case .disconnected: "picky-agentd disconnected during Pi OAuth."
+        case .timedOut: "Timed out waiting for picky-agentd OAuth response."
+        case .invalidURL(let value): "Pi OAuth returned an invalid URL: \(value)"
+        case .browserOpenFailed(let value): "Could not open the Pi OAuth URL: \(value)"
+        case .browserLoginUnavailable: "This Pi provider does not offer browser-based OAuth login."
         }
     }
 }

@@ -1,6 +1,6 @@
 {
   "id": "event-session-todo-001",
-  "protocolVersion": "2026-07-19",
+  "protocolVersion": "2026-07-23",
   "timestamp": "2026-07-14T01:00:00.000Z",
   "type": "sessionTodoStateUpdated",
   "sessionId": "session-001",

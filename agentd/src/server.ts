@@ -15,6 +15,7 @@ import { logAgentd } from "./local-log.js";
 import { EdgeTTSServiceError } from "./edge-tts-service.js";
 import type { EdgeTTSService } from "./edge-tts-service.js";
 import { CancellablePackageProcessController, installCancellablePackageCommands } from "./application/package-process-controller.js";
+import type { PiOAuthHandling } from "./application/pi-oauth-service.js";
 
 export interface PackageManager {
   installAndPersist(source: string): Promise<void>;
@@ -127,6 +128,8 @@ export interface AgentdServerOptions {
   setDefaultCwd?: (cwd: string) => void;
   /** Primary-only. Child daemons intentionally omit the local Edge TTS routes. */
   edgeTTS?: EdgeTTSService;
+  /** Primary-only provider authentication coordinator. */
+  piOAuth?: PiOAuthHandling;
 }
 
 type ParsedCommand = ReturnType<typeof parseCommand>;
@@ -422,7 +425,8 @@ export class AgentdServer {
           this.pendingDockGroupsRequests.delete(requestId);
         }
       }
-      logAgentd("ws disconnected", { clients: this.clients.size });
+      const cancelledOAuthLogins = this.options.piOAuth?.cancelOwnedBy(ws) ?? 0;
+      logAgentd("ws disconnected", { clients: this.clients.size, cancelledOAuthLogins });
     });
     ws.on("message", (data) => void this.handleMessage(ws, data.toString()));
     this.send(ws, { type: "hello", serverName: "picky-agentd", supportedProtocolVersions: [PROTOCOL_VERSION] });
@@ -456,6 +460,61 @@ export class AgentdServer {
       listSessions: (cmd) => this.send(ws, { type: "sessionSnapshot", sessions: compactSessionsForSnapshot(this.options.supervisor.list()).map(protocolSession) }),
       listMainMessages: (cmd) => this.send(ws, { type: "mainMessagesSnapshot", messages: this.options.supervisor.listMainMessages() }),
       listMainAgentModels: async (cmd) => this.send(ws, { type: "mainAgentModelsSnapshot", models: await this.options.supervisor.listMainAgentModels() }),
+      getPiOAuthStatus: async (cmd) => {
+        const status = await this.requirePiOAuth().status(cmd.providerId);
+        this.send(ws, { type: "piOAuthStatus", requestId: cmd.id, providerId: cmd.providerId, ...status });
+      },
+      signInPiOAuth: async (cmd) => {
+        const status = await this.requirePiOAuth().login({
+          requestId: cmd.id,
+          providerId: cmd.providerId,
+          owner: ws,
+          onNotify: (event) => {
+            if (event.type === "auth_url") {
+              this.send(ws, {
+                type: "piOAuthUrlRequested",
+                requestId: cmd.id,
+                providerId: cmd.providerId,
+                url: event.url,
+                instructions: event.instructions,
+              });
+            } else if (event.type === "device_code") {
+              this.send(ws, {
+                type: "piOAuthUrlRequested",
+                requestId: cmd.id,
+                providerId: cmd.providerId,
+                url: event.verificationUri,
+                userCode: event.userCode,
+              });
+            } else {
+              logAgentd("pi oauth progress", { requestId: cmd.id, providerId: cmd.providerId, eventType: event.type });
+            }
+          },
+          onPrompt: (promptId, prompt) => this.send(ws, {
+            type: "piOAuthPromptRequested",
+            requestId: cmd.id,
+            providerId: cmd.providerId,
+            promptId,
+            promptType: prompt.type,
+            message: prompt.message,
+            ...("placeholder" in prompt && prompt.placeholder ? { placeholder: prompt.placeholder } : {}),
+            ...(prompt.type === "select" ? { options: [...prompt.options] } : {}),
+          }),
+        });
+        this.send(ws, { type: "piOAuthStatus", requestId: cmd.id, providerId: cmd.providerId, ...status });
+      },
+      answerPiOAuthPrompt: (cmd) => this.requirePiOAuth().answerPrompt({
+        owner: ws,
+        requestId: cmd.requestId,
+        promptId: cmd.promptId,
+        value: cmd.value,
+        cancelled: cmd.cancelled,
+      }),
+      cancelPiOAuth: (cmd) => { this.requirePiOAuth().cancel(ws, cmd.requestId); },
+      reloadPiAuthentication: async (cmd) => {
+        const reloadedHandleCount = await this.options.supervisor.reloadPiAuthentication();
+        this.send(ws, { type: "piAuthenticationReloaded", requestId: cmd.id, reloadedHandleCount });
+      },
       setDefaultCwd: (cmd) => this.options.setDefaultCwd?.(cmd.defaultCwd.trim()),
       setMainAgentModel: (cmd) => this.options.supervisor.setMainAgentModel(cmd.mainAgentModelPattern),
       setDisabledBuiltinTools: (cmd) => this.options.supervisor.setDisabledBuiltinTools(cmd.disabledBuiltinTools),
@@ -594,6 +653,11 @@ export class AgentdServer {
 
     const handler = handlers[command.type] as (command: ParsedCommand) => unknown;
     await handler(command);
+  }
+
+  private requirePiOAuth(): PiOAuthHandling {
+    if (!this.options.piOAuth) throw new Error("Pi OAuth is available only on the primary daemon");
+    return this.options.piOAuth;
   }
 
   private async runPackageOperation(
@@ -1142,6 +1206,13 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, entryId: command.entryId };
     case "answerExtensionUi":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, requestId: command.requestId };
+    case "getPiOAuthStatus":
+    case "signInPiOAuth":
+      return { commandId: command.id, type: command.type, providerId: command.providerId };
+    case "answerPiOAuthPrompt":
+      return { commandId: command.id, type: command.type, requestId: command.requestId, promptId: command.promptId, cancelled: command.cancelled ? 1 : 0, valueChars: command.value?.length };
+    case "cancelPiOAuth":
+      return { commandId: command.id, type: command.type, requestId: command.requestId };
     case "installPackage":
     case "removePackage":
       return { commandId: command.id, type: command.type, sourceChars: command.source.length };
@@ -1160,6 +1231,7 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
     case "resetMainAgent":
     case "abortMainAgent":
     case "reloadPlugins":
+    case "reloadPiAuthentication":
       return { commandId: command.id, type: command.type };
     case "setMainAgentThinkingLevel":
       return { commandId: command.id, type: command.type, mainAgentThinkingLevel: command.mainAgentThinkingLevel };
@@ -1189,6 +1261,14 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, role: event.message.role, textChars: event.message.text.length };
     case "mainAgentModelsSnapshot":
       return { eventId: event.id, type: event.type, models: event.models.length };
+    case "piOAuthStatus":
+      return { eventId: event.id, type: event.type, requestId: event.requestId, providerId: event.providerId, configured: event.configured ? 1 : 0 };
+    case "piOAuthUrlRequested":
+      return { eventId: event.id, type: event.type, requestId: event.requestId, providerId: event.providerId, hasUserCode: event.userCode ? 1 : 0 };
+    case "piOAuthPromptRequested":
+      return { eventId: event.id, type: event.type, requestId: event.requestId, providerId: event.providerId, promptId: event.promptId, promptType: event.promptType, options: event.options?.length };
+    case "piAuthenticationReloaded":
+      return { eventId: event.id, type: event.type, requestId: event.requestId, reloadedHandles: event.reloadedHandleCount };
     case "mainAgentSessionInfoUpdated":
       return { eventId: event.id, type: event.type, hasSessionFile: event.sessionFilePath ? 1 : 0, hasCwd: event.cwd ? 1 : 0 };
     case "sessionSnapshot":

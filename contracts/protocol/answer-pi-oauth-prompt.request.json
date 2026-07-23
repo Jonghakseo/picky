@@ -1,0 +1,8 @@
+{
+  "id": "cmd-oauth-answer-001",
+  "protocolVersion": "2026-07-23",
+  "type": "answerPiOAuthPrompt",
+  "requestId": "cmd-oauth-login-001",
+  "promptId": "cmd-oauth-login-001-prompt-1",
+  "value": "browser"
+}

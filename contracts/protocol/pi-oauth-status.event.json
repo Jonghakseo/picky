@@ -1,0 +1,11 @@
+{
+  "id": "event-oauth-status-001",
+  "protocolVersion": "2026-07-23",
+  "timestamp": "2026-07-23T00:00:00.000Z",
+  "type": "piOAuthStatus",
+  "requestId": "cmd-oauth-login-001",
+  "providerId": "anthropic",
+  "configured": true,
+  "source": "stored",
+  "label": "OAuth"
+}

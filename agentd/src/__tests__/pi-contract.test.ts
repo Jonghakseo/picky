@@ -33,6 +33,7 @@ const HARD_PACKAGE_EXPORTS = [
   "createAgentSessionRuntime",
   "getAgentDir",
   "SessionManager",
+  "ModelRuntime",
   // Tool definition helper used by every application/*-tool.ts.
   "defineTool",
 ] as const;
@@ -107,6 +108,17 @@ describe("pi-coding-agent contract", () => {
     if (!runner || typeof runner.emitUserBash !== "function") {
       console.warn("[pi-contract] extensionRunner.emitUserBash missing in installed pi; user-bash hooks fall back to direct executeBash.");
     }
+  });
+
+  it("ModelRuntime keeps the reloadable credential-store bridge required for live OAuth updates", async () => {
+    const agentDir = await mkdtemp(join(tmpdir(), "picky-pi-contract-auth-"));
+    const modelRuntime = await pi.ModelRuntime.create({
+      authPath: join(agentDir, "auth.json"),
+      modelsPath: join(agentDir, "models.json"),
+      allowModelNetwork: false,
+    });
+    const credentialStore = (modelRuntime as unknown as { credentials?: { store?: { reload?: unknown } } }).credentials?.store;
+    expect(typeof credentialStore?.reload, "ModelRuntime.credentials.store.reload must stay available until Pi exposes a public live credential reload API").toBe("function");
   });
 
   it("AgentSession.state exposes the message array shape pi-sdk-runtime mutates", async () => {

@@ -1,6 +1,6 @@
 {
   "id": "event-autocomplete-suggestions",
-  "protocolVersion": "2026-07-19",
+  "protocolVersion": "2026-07-23",
   "timestamp": "2026-07-19T00:00:00.000Z",
   "type": "autocompleteSuggestionsSnapshot",
   "sessionId": "session-1",

@@ -1,6 +1,6 @@
 {
   "id": "event-visual-segment-committed-001",
-  "protocolVersion": "2026-07-19",
+  "protocolVersion": "2026-07-23",
   "timestamp": "2026-07-19T00:00:00.200Z",
   "type": "mainVisualNarrationSegmentCommitted",
   "identity": {

@@ -1,6 +1,6 @@
 {
   "id": "cmd-pin-pickle-session-001",
-  "protocolVersion": "2026-07-19",
+  "protocolVersion": "2026-07-23",
   "type": "pinPickleSession",
   "title": "Pinned Pi session",
   "context": {

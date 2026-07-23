@@ -1,0 +1,6 @@
+{
+  "id": "cmd-oauth-cancel-001",
+  "protocolVersion": "2026-07-23",
+  "type": "cancelPiOAuth",
+  "requestId": "cmd-oauth-login-001"
+}

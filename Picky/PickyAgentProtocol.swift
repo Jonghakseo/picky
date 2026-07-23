@@ -7,7 +7,7 @@
 
 import Foundation
 
-let pickyAgentProtocolVersion = "2026-07-19"
+let pickyAgentProtocolVersion = "2026-07-23"
 
 /// Identifiers for Picky's built-in tools exposed to the main agent.
 /// These names mirror `name:` on each `defineTool(...)` call in
@@ -55,6 +55,9 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var source: String?
     var requestId: String?
     var value: JSONValue?
+    var providerId: PickyPiOAuthLoginProvider?
+    var promptId: String?
+    var cancelled: Bool?
     var artifactId: String?
     var title: String?
     var instructions: String?
@@ -101,6 +104,9 @@ struct PickyCommandEnvelope: Codable, Equatable {
         source: String? = nil,
         requestId: String? = nil,
         value: JSONValue? = nil,
+        providerId: PickyPiOAuthLoginProvider? = nil,
+        promptId: String? = nil,
+        cancelled: Bool? = nil,
         artifactId: String? = nil,
         title: String? = nil,
         instructions: String? = nil,
@@ -143,6 +149,9 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.source = source
         self.requestId = requestId
         self.value = value
+        self.providerId = providerId
+        self.promptId = promptId
+        self.cancelled = cancelled
         self.artifactId = artifactId
         self.title = title
         self.instructions = instructions
@@ -209,6 +218,11 @@ enum PickyCommandType: String, Codable, Equatable {
     case listSessions
     case listMainMessages
     case listMainAgentModels
+    case getPiOAuthStatus
+    case signInPiOAuth
+    case answerPiOAuthPrompt
+    case cancelPiOAuth
+    case reloadPiAuthentication
     case setDefaultCwd
     case setMainAgentModel
     case resetMainAgent
@@ -274,6 +288,10 @@ enum PickyEvent: Equatable {
     case mainMessageAppended(PickyMainAgentMessage)
     case mainAgentSessionInfoUpdated(sessionFilePath: String?, cwd: String?)
     case mainAgentModelsSnapshot([PickyMainAgentModelOption])
+    case piOAuthStatus(PickyPiOAuthStatusEvent)
+    case piOAuthUrlRequested(PickyPiOAuthUrlRequestEvent)
+    case piOAuthPromptRequested(PickyPiOAuthPromptRequestEvent)
+    case piAuthenticationReloaded(PickyPiAuthenticationReloadedEvent)
     case sessionSnapshot(PickySessionSnapshot)
     case sessionUpdated(PickyAgentSession)
     /// Authoritative archive-flag change signaled by agentd. Picky's session
@@ -359,6 +377,10 @@ enum PickyEvent: Equatable {
         case "mainAgentModelsSnapshot":
             let payload = try PickyMainAgentModelsSnapshotPayload(from: decoder)
             return .mainAgentModelsSnapshot(payload.models)
+        case "piOAuthStatus": return .piOAuthStatus(try PickyPiOAuthStatusEvent(from: decoder))
+        case "piOAuthUrlRequested": return .piOAuthUrlRequested(try PickyPiOAuthUrlRequestEvent(from: decoder))
+        case "piOAuthPromptRequested": return .piOAuthPromptRequested(try PickyPiOAuthPromptRequestEvent(from: decoder))
+        case "piAuthenticationReloaded": return .piAuthenticationReloaded(try PickyPiAuthenticationReloadedEvent(from: decoder))
         case "error": return .error(try PickyErrorEvent(from: decoder))
         default: return nil
         }
@@ -477,6 +499,55 @@ private struct PickyMainMessagesSnapshotPayload: Decodable { let messages: [Pick
 private struct PickyMainMessageAppendedPayload: Decodable { let message: PickyMainAgentMessage }
 private struct PickyMainAgentSessionInfoUpdatedPayload: Decodable { let sessionFilePath: String?; let cwd: String? }
 private struct PickyMainAgentModelsSnapshotPayload: Decodable { let models: [PickyMainAgentModelOption] }
+
+struct PickyPiOAuthStatusEvent: Decodable, Equatable {
+    let requestId: String
+    let providerId: PickyPiOAuthLoginProvider
+    let configured: Bool
+    let source: String?
+    let label: String?
+
+    var authStatus: PickyPiOAuthLoginAuthStatus {
+        PickyPiOAuthLoginAuthStatus(configured: configured, source: source, label: label)
+    }
+}
+
+struct PickyPiOAuthUrlRequestEvent: Decodable, Equatable {
+    let requestId: String
+    let providerId: PickyPiOAuthLoginProvider
+    let url: String
+    let instructions: String?
+    let userCode: String?
+}
+
+enum PickyPiOAuthPromptType: String, Decodable, Equatable {
+    case text
+    case secret
+    case select
+    case manualCode = "manual_code"
+}
+
+struct PickyPiOAuthPromptOption: Decodable, Equatable {
+    let id: String
+    let label: String
+    let description: String?
+}
+
+struct PickyPiOAuthPromptRequestEvent: Decodable, Equatable {
+    let requestId: String
+    let providerId: PickyPiOAuthLoginProvider
+    let promptId: String
+    let promptType: PickyPiOAuthPromptType
+    let message: String
+    let placeholder: String?
+    let options: [PickyPiOAuthPromptOption]?
+}
+
+struct PickyPiAuthenticationReloadedEvent: Decodable, Equatable {
+    let requestId: String
+    let reloadedHandleCount: Int
+}
+
 private struct PickyMainTurnSettledPayload: Decodable { let contextId: String }
 /// A daemon session snapshot plus local decode completeness metadata.
 ///

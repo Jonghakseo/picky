@@ -1795,7 +1795,7 @@ private func waitForSession(
 
 private func sessionUpdatedJSON(id: String = "session-1", status: String = "running") -> String {
     """
-    {"id":"evt-\(id)","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:00.000Z","type":"sessionUpdated","session":{"id":"\(id)","title":"Test session","status":"\(status)","cwd":"/tmp/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"summary","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}}
+    {"id":"evt-\(id)","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:00.000Z","type":"sessionUpdated","session":{"id":"\(id)","title":"Test session","status":"\(status)","cwd":"/tmp/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"summary","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}}
     """
 }
 

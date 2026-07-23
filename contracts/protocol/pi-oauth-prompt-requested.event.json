@@ -1,0 +1,15 @@
+{
+  "id": "event-oauth-prompt-001",
+  "protocolVersion": "2026-07-23",
+  "timestamp": "2026-07-23T00:00:00.000Z",
+  "type": "piOAuthPromptRequested",
+  "requestId": "cmd-oauth-login-001",
+  "providerId": "openai-codex",
+  "promptId": "cmd-oauth-login-001-prompt-1",
+  "promptType": "select",
+  "message": "Select OpenAI Codex login method:",
+  "options": [
+    { "id": "browser", "label": "Browser login" },
+    { "id": "device", "label": "Device code login" }
+  ]
+}

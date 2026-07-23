@@ -43,7 +43,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-snapshot-backtick-url",
-          "protocolVersion":"2026-07-19",
+          "protocolVersion":"2026-07-23",
           "timestamp":"2026-05-01T00:00:01.000Z",
           "type":"sessionSnapshot",
           "sessions":[
@@ -97,7 +97,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-snapshot-partial",
-          "protocolVersion":"2026-07-19",
+          "protocolVersion":"2026-07-23",
           "timestamp":"2026-05-01T00:00:01.000Z",
           "type":"sessionSnapshot",
           "sessions":[
@@ -123,7 +123,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-future-001",
-          "protocolVersion":"2026-07-19",
+          "protocolVersion":"2026-07-23",
           "timestamp":"2026-05-01T00:00:00.000Z",
           "type":"sessionLogAppended",
           "sessionId":"session-001",
@@ -140,7 +140,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-future-002",
-          "protocolVersion":"2026-07-19",
+          "protocolVersion":"2026-07-23",
           "timestamp":"2026-05-01T00:00:00.000Z",
           "type":"newFutureEvent",
           "details":"kept recoverable"
@@ -155,7 +155,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-external-accepted-001",
-          "protocolVersion":"2026-07-19",
+          "protocolVersion":"2026-07-23",
           "timestamp":"2026-05-01T00:00:00.000Z",
           "type":"externalEntryAccepted",
           "commandId":"cli-1",
@@ -311,7 +311,7 @@ struct ProtocolContractTests {
         let queueJSON = """
         {
           "id":"event-queue",
-          "protocolVersion":"2026-07-19",
+          "protocolVersion":"2026-07-23",
           "timestamp":"2026-07-19T00:00:00.000Z",
           "type":"sessionQueueUpdated",
           "sessionId":"session-queue",
@@ -325,7 +325,7 @@ struct ProtocolContractTests {
         let terminalJSON = """
         {
           "id":"event-terminal-sync",
-          "protocolVersion":"2026-07-19",
+          "protocolVersion":"2026-07-23",
           "timestamp":"2026-07-19T00:00:00.000Z",
           "type":"terminalSessionSyncOutcome",
           "sessionId":"session-terminal",
@@ -388,7 +388,7 @@ struct ProtocolContractTests {
         let clearJSON = """
         {
           "id":"event-session-todo-clear",
-          "protocolVersion":"2026-07-19",
+          "protocolVersion":"2026-07-23",
           "timestamp":"2026-07-14T01:01:00.000Z",
           "type":"sessionTodoStateUpdated",
           "sessionId":"session-001",
@@ -412,7 +412,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-quick-001",
-          "protocolVersion":"2026-07-19",
+          "protocolVersion":"2026-07-23",
           "timestamp":"2026-05-01T00:00:00.000Z",
           "type":"quickReply",
           "contextId":"context-1",
@@ -428,7 +428,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-quick-002",
-          "protocolVersion":"2026-07-19",
+          "protocolVersion":"2026-07-23",
           "timestamp":"2026-05-01T00:00:00.000Z",
           "type":"quickReply",
           "contextId":"session-1",
@@ -453,7 +453,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-quick-003",
-          "protocolVersion":"2026-07-19",
+          "protocolVersion":"2026-07-23",
           "timestamp":"2026-05-01T00:00:00.000Z",
           "type":"quickReply",
           "contextId":"context-1",
@@ -526,7 +526,7 @@ struct ProtocolContractTests {
         let snapshotJSON = """
         {
           "id":"event-main-messages-001",
-          "protocolVersion":"2026-07-19",
+          "protocolVersion":"2026-07-23",
           "timestamp":"2026-05-01T00:00:00.000Z",
           "type":"mainMessagesSnapshot",
           "messages":[{"role":"user","text":"안녕","createdAt":"2026-05-01T00:00:00.000Z"}]
@@ -535,7 +535,7 @@ struct ProtocolContractTests {
         let appendedJSON = """
         {
           "id":"event-main-message-001",
-          "protocolVersion":"2026-07-19",
+          "protocolVersion":"2026-07-23",
           "timestamp":"2026-05-01T00:00:01.000Z",
           "type":"mainMessageAppended",
           "message":{"role":"assistant","text":"바로 답변","createdAt":"2026-05-01T00:00:01.000Z"}
@@ -563,7 +563,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-notify-message",
-          "protocolVersion":"2026-07-19",
+          "protocolVersion":"2026-07-23",
           "timestamp":"2026-05-05T00:00:00.000Z",
           "type":"sessionMessageAppended",
           "sessionId":"session-1",
@@ -679,7 +679,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-legacy-session",
-          "protocolVersion":"2026-07-19",
+          "protocolVersion":"2026-07-23",
           "timestamp":"2026-05-05T00:00:00.000Z",
           "type":"sessionUpdated",
           "session":{
@@ -715,7 +715,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-session-file",
-          "protocolVersion":"2026-07-19",
+          "protocolVersion":"2026-07-23",
           "timestamp":"2026-05-05T00:00:00.000Z",
           "type":"sessionUpdated",
           "session":{
@@ -745,7 +745,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-message-appended",
-          "protocolVersion":"2026-07-19",
+          "protocolVersion":"2026-07-23",
           "timestamp":"2026-05-05T00:00:00.000Z",
           "type":"sessionMessageAppended",
           "sessionId":"session-001",
@@ -779,7 +779,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-activity-message",
-          "protocolVersion":"2026-07-19",
+          "protocolVersion":"2026-07-23",
           "timestamp":"2026-05-05T00:00:00.000Z",
           "type":"sessionMessageAppended",
           "sessionId":"session-001",
@@ -807,7 +807,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-queue-updated",
-          "protocolVersion":"2026-07-19",
+          "protocolVersion":"2026-07-23",
           "timestamp":"2026-05-05T00:00:00.000Z",
           "type":"sessionQueueUpdated",
           "sessionId":"session-001",
@@ -846,7 +846,7 @@ private func pointerOverlayEventData(extraRequestField: String = "") -> Data {
     """
     {
       "id":"event-pointer-legacy",
-      "protocolVersion":"2026-07-19",
+      "protocolVersion":"2026-07-23",
       "timestamp":"2026-07-19T00:00:00.000Z",
       "type":"pointerOverlayRequested",
       "request":{
@@ -879,7 +879,7 @@ private func annotationOverlayEventData(annotation: String) -> Data {
     """
     {
       "id":"event-annotation-legacy",
-      "protocolVersion":"2026-07-19",
+      "protocolVersion":"2026-07-23",
       "timestamp":"2026-07-19T00:00:00.000Z",
       "type":"annotationOverlayRequested",
       "request":{

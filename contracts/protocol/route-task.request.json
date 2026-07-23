@@ -1,6 +1,6 @@
 {
   "id": "cmd-route-001",
-  "protocolVersion": "2026-07-19",
+  "protocolVersion": "2026-07-23",
   "type": "routeTask",
   "context": {
     "id": "context-route-001",

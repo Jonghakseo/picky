@@ -1,0 +1,10 @@
+{
+  "id": "event-oauth-url-001",
+  "protocolVersion": "2026-07-23",
+  "timestamp": "2026-07-23T00:00:00.000Z",
+  "type": "piOAuthUrlRequested",
+  "requestId": "cmd-oauth-login-001",
+  "providerId": "openai-codex",
+  "url": "https://auth.openai.com/oauth/authorize",
+  "instructions": "Complete login in your browser."
+}

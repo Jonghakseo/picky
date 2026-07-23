@@ -14,6 +14,7 @@ import { ThinkingLevelSchema, type ThinkingLevel } from "./protocol.js";
 import type { AgentRuntime } from "./runtime/types.js";
 import { logAgentd } from "./local-log.js";
 import { EdgeTTSService } from "./edge-tts-service.js";
+import { PiOAuthService } from "./application/pi-oauth-service.js";
 
 export type AgentdMode = "primary" | "child";
 
@@ -138,16 +139,18 @@ function parseThinkingLevel(value: string | undefined, options: { label: string;
   return options.fallback;
 }
 
-export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOverrides = {}): ComposeResult {
-  let cwdStabilization: ProcessCwdStabilizerResult | undefined;
-  if (config.mode === "child" && config.sessionCwd) {
-    const stabilize = overrides.stabilizeCwd ?? stabilizeProcessCwd;
-    cwdStabilization = stabilize(config.sessionCwd);
-    logAgentd("child cwd stabilized", { sessionId: config.sessionId, cwd: cwdStabilization.cwd, ok: cwdStabilization.ok ? 1 : 0 });
-    if (!cwdStabilization.ok) {
-      throw new Error(`Failed to stabilize child cwd ${config.sessionCwd}: ${describeStabilizationError(cwdStabilization.error)}`);
-    }
+function stabilizeChildCwd(config: AgentdConfig, override?: (targetDir: string) => ProcessCwdStabilizerResult): ProcessCwdStabilizerResult | undefined {
+  if (config.mode !== "child" || !config.sessionCwd) return undefined;
+  const cwdStabilization = (override ?? stabilizeProcessCwd)(config.sessionCwd);
+  logAgentd("child cwd stabilized", { sessionId: config.sessionId, cwd: cwdStabilization.cwd, ok: cwdStabilization.ok ? 1 : 0 });
+  if (!cwdStabilization.ok) {
+    throw new Error(`Failed to stabilize child cwd ${config.sessionCwd}: ${describeStabilizationError(cwdStabilization.error)}`);
   }
+  return cwdStabilization;
+}
+
+export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOverrides = {}): ComposeResult {
+  const cwdStabilization = stabilizeChildCwd(config, overrides.stabilizeCwd);
 
   const currentDefaultCwd = { value: config.defaultCwd };
   const supervisorRef: { current?: SessionSupervisor } = {};
@@ -210,6 +213,7 @@ export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOv
     // never expose this route because it is not the app-owned daemon whose
     // connection token is published to the Settings client.
     edgeTTS: config.mode === "primary" ? new EdgeTTSService() : undefined,
+    piOAuth: config.mode === "primary" ? new PiOAuthService() : undefined,
   });
   appPickleHandoffRef.current = (request) => server.requestPickleHandoffFromApp(request);
   appPickleHandoffRef.bridge = (request) => server.requestPickleBridgeFromApp(request);

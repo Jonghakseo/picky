@@ -1,5 +1,5 @@
 {
   "id": "cmd-reset-picky-001",
-  "protocolVersion": "2026-07-19",
+  "protocolVersion": "2026-07-23",
   "type": "resetMainAgent"
 }

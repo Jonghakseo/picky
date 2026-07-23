@@ -120,6 +120,8 @@ export interface RuntimeSessionHandle {
   interrupt?(prompt: BuiltPrompt): Promise<void>;
   steer(prompt: BuiltPrompt): Promise<RuntimeSteerResult>;
   abort(): Promise<void>;
+  /** Reload credentials changed by another local Pi/Picky process without replacing the session. */
+  reloadAuthentication?(): Promise<void>;
   /** Mirrors Pi TUI `/compact`: aborts an active turn first, then compacts the session. */
   compact?(customInstructions?: string): Promise<void>;
   newSession?(): Promise<{ cancelled: boolean }>;

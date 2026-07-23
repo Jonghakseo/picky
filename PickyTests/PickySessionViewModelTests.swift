@@ -324,7 +324,7 @@ struct PickySessionViewModelTests {
         #expect(viewModel.isLoadingInitialSessionSnapshot)
 
         viewModel.apply(.protocolEvent(.fixture(eventJSON: #"""
-        {"id":"snapshot-empty","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:10.000Z","type":"sessionSnapshot","sessions":[]}
+        {"id":"snapshot-empty","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:10.000Z","type":"sessionSnapshot","sessions":[]}
         """#)))
 
         #expect(viewModel.isLoadingInitialSessionSnapshot == false)
@@ -654,7 +654,7 @@ struct PickySessionViewModelTests {
         // Once an (empty) snapshot lands the loader flips off via the same
         // reducer path that the unit tests verify directly.
         client.emit(.protocolEvent(.fixture(eventJSON: #"""
-        {"id":"snapshot-empty","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:10.000Z","type":"sessionSnapshot","sessions":[]}
+        {"id":"snapshot-empty","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:10.000Z","type":"sessionSnapshot","sessions":[]}
         """#)))
         try await wait { viewModel.isLoadingInitialSessionSnapshot == false }
         #expect(viewModel.isLoadingInitialSessionSnapshot == false)
@@ -945,7 +945,7 @@ struct PickySessionViewModelTests {
         let validA = #"{"id":"session-a","title":"A refreshed","status":"completed","cwd":"/tmp/a","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:10.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}"#
         let malformedB = #"{"id":"session-b","title":"B malformed","status":42,"cwd":"/tmp/b","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:10.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}"#
         let validC = #"{"id":"session-c","title":"C refreshed","status":"completed","cwd":"/tmp/c","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:10.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}"#
-        let partialSnapshot = #"{"id":"partial-snapshot","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:10.000Z","type":"sessionSnapshot","sessions":["#
+        let partialSnapshot = #"{"id":"partial-snapshot","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:10.000Z","type":"sessionSnapshot","sessions":["#
             + validA + "," + malformedB + "," + validC + "]}"
 
         viewModel.apply(.protocolEvent(.fixture(eventJSON: partialSnapshot)))
@@ -958,7 +958,7 @@ struct PickySessionViewModelTests {
         #expect(draftStore.drafts["session-b"] == "keep this draft")
         #expect(draftStore.prunedKnownSessionIDs == nil)
 
-        let completeSnapshot = #"{"id":"complete-snapshot","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:20.000Z","type":"sessionSnapshot","sessions":["#
+        let completeSnapshot = #"{"id":"complete-snapshot","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:20.000Z","type":"sessionSnapshot","sessions":["#
             + validA + "," + validC + "]}"
         viewModel.apply(.protocolEvent(.fixture(eventJSON: completeSnapshot)))
 
@@ -984,7 +984,7 @@ struct PickySessionViewModelTests {
         let validA = #"{"id":"session-a","title":"A refreshed","status":"completed","cwd":"/tmp/a","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:10.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}"#
         let malformedB = #"{"id":"session-b","title":"B malformed","status":42,"cwd":"/tmp/b","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:10.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}"#
         let validC = #"{"id":"session-c","title":"C refreshed","status":"completed","cwd":"/tmp/c","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:10.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}"#
-        let partialSnapshot = #"{"id":"partial-snapshot","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:10.000Z","type":"sessionSnapshot","sessions":["#
+        let partialSnapshot = #"{"id":"partial-snapshot","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:10.000Z","type":"sessionSnapshot","sessions":["#
             + validA + "," + malformedB + "," + validC + "]}"
         viewModel.apply(.protocolEvent(.fixture(eventJSON: partialSnapshot)))
 
@@ -2758,7 +2758,7 @@ struct PickySessionViewModelTests {
         #expect(viewModel.activeVoiceFollowUpSessionID == "pickle-voice")
 
         client.emit(.protocolEvent(.fixture(eventJSON: """
-        {"id":"snapshot-empty","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:10.000Z","type":"sessionSnapshot","sessions":[]}
+        {"id":"snapshot-empty","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:10.000Z","type":"sessionSnapshot","sessions":[]}
         """)))
         try await settle()
 
@@ -2843,7 +2843,7 @@ struct PickySessionViewModelTests {
         )
 
         let emptySnapshot = """
-        {"id":"snapshot-empty","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:00.000Z","type":"sessionSnapshot","sessions":[]}
+        {"id":"snapshot-empty","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:00.000Z","type":"sessionSnapshot","sessions":[]}
         """
         viewModel.apply(.protocolEvent(.fixture(eventJSON: emptySnapshot)))
 
@@ -3182,7 +3182,7 @@ struct PickySessionViewModelTests {
         // delivers the initial state after connect, where manualOrder must be
         // applied wholesale before any per-id pruning would drop entries.
         let snapshotJSON = """
-        {"id":"snapshot-multi","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:30.000Z","type":"sessionSnapshot","sessions":[
+        {"id":"snapshot-multi","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:30.000Z","type":"sessionSnapshot","sessions":[
             {"id":"a","title":"A","status":"running","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"a","logs":[],"tools":[],"artifacts":[],"changedFiles":[]},
             {"id":"b","title":"B","status":"running","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:10.000Z","updatedAt":"2026-05-01T00:00:10.000Z","lastSummary":"b","logs":[],"tools":[],"artifacts":[],"changedFiles":[]},
             {"id":"c","title":"C","status":"running","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:20.000Z","updatedAt":"2026-05-01T00:00:20.000Z","lastSummary":"c","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}
@@ -3209,7 +3209,7 @@ struct PickySessionViewModelTests {
             dockLayoutStore: dockLayoutStore
         )
         let snapshotJSON = """
-        {"id":"snapshot-dock-layout","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:30.000Z","type":"sessionSnapshot","sessions":[
+        {"id":"snapshot-dock-layout","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:30.000Z","type":"sessionSnapshot","sessions":[
             {"id":"a","title":"A","status":"running","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"a","logs":[],"tools":[],"artifacts":[],"changedFiles":[]},
             {"id":"b","title":"B","status":"running","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:10.000Z","updatedAt":"2026-05-01T00:00:10.000Z","lastSummary":"b","logs":[],"tools":[],"artifacts":[],"changedFiles":[]},
             {"id":"c","title":"C","status":"running","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:20.000Z","updatedAt":"2026-05-01T00:00:20.000Z","lastSummary":"c","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}
@@ -3966,7 +3966,7 @@ struct PickySessionViewModelTests {
         )
 
         viewModel.apply(.protocolEvent(.fixture(eventJSON: """
-        {"id":"snapshot-detached","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:00.000Z","type":"sessionSnapshot","sessions":[{"id":"lost-runtime","title":"Old Pickle","status":"blocked","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"Runtime not attached after daemon restart; start a new task or resume support is required","logs":[],"tools":[],"artifacts":[],"changedFiles":[]},{"id":"manual-completed","title":"Manual archive","status":"completed","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"Done","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}]}
+        {"id":"snapshot-detached","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:00.000Z","type":"sessionSnapshot","sessions":[{"id":"lost-runtime","title":"Old Pickle","status":"blocked","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"Runtime not attached after daemon restart; start a new task or resume support is required","logs":[],"tools":[],"artifacts":[],"changedFiles":[]},{"id":"manual-completed","title":"Manual archive","status":"completed","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"Done","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}]}
         """)))
 
         #expect(viewModel.sessions.map(\.id) == ["lost-runtime"])
@@ -3978,7 +3978,7 @@ struct PickySessionViewModelTests {
         #expect(archiveStore.manuallyArchivedSessionIDs == ["lost-runtime", "manual-completed"])
 
         viewModel.apply(.protocolEvent(.fixture(eventJSON: """
-        {"id":"snapshot-detached-2","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:01.000Z","type":"sessionSnapshot","sessions":[{"id":"lost-runtime","title":"Old Pickle","status":"blocked","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:01.000Z","lastSummary":"Runtime not attached after daemon restart; start a new task or resume support is required","logs":[],"tools":[],"artifacts":[],"changedFiles":[]},{"id":"manual-completed","title":"Manual archive","status":"completed","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"Done","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}]}
+        {"id":"snapshot-detached-2","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:01.000Z","type":"sessionSnapshot","sessions":[{"id":"lost-runtime","title":"Old Pickle","status":"blocked","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:01.000Z","lastSummary":"Runtime not attached after daemon restart; start a new task or resume support is required","logs":[],"tools":[],"artifacts":[],"changedFiles":[]},{"id":"manual-completed","title":"Manual archive","status":"completed","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"Done","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}]}
         """)))
         #expect(viewModel.sessions.isEmpty)
         #expect(viewModel.archivedSessions.map(\.id) == ["lost-runtime", "manual-completed"])
@@ -5160,7 +5160,7 @@ private enum EventJSON {
         let encodedNotify = notifyMainOnCompletion.map { ",\"notifyMainOnCompletion\":\($0)" } ?? ""
         let encodedPinned = pinned.map { ",\"pinned\":\($0)" } ?? ""
         return """
-        {"id":"event-\(id)-\(status)","protocolVersion":"2026-07-19","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":\(encodedCwd),"createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]\(encodedPiSessionFilePath)\(encodedNotify)\(encodedPinned)}}
+        {"id":"event-\(id)-\(status)","protocolVersion":"2026-07-23","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":\(encodedCwd),"createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]\(encodedPiSessionFilePath)\(encodedNotify)\(encodedPinned)}}
         """
     }
 
@@ -5179,13 +5179,13 @@ private enum EventJSON {
         let encodedPiSessionFilePath = piSessionFilePath.map { ",\"piSessionFilePath\":\(String(decoding: try! JSONEncoder().encode($0), as: UTF8.self))" } ?? ""
         let encodedArchived = archived.map { ",\"archived\":\($0)" } ?? ""
         return """
-        {"id":"snapshot-\(id)-\(status)","protocolVersion":"2026-07-19","timestamp":"\(updatedAt)","type":"sessionSnapshot","sessions":[{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"\(testProjectCwd)","createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]\(encodedPiSessionFilePath)\(encodedArchived)}]}
+        {"id":"snapshot-\(id)-\(status)","protocolVersion":"2026-07-23","timestamp":"\(updatedAt)","type":"sessionSnapshot","sessions":[{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"\(testProjectCwd)","createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]\(encodedPiSessionFilePath)\(encodedArchived)}]}
         """
     }
 
     static func emptySessionSnapshot() -> String {
         """
-        {"id":"snapshot-empty","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:00.000Z","type":"sessionSnapshot","sessions":[]}
+        {"id":"snapshot-empty","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:00.000Z","type":"sessionSnapshot","sessions":[]}
         """
     }
 
@@ -5207,7 +5207,7 @@ private enum EventJSON {
             return "{\"name\":\(encodedName),\"description\":\(encodedName),\"source\":\"\(source)\"}"
         }.joined(separator: ",")
         return """
-        {"id":"event-slash-commands","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:00.000Z","type":"slashCommandsSnapshot","sessionId":\(encodedSessionId)\(encodedRequestId),"commands":[\(commands)]}
+        {"id":"event-slash-commands","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:00.000Z","type":"slashCommandsSnapshot","sessionId":\(encodedSessionId)\(encodedRequestId),"commands":[\(commands)]}
         """
     }
 
@@ -5221,32 +5221,32 @@ private enum EventJSON {
             ? "null"
             : "{\"tasks\":[{\"id\":\"todo-1\",\"content\":\"Implement HUD\",\"status\":\"\(taskStatus)\",\"activeForm\":\"Implementing HUD\"}],\"updatedAt\":\"2026-07-14T01:00:00.000Z\"}"
         return """
-        {"id":"event-todo-\(seq)","protocolVersion":"2026-07-19","timestamp":"2026-07-14T01:00:00.000Z","type":"sessionTodoStateUpdated","sessionId":"\(sessionId)","todoState":\(todoState),"seq":\(seq)}
+        {"id":"event-todo-\(seq)","protocolVersion":"2026-07-23","timestamp":"2026-07-14T01:00:00.000Z","type":"sessionTodoStateUpdated","sessionId":"\(sessionId)","todoState":\(todoState),"seq":\(seq)}
         """
     }
 
     static func sessionResourcesReloaded(sessionId: String = "session-commands") -> String {
         """
-        {"id":"event-resources-reloaded","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:01.000Z","type":"sessionResourcesReloaded","sessionId":"\(sessionId)"}
+        {"id":"event-resources-reloaded","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:01.000Z","type":"sessionResourcesReloaded","sessionId":"\(sessionId)"}
         """
     }
 
     static func extensionUiRequest() -> String {
         """
-        {"id":"event-ui","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:02.000Z","type":"extensionUiRequest","request":{"id":"ui-1","sessionId":"session-1","method":"confirm","title":"Confirm","prompt":"Proceed?","options":null,"createdAt":"2026-05-01T00:00:02.000Z"}}
+        {"id":"event-ui","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:02.000Z","type":"extensionUiRequest","request":{"id":"ui-1","sessionId":"session-1","method":"confirm","title":"Confirm","prompt":"Proceed?","options":null,"createdAt":"2026-05-01T00:00:02.000Z"}}
         """
     }
 
     static func askUserQuestionRequest() -> String {
         """
-        {"id":"event-ui-form","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:02.000Z","type":"extensionUiRequest","request":{"id":"ui-form","sessionId":"session-1","method":"askUserQuestion","title":"Confirm memory","description":"Pick what to save","questions":[{"id":"scope","type":"radio","prompt":"Scope?","options":[{"value":"user","label":"User"},{"value":"project","label":"Project"}],"default":"project"},{"id":"items","type":"checkbox","prompt":"Items?","options":[{"value":"rule","label":"Rule"}],"default":["rule"],"allowOther":true},{"id":"note","type":"text","prompt":"Note","required":false}],"createdAt":"2026-05-01T00:00:02.000Z"}}
+        {"id":"event-ui-form","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:02.000Z","type":"extensionUiRequest","request":{"id":"ui-form","sessionId":"session-1","method":"askUserQuestion","title":"Confirm memory","description":"Pick what to save","questions":[{"id":"scope","type":"radio","prompt":"Scope?","options":[{"value":"user","label":"User"},{"value":"project","label":"Project"}],"default":"project"},{"id":"items","type":"checkbox","prompt":"Items?","options":[{"value":"rule","label":"Rule"}],"default":["rule"],"allowOther":true},{"id":"note","type":"text","prompt":"Note","required":false}],"createdAt":"2026-05-01T00:00:02.000Z"}}
         """
     }
 
     static func setEditorTextRequest(text: String) -> String {
         let encodedText = String(decoding: try! JSONEncoder().encode(text), as: UTF8.self)
         return """
-        {"id":"event-ui-editor-text","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:02.000Z","type":"extensionUiRequest","request":{"id":"ui-editor-text","sessionId":"session-1","method":"set_editor_text","text":\(encodedText),"createdAt":"2026-05-01T00:00:02.000Z"}}
+        {"id":"event-ui-editor-text","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:02.000Z","type":"extensionUiRequest","request":{"id":"ui-editor-text","sessionId":"session-1","method":"set_editor_text","text":\(encodedText),"createdAt":"2026-05-01T00:00:02.000Z"}}
         """
     }
 
@@ -5258,7 +5258,7 @@ private enum EventJSON {
         updatedAt: String = "2026-05-01T00:00:02.000Z"
     ) -> String {
         """
-        {"id":"event-\(id)-pending","protocolVersion":"2026-07-19","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"Investigate current screen","status":"\(status)","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":[],"tools":[],"artifacts":[],"changedFiles":[],"pendingExtensionUiRequest":{"id":"\(requestId)","sessionId":"\(id)","method":"askUserQuestion","title":"Continue?","prompt":"Pick one","options":null,"questions":[{"id":"choice","type":"radio","prompt":"Choice","options":[{"value":"a","label":"A"}],"required":true}],"createdAt":"\(updatedAt)"}}}
+        {"id":"event-\(id)-pending","protocolVersion":"2026-07-23","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"Investigate current screen","status":"\(status)","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":[],"tools":[],"artifacts":[],"changedFiles":[],"pendingExtensionUiRequest":{"id":"\(requestId)","sessionId":"\(id)","method":"askUserQuestion","title":"Continue?","prompt":"Pick one","options":null,"questions":[{"id":"choice","type":"radio","prompt":"Choice","options":[{"value":"a","label":"A"}],"required":true}],"createdAt":"\(updatedAt)"}}}
         """
     }
 
@@ -5271,20 +5271,20 @@ private enum EventJSON {
     ) -> String {
         let encodedThinking = String(decoding: try! JSONEncoder().encode(thinkingPreview), as: UTF8.self)
         return """
-        {"id":"event-\(id)-thinking","protocolVersion":"2026-07-19","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"Investigate current screen","status":"\(status)","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","thinkingPreview":\(encodedThinking),"logs":[],"tools":[],"artifacts":[],"changedFiles":[]}}
+        {"id":"event-\(id)-thinking","protocolVersion":"2026-07-23","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"Investigate current screen","status":"\(status)","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","thinkingPreview":\(encodedThinking),"logs":[],"tools":[],"artifacts":[],"changedFiles":[]}}
         """
     }
 
     static func sessionLog(sessionId: String, line: String) -> String {
         let encodedLine = String(decoding: try! JSONEncoder().encode(line), as: UTF8.self)
         return """
-        {"id":"event-log","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:03.000Z","type":"sessionLogAppended","sessionId":"\(sessionId)","line":\(encodedLine)}
+        {"id":"event-log","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:03.000Z","type":"sessionLogAppended","sessionId":"\(sessionId)","line":\(encodedLine)}
         """
     }
 
     static func tool(sessionId: String, toolCallId: String, name: String, status: String, preview: String) -> String {
         """
-        {"id":"event-tool-\(status)","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:03.000Z","type":"toolActivityUpdated","sessionId":"\(sessionId)","tool":{"toolCallId":"\(toolCallId)","name":"\(name)","status":"\(status)","preview":"\(preview)","startedAt":"2026-05-01T00:00:02.000Z","endedAt":null}}
+        {"id":"event-tool-\(status)","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:03.000Z","type":"toolActivityUpdated","sessionId":"\(sessionId)","tool":{"toolCallId":"\(toolCallId)","name":"\(name)","status":"\(status)","preview":"\(preview)","startedAt":"2026-05-01T00:00:02.000Z","endedAt":null}}
         """
     }
 
@@ -5298,7 +5298,7 @@ private enum EventJSON {
             return "{\"id\":\"\(entry.messageId)\",\"kind\":\"agent_text\",\"createdAt\":\"2026-05-01T00:00:04.000Z\",\"originatedBy\":\"pi_extension\",\"text\":\(encodedText)}"
         }.joined(separator: ",")
         return """
-        {"id":"event-messages-imported-\(seq)","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionMessagesImported","sessionId":"\(sessionId)","messages":[\(messages)],"seq":\(seq)}
+        {"id":"event-messages-imported-\(seq)","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionMessagesImported","sessionId":"\(sessionId)","messages":[\(messages)],"seq":\(seq)}
         """
     }
 
@@ -5308,7 +5308,7 @@ private enum EventJSON {
 
     static func sessionMessageRemoved(sessionId: String, messageId: String, seq: Int) -> String {
         """
-        {"id":"event-message-remove-\(seq)","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionMessageRemoved","sessionId":"\(sessionId)","messageId":"\(messageId)","seq":\(seq)}
+        {"id":"event-message-remove-\(seq)","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionMessageRemoved","sessionId":"\(sessionId)","messageId":"\(messageId)","seq":\(seq)}
         """
     }
 
@@ -5316,7 +5316,7 @@ private enum EventJSON {
         let encodedEditorText = editorText.map { String(decoding: try! JSONEncoder().encode($0), as: UTF8.self) } ?? "null"
         let encodedRemovedIds = String(decoding: try! JSONEncoder().encode(removedIds), as: UTF8.self)
         return """
-        {"id":"event-session-rewound","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionRewound","sessionId":"\(sessionId)","editorText":\(encodedEditorText),"removedIds":\(encodedRemovedIds)}
+        {"id":"event-session-rewound","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionRewound","sessionId":"\(sessionId)","editorText":\(encodedEditorText),"removedIds":\(encodedRemovedIds)}
         """
     }
 
@@ -5324,7 +5324,7 @@ private enum EventJSON {
         let encodedCommand = String(decoding: try! JSONEncoder().encode(command), as: UTF8.self)
         let encodedDetail = detail.map { ",\"detail\":\(String(decoding: try! JSONEncoder().encode($0), as: UTF8.self))" } ?? ""
         return """
-        {"id":"event-command-receipt-\(seq)","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionMessageAppended","sessionId":"\(sessionId)","message":{"id":"\(messageId)","kind":"command_receipt","createdAt":"2026-05-01T00:00:04.000Z","text":\(encodedCommand),"commandReceipt":{"command":\(encodedCommand),"status":"\(status)"\(encodedDetail)}},"seq":\(seq)}
+        {"id":"event-command-receipt-\(seq)","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionMessageAppended","sessionId":"\(sessionId)","message":{"id":"\(messageId)","kind":"command_receipt","createdAt":"2026-05-01T00:00:04.000Z","text":\(encodedCommand),"commandReceipt":{"command":\(encodedCommand),"status":"\(status)"\(encodedDetail)}},"seq":\(seq)}
         """
     }
 
@@ -5334,13 +5334,13 @@ private enum EventJSON {
         let encodedSteeringMode = steeringMode.map { ",\"steeringMode\":\"\($0)\"" } ?? ""
         let encodedFollowUpMode = followUpMode.map { ",\"followUpMode\":\"\($0)\"" } ?? ""
         return """
-        {"id":"event-queue-\(seq)","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionQueueUpdated","sessionId":"\(sessionId)","steering":\(steeringItems),"followUp":\(followUpItems)\(encodedSteeringMode)\(encodedFollowUpMode),"seq":\(seq)}
+        {"id":"event-queue-\(seq)","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionQueueUpdated","sessionId":"\(sessionId)","steering":\(steeringItems),"followUp":\(followUpItems)\(encodedSteeringMode)\(encodedFollowUpMode),"seq":\(seq)}
         """
     }
 
     static func sessionActivityUpdated(sessionId: String, edit: Int, bash: Int, thinking: Int, other: Int, seq: Int) -> String {
         """
-        {"id":"event-activity-\(seq)","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionActivityUpdated","sessionId":"\(sessionId)","activitySummary":{"edit":\(edit),"bash":\(bash),"thinking":\(thinking),"other":\(other)},"seq":\(seq)}
+        {"id":"event-activity-\(seq)","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionActivityUpdated","sessionId":"\(sessionId)","activitySummary":{"edit":\(edit),"bash":\(bash),"thinking":\(thinking),"other":\(other)},"seq":\(seq)}
         """
     }
 
@@ -5354,14 +5354,14 @@ private enum EventJSON {
         let active = activeLastMessageId.map { ",\"activeLastMessageId\":\"\($0)\"" } ?? ""
         let baseline = baselinePiMessageId.map { ",\"baselinePiMessageId\":\"\($0)\"" } ?? ""
         return """
-        {"id":"event-tso-\(sessionId)-\(importedMessageCount)","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:04.000Z","type":"terminalSessionSyncOutcome","sessionId":"\(sessionId)","baselineFound":\(baselineFound),"importedMessageCount":\(importedMessageCount)\(active)\(baseline)}
+        {"id":"event-tso-\(sessionId)-\(importedMessageCount)","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:04.000Z","type":"terminalSessionSyncOutcome","sessionId":"\(sessionId)","baselineFound":\(baselineFound),"importedMessageCount":\(importedMessageCount)\(active)\(baseline)}
         """
     }
 
     private static func sessionMessageEvent(type: String, sessionId: String, messageId: String, text: String, seq: Int) -> String {
         let encodedText = String(decoding: try! JSONEncoder().encode(text), as: UTF8.self)
         return """
-        {"id":"event-message-\(type)-\(seq)","protocolVersion":"2026-07-19","timestamp":"2026-05-01T00:00:04.000Z","type":"\(type)","sessionId":"\(sessionId)","messageId":"\(messageId)","message":{"id":"\(messageId)","kind":"agent_text","createdAt":"2026-05-01T00:00:04.000Z","originatedBy":"main_agent","text":\(encodedText),"question":null,"cancelledAt":null,"report":null,"errorContext":null,"errorMessage":null},"seq":\(seq)}
+        {"id":"event-message-\(type)-\(seq)","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:04.000Z","type":"\(type)","sessionId":"\(sessionId)","messageId":"\(messageId)","message":{"id":"\(messageId)","kind":"agent_text","createdAt":"2026-05-01T00:00:04.000Z","originatedBy":"main_agent","text":\(encodedText),"question":null,"cancelledAt":null,"report":null,"errorContext":null,"errorMessage":null},"seq":\(seq)}
         """
     }
 

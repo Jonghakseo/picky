@@ -725,7 +725,7 @@ struct PickyAgentAnnotationOverlayTests {
         let json = """
         {
           "id":"event-annotations-001",
-          "protocolVersion":"2026-07-19",
+          "protocolVersion":"2026-07-23",
           "timestamp":"2026-07-19T00:00:00.000Z",
           "type":"annotationOverlayRequested",
           "request":{

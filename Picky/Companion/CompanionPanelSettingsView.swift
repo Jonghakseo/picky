@@ -49,7 +49,7 @@ struct CompanionPanelSettingsView: View {
     @State private var elevenLabsSTTAPIKeyDraft: String = ""
     @State private var elevenLabsSTTModelDraft: String = ""
     @State private var elevenLabsSTTLanguageDraft: String = ""
-    @StateObject private var oauthLoginController = PickyPiOAuthLoginController()
+    @StateObject private var oauthLoginController: PickyPiOAuthLoginController
     @StateObject private var edgeTTSVoiceCatalog = EdgeTTSVoiceCatalog()
     @State private var saveStatuses = CompanionPanelSettingsSaveStatuses()
     @State private var saveStatusResets: [CompanionPanelSettingsSection: AnyCancellable] = [:]
@@ -58,6 +58,21 @@ struct CompanionPanelSettingsView: View {
     /// archive management is an occasional task, not a persistent setting.
     @State private var isArchivedSessionsExpanded: Bool = false
     @Binding var route: CompanionPanelSettingsRoute
+
+    init(
+        viewModel: PickySettingsViewModel,
+        companionManager: CompanionManager,
+        sessionListViewModel: PickySessionListViewModel,
+        route: Binding<CompanionPanelSettingsRoute>
+    ) {
+        self.viewModel = viewModel
+        self.companionManager = companionManager
+        self.sessionListViewModel = sessionListViewModel
+        _route = route
+        _oauthLoginController = StateObject(
+            wrappedValue: PickyPiOAuthLoginController(runner: companionManager.makePiOAuthLoginRunner())
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {

@@ -1,0 +1,5 @@
+{
+  "id": "cmd-oauth-reload-001",
+  "protocolVersion": "2026-07-23",
+  "type": "reloadPiAuthentication"
+}

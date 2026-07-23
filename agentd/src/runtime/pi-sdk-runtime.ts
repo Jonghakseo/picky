@@ -36,6 +36,7 @@ import {
 import {
   isCompacting as piIsCompacting,
   readModelMetadata as piReadModelMetadata,
+  reloadModelRuntimeCredentials as piReloadModelRuntimeCredentials,
   tryCompact as piTryCompact,
   tryCycleModel as piTryCycleModel,
   tryCycleThinkingLevel as piTryCycleThinkingLevel,
@@ -372,6 +373,11 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     this.runtime.session.abortCompaction();
     await this.runtime.session.abort();
     this.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
+  }
+
+  async reloadAuthentication(): Promise<void> {
+    logAgentd("pi authentication reload", { sessionId: this.id });
+    await piReloadModelRuntimeCredentials(this.runtime.session.modelRuntime, this.id);
   }
 
   async executeUserBash(command: string, options: { excludeFromContext?: boolean; onOutputChunk?: (chunk: string) => void } = {}): Promise<RuntimeBashExecutionResult> {

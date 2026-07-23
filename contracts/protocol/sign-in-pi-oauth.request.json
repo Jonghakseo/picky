@@ -1,0 +1,6 @@
+{
+  "id": "cmd-oauth-login-001",
+  "protocolVersion": "2026-07-23",
+  "type": "signInPiOAuth",
+  "providerId": "openai-codex"
+}

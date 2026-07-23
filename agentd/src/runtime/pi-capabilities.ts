@@ -29,7 +29,7 @@
 // instead of a capability wrapper.
 //
 
-import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import type { AgentSession, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { ModelCycleDirection } from "../protocol.js";
 import type { RuntimeBashExecutionResult, ThinkingLevel } from "./types.js";
 import { logAgentd } from "../local-log.js";
@@ -159,6 +159,24 @@ export async function tryReload(session: AgentSession, sessionId: string): Promi
   recordPresence(sessionId, "reload");
   await method.call(session);
   return { supported: true };
+}
+
+/**
+ * Refreshes the file-backed credential snapshot used by an already-created Pi
+ * ModelRuntime. Pi 0.81.x does not expose credential reload on ModelRuntime,
+ * while its internal AuthStorage still owns a synchronous reload capability.
+ * Keep this single compatibility sniff isolated here and hard-gated by the Pi
+ * contract test; callers must fail visibly if it disappears.
+ */
+export async function reloadModelRuntimeCredentials(modelRuntime: ModelRuntime, sessionId: string): Promise<void> {
+  const credentialStore = (modelRuntime as unknown as { credentials?: { store?: { reload?: () => void } } }).credentials?.store;
+  if (typeof credentialStore?.reload !== "function") {
+    warnOnceForAbsence(sessionId, "modelRuntime.credentials.reload");
+    throw new Error("Installed Pi runtime cannot reload changed credentials");
+  }
+  recordPresence(sessionId, "modelRuntime.credentials.reload");
+  credentialStore.reload();
+  await modelRuntime.refresh({ allowNetwork: false });
 }
 
 export function tryRefreshSystemPromptFromActiveTools(session: AgentSession, sessionId: string): boolean {

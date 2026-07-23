@@ -402,6 +402,8 @@ private extension PickyCommandEnvelope {
         if let text { parts.append("textChars=\(text.count)") }
         if let source { parts.append("sourceChars=\(source.count)") }
         if let requestId { parts.append("request=\(requestId)") }
+        if let providerId { parts.append("provider=\(providerId.rawValue)") }
+        if let promptId { parts.append("prompt=\(promptId)") }
         if let artifactId { parts.append("artifact=\(artifactId)") }
         if let title { parts.append("titleChars=\(title.count)") }
         if let instructions { parts.append("instructionsChars=\(instructions.count)") }
@@ -439,6 +441,14 @@ private extension PickyEventEnvelope {
             return "type=mainMessageAppended id=\(id) role=\(message.role.rawValue) textChars=\(message.text.count)"
         case .mainAgentModelsSnapshot(let models):
             return "type=mainAgentModelsSnapshot id=\(id) models=\(models.count)"
+        case .piOAuthStatus(let status):
+            return "type=piOAuthStatus id=\(id) request=\(status.requestId) provider=\(status.providerId.rawValue) configured=\(status.configured ? 1 : 0)"
+        case .piOAuthUrlRequested(let request):
+            return "type=piOAuthUrlRequested id=\(id) request=\(request.requestId) provider=\(request.providerId.rawValue) hasUserCode=\(request.userCode == nil ? 0 : 1)"
+        case .piOAuthPromptRequested(let request):
+            return "type=piOAuthPromptRequested id=\(id) request=\(request.requestId) provider=\(request.providerId.rawValue) prompt=\(request.promptId) type=\(request.promptType.rawValue)"
+        case .piAuthenticationReloaded(let result):
+            return "type=piAuthenticationReloaded id=\(id) request=\(result.requestId) handles=\(result.reloadedHandleCount)"
         case .mainAgentSessionInfoUpdated(let sessionFilePath, let cwd):
             return "type=mainAgentSessionInfoUpdated id=\(id) hasSessionFile=\(sessionFilePath != nil ? 1 : 0) hasCwd=\(cwd != nil ? 1 : 0)"
         case .sessionSnapshot(let snapshot):

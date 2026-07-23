@@ -12,6 +12,7 @@ import { AgentdServer, commandLogFields, compactSessionsForSnapshot, createDefau
 import { EdgeTTSService, type EdgeTTSClient } from "./edge-tts-service.js";
 import { SessionStore } from "./session-store.js";
 import { SessionSupervisor } from "./session-supervisor.js";
+import type { PiOAuthHandling } from "./application/pi-oauth-service.js";
 
 let server: AgentdServer;
 let port: number;
@@ -113,6 +114,94 @@ describe("AgentdServer", () => {
     expect(apply).toHaveBeenCalledWith("session-autocomplete", expect.objectContaining({ prefix: ">w" }));
     await expect(nextEventWithin(observer.ws, 50)).resolves.toBeUndefined();
     requester.ws.close();
+    observer.ws.close();
+  });
+
+  it("keeps OAuth interactions owned by the requesting websocket and reloads active runtimes", async () => {
+    await server.stop();
+    const piOAuth: PiOAuthHandling = {
+      status: vi.fn(async () => ({ configured: false })),
+      login: vi.fn(async (request) => {
+        request.onPrompt("prompt-1", {
+          type: "select",
+          message: "Choose login method",
+          options: [{ id: "browser", label: "Browser" }],
+        });
+        request.onNotify({ type: "auth_url", url: "https://example.com/oauth" });
+        return { configured: true, source: "stored" };
+      }),
+      answerPrompt: vi.fn(),
+      cancel: vi.fn(() => true),
+      cancelOwnedBy: vi.fn(() => 1),
+    };
+    const reloadAuthentication = vi.spyOn(supervisor, "reloadPiAuthentication").mockResolvedValue(2);
+    server = new AgentdServer({ port: 0, token: "test-token", supervisor, piOAuth });
+    port = await server.start();
+
+    const requester = await connectWithHello();
+    const observer = await connectWithHello();
+    const oauthEvents: EventEnvelope[] = [];
+    requester.ws.on("message", (data) => oauthEvents.push(JSON.parse(data.toString()) as EventEnvelope));
+    requester.ws.send(JSON.stringify({
+      id: "cmd-oauth-login",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "signInPiOAuth",
+      providerId: "anthropic",
+    }));
+
+    await waitUntil(() => oauthEvents.filter((event) => "requestId" in event && event.requestId === "cmd-oauth-login").length === 3);
+    expect(oauthEvents.find((event) => event.type === "piOAuthPromptRequested")).toMatchObject({
+      type: "piOAuthPromptRequested",
+      requestId: "cmd-oauth-login",
+      promptId: "prompt-1",
+      promptType: "select",
+      options: [{ id: "browser", label: "Browser" }],
+    });
+    expect(oauthEvents.find((event) => event.type === "piOAuthUrlRequested")).toMatchObject({
+      type: "piOAuthUrlRequested",
+      requestId: "cmd-oauth-login",
+      url: "https://example.com/oauth",
+    });
+    expect(oauthEvents.find((event) => event.type === "piOAuthStatus")).toMatchObject({
+      type: "piOAuthStatus",
+      requestId: "cmd-oauth-login",
+      providerId: "anthropic",
+      configured: true,
+      source: "stored",
+    });
+    await expect(nextEventWithin(observer.ws, 50)).resolves.toBeUndefined();
+
+    requester.ws.send(JSON.stringify({
+      id: "cmd-oauth-answer",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "answerPiOAuthPrompt",
+      requestId: "cmd-oauth-login",
+      promptId: "prompt-1",
+      value: "browser",
+    }));
+    await waitUntil(() => vi.mocked(piOAuth.answerPrompt).mock.calls.length === 1);
+    expect(piOAuth.answerPrompt).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: "cmd-oauth-login",
+      promptId: "prompt-1",
+      value: "browser",
+    }));
+
+    requester.ws.send(JSON.stringify({
+      id: "cmd-auth-reload",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "reloadPiAuthentication",
+    }));
+    await expect(nextEvent(requester.ws)).resolves.toMatchObject({
+      type: "piAuthenticationReloaded",
+      requestId: "cmd-auth-reload",
+      reloadedHandleCount: 2,
+    });
+    expect(reloadAuthentication).toHaveBeenCalledOnce();
+
+    requester.ws.close();
+    await once(requester.ws, "close");
+    await waitUntil(() => vi.mocked(piOAuth.cancelOwnedBy).mock.calls.length === 1);
+    expect(piOAuth.cancelOwnedBy).toHaveBeenCalledOnce();
     observer.ws.close();
   });
 

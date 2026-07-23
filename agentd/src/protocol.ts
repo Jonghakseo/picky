@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const PROTOCOL_VERSION = "2026-07-19";
+export const PROTOCOL_VERSION = "2026-07-23";
 
 const isoTimestamp = z.string().datetime({ offset: true });
 
@@ -203,6 +203,16 @@ export const PickyMainAgentModelOptionSchema = z.object({
   pattern: z.string().min(1),
 });
 export type PickyMainAgentModelOption = z.infer<typeof PickyMainAgentModelOptionSchema>;
+export const PiOAuthProviderIdSchema = z.enum(["openai-codex", "anthropic"]);
+export type PiOAuthProviderId = z.infer<typeof PiOAuthProviderIdSchema>;
+export const PiOAuthPromptTypeSchema = z.enum(["text", "secret", "select", "manual_code"]);
+export type PiOAuthPromptType = z.infer<typeof PiOAuthPromptTypeSchema>;
+export const PiOAuthPromptOptionSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  description: z.string().optional(),
+});
+export type PiOAuthPromptOption = z.infer<typeof PiOAuthPromptOptionSchema>;
 export const PickySessionMessageSchema = z.object({
   id: z.string(),
   kind: z.enum(["user_text", "agent_text", "agent_thinking", "agent_question", "agent_error", "agent_activity", "command_receipt", "system"]),
@@ -390,6 +400,17 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("listSessions") }),
   CommandBaseSchema.extend({ type: z.literal("listMainMessages") }),
   CommandBaseSchema.extend({ type: z.literal("listMainAgentModels") }),
+  CommandBaseSchema.extend({ type: z.literal("getPiOAuthStatus"), providerId: PiOAuthProviderIdSchema }),
+  CommandBaseSchema.extend({ type: z.literal("signInPiOAuth"), providerId: PiOAuthProviderIdSchema }),
+  CommandBaseSchema.extend({
+    type: z.literal("answerPiOAuthPrompt"),
+    requestId: z.string().min(1),
+    promptId: z.string().min(1),
+    value: z.string().optional(),
+    cancelled: z.boolean().optional(),
+  }),
+  CommandBaseSchema.extend({ type: z.literal("cancelPiOAuth"), requestId: z.string().min(1) }),
+  CommandBaseSchema.extend({ type: z.literal("reloadPiAuthentication") }),
   CommandBaseSchema.extend({ type: z.literal("setDefaultCwd"), defaultCwd: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("setMainAgentModel"), mainAgentModelPattern: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("setDisabledBuiltinTools"), disabledBuiltinTools: z.array(z.string()) }),
@@ -496,6 +517,37 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
     cwd: z.string().optional(),
   }),
   EventBaseSchema.extend({ type: z.literal("mainAgentModelsSnapshot"), models: z.array(PickyMainAgentModelOptionSchema) }),
+  EventBaseSchema.extend({
+    type: z.literal("piOAuthStatus"),
+    requestId: z.string().min(1),
+    providerId: PiOAuthProviderIdSchema,
+    configured: z.boolean(),
+    source: z.string().optional(),
+    label: z.string().optional(),
+  }),
+  EventBaseSchema.extend({
+    type: z.literal("piOAuthUrlRequested"),
+    requestId: z.string().min(1),
+    providerId: PiOAuthProviderIdSchema,
+    url: z.string().url(),
+    instructions: z.string().optional(),
+    userCode: z.string().optional(),
+  }),
+  EventBaseSchema.extend({
+    type: z.literal("piOAuthPromptRequested"),
+    requestId: z.string().min(1),
+    providerId: PiOAuthProviderIdSchema,
+    promptId: z.string().min(1),
+    promptType: PiOAuthPromptTypeSchema,
+    message: z.string().min(1),
+    placeholder: z.string().optional(),
+    options: z.array(PiOAuthPromptOptionSchema).optional(),
+  }),
+  EventBaseSchema.extend({
+    type: z.literal("piAuthenticationReloaded"),
+    requestId: z.string().min(1),
+    reloadedHandleCount: z.number().int().nonnegative(),
+  }),
   EventBaseSchema.extend({ type: z.literal("sessionSnapshot"), sessions: z.array(PickyAgentSessionSchema) }),
   EventBaseSchema.extend({ type: z.literal("sessionUpdated"), session: PickyAgentSessionSchema }),
   // Explicit signal that a session's `archived` flag was just (un)set on the

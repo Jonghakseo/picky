@@ -1831,13 +1831,23 @@ final class CompanionManager: ObservableObject {
         // detail immediately before synthesis. The queued reply keeps the original
         // text so cursor and conversation UI still render full Markdown.
         let spoken = sanitizedTextForSpeech(text)
+        guard !spoken.isEmpty else {
+            logSpeech("interaction skipped empty sanitized speechID=\(speechID) context=\(contextID ?? "none")")
+            interactionCoordinator.effectCompleted(
+                .speechFinished(speechID: speechID),
+                correlation: PickyInteractionCorrelation(contextID: contextID, speechID: speechID, source: .system)
+            )
+            return
+        }
         startOrDeferInteractionSpeech(speechID: speechID, text: spoken, contextID: contextID, requestedAt: Date())
     }
 
     private func runPrefetchSpeechEffect(text: String) {
         // Apply the same speech transform runSpeakEffect uses so the warmed
         // audio is keyed by the exact string the provider will later synthesize.
-        speechPlaybackProvider.prefetch(sanitizedTextForSpeech(text))
+        let spoken = sanitizedTextForSpeech(text)
+        guard !spoken.isEmpty else { return }
+        speechPlaybackProvider.prefetch(spoken)
     }
 
     private func startOrDeferInteractionSpeech(speechID: UUID, text: String, contextID: String?, requestedAt: Date) {

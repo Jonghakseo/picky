@@ -888,6 +888,29 @@ struct PickyCompanionManagerTests {
         #expect(speechProvider.spokenUtterances == ["첫 문장.", "둘째 문장."])
     }
 
+    @Test func incrementalNarrationSkipsStandaloneParentheticalURLChunk() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        speechProvider.supportsIncrementalPlayback = true
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider
+        )
+        let parentheticalURL = "(https://aws.amazon.com/ec2/pricing/on-demand/)"
+
+        manager.applyAgentEvent(.mainNarrationChunk(PickyMainNarrationChunkEvent(
+            contextId: "parenthetical-url-context",
+            text: parentheticalURL,
+            originSource: .voice,
+            replyKind: .main,
+            sessionId: nil
+        )))
+        try await waitUntil { manager.latestAgentSessionSummary == parentheticalURL }
+
+        #expect(speechProvider.spokenUtterances.isEmpty)
+        manager.stop()
+    }
+
     @Test func unsupportedIncrementalProviderFallsBackToFinalQuickReply() async throws {
         let speechProvider = FakeSpeechPlaybackProvider()
         let manager = CompanionManager(
@@ -1854,9 +1877,9 @@ struct PickyCompanionManagerTests {
         #expect(sanitizedTextForSpeech(markdown) == "설정은 visualDslEnabled입니다. 이제 완료됐습니다.")
     }
 
-    @Test func speechSanitizerFallsBackWhenWholeMessageIsParenthesised() async throws {
-        let allParens = "(seed bootstrap rules)"
-        #expect(sanitizedTextForSpeech(allParens) == allParens)
+    @Test func speechSanitizerDropsStandaloneParentheticalURL() async throws {
+        let parentheticalURL = "(https://aws.amazon.com/ec2/pricing/on-demand/)"
+        #expect(sanitizedTextForSpeech(parentheticalURL).isEmpty)
     }
 
     // MARK: - Interaction orchestration

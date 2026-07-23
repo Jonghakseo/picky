@@ -32,7 +32,7 @@ func sanitizedTextForSpeech(_ text: String) -> String {
         .replacingOccurrences(of: "해당 경로 에서", with: "해당 경로에서")
         .replacingOccurrences(of: "링크 에", with: "링크에")
         .trimmingCharacters(in: .whitespacesAndNewlines)
-    return collapsed.isEmpty ? markdownText : collapsed
+    return collapsed
 }
 
 private func markdownPlainTextForSpeech(_ markdown: String) -> String {

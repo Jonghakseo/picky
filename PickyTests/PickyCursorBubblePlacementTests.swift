@@ -24,6 +24,18 @@ struct PickyCursorBubblePlacementTests {
         #expect(placement.topLeading.y == CGFloat(420))
     }
 
+    @Test func honorsTopRightPreferredSideForActivityChips() {
+        let placement = PickyCursorBubblePlacement.compute(
+            cursorPosition: CGPoint(x: 400, y: 400),
+            bubbleSize: bubbleSize,
+            screenSize: screenSize,
+            sideOrder: [.topRight, .topLeft, .bottomRight, .bottomLeft]
+        )
+
+        #expect(placement.side == .topRight)
+        #expect(placement.topLeading.y == CGFloat(400 - 20 - 40))
+    }
+
     @Test func flipsToBottomLeftWhenRightEdgeWouldClip() {
         let placement = PickyCursorBubblePlacement.compute(
             cursorPosition: CGPoint(x: 1380, y: 400),

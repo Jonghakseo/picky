@@ -492,6 +492,9 @@ struct BlueCursorView: View {
     @ObservedObject private var cursorPreferencesStore = PickyCursorPreferencesStore.shared
     @ObservedObject private var overlayBubblePreferencesStore = PickyOverlayBubblePreferencesStore.shared
     @StateObject private var responseBubbleLayoutCache = PickyCursorResponseBubbleLayoutCache()
+    // Main-agent activity arrives at a much lower cadence than cursor tracking.
+    // Cache its display projection so the 60fps overlay body never reparses tool details.
+    @StateObject private var mainActivityChipPresentationCache = PickyMainActivityChipPresentationCache()
 
     static let cursorTrackingInterval: TimeInterval = 1.0 / 60.0
     static let shakeReactionRequiredDuration: TimeInterval = 2.0
@@ -765,6 +768,28 @@ struct BlueCursorView: View {
                 .animation(.easeOut(duration: 0.2), value: companionManager.voiceState)
             }
 
+            if isCursorOnThisScreen,
+               PickyMainActivityOverlayPolicy.shouldShow(
+                    voiceState: companionManager.voiceState,
+                    hasActivities: !mainActivityChipPresentationCache.presentation.models.isEmpty,
+                    hasPendingQuestion: mainActivityChipPresentationCache.presentation.isQuestionPending
+               ) {
+                PickyCursorBubblePlacementLayout(
+                    cursorPosition: compactCursorChromePlacementIsPreferred ? systemCursorPosition : cursorPosition,
+                    screenSize: CGSize(width: screenFrame.width, height: screenFrame.height),
+                    horizontalGap: compactCursorChromePlacementIsPreferred ? 14 : 12,
+                    verticalGap: compactCursorChromePlacementIsPreferred ? 16 : 20,
+                    sideOrder: [.topRight, .topLeft, .bottomRight, .bottomLeft]
+                ) {
+                    // Keep content changes outside the cursor-follow spring. Activity
+                    // detail/status updates must not resize or bounce with the cursor.
+                    PickyMainActivityChipStackView(presentation: mainActivityChipPresentationCache.presentation)
+                        .transaction { $0.animation = nil }
+                }
+                .animation(cursorFollowAnimation, value: cursorPosition)
+                .transition(.opacity)
+            }
+
             if hiddenCursorWaitingIndicatorIsVisible {
                 CursorWaitingIndicatorView()
                     .overlay(
@@ -881,6 +906,7 @@ struct BlueCursorView: View {
 
             self.cursorOpacity = 1.0
             syncResponseBubbleLayout()
+            syncMainActivityChipPresentation()
         }
         .onDisappear {
             timer?.invalidate()
@@ -911,6 +937,12 @@ struct BlueCursorView: View {
         }
         .onChange(of: companionManager.latestAgentSessionSummary) { _, _ in
             syncResponseBubbleLayout()
+        }
+        .onChange(of: companionManager.mainLiveActivities) { _, _ in
+            syncMainActivityChipPresentation()
+        }
+        .onChange(of: companionManager.mainPendingQuestion) { _, _ in
+            syncMainActivityChipPresentation()
         }
         .onChange(of: companionManager.voiceState) { _, _ in
             syncResponseBubbleLayout()
@@ -955,6 +987,13 @@ struct BlueCursorView: View {
             && isCursorOnThisScreen
             && !companionManager.isQuickInputPanelVisible
             && !companionManager.inkOverlayState.isActive
+    }
+
+    private func syncMainActivityChipPresentation() {
+        mainActivityChipPresentationCache.update(
+            activities: companionManager.mainLiveActivities,
+            isQuestionPending: companionManager.mainPendingQuestion != nil
+        )
     }
 
     private func syncResponseBubbleLayout() {

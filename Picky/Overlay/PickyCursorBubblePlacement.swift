@@ -16,6 +16,7 @@ struct PickyCursorBubblePlacementLayout: Layout {
     let screenSize: CGSize
     var horizontalGap: CGFloat = 12
     var verticalGap: CGFloat = 20
+    var sideOrder: [PickyCursorBubblePlacement.Side] = PickyCursorBubblePlacement.defaultSideOrder
 
     var animatableData: AnimatablePair<CGFloat, CGFloat> {
         get { AnimatablePair(cursorPosition.x, cursorPosition.y) }
@@ -47,7 +48,8 @@ struct PickyCursorBubblePlacementLayout: Layout {
             bubbleSize: bubbleSize,
             screenSize: screenSize,
             horizontalGap: horizontalGap,
-            verticalGap: verticalGap
+            verticalGap: verticalGap,
+            sideOrder: sideOrder
         )
         bubble.place(
             at: CGPoint(
@@ -66,6 +68,7 @@ struct PickyCursorBubblePlacementLayout: Layout {
 /// to clamping when no candidate fits. Pure logic so it can be unit tested.
 struct PickyCursorBubblePlacement: Equatable {
     enum Side: Equatable { case bottomRight, bottomLeft, topRight, topLeft }
+    static let defaultSideOrder: [Side] = [.bottomRight, .bottomLeft, .topRight, .topLeft]
     let topLeading: CGPoint
     let side: Side
 
@@ -75,7 +78,8 @@ struct PickyCursorBubblePlacement: Equatable {
         screenSize: CGSize,
         horizontalGap: CGFloat = 12,
         verticalGap: CGFloat = 20,
-        edgePadding: CGFloat = 8
+        edgePadding: CGFloat = 8,
+        sideOrder: [Side] = defaultSideOrder
     ) -> PickyCursorBubblePlacement {
         let candidates: [(Side, CGPoint)] = [
             (.bottomRight, CGPoint(x: cursorPosition.x + horizontalGap, y: cursorPosition.y + verticalGap)),
@@ -84,7 +88,10 @@ struct PickyCursorBubblePlacement: Equatable {
             (.topLeft, CGPoint(x: cursorPosition.x - horizontalGap - bubbleSize.width, y: cursorPosition.y - verticalGap - bubbleSize.height)),
         ]
 
-        for (side, origin) in candidates {
+        let orderedCandidates = sideOrder.compactMap { preferredSide in
+            candidates.first(where: { $0.0 == preferredSide })
+        }
+        for (side, origin) in orderedCandidates {
             let fitsHorizontally = origin.x >= edgePadding
                 && origin.x + bubbleSize.width + edgePadding <= screenSize.width
             let fitsVertically = origin.y >= edgePadding
@@ -94,8 +101,9 @@ struct PickyCursorBubblePlacement: Equatable {
             }
         }
 
-        let fallbackSide = candidates[0].0
-        let fallbackOrigin = candidates[0].1
+        let fallback = orderedCandidates.first ?? candidates[0]
+        let fallbackSide = fallback.0
+        let fallbackOrigin = fallback.1
         let maxX = max(edgePadding, screenSize.width - bubbleSize.width - edgePadding)
         let maxY = max(edgePadding, screenSize.height - bubbleSize.height - edgePadding)
         let clampedX = min(max(fallbackOrigin.x, edgePadding), maxX)

@@ -168,6 +168,7 @@ final class CompanionManager: ObservableObject {
     let overlayWindowManager = OverlayWindowManager()
     let quickInputDoubleTapDetector = QuickInputDoubleTapDetector()
     let quickInputPanelManager: QuickInputPanelManager
+    let mainQuestionPanelManager: PickyMainQuestionPanelManager
     // Response text is now displayed inline on the cursor overlay via
     // streamingResponseText, so no separate response overlay manager is needed.
 
@@ -269,6 +270,10 @@ final class CompanionManager: ObservableObject {
             appearanceStore: appearanceStore,
             fontScaleStore: fontScaleStore
         )
+        self.mainQuestionPanelManager = PickyMainQuestionPanelManager(
+            appearanceStore: appearanceStore,
+            fontScaleStore: fontScaleStore
+        )
         self.screenContextTargetSessionID = selectionStore.screenContextTargetSessionID
         self.inkCaptureCoordinator.onStateChange = { [weak self] state in
             Task { @MainActor [weak self] in
@@ -324,6 +329,7 @@ final class CompanionManager: ObservableObject {
 
     private var shortcutTransitionCancellable: AnyCancellable?
     private var quickInputDoubleTapCancellable: AnyCancellable?
+    private var mainQuestionPanelCancellable: AnyCancellable?
     private var screenContextTargetCancellable: AnyCancellable?
     private var shortcutCaptureObserver: NSObjectProtocol?
     /// Tracks how many `ShortcutCaptureRecorder` instances are currently in
@@ -459,6 +465,7 @@ final class CompanionManager: ObservableObject {
             Task { await agentClient.connect() }
         }
         wireQuickInputPanel()
+        wireMainQuestionPanel()
         applyShortcutSpecsFromSettings()
         bindShortcutCaptureLifecycle()
         refreshAllPermissions()
@@ -483,6 +490,7 @@ final class CompanionManager: ObservableObject {
         globalPushToTalkShortcutMonitor.rawEventForwarder = nil
         quickInputDoubleTapDetector.reset()
         quickInputPanelManager.dismiss()
+        mainQuestionPanelManager.dismiss()
         cancelInkCapture()
         inkCaptureCoordinator.teardownEventTap()
         buddyDictationManager.cancelCurrentDictation()
@@ -518,6 +526,8 @@ final class CompanionManager: ObservableObject {
         }
         shortcutTransitionCancellable?.cancel()
         quickInputDoubleTapCancellable?.cancel()
+        mainQuestionPanelCancellable?.cancel()
+        mainQuestionPanelCancellable = nil
         screenContextTargetCancellable?.cancel()
         screenContextTargetCancellable = nil
         if let shortcutCaptureObserver {
@@ -1004,6 +1014,33 @@ final class CompanionManager: ObservableObject {
                 self?.cancelInkCapture()
             }
         }
+    }
+
+    private func wireMainQuestionPanel() {
+        mainQuestionPanelManager.onAnswer = { [weak self] requestID, value in
+            guard let self else { return PickyAgentClientError.disconnected }
+            do {
+                try await self.agentClient.send(PickyCommandEnvelope(
+                    type: .answerMainExtensionUi,
+                    requestId: requestID,
+                    value: value
+                ))
+                if self.mainPendingQuestion?.id == requestID {
+                    self.mainPendingQuestion = nil
+                }
+                return nil
+            } catch {
+                return error
+            }
+        }
+        mainQuestionPanelCancellable = $mainPendingQuestion
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] request in
+                Task { @MainActor [weak self] in
+                    self?.mainQuestionPanelManager.update(request: request)
+                }
+            }
     }
 
     private func bindQuickInputDoubleTap() {

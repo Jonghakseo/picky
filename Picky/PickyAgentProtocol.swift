@@ -1482,6 +1482,9 @@ struct PickyExtensionUiQuestion: Codable, Equatable, Identifiable {
         case defaultValue = "default"
     }
 
+    /// An omitted value preserves the interactive form's default Other input.
+    var allowsOther: Bool { allowOther ?? true }
+
 }
 
 enum PickyExtensionUiQuestionType: String, Codable, Equatable {

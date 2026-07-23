@@ -26,6 +26,11 @@ enum PickyMainQuestionPanelPolicy {
     ) -> Bool {
         error != nil && requestID == activeRequestID
     }
+
+    /// Esc dismisses the panel only when it is not needed to discard native IME composition.
+    static func shouldCancelOnEscape(firstResponderHasMarkedText: Bool) -> Bool {
+        !firstResponderHasMarkedText
+    }
 }
 
 struct PickyMainQuestionPanelAnswerError: LocalizedError {
@@ -41,7 +46,11 @@ private final class PickyMainQuestionKeyablePanel: PickySecureSurfacePanel, Pick
     override var canBecomeMain: Bool { false }
 
     override func sendEvent(_ event: NSEvent) {
-        if event.type == .keyDown, event.keyCode == 53 {
+        if event.type == .keyDown,
+           event.keyCode == 53,
+           PickyMainQuestionPanelPolicy.shouldCancelOnEscape(
+               firstResponderHasMarkedText: (firstResponder as? NSTextView)?.hasMarkedText() == true
+           ) {
             onEscape?()
             return
         }

@@ -53,6 +53,12 @@ struct PickyMainQuestionPanelPolicyTests {
     }
 
     @Test
+    func escapeCancelsOnlyWhenTheFirstResponderHasNoMarkedText() {
+        #expect(PickyMainQuestionPanelPolicy.shouldCancelOnEscape(firstResponderHasMarkedText: false))
+        #expect(!PickyMainQuestionPanelPolicy.shouldCancelOnEscape(firstResponderHasMarkedText: true))
+    }
+
+    @Test
     func panelPresentationTracksRequestPresence() {
         #expect(!PickyMainQuestionPanelPolicy.shouldPresent(request: nil))
         #expect(PickyMainQuestionPanelPolicy.shouldPresent(request: request()))

@@ -8,6 +8,20 @@ import Testing
 @testable import Picky
 
 struct PickyAskUserQuestionFormTests {
+    @Test func omittedAllowOtherDefaultsToTrueWhileExplicitFalseDisablesIt() {
+        let defaultQuestion = PickyExtensionUiQuestion(
+            id: "default", type: .radio, prompt: "Default", label: nil,
+            options: nil, allowOther: nil, required: false, placeholder: nil, defaultValue: nil
+        )
+        let fixedListQuestion = PickyExtensionUiQuestion(
+            id: "fixed", type: .radio, prompt: "Fixed", label: nil,
+            options: nil, allowOther: false, required: false, placeholder: nil, defaultValue: nil
+        )
+
+        #expect(defaultQuestion.allowsOther)
+        #expect(!fixedListQuestion.allowsOther)
+    }
+
     @Test func seedsDefaultsAndBuildsCompositeAnswer() throws {
         let questions = [
             PickyExtensionUiQuestion(

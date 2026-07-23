@@ -229,7 +229,7 @@ struct PickyQuestionBubbleView: View {
                             formState.selectRadio(question: question, index: index, value: option.value)
                         }
                     }
-                    if question.allowOther ?? true {
+                    if question.allowsOther {
                         optionButton(label: "Other…", description: nil, selected: formState.radioValues[key] == PickyAskUserQuestionFormState.otherSentinel) {
                             formState.selectRadio(question: question, index: index, value: PickyAskUserQuestionFormState.otherSentinel)
                         }
@@ -246,7 +246,7 @@ struct PickyQuestionBubbleView: View {
                             formState.toggleCheckbox(question: question, index: index, value: option.value)
                         }
                     }
-                    if question.allowOther ?? true {
+                    if question.allowsOther {
                         TextField("Other…", text: binding($formState.otherValues, key: key))
                             .textFieldStyle(.roundedBorder)
                             .font(PickyHUDTypography.supporting)

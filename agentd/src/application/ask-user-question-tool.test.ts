@@ -2,6 +2,13 @@ import { describe, expect, it } from "vitest";
 import { createPickyAskUserQuestionTool } from "./ask-user-question-tool.js";
 
 describe("picky ask_user_question tool", () => {
+  it("documents that allowOther defaults to true unless explicitly disabled", () => {
+    const tool = createPickyAskUserQuestionTool();
+
+    expect(tool.description).toContain("enabled by default when allowOther is omitted");
+    expect(tool.promptGuidelines).toContain("Omit allowOther to include Other by default; set it to false only when the option list is exhaustive.");
+  });
+
   it("routes form requests through the Picky extension UI bridge", async () => {
     const tool = createPickyAskUserQuestionTool();
     const calls: unknown[] = [];

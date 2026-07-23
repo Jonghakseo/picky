@@ -232,7 +232,7 @@ struct PickyMainQuestionPanelView: View {
                             viewModel.formState.selectRadio(question: question, index: index, value: option.value)
                         }
                     }
-                    if question.allowOther ?? true {
+                    if question.allowsOther {
                         optionButton(
                             label: "Other…",
                             description: nil,
@@ -259,7 +259,7 @@ struct PickyMainQuestionPanelView: View {
                             viewModel.formState.toggleCheckbox(question: question, index: index, value: option.value)
                         }
                     }
-                    if question.allowOther ?? true {
+                    if question.allowsOther {
                         TextField("Other…", text: binding(\PickyAskUserQuestionFormState.otherValues, key: key))
                             .textFieldStyle(.roundedBorder)
                             .pickyFont(size: 11)

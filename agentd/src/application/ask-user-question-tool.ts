@@ -34,7 +34,7 @@ const TOOL_DESCRIPTION = `Ask the user one or more questions through an interact
 - checkbox: pick multiple options from a list
 - text: free-form text answer
 
-radio/checkbox questions can include an "Other" option for free-form input.`;
+radio/checkbox questions can include an "Other" option for free-form input. "Other" is enabled by default when allowOther is omitted; set allowOther to false only for an exhaustive fixed list.`;
 
 export function createPickyAskUserQuestionTool(): ToolDefinition {
   return defineTool({
@@ -45,7 +45,7 @@ export function createPickyAskUserQuestionTool(): ToolDefinition {
     promptGuidelines: [
       "Use this tool when you need structured input from the user; do not ask in free-form text.",
       "Single choice: radio. Multiple choice: checkbox. Free-form answer: text.",
-      "Set allowOther: true when the option list is not exhaustive.",
+      "Omit allowOther to include Other by default; set it to false only when the option list is exhaustive.",
       "Batch related questions into one call instead of issuing multiple separate prompts.",
     ],
     parameters: AskUserQuestionParamsSchema,

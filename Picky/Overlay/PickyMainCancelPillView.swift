@@ -5,6 +5,14 @@
 
 import SwiftUI
 
+private struct PickyMainCancelPillVisibleContentFramePreferenceKey: PreferenceKey {
+    static var defaultValue = CGRect.null
+
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        value = value.union(nextValue())
+    }
+}
+
 struct PickyMainCancelPillView: View {
     @ObservedObject var viewModel: PickyMainCancelPillViewModel
     let onHoverChanged: (Bool) -> Void
@@ -40,17 +48,23 @@ struct PickyMainCancelPillView: View {
             .contentShape(Capsule(style: .continuous))
             .scaleEffect(state == .hover ? 1.05 : 1)
             .onHover(perform: onHoverChanged)
-            .accessibilityLabel(Text(L10n.t("overlay.mainCancel.accessibility")))
-            .help(L10n.t("overlay.mainCancel.accessibility"))
+            .accessibilityLabel(Text(accessibilityLabel))
+            .help(accessibilityLabel)
+            .background(visibleContentFrameReporter)
 
             if state == .rest {
                 caption
+                    .background(visibleContentFrameReporter)
             }
         }
         .fixedSize()
         // Top-aligned within the fixed panel so the pill row does not jump
         // vertically when the caption appears/disappears across states.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .coordinateSpace(name: "PickyMainCancelPill")
+        .onPreferenceChange(PickyMainCancelPillVisibleContentFramePreferenceKey.self) {
+            viewModel.visibleContentFrame = $0.insetBy(dx: -4, dy: -4)
+        }
         .animation(reduceMotion ? nil : .easeOut(duration: DS.Animation.fast), value: state)
     }
 
@@ -88,6 +102,26 @@ struct PickyMainCancelPillView: View {
             }
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(Color(hex: "#CFE1FF").opacity(0.75))
+        }
+    }
+
+    private var visibleContentFrameReporter: some View {
+        GeometryReader { proxy in
+            Color.clear.preference(
+                key: PickyMainCancelPillVisibleContentFramePreferenceKey.self,
+                value: proxy.frame(in: .named("PickyMainCancelPill"))
+            )
+        }
+    }
+
+    private var accessibilityLabel: String {
+        switch state {
+        case .rest, .hover:
+            L10n.t("overlay.mainCancel.accessibility")
+        case .escapeArmed:
+            L10n.t("overlay.mainCancel.accessibility.escapeArmed")
+        case .cancelled:
+            L10n.t("overlay.mainCancel.accessibility.cancelled")
         }
     }
 

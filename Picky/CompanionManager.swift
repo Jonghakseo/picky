@@ -341,6 +341,15 @@ final class CompanionManager: ObservableObject {
     /// correlated error events keep the question panel open instead of taking
     /// the global connection-loss cleanup path.
     private var pendingMainQuestionAnswerCommandIDs = Set<String>()
+    /// Cancellation rejections are delivered both to `sendAwaitingError` and
+    /// the general event stream. Keep their errors from clearing a still-running
+    /// turn before the cancellation attempt can restore a retryable pill.
+    private var pendingMainTurnCancellationCommandIDs = Set<String>()
+    /// A router may resume the cancellation waiter before its broadcast event
+    /// reaches this manager. Command ids are UUIDs, so retaining the completed
+    /// ids prevents that later copy from being mistaken for a connection-wide
+    /// failure without risking a future command collision.
+    private var completedMainTurnCancellationCommandIDs = Set<String>()
     private var screenContextTargetCancellable: AnyCancellable?
     private var shortcutCaptureObserver: NSObjectProtocol?
     /// Tracks how many `ShortcutCaptureRecorder` instances are currently in
@@ -1062,6 +1071,9 @@ final class CompanionManager: ObservableObject {
             guard let self else { return false }
             return await self.cancelMainTurn()
         }
+        mainCancelPillPanelManager.onCancellationAttemptResolved = { [weak self] in
+            self?.updateMainCancelPillPresentation()
+        }
         let center = NotificationCenter.default
         for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
             mainCancelPillKeyWindowObservers.append(
@@ -1579,6 +1591,10 @@ final class CompanionManager: ObservableObject {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return false }
 
+        // Text submissions can route either to the main agent or an armed
+        // Pickle. Advance before context capture so no-screenshot armed paths
+        // also invalidate a late cancellation from the previous turn.
+        beginMainTurnGeneration()
         directMessageError = nil
 
         if source == .quickInput, let targetSessionID = normalizedVoiceFollowUpSessionID(selectionStore.screenContextTargetSessionID) {
@@ -2170,6 +2186,7 @@ final class CompanionManager: ObservableObject {
     /// state for the whole Pickle run.
     func noteExternalSubmission(kind: PickyExternalEntryKind, text: String, context: PickyContextPacket) {
         guard kind == .submitMain else { return }
+        beginMainTurnGeneration()
         noteMainOverlayContext(context)
         let inputID = UUID()
         interactionCoordinator.accept(
@@ -2212,10 +2229,7 @@ final class CompanionManager: ObservableObject {
                 case .recoverableError(let message):
                     await MainActor.run { self.finishAwaitingAgentResponse(visibleText: "Agent event error: \(message)", spokenText: nil) }
                 case .disconnected:
-                    await MainActor.run {
-                        self.finishAwaitingAgentResponse(visibleText: "picky-agentd disconnected", spokenText: nil)
-                        self.clearInteractionStateForConnectionLoss()
-                    }
+                    await MainActor.run { self.handleAgentClientDisconnected() }
                 case .connected:
                     await MainActor.run {
                         self.latestAgentSessionSummary = "picky-agentd connected"
@@ -2226,6 +2240,16 @@ final class CompanionManager: ObservableObject {
                 }
             }
         }
+    }
+
+    /// Preserves the retryable cancellation projection while a cancellation
+    /// command is awaiting its transport result. Once it resolves, its defer
+    /// re-runs the current pill presentation and ordinary disconnect cleanup
+    /// resumes for subsequent lifecycle events.
+    func handleAgentClientDisconnected() {
+        guard pendingMainTurnCancellationCommandIDs.isEmpty else { return }
+        finishAwaitingAgentResponse(visibleText: "picky-agentd disconnected", spokenText: nil)
+        clearInteractionStateForConnectionLoss()
     }
 
     func applyAgentEvent(_ event: PickyEvent) {
@@ -2298,7 +2322,9 @@ final class CompanionManager: ObservableObject {
             applyAnnotationOverlayRequest(request)
         case .error(let error):
             if let commandID = error.commandId,
-               pendingMainQuestionAnswerCommandIDs.contains(commandID) {
+               pendingMainQuestionAnswerCommandIDs.contains(commandID)
+                || pendingMainTurnCancellationCommandIDs.contains(commandID)
+                || completedMainTurnCancellationCommandIDs.contains(commandID) {
                 break
             }
             finishAwaitingAgentResponse(visibleText: error.message, spokenText: nil)
@@ -2587,8 +2613,11 @@ final class CompanionManager: ObservableObject {
         return (annotations, screenshot)
     }
 
-    private func noteMainOverlayContext(_ context: PickyContextPacket) {
+    private func beginMainTurnGeneration() {
         mainTurnGeneration &+= 1
+    }
+
+    private func noteMainOverlayContext(_ context: PickyContextPacket) {
         annotationSceneMonitor?.stop()
         activeAnnotationSceneIdentity = nil
         latestOverlayContextID = context.id
@@ -2809,17 +2838,23 @@ final class CompanionManager: ObservableObject {
         if stopsLocalSpeech {
             stopCurrentSpeech()
         }
+        let mainAbortCommand = PickyCommandEnvelope(type: .abortMainAgent)
+        let followUpAbortCommand = cancellation.followUpSessionID.map {
+            PickyCommandEnvelope(type: .abort, sessionId: $0)
+        }
+        let cancellationCommandIDs = [mainAbortCommand.id, followUpAbortCommand?.id].compactMap { $0 }
+        pendingMainTurnCancellationCommandIDs.formUnion(cancellationCommandIDs)
+        defer {
+            pendingMainTurnCancellationCommandIDs.subtract(cancellationCommandIDs)
+            completedMainTurnCancellationCommandIDs.formUnion(cancellationCommandIDs)
+            updateMainCancelPillPresentation()
+        }
+
         do {
-            async let mainAbortRejection = agentClient.sendAwaitingError(
-                PickyCommandEnvelope(type: .abortMainAgent),
-                timeout: 1.0
-            )
+            async let mainAbortRejection = agentClient.sendAwaitingError(mainAbortCommand, timeout: 1.0)
             async let followUpAbortRejection: PickyErrorEvent? = {
-                guard let followUpSessionID = cancellation.followUpSessionID else { return nil }
-                return try await agentClient.sendAwaitingError(
-                    PickyCommandEnvelope(type: .abort, sessionId: followUpSessionID),
-                    timeout: 1.0
-                )
+                guard let followUpAbortCommand else { return nil }
+                return try await agentClient.sendAwaitingError(followUpAbortCommand, timeout: 1.0)
             }()
             let (mainRejection, followUpRejection) = try await (mainAbortRejection, followUpAbortRejection)
             if let mainRejection {
@@ -2870,7 +2905,7 @@ final class CompanionManager: ObservableObject {
     }
 
     func beginAwaitingAgentResponse(recognizedTranscript: String? = nil) {
-        mainTurnGeneration &+= 1
+        beginMainTurnGeneration()
         activeMainTurnFollowUpSessionID = voiceFollowUpSessionIDForCurrentUtterance
         deferredFinishAwaitingAgentResponseTask?.cancel()
         deferredFinishAwaitingAgentResponseTask = nil

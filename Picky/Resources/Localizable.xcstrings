@@ -65,6 +65,18 @@
         "ko": { "stringUnit": { "state": "translated", "value": "메인 에이전트 응답 중지" } }
       }
     },
+    "overlay.mainCancel.accessibility.escapeArmed": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Press Escape again to stop main-agent response" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "메인 에이전트 응답을 중지하려면 esc를 한 번 더 누르세요" } }
+      }
+    },
+    "overlay.mainCancel.accessibility.cancelled": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Main-agent response stopped" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "메인 에이전트 응답이 중지됨" } }
+      }
+    },
     "agent.summary.pointingScreen": {
       "comment": "Format: 'Pointing at: <label>'. Arg is the element label.",
       "localizations": {

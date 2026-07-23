@@ -15,9 +15,46 @@ private final class PickyMainCancelPillPanel: PickySecureSurfacePanel, PickyScre
     override var canBecomeMain: Bool { false }
 }
 
+/// Keeps the panel click-through except where SwiftUI renders the pill or its
+/// visible caption. A borderless NSPanel otherwise receives mouse events across
+/// its transparent 260×82 backing frame.
+private final class PickyMainCancelPillHostingView: NSHostingView<LocalizedHostingRoot<PickyMainCancelPillView>> {
+    private let hitRegion: () -> CGRect
+
+    required init(rootView: LocalizedHostingRoot<PickyMainCancelPillView>) {
+        self.hitRegion = { .null }
+        super.init(rootView: rootView)
+    }
+
+    init(rootView: LocalizedHostingRoot<PickyMainCancelPillView>, hitRegion: @escaping () -> CGRect) {
+        self.hitRegion = hitRegion
+        super.init(rootView: rootView)
+    }
+
+    @MainActor required dynamic init?(coder: NSCoder) {
+        nil
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let region = hitRegion()
+        guard !region.isNull else { return super.hitTest(point) }
+        let appKitRegion = NSRect(
+            x: region.minX,
+            y: bounds.height - region.maxY,
+            width: region.width,
+            height: region.height
+        )
+        guard appKitRegion.contains(point) else { return nil }
+        return super.hitTest(point)
+    }
+}
+
 @MainActor
 final class PickyMainCancelPillViewModel: ObservableObject {
     @Published var state: PickyMainCancelPillState = .rest
+    /// SwiftUI reports its rendered pill/caption geometry in the hosting view's
+    /// coordinate space so transparent panel margins remain click-through.
+    @Published var visibleContentFrame = CGRect.null
 }
 
 @MainActor
@@ -36,6 +73,10 @@ final class PickyMainCancelPillPanelManager {
     private var dismissGeneration = 0
 
     var onCancel: () async -> Bool = { false }
+    /// Called after either a successful or failed cancellation attempt has
+    /// restored its visual state, so the panel converges against current
+    /// in-flight and key-window state rather than a stale pre-attempt snapshot.
+    var onCancellationAttemptResolved: () -> Void = {}
 
     deinit {
         escapeResetTask?.cancel()
@@ -86,18 +127,25 @@ final class PickyMainCancelPillPanelManager {
             return
         }
         // Fade out (keeps the current label — e.g. “Stopped” — visible during
-        // the transition), then reset for the next presentation.
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.25
-            panel.animator().alphaValue = 0
-        }, completionHandler: { [weak self, weak panel] in
+        // the transition), then reset for the next presentation. Reduce Motion
+        // keeps the same state change without an opacity animation.
+        let completeDismissal: () -> Void = { [weak self, weak panel] in
             Task { @MainActor [weak self, weak panel] in
                 guard let self, self.dismissGeneration == generation else { return }
                 panel?.orderOut(nil)
                 panel?.alphaValue = 1
                 self.viewModel.state = .rest
             }
-        })
+        }
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            panel.alphaValue = 0
+            completeDismissal()
+        } else {
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.25
+                panel.animator().alphaValue = 0
+            }, completionHandler: completeDismissal)
+        }
     }
 
     private func present() {
@@ -128,7 +176,10 @@ final class PickyMainCancelPillPanelManager {
             },
             onCancel: { [weak self] in self?.cancel() }
         )
-        let host = NSHostingView(rootView: LocalizedHostingRoot { view })
+        let host = PickyMainCancelPillHostingView(
+            rootView: LocalizedHostingRoot { view },
+            hitRegion: { [weak viewModel] in viewModel?.visibleContentFrame ?? .null }
+        )
         host.frame = NSRect(origin: .zero, size: Self.panelSize)
 
         let panel = PickyMainCancelPillPanel(
@@ -191,6 +242,7 @@ final class PickyMainCancelPillPanelManager {
             guard self.cancellationAttemptID == attemptID else { return }
             self.cancellationAttemptID = nil
             self.viewModel.state = PickyMainCancelPillPolicy.stateAfterCancellationAttempt(succeeded: succeeded)
+            self.onCancellationAttemptResolved()
             guard succeeded else { return }
             self.scheduleCancelledDismissal()
         }

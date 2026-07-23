@@ -895,6 +895,99 @@ struct PickyCompanionManagerTests {
         #expect(manager.isWaitingForCursorResponse)
     }
 
+    @Test func noScreenshotArmedSubmissionPreventsLateCancellationFromSettlingTheNextArmedTurn() async throws {
+        let client = FakeVoiceClient()
+        let gate = FakeAbortGate()
+        client.abortMainAgentGate = gate
+        let selection = FakeVoiceSelectionStore()
+        selection.setScreenContextTarget(sessionID: "pickle-target", sticky: true)
+        let manager = CompanionManager(
+            agentClient: client,
+            selectionStore: selection,
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(screenshots: []),
+            armedPickleDispatchMode: .followUp
+        )
+
+        #expect(await manager.sendDirectMessage("first armed", source: .quickInput))
+        let firstCancellation = Task { await manager.cancelMainTurn() }
+        try await waitUntil { client.commands.contains { $0.type == .abortMainAgent } }
+
+        #expect(await manager.sendDirectMessage("second armed", source: .quickInput))
+        await gate.release()
+        #expect(!(await firstCancellation.value))
+
+        #expect(await manager.cancelMainTurn())
+        #expect(client.commands.filter { $0.type == .abort && $0.sessionId == "pickle-target" }.count == 2)
+    }
+
+    @Test func cancellationErrorBroadcastBeforeWaiterResolutionKeepsTheTurnRetryable() async throws {
+        let client = FakeVoiceClient()
+        let gate = FakeAbortGate()
+        let rejection = PickyErrorEvent(code: "disconnected", message: "picky-agentd disconnected", commandId: nil)
+        client.abortMainAgentGate = gate
+        client.sendAwaitingErrorResult = rejection
+        let manager = CompanionManager(agentClient: client, selectionStore: FakeVoiceSelectionStore())
+        manager.noteExternalSubmission(kind: .submitMain, text: "cancel this", context: context(source: "cli"))
+        try await waitUntil { manager.isWaitingForCursorResponse }
+
+        let cancellation = Task { await manager.cancelMainTurn() }
+        try await waitUntil { client.commands.map(\.type) == [.abortMainAgent] }
+        let commandID = try #require(client.commands.first?.id)
+        manager.applyAgentEvent(.error(PickyErrorEvent(
+            code: rejection.code,
+            message: rejection.message,
+            commandId: commandID
+        )))
+        #expect(manager.isWaitingForCursorResponse)
+
+        await gate.release()
+        #expect(!(await cancellation.value))
+        #expect(manager.isWaitingForCursorResponse)
+    }
+
+    @Test func cancellationErrorBroadcastAfterWaiterResolutionKeepsTheTurnRetryable() async throws {
+        let client = FakeVoiceClient()
+        let rejection = PickyErrorEvent(code: "disconnected", message: "picky-agentd disconnected", commandId: nil)
+        client.sendAwaitingErrorResult = rejection
+        let manager = CompanionManager(agentClient: client, selectionStore: FakeVoiceSelectionStore())
+        manager.noteExternalSubmission(kind: .submitMain, text: "cancel this", context: context(source: "cli"))
+        try await waitUntil { manager.isWaitingForCursorResponse }
+
+        let didCancel = await manager.cancelMainTurn()
+        #expect(!didCancel)
+        let commandID = try #require(client.commands.first?.id)
+        manager.applyAgentEvent(.error(PickyErrorEvent(
+            code: rejection.code,
+            message: rejection.message,
+            commandId: commandID
+        )))
+
+        #expect(manager.isWaitingForCursorResponse)
+    }
+
+    @Test func disconnectDuringCancellationKeepsTheTurnRetryableUntilTheAttemptResolves() async throws {
+        let client = FakeVoiceClient()
+        let gate = FakeAbortGate()
+        client.abortMainAgentGate = gate
+        client.sendAwaitingErrorResult = PickyErrorEvent(
+            code: "disconnected",
+            message: "picky-agentd disconnected",
+            commandId: nil
+        )
+        let manager = CompanionManager(agentClient: client, selectionStore: FakeVoiceSelectionStore())
+        manager.noteExternalSubmission(kind: .submitMain, text: "cancel this", context: context(source: "cli"))
+        try await waitUntil { manager.isWaitingForCursorResponse }
+
+        let cancellation = Task { await manager.cancelMainTurn() }
+        try await waitUntil { client.commands.map(\.type) == [.abortMainAgent] }
+        manager.handleAgentClientDisconnected()
+        #expect(manager.isWaitingForCursorResponse)
+
+        await gate.release()
+        #expect(!(await cancellation.value))
+        #expect(manager.isWaitingForCursorResponse)
+    }
+
     @Test func voiceInputSuppressesQuickReplySpeechWithoutQueueing() async throws {
         let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
 

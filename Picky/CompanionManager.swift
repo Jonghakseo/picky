@@ -15,7 +15,9 @@ import OSLog
 import ScreenCaptureKit
 import SwiftUI
 
-private enum PickySpeechPollResult {
+// Shared only by CompanionManager's speech-lifecycle extension; the manager remains
+// the sole mutable owner of speech state.
+enum PickySpeechPollResult {
     case speaking
     case finished
     case timedOut
@@ -30,15 +32,19 @@ final class CompanionManager: ObservableObject {
     /// How long the recognized-transcript bubble stays on screen after STT
     /// finishes. The agent may still be processing — the bubble auto-hides so
     /// it doesn't sit on the cursor for the entire response wait.
-    private static let recognizedTranscriptVisibleDuration: TimeInterval = 3.0
+    // Used by the main-turn lifecycle extension; state ownership remains here.
+    static let recognizedTranscriptVisibleDuration: TimeInterval = 3.0
     private static let deferredSpeechRetryInterval: TimeInterval = 0.05
     private static let deferredSpeechMaximumWait: TimeInterval = 2.0
-    @Published private(set) var voiceState: CompanionVoiceState = .idle {
+    /// Mutated only by CompanionManager and its lifecycle extensions.
+    @Published var voiceState: CompanionVoiceState = .idle {
         didSet { updateMainCancelPillPresentation() }
     }
     @Published private(set) var lastTranscript: String?
-    @Published private(set) var currentVoicePromptPreview: String?
-    @Published private(set) var voicePromptBubbleState: CompanionVoicePromptBubbleState = .hidden {
+    /// Mutated only by CompanionManager and its main-turn lifecycle extension.
+    @Published var currentVoicePromptPreview: String?
+    /// Mutated only by CompanionManager and its main-turn lifecycle extension.
+    @Published var voicePromptBubbleState: CompanionVoicePromptBubbleState = .hidden {
         didSet {
             // Any transition into .hidden (whether from finishAwaitingAgentResponse,
             // a fresh PTT, or the presentation reducer) makes the auto-hide task
@@ -50,7 +56,8 @@ final class CompanionManager: ObservableObject {
             }
         }
     }
-    @Published private(set) var latestAgentSessionSummary: String?
+    /// Mutated only by CompanionManager and its main-turn lifecycle extension.
+    @Published var latestAgentSessionSummary: String?
     @Published private(set) var isProgressiveResponseVisible = false
     @Published private(set) var hasActiveVisualNarration = false
     @Published private(set) var activeVisualNarrationSegmentID: String?
@@ -190,7 +197,9 @@ final class CompanionManager: ObservableObject {
     /// same connection Companion is listening on. The router's multi-
     /// subscriber events stream lets the HUD viewModel subscribe to the
     /// same instance without fighting over a single AsyncStream consumer.
-    private let agentClient: any PickyAgentClient
+    // Access is internal only for the main-turn lifecycle extension; CompanionManager
+    // remains the sole owner of commands sent through this client.
+    let agentClient: any PickyAgentClient
     /// `true` when `CompanionManager` owns the `agentClient` and is
     /// responsible for its lifecycle. `false` when the client is shared
     /// with another owner (in production the HUD's
@@ -204,7 +213,8 @@ final class CompanionManager: ObservableObject {
     private let transcriptionProviderFactory: (PickySettings) -> any BuddyTranscriptionProvider
     private let speechPlaybackProviderFactory: (PickySettings) -> any PickySpeechPlaybackProvider
     private let interactionTimerScheduler: any PickyInteractionTimerScheduling
-    private var speechPlaybackProvider: any PickySpeechPlaybackProvider
+    // Mutated only by CompanionManager; read and driven by its speech-lifecycle extension.
+    var speechPlaybackProvider: any PickySpeechPlaybackProvider
     private var appliedVoiceProviderSettings: PickyVoiceProviderSettings
     private var ttsPlaybackEnabled: Bool
     private let speechWatchdogTimeoutOverride: TimeInterval?
@@ -349,12 +359,12 @@ final class CompanionManager: ObservableObject {
     /// Cancellation rejections are delivered both to `sendAwaitingError` and
     /// the general event stream. Keep their errors from clearing a still-running
     /// turn before the cancellation attempt can restore a retryable pill.
-    private var pendingMainTurnCancellationCommandIDs = Set<String>()
+    var pendingMainTurnCancellationCommandIDs = Set<String>()
     /// A router may resume the cancellation waiter before its broadcast event
     /// reaches this manager. Command ids are UUIDs, so retaining the completed
     /// ids prevents that later copy from being mistaken for a connection-wide
     /// failure without risking a future command collision.
-    private var completedMainTurnCancellationCommandIDs = Set<String>()
+    var completedMainTurnCancellationCommandIDs = Set<String>()
     /// Deferred clear for the cursor activity chips. The daemon emits a clear
     /// (`mainActivityUpdated(nil)`) at turn terminal, right before the reply. We
     /// hold the chips a short beat so they linger beside the response bubble and
@@ -378,20 +388,23 @@ final class CompanionManager: ObservableObject {
     private var pendingKeyboardShortcutStartTask: Task<Void, Never>?
     /// Scheduled hide for transient cursor mode — cancelled if the user
     /// speaks again before the delay elapses.
-    private var transientHideTask: Task<Void, Never>?
-    private var responseStateTask: Task<Void, Never>?
-    private var deferredInteractionSpeechTask: Task<Void, Never>?
-    private var deferredFinishAwaitingAgentResponseTask: Task<Void, Never>?
-    private var deferredFinishAwaitingAgentResponseSessionID: String?
+    // Lifecycle task state is mutable only through CompanionManager's extensions.
+    // Internal visibility permits those coherent responsibilities to stay in named files.
+    var transientHideTask: Task<Void, Never>?
+    var responseStateTask: Task<Void, Never>?
+    var deferredInteractionSpeechTask: Task<Void, Never>?
+    var deferredFinishAwaitingAgentResponseTask: Task<Void, Never>?
+    var deferredFinishAwaitingAgentResponseSessionID: String?
     /// Caps how long the recognized-transcript bubble lingers after STT.
-    private var voicePromptBubbleAutoHideTask: Task<Void, Never>?
-    private struct ArmedPickleDispatch {
+    var voicePromptBubbleAutoHideTask: Task<Void, Never>?
+    struct ArmedPickleDispatch {
         let token: UUID
         let generation: UInt64
         var contextID: String?
     }
 
-    private struct MainTurnCancellation {
+    // Shared only with CompanionManager+MainTurnLifecycle.swift.
+    struct MainTurnCancellation {
         let shouldSettleLocalState: Bool
         let followUpSessionID: String?
         let generation: UInt64
@@ -400,33 +413,33 @@ final class CompanionManager: ObservableObject {
 
     /// Increments when a new main turn starts so late cancellation completions
     /// cannot reset that newer turn's local projection.
-    private var mainTurnGeneration: UInt64 = 0
+    var mainTurnGeneration: UInt64 = 0
     /// Identity of the armed Pickle dispatch currently capturing or awaiting
     /// agentd. Its token prevents stale capture completions and settled events
     /// from affecting a newer armed Pickle turn.
-    private var activeArmedPickleDispatch: ArmedPickleDispatch?
+    var activeArmedPickleDispatch: ArmedPickleDispatch?
 
-    private var voiceInteractionState = PickyVoiceInteractionState()
-    private var activeSpeechID: UUID?
+    var voiceInteractionState = PickyVoiceInteractionState()
+    var activeSpeechID: UUID?
     private var lastQuickReplyTTSDedupKey: String?
     private var lastQuickReplyTTSDedupAt: Date?
-    private var interactionSpeechID: UUID?
-    private var interactionVoiceInputID: UUID?
+    var interactionSpeechID: UUID?
+    var interactionVoiceInputID: UUID?
     /// Tracks the physical push-to-talk hold separately from dictation state so
     /// audio stays suppressed even if recording fails before the key is released.
-    private var isPushToTalkShortcutHeld = false
+    var isPushToTalkShortcutHeld = false
     /// Suppresses local spoken audio while the user is starting, holding,
     /// or finalizing voice input. If a voice-owned reply arrives during the
     /// finalizing→idle transition, speech is deferred briefly rather than failed
     /// so fast agent replies are not dropped by the tail of the same utterance.
-    private var isVoiceInputAudioSuppressionActive = false
-    private var pendingAgentResponseStartedAt: Date? {
+    var isVoiceInputAudioSuppressionActive = false
+    var pendingAgentResponseStartedAt: Date? {
         didSet { updateMainCancelPillPresentation() }
     }
     /// Follow-up destination for the currently cancellable turn. Voice uses its
     /// utterance snapshot; Quick Input records its armed Pickle after agentd
     /// accepts the dispatch so both cancellation surfaces stop the same work.
-    private var activeMainTurnFollowUpSessionID: String? {
+    var activeMainTurnFollowUpSessionID: String? {
         didSet { updateMainCancelPillPresentation() }
     }
     /// Tracks the last status we saw per session so `applyAgentEvent(.sessionUpdated)`
@@ -436,7 +449,7 @@ final class CompanionManager: ObservableObject {
     /// CompanionManager releases the cursor processing state. Idempotent against
     /// duplicate terminal updates (the second one observes status == prior == terminal
     /// and short-circuits).
-    private var lastObservedSessionStatuses: [String: PickySessionStatus] = [:]
+    var lastObservedSessionStatuses: [String: PickySessionStatus] = [:]
     /// Voice follow-up target captured at PTT press time and used by the response
     /// task to route the utterance. Exposed read-only at module scope so tests can
     /// guard the race-condition fix in `updateVoicePresentation` (see also the
@@ -467,14 +480,14 @@ final class CompanionManager: ObservableObject {
     }
     @Published private(set) var inkOverlayState: PickyInkOverlayState = .inactive
 
-    private var localOverlayVisibilityReasons: Set<PickyOverlayReason> = []
-    private var interactionOverlayVisibilityReasons: Set<PickyOverlayReason> = []
+    var localOverlayVisibilityReasons: Set<PickyOverlayReason> = []
+    var interactionOverlayVisibilityReasons: Set<PickyOverlayReason> = []
 
     /// Whether the cursor overlay windows should exist at all. Sourced from
     /// Settings → Cursor → "Show Picky cursor" (`cursor.showPiCursor`) — the
     /// same key the rendering layer (`BlueCursorView`) reads — so the window
     /// lifecycle and rendering can never disagree. Refreshed on settings save.
-    private var isCursorPreferenceEnabled: Bool
+    var isCursorPreferenceEnabled: Bool
 
     /// One-shot migration: older builds gated the overlay *windows* behind a
     /// separate `isPickyCursorEnabled` UserDefaults key while Settings'
@@ -794,7 +807,7 @@ final class CompanionManager: ObservableObject {
         syncOverlayVisibility()
     }
 
-    private func syncOverlayVisibility(animatedHide: Bool = true) {
+    func syncOverlayVisibility(animatedHide: Bool = true) {
         let reasons = localOverlayVisibilityReasons.union(interactionOverlayVisibilityReasons)
         overlayVisibilityReasons = reasons
         transientHideTask?.cancel()
@@ -819,7 +832,7 @@ final class CompanionManager: ObservableObject {
         isOverlayVisible = true
     }
 
-    private var hasActiveTransientOverlayBlocker: Bool {
+    var hasActiveTransientOverlayBlocker: Bool {
         let blockers: Set<PickyOverlayReason> = [.activeVoiceInput, .waitingForVoiceResponse, .speakingResponse, .activePointerAnimation, .activeInkCapture, .screenContextTarget]
         return !overlayVisibilityReasons.intersection(blockers).isEmpty
     }
@@ -1048,7 +1061,7 @@ final class CompanionManager: ObservableObject {
     }
 
     @discardableResult
-    private func reduceVoiceInteraction(_ event: PickyVoiceInteractionEvent) -> PickyVoiceInteractionTransition {
+    func reduceVoiceInteraction(_ event: PickyVoiceInteractionEvent) -> PickyVoiceInteractionTransition {
         let transition = PickyVoiceInteractionMachine.reduce(state: voiceInteractionState, event: event)
         voiceInteractionState = transition.state
         applyVoiceInteractionProjection(transition.state.projection)
@@ -1132,7 +1145,7 @@ final class CompanionManager: ObservableObject {
         updateMainCancelPillPresentation()
     }
 
-    private func updateMainCancelPillPresentation() {
+    func updateMainCancelPillPresentation() {
         // Lingering chips (deferred clear scheduled after turn settle) are a
         // purely visual afterglow — they must not keep the cancel pill alive
         // for an already-finished turn.
@@ -1179,7 +1192,7 @@ final class CompanionManager: ObservableObject {
 
     /// Clears chips now and cancels any pending deferred clear (hard reset paths:
     /// connection loss, new session).
-    private func clearMainActivitiesImmediately() {
+    func clearMainActivitiesImmediately() {
         mainActivityClearTask?.cancel()
         mainActivityClearTask = nil
         mainLiveActivities = []
@@ -1893,7 +1906,7 @@ final class CompanionManager: ObservableObject {
         activeMainTurnFollowUpSessionID = nil
     }
 
-    private func speechWatchdogTimeout(for utterance: String) -> TimeInterval {
+    func speechWatchdogTimeout(for utterance: String) -> TimeInterval {
         if let speechWatchdogTimeoutOverride {
             return max(0.05, speechWatchdogTimeoutOverride)
         }
@@ -1914,7 +1927,7 @@ final class CompanionManager: ObservableObject {
         return min(estimatedDuration, 300.0)
     }
 
-    private func logSpeech(_ message: String) {
+    func logSpeech(_ message: String) {
         PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: message)
     }
 
@@ -2785,7 +2798,7 @@ final class CompanionManager: ObservableObject {
         return (annotations, screenshot)
     }
 
-    private func beginMainTurnGeneration() {
+    func beginMainTurnGeneration() {
         mainTurnGeneration &+= 1
         activeArmedPickleDispatch = nil
     }
@@ -2918,462 +2931,6 @@ final class CompanionManager: ObservableObject {
     private func updatePassiveAgentSummary(_ summary: String) {
         guard voiceState != .responding else { return }
         latestAgentSessionSummary = summary
-    }
-
-    /// If the cursor is in transient mode (user toggled "Show Picky" off),
-    /// waits for any pointing animation to finish, then
-    /// fades out the overlay after a 1-second pause. Cancelled automatically
-    /// if the user starts another push-to-talk interaction.
-    func scheduleTransientHideIfNeeded() {
-        guard !isCursorPreferenceEnabled && isOverlayVisible else { return }
-        guard !hasActiveTransientOverlayBlocker else { return }
-
-        transientHideTask?.cancel()
-        transientHideTask = Task {
-            // Wait for pointing animation to finish (location is cleared
-            // when the buddy flies back to the cursor)
-            while detectedElementScreenLocation != nil || hasActiveTransientOverlayBlocker {
-                try? await Task.sleep(nanoseconds: 200_000_000)
-                guard !Task.isCancelled else { return }
-            }
-
-            // Pause 1s after everything finishes, then fade out
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-            guard !Task.isCancelled, !hasActiveTransientOverlayBlocker else { return }
-            localOverlayVisibilityReasons.removeAll()
-            interactionOverlayVisibilityReasons.removeAll()
-            syncOverlayVisibility(animatedHide: true)
-        }
-    }
-
-    private var shouldSuppressSpokenAudioForVoiceInput: Bool {
-        isPushToTalkShortcutHeld || isVoiceInputAudioSuppressionActive || buddyDictationManager.isDictationInProgress
-    }
-
-    private func updateVoiceInputAudioSuppression(isVoiceInputActive: Bool) {
-        guard isVoiceInputActive else {
-            isVoiceInputAudioSuppressionActive = false
-            return
-        }
-
-        isVoiceInputAudioSuppressionActive = true
-        stopCurrentSpeech()
-        // Voice input (PTT) means the user is taking over: drop any active
-        // agent state so the UI flips off the yellow loading / blue speaking
-        // indicator immediately and the STT subsystem can promote to
-        // `.listening` on its own.
-        if voiceState == .responding || voiceState == .processing {
-            voiceState = .idle
-        }
-    }
-
-    func interruptSpokenResponseForVoiceInput() {
-        // Capture before this PTT press can begin a new turn. The abort command
-        // must still precede that submission, but its eventual success must not
-        // settle the new turn that follows this key press.
-        let cancellation = makeMainTurnCancellation()
-        stopCurrentSpeech()
-        Task { [weak self] in
-            _ = await self?.cancelMainTurn(cancellation, stopsLocalSpeech: false)
-        }
-        updateVoiceInputAudioSuppression(isVoiceInputActive: true)
-        reduceVoiceInteraction(.abort)
-    }
-
-    /// Stops the current main turn regardless of whether it originated from
-    /// voice or typed Quick Input. A Pickle follow-up needs its own session
-    /// abort in addition to the main-agent abort.
-    @discardableResult
-    func cancelMainTurn() async -> Bool {
-        await cancelMainTurn(makeMainTurnCancellation(), stopsLocalSpeech: true)
-    }
-
-    private func makeMainTurnCancellation() -> MainTurnCancellation {
-        let hasPendingAgentResponse = pendingAgentResponseStartedAt != nil
-        let shouldSettleLocalState = PickyMainCancelPillPolicy.isMainTurnInFlight(
-            hasPendingAgentResponse: hasPendingAgentResponse,
-            voiceState: voiceState,
-            isWaitingForCursorResponse: isWaitingForCursorResponse,
-            hasLiveActivities: !mainLiveActivities.isEmpty,
-            hasActiveFollowUpTurn: activeMainTurnFollowUpSessionID != nil
-        )
-        let shouldAbortFollowUpPickle = PickyMainCancelPillPolicy.shouldAbortFollowUpPickle(
-            hasPendingAgentResponse: hasPendingAgentResponse,
-            voiceState: voiceState
-        )
-        return MainTurnCancellation(
-            shouldSettleLocalState: shouldSettleLocalState,
-            followUpSessionID: PickyMainCancelPillPolicy.followUpAbortTarget(
-                activeMainTurnFollowUpSessionID: activeMainTurnFollowUpSessionID,
-                voiceFollowUpSessionID: voiceFollowUpSessionIDForCurrentUtterance,
-                shouldAbortVoiceFollowUpPickle: shouldAbortFollowUpPickle
-            ),
-            generation: mainTurnGeneration,
-            armedPickleDispatchToken: activeArmedPickleDispatch?.token
-        )
-    }
-
-    private func cancelMainTurn(
-        _ cancellation: MainTurnCancellation,
-        stopsLocalSpeech: Bool
-    ) async -> Bool {
-        // Stop local narration immediately, but keep the in-flight projection
-        // intact until agentd accepted the main abort. That lets the pill remain
-        // usable when transport or command delivery fails.
-        if stopsLocalSpeech {
-            stopCurrentSpeech()
-        }
-        let mainAbortCommand = PickyCommandEnvelope(type: .abortMainAgent)
-        let followUpAbortCommand = cancellation.followUpSessionID.map {
-            PickyCommandEnvelope(type: .abort, sessionId: $0)
-        }
-        let cancellationCommandIDs = [mainAbortCommand.id, followUpAbortCommand?.id].compactMap { $0 }
-        pendingMainTurnCancellationCommandIDs.formUnion(cancellationCommandIDs)
-        defer {
-            pendingMainTurnCancellationCommandIDs.subtract(cancellationCommandIDs)
-            completedMainTurnCancellationCommandIDs.formUnion(cancellationCommandIDs)
-            updateMainCancelPillPresentation()
-        }
-
-        do {
-            async let mainAbortRejection = agentClient.sendAwaitingError(mainAbortCommand, timeout: 1.0)
-            async let followUpAbortRejection: PickyErrorEvent? = {
-                guard let followUpAbortCommand else { return nil }
-                return try await agentClient.sendAwaitingError(followUpAbortCommand, timeout: 1.0)
-            }()
-            let (mainRejection, followUpRejection) = try await (mainAbortRejection, followUpAbortRejection)
-            if let mainRejection {
-                print("⚠️ Failed to abort Picky main turn: \(mainRejection.message)")
-                return false
-            }
-            if let followUpRejection {
-                print("⚠️ Failed to abort Pickle session: \(followUpRejection.message)")
-                return false
-            }
-        } catch {
-            print("⚠️ Failed to abort Picky main turn: \(error)")
-            return false
-        }
-
-        // A PTT or typed submission may have started another turn while the
-        // daemon was processing this cancellation. Never settle or confirm a
-        // cancellation result against that newer turn.
-        guard mainTurnGeneration == cancellation.generation else { return false }
-        if let armedPickleDispatchToken = cancellation.armedPickleDispatchToken,
-           activeArmedPickleDispatch?.token == armedPickleDispatchToken {
-            activeArmedPickleDispatch = nil
-        }
-        if cancellation.shouldSettleLocalState {
-            settleMainTurnAfterCancellation()
-        }
-        return true
-    }
-
-    private func settleMainTurnAfterCancellation() {
-        deferredFinishAwaitingAgentResponseTask?.cancel()
-        deferredFinishAwaitingAgentResponseTask = nil
-        deferredFinishAwaitingAgentResponseSessionID = nil
-        responseStateTask?.cancel()
-        responseStateTask = nil
-        pendingAgentResponseStartedAt = nil
-        // User-initiated cancellation: drop the chips immediately (and any
-        // pending linger) — there is no settled response to linger beside.
-        clearMainActivitiesImmediately()
-        activeMainTurnFollowUpSessionID = nil
-        currentVoicePromptPreview = nil
-        voicePromptBubbleState = .hidden
-        // This is the same abort reduction used by the voice interruption path.
-        // It clears the voice projection even though agentd's abort command has
-        // no matching mainTurnSettled event.
-        reduceVoiceInteraction(.abort)
-        // Typed Quick Input uses the interaction coordinator rather than the
-        // voice machine. Reset its waiting output as well so the cursor cannot
-        // remain in the processing projection after a successful abort.
-        interactionCoordinator.accept(
-            .mainAgentSessionReset,
-            correlation: PickyInteractionCorrelation(source: .system)
-        )
-    }
-
-    func beginAwaitingAgentResponse(recognizedTranscript: String? = nil) {
-        beginMainTurnGeneration()
-        activeMainTurnFollowUpSessionID = voiceFollowUpSessionIDForCurrentUtterance
-        deferredFinishAwaitingAgentResponseTask?.cancel()
-        deferredFinishAwaitingAgentResponseTask = nil
-        deferredFinishAwaitingAgentResponseSessionID = nil
-        if !buddyDictationManager.isDictationInProgress {
-            updateVoiceInputAudioSuppression(isVoiceInputActive: false)
-        }
-        stopCurrentSpeech()
-        let trimmedTranscript = recognizedTranscript?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        currentVoicePromptPreview = trimmedTranscript.isEmpty ? nil : trimmedTranscript
-        let startedAt = Date()
-        pendingAgentResponseStartedAt = startedAt
-        latestAgentSessionSummary = L10n.t("agent.summary.preparingResponse")
-        reduceVoiceInteraction(.loadingStarted(
-            inputID: interactionVoiceInputID,
-            transcript: trimmedTranscript,
-            targetSessionID: voiceFollowUpSessionIDForCurrentUtterance,
-            now: startedAt,
-            promptBubbleVisibility: .visible
-        ))
-        scheduleRecognizedTranscriptAutoHide(trimmedTranscript: trimmedTranscript)
-    }
-
-    private func scheduleRecognizedTranscriptAutoHide(trimmedTranscript: String) {
-        voicePromptBubbleAutoHideTask?.cancel()
-        voicePromptBubbleAutoHideTask = nil
-        guard !trimmedTranscript.isEmpty else { return }
-
-        let visibleDuration = Self.recognizedTranscriptVisibleDuration
-        voicePromptBubbleAutoHideTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(visibleDuration * 1_000_000_000))
-            guard !Task.isCancelled else { return }
-            await MainActor.run { [weak self] in
-                guard let self else { return }
-                // Only retract the bubble if it's still showing the same
-                // recognized transcript. If the agent already responded, or a
-                // new utterance replaced it, the didSet on voicePromptBubbleState
-                // already cancelled this task — but guard defensively anyway.
-                guard case .recognized = self.voicePromptBubbleState else { return }
-                self.reduceVoiceInteraction(.promptBubbleAutoHide)
-                self.currentVoicePromptPreview = nil
-            }
-        }
-    }
-
-    /// Releases cursor state tied to a session that just transitioned to a terminal
-    /// status. The normal completion path runs through `quickReply` -> `finishAwaitingAgentResponse`,
-    /// but HUD aborts (and runtime cancel/fail) reach the client only as a `sessionUpdated`
-    /// with `.cancelled` / `.failed` — no `quickReply` ever lands. Without this hook the
-    /// cursor stays at `.processing` (yellow) forever because both channels that drive it
-    /// (`pendingAgentResponseStartedAt` + interaction state `.waitingForAgent`) never clear.
-    ///
-    /// Idempotent and side-effect-light when nothing matches:
-    ///   - only the *transition* into a terminal status triggers cleanup (duplicate
-    ///     `sessionUpdated` snapshots for the same terminal status are no-ops);
-    ///   - voice-follow-up tracking is only released when the terminated session is the
-    ///     one the cursor is actively waiting on;
-    ///   - the interaction-coordinator dispatch is harmless when the reducer never
-    ///     observed an `agentSubmissionAccepted` for this sessionID.
-    private func handleSessionStatusTransition(session: PickyAgentSession) {
-        let previous = lastObservedSessionStatuses[session.id]
-        lastObservedSessionStatuses[session.id] = session.status
-        guard session.status.isTerminal else { return }
-        if let previous, previous.isTerminal { return }
-        releaseCursorForTerminatedSession(sessionID: session.id, status: session.status)
-    }
-
-    private func releaseCursorForTerminatedSession(sessionID: String, status: PickySessionStatus) {
-        if activeMainTurnFollowUpSessionID == sessionID {
-            activeMainTurnFollowUpSessionID = nil
-        }
-        releaseDeferredAcceptedReceiptIfNeeded(sessionID: sessionID)
-        // Only release the voice-input "awaiting agent" timing when the cursor is
-        // actually waiting on THIS session. Otherwise we'd race-clear a fresh voice
-        // turn that started against a different (still-running) Pickle, or an in-flight
-        // spoken reply for an unrelated completed session.
-        if voiceFollowUpSessionIDForCurrentUtterance == sessionID {
-            deferredFinishAwaitingAgentResponseTask?.cancel()
-            deferredFinishAwaitingAgentResponseTask = nil
-            deferredFinishAwaitingAgentResponseSessionID = nil
-            responseStateTask?.cancel()
-            responseStateTask = nil
-            pendingAgentResponseStartedAt = nil
-            currentVoicePromptPreview = nil
-            voicePromptBubbleState = .hidden
-            setVoiceFollowUpSessionIDForCurrentUtterance(nil, caller: "session-terminated-\(status.rawValue)")
-            // Re-run the voice presentation pipeline. With pendingAgentResponseStartedAt
-            // cleared and no dictation in progress, this falls through to the
-            // `reduceVoiceInteraction(.reset)` branch which moves voiceState out of
-            // `.processing` (the yellow cursor) back to `.idle`. Without this nudge the
-            // PickyVoiceInteractionMachine stays parked in `.loading` and voiceState
-            // never updates because nothing else drives a projection refresh.
-            updateVoicePresentation()
-        }
-        // Dispatch the synthetic terminal event into the interaction reducer so any
-        // `.waitingForAgent` output that the reducer recorded against this session
-        // (CLI / quickInput / voice with cursor presentation) flips back to `.idle`.
-        // The reducer is idempotent: unknown sessionIDs become `.staleEvent` records.
-        interactionCoordinator.accept(
-            .sessionTerminated(sessionID: sessionID),
-            correlation: PickyInteractionCorrelation(sessionID: sessionID, source: .agent)
-        )
-    }
-
-    private func releaseDeferredAcceptedReceiptIfNeeded(sessionID: String) {
-        guard deferredFinishAwaitingAgentResponseSessionID == sessionID else { return }
-        deferredFinishAwaitingAgentResponseTask?.cancel()
-        deferredFinishAwaitingAgentResponseTask = nil
-        deferredFinishAwaitingAgentResponseSessionID = nil
-        pendingAgentResponseStartedAt = nil
-        currentVoicePromptPreview = nil
-        voicePromptBubbleState = .hidden
-        if voiceState == .processing {
-            reduceVoiceInteraction(.reset)
-        } else {
-            updateVoicePresentation()
-        }
-    }
-
-    func finishAwaitingAgentResponse(
-        visibleText: String,
-        spokenText: String?,
-        enforceMinimumProcessingDuration: Bool = false,
-        deferredSessionID: String? = nil
-    ) {
-        if enforceMinimumProcessingDuration,
-           let pendingAgentResponseStartedAt,
-           Date().timeIntervalSince(pendingAgentResponseStartedAt) < Self.minimumVoiceProcessingDisplayDuration {
-            let remainingDelay = Self.minimumVoiceProcessingDisplayDuration - Date().timeIntervalSince(pendingAgentResponseStartedAt)
-            deferredFinishAwaitingAgentResponseTask?.cancel()
-            deferredFinishAwaitingAgentResponseSessionID = deferredSessionID
-            deferredFinishAwaitingAgentResponseTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: UInt64(max(remainingDelay, 0) * 1_000_000_000))
-                guard !Task.isCancelled else { return }
-                await MainActor.run { [weak self] in
-                    self?.finishAwaitingAgentResponse(visibleText: visibleText, spokenText: spokenText)
-                }
-            }
-            return
-        }
-
-        deferredFinishAwaitingAgentResponseTask?.cancel()
-        deferredFinishAwaitingAgentResponseTask = nil
-        deferredFinishAwaitingAgentResponseSessionID = nil
-        responseStateTask?.cancel()
-        responseStateTask = nil
-        pendingAgentResponseStartedAt = nil
-        activeMainTurnFollowUpSessionID = nil
-        latestAgentSessionSummary = visibleText
-        currentVoicePromptPreview = nil
-        let textToSpeak = spokenText?.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let textToSpeak, !textToSpeak.isEmpty else {
-            reduceVoiceInteraction(.textReply(text: visibleText))
-            if !shouldSuppressSpokenAudioForVoiceInput {
-                scheduleTransientHideIfNeeded()
-            }
-            return
-        }
-        guard !shouldSuppressSpokenAudioForVoiceInput else {
-            stopCurrentSpeech()
-            reduceVoiceInteraction(.textReply(text: visibleText))
-            return
-        }
-        speakSystemMessage(textToSpeak)
-    }
-
-    /// Speaks a short local status message through macOS system speech.
-    private func speakSystemMessage(_ utterance: String) {
-        guard !shouldSuppressSpokenAudioForVoiceInput else {
-            stopCurrentSpeech()
-            return
-        }
-        stopCurrentSpeech()
-
-        let speechID = UUID()
-        activeSpeechID = speechID
-        reduceVoiceInteraction(.agentReply(text: utterance, shouldSpeak: true, speechID: speechID, timerID: speechID, inputID: interactionVoiceInputID, now: Date()))
-
-        logSpeech("system start speechID=\(speechID) provider=\(speechPlaybackProvider.displayName) chars=\(utterance.count)")
-        guard speechPlaybackProvider.speak(utterance, onFinish: { [weak self] didFinish in
-            Task { @MainActor [weak self] in
-                self?.logSpeech("system provider callback speechID=\(speechID) didFinish=\(didFinish)")
-                self?.handleSpeechFinished(speechID: speechID, didFinish: didFinish)
-            }
-        }) else {
-            logSpeech("system provider refused start speechID=\(speechID)")
-            handleSpeechFinished(speechID: speechID, didFinish: false)
-            return
-        }
-
-        let startedAt = Date()
-        let watchdogDeadline = Date().addingTimeInterval(speechWatchdogTimeout(for: utterance))
-        responseStateTask = Task { [weak self] in
-            var lastLoggedSecond = -1
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 250_000_000)
-                guard !Task.isCancelled else { return }
-                let pollResult = await MainActor.run { [weak self] in
-                    guard let self,
-                          self.activeSpeechID == speechID else {
-                        return PickySpeechPollResult.inactive
-                    }
-                    let isSpeaking = self.speechPlaybackProvider.isSpeaking
-                    let elapsedSecond = Int(Date().timeIntervalSince(startedAt))
-                    if elapsedSecond != lastLoggedSecond {
-                        lastLoggedSecond = elapsedSecond
-                        self.logSpeech("system poll speechID=\(speechID) elapsedMs=\(Int(Date().timeIntervalSince(startedAt) * 1000)) providerSpeaking=\(isSpeaking) voiceState=\(self.voiceState)")
-                    }
-                    if !isSpeaking { return .finished }
-                    if Date() >= watchdogDeadline { return .timedOut }
-                    return .speaking
-                }
-                switch pollResult {
-                case .speaking:
-                    continue
-                case .inactive:
-                    await MainActor.run { [weak self] in
-                        self?.logSpeech("system poll inactive speechID=\(speechID) elapsedMs=\(Int(Date().timeIntervalSince(startedAt) * 1000))")
-                    }
-                    return
-                case .finished:
-                    await MainActor.run { [weak self] in
-                        self?.logSpeech("system poll detected provider finished speechID=\(speechID) elapsedMs=\(Int(Date().timeIntervalSince(startedAt) * 1000))")
-                        self?.handleSpeechFinished(speechID: speechID, didFinish: true)
-                    }
-                    return
-                case .timedOut:
-                    await MainActor.run { [weak self] in
-                        guard let self, self.activeSpeechID == speechID else { return }
-                        self.logSpeech("system poll timed out speechID=\(speechID) elapsedMs=\(Int(Date().timeIntervalSince(startedAt) * 1000))")
-                        self.speechPlaybackProvider.stopSpeaking()
-                        self.handleSpeechFinished(speechID: speechID, didFinish: false)
-                    }
-                    return
-                }
-            }
-        }
-    }
-
-    private func stopCurrentSpeech() {
-        logSpeech("stop current speech active=\(activeSpeechID?.uuidString ?? "none") interaction=\(interactionSpeechID?.uuidString ?? "none") providerSpeaking=\(speechPlaybackProvider.isSpeaking)")
-        reduceVoiceInteraction(.reset)
-        activeSpeechID = nil
-        deferredInteractionSpeechTask?.cancel()
-        deferredInteractionSpeechTask = nil
-        responseStateTask?.cancel()
-        responseStateTask = nil
-        speechPlaybackProvider.stopSpeaking()
-    }
-
-    private func stopCurrentInteractionSpeech(speechID requestedSpeechID: UUID?) {
-        // Prefer the speechID the reducer explicitly preempted. Falling back
-        // to interactionSpeechID/activeSpeechID covers legacy call sites that
-        // didn't know which utterance was active (e.g., voicePressed when no
-        // interaction speech was running, just a system status message).
-        let speechID = requestedSpeechID ?? interactionSpeechID ?? activeSpeechID
-        logSpeech("stop current interaction speech requested=\(requestedSpeechID?.uuidString ?? "none") resolved=\(speechID?.uuidString ?? "none")")
-        stopCurrentSpeech()
-        guard let speechID else { return }
-        interactionCoordinator.effectCompleted(
-            .speechFailed(speechID: speechID),
-            correlation: PickyInteractionCorrelation(speechID: speechID, source: .system)
-        )
-    }
-
-    private func handleSpeechFinished(speechID: UUID, didFinish: Bool) {
-        guard activeSpeechID == speechID else {
-            logSpeech("system finish ignored stale speechID=\(speechID) active=\(activeSpeechID?.uuidString ?? "none") didFinish=\(didFinish) providerSpeaking=\(speechPlaybackProvider.isSpeaking)")
-            return
-        }
-        logSpeech("system finish accepted speechID=\(speechID) didFinish=\(didFinish) providerSpeaking=\(speechPlaybackProvider.isSpeaking)")
-        let machineCompletionTime = Date().addingTimeInterval(PickyVoiceInteractionMachine.minimumDisplayDuration + 0.01)
-        reduceVoiceInteraction(didFinish ? .speechFinished(speechID: speechID, now: machineCompletionTime) : .speechFailed(speechID: speechID, now: machineCompletionTime))
-        activeSpeechID = nil
-        responseStateTask?.cancel()
-        responseStateTask = nil
-        scheduleTransientHideIfNeeded()
     }
 
     /// Scans an assistant reply for the first `[label](picky://...)` link

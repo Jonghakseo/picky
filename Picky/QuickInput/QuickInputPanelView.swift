@@ -8,7 +8,6 @@
 //  trailing send (↑) glyph in a circle, and a dismissal × at the very right.
 //
 
-import AppKit
 import Combine
 import SwiftUI
 
@@ -20,24 +19,18 @@ enum QuickInputPanelLayout {
     /// prompt legible while still indicating additional scrollable content.
     static let historyTopFadeHeight: CGFloat = 18
     static let historyBottomFadeHeight: CGFloat = 24
-    /// The card intentionally recedes into the desktop until the user scrolls.
-    /// These component-level surface opacities preserve that hierarchy without
-    /// changing transcript text contrast or the shared surface token.
-    static let historyLightweightTopFadeOpacity: Double = 0.35
     static let historySolidSurfaceOpacity: Double = 0.96
-    /// Surface tint layered over the behind-window blur: airy at the top so
-    /// the desktop shows through, denser toward the pill for grounding.
-    static let historyLightweightTintTopOpacity: Double = 0.03
-    static let historyLightweightTintBottomOpacity: Double = 0.2
-    /// The system material's own tint is dense enough to read as opaque, so
-    /// the blur layer is faded to let the desktop actually show through.
-    static let historyLightweightBlurAlpha: Double = 0.45
+    /// Until the user scrolls, the card is a translucent surface whose whole
+    /// body (background, border, and message text together) dissolves toward
+    /// the top through one vertical mask, so it reads shorter than it is.
+    static let historyLightweightSurfaceOpacity: Double = 0.55
     static let historyLightweightBottomFadeOpacity: Double = 0.6
+    /// Dissolve mask stops, measured from the top of the card: fully gone at
+    /// the edge, ~30% visible mid-fade, crisp only in the bottom 30%.
+    static let historyDissolveMidLocation: CGFloat = 0.45
+    static let historyDissolveMidOpacity: Double = 0.3
+    static let historyDissolveCrispLocation: CGFloat = 0.7
     static let historyVerticalPadding: CGFloat = 10
-    static let historyLightweightBorderTopOpacity: Double = 0.18
-    static let historyLightweightBorderBottomOpacity: Double = 0.55
-    static let historyLightweightMainShadowOpacity: Double = 0.04
-    static let historyLightweightTightShadowOpacity: Double = 0.02
     static let historyBackgroundTransitionDuration: Double = 0.15
     static let mainShadowOpacity: Double = 0.08
     static let mainShadowRadius: CGFloat = 4
@@ -225,16 +218,37 @@ private struct QuickInputHistoryCard: View {
     private var messages: [PickyMainAgentMessage] { viewModel.recentMessages }
     private var anchorMessageID: String? { QuickInputHistoryPolicy.anchorMessageID(in: messages) }
     private var hasEarlierMessages: Bool { QuickInputHistoryPolicy.hasEarlierMessages(in: messages) }
+    /// The dissolve mask already vanishes the card's top while lightweight,
+    /// so the explicit top fade only applies to the solid presentation.
     private var showsTopFade: Bool {
-        hasEarlierMessages && hasContentAboveViewport
+        effectiveBackgroundMode == .solid && hasEarlierMessages && hasContentAboveViewport
     }
     private var effectiveBackgroundMode: QuickInputHistoryBackgroundMode {
         accessibilityReduceTransparency ? .solid : viewModel.historyBackgroundMode
     }
     private var topFadeSurfaceOpacity: Double {
-        effectiveBackgroundMode == .solid
-            ? QuickInputPanelLayout.historySolidSurfaceOpacity
-            : QuickInputPanelLayout.historyLightweightTopFadeOpacity
+        QuickInputPanelLayout.historySolidSurfaceOpacity
+    }
+
+    /// One vertical alpha mask over the whole card (background, border, and
+    /// text together) so the lightweight card dissolves toward its top edge.
+    /// The solid variant keeps identical stop counts so the transition
+    /// interpolates smoothly.
+    private var cardDissolveMask: LinearGradient {
+        let isLightweight = effectiveBackgroundMode == .lightweight
+        return LinearGradient(
+            stops: [
+                .init(color: .black.opacity(isLightweight ? 0 : 1), location: 0),
+                .init(
+                    color: .black.opacity(isLightweight ? QuickInputPanelLayout.historyDissolveMidOpacity : 1),
+                    location: QuickInputPanelLayout.historyDissolveMidLocation
+                ),
+                .init(color: .black, location: QuickInputPanelLayout.historyDissolveCrispLocation),
+                .init(color: .black, location: 1)
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
     }
     private var bottomFadeSurfaceOpacity: Double {
         effectiveBackgroundMode == .solid
@@ -357,12 +371,15 @@ private struct QuickInputHistoryCard: View {
                 }
             }
             .accessibilityLabel("Recent conversation")
-            // Clip the content first, then attach the background outside the
-            // clip: a SwiftUI clip mask on an ancestor layer disables
-            // `NSVisualEffectView`'s behind-window sampling, so the blur must
-            // stay unmasked and round its own corners via `maskImage`.
             .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.panel, style: .continuous))
             .background(QuickInputHistoryCardBackground(mode: effectiveBackgroundMode))
+            // Negative padding lets the mask cover the solid card's shadow
+            // spill instead of clipping it at the card bounds.
+            .mask(cardDissolveMask.padding(-QuickInputPanelLayout.shadowOutset))
+            .animation(
+                .easeInOut(duration: QuickInputPanelLayout.historyBackgroundTransitionDuration),
+                value: effectiveBackgroundMode
+            )
             .onAppear { scrollToAnchor(proxy) }
             .onChange(of: viewModel.presentationID) { _ in
                 hasContentAboveViewport = true
@@ -446,47 +463,13 @@ private struct QuickInputHistoryCardBackground: View {
         )
     }
 
+    /// A plain translucent surface — the card-wide dissolve mask supplies the
+    /// vertical fade, so no per-layer gradients or blur are needed here.
     private var lightweightSurface: some View {
-        QuickInputBehindWindowBlurView(
-            cornerRadius: DS.CornerRadius.panel,
-            alpha: QuickInputPanelLayout.historyLightweightBlurAlpha
-        )
+        shape
+            .fill(DS.Colors.surface1.opacity(QuickInputPanelLayout.historyLightweightSurfaceOpacity))
             .overlay(
-                shape.fill(
-                    LinearGradient(
-                        colors: [
-                            DS.Colors.surface1.opacity(QuickInputPanelLayout.historyLightweightTintTopOpacity),
-                            DS.Colors.surface1.opacity(QuickInputPanelLayout.historyLightweightTintBottomOpacity)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-            )
-            .overlay(
-                shape.stroke(
-                    LinearGradient(
-                        colors: [
-                            DS.Colors.borderSubtle.opacity(QuickInputPanelLayout.historyLightweightBorderTopOpacity),
-                            DS.Colors.borderSubtle.opacity(QuickInputPanelLayout.historyLightweightBorderBottomOpacity)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ),
-                    lineWidth: 0.8
-                )
-            )
-            .shadow(
-                color: Color.black.opacity(QuickInputPanelLayout.historyLightweightMainShadowOpacity),
-                radius: QuickInputPanelLayout.mainShadowRadius,
-                x: 0,
-                y: QuickInputPanelLayout.mainShadowYOffset
-            )
-            .shadow(
-                color: Color.black.opacity(QuickInputPanelLayout.historyLightweightTightShadowOpacity),
-                radius: QuickInputPanelLayout.tightShadowRadius,
-                x: 0,
-                y: QuickInputPanelLayout.tightShadowYOffset
+                shape.stroke(DS.Colors.borderSubtle.opacity(0.35), lineWidth: 0.8)
             )
     }
 
@@ -508,43 +491,6 @@ private struct QuickInputHistoryCardBackground: View {
                 x: 0,
                 y: QuickInputPanelLayout.tightShadowYOffset
             )
-    }
-}
-
-/// SwiftUI `Material` blends within the window inside `NSHostingView`, which
-/// shows nothing behind a transparent panel. Real desktop translucency needs
-/// an `NSVisualEffectView` with behind-window blending.
-private struct QuickInputBehindWindowBlurView: NSViewRepresentable {
-    let cornerRadius: CGFloat
-    var alpha: Double = 1
-
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.blendingMode = .behindWindow
-        view.material = .popover
-        view.state = .active
-        view.alphaValue = alpha
-        view.maskImage = Self.roundedMaskImage(cornerRadius: cornerRadius)
-        return view
-    }
-
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
-        nsView.alphaValue = alpha
-    }
-
-    /// AppKit-recommended rounded-corner masking for behind-window blur.
-    /// Cap insets keep the corners crisp while the center stretches.
-    private static func roundedMaskImage(cornerRadius radius: CGFloat) -> NSImage {
-        let inset = radius + 1
-        let size = NSSize(width: inset * 2 + 1, height: inset * 2 + 1)
-        let image = NSImage(size: size, flipped: false) { rect in
-            NSColor.black.set()
-            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
-            return true
-        }
-        image.capInsets = NSEdgeInsets(top: inset, left: inset, bottom: inset, right: inset)
-        image.resizingMode = .stretch
-        return image
     }
 }
 

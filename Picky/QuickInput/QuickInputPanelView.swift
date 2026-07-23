@@ -11,6 +11,25 @@
 import Combine
 import SwiftUI
 
+enum QuickInputRecipientProjection: Equatable {
+    case main
+    case pickle(sessionID: String, label: String)
+
+    var prompt: String {
+        switch self {
+        case .main:
+            "Message Picky…"
+        case .pickle(_, let label):
+            "Message \(label)…"
+        }
+    }
+
+    var showsMainAgentHistory: Bool {
+        if case .main = self { return true }
+        return false
+    }
+}
+
 enum QuickInputPanelLayout {
     static let pillWidth: CGFloat = 330
     static let capsuleHeight: CGFloat = 40
@@ -52,6 +71,8 @@ final class QuickInputPanelViewModel: ObservableObject {
     @Published var isSending: Bool = false
     @Published var errorMessage: String?
     @Published var recentMessages: [PickyMainAgentMessage] = []
+    /// Captured when the panel opens and delivered unchanged with submit.
+    @Published private(set) var recipient: QuickInputRecipientProjection = .main
     /// Increments after every panel presentation so a retained hosting view
     /// re-applies its transcript anchor when the panel becomes visible again.
     @Published private(set) var presentationID = 0
@@ -62,7 +83,7 @@ final class QuickInputPanelViewModel: ObservableObject {
     /// next presentation (predictable, no fade-back).
     @Published private(set) var historyBackgroundMode: QuickInputHistoryBackgroundMode = .lightweight
 
-    var onSubmit: (String) -> Void = { _ in }
+    var onSubmit: (String, QuickInputRecipientProjection) -> Void = { _, _ in }
     var onClose: () -> Void = {}
     /// Lets the AppKit panel remeasure after the transcript's SwiftUI content
     /// resolves its actual height.
@@ -71,14 +92,15 @@ final class QuickInputPanelViewModel: ObservableObject {
     func submit() {
         let trimmed = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isSending else { return }
-        onSubmit(trimmed)
+        onSubmit(trimmed, recipient)
     }
 
     func close() {
         onClose()
     }
 
-    func beginPresentation() {
+    func beginPresentation(recipient: QuickInputRecipientProjection = .main) {
+        self.recipient = recipient
         presentationID &+= 1
         historyBackgroundMode.resetForPresentation()
     }
@@ -102,7 +124,8 @@ struct QuickInputPanelView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: QuickInputPanelLayout.historyPillSpacing) {
-            if QuickInputHistoryPolicy.shouldDisplayCard(
+            if viewModel.recipient.showsMainAgentHistory,
+               QuickInputHistoryPolicy.shouldDisplayCard(
                 for: viewModel.recentMessages,
                 cardHeightLimit: viewModel.historyCardHeightLimit
             ) {
@@ -110,7 +133,7 @@ struct QuickInputPanelView: View {
             }
 
             HStack(spacing: 6) {
-                TextField("Message Picky…", text: $viewModel.draftText, axis: .horizontal)
+                TextField(viewModel.recipient.prompt, text: $viewModel.draftText, axis: .horizontal)
                     .textFieldStyle(.plain)
                     .font(PickyHUDTypography.bodyMedium)
                     .foregroundColor(DS.Colors.textPrimary)

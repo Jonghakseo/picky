@@ -18,6 +18,15 @@ protocol PickyInkCaptureCoordinating: AnyObject {
 
     @discardableResult
     func begin(source: PickyInkCaptureSource, origin: CGPoint) -> Bool
+    /// Starts a new capture while keeping visible strokes from a failed prior
+    /// text submission in the live overlay and final result. The default keeps
+    /// existing lightweight coordinators source-compatible.
+    @discardableResult
+    func begin(
+        source: PickyInkCaptureSource,
+        origin: CGPoint,
+        priorCapture: PickyInkCapture?
+    ) -> Bool
     func finish(warpSystemCursor: Bool) -> PickyInkCapture?
     func cancel()
 
@@ -30,6 +39,15 @@ protocol PickyInkCaptureCoordinating: AnyObject {
 }
 
 extension PickyInkCaptureCoordinating {
+    @discardableResult
+    func begin(
+        source: PickyInkCaptureSource,
+        origin: CGPoint,
+        priorCapture: PickyInkCapture?
+    ) -> Bool {
+        begin(source: source, origin: origin)
+    }
+
     @discardableResult
     func begin(source: PickyInkCaptureSource) -> Bool {
         begin(source: source, origin: NSEvent.mouseLocation)
@@ -67,6 +85,15 @@ final class PickyInkCaptureCenter: PickyInkCaptureCoordinating {
     @discardableResult
     func begin(source: PickyInkCaptureSource, origin: CGPoint = NSEvent.mouseLocation) -> Bool {
         controller.begin(source: source, origin: origin)
+    }
+
+    @discardableResult
+    func begin(
+        source: PickyInkCaptureSource,
+        origin: CGPoint = NSEvent.mouseLocation,
+        priorCapture: PickyInkCapture?
+    ) -> Bool {
+        controller.begin(source: source, origin: origin, priorCapture: priorCapture)
     }
 
     func finish(warpSystemCursor: Bool = false) -> PickyInkCapture? {

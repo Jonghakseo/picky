@@ -474,7 +474,12 @@ final class PickySessionListViewModel: ObservableObject {
         guard sessions.contains(where: { $0.id == sessionID }) else { return }
         screenContextTargetSessionID = sessionID
         screenContextTargetSticky = sticky
-        selectionStore.setScreenContextTarget(sessionID: sessionID, sticky: sticky)
+        let label = sessions.first(where: { $0.id == sessionID })?.title
+        if let labelStore = selectionStore as? PickyScreenContextTargetLabelStoring {
+            labelStore.setScreenContextTarget(sessionID: sessionID, sticky: sticky, label: label)
+        } else {
+            selectionStore.setScreenContextTarget(sessionID: sessionID, sticky: sticky)
+        }
         select(sessionID: sessionID)
         screenContextArmCollapseToken = UUID()
         pickySessionLog("screen context target armed session=\(sessionID) sticky=\(sticky)")
@@ -2468,8 +2473,17 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     private func syncScreenContextTargetAfterSessionListChange() {
-        if let screenContextTargetSessionID, sessions.contains(where: { $0.id == screenContextTargetSessionID }) {
-            selectionStore.setScreenContextTarget(sessionID: screenContextTargetSessionID, sticky: screenContextTargetSticky)
+        if let screenContextTargetSessionID,
+           let session = sessions.first(where: { $0.id == screenContextTargetSessionID }) {
+            if let labelStore = selectionStore as? PickyScreenContextTargetLabelStoring {
+                labelStore.setScreenContextTarget(
+                    sessionID: screenContextTargetSessionID,
+                    sticky: screenContextTargetSticky,
+                    label: session.title
+                )
+            } else {
+                selectionStore.setScreenContextTarget(sessionID: screenContextTargetSessionID, sticky: screenContextTargetSticky)
+            }
         } else if screenContextTargetSessionID != nil {
             clearScreenContextTarget(sessionID: screenContextTargetSessionID)
         }

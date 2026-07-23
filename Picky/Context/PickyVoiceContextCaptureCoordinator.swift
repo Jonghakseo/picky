@@ -27,7 +27,8 @@ struct PickyVoiceContextCaptureCoordinator {
         _ maximumDimension: Int,
         _ inkGlobalPoints: [CGPoint],
         _ onlyWhenInked: Bool,
-        _ displayOverrides: PickyScreenContextDisplayOverrides
+        _ displayOverrides: PickyScreenContextDisplayOverrides,
+        _ displaySelectionSnapshot: PickyScreenContextDisplaySelectionSnapshot?
     ) async throws -> [CompanionScreenCapture]
     typealias SettingsProvider = @MainActor () -> PickySettings
     typealias ContextPreflightCapture = @MainActor () async -> PickyContextPacketPreflight
@@ -60,14 +61,16 @@ struct PickyVoiceContextCaptureCoordinator {
         transcript: String,
         voiceFollowUpSessionID: String?,
         inkCapture: PickyInkCapture? = nil,
-        displayOverrides: PickyScreenContextDisplayOverrides = [:]
+        displayOverrides: PickyScreenContextDisplayOverrides = [:],
+        displaySelectionSnapshot: PickyScreenContextDisplaySelectionSnapshot? = nil
     ) async throws -> PickyVoiceContextCaptureResult? {
         let source = voiceFollowUpSessionID == nil ? "voice" : "voice-follow-up"
         return try await captureContext(
             transcript: transcript,
             source: source,
             inkCapture: inkCapture,
-            displayOverrides: displayOverrides
+            displayOverrides: displayOverrides,
+            displaySelectionSnapshot: displaySelectionSnapshot
         )
     }
 
@@ -75,12 +78,14 @@ struct PickyVoiceContextCaptureCoordinator {
         transcript: String,
         source: String,
         inkCapture: PickyInkCapture? = nil,
-        displayOverrides: PickyScreenContextDisplayOverrides = [:]
+        displayOverrides: PickyScreenContextDisplayOverrides = [:],
+        displaySelectionSnapshot: PickyScreenContextDisplaySelectionSnapshot? = nil
     ) async throws -> PickyVoiceContextCaptureResult? {
         guard let prepared = try await prepareContext(
             source: source,
             inkCapture: inkCapture,
-            displayOverrides: displayOverrides
+            displayOverrides: displayOverrides,
+            displaySelectionSnapshot: displaySelectionSnapshot
         ) else { return nil }
         return try await assembleContext(prepared, transcript: transcript)
     }
@@ -91,7 +96,8 @@ struct PickyVoiceContextCaptureCoordinator {
     func prepareContext(
         source: String,
         inkCapture: PickyInkCapture? = nil,
-        displayOverrides: PickyScreenContextDisplayOverrides = [:]
+        displayOverrides: PickyScreenContextDisplayOverrides = [:],
+        displaySelectionSnapshot: PickyScreenContextDisplaySelectionSnapshot? = nil
     ) async throws -> PickyPreparedVoiceContextCapture? {
         let captureID = UUID()
         let settings = settingsProvider()
@@ -107,13 +113,15 @@ struct PickyVoiceContextCaptureCoordinator {
             settings.screenshotQuality.maximumDimension,
             inkGlobalPoints,
             settings.attachScreenshotsOnlyWhenInked,
-            displayOverrides
+            displayOverrides,
+            displaySelectionSnapshot
         )
         let includedScreenCaptures = Self.filterScreenCapturesForAttachment(
             screenCaptures,
             onlyWhenInked: settings.attachScreenshotsOnlyWhenInked,
             inkGlobalPoints: inkGlobalPoints,
-            displayOverrides: displayOverrides
+            displayOverrides: displayOverrides,
+            displaySelectionSnapshot: displaySelectionSnapshot
         )
         let screenCaptureMilliseconds = Int(Date().timeIntervalSince(contextPreparationStartedAt) * 1_000)
         PickyLog.notice(
@@ -154,9 +162,14 @@ struct PickyVoiceContextCaptureCoordinator {
         _ captures: [CompanionScreenCapture],
         onlyWhenInked: Bool,
         inkGlobalPoints: [CGPoint],
-        displayOverrides: PickyScreenContextDisplayOverrides
+        displayOverrides: PickyScreenContextDisplayOverrides,
+        displaySelectionSnapshot: PickyScreenContextDisplaySelectionSnapshot? = nil
     ) -> [CompanionScreenCapture] {
         captures.filter { capture in
+            if let displaySelectionSnapshot,
+               !displaySelectionSnapshot.includedDisplayIDs.contains(capture.displayID) {
+                return false
+            }
             let hasInk = inkGlobalPoints.contains { capture.displayFrame.contains($0) }
             switch displayOverrides[capture.displayID] {
             case .included:
@@ -177,14 +190,16 @@ struct PickyVoiceContextCaptureCoordinator {
         maximumDimension: Int,
         inkGlobalPoints: [CGPoint],
         onlyWhenInked: Bool,
-        displayOverrides: PickyScreenContextDisplayOverrides
+        displayOverrides: PickyScreenContextDisplayOverrides,
+        displaySelectionSnapshot: PickyScreenContextDisplaySelectionSnapshot?
     ) async throws -> [CompanionScreenCapture] {
         try await CompanionScreenCaptureUtility.captureScreensAsJPEG(
             scope: scope,
             maximumDimension: maximumDimension,
             inkGlobalPoints: inkGlobalPoints,
             onlyWhenInked: onlyWhenInked,
-            displayOverrides: displayOverrides
+            displayOverrides: displayOverrides,
+            displaySelectionSnapshot: displaySelectionSnapshot
         )
     }
 

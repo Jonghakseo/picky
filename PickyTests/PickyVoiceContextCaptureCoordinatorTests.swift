@@ -13,7 +13,7 @@ struct PickyVoiceContextCaptureCoordinatorTests {
     @Test func cancellationAfterScreenCaptureSkipsContextAssembly() async throws {
         var didPrepare = false
         let coordinator = PickyVoiceContextCaptureCoordinator(
-            screenCapture: { _, _, _, _, _ in
+            screenCapture: { _, _, _, _, _, _ in
                 withUnsafeCurrentTask { task in
                     task?.cancel()
                 }
@@ -37,7 +37,7 @@ struct PickyVoiceContextCaptureCoordinatorTests {
     @Test func preflightStartsWhileScreenCaptureIsPending() async throws {
         var didStartPreflight = false
         let coordinator = PickyVoiceContextCaptureCoordinator(
-            screenCapture: { _, _, _, _, _ in
+            screenCapture: { _, _, _, _, _, _ in
                 await Task.yield()
                 #expect(didStartPreflight)
                 return []
@@ -57,7 +57,7 @@ struct PickyVoiceContextCaptureCoordinatorTests {
     @Test func preparedCaptureCollectsContextBeforeTranscriptArrives() async throws {
         var preparationCount = 0
         let coordinator = PickyVoiceContextCaptureCoordinator(
-            screenCapture: { _, _, _, _, _ in [] },
+            screenCapture: { _, _, _, _, _, _ in [] },
             contextPreflightCapture: { Self.preflight() },
             contextPreparer: { _, source, _, _ in
                 preparationCount += 1
@@ -82,7 +82,7 @@ struct PickyVoiceContextCaptureCoordinatorTests {
         settings.screenContextScope = .focusedScreen
         settings.screenshotQuality = .onePointFive
         let coordinator = PickyVoiceContextCaptureCoordinator(
-            screenCapture: { scope, maximumDimension, _, _, _ in
+            screenCapture: { scope, maximumDimension, _, _, _, _ in
                 capturedScope = scope
                 capturedMaximumDimension = maximumDimension
                 return []
@@ -102,13 +102,43 @@ struct PickyVoiceContextCaptureCoordinatorTests {
 
     // MARK: - Per-display attachment filtering
 
+    @Test func displaySelectionSnapshotIsPassedToCaptureAndRejectsLaterEnumeratedDisplays() async throws {
+        let snapshot = PickyScreenContextDisplaySelectionSnapshot(includedDisplayIDs: [1])
+        let included = Self.capture(displayID: 1, frame: CGRect(x: 0, y: 0, width: 100, height: 100))
+        let laterDisplay = Self.capture(displayID: 3, frame: CGRect(x: 200, y: 0, width: 100, height: 100))
+        var capturedSnapshot: PickyScreenContextDisplaySelectionSnapshot?
+        var assembledDisplayIDs: [CGDirectDisplayID] = []
+        let coordinator = PickyVoiceContextCaptureCoordinator(
+            screenCapture: { _, _, _, _, _, displaySelectionSnapshot in
+                capturedSnapshot = displaySelectionSnapshot
+                // Simulates a ScreenCaptureKit enumeration after a new display
+                // was connected. The coordinator must retain the submitted set.
+                return [included, laterDisplay]
+            },
+            contextPreflightCapture: { Self.preflight() },
+            contextPreparer: { captures, source, _, _ in
+                assembledDisplayIDs = captures.map(\.displayID)
+                return Self.preparedPacketForCaptures(captures, source: source)
+            }
+        )
+
+        _ = try await coordinator.captureContext(
+            transcript: "frozen topology",
+            voiceFollowUpSessionID: nil,
+            displaySelectionSnapshot: snapshot
+        )
+
+        #expect(capturedSnapshot == snapshot)
+        #expect(assembledDisplayIDs == [1])
+    }
+
     @Test func attachScreenshotsOnlyWhenInked_offByDefault_keepsScreenshots() async throws {
         let settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
         #expect(settings.attachScreenshotsOnlyWhenInked == false)
         let capture = Self.capture(displayID: 1, frame: CGRect(x: 0, y: 0, width: 100, height: 100))
 
         let coordinator = PickyVoiceContextCaptureCoordinator(
-            screenCapture: { _, _, _, _, _ in [capture] },
+            screenCapture: { _, _, _, _, _, _ in [capture] },
             settingsProvider: { settings },
             contextPreflightCapture: { Self.preflight() },
             contextPreparer: { captures, source, _, _ in
@@ -128,7 +158,7 @@ struct PickyVoiceContextCaptureCoordinatorTests {
         var assembledDisplayIDs: [CGDirectDisplayID] = []
 
         let coordinator = PickyVoiceContextCaptureCoordinator(
-            screenCapture: { _, _, _, _, _ in [capture] },
+            screenCapture: { _, _, _, _, _, _ in [capture] },
             settingsProvider: { settings },
             contextPreflightCapture: { Self.preflight() },
             contextPreparer: { captures, source, _, _ in
@@ -153,7 +183,7 @@ struct PickyVoiceContextCaptureCoordinatorTests {
         var assembledDisplayIDs: [CGDirectDisplayID] = []
 
         let coordinator = PickyVoiceContextCaptureCoordinator(
-            screenCapture: { _, _, _, _, _ in [first, second] },
+            screenCapture: { _, _, _, _, _, _ in [first, second] },
             settingsProvider: { settings },
             contextPreflightCapture: { Self.preflight() },
             contextPreparer: { captures, source, _, _ in
@@ -182,7 +212,7 @@ struct PickyVoiceContextCaptureCoordinatorTests {
         var assembledDisplayIDs: [CGDirectDisplayID] = []
 
         let coordinator = PickyVoiceContextCaptureCoordinator(
-            screenCapture: { _, _, _, _, displayOverrides in
+            screenCapture: { _, _, _, _, displayOverrides, _ in
                 capturedOverrides = displayOverrides
                 return [included, excluded]
             },

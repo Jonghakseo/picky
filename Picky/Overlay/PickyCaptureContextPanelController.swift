@@ -29,6 +29,81 @@ private final class PickyCaptureContextControlPanel: PickySecureSurfacePanel, Pi
     override var canBecomeMain: Bool { false }
 }
 
+/// Converts the SwiftUI-rendered capsule frame into the AppKit coordinate
+/// space used by both the panel's event dispatch and global overlay routing.
+enum PickyCaptureContextControlHitTestPolicy {
+    static func appKitVisibleBounds(
+        visibleContentFrame: CGRect,
+        hostingViewSize: CGSize
+    ) -> CGRect {
+        guard !visibleContentFrame.isNull,
+              visibleContentFrame.width > 0,
+              visibleContentFrame.height > 0,
+              hostingViewSize.width > 0,
+              hostingViewSize.height > 0 else {
+            return .null
+        }
+        return CGRect(
+            x: visibleContentFrame.minX,
+            y: hostingViewSize.height - visibleContentFrame.maxY,
+            width: visibleContentFrame.width,
+            height: visibleContentFrame.height
+        )
+    }
+
+    static func contains(
+        _ point: CGPoint,
+        visibleContentFrame: CGRect,
+        hostingViewSize: CGSize
+    ) -> Bool {
+        appKitVisibleBounds(
+            visibleContentFrame: visibleContentFrame,
+            hostingViewSize: hostingViewSize
+        ).contains(point)
+    }
+}
+
+@MainActor
+private final class PickyCaptureContextControlViewModel: ObservableObject {
+    /// SwiftUI reports the rendered capsule geometry in the hosting view's
+    /// coordinate space, leaving transparent panel margins click-through.
+    @Published var visibleContentFrame = CGRect.null
+}
+
+private final class PickyCaptureContextControlHostingView: NSHostingView<LocalizedHostingRoot<PickyCaptureContextControlView>> {
+    private let visibleContentFrame: () -> CGRect
+
+    required init(rootView: LocalizedHostingRoot<PickyCaptureContextControlView>) {
+        visibleContentFrame = { .null }
+        super.init(rootView: rootView)
+    }
+
+    init(
+        rootView: LocalizedHostingRoot<PickyCaptureContextControlView>,
+        visibleContentFrame: @escaping () -> CGRect
+    ) {
+        self.visibleContentFrame = visibleContentFrame
+        super.init(rootView: rootView)
+    }
+
+    @MainActor required dynamic init?(coder: NSCoder) {
+        nil
+    }
+
+    func containsInteractivePoint(_ point: NSPoint) -> Bool {
+        PickyCaptureContextControlHitTestPolicy.contains(
+            point,
+            visibleContentFrame: visibleContentFrame(),
+            hostingViewSize: bounds.size
+        )
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard containsInteractivePoint(point) else { return nil }
+        return super.hitTest(point)
+    }
+}
+
 @MainActor
 final class PickyCaptureContextPanelController {
     private var panels: [PickyCaptureContextControlPanel] = []
@@ -66,7 +141,13 @@ final class PickyCaptureContextPanelController {
 
     func containsInteractiveGlobalPoint(_ point: CGPoint) -> Bool {
         panels.contains { panel in
-            panel.isVisible && panel.frame.contains(point)
+            guard panel.isVisible,
+                  let hostingView = panel.contentView as? PickyCaptureContextControlHostingView else {
+                return false
+            }
+            let windowPoint = panel.convertPoint(fromScreen: point)
+            let hostingViewPoint = hostingView.convert(windowPoint, from: nil)
+            return hostingView.containsInteractivePoint(hostingViewPoint)
         }
     }
 
@@ -101,7 +182,7 @@ final class PickyCaptureContextPanelController {
     private func dismissPanels() {
         for panel in panels {
             panel.orderOut(nil)
-            panel.contentViewController = nil
+            panel.contentView = nil
         }
         panels.removeAll()
     }
@@ -132,19 +213,33 @@ final class PickyCaptureContextPanelController {
         panel.titlebarAppearsTransparent = true
         panel.sharingType = .none
 
-        let host = NSHostingController(rootView: LocalizedHostingRoot {
-            PickyCaptureContextControlView(
-                screenFrame: screenFrame,
-                displayID: displayID,
-                companionManager: companionManager
-            )
-        })
-        host.sizingOptions = []
-        host.view.frame = NSRect(origin: .zero, size: PickyCaptureContextControlPanelLayout.panelSize)
-        host.view.autoresizingMask = [.width, .height]
-        panel.contentViewController = host
+        let viewModel = PickyCaptureContextControlViewModel()
+        let host = PickyCaptureContextControlHostingView(
+            rootView: LocalizedHostingRoot {
+                PickyCaptureContextControlView(
+                    screenFrame: screenFrame,
+                    displayID: displayID,
+                    companionManager: companionManager,
+                    viewModel: viewModel
+                )
+            },
+            visibleContentFrame: { [weak viewModel] in
+                viewModel?.visibleContentFrame ?? .null
+            }
+        )
+        host.frame = NSRect(origin: .zero, size: PickyCaptureContextControlPanelLayout.panelSize)
+        host.autoresizingMask = [.width, .height]
+        panel.contentView = host
         panel.setFrame(frame, display: true)
         return panel
+    }
+}
+
+private struct PickyCaptureContextControlVisibleContentFramePreferenceKey: PreferenceKey {
+    static var defaultValue = CGRect.null
+
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        value = value.union(nextValue())
     }
 }
 
@@ -152,6 +247,7 @@ private struct PickyCaptureContextControlView: View {
     let screenFrame: CGRect
     let displayID: CGDirectDisplayID
     @ObservedObject var companionManager: CompanionManager
+    @ObservedObject var viewModel: PickyCaptureContextControlViewModel
 
     private var hasInk: Bool {
         let region = screenFrame.insetBy(dx: -1, dy: -1)
@@ -221,8 +317,22 @@ private struct PickyCaptureContextControlView: View {
                     lineWidth: 0.8
                 )
         )
+        .background(visibleContentFrameReporter)
         .fixedSize()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .coordinateSpace(name: "PickyCaptureContextControl")
+        .onPreferenceChange(PickyCaptureContextControlVisibleContentFramePreferenceKey.self) {
+            viewModel.visibleContentFrame = $0
+        }
+    }
+
+    private var visibleContentFrameReporter: some View {
+        GeometryReader { proxy in
+            Color.clear.preference(
+                key: PickyCaptureContextControlVisibleContentFramePreferenceKey.self,
+                value: proxy.frame(in: .named("PickyCaptureContextControl"))
+            )
+        }
     }
 }
 

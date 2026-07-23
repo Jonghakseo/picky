@@ -29,6 +29,9 @@ final class PickyInkCaptureController {
         var gesture: PickyInkGesturePhase = .idle
         var activeStrokeOrigin: CGPoint?
         var activeStrokePoints: [CGPoint] = []
+        /// Visible strokes retained from a failed text submission. They remain
+        /// immutable while the retry appends fresh points to this session.
+        let seededStrokes: [PickyInkCaptureStroke]
         var completedStrokes: [[CGPoint]] = []
         var didCrossThreshold = false
         var thresholdFeedbackPoint: CGPoint?
@@ -85,15 +88,21 @@ final class PickyInkCaptureController {
     }
 
     @discardableResult
-    func begin(source: PickyInkCaptureSource, origin: CGPoint = NSEvent.mouseLocation) -> Bool {
+    func begin(
+        source: PickyInkCaptureSource,
+        origin: CGPoint = NSEvent.mouseLocation,
+        priorCapture: PickyInkCapture? = nil
+    ) -> Bool {
         if isActive {
             _ = finish(warpSystemCursor: false)
         }
+        let seededStrokes = (priorCapture?.strokes ?? []).filter { $0.points.count >= 2 }
         session = Session(
             id: "ink-\(UUID().uuidString)",
             source: source,
-            startedAt: Date(),
-            virtualCursor: origin
+            startedAt: priorCapture?.startedAt ?? Date(),
+            virtualCursor: origin,
+            seededStrokes: seededStrokes
         )
         guard startEventTapIfNeeded() else {
             session = nil
@@ -132,17 +141,8 @@ final class PickyInkCaptureController {
         }
         publishState()
 
-        let capturedPointLists = capturedStrokePointLists(for: finishedSession)
-        guard !capturedPointLists.isEmpty else { return nil }
-        let strokes = capturedPointLists.enumerated().map { index, points in
-            PickyInkCaptureStroke(
-                id: "\(finishedSession.id)-stroke-\(index + 1)",
-                source: finishedSession.source,
-                points: points.map(PickyCGPoint.init),
-                strokeWidth: Double(strokeWidth),
-                opacity: strokeOpacity
-            )
-        }
+        let strokes = capturedStrokes(for: finishedSession)
+        guard !strokes.isEmpty else { return nil }
         return PickyInkCapture(
             id: finishedSession.id,
             source: finishedSession.source,
@@ -420,12 +420,12 @@ final class PickyInkCaptureController {
             onStateChange(.inactive)
             return
         }
-        let strokes = capturedStrokePointLists(for: session).enumerated().map { index, points in
+        let strokes = capturedStrokes(for: session).map { stroke in
             PickyInkOverlayStroke(
-                id: "\(session.id)-stroke-\(index + 1)",
-                points: points,
-                strokeWidth: strokeWidth,
-                opacity: strokeOpacity
+                id: stroke.id,
+                points: stroke.points.map { CGPoint(x: $0.x, y: $0.y) },
+                strokeWidth: CGFloat(stroke.strokeWidth),
+                opacity: stroke.opacity
             )
         }
         // Hide the trail entirely while the user is mid-stroke — the real
@@ -457,6 +457,20 @@ final class PickyInkCaptureController {
         if let firstFresh = cursorTrailPoints.firstIndex(where: { $0.capturedAt >= cutoff }), firstFresh > 0 {
             cursorTrailPoints.removeFirst(firstFresh)
         }
+    }
+
+    private func capturedStrokes(for session: Session) -> [PickyInkCaptureStroke] {
+        let appendedPointLists = capturedStrokePointLists(for: session)
+        let appendedStrokes = appendedPointLists.enumerated().map { index, points in
+            PickyInkCaptureStroke(
+                id: "\(session.id)-stroke-\(session.seededStrokes.count + index + 1)",
+                source: session.source,
+                points: points.map(PickyCGPoint.init),
+                strokeWidth: Double(strokeWidth),
+                opacity: strokeOpacity
+            )
+        }
+        return session.seededStrokes + appendedStrokes
     }
 
     private func capturedStrokePointLists(for session: Session) -> [[CGPoint]] {

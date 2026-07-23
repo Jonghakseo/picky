@@ -117,7 +117,7 @@ struct PickyCompanionDirectMessageTests {
     @Test func quickInputPassesPerDisplayOverridesIntoContextCapture() async throws {
         var capturedOverrides: PickyScreenContextDisplayOverrides = [:]
         let coordinator = PickyVoiceContextCaptureCoordinator(
-            screenCapture: { _, _, _, _, displayOverrides in
+            screenCapture: { _, _, _, _, displayOverrides, _ in
                 capturedOverrides = displayOverrides
                 return []
             },
@@ -202,7 +202,7 @@ struct PickyCompanionDirectMessageTests {
 
     private func fakeDirectMessageContextCaptureCoordinator() -> PickyVoiceContextCaptureCoordinator {
         PickyVoiceContextCaptureCoordinator(
-            screenCapture: { _, _, _, _, _ in [] },
+            screenCapture: { _, _, _, _, _, _ in [] },
             contextPreflightCapture: {
                 PickyContextPacketPreflight(
                     capturedAt: Date(timeIntervalSince1970: 1_800_000_000),

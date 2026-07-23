@@ -17,6 +17,7 @@ final class PickyVoiceContextCapturePipeline {
     private let screenShareableContentWarmup: ScreenShareableContentWarmup
     private var pendingTasks: [UUID: Task<PickyPreparedVoiceContextCapture?, Error>] = [:]
     private var pendingDisplayOverrides: [UUID: PickyScreenContextDisplayOverrides] = [:]
+    private var pendingDisplaySelectionSnapshots: [UUID: PickyScreenContextDisplaySelectionSnapshot] = [:]
     private var inputStartedAt: Date?
 
     init(
@@ -45,11 +46,15 @@ final class PickyVoiceContextCapturePipeline {
         voiceFollowUpSessionID: String?,
         inkCapture: PickyInkCapture?,
         displayOverrides: PickyScreenContextDisplayOverrides = [:],
+        displaySelectionSnapshot: PickyScreenContextDisplaySelectionSnapshot? = nil,
         stoppedAt: Date = Date()
     ) -> PickyInkCapture? {
         defer { inputStartedAt = nil }
         pendingTasks.removeValue(forKey: inputID)?.cancel()
         pendingDisplayOverrides[inputID] = displayOverrides
+        if let displaySelectionSnapshot {
+            pendingDisplaySelectionSnapshots[inputID] = displaySelectionSnapshot
+        }
         guard let inputStartedAt,
               !BuddyDictationManager.shouldIgnoreRecording(startedAt: inputStartedAt, stoppedAt: stoppedAt) else {
             return inkCapture
@@ -60,7 +65,8 @@ final class PickyVoiceContextCapturePipeline {
             try await coordinator.prepareContext(
                 source: source,
                 inkCapture: inkCapture,
-                displayOverrides: displayOverrides
+                displayOverrides: displayOverrides,
+                displaySelectionSnapshot: displaySelectionSnapshot
             )
         }
         return nil
@@ -73,6 +79,7 @@ final class PickyVoiceContextCapturePipeline {
     func cancel(inputID: UUID) {
         pendingTasks.removeValue(forKey: inputID)?.cancel()
         pendingDisplayOverrides.removeValue(forKey: inputID)
+        pendingDisplaySelectionSnapshots.removeValue(forKey: inputID)
     }
 
     func cancelAll() {
@@ -81,6 +88,7 @@ final class PickyVoiceContextCapturePipeline {
         }
         pendingTasks.removeAll()
         pendingDisplayOverrides.removeAll()
+        pendingDisplaySelectionSnapshots.removeAll()
         inputStartedAt = nil
     }
 
@@ -91,6 +99,7 @@ final class PickyVoiceContextCapturePipeline {
         fallbackInkCapture: PickyInkCapture?
     ) async throws -> PickyVoiceContextCaptureResult? {
         let displayOverrides = pendingDisplayOverrides.removeValue(forKey: inputID) ?? [:]
+        let displaySelectionSnapshot = pendingDisplaySelectionSnapshots.removeValue(forKey: inputID)
         if let preparedTask = pendingTasks.removeValue(forKey: inputID) {
             let joinStartedAt = Date()
             guard let prepared = try await preparedTask.value else { return nil }
@@ -108,7 +117,8 @@ final class PickyVoiceContextCapturePipeline {
             transcript: transcript,
             voiceFollowUpSessionID: voiceFollowUpSessionID,
             inkCapture: fallbackInkCapture,
-            displayOverrides: displayOverrides
+            displayOverrides: displayOverrides,
+            displaySelectionSnapshot: displaySelectionSnapshot
         )
     }
 

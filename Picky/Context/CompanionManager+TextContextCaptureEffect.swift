@@ -12,13 +12,16 @@ extension CompanionManager {
             guard let self else { return }
             let displayOverrides = screenContextDisplayOverridesByTextInputID
                 .removeValue(forKey: inputID) ?? [:]
+            let displaySelectionSnapshot = screenContextDisplaySelectionSnapshotsByTextInputID
+                .removeValue(forKey: inputID)
             do {
                 let inkCapture = pendingInkCaptures.consume(for: inputID)
                 guard let captureResult = try await voiceContextCaptureCoordinator.captureContext(
                     transcript: text,
                     source: "text",
                     inkCapture: inkCapture,
-                    displayOverrides: displayOverrides
+                    displayOverrides: displayOverrides,
+                    displaySelectionSnapshot: displaySelectionSnapshot
                 ) else {
                     interactionCoordinator.effectCompleted(
                         .textSubmissionFailed(

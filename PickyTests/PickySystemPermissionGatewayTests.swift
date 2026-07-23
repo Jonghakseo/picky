@@ -44,7 +44,7 @@ struct PickySystemPermissionGatewayTests {
         var warmupInvocationCount = 0
         let pipeline = PickyVoiceContextCapturePipeline(
             coordinator: PickyVoiceContextCaptureCoordinator(
-                screenCapture: { _, _, _, _, _ in [] },
+                screenCapture: { _, _, _, _, _, _ in [] },
                 contextPreflightCapture: { fatalError("PTT warmup must not capture context") },
                 contextPreparer: { _, _, _, _ in fatalError("PTT warmup must not prepare context") }
             ),

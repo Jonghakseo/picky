@@ -3,6 +3,7 @@
 //  PickyTests
 //
 
+import CoreGraphics
 import Testing
 @testable import Picky
 
@@ -112,5 +113,25 @@ struct PickyScreenContextInclusionPolicyTests {
             hasInk: false,
             displayOverride: nil
         ))
+    }
+
+    @Test func displaySelectionSnapshotFreezesEffectiveIDsBeforeTopologyChanges() {
+        let snapshot = PickyScreenContextDisplaySelectionSnapshot.capture(
+            scope: .focusedScreen,
+            onlyWhenInked: false,
+            displays: [
+                .init(id: 1, frame: CGRect(x: 0, y: 0, width: 100, height: 100)),
+                .init(id: 2, frame: CGRect(x: 100, y: 0, width: 100, height: 100))
+            ],
+            pointerLocation: CGPoint(x: 20, y: 20),
+            focusedDisplayID: nil,
+            inkGlobalPoints: [CGPoint(x: 120, y: 20)],
+            displayOverrides: [1: .excluded]
+        )
+
+        #expect(snapshot.includedDisplayIDs == [2])
+        // A display connected after submission has no identity in this turn's
+        // closed set, so asynchronous enumeration cannot include it.
+        #expect(!snapshot.includedDisplayIDs.contains(3))
     }
 }

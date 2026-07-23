@@ -71,6 +71,7 @@ enum CompanionScreenCaptureUtility {
         let onlyWhenInked: Bool
         let inkGlobalPoints: [CGPoint]
         let displayOverrides: PickyScreenContextDisplayOverrides
+        let displaySelectionSnapshot: PickyScreenContextDisplaySelectionSnapshot?
     }
 
     static let annotationSceneFingerprintMaximumDimension = 256
@@ -142,7 +143,8 @@ enum CompanionScreenCaptureUtility {
         maximumDimension: Int = PickyScreenshotQuality.defaultMaximumDimension,
         inkGlobalPoints: [CGPoint] = [],
         onlyWhenInked: Bool = false,
-        displayOverrides: PickyScreenContextDisplayOverrides = [:]
+        displayOverrides: PickyScreenContextDisplayOverrides = [:],
+        displaySelectionSnapshot: PickyScreenContextDisplaySelectionSnapshot? = nil
     ) async throws -> [CompanionScreenCapture] {
         let content = try await PickySystemPermissionGateway.shared.screenShareableContent()
 
@@ -187,7 +189,8 @@ enum CompanionScreenCaptureUtility {
                 scope: scope,
                 onlyWhenInked: onlyWhenInked,
                 inkGlobalPoints: inkGlobalPoints,
-                displayOverrides: displayOverrides
+                displayOverrides: displayOverrides,
+                displaySelectionSnapshot: displaySelectionSnapshot
             )
         )
 
@@ -312,6 +315,9 @@ enum CompanionScreenCaptureUtility {
         mouseLocation: CGPoint,
         selection: DisplaySelection
     ) -> [SCDisplay] {
+        if let displaySelectionSnapshot = selection.displaySelectionSnapshot {
+            return displays.filter { displaySelectionSnapshot.includedDisplayIDs.contains($0.displayID) }
+        }
         let hasAutomaticCandidate = displays.contains { display in
             let frame = screenByDisplayID[display.displayID]?.frame ?? display.frame
             return PickyScreenContextInclusionPolicy.isCaptureCandidate(

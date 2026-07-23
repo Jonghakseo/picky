@@ -52,6 +52,10 @@ private actor FakeCaptureGate {
     }
 }
 
+private enum FakeVoiceClientError: Error {
+    case submissionFailed
+}
+
 private final class FakeVoiceClient: PickyAgentClient, @unchecked Sendable {
     private let continuation: AsyncStream<PickyClientEvent>.Continuation
     let events: AsyncStream<PickyClientEvent>
@@ -66,6 +70,7 @@ private final class FakeVoiceClient: PickyAgentClient, @unchecked Sendable {
     private var _disconnectCalls = 0
     private var _sendAwaitingErrorResult: PickyErrorEvent?
     private var _abortMainAgentGate: FakeAbortGate?
+    private var _shouldFailSubmissions = false
     var submissions: [PickyAgentSubmission] { lock.withLock { _submissions } }
     var commands: [PickyCommandEnvelope] { lock.withLock { _commands } }
     var calls: [String] { lock.withLock { _calls } }
@@ -78,6 +83,10 @@ private final class FakeVoiceClient: PickyAgentClient, @unchecked Sendable {
         get { lock.withLock { _abortMainAgentGate } }
         set { lock.withLock { _abortMainAgentGate = newValue } }
     }
+    var shouldFailSubmissions: Bool {
+        get { lock.withLock { _shouldFailSubmissions } }
+        set { lock.withLock { _shouldFailSubmissions = newValue } }
+    }
 
     init() {
         var continuation: AsyncStream<PickyClientEvent>.Continuation!
@@ -87,9 +96,13 @@ private final class FakeVoiceClient: PickyAgentClient, @unchecked Sendable {
 
     func connect() async { continuation.yield(.connected) }
     func submit(_ submission: PickyAgentSubmission) async throws -> PickyAgentSubmissionReceipt {
-        lock.withLock {
+        let shouldFail = lock.withLock {
             _calls.append("submit")
             _submissions.append(submission)
+            return _shouldFailSubmissions
+        }
+        if shouldFail {
+            throw FakeVoiceClientError.submissionFailed
         }
         return PickyAgentSubmissionReceipt(sessionID: "created-session", message: "")
     }
@@ -109,6 +122,46 @@ private final class FakeVoiceClient: PickyAgentClient, @unchecked Sendable {
     func disconnect() {
         lock.withLock { _disconnectCalls += 1 }
         continuation.yield(.disconnected)
+    }
+}
+
+@MainActor
+private final class FakeInkCaptureCoordinator: PickyInkCaptureCoordinating {
+    struct BeginCall {
+        let source: PickyInkCaptureSource
+        let priorCapture: PickyInkCapture?
+    }
+
+    var isActive = false
+    var onStateChange: (PickyInkOverlayState) -> Void = { _ in }
+    var shouldPassThroughMouseEvent: (CGPoint, PickyInkCaptureSource) -> Bool = { _, _ in false }
+    private(set) var beginCalls: [BeginCall] = []
+    private(set) var finishCallCount = 0
+    var capturesToFinish: [PickyInkCapture?] = []
+
+    func begin(source: PickyInkCaptureSource, origin: CGPoint) -> Bool {
+        begin(source: source, origin: origin, priorCapture: nil)
+    }
+
+    func begin(
+        source: PickyInkCaptureSource,
+        origin: CGPoint,
+        priorCapture: PickyInkCapture?
+    ) -> Bool {
+        beginCalls.append(BeginCall(source: source, priorCapture: priorCapture))
+        isActive = true
+        return true
+    }
+
+    func finish(warpSystemCursor: Bool) -> PickyInkCapture? {
+        finishCallCount += 1
+        isActive = false
+        guard !capturesToFinish.isEmpty else { return nil }
+        return capturesToFinish.removeFirst()
+    }
+
+    func cancel() {
+        isActive = false
     }
 }
 
@@ -1109,6 +1162,83 @@ struct PickyCompanionManagerTests {
         await captureGate.release()
         #expect(!(await dispatch.value))
         #expect(!client.commands.contains { $0.type == .steer || $0.type == .followUp })
+    }
+
+    @Test func failedQuickInputRestartsTextInkWithSubmittedCaptureAndRetryUsesCombinedStrokes() async throws {
+        let client = FakeVoiceClient()
+        client.shouldFailSubmissions = true
+        let ink = FakeInkCaptureCoordinator()
+        let submittedCapture = inkCapture(id: "submitted", points: [CGPoint(x: 10, y: 20), CGPoint(x: 30, y: 40)])
+        let appendedStroke = PickyInkCaptureStroke(
+            id: "retry-stroke",
+            source: .text,
+            points: [PickyCGPoint(x: 50, y: 60), PickyCGPoint(x: 70, y: 80)],
+            strokeWidth: 8,
+            opacity: 0.34
+        )
+        let combinedCapture = PickyInkCapture(
+            id: "combined",
+            source: .text,
+            startedAt: submittedCapture.startedAt,
+            endedAt: Date(timeIntervalSince1970: 1_800_000_002),
+            strokes: submittedCapture.strokes + [appendedStroke]
+        )
+        ink.capturesToFinish = [submittedCapture, combinedCapture]
+        var preparedInkCaptures: [PickyInkCapture?] = []
+        let manager = CompanionManager(
+            agentClient: client,
+            selectionStore: FakeVoiceSelectionStore(),
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(
+                onContextPreparation: { preparedInkCaptures.append($0) }
+            ),
+            inkCaptureCoordinator: ink
+        )
+        manager.start()
+
+        manager.quickInputPanelManager.viewModelForTesting.draftText = "retry this"
+        manager.quickInputPanelManager.viewModelForTesting.submit()
+        try await waitUntil { ink.beginCalls.count == 1 }
+
+        let retryBegin = try #require(ink.beginCalls.first)
+        #expect(retryBegin.source == .text)
+        #expect(retryBegin.priorCapture == submittedCapture)
+        #expect(preparedInkCaptures == [submittedCapture])
+
+        client.shouldFailSubmissions = false
+        manager.quickInputPanelManager.viewModelForTesting.submit()
+        try await waitUntil { client.submissions.count == 2 }
+
+        #expect(ink.finishCallCount == 2)
+        #expect(preparedInkCaptures == [submittedCapture, combinedCapture])
+        manager.stop()
+    }
+
+    @Test func quickInputRecipientSnapshotSendsToOriginalPickleAfterTargetChanges() async throws {
+        let client = FakeVoiceClient()
+        let captureGate = FakeCaptureGate()
+        let selection = FakeVoiceSelectionStore()
+        selection.setScreenContextTarget(sessionID: "pickle-a", sticky: false)
+        let manager = CompanionManager(
+            agentClient: client,
+            selectionStore: selection,
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(captureGate: captureGate),
+            armedPickleDispatchMode: .followUp
+        )
+
+        let dispatch = Task {
+            await manager.sendDirectMessage(
+                "continue investigation",
+                source: .quickInput,
+                quickInputRecipient: .pickle(sessionID: "pickle-a", label: "Investigate logs")
+            )
+        }
+        await captureGate.waitUntilEntered()
+        selection.setScreenContextTarget(sessionID: "pickle-b", sticky: false)
+        await captureGate.release()
+
+        #expect(await dispatch.value)
+        #expect(client.commands.last?.type == .followUp)
+        #expect(client.commands.last?.sessionId == "pickle-a")
     }
 
     @Test func cancellationErrorBroadcastBeforeWaiterResolutionKeepsTheTurnRetryable() async throws {
@@ -2512,10 +2642,11 @@ struct PickyCompanionManagerTests {
     private func fakeContextCaptureCoordinator(
         screenshots: [PickyScreenshotContext] = [],
         captureGate: FakeCaptureGate? = nil,
-        onScreenCapture: @escaping @MainActor (PickyScreenContextDisplayOverrides) -> Void = { _ in }
+        onScreenCapture: @escaping @MainActor (PickyScreenContextDisplayOverrides) -> Void = { _ in },
+        onContextPreparation: @escaping @MainActor (PickyInkCapture?) -> Void = { _ in }
     ) -> PickyVoiceContextCaptureCoordinator {
         PickyVoiceContextCaptureCoordinator(
-            screenCapture: { _, _, _, _, displayOverrides in
+            screenCapture: { _, _, _, _, displayOverrides, _ in
                 onScreenCapture(displayOverrides)
                 if let captureGate {
                     await captureGate.wait()
@@ -2532,8 +2663,9 @@ struct PickyCompanionManagerTests {
                     warnings: []
                 )
             },
-            contextPreparer: { _, source, _, _ in
-                PickyPreparedContextPacket(
+            contextPreparer: { _, source, inkCapture, _ in
+                onContextPreparation(inkCapture)
+                return PickyPreparedContextPacket(
                     id: "typed-context",
                     source: source,
                     capturedAt: Date(timeIntervalSince1970: 1_800_000_000),
@@ -2547,6 +2679,22 @@ struct PickyCompanionManagerTests {
                     warnings: []
                 )
             }
+        )
+    }
+
+    private func inkCapture(id: String, points: [CGPoint]) -> PickyInkCapture {
+        PickyInkCapture(
+            id: id,
+            source: .text,
+            startedAt: Date(timeIntervalSince1970: 1_800_000_000),
+            endedAt: Date(timeIntervalSince1970: 1_800_000_001),
+            strokes: [PickyInkCaptureStroke(
+                id: "\(id)-stroke",
+                source: .text,
+                points: points.map(PickyCGPoint.init),
+                strokeWidth: 8,
+                opacity: 0.34
+            )]
         )
     }
 

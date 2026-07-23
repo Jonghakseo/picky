@@ -46,7 +46,7 @@ final class QuickInputPanelManager {
     /// Called when the user submits a non-empty message. The host (typically
     /// CompanionManager) is responsible for performing the actual delivery and
     /// for calling `panelDidFinishSending(success:errorMessage:)` afterwards.
-    var onSubmit: (String) -> Void = { _ in }
+    var onSubmit: (String, QuickInputRecipientProjection) -> Void = { _, _ in }
     var onVisibilityChange: (Bool) -> Void = { _ in }
 
     /// Logical visibility remains true while an optimistically hidden draft is
@@ -72,8 +72,8 @@ final class QuickInputPanelManager {
     ) {
         self.appearanceStore = appearanceStore ?? PickyAppearanceStore()
         self.fontScaleStore = fontScaleStore ?? PickyAppFontScaleStore()
-        viewModel.onSubmit = { [weak self] text in
-            self?.handleSubmit(text)
+        viewModel.onSubmit = { [weak self] text, recipient in
+            self?.handleSubmit(text, recipient: recipient)
         }
         viewModel.onClose = { [weak self] in
             self?.dismiss()
@@ -86,7 +86,10 @@ final class QuickInputPanelManager {
     /// Opens the pill anchored near `cursorLocation` (global AppKit screen
     /// coordinates). If the panel is already visible, it is repositioned and
     /// the field is re-focused.
-    func presentPanel(near cursorLocation: CGPoint) {
+    func presentPanel(
+        near cursorLocation: CGPoint,
+        recipient: QuickInputRecipientProjection = .main
+    ) {
         guard !viewModel.isSending else { return }
         if panel == nil {
             createPanel()
@@ -97,7 +100,7 @@ final class QuickInputPanelManager {
         positionPanelNearCursor(cursorLocation)
         panel?.makeKeyAndOrderFront(nil)
         panel?.orderFrontRegardless()
-        viewModel.beginPresentation()
+        viewModel.beginPresentation(recipient: recipient)
         installScrollWheelMonitorIfNeeded()
         onVisibilityChange(true)
     }
@@ -161,13 +164,13 @@ final class QuickInputPanelManager {
 
     // MARK: - Private
 
-    private func handleSubmit(_ text: String) {
+    private func handleSubmit(_ text: String, recipient: QuickInputRecipientProjection) {
         viewModel.isSending = true
         viewModel.errorMessage = nil
         // Keep the manager's visibility state (and its ink capture) alive
         // until delivery completes, but remove the pill immediately.
         panel?.orderOut(nil)
-        onSubmit(text)
+        onSubmit(text, recipient)
     }
 
     private func createPanel() {

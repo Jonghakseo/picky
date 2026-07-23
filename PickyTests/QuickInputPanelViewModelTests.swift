@@ -59,4 +59,29 @@ struct QuickInputPanelViewModelTests {
 
         #expect(manager.isPanelVisible)
     }
+
+    @Test
+    func pickleRecipientPresentationHidesMainHistoryAndNamesTarget() {
+        let viewModel = QuickInputPanelViewModel()
+
+        viewModel.beginPresentation(recipient: .pickle(sessionID: "pickle-a", label: "Investigate logs"))
+
+        #expect(viewModel.recipient == .pickle(sessionID: "pickle-a", label: "Investigate logs"))
+        #expect(viewModel.recipient.prompt == "Message Investigate logs…")
+        #expect(!viewModel.recipient.showsMainAgentHistory)
+    }
+
+    @Test
+    func submitDeliversTheRecipientCapturedForThisPresentation() {
+        let viewModel = QuickInputPanelViewModel()
+        let recipient = QuickInputRecipientProjection.pickle(sessionID: "pickle-a", label: "Investigate logs")
+        var submittedRecipient: QuickInputRecipientProjection?
+        viewModel.beginPresentation(recipient: recipient)
+        viewModel.draftText = "Continue from the error"
+        viewModel.onSubmit = { _, recipient in submittedRecipient = recipient }
+
+        viewModel.submit()
+
+        #expect(submittedRecipient == recipient)
+    }
 }

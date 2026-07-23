@@ -20,6 +20,7 @@ enum PickyVoiceFollowUpTargetNotification {
 enum PickyScreenContextTargetNotification {
     static let sessionIDKey = "sessionID"
     static let stickyKey = "sticky"
+    static let labelKey = "label"
 }
 
 enum PickyComposerDraftAppendNotification {
@@ -50,6 +51,13 @@ extension PickySessionSelectionStoring {
     }
 }
 
+/// Optional presentation metadata for the transient armed target. Routing
+/// remains session-ID based; this lets Quick Input truthfully name the target.
+protocol PickyScreenContextTargetLabelStoring: AnyObject {
+    var screenContextTargetLabel: String? { get }
+    func setScreenContextTarget(sessionID: String?, sticky: Bool, label: String?)
+}
+
 protocol PickySessionArchiveStoring: AnyObject {
     var archivedSessionIDs: Set<String> { get set }
     var manuallyArchivedSessionIDs: Set<String> { get set }
@@ -62,7 +70,7 @@ protocol PickySessionManualOrderStoring: AnyObject {
     var manualOrder: [String] { get set }
 }
 
-final class PickyUserDefaultsSessionSelectionStore: PickySessionSelectionStoring {
+final class PickyUserDefaultsSessionSelectionStore: PickySessionSelectionStoring, PickyScreenContextTargetLabelStoring {
     static let shared = PickyUserDefaultsSessionSelectionStore()
     static let key = "PickySelectedSessionID"
 
@@ -70,6 +78,7 @@ final class PickyUserDefaultsSessionSelectionStore: PickySessionSelectionStoring
     private var transientHoveredVoiceFollowUpSessionID: String?
     private var transientScreenContextTargetSessionID: String?
     private var transientScreenContextTargetSticky: Bool = false
+    private var transientScreenContextTargetLabel: String?
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -99,6 +108,8 @@ final class PickyUserDefaultsSessionSelectionStore: PickySessionSelectionStoring
         set { setScreenContextTarget(sessionID: newValue, sticky: false) }
     }
 
+    var screenContextTargetLabel: String? { transientScreenContextTargetLabel }
+
     var screenContextTargetSticky: Bool {
         get { transientScreenContextTargetSticky }
         set {
@@ -110,13 +121,20 @@ final class PickyUserDefaultsSessionSelectionStore: PickySessionSelectionStoring
     }
 
     func setScreenContextTarget(sessionID: String?, sticky: Bool) {
+        setScreenContextTarget(sessionID: sessionID, sticky: sticky, label: nil)
+    }
+
+    func setScreenContextTarget(sessionID: String?, sticky: Bool, label: String?) {
         let normalized = sessionID?.isEmpty == true ? nil : sessionID
         let normalizedSticky = normalized == nil ? false : sticky
+        let normalizedLabel = normalized == nil ? nil : label?.trimmingCharacters(in: .whitespacesAndNewlines)
         guard transientScreenContextTargetSessionID != normalized
             || transientScreenContextTargetSticky != normalizedSticky
+            || transientScreenContextTargetLabel != normalizedLabel
         else { return }
         transientScreenContextTargetSessionID = normalized
         transientScreenContextTargetSticky = normalizedSticky
+        transientScreenContextTargetLabel = normalizedLabel
         postScreenContextTargetNotification()
     }
 
@@ -126,6 +144,9 @@ final class PickyUserDefaultsSessionSelectionStore: PickySessionSelectionStoring
         ]
         if let id = transientScreenContextTargetSessionID {
             userInfo[PickyScreenContextTargetNotification.sessionIDKey] = id
+        }
+        if let label = transientScreenContextTargetLabel {
+            userInfo[PickyScreenContextTargetNotification.labelKey] = label
         }
         NotificationCenter.default.post(
             name: .pickyScreenContextTargetChanged,

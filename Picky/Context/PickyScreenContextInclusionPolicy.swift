@@ -18,6 +18,51 @@
 import CoreGraphics
 import Foundation
 
+/// Immutable topology-derived display set for one submitted input. Capture
+/// enumeration may happen later, but it can only capture these display IDs.
+struct PickyScreenContextDisplaySelectionSnapshot: Equatable {
+    struct Display: Equatable {
+        let id: CGDirectDisplayID
+        let frame: CGRect
+    }
+
+    let includedDisplayIDs: Set<CGDirectDisplayID>
+
+    static func capture(
+        scope: PickyScreenContextScope,
+        onlyWhenInked: Bool,
+        displays: [Display],
+        pointerLocation: CGPoint?,
+        focusedDisplayID: CGDirectDisplayID?,
+        inkGlobalPoints: [CGPoint],
+        displayOverrides: PickyScreenContextDisplayOverrides
+    ) -> Self {
+        let focusedID = focusedDisplayID
+            ?? displays.first(where: { display in
+                pointerLocation.map(display.frame.contains) == true
+            })?.id
+        let hasAutomaticCandidate = displays.contains { display in
+            PickyScreenContextInclusionPolicy.isCaptureCandidate(
+                scope: scope,
+                isFocused: display.id == focusedID,
+                hasInk: inkGlobalPoints.contains(where: display.frame.contains)
+            )
+        }
+        let fallbackFocusedID = scope == .focusedScreen && !hasAutomaticCandidate
+            ? displays.first?.id
+            : nil
+        return Self(includedDisplayIDs: Set(displays.compactMap { display in
+            PickyScreenContextInclusionPolicy.isSentAsContext(
+                scope: scope,
+                onlyWhenInked: onlyWhenInked,
+                isFocused: display.id == focusedID || display.id == fallbackFocusedID,
+                hasInk: inkGlobalPoints.contains(where: display.frame.contains),
+                displayOverride: displayOverrides[display.id]
+            ) ? display.id : nil
+        }))
+    }
+}
+
 enum PickyScreenContextDisplayOverride: Equatable {
     case included
     case excluded

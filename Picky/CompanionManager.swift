@@ -128,6 +128,7 @@ final class CompanionManager: ObservableObject {
     @Published private(set) var mainAgentModelOptions: [PickyMainAgentModelOption] = []
     @Published private(set) var isLoadingMainAgentModelOptions = false
     @Published private(set) var screenContextTargetSessionID: String?
+    private var screenContextTargetLabel: String?
 
     /// Screen location (global AppKit coords) of a highlighted UI point;
     /// observed by BlueCursorView to trigger the flight animation.
@@ -281,6 +282,7 @@ final class CompanionManager: ObservableObject {
             fontScaleStore: fontScaleStore
         )
         self.screenContextTargetSessionID = selectionStore.screenContextTargetSessionID
+        self.screenContextTargetLabel = (selectionStore as? PickyScreenContextTargetLabelStoring)?.screenContextTargetLabel
         self.inkCaptureCoordinator.onStateChange = { [weak self] state in
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -305,6 +307,8 @@ final class CompanionManager: ObservableObject {
     let pendingInkCaptures = PickyPendingInkCaptureStore()
     var screenContextVoiceTargetByInputID: [UUID: String] = [:]
     var screenContextDisplayOverridesByTextInputID: [UUID: PickyScreenContextDisplayOverrides] = [:]
+    var screenContextDisplaySelectionSnapshotsByTextInputID: [UUID: PickyScreenContextDisplaySelectionSnapshot] = [:]
+    private var failedQuickInputInkCapture: PickyInkCapture?
     var screenContextControlHitTest: (CGPoint) -> Bool = { _ in false }
     /// Monotonic marker for observing when queued interaction events have published.
     private(set) var interactionProjectionSequence: UInt64 = 0
@@ -748,18 +752,31 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    private func beginInkCapture(source: PickyInkCaptureSource) {
+    private func beginInkCapture(
+        source: PickyInkCaptureSource,
+        priorCapture: PickyInkCapture? = nil
+    ) {
+        // A fresh input is unrelated to a failed Quick Input retry. Only the
+        // explicit retry path below is allowed to keep its prior user marks.
+        if priorCapture == nil {
+            failedQuickInputInkCapture = nil
+        }
         interactionCoordinator.accept(.agentAnnotationsClearedForUserInput, correlation: PickyInteractionCorrelation(source: .text))
         if inkCaptureCoordinator.isActive {
             setLocalOverlayReason(.activeInkCapture, visible: true)
             return
         }
-        if !inkCaptureCoordinator.begin(source: source) {
+        if !inkCaptureCoordinator.begin(
+            source: source,
+            origin: NSEvent.mouseLocation,
+            priorCapture: priorCapture
+        ) {
             setLocalOverlayReason(.activeInkCapture, visible: false)
         }
     }
 
     private func cancelInkCapture() {
+        failedQuickInputInkCapture = nil
         inkCaptureCoordinator.cancel()
         setLocalOverlayReason(.activeInkCapture, visible: false)
     }
@@ -1078,14 +1095,15 @@ final class CompanionManager: ObservableObject {
             ) else { return }
             self.mainCancelPillPanelManager.handleEscape()
         }
-        quickInputPanelManager.onSubmit = { [weak self] text in
-            self?.handleQuickInputSubmit(text: text)
+        quickInputPanelManager.onSubmit = { [weak self] text, recipient in
+            self?.handleQuickInputSubmit(text: text, recipient: recipient)
         }
         quickInputPanelManager.onVisibilityChange = { [weak self] isVisible in
             self?.isQuickInputPanelVisible = isVisible
             self?.isQuickInputScreenContextControlsVisible = isVisible
             if !isVisible {
                 self?.resetScreenContextDisplayOverrides()
+                self?.failedQuickInputInkCapture = nil
             }
             if !isVisible, self?.inkOverlayState.source == .text {
                 self?.cancelInkCapture()
@@ -1215,14 +1233,27 @@ final class CompanionManager: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] notification in
                 let sessionID = notification.userInfo?[PickyScreenContextTargetNotification.sessionIDKey] as? String
-                self?.applyScreenContextTarget(sessionID)
+                let label = notification.userInfo?[PickyScreenContextTargetNotification.labelKey] as? String
+                self?.applyScreenContextTarget(sessionID, label: label)
             }
     }
 
-    private func applyScreenContextTarget(_ sessionID: String?) {
+    private func applyScreenContextTarget(_ sessionID: String?, label: String? = nil) {
         let normalized = normalizedVoiceFollowUpSessionID(sessionID)
+        let targetChanged = screenContextTargetSessionID != normalized
         screenContextTargetSessionID = normalized
+        screenContextTargetLabel = normalized == nil
+            ? nil
+            : label ?? (targetChanged ? nil : screenContextTargetLabel)
         setLocalOverlayReason(.screenContextTarget, visible: normalized != nil)
+    }
+
+    private func quickInputRecipientProjection() -> QuickInputRecipientProjection {
+        guard let sessionID = normalizedVoiceFollowUpSessionID(selectionStore.screenContextTargetSessionID) else {
+            return .main
+        }
+        let label = screenContextTargetLabel?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return .pickle(sessionID: sessionID, label: label?.isEmpty == false ? label! : "Pickle")
     }
 
     private func handleQuickInputDoubleTap(_ event: QuickInputDoubleTapEvent) {
@@ -1240,7 +1271,10 @@ final class CompanionManager: ObservableObject {
         // Push the current transcript before creating/showing the hosting view
         // so the first Quick Input frame is already anchored at the last turn.
         quickInputPanelManager.updateRecentMessages(mainAgentMessages)
-        quickInputPanelManager.presentPanel(near: event.mouseLocation)
+        quickInputPanelManager.presentPanel(
+            near: event.mouseLocation,
+            recipient: quickInputRecipientProjection()
+        )
     }
 
     /// Wires the global "is anyone currently rebinding a shortcut?" signal so
@@ -1276,9 +1310,16 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    private func handleQuickInputSubmit(text: String) {
+    private func handleQuickInputSubmit(
+        text: String,
+        recipient: QuickInputRecipientProjection
+    ) {
         let displayOverrides = screenContextDisplayOverrides
         let inkCapture = finishInkCaptureForDeferredTextSubmission()
+        let displaySelectionSnapshot = captureScreenContextDisplaySelectionSnapshot(
+            inkCapture: inkCapture,
+            displayOverrides: displayOverrides
+        )
         // The context packet uses the snapshot above. Do not leave controls live
         // while the Quick Input submission is in flight, or the status UI could
         // imply a later choice changes an already-captured payload.
@@ -1289,12 +1330,27 @@ final class CompanionManager: ObservableObject {
                 text,
                 source: .quickInput,
                 inkCapture: inkCapture,
-                displayOverrides: displayOverrides
+                displayOverrides: displayOverrides,
+                displaySelectionSnapshot: displaySelectionSnapshot,
+                quickInputRecipient: recipient
             )
+
+            // The panel hides optimistically while the send is in flight. Do
+            // not discard this local capture until the result is known: on a
+            // failure the same marks must remain visible and accept additions.
+            guard self.quickInputPanelManager.isSending else {
+                // Stop/dismiss/cancellation won the race with this send.
+                self.failedQuickInputInkCapture = nil
+                return
+            }
+            self.failedQuickInputInkCapture = success ? nil : inkCapture
             self.quickInputPanelManager.panelDidFinishSending(
                 success: success,
                 errorMessage: success ? nil : self.directMessageError
             )
+            if !success, let retainedCapture = self.failedQuickInputInkCapture {
+                self.beginInkCapture(source: .text, priorCapture: retainedCapture)
+            }
         }
     }
 
@@ -1401,11 +1457,17 @@ final class CompanionManager: ObservableObject {
             if let interactionVoiceInputID {
                 let displayOverrides = screenContextDisplayOverrides
                 finishInkCapture(inputID: interactionVoiceInputID)
+                let inkCapture = pendingInkCaptures.consume(for: interactionVoiceInputID)
+                let displaySelectionSnapshot = captureScreenContextDisplaySelectionSnapshot(
+                    inkCapture: inkCapture,
+                    displayOverrides: displayOverrides
+                )
                 let unusedInkCapture = voiceContextCapturePipeline.finishInput(
                     inputID: interactionVoiceInputID,
                     voiceFollowUpSessionID: voiceFollowUpSessionIDForCurrentUtterance,
-                    inkCapture: pendingInkCaptures.consume(for: interactionVoiceInputID),
-                    displayOverrides: displayOverrides
+                    inkCapture: inkCapture,
+                    displayOverrides: displayOverrides,
+                    displaySelectionSnapshot: displaySelectionSnapshot
                 )
                 if let unusedInkCapture {
                     pendingInkCaptures.store(unusedInkCapture, for: interactionVoiceInputID)
@@ -1523,8 +1585,12 @@ final class CompanionManager: ObservableObject {
         return try await agentClient.submit(submission)
     }
 
-    private func prepareArmedPickleVisualDslContext(_ context: PickyContextPacket, sessionID: String) -> Bool {
-        guard selectionStore.screenContextTargetSessionID == sessionID,
+    private func prepareArmedPickleVisualDslContext(
+        _ context: PickyContextPacket,
+        sessionID: String,
+        isArmedTargetSnapshot: Bool = false
+    ) -> Bool {
+        guard (isArmedTargetSnapshot || selectionStore.screenContextTargetSessionID == sessionID),
               !context.screenshots.isEmpty else { return false }
         interactionCoordinator.accept(
             .agentAnnotationsClearedForUserInput,
@@ -1534,8 +1600,12 @@ final class CompanionManager: ObservableObject {
         return true
     }
 
-    private func pickleFollowUpContext(_ context: PickyContextPacket, sessionID: String) -> PickyContextPacket {
-        let isScreenContextTargeted = selectionStore.screenContextTargetSessionID == sessionID
+    private func pickleFollowUpContext(
+        _ context: PickyContextPacket,
+        sessionID: String,
+        preservesScreenContext: Bool = false
+    ) -> PickyContextPacket {
+        let isScreenContextTargeted = preservesScreenContext || selectionStore.screenContextTargetSessionID == sessionID
         let hasUserMarks = !context.inkMarks.isEmpty
         guard isScreenContextTargeted || hasUserMarks else {
             return PickyContextPacket(
@@ -1590,6 +1660,7 @@ final class CompanionManager: ObservableObject {
         source: String,
         inkCapture: PickyInkCapture?,
         displayOverrides: PickyScreenContextDisplayOverrides,
+        displaySelectionSnapshot: PickyScreenContextDisplaySelectionSnapshot?,
         dispatchMode: PickyArmedPickleDispatchMode
     ) async -> Bool {
         let dispatch = ArmedPickleDispatch(
@@ -1604,7 +1675,8 @@ final class CompanionManager: ObservableObject {
                 transcript: text,
                 source: source,
                 inkCapture: inkCapture,
-                displayOverrides: displayOverrides
+                displayOverrides: displayOverrides,
+                displaySelectionSnapshot: displaySelectionSnapshot
             ) else {
                 guard isCurrentArmedPickleDispatch(dispatch) else { return false }
                 directMessageError = L10n.t("error.directMessage.contextEmpty")
@@ -1629,9 +1701,17 @@ final class CompanionManager: ObservableObject {
                 context = captureResult.contextPacket
             case .followUp:
                 commandType = .followUp
-                context = pickleFollowUpContext(captureResult.contextPacket, sessionID: targetSessionID)
+                context = pickleFollowUpContext(
+                    captureResult.contextPacket,
+                    sessionID: targetSessionID,
+                    preservesScreenContext: true
+                )
             }
-            let visualDslEnabled = prepareArmedPickleVisualDslContext(context, sessionID: targetSessionID)
+            let visualDslEnabled = prepareArmedPickleVisualDslContext(
+                context,
+                sessionID: targetSessionID,
+                isArmedTargetSnapshot: true
+            )
             guard isCurrentArmedPickleDispatch(dispatch) else { return false }
             let rejection = try await agentClient.sendAwaitingError(
                 PickyCommandEnvelope(
@@ -1672,7 +1752,9 @@ final class CompanionManager: ObservableObject {
         _ text: String,
         source: PickyInteractionSource = .text,
         inkCapture: PickyInkCapture? = nil,
-        displayOverrides: PickyScreenContextDisplayOverrides = [:]
+        displayOverrides: PickyScreenContextDisplayOverrides = [:],
+        displaySelectionSnapshot: PickyScreenContextDisplaySelectionSnapshot? = nil,
+        quickInputRecipient: QuickInputRecipientProjection? = nil
     ) async -> Bool {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return false }
@@ -1683,21 +1765,37 @@ final class CompanionManager: ObservableObject {
         beginMainTurnGeneration()
         directMessageError = nil
 
-        if source == .quickInput, let targetSessionID = normalizedVoiceFollowUpSessionID(selectionStore.screenContextTargetSessionID) {
+        let effectiveDisplaySelectionSnapshot: PickyScreenContextDisplaySelectionSnapshot?
+        if source == .quickInput {
+            effectiveDisplaySelectionSnapshot = displaySelectionSnapshot
+                ?? captureScreenContextDisplaySelectionSnapshot(
+                    inkCapture: inkCapture,
+                    displayOverrides: displayOverrides
+                )
+        } else {
+            effectiveDisplaySelectionSnapshot = displaySelectionSnapshot
+        }
+        let recipient = quickInputRecipient ?? quickInputRecipientProjection()
+        if source == .quickInput,
+           case let .pickle(targetSessionID, _) = recipient {
             return await sendPickleMessageFromInput(
                 targetSessionID: targetSessionID,
                 text: trimmedText,
                 source: "text-follow-up",
                 inkCapture: inkCapture,
                 displayOverrides: displayOverrides,
+                displaySelectionSnapshot: effectiveDisplaySelectionSnapshot,
                 dispatchMode: armedPickleDispatchMode
             )
         }
 
         activeMainTurnFollowUpSessionID = nil
         let inputID = UUID()
-        if source == .quickInput, !displayOverrides.isEmpty {
+        if source == .quickInput {
             screenContextDisplayOverridesByTextInputID[inputID] = displayOverrides
+            if let effectiveDisplaySelectionSnapshot {
+                screenContextDisplaySelectionSnapshotsByTextInputID[inputID] = effectiveDisplaySelectionSnapshot
+            }
         }
         if let inkCapture, inkCapture.hasVisibleInk {
             pendingInkCaptures.store(inkCapture, for: inputID)

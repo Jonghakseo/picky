@@ -326,6 +326,31 @@ struct PickyCompanionManagerTests {
         #expect(selection.screenContextTargetSessionID == nil)
     }
 
+    @Test func textInkCapturePassesThroughCaptureContextControlPanels() {
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore()
+        )
+        let controlPoint = CGPoint(x: 240, y: 160)
+        manager.setScreenContextControlHitTest { $0 == controlPoint }
+
+        #expect(manager.shouldPassThroughInkMouseEvent(point: controlPoint, source: .text))
+        #expect(manager.shouldPassThroughInkMouseEvent(point: controlPoint, source: .voice))
+    }
+
+    @Test func pttDoesNotOverlapAnInFlightQuickInputSubmission() {
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore()
+        )
+        manager.quickInputPanelManager.viewModelForTesting.isSending = true
+
+        manager.handleShortcutTransition(.pressed)
+
+        #expect(manager.voiceState == .idle)
+        manager.stop()
+    }
+
     @Test func productionPTTPreservesDisplayOverridesAcrossReleaseAndFallbackCapture() async throws {
         let client = FakeVoiceClient()
         var capturedOverrides: PickyScreenContextDisplayOverrides = [:]

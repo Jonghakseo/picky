@@ -211,6 +211,8 @@ final class CompanionManager: ObservableObject {
     @Published private(set) var attachScreenshotsOnlyWhenInked: Bool
     /// Per-turn display choices from the status pill; manual choices override scope and ink gating.
     @Published var screenContextDisplayOverrides: PickyScreenContextDisplayOverrides = [:]
+    /// True only while an open Quick Input draft can still change its screen choices.
+    @Published private(set) var isQuickInputScreenContextControlsVisible = false
     /// Physical display containing the pointer, updated only when the pointer crosses displays.
     @Published var screenContextFocusedDisplayID: CGDirectDisplayID?
 
@@ -296,6 +298,7 @@ final class CompanionManager: ObservableObject {
     let pendingInkCaptures = PickyPendingInkCaptureStore()
     var screenContextVoiceTargetByInputID: [UUID: String] = [:]
     var screenContextDisplayOverridesByTextInputID: [UUID: PickyScreenContextDisplayOverrides] = [:]
+    var screenContextControlHitTest: (CGPoint) -> Bool = { _ in false }
     /// Monotonic marker for observing when queued interaction events have published.
     private(set) var interactionProjectionSequence: UInt64 = 0
     lazy var interactionCoordinator: PickyInteractionCoordinator = {
@@ -676,7 +679,8 @@ final class CompanionManager: ObservableObject {
         syncOverlayVisibility()
     }
 
-    private func shouldPassThroughInkMouseEvent(point: CGPoint, source: PickyInkCaptureSource) -> Bool {
+    func shouldPassThroughInkMouseEvent(point: CGPoint, source: PickyInkCaptureSource) -> Bool {
+        if screenContextControlHitTest(point) { return true }
         guard source == .text else { return false }
         if quickInputPanelManager.containsInteractiveGlobalPoint(point) { return true }
         return NSApp.windows.contains { window in
@@ -1010,6 +1014,7 @@ final class CompanionManager: ObservableObject {
         }
         quickInputPanelManager.onVisibilityChange = { [weak self] isVisible in
             self?.isQuickInputPanelVisible = isVisible
+            self?.isQuickInputScreenContextControlsVisible = isVisible
             if !isVisible {
                 self?.resetScreenContextDisplayOverrides()
             }
@@ -1126,10 +1131,14 @@ final class CompanionManager: ObservableObject {
     }
 
     private func handleQuickInputSubmit(text: String) {
+        let displayOverrides = screenContextDisplayOverrides
+        let inkCapture = finishInkCaptureForDeferredTextSubmission()
+        // The context packet uses the snapshot above. Do not leave controls live
+        // while the Quick Input submission is in flight, or the status UI could
+        // imply a later choice changes an already-captured payload.
+        isQuickInputScreenContextControlsVisible = false
         Task { @MainActor [weak self] in
             guard let self else { return }
-            let displayOverrides = self.screenContextDisplayOverrides
-            let inkCapture = self.finishInkCaptureForDeferredTextSubmission()
             let success = await self.sendDirectMessage(
                 text,
                 source: .quickInput,
@@ -1169,7 +1178,11 @@ final class CompanionManager: ObservableObject {
         switch transition {
         case .pressed:
             isPushToTalkShortcutHeld = true
-            guard !buddyDictationManager.isDictationInProgress else { return }
+            guard !buddyDictationManager.isDictationInProgress,
+                  !quickInputPanelManager.isSending else { return }
+            // A draft and a voice turn must not share one display-choice map.
+            // Dismissing an open draft makes PTT the sole owner of the controls.
+            quickInputPanelManager.dismiss()
             resetScreenContextDisplayOverrides()
             voiceContextCapturePipeline.beginInput()
             interruptSpokenResponseForVoiceInput()

@@ -47,4 +47,8 @@ extension CompanionManager {
     func resetScreenContextDisplayOverrides() {
         screenContextDisplayOverrides = [:]
     }
+
+    func setScreenContextControlHitTest(_ hitTest: ((CGPoint) -> Bool)?) {
+        screenContextControlHitTest = hitTest ?? { _ in false }
+    }
 }

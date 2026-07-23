@@ -39,10 +39,13 @@ final class PickyCaptureContextPanelController {
     func bind(to companionManager: CompanionManager) {
         unbind()
         self.companionManager = companionManager
+        companionManager.setScreenContextControlHitTest { [weak self] point in
+            self?.containsInteractiveGlobalPoint(point) == true
+        }
         captureStateObservation = companionManager.$voiceState
-            .combineLatest(companionManager.$isQuickInputPanelVisible)
-            .map { voiceState, isQuickInputVisible in
-                voiceState == .listening || isQuickInputVisible
+            .combineLatest(companionManager.$isQuickInputScreenContextControlsVisible)
+            .map { voiceState, isQuickInputControlsVisible in
+                voiceState == .listening || isQuickInputControlsVisible
             }
             .removeDuplicates()
             .sink { [weak self] isActive in
@@ -61,9 +64,16 @@ final class PickyCaptureContextPanelController {
         rebuildPanels(screens: screens)
     }
 
+    func containsInteractiveGlobalPoint(_ point: CGPoint) -> Bool {
+        panels.contains { panel in
+            panel.isVisible && panel.frame.contains(point)
+        }
+    }
+
     func unbind() {
         captureStateObservation?.cancel()
         captureStateObservation = nil
+        companionManager?.setScreenContextControlHitTest(nil)
         companionManager = nil
         isCaptureActive = false
         dismissPanels()

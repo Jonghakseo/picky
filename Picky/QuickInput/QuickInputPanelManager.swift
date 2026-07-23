@@ -46,6 +46,7 @@ final class QuickInputPanelManager {
     /// Logical visibility remains true while an optimistically hidden draft is
     /// in flight so CompanionManager keeps its ink-capture lifecycle intact.
     var isPanelVisible: Bool { viewModel.isSending || panel?.isVisible == true }
+    var isSending: Bool { viewModel.isSending }
 
     func containsInteractiveGlobalPoint(_ point: CGPoint) -> Bool {
         guard let panel, panel.isVisible else { return false }

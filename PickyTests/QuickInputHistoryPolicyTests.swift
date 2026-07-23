@@ -113,6 +113,20 @@ struct QuickInputHistoryPolicyTests {
         #expect(QuickInputHistoryPolicy.anchorMessageID(in: messages) == newPrompt.id)
     }
 
+    @Test
+    func historyBackgroundBecomesSolidAfterUserScrollUntilNextPresentation() {
+        var mode: QuickInputHistoryBackgroundMode = .lightweight
+
+        mode.recordUserScroll()
+        #expect(mode == .solid)
+
+        mode.recordUserScroll()
+        #expect(mode == .solid)
+
+        mode.resetForPresentation()
+        #expect(mode == .lightweight)
+    }
+
     private func message(
         role: PickyMainAgentMessage.Role,
         text: String,

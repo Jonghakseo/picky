@@ -12,14 +12,25 @@ import Combine
 import SwiftUI
 
 enum QuickInputPanelLayout {
-    static let pillWidth: CGFloat = 360
-    static let capsuleHeight: CGFloat = 44
+    static let pillWidth: CGFloat = 330
+    static let capsuleHeight: CGFloat = 40
     static let historyPillSpacing: CGFloat = 6
     /// Component-level optical fades: shallow enough to leave the anchored
     /// prompt legible while still indicating additional scrollable content.
     static let historyTopFadeHeight: CGFloat = 18
-    static let historyTopFadeSurfaceOpacity: Double = 0.9
     static let historyBottomFadeHeight: CGFloat = 24
+    /// The card intentionally recedes into the desktop until the user scrolls.
+    /// These component-level surface opacities preserve that hierarchy without
+    /// changing transcript text contrast or the shared surface token.
+    static let historyLightweightSurfaceTopOpacity: Double = 0.35
+    static let historySolidSurfaceOpacity: Double = 0.96
+    static let historyLightweightSurfaceBottomOpacity: Double = historySolidSurfaceOpacity
+    static let historyLightweightBorderTopOpacity: Double = 0.18
+    static let historyLightweightBorderBottomOpacity: Double = 0.55
+    static let historyLightweightMainShadowOpacity: Double = 0.04
+    static let historyLightweightTightShadowOpacity: Double = 0.02
+    static let historyBackgroundTransitionDuration: Double = 0.15
+    static let historyAnchorSettlingDuration: Double = 0.1
     static let mainShadowOpacity: Double = 0.08
     static let mainShadowRadius: CGFloat = 4
     static let mainShadowYOffset: CGFloat = 2
@@ -182,7 +193,11 @@ struct QuickInputPanelView: View {
 
 private struct QuickInputHistoryCard: View {
     @ObservedObject var viewModel: QuickInputPanelViewModel
+    @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
     @State private var trailingTurnHeight: CGFloat = 0
+    @State private var backgroundMode: QuickInputHistoryBackgroundMode = .lightweight
+    @State private var isApplyingAnchorScroll = true
+    @State private var anchorScrollRequestID = 0
     /// Starts true so the initial scroll-to-last-turn presentation immediately
     /// shows the top fade when prior messages exist; the scroll offset
     /// preference clears it once the user reaches the transcript's actual top.
@@ -196,6 +211,17 @@ private struct QuickInputHistoryCard: View {
     private var hasEarlierMessages: Bool { QuickInputHistoryPolicy.hasEarlierMessages(in: messages) }
     private var showsTopFade: Bool {
         hasEarlierMessages && hasContentAboveViewport
+    }
+    private var effectiveBackgroundMode: QuickInputHistoryBackgroundMode {
+        accessibilityReduceTransparency ? .solid : backgroundMode
+    }
+    private var topFadeSurfaceOpacity: Double {
+        effectiveBackgroundMode == .solid
+            ? QuickInputPanelLayout.historySolidSurfaceOpacity
+            : QuickInputPanelLayout.historyLightweightSurfaceTopOpacity
+    }
+    private var bottomFadeSurfaceOpacity: Double {
+        QuickInputPanelLayout.historySolidSurfaceOpacity
     }
 
     private var anchorIndex: Int {
@@ -278,7 +304,7 @@ private struct QuickInputHistoryCard: View {
                 if showsTopFade {
                     LinearGradient(
                         colors: [
-                            DS.Colors.surface1.opacity(QuickInputPanelLayout.historyTopFadeSurfaceOpacity),
+                            DS.Colors.surface1.opacity(topFadeSurfaceOpacity),
                             DS.Colors.surface1.opacity(0)
                         ],
                         startPoint: .top,
@@ -291,7 +317,10 @@ private struct QuickInputHistoryCard: View {
             .overlay(alignment: .bottom) {
                 if hasContentBelowViewport {
                     LinearGradient(
-                        colors: [DS.Colors.surface1.opacity(0), DS.Colors.surface1],
+                        colors: [
+                            DS.Colors.surface1.opacity(0),
+                            DS.Colors.surface1.opacity(bottomFadeSurfaceOpacity)
+                        ],
                         startPoint: .top,
                         endPoint: .bottom
                     )
@@ -301,31 +330,13 @@ private struct QuickInputHistoryCard: View {
             }
             .padding(.vertical, 10)
             .accessibilityLabel("Recent conversation")
-            .background(
-                RoundedRectangle(cornerRadius: DS.CornerRadius.panel, style: .continuous)
-                    .fill(DS.Colors.surface1.opacity(0.96))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: DS.CornerRadius.panel, style: .continuous)
-                            .stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8)
-                    )
-                    .shadow(
-                        color: Color.black.opacity(QuickInputPanelLayout.mainShadowOpacity),
-                        radius: QuickInputPanelLayout.mainShadowRadius,
-                        x: 0,
-                        y: QuickInputPanelLayout.mainShadowYOffset
-                    )
-                    .shadow(
-                        color: Color.black.opacity(QuickInputPanelLayout.tightShadowOpacity),
-                        radius: QuickInputPanelLayout.tightShadowRadius,
-                        x: 0,
-                        y: QuickInputPanelLayout.tightShadowYOffset
-                    )
-            )
+            .background(QuickInputHistoryCardBackground(mode: effectiveBackgroundMode))
             .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.panel, style: .continuous))
             .onAppear { scrollToAnchor(proxy) }
             .onChange(of: viewModel.presentationID) { _ in
                 hasContentAboveViewport = true
                 hasContentBelowViewport = false
+                resetBackgroundForPresentation()
                 scrollToAnchor(proxy)
             }
             .onChange(of: viewModel.recentMessages.last?.id) { _ in
@@ -335,6 +346,7 @@ private struct QuickInputHistoryCard: View {
             }
             .onPreferenceChange(QuickInputHistoryScrollOffsetKey.self) { offset in
                 updateContentAboveViewport(offset)
+                recordUserScrollIfNeeded()
             }
             .onPreferenceChange(QuickInputHistoryContentBottomKey.self) { bottom in
                 updateContentBelowViewport(bottom)
@@ -372,14 +384,121 @@ private struct QuickInputHistoryCard: View {
         }
     }
 
+    private func recordUserScrollIfNeeded() {
+        // Offset changes from scroll wheels, trackpads, and scrollbars all flow
+        // through this preference. Anchor positioning is explicitly gated so
+        // the initial programmatic scroll cannot make the card solid.
+        guard !isApplyingAnchorScroll, backgroundMode == .lightweight else { return }
+        backgroundMode.recordUserScroll()
+    }
+
+    private func resetBackgroundForPresentation() {
+        var transaction = Transaction()
+        transaction.animation = nil
+        withTransaction(transaction) {
+            backgroundMode.resetForPresentation()
+        }
+    }
+
     private func scrollToAnchor(_ proxy: ScrollViewProxy) {
         guard let anchorMessageID else { return }
+        isApplyingAnchorScroll = true
+        anchorScrollRequestID &+= 1
+        let requestID = anchorScrollRequestID
         // Let the revised transcript finish laying out before resolving the
         // anchor. This keeps a freshly appended turn at its prompt rather than
         // at the previous content height.
         DispatchQueue.main.async {
             proxy.scrollTo(anchorMessageID, anchor: .top)
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + QuickInputPanelLayout.historyAnchorSettlingDuration
+            ) {
+                guard anchorScrollRequestID == requestID else { return }
+                isApplyingAnchorScroll = false
+            }
         }
+    }
+}
+
+private struct QuickInputHistoryCardBackground: View {
+    let mode: QuickInputHistoryBackgroundMode
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: DS.CornerRadius.panel, style: .continuous)
+    }
+
+    var body: some View {
+        ZStack {
+            lightweightSurface
+                .opacity(mode == .lightweight ? 1 : 0)
+            solidSurface
+                .opacity(mode == .solid ? 1 : 0)
+        }
+        // Keep the transition scoped to chrome so a scroll never animates the
+        // card's height, rows, or viewport fades.
+        .animation(
+            .easeInOut(duration: QuickInputPanelLayout.historyBackgroundTransitionDuration),
+            value: mode
+        )
+    }
+
+    private var lightweightSurface: some View {
+        shape
+            .fill(
+                LinearGradient(
+                    colors: [
+                        DS.Colors.surface1.opacity(QuickInputPanelLayout.historyLightweightSurfaceTopOpacity),
+                        DS.Colors.surface1.opacity(QuickInputPanelLayout.historyLightweightSurfaceBottomOpacity)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            .overlay(
+                shape.stroke(
+                    LinearGradient(
+                        colors: [
+                            DS.Colors.borderSubtle.opacity(QuickInputPanelLayout.historyLightweightBorderTopOpacity),
+                            DS.Colors.borderSubtle.opacity(QuickInputPanelLayout.historyLightweightBorderBottomOpacity)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 0.8
+                )
+            )
+            .shadow(
+                color: Color.black.opacity(QuickInputPanelLayout.historyLightweightMainShadowOpacity),
+                radius: QuickInputPanelLayout.mainShadowRadius,
+                x: 0,
+                y: QuickInputPanelLayout.mainShadowYOffset
+            )
+            .shadow(
+                color: Color.black.opacity(QuickInputPanelLayout.historyLightweightTightShadowOpacity),
+                radius: QuickInputPanelLayout.tightShadowRadius,
+                x: 0,
+                y: QuickInputPanelLayout.tightShadowYOffset
+            )
+    }
+
+    private var solidSurface: some View {
+        shape
+            .fill(DS.Colors.surface1.opacity(QuickInputPanelLayout.historySolidSurfaceOpacity))
+            .overlay(
+                shape.stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8)
+            )
+            .shadow(
+                color: Color.black.opacity(QuickInputPanelLayout.mainShadowOpacity),
+                radius: QuickInputPanelLayout.mainShadowRadius,
+                x: 0,
+                y: QuickInputPanelLayout.mainShadowYOffset
+            )
+            .shadow(
+                color: Color.black.opacity(QuickInputPanelLayout.tightShadowOpacity),
+                radius: QuickInputPanelLayout.tightShadowRadius,
+                x: 0,
+                y: QuickInputPanelLayout.tightShadowYOffset
+            )
     }
 }
 

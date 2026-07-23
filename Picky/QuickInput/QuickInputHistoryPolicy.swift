@@ -81,3 +81,18 @@ enum QuickInputHistoryPolicy {
         contentBottom > viewportHeight + 0.5
     }
 }
+
+/// The history starts visually lightweight for each presentation, then becomes
+/// solid after a user scroll so text remains easy to read over desktop content.
+enum QuickInputHistoryBackgroundMode: Equatable {
+    case lightweight
+    case solid
+
+    mutating func recordUserScroll() {
+        self = .solid
+    }
+
+    mutating func resetForPresentation() {
+        self = .lightweight
+    }
+}

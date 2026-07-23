@@ -5,6 +5,7 @@
 
 import AppKit
 import AVFoundation
+import Combine
 import Foundation
 import Testing
 @testable import Picky
@@ -1195,6 +1196,66 @@ struct PickyCompanionManagerTests {
         speechProvider.finishSpeaking()
         try await settle()
         #expect(speechProvider.spokenUtterances == ["첫 문장.", "둘째 문장."])
+    }
+
+    @Test func incrementalNarrationKeepsCumulativeBubbleWhenNextSentenceHasSameLineCount() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        speechProvider.supportsIncrementalPlayback = true
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider
+        )
+        let firstSentence = "첫 번째 문장입니다."
+        let secondSentence = "두 번째 문장입니다."
+        let fullReply = "\(firstSentence) \(secondSentence)"
+        let fullLineCount = PickyCursorResponseBubbleLayout(sourceText: fullReply).lineCount
+        let secondLineCount = PickyCursorResponseBubbleLayout(sourceText: secondSentence).lineCount
+        #expect(fullLineCount == 1)
+        #expect(secondLineCount == fullLineCount)
+
+        var publishedSummaries: [String] = []
+        let summaryObservation = manager.$latestAgentSessionSummary
+            .compactMap { $0 }
+            .sink { publishedSummaries.append($0) }
+        defer {
+            summaryObservation.cancel()
+            manager.stop()
+        }
+
+        manager.applyAgentEvent(.mainNarrationChunk(PickyMainNarrationChunkEvent(
+            contextId: "equal-line-count-context",
+            text: firstSentence,
+            originSource: .voice,
+            replyKind: .main,
+            sessionId: nil
+        )))
+        manager.applyAgentEvent(.mainNarrationChunk(PickyMainNarrationChunkEvent(
+            contextId: "equal-line-count-context",
+            text: secondSentence,
+            originSource: .voice,
+            replyKind: .main,
+            sessionId: nil
+        )))
+        manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
+            contextId: "equal-line-count-context",
+            text: fullReply,
+            originSource: .voice,
+            replyKind: .main,
+            didStreamNarration: true
+        )))
+        try await waitUntil {
+            speechProvider.spokenUtterances == [firstSentence]
+                && manager.latestAgentSessionSummary == fullReply
+        }
+        publishedSummaries.removeAll()
+
+        speechProvider.finishSpeaking()
+        try await waitUntil { speechProvider.spokenUtterances == [firstSentence, secondSentence] }
+        try await settle()
+
+        #expect(manager.latestAgentSessionSummary == fullReply)
+        #expect(!publishedSummaries.contains(secondSentence))
     }
 
     @Test func incrementalNarrationSkipsStandaloneParentheticalURLChunk() async throws {

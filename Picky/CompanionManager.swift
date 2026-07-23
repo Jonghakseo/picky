@@ -1023,10 +1023,13 @@ final class CompanionManager: ObservableObject {
         let transition = PickyVoiceInteractionMachine.reduce(state: voiceInteractionState, event: event)
         voiceInteractionState = transition.state
         applyVoiceInteractionProjection(transition.state.projection)
-        if let responseText = transition.state.context.responseBubbleText,
+        let streamedResponseOwnsBubble = interactionCoordinator.projection.state.streamedResponseText != nil
+        if !streamedResponseOwnsBubble,
+           let responseText = transition.state.context.responseBubbleText,
            !responseText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            // Do not wipe activity chips on response start — they intentionally
-            // linger beside the response bubble and fade via the deferred clear.
+            // Visual/system speech still relies on the voice machine's current
+            // utterance. Cumulative narration is owned by the interaction projection;
+            // replacing it here with one sentence causes a one-frame regression.
             latestAgentSessionSummary = responseText
         }
         return transition

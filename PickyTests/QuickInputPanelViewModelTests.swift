@@ -41,6 +41,20 @@ struct QuickInputPanelViewModelTests {
     }
 
     @Test
+    func managerRecentMessagesPropagateToViewModel() {
+        let manager = QuickInputPanelManager()
+        let message = PickyMainAgentMessage(
+            role: .user,
+            text: "Where did the last reply go?",
+            createdAt: Date(timeIntervalSince1970: 1)
+        )
+
+        manager.updateRecentMessages([message])
+
+        #expect(manager.viewModelForTesting.recentMessages == [message])
+    }
+
+    @Test
     func managerRemainsLogicallyVisibleWhileAnOptimisticSubmissionIsInFlight() {
         let manager = QuickInputPanelManager()
 

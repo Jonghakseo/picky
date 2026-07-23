@@ -14,6 +14,7 @@ import SwiftUI
 enum QuickInputPanelLayout {
     static let pillWidth: CGFloat = 360
     static let capsuleHeight: CGFloat = 44
+    static let historyPillSpacing: CGFloat = 6
     static let mainShadowOpacity: Double = 0.08
     static let mainShadowRadius: CGFloat = 4
     static let mainShadowYOffset: CGFloat = 2
@@ -46,9 +47,16 @@ final class QuickInputPanelViewModel: ObservableObject {
     @Published var isSending: Bool = false
     @Published var errorMessage: String?
     @Published var screenshotState: QuickInputScreenshotState = .attached
+    @Published var recentMessages: [PickyMainAgentMessage] = []
+    /// Includes the card chrome and is reduced by the manager when the cursor
+    /// has limited space above it on the active display.
+    @Published var historyCardHeightLimit: CGFloat = QuickInputHistoryPolicy.defaultCardHeight
 
     var onSubmit: (String) -> Void = { _ in }
     var onClose: () -> Void = {}
+    /// Lets the AppKit panel remeasure after the transcript's SwiftUI content
+    /// resolves its actual height.
+    var onFittingSizeChanged: () -> Void = {}
 
     func submit() {
         let trimmed = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -71,7 +79,11 @@ struct QuickInputPanelView: View {
     private let shadowOutset: CGFloat = QuickInputPanelLayout.shadowOutset
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: QuickInputPanelLayout.historyPillSpacing) {
+            if QuickInputHistoryPolicy.shouldShowCard(for: viewModel.recentMessages) {
+                QuickInputHistoryCard(viewModel: viewModel)
+            }
+
             HStack(spacing: 6) {
                 TextField("Message Picky…", text: $viewModel.draftText, axis: .horizontal)
                     .textFieldStyle(.plain)
@@ -198,5 +210,162 @@ struct QuickInputPanelView: View {
         case .attached: "quickInput.screenshot.attached"
         case .gated: "quickInput.screenshot.gated"
         }
+    }
+}
+
+private struct QuickInputHistoryCard: View {
+    @ObservedObject var viewModel: QuickInputPanelViewModel
+    @State private var trailingTurnHeight: CGFloat = 0
+
+    private var messages: [PickyMainAgentMessage] { viewModel.recentMessages }
+    private var anchorMessageID: String? { QuickInputHistoryPolicy.anchorMessageID(in: messages) }
+    private var hasEarlierMessages: Bool { QuickInputHistoryPolicy.hasEarlierMessages(in: messages) }
+
+    private var anchorIndex: Int {
+        guard let anchorMessageID,
+              let index = messages.firstIndex(where: { $0.id == anchorMessageID }) else {
+            return messages.startIndex
+        }
+        return index
+    }
+
+    private var earlierMessages: [PickyMainAgentMessage] {
+        Array(messages[..<anchorIndex])
+    }
+
+    private var currentTurnMessages: [PickyMainAgentMessage] {
+        guard !messages.isEmpty else { return [] }
+        return Array(messages[anchorIndex...])
+    }
+
+    private var hintHeight: CGFloat {
+        hasEarlierMessages ? 22 : 0
+    }
+
+    private var maximumScrollHeight: CGFloat {
+        max(1, viewModel.historyCardHeightLimit - hintHeight - 20)
+    }
+
+    private var scrollHeight: CGFloat {
+        guard trailingTurnHeight > 0 else { return maximumScrollHeight }
+        return min(trailingTurnHeight, maximumScrollHeight)
+    }
+
+    private var showsBottomFade: Bool {
+        trailingTurnHeight > maximumScrollHeight + 0.5
+    }
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            VStack(alignment: .leading, spacing: 8) {
+                if hasEarlierMessages {
+                    Text(L10n.t("quickInput.history.scrollEarlier"))
+                        .font(PickyHUDTypography.minimumMedium)
+                        .foregroundStyle(DS.Colors.textTertiary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .accessibilityHint(L10n.t("quickInput.history.scrollEarlier"))
+                }
+
+                ZStack {
+                    ScrollView(.vertical, showsIndicators: true) {
+                        LazyVStack(alignment: .leading, spacing: 14) {
+                            ForEach(earlierMessages) { message in
+                                PickyMainAgentTranscriptRow(message: message)
+                            }
+
+                            VStack(alignment: .leading, spacing: 14) {
+                                ForEach(currentTurnMessages) { message in
+                                    PickyMainAgentTranscriptRow(message: message)
+                                }
+                            }
+                            .background(
+                                GeometryReader { proxy in
+                                    Color.clear.preference(
+                                        key: QuickInputHistoryTrailingTurnHeightKey.self,
+                                        value: proxy.size.height
+                                    )
+                                }
+                            )
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                    }
+                    .frame(height: scrollHeight)
+                    .accessibilityLabel("Recent conversation")
+
+                    if hasEarlierMessages {
+                        LinearGradient(
+                            colors: [DS.Colors.surface1, DS.Colors.surface1.opacity(0)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .frame(height: min(18, scrollHeight))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .allowsHitTesting(false)
+                    }
+
+                    if showsBottomFade {
+                        LinearGradient(
+                            colors: [DS.Colors.surface1.opacity(0), DS.Colors.surface1],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .frame(height: min(24, scrollHeight))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                        .allowsHitTesting(false)
+                    }
+                }
+            }
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: DS.CornerRadius.panel, style: .continuous)
+                    .fill(DS.Colors.surface1.opacity(0.96))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DS.CornerRadius.panel, style: .continuous)
+                            .stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8)
+                    )
+                    .shadow(
+                        color: Color.black.opacity(QuickInputPanelLayout.mainShadowOpacity),
+                        radius: QuickInputPanelLayout.mainShadowRadius,
+                        x: 0,
+                        y: QuickInputPanelLayout.mainShadowYOffset
+                    )
+                    .shadow(
+                        color: Color.black.opacity(QuickInputPanelLayout.tightShadowOpacity),
+                        radius: QuickInputPanelLayout.tightShadowRadius,
+                        x: 0,
+                        y: QuickInputPanelLayout.tightShadowYOffset
+                    )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.panel, style: .continuous))
+            .onAppear { scrollToAnchor(proxy) }
+            .onChange(of: viewModel.recentMessages.last?.id) { _ in
+                scrollToAnchor(proxy)
+            }
+            .onPreferenceChange(QuickInputHistoryTrailingTurnHeightKey.self) { height in
+                guard abs(trailingTurnHeight - height) > 0.5 else { return }
+                trailingTurnHeight = height
+                viewModel.onFittingSizeChanged()
+            }
+        }
+    }
+
+    private func scrollToAnchor(_ proxy: ScrollViewProxy) {
+        guard let anchorMessageID else { return }
+        // Let the revised transcript finish laying out before resolving the
+        // anchor. This keeps a freshly appended turn at its prompt rather than
+        // at the previous content height.
+        DispatchQueue.main.async {
+            proxy.scrollTo(anchorMessageID, anchor: .top)
+        }
+    }
+}
+
+private struct QuickInputHistoryTrailingTurnHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }

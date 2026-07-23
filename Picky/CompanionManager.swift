@@ -1124,6 +1124,9 @@ final class CompanionManager: ObservableObject {
         if !quickInputPanelManager.isPanelVisible {
             beginInkCapture(source: .text)
         }
+        // Push the current transcript before creating/showing the hosting view
+        // so the first Quick Input frame is already anchored at the last turn.
+        quickInputPanelManager.updateRecentMessages(mainAgentMessages)
         quickInputPanelManager.updateScreenshotState(currentQuickInputScreenshotState())
         quickInputPanelManager.presentPanel(near: event.mouseLocation)
     }
@@ -2100,6 +2103,7 @@ final class CompanionManager: ObservableObject {
                 correlation: PickyInteractionCorrelation(source: .system)
             )
             mainAgentMessages = []
+            quickInputPanelManager.updateRecentMessages(mainAgentMessages)
             clearMainActivitiesImmediately()
             mainPendingQuestion = nil
             latestAgentSessionSummary = "Started a new Messages session"
@@ -2226,11 +2230,13 @@ final class CompanionManager: ObservableObject {
             )
         case .mainMessagesSnapshot(let messages):
             mainAgentMessages = Array(messages.suffix(100))
+            quickInputPanelManager.updateRecentMessages(mainAgentMessages)
             // Snapshot fires on session load/reset for the whole transcript,
             // so do not auto-dispatch deep links here — we would re-open
             // panels for stale replies the user already saw.
         case .mainMessageAppended(let message):
             mainAgentMessages = Array((mainAgentMessages + [message]).suffix(100))
+            quickInputPanelManager.updateRecentMessages(mainAgentMessages)
             autoDispatchPickyDeepLinkIfPresent(in: message)
         case .mainActivityUpdated(let activity):
             guard let activity else {

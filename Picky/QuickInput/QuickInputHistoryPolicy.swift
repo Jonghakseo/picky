@@ -13,8 +13,9 @@ import CoreGraphics
 /// turn, so scrolling down continues that answer and scrolling up reaches
 /// earlier turns in the same scroll view.
 enum QuickInputHistoryPolicy {
-    /// Header + one user turn + roughly four assistant text lines.
-    static let defaultCardHeight: CGFloat = 164
+    /// One user turn + roughly three assistant text lines; kept intentionally
+    /// compact so the card reads as a peek, not a chat window.
+    static let defaultCardHeight: CGFloat = 123
     /// The history card must never claim more than this fraction of a screen.
     static let maximumScreenHeightFraction: CGFloat = 0.45
     /// Fixed top and bottom padding around the scroll viewport.

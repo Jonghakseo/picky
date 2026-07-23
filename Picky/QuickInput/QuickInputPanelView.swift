@@ -27,11 +27,11 @@ enum QuickInputPanelLayout {
     static let historySolidSurfaceOpacity: Double = 0.96
     /// Surface tint layered over the behind-window blur: airy at the top so
     /// the desktop shows through, denser toward the pill for grounding.
-    static let historyLightweightTintTopOpacity: Double = 0.05
-    static let historyLightweightTintBottomOpacity: Double = 0.3
+    static let historyLightweightTintTopOpacity: Double = 0.03
+    static let historyLightweightTintBottomOpacity: Double = 0.2
     /// The system material's own tint is dense enough to read as opaque, so
     /// the blur layer is faded to let the desktop actually show through.
-    static let historyLightweightBlurAlpha: Double = 0.6
+    static let historyLightweightBlurAlpha: Double = 0.45
     static let historyLightweightBottomFadeOpacity: Double = 0.6
     static let historyVerticalPadding: CGFloat = 10
     static let historyLightweightBorderTopOpacity: Double = 0.18

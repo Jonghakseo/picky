@@ -95,6 +95,48 @@ struct PickyPiOAuthLoginControllerTests {
         #expect(didReloadAuthentication)
     }
 
+    @Test func browserFailureCancelsTheDaemonLogin() async {
+        let client = FakePickyAgentClient()
+        client.beforeSend = { command in
+            guard command.type == .signInPiOAuth, let provider = command.providerId else { return }
+            client.emit(.protocolEvent(Self.envelope(.piOAuthUrlRequested(PickyPiOAuthUrlRequestEvent(
+                requestId: command.id,
+                providerId: provider,
+                url: "https://example.com/oauth",
+                instructions: nil,
+                userCode: nil
+            )))))
+        }
+        let runner = PickyPiOAuthLoginAgentRunner(client: client, openURL: { _ in false })
+
+        do {
+            _ = try await runner.signIn(provider: .anthropic)
+            Issue.record("Expected browser launch failure")
+        } catch let error as PickyPiOAuthLoginError {
+            #expect(error == .browserOpenFailed("https://example.com/oauth"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+        await waitUntil { client.sentCommands.contains(where: { $0.type == .cancelPiOAuth }) }
+
+        let signInRequestId = client.sentCommands.first(where: { $0.type == .signInPiOAuth })?.id
+        #expect(client.sentCommands.first(where: { $0.type == .cancelPiOAuth })?.requestId == signInRequestId)
+    }
+
+    @Test func silentStatusRequestTimesOut() async {
+        let client = FakePickyAgentClient()
+        let runner = PickyPiOAuthLoginAgentRunner(client: client, statusTimeoutNanoseconds: 1_000_000)
+
+        do {
+            _ = try await runner.authStatus(for: .anthropic)
+            Issue.record("Expected status timeout")
+        } catch let error as PickyPiOAuthLoginError {
+            #expect(error == .timedOut)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
     @Test func cancelSendsTheOwnedLoginRequestIDToAgentd() async {
         let client = FakePickyAgentClient()
         let runner = PickyPiOAuthLoginAgentRunner(client: client)

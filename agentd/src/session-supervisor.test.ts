@@ -62,6 +62,38 @@ describe("SessionSupervisor", () => {
     expect(mainRuntime.handle?.reloadAuthenticationCalls).toBe(1);
   });
 
+  it("waits for a pending Pickle handle before acknowledging authentication reload", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-pending-auth-reload-"));
+    const runtime = new DeferredCreateRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    const creating = supervisor.create(context("pending auth reload"));
+    await waitUntil(() => runtime.createCalls === 1);
+
+    const reloading = supervisor.reloadPiAuthentication();
+    runtime.resolveAll();
+    await creating;
+
+    await expect(reloading).resolves.toBe(1);
+    expect(runtime.handles[0]?.reloadAuthenticationCalls).toBe(1);
+  });
+
+  it("attempts every runtime authentication reload before reporting failures", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-failed-auth-reload-"));
+    const runtime = new DeferredCreateRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    const creating = [
+      supervisor.create(context("failed auth reload one")),
+      supervisor.create(context("failed auth reload two")),
+    ];
+    await waitUntil(() => runtime.createCalls === 2);
+    runtime.resolveAll();
+    await Promise.all(creating);
+    runtime.handles[0]!.reloadAuthenticationError = new Error("first reload failed");
+
+    await expect(supervisor.reloadPiAuthentication()).rejects.toThrow("first reload failed");
+    expect(runtime.handles.map((handle) => handle.reloadAuthenticationCalls)).toEqual([1, 1]);
+  });
+
   it("creates multiple mock sessions concurrently", async () => {
     const supervisor = await makeSupervisor();
     const [first, second] = await Promise.all([supervisor.create(context("first")), supervisor.create(context("second"))]);
@@ -7821,6 +7853,7 @@ class ManualHandle implements RuntimeSessionHandle {
   steerOutcome: { handledSynchronously: boolean } = { handledSynchronously: false };
   aborts = 0;
   reloadAuthenticationCalls = 0;
+  reloadAuthenticationError?: Error;
   async steer(prompt: BuiltPrompt): Promise<{ handledSynchronously: boolean }> {
     this.steerPrompts.push(prompt);
     this.steers.push(prompt.text);
@@ -7836,6 +7869,7 @@ class ManualHandle implements RuntimeSessionHandle {
   }
   async reloadAuthentication(): Promise<void> {
     this.reloadAuthenticationCalls += 1;
+    if (this.reloadAuthenticationError) throw this.reloadAuthenticationError;
   }
   async compact(customInstructions?: string): Promise<void> {
     this.compactCalls.push(customInstructions);

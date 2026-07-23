@@ -111,6 +111,34 @@ describe("PiOAuthService", () => {
     await expect(login).rejects.toThrow("cancelled");
   });
 
+  it("reserves a provider before runtime initialization and honors cancellation during initialization", async () => {
+    const owner = {};
+    const runtime = fakeRuntime(async () => oauthCredential());
+    let resolveRuntime!: (runtime: PiOAuthRuntime) => void;
+    const runtimeReady = new Promise<PiOAuthRuntime>((resolve) => { resolveRuntime = resolve; });
+    const service = new PiOAuthService({ createRuntime: () => runtimeReady });
+
+    const first = service.login({
+      requestId: "login-initializing",
+      providerId: "anthropic",
+      owner,
+      onPrompt: () => {},
+      onNotify: () => {},
+    });
+    await expect(service.login({
+      requestId: "login-racing",
+      providerId: "anthropic",
+      owner,
+      onPrompt: () => {},
+      onNotify: () => {},
+    })).rejects.toThrow("already in progress");
+
+    expect(service.cancel(owner, "login-initializing")).toBe(true);
+    resolveRuntime(runtime);
+    await expect(first).rejects.toThrow("cancelled");
+    expect(runtime.login).not.toHaveBeenCalled();
+  });
+
   it("enforces one active login per provider", async () => {
     const owner = {};
     const prompts: string[] = [];

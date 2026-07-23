@@ -682,14 +682,29 @@ export class SessionSupervisor extends EventEmitter {
       }
     }
     for (const handle of this.runtimeHandles.values()) handles.add(handle);
+    for (const [sessionId, pendingHandle] of [...this.pendingRuntimeHandles]) {
+      try {
+        handles.add(await pendingHandle);
+      } catch (error) {
+        logAgentd("pending pickle authentication reload skipped", { sessionId, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
 
     let reloaded = 0;
+    const failures: string[] = [];
     for (const handle of handles) {
       if (!handle.reloadAuthentication) continue;
-      await handle.reloadAuthentication();
-      reloaded += 1;
+      try {
+        await handle.reloadAuthentication();
+        reloaded += 1;
+      } catch (error) {
+        failures.push(error instanceof Error ? error.message : String(error));
+      }
     }
-    logAgentd("pi authentication reloaded", { handles: reloaded });
+    logAgentd("pi authentication reloaded", { handles: reloaded, failures: failures.length });
+    if (failures.length > 0) {
+      throw new Error(`Failed to reload Pi authentication on ${failures.length} runtime handle(s): ${failures.join("; ")}`);
+    }
     return reloaded;
   }
 

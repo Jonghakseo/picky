@@ -88,8 +88,9 @@ export class PiOAuthService implements PiOAuthHandling {
       throw new Error(`Pi OAuth login already in progress for '${request.providerId}' (${existingRequestId})`);
     }
 
-    const runtime = await this.runtime();
-    this.requireOAuthProvider(runtime, request.providerId);
+    // Reserve synchronously before the first await. WebSocket commands can be
+    // dispatched concurrently while ModelRuntime is still initializing; a
+    // post-await reservation lets two requests pass both single-flight checks.
     const pending: PendingLogin = {
       providerId: request.providerId,
       owner: request.owner,
@@ -101,6 +102,9 @@ export class PiOAuthService implements PiOAuthHandling {
     this.providerRequests.set(request.providerId, request.requestId);
 
     try {
+      const runtime = await this.runtime();
+      if (pending.controller.signal.aborted) throw new Error("Pi OAuth login cancelled");
+      this.requireOAuthProvider(runtime, request.providerId);
       await runtime.login(request.providerId, "oauth", {
         signal: pending.controller.signal,
         notify: request.onNotify,

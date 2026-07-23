@@ -187,14 +187,22 @@ final class PickyPiOAuthLoginAgentRunner: PickyPiOAuthLoginRunning {
             }
         }
 
-        let status = try await withTaskCancellationHandler(
-            operation: {
-                try await awaitStatus(command: command, provider: provider, timeoutNanoseconds: nil)
-            },
-            onCancel: { [weak self] in
-                Task { @MainActor in self?.cancelRequest(provider: provider, requestId: command.id) }
-            }
-        )
+        let status: PickyPiOAuthLoginAuthStatus
+        do {
+            status = try await withTaskCancellationHandler(
+                operation: {
+                    try await awaitStatus(command: command, provider: provider, timeoutNanoseconds: nil)
+                },
+                onCancel: { [weak self] in
+                    Task { @MainActor in self?.cancelRequest(provider: provider, requestId: command.id) }
+                }
+            )
+        } catch {
+            // The daemon may still be waiting on a callback or prompt when a
+            // local browser/event handling failure terminates the response loop.
+            cancelRequest(provider: provider, requestId: command.id)
+            throw error
+        }
         try await reloadAuthenticationAcrossDaemons()
         return status
     }
@@ -287,14 +295,20 @@ final class PickyPiOAuthLoginAgentRunner: PickyPiOAuthLoginRunning {
             )
         }
         return try await withThrowingTaskGroup(of: PickyPiOAuthLoginAuthStatus.self) { group in
+            // The waiter is intentionally unstructured so it can subscribe
+            // before send(). Cancel it before the task-group scope waits for
+            // children, otherwise the timeout child can win while the event
+            // stream waiter remains suspended forever.
+            defer {
+                responseTask.cancel()
+                group.cancelAll()
+            }
             group.addTask { try await responseTask.value }
             group.addTask {
                 try await Task.sleep(nanoseconds: timeoutNanoseconds)
                 throw PickyPiOAuthLoginError.timedOut
             }
-            let status = try await group.next()!
-            group.cancelAll()
-            return status
+            return try await group.next()!
         }
     }
 
@@ -305,6 +319,7 @@ final class PickyPiOAuthLoginAgentRunner: PickyPiOAuthLoginRunning {
         guard deliveredCount > 0 else { throw PickyPiOAuthLoginError.disconnected }
 
         try await withThrowingTaskGroup(of: Void.self) { group in
+            defer { group.cancelAll() }
             group.addTask { @MainActor in
                 var receivedCount = 0
                 for await clientEvent in stream {
@@ -334,7 +349,6 @@ final class PickyPiOAuthLoginAgentRunner: PickyPiOAuthLoginRunning {
                 throw PickyPiOAuthLoginError.timedOut
             }
             _ = try await group.next()
-            group.cancelAll()
         }
     }
 

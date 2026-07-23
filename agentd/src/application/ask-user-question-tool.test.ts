@@ -50,7 +50,8 @@ describe("picky ask_user_question tool", () => {
       { hasUI: true, ui: { askUserQuestion: async () => undefined } } as never,
     );
 
-    expect(textContent(result)).toContain("cancelled");
+    expect(textContent(result)).toContain("dismissed without a submitted answer");
+    expect(textContent(result)).toContain("treat it as the answer");
     expect(result.details).toEqual({ cancelled: true });
   });
 });

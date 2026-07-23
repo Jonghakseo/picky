@@ -68,7 +68,7 @@ export function createPickyAskUserQuestionTool(): ToolDefinition {
 
       if (!result || (typeof result === "object" && "cancelled" in result && (result as { cancelled?: unknown }).cancelled === true)) {
         return {
-          content: [{ type: "text", text: "User cancelled the input form." }],
+          content: [{ type: "text", text: "The question form was dismissed without a submitted answer. Continue with your best judgment; if the user's next message addresses the question, treat it as the answer." }],
           details: { cancelled: true },
         };
       }

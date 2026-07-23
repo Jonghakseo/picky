@@ -354,8 +354,12 @@ private struct QuickInputHistoryCard: View {
                 }
             }
             .accessibilityLabel("Recent conversation")
-            .background(QuickInputHistoryCardBackground(mode: effectiveBackgroundMode))
+            // Clip the content first, then attach the background outside the
+            // clip: a SwiftUI clip mask on an ancestor layer disables
+            // `NSVisualEffectView`'s behind-window sampling, so the blur must
+            // stay unmasked and round its own corners via `maskImage`.
             .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.panel, style: .continuous))
+            .background(QuickInputHistoryCardBackground(mode: effectiveBackgroundMode))
             .onAppear { scrollToAnchor(proxy) }
             .onChange(of: viewModel.presentationID) { _ in
                 hasContentAboveViewport = true
@@ -512,15 +516,25 @@ private struct QuickInputBehindWindowBlurView: NSViewRepresentable {
         view.blendingMode = .behindWindow
         view.material = .popover
         view.state = .active
-        view.wantsLayer = true
-        view.layer?.cornerRadius = cornerRadius
-        view.layer?.cornerCurve = .continuous
-        view.layer?.masksToBounds = true
+        view.maskImage = Self.roundedMaskImage(cornerRadius: cornerRadius)
         return view
     }
 
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
-        nsView.layer?.cornerRadius = cornerRadius
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
+
+    /// AppKit-recommended rounded-corner masking for behind-window blur.
+    /// Cap insets keep the corners crisp while the center stretches.
+    private static func roundedMaskImage(cornerRadius radius: CGFloat) -> NSImage {
+        let inset = radius + 1
+        let size = NSSize(width: inset * 2 + 1, height: inset * 2 + 1)
+        let image = NSImage(size: size, flipped: false) { rect in
+            NSColor.black.set()
+            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+            return true
+        }
+        image.capInsets = NSEdgeInsets(top: inset, left: inset, bottom: inset, right: inset)
+        image.resizingMode = .stretch
+        return image
     }
 }
 

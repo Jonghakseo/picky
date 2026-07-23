@@ -26,6 +26,32 @@ private actor FakeAbortGate {
     }
 }
 
+private actor FakeCaptureGate {
+    private var didEnter = false
+    private var didRelease = false
+    private var enteredContinuation: CheckedContinuation<Void, Never>?
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        didEnter = true
+        enteredContinuation?.resume()
+        enteredContinuation = nil
+        guard !didRelease else { return }
+        await withCheckedContinuation { releaseContinuation = $0 }
+    }
+
+    func waitUntilEntered() async {
+        guard !didEnter else { return }
+        await withCheckedContinuation { enteredContinuation = $0 }
+    }
+
+    func release() {
+        didRelease = true
+        releaseContinuation?.resume()
+        releaseContinuation = nil
+    }
+}
+
 private final class FakeVoiceClient: PickyAgentClient, @unchecked Sendable {
     private let continuation: AsyncStream<PickyClientEvent>.Continuation
     let events: AsyncStream<PickyClientEvent>
@@ -1037,6 +1063,52 @@ struct PickyCompanionManagerTests {
 
         #expect(await manager.cancelMainTurn())
         #expect(client.commands.filter { $0.type == .abort && $0.sessionId == "pickle-target" }.count == 2)
+    }
+
+    @Test func cancelDuringArmedPickleCapturePreventsLateFollowUpDispatch() async throws {
+        let client = FakeVoiceClient()
+        let captureGate = FakeCaptureGate()
+        let selection = FakeVoiceSelectionStore()
+        selection.setScreenContextTarget(sessionID: "pickle-target", sticky: true)
+        let manager = CompanionManager(
+            agentClient: client,
+            selectionStore: selection,
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(captureGate: captureGate),
+            armedPickleDispatchMode: .followUp
+        )
+
+        let dispatch = Task { await manager.sendDirectMessage("cancel while capturing", source: .quickInput) }
+        await captureGate.waitUntilEntered()
+
+        #expect(await manager.cancelMainTurn())
+        await captureGate.release()
+
+        #expect(!(await dispatch.value))
+        #expect(!client.commands.contains { $0.type == .steer || $0.type == .followUp })
+    }
+
+    @Test func unrelatedMainTurnSettledPreservesArmedPickleAbortTarget() async throws {
+        let client = FakeVoiceClient()
+        let captureGate = FakeCaptureGate()
+        let selection = FakeVoiceSelectionStore()
+        selection.setScreenContextTarget(sessionID: "pickle-target", sticky: true)
+        let manager = CompanionManager(
+            agentClient: client,
+            selectionStore: selection,
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(captureGate: captureGate),
+            armedPickleDispatchMode: .steer
+        )
+
+        let dispatch = Task { await manager.sendDirectMessage("new armed turn", source: .quickInput) }
+        await captureGate.waitUntilEntered()
+        manager.applyAgentEvent(.mainTurnSettled(contextId: "older-main-context"))
+
+        #expect(await manager.cancelMainTurn())
+        #expect(client.commands.contains { $0.type == .abort && $0.sessionId == "pickle-target" })
+
+        await captureGate.release()
+        #expect(!(await dispatch.value))
+        #expect(!client.commands.contains { $0.type == .steer || $0.type == .followUp })
     }
 
     @Test func cancellationErrorBroadcastBeforeWaiterResolutionKeepsTheTurnRetryable() async throws {
@@ -2436,11 +2508,15 @@ struct PickyCompanionManagerTests {
 
     private func fakeContextCaptureCoordinator(
         screenshots: [PickyScreenshotContext] = [],
+        captureGate: FakeCaptureGate? = nil,
         onScreenCapture: @escaping @MainActor (PickyScreenContextDisplayOverrides) -> Void = { _ in }
     ) -> PickyVoiceContextCaptureCoordinator {
         PickyVoiceContextCaptureCoordinator(
             screenCapture: { _, _, _, _, displayOverrides in
                 onScreenCapture(displayOverrides)
+                if let captureGate {
+                    await captureGate.wait()
+                }
                 return []
             },
             contextPreflightCapture: {

@@ -380,15 +380,26 @@ final class CompanionManager: ObservableObject {
     private var deferredFinishAwaitingAgentResponseSessionID: String?
     /// Caps how long the recognized-transcript bubble lingers after STT.
     private var voicePromptBubbleAutoHideTask: Task<Void, Never>?
+    private struct ArmedPickleDispatch {
+        let token: UUID
+        let generation: UInt64
+        var contextID: String?
+    }
+
     private struct MainTurnCancellation {
         let shouldSettleLocalState: Bool
         let followUpSessionID: String?
         let generation: UInt64
+        let armedPickleDispatchToken: UUID?
     }
 
     /// Increments when a new main turn starts so late cancellation completions
     /// cannot reset that newer turn's local projection.
     private var mainTurnGeneration: UInt64 = 0
+    /// Identity of the armed Pickle dispatch currently capturing or awaiting
+    /// agentd. Its token prevents stale capture completions and settled events
+    /// from affecting a newer armed Pickle turn.
+    private var activeArmedPickleDispatch: ArmedPickleDispatch?
 
     private var voiceInteractionState = PickyVoiceInteractionState()
     private var activeSpeechID: UUID?
@@ -1580,6 +1591,12 @@ final class CompanionManager: ObservableObject {
         displayOverrides: PickyScreenContextDisplayOverrides,
         dispatchMode: PickyArmedPickleDispatchMode
     ) async -> Bool {
+        let dispatch = ArmedPickleDispatch(
+            token: UUID(),
+            generation: mainTurnGeneration,
+            contextID: nil
+        )
+        activeArmedPickleDispatch = dispatch
         activeMainTurnFollowUpSessionID = targetSessionID
         do {
             guard let captureResult = try await voiceContextCaptureCoordinator.captureContext(
@@ -1588,12 +1605,16 @@ final class CompanionManager: ObservableObject {
                 inkCapture: inkCapture,
                 displayOverrides: displayOverrides
             ) else {
+                guard isCurrentArmedPickleDispatch(dispatch) else { return false }
                 directMessageError = L10n.t("error.directMessage.contextEmpty")
                 latestAgentSessionSummary = directMessageError
                 clearScreenContextTargetIfCurrent(targetSessionID)
-                activeMainTurnFollowUpSessionID = nil
+                finishArmedPickleDispatch(dispatch)
                 return false
             }
+            guard isCurrentArmedPickleDispatch(dispatch) else { return false }
+            activeArmedPickleDispatch?.contextID = captureResult.contextPacket.id
+
             // `sendAwaitingError` waits up to 1s for the daemon to emit a
             // `type="error"` rejection (e.g. `Unknown session: …` when the
             // target Pickle lives in a child daemon the router can't reach).
@@ -1610,6 +1631,7 @@ final class CompanionManager: ObservableObject {
                 context = pickleFollowUpContext(captureResult.contextPacket, sessionID: targetSessionID)
             }
             let visualDslEnabled = prepareArmedPickleVisualDslContext(context, sessionID: targetSessionID)
+            guard isCurrentArmedPickleDispatch(dispatch) else { return false }
             let rejection = try await agentClient.sendAwaitingError(
                 PickyCommandEnvelope(
                     type: commandType,
@@ -1620,11 +1642,12 @@ final class CompanionManager: ObservableObject {
                 ),
                 timeout: 1.0
             )
+            guard isCurrentArmedPickleDispatch(dispatch) else { return false }
             if let rejection {
                 directMessageError = L10n.t("error.directMessage.sendFailed", rejection.message)
                 latestAgentSessionSummary = directMessageError
                 clearScreenContextTargetIfCurrent(targetSessionID)
-                activeMainTurnFollowUpSessionID = nil
+                finishArmedPickleDispatch(dispatch)
                 return false
             }
             latestAgentSessionSummary = dispatchMode == .steer
@@ -1633,11 +1656,12 @@ final class CompanionManager: ObservableObject {
             clearScreenContextTargetIfCurrent(targetSessionID)
             return true
         } catch {
+            guard isCurrentArmedPickleDispatch(dispatch) else { return false }
             let message = error.localizedDescription
             directMessageError = L10n.t("error.directMessage.sendFailed", message)
             latestAgentSessionSummary = directMessageError
             clearScreenContextTargetIfCurrent(targetSessionID)
-            activeMainTurnFollowUpSessionID = nil
+            finishArmedPickleDispatch(dispatch)
             return false
         }
     }
@@ -2421,7 +2445,13 @@ final class CompanionManager: ObservableObject {
     }
 
     private func applyMainTurnSettled(contextID: String) {
-        activeMainTurnFollowUpSessionID = nil
+        let doesSettleOwnArmedPickleDispatch = activeArmedPickleDispatch?.contextID == contextID
+        if activeArmedPickleDispatch == nil || doesSettleOwnArmedPickleDispatch {
+            activeMainTurnFollowUpSessionID = nil
+            if doesSettleOwnArmedPickleDispatch {
+                activeArmedPickleDispatch = nil
+            }
+        }
         let isMatchingWaitingTurn: Bool
         if case .waitingForAgent(_, let waitingContextID, _) = interactionCoordinator.projection.state.output {
             isMatchingWaitingTurn = waitingContextID == contextID
@@ -2657,6 +2687,18 @@ final class CompanionManager: ObservableObject {
 
     private func beginMainTurnGeneration() {
         mainTurnGeneration &+= 1
+        activeArmedPickleDispatch = nil
+    }
+
+    private func isCurrentArmedPickleDispatch(_ dispatch: ArmedPickleDispatch) -> Bool {
+        activeArmedPickleDispatch?.token == dispatch.token
+            && mainTurnGeneration == dispatch.generation
+    }
+
+    private func finishArmedPickleDispatch(_ dispatch: ArmedPickleDispatch) {
+        guard isCurrentArmedPickleDispatch(dispatch) else { return }
+        activeArmedPickleDispatch = nil
+        activeMainTurnFollowUpSessionID = nil
     }
 
     private func noteMainOverlayContext(_ context: PickyContextPacket) {
@@ -2866,7 +2908,8 @@ final class CompanionManager: ObservableObject {
                 voiceFollowUpSessionID: voiceFollowUpSessionIDForCurrentUtterance,
                 shouldAbortVoiceFollowUpPickle: shouldAbortFollowUpPickle
             ),
-            generation: mainTurnGeneration
+            generation: mainTurnGeneration,
+            armedPickleDispatchToken: activeArmedPickleDispatch?.token
         )
     }
 
@@ -2916,6 +2959,10 @@ final class CompanionManager: ObservableObject {
         // daemon was processing this cancellation. Never settle or confirm a
         // cancellation result against that newer turn.
         guard mainTurnGeneration == cancellation.generation else { return false }
+        if let armedPickleDispatchToken = cancellation.armedPickleDispatchToken,
+           activeArmedPickleDispatch?.token == armedPickleDispatchToken {
+            activeArmedPickleDispatch = nil
+        }
         if cancellation.shouldSettleLocalState {
             settleMainTurnAfterCancellation()
         }

@@ -26,8 +26,8 @@ struct PickyMainCancelPillView: View {
         VStack(spacing: 5) {
             Button(action: onCancel) {
                 pillLabel
-                    .padding(.horizontal, 13)
-                    .frame(minHeight: 30)
+                    .padding(.horizontal, 11)
+                    .frame(minHeight: 26)
                     .background(
                         // Dark base under the blue tint so the pill stays
                         // legible over bright desktops (mirrors the capture
@@ -46,7 +46,6 @@ struct PickyMainCancelPillView: View {
             }
             .buttonStyle(.plain)
             .contentShape(Capsule(style: .continuous))
-            .scaleEffect(state == .hover ? 1.05 : 1)
             .onHover(perform: onHoverChanged)
             .accessibilityLabel(Text(accessibilityLabel))
             .help(accessibilityLabel)
@@ -72,35 +71,35 @@ struct PickyMainCancelPillView: View {
     private var pillLabel: some View {
         switch state {
         case .rest:
-            HStack(spacing: 7) {
+            HStack(spacing: 6) {
                 stopIcon(.white)
                 Text(L10n.t("overlay.mainCancel.stop"))
             }
-            .font(.system(size: 12, weight: .medium))
+            .font(.system(size: 11.5, weight: .medium))
             .foregroundStyle(.white)
         case .hover:
-            HStack(spacing: 7) {
+            HStack(spacing: 6) {
                 stopIcon(.white)
                 Text(L10n.t("overlay.mainCancel.clickToStop"))
             }
-            .font(.system(size: 12, weight: .medium))
+            .font(.system(size: 11.5, weight: .medium))
             .foregroundStyle(.white)
         case .escapeArmed:
-            HStack(spacing: 7) {
+            HStack(spacing: 6) {
                 stopIcon(.white)
                 HStack(spacing: 5) {
                     keycap
                     Text(L10n.t("overlay.mainCancel.escapeArmed"))
                 }
             }
-            .font(.system(size: 12, weight: .medium))
+            .font(.system(size: 11.5, weight: .medium))
             .foregroundStyle(.white)
         case .cancelled:
-            HStack(spacing: 7) {
+            HStack(spacing: 6) {
                 stopIcon(Color(hex: "#CFE1FF").opacity(0.6))
                 Text(L10n.t("overlay.mainCancel.cancelled"))
             }
-            .font(.system(size: 12, weight: .medium))
+            .font(.system(size: 11.5, weight: .medium))
             .foregroundStyle(Color(hex: "#CFE1FF").opacity(0.75))
         }
     }
@@ -128,7 +127,7 @@ struct PickyMainCancelPillView: View {
     private func stopIcon(_ color: Color) -> some View {
         RoundedRectangle(cornerRadius: 2, style: .continuous)
             .fill(color)
-            .frame(width: 8, height: 8)
+            .frame(width: 7, height: 7)
     }
 
     private var caption: some View {
@@ -137,10 +136,10 @@ struct PickyMainCancelPillView: View {
             keycap
             Text(L10n.t("overlay.mainCancel.escapeHintSuffix"))
         }
-        .font(.system(size: 10.5, weight: .regular))
+        .font(.system(size: 10, weight: .regular))
         .foregroundStyle(Color(hex: "#CFE1FF").opacity(0.65))
-        .padding(.horizontal, 8)
-        .padding(.vertical, 2.5)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 2)
         .background(
             // Own backdrop: the caption floats over arbitrary desktops and
             // needs contrast independent of what is behind it.

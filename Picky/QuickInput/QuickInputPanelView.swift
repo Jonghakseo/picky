@@ -376,8 +376,13 @@ private struct QuickInputHistoryCard: View {
             // Negative padding lets the mask cover the solid card's shadow
             // spill instead of clipping it at the card bounds.
             .mask(cardDissolveMask.padding(-QuickInputPanelLayout.shadowOutset))
+            // Animate only toward solid. The reset back to lightweight happens
+            // while re-presenting the retained panel, and animating it there
+            // plays a distracting solid→translucent transition on open.
             .animation(
-                .easeInOut(duration: QuickInputPanelLayout.historyBackgroundTransitionDuration),
+                effectiveBackgroundMode == .solid
+                    ? .easeInOut(duration: QuickInputPanelLayout.historyBackgroundTransitionDuration)
+                    : nil,
                 value: effectiveBackgroundMode
             )
             .onAppear { scrollToAnchor(proxy) }
@@ -456,9 +461,12 @@ private struct QuickInputHistoryCardBackground: View {
                 .opacity(mode == .solid ? 1 : 0)
         }
         // Keep the transition scoped to chrome so a scroll never animates the
-        // card's height, rows, or viewport fades.
+        // card's height, rows, or viewport fades. Solid-only direction: the
+        // reset to lightweight must be instant (see the dissolve mask note).
         .animation(
-            .easeInOut(duration: QuickInputPanelLayout.historyBackgroundTransitionDuration),
+            mode == .solid
+                ? .easeInOut(duration: QuickInputPanelLayout.historyBackgroundTransitionDuration)
+                : nil,
             value: mode
         )
     }

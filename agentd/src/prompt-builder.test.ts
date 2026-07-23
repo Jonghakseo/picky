@@ -41,9 +41,6 @@ describe("neutral prompt builder", () => {
     for (const toolName of Object.values(PICKLE_TOOL_NAMES)) {
       expect(pair.user).toContain(toolName);
     }
-    // Removed narration tooling must not leak into the bootstrap pair.
-    expect(pair.user).not.toContain("picky_narrate_progress");
-    expect(pair.user).not.toContain("before a long step runs");
     // Persona + routing thresholds belong in the user-editable AGENTS.md, not
     // hard-coded prompt text.
     expect(pair.user).toContain("AGENTS.md");

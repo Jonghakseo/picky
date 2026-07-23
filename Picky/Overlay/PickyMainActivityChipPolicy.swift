@@ -30,11 +30,12 @@ struct PickyMainActivityChipModel: Equatable {
             )
         case .tool:
             guard let toolName = activity.toolName, !toolName.isEmpty else { return nil }
+            let skillName = PickyToolActivityPresentation.skillName(forToolNamed: toolName, argsPreview: activity.argsPreview)
             let category: PickyMainActivityChipCategory = pickleToolNames.contains(toolName) ? .pickle : .normal
             return PickyMainActivityChipModel(
                 category: category,
-                label: displayName(for: toolName),
-                detail: detail(for: toolName, argsPreview: activity.argsPreview),
+                label: skillName == nil ? displayName(for: toolName) : "skill",
+                detail: skillName ?? detail(for: toolName, argsPreview: activity.argsPreview),
                 isRunning: activity.status == "running"
             )
         }

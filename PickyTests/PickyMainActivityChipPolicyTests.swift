@@ -23,6 +23,36 @@ struct PickyMainActivityChipPolicyTests {
         #expect(model?.detail?.contains("Picky/") == false)
     }
 
+    @Test func skillReadShowsSkillNameInsteadOfManifestFilename() {
+        let activity = PickyMainActivity(
+            kind: .tool,
+            toolCallId: "read-skill",
+            toolName: "read",
+            status: "running",
+            argsPreview: #"{"path":"/Users/example/.pi/agent/skills/context7-cli/SKILL.md"}"#
+        )
+
+        let model = PickyMainActivityChipModel.chipModel(for: activity)
+
+        #expect(model?.label == "skill")
+        #expect(model?.detail == "context7-cli")
+    }
+
+    @Test func ordinaryManifestReadKeepsReadToolPresentation() {
+        let activity = PickyMainActivity(
+            kind: .tool,
+            toolCallId: "read-manifest",
+            toolName: "read",
+            status: "running",
+            argsPreview: #"{"path":"docs/SKILL.md"}"#
+        )
+
+        let model = PickyMainActivityChipModel.chipModel(for: activity)
+
+        #expect(model?.label == "read")
+        #expect(model?.detail == "SKILL.md")
+    }
+
     @Test func bashDetailPrefersTitleOverCommand() {
         let activity = PickyMainActivity(
             kind: .tool,

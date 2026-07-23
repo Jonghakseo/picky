@@ -17,8 +17,9 @@ final class GlobalPushToTalkShortcutMonitor: ObservableObject {
 
     /// Optional sink for raw flagsChanged/keyDown/keyUp events. Used by
     /// QuickInputDoubleTapDetector so we don't install a second CGEvent tap.
-    /// Always invoked on the main thread (the event tap runs on `CFRunLoopGetMain()`).
-    var rawEventForwarder: ((CGEventType, UInt16, UInt64) -> Void)?
+    /// The final argument identifies hardware key-repeat events. Always invoked
+    /// on the main thread (the event tap runs on `CFRunLoopGetMain()`).
+    var rawEventForwarder: ((CGEventType, UInt16, UInt64, Bool) -> Void)?
 
     /// Currently-active push-to-talk shortcut. Mutated by CompanionManager
     /// whenever the user saves a new spec in Settings.
@@ -177,7 +178,8 @@ final class GlobalPushToTalkShortcutMonitor: ObservableObject {
 
         let eventKeyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         let modifierFlagsRawValue = event.flags.rawValue
-        rawEventForwarder?(eventType, eventKeyCode, modifierFlagsRawValue)
+        let isAutorepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+        rawEventForwarder?(eventType, eventKeyCode, modifierFlagsRawValue, isAutorepeat)
         let shortcutTransition = BuddyPushToTalkShortcut.shortcutTransition(
             for: eventType,
             keyCode: eventKeyCode,

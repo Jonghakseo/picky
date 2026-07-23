@@ -3,6 +3,7 @@
 //  PickyTests
 //
 
+import CoreGraphics
 import Foundation
 import Testing
 @testable import Picky
@@ -34,6 +35,15 @@ struct PickyMainCancelPillPolicyTests {
             isWaitingForCursorResponse: false,
             hasLiveActivities: true
         ))
+        // An armed Quick Input follow-up is cancellable even before its
+        // response has produced activity or a cursor waiting projection.
+        #expect(PickyMainCancelPillPolicy.isMainTurnInFlight(
+            hasPendingAgentResponse: false,
+            voiceState: .idle,
+            isWaitingForCursorResponse: false,
+            hasLiveActivities: false,
+            hasActiveFollowUpTurn: true
+        ))
         #expect(!PickyMainCancelPillPolicy.isMainTurnInFlight(
             hasPendingAgentResponse: false,
             voiceState: .idle,
@@ -59,11 +69,56 @@ struct PickyMainCancelPillPolicyTests {
     }
 
     @Test
+    func repeatedEscapeKeyDownIsIgnoredUntilAnotherPhysicalPress() {
+        #expect(PickyMainCancelPillPolicy.shouldHandleEscape(
+            eventType: .keyDown,
+            keyCode: 53,
+            isAutorepeat: false
+        ))
+        #expect(!PickyMainCancelPillPolicy.shouldHandleEscape(
+            eventType: .keyDown,
+            keyCode: 53,
+            isAutorepeat: true
+        ))
+        #expect(!PickyMainCancelPillPolicy.shouldHandleEscape(
+            eventType: .keyUp,
+            keyCode: 53,
+            isAutorepeat: false
+        ))
+    }
+
+    @Test
+    func followUpAbortUsesOnlyTheOriginalVoiceInFlightGate() {
+        #expect(PickyMainCancelPillPolicy.shouldAbortFollowUpPickle(
+            hasPendingAgentResponse: true,
+            voiceState: .idle
+        ))
+        #expect(PickyMainCancelPillPolicy.shouldAbortFollowUpPickle(
+            hasPendingAgentResponse: false,
+            voiceState: .responding
+        ))
+        #expect(!PickyMainCancelPillPolicy.shouldAbortFollowUpPickle(
+            hasPendingAgentResponse: false,
+            voiceState: .processing
+        ))
+        #expect(!PickyMainCancelPillPolicy.shouldAbortFollowUpPickle(
+            hasPendingAgentResponse: false,
+            voiceState: .idle
+        ))
+    }
+
+    @Test
     func hoverOnlyChangesTheRestingPresentation() {
         #expect(PickyMainCancelPillPolicy.stateAfterHover(true, currentState: .rest) == .hover)
         #expect(PickyMainCancelPillPolicy.stateAfterHover(false, currentState: .hover) == .rest)
         #expect(PickyMainCancelPillPolicy.stateAfterHover(true, currentState: .escapeArmed) == .escapeArmed)
         #expect(PickyMainCancelPillPolicy.stateAfterHover(false, currentState: .cancelled) == .cancelled)
+    }
+
+    @Test
+    func cancellationPresentationChangesOnlyAfterAbortSucceeds() {
+        #expect(PickyMainCancelPillPolicy.stateAfterCancellationAttempt(succeeded: true) == .cancelled)
+        #expect(PickyMainCancelPillPolicy.stateAfterCancellationAttempt(succeeded: false) == .rest)
     }
 
     @Test

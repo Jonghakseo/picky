@@ -5,6 +5,7 @@
 //  Pure state and presentation policy for the main-turn cancel control.
 //
 
+import CoreGraphics
 import Foundation
 
 /// Visual states for the main-turn cancellation control.
@@ -26,9 +27,10 @@ enum PickyMainCancelPillPolicy {
         hasPendingAgentResponse: Bool,
         voiceState: CompanionVoiceState,
         isWaitingForCursorResponse: Bool,
-        hasLiveActivities: Bool
+        hasLiveActivities: Bool,
+        hasActiveFollowUpTurn: Bool = false
     ) -> Bool {
-        if hasPendingAgentResponse || isWaitingForCursorResponse || hasLiveActivities {
+        if hasPendingAgentResponse || isWaitingForCursorResponse || hasLiveActivities || hasActiveFollowUpTurn {
             return true
         }
         switch voiceState {
@@ -41,6 +43,30 @@ enum PickyMainCancelPillPolicy {
 
     static func shouldPresent(isMainTurnInFlight: Bool, isPickyPanelKeyWindow: Bool) -> Bool {
         isMainTurnInFlight && !isPickyPanelKeyWindow
+    }
+
+    /// Escape confirmation must be two physical presses: key-repeat events from
+    /// a held key never advance the state machine.
+    static func shouldHandleEscape(
+        eventType: CGEventType,
+        keyCode: UInt16,
+        isAutorepeat: Bool
+    ) -> Bool {
+        eventType == .keyDown && keyCode == 53 && !isAutorepeat
+    }
+
+    /// Pickle-scoped aborts retain the pre-pill voice semantics. The broader
+    /// in-flight projection governs visibility only; it must not let a late PTT
+    /// press cancel a completed Pickle with a stale target ID.
+    static func shouldAbortFollowUpPickle(
+        hasPendingAgentResponse: Bool,
+        voiceState: CompanionVoiceState
+    ) -> Bool {
+        hasPendingAgentResponse || voiceState == .responding
+    }
+
+    static func stateAfterCancellationAttempt(succeeded: Bool) -> PickyMainCancelPillState {
+        succeeded ? .cancelled : .rest
     }
 
     static func stateAfterHover(_ isHovering: Bool, currentState: PickyMainCancelPillState) -> PickyMainCancelPillState {

@@ -29,8 +29,9 @@ final class PickyMainCancelPillPanelManager {
     private var panel: PickyMainCancelPillPanel?
     private var escapeResetTask: Task<Void, Never>?
     private var cancelledDismissTask: Task<Void, Never>?
+    private var cancellationAttemptID: UUID?
 
-    var onCancel: () -> Void = {}
+    var onCancel: () async -> Bool = { false }
 
     deinit {
         escapeResetTask?.cancel()
@@ -42,7 +43,11 @@ final class PickyMainCancelPillPanelManager {
             isMainTurnInFlight: isMainTurnInFlight,
             isPickyPanelKeyWindow: isPickyPanelKeyWindow
         ) else {
-            if viewModel.state != .cancelled {
+            // A successful abort clears the in-flight projection before this
+            // panel receives its confirmation result. Keep it visible while
+            // awaiting that result so success can still show “Stopped”; a
+            // failure restores .rest without dropping the usable control.
+            if viewModel.state != .cancelled, cancellationAttemptID == nil {
                 dismiss()
             }
             return
@@ -51,12 +56,14 @@ final class PickyMainCancelPillPanelManager {
     }
 
     func handleEscape() {
-        guard panel?.isVisible == true, viewModel.state != .cancelled else { return }
+        guard panel?.isVisible == true, viewModel.state != .cancelled, cancellationAttemptID == nil else { return }
         let nextState = PickyMainCancelPillPolicy.stateAfterEscape(currentState: viewModel.state)
-        viewModel.state = nextState
         if nextState == .cancelled {
+            // Keep the armed state while the abort is in flight. Only a
+            // confirmed daemon abort is allowed to show the cancelled label.
             cancel()
         } else {
+            viewModel.state = nextState
             scheduleEscapeReset()
         }
     }
@@ -66,6 +73,7 @@ final class PickyMainCancelPillPanelManager {
         escapeResetTask = nil
         cancelledDismissTask?.cancel()
         cancelledDismissTask = nil
+        cancellationAttemptID = nil
         viewModel.state = .rest
         panel?.orderOut(nil)
     }
@@ -118,10 +126,10 @@ final class PickyMainCancelPillPanelManager {
         guard let panel else { return }
         let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) }) ?? NSScreen.main
         guard let screen else { return }
-        let visibleFrame = screen.visibleFrame
+        let screenFrame = screen.frame
         let origin = CGPoint(
-            x: visibleFrame.midX - Self.panelSize.width / 2,
-            y: visibleFrame.maxY - Self.topInset - Self.panelSize.height
+            x: screenFrame.midX - Self.panelSize.width / 2,
+            y: screenFrame.maxY - Self.topInset - Self.panelSize.height
         )
         panel.setFrame(CGRect(origin: origin, size: Self.panelSize), display: true)
     }
@@ -139,11 +147,24 @@ final class PickyMainCancelPillPanelManager {
     }
 
     private func cancel() {
-        guard viewModel.state != .cancelled else { return }
+        guard viewModel.state != .cancelled, cancellationAttemptID == nil else { return }
         escapeResetTask?.cancel()
         escapeResetTask = nil
-        viewModel.state = .cancelled
-        onCancel()
+        let attemptID = UUID()
+        cancellationAttemptID = attemptID
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let succeeded = await self.onCancel()
+            guard self.cancellationAttemptID == attemptID else { return }
+            self.cancellationAttemptID = nil
+            self.viewModel.state = PickyMainCancelPillPolicy.stateAfterCancellationAttempt(succeeded: succeeded)
+            guard succeeded else { return }
+            self.scheduleCancelledDismissal()
+        }
+    }
+
+    private func scheduleCancelledDismissal() {
         cancelledDismissTask?.cancel()
         cancelledDismissTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(PickyMainCancelPillPolicy.cancellationConfirmationDuration * 1_000_000_000))

@@ -364,6 +364,11 @@ final class CompanionManager: ObservableObject {
     private var deferredFinishAwaitingAgentResponseSessionID: String?
     /// Caps how long the recognized-transcript bubble lingers after STT.
     private var voicePromptBubbleAutoHideTask: Task<Void, Never>?
+    private struct MainTurnCancellation {
+        let shouldSettleLocalState: Bool
+        let followUpSessionID: String?
+    }
+
     private var voiceInteractionState = PickyVoiceInteractionState()
     private var activeSpeechID: UUID?
     private var lastQuickReplyTTSDedupKey: String?
@@ -384,7 +389,9 @@ final class CompanionManager: ObservableObject {
     /// Follow-up destination for the currently cancellable turn. Voice uses its
     /// utterance snapshot; Quick Input records its armed Pickle after agentd
     /// accepts the dispatch so both cancellation surfaces stop the same work.
-    private var activeMainTurnFollowUpSessionID: String?
+    private var activeMainTurnFollowUpSessionID: String? {
+        didSet { updateMainCancelPillPresentation() }
+    }
     /// Tracks the last status we saw per session so `applyAgentEvent(.sessionUpdated)`
     /// can detect the *transition* into a terminal status (cancelled/failed/completed)
     /// rather than reacting on every snapshot. Used by the HUD-abort cursor-cleanup path:
@@ -1020,14 +1027,18 @@ final class CompanionManager: ObservableObject {
     /// Routes raw flags/key events from the PTT event tap into the Quick
     /// Input detector so we don't need a second CGEvent tap.
     private func wireQuickInputPanel() {
-        globalPushToTalkShortcutMonitor.rawEventForwarder = { [weak self] eventType, keyCode, flagsRawValue in
+        globalPushToTalkShortcutMonitor.rawEventForwarder = { [weak self] eventType, keyCode, flagsRawValue, isAutorepeat in
             guard let self else { return }
             self.quickInputDoubleTapDetector.handleGlobalEvent(
                 eventType: eventType,
                 keyCode: keyCode,
                 modifierFlagsRawValue: flagsRawValue
             )
-            guard eventType == .keyDown, keyCode == 53 else { return }
+            guard PickyMainCancelPillPolicy.shouldHandleEscape(
+                eventType: eventType,
+                keyCode: keyCode,
+                isAutorepeat: isAutorepeat
+            ) else { return }
             self.mainCancelPillPanelManager.handleEscape()
         }
         quickInputPanelManager.onSubmit = { [weak self] text in
@@ -1043,7 +1054,8 @@ final class CompanionManager: ObservableObject {
 
     private func wireMainCancelPill() {
         mainCancelPillPanelManager.onCancel = { [weak self] in
-            self?.cancelMainTurn()
+            guard let self else { return false }
+            return await self.cancelMainTurn()
         }
         let center = NotificationCenter.default
         for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
@@ -1063,7 +1075,8 @@ final class CompanionManager: ObservableObject {
             hasPendingAgentResponse: pendingAgentResponseStartedAt != nil,
             voiceState: voiceState,
             isWaitingForCursorResponse: isWaitingForCursorResponse,
-            hasLiveActivities: !mainLiveActivities.isEmpty
+            hasLiveActivities: !mainLiveActivities.isEmpty,
+            hasActiveFollowUpTurn: activeMainTurnFollowUpSessionID != nil
         )
         // Picky's interactive panels are non-activating but become the key
         // window. While one owns keyboard input, ESC must retain its native
@@ -2736,7 +2749,14 @@ final class CompanionManager: ObservableObject {
     }
 
     func interruptSpokenResponseForVoiceInput() {
-        cancelMainTurn()
+        // Capture before this PTT press can begin a new turn. The abort command
+        // must still precede that submission, but its eventual success must not
+        // settle the new turn that follows this key press.
+        let cancellation = makeMainTurnCancellation()
+        stopCurrentSpeech()
+        Task { [weak self] in
+            _ = await self?.cancelMainTurn(cancellation, stopsLocalSpeech: false)
+        }
         updateVoiceInputAudioSuppression(isVoiceInputActive: true)
         reduceVoiceInteraction(.abort)
     }
@@ -2744,30 +2764,60 @@ final class CompanionManager: ObservableObject {
     /// Stops the current main turn regardless of whether it originated from
     /// voice or typed Quick Input. A Pickle follow-up needs its own session
     /// abort in addition to the main-agent abort.
-    func cancelMainTurn() {
-        let isAgentResponseInFlight = PickyMainCancelPillPolicy.isMainTurnInFlight(
-            hasPendingAgentResponse: pendingAgentResponseStartedAt != nil,
+    @discardableResult
+    func cancelMainTurn() async -> Bool {
+        await cancelMainTurn(makeMainTurnCancellation(), stopsLocalSpeech: true)
+    }
+
+    private func makeMainTurnCancellation() -> MainTurnCancellation {
+        let hasPendingAgentResponse = pendingAgentResponseStartedAt != nil
+        let shouldSettleLocalState = PickyMainCancelPillPolicy.isMainTurnInFlight(
+            hasPendingAgentResponse: hasPendingAgentResponse,
             voiceState: voiceState,
             isWaitingForCursorResponse: isWaitingForCursorResponse,
-            hasLiveActivities: !mainLiveActivities.isEmpty
+            hasLiveActivities: !mainLiveActivities.isEmpty,
+            hasActiveFollowUpTurn: activeMainTurnFollowUpSessionID != nil
         )
-        let followUpSessionID = isAgentResponseInFlight
-            ? activeMainTurnFollowUpSessionID ?? voiceFollowUpSessionIDForCurrentUtterance
-            : nil
+        let shouldAbortFollowUpPickle = PickyMainCancelPillPolicy.shouldAbortFollowUpPickle(
+            hasPendingAgentResponse: hasPendingAgentResponse,
+            voiceState: voiceState
+        )
+        return MainTurnCancellation(
+            shouldSettleLocalState: shouldSettleLocalState,
+            followUpSessionID: shouldAbortFollowUpPickle
+                ? activeMainTurnFollowUpSessionID ?? voiceFollowUpSessionIDForCurrentUtterance
+                : nil
+        )
+    }
 
-        stopCurrentSpeech()
-        pendingAgentResponseStartedAt = nil
-        mainLiveActivities = []
-        activeMainTurnFollowUpSessionID = nil
-
-        Task { [agentClient] in
-            do {
-                try await agentClient.send(PickyCommandEnvelope(type: .abortMainAgent))
-            } catch {
-                print("⚠️ Failed to abort Picky main turn: \(error)")
-            }
+    private func cancelMainTurn(
+        _ cancellation: MainTurnCancellation,
+        stopsLocalSpeech: Bool
+    ) async -> Bool {
+        // Stop local narration immediately, but keep the in-flight projection
+        // intact until agentd accepted the main abort. That lets the pill remain
+        // usable when transport or command delivery fails.
+        if stopsLocalSpeech {
+            stopCurrentSpeech()
         }
-        if let followUpSessionID {
+        do {
+            let rejection = try await agentClient.sendAwaitingError(
+                PickyCommandEnvelope(type: .abortMainAgent),
+                timeout: 1.0
+            )
+            if let rejection {
+                print("⚠️ Failed to abort Picky main turn: \(rejection.message)")
+                return false
+            }
+        } catch {
+            print("⚠️ Failed to abort Picky main turn: \(error)")
+            return false
+        }
+
+        if cancellation.shouldSettleLocalState {
+            settleMainTurnAfterCancellation()
+        }
+        if let followUpSessionID = cancellation.followUpSessionID {
             Task { [agentClient] in
                 do {
                     try await agentClient.send(PickyCommandEnvelope(type: .abort, sessionId: followUpSessionID))
@@ -2776,6 +2826,31 @@ final class CompanionManager: ObservableObject {
                 }
             }
         }
+        return true
+    }
+
+    private func settleMainTurnAfterCancellation() {
+        deferredFinishAwaitingAgentResponseTask?.cancel()
+        deferredFinishAwaitingAgentResponseTask = nil
+        deferredFinishAwaitingAgentResponseSessionID = nil
+        responseStateTask?.cancel()
+        responseStateTask = nil
+        pendingAgentResponseStartedAt = nil
+        mainLiveActivities = []
+        activeMainTurnFollowUpSessionID = nil
+        currentVoicePromptPreview = nil
+        voicePromptBubbleState = .hidden
+        // This is the same abort reduction used by the voice interruption path.
+        // It clears the voice projection even though agentd's abort command has
+        // no matching mainTurnSettled event.
+        reduceVoiceInteraction(.abort)
+        // Typed Quick Input uses the interaction coordinator rather than the
+        // voice machine. Reset its waiting output as well so the cursor cannot
+        // remain in the processing projection after a successful abort.
+        interactionCoordinator.accept(
+            .mainAgentSessionReset,
+            correlation: PickyInteractionCorrelation(source: .system)
+        )
     }
 
     func beginAwaitingAgentResponse(recognizedTranscript: String? = nil) {
@@ -2847,6 +2922,9 @@ final class CompanionManager: ObservableObject {
     }
 
     private func releaseCursorForTerminatedSession(sessionID: String, status: PickySessionStatus) {
+        if activeMainTurnFollowUpSessionID == sessionID {
+            activeMainTurnFollowUpSessionID = nil
+        }
         releaseDeferredAcceptedReceiptIfNeeded(sessionID: sessionID)
         // Only release the voice-input "awaiting agent" timing when the cursor is
         // actually waiting on THIS session. Otherwise we'd race-clear a fresh voice

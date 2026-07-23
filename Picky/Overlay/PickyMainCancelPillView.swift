@@ -52,15 +52,18 @@ struct PickyMainCancelPillView: View {
                 Text(L10n.t("overlay.mainCancel.stop"))
             }
             .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.white)
         case .hover:
             Text(L10n.t("overlay.mainCancel.clickToStop"))
                 .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.white)
         case .escapeArmed:
             HStack(spacing: 5) {
                 keycap
                 Text(L10n.t("overlay.mainCancel.escapeArmed"))
             }
             .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.white)
         case .cancelled:
             HStack(spacing: 7) {
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
@@ -69,6 +72,7 @@ struct PickyMainCancelPillView: View {
                 Text(L10n.t("overlay.mainCancel.cancelled"))
             }
             .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(Color(hex: "#CFE1FF").opacity(0.75))
         }
     }
 

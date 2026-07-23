@@ -21,10 +21,15 @@ private final class FakeVoiceClient: PickyAgentClient, @unchecked Sendable {
     private var _commands: [PickyCommandEnvelope] = []
     private var _calls: [String] = []
     private var _disconnectCalls = 0
+    private var _sendAwaitingErrorResult: PickyErrorEvent?
     var submissions: [PickyAgentSubmission] { lock.withLock { _submissions } }
     var commands: [PickyCommandEnvelope] { lock.withLock { _commands } }
     var calls: [String] { lock.withLock { _calls } }
     var disconnectCalls: Int { lock.withLock { _disconnectCalls } }
+    var sendAwaitingErrorResult: PickyErrorEvent? {
+        get { lock.withLock { _sendAwaitingErrorResult } }
+        set { lock.withLock { _sendAwaitingErrorResult = newValue } }
+    }
 
     init() {
         var continuation: AsyncStream<PickyClientEvent>.Continuation!
@@ -45,6 +50,10 @@ private final class FakeVoiceClient: PickyAgentClient, @unchecked Sendable {
             _calls.append("send:\(command.type.rawValue)")
             _commands.append(command)
         }
+    }
+    func sendAwaitingError(_ command: PickyCommandEnvelope, timeout: TimeInterval) async throws -> PickyErrorEvent? {
+        try await send(command)
+        return lock.withLock { _sendAwaitingErrorResult }
     }
     func disconnect() {
         lock.withLock { _disconnectCalls += 1 }
@@ -795,6 +804,37 @@ struct PickyCompanionManagerTests {
         try await waitUntil { client.calls == ["send:abortMainAgent"] }
 
         #expect(client.commands.contains { $0.type == .abort } == false)
+    }
+
+    @Test func successfulMainTurnCancelSettlesWaitingCursorProjection() async throws {
+        let client = FakeVoiceClient()
+        let manager = CompanionManager(agentClient: client, selectionStore: FakeVoiceSelectionStore())
+
+        manager.noteExternalSubmission(kind: .submitMain, text: "cancel this", context: context(source: "cli"))
+        try await waitUntil { manager.isWaitingForCursorResponse }
+
+        let didCancel = await manager.cancelMainTurn()
+        #expect(didCancel)
+        try await waitUntil { !manager.isWaitingForCursorResponse }
+        #expect(client.commands.map(\.type) == [.abortMainAgent])
+    }
+
+    @Test func rejectedMainTurnCancelKeepsWaitingProjectionForRetry() async throws {
+        let client = FakeVoiceClient()
+        client.sendAwaitingErrorResult = PickyErrorEvent(
+            code: "disconnected",
+            message: "picky-agentd disconnected",
+            commandId: nil
+        )
+        let manager = CompanionManager(agentClient: client, selectionStore: FakeVoiceSelectionStore())
+
+        manager.noteExternalSubmission(kind: .submitMain, text: "cancel this", context: context(source: "cli"))
+        try await waitUntil { manager.isWaitingForCursorResponse }
+
+        let didCancel = await manager.cancelMainTurn()
+        #expect(!didCancel)
+        #expect(manager.isWaitingForCursorResponse)
+        #expect(client.commands.map(\.type) == [.abortMainAgent])
     }
 
     @Test func voiceInputSuppressesQuickReplySpeechWithoutQueueing() async throws {

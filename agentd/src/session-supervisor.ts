@@ -5,6 +5,7 @@ import { stat } from "node:fs/promises";
 import { extractChangedFilesFromExplicitText, extractSessionLinkArtifacts } from "./artifact-store.js";
 import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { FollowUpLifecycleDiagnostics } from "./application/follow-up-lifecycle-diagnostics.js";
+import type { ReloadPluginsSummary, SessionSupervisorOptions } from "./application/session-supervisor-options.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
 import { TerminalManualCompactionCoordinator } from "./application/terminal-manual-compaction.js";
 import { makeAnnotationOverlayRequestForContext, makePointerOverlayRequestForContext, type MainTurnOverlayContext } from "./application/overlay-context-resolver.js";
@@ -21,8 +22,6 @@ import { PickleVisualDslCoordinator, type PickleVisualDslLease } from "./applica
 import { readPiSessionInfoName } from "./application/pi-session-syncer.js";
 import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY } from "./session-store.js";
 import type { SessionStore } from "./session-store.js";
-import type { TaskRouter } from "./task-router.js";
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentRuntime, RewindTarget, RuntimeAutocompleteApplyRequest, RuntimeAutocompleteCapabilities, RuntimeAutocompleteCompletion, RuntimeAutocompleteQuery, RuntimeAutocompleteSuggestions, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./runtime/types.js";
 import { listRewindTargets as rewindListTargets, rewindToEntry as runRewindToEntry, type RewindDeps } from "./application/session-rewind.js";
 import { hasActivity, zeroActivitySummary } from "./domain/activity-summary.js";
@@ -31,6 +30,7 @@ import { mergeChangedFiles } from "./domain/changed-files.js";
 import { diffQueueRemovedItems, dropAlreadyMaterializedQueueEntries, queueItems, sameQueueItems, type PendingQueueDelivery } from "./domain/queue-policy.js";
 import { isTerminalStatus } from "./domain/session-status.js";
 import { countSystemMessages, sameTodoState, shouldReattachBlockedSessionOnStartup } from "./domain/session-state-policy.js";
+import { ARCHIVED_SESSION_RETENTION_DAYS, buildAppendedMainMessageState, buildArchivedSessionRestartCancellation, buildDuplicatedPickleSession, buildEmptyPickleSession, buildInterruptedRuntimeLiveStatePatch, buildOrphanedChildRecoverySession, buildPinnedPickleSession, buildResumedHandoffPickleSession, buildRuntimeReattachPatch, buildRuntimeSessionReplacementPatch, buildUnattachedRuntimeBlock, buildVisibleSession, projectMainAgentSessionInfo, projectMainReplyMetadata, projectMainRolloverPickleSessions, shouldPurgeArchivedSession } from "./domain/session-supervisor-projection-policy.js";
 import { normalizeDslWhitespace, userInputFromLogLine } from "./domain/session-text-policy.js";
 import { HANDOFF_PREFIX, FOLLOWUP_PREFIX, STEER_PREFIX, EXTENSION_ANSWER_PREFIX } from "./domain/log-prefixes.js";
 import { cleanFinalAnswer } from "./domain/session-summary.js";
@@ -39,54 +39,13 @@ import { titleFromContext } from "./domain/session-title.js";
 import { normalizeOptionalString } from "./domain/strings.js";
 import { appendLiveBashOutput, formatUserBashFailureSystemMessage, formatUserBashRunningSystemMessage, formatUserBashSystemMessage, parseUserBashInput, userBashSummary, type UserBashInput } from "./domain/user-bash-format.js";
 import { isNonSkillSlashCommand, isNoTurnStateRestoringSlashCommand, isReloadSlashCommand, normalizeSlashCommands } from "./domain/slash-commands.js";
-import { appendUniqueLog, hasPickleSessionMarkerLog, piSessionFilePathForSession, piSessionFilePathFromLogLine, withPiSessionFileFromLogs } from "./domain/pi-session-files.js";
+import { hasPickleSessionMarkerLog, piSessionFilePathForSession, piSessionFilePathFromLogLine, withPiSessionFileFromLogs } from "./domain/pi-session-files.js";
 import { buildPinnedPickleSessionLogs, piSessionFilePathFromHandoffTranscript, titleForEmptyPickleSession } from "./domain/pickle-handoff-context.js";
 import { extractPickyPromptUserInstruction, queueTextMatchesUserText } from "./domain/queue-policy.js";
-import { buildMainAgentRolloverSummary, MAIN_AGENT_COMPACT_IDLE_MS, MAIN_AGENT_MESSAGE_LIMIT, MAIN_AGENT_RESTART_TEARDOWN_SESSION_BYTES, MAIN_AGENT_SUMMARY_PICKLE_SESSION_LIMIT, mainRolloverReason, normalizeMainAgentState, quickReplyOriginFromContextSource, type MainRolloverPickleSession, type QuickReplyMetadata } from "./domain/main-agent-policy.js";
+import { buildMainAgentRolloverSummary, MAIN_AGENT_COMPACT_IDLE_MS, MAIN_AGENT_MESSAGE_LIMIT, MAIN_AGENT_RESTART_TEARDOWN_SESSION_BYTES, MAIN_AGENT_SUMMARY_PICKLE_SESSION_LIMIT, mainRolloverReason, normalizeMainAgentState, quickReplyOriginFromContextSource, type QuickReplyMetadata } from "./domain/main-agent-policy.js";
 import type { ToolCategory } from "./domain/tool-categorizer.js";
-import { logAgentd, type LogField } from "./local-log.js";
+import { logAgentd } from "./local-log.js";
 import { SessionMessageBuilder } from "./session-message-builder.js";
-
-export interface ReloadPluginsSummary {
-  pickyReloaded: boolean;
-  pickleReloadedCount: number;
-  pickleAbortedCount: number;
-  pickleDeferredCount: number;
-}
-
-interface SessionSupervisorOptions {
-  taskRouter?: TaskRouter;
-  mainRuntime?: AgentRuntime;
-  // Optional factory used to mint new session ids. Defaults to a random UUID generator. Child
-  // daemons (per-Pickle agentd plan §3.2) override this with a single-use factory that returns
-  // the env-supplied PICKY_AGENTD_SESSION_ID so the scoped SessionStore accepts the first save.
-  sessionIdFactory?: () => string;
-  // Defaults to 1s; tests may lower it to avoid waiting on real-time intervals.
-  userBashLiveUpdateIntervalMs?: number;
-  // Idle window before a threshold-triggered in-place main compaction runs. Defaults to
-  // MAIN_AGENT_COMPACT_IDLE_MS; tests lower it to avoid waiting on real-time timers.
-  mainCompactionIdleMs?: number;
-  // Child daemons have no `mainRuntime` of their own, so they cannot followUp the main Picky
-  // agent directly. When set, `deliverPickleCompletionToMain` falls back to this callback to
-  // forward the prebuilt prompt through the Picky app to the primary daemon, which owns the
-  // main agent. Returning successfully marks the Pickle as notified.
-  forwardPickleCompletionToPrimary?: (request: { sessionId: string; prompt: string; cwd?: string }) => Promise<void>;
-  // Builds the customTools array to apply to the main runtime after the user
-  // toggles built-in tool availability. Called with the current disabled set;
-  // returns the filtered ToolDefinition[] that should be active. bootstrap.ts
-  // owns the tool registry; supervisor only stores the disabled set and asks
-  // for a refreshed list when it changes.
-  mainCustomToolsBuilder?: (disabled: ReadonlySet<string>) => ToolDefinition[];
-  /** Test seam for privacy-safe lifecycle evidence; production defaults to logLifecycleEvent. */
-  lifecycleEventLogger?: (event: string, fields: Record<string, LogField>) => void;
-  /** Injectable timer boundary keeps follow-up stall detection deterministic in tests. */
-  followUpStallDelayMs?: number;
-  scheduleFollowUpStall?: (callback: () => void, delayMs: number) => unknown;
-  clearFollowUpStall?: (timer: unknown) => void;
-}
-
-const ARCHIVED_SESSION_RETENTION_DAYS = 7;
-const ARCHIVED_SESSION_RETENTION_MS = ARCHIVED_SESSION_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
 export class SessionSupervisor extends EventEmitter {
   private sessions = new Map<string, PickyAgentSession>();
@@ -338,14 +297,13 @@ export class SessionSupervisor extends EventEmitter {
         // once. Without this the marker stays in logs forever and every subsequent restart re-enters
         // this branch, leaving the dock icon permanently in the blocked/help state even when the Pi
         // session file is still alive and reattachable.
-        const restored = {
-          ...current,
-          ...interrupted.patch,
-          status: "blocked" as const,
-          lastSummary: ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY,
-          logs: current.logs.filter((line) => line !== ORPHANED_CHILD_SESSION_RECOVERY_LOG),
-          updatedAt: new Date().toISOString(),
-        };
+        const restored = buildOrphanedChildRecoverySession(
+          current,
+          interrupted.patch,
+          new Date().toISOString(),
+          ORPHANED_CHILD_SESSION_RECOVERY_LOG,
+          ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY,
+        );
         this.sessions.set(restored.id, restored);
         await this.store.save(restored);
         continue;
@@ -355,13 +313,11 @@ export class SessionSupervisor extends EventEmitter {
         if (session.archived === true) {
           const interrupted = await this.interruptedRuntimeLiveStatePatch(session.id);
           const current = this.mustGet(session.id);
-          const restored = {
-            ...current,
-            ...interrupted.patch,
-            status: "cancelled" as const,
-            lastSummary: "Archived session was not resumed after daemon restart",
-            updatedAt: new Date().toISOString(),
-          };
+          const restored = buildArchivedSessionRestartCancellation(
+            current,
+            interrupted.patch,
+            new Date().toISOString(),
+          );
           this.sessions.set(restored.id, restored);
           await this.store.save(restored);
           continue;
@@ -371,14 +327,12 @@ export class SessionSupervisor extends EventEmitter {
         if (!resumedHandle) {
           const interrupted = await this.interruptedRuntimeLiveStatePatch(session.id);
           const current = this.mustGet(session.id);
-          const restored = {
-            ...current,
-            ...interrupted.patch,
-            status: "blocked" as const,
-            lastSummary: "Runtime not attached after daemon restart; start a new task or resume support is required",
-            logs: appendUniqueLog(current.logs, "Runtime not attached after daemon restart; start a new task or resume support is required"),
-            updatedAt: new Date().toISOString(),
-          };
+          const restored = buildUnattachedRuntimeBlock(
+            current,
+            interrupted.patch,
+            new Date().toISOString(),
+            "Runtime not attached after daemon restart; start a new task or resume support is required",
+          );
           this.sessions.set(restored.id, restored);
           await this.store.save(restored);
         }
@@ -394,11 +348,7 @@ export class SessionSupervisor extends EventEmitter {
   private async purgeStaleArchivedSessions(now: number = Date.now()): Promise<void> {
     const removed: string[] = [];
     for (const session of [...this.sessions.values()]) {
-      if (session.archived !== true) continue;
-      if (!isTerminalStatus(session.status)) continue;
-      if (this.runtimeHandles.has(session.id)) continue;
-      const ageSource = session.archivedAt ?? session.updatedAt;
-      if (now - new Date(ageSource).getTime() < ARCHIVED_SESSION_RETENTION_MS) continue;
+      if (!shouldPurgeArchivedSession(session, now, this.runtimeHandles.has(session.id))) continue;
       try {
         await this.store.deleteSession(session.id);
         this.sessions.delete(session.id);
@@ -607,12 +557,7 @@ export class SessionSupervisor extends EventEmitter {
   /// escape hatches in the Messages tab so users can drop into a real Pi TUI
   /// against the same session file the daemon is driving.
   mainAgentSessionInfo(): { sessionFilePath?: string; cwd?: string } {
-    const sessionFilePath = this.mainState.sessionFilePath?.trim();
-    const cwd = this.mainState.cwd?.trim();
-    return {
-      ...(sessionFilePath ? { sessionFilePath } : {}),
-      ...(cwd ? { cwd } : {}),
-    };
+    return projectMainAgentSessionInfo(this.mainState);
   }
 
   async answerMainExtensionUi(requestId: string, value: unknown): Promise<void> {
@@ -1029,25 +974,15 @@ export class SessionSupervisor extends EventEmitter {
     const cwd = normalizeOptionalString(context.cwd);
     const newFilePath = await snapshotPiSessionFile(sourceSessionFilePath, id);
     const title = handoff.title.trim() || titleFromContext(context);
-    const session: PickyAgentSession = {
+    const session = buildResumedHandoffPickleSession({
       id,
       title,
-      status: "queued",
       cwd,
-      createdAt: now,
-      updatedAt: now,
-      lastSummary: "Resuming source Pi session",
-      logs: [
-        `pi session: ${newFilePath}`,
-        `source pi session snapshot: ${sourceSessionFilePath}`,
-      ],
-      notifyMainOnCompletion: true,
-      tools: [],
+      now,
+      sessionFilePath: newFilePath,
+      sourceSessionFilePath,
       artifacts: extractSessionLinkArtifacts(context.transcript ?? "", now),
-      changedFiles: [],
-      activitySummary: zeroActivitySummary(),
-      piSessionFilePath: newFilePath,
-    };
+    });
     this.pickleSessionIds.add(id);
     this.sessionContexts.set(id, context);
     const pendingHandle = createPendingRuntimeHandle();
@@ -1097,21 +1032,12 @@ export class SessionSupervisor extends EventEmitter {
     const id = this.sessionIdFactory();
     const cwd = normalizeOptionalString(context.cwd);
     const pickleContext: PickyContextPacket = { ...context, cwd, transcript: undefined, screenshots: [] };
-    const session: PickyAgentSession = {
+    const session = buildEmptyPickleSession({
       id,
       title: titleForEmptyPickleSession(pickleContext),
-      status: "waiting_for_input",
       cwd: pickleContext.cwd,
-      createdAt: now,
-      updatedAt: now,
-      lastSummary: "Ready for instructions",
-      logs: [],
-      notifyMainOnCompletion: false,
-      tools: [],
-      artifacts: [],
-      changedFiles: [],
-      activitySummary: zeroActivitySummary(),
-    };
+      now,
+    });
     this.pickleSessionIds.add(id);
     this.sessionContexts.set(id, pickleContext);
     const pendingHandle = createPendingRuntimeHandle();
@@ -1173,29 +1099,13 @@ export class SessionSupervisor extends EventEmitter {
     const id = this.sessionIdFactory();
     const cwd = normalizeOptionalString(source.cwd);
     const newFilePath = await snapshotPiSessionFile(sourceFilePath, id);
-    const baseTitle = source.title.trim() || "Pickle";
-    const sourceMessages = source.messages ?? [];
-    const session: PickyAgentSession = {
+    const session = buildDuplicatedPickleSession({
       id,
-      title: `(copy) ${baseTitle}`,
-      status: "waiting_for_input",
+      source,
       cwd,
-      createdAt: now,
-      updatedAt: now,
-      lastSummary: "Duplicated from existing Pickle",
-      logs: [
-        `duplicated from session: ${source.id}`,
-        ...(cwd ? [`source cwd: ${cwd}`] : []),
-        `pi session: ${newFilePath}`,
-      ],
-      notifyMainOnCompletion: source.notifyMainOnCompletion ?? false,
-      tools: [],
-      artifacts: [],
-      changedFiles: [],
-      activitySummary: zeroActivitySummary(),
-      messages: sourceMessages.map((message) => ({ ...message })),
-      piSessionFilePath: newFilePath,
-    };
+      now,
+      sessionFilePath: newFilePath,
+    });
 
     this.pickleSessionIds.add(id);
     const pendingHandle = createPendingRuntimeHandle();
@@ -1250,24 +1160,15 @@ export class SessionSupervisor extends EventEmitter {
   async pinPickleSession(context: PickyContextPacket, title?: string): Promise<PickyAgentSession> {
     const now = new Date().toISOString();
     const id = this.sessionIdFactory();
-    const session: PickyAgentSession = {
+    const session = buildPinnedPickleSession({
       id,
       title: title?.trim() || titleFromContext(context),
-      status: "completed",
-      cwd: context.cwd,
-      createdAt: now,
-      updatedAt: now,
-      lastSummary: "Pinned completed Pi session",
-      finalAnswer: "Pinned from an idle Pi session. No Pickle run has been started yet.",
+      context,
+      now,
       logs: buildPinnedPickleSessionLogs(context),
-      piSessionFilePath: piSessionFilePathFromHandoffTranscript(context.transcript),
-      notifyMainOnCompletion: false,
-      pinned: true,
-      tools: [],
+      sessionFilePath: piSessionFilePathFromHandoffTranscript(context.transcript),
       artifacts: extractSessionLinkArtifacts(context.transcript ?? "", now),
-      changedFiles: [],
-      activitySummary: zeroActivitySummary(),
-    };
+    });
     this.pickleSessionIds.add(id);
     logAgentd("pickle session pinned", { sessionId: id, titleChars: session.title.length, cwd: context.cwd, contextId: context.id });
     await this.upsert(session);
@@ -1290,20 +1191,14 @@ export class SessionSupervisor extends EventEmitter {
   private async createVisibleSession(context: PickyContextPacket, title: string, prompt = buildInitialTaskPrompt(context), options: { notifyMainOnCompletion?: boolean } = {}): Promise<PickyAgentSession> {
     const now = new Date().toISOString();
     const id = this.sessionIdFactory();
-    const session: PickyAgentSession = {
+    const session = buildVisibleSession({
       id,
       title,
-      status: "queued",
       cwd: context.cwd,
-      createdAt: now,
-      updatedAt: now,
-      logs: [],
-      ...(options.notifyMainOnCompletion === undefined ? {} : { notifyMainOnCompletion: options.notifyMainOnCompletion }),
-      tools: [],
+      now,
+      notifyMainOnCompletion: options.notifyMainOnCompletion,
       artifacts: extractSessionLinkArtifacts(context.transcript ?? "", now),
-      changedFiles: [],
-      activitySummary: zeroActivitySummary(),
-    };
+    });
     this.sessionContexts.set(id, context);
     const pendingHandle = createPendingRuntimeHandle();
     this.pendingRuntimeHandles.set(id, pendingHandle.promise);
@@ -1474,13 +1369,12 @@ export class SessionSupervisor extends EventEmitter {
     });
   }
 
-  private mainRolloverPickleSessions(): MainRolloverPickleSession[] {
-    return [...this.pickleSessionIds]
-      .map((sessionId) => this.sessions.get(sessionId))
-      .filter((session): session is PickyAgentSession => Boolean(session))
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-      .slice(0, MAIN_AGENT_SUMMARY_PICKLE_SESSION_LIMIT)
-      .map((session) => ({ id: session.id, title: session.title, status: session.status }));
+  private mainRolloverPickleSessions() {
+    return projectMainRolloverPickleSessions(
+      this.sessions.values(),
+      this.pickleSessionIds,
+      MAIN_AGENT_SUMMARY_PICKLE_SESSION_LIMIT,
+    );
   }
 
   private async deliverMainPrompt(handle: RuntimeSessionHandle, prompt: ReturnType<typeof buildMainAgentPrompt>): Promise<void> {
@@ -1628,13 +1522,13 @@ export class SessionSupervisor extends EventEmitter {
   private async appendMainMessage(role: PickyMainAgentMessage["role"], text: string): Promise<void> {
     const trimmed = text.trim();
     if (!trimmed) return;
-    const createdAt = new Date().toISOString();
-    const message: PickyMainAgentMessage = { role, text: trimmed, createdAt };
-    const patch: Partial<PickyMainAgentState> = { messages: [...this.mainState.messages, message].slice(-MAIN_AGENT_MESSAGE_LIMIT) };
-    if (role === "user") {
-      patch.epochTurnCount = (this.mainState.epochTurnCount ?? 0) + 1;
-      patch.epochStartedAt = this.mainState.epochStartedAt ?? createdAt;
-    }
+    const { message, patch } = buildAppendedMainMessageState(
+      this.mainState,
+      role,
+      trimmed,
+      new Date().toISOString(),
+      MAIN_AGENT_MESSAGE_LIMIT,
+    );
     await this.patchMainState(patch);
     this.emit("mainMessage", message);
   }
@@ -1763,13 +1657,7 @@ export class SessionSupervisor extends EventEmitter {
       await this.appendMainMessage("assistant", reply);
       const replyContextId = this.mainReplyContextId;
       if (replyContextId) {
-        const isPickleReply = this.pickleSessionIds.has(replyContextId) || this.externalPickleReplyContexts.has(replyContextId);
-        this.emitQuickReply(replyContextId, reply, {
-          originSource: replyContextId === this.mainContext?.id ? quickReplyOriginFromContextSource(this.mainContext.source) : "system",
-          replyKind: isPickleReply ? "pickleCompletion" : "main",
-          sessionId: isPickleReply ? replyContextId : undefined,
-          ...(didStreamNarration ? { didStreamNarration: true } : {}),
-        });
+        this.emitQuickReply(replyContextId, reply, projectMainReplyMetadata(replyContextId, this.mainContext, this.pickleSessionIds, this.externalPickleReplyContexts, didStreamNarration));
       }
       this.mainVisualNarration.reset();
       this.mainAssistantDeltaSeen = false;
@@ -1840,13 +1728,7 @@ export class SessionSupervisor extends EventEmitter {
               this.lastMainQuickReplyAt = now;
               logAgentd("main quick reply", { contextId: this.mainReplyContextId, textChars: reply.length });
               await this.appendMainMessage("assistant", reply);
-              const isPickleReply = this.pickleSessionIds.has(this.mainReplyContextId) || this.externalPickleReplyContexts.has(this.mainReplyContextId);
-              this.emitQuickReply(this.mainReplyContextId, reply, {
-                originSource: this.mainReplyContextId === this.mainContext?.id ? quickReplyOriginFromContextSource(this.mainContext.source) : "system",
-                replyKind: isPickleReply ? "pickleCompletion" : "main",
-                sessionId: isPickleReply ? this.mainReplyContextId : undefined,
-                ...(didStreamNarration ? { didStreamNarration: true } : {}),
-              });
+              this.emitQuickReply(this.mainReplyContextId, reply, projectMainReplyMetadata(this.mainReplyContextId, this.mainContext, this.pickleSessionIds, this.externalPickleReplyContexts, didStreamNarration));
               this.externalPickleReplyContexts.delete(this.mainReplyContextId);
             }
           }
@@ -1863,14 +1745,8 @@ export class SessionSupervisor extends EventEmitter {
     }
   }
 
-  private mainNarrationMetadata(): { originSource: ReturnType<typeof quickReplyOriginFromContextSource> | "system"; replyKind: "pickleCompletion" | "main"; sessionId?: string } {
-    const contextId = this.mainReplyContextId;
-    const isPickleReply = this.pickleSessionIds.has(contextId) || this.externalPickleReplyContexts.has(contextId);
-    return {
-      originSource: contextId === this.mainContext?.id ? quickReplyOriginFromContextSource(this.mainContext.source) : "system",
-      replyKind: isPickleReply ? "pickleCompletion" : "main",
-      ...(isPickleReply ? { sessionId: contextId } : {}),
-    };
+  private mainNarrationMetadata() {
+    return projectMainReplyMetadata(this.mainReplyContextId, this.mainContext, this.pickleSessionIds, this.externalPickleReplyContexts);
   }
 
   private async notifyPickyOfPickleCompletion(sessionId: string): Promise<void> {
@@ -2678,14 +2554,7 @@ export class SessionSupervisor extends EventEmitter {
     }
     return {
       hadPendingExtensionUiRequest: Boolean(pendingRequestId),
-      patch: {
-        pendingExtensionUiRequest: undefined,
-        thinkingPreview: undefined,
-        tools: settleActiveTools(current.tools, "Tool was interrupted by a Picky daemon restart."),
-        queuedSteers: [],
-        queuedFollowUps: [],
-        activitySummary: zeroActivitySummary(),
-      },
+      patch: buildInterruptedRuntimeLiveStatePatch(current),
     };
   }
 
@@ -2720,18 +2589,11 @@ export class SessionSupervisor extends EventEmitter {
       await this.appendLog(session.id, `runtime reattached from pi session: ${sessionFilePath}`);
       const interrupted = await this.interruptedRuntimeLiveStatePatch(session.id);
       const current = this.mustGet(session.id);
-      const reattachPatch: Partial<PickyAgentSession> = { ...interrupted.patch };
-      if (!isTerminalStatus(current.status)) {
-        // The previous extension UI dialog promise lived only inside the old daemon process,
-        // so its requestId is no longer answerable. Drop the stale pending request so the HUD
-        // does not re-show a form that the new ExtensionUiBridge cannot resolve, and ask the
-        // user to continue via follow-up/steer instead.
-        reattachPatch.status = "blocked";
-        reattachPatch.lastSummary = interrupted.hadPendingExtensionUiRequest
-          ? "Picky daemon restarted; the previous question can no longer be answered. Send a follow-up or steer message to continue."
-          : "Previous run was interrupted by daemon restart; send a follow-up or steer message to continue.";
-      }
-      await this.patch(session.id, reattachPatch);
+      await this.patch(session.id, buildRuntimeReattachPatch(
+        current,
+        interrupted.patch,
+        interrupted.hadPendingExtensionUiRequest,
+      ));
       return handle;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -2999,27 +2861,13 @@ export class SessionSupervisor extends EventEmitter {
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
     this.messageBuilder.onSessionRemoved(sessionId);
     if (this.isPickleSession(sessionId)) this.clearPickleCompletionTracking(sessionId);
-    await this.patch(sessionId, {
-      title: this.isPickleSession(sessionId) ? titleForEmptyPickleSession({ ...(nextContext ?? {}), cwd } as PickyContextPacket) : current.title,
-      status: "waiting_for_input",
+    await this.patch(sessionId, buildRuntimeSessionReplacementPatch({
       cwd,
-      lastSummary: "Ready for instructions",
-      finalAnswer: undefined,
-      thinkingPreview: undefined,
-      pendingExtensionUiRequest: undefined,
-      logs: [],
-      tools: [],
-      artifacts: [],
-      changedFiles: [],
-      todoState: undefined,
-      messages: [],
-      queuedSteers: [],
-      queuedFollowUps: [],
-      activitySummary: zeroActivitySummary(),
-      contextUsage: undefined,
-      piSessionFilePath: event.sessionFilePath,
-      pinned: false,
-    });
+      title: this.isPickleSession(sessionId)
+        ? titleForEmptyPickleSession({ ...(nextContext ?? {}), cwd } as PickyContextPacket)
+        : current.title,
+      sessionFilePath: event.sessionFilePath,
+    }));
     logAgentd("runtime session replaced", { sessionId, reason: event.reason, cwd, sessionFilePath: event.sessionFilePath });
   }
 

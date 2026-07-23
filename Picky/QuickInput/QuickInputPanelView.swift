@@ -48,6 +48,9 @@ final class QuickInputPanelViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var screenshotState: QuickInputScreenshotState = .attached
     @Published var recentMessages: [PickyMainAgentMessage] = []
+    /// Increments after every panel presentation so a retained hosting view
+    /// re-applies its transcript anchor when the panel becomes visible again.
+    @Published private(set) var presentationID = 0
     /// Includes the card chrome and is reduced by the manager when the cursor
     /// has limited space above it on the active display.
     @Published var historyCardHeightLimit: CGFloat = QuickInputHistoryPolicy.defaultCardHeight
@@ -66,6 +69,10 @@ final class QuickInputPanelViewModel: ObservableObject {
 
     func close() {
         onClose()
+    }
+
+    func beginPresentation() {
+        presentationID &+= 1
     }
 }
 
@@ -288,7 +295,10 @@ private struct QuickInputHistoryCard: View {
                             }
                             .frame(height: 0)
 
-                            LazyVStack(alignment: .leading, spacing: 14) {
+                            // The transcript is capped at 100 messages. Keep all
+                            // rows materialized so the initial scroll-to-last-turn
+                            // target exists before the proxy resolves it.
+                            VStack(alignment: .leading, spacing: 14) {
                                 ForEach(earlierMessages) { message in
                                     PickyMainAgentTranscriptRow(message: message)
                                 }
@@ -362,6 +372,10 @@ private struct QuickInputHistoryCard: View {
             )
             .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.panel, style: .continuous))
             .onAppear { scrollToAnchor(proxy) }
+            .onChange(of: viewModel.presentationID) { _ in
+                hasContentAboveViewport = true
+                scrollToAnchor(proxy)
+            }
             .onChange(of: viewModel.recentMessages.last?.id) { _ in
                 hasContentAboveViewport = true
                 scrollToAnchor(proxy)

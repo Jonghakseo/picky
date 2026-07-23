@@ -55,6 +55,17 @@ struct QuickInputPanelViewModelTests {
     }
 
     @Test
+    func presentationIDAdvancesForEveryPanelPresentation() {
+        let viewModel = QuickInputPanelViewModel()
+
+        viewModel.beginPresentation()
+        #expect(viewModel.presentationID == 1)
+
+        viewModel.beginPresentation()
+        #expect(viewModel.presentationID == 2)
+    }
+
+    @Test
     func managerRemainsLogicallyVisibleWhileAnOptimisticSubmissionIsInFlight() {
         let manager = QuickInputPanelManager()
 

@@ -91,6 +91,7 @@ final class QuickInputPanelManager {
         positionPanelNearCursor(cursorLocation)
         panel?.makeKeyAndOrderFront(nil)
         panel?.orderFrontRegardless()
+        viewModel.beginPresentation()
         onVisibilityChange(true)
     }
 

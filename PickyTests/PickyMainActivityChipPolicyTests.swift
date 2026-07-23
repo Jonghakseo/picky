@@ -63,6 +63,34 @@ struct PickyMainActivityChipPolicyTests {
         #expect(model?.detail == "release readiness")
     }
 
+    @Test func emptyArgsPreviewOmitsDetail() {
+        for empty in ["{}", "{ }", "[]", "", "   "] {
+            let activity = PickyMainActivity(
+                kind: .tool,
+                toolCallId: "empty-\(empty.count)",
+                toolName: "list_agents",
+                status: "running",
+                argsPreview: empty
+            )
+            let model = PickyMainActivityChipModel.chipModel(for: activity)
+            #expect(model?.label == "list_agents")
+            #expect(model?.detail == nil)
+        }
+    }
+
+    @Test func nilArgsPreviewOmitsDetail() {
+        let activity = PickyMainActivity(
+            kind: .tool,
+            toolCallId: "noargs-1",
+            toolName: "reload_plugins",
+            status: "running",
+            argsPreview: nil
+        )
+        let model = PickyMainActivityChipModel.chipModel(for: activity)
+        #expect(model?.label == "reload_plugins")
+        #expect(model?.detail == nil)
+    }
+
     @Test func pickleToolUsesPickleCategoryAndTitle() {
         let activity = PickyMainActivity(
             kind: .tool,

@@ -10,28 +10,19 @@ import Testing
 @MainActor
 struct PickyMainQuestionPanelPolicyTests {
     @Test
-    func activityOverlayShowsOnlyWhileProcessingWithLiveActivity() {
+    func activityOverlayShowsWheneverLiveActivityOrPendingQuestionExists() {
+        // Presence-based and voiceState-independent: typed/external main turns keep
+        // the cursor idle, and chips are intentionally kept through `.responding`
+        // (they linger beside the response bubble, then fade via a deferred clear).
         #expect(PickyMainActivityOverlayPolicy.shouldShow(
-            voiceState: .processing,
             hasActivities: true,
             hasPendingQuestion: false
         ))
-        #expect(!PickyMainActivityOverlayPolicy.shouldShow(
-            voiceState: .responding,
-            hasActivities: true,
-            hasPendingQuestion: false
-        ))
-    }
-
-    @Test
-    func activityOverlayShowsForPendingQuestionWithoutToolActivity() {
         #expect(PickyMainActivityOverlayPolicy.shouldShow(
-            voiceState: .processing,
             hasActivities: false,
             hasPendingQuestion: true
         ))
         #expect(!PickyMainActivityOverlayPolicy.shouldShow(
-            voiceState: .processing,
             hasActivities: false,
             hasPendingQuestion: false
         ))

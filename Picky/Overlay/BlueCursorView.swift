@@ -775,7 +775,6 @@ struct BlueCursorView: View {
 
             if isCursorOnThisScreen,
                PickyMainActivityOverlayPolicy.shouldShow(
-                    voiceState: companionManager.voiceState,
                     hasActivities: !mainActivityChipPresentationCache.presentation.models.isEmpty,
                     hasPendingQuestion: mainActivityChipPresentationCache.presentation.isQuestionPending
                ) {

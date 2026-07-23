@@ -1,0 +1,47 @@
+//
+//  QuickInputPanelViewModelTests.swift
+//  PickyTests
+//
+//  Covers Quick Input view-model state shared by history and submission flows.
+//
+
+import Foundation
+import Testing
+@testable import Picky
+
+@MainActor
+struct QuickInputPanelViewModelTests {
+    @Test
+    func managerRecentMessagesPropagateToViewModel() {
+        let manager = QuickInputPanelManager()
+        let message = PickyMainAgentMessage(
+            role: .user,
+            text: "Where did the last reply go?",
+            createdAt: Date(timeIntervalSince1970: 1)
+        )
+
+        manager.updateRecentMessages([message])
+
+        #expect(manager.viewModelForTesting.recentMessages == [message])
+    }
+
+    @Test
+    func presentationIDAdvancesForEveryPanelPresentation() {
+        let viewModel = QuickInputPanelViewModel()
+
+        viewModel.beginPresentation()
+        #expect(viewModel.presentationID == 1)
+
+        viewModel.beginPresentation()
+        #expect(viewModel.presentationID == 2)
+    }
+
+    @Test
+    func managerRemainsLogicallyVisibleWhileAnOptimisticSubmissionIsInFlight() {
+        let manager = QuickInputPanelManager()
+
+        manager.viewModelForTesting.isSending = true
+
+        #expect(manager.isPanelVisible)
+    }
+}

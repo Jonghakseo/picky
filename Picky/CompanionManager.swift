@@ -334,6 +334,13 @@ final class CompanionManager: ObservableObject {
     /// correlated error events keep the question panel open instead of taking
     /// the global connection-loss cleanup path.
     private var pendingMainQuestionAnswerCommandIDs = Set<String>()
+    /// Deferred clear for the cursor activity chips. The daemon emits a clear
+    /// (`mainActivityUpdated(nil)`) at turn terminal, right before the reply. We
+    /// hold the chips a short beat so they linger beside the response bubble and
+    /// fade, instead of vanishing the instant the response appears. A fresh
+    /// activity or a hard reset cancels it.
+    private var mainActivityClearTask: Task<Void, Never>?
+    private static let mainActivityLingerDelay: Duration = .seconds(2)
     private var screenContextTargetCancellable: AnyCancellable?
     private var shortcutCaptureObserver: NSObjectProtocol?
     /// Tracks how many `ShortcutCaptureRecorder` instances are currently in
@@ -978,7 +985,8 @@ final class CompanionManager: ObservableObject {
         applyVoiceInteractionProjection(transition.state.projection)
         if let responseText = transition.state.context.responseBubbleText,
            !responseText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            mainLiveActivities = []
+            // Do not wipe activity chips on response start — they intentionally
+            // linger beside the response bubble and fade via the deferred clear.
             latestAgentSessionSummary = responseText
         }
         return transition
@@ -1022,6 +1030,33 @@ final class CompanionManager: ObservableObject {
                 self?.cancelInkCapture()
             }
         }
+    }
+
+    /// Defers clearing the cursor activity chips so they briefly linger beside the
+    /// response bubble, then fade. Cancelled by a fresh activity or a hard reset.
+    private func scheduleMainActivityClear() {
+        guard !mainLiveActivities.isEmpty else { return }
+        mainActivityClearTask?.cancel()
+        mainActivityClearTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.mainActivityLingerDelay)
+            guard !Task.isCancelled, let self else { return }
+            // Animate the removal so the chips fade via their `.transition(.opacity)`
+            // instead of cutting out. Only the presence changes here; chip layout is
+            // unaffected, so this does not reintroduce the height-bounce the chips
+            // otherwise guard against.
+            withAnimation(.easeOut(duration: 0.25)) {
+                self.mainLiveActivities = []
+            }
+            self.mainActivityClearTask = nil
+        }
+    }
+
+    /// Clears chips now and cancels any pending deferred clear (hard reset paths:
+    /// connection loss, new session).
+    private func clearMainActivitiesImmediately() {
+        mainActivityClearTask?.cancel()
+        mainActivityClearTask = nil
+        mainLiveActivities = []
     }
 
     private func wireMainQuestionPanel() {
@@ -1094,6 +1129,9 @@ final class CompanionManager: ObservableObject {
             resetScreenContextDisplayOverrides()
             beginInkCapture(source: .text)
         }
+        // Push the current transcript before creating/showing the hosting view
+        // so the first Quick Input frame is already anchored at the last turn.
+        quickInputPanelManager.updateRecentMessages(mainAgentMessages)
         quickInputPanelManager.presentPanel(near: event.mouseLocation)
     }
 
@@ -2026,7 +2064,7 @@ final class CompanionManager: ObservableObject {
     /// turn, queued speech, speaking output) but does NOT clear persisted messages or
     /// send a daemon command, so a later reconnect keeps the transcript intact.
     private func clearInteractionStateForConnectionLoss() {
-        mainLiveActivities = []
+        clearMainActivitiesImmediately()
         mainPendingQuestion = nil
         annotationSceneMonitor?.stop()
         activeAnnotationSceneIdentity = nil
@@ -2052,7 +2090,8 @@ final class CompanionManager: ObservableObject {
                 correlation: PickyInteractionCorrelation(source: .system)
             )
             mainAgentMessages = []
-            mainLiveActivities = []
+            quickInputPanelManager.updateRecentMessages(mainAgentMessages)
+            clearMainActivitiesImmediately()
             mainPendingQuestion = nil
             latestAgentSessionSummary = "Started a new Messages session"
             return true
@@ -2160,7 +2199,7 @@ final class CompanionManager: ObservableObject {
             )
             applyQuickReplyEvent(reply)
         case .mainTurnSettled(let contextID):
-            mainLiveActivities = []
+            scheduleMainActivityClear()
             applyMainTurnSettled(contextID: contextID)
         case .mainNarrationChunk(let chunk):
             applyMainNarrationChunk(chunk)
@@ -2178,17 +2217,21 @@ final class CompanionManager: ObservableObject {
             )
         case .mainMessagesSnapshot(let messages):
             mainAgentMessages = Array(messages.suffix(100))
+            quickInputPanelManager.updateRecentMessages(mainAgentMessages)
             // Snapshot fires on session load/reset for the whole transcript,
             // so do not auto-dispatch deep links here — we would re-open
             // panels for stale replies the user already saw.
         case .mainMessageAppended(let message):
             mainAgentMessages = Array((mainAgentMessages + [message]).suffix(100))
+            quickInputPanelManager.updateRecentMessages(mainAgentMessages)
             autoDispatchPickyDeepLinkIfPresent(in: message)
         case .mainActivityUpdated(let activity):
             guard let activity else {
-                mainLiveActivities = []
+                scheduleMainActivityClear()
                 break
             }
+            mainActivityClearTask?.cancel()
+            mainActivityClearTask = nil
             mainLiveActivities = PickyMainActivityStack.apply(activity, to: mainLiveActivities)
         case .mainExtensionUiRequested(let request):
             mainPendingQuestion = request

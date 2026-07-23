@@ -7108,6 +7108,22 @@
         }
       }
     },
+    "quickInput.history.scrollEarlier": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scroll up for earlier messages"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "위로 스크롤해 이전 대화 보기"
+          }
+        }
+      }
+    },
     "settings.shortcuts.quickInput.title": {
       "localizations": {
         "en": {

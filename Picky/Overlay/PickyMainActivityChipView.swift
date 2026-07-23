@@ -38,14 +38,16 @@ final class PickyMainActivityChipPresentationCache: ObservableObject {
 /// Pure projection rules shared by the cursor overlay and its focused tests.
 enum PickyMainActivityOverlayPolicy {
     static func shouldShow(
-        voiceState: CompanionVoiceState,
         hasActivities: Bool,
         hasPendingQuestion: Bool
     ) -> Bool {
-        if case .processing = voiceState {
-            return hasActivities || hasPendingQuestion
-        }
-        return false
+        // Purely presence-based, independent of voiceState. Main turns launched from
+        // typed input keep the cursor `.idle`, so gating on `.processing` hid the
+        // chips for those. Chips are also intentionally kept through `.responding`
+        // (they briefly linger beside the response bubble — which anchors bottom
+        // while chips anchor top — then fade). CompanionManager bounds staleness by
+        // deferring the clear a short beat instead of wiping on response start.
+        hasActivities || hasPendingQuestion
     }
 }
 

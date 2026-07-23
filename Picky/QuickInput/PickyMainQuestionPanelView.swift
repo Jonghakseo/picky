@@ -86,6 +86,7 @@ struct PickyMainQuestionPanelView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.md) {
             if let request {
+                dragGrabber
                 header(for: request)
                 ScrollView(.vertical, showsIndicators: true) {
                     VStack(alignment: .leading, spacing: DS.Spacing.md) {
@@ -120,6 +121,18 @@ struct PickyMainQuestionPanelView: View {
         )
         .padding(PickyMainQuestionPanelLayout.shadowOutset)
         .frame(width: PickyMainQuestionPanelLayout.panelWidth, alignment: .leading)
+    }
+
+    /// Purely a discoverability affordance. The window itself is moved natively via
+    /// `isMovableByWindowBackground`, so any non-control area (including this strip)
+    /// drags the panel; the capsule just signals that.
+    private var dragGrabber: some View {
+        Capsule(style: .continuous)
+            .fill(DS.Colors.textPrimary.opacity(0.18))
+            .frame(width: 36, height: 4)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .contentShape(Rectangle())
+            .accessibilityHidden(true)
     }
 
     private func header(for request: PickyExtensionUiRequest) -> some View {

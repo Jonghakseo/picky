@@ -199,7 +199,22 @@ struct QuickInputPanelView: View {
         .frame(width: pillWidth, alignment: .leading)
         .padding(shadowOutset)
         .frame(width: QuickInputPanelLayout.panelWidth, alignment: .leading)
-        .onAppear { isFieldFocused = true }
+        .onAppear { requestFieldFocus(for: viewModel.presentationID) }
+        .onChange(of: viewModel.presentationID) { presentationID in
+            requestFieldFocus(for: presentationID)
+        }
+    }
+
+    /// The panel stays alive after dismissal, so `onAppear` only covers its
+    /// first presentation. Clear first so a retained `true` binding cannot
+    /// suppress the next focus request, then wait until the key panel and its
+    /// TextField are both installed in AppKit's responder chain.
+    private func requestFieldFocus(for presentationID: Int) {
+        isFieldFocused = false
+        DispatchQueue.main.async {
+            guard viewModel.presentationID == presentationID else { return }
+            isFieldFocused = true
+        }
     }
 
     private var sendButton: some View {

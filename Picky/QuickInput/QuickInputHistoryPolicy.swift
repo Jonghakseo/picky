@@ -81,6 +81,23 @@ enum QuickInputHistoryPolicy {
     ) -> Bool {
         contentBottom > viewportHeight + 0.5
     }
+
+    static func effectiveBackgroundMode(
+        _ backgroundMode: QuickInputHistoryBackgroundMode,
+        reduceTransparency: Bool
+    ) -> QuickInputHistoryBackgroundMode {
+        reduceTransparency ? .solid : backgroundMode
+    }
+
+    static func shouldShowNewSessionAction(
+        backgroundMode: QuickInputHistoryBackgroundMode,
+        reduceTransparency: Bool
+    ) -> Bool {
+        effectiveBackgroundMode(
+            backgroundMode,
+            reduceTransparency: reduceTransparency
+        ) == .solid
+    }
 }
 
 /// The history starts visually lightweight for each presentation, then becomes

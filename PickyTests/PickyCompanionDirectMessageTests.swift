@@ -72,6 +72,7 @@ struct PickyCompanionDirectMessageTests {
         )
         manager.applyAgentEvent(.mainMessageAppended(PickyMainAgentMessage(role: .user, text: "old prompt", createdAt: Date(timeIntervalSince1970: 1_800_000_000))))
         manager.applyAgentEvent(.mainMessageAppended(PickyMainAgentMessage(role: .assistant, text: "old reply", createdAt: Date(timeIntervalSince1970: 1_800_000_001))))
+        #expect(manager.quickInputPanelManager.viewModelForTesting.recentMessages.count == 2)
         manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
             contextId: "old-cli-context",
             text: "old spoken reply",
@@ -86,6 +87,7 @@ struct PickyCompanionDirectMessageTests {
         #expect(didReset)
         #expect(client.sentCommands.map(\.type) == [.resetMainAgent])
         #expect(manager.mainAgentMessages.isEmpty)
+        #expect(manager.quickInputPanelManager.viewModelForTesting.recentMessages.isEmpty)
         #expect(manager.latestAgentSessionSummary == "Started a new Messages session")
     }
 

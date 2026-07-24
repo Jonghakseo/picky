@@ -34,6 +34,13 @@ enum QuickInputPanelLayout {
     static let pillWidth: CGFloat = 330
     static let capsuleHeight: CGFloat = 40
     static let historyPillSpacing: CGFloat = 6
+    /// Always reserved so revealing the solid-history action never changes
+    /// the panel height or moves the cursor-anchored composer.
+    static let historyActionRowHeight: CGFloat = 26
+    static let historyActionSpacing: CGFloat = 4
+    static var historyActionReservedHeight: CGFloat {
+        historyActionRowHeight + historyActionSpacing
+    }
     /// Component-level optical fades: shallow enough to leave the anchored
     /// prompt legible while still indicating additional scrollable content.
     static let historyTopFadeHeight: CGFloat = 18
@@ -82,8 +89,10 @@ final class QuickInputPanelViewModel: ObservableObject {
     /// Lightweight until the user scrolls the history, then solid until the
     /// next presentation (predictable, no fade-back).
     @Published private(set) var historyBackgroundMode: QuickInputHistoryBackgroundMode = .lightweight
+    @Published private(set) var isStartingNewSession = false
 
     var onSubmit: (String, QuickInputRecipientProjection) -> Void = { _, _ in }
+    var onStartNewSession: @MainActor () async -> String? = { nil }
     var onClose: () -> Void = {}
     /// Lets the AppKit panel remeasure after the transcript's SwiftUI content
     /// resolves its actual height.
@@ -97,6 +106,15 @@ final class QuickInputPanelViewModel: ObservableObject {
 
     func close() {
         onClose()
+    }
+
+    func startNewSession() async {
+        guard !isStartingNewSession else { return }
+        isStartingNewSession = true
+        errorMessage = nil
+        defer { isStartingNewSession = false }
+
+        errorMessage = await onStartNewSession()
     }
 
     func beginPresentation(recipient: QuickInputRecipientProjection = .main) {
@@ -129,7 +147,7 @@ struct QuickInputPanelView: View {
                 for: viewModel.recentMessages,
                 cardHeightLimit: viewModel.historyCardHeightLimit
             ) {
-                QuickInputHistoryCard(viewModel: viewModel)
+                QuickInputHistorySection(viewModel: viewModel)
             }
 
             HStack(spacing: 6) {
@@ -227,6 +245,93 @@ struct QuickInputPanelView: View {
 
 }
 
+private struct QuickInputHistorySection: View {
+    @ObservedObject var viewModel: QuickInputPanelViewModel
+    @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
+
+    private var showsNewSessionAction: Bool {
+        QuickInputHistoryPolicy.shouldShowNewSessionAction(
+            backgroundMode: viewModel.historyBackgroundMode,
+            reduceTransparency: accessibilityReduceTransparency
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: QuickInputPanelLayout.historyActionSpacing) {
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                Button {
+                    Task { @MainActor in
+                        await viewModel.startNewSession()
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        if viewModel.isStartingNewSession {
+                            ProgressView()
+                                .controlSize(.small)
+                                .frame(width: 11, height: 11)
+                        } else {
+                            Image(systemName: "arrow.counterclockwise")
+                                .pickyFont(size: 9.5, weight: .semibold)
+                        }
+                        Text("messages.newSession")
+                            .font(PickyHUDTypography.statusMedium)
+                    }
+                    .padding(.horizontal, 9)
+                    .frame(height: QuickInputPanelLayout.historyActionRowHeight)
+                }
+                .buttonStyle(QuickInputHistoryActionButtonStyle())
+                .disabled(!showsNewSessionAction || viewModel.isStartingNewSession)
+                .accessibilityLabel("messages.newSession")
+                .accessibilityValue(
+                    viewModel.isStartingNewSession
+                        ? L10n.t("messages.newSession.starting")
+                        : ""
+                )
+            }
+            .frame(height: QuickInputPanelLayout.historyActionRowHeight)
+            .opacity(showsNewSessionAction ? 1 : 0)
+            .allowsHitTesting(showsNewSessionAction)
+            .accessibilityHidden(!showsNewSessionAction)
+            .animation(
+                .easeInOut(duration: QuickInputPanelLayout.historyBackgroundTransitionDuration),
+                value: showsNewSessionAction
+            )
+
+            QuickInputHistoryCard(viewModel: viewModel)
+                .frame(maxWidth: .infinity)
+        }
+    }
+}
+
+private struct QuickInputHistoryActionButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovered = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundColor(isEnabled ? DS.Colors.textSecondary : DS.Colors.textTertiary)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(backgroundColor(isPressed: configuration.isPressed))
+                    .overlay(
+                        Capsule(style: .continuous)
+                            .stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8)
+                    )
+            )
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.easeOut(duration: DS.Animation.fast), value: configuration.isPressed)
+            .animation(.easeOut(duration: DS.Animation.fast), value: isHovered)
+            .onHover { isHovered = $0 }
+    }
+
+    private func backgroundColor(isPressed: Bool) -> Color {
+        if isPressed { return DS.Colors.surface4 }
+        if isHovered { return DS.Colors.surface3 }
+        return DS.Colors.surface1.opacity(QuickInputPanelLayout.historySolidSurfaceOpacity)
+    }
+}
+
 private struct QuickInputHistoryCard: View {
     @ObservedObject var viewModel: QuickInputPanelViewModel
     @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
@@ -248,7 +353,10 @@ private struct QuickInputHistoryCard: View {
         effectiveBackgroundMode == .solid && hasEarlierMessages && hasContentAboveViewport
     }
     private var effectiveBackgroundMode: QuickInputHistoryBackgroundMode {
-        accessibilityReduceTransparency ? .solid : viewModel.historyBackgroundMode
+        QuickInputHistoryPolicy.effectiveBackgroundMode(
+            viewModel.historyBackgroundMode,
+            reduceTransparency: accessibilityReduceTransparency
+        )
     }
     private var topFadeSurfaceOpacity: Double {
         QuickInputPanelLayout.historySolidSurfaceOpacity

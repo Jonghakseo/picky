@@ -127,6 +127,22 @@ struct QuickInputHistoryPolicyTests {
         #expect(mode == .lightweight)
     }
 
+    @Test
+    func newSessionActionFollowsEffectiveSolidPresentation() {
+        #expect(!QuickInputHistoryPolicy.shouldShowNewSessionAction(
+            backgroundMode: .lightweight,
+            reduceTransparency: false
+        ))
+        #expect(QuickInputHistoryPolicy.shouldShowNewSessionAction(
+            backgroundMode: .solid,
+            reduceTransparency: false
+        ))
+        #expect(QuickInputHistoryPolicy.shouldShowNewSessionAction(
+            backgroundMode: .lightweight,
+            reduceTransparency: true
+        ))
+    }
+
     private func message(
         role: PickyMainAgentMessage.Role,
         text: String,

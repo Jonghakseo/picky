@@ -1111,6 +1111,12 @@ final class CompanionManager: ObservableObject {
         quickInputPanelManager.onSubmit = { [weak self] text, recipient in
             self?.handleQuickInputSubmit(text: text, recipient: recipient)
         }
+        quickInputPanelManager.onStartNewSession = { [weak self] in
+            guard let self else { return L10n.t("error.directMessage.fallback") }
+            return await self.resetMainAgentSession()
+                ? nil
+                : self.directMessageError ?? L10n.t("error.directMessage.fallback")
+        }
         quickInputPanelManager.onVisibilityChange = { [weak self] isVisible in
             self?.isQuickInputPanelVisible = isVisible
             self?.isQuickInputScreenContextControlsVisible = isVisible

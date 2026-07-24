@@ -62,6 +62,22 @@ struct QuickInputPanelViewModelTests {
     }
 
     @Test
+    func managerNewSessionRequestPropagatesFailureToViewModel() async {
+        let manager = QuickInputPanelManager()
+        var requestCount = 0
+        manager.onStartNewSession = {
+            requestCount += 1
+            return "Could not start a new session"
+        }
+
+        await manager.viewModelForTesting.startNewSession()
+
+        #expect(requestCount == 1)
+        #expect(!manager.viewModelForTesting.isStartingNewSession)
+        #expect(manager.viewModelForTesting.errorMessage == "Could not start a new session")
+    }
+
+    @Test
     func pickleRecipientPresentationHidesMainHistoryAndNamesTarget() {
         let viewModel = QuickInputPanelViewModel()
 

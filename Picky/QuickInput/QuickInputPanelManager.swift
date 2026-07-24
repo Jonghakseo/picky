@@ -47,6 +47,7 @@ final class QuickInputPanelManager {
     /// CompanionManager) is responsible for performing the actual delivery and
     /// for calling `panelDidFinishSending(success:errorMessage:)` afterwards.
     var onSubmit: (String, QuickInputRecipientProjection) -> Void = { _, _ in }
+    var onStartNewSession: @MainActor () async -> String? = { nil }
     var onVisibilityChange: (Bool) -> Void = { _ in }
 
     /// Logical visibility remains true while an optimistically hidden draft is
@@ -74,6 +75,10 @@ final class QuickInputPanelManager {
         self.fontScaleStore = fontScaleStore ?? PickyAppFontScaleStore()
         viewModel.onSubmit = { [weak self] text, recipient in
             self?.handleSubmit(text, recipient: recipient)
+        }
+        viewModel.onStartNewSession = { [weak self] in
+            guard let self else { return L10n.t("error.directMessage.fallback") }
+            return await self.onStartNewSession()
         }
         viewModel.onClose = { [weak self] in
             self?.dismiss()
@@ -223,10 +228,18 @@ final class QuickInputPanelManager {
         let screen = NSScreen.screens.first(where: { $0.frame.contains(cursorLocation) }) ?? NSScreen.main
         let visibleFrame = screen?.visibleFrame
         // The pill's top remains cursorOffsetY below the cursor. Everything
-        // above that point belongs to the history card, including its shadow.
+        // above that point belongs to the history section, including the
+        // always-reserved new-session action row and the card's shadow.
         let pillTop = cursorLocation.y - cursorOffsetY
         let spaceAbovePill = visibleFrame.map {
-            max(0, $0.maxY - pillTop - QuickInputPanelLayout.historyPillSpacing - shadowOutset)
+            max(
+                0,
+                $0.maxY
+                    - pillTop
+                    - QuickInputPanelLayout.historyPillSpacing
+                    - QuickInputPanelLayout.historyActionReservedHeight
+                    - shadowOutset
+            )
         }
         viewModel.historyCardHeightLimit = QuickInputHistoryPolicy.cardHeightLimit(
             visibleScreenHeight: visibleFrame?.height,

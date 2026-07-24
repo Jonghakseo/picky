@@ -230,6 +230,21 @@ When bumping pi (`agentd/package.json` `@earendil-works/pi-coding-agent`):
   Picky temporarily hard-gates the centralized
   `ModelRuntime.credentials.store.reload` compatibility bridge.
 
+### 0.81.1 -> 0.82.0
+
+- Pi 0.82.0 adds constrained tool sampling through an optional inherited
+  `Tool.constrainedSampling` field. Picky's `defineTool` definitions continue to use
+  the default sampling contract, so no tool schema or execution change is required.
+- Built-in and factory-created bash tools now expose Pi session/model metadata through
+  environment variables. Picky delegates direct bash execution to `AgentSession.executeBash`,
+  so the metadata is inherited without changing the `PiBashSurface` adapter.
+- Direct RPC bash commands now emit correlated `bash_execution_update` events. Picky uses
+  the SDK `AgentSession` surface rather than Pi's RPC command transport, so no protocol or
+  event-normalizer change is required.
+- The release contains no breaking `AgentSession`, `ExtensionUIContext`, tool definition,
+  command registration, model runtime, or session event changes. The pinned `pi-ai`,
+  `pi-coding-agent`, and `pi-tui` packages are kept on the same `0.82.0` release line.
+
 ## Backward-compatibility policy
 
 - **Capability sniffs (T2) MUST stay non-fatal.** A pi version that drops

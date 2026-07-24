@@ -114,7 +114,6 @@ export class SessionSupervisor extends EventEmitter {
   private lastMainQuickReplyText?: string;
   private lastMainQuickReplyContextId?: string;
   private lastMainQuickReplyAt?: number;
-  private suppressNextMainReply = false;
   // Monotonic supervisor-side generation for main-agent turns. When a runtime can tag streamed
   // events with this id, interrupted-turn terminal events can be dropped by exact id instead of by
   // broad counters that may also match the replacement turn.
@@ -846,7 +845,6 @@ export class SessionSupervisor extends EventEmitter {
     this.mainReplyContextId = "main";
     this.mainIsProcessing = false;
     this.mainTerminalProcessed = false;
-    this.suppressNextMainReply = false;
     this.mainTurnId += 1;
     this.mainVisualNarrationTurnToken = `main-turn-${this.mainTurnId}`;
     this.activeMainRuntimeInputId = undefined;
@@ -918,13 +916,6 @@ export class SessionSupervisor extends EventEmitter {
     } catch (error) {
       logAgentd("main reset abort failed", { label, error: error instanceof Error ? error.message : String(error) });
     }
-  }
-
-  announceMainHandoff(contextId: string, text: string): void {
-    logAgentd("main handoff announced", { contextId, textChars: text.length });
-    this.suppressNextMainReply = true;
-    void this.appendMainMessage("assistant", text);
-    this.emitQuickReply(contextId, text, { replyKind: "handoffAck" });
   }
 
   async route(context: PickyContextPacket): Promise<PickyAgentSession | undefined> {
@@ -1699,14 +1690,7 @@ export class SessionSupervisor extends EventEmitter {
         this.mainDraft = "";
         logAgentd("main status", { status: event.status, contextId: this.mainReplyContextId, draftChars: draftSnapshot.length });
         const rawReply = cleanFinalAnswer(this.mainVisualNarration.hasAnnotationDslTag ? normalizeDslWhitespace(draftSnapshot) : draftSnapshot) ?? (event.status === "failed" ? event.summary : undefined);
-        if (this.suppressNextMainReply) {
-          this.suppressNextMainReply = false;
-          // The reply is intentionally dropped (e.g. after a handoff ack), but any
-          // prose the turn streamed already emitted progressive narration/visual
-          // events. Settle the turn so the app clears that leaked bubble instead of
-          // leaving it resident until the next reply.
-          this.emit("mainTurnSettled", this.mainReplyContextId);
-        } else if (rawReply) {
+        if (rawReply) {
           const reply = cleanFinalAnswer(rawReply);
           if (reply) {
             // Guard C (defense-in-depth): drop a second emit of the same (contextId, text)
@@ -1757,11 +1741,9 @@ export class SessionSupervisor extends EventEmitter {
       logAgentd("Pickle completion notify skipped", { sessionId, status: session.status });
       return;
     }
-    // Defer when the Picky is mid-turn (e.g. the handoff turn that spawned this
+    // Defer when Picky is mid-turn (e.g. the handoff turn that spawned this
     // Pickle session has not emitted status:completed yet). Sending the followUp now
-    // would clobber mainReplyContextId / mainDraft, and the in-flight turn's
-    // suppressNextMainReply would later swallow this Pickle completion's reply when its
-    // delayed status:completed finally arrives. Park the sessionId and let
+    // would clobber mainReplyContextId / mainDraft. Park the sessionId and let
     // applyMainRuntimeEvent drain it once the active turn ends.
     if (this.mainIsProcessing) {
       if (!this.pendingPickleCompletions.includes(sessionId) && !this.pickleCompletionNotified.has(sessionId) && !this.pickleCompletionInFlight.has(sessionId)) {

@@ -4898,39 +4898,33 @@ describe("SessionSupervisor", () => {
     mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Running" });
     await settle();
 
-    // 2) Main decides to hand off: it announces the handoff text (which sets
-    //    suppressNextMainReply=true) and spawns the Pickle session. The handoff
-    //    turn has NOT yet emitted status:completed.
-    supervisor.announceMainHandoff(userCtx.id, "피클에 위임할게요");
+    // 2) Main starts the Pickle. The handoff turn has NOT yet emitted
+    //    status:completed, and no synthetic acknowledgement is emitted.
     const pickleSession = await supervisor.createPickleFromHandoff(userCtx, { title: "task", instructions: "do it" });
     await settle();
 
-    expect(replies).toContainEqual({ contextId: userCtx.id, text: "피클에 위임할게요" });
+    expect(replies.filter((entry) => entry.contextId === userCtx.id)).toEqual([]);
 
     // 3) Pickle session finishes BEFORE the main handoff turn ends. The
     //    notification must be deferred — sending it now would clobber
-    //    mainReplyContextId/mainDraft and let the handoff turn's
-    //    suppressNextMainReply swallow this Pickle completion's reply.
+    //    mainReplyContextId/mainDraft.
     sideRuntime.handle?.emit({ type: "assistant_delta", delta: "피클 결과 X" });
     sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
 
     expect(mainRuntime.handle?.followUps ?? []).toHaveLength(0);
 
-    // 4) Handoff turn finally ends. suppressNextMainReply is consumed here, the
-    //    handoff turn's draft is discarded, and the deferred Pickle completion is
-    //    drained from the queue and delivered as a fresh Picky turn.
-    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "핸드오프 잔여 텍스트" });
+    // 4) The main agent emits its own handoff acknowledgement from the tool result.
+    //    Once that turn ends, the deferred Pickle completion is delivered as a fresh turn.
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "피클이 시작됐어요. Dock에서 진행을 확인할 수 있어요." });
     mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
 
     expect(mainRuntime.handle?.followUps).toHaveLength(1);
     expect(mainRuntime.handle?.followUps[0]?.text).toContain(`Title: ${pickleSession.title}`);
-    // Handoff-turn draft must NOT have been emitted as a quickReply (suppress
-    // consumed it correctly), and no spurious Pickle-completion reply was emitted.
     expect(replies.filter((entry) => entry.contextId === pickleSession.id)).toHaveLength(0);
     expect(replies.filter((entry) => entry.contextId === userCtx.id)).toEqual([
-      { contextId: userCtx.id, text: "피클에 위임할게요" },
+      { contextId: userCtx.id, text: "피클이 시작됐어요. Dock에서 진행을 확인할 수 있어요." },
     ]);
 
     // 5) Main processes the Pickle-completion follow-up. Its reply must arrive
@@ -4940,45 +4934,6 @@ describe("SessionSupervisor", () => {
     await settle();
 
     expect(replies).toContainEqual({ contextId: pickleSession.id, text: "피클 작업 마쳤어요" });
-  });
-
-  // Regression: a suppressed handoff turn may still stream prose, which leaks as
-  // progressive narration on the app. If the terminal only consumes the suppress
-  // flag without settling, that leaked cursor bubble stays resident. The suppress
-  // branch must emit `mainTurnSettled` so the app clears it.
-  it("settles a suppressed handoff turn so a leaked progressive bubble clears", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
-    const sideRuntime = new ManualRuntime();
-    const mainRuntime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), { mainRuntime });
-    const replies: Array<{ contextId: string; text: string }> = [];
-    const narrationChunks: string[] = [];
-    const settledContexts: string[] = [];
-    supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
-    supervisor.on("mainNarrationChunk", (chunk) => narrationChunks.push(chunk.text));
-    supervisor.on("mainTurnSettled", (contextId) => settledContexts.push(contextId));
-
-    const userCtx = context("작업 위임해줘");
-    await supervisor.route(userCtx);
-    mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Running" });
-    await settle();
-
-    supervisor.announceMainHandoff(userCtx.id, "위임할게요");
-    await settle();
-
-    // The suppressed turn keeps streaming prose, which leaks as progressive narration.
-    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "위임 준비 중이에요. " });
-    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    await settle();
-
-    // The leak really happened (a narration sentence was emitted) ...
-    expect(narrationChunks).toContain("위임 준비 중이에요.");
-    // ... the streamed prose was NOT emitted as a final quickReply (suppressed) ...
-    expect(replies.filter((entry) => entry.contextId === userCtx.id)).toEqual([
-      { contextId: userCtx.id, text: "위임할게요" },
-    ]);
-    // ... and the turn settled so the app clears the leaked progressive bubble.
-    expect(settledContexts).toContain(userCtx.id);
   });
 
   // Regression for the `/diff-review` follow-up: the previous fix synthesized a `completed`
@@ -4993,7 +4948,6 @@ describe("SessionSupervisor", () => {
 
     const userCtx = context("피클 시작");
     await supervisor.route(userCtx);
-    supervisor.announceMainHandoff(userCtx.id, "피클 위임");
     const pickleSession = await supervisor.createPickleFromHandoff(userCtx, { title: "task", instructions: "do it" });
     mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
@@ -5016,7 +4970,6 @@ describe("SessionSupervisor", () => {
 
     const userCtx = context("피클 시작");
     await supervisor.route(userCtx);
-    supervisor.announceMainHandoff(userCtx.id, "피클 위임");
     const pickleSession = await supervisor.createPickleFromHandoff(userCtx, { title: "task", instructions: "do it" });
 
     // Handoff turn ends BEFORE the Pickle session emits its terminal status.
@@ -5050,7 +5003,6 @@ describe("SessionSupervisor", () => {
     await supervisor.route(userCtx);
     mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Running" });
     await settle();
-    supervisor.announceMainHandoff(userCtx.id, "위임");
     const pickleSession = await supervisor.createPickleFromHandoff(userCtx, { title: "task", instructions: "do it" });
     await supervisor.setNotifyMainOnCompletion(pickleSession.id, false);
 
@@ -5075,7 +5027,6 @@ describe("SessionSupervisor", () => {
     await supervisor.route(userCtx);
     mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Running" });
     await settle();
-    supervisor.announceMainHandoff(userCtx.id, "위임");
     await supervisor.createPickleFromHandoff(userCtx, { title: "task", instructions: "do it" });
 
     // Pickle completes while main is still running the handoff turn → deferred.
@@ -5114,7 +5065,6 @@ describe("SessionSupervisor", () => {
     await supervisor.route(userCtx);
     mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Running" });
     await settle();
-    supervisor.announceMainHandoff(userCtx.id, "위임");
     const pickleSession = await supervisor.createPickleFromHandoff(userCtx, { title: "task", instructions: "do it" });
 
     // Pickle completes while main is mid-turn → deferred.

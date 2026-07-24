@@ -3,7 +3,7 @@ import type { DockGroup, PickyAgentSession } from "../protocol.js";
 import { createPickyAbortPickleTool, createPickyPickleSessionsTool, createPickyStartPickleTool, createPickySteerPickleTool, type PickyHandoffRequest } from "./handoff-tool.js";
 
 describe("handoff tools", () => {
-  it("passes an optional cwd override to the handoff callback and result details", async () => {
+  it("returns user-facing dock guidance after a Pickle starts successfully", async () => {
     let received: PickyHandoffRequest | undefined;
     const tool = createPickyStartPickleTool(async (request) => {
       received = request;
@@ -20,6 +20,12 @@ describe("handoff tools", () => {
 
     expect(received).toMatchObject({ title: "피클 조사", instructions: "Inspect this repo", cwd: "/tmp/override-project" });
     expect(result.details).toMatchObject({ sessionId: "session-1", title: "피클 조사", cwd: "/tmp/override-project" });
+    const content = result.content[0];
+    expect(content?.type).toBe("text");
+    if (content?.type !== "text") throw new Error("expected text content");
+    expect(content.text).toContain("Pickle started: 피클 조사 (session-1)");
+    expect(content.text).toContain("tell the user (in their language)");
+    expect(content.text).toContain("check progress in the Picky dock");
   });
 
   it("guides Picky handoffs toward compact delta-first instructions", () => {

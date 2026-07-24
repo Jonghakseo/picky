@@ -642,7 +642,7 @@ Terminal zoom shortcuts:
 | Cmd + `-` | Zoom out. |
 | Cmd + `0` | Reset zoom. |
 
-Closing the terminal syncs the session card from the Pi session file when possible.
+While the Pi terminal is open, new prompts, thinking, tool activity, and responses are reflected in the session card as Pi writes them. Closing the terminal performs a final sync from the Pi session file when possible.
 
 ## 12. Report viewer
 

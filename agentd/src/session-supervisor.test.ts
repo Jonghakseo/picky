@@ -6777,15 +6777,101 @@ describe("SessionSupervisor", () => {
 
     await supervisor.setTerminalSessionTailEnabled("terminal-tail-session", true);
 
-    // User just typed a new prompt in the TUI; dock should flip to running.
+    // User just typed a new prompt in the TUI; dock and canonical HUD messages update live.
     await appendFile(piSessionFile, JSON.stringify({ type: "message", id: "u2", parentId: "a1", timestamp: "2026-05-01T00:00:03.000Z", message: { role: "user", content: "new TUI prompt", timestamp: 0 } }) + "\n");
     await waitUntil(() => supervisor.get("terminal-tail-session")?.status === "running");
+    await waitUntil(() => supervisor.get("terminal-tail-session")?.messages?.some((message) => message.id === "msg-pi-user-u2") === true);
 
-    // Pi finishes the turn; dock should flip back to completed.
-    await appendFile(piSessionFile, JSON.stringify({ type: "message", id: "a2", parentId: "u2", timestamp: "2026-05-01T00:00:04.000Z", message: { role: "assistant", content: [{ type: "text", text: "TUI answer" }], timestamp: 0, stopReason: "stop" } }) + "\n");
+    // Thinking and tool activity should arrive before the turn completes.
+    await appendFile(piSessionFile, JSON.stringify({
+      type: "message", id: "a2", parentId: "u2", timestamp: "2026-05-01T00:00:04.000Z",
+      message: { role: "assistant", content: [{ type: "thinking", thinking: "checking" }, { type: "toolCall", name: "bash", arguments: { command: "pwd" } }], timestamp: 0, stopReason: "toolUse" },
+    }) + "\n");
+    await waitUntil(() => supervisor.get("terminal-tail-session")?.messages?.some((message) => message.id === "msg-pi-activity-a2") === true);
+    expect(supervisor.get("terminal-tail-session")?.status).toBe("running");
+
+    // Pi finishes the turn; final text arrives immediately and the dock flips to completed.
+    await appendFile(piSessionFile, JSON.stringify({ type: "message", id: "a3", parentId: "a2", timestamp: "2026-05-01T00:00:05.000Z", message: { role: "assistant", content: [{ type: "text", text: "TUI answer" }], timestamp: 0, stopReason: "stop" } }) + "\n");
     await waitUntil(() => supervisor.get("terminal-tail-session")?.status === "completed");
+    await waitUntil(() => supervisor.get("terminal-tail-session")?.messages?.some((message) => message.id === "msg-pi-agent-a3") === true);
+
+    expect(supervisor.get("terminal-tail-session")?.messages?.map((message) => message.id)).toEqual([
+      "msg-pi-user-u2",
+      "msg-pi-thinking-a2",
+      "msg-pi-activity-a2",
+      "msg-pi-agent-a3",
+    ]);
+    expect(supervisor.get("terminal-tail-session")?.finalAnswer).toBe("TUI answer");
 
     await supervisor.setTerminalSessionTailEnabled("terminal-tail-session", false);
+  });
+
+  it("keeps running across empty retryable assistant errors in the tailed transcript", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-terminal-tail-retry-"));
+    const piSessionFile = join(dir, "pi-session.jsonl");
+    await writeFile(piSessionFile, "");
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "terminal-tail-retry",
+      title: "Terminal tail retry",
+      status: "completed",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      lastSummary: "prev",
+      logs: [`pi session: ${piSessionFile}`],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+      messages: [],
+    });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), store);
+    await supervisor.load();
+    await supervisor.setTerminalSessionTailEnabled("terminal-tail-retry", true);
+
+    await appendFile(piSessionFile, JSON.stringify({ type: "message", id: "u1", parentId: null, timestamp: "2026-05-01T00:00:11.000Z", message: { role: "user", content: "continue", timestamp: 0 } }) + "\n");
+    await waitUntil(() => supervisor.get("terminal-tail-retry")?.status === "running");
+    await appendFile(piSessionFile, JSON.stringify({
+      type: "message", id: "error1", parentId: "u1", timestamp: "2026-05-01T00:00:12.000Z",
+      message: { role: "assistant", content: [], stopReason: "error", errorMessage: "Connection error.", timestamp: 0 },
+    }) + "\n");
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    expect(supervisor.get("terminal-tail-retry")?.status).toBe("running");
+    expect(supervisor.get("terminal-tail-retry")?.messages?.map((message) => message.id)).toEqual(["msg-pi-user-u1"]);
+    await supervisor.setTerminalSessionTailEnabled("terminal-tail-retry", false);
+  });
+
+  it("leaves transcript import to runtime events while the attached runtime is streaming", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-terminal-tail-runtime-"));
+    const piSessionFile = join(dir, "pi-session.jsonl");
+    await writeFile(piSessionFile, "");
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "terminal-tail-runtime",
+      title: "Terminal tail runtime",
+      status: "completed",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      logs: [`pi session: ${piSessionFile}`],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+      messages: [],
+    });
+    const runtime = new ResumableRuntime();
+    const supervisor = new SessionSupervisor(runtime, store);
+    await supervisor.load();
+    await supervisor.followUp("terminal-tail-runtime", "runtime prompt");
+    runtime.handle!.isStreaming = true;
+    await supervisor.setTerminalSessionTailEnabled("terminal-tail-runtime", true);
+
+    await appendFile(piSessionFile, JSON.stringify({ type: "message", id: "a1", parentId: null, timestamp: "2026-05-01T00:00:11.000Z", message: { role: "assistant", content: [{ type: "text", text: "runtime answer" }], stopReason: "stop", timestamp: 0 } }) + "\n");
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(supervisor.get("terminal-tail-runtime")?.messages?.some((message) => message.id === "msg-pi-agent-a1")).toBe(false);
+
+    await supervisor.setTerminalSessionTailEnabled("terminal-tail-runtime", false);
   });
 
   it("flips to waiting_for_input when an ask_user_question toolCall is open in the tailed transcript", async () => {

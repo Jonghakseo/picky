@@ -1,13 +1,8 @@
 import { watch, type FSWatcher } from "node:fs";
 import { open, type FileHandle } from "node:fs/promises";
+import type { PiSessionEntry } from "./pi-session-syncer.js";
 
-export interface PiSessionTailEntry {
-  type?: string;
-  id?: string;
-  parentId?: string | null;
-  timestamp?: string;
-  message?: { role?: string; content?: unknown };
-}
+export type PiSessionTailEntry = PiSessionEntry;
 
 export interface PiSessionTailWatcherOptions {
   /** Where to start reading from. Defaults to `"eof"` so existing transcript isn't replayed as fake transitions. */
@@ -24,9 +19,9 @@ export interface PiSessionTailWatcherOptions {
 /**
  * Tails a Pi JSONL session file while an inline-terminal/Pickle overlay is driving
  * the session. Emits parsed JSONL entries to `onEntries` whenever the file grows so
- * the supervisor can derive live status transitions (running/completed) for the HUD
- * dock icon. Status inference is intentionally kept out of this module so the watcher
- * stays a pure file primitive.
+ * the supervisor can mirror transcript messages and derive live HUD status transitions.
+ * Reconciliation policy is intentionally kept out of this module so the watcher stays
+ * a pure file primitive.
  */
 export class PiSessionTailWatcher {
   private fsWatcher?: FSWatcher;

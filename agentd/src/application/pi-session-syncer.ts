@@ -5,7 +5,7 @@ import { categorizeTool } from "../domain/tool-categorizer.js";
 import { resolveTodoStateFromPiSessionEntries } from "../domain/todo-state.js";
 import type { PickyActivitySummary, PickySessionMessage, PickyTodoState } from "../protocol.js";
 
-interface PiSessionEntry {
+export interface PiSessionEntry {
   type?: string;
   id?: string;
   parentId?: string | null;
@@ -15,10 +15,12 @@ interface PiSessionEntry {
   message?: PiSessionMessage;
 }
 
-interface PiSessionMessage {
+export interface PiSessionMessage {
   role?: string;
   content?: unknown;
   timestamp?: number | string;
+  stopReason?: string;
+  errorMessage?: string;
 }
 
 interface PiContentBlock {
@@ -61,6 +63,10 @@ export async function readPiSessionInfoName(sessionFilePath: string): Promise<st
   return undefined;
 }
 
+export function piSessionEntriesToPickyMessages(entries: readonly PiSessionEntry[]): PickySessionMessage[] {
+  return entries.flatMap(toPickySessionMessages);
+}
+
 export async function readPiTerminalSessionMessages(sessionFilePath: string, baselinePiMessageId?: string): Promise<PiTerminalSessionSyncResult> {
   const text = await readFile(sessionFilePath, "utf8");
   const entries = parseMessageEntries(text);
@@ -82,7 +88,7 @@ export async function readPiTerminalSessionMessages(sessionFilePath: string, bas
   const baselineEntry = startIndex >= 0 ? activePath[startIndex] : undefined;
   const baselineCreatedAt = baselineEntry ? isoTimestamp(baselineEntry.timestamp, baselineEntry.message?.timestamp) : undefined;
   const candidates = baselinePiMessageId ? activePath.slice(startIndex + 1) : activePath;
-  const messages = candidates.flatMap(toPickySessionMessages);
+  const messages = piSessionEntriesToPickyMessages(candidates);
   return {
     messages,
     todoStateResolved: todoResolution.resolved,

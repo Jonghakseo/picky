@@ -232,6 +232,7 @@ export class SessionSupervisor extends EventEmitter {
       getSession: (sessionId) => this.sessions.get(sessionId),
       getSessionOrThrow: (sessionId) => this.mustGet(sessionId),
       hasRuntimeHandle: (sessionId) => this.runtimeHandles.has(sessionId),
+      isRuntimeStreaming: (sessionId) => this.runtimeHandles.get(sessionId)?.isStreaming === true,
       detachRuntimeHandle: (sessionId) => this.detachRuntimeHandle(sessionId),
       patchSession: (sessionId, patch) => this.patch(sessionId, patch),
       updateTodoState: (sessionId, todoState) => this.updateTodoState(sessionId, todoState),

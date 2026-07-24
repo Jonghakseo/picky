@@ -1,5 +1,5 @@
 import { PiSessionTailWatcher, type PiSessionTailEntry } from "./pi-session-tail-watcher.js";
-import { readPiTerminalSessionMessages } from "./pi-session-syncer.js";
+import { piSessionEntriesToPickyMessages, readPiTerminalSessionMessages } from "./pi-session-syncer.js";
 import { inferTerminalStatusFromEntries } from "./terminal-tail-status.js";
 import { appendUniqueLog, piSessionFilePathForSession } from "../domain/pi-session-files.js";
 import { FOLLOWUP_PREFIX } from "../domain/log-prefixes.js";
@@ -21,6 +21,7 @@ interface TerminalSessionCoordinatorDeps {
   getSession(sessionId: string): PickyAgentSession | undefined;
   getSessionOrThrow(sessionId: string): PickyAgentSession;
   hasRuntimeHandle(sessionId: string): boolean;
+  isRuntimeStreaming(sessionId: string): boolean;
   detachRuntimeHandle(sessionId: string): Promise<void>;
   patchSession(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void>;
   updateTodoState(sessionId: string, todoState: PickyAgentSession["todoState"]): Promise<void>;
@@ -177,11 +178,46 @@ export class TerminalSessionCoordinator {
   private async handleTailEntries(sessionId: string, entries: PiSessionTailEntry[]): Promise<void> {
     const session = this.deps.getSession(sessionId);
     if (!session) return;
+
     const inferred = inferTerminalStatusFromEntries(entries);
-    if (!inferred || session.status === inferred) return;
-    if (session.status === "cancelled" && inferred !== "completed") return;
-    logAgentd("terminal tail status patch", { sessionId, from: session.status, to: inferred });
-    await this.deps.patchSession(sessionId, { status: inferred });
+    const patch: Partial<PickyAgentSession> = {};
+    if (!this.deps.isRuntimeStreaming(sessionId)) {
+      const existingIds = new Set((session.messages ?? []).map((message) => message.id));
+      const messagesToImport = piSessionEntriesToPickyMessages(entries)
+        .map((message) => message.kind === "user_text" && message.text
+          ? { ...message, text: this.deps.reverseInputExpansion(sessionId, message.text) }
+          : message)
+        .filter((message) => !existingIds.has(message.id));
+      if (messagesToImport.length > 0) {
+        if (this.deps.hasRuntimeHandle(sessionId)) {
+          await this.deps.detachRuntimeHandle(sessionId);
+          logAgentd("terminal tail invalidated idle runtime handle after pi session advanced", { sessionId });
+        }
+        await this.deps.messageRecorder.recordTerminalSessionMessages(sessionId, messagesToImport);
+        const latestAssistantText = [...messagesToImport].reverse().find((message) => message.kind === "agent_text")?.text?.trim();
+        const latestUserText = [...messagesToImport].reverse().find((message) => message.kind === "user_text")?.text?.trim();
+        if (latestUserText) {
+          patch.logs = appendUniqueLog(this.deps.getSessionOrThrow(sessionId).logs, `${FOLLOWUP_PREFIX}${latestUserText}`);
+          patch.finalAnswer = undefined;
+          patch.thinkingPreview = undefined;
+        }
+        if (latestAssistantText) {
+          patch.lastSummary = latestAssistantText;
+          if (inferred === "completed") patch.finalAnswer = latestAssistantText;
+        }
+        logAgentd("terminal tail messages imported", { sessionId, messages: messagesToImport.length });
+      }
+    }
+
+    const current = this.deps.getSessionOrThrow(sessionId);
+    const statusAllowed = inferred
+      && current.status !== inferred
+      && !(current.status === "cancelled" && inferred !== "completed");
+    if (statusAllowed) {
+      patch.status = inferred;
+      logAgentd("terminal tail status patch", { sessionId, from: current.status, to: inferred });
+    }
+    if (Object.keys(patch).length > 0) await this.deps.patchSession(sessionId, patch);
   }
 
   private emitSyncOutcome(

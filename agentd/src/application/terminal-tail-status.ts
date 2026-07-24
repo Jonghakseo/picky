@@ -16,10 +16,11 @@ const INPUT_BLOCKING_TOOL_NAMES = new Set(["ask_user_question"]);
  * the user is driving a Pickle through the Pi terminal overlay / inline TUI.
  *
  * Mapping (last decisive entry wins):
- * - user entry                     -> running   (a fresh prompt just hit the queue)
- * - assistant entry, no open tool  -> completed (turn finished)
- * - assistant entry, blocking tool -> waiting_for_input (e.g. ask_user_question is pending)
- * - assistant entry, other tool    -> running   (mid-turn, tool still resolving)
+ * - user entry                         -> running   (a fresh prompt just hit the queue)
+ * - assistant entry, terminal text     -> completed (turn finished)
+ * - assistant entry, blocking tool     -> waiting_for_input (e.g. ask_user_question is pending)
+ * - assistant entry, other tool/error  -> running   (mid-turn or Pi is retrying)
+ * - empty assistant metadata entry     -> ignored   (not enough evidence to finish)
  */
 export function inferTerminalStatusFromEntries(entries: PiSessionTailEntry[]): PickyAgentSession["status"] | undefined {
   for (let i = entries.length - 1; i >= 0; i -= 1) {
@@ -29,13 +30,24 @@ export function inferTerminalStatusFromEntries(entries: PiSessionTailEntry[]): P
     const role = entry.message?.role;
     if (role === "user") return "running";
     if (role === "assistant") {
-      const openTools = openToolCallNames(entry.message?.content);
-      if (openTools.length === 0) return "completed";
+      const content = entry.message?.content;
+      const openTools = openToolCallNames(content);
       if (openTools.some((name) => INPUT_BLOCKING_TOOL_NAMES.has(name))) return "waiting_for_input";
-      return "running";
+      if (openTools.length > 0 || entry.message?.stopReason === "toolUse" || entry.message?.stopReason === "error") return "running";
+      if (hasVisibleAssistantContent(content) || entry.message?.stopReason === "stop") return "completed";
     }
   }
   return undefined;
+}
+
+function hasVisibleAssistantContent(content: unknown): boolean {
+  if (typeof content === "string") return content.trim().length > 0;
+  if (!Array.isArray(content)) return false;
+  return content.some((block) => {
+    if (!block || typeof block !== "object") return false;
+    const candidate = block as { type?: string; text?: unknown };
+    return candidate.type === "text" && typeof candidate.text === "string" && candidate.text.trim().length > 0;
+  });
 }
 
 function openToolCallNames(content: unknown): string[] {

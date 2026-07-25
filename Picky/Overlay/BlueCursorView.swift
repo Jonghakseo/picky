@@ -217,7 +217,11 @@ private struct PickyCursorMascotView: View {
     @ViewBuilder
     var body: some View {
         if needsTimelineAnimation {
-            TimelineView(.animation) { timeline in
+            // 30fps is plenty for the low-amplitude mascot motion; the default
+            // `.animation` schedule ticks at display refresh rate (120Hz on
+            // ProMotion) per overlay window, which burns CPU on multi-display
+            // setups.
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
                 let time = timeline.date.timeIntervalSinceReferenceDate
                 mascotBody(
                     expression: expression(at: time),
@@ -382,7 +386,8 @@ private struct PickleTargetCursorMascotView: View {
 
     var body: some View {
         if needsTimelineAnimation {
-            TimelineView(.animation) { timeline in
+            // Throttled for the same reason as `PickyCursorMascotView` above.
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
                 let time = timeline.date.timeIntervalSinceReferenceDate
                 targetIcon(
                     scale: scale(at: time),

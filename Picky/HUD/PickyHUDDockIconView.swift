@@ -208,9 +208,14 @@ struct PickyHUDDockIconView: View {
     }
 
     private var dockIconContent: some View {
-        VStack(spacing: max(1, 2 * metrics.scale)) {
+        // Todo progress is independent of the running-state timeline. Resolve it
+        // once for this body evaluation so timeline ticks only update the breath
+        // and wink drawing.
+        let todoProgressPresentation = PickyTodoProgressPresentation(state: session.todoState)
+
+        return VStack(spacing: max(1, 2 * metrics.scale)) {
             ZStack {
-                // Drive the breath from a `TimelineView` instead of a
+                // Drive the breath from a throttled `TimelineView` instead of a
                 // `withAnimation(.repeatForever)` toggle. The previous toggle
                 // approach leaked SwiftUI's repeating animation: once started,
                 // the implicit repeat kept interpolating the halo + glyph even
@@ -220,7 +225,7 @@ struct PickyHUDDockIconView: View {
                 // (when `session.status != .running`) hard-stops it.
                 if isScreenContextArmed {
                     ZStack {
-                        dockTodoProgressRing
+                        dockTodoProgressRing(todoProgressPresentation)
                         Image("PickyCursorNormal")
                             .resizable()
                             .renderingMode(.template)
@@ -230,20 +235,28 @@ struct PickyHUDDockIconView: View {
                             .shadow(color: DS.Colors.accentText.opacity(isSelected ? 0.18 : 0.10), radius: 2.0, x: 0, y: 0.7)
                     }
                 } else if session.status == .running {
-                    if accessibilityReduceMotion {
-                        runningDockGlyph(phase: 0.5, isWinkVisible: false)
-                    } else {
-                        TimelineView(.animation) { context in
-                            let _ = PickyPerf.event("dock_icon_timeline_tick")
-                            runningDockGlyph(
-                                phase: breathingPhase(at: context.date),
-                                isWinkVisible: isRunningWinkVisible(at: context.date)
-                            )
+                    ZStack {
+                        if accessibilityReduceMotion {
+                            runningDockGlyph(phase: 0.5, isWinkVisible: false)
+                        } else {
+                            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+                                let _ = PickyPerf.event("dock_icon_timeline_tick")
+                                runningDockGlyph(
+                                    phase: breathingPhase(at: context.date),
+                                    isWinkVisible: isRunningWinkVisible(at: context.date)
+                                )
+                            }
                         }
+
+                        // Keep todo progress outside the timeline: it changes
+                        // only with session data, not elapsed time. The ring is
+                        // layered above the halo and its centered glyph does not
+                        // overlap the ring, preserving the existing appearance.
+                        dockTodoProgressRing(todoProgressPresentation)
                     }
                 } else {
                     ZStack {
-                        dockTodoProgressRing
+                        dockTodoProgressRing(todoProgressPresentation)
                         if let asset = dockStatusAsset {
                             dockPickleAsset(asset)
                         } else {
@@ -269,7 +282,6 @@ struct PickyHUDDockIconView: View {
                 .stroke(statusColor.opacity(0.16 + 0.36 * phase), lineWidth: 1.0)
                 .frame(width: metrics.sessionLogoSide, height: metrics.sessionLogoSide)
                 .scaleEffect(1.0 + 0.12 * phase)
-            dockTodoProgressRing
             Group {
                 if isWinkVisible {
                     dockPickleAsset(.wink)
@@ -281,12 +293,8 @@ struct PickyHUDDockIconView: View {
         }
     }
 
-    private var todoProgressPresentation: PickyTodoProgressPresentation? {
-        PickyTodoProgressPresentation(state: session.todoState)
-    }
-
     @ViewBuilder
-    private var dockTodoProgressRing: some View {
+    private func dockTodoProgressRing(_ todoProgressPresentation: PickyTodoProgressPresentation?) -> some View {
         if let todoProgressPresentation {
             let lineWidth = max(1.2, 1.45 * metrics.scale)
             ZStack {

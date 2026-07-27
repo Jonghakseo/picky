@@ -20,13 +20,13 @@
     "overlay.mainCancel.stop": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Stop" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "중지" } }
+        "ko": { "stringUnit": { "state": "translated", "value": "응답 중지" } }
       }
     },
     "overlay.mainCancel.clickToStop": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Click to stop" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "클릭해서 중지" } }
+        "ko": { "stringUnit": { "state": "translated", "value": "클릭해서 응답 중지" } }
       }
     },
     "overlay.mainCancel.escapeHintPrefix": {

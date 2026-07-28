@@ -1103,6 +1103,13 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
         this.cancelDeferredTerminalError();
         return { type: "status", status: "running", summary: "Compaction completed; retrying…", compactionCompleted: true, ...(reason ? { compactionReason: reason } : {}) };
       }
+      // Pi can compact before accepting a newly submitted prompt. In that preflight path the
+      // compaction_end event arrives while the expected input delivery is still pending, followed
+      // by preflightResult(true) and agent_start. Treating this as an idle compaction completion
+      // terminalizes the Pickle one second too early, causing the host to discard the entire turn.
+      if (!errorMessage && event.aborted !== true && this.expectedInputDeliveries.length > 0) {
+        return { type: "status", status: "running", summary: "Session compacted; continuing…", compactionCompleted: true, ...(reason ? { compactionReason: reason } : {}) };
+      }
       if (reason === "overflow" && errorMessage) {
         this.cancelDeferredTerminalError();
         return { type: "status", status: "failed", summary: errorMessage, compactionFailed: true, ...(reason ? { compactionReason: reason } : {}) };

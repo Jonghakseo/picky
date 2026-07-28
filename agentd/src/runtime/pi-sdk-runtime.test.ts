@@ -284,6 +284,22 @@ class RaceSkillExpansionFakeSession extends SkillExpansionFakeSession {
   }
 }
 
+class PreflightCompactionSession extends FakeSession {
+  override async prompt(text: string, options?: unknown): Promise<void> {
+    this.prompts.push(text);
+    this.promptOptions.push(options);
+    this.isCompacting = true;
+    this.emit("event", { type: "compaction_start", reason: "threshold" });
+    this.isCompacting = false;
+    this.emit("event", { type: "compaction_end", reason: "threshold", willRetry: false, aborted: false, result: { summary: "요약" } });
+    (options as { preflightResult?: (success: boolean) => void } | undefined)?.preflightResult?.(true);
+    this.isStreaming = true;
+    this.emit("event", { type: "agent_start" });
+    this.emit("event", { type: "message_start", message: { role: "user", content: text } });
+    this.emit("event", { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "continued" } });
+  }
+}
+
 class BlockingPromptSession extends FakeSession {
   private promptFinished: Promise<void>;
   private finishPrompt!: () => void;
@@ -1006,6 +1022,21 @@ describe("PiSdkRuntime", () => {
     await expect(handle.followUp({ text: "continue while busy", imagePaths: [] })).rejects.toThrow(/Agent is already processing/);
 
     expect(statusEvents(events).some((event) => event.status === "failed")).toBe(false);
+  });
+
+  it("keeps preflight threshold compaction running until the accepted prompt starts", async () => {
+    const fakeSession = new PreflightCompactionSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-preflight-compaction" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    await handle.followUp({ text: "continue after compaction", imagePaths: [] });
+
+    expect(statusEvents(events)).toContainEqual({ type: "status", status: "running", summary: "Compacting session…", compactionStarted: true, compactionReason: "threshold" });
+    expect(statusEvents(events)).toContainEqual({ type: "status", status: "running", summary: "Session compacted; continuing…", compactionCompleted: true, compactionReason: "threshold" });
+    expect(statusEvents(events)).toContainEqual({ type: "status", status: "running", summary: "Agent started" });
+    expect(statusEvents(events).some((event) => event.status === "completed")).toBe(false);
   });
 
   it("emits completion for non-retry automatic threshold compaction", async () => {

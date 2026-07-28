@@ -6216,6 +6216,61 @@ describe("SessionSupervisor", () => {
     expect(runtime.handle?.followUps.map((prompt) => prompt.text)).toEqual(["after TUI follow-up"]);
   });
 
+  it("keeps a streaming runtime attached when sync catches up missing live messages", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-terminal-sync-live-runtime-"));
+    const piSessionFile = join(dir, "pi-session.jsonl");
+    await writeFile(piSessionFile, [
+      JSON.stringify({ type: "session", version: 3, id: "pi-session", timestamp: "2026-05-01T00:00:00.000Z", cwd: "/tmp/project" }),
+      JSON.stringify({ type: "message", id: "u1", parentId: null, timestamp: "2026-05-01T00:00:01.000Z", message: { role: "user", content: "old prompt", timestamp: 0 } }),
+      JSON.stringify({ type: "message", id: "a1", parentId: "u1", timestamp: "2026-05-01T00:00:02.000Z", message: { role: "assistant", content: [{ type: "text", text: "old answer" }], timestamp: 0, stopReason: "stop" } }),
+      "",
+    ].join("\n"));
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "terminal-sync-live-runtime",
+      title: "Terminal sync live runtime",
+      status: "completed",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      lastSummary: "old answer",
+      finalAnswer: "old answer",
+      logs: [`pi session: ${piSessionFile}`],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+      messages: [
+        { id: "msg-existing-user", kind: "user_text", createdAt: "2026-05-01T00:00:01.000Z", originatedBy: "user", text: "old prompt" },
+        { id: "msg-existing-agent", kind: "agent_text", createdAt: "2026-05-01T00:00:02.000Z", text: "old answer" },
+      ],
+    });
+
+    const runtime = new ResumableRuntime();
+    const supervisor = new SessionSupervisor(runtime, store);
+    await supervisor.load();
+    await supervisor.followUp("terminal-sync-live-runtime", "live follow-up");
+    const liveHandle = runtime.handle!;
+    liveHandle.isStreaming = true;
+
+    await appendFile(piSessionFile, [
+      JSON.stringify({ type: "message", id: "u2", parentId: "a1", timestamp: "2026-05-01T00:00:03.000Z", message: { role: "user", content: "live follow-up", timestamp: 0 } }),
+      JSON.stringify({ type: "message", id: "a2", parentId: "u2", timestamp: "2026-05-01T00:00:04.000Z", message: { role: "assistant", content: [{ type: "text", text: "intermediate progress" }, { type: "toolCall", id: "tool-1", name: "read", arguments: {} }], timestamp: 0, stopReason: "toolUse" } }),
+      "",
+    ].join("\n"));
+
+    await supervisor.syncTerminalSession("terminal-sync-live-runtime", "a1");
+
+    expect(supervisor.get("terminal-sync-live-runtime")?.status).toBe("running");
+    expect(supervisor.get("terminal-sync-live-runtime")?.finalAnswer).toBeUndefined();
+    expect(supervisor.get("terminal-sync-live-runtime")?.lastSummary).toBe("intermediate progress");
+
+    await supervisor.followUp("terminal-sync-live-runtime", "queue after sync");
+
+    expect(runtime.resumeCalls).toHaveLength(1);
+    expect(runtime.handle).toBe(liveHandle);
+    expect(liveHandle.followUps.map((prompt) => prompt.text)).toEqual(["live follow-up", "queue after sync"]);
+  });
+
   it("unsubscribes an invalidated terminal-sync handle before deleting its archived session", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-terminal-sync-delete-unsubscribe-"));
     const store = new SessionStore(dir);

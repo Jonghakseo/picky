@@ -91,6 +91,19 @@ export class TerminalSessionCoordinator {
       ? activeLastMessageId !== baselinePiMessageId
       : outcome.importedMessageCount > 0;
     if (!activePathAdvanced || !this.deps.hasRuntimeHandle(sessionId)) return;
+    // A live Picky-owned runtime naturally advances this same JSONL. Keep its handle attached so
+    // sync can repair HUD history without disconnecting the still-running Pi turn. Idle handles
+    // are still invalidated below because append-only changes then imply an external TUI advanced
+    // the session and the in-memory branch is stale.
+    if (this.deps.isRuntimeStreaming(sessionId)) {
+      logAgentd("terminal session sync retained streaming runtime handle after pi session advanced", {
+        sessionId,
+        activeLastMessageId,
+        ...(baselinePiMessageId ? { baselinePiMessageId } : {}),
+        importedMessageCount: outcome.importedMessageCount,
+      });
+      return;
+    }
     void this.deps.detachRuntimeHandle(sessionId);
     logAgentd("terminal session sync invalidated runtime handle after pi session advanced", {
       sessionId,
@@ -157,12 +170,19 @@ export class TerminalSessionCoordinator {
     await this.deps.messageRecorder.recordTerminalSessionMessages(sessionId, messagesToImport);
     const latestAssistantText = [...messagesToImport].reverse().find((message) => message.kind === "agent_text")?.text?.trim();
     const latestUserText = [...messagesToImport].reverse().find((message) => message.kind === "user_text")?.text?.trim();
+    const runtimeStreaming = this.deps.isRuntimeStreaming(sessionId);
     const patch: Partial<PickyAgentSession> = {
       thinkingPreview: undefined,
-      ...(latestAssistantText ? { lastSummary: latestAssistantText, finalAnswer: latestAssistantText } : {}),
+      ...(latestAssistantText ? { lastSummary: latestAssistantText } : {}),
       ...(latestUserText ? { logs: appendUniqueLog(this.deps.getSessionOrThrow(sessionId).logs, `${FOLLOWUP_PREFIX}${latestUserText}`) } : {}),
     };
-    if (latestAssistantText) patch.status = "completed";
+    if (runtimeStreaming) {
+      patch.status = "running";
+      patch.finalAnswer = undefined;
+    } else if (latestAssistantText) {
+      patch.status = "completed";
+      patch.finalAnswer = latestAssistantText;
+    }
     await this.deps.patchSession(sessionId, patch);
     logAgentd("terminal session synced", { sessionId, importedMessages: messagesToImport.length, activeLastMessageId: result.activeLastMessageId });
     this.emitSyncOutcome(sessionId, true, messagesToImport.length, result.activeLastMessageId, baselinePiMessageId);

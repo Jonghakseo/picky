@@ -19,6 +19,29 @@ struct ShortcutCaptureRecorderTests {
     private let leftOption: UInt16 = 58
     private let leftShift: UInt16 = 56
 
+    @Test func captureRoutingConsumesOnlyTheOriginatingSettingsWindow() {
+        #expect(PickyShortcutCaptureEventRoutingPolicy.shouldConsume(
+            isCapturing: true,
+            hasCaptureWindow: true,
+            isEventInCaptureWindow: true
+        ))
+        #expect(!PickyShortcutCaptureEventRoutingPolicy.shouldConsume(
+            isCapturing: true,
+            hasCaptureWindow: true,
+            isEventInCaptureWindow: false
+        ))
+        #expect(!PickyShortcutCaptureEventRoutingPolicy.shouldConsume(
+            isCapturing: true,
+            hasCaptureWindow: false,
+            isEventInCaptureWindow: true
+        ))
+        #expect(!PickyShortcutCaptureEventRoutingPolicy.shouldConsume(
+            isCapturing: false,
+            hasCaptureWindow: true,
+            isEventInCaptureWindow: true
+        ))
+    }
+
     @Test
     func pushToTalkCapturesModifierOnly() {
         let recorder = ShortcutCaptureRecorder(allowance: .pushToTalk)

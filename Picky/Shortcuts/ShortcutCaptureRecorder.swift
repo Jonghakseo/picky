@@ -29,6 +29,20 @@ enum PickyShortcutCaptureNotificationKeys {
     static let isCapturing = "isCapturing"
 }
 
+/// Shortcut recording must be scoped to the settings panel that started it.
+/// The panel's hosting hierarchy persists while hidden, so an active recorder
+/// otherwise continues to receive every app-local keyDown event and can block
+/// typing in an unrelated HUD composer.
+enum PickyShortcutCaptureEventRoutingPolicy {
+    static func shouldConsume(
+        isCapturing: Bool,
+        hasCaptureWindow: Bool,
+        isEventInCaptureWindow: Bool
+    ) -> Bool {
+        isCapturing && hasCaptureWindow && isEventInCaptureWindow
+    }
+}
+
 @MainActor
 final class ShortcutCaptureRecorder: ObservableObject {
     enum Allowance {
@@ -64,6 +78,7 @@ final class ShortcutCaptureRecorder: ObservableObject {
 
     private let allowance: Allowance
     private var localMonitor: Any?
+    private weak var captureWindow: NSWindow?
     /// Most recently observed pure modifier set (no non-modifier keys held yet).
     /// Used to distinguish modifier-only and double-tap candidates from combos.
     private var lastPureModifierSet: NSEvent.ModifierFlags = []
@@ -84,6 +99,7 @@ final class ShortcutCaptureRecorder: ObservableObject {
 
     func start() {
         guard !isCapturing else { return }
+        captureWindow = NSApp.keyWindow
         isCapturing = true
         draftSpec = nil
         statusMessage = allowance.hint
@@ -129,6 +145,7 @@ final class ShortcutCaptureRecorder: ObservableObject {
 
     private func finishCapture(clearDraft: Bool) {
         isCapturing = false
+        captureWindow = nil
         statusMessage = nil
         if clearDraft { draftSpec = nil }
         if let localMonitor {
@@ -140,14 +157,21 @@ final class ShortcutCaptureRecorder: ObservableObject {
     private func installLocalMonitorIfNeeded() {
         guard localMonitor == nil else { return }
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
-            guard let self else { return event }
+            guard let self,
+                  let captureWindow = self.captureWindow,
+                  PickyShortcutCaptureEventRoutingPolicy.shouldConsume(
+                    isCapturing: self.isCapturing,
+                    hasCaptureWindow: true,
+                    isEventInCaptureWindow: event.window === captureWindow
+                  )
+            else { return event }
             self.handleEvent(
                 type: event.type,
                 keyCode: event.keyCode,
                 modifierFlags: event.modifierFlags
             )
-            // Swallow the event so it doesn't leak into surrounding controls
-            // (e.g. typing "S" wouldn't activate a button labelled "Save").
+            // Swallow the event only inside the settings panel currently
+            // recording a shortcut so other Picky inputs keep receiving keys.
             return nil
         }
     }

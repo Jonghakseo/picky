@@ -251,6 +251,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private pendingTerminalErrorTimer?: ReturnType<typeof setTimeout>;
   private initialPromptTimer?: ReturnType<typeof setTimeout>;
   private expectedInputDeliveries: ExpectedInputDelivery[] = [];
+  private pendingPromptPreflightDeliveryIds = new Set<string>();
   // Pi expands slash commands like `/skill:<name>` server-side before enqueueing, so the queue
   // snapshot and the matching role="custom" message_start carry the expansion (e.g. the SKILL.md
   // body) instead of the raw text the user typed. We learn `expansion -> raw` mappings from Pi's
@@ -903,6 +904,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       queuedSteeringCount: this.queuedSteeringCount,
       queuedFollowUpCount: this.queuedFollowUpCount,
       expectedInputDeliveryCount: this.expectedInputDeliveries.length,
+      pendingPromptPreflightCount: this.pendingPromptPreflightDeliveryIds.size,
     };
   }
 
@@ -1104,10 +1106,10 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
         return { type: "status", status: "running", summary: "Compaction completed; retrying…", compactionCompleted: true, ...(reason ? { compactionReason: reason } : {}) };
       }
       // Pi can compact before accepting a newly submitted prompt. In that preflight path the
-      // compaction_end event arrives while the expected input delivery is still pending, followed
-      // by preflightResult(true) and agent_start. Treating this as an idle compaction completion
-      // terminalizes the Pickle one second too early, causing the host to discard the entire turn.
-      if (!errorMessage && event.aborted !== true && this.expectedInputDeliveries.length > 0) {
+      // compaction_end event arrives before preflightResult(true) and agent_start. Expected input
+      // deliveries can outlive their turn when Pi omits the matching role=user echo, so only the
+      // prompt-specific preflight ledger proves that a new turn is actually waiting to continue.
+      if (!errorMessage && event.aborted !== true && this.pendingPromptPreflightDeliveryIds.size > 0) {
         return { type: "status", status: "running", summary: "Session compacted; continuing…", compactionCompleted: true, ...(reason ? { compactionReason: reason } : {}) };
       }
       if (reason === "overflow" && errorMessage) {
@@ -1282,12 +1284,14 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     };
 
     const expected = this.expectInputDelivery(text, "internal", true, queueKindFromStreamingBehavior(options.streamingBehavior));
+    this.pendingPromptPreflightDeliveryIds.add(expected.id);
     const queueBeforeSlashExpansion = this.snapshotQueueForSlashExpansion(text);
     const pendingSlashSubmission = queueBeforeSlashExpansion ? { raw: text.trim(), beforeQueue: queueBeforeSlashExpansion } : undefined;
     if (pendingSlashSubmission) this.pendingSlashSubmissions.push(pendingSlashSubmission);
     const promptPromise = this.inputRewriteObserver.runWithDelivery(expected.id, () => this.runtime.session.prompt(text, {
       ...options,
       preflightResult: (success: boolean) => {
+        this.pendingPromptPreflightDeliveryIds.delete(expected.id);
         if (!success) {
           logLifecycleEvent("piPromptPreflightRejected", { sessionId: this.id, ...this.lifecycleFields() });
           this.cancelExpectedInputDelivery(expected.id);
@@ -1302,11 +1306,13 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
 
     void promptPromise
       .then(() => {
+        this.pendingPromptPreflightDeliveryIds.delete(expected.id);
         promptResolved = true;
         logLifecycleEvent("piPromptResolved", { sessionId: this.id, accepted, ...this.lifecycleFields() });
         resolveOnce();
       })
       .catch((error) => {
+        this.pendingPromptPreflightDeliveryIds.delete(expected.id);
         promptResolved = true;
         logLifecycleEvent("piPromptRejected", { sessionId: this.id, accepted, ...this.lifecycleFields() });
         this.cancelExpectedInputDelivery(expected.id);

@@ -1039,6 +1039,26 @@ describe("PiSdkRuntime", () => {
     expect(statusEvents(events).some((event) => event.status === "completed")).toBe(false);
   });
 
+  it("completes manual compaction despite a stale expected input delivery", async () => {
+    const fakeSession = new BlockingPromptSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-manual-compaction-stale-delivery" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    // This fake intentionally omits Pi's role=user message_start, leaving the prior turn's
+    // expected-delivery record stale just like the production session that exposed this bug.
+    await handle.followUp({ text: "prior completed turn", imagePaths: [] });
+    fakeSession.isStreaming = false;
+    events.length = 0;
+
+    await handle.compact?.();
+
+    expect(statusEvents(events)).toContainEqual({ type: "status", status: "running", summary: "Compacting session…", compactionStarted: true, compactionReason: "manual" });
+    expect(statusEvents(events)).toContainEqual({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, compactionReason: "manual" });
+    expect(statusEvents(events).some((event) => event.summary === "Session compacted; continuing…")).toBe(false);
+  });
+
   it("emits completion for non-retry automatic threshold compaction", async () => {
     const fakeSession = new FakeSession();
     const runtime = makeRuntime(fakeSession);

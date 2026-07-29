@@ -2036,10 +2036,27 @@ export class SessionSupervisor extends EventEmitter {
     return this.terminalSessionCoordinator.sync(sessionId, baselinePiMessageId);
   }
 
-  async followUp(sessionId: string, text: string, context?: PickyContextPacket, visualDslEnabled = false): Promise<PickyAgentSession> {
+  private async routeTerminalFollowUp(sessionId: string, text: string, context?: PickyContextPacket, visualDslEnabled = false): Promise<PickyAgentSession | undefined> {
+    if (context?.source === "voice-follow-up") {
+      const pendingAbort = this.pendingAbortOperations.get(sessionId);
+      if (pendingAbort) {
+        logAgentd("voice follow-up waiting for abort", { sessionId, textChars: text.length });
+        await pendingAbort;
+      }
+    }
     const session = this.mustGet(sessionId);
     if (session.archived === true) throw new Error("Cannot follow up an archived session");
+    if (this.isPickleSession(sessionId) && session.status === "cancelled" && context?.source === "voice-follow-up") {
+      return this.steer(sessionId, text, context, visualDslEnabled);
+    }
     if (["failed", "cancelled"].includes(session.status)) throw new Error(`Cannot follow up ${session.status} session`);
+    return undefined;
+  }
+
+  async followUp(sessionId: string, text: string, context?: PickyContextPacket, visualDslEnabled = false): Promise<PickyAgentSession> {
+    const terminalFollowUp = await this.routeTerminalFollowUp(sessionId, text, context, visualDslEnabled);
+    if (terminalFollowUp) return terminalFollowUp;
+    const session = this.mustGet(sessionId);
 
     const userBash = parseUserBashInput(text);
     if (userBash) return this.executeUserBash(sessionId, userBash, context);

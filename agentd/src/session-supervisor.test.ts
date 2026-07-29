@@ -2547,6 +2547,62 @@ describe("SessionSupervisor", () => {
     expect(updated.logs).toContain("steer: 다시 진행해줘");
   });
 
+  it("routes voice follow-up for a cancelled Pickle session through steer", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
+
+    await supervisor.abort(pickle.id);
+
+    const updated = await supervisor.followUp(pickle.id, "음성으로 다시 진행해줘", {
+      ...context("voice follow-up"),
+      source: "voice-follow-up",
+    });
+
+    expect(runtime.handle?.steers).toHaveLength(1);
+    expect(runtime.handle?.steerPrompts[0]?.text).toContain("음성으로 다시 진행해줘");
+    expect(runtime.handle?.followUps).toEqual([]);
+    expect(updated.status).toBe("running");
+  });
+
+  it("waits for an in-flight abort before routing voice follow-up for a Pickle session", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-voice-follow-up-during-abort-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
+    const handle = runtime.handle!;
+    handle.isStreaming = true;
+    let releaseAbort!: () => void;
+    const abortGate = new Promise<void>((resolve) => { releaseAbort = resolve; });
+    handle.abort = async () => {
+      handle.aborts += 1;
+      await abortGate;
+      handle.isStreaming = false;
+    };
+
+    const aborting = supervisor.abort(pickle.id);
+    await waitUntil(() => handle.aborts === 1);
+    const following = supervisor.followUp(pickle.id, "음성으로 다시 진행해줘", {
+      ...context("voice follow-up during abort"),
+      source: "voice-follow-up",
+    });
+    await settle();
+
+    expect(handle.followUps).toEqual([]);
+    expect(handle.steers).toEqual([]);
+
+    releaseAbort();
+    await aborting;
+    const updated = await following;
+
+    expect(handle.steerPrompts[0]?.text).toContain("음성으로 다시 진행해줘");
+    expect(handle.followUps).toEqual([]);
+    expect(updated.status).toBe("running");
+  });
+
   it("rejects cancelled Pickle-session follow-up calls", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();

@@ -179,6 +179,7 @@ Visible cues:
 
 - The Pickle header can show a small microphone badge.
 - The voice input becomes a Pickle follow-up/steer rather than a main Picky turn.
+- If the targeted Pickle is cancelled, Picky resumes it with a steer so the voice input is not rejected as a follow-up.
 
 ### 4.3 Screen-context target to a Pickle
 

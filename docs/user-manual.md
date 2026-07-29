@@ -413,7 +413,9 @@ The composer stays pinned to the bottom of a resized Pickle card. It changes beh
 | running / queued / waiting_for_input | Steer this agent. |
 | completed / blocked | Send follow-up. |
 | cancelled | Resume with a steer. |
-| failed | Send recovery steer or open terminal. |
+| failed | Use **Retry** to continue the failed request in the same Pickle. |
+
+When a runtime request fails, its error bubble shows **Retry**. Retry keeps the existing Pickle transcript and resumes it with a short continuation, so it does not re-send the original request or intentionally repeat completed work. If Pi rejected the original request before it was delivered, Retry safely sends that original request again instead. The Pi terminal remains available from the card menu for diagnosis or manual control.
 
 Keyboard behavior inside the composer:
 

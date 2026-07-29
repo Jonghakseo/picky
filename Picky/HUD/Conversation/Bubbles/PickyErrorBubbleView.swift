@@ -9,14 +9,9 @@ import SwiftUI
 
 struct PickyErrorBubbleView: View {
     let message: PickySessionMessage
-    // Keep the recovery surface narrow: failed runs can be inspected or resumed
-    // through the Pi terminal overlay.
-    var onOpenTerminal: () -> Void = {}
-    // Only set when the previous user request can be safely re-sent — currently
-    // exposed for the Pi SDK race where `Session.prompt()` saw isStreaming=false
-    // but `agent.activeRun` had been claimed by another caller (e.g. the `until`
-    // extension's scheduled iteration) during the awaits in between, so the
-    // follow-up/steer was rejected before delivery.
+    // Only set for the latest error while its session is still failed. The
+    // caller chooses whether Retry must resend an undelivered request or send a
+    // short continuation prompt for an accepted runtime failure.
     var onRetry: (() -> Void)? = nil
 
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
@@ -24,10 +19,14 @@ struct PickyErrorBubbleView: View {
     var body: some View {
         HStack(spacing: PickyConversationBubbleLayout.horizontalStackSpacing) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("⚠ FAILED · runtime error")
-                    .font(PickyHUDTypography.metaBold)
-                    .foregroundColor(DS.Colors.destructiveText)
-                    .lineLimit(1)
+                Label {
+                    Text("hud.error.header")
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle")
+                }
+                .font(PickyHUDTypography.metaBold)
+                .foregroundColor(DS.Colors.destructiveText)
+                .lineLimit(1)
                 if let titleText {
                     Text(titleText)
                         .font(PickyHUDTypography.bodyCompactMedium)
@@ -49,11 +48,14 @@ struct PickyErrorBubbleView: View {
                         .foregroundColor(DS.Colors.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                HStack(spacing: 6) {
-                    if let onRetry, Self.isRecoverableRuntimeRace(errorMessage: message.errorMessage) {
-                        recoveryChip(Self.retryLabel, color: DS.Colors.accentText, action: onRetry)
-                    }
-                    recoveryChip(Self.openTerminalLabel, color: DS.Colors.accentText, action: onOpenTerminal)
+                if let onRetry {
+                    recoveryChip(
+                        "hud.error.retry",
+                        systemImage: "arrow.clockwise",
+                        accessibilityLabelKey: "hud.error.retry.accessibilityLabel",
+                        color: DS.Colors.accentText,
+                        action: onRetry
+                    )
                 }
             }
             .padding(.horizontal, 10)
@@ -79,16 +81,10 @@ struct PickyErrorBubbleView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    static let openTerminalLabel = "⌨ Open Terminal"
-    static let retryLabel = "↻ Retry"
+    static var retryLabel: String { L10n.t("hud.error.retry") }
 
     var recoveryChipLabels: [String] {
-        var labels: [String] = []
-        if onRetry != nil, Self.isRecoverableRuntimeRace(errorMessage: message.errorMessage) {
-            labels.append(Self.retryLabel)
-        }
-        labels.append(Self.openTerminalLabel)
-        return labels
+        onRetry == nil ? [] : [Self.retryLabel]
     }
 
     // Pi SDK `Session.prompt()` re-checks `isStreaming` only before its first
@@ -109,9 +105,15 @@ struct PickyErrorBubbleView: View {
         return text
     }
 
-    private func recoveryChip(_ label: String, color: Color, action: @escaping () -> Void) -> some View {
+    private func recoveryChip(
+        _ labelKey: LocalizedStringKey,
+        systemImage: String,
+        accessibilityLabelKey: LocalizedStringKey,
+        color: Color,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
-            Text(label)
+            Label(labelKey, systemImage: systemImage)
                 .font(PickyHUDTypography.statusSemibold)
                 .foregroundColor(color)
                 .lineLimit(1)
@@ -121,5 +123,6 @@ struct PickyErrorBubbleView: View {
                 .overlay(Capsule().stroke(color.opacity(0.32), lineWidth: 0.5))
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(Text(accessibilityLabelKey))
     }
 }

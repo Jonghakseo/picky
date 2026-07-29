@@ -1569,6 +1569,74 @@
         }
       }
     },
+    "hud.error.header": {
+      "comment": "Heading shown on a failed runtime error bubble.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "FAILED · runtime error"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실패 · 런타임 오류"
+          }
+        }
+      }
+    },
+    "hud.error.retry": {
+      "comment": "Button label that retries the latest failed Pickle request.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retry"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 시도"
+          }
+        }
+      }
+    },
+    "hud.error.retry.accessibilityLabel": {
+      "comment": "VoiceOver label for the failed-request Retry button.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retry failed request"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실패한 요청 다시 시도"
+          }
+        }
+      }
+    },
+    "hud.error.retry.continuePrompt": {
+      "comment": "Short user-language prompt sent to Pi when retrying an accepted request after a runtime failure.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "계속해줘."
+          }
+        }
+      }
+    },
     "hud.todo.title": {
       "localizations": {
         "en": {

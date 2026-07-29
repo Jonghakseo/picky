@@ -827,6 +827,15 @@ final class PickySessionListViewModel: ObservableObject {
         select(sessionID: target)
     }
 
+    /// Continues a request that Pi accepted before a runtime/provider failure.
+    /// Sending the original request again could repeat completed tools or other
+    /// side effects, so Retry adds only a short localized continuation turn.
+    func continueAfterRuntimeFailure(sessionID: String) async throws {
+        let prompt = L10n.t("hud.error.retry.continuePrompt")
+        pickySessionLog("continue-after-runtime-failure session=\(sessionID) textChars=\(prompt.count)")
+        try await steer(text: prompt, sessionID: sessionID)
+    }
+
     /// Re-sends the card's most recent user-request text via `steer` so the
     /// Pi SDK queues it behind the run that won the `activeRun` race. The
     /// failed card stays terminal until the supervisor revives it to

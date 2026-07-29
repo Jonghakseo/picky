@@ -331,8 +331,7 @@ struct PickyConversationListView: View {
         case .error:
             PickyErrorBubbleView(
                 message: message,
-                onOpenTerminal: { viewModel.openTerminalOverlay(sessionID: session.id) },
-                onRetry: retryRuntimeRaceAction(for: message)
+                onRetry: retryAction(for: message)
             )
         case .activitySummary:
             // Every agentActivity message renders as the compact aggregate
@@ -382,18 +381,25 @@ struct PickyConversationListView: View {
         isCommandShortcutHintVisible && isLatestAgentResponse(message)
     }
 
-    /// Returns a closure that re-sends `session.lastRequestText` via `steer`, but
-    /// only when the failed bubble was caused by the Pi SDK `activeRun` race so
-    /// we do not invite re-submission on unrelated runtime errors. `steer` is
-    /// the right channel because it accepts terminal-status sessions; the
-    /// supervisor revives the card to `running` and Pi queues the prompt behind
-    /// the in-flight run that won the race.
-    private func retryRuntimeRaceAction(for message: PickySessionMessage) -> (() -> Void)? {
-        guard PickyErrorBubbleView.isRecoverableRuntimeRace(errorMessage: message.errorMessage) else { return nil }
-        guard let text = session.lastRequestText, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+    /// Offers Retry only on the latest error while the session is still failed.
+    /// A Pi `activeRun` race rejected the request before delivery, so that path
+    /// must resend `lastRequestText`. Other runtime failures happened after Pi
+    /// accepted the turn; those continue from the existing transcript with a
+    /// short localized prompt instead of duplicating the original request.
+    private func retryAction(for message: PickySessionMessage) -> (() -> Void)? {
+        guard session.status == .failed else { return nil }
+        guard message.id == session.messages.last(where: { $0.kind == .agentError })?.id else { return nil }
+
         let sessionID = session.id
+        if PickyErrorBubbleView.isRecoverableRuntimeRace(errorMessage: message.errorMessage) {
+            guard let text = session.lastRequestText, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            return { [weak viewModel] in
+                Task { try? await viewModel?.retryAfterRuntimeRace(sessionID: sessionID) }
+            }
+        }
+
         return { [weak viewModel] in
-            Task { try? await viewModel?.retryAfterRuntimeRace(sessionID: sessionID) }
+            Task { try? await viewModel?.continueAfterRuntimeFailure(sessionID: sessionID) }
         }
     }
 

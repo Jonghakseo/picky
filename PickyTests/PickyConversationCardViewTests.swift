@@ -723,7 +723,7 @@ struct PickyConversationCardViewTests {
         #expect(PickyConversationHeaderView.renameCommandText(forNewTitle: "New Title", current: "Old") == "/name New Title")
     }
 
-    @Test func failedPhaseRendersErrorBubbleWithoutRetryChip() {
+    @Test func failedPhaseRendersLocalizedRetryWithoutTerminalChip() {
         let errorMessage = message(
             "m-error",
             kind: .agentError,
@@ -735,11 +735,11 @@ struct PickyConversationCardViewTests {
         let viewModel = makeViewModel()
         let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
         let header = PickyConversationHeaderView(viewModel: viewModel, session: session)
-        let errorBubble = PickyErrorBubbleView(message: errorMessage)
+        let errorBubble = PickyErrorBubbleView(message: errorMessage, onRetry: {})
 
         #expect(snapshot.errorBubbleCount == 1)
-        #expect(!errorBubble.recoveryChipLabels.contains("↻ 다시 시도"))
-        #expect(errorBubble.recoveryChipLabels == ["⌨ Open Terminal"])
+        #expect(errorBubble.recoveryChipLabels == [L10n.t("hud.error.retry")])
+        #expect(!errorBubble.recoveryChipLabels.contains("⌨ Open Terminal"))
         #expect(errorBubble.titleText == "Command failed")
         #expect(header.statusTone == .destructiveText)
     }

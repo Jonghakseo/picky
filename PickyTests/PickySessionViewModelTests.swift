@@ -4538,6 +4538,18 @@ struct PickySessionViewModelTests {
         #expect(viewModel.sessions.first?.lastRequestText == "다시 진행해줘")
     }
 
+    @MainActor @Test func continueAfterRuntimeFailureSendsShortLocalizedPromptViaSteer() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-runtime-failure", status: "failed", updatedAt: "2026-05-01T00:00:05.000Z"))))
+
+        try await viewModel.continueAfterRuntimeFailure(sessionID: "session-runtime-failure")
+
+        #expect(client.sentCommands.last?.type == .steer)
+        #expect(client.sentCommands.last?.sessionId == "session-runtime-failure")
+        #expect(client.sentCommands.last?.text == L10n.t("hud.error.retry.continuePrompt"))
+    }
+
     @MainActor @Test func retryAfterRuntimeRaceResendsLastRequestViaSteer() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())

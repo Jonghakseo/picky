@@ -245,6 +245,39 @@ When bumping pi (`agentd/package.json` `@earendil-works/pi-coding-agent`):
   command registration, model runtime, or session event changes. The pinned `pi-ai`,
   `pi-coding-agent`, and `pi-tui` packages are kept on the same `0.82.0` release line.
 
+### 0.82.0 -> 0.83.0
+
+- Pi 0.83.0 upgrades its bundled TypeBox aliases to 1.3.7 and removes `Type.Base`,
+  `Type.Awaited`, `Type.Promise`, `Type.AsyncIterator`, `Type.Iterator`,
+  `Type.Options`, and `Value.Mutate`. Picky's tool schemas only use
+  `Type.Any/Boolean/Literal/Number/Object/String/Union`, so no schema migration was
+  required. `agentd/package.json` moved its direct `typebox` dependency from
+  `^1.1.37` to `^1.3.7` so the daemon and Pi share one resolved TypeBox instance
+  instead of loading 1.1.37 alongside Pi's 1.3.7.
+- Pi adds the non-terminal `"pending"` stop reason for partial streaming messages.
+  It only appears on in-flight provider partials, which reach Picky through
+  `message_update` deltas; `turn_end` / `agent_end` still carry terminal reasons
+  only. `terminalStatusFromStopReason` therefore needs no new branch. If a future
+  Pi ever emits `turn_end` with `"pending"`, the normalizer would misread it as a
+  completed turn — that is the branch to revisit.
+- Unmapped provider terminal reasons now surface as provider errors instead of
+  successful stops. Picky inherits this as `stopReason: "error"` -> `failed`, which
+  is the intended fail-closed direction for Pickle status.
+- Pi fixes session replacement during an active response to abort and persist the
+  outgoing turn instead of leaving dangling tool calls. Picky's
+  `repairDanglingToolCalls` stays as a defensive T3 guard; it is now expected to
+  find fewer dangling calls, not none.
+- Pi fixes skills, prompts, and themes losing package source metadata after a
+  resource reload. Picky reads only name/description off
+  `resourceLoader.getSkills().skills` and `promptTemplates`, so this is an upstream
+  improvement with no host change.
+- `ctx.scopedModels` is newly exposed to extensions. Picky already passes
+  `scopedModels` at session creation for fixed-model overrides and does not consume
+  the extension-side read.
+- The release contains no breaking `AgentSession`, `ExtensionUIContext`, tool
+  definition, command registration, or model runtime changes. `pi-ai`,
+  `pi-coding-agent`, and `pi-tui` are kept on the same `0.83.0` release line.
+
 ## Backward-compatibility policy
 
 - **Capability sniffs (T2) MUST stay non-fatal.** A pi version that drops

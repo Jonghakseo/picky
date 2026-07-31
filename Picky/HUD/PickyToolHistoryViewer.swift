@@ -474,7 +474,10 @@ struct PickyToolHistoryEntryView: View {
             keyValueRow("file", value: file.map { AnyView(monospaceLink($0)) })
             keyValueRow("range", value: range.map { AnyView(monospaceText($0)) })
             keyValueRow("result", value: summary.map { AnyView(secondaryText($0)) })
-        case let .bash(command, output):
+        case let .bash(command, title, output):
+            if let title {
+                keyValueRow("title", value: AnyView(secondaryText(title)))
+            }
             if let command {
                 keyValueBlock("$") { codeBlock(command) }
             } else {

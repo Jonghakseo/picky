@@ -105,7 +105,8 @@ struct PickyToolCallInlineRow: View {
 
     /// Compact second column. Pulls the most informative slice out of the
     /// parsed detail — skill name for skill invocation, file path for
-    /// read/edit/write, command head for bash, truncated args preview for
+    /// read/edit/write, `title` (falling back to the command head) for bash,
+    /// truncated args preview for
     /// generic tools. Falls back to recovering the `path` field directly from
     /// the raw args preview so a truncated JSON payload still surfaces the file
     /// path the model called the tool with.
@@ -124,8 +125,8 @@ struct PickyToolCallInlineRow: View {
             let base = shortenPath(resolved)
             if let range { return "\(base) \(range)" }
             return base
-        case let .bash(command, _):
-            return command.map(firstLine)
+        case let .bash(command, title, _):
+            return (title ?? command).map(firstLine)
         case let .edit(file, changes):
             let resolved = file ?? recoveredPath()
             guard let resolved else { return changes.isEmpty ? nil : "\(changes.count) changes" }

@@ -23,7 +23,7 @@ struct PickyToolHistoryEditChange: Equatable {
 
 enum PickyToolHistoryDetail: Equatable {
     case read(file: String?, range: String?, resultSummary: String?)
-    case bash(command: String?, output: String?)
+    case bash(command: String?, title: String?, output: String?)
     case edit(file: String?, changes: [PickyToolHistoryEditChange])
     case write(file: String?, content: String?)
     case generic(argsJSON: String?, result: String?)
@@ -120,7 +120,8 @@ enum PickyToolHistoryRenderer {
             return .read(file: file, range: range, resultSummary: resultSummary)
         case .bash:
             let command = stringValue(args, keys: ["command", "cmd", "script"], fallbackJSON: argsJSON)
-            return .bash(command: command, output: result)
+            let title = stringValue(args, keys: ["title"], fallbackJSON: argsJSON)
+            return .bash(command: command, title: title, output: result)
         case .edit:
             let file = stringValue(args, keys: ["path", "file", "file_path", "filePath"], fallbackJSON: argsJSON)
             return .edit(file: file, changes: editChanges(args, fallbackJSON: argsJSON))

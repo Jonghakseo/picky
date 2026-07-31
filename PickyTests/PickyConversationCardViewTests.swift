@@ -1196,6 +1196,34 @@ struct PickyConversationCardViewTests {
         #expect(row.displayedDetail == "picky-design-guide")
     }
 
+    @Test func activeBashRowPrefersTitleOverCommand() {
+        let row = PickyToolCallInlineRow(
+            tool: PickyToolActivity(
+                toolCallId: "bash-titled",
+                name: "bash",
+                status: "running",
+                argsPreview: #"{"command":"pnpm test --run","title":"에이전트 테스트 실행"}"#
+            ),
+            onTap: {}
+        )
+
+        #expect(row.displayedDetail == "에이전트 테스트 실행")
+    }
+
+    @Test func activeBashRowFallsBackToCommandWithoutTitle() {
+        let row = PickyToolCallInlineRow(
+            tool: PickyToolActivity(
+                toolCallId: "bash-untitled",
+                name: "bash",
+                status: "running",
+                argsPreview: #"{"command":"pnpm test --run"}"#
+            ),
+            onTap: {}
+        )
+
+        #expect(row.displayedDetail == "pnpm test --run")
+    }
+
     @Test func ordinaryPiExtensionMessageKeepsItsOriginalPreview() {
         let bubble = PickyUserBubbleView(
             message: message("m-pi-note", kind: .userText, text: "custom extension note", originatedBy: .piExtension)

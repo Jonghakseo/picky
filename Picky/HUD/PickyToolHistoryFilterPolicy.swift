@@ -53,8 +53,8 @@ enum PickyToolHistoryFilterPolicy {
         switch entry.detail {
         case let .read(file, range, resultSummary):
             detailText = [file, range, resultSummary]
-        case let .bash(command, output):
-            detailText = [command, output]
+        case let .bash(command, title, output):
+            detailText = [command, title, output]
         case let .edit(file, changes):
             detailText = [file] + changes.flatMap { [Optional($0.oldText), Optional($0.newText)] }
         case let .write(file, content):

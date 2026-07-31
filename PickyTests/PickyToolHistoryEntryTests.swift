@@ -51,12 +51,29 @@ struct PickyToolHistoryEntryTests {
         )
         let entry = PickyToolHistoryRenderer.entry(from: tool, index: 2)
         #expect(entry.category == .bash)
-        guard case let .bash(command, output) = entry.detail else {
+        guard case let .bash(command, title, output) = entry.detail else {
             Issue.record("Expected bash detail")
             return
         }
         #expect(command == "pnpm test")
+        #expect(title == nil)
         #expect(output == "Tests 316 passed")
+    }
+
+    @Test func bashEntryExposesTitleWhenProvided() {
+        let tool = PickyToolActivity(
+            toolCallId: "call-2a",
+            name: "bash",
+            status: "succeeded",
+            argsPreview: #"{"command":"pnpm test","title":"에이전트 테스트 실행"}"#
+        )
+        let entry = PickyToolHistoryRenderer.entry(from: tool, index: 2)
+        guard case let .bash(command, title, _) = entry.detail else {
+            Issue.record("Expected bash detail")
+            return
+        }
+        #expect(command == "pnpm test")
+        #expect(title == "에이전트 테스트 실행")
     }
 
     @Test func bashEntryRecoversCommandFromTruncatedJson() {
@@ -68,7 +85,7 @@ struct PickyToolHistoryEntryTests {
             argsPreview: truncatedArgs
         )
         let entry = PickyToolHistoryRenderer.entry(from: tool, index: 1)
-        guard case let .bash(command, _) = entry.detail else {
+        guard case let .bash(command, _, _) = entry.detail else {
             Issue.record("Expected bash detail")
             return
         }
@@ -371,7 +388,7 @@ struct PickyToolHistoryEntryTests {
                 status: .failed,
                 durationMs: nil,
                 startedAt: nil,
-                detail: .bash(command: "deploy preview", output: "retry after failure")
+                detail: .bash(command: "deploy preview", title: nil, output: "retry after failure")
             ),
             PickyToolHistoryEntry(
                 id: "edit",

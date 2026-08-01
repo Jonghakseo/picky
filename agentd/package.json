@@ -5,7 +5,7 @@
   "type": "module",
   "packageManager": "pnpm@10.15.1",
   "engines": {
-    "node": "22.19.0"
+    "node": "24.18.1"
   },
   "scripts": {
     "dev": "tsx src/index.ts",
@@ -30,7 +30,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/node": "^22.10.2",
+    "@types/node": "^24.0.0",
     "@types/ws": "^8.5.13",
     "eslint": "^10.4.1",
     "globals": "^17.6.0",

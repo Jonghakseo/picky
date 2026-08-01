@@ -131,7 +131,7 @@ So testers do not need `pnpm`, `tsx`, TypeScript, the source tree, **or a system
 
 - `PICKY_SKIP_NODE_BUNDLE=1` — package without bundling Node (tester must provide a system Node). Used for niche CI/dev scenarios only.
 
-The bundled Node version is read solely from `agentd/package.json#engines.node` (currently `22.19.0`). To bump it, update that field; there is no env-var override.
+The bundled Node version is read solely from `agentd/package.json#engines.node` (currently `24.18.1`). To bump it, update that field; there is no env-var override.
 
 ## When to switch to proper beta distribution
 

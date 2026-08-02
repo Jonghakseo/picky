@@ -12,7 +12,7 @@
 import Combine
 import SwiftUI
 
-private struct PickyCuratedPlugin: Identifiable {
+struct PickyCuratedPlugin: Identifiable {
     let id: String
     let titleKey: String
     let descriptionKey: String
@@ -67,6 +67,14 @@ private struct PickyCuratedPlugin: Identifiable {
         source: "npm:@ryan_nookpi/pi-extension-todo-write-overlay"
     )
 
+    static let subagent = PickyCuratedPlugin(
+        id: "subagent",
+        titleKey: "extensions.curated.subagent.title",
+        descriptionKey: "extensions.curated.subagent.description",
+        commandName: "subagent",
+        source: "npm:@ryan_nookpi/pi-extension-subagent"
+    )
+
     static let clipboard = PickyCuratedPlugin(
         id: "clipboard",
         titleKey: "extensions.curated.clipboard.title",
@@ -106,6 +114,7 @@ private struct PickyCuratedPlugin: Identifiable {
         .autoName,
         .delayedAction,
         .todoWriteOverlay,
+        .subagent,
         .clipboard,
         .claudeMcpBridge,
         .crossAgent,

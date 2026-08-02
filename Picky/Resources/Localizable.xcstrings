@@ -6118,6 +6118,38 @@
         }
       }
     },
+    "extensions.curated.subagent.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subagent"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "서브에이전트"
+          }
+        }
+      }
+    },
+    "extensions.curated.subagent.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delegate coding and research tasks to asynchronous subagents with run, batch, and chain workflows."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "run·batch·chain 워크플로우로 코딩·조사 작업을 서브에이전트에 위임합니다."
+          }
+        }
+      }
+    },
     "extensions.curated.clipboard.title": {
       "localizations": {
         "en": {

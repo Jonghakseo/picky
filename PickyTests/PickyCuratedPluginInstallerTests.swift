@@ -10,6 +10,12 @@ import Testing
 struct PickyCuratedPluginInstallerTests {
     private let source = "npm:@ryan_nookpi/pi-extension-diff-review"
 
+    @Test func curatedDefaultsIncludeSubagentWithExpectedSource() {
+        let subagent = PickyCuratedPlugin.curatedDefaults.first { $0.id == "subagent" }
+
+        #expect(subagent?.source == "npm:@ryan_nookpi/pi-extension-subagent")
+    }
+
     @Test func statusReportsNotInstalledWhenSettingsAreMissing() throws {
         let scratch = try ScratchCuratedPlugin()
 

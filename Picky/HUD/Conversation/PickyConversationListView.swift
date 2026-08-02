@@ -16,7 +16,7 @@ struct PickyConversationListView: View {
     /// the card's bottom edge instead of floating below a hardcoded 640pt cap.
     var fillsAvailableHeight = false
     /// Whether the card reserves a top overlay control above transcript rows.
-    var hasTodoOverlay = false
+    var hasProgressOverlay = false
     @State private var hasAppeared = false
     @State private var isPinnedToBottom = true
     @State private var hasUnreadContentSinceUnpinning = false
@@ -179,7 +179,7 @@ struct PickyConversationListView: View {
             followUpMode: session.followUpMode,
             lastRequestAt: session.lastRequestAt,
             pendingExtensionUiRequestID: session.pendingExtensionUiRequest?.id,
-            hasTodoOverlay: hasTodoOverlay
+            hasProgressOverlay: hasProgressOverlay
         )
     }
 
@@ -766,7 +766,7 @@ struct PickyConversationBottomScrollTrigger: Equatable {
     let followUpMode: PickyQueueMode
     let lastRequestAt: Date?
     let pendingExtensionUiRequestID: String?
-    var hasTodoOverlay = false
+    var hasProgressOverlay = false
 }
 
 /// Single source of truth for the message → bubble mapping. The render path

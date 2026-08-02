@@ -120,7 +120,7 @@ struct PickyConversationCardView: View {
                 viewModel: viewModel,
                 isCommandShortcutHintVisible: isCommandShortcutHintVisible,
                 fillsAvailableHeight: fillsAvailableHeight,
-                hasTodoOverlay: todoPresentation != nil || subagentPresentation != nil
+                hasProgressOverlay: todoPresentation != nil || subagentPresentation != nil
             )
             .overlay(alignment: .top) {
                 VStack(alignment: .trailing, spacing: DS.Spacing.sm) {

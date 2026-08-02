@@ -15,10 +15,49 @@ struct PickySubagentProgressPresentationTests {
             run(3, status: .done, batchID: "batch-a"),
         ]))
 
-        #expect(presentation.pillText == "1 agents · 2/3")
-        #expect(presentation.headerText == "1 agents running · 2/3 done")
+        #expect(presentation.pillText == "1 agent · 2/3")
+        #expect(presentation.headerText == "1 agent running · 2/3 done")
         #expect(presentation.tone == .error)
         #expect(presentation.groups.map(\.runs.count) == [1, 2])
+    }
+
+    @Test func pluralizesRunningPillAndHeader() throws {
+        let presentation = try #require(PickySubagentProgressPresentation(runs: [
+            run(1, status: .running),
+            run(2, status: .running),
+            run(3, status: .done),
+        ]))
+
+        #expect(presentation.pillText == "2 agents · 1/3")
+        #expect(presentation.headerText == "2 agents running · 1/3 done")
+    }
+
+    @Test func settledPillLeadsWithOutcome() throws {
+        let allDone = try #require(PickySubagentProgressPresentation(runs: [
+            run(1, status: .done),
+            run(2, status: .done),
+            run(3, status: .done),
+        ]))
+        #expect(allDone.pillText == "3 agents done")
+        #expect(allDone.headerText == "3 agents done")
+
+        let singleDone = try #require(PickySubagentProgressPresentation(runs: [run(1, status: .done)]))
+        #expect(singleDone.pillText == "1 agent done")
+
+        let withFailure = try #require(PickySubagentProgressPresentation(runs: [
+            run(1, status: .error),
+            run(2, status: .done),
+            run(3, status: .done),
+        ]))
+        #expect(withFailure.pillText == "1 failed · 2/3")
+        #expect(withFailure.tone == .error)
+    }
+
+    @Test func groupLabelUsesSingularRunUnit() throws {
+        let presentation = try #require(PickySubagentProgressPresentation(runs: [
+            run(1, status: .running, batchID: "batch-a"),
+        ]))
+        #expect(presentation.groups.first?.label == "batch · 1 run")
     }
 
     @Test func formatsLiveAndCompletedElapsedDurations() throws {

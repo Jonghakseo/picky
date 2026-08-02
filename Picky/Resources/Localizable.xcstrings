@@ -1649,6 +1649,36 @@
         "ko": { "stringUnit": { "state": "translated", "value": "%1$lld개 에이전트 실행 중 · %2$lld/%3$lld 완료" } }
       }
     },
+    "hud.subagent.header.one": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "1 agent running · %lld/%lld done" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "1개 에이전트 실행 중 · %1$lld/%2$lld 완료" } }
+      }
+    },
+    "hud.subagent.pill.one": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "1 agent · %lld/%lld" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "1개 에이전트 · %1$lld/%2$lld" } }
+      }
+    },
+    "hud.subagent.pill.done": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld agents done" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "%lld개 에이전트 완료" } }
+      }
+    },
+    "hud.subagent.pill.done.one": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "1 agent done" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "1개 에이전트 완료" } }
+      }
+    },
+    "hud.subagent.pill.failed": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld failed · %lld/%lld" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "%1$lld개 실패 · %2$lld/%3$lld" } }
+      }
+    },
     "hud.subagent.show": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Show agent runs" } },

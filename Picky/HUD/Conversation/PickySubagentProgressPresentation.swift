@@ -29,6 +29,7 @@ struct PickySubagentProgressPresentation: Equatable {
     let runs: [PickySubagentRun]
     let completedCount: Int
     let runningCount: Int
+    let errorCount: Int
     let totalCount: Int
     let fraction: Double
     let tone: Tone
@@ -40,6 +41,7 @@ struct PickySubagentProgressPresentation: Equatable {
         self.runs = ordered
         self.completedCount = ordered.count { $0.status != .running }
         self.runningCount = ordered.count { $0.status == .running }
+        self.errorCount = ordered.count { $0.status == .error }
         self.totalCount = ordered.count
         self.fraction = Double(completedCount) / Double(totalCount)
         self.tone = ordered.contains(where: { $0.status == .error }) ? .error : (runningCount > 0 ? .running : .success)
@@ -47,12 +49,29 @@ struct PickySubagentProgressPresentation: Equatable {
     }
 
     var isComplete: Bool { runningCount == 0 }
+
+    /// Collapsed pill copy is state-first: live runs show the running count,
+    /// settled sets lead with the outcome (done vs failed) so the pill remains
+    /// meaningful after the progress ring stops moving.
     var pillText: String {
-        L10n.t("hud.subagent.pill", Int64(runningCount), Int64(completedCount), Int64(totalCount))
+        if runningCount > 0 {
+            return runningCount == 1
+                ? L10n.t("hud.subagent.pill.one", Int64(completedCount), Int64(totalCount))
+                : L10n.t("hud.subagent.pill", Int64(runningCount), Int64(completedCount), Int64(totalCount))
+        }
+        if errorCount > 0 {
+            return L10n.t("hud.subagent.pill.failed", Int64(errorCount), Int64(totalCount - errorCount), Int64(totalCount))
+        }
+        return totalCount == 1
+            ? L10n.t("hud.subagent.pill.done.one")
+            : L10n.t("hud.subagent.pill.done", Int64(totalCount))
     }
 
     var headerText: String {
-        L10n.t("hud.subagent.header", Int64(runningCount), Int64(completedCount), Int64(totalCount))
+        guard runningCount > 0 else { return pillText }
+        return runningCount == 1
+            ? L10n.t("hud.subagent.header.one", Int64(completedCount), Int64(totalCount))
+            : L10n.t("hud.subagent.header", Int64(runningCount), Int64(completedCount), Int64(totalCount))
     }
 
     func elapsedText(for run: PickySubagentRun, now: Date = Date()) -> String {
@@ -78,7 +97,8 @@ struct PickySubagentProgressPresentation: Equatable {
         for key in buckets.keys.sorted() {
             guard let groupedRuns = buckets[key] else { continue }
             let kind = key.hasPrefix("pipeline:") ? "pipeline" : "batch"
-            grouped.append(.init(id: key, label: "\(kind) · \(groupedRuns.count) runs", runs: groupedRuns.sorted { $0.runId < $1.runId }))
+            let unit = groupedRuns.count == 1 ? "run" : "runs"
+            grouped.append(.init(id: key, label: "\(kind) · \(groupedRuns.count) \(unit)", runs: groupedRuns.sorted { $0.runId < $1.runId }))
         }
         return grouped
     }

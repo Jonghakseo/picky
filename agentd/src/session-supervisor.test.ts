@@ -2903,7 +2903,7 @@ describe("SessionSupervisor", () => {
     expect(supervisor.isPickleSession(pinned.id)).toBe(true);
   });
 
-  it("imports the last two source Pi turns when pinning an idle Pi handoff", async () => {
+  it("imports the last source Pi turns when pinning an idle Pi handoff, matching HUD default window", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-pinned-source-turns-"));
     const piSessionFile = join(dir, "source-pi-session.jsonl");
     await writeFile(piSessionFile, [
@@ -2923,6 +2923,8 @@ describe("SessionSupervisor", () => {
     const pinned = await supervisor.pinPickleSession(contextWithPiSessionFile("pin completed source", piSessionFile), "Pinned source");
 
     expect(pinned.messages?.map((message) => ({ kind: message.kind, text: message.text, originatedBy: message.originatedBy }))).toEqual([
+      { kind: "user_text", text: "first prompt", originatedBy: "pi_extension" },
+      { kind: "agent_text", text: "first answer", originatedBy: undefined },
       { kind: "user_text", text: "second prompt", originatedBy: "pi_extension" },
       { kind: "agent_text", text: "second answer", originatedBy: undefined },
       { kind: "user_text", text: "third prompt", originatedBy: "pi_extension" },

@@ -1,7 +1,8 @@
 import type { PickyContextPacket, PickySessionMessage } from "../protocol.js";
 import { normalizeOptionalString } from "./strings.js";
 
-export const PINNED_SOURCE_TURN_COUNT = 2;
+// Seed enough turns to fill the Picky HUD default visible window (15).
+export const PINNED_SOURCE_TURN_COUNT = 15;
 
 export function lastTurns(messages: PickySessionMessage[], turnCount: number): PickySessionMessage[] {
   if (messages.length === 0) return [];

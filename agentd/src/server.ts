@@ -491,7 +491,7 @@ export class AgentdServer {
       },
       getSessionDiff: async (cmd) => {
         const result = await this.options.supervisor.getSessionDiff(cmd.sessionId, cmd.view);
-        this.send(ws, { type: "sessionDiffResult", sessionId: cmd.sessionId, view: cmd.view, requestId: cmd.id, ...result });
+        this.send(ws, { type: "sessionDiffResult", sessionId: cmd.sessionId, view: cmd.view, requestId: cmd.requestId, ...result });
       },
       rewindSession: async (cmd) => {
         const session = await this.options.supervisor.rewindToEntry(cmd.sessionId, cmd.entryId);

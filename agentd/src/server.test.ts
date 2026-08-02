@@ -58,7 +58,8 @@ describe("AgentdServer", () => {
     const observer = await connectWithHello();
     vi.spyOn(supervisor, "getSessionDiff").mockResolvedValue({
       isGitRepo: true,
-      files: [{ path: "source.ts", status: "modified", additions: 2, deletions: 1, diff: "@@ -1 +1 @@" }],
+      files: [{ path: "source.ts", status: "modified", additions: 2, deletions: 1, diff: "@@ -1 +1 @@", truncated: false }],
+      filesTruncated: false,
     });
 
     requester.ws.send(JSON.stringify({
@@ -67,13 +68,14 @@ describe("AgentdServer", () => {
       type: "getSessionDiff",
       sessionId: "session-diff",
       view: "unstaged",
+      requestId: "request-session-diff",
     }));
 
     await expect(nextEvent(requester.ws)).resolves.toMatchObject({
       type: "sessionDiffResult",
       sessionId: "session-diff",
       view: "unstaged",
-      requestId: "cmd-session-diff",
+      requestId: "request-session-diff",
       isGitRepo: true,
       files: [{ path: "source.ts", additions: 2, deletions: 1 }],
     });

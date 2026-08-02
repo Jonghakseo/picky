@@ -1,0 +1,8 @@
+{
+  "id": "cmd-session-diff-001",
+  "protocolVersion": "2026-07-23",
+  "type": "getSessionDiff",
+  "sessionId": "session-001",
+  "view": "unstaged",
+  "requestId": "request-session-diff-001"
+}

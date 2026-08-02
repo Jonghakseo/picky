@@ -132,6 +132,7 @@ export const PickySessionDiffFileSchema = z.object({
   additions: z.number().int().nonnegative(),
   deletions: z.number().int().nonnegative(),
   diff: z.string(),
+  truncated: z.boolean(),
 });
 export type PickySessionDiffFile = z.infer<typeof PickySessionDiffFileSchema>;
 export const PickyArtifactSchema = z.object({ id: z.string(), kind: z.string(), title: z.string(), path: z.string().optional(), url: z.string().url().optional(), updatedAt: isoTimestamp });
@@ -498,7 +499,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
     prefix: z.string(),
   }),
   CommandBaseSchema.extend({ type: z.literal("listRewindTargets"), sessionId: z.string() }),
-  CommandBaseSchema.extend({ type: z.literal("getSessionDiff"), sessionId: z.string(), view: PickySessionDiffViewSchema }),
+  CommandBaseSchema.extend({ type: z.literal("getSessionDiff"), sessionId: z.string(), view: PickySessionDiffViewSchema, requestId: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("rewindSession"), sessionId: z.string(), entryId: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("getSession"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("answerExtensionUi"), sessionId: z.string(), requestId: z.string(), value: z.unknown().optional() }),
@@ -748,8 +749,9 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
     view: PickySessionDiffViewSchema,
     isGitRepo: z.boolean(),
     files: z.array(PickySessionDiffFileSchema),
+    filesTruncated: z.boolean(),
     errorMessage: z.string().optional(),
-    requestId: z.string().optional(),
+    requestId: z.string().min(1),
   }),
   EventBaseSchema.extend({ type: z.literal("sessionRewound"), sessionId: z.string(), editorText: z.string().optional(), removedIds: z.array(z.string()) }),
   EventBaseSchema.extend({ type: z.literal("sessionMessageAppended"), sessionId: z.string(), message: PickySessionMessageSchema, seq: z.number().int() }),

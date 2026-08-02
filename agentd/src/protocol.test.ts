@@ -446,7 +446,15 @@ describe("protocol contract fixtures", () => {
       type: "getSessionDiff",
       sessionId: "session-001",
       view: "unstaged",
-    })).toMatchObject({ type: "getSessionDiff", view: "unstaged" });
+      requestId: "request-session-diff",
+    })).toMatchObject({ type: "getSessionDiff", view: "unstaged", requestId: "request-session-diff" });
+    expect(() => CommandEnvelopeSchema.parse({
+      id: "cmd-session-diff-missing-request",
+      protocolVersion: "2026-07-23",
+      type: "getSessionDiff",
+      sessionId: "session-001",
+      view: "unstaged",
+    })).toThrow();
 
     expect(CommandEnvelopeSchema.parse({
       id: "cmd-rewind",
@@ -464,8 +472,10 @@ describe("protocol contract fixtures", () => {
       sessionId: "session-001",
       view: "unstaged",
       isGitRepo: true,
-      files: [{ path: "source.ts", status: "modified", additions: 3, deletions: 1, diff: "@@ -1 +1 @@" }],
-    })).toMatchObject({ type: "sessionDiffResult", files: [{ path: "source.ts", additions: 3 }] });
+      files: [{ path: "source.ts", status: "modified", additions: 3, deletions: 1, diff: "@@ -1 +1 @@", truncated: false }],
+      filesTruncated: false,
+      requestId: "request-session-diff",
+    })).toMatchObject({ type: "sessionDiffResult", files: [{ path: "source.ts", additions: 3 }], requestId: "request-session-diff" });
 
     expect(EventEnvelopeSchema.parse({
       id: "event-rewind-targets",

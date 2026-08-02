@@ -1,0 +1,23 @@
+{
+  "id": "event-session-diff-001",
+  "protocolVersion": "2026-07-23",
+  "timestamp": "2026-08-02T00:00:00.000Z",
+  "type": "sessionDiffResult",
+  "sessionId": "session-001",
+  "view": "unstaged",
+  "isGitRepo": true,
+  "files": [
+    {
+      "path": "new-name.swift",
+      "status": "renamed",
+      "renamedFrom": "old-name.swift",
+      "additions": 12,
+      "deletions": 3,
+      "diff": "diff --git a/old-name.swift b/new-name.swift\n@@ -1 +1 @@\n-old\n+new",
+      "truncated": true
+    }
+  ],
+  "filesTruncated": false,
+  "errorMessage": "partial result",
+  "requestId": "request-session-diff-001"
+}

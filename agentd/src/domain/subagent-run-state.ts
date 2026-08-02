@@ -2,6 +2,21 @@ import { sliceUtf16Safe } from "./safe-truncate.js";
 import type { PickySubagentRun } from "../protocol.js";
 
 export type SubagentRunUpdate = PickySubagentRun;
+export type SubagentLaunchAction = "run" | "batch" | "chain";
+
+export interface SubagentLaunchIntentEntry {
+  agent: string;
+  task: string;
+}
+
+export interface SubagentLaunchIntent {
+  action: SubagentLaunchAction;
+  entries: SubagentLaunchIntentEntry[];
+}
+
+export interface SubagentDiagnosticRunUpdate extends Omit<PickySubagentRun, "task"> {
+  recordedAt: string;
+}
 
 const supportedCustomTypes = new Set(["subagent-tool", "subagent-command"]);
 const resultPreviewLimit = 600;
@@ -23,6 +38,141 @@ export function subagentRunUpdateFromCustomMessage(
     ...identity,
     ...optionalRunFields(details),
     ...(preview ? { resultPreview: preview } : {}),
+  };
+}
+
+/** Parses the subagent CLI command passed through Pi's `subagent` tool. */
+export function subagentLaunchIntentFromToolArgs(args: unknown): SubagentLaunchIntent | undefined {
+  const command = commandFromToolArgs(args);
+  if (!command) return undefined;
+
+  const tokens = shellTokens(command);
+  if (tokens[0]?.value !== "subagent") return undefined;
+  const action = launchAction(tokens[1]?.value);
+  if (!action) return undefined;
+
+  if (action === "run") return runLaunchIntent(command, tokens);
+  const entries = multiLaunchEntries(tokens);
+  return entries.length > 0 ? { action, entries } : undefined;
+}
+
+/** Maps headless runner diagnostics into a run update without fabricating a task. */
+export function subagentRunUpdateFromDiagnostic(data: unknown): SubagentDiagnosticRunUpdate | undefined {
+  if (!isRecord(data)) return undefined;
+  const identity = diagnosticIdentity(data);
+  const recordedAt = isoTimestamp(data.recordedAt);
+  if (!identity || !recordedAt) return undefined;
+
+  const status = diagnosticStatus(data.event, data.code);
+  if (!status) return undefined;
+  return {
+    ...identity,
+    status: status.status,
+    recordedAt,
+    ...(status.errorClass ? { errorClass: status.errorClass } : {}),
+    ...(status.status === "running" ? { startedAt: recordedAt } : {}),
+    ...diagnosticGroupFields(data),
+  };
+}
+
+function commandFromToolArgs(args: unknown): string | undefined {
+  if (isRecord(args)) return nonEmptyString(args.command) ? args.command : undefined;
+  if (typeof args !== "string") return undefined;
+  try {
+    return commandFromToolArgs(JSON.parse(args));
+  } catch {
+    return undefined;
+  }
+}
+
+interface ShellToken {
+  value: string;
+  start: number;
+  end: number;
+}
+
+function shellTokens(command: string): ShellToken[] {
+  const tokens: ShellToken[] = [];
+  let index = 0;
+  while (index < command.length) {
+    while (/\s/.test(command[index] ?? "")) index += 1;
+    if (index >= command.length) break;
+    const start = index;
+    let value = "";
+    let quote: "'" | '"' | undefined;
+    while (index < command.length) {
+      const character = command[index]!;
+      if (quote) {
+        if (character === quote) quote = undefined;
+        else if (character === "\\" && quote === '"' && index + 1 < command.length) value += command[++index]!;
+        else value += character;
+        index += 1;
+        continue;
+      }
+      if (character === "'" || character === '"') {
+        quote = character;
+        index += 1;
+      } else if (character === "\\" && index + 1 < command.length) {
+        value += command[index + 1]!;
+        index += 2;
+      } else if (/\s/.test(character)) {
+        break;
+      } else {
+        value += character;
+        index += 1;
+      }
+    }
+    tokens.push({ value, start, end: index });
+  }
+  return tokens;
+}
+
+function launchAction(value: string | undefined): SubagentLaunchAction | undefined {
+  return value === "run" || value === "batch" || value === "chain" ? value : undefined;
+}
+
+function runLaunchIntent(command: string, tokens: ShellToken[]): SubagentLaunchIntent | undefined {
+  const agent = tokens[2]?.value;
+  const delimiter = tokens.slice(3).find((token) => token.value === "--");
+  if (!nonEmptyString(agent) || !delimiter) return undefined;
+  const task = command.slice(delimiter.end).trim();
+  return task ? { action: "run", entries: [{ agent, task }] } : undefined;
+}
+
+function multiLaunchEntries(tokens: ShellToken[]): SubagentLaunchIntentEntry[] {
+  const entries: SubagentLaunchIntentEntry[] = [];
+  let agent: string | undefined;
+  for (let index = 2; index < tokens.length; index += 1) {
+    const token = tokens[index]?.value;
+    if (token === "--agent") agent = tokens[++index]?.value;
+    else if (token === "--task" && agent) {
+      const task = tokens[++index]?.value;
+      if (nonEmptyString(task)) entries.push({ agent, task });
+      agent = undefined;
+    }
+  }
+  return entries;
+}
+
+function diagnosticIdentity(data: Record<string, unknown>): Pick<SubagentDiagnosticRunUpdate, "runId" | "agent"> | undefined {
+  const runId = integer(data.runId);
+  const agent = nonEmptyString(data.agent) ? data.agent : undefined;
+  return runId !== undefined && runId >= 0 && agent ? { runId, agent } : undefined;
+}
+
+function diagnosticStatus(event: unknown, code: unknown): Pick<SubagentDiagnosticRunUpdate, "status" | "errorClass"> | undefined {
+  if (event === "spawn") return { status: "running" };
+  if (event === "settled") return integer(code) === 0 ? { status: "done" } : { status: "error" };
+  if (event === "kill_result") return { status: "error", errorClass: "aborted" };
+  if (event === "process_error") return { status: "error", errorClass: "process_error" };
+  return undefined;
+}
+
+function diagnosticGroupFields(data: Record<string, unknown>): Partial<PickySubagentRun> {
+  return {
+    ...(nonEmptyString(data.batchId) ? { batchId: data.batchId } : {}),
+    ...(nonEmptyString(data.pipelineId) ? { pipelineId: data.pipelineId } : {}),
+    ...(integer(data.pipelineStepIndex) !== undefined ? { pipelineStepIndex: integer(data.pipelineStepIndex) } : {}),
   };
 }
 
@@ -51,7 +201,7 @@ function optionalRunFields(details: Record<string, unknown>): Partial<PickySubag
     ...(finiteNonnegativeNumber(details.elapsedMs) ? { elapsedMs: details.elapsedMs } : {}),
     ...(nonEmptyString(details.batchId) ? { batchId: details.batchId } : {}),
     ...(nonEmptyString(details.pipelineId) ? { pipelineId: details.pipelineId } : {}),
-    ...(integer(details.pipelineStepIndex) ? { pipelineStepIndex: details.pipelineStepIndex } : {}),
+    ...(integer(details.pipelineStepIndex) !== undefined ? { pipelineStepIndex: integer(details.pipelineStepIndex) } : {}),
     ...(nonEmptyString(details.model) ? { model: details.model } : {}),
   };
 }
@@ -85,7 +235,7 @@ function contentText(content: unknown): string | undefined {
 }
 
 function isoTimestamp(value: unknown): string | undefined {
-  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  if (typeof value !== "string" && typeof value !== "number") return undefined;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 }
@@ -94,8 +244,8 @@ function finiteNonnegativeNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
-function integer(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value);
+function integer(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) ? value : undefined;
 }
 
 function nonEmptyString(value: unknown): value is string {

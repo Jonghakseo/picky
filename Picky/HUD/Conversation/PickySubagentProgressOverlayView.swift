@@ -113,31 +113,41 @@ struct PickySubagentProgressOverlayView: View {
         .accessibilityElement(children: .contain)
     }
 
-    private func runRow(_ run: PickySubagentRun, now: Date, indented: Bool) -> some View {
-        let expanded = isRunExpanded(run.runId)
-        return Button { toggleRunExpanded(run.runId) } label: {
-            VStack(alignment: .leading, spacing: DS.Spacing.xs) {
-                HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.sm) {
-                    runMarker(run).frame(width: 14, height: 14).accessibilityHidden(true)
-                    Text(run.agent).font(PickyHUDTypography.statusMonospacedMedium).foregroundColor(runColor(run))
-                    Text("#\(run.runId)").font(PickyHUDTypography.metaMonospacedMedium).foregroundColor(DS.Colors.textTertiary)
-                    Text(rowText(run)).font(PickyHUDTypography.supporting).foregroundColor(run.status == .error ? DS.Colors.destructiveText : DS.Colors.textSecondary).lineLimit(1)
-                    Spacer(minLength: DS.Spacing.xs)
-                    Text(presentation.elapsedText(for: run, now: now)).font(PickyHUDTypography.metaMonospacedMedium).foregroundColor(DS.Colors.textTertiary)
-                }
-                if expanded, let preview = run.status == .error ? (run.resultPreview ?? run.errorClass) : run.resultPreview, !preview.isEmpty {
-                    Text(preview).font(PickyHUDTypography.supporting).foregroundColor(run.status == .error ? DS.Colors.destructiveText : DS.Colors.textSecondary).lineLimit(8).fixedSize(horizontal: false, vertical: true)
-                        .padding(.leading, 22)
-                }
+    @ViewBuilder private func runRow(_ run: PickySubagentRun, now: Date, indented: Bool) -> some View {
+        if let preview = PickySubagentProgressExpansionPolicy.expandableContent(for: run) {
+            Button { toggleRunExpanded(run.runId) } label: {
+                runRowContent(run, now: now, indented: indented, expandedPreview: isRunExpanded(run.runId) ? preview : nil)
+                    .contentShape(Rectangle())
             }
-            .padding(.leading, indented ? DS.Spacing.lg : 0)
-            .padding(.horizontal, DS.Spacing.md)
-            .padding(.vertical, DS.Spacing.sm)
-            .contentShape(Rectangle())
+            .buttonStyle(PickySubagentProgressButtonStyle())
+            .accessibilityLabel("\(run.agent) #\(run.runId): \(rowText(run))")
+            .accessibilityValue(accessibilityStatus(run.status))
+        } else {
+            runRowContent(run, now: now, indented: indented, expandedPreview: nil)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(run.agent) #\(run.runId): \(rowText(run))")
+                .accessibilityValue(accessibilityStatus(run.status))
         }
-        .buttonStyle(PickySubagentProgressButtonStyle())
-        .accessibilityLabel("\(run.agent) #\(run.runId): \(rowText(run))")
-        .accessibilityValue(accessibilityStatus(run.status))
+    }
+
+    private func runRowContent(_ run: PickySubagentRun, now: Date, indented: Bool, expandedPreview: String?) -> some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.xs) {
+            HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.sm) {
+                runMarker(run).frame(width: 14, height: 14).accessibilityHidden(true)
+                Text(run.agent).font(PickyHUDTypography.statusMonospacedMedium).foregroundColor(runColor(run))
+                Text("#\(run.runId)").font(PickyHUDTypography.metaMonospacedMedium).foregroundColor(DS.Colors.textTertiary)
+                Text(rowText(run)).font(PickyHUDTypography.supporting).foregroundColor(run.status == .error ? DS.Colors.destructiveText : DS.Colors.textSecondary).lineLimit(1)
+                Spacer(minLength: DS.Spacing.xs)
+                Text(presentation.elapsedText(for: run, now: now)).font(PickyHUDTypography.metaMonospacedMedium).foregroundColor(DS.Colors.textTertiary)
+            }
+            if let expandedPreview {
+                Text(expandedPreview).font(PickyHUDTypography.supporting).foregroundColor(run.status == .error ? DS.Colors.destructiveText : DS.Colors.textSecondary).lineLimit(8).fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 22)
+            }
+        }
+        .padding(.leading, indented ? DS.Spacing.lg : 0)
+        .padding(.horizontal, DS.Spacing.md)
+        .padding(.vertical, DS.Spacing.sm)
     }
 
     @ViewBuilder private func runMarker(_ run: PickySubagentRun) -> some View {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applySubagentRunUpdate, pruneSettledSubagentRuns, subagentRunUpdateFromCustomMessage } from "./subagent-run-state.js";
+import { applySubagentRunUpdate, pruneSettledSubagentRuns, subagentLaunchIntentFromToolArgs, subagentRunUpdateFromCustomMessage, subagentRunUpdateFromDiagnostic } from "./subagent-run-state.js";
 
 describe("subagent run state", () => {
   it("maps extension lifecycle details and extracts the trailing result preview", () => {
@@ -25,6 +25,47 @@ describe("subagent run state", () => {
   it("rejects unrelated or incomplete custom messages", () => {
     expect(subagentRunUpdateFromCustomMessage("other", { runId: 1, agent: "worker", task: "task", status: "started" })).toBeUndefined();
     expect(subagentRunUpdateFromCustomMessage("subagent-command", { runId: 1, status: "started" })).toBeUndefined();
+  });
+
+  it("parses run, batch, and chain launch intents with quoted tasks", () => {
+    expect(subagentLaunchIntentFromToolArgs({ command: "subagent run worker --main -- inspect 'the quoted task'" })).toEqual({
+      action: "run",
+      entries: [{ agent: "worker", task: "inspect 'the quoted task'" }],
+    });
+    expect(subagentLaunchIntentFromToolArgs(JSON.stringify({ command: 'subagent batch --agent worker --task "Inspect files" --agent reviewer --task "Review \\"quotes\\""' }))).toEqual({
+      action: "batch",
+      entries: [{ agent: "worker", task: "Inspect files" }, { agent: "reviewer", task: 'Review "quotes"' }],
+    });
+    expect(subagentLaunchIntentFromToolArgs({ command: "subagent chain --agent scout --task 'Find risks' --agent worker --task implement" })).toEqual({
+      action: "chain",
+      entries: [{ agent: "scout", task: "Find risks" }, { agent: "worker", task: "implement" }],
+    });
+    expect(subagentLaunchIntentFromToolArgs({ command: "subagent status" })).toBeUndefined();
+  });
+
+  it("maps runner diagnostics without fabricating result previews", () => {
+    const spawn = subagentRunUpdateFromDiagnostic({
+      schemaVersion: 1,
+      recordedAt: "2026-08-02T05:26:36.115Z",
+      runId: 3,
+      agent: "searcher",
+      batchId: "b_1785648388418_hfli",
+      pipelineStepIndex: 1,
+      event: "spawn",
+    });
+    expect(spawn).toEqual({
+      runId: 3,
+      agent: "searcher",
+      status: "running",
+      startedAt: "2026-08-02T05:26:36.115Z",
+      recordedAt: "2026-08-02T05:26:36.115Z",
+      batchId: "b_1785648388418_hfli",
+      pipelineStepIndex: 1,
+    });
+    expect(subagentRunUpdateFromDiagnostic({ ...spawn, event: "settled", code: 0 })).toMatchObject({ status: "done" });
+    expect(subagentRunUpdateFromDiagnostic({ ...spawn, event: "settled", code: 143 })).toMatchObject({ status: "error" });
+    expect(subagentRunUpdateFromDiagnostic({ ...spawn, event: "kill_result" })).toMatchObject({ status: "error", errorClass: "aborted" });
+    expect(subagentRunUpdateFromDiagnostic({ recordedAt: "2026-08-02T05:26:36.115Z", event: "session_shutdown" })).toBeUndefined();
   });
 
   it("upserts by run ID and keeps runs ordered", () => {

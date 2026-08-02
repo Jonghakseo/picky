@@ -3,6 +3,7 @@ import type { AutocompleteItem, AutocompleteProvider } from "@earendil-works/pi-
 import { describe, expect, it, vi } from "vitest";
 import * as localLog from "../local-log.js";
 import { PiSdkRuntime } from "./pi-sdk-runtime.js";
+import type { RuntimeEvent } from "./types.js";
 
 class FakeSession extends EventEmitter {
   sessionFile = "/tmp/fake-session.jsonl";
@@ -508,6 +509,47 @@ describe("PiSdkRuntime", () => {
     expect(events).toContainEqual({ type: "input_message", role: "custom", text: "active custom result", originatedBy: "pi_extension", display: true, customType: "subagent", turnActive: true });
     expect(events).toContainEqual({ type: "input_message", role: "custom", text: "hidden result", originatedBy: "pi_extension", display: false, customType: "hidden", turnActive: false });
     expect(events).toContainEqual(expect.objectContaining({ type: "subagent_run_update", update: expect.objectContaining({ runId: 12, status: "running" }) }));
+  });
+
+  it("emits headless diagnostic run updates with launch tasks matched in spawn order", async () => {
+    const fakeSession = new FakeSession();
+    const handle = await makeRuntime(fakeSession).prewarm({ cwd: "/tmp/project", sessionId: "session-diagnostics" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    fakeSession.emit("event", {
+      type: "tool_execution_start",
+      toolCallId: "subagent-1",
+      toolName: "subagent",
+      args: { command: 'subagent batch --agent worker --task "Inspect files" --agent worker --task "Implement fix"' },
+    });
+    fakeSession.emit("event", {
+      type: "entry_appended",
+      entry: { type: "custom", customType: "subagent-runner-diagnostic", data: { schemaVersion: 1, recordedAt: "2026-08-02T05:26:36.115Z", runId: 3, agent: "worker", event: "spawn" } },
+    });
+    fakeSession.emit("event", {
+      type: "entry_appended",
+      entry: { type: "custom", customType: "subagent-runner-diagnostic", data: { schemaVersion: 1, recordedAt: "2026-08-02T05:26:38.115Z", runId: 4, agent: "worker", event: "spawn" } },
+    });
+    fakeSession.emit("event", {
+      type: "entry_appended",
+      entry: { type: "custom", customType: "subagent-runner-diagnostic", data: { schemaVersion: 1, recordedAt: "2026-08-02T05:26:41.115Z", runId: 3, agent: "worker", event: "settled", code: 0 } },
+    });
+    fakeSession.emit("event", {
+      type: "entry_appended",
+      entry: { type: "custom", customType: "subagent-runner-diagnostic", data: { schemaVersion: 1, recordedAt: "2026-08-02T05:26:42.115Z", runId: 4, agent: "worker", event: "settled", code: 143 } },
+    });
+
+    const updates = events.filter((event): event is Extract<RuntimeEvent, { type: "subagent_run_update" }> => (
+      typeof event === "object" && event !== null && (event as { type?: string }).type === "subagent_run_update"
+    ));
+    expect(updates.map((event) => event.update)).toEqual([
+      expect.objectContaining({ runId: 3, task: "Inspect files", status: "running" }),
+      expect.objectContaining({ runId: 4, task: "Implement fix", status: "running" }),
+      expect.objectContaining({ runId: 3, task: "Inspect files", status: "done", elapsedMs: 5_000 }),
+      expect.objectContaining({ runId: 4, task: "Implement fix", status: "error", elapsedMs: 4_000 }),
+    ]);
+    expect(updates.every((event) => event.update.resultPreview === undefined)).toBe(true);
   });
 
   it("executes user bash directly through the Pi session and preserves context inclusion flag", async () => {

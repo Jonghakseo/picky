@@ -66,6 +66,13 @@ struct PickySubagentProgressPresentationTests {
         #expect(presentation.elapsedText(for: completed) == "2m 34s")
     }
 
+    @Test func exposesExpansionOnlyWhenTheRunHasVisibleDetail() {
+        #expect(PickySubagentProgressExpansionPolicy.expandableContent(for: run(1, status: .running)) == nil)
+        #expect(PickySubagentProgressExpansionPolicy.expandableContent(for: run(2, status: .done, resultPreview: "Completed details")) == "Completed details")
+        #expect(PickySubagentProgressExpansionPolicy.expandableContent(for: run(3, status: .error, errorClass: "aborted")) == "aborted")
+        #expect(PickySubagentProgressExpansionPolicy.expandableContent(for: run(4, status: .error, errorClass: "aborted", resultPreview: "Runner output")) == "Runner output")
+    }
+
     @Test func decodesSubagentRunsFromSessionAndSlimUpdate() throws {
         let sessionData = Data("""
         {"id":"session-1","title":"Pickle","status":"running","createdAt":"2026-07-14T01:00:00.000Z","updatedAt":"2026-07-14T01:00:00.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[],"subagentRuns":[{"runId":1,"agent":"worker","task":"Inspect","status":"running"}]}
@@ -101,7 +108,7 @@ struct PickySubagentProgressPresentationTests {
         #expect(viewModel.isSubagentRunExpanded(1, sessionID: "session-1"))
     }
 
-    private func run(_ id: Int, status: PickySubagentRunStatus, batchID: String? = nil, elapsedMs: Double? = nil) -> PickySubagentRun {
-        PickySubagentRun(runId: id, agent: "worker", task: "Task \(id)", displayTask: nil, status: status, errorClass: nil, startedAt: Date(timeIntervalSince1970: 1_700_000_000), elapsedMs: elapsedMs, batchId: batchID, pipelineId: nil, pipelineStepIndex: nil, resultPreview: nil, model: nil)
+    private func run(_ id: Int, status: PickySubagentRunStatus, batchID: String? = nil, elapsedMs: Double? = nil, errorClass: String? = nil, resultPreview: String? = nil) -> PickySubagentRun {
+        PickySubagentRun(runId: id, agent: "worker", task: "Task \(id)", displayTask: nil, status: status, errorClass: errorClass, startedAt: Date(timeIntervalSince1970: 1_700_000_000), elapsedMs: elapsedMs, batchId: batchID, pipelineId: nil, pipelineStepIndex: nil, resultPreview: resultPreview, model: nil)
     }
 }

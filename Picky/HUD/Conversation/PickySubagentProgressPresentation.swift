@@ -21,6 +21,12 @@ enum PickySubagentProgressExpansionPolicy {
     static func shouldCollapse(previousIsComplete: Bool?, currentIsComplete: Bool) -> Bool {
         currentIsComplete && previousIsComplete != true
     }
+
+    static func expandableContent(for run: PickySubagentRun) -> String? {
+        let content = run.status == .error ? (run.resultPreview ?? run.errorClass) : run.resultPreview
+        guard let content, !content.isEmpty else { return nil }
+        return content
+    }
 }
 
 struct PickySubagentProgressPresentation: Equatable {

@@ -90,7 +90,7 @@ struct PickyAgentClientTests {
         #expect(task.sentMessages.count == 1)
     }
 
-    @Test func encodesRewindCommands() throws {
+    @Test func encodesRewindAndDiffCommands() throws {
         let encoder = JSONEncoder.pickyAgentProtocolEncoder()
 
         let listData = try encoder.encode(PickyCommandEnvelope(id: "cmd-rewind-list", type: .listRewindTargets, sessionId: "session-1"))
@@ -104,9 +104,22 @@ struct PickyAgentClientTests {
         #expect(rewindJSON.contains("\"type\":\"rewindSession\"") || rewindJSON.contains("\"type\" : \"rewindSession\""))
         #expect(rewindJSON.contains("\"sessionId\":\"session-1\"") || rewindJSON.contains("\"sessionId\" : \"session-1\""))
         #expect(rewindJSON.contains("\"entryId\":\"entry-3\"") || rewindJSON.contains("\"entryId\" : \"entry-3\""))
+
+        let diffData = try encoder.encode(PickySessionDiffCommand(id: "cmd-diff", sessionId: "session-1", requestId: "request-diff", view: .staged))
+        let diffJSON = try #require(String(data: diffData, encoding: .utf8))
+        #expect(diffJSON.contains("\"type\":\"getSessionDiff\"") || diffJSON.contains("\"type\" : \"getSessionDiff\""))
+        #expect(diffJSON.contains("\"view\":\"staged\"") || diffJSON.contains("\"view\" : \"staged\""))
+        #expect(diffJSON.contains("\"requestId\":\"request-diff\"") || diffJSON.contains("\"requestId\" : \"request-diff\""))
+
+        let decoder = JSONDecoder.pickyAgentProtocolDecoder()
+        #expect(throws: DecodingError.self) {
+            try decoder.decode(PickySessionDiffCommand.self, from: Data("""
+            {"id":"cmd-diff-missing-request","protocolVersion":"2026-07-23","type":"getSessionDiff","sessionId":"session-1","view":"staged"}
+            """.utf8))
+        }
     }
 
-    @Test func decodesRewindEvents() throws {
+    @Test func decodesRewindAndDiffEvents() throws {
         let decoder = JSONDecoder.pickyAgentProtocolDecoder()
         let targets = try decoder.decode(PickyEventEnvelope.self, from: Data("""
         {"id":"event-rewind-targets","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:02.000Z","type":"rewindTargetsSnapshot","sessionId":"session-1","requestId":"cmd-rewind-list","targets":[{"entryId":"entry-1","text":"첫 요청","createdAt":"2026-05-01T00:00:00.000Z"},{"entryId":"entry-2","text":"다음 요청","createdAt":null}]}
@@ -119,6 +132,23 @@ struct PickyAgentClientTests {
                 PickyRewindTarget(entryId: "entry-2", text: "다음 요청", createdAt: nil)
             ])
         } else { Issue.record("Expected rewindTargetsSnapshot") }
+
+        let diff = try decoder.decode(PickyEventEnvelope.self, from: Data("""
+        {"id":"event-diff","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:03.000Z","type":"sessionDiffResult","sessionId":"session-1","view":"unstaged","isGitRepo":true,"files":[{"path":"Picky/App.swift","status":"modified","additions":4,"deletions":2,"diff":"@@ -1 +1 @@\\n-old\\n+new","truncated":false}],"filesTruncated":false,"requestId":"cmd-diff"}
+        """.utf8))
+        if case .sessionDiffResult(let result) = diff.event {
+            #expect(result.sessionId == "session-1")
+            #expect(result.view == .unstaged)
+            #expect(result.files.first?.status == .modified)
+            #expect(result.files.first?.additions == 4)
+            #expect(result.requestID == "cmd-diff")
+        } else { Issue.record("Expected sessionDiffResult") }
+
+        #expect(throws: DecodingError.self) {
+            try decoder.decode(PickyEventEnvelope.self, from: Data("""
+            {"id":"event-diff-missing-request","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:03.000Z","type":"sessionDiffResult","sessionId":"session-1","view":"unstaged","isGitRepo":true,"files":[],"filesTruncated":false}
+            """.utf8))
+        }
 
         let rewound = try decoder.decode(PickyEventEnvelope.self, from: Data("""
         {"id":"event-rewound","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:03.000Z","type":"sessionRewound","sessionId":"session-1","editorText":"다시 작성할 요청","removedIds":["message-2","message-3"]}

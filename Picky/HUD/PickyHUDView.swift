@@ -390,9 +390,19 @@ struct PickyHUDView: View {
                         session: activeSession,
                         viewModel: viewModel,
                         selectedTab: utilityPanelTabBinding(for: activeSession.id),
-                        height: utilityPanelHeight
+                        height: utilityPanelHeight,
+                        changesBadgeCount: PickySessionDiffPresentation.badgeCount(
+                            for: viewModel.sessionDiffState(for: activeSession.id)
+                        )
                     ) {
-                        PickyHUDUtilityPanelChangesPlaceholderView()
+                        PickySessionChangesView(
+                            sessionID: activeSession.id,
+                            viewModel: viewModel,
+                            isVisible: PickyHUDUtilityPanelPolicy.selectedTab(
+                                for: activeSession.id,
+                                selections: utilityPanelSelections
+                            ) == .changes
+                        )
                     }
                     .transition(.opacity)
                 }

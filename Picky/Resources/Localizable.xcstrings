@@ -1133,6 +1133,78 @@
         }
       }
     },
+    "hud.changes.accessibilityLabel": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Session changes" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "세션 변경사항" } }
+      }
+    },
+    "hud.changes.collapseDiff": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Collapse diff" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "diff 접기" } }
+      }
+    },
+    "hud.changes.diffTruncated": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Diff output was truncated" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "diff 출력이 잘렸습니다" } }
+      }
+    },
+    "hud.changes.filesTruncated": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "More changed files are not shown" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "추가 변경 파일은 표시되지 않습니다" } }
+      }
+    },
+    "hud.changes.empty": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No changes in this view" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 보기에는 변경사항이 없습니다" } }
+      }
+    },
+    "hud.changes.error": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Changes error: %@" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "변경사항 오류: %@" } }
+      }
+    },
+    "hud.changes.expandDiff": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Expand diff" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "diff 펼치기" } }
+      }
+    },
+    "hud.changes.fileSummary": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%@, %lld additions, %lld deletions" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "%@, 추가 %lld개, 삭제 %lld개" } }
+      }
+    },
+    "hud.changes.loading": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Loading changes" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "변경사항 불러오는 중" } }
+      }
+    },
+    "hud.changes.notGitRepository": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "This folder is not a Git repository" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 폴더는 Git 저장소가 아닙니다" } }
+      }
+    },
+    "hud.changes.view.staged": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Staged" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "스테이지됨" } }
+      }
+    },
+    "hud.changes.view.unstaged": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Unstaged" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "스테이지되지 않음" } }
+      }
+    },
     "hud.utilityPanel.accessibilityLabel": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Pickle utility panel" } },

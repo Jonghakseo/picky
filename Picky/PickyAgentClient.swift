@@ -402,6 +402,7 @@ private extension PickyCommandEnvelope {
         if let text { parts.append("textChars=\(text.count)") }
         if let source { parts.append("sourceChars=\(source.count)") }
         if let requestId { parts.append("request=\(requestId)") }
+        if let view { parts.append("view=\(view.rawValue)") }
         if let providerId { parts.append("provider=\(providerId.rawValue)") }
         if let promptId { parts.append("prompt=\(promptId)") }
         if let artifactId { parts.append("artifact=\(artifactId)") }
@@ -511,6 +512,8 @@ private extension PickyEventEnvelope {
             return "type=autocompleteCompletionApplied id=\(id) session=\(completion.sessionId) request=\(completion.requestId) generation=\(completion.generation) revision=\(completion.draftRevision) lines=\(completion.lines.count)"
         case .rewindTargetsSnapshot(let sessionId, let requestId, let targets):
             return "type=rewindTargetsSnapshot id=\(id) session=\(sessionId) request=\(requestId ?? "none") targets=\(targets.count)"
+        case .sessionDiffResult(let result):
+            return "type=sessionDiffResult id=\(id) session=\(result.sessionId) view=\(result.view.rawValue) files=\(result.files.count) request=\(result.requestID ?? "none")"
         case .sessionRewound(let sessionId, let editorText, let removedIds):
             return "type=sessionRewound id=\(id) session=\(sessionId) editorTextChars=\(editorText?.count ?? 0) removed=\(removedIds.count)"
         case .sessionMessageAppended(let sessionId, _, let seq):

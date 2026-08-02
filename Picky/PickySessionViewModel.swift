@@ -21,6 +21,9 @@ final class PickySessionListViewModel: ObservableObject {
     /// Published mirror of `PickySessionSlashCommandController` cache state.
     /// Every controller mutation path must call `syncSlashCommands()`.
     @Published private(set) var slashCommandsBySessionID: [String: [PickySlashCommand]] = [:]
+    /// Per-session git-diff projections. Populated only while the Changes utility tab is visible.
+    @Published private(set) var sessionDiffStatesBySessionID: [String: PickySessionDiffState] = [:]
+    private var visibleSessionDiffSessionIDs = Set<String>()
     /// High-frequency autocomplete responses bypass `objectWillChange` so typing does not
     /// invalidate every conversation bubble observing this view model. The active composer
     /// filters this stream by session, generation, request id, draft revision, and cursor.
@@ -545,6 +548,45 @@ final class PickySessionListViewModel: ObservableObject {
 
     func hasLoadedSlashCommands(sessionID: String) -> Bool {
         slashCommandController.hasLoaded(sessionID: sessionID)
+    }
+
+    func sessionDiffState(for sessionID: String) -> PickySessionDiffState {
+        sessionDiffStatesBySessionID[sessionID] ?? PickySessionDiffState()
+    }
+
+    func setSessionDiffVisible(_ isVisible: Bool, sessionID: String) {
+        if isVisible {
+            guard visibleSessionDiffSessionIDs.insert(sessionID).inserted else { return }
+            requestSessionDiff(sessionID: sessionID)
+        } else {
+            visibleSessionDiffSessionIDs.remove(sessionID)
+        }
+    }
+
+    func selectSessionDiffView(_ view: PickySessionDiffView, sessionID: String) {
+        guard sessionDiffState(for: sessionID).view != view else { return }
+        requestSessionDiff(sessionID: sessionID, view: view)
+    }
+
+    private func requestSessionDiff(sessionID: String, view requestedView: PickySessionDiffView? = nil) {
+        guard card(sessionID: sessionID) != nil else { return }
+        let view = requestedView ?? sessionDiffState(for: sessionID).view
+        let requestID = "session-diff-\(UUID().uuidString)"
+        let command = PickyCommandEnvelope(PickySessionDiffCommand(sessionId: sessionID, requestId: requestID, view: view))
+        sessionDiffStatesBySessionID[sessionID] = .requesting(view: view, requestID: requestID)
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await client.send(command)
+            } catch {
+                guard var state = sessionDiffStatesBySessionID[sessionID], state.requestID == requestID else { return }
+                state.isLoading = false
+                state.errorMessage = error.localizedDescription
+                state.requestID = nil
+                state.hasReceivedResult = true
+                sessionDiffStatesBySessionID[sessionID] = state
+            }
+        }
     }
 
     @discardableResult
@@ -1642,6 +1684,8 @@ final class PickySessionListViewModel: ObservableObject {
         case .autocompleteCompletionApplied(let completion):
             autocompleteEvents.send(.completion(completion))
         case .rewindTargetsSnapshot: break
+        case .sessionDiffResult(let result):
+            applySessionDiffResult(result)
         case .sessionRewound(let sessionId, let editorText, _): applySessionRewound(sessionID: sessionId, editorText: editorText)
         case .sessionMessageAppended(let sessionId, let message, let seq):
             applySessionMessageAppended(sessionID: sessionId, message: message, seq: seq)
@@ -1805,6 +1849,17 @@ final class PickySessionListViewModel: ObservableObject {
                 preserveIncrementalConversationState: lastIncrementalSeqBySessionID[session.id] != nil
             )
         }
+        if visibleSessionDiffSessionIDs.contains(session.id),
+           PickySessionDiffPresentation.isSettledTransition(from: previousCard?.status, to: incomingCard.status) {
+            requestSessionDiff(sessionID: session.id)
+        }
+    }
+
+    private func applySessionDiffResult(_ result: PickySessionDiffResult) {
+        let current = sessionDiffState(for: result.sessionId)
+        let next = PickySessionDiffState.reducing(current: current, result: result)
+        guard next != current else { return }
+        sessionDiffStatesBySessionID[result.sessionId] = next
     }
 
     private func applySessionArchivedAuthoritative(sessionID sessionId: String, archived: Bool) {

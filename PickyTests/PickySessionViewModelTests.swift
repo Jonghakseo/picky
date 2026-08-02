@@ -5195,6 +5195,60 @@ private func wait(
     }
 }
 
+@MainActor @Test func visibleSessionDiffRefreshesForViewChangesAndTurnCompletion() async throws {
+    let client = FakePickyAgentClient()
+    let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+    viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running"))))
+
+    viewModel.setSessionDiffVisible(true, sessionID: "session-1")
+    try await wait { client.sentCommands.count == 1 }
+    let firstCommand = try #require(client.sentCommands.first)
+    #expect(firstCommand.type == .getSessionDiff)
+    #expect(firstCommand.view == .unstaged)
+    let firstRequestID = try #require(firstCommand.requestId)
+
+    viewModel.apply(.protocolEvent(PickyEventEnvelope(
+        id: "event-diff-unstaged",
+        protocolVersion: pickyAgentProtocolVersion,
+        timestamp: Date(),
+        event: .sessionDiffResult(PickySessionDiffResult(
+            sessionId: "session-1",
+            view: .unstaged,
+            isGitRepo: true,
+            files: [PickySessionDiffFile(path: "Picky/App.swift", status: .modified, renamedFrom: nil, additions: 3, deletions: 1, diff: "+new\n-old", truncated: false)],
+            filesTruncated: false,
+            errorMessage: nil,
+            requestID: firstRequestID
+        ))
+    )))
+    #expect(viewModel.sessionDiffState(for: "session-1").files.count == 1)
+
+    viewModel.selectSessionDiffView(.staged, sessionID: "session-1")
+    try await wait { client.sentCommands.count == 2 }
+    let stagedCommand = try #require(client.sentCommands.last)
+    #expect(stagedCommand.view == .staged)
+
+    viewModel.apply(.protocolEvent(PickyEventEnvelope(
+        id: "event-stale-diff",
+        protocolVersion: pickyAgentProtocolVersion,
+        timestamp: Date(),
+        event: .sessionDiffResult(PickySessionDiffResult(
+            sessionId: "session-1",
+            view: .unstaged,
+            isGitRepo: true,
+            files: [],
+            filesTruncated: false,
+            errorMessage: nil,
+            requestID: firstRequestID
+        ))
+    )))
+    #expect(viewModel.sessionDiffState(for: "session-1").isLoading)
+
+    viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", updatedAt: "2026-05-01T00:00:01.000Z"))))
+    try await wait { client.sentCommands.count == 3 }
+    #expect(client.sentCommands.last?.view == .staged)
+}
+
 private enum EventJSON {
     static func sessionUpdated(
         id: String = "session-1",

@@ -54,6 +54,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var text: String?
     var source: String?
     var requestId: String?
+    var view: PickySessionDiffView?
     var value: JSONValue?
     var providerId: PickyPiOAuthLoginProvider?
     var promptId: String?
@@ -103,6 +104,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         text: String? = nil,
         source: String? = nil,
         requestId: String? = nil,
+        view: PickySessionDiffView? = nil,
         value: JSONValue? = nil,
         providerId: PickyPiOAuthLoginProvider? = nil,
         promptId: String? = nil,
@@ -148,6 +150,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.text = text
         self.source = source
         self.requestId = requestId
+        self.view = view
         self.value = value
         self.providerId = providerId
         self.promptId = promptId
@@ -235,6 +238,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case autocompleteQuery
     case autocompleteApply
     case listRewindTargets
+    case getSessionDiff
     case rewindSession
     case getSession
     case answerExtensionUi
@@ -332,6 +336,7 @@ enum PickyEvent: Equatable {
     case autocompleteSuggestionsSnapshot(PickyAutocompleteSuggestionsSnapshot)
     case autocompleteCompletionApplied(PickyAutocompleteCompletionApplied)
     case rewindTargetsSnapshot(sessionId: String, requestId: String?, targets: [PickyRewindTarget])
+    case sessionDiffResult(PickySessionDiffResult)
     case sessionRewound(sessionId: String, editorText: String?, removedIds: [String])
     case sessionMessageAppended(sessionId: String, message: PickySessionMessage, seq: Int)
     /// Bulk append for terminal-sync / history-restore imports. The whole batch
@@ -442,6 +447,8 @@ enum PickyEvent: Equatable {
         case "rewindTargetsSnapshot":
             let payload = try PickyRewindTargetsSnapshotPayload(from: decoder)
             return .rewindTargetsSnapshot(sessionId: payload.sessionId, requestId: payload.requestId, targets: payload.targets)
+        case "sessionDiffResult":
+            return .sessionDiffResult(try PickySessionDiffResult(from: decoder))
         case "sessionRewound":
             let payload = try PickySessionRewoundPayload(from: decoder)
             return .sessionRewound(sessionId: payload.sessionId, editorText: payload.editorText, removedIds: payload.removedIds)
@@ -910,6 +917,90 @@ struct PickyRewindTarget: Decodable, Equatable, Identifiable {
     let entryId: String
     let text: String
     let createdAt: Date?
+}
+
+enum PickySessionDiffView: String, Codable, Equatable {
+    case unstaged
+    case staged
+}
+
+/// Type-specific command payload for a diff request. Unlike the generic envelope's
+/// optional correlation field, this payload cannot be created or decoded without one.
+struct PickySessionDiffCommand: Codable, Equatable {
+    let id: String
+    let protocolVersion: String
+    let type: PickyCommandType
+    let sessionId: String
+    let requestId: String
+    let view: PickySessionDiffView
+
+    init(
+        id: String = "cmd-\(UUID().uuidString)",
+        sessionId: String,
+        requestId: String,
+        view: PickySessionDiffView
+    ) {
+        self.id = id
+        protocolVersion = pickyAgentProtocolVersion
+        type = .getSessionDiff
+        self.sessionId = sessionId
+        self.requestId = requestId
+        self.view = view
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        protocolVersion = try container.decode(String.self, forKey: .protocolVersion)
+        type = try container.decode(PickyCommandType.self, forKey: .type)
+        guard type == .getSessionDiff else {
+            throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Expected getSessionDiff command")
+        }
+        sessionId = try container.decode(String.self, forKey: .sessionId)
+        requestId = try container.decode(String.self, forKey: .requestId)
+        view = try container.decode(PickySessionDiffView.self, forKey: .view)
+    }
+}
+
+extension PickyCommandEnvelope {
+    init(_ command: PickySessionDiffCommand) {
+        self.init(
+            id: command.id,
+            type: command.type,
+            sessionId: command.sessionId,
+            requestId: command.requestId,
+            view: command.view
+        )
+    }
+}
+
+struct PickySessionDiffFile: Decodable, Equatable, Identifiable {
+    enum Status: String, Decodable, Equatable {
+        case added, modified, deleted, renamed, untracked
+    }
+
+    var id: String { path }
+    let path: String
+    let status: Status
+    let renamedFrom: String?
+    let additions: Int
+    let deletions: Int
+    let diff: String
+    let truncated: Bool
+}
+
+struct PickySessionDiffResult: Decodable, Equatable {
+    let sessionId: String
+    let view: PickySessionDiffView
+    let isGitRepo: Bool
+    let files: [PickySessionDiffFile]
+    let filesTruncated: Bool
+    let errorMessage: String?
+    let requestID: String
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionId, view, isGitRepo, files, filesTruncated, errorMessage, requestID = "requestId"
+    }
 }
 
 struct PickyMainAgentMessage: Codable, Equatable, Identifiable {

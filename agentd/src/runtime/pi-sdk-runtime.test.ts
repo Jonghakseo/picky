@@ -679,6 +679,73 @@ describe("PiSdkRuntime", () => {
     ]);
   });
 
+  it("emits headless tool result responses for single, batch, and chain runs", async () => {
+    const fakeSession = new FakeSession();
+    const handle = await makeRuntime(fakeSession).prewarm({ cwd: "/tmp/project", sessionId: "session-headless-responses" });
+    const events: RuntimeEvent[] = [];
+    handle.subscribe((event) => events.push(event));
+    const diagnostic = (runId: number, agent: string, event: "spawn" | "settled", data: Record<string, unknown> = {}) => {
+      fakeSession.emit("event", {
+        type: "entry_appended",
+        entry: { type: "custom", customType: "subagent-runner-diagnostic", data: {
+          schemaVersion: 1, recordedAt: "2026-08-02T05:26:36.115Z", runId, agent, event, ...data,
+        } },
+      });
+    };
+
+    fakeSession.emit("event", {
+      type: "tool_execution_start", toolCallId: "subagent-single", toolName: "subagent", args: { command: "subagent run worker -- Inspect" },
+    });
+    diagnostic(11, "worker", "spawn");
+    diagnostic(11, "worker", "settled", { code: 0 });
+    fakeSession.emit("event", {
+      type: "tool_execution_end", toolCallId: "subagent-single", toolName: "subagent", result: {
+        content: [{ type: "text", text: "Idle warning\n\n[subagent:worker#11] completed\nPrompt: Inspect\n\nSingle response" }],
+      },
+    });
+
+    fakeSession.emit("event", {
+      type: "tool_execution_start", toolCallId: "subagent-batch", toolName: "subagent", args: { command: 'subagent batch --agent worker --task "Inspect" --agent reviewer --task "Review"' },
+    });
+    diagnostic(12, "worker", "spawn", { batchId: "batch-a" });
+    diagnostic(13, "reviewer", "spawn", { batchId: "batch-a" });
+    diagnostic(12, "worker", "settled", { batchId: "batch-a", code: 0 });
+    diagnostic(13, "reviewer", "settled", { batchId: "batch-a", code: 1 });
+    fakeSession.emit("event", {
+      type: "tool_execution_end", toolCallId: "subagent-batch", toolName: "subagent", isError: true, result: [
+        { type: "text", text: [
+          "[subagent-batch#batch-a] error", "Runs: #12 done, #13 error", "", "#12 worker", "- Batch worker response", "", "#13 reviewer", "- Batch reviewer response",
+        ].join("\n") },
+      ],
+    });
+
+    fakeSession.emit("event", {
+      type: "tool_execution_start", toolCallId: "subagent-chain", toolName: "subagent", args: { command: 'subagent chain --agent worker --task "Inspect files" --agent reviewer --task "Review"' },
+    });
+    diagnostic(14, "worker", "spawn", { pipelineId: "chain-a", pipelineStepIndex: 0 });
+    diagnostic(15, "reviewer", "spawn", { pipelineId: "chain-a", pipelineStepIndex: 1 });
+    diagnostic(14, "worker", "settled", { pipelineId: "chain-a", pipelineStepIndex: 0, code: 0 });
+    diagnostic(15, "reviewer", "settled", { pipelineId: "chain-a", pipelineStepIndex: 1, code: 0 });
+    fakeSession.emit("event", {
+      type: "tool_execution_end", toolCallId: "subagent-chain", toolName: "subagent", result: [
+        { type: "text", text: [
+          "[subagent-chain#chain-a] completed", "", "Step 1 · #14 worker · done", "Task: Inspect files", "Chain worker response", "", "Step 2 · #15 reviewer · done", "Task: Review", "Chain reviewer response",
+        ].join("\n") },
+      ],
+    });
+
+    const responseUpdates = events.filter((event): event is Extract<RuntimeEvent, { type: "subagent_run_update" }> => (
+      event.type === "subagent_run_update" && event.update.resultText !== undefined
+    ));
+    expect(responseUpdates.map((event) => event.update)).toEqual([
+      expect.objectContaining({ runId: 11, status: "done", resultText: "Single response" }),
+      expect.objectContaining({ runId: 12, status: "done", resultText: "Batch worker response" }),
+      expect.objectContaining({ runId: 13, status: "error", resultText: "Batch reviewer response" }),
+      expect.objectContaining({ runId: 14, status: "done", resultText: "Chain worker response" }),
+      expect.objectContaining({ runId: 15, status: "done", resultText: "Chain reviewer response" }),
+    ]);
+  });
+
   it("discards unspawned launches when a subagent invocation ends", async () => {
     const fakeSession = new FakeSession();
     const handle = await makeRuntime(fakeSession).prewarm({ cwd: "/tmp/project", sessionId: "session-unspawned" });

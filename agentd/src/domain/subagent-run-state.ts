@@ -74,14 +74,47 @@ export function subagentGroupRunUpdatesFromCustomMessage(
   const sections = group.kind === "batch"
     ? batchSections(text, summaries)
     : chainSections(text, summaries);
-  return sections.flatMap(({ summary, body }) => {
-    const response = group.kind === "chain" ? stripChainTask(body, knownTasks.get(summary.runId)) : stripBatchBullet(body);
-    const text = cappedResultText(response);
+  return resultUpdatesFromSections(sections, group.kind, knownTasks);
+}
+
+/** Extracts completed headless subagent responses from a `tool_execution_end` result. */
+export function subagentRunUpdatesFromToolResult(
+  result: unknown,
+  knownRuns: readonly PickySubagentRun[],
+): SubagentGroupRunUpdate[] {
+  const content = contentAfterFirstSubagentMarker(contentText(result));
+  if (!content) return [];
+
+  const single = /^\[subagent:([^#\]]+)#(\d+)\]\s+(completed|failed|escalated)\s*$/.exec(content.marker);
+  if (single) {
+    const [, agent, runIdText, markerStatus] = single;
+    const runId = Number(runIdText);
+    const knownRun = knownRuns.find((run) => run.runId === runId && run.agent === agent);
+    if (!knownRun) return [];
+    const response = firstResponseBody(content.text);
+    const text = response ? cappedResultText(response) : undefined;
     return [{
-      ...summary,
+      runId,
+      agent,
+      status: markerStatus === "completed" ? "done" : "error",
       ...(text ? { resultText: text, resultPreview: resultPreview(text) } : {}),
     }];
-  });
+  }
+
+  const batch = /^\[subagent-batch#([^\]]+)\]/.exec(content.marker);
+  if (batch) {
+    const summaries = knownRuns
+      .filter((run) => run.batchId === batch[1])
+      .map(groupSummaryFromKnownRun);
+    return resultUpdatesFromSections(batchSections(content.text, summaries), "batch", new Map());
+  }
+
+  const chain = /^\[subagent-chain#([^\]]+)\]/.exec(content.marker);
+  if (!chain) return [];
+  const runs = knownRuns.filter((run) => run.pipelineId === chain[1]);
+  const summaries = runs.map(groupSummaryFromKnownRun);
+  const knownTasks = new Map(runs.map((run) => [run.runId, run.task]));
+  return resultUpdatesFromSections(chainSections(content.text, summaries), "chain", knownTasks);
 }
 
 /** Parses the subagent CLI command passed through Pi's `subagent` tool. */
@@ -334,10 +367,15 @@ function batchSections(text: string, summaries: readonly SubagentGroupRunUpdate[
 }
 
 function chainSections(text: string, summaries: readonly SubagentGroupRunUpdate[]): GroupSection[] {
-  return sectionsForHeaders(text, summaries, (summary) => {
-    const stepIndex = summary.pipelineStepIndex;
-    return stepIndex !== undefined ? `Step ${stepIndex + 1} · #${summary.runId} ${summary.agent} · ${summary.status}` : "";
-  });
+  return sectionsForHeaders(text, summaries.filter(hasUsablePipelineStepIndex), (summary) => (
+    `Step ${summary.pipelineStepIndex! + 1} · #${summary.runId} ${summary.agent} · ${summary.status}`
+  ));
+}
+
+function hasUsablePipelineStepIndex(summary: SubagentGroupRunUpdate): boolean {
+  return typeof summary.pipelineStepIndex === "number"
+    && Number.isInteger(summary.pipelineStepIndex)
+    && summary.pipelineStepIndex >= 0;
 }
 
 function sectionsForHeaders(
@@ -356,6 +394,45 @@ function sectionsForHeaders(
     summary,
     body: lines.slice(index + 1, matches[matchIndex + 1]?.index).join("\n"),
   }));
+}
+
+function resultUpdatesFromSections(
+  sections: readonly GroupSection[],
+  kind: GroupDetails["kind"],
+  knownTasks: ReadonlyMap<number, string>,
+): SubagentGroupRunUpdate[] {
+  return sections.flatMap(({ summary, body }) => {
+    const response = kind === "chain" ? stripChainTask(body, knownTasks.get(summary.runId)) : stripBatchBullet(body);
+    const text = cappedResultText(response);
+    return [{
+      ...summary,
+      ...(text ? { resultText: text, resultPreview: resultPreview(text) } : {}),
+    }];
+  });
+}
+
+function groupSummaryFromKnownRun(run: PickySubagentRun): SubagentGroupRunUpdate {
+  return {
+    runId: run.runId,
+    agent: run.agent,
+    status: run.status,
+    ...(run.batchId ? { batchId: run.batchId } : {}),
+    ...(run.pipelineId ? { pipelineId: run.pipelineId } : {}),
+    ...(run.pipelineStepIndex !== undefined ? { pipelineStepIndex: run.pipelineStepIndex } : {}),
+  };
+}
+
+function contentAfterFirstSubagentMarker(text: string | undefined): { marker: string; text: string } | undefined {
+  if (!text) return undefined;
+  const lines = text.replaceAll("\r\n", "\n").split("\n");
+  const index = lines.findIndex((line) => line.startsWith("[subagent:") || line.startsWith("[subagent-batch#") || line.startsWith("[subagent-chain#"));
+  const marker = lines[index];
+  return index >= 0 && marker ? { marker, text: lines.slice(index).join("\n") } : undefined;
+}
+
+function firstResponseBody(text: string): string | undefined {
+  const separator = text.indexOf("\n\n");
+  return separator >= 0 ? text.slice(separator + 2) : undefined;
 }
 
 function stripBatchBullet(body: string): string {
@@ -378,12 +455,20 @@ function escapeRegExp(value: string): string {
 }
 
 export function applySubagentRunUpdate(runs: readonly PickySubagentRun[], update: SubagentRunUpdate): PickySubagentRun[] {
-  const existingIndex = runs.findIndex((run) => sameRunIdentity(run, update));
+  const existingIndex = matchingRunIndex(runs, update);
   if (existingIndex < 0) return [...runs, update].sort((left, right) => left.runId - right.runId);
 
   const existing = runs[existingIndex]!;
   const next = isFreshSpawn(update, existing) ? update : { ...existing, ...update };
   return runs.map((run, index) => index === existingIndex ? next : run).sort((left, right) => left.runId - right.runId);
+}
+
+function matchingRunIndex(runs: readonly PickySubagentRun[], update: SubagentRunUpdate): number {
+  if (update.invocationId !== undefined) return runs.findIndex((run) => sameRunIdentity(run, update));
+  for (let index = runs.length - 1; index >= 0; index -= 1) {
+    if (sameRunIdentity(runs[index]!, update)) return index;
+  }
+  return -1;
 }
 
 function sameRunIdentity(run: PickySubagentRun, update: SubagentRunUpdate): boolean {
@@ -402,12 +487,29 @@ export function capSubagentRuns(runs: readonly PickySubagentRun[], limit = 100):
 
 /** Keeps full responses only for recent runs so persisted session snapshots stay bounded. */
 export function retainSubagentRunResultText(runs: readonly PickySubagentRun[], limit = 30): PickySubagentRun[] {
-  const firstRetainedIndex = Math.max(0, runs.length - limit);
+  const retainedCount = Math.max(0, Math.floor(limit));
+  const retainedIndexes = new Set(runs
+    .map((run, index) => ({ index, settledAt: settledAt(run) }))
+    .sort((left, right) => {
+      if (left.settledAt !== undefined && right.settledAt !== undefined) return right.settledAt - left.settledAt;
+      if (left.settledAt !== undefined) return -1;
+      if (right.settledAt !== undefined) return 1;
+      return right.index - left.index;
+    })
+    .slice(0, retainedCount)
+    .map(({ index }) => index));
   return runs.map((run, index) => {
-    if (index >= firstRetainedIndex || run.resultText === undefined) return run;
+    if (retainedIndexes.has(index) || run.resultText === undefined) return run;
     const { resultText: _, ...withoutResultText } = run;
     return withoutResultText;
   });
+}
+
+function settledAt(run: PickySubagentRun): number | undefined {
+  if (run.status !== "done" && run.status !== "error") return undefined;
+  const startedAt = run.startedAt ? new Date(run.startedAt).getTime() : Number.NaN;
+  if (!Number.isFinite(startedAt)) return undefined;
+  return startedAt + (finiteNonnegativeNumber(run.elapsedMs) ? run.elapsedMs : 0);
 }
 
 function resultPreview(content: unknown): string | undefined {
@@ -430,6 +532,7 @@ function cappedResultText(text: string): string | undefined {
 
 function contentText(content: unknown): string | undefined {
   if (typeof content === "string") return content;
+  if (isRecord(content)) return contentText(content.content);
   if (!Array.isArray(content)) return undefined;
   return content
     .filter(isRecord)

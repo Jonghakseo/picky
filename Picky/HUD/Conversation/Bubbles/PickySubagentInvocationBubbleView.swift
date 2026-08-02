@@ -16,7 +16,7 @@ struct PickySubagentInvocationBubbleView: View {
 
     var body: some View {
         Group {
-            if isExpanded, presentation.runningCount > 0 {
+            if isExpanded, !presentation.isComplete || presentation.runningCount > 0 {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     content(now: context.date)
                 }
@@ -36,7 +36,7 @@ struct PickySubagentInvocationBubbleView: View {
             }
             .buttonStyle(PickySubagentInvocationButtonStyle())
             .accessibilityLabel(accessibilityHeader)
-            .accessibilityValue(presentation.statusText)
+            .accessibilityValue(presentation.isComplete && !isExpanded ? presentation.collapsedText : presentation.statusText)
             .help(isExpanded ? L10n.t("hud.subagent.collapse") : L10n.t("hud.subagent.show"))
 
             if isExpanded {
@@ -63,14 +63,15 @@ struct PickySubagentInvocationBubbleView: View {
 
     @ViewBuilder private func header(now: Date) -> some View {
         if presentation.isComplete && !isExpanded {
+            let collapsedTone = presentation.collapsedTone
             HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.sm) {
-                Text(presentation.tone == .success ? "✓" : "×")
+                Text(collapsedTone == .success ? "✓" : "×")
                     .font(PickyHUDTypography.statusMonospacedMedium)
-                    .foregroundColor(toneColor)
+                    .foregroundColor(color(for: collapsedTone))
                     .accessibilityHidden(true)
                 Text(presentation.collapsedText)
                     .font(PickyHUDTypography.statusMonospacedMedium)
-                    .foregroundColor(toneColor)
+                    .foregroundColor(color(for: collapsedTone))
                     .lineLimit(1)
                 Spacer(minLength: DS.Spacing.xs)
                 elapsedAndChevron(now: now)

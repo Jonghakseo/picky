@@ -118,6 +118,30 @@ struct PickySubagentProgressPresentationTests {
         #expect(presentation.elapsedText(now: Date(timeIntervalSince1970: 1_800_000_000)) == "1s")
     }
 
+    @Test func collapsedHeaderUsesCompletionOutcomeDespiteStaleRunningRows() throws {
+        let succeeded = try #require(makePresentation(
+            action: .run,
+            planned: [plan("worker", "Implement")],
+            runs: [run(1, agent: "worker", status: .running)],
+            completed: true
+        ))
+        let failed = try #require(makePresentation(
+            action: .batch,
+            planned: [plan("worker", "Implement"), plan("reviewer", "Review")],
+            runs: [
+                run(1, agent: "worker", status: .error),
+                run(2, agent: "reviewer", status: .running)
+            ],
+            completed: true
+        ))
+
+        #expect(succeeded.tone == .running)
+        #expect(succeeded.collapsedTone == .success)
+        #expect(succeeded.collapsedText == "1 agent done")
+        #expect(failed.collapsedTone == .error)
+        #expect(failed.collapsedText == "1 failed · 1/2")
+    }
+
     @Test func decodesUnknownSubagentInvocationActionsAsRun() throws {
         let data = Data("""
         {"id":"session-1","title":"Pickle","status":"running","createdAt":"2026-07-14T01:00:00.000Z","updatedAt":"2026-07-14T01:00:00.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[],"messages":[{"id":"invocation-1","kind":"subagent_invocation","createdAt":"2026-07-14T01:00:00.000Z","subagentInvocation":{"invocationId":"tool-1","action":"future_action","planned":[]}}]}

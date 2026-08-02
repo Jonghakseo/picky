@@ -121,7 +121,22 @@ struct PickySubagentInvocationPresentation: Equatable {
             : L10n.t("hud.subagent.pill.done", Int64(totalCount))
     }
 
-    var collapsedText: String { statusText }
+    /// Collapsed headers represent the authoritative invocation completion event,
+    /// even if a delayed diagnostic leaves a row in its running state.
+    var collapsedTone: Tone {
+        guard isComplete else { return tone }
+        return errorCount > 0 ? .error : .success
+    }
+
+    var collapsedText: String {
+        guard isComplete, totalCount > 0 else { return statusText }
+        if errorCount > 0 {
+            return L10n.t("hud.subagent.pill.failed", Int64(errorCount), Int64(totalCount - errorCount), Int64(totalCount))
+        }
+        return totalCount == 1
+            ? L10n.t("hud.subagent.pill.done.one")
+            : L10n.t("hud.subagent.pill.done", Int64(totalCount))
+    }
 
     func elapsedText(now: Date = Date()) -> String {
         if isComplete {

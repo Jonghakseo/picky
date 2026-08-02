@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applySubagentRunUpdate, capSubagentRuns, retainSubagentRunResultText, subagentGroupRunUpdatesFromCustomMessage, subagentLaunchIntentFromToolArgs, subagentRunActivityUpdateFromDiagnostic, subagentRunUpdateFromCustomMessage, subagentRunUpdateFromDiagnostic } from "./subagent-run-state.js";
+import { applySubagentRunUpdate, capSubagentRuns, retainSubagentRunResultText, subagentGroupRunUpdatesFromCustomMessage, subagentLaunchIntentFromToolArgs, subagentRunActivityUpdateFromDiagnostic, subagentRunUpdateFromCustomMessage, subagentRunUpdateFromDiagnostic, subagentRunUpdatesFromToolResult } from "./subagent-run-state.js";
 
 describe("subagent run state", () => {
   it("maps extension lifecycle details and extracts the trailing result preview", () => {
@@ -103,6 +103,52 @@ describe("subagent run state", () => {
     })]);
   });
 
+  it("extracts sync single-run responses after an idle warning and maps escalation to error", () => {
+    const knownRuns = [{ runId: 12, agent: "worker", task: "Inspect", status: "running" as const }];
+    const completed = subagentRunUpdatesFromToolResult({ content: [{ type: "text", text: [
+      "Idle warning", "", "[subagent:worker#12] completed", "Prompt: Inspect", "", "Complete response",
+    ].join("\n") }] }, knownRuns);
+    const escalated = subagentRunUpdatesFromToolResult("Idle warning\n\n[subagent:worker#12] escalated\nPrompt: Inspect\n\nEscalation response", knownRuns);
+
+    expect(completed).toEqual([expect.objectContaining({ runId: 12, agent: "worker", status: "done", resultText: "Complete response" })]);
+    expect(escalated).toEqual([expect.objectContaining({ runId: 12, agent: "worker", status: "error", resultText: "Escalation response" })]);
+  });
+
+  it("extracts sync batch and chain responses only for matching diagnostic runs", () => {
+    const batchRuns = [
+      { runId: 12, agent: "worker", task: "Inspect", status: "done" as const, batchId: "batch-a" },
+      { runId: 13, agent: "reviewer", task: "Review", status: "error" as const, batchId: "batch-a" },
+    ];
+    const chainRuns = [
+      { runId: 14, agent: "worker", task: "Inspect\nmultiple files", status: "done" as const, pipelineId: "chain-a", pipelineStepIndex: 0 },
+      { runId: 15, agent: "reviewer", task: "Review", status: "error" as const, pipelineId: "chain-a", pipelineStepIndex: 1 },
+    ];
+
+    expect(subagentRunUpdatesFromToolResult([
+      "Idle warning", "", "[subagent-batch#batch-a] completed", "Runs: #12 done, #13 error", "", "#12 worker", "- Worker response", "", "#13 reviewer", "- Reviewer response",
+    ].join("\n"), batchRuns)).toEqual([
+      expect.objectContaining({ runId: 12, status: "done", resultText: "Worker response" }),
+      expect.objectContaining({ runId: 13, status: "error", resultText: "Reviewer response" }),
+    ]);
+    expect(subagentRunUpdatesFromToolResult([
+      "[subagent-chain#chain-a] error", "", "Step 1 · #14 worker · done", "Task: Inspect", "multiple files", "Worker response", "", "Step 2 · #15 reviewer · error", "Task: Review", "Reviewer response",
+    ].join("\n"), chainRuns)).toEqual([
+      expect.objectContaining({ runId: 14, status: "done", resultText: "Worker response" }),
+      expect.objectContaining({ runId: 15, status: "error", resultText: "Reviewer response" }),
+    ]);
+  });
+
+  it("does not match chain sections for summaries without a usable step index", () => {
+    const updates = subagentGroupRunUpdatesFromCustomMessage("subagent-tool", {
+      pipelineId: "pipeline-a",
+      stepRunIds: [12],
+      status: "done",
+      runSummaries: [{ runId: 12, agent: "worker", status: "done" }],
+    }, "[subagent-chain#pipeline-a] completed\n\n\n- unrelated output");
+
+    expect(updates).toEqual([]);
+  });
+
   it("skips group runs whose exact known header is absent", () => {
     const updates = subagentGroupRunUpdatesFromCustomMessage("subagent-tool", {
       batchId: "batch-a",
@@ -185,6 +231,18 @@ describe("subagent run state", () => {
     expect(reused[2]).toMatchObject({ status: "running", task: "new invocation" });
   });
 
+  it("updates the most recent reused run ID when an update has no invocation ID", () => {
+    const runs = applySubagentRunUpdate([
+      { runId: 4, agent: "worker", task: "old task", status: "done" as const, invocationId: "first" },
+      { runId: 4, agent: "worker", task: "new task", status: "running" as const, invocationId: "second" },
+    ], { runId: 4, agent: "worker", task: "new task", status: "done", elapsedMs: 25 });
+
+    expect(runs).toEqual([
+      expect.objectContaining({ invocationId: "first", status: "done", task: "old task" }),
+      expect.objectContaining({ invocationId: "second", status: "done", elapsedMs: 25, task: "new task" }),
+    ]);
+  });
+
   it("replaces terminal run state for an unscoped fresh spawn", () => {
     const updated = applySubagentRunUpdate([{
       runId: 4,
@@ -246,10 +304,13 @@ describe("subagent run state", () => {
       agent: "worker",
       task: `task ${index + 1}`,
       status: "done" as const,
+      startedAt: new Date(Date.UTC(2026, 0, 1, 0, 0, 31 - index)).toISOString(),
+      elapsedMs: 100,
       resultText: `response ${index + 1}`,
     }));
     const retained = retainSubagentRunResultText(runs);
-    expect(retained[0]).not.toHaveProperty("resultText");
-    expect(retained.slice(1).every((run) => run.resultText !== undefined)).toBe(true);
+    expect(retained[0]?.resultText).toBe("response 1");
+    expect(retained[1]?.resultText).toBe("response 2");
+    expect(retained[30]).not.toHaveProperty("resultText");
   });
 });

@@ -21,8 +21,7 @@ import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShow
 import type { PickyShowAnnotationsRequest, PickyShowAnnotationsResult } from "./application/annotation-overlay-request.js";
 import { PickleVisualDslCoordinator, type PickleVisualDslLease } from "./application/pickle-visual-dsl-coordinator.js";
 import { PickleSessionTitleRefresher } from "./application/pickle-session-title-refresher.js";
-import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY } from "./session-store.js";
-import type { SessionStore } from "./session-store.js";
+import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY, type SessionStore } from "./session-store.js";
 import type { AgentRuntime, RewindTarget, RuntimeAutocompleteApplyRequest, RuntimeAutocompleteCapabilities, RuntimeAutocompleteCompletion, RuntimeAutocompleteQuery, RuntimeAutocompleteSuggestions, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./runtime/types.js";
 import { readSessionDiff, type SessionDiffResult } from "./application/session-diff.js";
 import { listRewindTargets as rewindListTargets, rewindToEntry as runRewindToEntry, type RewindDeps } from "./application/session-rewind.js";
@@ -30,7 +29,7 @@ import type { SessionDiffView } from "./domain/git-diff.js";
 import { hasActivity, zeroActivitySummary } from "./domain/activity-summary.js";
 import { mergeArtifacts } from "./domain/artifacts.js";
 import { mergeChangedFiles } from "./domain/changed-files.js";
-import { diffQueueRemovedItems, dropAlreadyMaterializedQueueEntries, queueItems, sameQueueItems, type PendingQueueDelivery } from "./domain/queue-policy.js";
+import { diffQueueRemovedItems, dropAlreadyMaterializedQueueEntries, extractPickyPromptUserInstruction, queueItems, queueTextMatchesUserText, sameQueueItems, type PendingQueueDelivery } from "./domain/queue-policy.js";
 import { isTerminalStatus } from "./domain/session-status.js";
 import { countSystemMessages, sameTodoState, shouldReattachBlockedSessionOnStartup } from "./domain/session-state-policy.js";
 import { ARCHIVED_SESSION_RETENTION_DAYS, buildAppendedMainMessageState, buildArchivedSessionRestartCancellation, buildDuplicatedPickleSession, buildEmptyPickleSession, buildInterruptedRuntimeLiveStatePatch, buildOrphanedChildRecoverySession, buildPinnedPickleSession, buildResumedHandoffPickleSession, buildRuntimeReattachPatch, buildRuntimeSessionReplacementPatch, buildUnattachedRuntimeBlock, buildVisibleSession, projectMainAgentSessionInfo, projectMainReplyMetadata, projectMainRolloverPickleSessions, shouldPurgeArchivedSession } from "./domain/session-supervisor-projection-policy.js";
@@ -44,7 +43,6 @@ import { appendLiveBashOutput, formatUserBashFailureSystemMessage, formatUserBas
 import { isNonSkillSlashCommand, isNoTurnStateRestoringSlashCommand, isReloadSlashCommand, normalizeSlashCommands } from "./domain/slash-commands.js";
 import { hasPickleSessionMarkerLog, piSessionFilePathForSession, piSessionFilePathFromLogLine, withPiSessionFileFromLogs } from "./domain/pi-session-files.js";
 import { buildPinnedPickleSessionLogs, piSessionFilePathFromHandoffTranscript, titleForEmptyPickleSession } from "./domain/pickle-handoff-context.js";
-import { extractPickyPromptUserInstruction, queueTextMatchesUserText } from "./domain/queue-policy.js";
 import { buildMainAgentRolloverSummary, MAIN_AGENT_COMPACT_IDLE_MS, MAIN_AGENT_MESSAGE_LIMIT, MAIN_AGENT_RESTART_TEARDOWN_SESSION_BYTES, MAIN_AGENT_SUMMARY_PICKLE_SESSION_LIMIT, mainRolloverReason, normalizeMainAgentState, quickReplyOriginFromContextSource, type QuickReplyMetadata } from "./domain/main-agent-policy.js";
 import type { ToolCategory } from "./domain/tool-categorizer.js";
 import { logAgentd } from "./local-log.js";
@@ -395,7 +393,6 @@ export class SessionSupervisor extends EventEmitter {
   isPickleSession(sessionId: string): boolean {
     return this.pickleSessionIds.has(sessionId);
   }
-
 
   get(id: string): PickyAgentSession | undefined {
     return this.sessions.get(id);
@@ -1983,7 +1980,7 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   async getSessionDiff(sessionId: string, view: SessionDiffView): Promise<SessionDiffResult> {
-    return await readSessionDiff(this.mustGet(sessionId).cwd, view);
+    return readSessionDiff(this.mustGet(sessionId).cwd, view);
   }
 
   async rewindToEntry(sessionId: string, entryId: string): Promise<PickyAgentSession> {

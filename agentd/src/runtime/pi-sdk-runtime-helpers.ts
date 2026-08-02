@@ -266,3 +266,35 @@ export function parseSkillExpansionEcho(text: string): SkillInvocation | undefin
   if (!closing) return undefined;
   return { name, instruction: rest.slice(closing.index + closing[0].length).trim() };
 }
+
+// Fallback for /skill: echo suppression when Pi never queues the prompt (idle-session submit):
+// the queue-diff mapping in the runtime has nothing to match, so remember the parsed invocation
+// of each submitted /skill: command and structurally match it against the role="custom" echo.
+export class SkillEchoSuppressionTracker {
+  private pending: SkillInvocation[] = [];
+
+  constructor(private readonly cap: number) {}
+
+  register(rawText: string): SkillInvocation | undefined {
+    const invocation = parseSkillSlashCommand(rawText);
+    if (!invocation) return undefined;
+    while (this.pending.length >= this.cap) this.pending.shift();
+    this.pending.push(invocation);
+    return invocation;
+  }
+
+  remove(entry: SkillInvocation | undefined): void {
+    if (!entry) return;
+    const index = this.pending.indexOf(entry);
+    if (index >= 0) this.pending.splice(index, 1);
+  }
+
+  consume(text: string): boolean {
+    const echo = parseSkillExpansionEcho(text);
+    if (!echo) return false;
+    const index = this.pending.findIndex((entry) => entry.name === echo.name && entry.instruction === echo.instruction);
+    if (index < 0) return false;
+    this.pending.splice(index, 1);
+    return true;
+  }
+}

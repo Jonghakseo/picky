@@ -16,6 +16,7 @@ import type { BuiltPrompt } from "../prompt-builder.js";
 import { ExtensionUiBridge, type DialogMethod } from "../application/extension-ui-bridge.js";
 import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
 import { resolveTodoStateFromPiSessionEntries } from "../domain/todo-state.js";
+import { subagentRunUpdateFromCustomMessage } from "../domain/subagent-run-state.js";
 import { isTransientAgentBusyError } from "../domain/transient-runtime-error.js";
 import type { AgentRuntime, AnswerExtensionUiOptions, RewindBranchMessage, RewindResult, RewindTarget, RuntimeAssistantRunMetadata, RuntimeAutocompleteApplyRequest, RuntimeAutocompleteCapabilities, RuntimeAutocompleteCompletion, RuntimeAutocompleteQuery, RuntimeAutocompleteSuggestions, RuntimeBashExecutionResult, RuntimeEvent, RuntimeModelOption, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
 import type { ModelCycleDirection, PickyQueueMode } from "../protocol.js";
@@ -937,7 +938,12 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     }
 
     const inputMessageEvent = this.runtimeEventFromInputMessagePiEvent(record);
-    if (inputMessageEvent) return inputMessageEvent;
+    if (inputMessageEvent) {
+      const message = asRecord(record.message);
+      const update = subagentRunUpdateFromCustomMessage(message.customType, message.details, message.content);
+      if (update) this.emit({ type: "subagent_run_update", update });
+      return inputMessageEvent;
+    }
 
     const recoveryEvent = this.runtimeEventFromRecoveryPiEvent(record);
     if (recoveryEvent) return recoveryEvent;

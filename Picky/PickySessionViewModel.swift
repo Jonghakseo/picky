@@ -32,6 +32,8 @@ final class PickySessionListViewModel: ObservableObject {
     @Published private(set) var thinkingBlocksHiddenBySessionID: [String: Bool] = [:]
     /// Per-session TODO expansion choice survives Conversation Card teardown while the HUD is closed.
     @Published private(set) var todoProgressExpandedBySessionID: [String: Bool] = [:]
+    @Published private(set) var subagentProgressExpandedBySessionID: [String: Bool] = [:]
+    @Published private(set) var expandedSubagentRunIDsBySessionID: [String: Set<Int>] = [:]
     @Published private(set) var pendingDoneFlashSessionIDs: Set<String> = []
     /// Sessions whose detail card is currently presented as an inline Pi TUI instead of
     /// the SwiftUI chat/composer. This is intentionally UI-only state: the daemon and
@@ -732,6 +734,28 @@ final class PickySessionListViewModel: ObservableObject {
     func setTodoProgressExpanded(_ isExpanded: Bool, sessionID: String) {
         guard todoProgressExpandedBySessionID[sessionID] != isExpanded else { return }
         todoProgressExpandedBySessionID[sessionID] = isExpanded
+    }
+
+    func isSubagentProgressExpanded(sessionID: String, isComplete: Bool) -> Bool {
+        PickySubagentProgressExpansionPolicy.isExpanded(
+            savedValue: subagentProgressExpandedBySessionID[sessionID],
+            isComplete: isComplete
+        )
+    }
+
+    func setSubagentProgressExpanded(_ isExpanded: Bool, sessionID: String) {
+        guard subagentProgressExpandedBySessionID[sessionID] != isExpanded else { return }
+        subagentProgressExpandedBySessionID[sessionID] = isExpanded
+    }
+
+    func isSubagentRunExpanded(_ runID: Int, sessionID: String) -> Bool {
+        expandedSubagentRunIDsBySessionID[sessionID]?.contains(runID) == true
+    }
+
+    func toggleSubagentRunExpanded(_ runID: Int, sessionID: String) {
+        var runIDs = expandedSubagentRunIDsBySessionID[sessionID] ?? []
+        if !runIDs.insert(runID).inserted { runIDs.remove(runID) }
+        expandedSubagentRunIDsBySessionID[sessionID] = runIDs
     }
 
     func markDoneFlashConsumed(sessionID: String) {
@@ -1581,6 +1605,8 @@ final class PickySessionListViewModel: ObservableObject {
             applyToolActivityUpdated(sessionID: sessionId, tool: tool)
         case .sessionTodoStateUpdated(let sessionId, let todoState, let seq):
             applyTodoStateUpdated(sessionID: sessionId, todoState: todoState, seq: seq)
+        case .sessionSubagentRunsUpdated(let sessionId, let runs, let seq):
+            applySubagentRunsUpdated(sessionID: sessionId, runs: runs, seq: seq)
         case .extensionUiRequest(let request):
             applyExtensionUiRequest(request)
         case .artifactUpdated(let sessionId, let artifact):
@@ -1695,6 +1721,11 @@ final class PickySessionListViewModel: ObservableObject {
                 previousState: previousCardsByID[card.id]?.todoState,
                 currentState: card.todoState
             )
+            reconcileSubagentProgressExpansion(
+                sessionID: card.id,
+                previousRuns: previousCardsByID[card.id]?.subagentRuns ?? [],
+                currentRuns: card.subagentRuns
+            )
         }
         PickyPerf.interval("vm_snapshot_publish_session_lists") {
             sessions = cards.filter { !archivedIDs.contains($0.id) }
@@ -1740,6 +1771,11 @@ final class PickySessionListViewModel: ObservableObject {
             sessionID: session.id,
             previousState: previousCard?.todoState,
             currentState: incomingCard.todoState
+        )
+        reconcileSubagentProgressExpansion(
+            sessionID: session.id,
+            previousRuns: previousCard?.subagentRuns ?? [],
+            currentRuns: incomingCard.subagentRuns
         )
         if shouldInvalidateSlashCommandCache(previous: previousCard, incoming: incomingCard) {
             invalidateSlashCommandCache(sessionID: session.id)
@@ -1837,6 +1873,20 @@ final class PickySessionListViewModel: ObservableObject {
         update(sessionID: sessionId) { card in
             card.todoState = todoState
             card.updatedAt = todoState?.updatedAt ?? Date()
+        }
+    }
+
+    private func applySubagentRunsUpdated(sessionID sessionId: String, runs: [PickySubagentRun], seq: Int) {
+        PickyPerf.event("vm_event_subagent_runs_updated")
+        guard acceptIncrementalEvent(sessionID: sessionId, seq: seq) else { return }
+        reconcileSubagentProgressExpansion(
+            sessionID: sessionId,
+            previousRuns: card(sessionID: sessionId)?.subagentRuns ?? [],
+            currentRuns: runs
+        )
+        update(sessionID: sessionId) { card in
+            card.subagentRuns = runs
+            card.updatedAt = Date()
         }
     }
 
@@ -2025,6 +2075,28 @@ final class PickySessionListViewModel: ObservableObject {
         setTodoProgressExpanded(false, sessionID: sessionID)
     }
 
+    private func reconcileSubagentProgressExpansion(
+        sessionID: String,
+        previousRuns: [PickySubagentRun],
+        currentRuns: [PickySubagentRun]
+    ) {
+        guard let current = PickySubagentProgressPresentation(runs: currentRuns) else {
+            subagentProgressExpandedBySessionID.removeValue(forKey: sessionID)
+            expandedSubagentRunIDsBySessionID.removeValue(forKey: sessionID)
+            return
+        }
+        let previousIsComplete = PickySubagentProgressPresentation(runs: previousRuns)?.isComplete
+        if previousIsComplete == true && !current.isComplete {
+            subagentProgressExpandedBySessionID.removeValue(forKey: sessionID)
+        }
+        if PickySubagentProgressExpansionPolicy.shouldCollapse(
+            previousIsComplete: previousIsComplete,
+            currentIsComplete: current.isComplete
+        ) {
+            setSubagentProgressExpanded(false, sessionID: sessionID)
+        }
+    }
+
     private func pruneSlashCommandCache(knownSessionIDs: Set<String>) {
         slashCommandController.prune(knownSessionIDs: knownSessionIDs)
         syncSlashCommands()
@@ -2032,6 +2104,8 @@ final class PickySessionListViewModel: ObservableObject {
         syncComposerDraftRequests()
         thinkingBlocksHiddenBySessionID = thinkingBlocksHiddenBySessionID.filter { knownSessionIDs.contains($0.key) }
         todoProgressExpandedBySessionID = todoProgressExpandedBySessionID.filter { knownSessionIDs.contains($0.key) }
+        subagentProgressExpandedBySessionID = subagentProgressExpandedBySessionID.filter { knownSessionIDs.contains($0.key) }
+        expandedSubagentRunIDsBySessionID = expandedSubagentRunIDsBySessionID.filter { knownSessionIDs.contains($0.key) }
         pendingDoneFlashSessionIDs = pendingDoneFlashSessionIDs.filter { knownSessionIDs.contains($0) }
         unreadSessionIDs = unreadSessionIDs.filter { knownSessionIDs.contains($0) }
         releasedArchivedChildSessionIDs = releasedArchivedChildSessionIDs.filter { knownSessionIDs.contains($0) }

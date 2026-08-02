@@ -313,6 +313,7 @@ enum PickyEvent: Equatable {
     case sessionLogAppended(sessionId: String, line: String)
     case toolActivityUpdated(sessionId: String, tool: PickyToolActivity)
     case sessionTodoStateUpdated(sessionId: String, todoState: PickyTodoState?, seq: Int)
+    case sessionSubagentRunsUpdated(sessionId: String, runs: [PickySubagentRun], seq: Int)
     case extensionUiRequest(PickyExtensionUiRequest)
     case artifactUpdated(sessionId: String, artifact: PickyArtifact)
     case pointerOverlayRequested(PickyPointerOverlayRequest)
@@ -420,6 +421,9 @@ enum PickyEvent: Equatable {
         case "sessionTodoStateUpdated":
             let payload = try PickyTodoStateUpdatedPayload(from: decoder)
             return .sessionTodoStateUpdated(sessionId: payload.sessionId, todoState: payload.todoState, seq: payload.seq)
+        case "sessionSubagentRunsUpdated":
+            let payload = try PickySubagentRunsUpdatedPayload(from: decoder)
+            return .sessionSubagentRunsUpdated(sessionId: payload.sessionId, runs: payload.runs, seq: payload.seq)
         case "artifactUpdated":
             let payload = try PickyArtifactUpdatedPayload(from: decoder)
             return .artifactUpdated(sessionId: payload.sessionId, artifact: payload.artifact)
@@ -666,6 +670,7 @@ struct PickyPackageOperationCompletedEvent: Decodable, Equatable {
 private struct PickySessionLogAppendedPayload: Decodable { let sessionId: String; let line: String }
 private struct PickyToolActivityUpdatedPayload: Decodable { let sessionId: String; let tool: PickyToolActivity }
 private struct PickyTodoStateUpdatedPayload: Decodable { let sessionId: String; let todoState: PickyTodoState?; let seq: Int }
+private struct PickySubagentRunsUpdatedPayload: Decodable { let sessionId: String; let runs: [PickySubagentRun]; let seq: Int }
 private struct PickyExtensionUiRequestPayload: Decodable { let request: PickyExtensionUiRequest }
 private struct PickyArtifactUpdatedPayload: Decodable { let sessionId: String; let artifact: PickyArtifact }
 private struct PickyPointerOverlayRequestedPayload: Decodable { let request: PickyPointerOverlayRequest }
@@ -1166,6 +1171,28 @@ struct PickyTodoState: Codable, Equatable {
     }
 }
 
+enum PickySubagentRunStatus: String, Codable, Equatable {
+    case running, done, error
+}
+
+struct PickySubagentRun: Codable, Equatable, Identifiable {
+    let runId: Int
+    let agent: String
+    let task: String
+    let displayTask: String?
+    let status: PickySubagentRunStatus
+    let errorClass: String?
+    let startedAt: Date?
+    let elapsedMs: Double?
+    let batchId: String?
+    let pipelineId: String?
+    let pipelineStepIndex: Int?
+    let resultPreview: String?
+    let model: String?
+
+    var id: Int { runId }
+}
+
 struct PickyAgentSession: Codable, Equatable, Identifiable {
     let id: String
     let title: String
@@ -1180,6 +1207,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
     var logs: [String]
     var tools: [PickyToolActivity]
     var todoState: PickyTodoState? = nil
+    var subagentRuns: [PickySubagentRun] = []
     var artifacts: [PickyArtifact]
     var changedFiles: [PickyChangedFile]
     var messages: [PickySessionMessage] = []
@@ -1196,7 +1224,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
     var pinned: Bool? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, title, status, cwd, piSessionFilePath, createdAt, updatedAt, lastSummary, thinkingPreview, finalAnswer, logs, tools, todoState, artifacts, changedFiles
+        case id, title, status, cwd, piSessionFilePath, createdAt, updatedAt, lastSummary, thinkingPreview, finalAnswer, logs, tools, todoState, subagentRuns, artifacts, changedFiles
         case messages, queuedSteers, queuedFollowUps, steeringMode, followUpMode, activitySummary, contextUsage, currentAssistantRun
         case pendingExtensionUiRequest, notifyMainOnCompletion, archived, pinned
     }
@@ -1215,6 +1243,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         logs: [String],
         tools: [PickyToolActivity],
         todoState: PickyTodoState? = nil,
+        subagentRuns: [PickySubagentRun] = [],
         artifacts: [PickyArtifact],
         changedFiles: [PickyChangedFile],
         messages: [PickySessionMessage] = [],
@@ -1243,6 +1272,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         self.logs = logs
         self.tools = tools
         self.todoState = todoState
+        self.subagentRuns = subagentRuns
         self.artifacts = artifacts
         self.changedFiles = changedFiles
         self.messages = messages
@@ -1274,6 +1304,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         logs = try container.decodeIfPresent([String].self, forKey: .logs) ?? []
         tools = try container.decodeIfPresent([PickyToolActivity].self, forKey: .tools) ?? []
         todoState = try container.decodeIfPresent(PickyTodoState.self, forKey: .todoState)
+        subagentRuns = try container.decodeIfPresent([PickySubagentRun].self, forKey: .subagentRuns) ?? []
         artifacts = try container.decodeIfPresent([PickyArtifact].self, forKey: .artifacts) ?? []
         changedFiles = try container.decodeIfPresent([PickyChangedFile].self, forKey: .changedFiles) ?? []
         messages = try container.decodeIfPresent([PickySessionMessage].self, forKey: .messages) ?? []

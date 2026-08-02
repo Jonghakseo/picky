@@ -430,6 +430,30 @@ describe("SessionSupervisor", () => {
     expect(restored?.todoState).toEqual(clearedState);
   });
 
+  it("persists slim subagent run updates and keeps active background runs after a terminal turn", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-subagent-runs-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("subagent runs"));
+    const events: Array<{ runs: unknown[]; seq: number }> = [];
+    supervisor.on("subagentRunsUpdated", (_sessionId, runs, seq) => events.push({ runs, seq }));
+
+    runtime.handle!.emit({ type: "subagent_run_update", update: { runId: 2, agent: "worker", task: "Inspect", status: "running" } });
+    runtime.handle!.emit({ type: "subagent_run_update", update: { runId: 1, agent: "reviewer", task: "Review", status: "done", elapsedMs: 50 } });
+    await waitUntil(() => events.length === 2);
+    expect(supervisor.get(session.id)?.subagentRuns?.map((run) => run.runId)).toEqual([1, 2]);
+
+    runtime.handle!.emit({ type: "status", status: "completed", summary: "Done" });
+    await waitUntil(() => supervisor.get(session.id)?.status === "completed");
+    expect(supervisor.get(session.id)?.subagentRuns).toHaveLength(2);
+
+    runtime.handle!.emit({ type: "subagent_run_update", update: { runId: 2, agent: "worker", task: "Inspect", status: "done", elapsedMs: 100 } });
+    await waitUntil(() => supervisor.get(session.id)?.subagentRuns?.every((run) => run.status === "done") ?? false);
+    runtime.handle!.emit({ type: "status", status: "completed", summary: "Done" });
+    await waitUntil(() => supervisor.get(session.id)?.subagentRuns?.length === 0);
+  });
+
   it("broadcasts activitySummary via sessionActivityUpdated without an accompanying full sessionUpdated", async () => {
     // Phase 1 of the live-update slim-down: streaming tool/thinking turns previously fired a full
     // sessionUpdated (full PickyAgentSession payload) on top of every sessionActivityUpdated, which
@@ -5639,6 +5663,63 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(session.id)?.status).toBe("running");
     expect(supervisor.get(session.id)?.finalAnswer).toBeUndefined();
     expect(supervisor.get(session.id)?.messages?.at(-1)).toMatchObject({ kind: "user_text", text: "extension follow-up", originatedBy: "pi_extension" });
+  });
+
+  it("revives and unpins a completed Pickle for a hidden custom message during an active Pi turn without journaling it", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-pi-extension-custom-revive-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.createPickleFromHandoff(context("custom extension revive"), { title: "Pickle", instructions: "Investigate" });
+    await supervisor.setNotifyMainOnCompletion(session.id, false);
+    const internals = supervisor as unknown as {
+      patch(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void>;
+      pickleCompletionNotified: Set<string>;
+    };
+    await internals.patch(session.id, { pinned: true });
+
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed", finalAnswer: "old answer" });
+    await waitUntil(() => internals.pickleCompletionNotified.has(session.id));
+
+    // Pi's agent_start was ignored because this Pickle was already completed. The Pi adapter
+    // supplies turnActive from session.isStreaming so the subsequent hidden custom event still
+    // revives it, while display:false keeps it out of the conversation journal.
+    runtime.handle!.isStreaming = true;
+    runtime.handle?.emit({ type: "input_message", role: "custom", text: "subagent begins active work", originatedBy: "pi_extension", customType: "subagent", display: false, turnActive: true });
+    await waitUntil(() => supervisor.get(session.id)?.status === "running");
+
+    expect(supervisor.get(session.id)).toMatchObject({ status: "running", pinned: false, finalAnswer: undefined });
+    expect(internals.pickleCompletionNotified.has(session.id)).toBe(false);
+    expect(supervisor.get(session.id)?.messages?.some((message) => message.kind === "user_text" && message.text === "subagent begins active work")).toBe(false);
+  });
+
+  it("preserves completed Pickle state and completion tracking for an idle custom extension message", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-pi-extension-custom-idle-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.createPickleFromHandoff(context("idle custom extension"), { title: "Pickle", instructions: "Investigate" });
+    await supervisor.setNotifyMainOnCompletion(session.id, false);
+    const internals = supervisor as unknown as {
+      patch(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void>;
+      pickleCompletionNotified: Set<string>;
+    };
+    await internals.patch(session.id, { pinned: true });
+
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed", finalAnswer: "completed answer" });
+    await waitUntil(() => internals.pickleCompletionNotified.has(session.id));
+
+    runtime.handle?.emit({ type: "input_message", role: "custom", text: "subagent status update", originatedBy: "pi_extension", customType: "subagent", turnActive: false });
+    await settle();
+
+    expect(supervisor.get(session.id)).toMatchObject({
+      status: "completed",
+      finalAnswer: "completed answer",
+      lastSummary: "completed answer",
+      pinned: true,
+    });
+    expect(internals.pickleCompletionNotified.has(session.id)).toBe(true);
+    expect(supervisor.get(session.id)?.messages?.at(-1)).toMatchObject({ kind: "user_text", text: "subagent status update", originatedBy: "pi_extension" });
   });
 
   it("defers user_text for queued follow-ups until Pi dequeues them", async () => {

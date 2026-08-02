@@ -1637,6 +1637,48 @@
         }
       }
     },
+    "hud.subagent.pill": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld agents · %lld/%lld" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "%1$lld개 에이전트 · %2$lld/%3$lld" } }
+      }
+    },
+    "hud.subagent.header": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld agents running · %lld/%lld done" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "%1$lld개 에이전트 실행 중 · %2$lld/%3$lld 완료" } }
+      }
+    },
+    "hud.subagent.show": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Show agent runs" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "서브에이전트 실행 보기" } }
+      }
+    },
+    "hud.subagent.collapse": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Collapse agent runs" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "서브에이전트 실행 접기" } }
+      }
+    },
+    "hud.subagent.status.running": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Running" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "실행 중" } }
+      }
+    },
+    "hud.subagent.status.done": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Completed" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "완료" } }
+      }
+    },
+    "hud.subagent.status.error": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Failed" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "실패" } }
+      }
+    },
     "hud.todo.title": {
       "localizations": {
         "en": {

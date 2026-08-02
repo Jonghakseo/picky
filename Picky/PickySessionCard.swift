@@ -26,6 +26,7 @@ extension PickySessionListViewModel {
         var lastRequestAt: Date?
         var tools: [PickyToolActivity]
         var todoState: PickyTodoState? = nil
+        var subagentRuns: [PickySubagentRun] = []
         var artifacts: [PickyArtifact]
         var changedFiles: [PickyChangedFile]
         var messages: [PickySessionMessage]
@@ -211,6 +212,7 @@ extension PickySessionListViewModel.SessionCard {
         self.lastRequestAt = nil
         self.tools = session.tools
         self.todoState = session.todoState
+        self.subagentRuns = session.subagentRuns
         self.artifacts = session.artifacts
         self.changedFiles = session.changedFiles
         self.messages = session.messages

@@ -32,6 +32,7 @@ interface RuntimeEventHandlerDependencies {
   patchSession(sessionId: string, patch: Partial<PickyAgentSession>, options?: { emitSession?: boolean }): Promise<void>;
   emitToolActivityUpdated(sessionId: string, tool: PickyToolActivity): void;
   updateTodoState(sessionId: string, todoState: PickyAgentSession["todoState"]): Promise<void>;
+  updateSubagentRuns?(sessionId: string, update: Extract<RuntimeEvent, { type: "subagent_run_update" }>["update"]): Promise<void>;
   consumeNoTurnRanSessionStateRestore?(sessionId: string): Partial<PickyAgentSession> | undefined;
   appendLog(sessionId: string, line: string): Promise<void>;
   materializeTerminalArtifacts(sessionId: string): Promise<void>;
@@ -103,6 +104,7 @@ export class RuntimeEventHandler {
   async handle(sessionId: string, event: RuntimeEvent): Promise<void> {
     if (event.type === "log") return this.dependencies.appendLog(sessionId, event.line);
     if (event.type === "todo_state") return this.dependencies.updateTodoState(sessionId, event.todoState);
+    if (event.type === "subagent_run_update") return this.dependencies.updateSubagentRuns?.(sessionId, event.update);
     if (event.type === "input_message") {
       const currentStatus = this.dependencies.getSession(sessionId).status;
       if (isTerminalStatus(currentStatus) && currentStatus !== "completed") return;
@@ -156,7 +158,7 @@ export class RuntimeEventHandler {
   }
 
   private async applyInputMessageEvent(sessionId: string, event: Extract<RuntimeEvent, { type: "input_message" }>): Promise<void> {
-    if (event.originatedBy === "internal" || event.display === false) return;
+    if (event.originatedBy === "internal") return;
 
     // Pi extensions use custom messages for displayable context (such as subagent status) as
     // well as turn-triggering input. Unlike role=user, custom messages start a turn only when
@@ -164,7 +166,9 @@ export class RuntimeEventHandler {
     // completion tracking for idle custom messages while still showing them in the journal.
     const startsTurn = event.role === "user" || event.turnActive === true;
     if (!startsTurn) {
-      await this.dependencies.messageBuilder.recordUserText(sessionId, event.text, event.originatedBy === "pi_extension" ? "pi_extension" : event.originatedBy);
+      if (event.display !== false) {
+        await this.dependencies.messageBuilder.recordUserText(sessionId, event.text, event.originatedBy === "pi_extension" ? "pi_extension" : event.originatedBy);
+      }
       return;
     }
 
@@ -173,10 +177,10 @@ export class RuntimeEventHandler {
     await this.dependencies.messageBuilder.flushAssistantText(sessionId);
     await this.dependencies.messageBuilder.flushThinking(sessionId);
     await this.dependencies.commitTurnActivity(sessionId);
-    await this.dependencies.messageBuilder.recordUserText(sessionId, event.text, event.originatedBy === "pi_extension" ? "pi_extension" : event.originatedBy);
-    this.assistantDrafts.set(sessionId, "");
-    this.thinkingDrafts.set(sessionId, "");
-    this.thinkingActive.set(sessionId, false);
+    if (event.display !== false) {
+      await this.dependencies.messageBuilder.recordUserText(sessionId, event.text, event.originatedBy === "pi_extension" ? "pi_extension" : event.originatedBy);
+    }
+    this.resetAssistantDraft(sessionId);
     await this.dependencies.patchSession(sessionId, { status: "running", lastSummary: event.role === "custom" ? "Pi extension message started" : "Pi extension follow-up started", finalAnswer: undefined, thinkingPreview: undefined });
   }
 

@@ -496,12 +496,18 @@ describe("PiSdkRuntime", () => {
     handle.subscribe((event) => events.push(event));
 
     fakeSession.emit("event", { type: "message_start", message: { role: "user", content: [{ type: "text", text: "extension follow-up" }] } });
-    fakeSession.emit("event", { type: "message_start", message: { role: "custom", customType: "subagent", content: "custom result", display: true } });
+    fakeSession.emit("event", { type: "message_start", message: { role: "custom", customType: "subagent", content: "idle custom result", display: true } });
+    fakeSession.isStreaming = true;
+    fakeSession.emit("event", { type: "message_start", message: { role: "custom", customType: "subagent", content: "active custom result", display: true } });
+    fakeSession.emit("event", { type: "message_start", message: { role: "custom", customType: "subagent-tool", content: "[subagent:worker#12] started", display: false, details: { runId: 12, agent: "worker", task: "Inspect", status: "started", startedAt: 1_700_000_000_000 } } });
+    fakeSession.isStreaming = false;
     fakeSession.emit("event", { type: "message_start", message: { role: "custom", customType: "hidden", content: "hidden result", display: false } });
 
     expect(events).toContainEqual({ type: "input_message", role: "user", text: "extension follow-up", originatedBy: "pi_extension" });
-    expect(events).toContainEqual({ type: "input_message", role: "custom", text: "custom result", originatedBy: "pi_extension", display: true, customType: "subagent" });
-    expect(events).toContainEqual({ type: "input_message", role: "custom", text: "hidden result", originatedBy: "pi_extension", display: false, customType: "hidden" });
+    expect(events).toContainEqual({ type: "input_message", role: "custom", text: "idle custom result", originatedBy: "pi_extension", display: true, customType: "subagent", turnActive: false });
+    expect(events).toContainEqual({ type: "input_message", role: "custom", text: "active custom result", originatedBy: "pi_extension", display: true, customType: "subagent", turnActive: true });
+    expect(events).toContainEqual({ type: "input_message", role: "custom", text: "hidden result", originatedBy: "pi_extension", display: false, customType: "hidden", turnActive: false });
+    expect(events).toContainEqual(expect.objectContaining({ type: "subagent_run_update", update: expect.objectContaining({ runId: 12, status: "running" }) }));
   });
 
   it("executes user bash directly through the Pi session and preserves context inclusion flag", async () => {
@@ -905,7 +911,7 @@ describe("PiSdkRuntime", () => {
 
     const inputMessages = events.filter((event) => (event as { type?: string }).type === "input_message");
     expect(inputMessages).toEqual([
-      { type: "input_message", role: "custom", text: "unrelated custom note", originatedBy: "pi_extension", customType: "subagent" },
+      { type: "input_message", role: "custom", text: "unrelated custom note", originatedBy: "pi_extension", customType: "subagent", turnActive: true },
     ]);
   });
 
@@ -927,7 +933,7 @@ describe("PiSdkRuntime", () => {
 
     const inputMessages = events.filter((event) => (event as { type?: string }).type === "input_message");
     expect(inputMessages).toEqual([
-      { type: "input_message", role: "custom", text: expansion, originatedBy: "pi_extension", customType: "skill" },
+      { type: "input_message", role: "custom", text: expansion, originatedBy: "pi_extension", customType: "skill", turnActive: true },
     ]);
   });
 

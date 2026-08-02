@@ -15,7 +15,7 @@ import { readRecentPinnedSourceState, snapshotPiSessionFile } from "./applicatio
 import { TerminalSessionCoordinator } from "./application/terminal-session-coordinator.js";
 import { mapExtensionUiRequest, summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
 import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentPickleCompletionPrompt, buildPicklePrompt, buildSteerPrompt, type BuiltPrompt } from "./prompt-builder.js";
-import type { ModelCycleDirection, PickyActivitySummary, PickyAgentSession, PickyAnnotationOverlayRequest, PickyContextPacket, PickyExtensionUiRequest, PickyMainActivity, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
+import type { ModelCycleDirection, PickyActivitySummary, PickyAgentSession, PickyAnnotationOverlayRequest, PickyContextPacket, PickyExtensionUiRequest, PickyMainActivity, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage, PickySubagentRun } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-overlay-request.js";
 import type { PickyShowAnnotationsRequest, PickyShowAnnotationsResult } from "./application/annotation-overlay-request.js";
 import { PickleVisualDslCoordinator, type PickleVisualDslLease } from "./application/pickle-visual-dsl-coordinator.js";
@@ -30,6 +30,7 @@ import { mergeChangedFiles } from "./domain/changed-files.js";
 import { diffQueueRemovedItems, dropAlreadyMaterializedQueueEntries, queueItems, sameQueueItems, type PendingQueueDelivery } from "./domain/queue-policy.js";
 import { isTerminalStatus } from "./domain/session-status.js";
 import { countSystemMessages, sameTodoState, shouldReattachBlockedSessionOnStartup } from "./domain/session-state-policy.js";
+import { applySubagentRunUpdate, pruneSettledSubagentRuns } from "./domain/subagent-run-state.js";
 import { ARCHIVED_SESSION_RETENTION_DAYS, buildAppendedMainMessageState, buildArchivedSessionRestartCancellation, buildDuplicatedPickleSession, buildEmptyPickleSession, buildInterruptedRuntimeLiveStatePatch, buildOrphanedChildRecoverySession, buildPinnedPickleSession, buildResumedHandoffPickleSession, buildRuntimeReattachPatch, buildRuntimeSessionReplacementPatch, buildUnattachedRuntimeBlock, buildVisibleSession, projectMainAgentSessionInfo, projectMainReplyMetadata, projectMainRolloverPickleSessions, shouldPurgeArchivedSession } from "./domain/session-supervisor-projection-policy.js";
 import { normalizeDslWhitespace, userInputFromLogLine } from "./domain/session-text-policy.js";
 import { HANDOFF_PREFIX, FOLLOWUP_PREFIX, STEER_PREFIX, EXTENSION_ANSWER_PREFIX } from "./domain/log-prefixes.js";
@@ -245,6 +246,7 @@ export class SessionSupervisor extends EventEmitter {
       patchSession: (sessionId, patch, options) => this.patch(sessionId, patch, options),
       emitToolActivityUpdated: (sessionId, tool) => this.emit("toolActivityUpdated", sessionId, tool),
       updateTodoState: (sessionId, todoState) => this.updateTodoState(sessionId, todoState),
+      updateSubagentRuns: (sessionId, update) => this.updateSubagentRuns(sessionId, update),
       consumeNoTurnRanSessionStateRestore: (sessionId) => this.consumeNoTurnRanSessionStateRestore(sessionId),
       appendLog: (sessionId, line) => this.appendLog(sessionId, line),
       materializeTerminalArtifacts: (sessionId) => this.materializeTerminalArtifacts(sessionId),
@@ -2802,22 +2804,29 @@ export class SessionSupervisor extends EventEmitter {
         return;
       }
       await this.runtimeEventHandler.handle(sessionId, event);
-      if (event.type === "status" && ["failed", "cancelled"].includes(event.status)) this.followUpLifecycleDiagnostics.clearFollowUpStalls(sessionId);
-      // `agent_start` normalizes to this status event; once Pi starts a new agent cycle the
-      // queued follow-up is no longer the stalled state this detector tracks.
-      if (event.type === "status" && event.status === "running" && event.summary === "Agent started") this.followUpLifecycleDiagnostics.clearFollowUpStalls(sessionId);
-      if (event.type === "status" && event.noTurnRan && ["completed", "failed", "cancelled"].includes(event.status)) {
-        const wasPendingReload = this.pendingResourceReloadSessionIDs.delete(sessionId);
-        if (wasPendingReload && event.status === "completed" && !event.preserveSessionState) {
-          this.emit("resourcesReloaded", sessionId);
-        }
-      }
+      if (event.type === "status") await this.applyRuntimeStatusSideEffects(sessionId, event);
       this.maybeDrainPostCompactionReload(sessionId);
     });
     const tracked = next.catch(() => undefined);
     this.runtimeEventChains.set(sessionId, tracked);
     await next;
     if (this.runtimeEventChains.get(sessionId) === tracked) this.runtimeEventChains.delete(sessionId);
+  }
+
+  private async applyRuntimeStatusSideEffects(sessionId: string, event: Extract<RuntimeEvent, { type: "status" }>): Promise<void> {
+    if (["completed", "failed", "cancelled"].includes(event.status)) {
+      await this.pruneSettledSubagentRuns(sessionId);
+    }
+    if (["failed", "cancelled"].includes(event.status)) this.followUpLifecycleDiagnostics.clearFollowUpStalls(sessionId);
+    // `agent_start` normalizes to this status event; once Pi starts a new agent cycle the
+    // queued follow-up is no longer the stalled state this detector tracks.
+    if (event.status === "running" && event.summary === "Agent started") this.followUpLifecycleDiagnostics.clearFollowUpStalls(sessionId);
+    if (event.noTurnRan && ["completed", "failed", "cancelled"].includes(event.status)) {
+      const wasPendingReload = this.pendingResourceReloadSessionIDs.delete(sessionId);
+      if (wasPendingReload && event.status === "completed" && !event.preserveSessionState) {
+        this.emit("resourcesReloaded", sessionId);
+      }
+    }
   }
 
   private async waitForRuntimeEvents(sessionId: string): Promise<void> {
@@ -2962,6 +2971,28 @@ export class SessionSupervisor extends EventEmitter {
     });
   }
 
+  private async updateSubagentRuns(sessionId: string, update: PickySubagentRun): Promise<void> {
+    const current = this.mustGet(sessionId).subagentRuns ?? [];
+    const runs = applySubagentRunUpdate(current, update);
+    if (sameSubagentRuns(current, runs)) return;
+    await this.patch(sessionId, { subagentRuns: runs }, { emitSession: false });
+    const seq = this.nextSeq(sessionId);
+    await this.chainEmit(sessionId, async () => {
+      this.emit("subagentRunsUpdated", sessionId, runs, seq);
+    });
+  }
+
+  private async pruneSettledSubagentRuns(sessionId: string): Promise<void> {
+    const current = this.mustGet(sessionId).subagentRuns ?? [];
+    const runs = pruneSettledSubagentRuns(current);
+    if (sameSubagentRuns(current, runs)) return;
+    await this.patch(sessionId, { subagentRuns: runs }, { emitSession: false });
+    const seq = this.nextSeq(sessionId);
+    await this.chainEmit(sessionId, async () => {
+      this.emit("subagentRunsUpdated", sessionId, runs, seq);
+    });
+  }
+
   private async syncSessionMessages(sessionId: string, messages: readonly PickySessionMessage[]): Promise<void> {
     await this.runSessionWrite(sessionId, async () => {
       const session = { ...this.mustGet(sessionId), messages: [...messages], updatedAt: new Date().toISOString() };
@@ -2999,4 +3030,8 @@ export class SessionSupervisor extends EventEmitter {
     if (!session) throw new Error(`Unknown session: ${sessionId}`);
     return session;
   }
+}
+
+function sameSubagentRuns(left: readonly PickySubagentRun[], right: readonly PickySubagentRun[]): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
 }

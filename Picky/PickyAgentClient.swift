@@ -477,6 +477,8 @@ private extension PickyEventEnvelope {
             return "type=toolActivityUpdated id=\(id) session=\(sessionId) tool=\(tool.name) status=\(tool.status)"
         case .sessionTodoStateUpdated(let sessionId, let todoState, let seq):
             return "type=sessionTodoStateUpdated id=\(id) session=\(sessionId) tasks=\(todoState?.tasks.count ?? 0) seq=\(seq)"
+        case .sessionSubagentRunsUpdated(let sessionId, let runs, let seq):
+            return "type=sessionSubagentRunsUpdated id=\(id) session=\(sessionId) runs=\(runs.count) seq=\(seq)"
         case .extensionUiRequest(let request):
             return "type=extensionUiRequest id=\(id) session=\(request.sessionId) request=\(request.id) method=\(request.method)"
         case .artifactUpdated(let sessionId, let artifact):

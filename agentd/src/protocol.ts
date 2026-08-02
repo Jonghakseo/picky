@@ -149,6 +149,22 @@ export const PickyTodoStateSchema = z.object({
   updatedAt: isoTimestamp,
 });
 export type PickyTodoState = z.infer<typeof PickyTodoStateSchema>;
+export const PickySubagentRunSchema = z.object({
+  runId: z.number().int(),
+  agent: z.string(),
+  task: z.string(),
+  displayTask: z.string().optional(),
+  status: z.enum(["running", "done", "error"]),
+  errorClass: z.string().optional(),
+  startedAt: isoTimestamp.optional(),
+  elapsedMs: z.number().nonnegative().optional(),
+  batchId: z.string().optional(),
+  pipelineId: z.string().optional(),
+  pipelineStepIndex: z.number().int().optional(),
+  resultPreview: z.string().optional(),
+  model: z.string().optional(),
+});
+export type PickySubagentRun = z.infer<typeof PickySubagentRunSchema>;
 const PickyExtensionUiQuestionOptionSchema = z.preprocess(
   (option) => typeof option === "string" ? { value: option, label: option } : option,
   z.object({ value: z.string(), label: z.string(), description: z.string().optional() }),
@@ -259,6 +275,7 @@ export const PickyAgentSessionSchema = z.object({
   logs: z.array(z.string()).default([]),
   tools: z.array(PickyToolActivitySchema).default([]),
   todoState: PickyTodoStateSchema.optional(),
+  subagentRuns: z.array(PickySubagentRunSchema).default([]),
   artifacts: z.array(PickyArtifactSchema).default([]),
   changedFiles: z.array(PickyChangedFileSchema).default([]),
   messages: z.array(PickySessionMessageSchema).default([]),
@@ -281,7 +298,7 @@ export const PickyAgentSessionSchema = z.object({
 });
 
 export type PickyAgentSessionParsed = z.infer<typeof PickyAgentSessionSchema>;
-export type PickyAgentSession = Omit<PickyAgentSessionParsed, "messages" | "queuedSteers" | "queuedFollowUps" | "steeringMode" | "followUpMode" | "activitySummary"> & Partial<Pick<PickyAgentSessionParsed, "messages" | "queuedSteers" | "queuedFollowUps" | "steeringMode" | "followUpMode" | "activitySummary">>;
+export type PickyAgentSession = Omit<PickyAgentSessionParsed, "messages" | "queuedSteers" | "queuedFollowUps" | "steeringMode" | "followUpMode" | "activitySummary" | "subagentRuns"> & Partial<Pick<PickyAgentSessionParsed, "messages" | "queuedSteers" | "queuedFollowUps" | "steeringMode" | "followUpMode" | "activitySummary" | "subagentRuns">>;
 
 export const PickyPointerOverlayRequestSchema = z.object({
   id: z.string().min(1),
@@ -599,6 +616,7 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
   EventBaseSchema.extend({ type: z.literal("sessionLogAppended"), sessionId: z.string(), line: z.string() }),
   EventBaseSchema.extend({ type: z.literal("toolActivityUpdated"), sessionId: z.string(), tool: PickyToolActivitySchema }),
   EventBaseSchema.extend({ type: z.literal("sessionTodoStateUpdated"), sessionId: z.string(), todoState: PickyTodoStateSchema.nullable(), seq: z.number().int() }),
+  EventBaseSchema.extend({ type: z.literal("sessionSubagentRunsUpdated"), sessionId: z.string(), runs: z.array(PickySubagentRunSchema), seq: z.number().int() }),
   EventBaseSchema.extend({ type: z.literal("extensionUiRequest"), request: PickyExtensionUiRequestSchema }),
   EventBaseSchema.extend({ type: z.literal("artifactUpdated"), sessionId: z.string(), artifact: PickyArtifactSchema }),
   EventBaseSchema.extend({ type: z.literal("pointerOverlayRequested"), request: PickyPointerOverlayRequestSchema }),

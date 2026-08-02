@@ -87,4 +87,186 @@ describe("RuntimeEventHandler", () => {
     expect(notifyPickleCompletion).toHaveBeenCalledTimes(1);
     expect(finishAssistantRun).toHaveBeenCalledTimes(2);
   });
+
+  it("journals an idle custom extension message without reviving a completed Pickle", async () => {
+    const harness = inputHarness({
+      status: "completed",
+      finalAnswer: "Completed answer",
+      lastSummary: "Completed answer",
+      pinned: true,
+    });
+
+    await harness.handler.handle("pickle-1", {
+      type: "input_message",
+      role: "custom",
+      text: "subagent finished",
+      originatedBy: "pi_extension",
+      customType: "subagent",
+      turnActive: false,
+    });
+
+    expect(harness.current()).toMatchObject({
+      status: "completed",
+      finalAnswer: "Completed answer",
+      lastSummary: "Completed answer",
+      pinned: true,
+    });
+    expect(harness.recordUserText).toHaveBeenCalledWith("pickle-1", "subagent finished", "pi_extension");
+    expect(harness.onInputMessage).not.toHaveBeenCalled();
+    expect(harness.patchSession).not.toHaveBeenCalled();
+  });
+
+  it("ignores a hidden idle custom extension message without changing a completed Pickle", async () => {
+    const harness = inputHarness({
+      status: "completed",
+      finalAnswer: "Completed answer",
+      lastSummary: "Completed answer",
+      pinned: true,
+    });
+
+    await harness.handler.handle("pickle-1", {
+      type: "input_message",
+      role: "custom",
+      text: "hidden subagent status",
+      originatedBy: "pi_extension",
+      customType: "subagent",
+      display: false,
+      turnActive: false,
+    });
+
+    expect(harness.current()).toMatchObject({
+      status: "completed",
+      finalAnswer: "Completed answer",
+      lastSummary: "Completed answer",
+      pinned: true,
+    });
+    expect(harness.recordUserText).not.toHaveBeenCalled();
+    expect(harness.onInputMessage).not.toHaveBeenCalled();
+    expect(harness.patchSession).not.toHaveBeenCalled();
+  });
+
+  it("revives a completed Pickle for a hidden custom message observed during an active Pi turn without journaling it", async () => {
+    const harness = inputHarness({ status: "completed", finalAnswer: "Previous answer" });
+
+    // The preceding Pi agent_start is ignored because the Pickle was completed. The adapter's
+    // authoritative isStreaming snapshot on this custom event must still revive the session.
+    await harness.handler.handle("pickle-1", {
+      type: "input_message",
+      role: "custom",
+      text: "subagent result starts next turn",
+      originatedBy: "pi_extension",
+      customType: "subagent",
+      display: false,
+      turnActive: true,
+    });
+
+    expect(harness.current()).toMatchObject({
+      status: "running",
+      lastSummary: "Pi extension message started",
+    });
+    expect(harness.current().finalAnswer).toBeUndefined();
+    expect(harness.onInputMessage).toHaveBeenCalledTimes(1);
+    expect(harness.recordUserText).not.toHaveBeenCalled();
+  });
+
+  it("processes terminal completion after an extension turn resets the previous terminal dedupe", async () => {
+    const harness = inputHarness();
+
+    await harness.handler.handle("pickle-1", {
+      type: "status",
+      status: "completed",
+      summary: "First completed turn",
+      finalAnswer: "First answer",
+    });
+    await harness.handler.handle("pickle-1", {
+      type: "input_message",
+      role: "custom",
+      text: "subagent starts another turn",
+      originatedBy: "pi_extension",
+      customType: "subagent",
+      turnActive: true,
+    });
+
+    // The terminal tail can win the race and patch the second turn as completed before the
+    // runtime status arrives. The status event must still commit completion side effects.
+    harness.setCurrent({ status: "completed" });
+    await harness.handler.handle("pickle-1", {
+      type: "status",
+      status: "completed",
+      summary: "Second completed turn",
+      finalAnswer: "Second answer",
+    });
+
+    expect(harness.current()).toMatchObject({ status: "completed", finalAnswer: "Second answer" });
+    expect(harness.materializeTerminalArtifacts).toHaveBeenCalledTimes(2);
+    expect(harness.notifyPickleCompletion).toHaveBeenCalledTimes(2);
+  });
+
+  it("continues to start a turn for an extension user message", async () => {
+    const harness = inputHarness({ status: "completed", finalAnswer: "Previous answer" });
+
+    await harness.handler.handle("pickle-1", {
+      type: "input_message",
+      role: "user",
+      text: "extension follow-up",
+      originatedBy: "pi_extension",
+    });
+
+    expect(harness.current()).toMatchObject({
+      status: "running",
+      lastSummary: "Pi extension follow-up started",
+    });
+    expect(harness.current().finalAnswer).toBeUndefined();
+    expect(harness.onInputMessage).toHaveBeenCalledTimes(1);
+  });
 });
+
+function inputHarness(initial: Partial<PickyAgentSession> = {}) {
+  let current = { ...session(), ...initial };
+  const patchSession = vi.fn(async (_sessionId: string, patch: Partial<PickyAgentSession>) => {
+    current = { ...current, ...patch };
+  });
+  const onInputMessage = vi.fn(async () => {});
+  const recordUserText = vi.fn(async () => {});
+  const materializeTerminalArtifacts = vi.fn(async () => {});
+  const notifyPickleCompletion = vi.fn(async () => {});
+  const handler = new RuntimeEventHandler({
+    getSession: () => current,
+    patchSession,
+    emitToolActivityUpdated: () => {},
+    updateTodoState: async () => {},
+    appendLog: async () => {},
+    materializeTerminalArtifacts,
+    applyQueueUpdate: async () => {},
+    incrementActivity: async () => {},
+    commitTurnActivity: async () => {},
+    notifyPickleCompletion,
+    isPickleSession: () => true,
+    emitExtensionUiRequest: () => {},
+    onInputMessage,
+    messageBuilder: {
+      recordExtensionQuestion: async () => {},
+      recordExtensionNotification: async () => {},
+      cancelExtensionQuestion: async () => {},
+      recordError: async () => {},
+      recordSystemMessage: async () => {},
+      recordUserText,
+      appendAssistantDelta: () => {},
+      flushAssistantText: async () => {},
+      appendThinkingDelta: async () => {},
+      flushThinking: async () => {},
+      clearAllThinking: async () => {},
+      recordActivitySnapshot: async () => {},
+    },
+  });
+  return {
+    handler,
+    current: () => current,
+    setCurrent: (patch: Partial<PickyAgentSession>) => { current = { ...current, ...patch }; },
+    patchSession,
+    onInputMessage,
+    recordUserText,
+    materializeTerminalArtifacts,
+    notifyPickleCompletion,
+  };
+}

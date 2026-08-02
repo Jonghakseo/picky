@@ -491,6 +491,8 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("answerMainExtensionUi"), requestId: z.string().min(1), value: z.unknown().optional() }),
   CommandBaseSchema.extend({ type: z.literal("installPackage"), source: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("removePackage"), source: z.string().min(1) }),
+  CommandBaseSchema.extend({ type: z.literal("checkPackageUpdates") }),
+  CommandBaseSchema.extend({ type: z.literal("updatePackage"), source: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("reloadPlugins") }),
 ]);
 
@@ -612,16 +614,21 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
     pickleDeferredCount: z.number().int().nonnegative(),
   }),
   EventBaseSchema.extend({
+    type: z.literal("packageUpdatesAvailable"),
+    commandId: z.string().min(1),
+    sources: z.array(z.string().min(1)),
+  }),
+  EventBaseSchema.extend({
     type: z.literal("packageOperationProgress"),
     requestId: z.string().min(1),
-    operation: z.enum(["install", "remove"]),
+    operation: z.enum(["install", "remove", "update"]),
     source: z.string().min(1),
     message: z.string().min(1),
   }),
   EventBaseSchema.extend({
     type: z.literal("packageOperationCompleted"),
     requestId: z.string().min(1),
-    operation: z.enum(["install", "remove"]),
+    operation: z.enum(["install", "remove", "update"]),
     source: z.string().min(1),
     ok: z.boolean(),
     errorMessage: z.string().min(1).optional(),

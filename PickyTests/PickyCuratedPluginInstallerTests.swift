@@ -70,6 +70,62 @@ struct PickyCuratedPluginInstallerTests {
         #expect(throws: Never.self) { try result.get() }
     }
 
+    @Test func checkUpdatesReturnsSourcesFromMatchingDaemonResponse() async {
+        let client = FakeCuratedPluginAgentClient()
+        var sentCommand: PickyCommandEnvelope?
+        client.sendHandler = { command in
+            sentCommand = command
+            client.availableUpdates(commandId: command.id, sources: [self.source])
+        }
+
+        let updates = await PickyCuratedPluginInstaller.checkUpdates(client: client)
+
+        #expect(sentCommand?.type == .checkPackageUpdates)
+        #expect(updates == Set([source]))
+    }
+
+    @Test @MainActor func availableUpdateSourcesMarkOnlyInstalledCuratedRowsAsUpdatable() {
+        let source = "npm:@example/curated-plugin"
+        let plugin = PickyCuratedPlugin(
+            id: "test-plugin",
+            titleKey: "extensions.curated.diffReview.title",
+            descriptionKey: "extensions.curated.diffReview.description",
+            commandName: "/test-plugin",
+            source: source
+        )
+        let notInstalledPlugin = PickyCuratedPlugin(
+            id: "not-installed-plugin",
+            titleKey: "extensions.curated.diffReview.title",
+            descriptionKey: "extensions.curated.diffReview.description",
+            commandName: "/not-installed-plugin",
+            source: "npm:@example/not-installed-plugin"
+        )
+        let viewModel = PickyCuratedPluginsViewModel(
+            plugins: [plugin, notInstalledPlugin],
+            statusForSource: { source in source == plugin.source ? .installed : .notInstalled }
+        )
+
+        viewModel.applyAvailableUpdates([source, notInstalledPlugin.source])
+
+        #expect(viewModel.rows.first?.hasUpdate == true)
+        #expect(viewModel.rows.last?.hasUpdate == false)
+    }
+
+    @Test func updateSendsPackageCommandAndWaitsForDaemonCompletion() async throws {
+        let client = FakeCuratedPluginAgentClient()
+        var sentCommand: PickyCommandEnvelope?
+        client.sendHandler = { command in
+            sentCommand = command
+            client.complete(requestId: command.id, operation: .update, source: command.source ?? "", ok: true)
+        }
+
+        let result = await PickyCuratedPluginInstaller.update(source: source, client: client)
+
+        #expect(sentCommand?.type == .updatePackage)
+        #expect(sentCommand?.source == source)
+        #expect(throws: Never.self) { try result.get() }
+    }
+
     @Test func removeSurfacesDaemonPackageFailure() async {
         let client = FakeCuratedPluginAgentClient()
         client.sendHandler = { command in
@@ -126,6 +182,18 @@ private final class FakeCuratedPluginAgentClient: PickyAgentClient {
         sendHandler?(command)
     }
     func disconnect() {}
+
+    func availableUpdates(commandId: String, sources: [String]) {
+        continuation.yield(.protocolEvent(PickyEventEnvelope(
+            id: "event-package-updates-\(commandId)",
+            protocolVersion: pickyAgentProtocolVersion,
+            timestamp: Date(),
+            event: .packageUpdatesAvailable(PickyPackageUpdatesAvailableEvent(
+                commandId: commandId,
+                sources: sources
+            ))
+        )))
+    }
 
     func complete(
         requestId: String,

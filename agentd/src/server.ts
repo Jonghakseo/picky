@@ -20,6 +20,8 @@ import type { PiOAuthHandling } from "./application/pi-oauth-service.js";
 export interface PackageManager {
   installAndPersist(source: string): Promise<void>;
   removeAndPersist(source: string): Promise<boolean>;
+  checkAvailableUpdates(): Promise<Array<{ source: string }>>;
+  update(source: string): Promise<void>;
   setProgressCallback(callback: ((event: ProgressEvent) => void) | undefined): void;
   /** Waits until package settings changes are durable before completing the request. */
   flush?(): Promise<void>;
@@ -81,6 +83,8 @@ export function createDefaultPackageManager(
   return {
     installAndPersist: (packageSource) => packageManager.installAndPersist(packageSource),
     removeAndPersist: (packageSource) => packageManager.removeAndPersist(packageSource),
+    checkAvailableUpdates: () => (packageManager as DefaultPackageManager).checkForAvailableUpdates(),
+    update: (packageSource) => (packageManager as DefaultPackageManager).update(packageSource),
     setProgressCallback: (callback) => packageManager.setProgressCallback(callback),
     cancel: processController ? () => processController.cancelAll() : undefined,
     flush: async () => {
@@ -652,6 +656,8 @@ export class AgentdServer {
       answerMainExtensionUi: (cmd) => this.options.supervisor.answerMainExtensionUi(cmd.requestId, cmd.value),
       installPackage: (cmd) => this.runPackageOperation(ws, cmd.id, "install", cmd.source),
       removePackage: (cmd) => this.runPackageOperation(ws, cmd.id, "remove", cmd.source),
+      checkPackageUpdates: (cmd) => this.runPackageUpdateCheck(ws, cmd.id),
+      updatePackage: (cmd) => this.runPackageOperation(ws, cmd.id, "update", cmd.source),
       reloadPlugins: async (cmd) => {
         const summary = await this.options.supervisor.reloadPlugins();
         this.broadcast({
@@ -674,10 +680,32 @@ export class AgentdServer {
     return this.options.piOAuth;
   }
 
+  private async runPackageUpdateCheck(ws: WebSocket, commandId: string): Promise<void> {
+    const agentDir = (this.options.getAgentDir ?? getAgentDir)();
+    await this.enqueuePackageOperation(agentDir, async () => {
+      const createPackageManager = this.options.createPackageManager ?? createDefaultPackageManager;
+      const packageManager = createPackageManager({ cwd: process.cwd(), agentDir });
+      this.activePackageManagers.add(packageManager);
+      try {
+        try {
+          const updates = await packageManager.checkAvailableUpdates();
+          this.send(ws, { type: "packageUpdatesAvailable", commandId, sources: updates.map(({ source }) => source) });
+        } catch (error) {
+          logAgentd("package update check failed", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+          this.send(ws, { type: "packageUpdatesAvailable", commandId, sources: [] });
+        }
+      } finally {
+        this.activePackageManagers.delete(packageManager);
+      }
+    });
+  }
+
   private async runPackageOperation(
     ws: WebSocket,
     requestId: string,
-    operation: "install" | "remove",
+    operation: "install" | "remove" | "update",
     source: string,
   ): Promise<void> {
     if (this.packageOperationsStopping) {
@@ -713,7 +741,7 @@ export class AgentdServer {
   private async executePackageOperation(
     ws: WebSocket,
     requestId: string,
-    operation: "install" | "remove",
+    operation: "install" | "remove" | "update",
     source: string,
     agentDir: string,
   ): Promise<void> {
@@ -727,7 +755,9 @@ export class AgentdServer {
     try {
       const mutation = operation === "install"
         ? packageManager.installAndPersist(source)
-        : packageManager.removeAndPersist(source).then(() => undefined);
+        : operation === "remove"
+          ? packageManager.removeAndPersist(source).then(() => undefined)
+          : packageManager.update(source);
       const outcome = await waitForPackageMutation(
         mutation,
         this.options.packageOperationTimeoutMs ?? DEFAULT_PACKAGE_OPERATION_TIMEOUT_MS,
@@ -1231,7 +1261,10 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, requestId: command.requestId };
     case "installPackage":
     case "removePackage":
+    case "updatePackage":
       return { commandId: command.id, type: command.type, sourceChars: command.source.length };
+    case "checkPackageUpdates":
+      return { commandId: command.id, type: command.type };
     case "setDefaultCwd":
       return { commandId: command.id, type: command.type, cwdChars: command.defaultCwd.length };
     case "setMainAgentModel":
@@ -1303,6 +1336,8 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, sessionId: event.sessionId };
     case "pluginsReloaded":
       return { eventId: event.id, type: event.type, requestId: event.requestId, pickyReloaded: event.pickyReloaded ? 1 : 0, pickleReloadedCount: event.pickleReloadedCount, pickleAbortedCount: event.pickleAbortedCount, pickleDeferredCount: event.pickleDeferredCount };
+    case "packageUpdatesAvailable":
+      return { eventId: event.id, type: event.type, commandId: event.commandId, sources: event.sources.length };
     case "packageOperationProgress":
       return { eventId: event.id, type: event.type, requestId: event.requestId, operation: event.operation, sourceChars: event.source.length, messageChars: event.message.length };
     case "packageOperationCompleted":

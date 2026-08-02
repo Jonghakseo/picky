@@ -203,7 +203,7 @@ struct PickyAgentClientTests {
         } else { Issue.record("Expected sessionUpdated") }
     }
 
-    @Test func encodesPackageOperationCommandsAndDecodesCompletionEvents() throws {
+    @Test func encodesPackageCommandsAndDecodesUpdateEvents() throws {
         let encoder = JSONEncoder.pickyAgentProtocolEncoder()
         let decoder = JSONDecoder.pickyAgentProtocolDecoder()
 
@@ -217,10 +217,29 @@ struct PickyAgentClientTests {
             type: .removePackage,
             source: "npm:@example/plugin"
         )), as: UTF8.self)
+        let check = try String(decoding: encoder.encode(PickyCommandEnvelope(
+            id: "cmd-package-check",
+            type: .checkPackageUpdates
+        )), as: UTF8.self)
+        let update = try String(decoding: encoder.encode(PickyCommandEnvelope(
+            id: "cmd-package-update",
+            type: .updatePackage,
+            source: "npm:@example/plugin"
+        )), as: UTF8.self)
         #expect(install.contains("\"type\":\"installPackage\"") || install.contains("\"type\" : \"installPackage\""))
         #expect(remove.contains("\"type\":\"removePackage\"") || remove.contains("\"type\" : \"removePackage\""))
+        #expect(check.contains("\"type\":\"checkPackageUpdates\"") || check.contains("\"type\" : \"checkPackageUpdates\""))
+        #expect(update.contains("\"type\":\"updatePackage\"") || update.contains("\"type\" : \"updatePackage\""))
         let decodedInstall = try decoder.decode(PickyCommandEnvelope.self, from: Data(install.utf8))
         #expect(decodedInstall.source == "npm:@example/plugin")
+
+        let available = try decoder.decode(PickyEventEnvelope.self, from: Data("""
+        {"id":"event-package-updates","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:01.000Z","type":"packageUpdatesAvailable","commandId":"cmd-package-check","sources":["npm:@example/plugin"]}
+        """.utf8))
+        if case .packageUpdatesAvailable(let event) = available.event {
+            #expect(event.commandId == "cmd-package-check")
+            #expect(event.sources == ["npm:@example/plugin"])
+        } else { Issue.record("Expected packageUpdatesAvailable") }
 
         let progress = try decoder.decode(PickyEventEnvelope.self, from: Data("""
         {"id":"event-package-progress","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:02.000Z","type":"packageOperationProgress","requestId":"cmd-package-install","operation":"install","source":"npm:@example/plugin","message":"Installing npm:@example/plugin..."}
@@ -232,11 +251,11 @@ struct PickyAgentClientTests {
         } else { Issue.record("Expected packageOperationProgress") }
 
         let completion = try decoder.decode(PickyEventEnvelope.self, from: Data("""
-        {"id":"event-package-completed","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:03.000Z","type":"packageOperationCompleted","requestId":"cmd-package-remove","operation":"remove","source":"npm:@example/plugin","ok":false,"errorMessage":"npm was not found"}
+        {"id":"event-package-completed","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:03.000Z","type":"packageOperationCompleted","requestId":"cmd-package-update","operation":"update","source":"npm:@example/plugin","ok":false,"errorMessage":"npm was not found"}
         """.utf8))
         if case .packageOperationCompleted(let event) = completion.event {
-            #expect(event.requestId == "cmd-package-remove")
-            #expect(event.operation == .remove)
+            #expect(event.requestId == "cmd-package-update")
+            #expect(event.operation == .update)
             #expect(event.ok == false)
             #expect(event.errorMessage == "npm was not found")
         } else { Issue.record("Expected packageOperationCompleted") }

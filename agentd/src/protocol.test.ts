@@ -364,6 +364,28 @@ describe("protocol contract fixtures", () => {
       source: "npm:@example/plugin",
     })).toMatchObject({ type: "removePackage", source: "npm:@example/plugin" });
 
+    expect(CommandEnvelopeSchema.parse({
+      id: "cmd-package-check-updates",
+      protocolVersion: "2026-07-23",
+      type: "checkPackageUpdates",
+    })).toMatchObject({ type: "checkPackageUpdates" });
+
+    expect(CommandEnvelopeSchema.parse({
+      id: "cmd-package-update",
+      protocolVersion: "2026-07-23",
+      type: "updatePackage",
+      source: "npm:@example/plugin",
+    })).toMatchObject({ type: "updatePackage", source: "npm:@example/plugin" });
+
+    expect(EventEnvelopeSchema.parse({
+      id: "event-package-updates",
+      protocolVersion: "2026-07-23",
+      timestamp: "2026-07-19T00:00:00.000Z",
+      type: "packageUpdatesAvailable",
+      commandId: "cmd-package-check-updates",
+      sources: ["npm:@example/plugin"],
+    })).toMatchObject({ type: "packageUpdatesAvailable", sources: ["npm:@example/plugin"] });
+
     expect(EventEnvelopeSchema.parse({
       id: "event-package-progress",
       protocolVersion: "2026-07-23",
@@ -380,12 +402,12 @@ describe("protocol contract fixtures", () => {
       protocolVersion: "2026-07-23",
       timestamp: "2026-07-19T00:00:00.000Z",
       type: "packageOperationCompleted",
-      requestId: "cmd-package-remove",
-      operation: "remove",
+      requestId: "cmd-package-update",
+      operation: "update",
       source: "npm:@example/plugin",
       ok: false,
       errorMessage: "npm was not found",
-    })).toMatchObject({ type: "packageOperationCompleted", operation: "remove", ok: false });
+    })).toMatchObject({ type: "packageOperationCompleted", operation: "update", ok: false });
   });
 
   it("parses slim todo state updates including authoritative clears", () => {

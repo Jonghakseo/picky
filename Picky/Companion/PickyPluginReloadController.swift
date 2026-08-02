@@ -87,6 +87,14 @@ final class PickyPluginReloadController: ObservableObject {
         await PickyCuratedPluginInstaller.remove(source: source, client: client)
     }
 
+    func checkCuratedPackageUpdates() async -> Set<String> {
+        await PickyCuratedPluginInstaller.checkUpdates(client: client)
+    }
+
+    func updateCuratedPackage(source: String) async -> Result<Void, PickyCuratedPluginInstaller.CommandError> {
+        await PickyCuratedPluginInstaller.update(source: source, client: client)
+    }
+
     /// Called by the plugin manager when an install/uninstall completes
     /// successfully. Idempotent: re-noting while the banner is already showing
     /// just keeps it visible.

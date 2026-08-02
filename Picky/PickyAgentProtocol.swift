@@ -247,6 +247,8 @@ enum PickyCommandType: String, Codable, Equatable {
     case setMainAgentTTSEnabled
     case installPackage
     case removePackage
+    case checkPackageUpdates
+    case updatePackage
     case reloadPlugins
 
 }
@@ -308,6 +310,7 @@ enum PickyEvent: Equatable {
     case sessionArchivedAuthoritative(sessionId: String, archived: Bool)
     case sessionResourcesReloaded(sessionId: String)
     case pluginsReloaded(PickyPluginsReloadedEvent)
+    case packageUpdatesAvailable(PickyPackageUpdatesAvailableEvent)
     case packageOperationProgress(PickyPackageOperationProgressEvent)
     case packageOperationCompleted(PickyPackageOperationCompletedEvent)
     case sessionLogAppended(sessionId: String, line: String)
@@ -478,6 +481,8 @@ enum PickyEvent: Equatable {
         switch type {
         case "pluginsReloaded":
             return .pluginsReloaded(try PickyPluginsReloadedEvent(from: decoder))
+        case "packageUpdatesAvailable":
+            return .packageUpdatesAvailable(try PickyPackageUpdatesAvailableEvent(from: decoder))
         case "packageOperationProgress":
             return .packageOperationProgress(try PickyPackageOperationProgressEvent(from: decoder))
         case "packageOperationCompleted":
@@ -651,6 +656,12 @@ struct PickyPluginsReloadedEvent: Decodable, Equatable {
 enum PickyPackageOperation: String, Decodable, Equatable {
     case install
     case remove
+    case update
+}
+
+struct PickyPackageUpdatesAvailableEvent: Decodable, Equatable {
+    let commandId: String
+    let sources: [String]
 }
 
 struct PickyPackageOperationProgressEvent: Decodable, Equatable {

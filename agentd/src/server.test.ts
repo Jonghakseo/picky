@@ -348,6 +348,8 @@ describe("AgentdServer", () => {
       return {
         installAndPersist: async () => {},
         removeAndPersist: async () => false,
+        checkAvailableUpdates: async () => [],
+        update: async () => {},
         setProgressCallback: () => {},
       };
     });
@@ -386,6 +388,8 @@ describe("AgentdServer", () => {
       createPackageManager: () => ({
         installAndPersist,
         removeAndPersist: vi.fn(),
+        checkAvailableUpdates: vi.fn(async () => []),
+        update: vi.fn(async () => {}),
         setProgressCallback: (callback) => { progressCallback = callback as typeof progressCallback; },
         flush,
       }),
@@ -428,6 +432,8 @@ describe("AgentdServer", () => {
       createPackageManager: () => ({
         installAndPersist: vi.fn(async () => { throw new Error("npm was not found"); }),
         removeAndPersist: vi.fn(),
+        checkAvailableUpdates: vi.fn(async () => []),
+        update: vi.fn(async () => {}),
         setProgressCallback: vi.fn(),
       }),
     });
@@ -439,6 +445,136 @@ describe("AgentdServer", () => {
       type: "packageOperationCompleted",
       requestId: "cmd-package-failure",
       operation: "install",
+      source: "npm:@example/plugin",
+      ok: false,
+      errorMessage: "npm was not found",
+    });
+    ws.close();
+  });
+
+  it("returns available package update sources from an injected manager", async () => {
+    const checkAvailableUpdates = vi.fn(async () => [{ source: "npm:@example/plugin" }]);
+
+    await server.stop();
+    server = new AgentdServer({
+      port: 0,
+      token: "test-token",
+      supervisor,
+      createPackageManager: () => ({
+        installAndPersist: vi.fn(),
+        removeAndPersist: vi.fn(),
+        checkAvailableUpdates,
+        update: vi.fn(),
+        setProgressCallback: vi.fn(),
+      }),
+    });
+    port = await server.start();
+
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({ id: "cmd-package-updates", protocolVersion: PROTOCOL_VERSION, type: "checkPackageUpdates" }));
+
+    await expect(waitForEvent(ws, "packageUpdatesAvailable")).resolves.toMatchObject({
+      type: "packageUpdatesAvailable",
+      commandId: "cmd-package-updates",
+      sources: ["npm:@example/plugin"],
+    });
+    expect(checkAvailableUpdates).toHaveBeenCalledOnce();
+    ws.close();
+  });
+
+  it("returns an empty update list when the package update check fails", async () => {
+    await server.stop();
+    server = new AgentdServer({
+      port: 0,
+      token: "test-token",
+      supervisor,
+      createPackageManager: () => ({
+        installAndPersist: vi.fn(),
+        removeAndPersist: vi.fn(),
+        checkAvailableUpdates: vi.fn(async () => { throw new Error("npm registry unavailable"); }),
+        update: vi.fn(),
+        setProgressCallback: vi.fn(),
+      }),
+    });
+    port = await server.start();
+
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({ id: "cmd-package-updates-failure", protocolVersion: PROTOCOL_VERSION, type: "checkPackageUpdates" }));
+
+    await expect(waitForEvent(ws, "packageUpdatesAvailable")).resolves.toMatchObject({
+      commandId: "cmd-package-updates-failure",
+      sources: [],
+    });
+    ws.close();
+  });
+
+  it("serializes update checks and explicit package updates", async () => {
+    const lifecycle: string[] = [];
+    let releaseCheck: (() => void) | undefined;
+    const checkAvailableUpdates = vi.fn(async () => {
+      lifecycle.push("check:start");
+      await new Promise<void>((resolve) => { releaseCheck = resolve; });
+      lifecycle.push("check:end");
+      return [{ source: "npm:@example/plugin" }];
+    });
+    const update = vi.fn(async (source: string) => { lifecycle.push(`update:${source}`); });
+
+    await server.stop();
+    server = new AgentdServer({
+      port: 0,
+      token: "test-token",
+      supervisor,
+      getAgentDir: () => "/tmp/picky-agent",
+      createPackageManager: () => ({
+        installAndPersist: vi.fn(),
+        removeAndPersist: vi.fn(),
+        checkAvailableUpdates,
+        update,
+        setProgressCallback: vi.fn(),
+      }),
+    });
+    port = await server.start();
+
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({ id: "cmd-package-check-serialized", protocolVersion: PROTOCOL_VERSION, type: "checkPackageUpdates" }));
+    await waitUntil(() => releaseCheck !== undefined);
+    ws.send(JSON.stringify({ id: "cmd-package-update-serialized", protocolVersion: PROTOCOL_VERSION, type: "updatePackage", source: "npm:@example/plugin" }));
+    await sleep(20);
+    expect(lifecycle).toEqual(["check:start"]);
+
+    releaseCheck?.();
+    await expect(waitForEvent(ws, "packageOperationCompleted")).resolves.toMatchObject({
+      requestId: "cmd-package-update-serialized",
+      operation: "update",
+      source: "npm:@example/plugin",
+      ok: true,
+    });
+    expect(lifecycle).toEqual(["check:start", "check:end", "update:npm:@example/plugin"]);
+    ws.close();
+  });
+
+  it("returns explicit package update failures as completion events", async () => {
+    await server.stop();
+    server = new AgentdServer({
+      port: 0,
+      token: "test-token",
+      supervisor,
+      createPackageManager: () => ({
+        installAndPersist: vi.fn(),
+        removeAndPersist: vi.fn(),
+        checkAvailableUpdates: vi.fn(async () => []),
+        update: vi.fn(async () => { throw new Error("npm was not found"); }),
+        setProgressCallback: vi.fn(),
+      }),
+    });
+    port = await server.start();
+
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({ id: "cmd-package-update-failure", protocolVersion: PROTOCOL_VERSION, type: "updatePackage", source: "npm:@example/plugin" }));
+
+    await expect(waitForEvent(ws, "packageOperationCompleted")).resolves.toMatchObject({
+      requestId: "cmd-package-update-failure",
+      operation: "update",
       source: "npm:@example/plugin",
       ok: false,
       errorMessage: "npm was not found",
@@ -468,6 +604,8 @@ describe("AgentdServer", () => {
       createPackageManager: () => ({
         installAndPersist,
         removeAndPersist: vi.fn(),
+        checkAvailableUpdates: vi.fn(async () => []),
+        update: vi.fn(async () => {}),
         setProgressCallback: vi.fn(),
         flush,
       }),
@@ -526,6 +664,8 @@ describe("AgentdServer", () => {
           lifecycle.push(`end:${source}`);
         },
         removeAndPersist: vi.fn(),
+        checkAvailableUpdates: vi.fn(async () => []),
+        update: vi.fn(async () => {}),
         setProgressCallback: vi.fn(),
         cancel,
       }),
@@ -568,6 +708,8 @@ describe("AgentdServer", () => {
         }
       },
       removeAndPersist: vi.fn(),
+      checkAvailableUpdates: vi.fn(async () => []),
+      update: vi.fn(async () => {}),
       setProgressCallback: vi.fn(),
       cancel,
     }));
@@ -615,6 +757,8 @@ describe("AgentdServer", () => {
           createPackageManager: () => ({
             installAndPersist: async () => {},
             removeAndPersist: async () => false,
+            checkAvailableUpdates: async () => [],
+            update: async () => {},
             setProgressCallback: () => {},
           }),
         },
@@ -655,6 +799,8 @@ describe("AgentdServer", () => {
       createPackageManager: () => ({
         installAndPersist,
         removeAndPersist: vi.fn(),
+        checkAvailableUpdates: vi.fn(async () => []),
+        update: vi.fn(async () => {}),
         setProgressCallback: vi.fn(),
       }),
     });

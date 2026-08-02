@@ -59,13 +59,66 @@ enum PickyCuratedPluginInstaller {
         await run(operation: .remove, source: source, client: client, timeoutNanoseconds: timeoutNanoseconds)
     }
 
+    @discardableResult
+    static func update(
+        source: String,
+        client: any PickyAgentClient,
+        timeoutNanoseconds: UInt64 = 120_000_000_000
+    ) async -> Result<Void, CommandError> {
+        await run(operation: .update, source: source, client: client, timeoutNanoseconds: timeoutNanoseconds)
+    }
+
+    /// A best-effort background lookup. Failures intentionally appear as no updates,
+    /// so opening the curated list never surfaces a registry/network error.
+    static func checkUpdates(
+        client: any PickyAgentClient,
+        timeoutNanoseconds: UInt64 = 30_000_000_000
+    ) async -> Set<String> {
+        let command = PickyCommandEnvelope(type: .checkPackageUpdates)
+        let stream = client.events
+
+        do {
+            try await client.send(command)
+            return try await withThrowingTaskGroup(of: Set<String>.self) { group in
+                defer { group.cancelAll() }
+                group.addTask {
+                    for await clientEvent in stream {
+                        guard case .protocolEvent(let envelope) = clientEvent,
+                              case .packageUpdatesAvailable(let result) = envelope.event,
+                              result.commandId == command.id else {
+                            continue
+                        }
+                        return Set(result.sources)
+                    }
+                    throw CommandError.disconnected
+                }
+                group.addTask {
+                    try await Task.sleep(nanoseconds: timeoutNanoseconds)
+                    try Task.checkCancellation()
+                    throw CommandError.timedOut
+                }
+                return try await group.next() ?? []
+            }
+        } catch {
+            return []
+        }
+    }
+
     private static func run(
         operation: PickyPackageOperation,
         source: String,
         client: any PickyAgentClient,
         timeoutNanoseconds: UInt64
     ) async -> Result<Void, CommandError> {
-        let commandType: PickyCommandType = operation == .install ? .installPackage : .removePackage
+        let commandType: PickyCommandType
+        switch operation {
+        case .install:
+            commandType = .installPackage
+        case .remove:
+            commandType = .removePackage
+        case .update:
+            commandType = .updatePackage
+        }
         let command = PickyCommandEnvelope(type: commandType, source: source)
         // Subscribe before sending so a fast daemon completion cannot be missed.
         let stream = client.events

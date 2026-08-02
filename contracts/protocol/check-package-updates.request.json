@@ -1,0 +1,5 @@
+{
+  "id": "cmd-package-check-updates-001",
+  "protocolVersion": "2026-07-23",
+  "type": "checkPackageUpdates"
+}

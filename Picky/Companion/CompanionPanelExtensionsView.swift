@@ -123,10 +123,11 @@ struct PickyCuratedPlugin: Identifiable {
 }
 
 @MainActor
-private final class PickyCuratedPluginsViewModel: ObservableObject {
+final class PickyCuratedPluginsViewModel: ObservableObject {
     struct Row: Identifiable {
         let plugin: PickyCuratedPlugin
         var status: PickyCuratedPluginInstaller.Status
+        var hasUpdate: Bool
         var isBusy: Bool
 
         var id: String { plugin.id }
@@ -136,18 +137,27 @@ private final class PickyCuratedPluginsViewModel: ObservableObject {
     @Published private(set) var lastError: String?
 
     private let plugins: [PickyCuratedPlugin]
+    private let statusForSource: (String) -> PickyCuratedPluginInstaller.Status
+    private var availableUpdateSources: Set<String> = []
+    private var hasCheckedForUpdates = false
     var onPluginStateChanged: (() -> Void)?
 
-    init(plugins: [PickyCuratedPlugin] = PickyCuratedPlugin.curatedDefaults) {
+    init(
+        plugins: [PickyCuratedPlugin] = PickyCuratedPlugin.curatedDefaults,
+        statusForSource: @escaping (String) -> PickyCuratedPluginInstaller.Status = { PickyCuratedPluginInstaller.status(source: $0) }
+    ) {
         self.plugins = plugins
+        self.statusForSource = statusForSource
         refresh()
     }
 
     func refresh() {
         rows = plugins.map { plugin in
-            Row(
+            let status = statusForSource(plugin.source)
+            return Row(
                 plugin: plugin,
-                status: PickyCuratedPluginInstaller.status(source: plugin.source),
+                status: status,
+                hasUpdate: status == .installed && availableUpdateSources.contains(plugin.source),
                 isBusy: false
             )
         }
@@ -161,9 +171,24 @@ private final class PickyCuratedPluginsViewModel: ObservableObject {
         mutate(plugin, operation: .remove, pluginReloadController: pluginReloadController)
     }
 
+    func update(_ plugin: PickyCuratedPlugin, pluginReloadController: PickyPluginReloadController) {
+        mutate(plugin, operation: .update, pluginReloadController: pluginReloadController)
+    }
+
+    func checkUpdatesIfNeeded(pluginReloadController: PickyPluginReloadController) {
+        guard !hasCheckedForUpdates else { return }
+        hasCheckedForUpdates = true
+        Task { [weak self] in
+            let sources = await pluginReloadController.checkCuratedPackageUpdates()
+            guard !Task.isCancelled else { return }
+            self?.applyAvailableUpdates(sources)
+        }
+    }
+
     private enum Operation {
         case install
         case remove
+        case update
     }
 
     private func mutate(
@@ -184,6 +209,8 @@ private final class PickyCuratedPluginsViewModel: ObservableObject {
                 result = await pluginReloadController.installCuratedPackage(source: source)
             case .remove:
                 result = await pluginReloadController.removeCuratedPackage(source: source)
+            case .update:
+                result = await pluginReloadController.updateCuratedPackage(source: source)
             }
             guard !Task.isCancelled else { return }
             self?.applyMutationResult(pluginID: pluginID, source: source, result: result)
@@ -193,6 +220,7 @@ private final class PickyCuratedPluginsViewModel: ObservableObject {
     private func applyMutationResult(pluginID: String, source: String, result: Result<Void, PickyCuratedPluginInstaller.CommandError>) {
         switch result {
         case .success:
+            availableUpdateSources.remove(source)
             lastError = nil
             onPluginStateChanged?()
         case .failure(let error):
@@ -200,7 +228,15 @@ private final class PickyCuratedPluginsViewModel: ObservableObject {
         }
         if let index = rows.firstIndex(where: { $0.plugin.id == pluginID }) {
             rows[index].isBusy = false
-            rows[index].status = PickyCuratedPluginInstaller.status(source: source)
+            rows[index].status = statusForSource(source)
+            rows[index].hasUpdate = rows[index].status == .installed && availableUpdateSources.contains(source)
+        }
+    }
+
+    func applyAvailableUpdates(_ sources: Set<String>) {
+        availableUpdateSources = sources
+        for index in rows.indices {
+            rows[index].hasUpdate = rows[index].status == .installed && sources.contains(rows[index].plugin.source)
         }
     }
 }
@@ -417,6 +453,7 @@ struct CompanionPanelExtensionsView: View {
             curatedViewModel.onPluginStateChanged = { [weak controller = pluginReloadController] in
                 controller?.notePluginsChanged()
             }
+            curatedViewModel.checkUpdatesIfNeeded(pluginReloadController: pluginReloadController)
         }
     }
 
@@ -499,12 +536,23 @@ struct CompanionPanelExtensionsView: View {
     private func curatedActionButton(for row: PickyCuratedPluginsViewModel.Row) -> some View {
         switch row.status {
         case .installed:
-            Button(action: { curatedViewModel.remove(row.plugin, pluginReloadController: pluginReloadController) }) {
-                curatedButtonLabel(text: "status.extensions.action.remove", isBusy: row.isBusy)
+            HStack(spacing: 6) {
+                if row.hasUpdate {
+                    Button(action: { curatedViewModel.update(row.plugin, pluginReloadController: pluginReloadController) }) {
+                        curatedButtonLabel(text: "status.extensions.action.update", isBusy: row.isBusy)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(row.isBusy)
+                }
+
+                Button(action: { curatedViewModel.remove(row.plugin, pluginReloadController: pluginReloadController) }) {
+                    curatedButtonLabel(text: "status.extensions.action.remove", isBusy: row.isBusy)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(row.isBusy)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(row.isBusy)
         case .notInstalled:
             Button(action: { curatedViewModel.install(row.plugin, pluginReloadController: pluginReloadController) }) {
                 curatedButtonLabel(text: "status.extensions.action.install", isBusy: row.isBusy)

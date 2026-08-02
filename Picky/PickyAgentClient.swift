@@ -467,6 +467,8 @@ private extension PickyEventEnvelope {
             return "type=sessionResourcesReloaded id=\(id) session=\(sessionId)"
         case .pluginsReloaded(let summary):
             return "type=pluginsReloaded id=\(id) request=\(summary.requestId ?? "none") picky=\(summary.pickyReloaded ? 1 : 0) reloaded=\(summary.pickleReloadedCount) aborted=\(summary.pickleAbortedCount) deferred=\(summary.pickleDeferredCount)"
+        case .packageUpdatesAvailable(let updates):
+            return "type=packageUpdatesAvailable id=\(id) command=\(updates.commandId) sources=\(updates.sources.count)"
         case .packageOperationProgress(let progress):
             return "type=packageOperationProgress id=\(id) request=\(progress.requestId) operation=\(progress.operation.rawValue) sourceChars=\(progress.source.count) messageChars=\(progress.message.count)"
         case .packageOperationCompleted(let result):

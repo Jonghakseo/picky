@@ -101,9 +101,9 @@ struct PickyConversationComposerView: View {
     @Binding private var droppedFilePaths: [String]
     let isFileDropTargeted: Bool
     let focusRequestID: Int
-    let isExtendedTerminalOpen: Bool
+    let isUtilityPanelOpen: Bool
     let isCommandShortcutHintVisible: Bool
-    var onToggleExtendedTerminal: () -> Void
+    var onToggleUtilityPanel: () -> Void
     var onRequestRewind: () -> Void
     @State private var draft: String = ""
     @State private var attachments: [PickyComposerAttachment] = []
@@ -131,9 +131,9 @@ struct PickyConversationComposerView: View {
         droppedFilePaths: Binding<[String]> = .constant([]),
         isFileDropTargeted: Bool = false,
         focusRequestID: Int = 0,
-        isExtendedTerminalOpen: Bool = false,
+        isUtilityPanelOpen: Bool = false,
         isCommandShortcutHintVisible: Bool = false,
-        onToggleExtendedTerminal: @escaping () -> Void = { },
+        onToggleUtilityPanel: @escaping () -> Void = { },
         onRequestRewind: @escaping () -> Void = { }
     ) {
         self.session = session
@@ -141,9 +141,9 @@ struct PickyConversationComposerView: View {
         self._droppedFilePaths = droppedFilePaths
         self.isFileDropTargeted = isFileDropTargeted
         self.focusRequestID = focusRequestID
-        self.isExtendedTerminalOpen = isExtendedTerminalOpen
+        self.isUtilityPanelOpen = isUtilityPanelOpen
         self.isCommandShortcutHintVisible = isCommandShortcutHintVisible
-        self.onToggleExtendedTerminal = onToggleExtendedTerminal
+        self.onToggleUtilityPanel = onToggleUtilityPanel
         self.onRequestRewind = onRequestRewind
     }
 
@@ -340,10 +340,10 @@ struct PickyConversationComposerView: View {
     }
 
     private var terminalButton: some View {
-        Button(action: onToggleExtendedTerminal) {
+        Button(action: onToggleUtilityPanel) {
             Image(systemName: "terminal.fill")
                 .pickyFont(size: 10.5, weight: .semibold)
-                .foregroundColor(isExtendedTerminalOpen ? DS.Colors.accentText : DS.Colors.textTertiary)
+                .foregroundColor(isUtilityPanelOpen ? DS.Colors.accentText : DS.Colors.textTertiary)
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
                 .background(terminalButtonBackground)
@@ -358,18 +358,18 @@ struct PickyConversationComposerView: View {
                 .animation(.easeOut(duration: 0.12), value: isCommandShortcutHintVisible)
                 .allowsHitTesting(false)
         }
-        .help("Extended terminal (⌘E)")
-        .accessibilityLabel("Extended terminal")
-        .accessibilityValue(isExtendedTerminalOpen ? "Open" : "Closed")
+        .help(L10n.t("hud.utilityPanel.toggle.help"))
+        .accessibilityLabel(L10n.t("hud.utilityPanel.accessibilityLabel"))
+        .accessibilityValue(L10n.t(isUtilityPanelOpen ? "hud.utilityPanel.state.open" : "hud.utilityPanel.state.closed"))
         .hoverAffordance()
     }
 
     private var terminalButtonBackground: some View {
         RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
-            .fill(isExtendedTerminalOpen ? DS.Colors.accentSubtle.opacity(0.24) : Color.clear)
+            .fill(isUtilityPanelOpen ? DS.Colors.accentSubtle.opacity(0.24) : Color.clear)
             .overlay(
                 RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
-                    .stroke(isExtendedTerminalOpen ? DS.Colors.accentText.opacity(0.28) : Color.clear, lineWidth: 0.5)
+                    .stroke(isUtilityPanelOpen ? DS.Colors.accentText.opacity(0.28) : Color.clear, lineWidth: 0.5)
             )
     }
 

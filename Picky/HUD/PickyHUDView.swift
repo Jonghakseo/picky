@@ -49,7 +49,11 @@ struct PickyHUDView: View {
     @State private var modifierFlagsMonitor: Any?
     @State private var isCommandShortcutHintVisible = false
     @State private var composerFocusRequestID = 0
-    @State private var extendedTerminalOpenSessionIDs: Set<String> = []
+    @State private var utilityPanelOpenSessionIDs: Set<String> = []
+    @State private var utilityPanelSelections: [String: PickyHUDUtilityPanelTab] = [:]
+    @State private var utilityPanelResizeStartHeight: CGFloat?
+    @State private var utilityPanelHeightOverride: CGFloat?
+    @AppStorage(PickyHUDUtilityPanelPolicy.heightStorageKey) private var storedUtilityPanelHeight = PickyHUDUtilityPanelPolicy.defaultHeight
     @State private var isDockAddSlotExpanded = false
     @State private var cardResizeInteraction = PickyHUDCardResizeInteractionState()
     @State private var sizeReporter = PickyHUDSizeReporter()
@@ -334,21 +338,25 @@ struct PickyHUDView: View {
     @ViewBuilder
     private var conversationCard: some View {
         if let activeSession {
-            let extendedTerminalIsOpen = isExtendedTerminalOpen(sessionID: activeSession.id)
+            let utilityPanelIsOpen = isUtilityPanelOpen(sessionID: activeSession.id)
                 && !viewModel.isInlineTerminalMode(sessionID: activeSession.id)
-            VStack(alignment: .leading, spacing: 8) {
+            let utilityPanelHeight = resolvedUtilityPanelHeight
+            VStack(alignment: .leading, spacing: 0) {
                 PickyConversationCardView(
                     viewModel: viewModel,
                     session: activeSession,
                     onArchiveSession: archiveSession,
-                    maxHeight: conversationCardMaxHeight(isExtendedTerminalOpen: extendedTerminalIsOpen),
+                    maxHeight: conversationCardMaxHeight(
+                        isUtilityPanelOpen: utilityPanelIsOpen,
+                        utilityPanelHeight: utilityPanelHeight
+                    ),
                     width: placement.cardWidth,
                     fixedHeight: placement.fixedCardHeight,
                     isPreviewMode: false,
                     focusRequestID: composerFocusRequestID,
                     isCommandShortcutHintVisible: isCommandShortcutHintVisible,
-                    isExtendedTerminalOpen: extendedTerminalIsOpen,
-                    onToggleExtendedTerminal: { toggleExtendedTerminal(sessionID: activeSession.id) }
+                    isUtilityPanelOpen: utilityPanelIsOpen,
+                    onToggleUtilityPanel: { toggleUtilityPanel(sessionID: activeSession.id) }
                 )
                 .background(PickyHUDCardSizeReader())
                 .overlay(alignment: resizeHandleAlignment) {
@@ -373,8 +381,20 @@ struct PickyHUDView: View {
                 }
                 .accessibilityHint("Drag the corner to resize this Pickle card. Double-click to reset the size.")
 
-                if extendedTerminalIsOpen {
-                    extendedTerminal(for: activeSession)
+                if utilityPanelIsOpen {
+                    PickyHUDUtilityPanelResizeGrip(
+                        onDragChanged: updateUtilityPanelHeight(for:),
+                        onDragEnded: finishUtilityPanelResize
+                    )
+                    PickySessionUtilityPanelView(
+                        session: activeSession,
+                        viewModel: viewModel,
+                        selectedTab: utilityPanelTabBinding(for: activeSession.id),
+                        height: utilityPanelHeight
+                    ) {
+                        PickyHUDUtilityPanelChangesPlaceholderView()
+                    }
+                    .transition(.opacity)
                 }
             }
             .environment(\.pickyHUDDetailWidth, placement.cardWidth)
@@ -434,17 +454,59 @@ struct PickyHUDView: View {
         }
     }
 
-    private func conversationCardMaxHeight(isExtendedTerminalOpen: Bool) -> CGFloat {
-        guard isExtendedTerminalOpen else { return placement.availableCardMaxHeight }
-        return max(
-            320,
-            placement.availableCardMaxHeight - PickyHUDDockLayout.extendedTerminalHeight - 8
+    private var resolvedUtilityPanelHeight: CGFloat {
+        PickyHUDUtilityPanelPolicy.clampedHeight(
+            utilityPanelHeightOverride ?? storedUtilityPanelHeight,
+            availableCardHeight: placement.availableCardMaxHeight
         )
     }
 
-    private func extendedTerminal(for session: PickySessionListViewModel.SessionCard) -> some View {
-        PickySessionExtendedTerminalView(session: session, viewModel: viewModel)
-            .transition(.opacity)
+    private func conversationCardMaxHeight(
+        isUtilityPanelOpen: Bool,
+        utilityPanelHeight: CGFloat
+    ) -> CGFloat {
+        guard isUtilityPanelOpen else { return placement.availableCardMaxHeight }
+        return PickyHUDUtilityPanelPolicy.conversationCardMaxHeight(
+            availableCardHeight: placement.availableCardMaxHeight,
+            utilityPanelHeight: utilityPanelHeight
+        )
+    }
+
+    private func utilityPanelTabBinding(for sessionID: String) -> Binding<PickyHUDUtilityPanelTab> {
+        Binding(
+            get: {
+                PickyHUDUtilityPanelPolicy.selectedTab(
+                    for: sessionID,
+                    selections: utilityPanelSelections
+                )
+            },
+            set: { selectedTab in
+                utilityPanelSelections = PickyHUDUtilityPanelPolicy.selectionsAfterSelecting(
+                    selectedTab,
+                    sessionID: sessionID,
+                    selections: utilityPanelSelections
+                )
+            }
+        )
+    }
+
+    private func updateUtilityPanelHeight(for verticalTranslation: CGFloat) {
+        if utilityPanelResizeStartHeight == nil {
+            utilityPanelResizeStartHeight = resolvedUtilityPanelHeight
+        }
+        guard let utilityPanelResizeStartHeight else { return }
+        utilityPanelHeightOverride = PickyHUDUtilityPanelPolicy.clampedHeight(
+            utilityPanelResizeStartHeight - verticalTranslation,
+            availableCardHeight: placement.availableCardMaxHeight
+        )
+    }
+
+    private func finishUtilityPanelResize() {
+        if let utilityPanelHeightOverride {
+            storedUtilityPanelHeight = utilityPanelHeightOverride
+        }
+        utilityPanelHeightOverride = nil
+        utilityPanelResizeStartHeight = nil
     }
 
     @ViewBuilder
@@ -768,7 +830,8 @@ struct PickyHUDView: View {
         cancelPendingClose()
         let title = (visibleSessions + viewModel.sessions).first(where: { $0.id == sessionID })?.title ?? "Pickle"
         viewModel.archive(sessionID: sessionID)
-        extendedTerminalOpenSessionIDs.remove(sessionID)
+        utilityPanelOpenSessionIDs.remove(sessionID)
+        utilityPanelSelections.removeValue(forKey: sessionID)
         if heldSession?.sessionID == sessionID { heldSession = nil }
         if hoverPreviewSessionID == sessionID { hoverPreviewSessionID = nil }
         if suppressedHoverSessionID == sessionID { suppressedHoverSessionID = nil }
@@ -921,7 +984,7 @@ struct PickyHUDView: View {
             modifiers: flags
         ), let activeSession,
            !viewModel.isInlineTerminalMode(sessionID: activeSession.id) {
-            toggleExtendedTerminal(sessionID: activeSession.id)
+            toggleUtilityPanel(sessionID: activeSession.id)
             return true
         }
 
@@ -992,16 +1055,18 @@ struct PickyHUDView: View {
         composerFocusRequestID &+= 1
     }
 
-    private func isExtendedTerminalOpen(sessionID: String) -> Bool {
-        extendedTerminalOpenSessionIDs.contains(sessionID)
+    private func isUtilityPanelOpen(sessionID: String) -> Bool {
+        utilityPanelOpenSessionIDs.contains(sessionID)
     }
 
-    private func toggleExtendedTerminal(sessionID: String) {
+    private func toggleUtilityPanel(sessionID: String) {
         cancelPendingClose()
-        if extendedTerminalOpenSessionIDs.contains(sessionID) {
-            extendedTerminalOpenSessionIDs.remove(sessionID)
-        } else {
-            extendedTerminalOpenSessionIDs.insert(sessionID)
+        let wasOpen = utilityPanelOpenSessionIDs.contains(sessionID)
+        utilityPanelOpenSessionIDs = PickyHUDUtilityPanelPolicy.openSessionIDsAfterToggling(
+            sessionID: sessionID,
+            openSessionIDs: utilityPanelOpenSessionIDs
+        )
+        if !wasOpen {
             viewModel.markSessionRead(sessionID: sessionID)
         }
     }

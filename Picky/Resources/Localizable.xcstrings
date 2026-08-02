@@ -1133,6 +1133,48 @@
         }
       }
     },
+    "hud.utilityPanel.accessibilityLabel": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Pickle utility panel" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "피클 유틸리티 패널" } }
+      }
+    },
+    "hud.utilityPanel.changes.placeholder": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Changes will appear here" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "변경사항이 여기에 표시됩니다" } }
+      }
+    },
+    "hud.utilityPanel.state.closed": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Closed" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "닫힘" } }
+      }
+    },
+    "hud.utilityPanel.state.open": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Open" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "열림" } }
+      }
+    },
+    "hud.utilityPanel.tab.changes": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Changes" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "변경사항" } }
+      }
+    },
+    "hud.utilityPanel.tab.terminal": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Terminal" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "터미널" } }
+      }
+    },
+    "hud.utilityPanel.toggle.help": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Show or hide utility panel (⌘E)" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "유틸리티 패널 표시 또는 숨기기(⌘E)" } }
+      }
+    },
     "hud.report.outline": {
       "localizations": {
         "en": {

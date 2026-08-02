@@ -175,6 +175,7 @@ export const PickySubagentInvocationSchema = z.object({
   invocationId: z.string(),
   action: z.enum(["run", "batch", "chain"]),
   planned: z.array(z.object({ agent: z.string(), task: z.string() })),
+  completed: z.boolean().optional(),
 });
 export type PickySubagentInvocation = z.infer<typeof PickySubagentInvocationSchema>;
 const PickyExtensionUiQuestionOptionSchema = z.preprocess(

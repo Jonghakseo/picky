@@ -282,6 +282,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private autocompleteQueryController: AbortController | undefined;
   private pendingSubagentLaunches: Array<SubagentLaunchIntentEntry & { invocationId: string }> = [];
   private activeSubagentInvocationIDs: string[] = [];
+  private subagentInvocationsByID = new Map<string, PickySubagentInvocation>();
   private subagentRunsById = new Map<number, PickySubagentRun>();
 
   constructor(
@@ -1012,15 +1013,20 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       action: intent.action,
       planned: intent.entries,
     };
+    this.subagentInvocationsByID.set(invocationId, invocation);
     this.emit({ type: "subagent_invocation", invocation });
   }
 
   private closeSubagentInvocationIfSettled(event: Record<string, unknown>): void {
-    if ((event.type !== "tool_execution_update" && event.type !== "tool_execution_end") || event.toolName !== "subagent") return;
+    if (event.type !== "tool_execution_end" || event.toolName !== "subagent") return;
     const invocationId = stringValue(event.toolCallId);
-    if (!invocationId) return;
+    const invocation = invocationId ? this.subagentInvocationsByID.get(invocationId) : undefined;
+    if (!invocationId || !invocation) return;
     const index = this.activeSubagentInvocationIDs.lastIndexOf(invocationId);
     if (index >= 0) this.activeSubagentInvocationIDs.splice(index, 1);
+    this.pendingSubagentLaunches = this.pendingSubagentLaunches.filter((launch) => launch.invocationId !== invocationId);
+    this.subagentInvocationsByID.delete(invocationId);
+    this.emit({ type: "subagent_invocation", invocation: { ...invocation, completed: true } });
   }
 
   private subagentRunEventFromDiagnosticPiEvent(event: Record<string, unknown>): RuntimeEvent | undefined {
@@ -1073,6 +1079,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private resetSubagentRunTracking(): void {
     this.pendingSubagentLaunches = [];
     this.activeSubagentInvocationIDs = [];
+    this.subagentInvocationsByID.clear();
     this.subagentRunsById.clear();
   }
 

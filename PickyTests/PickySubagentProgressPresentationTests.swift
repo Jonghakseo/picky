@@ -56,7 +56,7 @@ struct PickySubagentProgressPresentationTests {
 
     @Test func decodesInvocationMessageAndOptionalRunFields() throws {
         let data = Data("""
-        {"id":"session-1","title":"Pickle","status":"running","createdAt":"2026-07-14T01:00:00.000Z","updatedAt":"2026-07-14T01:00:00.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[],"subagentRuns":[{"runId":1,"agent":"worker","task":"Inspect","status":"running","invocationId":"tool-1","lastActivity":{"toolName":"read","toolCallCount":2,"lastLine":"opened file"}}],"messages":[{"id":"invocation-1","kind":"subagent_invocation","createdAt":"2026-07-14T01:00:00.000Z","subagentInvocation":{"invocationId":"tool-1","action":"run","planned":[{"agent":"worker","task":"Inspect"}]}}]}
+        {"id":"session-1","title":"Pickle","status":"running","createdAt":"2026-07-14T01:00:00.000Z","updatedAt":"2026-07-14T01:00:00.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[],"subagentRuns":[{"runId":1,"agent":"worker","task":"Inspect","status":"running","invocationId":"tool-1","lastActivity":{"toolName":"read","toolCallCount":2,"lastLine":"opened file"}}],"messages":[{"id":"invocation-1","kind":"subagent_invocation","createdAt":"2026-07-14T01:00:00.000Z","subagentInvocation":{"invocationId":"tool-1","action":"run","planned":[{"agent":"worker","task":"Inspect"}],"completed":true}}]}
         """.utf8)
         let session = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyAgentSession.self, from: data)
 
@@ -64,6 +64,29 @@ struct PickySubagentProgressPresentationTests {
         #expect(session.subagentRuns.first?.lastActivity?.toolCallCount == 2)
         #expect(session.messages.first?.kind == .subagentInvocation)
         #expect(session.messages.first?.subagentInvocation?.planned.first?.agent == "worker")
+        #expect(session.messages.first?.subagentInvocation?.completed == true)
+    }
+
+    @Test func marksUnspawnedPlansAsFailedAfterInvocationCompletes() throws {
+        let presentation = try #require(makePresentation(
+            action: .batch,
+            planned: [plan("worker", "Implement")],
+            runs: [],
+            completed: true
+        ))
+
+        #expect(presentation.rows.map(\.status) == [.error])
+        #expect(presentation.isComplete)
+    }
+
+    @Test func decodesUnknownSubagentInvocationActionsAsRun() throws {
+        let data = Data("""
+        {"id":"session-1","title":"Pickle","status":"running","createdAt":"2026-07-14T01:00:00.000Z","updatedAt":"2026-07-14T01:00:00.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[],"messages":[{"id":"invocation-1","kind":"subagent_invocation","createdAt":"2026-07-14T01:00:00.000Z","subagentInvocation":{"invocationId":"tool-1","action":"future_action","planned":[]}}]}
+        """.utf8)
+
+        let session = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyAgentSession.self, from: data)
+
+        #expect(session.messages.first?.subagentInvocation?.action == .run)
     }
 
     @Test func decodesUnknownMessageKindsWithoutDroppingTheSession() throws {
@@ -77,10 +100,11 @@ struct PickySubagentProgressPresentationTests {
     private func makePresentation(
         action: PickySubagentInvocationAction,
         planned: [PickySubagentInvocationPlan],
-        runs: [PickySubagentRun]
+        runs: [PickySubagentRun],
+        completed: Bool? = nil
     ) -> PickySubagentInvocationPresentation? {
         PickySubagentInvocationPresentation(
-            invocation: .init(invocationId: "call-1", action: action, planned: planned),
+            invocation: .init(invocationId: "call-1", action: action, planned: planned, completed: completed),
             runs: runs,
             createdAt: Date(timeIntervalSince1970: 1_700_000_000)
         )

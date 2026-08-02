@@ -104,20 +104,27 @@ describe("SessionMessageBuilder", () => {
     expect(events).toMatchObject([{ type: "appended", message: { kind: "agent_activity" }, seq: 1 }]);
   });
 
-  it("records immutable subagent invocation messages", async () => {
-    const { builder, messages } = makeBuilder();
+  it("marks an existing subagent invocation complete without appending a second bubble", async () => {
+    const { builder, events, messages } = makeBuilder();
 
     await builder.recordSubagentInvocation("session-1", {
       invocationId: "tool-subagent-1",
       action: "batch",
       planned: [{ agent: "worker", task: "Implement" }, { agent: "reviewer", task: "Review" }],
     });
+    await builder.recordSubagentInvocation("session-1", {
+      invocationId: "tool-subagent-1",
+      action: "batch",
+      planned: [{ agent: "worker", task: "Implement" }, { agent: "reviewer", task: "Review" }],
+      completed: true,
+    });
 
     expect(messages).toMatchObject([{
       id: "msg-subagent-invocation-tool-subagent-1",
       kind: "subagent_invocation",
-      subagentInvocation: { action: "batch", planned: [{ agent: "worker" }, { agent: "reviewer" }] },
+      subagentInvocation: { action: "batch", completed: true, planned: [{ agent: "worker" }, { agent: "reviewer" }] },
     }]);
+    expect(events.map((event) => event.type)).toEqual(["appended", "replaced"]);
   });
 
   it("keeps appended message timestamps monotonic when the clock moves backward", async () => {

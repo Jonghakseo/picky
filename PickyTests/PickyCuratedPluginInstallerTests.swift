@@ -38,7 +38,20 @@ struct PickyCuratedPluginInstallerTests {
             preferences: PickyPiInstallationPreferences(codingAgentDir: scratch.home.appendingPathComponent(".pi/agent").path)
         )
 
-        #expect(status == .installed)
+        #expect(status == .installed(isPinned: false))
+    }
+
+    @Test func statusReportsPinnedPackageAsInstalled() throws {
+        let scratch = try ScratchCuratedPlugin()
+        try scratch.writeSettings(packages: ["\(source)@1.2.3"])
+
+        let status = PickyCuratedPluginInstaller.status(
+            source: source,
+            homeURL: scratch.home,
+            preferences: PickyPiInstallationPreferences(codingAgentDir: scratch.home.appendingPathComponent(".pi/agent").path)
+        )
+
+        #expect(status == .installed(isPinned: true))
     }
 
     @Test func statusUsesConfiguredPiCodingAgentDir() throws {
@@ -52,7 +65,7 @@ struct PickyCuratedPluginInstallerTests {
             preferences: PickyPiInstallationPreferences(codingAgentDir: customAgentDir.path)
         )
 
-        #expect(status == .installed)
+        #expect(status == .installed(isPinned: false))
     }
 
     @Test func installSendsPackageCommandAndWaitsForDaemonCompletion() async throws {
@@ -78,10 +91,19 @@ struct PickyCuratedPluginInstallerTests {
             client.availableUpdates(commandId: command.id, sources: [self.source])
         }
 
-        let updates = await PickyCuratedPluginInstaller.checkUpdates(client: client)
+        let result = await PickyCuratedPluginInstaller.checkUpdates(client: client)
 
         #expect(sentCommand?.type == .checkPackageUpdates)
-        #expect(updates == Set([source]))
+        #expect((try? result.get()) == Set([source]))
+    }
+
+    @Test func checkUpdatesReturnsFailureWhenDisconnected() async {
+        let client = FakeCuratedPluginAgentClient()
+        client.sendHandler = { _ in client.emitDisconnected() }
+
+        let result = await PickyCuratedPluginInstaller.checkUpdates(client: client)
+
+        #expect(result == .failure(.disconnected))
     }
 
     @Test @MainActor func availableUpdateSourcesMarkOnlyInstalledCuratedRowsAsUpdatable() {
@@ -102,13 +124,31 @@ struct PickyCuratedPluginInstallerTests {
         )
         let viewModel = PickyCuratedPluginsViewModel(
             plugins: [plugin, notInstalledPlugin],
-            statusForSource: { source in source == plugin.source ? .installed : .notInstalled }
+            statusForSource: { source in source == plugin.source ? .installed(isPinned: false) : .notInstalled }
         )
 
         viewModel.applyAvailableUpdates([source, notInstalledPlugin.source])
 
         #expect(viewModel.rows.first?.hasUpdate == true)
         #expect(viewModel.rows.last?.hasUpdate == false)
+    }
+
+    @Test @MainActor func availableUpdateSourcesExcludePinnedCuratedRows() {
+        let plugin = PickyCuratedPlugin(
+            id: "pinned-plugin",
+            titleKey: "extensions.curated.diffReview.title",
+            descriptionKey: "extensions.curated.diffReview.description",
+            commandName: "/pinned-plugin",
+            source: source
+        )
+        let viewModel = PickyCuratedPluginsViewModel(
+            plugins: [plugin],
+            statusForSource: { _ in .installed(isPinned: true) }
+        )
+
+        viewModel.applyAvailableUpdates([source])
+
+        #expect(viewModel.rows.first?.hasUpdate == false)
     }
 
     @Test func updateSendsPackageCommandAndWaitsForDaemonCompletion() async throws {
@@ -123,6 +163,28 @@ struct PickyCuratedPluginInstallerTests {
 
         #expect(sentCommand?.type == .updatePackage)
         #expect(sentCommand?.source == source)
+        #expect(throws: Never.self) { try result.get() }
+    }
+
+    @Test func removeUsesPinnedSettingsSource() async throws {
+        let scratch = try ScratchCuratedPlugin()
+        let pinnedSource = "\(source)@1.2.3"
+        try scratch.writeSettings(packages: [pinnedSource])
+        let client = FakeCuratedPluginAgentClient()
+        var sentCommand: PickyCommandEnvelope?
+        client.sendHandler = { command in
+            sentCommand = command
+            client.complete(requestId: command.id, operation: .remove, source: command.source ?? "", ok: true)
+        }
+
+        let result = await PickyCuratedPluginInstaller.remove(
+            source: source,
+            client: client,
+            homeURL: scratch.home,
+            preferences: PickyPiInstallationPreferences(codingAgentDir: scratch.home.appendingPathComponent(".pi/agent").path)
+        )
+
+        #expect(sentCommand?.source == pinnedSource)
         #expect(throws: Never.self) { try result.get() }
     }
 
@@ -182,6 +244,10 @@ private final class FakeCuratedPluginAgentClient: PickyAgentClient {
         sendHandler?(command)
     }
     func disconnect() {}
+
+    func emitDisconnected() {
+        continuation.yield(.disconnected)
+    }
 
     func availableUpdates(commandId: String, sources: [String]) {
         continuation.yield(.protocolEvent(PickyEventEnvelope(

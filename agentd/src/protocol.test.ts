@@ -550,6 +550,7 @@ describe("protocol contract fixtures", () => {
             invocationId: "tool-subagent-1",
             action: "chain",
             planned: [{ agent: "worker", task: "Implement" }, { agent: "reviewer", task: "Review" }],
+            completed: true,
           },
         },
         seq: 2,

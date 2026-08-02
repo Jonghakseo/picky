@@ -1715,6 +1715,12 @@
         "ko": { "stringUnit": { "state": "translated", "value": "서브에이전트 실행 접기" } }
       }
     },
+    "hud.subagent.status.pending": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Pending" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "대기 중" } }
+      }
+    },
     "hud.subagent.status.running": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Running" } },

@@ -565,6 +565,49 @@ describe("PiSdkRuntime", () => {
     expect(updates.every((event) => event.update.resultPreview === undefined)).toBe(true);
   });
 
+  it("discards unspawned launches when a subagent invocation ends", async () => {
+    const fakeSession = new FakeSession();
+    const handle = await makeRuntime(fakeSession).prewarm({ cwd: "/tmp/project", sessionId: "session-unspawned" });
+    const events: RuntimeEvent[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    fakeSession.emit("event", {
+      type: "tool_execution_start",
+      toolCallId: "subagent-first",
+      toolName: "subagent",
+      args: { command: 'subagent batch --agent worker --task "First task"' },
+    });
+    fakeSession.emit("event", {
+      type: "tool_execution_end",
+      toolCallId: "subagent-first",
+      toolName: "subagent",
+      isError: true,
+      result: "Failed before spawn",
+    });
+    fakeSession.emit("event", {
+      type: "tool_execution_start",
+      toolCallId: "subagent-second",
+      toolName: "subagent",
+      args: { command: 'subagent batch --agent worker --task "Second task"' },
+    });
+    fakeSession.emit("event", {
+      type: "entry_appended",
+      entry: { type: "custom", customType: "subagent-runner-diagnostic", data: { schemaVersion: 1, recordedAt: "2026-08-02T05:26:36.115Z", runId: 3, agent: "worker", event: "spawn" } },
+    });
+
+    const invocations = events.filter((event): event is Extract<RuntimeEvent, { type: "subagent_invocation" }> => event.type === "subagent_invocation");
+    const updates = events.filter((event): event is Extract<RuntimeEvent, { type: "subagent_run_update" }> => event.type === "subagent_run_update");
+    expect(invocations.map((event) => event.invocation.invocationId)).toEqual([
+      "subagent-first",
+      "subagent-first",
+      "subagent-second",
+    ]);
+    expect(invocations[1]?.invocation.completed).toBe(true);
+    expect(updates).toContainEqual(expect.objectContaining({
+      update: expect.objectContaining({ task: "Second task", invocationId: "subagent-second" }),
+    }));
+  });
+
   it("executes user bash directly through the Pi session and preserves context inclusion flag", async () => {
     const fakeSession = new FakeSession();
     const runtime = makeRuntime(fakeSession);

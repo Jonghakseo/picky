@@ -12,7 +12,17 @@ import Foundation
 enum PickyCuratedPluginInstaller {
     enum Status: Equatable {
         case notInstalled
-        case installed
+        case installed(isPinned: Bool)
+
+        var isInstalled: Bool {
+            if case .installed = self { return true }
+            return false
+        }
+
+        var isPinned: Bool {
+            if case .installed(let isPinned) = self { return isPinned }
+            return false
+        }
     }
 
     enum CommandError: LocalizedError, Equatable {
@@ -38,7 +48,16 @@ enum PickyCuratedPluginInstaller {
         fileManager: FileManager = .default,
         preferences: PickyPiInstallationPreferences? = nil
     ) -> Status {
-        installedPackageSources(homeURL: homeURL, fileManager: fileManager, preferences: resolvedPreferences(preferences, homeURL: homeURL)).contains(source) ? .installed : .notInstalled
+        let preferences = resolvedPreferences(preferences, homeURL: homeURL)
+        guard let installedSource = installedPackageSource(
+            matching: source,
+            homeURL: homeURL,
+            fileManager: fileManager,
+            preferences: preferences
+        ) else {
+            return .notInstalled
+        }
+        return .installed(isPinned: npmPackageIdentity(installedSource) != installedSource)
     }
 
     @discardableResult
@@ -54,9 +73,22 @@ enum PickyCuratedPluginInstaller {
     static func remove(
         source: String,
         client: any PickyAgentClient,
-        timeoutNanoseconds: UInt64 = 120_000_000_000
+        timeoutNanoseconds: UInt64 = 120_000_000_000,
+        homeURL: URL = FileManager.default.homeDirectoryForCurrentUser,
+        fileManager: FileManager = .default,
+        preferences: PickyPiInstallationPreferences? = nil
     ) async -> Result<Void, CommandError> {
-        await run(operation: .remove, source: source, client: client, timeoutNanoseconds: timeoutNanoseconds)
+        await run(
+            operation: .remove,
+            source: installedPackageSource(
+                matching: source,
+                homeURL: homeURL,
+                fileManager: fileManager,
+                preferences: preferences
+            ) ?? source,
+            client: client,
+            timeoutNanoseconds: timeoutNanoseconds
+        )
     }
 
     @discardableResult
@@ -68,27 +100,33 @@ enum PickyCuratedPluginInstaller {
         await run(operation: .update, source: source, client: client, timeoutNanoseconds: timeoutNanoseconds)
     }
 
-    /// A best-effort background lookup. Failures intentionally appear as no updates,
-    /// so opening the curated list never surfaces a registry/network error.
+    /// A best-effort background lookup. Callers keep failures silent but retain
+    /// them so a later appearance can retry the request.
     static func checkUpdates(
         client: any PickyAgentClient,
         timeoutNanoseconds: UInt64 = 30_000_000_000
-    ) async -> Set<String> {
+    ) async -> Result<Set<String>, CommandError> {
         let command = PickyCommandEnvelope(type: .checkPackageUpdates)
         let stream = client.events
 
         do {
             try await client.send(command)
-            return try await withThrowingTaskGroup(of: Set<String>.self) { group in
+            let sources = try await withThrowingTaskGroup(of: Set<String>.self) { group in
                 defer { group.cancelAll() }
                 group.addTask {
                     for await clientEvent in stream {
-                        guard case .protocolEvent(let envelope) = clientEvent,
-                              case .packageUpdatesAvailable(let result) = envelope.event,
-                              result.commandId == command.id else {
+                        switch clientEvent {
+                        case .protocolEvent(let envelope):
+                            guard case .packageUpdatesAvailable(let result) = envelope.event,
+                                  result.commandId == command.id else {
+                                continue
+                            }
+                            return Set(result.sources)
+                        case .disconnected:
+                            throw CommandError.disconnected
+                        case .connected, .recoverableError:
                             continue
                         }
-                        return Set(result.sources)
                     }
                     throw CommandError.disconnected
                 }
@@ -99,8 +137,11 @@ enum PickyCuratedPluginInstaller {
                 }
                 return try await group.next() ?? []
             }
+            return .success(sources)
+        } catch let error as CommandError {
+            return .failure(error)
         } catch {
-            return []
+            return .failure(.failed(error.localizedDescription))
         }
     }
 
@@ -164,7 +205,13 @@ enum PickyCuratedPluginInstaller {
         }
     }
 
-    private static func installedPackageSources(homeURL: URL, fileManager: FileManager, preferences: PickyPiInstallationPreferences) -> Set<String> {
+    private static func installedPackageSource(
+        matching source: String,
+        homeURL: URL = FileManager.default.homeDirectoryForCurrentUser,
+        fileManager: FileManager = .default,
+        preferences: PickyPiInstallationPreferences? = nil
+    ) -> String? {
+        let preferences = resolvedPreferences(preferences, homeURL: homeURL)
         let environment = homeURL.path == FileManager.default.homeDirectoryForCurrentUser.path
             ? ProcessInfo.processInfo.environment
             : [:]
@@ -172,9 +219,21 @@ enum PickyCuratedPluginInstaller {
         guard let data = try? Data(contentsOf: settingsURL),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let packages = json["packages"] as? [String] else {
-            return []
+            return nil
         }
-        return Set(packages)
+        let identity = npmPackageIdentity(source)
+        return packages.first { npmPackageIdentity($0) == identity }
+    }
+
+    private static func npmPackageIdentity(_ source: String) -> String {
+        guard source.hasPrefix("npm:") else { return source }
+        let package = source.dropFirst("npm:".count)
+        guard let versionIndex = package.lastIndex(of: "@"),
+              versionIndex != package.startIndex,
+              versionIndex < package.index(before: package.endIndex) else {
+            return source
+        }
+        return "npm:" + String(package[..<versionIndex])
     }
 
     private static func resolvedPreferences(_ preferences: PickyPiInstallationPreferences?, homeURL: URL) -> PickyPiInstallationPreferences {

@@ -240,8 +240,14 @@ export class SessionMessageBuilder {
   async recordSubagentInvocation(sessionId: string, subagentInvocation: PickySubagentInvocation): Promise<void> {
     await this.flushAssistantText(sessionId);
     await this.flushThinking(sessionId);
+    const messageId = `msg-subagent-invocation-${subagentInvocation.invocationId}`;
+    const existing = this.stateFor(sessionId).journal.find((entry) => entry.message.id === messageId);
+    if (existing) {
+      await this.replaceInternal(sessionId, messageId, { ...existing.message, subagentInvocation });
+      return;
+    }
     await this.appendInternal(sessionId, {
-      id: `msg-subagent-invocation-${subagentInvocation.invocationId}`,
+      id: messageId,
       kind: "subagent_invocation",
       createdAt: this.deps.now(),
       subagentInvocation,

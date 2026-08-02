@@ -1913,10 +1913,10 @@ describe("SessionSupervisor", () => {
         updatedAt: "2026-07-14T01:00:00.000Z",
       },
     });
-    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await waitUntil(() => (supervisor.get(pickle.id)?.messages?.length ?? 0) > 0);
     await waitUntil(() => (supervisor.get(pickle.id)?.tools.length ?? 0) > 0);
     await waitUntil(() => supervisor.get(pickle.id)?.todoState?.tasks[0]?.id === "old-todo");
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     expect(supervisor.get(pickle.id)?.messages?.length).toBeGreaterThan(0);
     expect(supervisor.get(pickle.id)?.tools.length).toBeGreaterThan(0);
 
@@ -1940,6 +1940,24 @@ describe("SessionSupervisor", () => {
     expect(updated.todoState).toBeUndefined();
     expect(updated.activitySummary).toEqual({ read: 0, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 });
     expect(updated.piSessionFilePath).toBe("/tmp/manual-new-session-1.jsonl");
+  });
+
+  it("clears subagent runs when /new replaces the underlying Pi session", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-replaced-subagent-runs-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("subagent replacement"));
+    const events: PickyAgentSession["subagentRuns"][] = [];
+    supervisor.on("subagentRunsUpdated", (_sessionId, runs) => events.push(runs));
+
+    runtime.handle!.emit({ type: "subagent_run_update", update: { runId: 1, agent: "worker", task: "Old run", status: "running" } });
+    await waitUntil(() => events.length === 1);
+
+    await runtime.handle!.newSession();
+    await waitUntil(() => supervisor.get(session.id)?.status === "waiting_for_input");
+
+    expect(supervisor.get(session.id)?.subagentRuns).toEqual([]);
   });
 
   it("resets live turn activity counters when /new replaces the underlying Pi session", async () => {
@@ -3492,6 +3510,7 @@ describe("SessionSupervisor", () => {
       lastSummary: "Still working before restart",
       logs: [],
       tools: [{ toolCallId: "tool-1", name: "bash", status: "running", startedAt: "2026-05-01T00:00:05.000Z" }],
+      subagentRuns: [{ runId: 1, agent: "worker", task: "Interrupted run", status: "running" }],
       artifacts: [],
       changedFiles: [],
       queuedSteers: [{ text: "stale steer", enqueuedAt: "2026-05-01T00:00:06.000Z" }],
@@ -3508,6 +3527,7 @@ describe("SessionSupervisor", () => {
     expect(restored?.lastSummary).toMatch(/Runtime not attached/);
     expect(restored?.thinkingPreview).toBeUndefined();
     expect(restored?.tools[0]).toMatchObject({ status: "failed", preview: "Tool was interrupted by a Picky daemon restart." });
+    expect(restored?.subagentRuns).toMatchObject([{ runId: 1, status: "error", errorClass: "interrupted" }]);
     expect(restored?.queuedSteers).toEqual([]);
     expect(restored?.queuedFollowUps).toEqual([]);
     expect(restored?.activitySummary).toEqual({ read: 0, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 });

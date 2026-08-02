@@ -140,6 +140,7 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
     private let statusForSource: (String) -> PickyCuratedPluginInstaller.Status
     private var availableUpdateSources: Set<String> = []
     private var hasCheckedForUpdates = false
+    private var isCheckingForUpdates = false
     var onPluginStateChanged: (() -> Void)?
 
     init(
@@ -157,7 +158,7 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
             return Row(
                 plugin: plugin,
                 status: status,
-                hasUpdate: status == .installed && availableUpdateSources.contains(plugin.source),
+                hasUpdate: status.isInstalled && !status.isPinned && availableUpdateSources.contains(plugin.source),
                 isBusy: false
             )
         }
@@ -176,12 +177,19 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
     }
 
     func checkUpdatesIfNeeded(pluginReloadController: PickyPluginReloadController) {
-        guard !hasCheckedForUpdates else { return }
-        hasCheckedForUpdates = true
+        guard !hasCheckedForUpdates, !isCheckingForUpdates else { return }
+        isCheckingForUpdates = true
         Task { [weak self] in
-            let sources = await pluginReloadController.checkCuratedPackageUpdates()
-            guard !Task.isCancelled else { return }
-            self?.applyAvailableUpdates(sources)
+            let result = await pluginReloadController.checkCuratedPackageUpdates()
+            guard !Task.isCancelled, let self else { return }
+            self.isCheckingForUpdates = false
+            switch result {
+            case .success(let sources):
+                self.hasCheckedForUpdates = true
+                self.applyAvailableUpdates(sources)
+            case .failure:
+                self.hasCheckedForUpdates = false
+            }
         }
     }
 
@@ -229,14 +237,14 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
         if let index = rows.firstIndex(where: { $0.plugin.id == pluginID }) {
             rows[index].isBusy = false
             rows[index].status = statusForSource(source)
-            rows[index].hasUpdate = rows[index].status == .installed && availableUpdateSources.contains(source)
+            rows[index].hasUpdate = rows[index].status.isInstalled && !rows[index].status.isPinned && availableUpdateSources.contains(source)
         }
     }
 
     func applyAvailableUpdates(_ sources: Set<String>) {
         availableUpdateSources = sources
         for index in rows.indices {
-            rows[index].hasUpdate = rows[index].status == .installed && sources.contains(rows[index].plugin.source)
+            rows[index].hasUpdate = rows[index].status.isInstalled && !rows[index].status.isPinned && sources.contains(rows[index].plugin.source)
         }
     }
 }
@@ -484,7 +492,7 @@ struct CompanionPanelExtensionsView: View {
 
             curatedInfoButton(for: row)
 
-            if row.status == .installed {
+            if row.status.isInstalled {
                 curatedBadgePill(
                     text: L10n.t("status.extensions.state.installed"),
                     foreground: DS.Colors.successText,
@@ -534,8 +542,7 @@ struct CompanionPanelExtensionsView: View {
 
     @ViewBuilder
     private func curatedActionButton(for row: PickyCuratedPluginsViewModel.Row) -> some View {
-        switch row.status {
-        case .installed:
+        if row.status.isInstalled {
             HStack(spacing: 6) {
                 if row.hasUpdate {
                     Button(action: { curatedViewModel.update(row.plugin, pluginReloadController: pluginReloadController) }) {
@@ -553,7 +560,7 @@ struct CompanionPanelExtensionsView: View {
                 .controlSize(.small)
                 .disabled(row.isBusy)
             }
-        case .notInstalled:
+        } else {
             Button(action: { curatedViewModel.install(row.plugin, pluginReloadController: pluginReloadController) }) {
                 curatedButtonLabel(text: "status.extensions.action.install", isBusy: row.isBusy)
             }

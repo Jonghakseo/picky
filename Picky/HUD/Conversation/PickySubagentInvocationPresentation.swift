@@ -47,7 +47,7 @@ struct PickySubagentInvocationPresentation: Equatable {
         guard let invocation else { return nil }
         self.invocation = invocation
         let invocationRuns = runs.filter { $0.invocationId == invocation.invocationId }
-        self.rows = Self.rows(planned: invocation.planned, runs: invocationRuns)
+        self.rows = Self.rows(planned: invocation.planned, runs: invocationRuns, completed: invocation.completed == true)
         self.completedCount = rows.count { $0.status == .done || $0.status == .error }
         self.runningCount = rows.count { $0.status == .running }
         self.pendingCount = rows.count { $0.status == .pending }
@@ -134,7 +134,11 @@ struct PickySubagentInvocationPresentation: Equatable {
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
-    private static func rows(planned: [PickySubagentInvocationPlan], runs: [PickySubagentRun]) -> [PickySubagentInvocationRow] {
+    private static func rows(
+        planned: [PickySubagentInvocationPlan],
+        runs: [PickySubagentRun],
+        completed: Bool
+    ) -> [PickySubagentInvocationRow] {
         var unmatchedRuns = runs.sorted { $0.runId < $1.runId }
         var rows: [PickySubagentInvocationRow] = []
         for (index, plannedRun) in planned.enumerated() {
@@ -146,7 +150,7 @@ struct PickySubagentInvocationPresentation: Equatable {
                 agent: plannedRun.agent,
                 task: plannedRun.task,
                 run: matchedRun,
-                status: status(for: matchedRun)
+                status: status(for: matchedRun, completed: completed)
             ))
         }
         rows.append(contentsOf: unmatchedRuns.map { run in
@@ -156,14 +160,14 @@ struct PickySubagentInvocationPresentation: Equatable {
                 agent: run.agent,
                 task: run.task,
                 run: run,
-                status: status(for: run)
+                status: status(for: run, completed: false)
             )
         })
         return rows
     }
 
-    private static func status(for run: PickySubagentRun?) -> PickySubagentInvocationRow.Status {
-        guard let run else { return .pending }
+    private static func status(for run: PickySubagentRun?, completed: Bool) -> PickySubagentInvocationRow.Status {
+        guard let run else { return completed ? .error : .pending }
         switch run.status {
         case .running: return .running
         case .done: return .done

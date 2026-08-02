@@ -153,6 +153,9 @@ export function buildInterruptedRuntimeLiveStatePatch(session: PickyAgentSession
     pendingExtensionUiRequest: undefined,
     thinkingPreview: undefined,
     tools: settleActiveTools(session.tools, "Tool was interrupted by a Picky daemon restart."),
+    subagentRuns: (session.subagentRuns ?? []).map((run) => (
+      run.status === "running" ? { ...run, status: "error", errorClass: "interrupted" } : run
+    )),
     queuedSteers: [],
     queuedFollowUps: [],
     activitySummary: zeroActivitySummary(),
@@ -239,6 +242,7 @@ export function buildRuntimeSessionReplacementPatch(input: {
     artifacts: [],
     changedFiles: [],
     todoState: undefined,
+    subagentRuns: [],
     messages: [],
     queuedSteers: [],
     queuedFollowUps: [],

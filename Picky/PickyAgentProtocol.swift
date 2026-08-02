@@ -1210,12 +1210,18 @@ struct PickySubagentInvocationPlan: Codable, Equatable, Identifiable {
 
 enum PickySubagentInvocationAction: String, Codable, Equatable {
     case run, batch, chain
+
+    init(from decoder: Decoder) throws {
+        let rawValue = try decoder.singleValueContainer().decode(String.self)
+        self = Self(rawValue: rawValue) ?? .run
+    }
 }
 
 struct PickySubagentInvocation: Codable, Equatable {
     let invocationId: String
     let action: PickySubagentInvocationAction
     let planned: [PickySubagentInvocationPlan]
+    var completed: Bool? = nil
 }
 
 struct PickySubagentRun: Codable, Equatable, Identifiable {

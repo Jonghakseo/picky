@@ -199,7 +199,7 @@ struct PickySubagentInvocationBubbleView: View {
 
     private func markerDescription(for status: PickySubagentInvocationRow.Status) -> String {
         switch status {
-        case .pending: "Pending"
+        case .pending: L10n.t("hud.subagent.status.pending")
         case .running: L10n.t("hud.subagent.status.running")
         case .done: L10n.t("hud.subagent.status.done")
         case .error: L10n.t("hud.subagent.status.error")

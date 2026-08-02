@@ -107,10 +107,12 @@ For every bundled extension or skill the tab shows:
 
 Currently bundled:
 
-- **Pi handoff command** — adds a `/handoff-to-picky` slash command to local Pi. When the source Pi turn is idle, it pins the conversation to Picky as a completed Pickle card; when Pi is busy, it aborts the source turn, snapshots that Pi session, resumes it as a Pickle, and sends the handoff instruction (default: `continue`). After installing, restart Pi or run `/reload`.
+- **Pi handoff command** — adds a `/handoff-to-picky` slash command to local Pi. When the source Pi turn is idle, it pins the conversation to Picky as a completed Pickle card seeded with the recent turns of the source session; when Pi is busy, it aborts the source turn, snapshots that Pi session, resumes it as a Pickle, and sends the handoff instruction (default: `continue`). After installing, restart Pi or run `/reload`.
 - **Picky CLI skill** — teaches local Pi how to use the `picky` shell command for submitting to Picky, creating/steering Pickles, and controlling Picky push-to-talk.
 
-A **Curated extensions** section under the bundled list lists a small set of useful third-party Pi extensions. Each row shows the extension name, the command or tool it adds, a short description, and an install/remove control that installs the extension from npm into the local Pi setup. Examples include `/diff-review` for native diff review, `ask_user_question` for structured clarification forms, `show_widget` for native generative UI windows, and `/delay` for scheduling a one-shot follow-up prompt after a chosen delay.
+A **Curated extensions** section under the bundled list lists a small set of useful third-party Pi extensions. Each row shows the extension name, the command or tool it adds, a short description, and an install/remove control that installs the extension from npm into the local Pi setup. Examples include `/diff-review` for native diff review, `ask_user_question` for structured clarification forms, `show_widget` for native generative UI windows, `/delay` for scheduling a one-shot follow-up prompt after a chosen delay, and `subagent` for delegating work to parallel Pi subagents.
+
+Picky also checks npm for newer versions of installed curated extensions: when an installed, non-pinned extension has an update available, an **Update** button appears next to its Remove button.
 
 ### 2.3 Settings tab
 
@@ -363,7 +365,8 @@ The card contains:
 
 - Header with title, status badge, and menu.
 - Context line with working folder, Git/PR/link badges.
-- Conversation history with Markdown-rendered replies. The latest Picky reply is shown in full in the HUD, including Markdown tables rendered as cell grids; older replies may stay compact and can still be opened as reports.
+- Conversation history with Markdown-rendered replies. The latest Picky reply is shown in full in the HUD, including Markdown tables rendered as cell grids; older replies may stay compact and can still be opened as reports. The card keeps a window of the most recent turns; when older turns are hidden, a **Show earlier turns** pill at the top of the history reveals more per click (full history stays reachable through the Pi terminal overlay).
+- Subagent activity bubbles when the Pickle delegates work to Pi subagents (see 8.11).
 - Composer for steer/follow-up input.
 - Inline question forms when Pi/tools need user input.
 - A read-only task-progress indicator at the top of the conversation when Pi shares a checklist for the active task. Click it to expand or collapse the task list; once expanded, it stays open while you interact elsewhere in the conversation and closes only when you collapse it or the checklist completes. Completed tasks are marked, the current task shows its in-progress state only while the Pickle is running, and lists with six or more tasks scroll within the expanded panel.
@@ -516,7 +519,15 @@ Supported controls:
 
 Answered or cancelled question bubbles collapse but can be expanded for review.
 
-### 8.11 Tool History viewer
+### 8.11 Subagent activity bubbles
+
+When a Pickle launches Pi subagents (single `run`, parallel `batch`, or sequential `chain`), the conversation shows a dedicated bubble for each subagent invocation instead of a global overlay.
+
+While running, the bubble lists one row per agent with its status marker, agent name, run number, task preview, and elapsed time; chain invocations also show the step order. The bubble collapses to a one-line summary once every run settles, and can be expanded again at any time.
+
+After a run completes, its row swaps the task preview for a preview of the subagent's response. Click a completed row to open the full response in the Markdown report viewer (the row tooltip still shows the original task). Full response text is kept for the most recent runs; older runs keep only the short preview.
+
+### 8.12 Tool History viewer
 
 Click a tool/activity summary in a Pickle card to open **Tool History** in a separate window. Tool History helps inspect what the Pickle actually did.
 
@@ -526,7 +537,10 @@ It can show:
 - Tool status and duration.
 - Bash output or generic tool details where available.
 - Edit diffs for file changes where available.
+- Dedicated layouts for todo-list updates and subagent launches.
 - A scope toggle to switch between the current turn and the whole session.
+
+File paths shown for read/edit/write entries are clickable when they are absolute (including `~`-prefixed) paths: clicking opens the file with its default app, and a right-click menu offers **Copy path**.
 
 Tool History is a local inspection surface for the current user, so treat visible tool outputs and diffs as potentially sensitive project context.
 

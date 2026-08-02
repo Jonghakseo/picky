@@ -2,6 +2,8 @@ import { sliceUtf16Safe } from "./safe-truncate.js";
 import type { PickySubagentRun } from "../protocol.js";
 
 export type SubagentRunUpdate = PickySubagentRun;
+export type SubagentGroupRunUpdate = Pick<PickySubagentRun, "runId" | "agent" | "status">
+  & Partial<Omit<PickySubagentRun, "runId" | "agent" | "status" | "task">>;
 export type SubagentLaunchAction = "run" | "batch" | "chain";
 
 export interface SubagentLaunchIntentEntry {
@@ -25,6 +27,7 @@ export interface SubagentDiagnosticRunUpdate extends Omit<PickySubagentRun, "tas
 
 const supportedCustomTypes = new Set(["subagent-tool", "subagent-command"]);
 const resultPreviewLimit = 600;
+const resultTextLimit = 32_000;
 
 /** Maps the subagent extension's opaque custom-message details into HUD state. */
 export function subagentRunUpdateFromCustomMessage(
@@ -39,11 +42,46 @@ export function subagentRunUpdateFromCustomMessage(
   if (!identity) return undefined;
 
   const preview = identity.status !== "running" ? resultPreview(content) : undefined;
+  const text = identity.status !== "running" ? resultText(content) : undefined;
   return {
     ...identity,
     ...optionalRunFields(details),
     ...(preview ? { resultPreview: preview } : {}),
+    ...(text ? { resultText: text } : {}),
   };
+}
+
+/** Best-effort parses batch and chain completion content into updates for existing run state. */
+export function subagentGroupRunUpdatesFromCustomMessage(
+  customType: unknown,
+  details: unknown,
+  content?: unknown,
+  knownTasks: ReadonlyMap<number, string> = new Map(),
+): SubagentGroupRunUpdate[] {
+  if (typeof customType !== "string" || !supportedCustomTypes.has(customType)) return [];
+  if (!isRecord(details)) return [];
+  const text = contentText(content);
+  if (!text) return [];
+
+  const group = groupDetails(details);
+  if (!group) return [];
+  const summaries = group.runIds.flatMap((runId) => {
+    const summary = group.summaries.get(runId);
+    return summary ? [summary] : [];
+  });
+  if (summaries.length === 0) return [];
+
+  const sections = group.kind === "batch"
+    ? batchSections(text, summaries)
+    : chainSections(text, summaries);
+  return sections.flatMap(({ summary, body }) => {
+    const response = group.kind === "chain" ? stripChainTask(body, knownTasks.get(summary.runId)) : stripBatchBullet(body);
+    const text = cappedResultText(response);
+    return [{
+      ...summary,
+      ...(text ? { resultText: text, resultPreview: resultPreview(text) } : {}),
+    }];
+  });
 }
 
 /** Parses the subagent CLI command passed through Pi's `subagent` tool. */
@@ -231,10 +269,130 @@ function optionalRunFields(details: Record<string, unknown>): Partial<PickySubag
   };
 }
 
+interface GroupDetails {
+  kind: "batch" | "chain";
+  runIds: number[];
+  summaries: Map<number, SubagentGroupRunUpdate>;
+}
+
+interface GroupSection {
+  summary: SubagentGroupRunUpdate;
+  body: string;
+}
+
+function groupDetails(details: Record<string, unknown>): GroupDetails | undefined {
+  const kind = nonEmptyString(details.batchId) && Array.isArray(details.runIds)
+    ? "batch"
+    : nonEmptyString(details.pipelineId) && Array.isArray(details.stepRunIds)
+      ? "chain"
+      : undefined;
+  if (!kind || !Array.isArray(details.runSummaries)) return undefined;
+
+  const rawRunIds = kind === "batch" ? details.runIds : details.stepRunIds;
+  if (!Array.isArray(rawRunIds)) return undefined;
+  const runIds = rawRunIds.flatMap((value): number[] => {
+    const runId = integer(value);
+    return runId !== undefined && runId >= 0 ? [runId] : [];
+  });
+  if (runIds.length === 0 || new Set(runIds).size !== runIds.length) return undefined;
+
+  const summaries = new Map<number, SubagentGroupRunUpdate>();
+  for (const value of details.runSummaries) {
+    const summary = groupRunSummary(value, kind, details);
+    if (!summary || !runIds.includes(summary.runId) || summaries.has(summary.runId)) continue;
+    summaries.set(summary.runId, summary);
+  }
+  return { kind, runIds, summaries };
+}
+
+function groupRunSummary(
+  value: unknown,
+  kind: GroupDetails["kind"],
+  details: Record<string, unknown>,
+): SubagentGroupRunUpdate | undefined {
+  if (!isRecord(value)) return undefined;
+  const runId = integer(value.runId);
+  const agent = nonEmptyString(value.agent) ? value.agent : undefined;
+  const status = value.status === "done" || value.status === "error" ? value.status : undefined;
+  if (runId === undefined || runId < 0 || !agent || !status) return undefined;
+  const pipelineStepIndex = integer(value.stepIndex);
+  return {
+    runId,
+    agent,
+    status,
+    ...(finiteNonnegativeNumber(value.elapsedMs) ? { elapsedMs: value.elapsedMs } : {}),
+    ...(nonEmptyString(value.model) ? { model: value.model } : {}),
+    ...(nonEmptyString(value.errorClass) ? { errorClass: value.errorClass } : {}),
+    ...(kind === "batch" && nonEmptyString(details.batchId) ? { batchId: details.batchId } : {}),
+    ...(kind === "chain" && nonEmptyString(details.pipelineId) ? { pipelineId: details.pipelineId } : {}),
+    ...(pipelineStepIndex !== undefined ? { pipelineStepIndex } : {}),
+  };
+}
+
+function batchSections(text: string, summaries: readonly SubagentGroupRunUpdate[]): GroupSection[] {
+  return sectionsForHeaders(text, summaries, (summary) => `#${summary.runId} ${summary.agent}`);
+}
+
+function chainSections(text: string, summaries: readonly SubagentGroupRunUpdate[]): GroupSection[] {
+  return sectionsForHeaders(text, summaries, (summary) => {
+    const stepIndex = summary.pipelineStepIndex;
+    return stepIndex !== undefined ? `Step ${stepIndex + 1} · #${summary.runId} ${summary.agent} · ${summary.status}` : "";
+  });
+}
+
+function sectionsForHeaders(
+  text: string,
+  summaries: readonly SubagentGroupRunUpdate[],
+  headerFor: (summary: SubagentGroupRunUpdate) => string,
+): GroupSection[] {
+  const byHeader = new Map(summaries.map((summary) => [headerFor(summary), summary]));
+  const lines = text.replaceAll("\r\n", "\n").split("\n");
+  const matches: Array<{ index: number; summary: SubagentGroupRunUpdate }> = [];
+  for (let index = 1; index < lines.length; index += 1) {
+    const summary = byHeader.get(lines[index] ?? "");
+    if (summary && lines[index - 1] === "") matches.push({ index, summary });
+  }
+  return matches.map(({ index, summary }, matchIndex) => ({
+    summary,
+    body: lines.slice(index + 1, matches[matchIndex + 1]?.index).join("\n"),
+  }));
+}
+
+function stripBatchBullet(body: string): string {
+  return body.startsWith("- ") ? body.slice(2) : body;
+}
+
+function stripChainTask(body: string, knownTask: string | undefined): string {
+  if (!body.startsWith("Task: ")) return body;
+  const normalizedTask = knownTask?.trim().replace(/\s+/g, " ");
+  if (normalizedTask) {
+    const escapedWords = normalizedTask.split(" ").map(escapeRegExp).join("\\s+");
+    const match = new RegExp(`^Task:\\s*${escapedWords}(?:\\s|$)`).exec(body);
+    if (match) return body.slice(match[0].length);
+  }
+  return body.replace(/^Task:[^\n]*(?:\n|$)/, "");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export function applySubagentRunUpdate(runs: readonly PickySubagentRun[], update: SubagentRunUpdate): PickySubagentRun[] {
-  const existing = runs.find((run) => run.runId === update.runId);
-  const next = existing ? { ...existing, ...update } : update;
-  return [...runs.filter((run) => run.runId !== update.runId), next].sort((left, right) => left.runId - right.runId);
+  const existingIndex = runs.findIndex((run) => sameRunIdentity(run, update));
+  if (existingIndex < 0) return [...runs, update].sort((left, right) => left.runId - right.runId);
+
+  const existing = runs[existingIndex]!;
+  const next = isFreshSpawn(update, existing) ? update : { ...existing, ...update };
+  return runs.map((run, index) => index === existingIndex ? next : run).sort((left, right) => left.runId - right.runId);
+}
+
+function sameRunIdentity(run: PickySubagentRun, update: SubagentRunUpdate): boolean {
+  if (run.runId !== update.runId) return false;
+  return update.invocationId === undefined || run.invocationId === update.invocationId;
+}
+
+function isFreshSpawn(update: SubagentRunUpdate, existing: PickySubagentRun): boolean {
+  return update.status === "running" && (existing.status === "done" || existing.status === "error");
 }
 
 /** Retains bounded invocation history, dropping the oldest runs first. */
@@ -242,11 +400,32 @@ export function capSubagentRuns(runs: readonly PickySubagentRun[], limit = 100):
   return runs.length <= limit ? [...runs] : runs.slice(runs.length - limit);
 }
 
+/** Keeps full responses only for recent runs so persisted session snapshots stay bounded. */
+export function retainSubagentRunResultText(runs: readonly PickySubagentRun[], limit = 30): PickySubagentRun[] {
+  const firstRetainedIndex = Math.max(0, runs.length - limit);
+  return runs.map((run, index) => {
+    if (index >= firstRetainedIndex || run.resultText === undefined) return run;
+    const { resultText: _, ...withoutResultText } = run;
+    return withoutResultText;
+  });
+}
+
 function resultPreview(content: unknown): string | undefined {
   const text = contentText(content)?.trim();
   if (!text) return undefined;
   const separator = text.lastIndexOf("\n\n");
   return sliceUtf16Safe((separator >= 0 ? text.slice(separator + 2) : text).trim(), resultPreviewLimit) || undefined;
+}
+
+function resultText(content: unknown): string | undefined {
+  const text = contentText(content);
+  if (!text) return undefined;
+  const separator = text.indexOf("\n\n");
+  return separator >= 0 ? cappedResultText(text.slice(separator + 2)) : undefined;
+}
+
+function cappedResultText(text: string): string | undefined {
+  return sliceUtf16Safe(text.trim(), resultTextLimit) || undefined;
 }
 
 function contentText(content: unknown): string | undefined {

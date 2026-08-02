@@ -30,7 +30,7 @@ import { mergeChangedFiles } from "./domain/changed-files.js";
 import { diffQueueRemovedItems, dropAlreadyMaterializedQueueEntries, queueItems, sameQueueItems, type PendingQueueDelivery } from "./domain/queue-policy.js";
 import { isTerminalStatus } from "./domain/session-status.js";
 import { countSystemMessages, sameTodoState, shouldReattachBlockedSessionOnStartup } from "./domain/session-state-policy.js";
-import { applySubagentRunUpdate, capSubagentRuns } from "./domain/subagent-run-state.js";
+import { applySubagentRunUpdate, capSubagentRuns, retainSubagentRunResultText } from "./domain/subagent-run-state.js";
 import { ARCHIVED_SESSION_RETENTION_DAYS, buildAppendedMainMessageState, buildArchivedSessionRestartCancellation, buildDuplicatedPickleSession, buildEmptyPickleSession, buildInterruptedRuntimeLiveStatePatch, buildOrphanedChildRecoverySession, buildPinnedPickleSession, buildResumedHandoffPickleSession, buildRuntimeReattachPatch, buildRuntimeSessionReplacementPatch, buildUnattachedRuntimeBlock, buildVisibleSession, projectMainAgentSessionInfo, projectMainReplyMetadata, projectMainRolloverPickleSessions, shouldPurgeArchivedSession } from "./domain/session-supervisor-projection-policy.js";
 import { normalizeDslWhitespace, userInputFromLogLine } from "./domain/session-text-policy.js";
 import { HANDOFF_PREFIX, FOLLOWUP_PREFIX, STEER_PREFIX, EXTENSION_ANSWER_PREFIX } from "./domain/log-prefixes.js";
@@ -2970,7 +2970,7 @@ export class SessionSupervisor extends EventEmitter {
 
   private async updateSubagentRuns(sessionId: string, update: PickySubagentRun): Promise<void> {
     const current = this.mustGet(sessionId).subagentRuns ?? [];
-    const runs = capSubagentRuns(applySubagentRunUpdate(current, update));
+    const runs = retainSubagentRunResultText(capSubagentRuns(applySubagentRunUpdate(current, update)));
     if (sameSubagentRuns(current, runs)) return;
     await this.patch(sessionId, { subagentRuns: runs }, { emitSession: false });
     const seq = this.nextSeq(sessionId);

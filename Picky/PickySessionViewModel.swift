@@ -1048,6 +1048,29 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
+    /// Opens a completed subagent's full response in the shared markdown report viewer.
+    func openSubagentRunResponse(sessionID: String, invocationID: String, runId: Int) async throws {
+        guard let session = (sessions + archivedSessions).first(where: { $0.id == sessionID }),
+              let run = session.subagentRuns.first(where: { $0.runId == runId && $0.invocationId == invocationID }),
+              let markdown = run.resultText ?? run.resultPreview,
+              !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            lastError = "Subagent response is not available as a report"
+            throw PickySessionListViewModelError.missingReport
+        }
+        do {
+            let runIdentity = sanitizedReportFileComponent(invocationID)
+            try openGeneratedReport(
+                windowKey: "\(sessionID):subagent-run:\(invocationID):\(runId)",
+                title: "\(run.agent) #\(runId) \u{2014} Response",
+                fileName: "subagent-run-\(runIdentity)-\(runId).md",
+                markdown: markdown
+            )
+        } catch {
+            lastError = error.localizedDescription
+            throw error
+        }
+    }
+
     private func openGeneratedReport(windowKey: String, title: String, fileName: String, markdown: String) throws {
         try FileManager.default.createDirectory(at: generatedReportDirectory, withIntermediateDirectories: true)
         let fileURL = generatedReportDirectory.appendingPathComponent(fileName, isDirectory: false)

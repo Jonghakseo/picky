@@ -19,6 +19,25 @@ struct PickySubagentInvocationRow: Equatable, Identifiable {
 
     var runIDText: String? { run.map { "#\($0.runId)" } }
     var displayTask: String { run?.displayTask ?? task }
+
+    /// The complete result is retained only for recent runs, so it controls the
+    /// report-viewer affordance independently from the compact row preview.
+    var hasResponseText: Bool {
+        guard let resultText = run?.resultText?.trimmingCharacters(in: .whitespacesAndNewlines) else { return false }
+        return !resultText.isEmpty
+    }
+
+    /// Settled runs prioritize their compact response preview over the launch task.
+    /// A row remains task-first while running, even if an interim result arrives.
+    var displayText: String {
+        guard status == .done || status == .error,
+              let response = run?.resultPreview ?? run?.resultText,
+              !response.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            return displayTask
+        }
+        return response.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
 }
 
 enum PickySubagentInvocationExpansionPolicy {
@@ -56,7 +75,9 @@ struct PickySubagentInvocationPresentation: Equatable {
         self.startedAt = invocationRuns.compactMap(\.startedAt).min() ?? createdAt
     }
 
-    var isComplete: Bool { runningCount == 0 && pendingCount == 0 }
+    /// The tool completion event is authoritative even when pre-fix history has
+    /// no matching run records or a delayed diagnostic still reports running.
+    var isComplete: Bool { invocation.completed == true || (runningCount == 0 && pendingCount == 0) }
 
     var tone: Tone {
         if errorCount > 0 { return .error }
@@ -103,17 +124,17 @@ struct PickySubagentInvocationPresentation: Equatable {
     var collapsedText: String { statusText }
 
     func elapsedText(now: Date = Date()) -> String {
-        let end: Date
         if isComplete {
-            end = rows.compactMap { row in
+            guard let completedAt = rows.compactMap({ row -> Date? in
                 guard let startedAt = row.run?.startedAt,
                       let elapsedMs = row.run?.elapsedMs else { return nil }
                 return startedAt.addingTimeInterval(elapsedMs / 1_000)
-            }.max() ?? now
-        } else {
-            end = now
+            }).max() else {
+                return ""
+            }
+            return Self.elapsedText(milliseconds: max(0, completedAt.timeIntervalSince(startedAt) * 1_000))
         }
-        return Self.elapsedText(milliseconds: max(0, end.timeIntervalSince(startedAt) * 1_000))
+        return Self.elapsedText(milliseconds: max(0, now.timeIntervalSince(startedAt) * 1_000))
     }
 
     func elapsedText(for row: PickySubagentInvocationRow, now: Date = Date()) -> String {
@@ -145,7 +166,7 @@ struct PickySubagentInvocationPresentation: Equatable {
             let matchedIndex = unmatchedRuns.firstIndex { $0.agent == plannedRun.agent }
             let matchedRun = matchedIndex.map { unmatchedRuns.remove(at: $0) }
             rows.append(PickySubagentInvocationRow(
-                id: matchedRun.map { "run-\($0.runId)" } ?? "planned-\(index)",
+                id: matchedRun.map { "run-\($0.invocationId ?? "legacy")-\($0.runId)" } ?? "planned-\(index)",
                 planIndex: index,
                 agent: plannedRun.agent,
                 task: plannedRun.task,
@@ -155,7 +176,7 @@ struct PickySubagentInvocationPresentation: Equatable {
         }
         rows.append(contentsOf: unmatchedRuns.map { run in
             PickySubagentInvocationRow(
-                id: "run-\(run.runId)",
+                id: "run-\(run.invocationId ?? "legacy")-\(run.runId)",
                 planIndex: nil,
                 agent: run.agent,
                 task: run.task,

@@ -565,6 +565,120 @@ describe("PiSdkRuntime", () => {
     expect(updates.every((event) => event.update.resultPreview === undefined)).toBe(true);
   });
 
+  it("starts a reused diagnostic run ID without stale terminal state", async () => {
+    const fakeSession = new FakeSession();
+    const handle = await makeRuntime(fakeSession).prewarm({ cwd: "/tmp/project", sessionId: "session-reused-run" });
+    const events: RuntimeEvent[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    fakeSession.emit("event", {
+      type: "tool_execution_start",
+      toolCallId: "subagent-first",
+      toolName: "subagent",
+      args: { command: "subagent run worker -- old task" },
+    });
+    fakeSession.emit("event", {
+      type: "entry_appended",
+      entry: { type: "custom", customType: "subagent-runner-diagnostic", data: { schemaVersion: 1, recordedAt: "2026-08-02T05:26:36.115Z", runId: 3, agent: "worker", event: "spawn" } },
+    });
+    fakeSession.emit("event", {
+      type: "entry_appended",
+      entry: { type: "custom", customType: "subagent-runner-diagnostic", data: { schemaVersion: 1, recordedAt: "2026-08-02T05:26:41.115Z", runId: 3, agent: "worker", event: "settled", code: 0 } },
+    });
+    fakeSession.emit("event", { type: "tool_execution_end", toolCallId: "subagent-first", toolName: "subagent" });
+    fakeSession.emit("event", {
+      type: "tool_execution_start",
+      toolCallId: "subagent-second",
+      toolName: "subagent",
+      args: { command: "subagent run worker -- new task" },
+    });
+    fakeSession.emit("event", {
+      type: "entry_appended",
+      entry: { type: "custom", customType: "subagent-runner-diagnostic", data: { schemaVersion: 1, recordedAt: "2026-08-02T05:27:00.115Z", runId: 3, agent: "worker", event: "spawn" } },
+    });
+
+    const updates = events.filter((event): event is Extract<RuntimeEvent, { type: "subagent_run_update" }> => event.type === "subagent_run_update");
+    expect(updates.at(-1)?.update).toEqual(expect.objectContaining({
+      runId: 3,
+      agent: "worker",
+      task: "new task",
+      status: "running",
+      invocationId: "subagent-second",
+      startedAt: "2026-08-02T05:27:00.115Z",
+    }));
+    expect(updates.at(-1)?.update).not.toHaveProperty("elapsedMs");
+  });
+
+  it("merges batch completion responses into existing diagnostic run state", async () => {
+    const fakeSession = new FakeSession();
+    const handle = await makeRuntime(fakeSession).prewarm({ cwd: "/tmp/project", sessionId: "session-batch-response" });
+    const events: RuntimeEvent[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    fakeSession.emit("event", {
+      type: "tool_execution_start",
+      toolCallId: "subagent-batch",
+      toolName: "subagent",
+      args: { command: 'subagent batch --agent worker --task "Inspect files" --agent reviewer --task "Review changes"' },
+    });
+    for (const [runId, agent, recordedAt] of [
+      [12, "worker", "2026-08-02T05:26:36.115Z"],
+      [13, "reviewer", "2026-08-02T05:26:37.115Z"],
+    ] as const) {
+      fakeSession.emit("event", {
+        type: "entry_appended",
+        entry: { type: "custom", customType: "subagent-runner-diagnostic", data: { schemaVersion: 1, recordedAt, runId, agent, batchId: "batch-a", event: "spawn" } },
+      });
+    }
+    fakeSession.emit("event", {
+      type: "message_start",
+      message: {
+        role: "custom",
+        customType: "subagent-tool",
+        display: true,
+        details: {
+          batchId: "batch-a",
+          runIds: [12, 13],
+          status: "done",
+          runSummaries: [
+            { runId: 12, agent: "worker", status: "done", elapsedMs: 100 },
+            { runId: 13, agent: "reviewer", status: "done", elapsedMs: 200 },
+          ],
+        },
+        content: [
+          "[subagent-batch#batch-a] completed",
+          "Runs: #12 done, #13 done",
+          "",
+          "#12 worker",
+          "- Worker response",
+          "",
+          "#13 reviewer",
+          "- Reviewer response",
+        ].join("\n"),
+      },
+    });
+
+    const updates = events.filter((event): event is Extract<RuntimeEvent, { type: "subagent_run_update" }> => event.type === "subagent_run_update");
+    expect(updates.slice(-2).map((event) => event.update)).toEqual([
+      expect.objectContaining({
+        runId: 12,
+        task: "Inspect files",
+        status: "done",
+        startedAt: "2026-08-02T05:26:36.115Z",
+        invocationId: "subagent-batch",
+        resultText: "Worker response",
+      }),
+      expect.objectContaining({
+        runId: 13,
+        task: "Review changes",
+        status: "done",
+        startedAt: "2026-08-02T05:26:37.115Z",
+        invocationId: "subagent-batch",
+        resultText: "Reviewer response",
+      }),
+    ]);
+  });
+
   it("discards unspawned launches when a subagent invocation ends", async () => {
     const fakeSession = new FakeSession();
     const handle = await makeRuntime(fakeSession).prewarm({ cwd: "/tmp/project", sessionId: "session-unspawned" });

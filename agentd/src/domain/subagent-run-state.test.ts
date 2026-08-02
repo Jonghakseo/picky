@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applySubagentRunUpdate, capSubagentRuns, subagentLaunchIntentFromToolArgs, subagentRunActivityUpdateFromDiagnostic, subagentRunUpdateFromCustomMessage, subagentRunUpdateFromDiagnostic } from "./subagent-run-state.js";
+import { applySubagentRunUpdate, capSubagentRuns, retainSubagentRunResultText, subagentGroupRunUpdatesFromCustomMessage, subagentLaunchIntentFromToolArgs, subagentRunActivityUpdateFromDiagnostic, subagentRunUpdateFromCustomMessage, subagentRunUpdateFromDiagnostic } from "./subagent-run-state.js";
 
 describe("subagent run state", () => {
   it("maps extension lifecycle details and extracts the trailing result preview", () => {
@@ -19,10 +19,105 @@ describe("subagent run state", () => {
       status: "done",
       startedAt: "2023-11-14T22:13:20.000Z",
       resultPreview: "Final result",
+      resultText: "Final result",
     }));
   });
 
-  it("rejects unrelated or incomplete custom messages", () => {
+  it("keeps the complete single-run response while previewing its trailing paragraph", () => {
+    const update = subagentRunUpdateFromCustomMessage("subagent-tool", {
+      runId: 12,
+      agent: "worker",
+      task: "Inspect the implementation",
+      status: "done",
+    }, "[subagent:worker#12] completed\nPrompt: Inspect\n\nFirst paragraph\n\nFinal paragraph");
+
+    expect(update).toMatchObject({
+      resultText: "First paragraph\n\nFinal paragraph",
+      resultPreview: "Final paragraph",
+    });
+  });
+
+  it("parses batch sections only at known headers preceded by a blank line", () => {
+    const updates = subagentGroupRunUpdatesFromCustomMessage("subagent-tool", {
+      batchId: "batch-a",
+      runIds: [12, 13],
+      status: "done",
+      runSummaries: [
+        { runId: 12, agent: "reviewer", status: "done", elapsedMs: 120, model: "model-a" },
+        { runId: 13, agent: "challenger", status: "error", elapsedMs: 240, errorClass: "timeout" },
+      ],
+    }, [
+      "[subagent-batch#batch-a] completed",
+      "Runs: #12 done, #13 error",
+      "",
+      "#12 reviewer",
+      "- First response line",
+      "#99 unrelated header",
+      "#13 challenger",
+      "still part of reviewer output",
+      "",
+      "#13 challenger",
+      "- Challenger response",
+    ].join("\n"));
+
+    expect(updates).toEqual([
+      expect.objectContaining({
+        runId: 12,
+        agent: "reviewer",
+        status: "done",
+        batchId: "batch-a",
+        elapsedMs: 120,
+        model: "model-a",
+        resultText: "First response line\n#99 unrelated header\n#13 challenger\nstill part of reviewer output",
+      }),
+      expect.objectContaining({
+        runId: 13,
+        agent: "challenger",
+        status: "error",
+        errorClass: "timeout",
+        resultText: "Challenger response",
+      }),
+    ]);
+  });
+
+  it("parses chain sections and removes a multiline known task", () => {
+    const updates = subagentGroupRunUpdatesFromCustomMessage("subagent-command", {
+      pipelineId: "pipeline-a",
+      stepRunIds: [12],
+      status: "done",
+      runSummaries: [{ runId: 12, agent: "worker", status: "done", stepIndex: 0 }],
+    }, [
+      "[subagent-chain#pipeline-a] completed",
+      "",
+      "Step 1 · #12 worker · done",
+      "Task: Inspect the implementation",
+      "across multiple files",
+      "Full response with details.",
+    ].join("\n"), new Map([[12, "Inspect the implementation\nacross multiple files"]]));
+
+    expect(updates).toEqual([expect.objectContaining({
+      runId: 12,
+      pipelineId: "pipeline-a",
+      pipelineStepIndex: 0,
+      resultText: "Full response with details.",
+    })]);
+  });
+
+  it("skips group runs whose exact known header is absent", () => {
+    const updates = subagentGroupRunUpdatesFromCustomMessage("subagent-tool", {
+      batchId: "batch-a",
+      runIds: [12, 13],
+      status: "done",
+      runSummaries: [
+        { runId: 12, agent: "worker", status: "done" },
+        { runId: 13, agent: "reviewer", status: "done" },
+      ],
+    }, "[subagent-batch#batch-a] completed\n\n#12 worker\n- Present response");
+
+    expect(updates.map((update) => update.runId)).toEqual([12]);
+  });
+
+  it("rejects unrelated or incomplete custom messages",  () => {
     expect(subagentRunUpdateFromCustomMessage("other", { runId: 1, agent: "worker", task: "task", status: "started" })).toBeUndefined();
     expect(subagentRunUpdateFromCustomMessage("subagent-command", { runId: 1, status: "started" })).toBeUndefined();
   });
@@ -72,14 +167,43 @@ describe("subagent run state", () => {
     expect(subagentRunUpdateFromDiagnostic({ recordedAt: "2026-08-02T05:26:36.115Z", event: "session_shutdown" })).toBeUndefined();
   });
 
-  it("upserts by run ID and keeps runs ordered", () => {
-    const next = applySubagentRunUpdate([{ runId: 4, agent: "worker", task: "later", status: "running" }], {
-      runId: 2, agent: "reviewer", task: "first", status: "running",
+  it("upserts by invocation and run ID while keeping duplicate run IDs ordered", () => {
+    const next = applySubagentRunUpdate([{ runId: 4, agent: "worker", task: "later", status: "running", invocationId: "first" }], {
+      runId: 2, agent: "reviewer", task: "first", status: "running", invocationId: "first",
     });
-    const updated = applySubagentRunUpdate(next, { runId: 4, agent: "worker", task: "later", status: "done", elapsedMs: 10 });
+    const updated = applySubagentRunUpdate(next, { runId: 4, agent: "worker", task: "later", status: "done", elapsedMs: 10, invocationId: "first" });
+    const reused = applySubagentRunUpdate(updated, {
+      runId: 4,
+      agent: "worker",
+      task: "new invocation",
+      status: "running",
+      invocationId: "second",
+    });
 
-    expect(updated.map((run) => run.runId)).toEqual([2, 4]);
-    expect(updated[1]).toMatchObject({ status: "done", elapsedMs: 10 });
+    expect(reused.map((run) => [run.invocationId, run.runId])).toEqual([["first", 2], ["first", 4], ["second", 4]]);
+    expect(reused[1]).toMatchObject({ status: "done", elapsedMs: 10, task: "later" });
+    expect(reused[2]).toMatchObject({ status: "running", task: "new invocation" });
+  });
+
+  it("replaces terminal run state for an unscoped fresh spawn", () => {
+    const updated = applySubagentRunUpdate([{
+      runId: 4,
+      agent: "worker",
+      task: "old task",
+      status: "done",
+      elapsedMs: 10,
+      resultPreview: "old result",
+      errorClass: "timeout",
+      lastActivity: { toolName: "bash" },
+      displayTask: "Old task",
+    }], {
+      runId: 4,
+      agent: "worker",
+      task: "new task",
+      status: "running",
+    });
+
+    expect(updated).toEqual([{ runId: 4, agent: "worker", task: "new task", status: "running" }]);
   });
 
   it("parses optional future activity without treating unrelated diagnostics as activity", () => {
@@ -106,5 +230,26 @@ describe("subagent run state", () => {
       status: "done" as const,
     }));
     expect(capSubagentRuns(runs).map((run) => run.runId)).toEqual(Array.from({ length: 100 }, (_, index) => index + 3));
+  });
+
+  it("caps result text at 32000 UTF-16 code units and retains it for only 30 recent runs", () => {
+    const oversized = subagentRunUpdateFromCustomMessage("subagent-tool", {
+      runId: 12,
+      agent: "worker",
+      task: "Inspect",
+      status: "done",
+    }, `[subagent:worker#12] completed\n\n${"x".repeat(32_001)}`);
+    expect(oversized?.resultText).toHaveLength(32_000);
+
+    const runs = Array.from({ length: 31 }, (_, index) => ({
+      runId: index + 1,
+      agent: "worker",
+      task: `task ${index + 1}`,
+      status: "done" as const,
+      resultText: `response ${index + 1}`,
+    }));
+    const retained = retainSubagentRunResultText(runs);
+    expect(retained[0]).not.toHaveProperty("resultText");
+    expect(retained.slice(1).every((run) => run.resultText !== undefined)).toBe(true);
   });
 });

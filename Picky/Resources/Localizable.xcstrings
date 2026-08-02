@@ -1698,6 +1698,18 @@
         "ko": { "stringUnit": { "state": "translated", "value": "서브에이전트 실행 접기" } }
       }
     },
+    "hud.subagent.row.openResponse": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Open agent response" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "서브에이전트 응답 열기" } }
+      }
+    },
+    "hud.subagent.row.task": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Task: %@" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "작업: %@" } }
+      }
+    },
     "hud.subagent.status.pending": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Pending" } },

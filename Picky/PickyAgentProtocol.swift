@@ -1237,6 +1237,7 @@ struct PickySubagentRun: Codable, Equatable, Identifiable {
     let pipelineId: String?
     let pipelineStepIndex: Int?
     let resultPreview: String?
+    var resultText: String? = nil
     let model: String?
     var invocationId: String? = nil
     var lastActivity: PickySubagentLastActivity? = nil

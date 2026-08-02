@@ -11,11 +11,12 @@ struct PickySubagentInvocationBubbleView: View {
     let presentation: PickySubagentInvocationPresentation
     let isExpanded: Bool
     let setExpanded: (Bool) -> Void
+    let onOpenRunResponse: (PickySubagentInvocationRow) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Group {
-            if isExpanded, !presentation.isComplete {
+            if isExpanded, presentation.runningCount > 0 {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     content(now: context.date)
                 }
@@ -113,7 +114,23 @@ struct PickySubagentInvocationBubbleView: View {
         }
     }
 
-    private func rowView(_ row: PickySubagentInvocationRow, now: Date) -> some View {
+    @ViewBuilder private func rowView(_ row: PickySubagentInvocationRow, now: Date) -> some View {
+        if row.hasResponseText && (row.status == .done || row.status == .error) {
+            Button { onOpenRunResponse(row) } label: {
+                rowContent(row, now: now)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(PickySubagentInvocationButtonStyle())
+            .help("\(L10n.t("hud.subagent.row.openResponse"))\n\(taskText(for: row))")
+            .accessibilityLabel("\(accessibilityRow(row)), \(taskText(for: row)), \(L10n.t("hud.subagent.row.openResponse"))")
+        } else {
+            rowContent(row, now: now)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(accessibilityRow(row))
+        }
+    }
+
+    private func rowContent(_ row: PickySubagentInvocationRow, now: Date) -> some View {
         VStack(alignment: .leading, spacing: DS.Spacing.xs) {
             HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.sm) {
                 Text(marker(for: row.status))
@@ -135,7 +152,7 @@ struct PickySubagentInvocationBubbleView: View {
                         .font(PickyHUDTypography.metaMonospacedMedium)
                         .foregroundColor(DS.Colors.textTertiary)
                 }
-                Text(row.displayTask)
+                Text(row.displayText)
                     .font(PickyHUDTypography.supporting)
                     .foregroundColor(row.status == .error ? DS.Colors.destructiveText : DS.Colors.textSecondary)
                     .lineLimit(1)
@@ -154,8 +171,6 @@ struct PickySubagentInvocationBubbleView: View {
             }
         }
         .padding(.vertical, DS.Spacing.xs)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityRow(row))
     }
 
     private var accessibilityHeader: String {
@@ -163,9 +178,13 @@ struct PickySubagentInvocationBubbleView: View {
     }
 
     private func accessibilityRow(_ row: PickySubagentInvocationRow) -> String {
-        [markerDescription(for: row.status), row.agent, row.runIDText, row.displayTask, presentation.activityText(for: row)]
+        [markerDescription(for: row.status), row.agent, row.runIDText, row.displayText, presentation.activityText(for: row)]
             .compactMap { $0 }
             .joined(separator: ", ")
+    }
+
+    private func taskText(for row: PickySubagentInvocationRow) -> String {
+        L10n.t("hud.subagent.row.task", row.displayTask)
     }
 
     private var toneColor: Color { color(for: presentation.tone) }

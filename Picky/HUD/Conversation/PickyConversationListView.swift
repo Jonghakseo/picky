@@ -363,8 +363,9 @@ struct PickyConversationListView: View {
                         )
                     },
                     onOpenRunResponse: { row in
-                        guard let runID = row.run?.runId else { return }
-                        Task { try? await viewModel.openSubagentRunResponse(sessionID: session.id, runId: runID) }
+                        guard let runID = row.run?.runId,
+                              let invocationID = row.run?.invocationId else { return }
+                        Task { try? await viewModel.openSubagentRunResponse(sessionID: session.id, invocationID: invocationID, runId: runID) }
                     }
                 )
             }

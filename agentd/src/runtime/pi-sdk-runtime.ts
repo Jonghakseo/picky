@@ -16,7 +16,7 @@ import type { BuiltPrompt } from "../prompt-builder.js";
 import { ExtensionUiBridge, type DialogMethod } from "../application/extension-ui-bridge.js";
 import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
 import { resolveTodoStateFromPiSessionEntries } from "../domain/todo-state.js";
-import { subagentLaunchIntentFromToolArgs, subagentRunActivityUpdateFromDiagnostic, subagentRunUpdateFromCustomMessage, subagentRunUpdateFromDiagnostic, type SubagentDiagnosticRunUpdate, type SubagentLaunchIntentEntry } from "../domain/subagent-run-state.js";
+import { subagentGroupRunUpdatesFromCustomMessage, subagentLaunchIntentFromToolArgs, subagentRunActivityUpdateFromDiagnostic, subagentRunUpdateFromCustomMessage, subagentRunUpdateFromDiagnostic, type SubagentDiagnosticRunUpdate, type SubagentGroupRunUpdate, type SubagentLaunchIntentEntry } from "../domain/subagent-run-state.js";
 import { isTransientAgentBusyError } from "../domain/transient-runtime-error.js";
 import type { AgentRuntime, AnswerExtensionUiOptions, RewindBranchMessage, RewindResult, RewindTarget, RuntimeAssistantRunMetadata, RuntimeAutocompleteApplyRequest, RuntimeAutocompleteCapabilities, RuntimeAutocompleteCompletion, RuntimeAutocompleteQuery, RuntimeAutocompleteSuggestions, RuntimeBashExecutionResult, RuntimeEvent, RuntimeModelOption, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
 import type { ModelCycleDirection, PickyQueueMode, PickySubagentInvocation, PickySubagentRun } from "../protocol.js";
@@ -234,6 +234,10 @@ function elapsedSince(startedAt: string | undefined, endedAt: string): number | 
   if (!startedAt) return undefined;
   const elapsed = Date.parse(endedAt) - Date.parse(startedAt);
   return Number.isFinite(elapsed) ? Math.max(0, elapsed) : undefined;
+}
+
+function isTerminalSubagentRun(run: PickySubagentRun | undefined): boolean {
+  return run?.status === "done" || run?.status === "error";
 }
 
 interface ExpectedInputDelivery {
@@ -957,7 +961,15 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     if (inputMessageEvent) {
       const message = asRecord(record.message);
       const update = subagentRunUpdateFromCustomMessage(message.customType, message.details, message.content);
-      if (update) this.emit({ type: "subagent_run_update", update: this.attachSubagentInvocation(update) });
+      if (update) {
+        this.emit({ type: "subagent_run_update", update: this.attachSubagentInvocation(update) });
+      } else {
+        const knownTasks = new Map([...this.subagentRunsById].map(([runId, run]) => [runId, run.task]));
+        for (const groupUpdate of subagentGroupRunUpdatesFromCustomMessage(message.customType, message.details, message.content, knownTasks)) {
+          const run = this.attachSubagentGroupRunUpdate(groupUpdate);
+          if (run) this.emit({ type: "subagent_run_update", update: run });
+        }
+      }
       return inputMessageEvent;
     }
 
@@ -1050,10 +1062,11 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     const { recordedAt, ...update } = diagnostic;
     const existing = this.subagentRunsById.get(update.runId);
     const launch = update.status === "running" ? this.consumeSubagentLaunch(update.agent) : undefined;
-    const task = launch?.task ?? existing?.task ?? update.agent;
+    const isFreshSpawn = update.status === "running" && isTerminalSubagentRun(existing);
+    const task = launch?.task ?? (isFreshSpawn ? update.agent : existing?.task) ?? update.agent;
     const elapsedMs = update.status === "running" ? undefined : elapsedSince(existing?.startedAt, recordedAt);
     const run: PickySubagentRun = {
-      ...existing,
+      ...(isFreshSpawn ? {} : existing),
       ...update,
       task,
       ...(launch ? { invocationId: launch.invocationId } : {}),
@@ -1065,8 +1078,23 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
 
   private attachSubagentInvocation(update: PickySubagentRun): PickySubagentRun {
     const existing = this.subagentRunsById.get(update.runId);
-    const invocationId = existing?.invocationId ?? this.activeSubagentInvocationIDs.at(-1);
-    const run = { ...existing, ...update, ...(invocationId ? { invocationId } : {}) };
+    const isFreshSpawn = update.status === "running" && isTerminalSubagentRun(existing);
+    const invocationId = isFreshSpawn
+      ? this.activeSubagentInvocationIDs.at(-1)
+      : existing?.invocationId ?? this.activeSubagentInvocationIDs.at(-1);
+    const run = {
+      ...(isFreshSpawn ? {} : existing),
+      ...update,
+      ...(invocationId ? { invocationId } : {}),
+    };
+    this.subagentRunsById.set(run.runId, run);
+    return run;
+  }
+
+  private attachSubagentGroupRunUpdate(update: SubagentGroupRunUpdate): PickySubagentRun | undefined {
+    const existing = this.subagentRunsById.get(update.runId);
+    if (!existing) return undefined;
+    const run = { ...existing, ...update };
     this.subagentRunsById.set(run.runId, run);
     return run;
   }

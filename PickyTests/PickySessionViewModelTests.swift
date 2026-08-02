@@ -4777,6 +4777,49 @@ struct PickySessionViewModelTests {
         #expect(FileManager.default.fileExists(atPath: call.fileURL.path))
     }
 
+    @MainActor @Test func openSubagentRunResponseOpensFullRunResultInDedicatedReport() async throws {
+        let generatedRoot = FileManager.default.temporaryDirectory.appendingPathComponent("picky-subagent-report-\(UUID().uuidString)", isDirectory: true)
+        let presenter = FakeReportPresenter()
+        let viewModel = PickySessionListViewModel(
+            client: FakePickyAgentClient(),
+            notificationCenter: PickyNoopNotificationCenter(),
+            reportPresenter: presenter,
+            generatedReportDirectory: generatedRoot
+        )
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "subagent-session", title: "Investigate", status: "completed"))))
+        let run = PickySubagentRun(
+            runId: 12,
+            agent: "reviewer",
+            task: "Review the implementation",
+            displayTask: nil,
+            status: .done,
+            errorClass: nil,
+            startedAt: nil,
+            elapsedMs: nil,
+            batchId: nil,
+            pipelineId: nil,
+            pipelineStepIndex: nil,
+            resultPreview: "Full response",
+            resultText: "# Review\n\nNo regressions found.",
+            model: nil,
+            invocationId: "tool-1"
+        )
+        let encodedRuns = String(decoding: try JSONEncoder().encode([run]), as: UTF8.self)
+        let eventJSON = """
+        {"id":"event-subagent-runs","protocolVersion":"2026-07-23","timestamp":"2026-07-14T01:00:00.000Z","type":"sessionSubagentRunsUpdated","sessionId":"subagent-session","runs":\(encodedRuns),"seq":1}
+        """
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: eventJSON)))
+
+        try await viewModel.openSubagentRunResponse(sessionID: "subagent-session", runId: 12)
+
+        let call = try #require(presenter.calls.first)
+        #expect(call.sessionID == "subagent-session:subagent-run:12")
+        #expect(call.title == "reviewer #12 \u{2014} Response")
+        #expect(call.fileURL.lastPathComponent == "subagent-run-12.md")
+        #expect(call.markdown == "# Review\n\nNo regressions found.")
+        #expect(FileManager.default.fileExists(atPath: call.fileURL.path))
+    }
+
     @MainActor @Test func openLatestAgentResponseReportOpensNewestAgentTextOnly() async throws {
         let generatedRoot = FileManager.default.temporaryDirectory.appendingPathComponent("picky-latest-response-report-\(UUID().uuidString)", isDirectory: true)
         let presenter = FakeReportPresenter()

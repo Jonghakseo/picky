@@ -162,6 +162,7 @@ export const PickySubagentRunSchema = z.object({
   pipelineId: z.string().optional(),
   pipelineStepIndex: z.number().int().optional(),
   resultPreview: z.string().optional(),
+  resultText: z.string().optional(),
   model: z.string().optional(),
   invocationId: z.string().optional(),
   lastActivity: z.object({

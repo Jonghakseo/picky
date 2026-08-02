@@ -9,6 +9,11 @@ export interface SubagentLaunchIntentEntry {
   task: string;
 }
 
+export interface SubagentRunActivityUpdate {
+  runId: number;
+  lastActivity: NonNullable<PickySubagentRun["lastActivity"]>;
+}
+
 export interface SubagentLaunchIntent {
   action: SubagentLaunchAction;
   entries: SubagentLaunchIntentEntry[];
@@ -75,6 +80,25 @@ export function subagentRunUpdateFromDiagnostic(data: unknown): SubagentDiagnost
   };
 }
 
+/** Parses optional, forward-compatible live activity emitted by a future subagent extension. */
+export function subagentRunActivityUpdateFromDiagnostic(data: unknown): SubagentRunActivityUpdate | undefined {
+  if (!isRecord(data)) return undefined;
+  const runId = integer(data.runId);
+  if (runId === undefined || runId < 0 || !nonEmptyString(data.agent)) return undefined;
+  const toolName = nonEmptyString(data.lastToolName) ? data.lastToolName : undefined;
+  const toolCallCount = integer(data.toolCallCount);
+  const lastLine = nonEmptyString(data.lastLine) ? data.lastLine : undefined;
+  if (!toolName && toolCallCount === undefined && !lastLine) return undefined;
+  return {
+    runId,
+    lastActivity: {
+      ...(toolName ? { toolName } : {}),
+      ...(toolCallCount !== undefined && toolCallCount >= 0 ? { toolCallCount } : {}),
+      ...(lastLine ? { lastLine } : {}),
+    },
+  };
+}
+
 function commandFromToolArgs(args: unknown): string | undefined {
   if (isRecord(args)) return nonEmptyString(args.command) ? args.command : undefined;
   if (typeof args !== "string") return undefined;
@@ -128,6 +152,7 @@ function shellTokens(command: string): ShellToken[] {
 }
 
 function launchAction(value: string | undefined): SubagentLaunchAction | undefined {
+  if (value === "continue") return "run";
   return value === "run" || value === "batch" || value === "chain" ? value : undefined;
 }
 
@@ -212,9 +237,9 @@ export function applySubagentRunUpdate(runs: readonly PickySubagentRun[], update
   return [...runs.filter((run) => run.runId !== update.runId), next].sort((left, right) => left.runId - right.runId);
 }
 
-/** Settled runs are transient; retain only while a background run is still active. */
-export function pruneSettledSubagentRuns(runs: readonly PickySubagentRun[]): PickySubagentRun[] {
-  return runs.some((run) => run.status === "running") ? [...runs] : [];
+/** Retains bounded invocation history, dropping the oldest runs first. */
+export function capSubagentRuns(runs: readonly PickySubagentRun[], limit = 100): PickySubagentRun[] {
+  return runs.length <= limit ? [...runs] : runs.slice(runs.length - limit);
 }
 
 function resultPreview(content: unknown): string | undefined {

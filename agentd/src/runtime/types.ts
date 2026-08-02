@@ -1,7 +1,7 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import type { BuiltPrompt } from "../prompt-builder.js";
-import type { ModelCycleDirection, PickyQueueMode, PickySubagentRun, PickyTodoState } from "../protocol.js";
+import type { ModelCycleDirection, PickyQueueMode, PickySubagentInvocation, PickySubagentRun, PickyTodoState } from "../protocol.js";
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 export type RuntimeSlashCommandSource = "extension" | "prompt" | "skill" | "builtin";
@@ -98,6 +98,7 @@ export type RuntimeEvent =
   | { type: "turn_text_complete"; text: string; inputId?: string; assistantRun?: RuntimeAssistantRunMetadata }
   | { type: "tool"; toolCallId: string; name: string; status: "running" | "succeeded" | "failed"; preview?: string; argsPreview?: string; resultPreview?: string }
   | { type: "todo_state"; todoState?: PickyTodoState }
+  | { type: "subagent_invocation"; invocation: PickySubagentInvocation }
   | { type: "subagent_run_update"; update: PickySubagentRun }
   | { type: "extension_ui"; request: Record<string, unknown>; waitsForInput: boolean }
   | { type: "extension_ui_cancelled"; requestId: string }

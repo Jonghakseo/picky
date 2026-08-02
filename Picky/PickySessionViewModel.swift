@@ -32,8 +32,8 @@ final class PickySessionListViewModel: ObservableObject {
     @Published private(set) var thinkingBlocksHiddenBySessionID: [String: Bool] = [:]
     /// Per-session TODO expansion choice survives Conversation Card teardown while the HUD is closed.
     @Published private(set) var todoProgressExpandedBySessionID: [String: Bool] = [:]
-    @Published private(set) var subagentProgressExpandedBySessionID: [String: Bool] = [:]
-    @Published private(set) var expandedSubagentRunIDsBySessionID: [String: Set<Int>] = [:]
+    /// Per-invocation expansion survives conversation-card teardown while the HUD is closed.
+    @Published private(set) var subagentInvocationExpandedBySessionID: [String: [String: Bool]] = [:]
     @Published private(set) var pendingDoneFlashSessionIDs: Set<String> = []
     /// Sessions whose detail card is currently presented as an inline Pi TUI instead of
     /// the SwiftUI chat/composer. This is intentionally UI-only state: the daemon and
@@ -507,6 +507,7 @@ final class PickySessionListViewModel: ObservableObject {
         deliveredNotificationKeys.remove("\(sessionID):failed")
         thinkingBlocksHiddenBySessionID.removeValue(forKey: sessionID)
         todoProgressExpandedBySessionID.removeValue(forKey: sessionID)
+        subagentInvocationExpandedBySessionID.removeValue(forKey: sessionID)
         slashCommandController.clear(sessionID: sessionID)
         syncSlashCommands()
         lastIncrementalSeqBySessionID.removeValue(forKey: sessionID)
@@ -736,26 +737,18 @@ final class PickySessionListViewModel: ObservableObject {
         todoProgressExpandedBySessionID[sessionID] = isExpanded
     }
 
-    func isSubagentProgressExpanded(sessionID: String, isComplete: Bool) -> Bool {
-        PickySubagentProgressExpansionPolicy.isExpanded(
-            savedValue: subagentProgressExpandedBySessionID[sessionID],
+    func isSubagentInvocationExpanded(invocationID: String, sessionID: String, isComplete: Bool) -> Bool {
+        PickySubagentInvocationExpansionPolicy.isExpanded(
+            savedValue: subagentInvocationExpandedBySessionID[sessionID]?[invocationID],
             isComplete: isComplete
         )
     }
 
-    func setSubagentProgressExpanded(_ isExpanded: Bool, sessionID: String) {
-        guard subagentProgressExpandedBySessionID[sessionID] != isExpanded else { return }
-        subagentProgressExpandedBySessionID[sessionID] = isExpanded
-    }
-
-    func isSubagentRunExpanded(_ runID: Int, sessionID: String) -> Bool {
-        expandedSubagentRunIDsBySessionID[sessionID]?.contains(runID) == true
-    }
-
-    func toggleSubagentRunExpanded(_ runID: Int, sessionID: String) {
-        var runIDs = expandedSubagentRunIDsBySessionID[sessionID] ?? []
-        if !runIDs.insert(runID).inserted { runIDs.remove(runID) }
-        expandedSubagentRunIDsBySessionID[sessionID] = runIDs
+    func setSubagentInvocationExpanded(_ isExpanded: Bool, invocationID: String, sessionID: String) {
+        guard subagentInvocationExpandedBySessionID[sessionID]?[invocationID] != isExpanded else { return }
+        var values = subagentInvocationExpandedBySessionID[sessionID] ?? [:]
+        values[invocationID] = isExpanded
+        subagentInvocationExpandedBySessionID[sessionID] = values
     }
 
     func markDoneFlashConsumed(sessionID: String) {
@@ -1514,6 +1507,7 @@ final class PickySessionListViewModel: ObservableObject {
         deliveredNotificationKeys.remove("\(sessionID):failed")
         thinkingBlocksHiddenBySessionID.removeValue(forKey: sessionID)
         todoProgressExpandedBySessionID.removeValue(forKey: sessionID)
+        subagentInvocationExpandedBySessionID.removeValue(forKey: sessionID)
         slashCommandController.clear(sessionID: sessionID)
         syncSlashCommands()
         lastIncrementalSeqBySessionID.removeValue(forKey: sessionID)
@@ -1721,8 +1715,9 @@ final class PickySessionListViewModel: ObservableObject {
                 previousState: previousCardsByID[card.id]?.todoState,
                 currentState: card.todoState
             )
-            reconcileSubagentProgressExpansion(
+            reconcileSubagentInvocationExpansion(
                 sessionID: card.id,
+                messages: card.messages,
                 previousRuns: previousCardsByID[card.id]?.subagentRuns ?? [],
                 currentRuns: card.subagentRuns
             )
@@ -1772,8 +1767,9 @@ final class PickySessionListViewModel: ObservableObject {
             previousState: previousCard?.todoState,
             currentState: incomingCard.todoState
         )
-        reconcileSubagentProgressExpansion(
+        reconcileSubagentInvocationExpansion(
             sessionID: session.id,
+            messages: incomingCard.messages,
             previousRuns: previousCard?.subagentRuns ?? [],
             currentRuns: incomingCard.subagentRuns
         )
@@ -1879,8 +1875,9 @@ final class PickySessionListViewModel: ObservableObject {
     private func applySubagentRunsUpdated(sessionID sessionId: String, runs: [PickySubagentRun], seq: Int) {
         PickyPerf.event("vm_event_subagent_runs_updated")
         guard acceptIncrementalEvent(sessionID: sessionId, seq: seq) else { return }
-        reconcileSubagentProgressExpansion(
+        reconcileSubagentInvocationExpansion(
             sessionID: sessionId,
+            messages: card(sessionID: sessionId)?.messages ?? [],
             previousRuns: card(sessionID: sessionId)?.subagentRuns ?? [],
             currentRuns: runs
         )
@@ -2075,25 +2072,40 @@ final class PickySessionListViewModel: ObservableObject {
         setTodoProgressExpanded(false, sessionID: sessionID)
     }
 
-    private func reconcileSubagentProgressExpansion(
+    private func reconcileSubagentInvocationExpansion(
         sessionID: String,
+        messages: [PickySessionMessage],
         previousRuns: [PickySubagentRun],
         currentRuns: [PickySubagentRun]
     ) {
-        guard let current = PickySubagentProgressPresentation(runs: currentRuns) else {
-            subagentProgressExpandedBySessionID.removeValue(forKey: sessionID)
-            expandedSubagentRunIDsBySessionID.removeValue(forKey: sessionID)
+        let invocations = messages.compactMap { message -> (PickySubagentInvocation, Date)? in
+            guard message.kind == .subagentInvocation, let invocation = message.subagentInvocation else { return nil }
+            return (invocation, message.createdAt)
+        }
+        guard !invocations.isEmpty else {
+            subagentInvocationExpandedBySessionID.removeValue(forKey: sessionID)
             return
         }
-        let previousIsComplete = PickySubagentProgressPresentation(runs: previousRuns)?.isComplete
-        if previousIsComplete == true && !current.isComplete {
-            subagentProgressExpandedBySessionID.removeValue(forKey: sessionID)
-        }
-        if PickySubagentProgressExpansionPolicy.shouldCollapse(
-            previousIsComplete: previousIsComplete,
-            currentIsComplete: current.isComplete
-        ) {
-            setSubagentProgressExpanded(false, sessionID: sessionID)
+        for (invocation, createdAt) in invocations {
+            let previousIsComplete = PickySubagentInvocationPresentation(
+                invocation: invocation,
+                runs: previousRuns,
+                createdAt: createdAt
+            )?.isComplete
+            guard let current = PickySubagentInvocationPresentation(
+                invocation: invocation,
+                runs: currentRuns,
+                createdAt: createdAt
+            ) else { continue }
+            if previousIsComplete == true && !current.isComplete {
+                subagentInvocationExpandedBySessionID[sessionID]?[invocation.invocationId] = nil
+            }
+            if PickySubagentInvocationExpansionPolicy.shouldCollapse(
+                previousIsComplete: previousIsComplete,
+                currentIsComplete: current.isComplete
+            ) {
+                setSubagentInvocationExpanded(false, invocationID: invocation.invocationId, sessionID: sessionID)
+            }
         }
     }
 
@@ -2104,8 +2116,7 @@ final class PickySessionListViewModel: ObservableObject {
         syncComposerDraftRequests()
         thinkingBlocksHiddenBySessionID = thinkingBlocksHiddenBySessionID.filter { knownSessionIDs.contains($0.key) }
         todoProgressExpandedBySessionID = todoProgressExpandedBySessionID.filter { knownSessionIDs.contains($0.key) }
-        subagentProgressExpandedBySessionID = subagentProgressExpandedBySessionID.filter { knownSessionIDs.contains($0.key) }
-        expandedSubagentRunIDsBySessionID = expandedSubagentRunIDsBySessionID.filter { knownSessionIDs.contains($0.key) }
+        subagentInvocationExpandedBySessionID = subagentInvocationExpandedBySessionID.filter { knownSessionIDs.contains($0.key) }
         pendingDoneFlashSessionIDs = pendingDoneFlashSessionIDs.filter { knownSessionIDs.contains($0) }
         unreadSessionIDs = unreadSessionIDs.filter { knownSessionIDs.contains($0) }
         releasedArchivedChildSessionIDs = releasedArchivedChildSessionIDs.filter { knownSessionIDs.contains($0) }

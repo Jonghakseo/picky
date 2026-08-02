@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { BrowserMetadataSchema, CommandEnvelopeSchema, EventEnvelopeSchema } from "./protocol.js";
+import { BrowserMetadataSchema, CommandEnvelopeSchema, EventEnvelopeSchema, PickyAgentSessionSchema } from "./protocol.js";
 
 const contractsRoot = join(process.cwd(), "..", "contracts", "protocol");
 
@@ -510,6 +510,34 @@ describe("protocol contract fixtures", () => {
         seq: 2,
       }),
     ).not.toThrow();
+  });
+
+  it("parses subagent invocation message events with optional activity fields", () => {
+    expect(() =>
+      EventEnvelopeSchema.parse({
+        id: "event-subagent-invocation",
+        protocolVersion: "2026-07-23",
+        timestamp: "2026-08-02T00:00:00.000Z",
+        type: "sessionMessageAppended",
+        sessionId: "session-001",
+        message: {
+          id: "message-subagent-invocation",
+          kind: "subagent_invocation",
+          createdAt: "2026-08-02T00:00:00.000Z",
+          subagentInvocation: {
+            invocationId: "tool-subagent-1",
+            action: "chain",
+            planned: [{ agent: "worker", task: "Implement" }, { agent: "reviewer", task: "Review" }],
+          },
+        },
+        seq: 2,
+      }),
+    ).not.toThrow();
+    expect(PickyAgentSessionSchema.parse({
+      id: "session-001", title: "Pickle", status: "running", createdAt: "2026-08-02T00:00:00.000Z", updatedAt: "2026-08-02T00:00:00.000Z",
+      logs: [], tools: [], artifacts: [], changedFiles: [],
+      subagentRuns: [{ runId: 1, agent: "worker", task: "Implement", status: "running", invocationId: "tool-subagent-1", lastActivity: { toolName: "edit", toolCallCount: 2 } }],
+    }).subagentRuns[0]).toMatchObject({ invocationId: "tool-subagent-1", lastActivity: { toolName: "edit" } });
   });
 
   it("parses agent activity session message events", () => {

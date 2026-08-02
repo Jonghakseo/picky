@@ -1,0 +1,218 @@
+//
+//  PickySubagentInvocationBubbleView.swift
+//  Picky
+//
+//  Conversation-local presentation for a single subagent tool invocation.
+//
+
+import SwiftUI
+
+struct PickySubagentInvocationBubbleView: View {
+    let presentation: PickySubagentInvocationPresentation
+    let isExpanded: Bool
+    let setExpanded: (Bool) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Group {
+            if isExpanded, !presentation.isComplete {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    content(now: context.date)
+                }
+            } else {
+                content(now: Date())
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func content(now: Date) -> some View {
+        let _ = PickyPerf.event("subagent_invocation_bubble")
+        return VStack(alignment: .leading, spacing: DS.Spacing.xs) {
+            Button { setExpanded(!isExpanded) } label: {
+                header(now: now)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(PickySubagentInvocationButtonStyle())
+            .accessibilityLabel(accessibilityHeader)
+            .accessibilityValue(presentation.statusText)
+            .help(isExpanded ? L10n.t("hud.subagent.collapse") : L10n.t("hud.subagent.show"))
+
+            if isExpanded {
+                Divider().overlay(DS.Colors.borderSubtle.opacity(0.65))
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(presentation.rows) { row in
+                        rowView(row, now: now)
+                    }
+                }
+                .transition(.opacity)
+            }
+        }
+        .padding(DS.Spacing.md)
+        .background(
+            RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous)
+                .fill(DS.Colors.surface2)
+                .overlay(
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous)
+                        .stroke(DS.Colors.borderSubtle, lineWidth: 0.5)
+                )
+        )
+        .animation(reduceMotion ? nil : .easeOut(duration: DS.Animation.normal), value: isExpanded)
+    }
+
+    @ViewBuilder private func header(now: Date) -> some View {
+        if presentation.isComplete && !isExpanded {
+            HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.sm) {
+                Text(presentation.tone == .success ? "✓" : "×")
+                    .font(PickyHUDTypography.statusMonospacedMedium)
+                    .foregroundColor(toneColor)
+                    .accessibilityHidden(true)
+                Text(presentation.collapsedText)
+                    .font(PickyHUDTypography.statusMonospacedMedium)
+                    .foregroundColor(toneColor)
+                    .lineLimit(1)
+                Spacer(minLength: DS.Spacing.xs)
+                elapsedAndChevron(now: now)
+            }
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.sm) {
+                Text(presentation.headerLabel)
+                    .font(PickyHUDTypography.statusMonospacedMedium)
+                    .foregroundColor(DS.Colors.floatingGradientPurple)
+                    .lineLimit(1)
+                Text(presentation.statusText)
+                    .font(PickyHUDTypography.metaMonospacedMedium)
+                    .foregroundColor(toneColor)
+                    .lineLimit(1)
+                Spacer(minLength: DS.Spacing.xs)
+                elapsedAndChevron(now: now)
+            }
+            .overlay(alignment: .bottomLeading) {
+                if let agents = presentation.chainAgentsText {
+                    Text(agents)
+                        .font(PickyHUDTypography.metaMonospacedMedium)
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .lineLimit(1)
+                        .offset(y: DS.Spacing.md)
+                }
+            }
+            .padding(.bottom, presentation.chainAgentsText == nil ? 0 : DS.Spacing.md)
+        }
+    }
+
+    private func elapsedAndChevron(now: Date) -> some View {
+        HStack(spacing: DS.Spacing.xs) {
+            Text(presentation.elapsedText(now: now))
+                .font(PickyHUDTypography.metaMonospacedMedium)
+                .foregroundColor(DS.Colors.textTertiary)
+                .lineLimit(1)
+            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                .pickyFont(size: 9, weight: .semibold)
+                .foregroundColor(DS.Colors.textTertiary)
+                .accessibilityHidden(true)
+        }
+    }
+
+    private func rowView(_ row: PickySubagentInvocationRow, now: Date) -> some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.xs) {
+            HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.sm) {
+                Text(marker(for: row.status))
+                    .font(PickyHUDTypography.statusMonospacedMedium)
+                    .foregroundColor(color(for: row.status))
+                    .frame(width: DS.Spacing.md, alignment: .center)
+                    .accessibilityHidden(true)
+                if let planIndex = row.planIndex, presentation.invocation.action == .chain {
+                    Text("\(planIndex + 1).")
+                        .font(PickyHUDTypography.metaMonospacedMedium)
+                        .foregroundColor(DS.Colors.textTertiary)
+                }
+                Text(row.agent)
+                    .font(PickyHUDTypography.statusMonospacedMedium)
+                    .foregroundColor(color(for: row.status))
+                    .lineLimit(1)
+                if let runIDText = row.runIDText {
+                    Text(runIDText)
+                        .font(PickyHUDTypography.metaMonospacedMedium)
+                        .foregroundColor(DS.Colors.textTertiary)
+                }
+                Text(row.displayTask)
+                    .font(PickyHUDTypography.supporting)
+                    .foregroundColor(row.status == .error ? DS.Colors.destructiveText : DS.Colors.textSecondary)
+                    .lineLimit(1)
+                Spacer(minLength: DS.Spacing.xs)
+                Text(presentation.elapsedText(for: row, now: now))
+                    .font(PickyHUDTypography.metaMonospacedMedium)
+                    .foregroundColor(DS.Colors.textTertiary)
+                    .lineLimit(1)
+            }
+            if let activity = presentation.activityText(for: row) {
+                Text(activity)
+                    .font(PickyHUDTypography.metaMonospacedMedium)
+                    .foregroundColor(DS.Colors.textTertiary)
+                    .lineLimit(1)
+                    .padding(.leading, DS.Spacing.md + DS.Spacing.sm)
+            }
+        }
+        .padding(.vertical, DS.Spacing.xs)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityRow(row))
+    }
+
+    private var accessibilityHeader: String {
+        [presentation.headerLabel, presentation.chainAgentsText].compactMap { $0 }.joined(separator: ", ")
+    }
+
+    private func accessibilityRow(_ row: PickySubagentInvocationRow) -> String {
+        [markerDescription(for: row.status), row.agent, row.runIDText, row.displayTask, presentation.activityText(for: row)]
+            .compactMap { $0 }
+            .joined(separator: ", ")
+    }
+
+    private var toneColor: Color { color(for: presentation.tone) }
+
+    private func color(for tone: PickySubagentInvocationPresentation.Tone) -> Color {
+        switch tone {
+        case .running: DS.Colors.info
+        case .success: DS.Colors.successText
+        case .error: DS.Colors.destructiveText
+        case .pending: DS.Colors.textTertiary
+        }
+    }
+
+    private func color(for status: PickySubagentInvocationRow.Status) -> Color {
+        switch status {
+        case .pending: DS.Colors.textTertiary
+        case .running: DS.Colors.info
+        case .done: DS.Colors.successText
+        case .error: DS.Colors.destructiveText
+        }
+    }
+
+    private func marker(for status: PickySubagentInvocationRow.Status) -> String {
+        switch status {
+        case .pending: "○"
+        case .running: "⟳"
+        case .done: "✓"
+        case .error: "×"
+        }
+    }
+
+    private func markerDescription(for status: PickySubagentInvocationRow.Status) -> String {
+        switch status {
+        case .pending: "Pending"
+        case .running: L10n.t("hud.subagent.status.running")
+        case .done: L10n.t("hud.subagent.status.done")
+        case .error: L10n.t("hud.subagent.status.error")
+        }
+    }
+}
+
+private struct PickySubagentInvocationButtonStyle: ButtonStyle {
+    @State private var hovered = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(PickyHUDInteractionStateLayer.fill(isHovered: hovered, isPressed: configuration.isPressed, isFocused: false))
+            .onHover { hovered = $0 }
+    }
+}

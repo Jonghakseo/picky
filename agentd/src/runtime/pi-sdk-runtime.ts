@@ -16,10 +16,10 @@ import type { BuiltPrompt } from "../prompt-builder.js";
 import { ExtensionUiBridge, type DialogMethod } from "../application/extension-ui-bridge.js";
 import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
 import { resolveTodoStateFromPiSessionEntries } from "../domain/todo-state.js";
-import { subagentLaunchIntentFromToolArgs, subagentRunUpdateFromCustomMessage, subagentRunUpdateFromDiagnostic, type SubagentDiagnosticRunUpdate, type SubagentLaunchIntentEntry } from "../domain/subagent-run-state.js";
+import { subagentLaunchIntentFromToolArgs, subagentRunActivityUpdateFromDiagnostic, subagentRunUpdateFromCustomMessage, subagentRunUpdateFromDiagnostic, type SubagentDiagnosticRunUpdate, type SubagentLaunchIntentEntry } from "../domain/subagent-run-state.js";
 import { isTransientAgentBusyError } from "../domain/transient-runtime-error.js";
 import type { AgentRuntime, AnswerExtensionUiOptions, RewindBranchMessage, RewindResult, RewindTarget, RuntimeAssistantRunMetadata, RuntimeAutocompleteApplyRequest, RuntimeAutocompleteCapabilities, RuntimeAutocompleteCompletion, RuntimeAutocompleteQuery, RuntimeAutocompleteSuggestions, RuntimeBashExecutionResult, RuntimeEvent, RuntimeModelOption, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
-import type { ModelCycleDirection, PickyQueueMode, PickySubagentRun } from "../protocol.js";
+import type { ModelCycleDirection, PickyQueueMode, PickySubagentInvocation, PickySubagentRun } from "../protocol.js";
 import { expectedInputDeliveryIndex, PiInputRewriteObserver } from "./pi-input-rewrite-observer.js";
 import { logAgentd, logLifecycleEvent } from "../local-log.js";
 import {
@@ -280,7 +280,8 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private pendingAbortAcknowledgements = 0;
   private autocompleteGeneration = 0;
   private autocompleteQueryController: AbortController | undefined;
-  private pendingSubagentLaunches: SubagentLaunchIntentEntry[] = [];
+  private pendingSubagentLaunches: Array<SubagentLaunchIntentEntry & { invocationId: string }> = [];
+  private activeSubagentInvocationIDs: string[] = [];
   private subagentRunsById = new Map<number, PickySubagentRun>();
 
   constructor(
@@ -947,6 +948,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     }
 
     this.captureSubagentLaunchIntent(record);
+    this.closeSubagentInvocationIfSettled(record);
     const diagnosticSubagentRunEvent = this.subagentRunEventFromDiagnosticPiEvent(record);
     if (diagnosticSubagentRunEvent) this.emit(diagnosticSubagentRunEvent);
 
@@ -954,7 +956,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     if (inputMessageEvent) {
       const message = asRecord(record.message);
       const update = subagentRunUpdateFromCustomMessage(message.customType, message.details, message.content);
-      if (update) this.emit({ type: "subagent_run_update", update });
+      if (update) this.emit({ type: "subagent_run_update", update: this.attachSubagentInvocation(update) });
       return inputMessageEvent;
     }
 
@@ -1000,17 +1002,42 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
 
   private captureSubagentLaunchIntent(event: Record<string, unknown>): void {
     if (event.type !== "tool_execution_start" || event.toolName !== "subagent") return;
+    const invocationId = stringValue(event.toolCallId);
     const intent = subagentLaunchIntentFromToolArgs(event.args);
-    if (intent) this.pendingSubagentLaunches.push(...intent.entries);
+    if (!invocationId || !intent) return;
+    this.activeSubagentInvocationIDs.push(invocationId);
+    this.pendingSubagentLaunches.push(...intent.entries.map((entry) => ({ ...entry, invocationId })));
+    const invocation: PickySubagentInvocation = {
+      invocationId,
+      action: intent.action,
+      planned: intent.entries,
+    };
+    this.emit({ type: "subagent_invocation", invocation });
+  }
+
+  private closeSubagentInvocationIfSettled(event: Record<string, unknown>): void {
+    if ((event.type !== "tool_execution_update" && event.type !== "tool_execution_end") || event.toolName !== "subagent") return;
+    const invocationId = stringValue(event.toolCallId);
+    if (!invocationId) return;
+    const index = this.activeSubagentInvocationIDs.lastIndexOf(invocationId);
+    if (index >= 0) this.activeSubagentInvocationIDs.splice(index, 1);
   }
 
   private subagentRunEventFromDiagnosticPiEvent(event: Record<string, unknown>): RuntimeEvent | undefined {
     if (event.type !== "entry_appended") return undefined;
     const entry = asRecord(event.entry);
-    if (entry.type !== "custom" || entry.customType !== "subagent-runner-diagnostic") return undefined;
-    const diagnostic = subagentRunUpdateFromDiagnostic(entry.data);
-    if (!diagnostic) return undefined;
-    return { type: "subagent_run_update", update: this.subagentRunFromDiagnostic(diagnostic) };
+    if (entry.type !== "custom") return undefined;
+    if (entry.customType === "subagent-runner-diagnostic") {
+      const diagnostic = subagentRunUpdateFromDiagnostic(entry.data);
+      return diagnostic ? { type: "subagent_run_update", update: this.subagentRunFromDiagnostic(diagnostic) } : undefined;
+    }
+    if (entry.customType !== "subagent-activity") return undefined;
+    const activity = subagentRunActivityUpdateFromDiagnostic(entry.data);
+    const existing = activity ? this.subagentRunsById.get(activity.runId) : undefined;
+    if (!activity || !existing) return undefined;
+    const update = { ...existing, lastActivity: activity.lastActivity };
+    this.subagentRunsById.set(update.runId, update);
+    return { type: "subagent_run_update", update };
   }
 
   private subagentRunFromDiagnostic(diagnostic: SubagentDiagnosticRunUpdate): PickySubagentRun {
@@ -1023,19 +1050,29 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       ...existing,
       ...update,
       task,
+      ...(launch ? { invocationId: launch.invocationId } : {}),
       ...(elapsedMs !== undefined ? { elapsedMs } : {}),
     };
     this.subagentRunsById.set(run.runId, run);
     return run;
   }
 
-  private consumeSubagentLaunch(agent: string): SubagentLaunchIntentEntry | undefined {
+  private attachSubagentInvocation(update: PickySubagentRun): PickySubagentRun {
+    const existing = this.subagentRunsById.get(update.runId);
+    const invocationId = existing?.invocationId ?? this.activeSubagentInvocationIDs.at(-1);
+    const run = { ...existing, ...update, ...(invocationId ? { invocationId } : {}) };
+    this.subagentRunsById.set(run.runId, run);
+    return run;
+  }
+
+  private consumeSubagentLaunch(agent: string): (SubagentLaunchIntentEntry & { invocationId: string }) | undefined {
     const index = this.pendingSubagentLaunches.findIndex((entry) => entry.agent === agent);
     return index < 0 ? undefined : this.pendingSubagentLaunches.splice(index, 1)[0];
   }
 
   private resetSubagentRunTracking(): void {
     this.pendingSubagentLaunches = [];
+    this.activeSubagentInvocationIDs = [];
     this.subagentRunsById.clear();
   }
 

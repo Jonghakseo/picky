@@ -8,107 +8,110 @@ import Testing
 @testable import Picky
 
 struct PickySubagentProgressPresentationTests {
-    @Test func projectsRunningAndSettledCountsWithErrorTone() throws {
-        let presentation = try #require(PickySubagentProgressPresentation(runs: [
-            run(2, status: .running),
-            run(1, status: .error, batchID: "batch-a"),
-            run(3, status: .done, batchID: "batch-a"),
-        ]))
+    @Test func mergesPlannedChainStepsWithSpawnedRunsInOrder() throws {
+        let presentation = try #require(makePresentation(
+            action: .chain,
+            planned: [plan("worker", "Implement"), plan("verifier", "Verify"), plan("reviewer", "Review")],
+            runs: [run(8, agent: "worker", status: .done), run(9, agent: "verifier", status: .running)]
+        ))
 
-        #expect(presentation.pillText == "1 agent · 2/3")
-        #expect(presentation.headerText == "1 agent running · 2/3 done")
-        #expect(presentation.tone == .error)
-        #expect(presentation.groups.map(\.runs.count) == [1, 2])
+        #expect(presentation.headerLabel == "◇ chain 2/3")
+        #expect(presentation.chainAgentsText == "worker → verifier → reviewer")
+        #expect(presentation.rows.map(\.status) == [.done, .running, .pending])
+        #expect(presentation.rows.last?.displayTask == "Review")
+        #expect(!presentation.isComplete)
     }
 
-    @Test func pluralizesRunningPillAndHeader() throws {
-        let presentation = try #require(PickySubagentProgressPresentation(runs: [
-            run(1, status: .running),
-            run(2, status: .running),
-            run(3, status: .done),
-        ]))
+    @Test func collapsesOnlyAfterEveryPlannedRunSettles() throws {
+        let invocation = PickySubagentInvocation(invocationId: "call-1", action: .batch, planned: [plan("worker", "Implement"), plan("reviewer", "Review")])
+        let previous = try #require(PickySubagentInvocationPresentation(
+            invocation: invocation,
+            runs: [run(1, agent: "worker", status: .done), run(2, agent: "reviewer", status: .running)],
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000)
+        ))
+        let current = try #require(PickySubagentInvocationPresentation(
+            invocation: invocation,
+            runs: [run(1, agent: "worker", status: .done), run(2, agent: "reviewer", status: .error)],
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000)
+        ))
 
-        #expect(presentation.pillText == "2 agents · 1/3")
-        #expect(presentation.headerText == "2 agents running · 1/3 done")
+        #expect(current.statusText == "1 failed · 1/2")
+        #expect(current.isComplete)
+        #expect(PickySubagentInvocationExpansionPolicy.shouldCollapse(previousIsComplete: previous.isComplete, currentIsComplete: current.isComplete))
+        #expect(!PickySubagentInvocationExpansionPolicy.isExpanded(savedValue: nil, isComplete: current.isComplete))
     }
 
-    @Test func settledPillLeadsWithOutcome() throws {
-        let allDone = try #require(PickySubagentProgressPresentation(runs: [
-            run(1, status: .done),
-            run(2, status: .done),
-            run(3, status: .done),
-        ]))
-        #expect(allDone.pillText == "3 agents done")
-        #expect(allDone.headerText == "3 agents done")
+    @Test func rendersFutureActivityOnlyForRunningRows() throws {
+        let active = run(1, agent: "worker", status: .running, activity: .init(toolName: "edit", toolCallCount: 12, lastLine: "updated presentation"))
+        let presentation = try #require(makePresentation(action: .run, planned: [plan("worker", "Implement")], runs: [active]))
 
-        let singleDone = try #require(PickySubagentProgressPresentation(runs: [run(1, status: .done)]))
-        #expect(singleDone.pillText == "1 agent done")
-
-        let withFailure = try #require(PickySubagentProgressPresentation(runs: [
-            run(1, status: .error),
-            run(2, status: .done),
-            run(3, status: .done),
-        ]))
-        #expect(withFailure.pillText == "1 failed · 2/3")
-        #expect(withFailure.tone == .error)
+        #expect(presentation.activityText(for: presentation.rows[0]) == "✏ edit · 12 tools · updated presentation")
+        let done = try #require(PickySubagentInvocationPresentation(
+            invocation: presentation.invocation,
+            runs: [run(1, agent: "worker", status: .done, activity: active.lastActivity)],
+            createdAt: Date()
+        ))
+        #expect(done.activityText(for: done.rows[0]) == nil)
     }
 
-    @Test func groupLabelUsesSingularRunUnit() throws {
-        let presentation = try #require(PickySubagentProgressPresentation(runs: [
-            run(1, status: .running, batchID: "batch-a"),
-        ]))
-        #expect(presentation.groups.first?.label == "batch · 1 run")
-    }
-
-    @Test func formatsLiveAndCompletedElapsedDurations() throws {
-        let presentation = try #require(PickySubagentProgressPresentation(runs: [run(1, status: .running)]))
-        let completed = run(2, status: .done, elapsedMs: 154_000)
-        #expect(presentation.elapsedText(for: completed) == "2m 34s")
-    }
-
-    @Test func exposesExpansionOnlyWhenTheRunHasVisibleDetail() {
-        #expect(PickySubagentProgressExpansionPolicy.expandableContent(for: run(1, status: .running)) == nil)
-        #expect(PickySubagentProgressExpansionPolicy.expandableContent(for: run(2, status: .done, resultPreview: "Completed details")) == "Completed details")
-        #expect(PickySubagentProgressExpansionPolicy.expandableContent(for: run(3, status: .error, errorClass: "aborted")) == "aborted")
-        #expect(PickySubagentProgressExpansionPolicy.expandableContent(for: run(4, status: .error, errorClass: "aborted", resultPreview: "Runner output")) == "Runner output")
-    }
-
-    @Test func decodesSubagentRunsFromSessionAndSlimUpdate() throws {
-        let sessionData = Data("""
-        {"id":"session-1","title":"Pickle","status":"running","createdAt":"2026-07-14T01:00:00.000Z","updatedAt":"2026-07-14T01:00:00.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[],"subagentRuns":[{"runId":1,"agent":"worker","task":"Inspect","status":"running"}]}
+    @Test func decodesInvocationMessageAndOptionalRunFields() throws {
+        let data = Data("""
+        {"id":"session-1","title":"Pickle","status":"running","createdAt":"2026-07-14T01:00:00.000Z","updatedAt":"2026-07-14T01:00:00.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[],"subagentRuns":[{"runId":1,"agent":"worker","task":"Inspect","status":"running","invocationId":"tool-1","lastActivity":{"toolName":"read","toolCallCount":2,"lastLine":"opened file"}}],"messages":[{"id":"invocation-1","kind":"subagent_invocation","createdAt":"2026-07-14T01:00:00.000Z","subagentInvocation":{"invocationId":"tool-1","action":"run","planned":[{"agent":"worker","task":"Inspect"}]}}]}
         """.utf8)
-        let session = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyAgentSession.self, from: sessionData)
-        #expect(session.subagentRuns.first?.agent == "worker")
+        let session = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyAgentSession.self, from: data)
 
-        let eventData = Data("""
-        {"id":"event-1","protocolVersion":"2026-07-23","timestamp":"2026-07-14T01:00:00.000Z","type":"sessionSubagentRunsUpdated","sessionId":"session-1","runs":[{"runId":1,"agent":"worker","task":"Inspect","status":"done"}],"seq":4}
-        """.utf8)
-        let event = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: eventData)
-        guard case .sessionSubagentRunsUpdated(_, let runs, let seq) = event.event else {
-            Issue.record("Expected subagent runs update")
-            return
-        }
-        #expect(runs.first?.status == .done)
-        #expect(seq == 4)
+        #expect(session.subagentRuns.first?.invocationId == "tool-1")
+        #expect(session.subagentRuns.first?.lastActivity?.toolCallCount == 2)
+        #expect(session.messages.first?.kind == .subagentInvocation)
+        #expect(session.messages.first?.subagentInvocation?.planned.first?.agent == "worker")
     }
 
-    @MainActor @Test func appliesSlimRunUpdateAndTracksInlineExpansion() throws {
-        let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        let sessionData = Data("""
-        {"id":"session-1","title":"Pickle","status":"running","createdAt":"2026-07-14T01:00:00.000Z","updatedAt":"2026-07-14T01:00:00.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}
+    @Test func decodesUnknownMessageKindsWithoutDroppingTheSession() throws {
+        let data = Data("""
+        {"id":"session-1","title":"Pickle","status":"running","createdAt":"2026-07-14T01:00:00.000Z","updatedAt":"2026-07-14T01:00:00.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[],"messages":[{"id":"future","kind":"future_kind","createdAt":"2026-07-14T01:00:00.000Z"}]}
         """.utf8)
-        let session = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyAgentSession.self, from: sessionData)
-        viewModel.apply(.protocolEvent(PickyEventEnvelope(id: "session", protocolVersion: "2026-07-23", timestamp: Date(), event: .sessionUpdated(session))))
-
-        let runs = [run(1, status: .running)]
-        viewModel.apply(.protocolEvent(PickyEventEnvelope(id: "runs", protocolVersion: "2026-07-23", timestamp: Date(), event: .sessionSubagentRunsUpdated(sessionId: "session-1", runs: runs, seq: 1))))
-        #expect(viewModel.sessions.first?.subagentRuns == runs)
-        #expect(viewModel.isSubagentProgressExpanded(sessionID: "session-1", isComplete: false))
-        viewModel.toggleSubagentRunExpanded(1, sessionID: "session-1")
-        #expect(viewModel.isSubagentRunExpanded(1, sessionID: "session-1"))
+        let session = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyAgentSession.self, from: data)
+        #expect(session.messages.first?.kind == .system)
     }
 
-    private func run(_ id: Int, status: PickySubagentRunStatus, batchID: String? = nil, elapsedMs: Double? = nil, errorClass: String? = nil, resultPreview: String? = nil) -> PickySubagentRun {
-        PickySubagentRun(runId: id, agent: "worker", task: "Task \(id)", displayTask: nil, status: status, errorClass: errorClass, startedAt: Date(timeIntervalSince1970: 1_700_000_000), elapsedMs: elapsedMs, batchId: batchID, pipelineId: nil, pipelineStepIndex: nil, resultPreview: resultPreview, model: nil)
+    private func makePresentation(
+        action: PickySubagentInvocationAction,
+        planned: [PickySubagentInvocationPlan],
+        runs: [PickySubagentRun]
+    ) -> PickySubagentInvocationPresentation? {
+        PickySubagentInvocationPresentation(
+            invocation: .init(invocationId: "call-1", action: action, planned: planned),
+            runs: runs,
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+    }
+
+    private func plan(_ agent: String, _ task: String) -> PickySubagentInvocationPlan {
+        .init(agent: agent, task: task)
+    }
+
+    private func run(
+        _ id: Int,
+        agent: String,
+        status: PickySubagentRunStatus,
+        activity: PickySubagentLastActivity? = nil
+    ) -> PickySubagentRun {
+        PickySubagentRun(
+            runId: id,
+            agent: agent,
+            task: "Task \(id)",
+            displayTask: nil,
+            status: status,
+            errorClass: nil,
+            startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            elapsedMs: 1_000,
+            batchId: nil,
+            pipelineId: nil,
+            pipelineStepIndex: nil,
+            resultPreview: nil,
+            model: nil,
+            invocationId: "call-1",
+            lastActivity: activity
+        )
     }
 }

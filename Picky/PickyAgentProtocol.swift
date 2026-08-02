@@ -1004,7 +1004,13 @@ enum PickySessionMessageKind: String, Codable, Equatable {
     case agentError = "agent_error"
     case agentActivity = "agent_activity"
     case commandReceipt = "command_receipt"
+    case subagentInvocation = "subagent_invocation"
     case system
+
+    init(from decoder: Decoder) throws {
+        let rawValue = try decoder.singleValueContainer().decode(String.self)
+        self = Self(rawValue: rawValue) ?? .system
+    }
 }
 
 enum PickyCommandReceiptStatus: String, Codable, Equatable {
@@ -1055,6 +1061,7 @@ struct PickySessionMessage: Codable, Equatable, Identifiable {
     let errorMessage: String?
     var notifyType: PickyExtensionNotifyType? = nil
     var commandReceipt: PickyCommandReceipt? = nil
+    var subagentInvocation: PickySubagentInvocation? = nil
     /// Count of image attachments that travelled with this user_text via the
     /// structured context channel (PTT / QuickInput screenshots). Nil for
     /// messages that have no attachments or for non-user kinds.
@@ -1073,6 +1080,8 @@ extension PickySessionMessage {
             let reportText = notifyType == nil ? source : PickyAnsiEscapeSanitizer.stripped(source)
             let trimmed = reportText.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.isEmpty ? nil : trimmed
+        case .subagentInvocation:
+            return nil
         default:
             return nil
         }
@@ -1175,6 +1184,29 @@ enum PickySubagentRunStatus: String, Codable, Equatable {
     case running, done, error
 }
 
+struct PickySubagentLastActivity: Codable, Equatable {
+    var toolName: String? = nil
+    var toolCallCount: Int? = nil
+    var lastLine: String? = nil
+}
+
+struct PickySubagentInvocationPlan: Codable, Equatable, Identifiable {
+    let agent: String
+    let task: String
+
+    var id: String { "\(agent):\(task)" }
+}
+
+enum PickySubagentInvocationAction: String, Codable, Equatable {
+    case run, batch, chain
+}
+
+struct PickySubagentInvocation: Codable, Equatable {
+    let invocationId: String
+    let action: PickySubagentInvocationAction
+    let planned: [PickySubagentInvocationPlan]
+}
+
 struct PickySubagentRun: Codable, Equatable, Identifiable {
     let runId: Int
     let agent: String
@@ -1189,6 +1221,8 @@ struct PickySubagentRun: Codable, Equatable, Identifiable {
     let pipelineStepIndex: Int?
     let resultPreview: String?
     let model: String?
+    var invocationId: String? = nil
+    var lastActivity: PickySubagentLastActivity? = nil
 
     var id: Int { runId }
 }

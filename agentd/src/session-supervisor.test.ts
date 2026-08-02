@@ -430,7 +430,7 @@ describe("SessionSupervisor", () => {
     expect(restored?.todoState).toEqual(clearedState);
   });
 
-  it("persists slim subagent run updates and keeps active background runs after a terminal turn", async () => {
+  it("persists slim subagent run updates after every run settles", async () => {
     const runtime = new ManualRuntime();
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-subagent-runs-"));
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
@@ -451,7 +451,9 @@ describe("SessionSupervisor", () => {
     runtime.handle!.emit({ type: "subagent_run_update", update: { runId: 2, agent: "worker", task: "Inspect", status: "done", elapsedMs: 100 } });
     await waitUntil(() => supervisor.get(session.id)?.subagentRuns?.every((run) => run.status === "done") ?? false);
     runtime.handle!.emit({ type: "status", status: "completed", summary: "Done" });
-    await waitUntil(() => supervisor.get(session.id)?.subagentRuns?.length === 0);
+    await waitUntil(() => supervisor.get(session.id)?.subagentRuns?.length === 2);
+    const restored = (await new SessionStore(dir).loadAll()).find((entry) => entry.id === session.id);
+    expect(restored?.subagentRuns?.every((run) => run.status === "done")).toBe(true);
   });
 
   it("broadcasts activitySummary via sessionActivityUpdated without an accompanying full sessionUpdated", async () => {

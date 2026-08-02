@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { hasActivity } from "./domain/activity-summary.js";
 import { stripAnsiEscapeSequences } from "./domain/ansi.js";
-import type { PickyActivitySummary, PickyAssistantRunMetadata, PickyCommandReceipt, PickyExtensionUiRequest, PickySessionMessage } from "./protocol.js";
+import type { PickyActivitySummary, PickyAssistantRunMetadata, PickyCommandReceipt, PickyExtensionUiRequest, PickySessionMessage, PickySubagentInvocation } from "./protocol.js";
 
 type MessageOrigin = "user" | "main_agent" | "pi_extension";
 
@@ -234,6 +234,17 @@ export class SessionMessageBuilder {
       kind: "agent_activity",
       createdAt: this.deps.now(),
       activitySnapshot,
+    });
+  }
+
+  async recordSubagentInvocation(sessionId: string, subagentInvocation: PickySubagentInvocation): Promise<void> {
+    await this.flushAssistantText(sessionId);
+    await this.flushThinking(sessionId);
+    await this.appendInternal(sessionId, {
+      id: `msg-subagent-invocation-${subagentInvocation.invocationId}`,
+      kind: "subagent_invocation",
+      createdAt: this.deps.now(),
+      subagentInvocation,
     });
   }
 

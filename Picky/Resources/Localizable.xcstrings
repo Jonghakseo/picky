@@ -1655,6 +1655,30 @@
         "ko": { "stringUnit": { "state": "translated", "value": "1개 에이전트 실행 중 · %1$lld/%2$lld 완료" } }
       }
     },
+    "hud.subagent.invocation.batch": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "batch ×%lld" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "batch ×%lld" } }
+      }
+    },
+    "hud.subagent.invocation.chain": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "chain %lld/%lld" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "chain %1$lld/%2$lld" } }
+      }
+    },
+    "hud.subagent.invocation.run": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "run" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "run" } }
+      }
+    },
+    "hud.subagent.pending": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld pending · %lld/%lld done" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "%1$lld개 대기 중 · %2$lld/%3$lld 완료" } }
+      }
+    },
     "hud.subagent.pill.one": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "1 agent · %lld/%lld" } },

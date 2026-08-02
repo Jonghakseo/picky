@@ -104,6 +104,22 @@ describe("SessionMessageBuilder", () => {
     expect(events).toMatchObject([{ type: "appended", message: { kind: "agent_activity" }, seq: 1 }]);
   });
 
+  it("records immutable subagent invocation messages", async () => {
+    const { builder, messages } = makeBuilder();
+
+    await builder.recordSubagentInvocation("session-1", {
+      invocationId: "tool-subagent-1",
+      action: "batch",
+      planned: [{ agent: "worker", task: "Implement" }, { agent: "reviewer", task: "Review" }],
+    });
+
+    expect(messages).toMatchObject([{
+      id: "msg-subagent-invocation-tool-subagent-1",
+      kind: "subagent_invocation",
+      subagentInvocation: { action: "batch", planned: [{ agent: "worker" }, { agent: "reviewer" }] },
+    }]);
+  });
+
   it("keeps appended message timestamps monotonic when the clock moves backward", async () => {
     const { builder, messages, setNow } = makeBuilder();
 

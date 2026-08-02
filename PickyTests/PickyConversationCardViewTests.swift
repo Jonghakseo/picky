@@ -80,6 +80,27 @@ struct PickyConversationCardViewTests {
         #expect(snapshot.showsActivitySummary)
     }
 
+    @Test func subagentInvocationMessagesRenderDedicatedConversationBubbles() {
+        let invocation = PickySubagentInvocation(
+            invocationId: "tool-subagent-1",
+            action: .batch,
+            planned: [
+                .init(agent: "worker", task: "Implement"),
+                .init(agent: "reviewer", task: "Review"),
+            ]
+        )
+        let session = makeConversationSession(
+            status: .running,
+            messages: [
+                message("m-user", kind: .userText, text: "delegate this"),
+                message("m-invocation", kind: .subagentInvocation, subagentInvocation: invocation),
+            ]
+        )
+
+        let snapshot = PickyConversationListView(session: session, viewModel: makeViewModel()).renderSnapshot
+        #expect(snapshot.subagentInvocationBubbleCount == 1)
+    }
+
     @Test func activityStripShowsEtcWhenOnlyOtherToolsRan() {
         let summary = PickyActivitySummary(other: 2)
         let session = makeConversationSession(
@@ -1942,6 +1963,7 @@ private func message(
     errorMessage: String? = nil,
     notifyType: PickyExtensionNotifyType? = nil,
     commandReceipt: PickyCommandReceipt? = nil,
+    subagentInvocation: PickySubagentInvocation? = nil,
     attachedImagesCount: Int? = nil
 ) -> PickySessionMessage {
     PickySessionMessage(
@@ -1958,6 +1980,7 @@ private func message(
         errorMessage: errorMessage,
         notifyType: notifyType,
         commandReceipt: commandReceipt,
+        subagentInvocation: subagentInvocation,
         attachedImagesCount: attachedImagesCount
     )
 }

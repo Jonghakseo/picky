@@ -539,15 +539,28 @@ describe("PiSdkRuntime", () => {
       type: "entry_appended",
       entry: { type: "custom", customType: "subagent-runner-diagnostic", data: { schemaVersion: 1, recordedAt: "2026-08-02T05:26:42.115Z", runId: 4, agent: "worker", event: "settled", code: 143 } },
     });
+    fakeSession.emit("event", {
+      type: "entry_appended",
+      entry: { type: "custom", customType: "subagent-activity", data: { schemaVersion: 1, recordedAt: "2026-08-02T05:26:43.115Z", runId: 3, agent: "worker", lastToolName: "edit", toolCallCount: 12, lastLine: "updated presentation" } },
+    });
 
+    expect(events).toContainEqual({
+      type: "subagent_invocation",
+      invocation: {
+        invocationId: "subagent-1",
+        action: "batch",
+        planned: [{ agent: "worker", task: "Inspect files" }, { agent: "worker", task: "Implement fix" }],
+      },
+    });
     const updates = events.filter((event): event is Extract<RuntimeEvent, { type: "subagent_run_update" }> => (
       typeof event === "object" && event !== null && (event as { type?: string }).type === "subagent_run_update"
     ));
     expect(updates.map((event) => event.update)).toEqual([
-      expect.objectContaining({ runId: 3, task: "Inspect files", status: "running" }),
-      expect.objectContaining({ runId: 4, task: "Implement fix", status: "running" }),
-      expect.objectContaining({ runId: 3, task: "Inspect files", status: "done", elapsedMs: 5_000 }),
-      expect.objectContaining({ runId: 4, task: "Implement fix", status: "error", elapsedMs: 4_000 }),
+      expect.objectContaining({ runId: 3, task: "Inspect files", status: "running", invocationId: "subagent-1" }),
+      expect.objectContaining({ runId: 4, task: "Implement fix", status: "running", invocationId: "subagent-1" }),
+      expect.objectContaining({ runId: 3, task: "Inspect files", status: "done", elapsedMs: 5_000, invocationId: "subagent-1" }),
+      expect.objectContaining({ runId: 4, task: "Implement fix", status: "error", elapsedMs: 4_000, invocationId: "subagent-1" }),
+      expect.objectContaining({ runId: 3, lastActivity: { toolName: "edit", toolCallCount: 12, lastLine: "updated presentation" } }),
     ]);
     expect(updates.every((event) => event.update.resultPreview === undefined)).toBe(true);
   });

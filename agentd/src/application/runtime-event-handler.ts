@@ -8,7 +8,7 @@ import { isTransientAgentBusyError } from "../domain/transient-runtime-error.js"
 import { settleActiveTools } from "../domain/tool-activity.js";
 import { categorizeTool, type ToolCategory } from "../domain/tool-categorizer.js";
 import { logAgentd } from "../local-log.js";
-import type { PickyActivitySummary, PickyAgentSession, PickyAssistantRunMetadata, PickyExtensionUiRequest, PickyToolActivity } from "../protocol.js";
+import type { PickyActivitySummary, PickyAgentSession, PickyAssistantRunMetadata, PickyExtensionUiRequest, PickySubagentInvocation, PickyToolActivity } from "../protocol.js";
 import type { RuntimeEvent } from "../runtime/types.js";
 import { extensionUiLogLine, extensionUiWaitingSummary, mapExtensionUiRequest } from "./extension-ui-request-mapper.js";
 
@@ -25,6 +25,7 @@ interface RuntimeMessageJournal {
   flushThinking(sessionId: string): Promise<void>;
   clearAllThinking(sessionId: string): Promise<void>;
   recordActivitySnapshot(sessionId: string, activitySnapshot: PickyActivitySummary): Promise<void>;
+  recordSubagentInvocation?(sessionId: string, invocation: PickySubagentInvocation): Promise<void>;
 }
 
 interface RuntimeEventHandlerDependencies {
@@ -104,6 +105,7 @@ export class RuntimeEventHandler {
   async handle(sessionId: string, event: RuntimeEvent): Promise<void> {
     if (event.type === "log") return this.dependencies.appendLog(sessionId, event.line);
     if (event.type === "todo_state") return this.dependencies.updateTodoState(sessionId, event.todoState);
+    if (event.type === "subagent_invocation") return this.dependencies.messageBuilder.recordSubagentInvocation?.(sessionId, event.invocation);
     if (event.type === "subagent_run_update") return this.dependencies.updateSubagentRuns?.(sessionId, event.update);
     if (event.type === "input_message") {
       const currentStatus = this.dependencies.getSession(sessionId).status;

@@ -95,7 +95,6 @@ struct PickyConversationCardView: View {
         let isTodoExpanded = todoPresentation.map {
             viewModel.isTodoProgressExpanded(sessionID: session.id, isComplete: $0.isComplete)
         } ?? false
-        let subagentPresentation = PickySubagentProgressPresentation(runs: session.subagentRuns)
         return VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: DS.Spacing.xs) {
                 PickyConversationHeaderView(
@@ -120,7 +119,7 @@ struct PickyConversationCardView: View {
                 viewModel: viewModel,
                 isCommandShortcutHintVisible: isCommandShortcutHintVisible,
                 fillsAvailableHeight: fillsAvailableHeight,
-                hasProgressOverlay: todoPresentation != nil || subagentPresentation != nil
+                hasProgressOverlay: todoPresentation != nil
             )
             .overlay(alignment: .top) {
                 VStack(alignment: .trailing, spacing: DS.Spacing.sm) {
@@ -129,15 +128,6 @@ struct PickyConversationCardView: View {
                             presentation: todoPresentation,
                             isSessionRunning: session.status == .running,
                             isExpanded: todoExpansionBinding(for: todoPresentation)
-                        )
-                    }
-                    if let subagentPresentation {
-                        PickySubagentProgressOverlayView(
-                            presentation: subagentPresentation,
-                            isSessionRunning: session.status == .running,
-                            isExpanded: subagentExpansionBinding(for: subagentPresentation),
-                            isRunExpanded: { viewModel.isSubagentRunExpanded($0, sessionID: session.id) },
-                            toggleRunExpanded: { viewModel.toggleSubagentRunExpanded($0, sessionID: session.id) }
                         )
                     }
                 }
@@ -167,15 +157,6 @@ struct PickyConversationCardView: View {
                 viewModel.isTodoProgressExpanded(sessionID: session.id, isComplete: presentation.isComplete)
             },
             set: { viewModel.setTodoProgressExpanded($0, sessionID: session.id) }
-        )
-    }
-
-    private func subagentExpansionBinding(for presentation: PickySubagentProgressPresentation) -> Binding<Bool> {
-        Binding(
-            get: {
-                viewModel.isSubagentProgressExpanded(sessionID: session.id, isComplete: presentation.isComplete)
-            },
-            set: { viewModel.setSubagentProgressExpanded($0, sessionID: session.id) }
         )
     }
 

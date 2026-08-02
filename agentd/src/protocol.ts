@@ -163,8 +163,20 @@ export const PickySubagentRunSchema = z.object({
   pipelineStepIndex: z.number().int().optional(),
   resultPreview: z.string().optional(),
   model: z.string().optional(),
+  invocationId: z.string().optional(),
+  lastActivity: z.object({
+    toolName: z.string().optional(),
+    toolCallCount: z.number().int().nonnegative().optional(),
+    lastLine: z.string().optional(),
+  }).optional(),
 });
 export type PickySubagentRun = z.infer<typeof PickySubagentRunSchema>;
+export const PickySubagentInvocationSchema = z.object({
+  invocationId: z.string(),
+  action: z.enum(["run", "batch", "chain"]),
+  planned: z.array(z.object({ agent: z.string(), task: z.string() })),
+});
+export type PickySubagentInvocation = z.infer<typeof PickySubagentInvocationSchema>;
 const PickyExtensionUiQuestionOptionSchema = z.preprocess(
   (option) => typeof option === "string" ? { value: option, label: option } : option,
   z.object({ value: z.string(), label: z.string(), description: z.string().optional() }),
@@ -240,7 +252,7 @@ export const PiOAuthPromptOptionSchema = z.object({
 export type PiOAuthPromptOption = z.infer<typeof PiOAuthPromptOptionSchema>;
 export const PickySessionMessageSchema = z.object({
   id: z.string(),
-  kind: z.enum(["user_text", "agent_text", "agent_thinking", "agent_question", "agent_error", "agent_activity", "command_receipt", "system"]),
+  kind: z.enum(["user_text", "agent_text", "agent_thinking", "agent_question", "agent_error", "agent_activity", "command_receipt", "subagent_invocation", "system"]),
   createdAt: isoTimestamp,
   originatedBy: z.enum(["user", "main_agent", "pi_extension"]).optional(),
   text: z.string().optional(),
@@ -252,6 +264,7 @@ export const PickySessionMessageSchema = z.object({
   errorMessage: z.string().optional(),
   notifyType: PickyExtensionNotifyTypeSchema.optional(),
   commandReceipt: PickyCommandReceiptSchema.optional(),
+  subagentInvocation: PickySubagentInvocationSchema.optional(),
   // Count of image attachments that travelled with this user_text via the
   // structured context channel (PTT / QuickInput screenshots). HUD renders a
   // small "\ud83d\uddbc N attached" affordance on the user bubble so the user

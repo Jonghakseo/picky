@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applySubagentRunUpdate, pruneSettledSubagentRuns, subagentLaunchIntentFromToolArgs, subagentRunUpdateFromCustomMessage, subagentRunUpdateFromDiagnostic } from "./subagent-run-state.js";
+import { applySubagentRunUpdate, capSubagentRuns, subagentLaunchIntentFromToolArgs, subagentRunActivityUpdateFromDiagnostic, subagentRunUpdateFromCustomMessage, subagentRunUpdateFromDiagnostic } from "./subagent-run-state.js";
 
 describe("subagent run state", () => {
   it("maps extension lifecycle details and extracts the trailing result preview", () => {
@@ -40,6 +40,10 @@ describe("subagent run state", () => {
       action: "chain",
       entries: [{ agent: "scout", task: "Find risks" }, { agent: "worker", task: "implement" }],
     });
+    expect(subagentLaunchIntentFromToolArgs({ command: "subagent continue worker -- inspect the current state" })).toEqual({
+      action: "run",
+      entries: [{ agent: "worker", task: "inspect the current state" }],
+    });
     expect(subagentLaunchIntentFromToolArgs({ command: "subagent status" })).toBeUndefined();
   });
 
@@ -78,9 +82,29 @@ describe("subagent run state", () => {
     expect(updated[1]).toMatchObject({ status: "done", elapsedMs: 10 });
   });
 
-  it("clears settled runs only when no background run remains", () => {
-    expect(pruneSettledSubagentRuns([{ runId: 1, agent: "worker", task: "task", status: "done" }])).toEqual([]);
-    const active = [{ runId: 1, agent: "worker", task: "task", status: "running" }, { runId: 2, agent: "worker", task: "task", status: "done" }] as const;
-    expect(pruneSettledSubagentRuns(active)).toEqual(active);
+  it("parses optional future activity without treating unrelated diagnostics as activity", () => {
+    expect(subagentRunActivityUpdateFromDiagnostic({
+      schemaVersion: 1,
+      recordedAt: "2026-08-02T05:26:36.115Z",
+      runId: 3,
+      agent: "worker",
+      lastToolName: "edit",
+      toolCallCount: 12,
+      lastLine: "updated presentation",
+    })).toEqual({
+      runId: 3,
+      lastActivity: { toolName: "edit", toolCallCount: 12, lastLine: "updated presentation" },
+    });
+    expect(subagentRunActivityUpdateFromDiagnostic({ runId: 3, agent: "worker" })).toBeUndefined();
+  });
+
+  it("caps retained history at the newest 100 runs", () => {
+    const runs = Array.from({ length: 102 }, (_, index) => ({
+      runId: index + 1,
+      agent: "worker",
+      task: `task ${index + 1}`,
+      status: "done" as const,
+    }));
+    expect(capSubagentRuns(runs).map((run) => run.runId)).toEqual(Array.from({ length: 100 }, (_, index) => index + 3));
   });
 });

@@ -207,6 +207,8 @@ struct PickyConversationListView: View {
                 break
             case .commandReceipt:
                 snapshot.commandReceiptBubbleCount += 1
+            case .subagentInvocation:
+                snapshot.subagentInvocationBubbleCount += 1
             case .typing:
                 snapshot.typingBubbleCount += 1
             case .question:
@@ -314,6 +316,28 @@ struct PickyConversationListView: View {
             )
         case .typing:
             PickyTypingBubbleView(message: message, initiallyCollapsed: viewModel.thinkingBlocksHidden(sessionID: session.id))
+        case .subagentInvocation:
+            if let presentation = PickySubagentInvocationPresentation(
+                invocation: message.subagentInvocation,
+                runs: session.subagentRuns,
+                createdAt: message.createdAt
+            ) {
+                PickySubagentInvocationBubbleView(
+                    presentation: presentation,
+                    isExpanded: viewModel.isSubagentInvocationExpanded(
+                        invocationID: presentation.invocation.invocationId,
+                        sessionID: session.id,
+                        isComplete: presentation.isComplete
+                    ),
+                    setExpanded: { expanded in
+                        viewModel.setSubagentInvocationExpanded(
+                            expanded,
+                            invocationID: presentation.invocation.invocationId,
+                            sessionID: session.id
+                        )
+                    }
+                )
+            }
         case .question:
             if let request = message.question {
                 PickyQuestionBubbleView(
@@ -776,6 +800,7 @@ struct PickyConversationBottomScrollTrigger: Equatable {
 enum PickyConversationBubbleKind: Equatable {
     case userText
     case commandReceipt
+    case subagentInvocation
     case agentText
     case typing
     case question
@@ -797,6 +822,8 @@ enum PickyConversationBubbleKind: Equatable {
             self = .userText
         case .commandReceipt:
             self = .commandReceipt
+        case .subagentInvocation:
+            self = message.subagentInvocation == nil ? .hiddenActivity : .subagentInvocation
         case .agentText:
             self = .agentText
         case .agentThinking:
@@ -834,6 +861,7 @@ struct PickyConversationListRenderSnapshot: Equatable {
     var compactCompletionBubbleCount = 0
     var compactFailureBubbleCount = 0
     var commandReceiptBubbleCount = 0
+    var subagentInvocationBubbleCount = 0
     var turnCardCount = 0
     var showsActivitySummary = false
 }

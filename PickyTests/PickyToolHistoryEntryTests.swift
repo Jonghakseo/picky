@@ -183,6 +183,179 @@ struct PickyToolHistoryEntryTests {
         #expect(result == "{\"key\":\"COM-123\"}")
     }
 
+    @Test func subagentRunParsesQuotedTaskFlagsAndInlinePresentation() {
+        let tool = PickyToolActivity(
+            toolCallId: "subagent-run",
+            name: "subagent",
+            status: "succeeded",
+            argsPreview: #"{"command":"subagent run worker --main -- 'Review the changed files'"}"#,
+            resultPreview: "completed"
+        )
+        let entry = PickyToolHistoryRenderer.entry(from: tool, index: 1)
+
+        guard case let .subagent(mode, agents, task, result) = entry.detail else {
+            Issue.record("Expected structured subagent detail")
+            return
+        }
+        #expect(entry.category == .other)
+        #expect(mode == "run · --main")
+        #expect(agents == ["worker"])
+        #expect(task == "Review the changed files")
+        #expect(result == "completed")
+        #expect(PickyToolHistoryRenderer.inlineSummary(for: entry.detail) == "run worker · Review the changed files")
+        #expect(PickyToolHistoryRenderer.displayCategory(for: entry.detail) == .agent)
+
+        let row = PickyToolCallInlineRow(tool: tool, onTap: {})
+        #expect(row.displayedToolName == "subagent")
+        #expect(row.displayedDetail == "run worker · Review the changed files")
+    }
+
+    @Test func subagentBatchAndChainSummariesListAgents() {
+        let batch = PickyToolHistoryRenderer.entry(
+            from: PickyToolActivity(
+                toolCallId: "subagent-batch",
+                name: "subagent",
+                status: "running",
+                argsPreview: #"{"command":"subagent batch --agent worker --task 'first task' --agent verifier --task 'second task' --agent reviewer --task 'third task'"}"#
+            ),
+            index: 1
+        )
+        let chain = PickyToolHistoryRenderer.entry(
+            from: PickyToolActivity(
+                toolCallId: "subagent-chain",
+                name: "subagent",
+                status: "running",
+                argsPreview: #"{"command":"subagent chain --agent worker --task 'first task' --agent reviewer --task 'second task'"}"#
+            ),
+            index: 2
+        )
+
+        guard case let .subagent(batchMode, batchAgents, batchTask, _) = batch.detail else {
+            Issue.record("Expected batch detail")
+            return
+        }
+        #expect(batchMode == "batch")
+        #expect(batchAgents == ["worker", "verifier", "reviewer"])
+        #expect(batchTask == nil)
+        #expect(PickyToolHistoryRenderer.inlineSummary(for: batch.detail) == "batch ×3 (worker, verifier, …)")
+        #expect(PickyToolHistoryRenderer.inlineSummary(for: chain.detail) == "chain ×2 (worker → reviewer)")
+
+        let status = PickyToolHistoryRenderer.entry(
+            from: PickyToolActivity(
+                toolCallId: "subagent-status",
+                name: "subagent",
+                status: "succeeded",
+                argsPreview: #"{"command":"subagent status #3"}"#
+            ),
+            index: 3
+        )
+        #expect(PickyToolHistoryRenderer.inlineSummary(for: status.detail) == "status #3")
+    }
+
+    @Test func subagentRecoversTruncatedCommandAndFallsBackForInvalidLaunch() {
+        let recovered = PickyToolHistoryRenderer.entry(
+            from: PickyToolActivity(
+                toolCallId: "subagent-truncated",
+                name: "subagent",
+                status: "running",
+                argsPreview: #"{"command":"subagent continue worker -- inspect the current state"#
+            ),
+            index: 1
+        )
+        guard case let .subagent(mode, agents, task, _) = recovered.detail else {
+            Issue.record("Expected recovered subagent detail")
+            return
+        }
+        #expect(mode == "continue")
+        #expect(agents == ["worker"])
+        #expect(task == "inspect the current state")
+
+        let invalid = PickyToolHistoryRenderer.entry(
+            from: PickyToolActivity(
+                toolCallId: "subagent-invalid",
+                name: "subagent",
+                status: "succeeded",
+                argsPreview: #"{"command":"subagent run worker"}"#,
+                resultPreview: "unchanged"
+            ),
+            index: 2
+        )
+        guard case let .generic(argsJSON, result) = invalid.detail else {
+            Issue.record("Expected generic fallback")
+            return
+        }
+        #expect(argsJSON?.contains("subagent run worker") == true)
+        #expect(result == "unchanged")
+    }
+
+    @Test func todoReplaceBuildsChecklistAndInlineSummary() {
+        let tool = PickyToolActivity(
+            toolCallId: "todo-replace",
+            name: "todo_write",
+            status: "succeeded",
+            argsPreview: #"{"todos":[{"content":"Inspect renderer","status":"completed"},{"content":"Implement policy","status":"in_progress"},{"content":"Run tests","status":"pending"}]}"#
+        )
+        let entry = PickyToolHistoryRenderer.entry(from: tool, index: 1)
+
+        guard case let .todo(summary, items) = entry.detail else {
+            Issue.record("Expected structured todo detail")
+            return
+        }
+        #expect(entry.category == .other)
+        #expect(summary == "replace · 3 tasks")
+        #expect(items == [
+            .init(marker: .done, text: "Inspect renderer"),
+            .init(marker: .active, text: "Implement policy"),
+            .init(marker: .pending, text: "Run tests"),
+        ])
+        #expect(PickyToolHistoryRenderer.inlineSummary(for: entry.detail) == "3 tasks · → Implement policy")
+        #expect(PickyToolHistoryRenderer.displayCategory(for: entry.detail) == .todo)
+
+        let row = PickyToolCallInlineRow(tool: tool, onTap: {})
+        #expect(row.displayedToolName == "todo")
+        #expect(row.displayedDetail == "3 tasks · → Implement policy")
+    }
+
+    @Test func todoPatchBuildsTransitionSummaryAndChecklist() {
+        let tool = PickyToolActivity(
+            toolCallId: "todo-patch",
+            name: "todowrite",
+            status: "succeeded",
+            argsPreview: #"{"op":"patch","set":[{"id":"task-1","status":"completed"},{"id":"task-2","content":"Run tests","status":"in_progress"}],"add":[{"content":"Report results","status":"pending"}],"remove":["task-0"]}"#
+        )
+        let entry = PickyToolHistoryRenderer.entry(from: tool, index: 1)
+
+        guard case let .todo(summary, items) = entry.detail else {
+            Issue.record("Expected patch todo detail")
+            return
+        }
+        #expect(summary == "patch · 2 set, 1 add, 1 remove")
+        #expect(items == [
+            .init(marker: .done, text: "task-1 → completed"),
+            .init(marker: .active, text: "Run tests → in_progress"),
+            .init(marker: .added, text: "Report results"),
+            .init(marker: .removed, text: "task-0"),
+        ])
+        #expect(PickyToolHistoryRenderer.inlineSummary(for: entry.detail) == "✓ 1 done · → 1 started · + 1 · − 1")
+    }
+
+    @Test func invalidTodoPayloadFallsBackToGenericDetail() {
+        let tool = PickyToolActivity(
+            toolCallId: "todo-invalid",
+            name: "todo_write",
+            status: "succeeded",
+            argsPreview: #"{"todos":[{"content":"Missing status"}]}"#,
+            resultPreview: "ignored"
+        )
+        let entry = PickyToolHistoryRenderer.entry(from: tool, index: 1)
+        guard case let .generic(argsJSON, result) = entry.detail else {
+            Issue.record("Expected generic fallback")
+            return
+        }
+        #expect(argsJSON?.contains("Missing status") == true)
+        #expect(result == "ignored")
+    }
+
     @Test func durationComputesFromStartAndEnd() {
         let start = Date(timeIntervalSince1970: 1_700_000_000)
         let end = start.addingTimeInterval(0.350)

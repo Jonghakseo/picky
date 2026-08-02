@@ -21,12 +21,29 @@ struct PickyToolHistoryEditChange: Equatable {
     let newText: String
 }
 
+enum PickyToolHistoryTodoMarker: Equatable {
+    case done, active, pending, added, removed
+}
+
+struct PickyToolHistoryTodoItem: Equatable {
+    let marker: PickyToolHistoryTodoMarker
+    let text: String
+}
+
 enum PickyToolHistoryDetail: Equatable {
     case read(file: String?, range: String?, resultSummary: String?)
     case bash(command: String?, title: String?, output: String?)
     case edit(file: String?, changes: [PickyToolHistoryEditChange])
     case write(file: String?, content: String?)
+    case subagent(mode: String, agents: [String], task: String?, result: String?)
+    case todo(summary: String, items: [PickyToolHistoryTodoItem])
     case generic(argsJSON: String?, result: String?)
+}
+
+enum PickyToolHistoryDisplayCategory: Equatable {
+    case standard(PickyToolHistoryCategory)
+    case agent
+    case todo
 }
 
 struct PickyToolHistoryEntry: Identifiable, Equatable {
@@ -72,7 +89,7 @@ enum PickyToolHistoryRenderer {
         let status = status(for: tool.status)
         let argsJSON = tool.argsPreview
         let result = tool.resultPreview ?? (status != .running ? tool.preview : nil)
-        let detail = detail(for: category, argsJSON: argsJSON, result: result)
+        let detail = detail(for: tool.name, category: category, argsJSON: argsJSON, result: result)
         return PickyToolHistoryEntry(
             id: tool.toolCallId,
             index: index,
@@ -110,8 +127,38 @@ enum PickyToolHistoryRenderer {
         return Int(value.rounded())
     }
 
-    private static func detail(for category: PickyToolHistoryCategory, argsJSON: String?, result: String?) -> PickyToolHistoryDetail {
+    static func displayCategory(for detail: PickyToolHistoryDetail) -> PickyToolHistoryDisplayCategory {
+        switch detail {
+        case .subagent:
+            return .agent
+        case .todo:
+            return .todo
+        default:
+            return .standard(category(for: detail))
+        }
+    }
+
+    private static func category(for detail: PickyToolHistoryDetail) -> PickyToolHistoryCategory {
+        switch detail {
+        case .read: return .read
+        case .bash: return .bash
+        case .edit: return .edit
+        case .write: return .write
+        case .subagent, .todo, .generic: return .other
+        }
+    }
+
+    private static func detail(for name: String, category: PickyToolHistoryCategory, argsJSON: String?, result: String?) -> PickyToolHistoryDetail {
         let args = parseArgs(argsJSON)
+        switch name.lowercased() {
+        case "subagent":
+            if let detail = subagentDetail(args: args, fallbackJSON: argsJSON, result: result) { return detail }
+        case "todo_write", "todowrite":
+            if let detail = todoDetail(args: args) { return detail }
+        default:
+            break
+        }
+
         switch category {
         case .read:
             let file = stringValue(args, keys: ["path", "file", "file_path", "filePath"], fallbackJSON: argsJSON)
@@ -177,6 +224,214 @@ enum PickyToolHistoryRenderer {
         }
         if isEscaping { output.append("\\") }
         return output
+    }
+
+    static func inlineSummary(for detail: PickyToolHistoryDetail) -> String? {
+        switch detail {
+        case let .subagent(mode, agents, task, _):
+            let action = mode.split(separator: "·", maxSplits: 1).first.map { $0.trimmingCharacters(in: .whitespaces) } ?? mode
+            switch action {
+            case "run", "continue":
+                guard let agent = agents.first, let task else { return mode }
+                return "\(action) \(agent) · \(firstLine(task))"
+            case "batch":
+                return "batch ×\(agents.count) (\(agentList(agents)))"
+            case "chain":
+                return "chain ×\(agents.count) (\(agents.joined(separator: " → ")))"
+            default:
+                return mode
+            }
+        case let .todo(summary, items):
+            if summary.hasPrefix("replace") {
+                let count = items.count
+                if let active = items.first(where: { $0.marker == .active }) {
+                    return "\(count) tasks · → \(active.text)"
+                }
+                return "\(count) tasks"
+            }
+            let counts = Dictionary(grouping: items, by: \.marker).mapValues(\.count)
+            let parts = [
+                counts[.done].map { "✓ \($0) done" },
+                counts[.active].map { "→ \($0) started" },
+                counts[.added].map { "+ \($0)" },
+                counts[.removed].map { "− \($0)" },
+            ].compactMap { $0 }
+            return parts.isEmpty ? summary : parts.joined(separator: " · ")
+        default:
+            return nil
+        }
+    }
+
+    private static func subagentDetail(args: [String: Any], fallbackJSON: String?, result: String?) -> PickyToolHistoryDetail? {
+        guard let command = stringValue(args, keys: ["command"], fallbackJSON: fallbackJSON) else { return nil }
+        let tokens = shellTokens(command)
+        guard tokens.first?.value == "subagent", let action = tokens.dropFirst().first?.value else { return nil }
+
+        if action == "run" || action == "continue" {
+            guard tokens.count >= 4,
+                  let delimiter = tokens.dropFirst(3).firstIndex(where: { $0.value == "--" }),
+                  delimiter + 1 < tokens.count
+            else { return nil }
+            let agent = tokens[2].value
+            let task = tokens[(delimiter + 1)...].map(\.value).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !agent.isEmpty, !task.isEmpty else { return nil }
+            let flags = tokens[3..<delimiter].map(\.value).filter { $0.hasPrefix("--") }
+            let mode = ([action] + flags).joined(separator: " · ")
+            return .subagent(mode: mode, agents: [agent], task: task, result: result)
+        }
+
+        if action == "batch" || action == "chain" {
+            var agents: [String] = []
+            var currentAgent: String?
+            var index = 2
+            while index < tokens.count {
+                switch tokens[index].value {
+                case "--agent":
+                    guard index + 1 < tokens.count else { return nil }
+                    currentAgent = tokens[index + 1].value
+                    index += 2
+                case "--task":
+                    guard let agent = currentAgent, index + 1 < tokens.count, !tokens[index + 1].value.isEmpty else { return nil }
+                    agents.append(agent)
+                    currentAgent = nil
+                    index += 2
+                default:
+                    index += 1
+                }
+            }
+            guard !agents.isEmpty else { return nil }
+            return .subagent(mode: action, agents: agents, task: nil, result: result)
+        }
+
+        let controlActions = Set(["status", "detail", "list", "abort"])
+        guard controlActions.contains(action) else { return nil }
+        let suffix = tokens.dropFirst(2).map(\.value).joined(separator: " ")
+        return .subagent(mode: suffix.isEmpty ? action : "\(action) \(suffix)", agents: [], task: nil, result: result)
+    }
+
+    private static func todoDetail(args: [String: Any]) -> PickyToolHistoryDetail? {
+        if let todos = args["todos"] as? [[String: Any]] {
+            let items = todos.compactMap(todoReplacementItem)
+            guard items.count == todos.count else { return nil }
+            return .todo(summary: "replace · \(items.count) tasks", items: items)
+        }
+
+        guard args["op"] as? String == "patch" else { return nil }
+        let set = args["set"] as? [[String: Any]] ?? []
+        let add = args["add"] as? [[String: Any]] ?? []
+        let remove = args["remove"] as? [String] ?? []
+        guard !set.isEmpty || !add.isEmpty || !remove.isEmpty else { return nil }
+
+        let setItems = set.compactMap(todoPatchSetItem)
+        let addItems = add.compactMap(todoAddedItem)
+        guard setItems.count == set.count, addItems.count == add.count,
+              remove.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+        else { return nil }
+
+        var summaryParts: [String] = []
+        if !set.isEmpty { summaryParts.append("\(set.count) set") }
+        if !add.isEmpty { summaryParts.append("\(add.count) add") }
+        if !remove.isEmpty { summaryParts.append("\(remove.count) remove") }
+        return .todo(
+            summary: "patch · \(summaryParts.joined(separator: ", "))",
+            items: setItems + addItems + remove.map { .init(marker: .removed, text: $0) }
+        )
+    }
+
+    private static func todoReplacementItem(_ raw: [String: Any]) -> PickyToolHistoryTodoItem? {
+        guard let content = nonEmptyString(raw["content"]), let marker = todoMarker(status: raw["status"] as? String) else { return nil }
+        return .init(marker: marker, text: content)
+    }
+
+    private static func todoPatchSetItem(_ raw: [String: Any]) -> PickyToolHistoryTodoItem? {
+        guard let status = raw["status"] as? String, let marker = todoMarker(status: status) else { return nil }
+        let identity = nonEmptyString(raw["content"]) ?? nonEmptyString(raw["id"])
+        guard let identity else { return nil }
+        return .init(marker: marker, text: "\(identity) → \(status)")
+    }
+
+    private static func todoAddedItem(_ raw: [String: Any]) -> PickyToolHistoryTodoItem? {
+        guard let content = nonEmptyString(raw["content"]) else { return nil }
+        return .init(marker: .added, text: content)
+    }
+
+    private static func todoMarker(status: String?) -> PickyToolHistoryTodoMarker? {
+        switch status {
+        case "completed": return .done
+        case "in_progress": return .active
+        case "pending": return .pending
+        default: return nil
+        }
+    }
+
+    private static func nonEmptyString(_ value: Any?) -> String? {
+        guard let value = value as? String else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func agentList(_ agents: [String]) -> String {
+        let unique = agents.reduce(into: [String]()) { result, agent in
+            if !result.contains(agent) { result.append(agent) }
+        }
+        return unique.prefix(2).joined(separator: ", ") + (unique.count > 2 ? ", …" : "")
+    }
+
+    private static func firstLine(_ text: String) -> String {
+        text.split(whereSeparator: \.isNewline).first.map(String.init) ?? text
+    }
+
+    private struct ShellToken {
+        let value: String
+    }
+
+    private static func shellTokens(_ command: String) -> [ShellToken] {
+        var tokens: [ShellToken] = []
+        var index = command.startIndex
+        while index < command.endIndex {
+            while index < command.endIndex, command[index].isWhitespace { index = command.index(after: index) }
+            guard index < command.endIndex else { break }
+            var value = ""
+            var quote: Character?
+            while index < command.endIndex {
+                let character = command[index]
+                if let activeQuote = quote {
+                    if character == activeQuote {
+                        selfAdvance(&index, in: command)
+                        quote = nil
+                    } else if character == "\\", activeQuote == "\"" {
+                        selfAdvance(&index, in: command)
+                        if index < command.endIndex {
+                            value.append(command[index])
+                            selfAdvance(&index, in: command)
+                        }
+                    } else {
+                        value.append(character)
+                        selfAdvance(&index, in: command)
+                    }
+                } else if character == "\"" || character == "'" {
+                    quote = character
+                    selfAdvance(&index, in: command)
+                } else if character == "\\" {
+                    selfAdvance(&index, in: command)
+                    if index < command.endIndex {
+                        value.append(command[index])
+                        selfAdvance(&index, in: command)
+                    }
+                } else if character.isWhitespace {
+                    break
+                } else {
+                    value.append(character)
+                    selfAdvance(&index, in: command)
+                }
+            }
+            tokens.append(.init(value: value))
+        }
+        return tokens
+    }
+
+    private static func selfAdvance(_ index: inout String.Index, in command: String) {
+        index = command.index(after: index)
     }
 
     private static func stringValue(_ args: [String: Any], keys: [String], fallbackJSON: String? = nil) -> String? {

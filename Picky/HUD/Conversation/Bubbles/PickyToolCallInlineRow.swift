@@ -78,29 +78,44 @@ struct PickyToolCallInlineRow: View {
     }
 
     private var icon: String {
-        switch entry.category {
-        case .read: return "📖"
-        case .bash: return "⌨"
-        case .edit: return "✏"
-        case .write: return "▣"
-        case .other: return "⋯"
+        switch entry.detail {
+        case .subagent: return "◇"
+        case .todo: return "☑"
+        default:
+            switch entry.category {
+            case .read: return "📖"
+            case .bash: return "⌨"
+            case .edit: return "✏"
+            case .write: return "▣"
+            case .other: return "⋯"
+            }
         }
     }
 
     private var categoryColor: Color {
-        switch entry.category {
-        case .read: return DS.Colors.info
-        case .bash: return DS.Colors.warningText
-        case .edit: return DS.Colors.accentText
-        case .write: return DS.Colors.floatingGradientPurple
-        case .other: return DS.Colors.textSecondary
+        switch entry.detail {
+        case .subagent: return DS.Colors.floatingGradientPurple
+        case .todo: return DS.Colors.info
+        default:
+            switch entry.category {
+            case .read: return DS.Colors.info
+            case .bash: return DS.Colors.warningText
+            case .edit: return DS.Colors.accentText
+            case .write: return DS.Colors.floatingGradientPurple
+            case .other: return DS.Colors.textSecondary
+            }
         }
     }
 
     var displayedToolName: String {
-        PickyToolActivityPresentation.skillName(forToolNamed: tool.name, argsPreview: tool.argsPreview) == nil
-            ? tool.name
-            : "skill"
+        switch entry.detail {
+        case .subagent: return "subagent"
+        case .todo: return "todo"
+        default:
+            return PickyToolActivityPresentation.skillName(forToolNamed: tool.name, argsPreview: tool.argsPreview) == nil
+                ? tool.name
+                : "skill"
+        }
     }
 
     /// Compact second column. Pulls the most informative slice out of the
@@ -118,6 +133,9 @@ struct PickyToolCallInlineRow: View {
     }
 
     private var detailText: String? {
+        if let summary = PickyToolHistoryRenderer.inlineSummary(for: entry.detail) {
+            return summary
+        }
         switch entry.detail {
         case let .read(file, range, _):
             let resolved = file ?? recoveredPath()
@@ -136,6 +154,8 @@ struct PickyToolCallInlineRow: View {
         case let .write(file, _):
             let resolved = file ?? recoveredPath()
             return resolved.map(shortenPath)
+        case .subagent, .todo:
+            return nil
         case let .generic(argsJSON, _):
             return argsJSON.map(firstLine)
         }

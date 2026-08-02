@@ -59,6 +59,10 @@ enum PickyToolHistoryFilterPolicy {
             detailText = [file] + changes.flatMap { [Optional($0.oldText), Optional($0.newText)] }
         case let .write(file, content):
             detailText = [file, content]
+        case let .subagent(mode, agents, task, result):
+            detailText = [mode, task, result] + agents.map(Optional.some)
+        case let .todo(summary, items):
+            detailText = [summary] + items.map { $0.text }
         case let .generic(argsJSON, result):
             detailText = [argsJSON, result]
         }

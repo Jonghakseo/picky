@@ -445,7 +445,7 @@ struct PickyToolHistoryEntryView: View {
     }
 
     private var categoryChip: some View {
-        let display = PickyToolHistoryCategoryDisplay.display(for: entry.category)
+        let display = PickyToolHistoryCategoryDisplay.display(for: entry.detail, category: entry.category)
         return Text(display.label)
             .font(PickyHUDTypography.metaMonospacedSemibold)
             .foregroundStyle(display.tint)
@@ -496,6 +496,22 @@ struct PickyToolHistoryEntryView: View {
             keyValueRow("file", value: file.map { AnyView(monospaceLink($0)) })
             if let content {
                 keyValueBlock("content") { codeBlock(content) }
+            }
+        case let .subagent(mode, agents, task, result):
+            keyValueRow("mode", value: AnyView(monospaceText(mode)))
+            if !agents.isEmpty {
+                keyValueRow("agent", value: AnyView(secondaryText(agents.joined(separator: ", "))))
+            }
+            if let task {
+                keyValueBlock("task") { codeBlock(task) }
+            }
+            if let result {
+                resultDisclosure(result)
+            }
+        case let .todo(summary, items):
+            keyValueRow("op", value: AnyView(secondaryText(summary)))
+            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                todoItemRow(item)
             }
         case let .generic(argsJSON, result):
             if let argsJSON {
@@ -578,6 +594,31 @@ struct PickyToolHistoryEntryView: View {
         .frame(maxHeight: 180)
         .background(DS.Colors.surface3.opacity(0.6))
         .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.small))
+    }
+
+    private func todoItemRow(_ item: PickyToolHistoryTodoItem) -> some View {
+        let presentation: (symbol: String, color: Color, completed: Bool, emphasized: Bool) = {
+            switch item.marker {
+            case .done: return ("✓", DS.Colors.successText, true, false)
+            case .active: return ("◐", DS.Colors.info, false, true)
+            case .pending: return ("○", DS.Colors.textTertiary, false, false)
+            case .added: return ("+", DS.Colors.info, false, true)
+            case .removed: return ("−", DS.Colors.textTertiary, true, false)
+            }
+        }()
+        return HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(presentation.symbol)
+                .pickyFont(size: 11, weight: presentation.emphasized ? .semibold : .medium)
+                .foregroundStyle(presentation.color)
+                .frame(width: 12, alignment: .center)
+            Text(item.text)
+                .pickyFont(size: 11.5, weight: presentation.emphasized ? .semibold : .regular)
+                .foregroundStyle(presentation.completed ? DS.Colors.textTertiary : DS.Colors.textSecondary)
+                .strikethrough(presentation.completed, color: DS.Colors.textTertiary)
+                .textSelection(.enabled)
+            Spacer(minLength: 0)
+        }
+        .accessibilityLabel("\(presentation.symbol) \(item.text)")
     }
 
     private func diffBlock(_ change: PickyToolHistoryEditChange) -> some View {
@@ -666,5 +707,16 @@ private struct PickyToolHistoryCategoryDisplay {
 
     static func display(for category: PickyToolHistoryCategory) -> PickyToolHistoryCategoryDisplay {
         ordered.first(where: { $0.category == category }) ?? ordered.last!
+    }
+
+    static func display(for detail: PickyToolHistoryDetail, category: PickyToolHistoryCategory) -> PickyToolHistoryCategoryDisplay {
+        switch PickyToolHistoryRenderer.displayCategory(for: detail) {
+        case .agent:
+            return .init(category: .other, label: "agent", tint: DS.Colors.floatingGradientPurple)
+        case .todo:
+            return .init(category: .other, label: "todo", tint: DS.Colors.info)
+        case let .standard(category):
+            return display(for: category)
+        }
     }
 }

@@ -7,6 +7,7 @@ import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { FollowUpLifecycleDiagnostics } from "./application/follow-up-lifecycle-diagnostics.js";
 import type { ReloadPluginsSummary, SessionSupervisorOptions } from "./application/session-supervisor-options.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
+import { SubagentRunUpdater } from "./application/subagent-run-updater.js";
 import { TerminalManualCompactionCoordinator } from "./application/terminal-manual-compaction.js";
 import { makeAnnotationOverlayRequestForContext, makePointerOverlayRequestForContext, type MainTurnOverlayContext } from "./application/overlay-context-resolver.js";
 import { MainVisualNarrationCoordinator } from "./application/main-visual-narration-coordinator.js";
@@ -15,11 +16,11 @@ import { readRecentPinnedSourceState, snapshotPiSessionFile } from "./applicatio
 import { TerminalSessionCoordinator } from "./application/terminal-session-coordinator.js";
 import { mapExtensionUiRequest, summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
 import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentPickleCompletionPrompt, buildPicklePrompt, buildSteerPrompt, type BuiltPrompt } from "./prompt-builder.js";
-import type { ModelCycleDirection, PickyActivitySummary, PickyAgentSession, PickyAnnotationOverlayRequest, PickyContextPacket, PickyExtensionUiRequest, PickyMainActivity, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage, PickySubagentRun } from "./protocol.js";
+import type { ModelCycleDirection, PickyActivitySummary, PickyAgentSession, PickyAnnotationOverlayRequest, PickyContextPacket, PickyExtensionUiRequest, PickyMainActivity, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-overlay-request.js";
 import type { PickyShowAnnotationsRequest, PickyShowAnnotationsResult } from "./application/annotation-overlay-request.js";
 import { PickleVisualDslCoordinator, type PickleVisualDslLease } from "./application/pickle-visual-dsl-coordinator.js";
-import { readPiSessionInfoName } from "./application/pi-session-syncer.js";
+import { PickleSessionTitleRefresher } from "./application/pickle-session-title-refresher.js";
 import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY } from "./session-store.js";
 import type { SessionStore } from "./session-store.js";
 import type { AgentRuntime, RewindTarget, RuntimeAutocompleteApplyRequest, RuntimeAutocompleteCapabilities, RuntimeAutocompleteCompletion, RuntimeAutocompleteQuery, RuntimeAutocompleteSuggestions, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./runtime/types.js";
@@ -30,7 +31,6 @@ import { mergeChangedFiles } from "./domain/changed-files.js";
 import { diffQueueRemovedItems, dropAlreadyMaterializedQueueEntries, queueItems, sameQueueItems, type PendingQueueDelivery } from "./domain/queue-policy.js";
 import { isTerminalStatus } from "./domain/session-status.js";
 import { countSystemMessages, sameTodoState, shouldReattachBlockedSessionOnStartup } from "./domain/session-state-policy.js";
-import { applySubagentRunUpdate, capSubagentRuns, retainSubagentRunResultText } from "./domain/subagent-run-state.js";
 import { ARCHIVED_SESSION_RETENTION_DAYS, buildAppendedMainMessageState, buildArchivedSessionRestartCancellation, buildDuplicatedPickleSession, buildEmptyPickleSession, buildInterruptedRuntimeLiveStatePatch, buildOrphanedChildRecoverySession, buildPinnedPickleSession, buildResumedHandoffPickleSession, buildRuntimeReattachPatch, buildRuntimeSessionReplacementPatch, buildUnattachedRuntimeBlock, buildVisibleSession, projectMainAgentSessionInfo, projectMainReplyMetadata, projectMainRolloverPickleSessions, shouldPurgeArchivedSession } from "./domain/session-supervisor-projection-policy.js";
 import { normalizeDslWhitespace, userInputFromLogLine } from "./domain/session-text-policy.js";
 import { HANDOFF_PREFIX, FOLLOWUP_PREFIX, STEER_PREFIX, EXTENSION_ANSWER_PREFIX } from "./domain/log-prefixes.js";
@@ -59,6 +59,8 @@ export class SessionSupervisor extends EventEmitter {
   private readonly ttsEnabledListeners = new Set<(enabled: boolean) => void>();
   private readonly artifactMaterializer: ArtifactMaterializer;
   private readonly runtimeEventHandler: RuntimeEventHandler;
+  private readonly subagentRunUpdater: SubagentRunUpdater;
+  private readonly pickleSessionTitleRefresher: PickleSessionTitleRefresher;
   private mainHandle?: RuntimeSessionHandle;
   private mainHandlePromise?: Promise<RuntimeSessionHandle>;
   private mainHandleUnsubscribe?: () => void;
@@ -205,6 +207,7 @@ export class SessionSupervisor extends EventEmitter {
       log: (message, data) => logAgentd(message, data),
     });
     this.sessionIdFactory = options.sessionIdFactory ?? (() => `session-${randomUUID()}`);
+    this.pickleSessionTitleRefresher = new PickleSessionTitleRefresher({ isPickleSession: (sessionId) => this.isPickleSession(sessionId), getSession: (sessionId) => this.sessions.get(sessionId), patchSession: (sessionId, patch) => this.patch(sessionId, patch) });
     this.artifactMaterializer = new ArtifactMaterializer();
     this.pickleVisualDslCoordinator = new PickleVisualDslCoordinator((event) => {
       if (event.type === "quickReply") {
@@ -241,12 +244,18 @@ export class SessionSupervisor extends EventEmitter {
       emitSyncOutcome: (sessionId, outcome) => this.emit("terminalSessionSyncOutcome", sessionId, outcome),
       reverseInputExpansion: (sessionId, text) => this.runtimeHandles.get(sessionId)?.reverseInputExpansion?.(text) ?? text,
     });
+    this.subagentRunUpdater = new SubagentRunUpdater({
+      currentRuns: (sessionId) => this.mustGet(sessionId).subagentRuns ?? [],
+      patchSession: (sessionId, patch, options) => this.patch(sessionId, patch, options),
+      nextSeq: (sessionId) => this.nextSeq(sessionId),
+      emitUpdated: (sessionId, runs, seq) => this.chainEmit(sessionId, async () => { this.emit("subagentRunsUpdated", sessionId, runs, seq); }),
+    });
     this.runtimeEventHandler = new RuntimeEventHandler({
       getSession: (sessionId) => this.mustGet(sessionId),
       patchSession: (sessionId, patch, options) => this.patch(sessionId, patch, options),
       emitToolActivityUpdated: (sessionId, tool) => this.emit("toolActivityUpdated", sessionId, tool),
       updateTodoState: (sessionId, todoState) => this.updateTodoState(sessionId, todoState),
-      updateSubagentRuns: (sessionId, update) => this.updateSubagentRuns(sessionId, update),
+      updateSubagentRuns: (sessionId, update) => this.subagentRunUpdater.update(sessionId, update),
       consumeNoTurnRanSessionStateRestore: (sessionId) => this.consumeNoTurnRanSessionStateRestore(sessionId),
       appendLog: (sessionId, line) => this.appendLog(sessionId, line),
       materializeTerminalArtifacts: (sessionId) => this.materializeTerminalArtifacts(sessionId),
@@ -290,7 +299,7 @@ export class SessionSupervisor extends EventEmitter {
       this.sessions.set(session.id, session);
       this.messageBuilder.hydrateSession(session.id, session.messages);
       if (session.piSessionFilePath !== persistedSession.piSessionFilePath || session.notifyMainOnCompletion !== persistedSession.notifyMainOnCompletion) await this.store.save(session);
-      if (this.pickleSessionIds.has(session.id)) void this.refreshPickleSessionTitleFromPi(session.id);
+      if (this.pickleSessionIds.has(session.id)) void this.pickleSessionTitleRefresher.refresh(session.id);
 
       if (session.logs.includes(ORPHANED_CHILD_SESSION_RECOVERY_LOG)) {
         const interrupted = await this.interruptedRuntimeLiveStatePatch(session.id);
@@ -999,7 +1008,7 @@ export class SessionSupervisor extends EventEmitter {
       await handle.followUp({ text: handoff.instructions, imagePaths: [] });
       await this.appendLog(id, `${HANDOFF_PREFIX}${handoff.instructions}`);
       if (cwd) await this.appendLog(id, `Picky handoff cwd: ${cwd}`);
-      void this.refreshPickleSessionTitleFromPi(id);
+      void this.pickleSessionTitleRefresher.refresh(id);
       return this.mustGet(id);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -1125,7 +1134,7 @@ export class SessionSupervisor extends EventEmitter {
       logAgentd("pickle session duplicate ready", { sourceSessionId, newSessionId: id });
       // Pull the freshly-resumed Pi session_info name (when present) so the (copy) prefix is
       // applied on top of Pi's own name rather than a stale Picky default.
-      void this.refreshPickleSessionTitleFromPi(id);
+      void this.pickleSessionTitleRefresher.refresh(id);
       return this.mustGet(id);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -2919,28 +2928,7 @@ export class SessionSupervisor extends EventEmitter {
       await this.messageBuilder.recordUserText(sessionId, line.slice(HANDOFF_PREFIX.length), "main_agent");
     }
     if (piSessionFilePath) {
-      void this.refreshPickleSessionTitleFromPi(sessionId);
-    }
-  }
-
-  // Pi names the underlying session asynchronously after the first turn, but session_info_changed
-  // events do not fire when Picky resumes an existing pi session file. Read the JSONL directly and
-  // patch the Pickle title so the HUD card shows Pi's name instead of "New Pickle · cwd".
-  private async refreshPickleSessionTitleFromPi(sessionId: string): Promise<void> {
-    if (!this.isPickleSession(sessionId)) return;
-    const session = this.sessions.get(sessionId);
-    if (!session) return;
-    const sessionFilePath = piSessionFilePathForSession(session);
-    if (!sessionFilePath) return;
-    try {
-      const name = await readPiSessionInfoName(sessionFilePath);
-      if (!name) return;
-      const current = this.sessions.get(sessionId);
-      if (!current || current.title === name) return;
-      logAgentd("pickle session title refreshed from pi", { sessionId, previousTitle: current.title, name });
-      await this.patch(sessionId, { title: name });
-    } catch (error) {
-      logAgentd("pickle session title refresh failed", { sessionId, error: error instanceof Error ? error.message : String(error) });
+      void this.pickleSessionTitleRefresher.refresh(sessionId);
     }
   }
 
@@ -2965,17 +2953,6 @@ export class SessionSupervisor extends EventEmitter {
     const seq = this.nextSeq(sessionId);
     await this.chainEmit(sessionId, async () => {
       this.emit("todoStateUpdated", sessionId, todoState, seq);
-    });
-  }
-
-  private async updateSubagentRuns(sessionId: string, update: PickySubagentRun): Promise<void> {
-    const current = this.mustGet(sessionId).subagentRuns ?? [];
-    const runs = retainSubagentRunResultText(capSubagentRuns(applySubagentRunUpdate(current, update)));
-    if (sameSubagentRuns(current, runs)) return;
-    await this.patch(sessionId, { subagentRuns: runs }, { emitSession: false });
-    const seq = this.nextSeq(sessionId);
-    await this.chainEmit(sessionId, async () => {
-      this.emit("subagentRunsUpdated", sessionId, runs, seq);
     });
   }
 
@@ -3016,8 +2993,4 @@ export class SessionSupervisor extends EventEmitter {
     if (!session) throw new Error(`Unknown session: ${sessionId}`);
     return session;
   }
-}
-
-function sameSubagentRuns(left: readonly PickySubagentRun[], right: readonly PickySubagentRun[]): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
 }

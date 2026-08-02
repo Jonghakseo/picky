@@ -1,123 +1,18 @@
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
-import { DefaultPackageManager, getAgentDir, SettingsManager, type ProgressEvent } from "@earendil-works/pi-coding-agent";
 import { isAuthorized } from "./auth.js";
 import { FOLLOWUP_PREFIX, HANDOFF_PREFIX, STEER_PREFIX } from "./domain/log-prefixes.js";
-import { resolveNpmCommand } from "./domain/npm-command.js";
 import { sliceUtf16Safe } from "./domain/safe-truncate.js";
 import { PROTOCOL_VERSION, PickyAgentSessionSchema, parseCommand, type DockGroup, type EventEnvelope, type PickyAgentSession, type PickyAgentSessionParsed, type PickyContextPacket, type PickyPushToTalkControlAction } from "./protocol.js";
 import type { SessionSupervisor } from "./session-supervisor.js";
 import { logAgentd } from "./local-log.js";
 import { EdgeTTSServiceError } from "./edge-tts-service.js";
 import type { EdgeTTSService } from "./edge-tts-service.js";
-import { CancellablePackageProcessController, installCancellablePackageCommands } from "./application/package-process-controller.js";
+import { PackageOperations, type PackageManager, type PackageManagerFactoryOptions } from "./application/package-operations.js";
+export { createDefaultPackageManager, type DefaultPackageManagerDependencies } from "./application/package-operations.js";
 import type { PiOAuthHandling } from "./application/pi-oauth-service.js";
-
-export interface PackageManager {
-  installAndPersist(source: string): Promise<void>;
-  removeAndPersist(source: string): Promise<boolean>;
-  checkAvailableUpdates(): Promise<Array<{ source: string }>>;
-  update(source: string): Promise<void>;
-  setProgressCallback(callback: ((event: ProgressEvent) => void) | undefined): void;
-  /** Waits until package settings changes are durable before completing the request. */
-  flush?(): Promise<void>;
-  /** Stops external commands and settles the active mutation before the queue is released. */
-  cancel?(): Promise<void>;
-}
-
-export interface PackageManagerFactoryOptions {
-  cwd: string;
-  agentDir: string;
-}
-
-type PiPackageManagerOptions = ConstructorParameters<typeof DefaultPackageManager>[0];
-
-export interface DefaultPackageManagerDependencies {
-  createSettingsManager?: (cwd: string, agentDir?: string) => SettingsManager;
-  createPackageManager?: (options: PiPackageManagerOptions) => PackageManager;
-  execPath?: string;
-  fileExists?: (path: string) => boolean;
-  npmCommandRunnerPath?: string;
-  npmCommandTimeoutMs?: number;
-}
-
-const DEFAULT_NPM_COMMAND_TIMEOUT_MS = 90_000;
-const DEFAULT_PACKAGE_OPERATION_TIMEOUT_MS = 110_000;
-const DEFAULT_NPM_COMMAND_RUNNER_PATH = fileURLToPath(new URL("./application/npm-command-runner.js", import.meta.url));
-
-/** Creates the Pi package manager with a runtime-only bundled npm fallback. */
-export function createDefaultPackageManager(
-  options: PackageManagerFactoryOptions,
-  dependencies: DefaultPackageManagerDependencies = {},
-): PackageManager {
-  const settingsManager = (dependencies.createSettingsManager ?? SettingsManager.create)(options.cwd, options.agentDir);
-  const execPath = dependencies.execPath ?? process.execPath;
-  const fileExists = dependencies.fileExists ?? existsSync;
-  const packageManagerSettings = new Proxy(settingsManager, {
-    get(target, property) {
-      if (property === "getNpmCommand") {
-        return () => resolveNpmCommand({
-          configured: target.getNpmCommand(),
-          execPath,
-          fileExists,
-          runnerPath: dependencies.npmCommandRunnerPath ?? DEFAULT_NPM_COMMAND_RUNNER_PATH,
-          timeoutMs: dependencies.npmCommandTimeoutMs ?? DEFAULT_NPM_COMMAND_TIMEOUT_MS,
-        });
-      }
-      const value = Reflect.get(target, property, target);
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-  });
-  const usesDefaultPackageManager = dependencies.createPackageManager === undefined;
-  const packageManager = (dependencies.createPackageManager ?? ((params) => new DefaultPackageManager(params)))({
-    ...options,
-    settingsManager: packageManagerSettings,
-  });
-  const processController = usesDefaultPackageManager ? new CancellablePackageProcessController() : undefined;
-  if (processController) installCancellablePackageCommands(packageManager as object, processController);
-
-  return {
-    installAndPersist: (packageSource) => packageManager.installAndPersist(packageSource),
-    removeAndPersist: (packageSource) => packageManager.removeAndPersist(packageSource),
-    checkAvailableUpdates: () => (packageManager as DefaultPackageManager).checkForAvailableUpdates(),
-    update: (packageSource) => (packageManager as DefaultPackageManager).update(packageSource),
-    setProgressCallback: (callback) => packageManager.setProgressCallback(callback),
-    cancel: processController ? () => processController.cancelAll() : undefined,
-    flush: async () => {
-      await settingsManager.flush();
-      const errors = settingsManager.drainErrors();
-      if (errors.length > 0) {
-        throw new Error(errors.map(({ scope, error }) => `Failed to persist ${scope} settings: ${error.message}`).join("; "));
-      }
-    },
-  };
-}
-
-type PackageMutationOutcome =
-  | { kind: "completed" }
-  | { kind: "failed"; error: unknown }
-  | { kind: "timedOut"; timeoutMs: number };
-
-async function waitForPackageMutation(mutation: Promise<void>, timeoutMs: number): Promise<PackageMutationOutcome> {
-  return await new Promise<PackageMutationOutcome>((resolveOutcome) => {
-    let settled = false;
-    const finish = (outcome: PackageMutationOutcome) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolveOutcome(outcome);
-    };
-    const timer = setTimeout(() => finish({ kind: "timedOut", timeoutMs }), timeoutMs);
-    void mutation.then(
-      () => finish({ kind: "completed" }),
-      (error: unknown) => finish({ kind: "failed", error }),
-    );
-  });
-}
 
 export interface AgentdServerOptions {
   port: number;
@@ -189,12 +84,7 @@ export class AgentdServer {
   private pendingExternalEntries = new Map<string, ExternalEntryPending>();
   private pendingPushToTalkControls = new Map<string, PushToTalkControlPending>();
   private pendingDockGroupsRequests = new Map<string, DockGroupsPending>();
-  /** Serializes package mutations that share a Pi agent settings directory. */
-  private packageOperationChains = new Map<string, Promise<void>>();
-  /** Owns active external package commands so daemon shutdown can cancel them. */
-  private activePackageManagers = new Set<PackageManager>();
-  /** Prevents queued package mutations from starting once daemon shutdown begins. */
-  private packageOperationsStopping = false;
+  private readonly packageOperations: PackageOperations;
   /**
    * FIFO queue of external CLI submissions. Per the agreed Q3 policy, only one
    * `submitMainFromExternal` / `createPickleFromExternal` is processed at a time;
@@ -209,10 +99,17 @@ export class AgentdServer {
   /** Set when stop() begins so freshly-dequeued entries can short-circuit. */
   private externalEntryStopping = false;
 
-  constructor(private readonly options: AgentdServerOptions) {}
+  constructor(private readonly options: AgentdServerOptions) {
+    this.packageOperations = new PackageOperations({
+      createPackageManager: options.createPackageManager,
+      getAgentDir: options.getAgentDir,
+      packageOperationTimeoutMs: options.packageOperationTimeoutMs,
+      send: (ws, event) => { this.send(ws, event); },
+    });
+  }
 
   async start(): Promise<number> {
-    this.packageOperationsStopping = false;
+    this.packageOperations.start();
     this.httpServer = createServer((request, response) => {
       void this.handleHttpRequest(request, response);
     });
@@ -307,7 +204,6 @@ export class AgentdServer {
   }
 
   async stop(): Promise<void> {
-    this.packageOperationsStopping = true;
     for (const pending of this.pendingPickleHandoffs.values()) {
       clearTimeout(pending.timer);
       pending.reject(new Error(APP_PICKLE_HANDOFF_UNAVAILABLE));
@@ -335,17 +231,7 @@ export class AgentdServer {
     }
     this.pendingDockGroupsRequests.clear();
     for (const client of this.clients) client.close();
-    const activePackageManagers = [...this.activePackageManagers];
-    await Promise.all(activePackageManagers.map(async (packageManager) => {
-      await packageManager.cancel?.().catch((error) => {
-        logAgentd("package operation shutdown cancellation failed", {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      });
-    }));
-    await Promise.all([...this.packageOperationChains.values()].map(async (operation) => {
-      await operation.catch(() => {});
-    }));
+    await this.packageOperations.stop();
     this.options.edgeTTS?.dispose();
     await new Promise<void>((resolve) => this.wsServer?.close(() => resolve()) ?? resolve());
     await new Promise<void>((resolve) => this.httpServer?.close(() => resolve()) ?? resolve());
@@ -654,10 +540,10 @@ export class AgentdServer {
       abort: (cmd) => this.options.supervisor.abort(cmd.sessionId),
       answerExtensionUi: (cmd) => this.options.supervisor.answerExtensionUi(cmd.sessionId, cmd.requestId, cmd.value),
       answerMainExtensionUi: (cmd) => this.options.supervisor.answerMainExtensionUi(cmd.requestId, cmd.value),
-      installPackage: (cmd) => this.runPackageOperation(ws, cmd.id, "install", cmd.source),
-      removePackage: (cmd) => this.runPackageOperation(ws, cmd.id, "remove", cmd.source),
-      checkPackageUpdates: (cmd) => this.runPackageUpdateCheck(ws, cmd.id),
-      updatePackage: (cmd) => this.runPackageOperation(ws, cmd.id, "update", cmd.source),
+      installPackage: (cmd) => this.packageOperations.runOperation(ws, cmd.id, "install", cmd.source),
+      removePackage: (cmd) => this.packageOperations.runOperation(ws, cmd.id, "remove", cmd.source),
+      checkPackageUpdates: (cmd) => this.packageOperations.runUpdateCheck(ws, cmd.id),
+      updatePackage: (cmd) => this.packageOperations.runOperation(ws, cmd.id, "update", cmd.source),
       reloadPlugins: async (cmd) => {
         const summary = await this.options.supervisor.reloadPlugins();
         this.broadcast({
@@ -678,125 +564,6 @@ export class AgentdServer {
   private requirePiOAuth(): PiOAuthHandling {
     if (!this.options.piOAuth) throw new Error("Pi OAuth is available only on the primary daemon");
     return this.options.piOAuth;
-  }
-
-  private async runPackageUpdateCheck(ws: WebSocket, commandId: string): Promise<void> {
-    const agentDir = (this.options.getAgentDir ?? getAgentDir)();
-    await this.enqueuePackageOperation(agentDir, async () => {
-      const createPackageManager = this.options.createPackageManager ?? createDefaultPackageManager;
-      const packageManager = createPackageManager({ cwd: process.cwd(), agentDir });
-      this.activePackageManagers.add(packageManager);
-      try {
-        try {
-          const updates = await packageManager.checkAvailableUpdates();
-          this.send(ws, { type: "packageUpdatesAvailable", commandId, sources: updates.map(({ source }) => source) });
-        } catch (error) {
-          logAgentd("package update check failed", {
-            error: error instanceof Error ? error.message : String(error),
-          });
-          this.send(ws, { type: "packageUpdatesAvailable", commandId, sources: [], failed: true });
-        }
-      } finally {
-        this.activePackageManagers.delete(packageManager);
-      }
-    });
-  }
-
-  private async runPackageOperation(
-    ws: WebSocket,
-    requestId: string,
-    operation: "install" | "remove" | "update",
-    source: string,
-  ): Promise<void> {
-    if (this.packageOperationsStopping) {
-      this.send(ws, {
-        type: "packageOperationCompleted",
-        requestId,
-        operation,
-        source,
-        ok: false,
-        errorMessage: "Package operation rejected because the daemon is stopping",
-      });
-      return;
-    }
-    const agentDir = (this.options.getAgentDir ?? getAgentDir)();
-    await this.enqueuePackageOperation(agentDir, () => this.executePackageOperation(ws, requestId, operation, source, agentDir));
-  }
-
-  private async enqueuePackageOperation(agentDir: string, operation: () => Promise<void>): Promise<void> {
-    const previous = this.packageOperationChains.get(agentDir) ?? Promise.resolve();
-    const current = previous.catch(() => {}).then(async () => {
-      if (this.packageOperationsStopping) return;
-      await operation();
-    });
-    this.packageOperationChains.set(agentDir, current);
-    void current.finally(() => {
-      if (this.packageOperationChains.get(agentDir) === current) {
-        this.packageOperationChains.delete(agentDir);
-      }
-    }).catch(() => {});
-    await current;
-  }
-
-  private async executePackageOperation(
-    ws: WebSocket,
-    requestId: string,
-    operation: "install" | "remove" | "update",
-    source: string,
-    agentDir: string,
-  ): Promise<void> {
-    const createPackageManager = this.options.createPackageManager ?? createDefaultPackageManager;
-    const packageManager = createPackageManager({ cwd: process.cwd(), agentDir });
-    this.activePackageManagers.add(packageManager);
-    packageManager.setProgressCallback((event) => {
-      const message = event.message ?? `${event.action} ${event.source}`;
-      this.send(ws, { type: "packageOperationProgress", requestId, operation, source, message });
-    });
-    try {
-      const mutation = operation === "install"
-        ? packageManager.installAndPersist(source)
-        : operation === "remove"
-          ? packageManager.removeAndPersist(source).then(() => undefined)
-          : packageManager.update(source);
-      const outcome = await waitForPackageMutation(
-        mutation,
-        this.options.packageOperationTimeoutMs ?? DEFAULT_PACKAGE_OPERATION_TIMEOUT_MS,
-      );
-      if (outcome.kind === "timedOut") {
-        this.send(ws, {
-          type: "packageOperationCompleted",
-          requestId,
-          operation,
-          source,
-          ok: false,
-          errorMessage: `Package operation timed out after ${outcome.timeoutMs}ms`,
-        });
-        // Cancel every external command owned by the default package mutation,
-        // then keep the per-agentDir queue held until the mutation settles. A
-        // custom manager without cancellation remains serialized rather than
-        // risking concurrent writes to the same package/settings directories.
-        await packageManager.cancel?.().catch((error) => {
-          logAgentd("package operation cancellation failed", {
-            operation,
-            source,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        });
-        await mutation.catch(() => {});
-        return;
-      }
-      try {
-        if (outcome.kind === "failed") throw outcome.error;
-        await packageManager.flush?.();
-        this.send(ws, { type: "packageOperationCompleted", requestId, operation, source, ok: true });
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        this.send(ws, { type: "packageOperationCompleted", requestId, operation, source, ok: false, errorMessage });
-      }
-    } finally {
-      packageManager.setProgressCallback(undefined);
-      this.activePackageManagers.delete(packageManager);
-    }
   }
 
   private registerAppCapabilities(ws: WebSocket, capabilities: string[]): void {

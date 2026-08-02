@@ -1598,33 +1598,71 @@ struct PickyConversationCardViewTests {
         #expect(list.hiddenHistoryCount == 0)
     }
 
-    @Test func visibleMessagesShowsLastFiveUserTurnsWhenMoreExist() {
-        // With six or more user turns, only the last five turns (from the fifth-to-last
-        // user_text to the end of the message list) stay visible. Earlier turns collapse
-        // behind the "View as TUI" pill.
+    @Test func visibleMessagesShowsLastFifteenUserTurnsWhenMoreExist() {
+        // With more than fifteen user turns, only the last fifteen turns (from the
+        // fifteenth-to-last user_text to the end of the message list) stay visible.
+        // Earlier turns load in steps via the "load earlier turns" pill.
         let session = makeConversationSession(
             status: .running,
-            messages: [
-                message("u1", kind: .userText, text: "first"),
-                message("a1", kind: .agentText, text: "reply 1"),
-                message("u2", kind: .userText, text: "second"),
-                message("a2", kind: .agentText, text: "reply 2"),
-                message("u3", kind: .userText, text: "third"),
-                message("a3", kind: .agentText, text: "reply 3"),
-                message("u4", kind: .userText, text: "fourth"),
-                message("a4", kind: .agentText, text: "reply 4"),
-                message("u5", kind: .userText, text: "fifth"),
-                message("a5", kind: .agentText, text: "reply 5"),
-                message("u6", kind: .userText, text: "sixth"),
-                message("a6-act", kind: .agentActivity, activitySnapshot: PickyActivitySummary(edit: 1, bash: 0, thinking: 0, other: 0)),
-                message("a6", kind: .agentText, text: "reply 6")
-            ]
+            messages: turnMessages(count: 17)
         )
         let viewModel = makeViewModel()
         let list = PickyConversationListView(session: session, viewModel: viewModel)
 
-        #expect(list.visibleMessages.map(\.id) == ["u2", "a2", "u3", "a3", "u4", "a4", "u5", "a5", "u6", "a6-act", "a6"])
-        #expect(list.hiddenHistoryCount == 2)
+        #expect(list.visibleMessages.first?.id == "u3")
+        #expect(list.visibleMessages.count == 30)
+        #expect(list.hiddenHistoryCount == 4)
+    }
+
+    @Test func historyWindowPolicyDefaultsToBaseWindow() {
+        let messages = turnMessages(count: 20)
+
+        let start = PickyConversationHistoryWindowPolicy.visibleStartIndex(messages: messages, expandedAnchorID: nil)
+
+        #expect(start.map { messages[$0].id } == "u6")
+        #expect(PickyConversationHistoryWindowPolicy.hiddenTurnCount(messages: messages, expandedAnchorID: nil) == 5)
+    }
+
+    @Test func historyWindowPolicyShowsEverythingAtOrBelowBaseTurnCount() {
+        let messages = turnMessages(count: 15)
+
+        #expect(PickyConversationHistoryWindowPolicy.visibleStartIndex(messages: messages, expandedAnchorID: nil) == nil)
+        #expect(PickyConversationHistoryWindowPolicy.hiddenTurnCount(messages: messages, expandedAnchorID: nil) == 0)
+    }
+
+    @Test func historyWindowPolicyLoadsOlderTurnsInStepsAndClampsAtStart() {
+        let messages = turnMessages(count: 30)
+
+        // Base window starts at u16; first load steps back 10 turns to u6.
+        let firstAnchor = PickyConversationHistoryWindowPolicy.anchorIDAfterLoadingMore(messages: messages, expandedAnchorID: nil)
+        #expect(firstAnchor == "u6")
+        #expect(PickyConversationHistoryWindowPolicy.hiddenTurnCount(messages: messages, expandedAnchorID: firstAnchor) == 5)
+
+        // Second load clamps at the very first turn and reveals everything.
+        let secondAnchor = PickyConversationHistoryWindowPolicy.anchorIDAfterLoadingMore(messages: messages, expandedAnchorID: firstAnchor)
+        #expect(secondAnchor == "u1")
+        #expect(PickyConversationHistoryWindowPolicy.visibleStartIndex(messages: messages, expandedAnchorID: secondAnchor) == nil)
+        #expect(PickyConversationHistoryWindowPolicy.hiddenTurnCount(messages: messages, expandedAnchorID: secondAnchor) == 0)
+    }
+
+    @Test func historyWindowPolicyPreservesExpandedHistoryWhenNewTurnsArrive() {
+        var messages = turnMessages(count: 30)
+        let anchor = PickyConversationHistoryWindowPolicy.anchorIDAfterLoadingMore(messages: messages, expandedAnchorID: nil)
+        #expect(anchor == "u6")
+
+        // Streaming five more turns must not slide the expanded window forward.
+        messages += turnMessages(count: 5, startingAt: 31)
+
+        let start = PickyConversationHistoryWindowPolicy.visibleStartIndex(messages: messages, expandedAnchorID: anchor)
+        #expect(start.map { messages[$0].id } == "u6")
+    }
+
+    @Test func historyWindowPolicyFallsBackToBaseWindowForUnknownAnchor() {
+        let messages = turnMessages(count: 20)
+
+        let start = PickyConversationHistoryWindowPolicy.visibleStartIndex(messages: messages, expandedAnchorID: "missing-id")
+
+        #expect(start.map { messages[$0].id } == "u6")
     }
 
     @Test func visibleMessagesShowsAllWhenNoUserTextExists() {
@@ -1796,7 +1834,7 @@ struct PickyConversationCardViewTests {
     // MARK: - Turn card grouping
 
     @Test func turnGroupsExposeOneCardPerVisibleUserText() {
-        // visibleMessages 정책 (마지막 다섯 user_text 부터) 과 turn 그룹화가 함께
+        // visibleMessages 정책 (마지막 15개 user_text 부터) 과 turn 그룹화가 함께
         // 동작해 세 개의 turn card 가 생기는지 검증.
         let session = makeConversationSession(
             status: .running,
@@ -1867,6 +1905,15 @@ private func toolActivity(
         status: status,
         startedAt: baseDate.addingTimeInterval(secondsOffset)
     )
+}
+
+private func turnMessages(count: Int, startingAt first: Int = 1) -> [PickySessionMessage] {
+    (first..<(first + count)).flatMap { index in
+        [
+            message("u\(index)", kind: .userText, text: "turn \(index)"),
+            message("a\(index)", kind: .agentText, text: "reply \(index)")
+        ]
+    }
 }
 
 private func settle() async throws {

@@ -1535,36 +1535,19 @@
         }
       }
     },
-    "hud.conversation.viewAsTui": {
-      "comment": "Button label that opens the full Pi terminal overlay panel.",
+    "hud.conversation.loadMoreTurns": {
+      "comment": "Pill at the top of the conversation card that reveals earlier turns. First arg is how many turns the tap loads, second arg is the total hidden turn count.",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open Pi terminal"
+            "value": "Show %lld earlier turns · %lld hidden"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "TUI창으로 전체 대화 보기"
-          }
-        }
-      }
-    },
-    "hud.conversation.viewAsTuiMoreSuffix": {
-      "comment": "Suffix appended to the Pi terminal overlay button when older messages are hidden. Format arg is the integer count of hidden older messages.",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": " · %lld more"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": " · %lld개 더"
+            "value": "이전 %lld턴 더 보기 · 숨겨진 %lld턴"
           }
         }
       }

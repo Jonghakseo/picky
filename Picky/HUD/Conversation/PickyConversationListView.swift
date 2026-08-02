@@ -26,6 +26,15 @@ struct PickyConversationListView: View {
     /// streaming update growing the content and its requested bottom scroll.
     @State private var isAwaitingProgrammaticBottomPin = false
     @State private var delayedQuestionCollapseScrollTask: Task<Void, Never>?
+    /// Oldest visible `userText` message id once the user has loaded earlier
+    /// turns. nil = default window (last 15 user turns). Absolute id so newly
+    /// streamed turns never push expanded history back out of view.
+    @State private var expandedHistoryAnchorID: String?
+    /// One-shot `scrollPosition` target used to keep the previously-top turn
+    /// anchored while older turns are prepended in the same transaction
+    /// (flicker-free, unlike a deferred `proxy.scrollTo`). Cleared right after
+    /// the commit so it never fights the bottom-pin machinery.
+    @State private var historyScrollTargetID: String?
 
     var body: some View {
         let _ = PickyPerf.event("conversation_list_body")
@@ -36,13 +45,16 @@ struct PickyConversationListView: View {
         // PickyConversationCardViewTests.
         let messages = PickyPerf.interval("conversation_visible_messages") { visibleMessages }
         let groups = PickyPerf.interval("conversation_turn_groups") { turnGroups }
-        let hiddenCount = max(0, session.messages.count - messages.count)
+        let hiddenTurns = PickyConversationHistoryWindowPolicy.hiddenTurnCount(
+            messages: session.messages,
+            expandedAnchorID: expandedHistoryAnchorID
+        )
         ScrollViewReader { proxy in
             ZStack {
                 ScrollView(.vertical, showsIndicators: false) {
                     // Eager VStack instead of LazyVStack: `visibleMessages` already
-                    // trims to the last five user turns (older history lives behind
-                    // the View as TUI button / terminal overlay), so the row
+                    // trims to the last fifteen user turns (older history loads in
+                    // ten-turn steps via the pill below), so the row
                     // count is bounded and laziness gains little. Lazy materialization
                     // also broke `proxy.scrollTo(bottomAnchorID, anchor: .bottom)`
                     // for long-content sessions: the 1pt sentinel hadn't been laid
@@ -57,7 +69,9 @@ struct PickyConversationListView: View {
                                 viewModel.dismissTerminalSyncOutcome(sessionID: session.id)
                             }
                         }
-                        moreHistoryButton(hiddenCount: hiddenCount)
+                        if hiddenTurns > 0 {
+                            loadMoreHistoryButton(hiddenTurns: hiddenTurns, groups: groups)
+                        }
                         if messages.isEmpty && !hasQueueOrActivity {
                             Color.clear
                                 .frame(height: 24)
@@ -88,7 +102,17 @@ struct PickyConversationListView: View {
                             }
                     }
                     .padding(.vertical, 2)
+                    .scrollTargetLayout()
                 }
+                .scrollPosition(
+                    id: Binding(
+                        get: { historyScrollTargetID },
+                        // Write-only: ignore scroll writeback so user scrolling
+                        // never mutates state; we clear explicitly post-commit.
+                        set: { _ in }
+                    ),
+                    anchor: .top
+                )
                 .coordinateSpace(name: Self.scrollCoordinateSpace)
                 .background {
                     GeometryReader { proxy in
@@ -122,6 +146,8 @@ struct PickyConversationListView: View {
                 updatePinnedStateFromViewportGeometry()
             }
             .task(id: session.id) {
+                expandedHistoryAnchorID = nil
+                historyScrollTargetID = nil
                 // Session changes always start at the most recent content. VStack is
                 // eager, so the bottom sentinel is in the view tree by this point.
                 if PickyConversationScrollPolicy.shouldAutoScroll(
@@ -335,6 +361,10 @@ struct PickyConversationListView: View {
                             invocationID: presentation.invocation.invocationId,
                             sessionID: session.id
                         )
+                    },
+                    onOpenRunResponse: { row in
+                        guard let runID = row.run?.runId else { return }
+                        Task { try? await viewModel.openSubagentRunResponse(sessionID: session.id, runId: runID) }
                     }
                 )
             }
@@ -535,59 +565,63 @@ struct PickyConversationListView: View {
         }
     }
 
-    /// 카드 안에는 "마지막 user_text 다섯 개 → 끝" 범위를 노출 (최근 5턴이 함께 보이게).
-    /// 그 앞 히스토리는 "View as TUI" 버튼 → 인라인 터미널 TUI로 풀 히스토리 확인.
-    /// user_text가 0–4개일 때는 전체를 그대로 노출 (slice 시작점이 0과 동일).
+    /// 카드 안에는 기본적으로 마지막 15개 user turn부터 끝까지 노출.
+    /// "이전 턴 더 보기" 버튼이 anchor(user_text id)를 뒤로 옮겨 10턴씩 확장하며,
+    /// anchor는 절대 id라 새 턴이 스트리밍돼도 펼친 히스토리는 유지된다.
+    /// 정책은 `PickyConversationHistoryWindowPolicy` 참조.
     var visibleMessages: [PickySessionMessage] {
         let messages = session.messages
-        let userIndices = messages.indices.filter { messages[$0].kind == .userText }
-        guard let firstVisibleUserIndex = userIndices.suffix(5).first else {
+        guard let start = PickyConversationHistoryWindowPolicy.visibleStartIndex(
+            messages: messages,
+            expandedAnchorID: expandedHistoryAnchorID
+        ) else {
             return messages
         }
-        return Array(messages[firstVisibleUserIndex...])
+        return Array(messages[start...])
     }
 
     var hiddenHistoryCount: Int {
         max(0, session.messages.count - visibleMessages.count)
     }
 
-    private func moreHistoryButtonLabel(hiddenCount: Int) -> String {
-        var label = L10n.t("hud.conversation.viewAsTui")
-        if hiddenCount > 0 {
-            label += L10n.t("hud.conversation.viewAsTuiMoreSuffix", Int64(hiddenCount))
-        }
-        return label
-    }
-
-    private func moreHistoryButton(hiddenCount: Int) -> some View {
+    private func loadMoreHistoryButton(hiddenTurns: Int, groups: [PickyTurnGroup]) -> some View {
         Button(action: {
-            viewModel.openTerminalOverlay(sessionID: session.id)
+            let previousTopGroupID = groups.first?.id
+            // Prepend + scroll-target in one transaction so the previously-top
+            // turn stays anchored within the same layout commit (no flicker).
+            withTransaction(Transaction(animation: nil)) {
+                historyScrollTargetID = previousTopGroupID
+                expandedHistoryAnchorID = PickyConversationHistoryWindowPolicy.anchorIDAfterLoadingMore(
+                    messages: session.messages,
+                    expandedAnchorID: expandedHistoryAnchorID
+                )
+            }
+            // Clear the one-shot target after the repositioning commit. Two
+            // hops so the clear cannot coalesce into the same commit.
+            DispatchQueue.main.async {
+                DispatchQueue.main.async { historyScrollTargetID = nil }
+            }
         }) {
             HStack(spacing: 5) {
-                Image(systemName: "terminal.fill")
+                Image(systemName: "clock.arrow.circlepath")
                     .pickyFont(size: 8.5, weight: .semibold)
-                Text(moreHistoryButtonLabel(hiddenCount: hiddenCount))
-                    .font(PickyHUDTypography.statusMedium)
+                Text(L10n.t(
+                    "hud.conversation.loadMoreTurns",
+                    Int64(min(PickyConversationHistoryWindowPolicy.loadMoreTurnStep, hiddenTurns)),
+                    Int64(hiddenTurns)
+                ))
+                .font(PickyHUDTypography.statusMedium)
             }
             .foregroundColor(DS.Colors.textTertiary)
             .padding(.horizontal, 9)
             .padding(.vertical, 4)
             .background(Capsule().fill(DS.Colors.surface2.opacity(0.55)))
             .overlay(Capsule().stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.5))
-            .overlay(alignment: .topTrailing) {
-                PickyShortcutKeyBadge(label: "T", symbols: ["command", "shift"])
-                    .fixedSize()
-                    .offset(x: 10, y: -7)
-                    .opacity(isCommandShortcutHintVisible ? 1 : 0)
-                    .scaleEffect(isCommandShortcutHintVisible ? 1 : 0.88, anchor: .center)
-                    .allowsHitTesting(false)
-            }
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity, alignment: .center)
         .padding(.bottom, 4)
-        .help("Open full session history in Pi terminal (⌘⇧T)")
-        .animation(.easeOut(duration: 0.12), value: isCommandShortcutHintVisible)
+        .help("Show earlier turns")
     }
 
     /// Time separator between two adjacent turn cards. Inside a turn card,

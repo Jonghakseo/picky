@@ -1131,6 +1131,27 @@ describe("PiSdkRuntime", () => {
     expect(inputMessages).toEqual([]);
   });
 
+  it("suppresses the duplicate role=custom echo when a /skill: command is submitted while idle", async () => {
+    const fakeSession = new SkillExpansionFakeSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-skill-idle-echo" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    const rawText = "/skill:dynamic-workflow 다이나믹 워크플로우로 구현해줘";
+    await handle.followUp({ text: rawText, imagePaths: [] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Idle submits never touch Pi's queue, so no expansion mapping is learned from a queue
+    // diff. Pi still emits the role=custom expansion echo when the turn starts; the runtime
+    // must suppress it via structural matching against the remembered /skill: invocation.
+    const expansion = fakeSession.expansionFor(rawText);
+    fakeSession.emit("event", { type: "message_start", message: { role: "custom", customType: "skill", content: [{ type: "text", text: expansion }] } });
+
+    const inputMessages = events.filter((event) => (event as { type?: string }).type === "input_message");
+    expect(inputMessages).toEqual([]);
+  });
+
   it("preserves the slash expansion mapping across repeated identical /skill: submissions", async () => {
     const fakeSession = new SkillExpansionFakeSession();
     const runtime = makeRuntime(fakeSession);

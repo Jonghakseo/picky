@@ -242,3 +242,27 @@ export function normalizeAnswer(value: unknown): { value?: unknown; confirmed?: 
 export function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+
+export interface SkillInvocation {
+  name: string;
+  instruction: string;
+}
+
+// Raw user input like `/skill:dynamic-workflow do the thing`.
+export function parseSkillSlashCommand(text: string): SkillInvocation | undefined {
+  const match = /^\/skill:([\w.-]+)(?:\s+([\s\S]*))?$/.exec(text.trim());
+  if (!match) return undefined;
+  return { name: match[1]!, instruction: (match[2] ?? "").trim() };
+}
+
+// Pi's server-side expansion of a /skill: command: `<skill name="X" ...>SKILL.md body</skill>\n<instruction>`.
+export function parseSkillExpansionEcho(text: string): SkillInvocation | undefined {
+  const opening = /^\s*<skill\b[^>]*\bname\s*=\s*["']([^"']+)["'][^>]*>/i.exec(text);
+  if (!opening) return undefined;
+  const name = opening[1]!.trim();
+  if (!name) return undefined;
+  const rest = text.slice(opening.index + opening[0].length);
+  const closing = /<\/skill\s*>/i.exec(rest);
+  if (!closing) return undefined;
+  return { name, instruction: rest.slice(closing.index + closing[0].length).trim() };
+}

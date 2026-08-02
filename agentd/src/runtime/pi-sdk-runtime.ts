@@ -60,6 +60,8 @@ import {
   normalizeAnswer,
   normalizeBashExecutionResult,
   numberValue,
+  parseSkillExpansionEcho,
+  parseSkillSlashCommand,
   queueKindFromStreamingBehavior,
   repairDanglingToolCalls,
   resolveAutocompleteFdPath,
@@ -263,6 +265,10 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   // text consistently and suppress the duplicate role="custom" echo when it arrives.
   private slashExpansions = new Map<string, { raw: string; count: number }>();
   private pendingSlashSubmissions: Array<{ raw: string; beforeQueue?: ReadonlyMap<string, number> }> = [];
+  // Fallback for /skill: echo suppression when Pi never queues the prompt (idle-session submit):
+  // the queue-diff mapping above has nothing to match, so remember the parsed invocation of each
+  // submitted /skill: command and structurally match it against the role="custom" expansion echo.
+  private pendingSkillEchoSuppressions: Array<{ name: string; instruction: string }> = [];
   // After an explicit abort() we synthesize a `status: cancelled` event right away. Pi will
   // still drain the aborted turn and eventually emit its own turn_end/agent_end with
   // stopReason="aborted" (each normalized to another `status: cancelled`). Pi can emit BOTH
@@ -303,6 +309,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     if (await this.handleBuiltinSlashCommand(prompt.text)) return;
     const wasStreaming = this.runtime.session.isStreaming;
     const expected = this.expectInputDelivery(prompt.text);
+    const skillEchoSuppression = this.registerSkillEchoSuppression(prompt.text);
     try {
       const images = await imageOptions(prompt.imagePaths);
       await this.inputRewriteObserver.runWithDelivery(expected.id, () => this.runtime.session.prompt(
@@ -311,6 +318,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       ));
     } catch (error) {
       this.cancelExpectedInputDelivery(expected.id);
+      this.removeSkillEchoSuppression(skillEchoSuppression);
       this.emitPromptFailureStatus(error);
       return;
     }
@@ -615,7 +623,10 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     // Drop cached slash-command expansion mappings whose Pi-side entries were just cleared.
     // Without this the mapping would leak indefinitely whenever the user discards a queued
     // slash command before Pi delivers its role="custom" echo.
-    for (const entry of [...cleared.steering, ...cleared.followUp]) this.slashExpansions.delete(this.normalizedSlashExpansionKey(entry));
+    for (const entry of [...cleared.steering, ...cleared.followUp]) {
+      this.slashExpansions.delete(this.normalizedSlashExpansionKey(entry));
+      this.consumeSkillEchoSuppression(entry);
+    }
     return cleared;
   }
 
@@ -702,6 +713,31 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     if (!pending) return;
     const index = this.pendingSlashSubmissions.indexOf(pending);
     if (index >= 0) this.pendingSlashSubmissions.splice(index, 1);
+  }
+
+  private registerSkillEchoSuppression(rawText: string): { name: string; instruction: string } | undefined {
+    const invocation = parseSkillSlashCommand(rawText);
+    if (!invocation) return undefined;
+    while (this.pendingSkillEchoSuppressions.length >= SLASH_EXPANSION_MAP_CAP) this.pendingSkillEchoSuppressions.shift();
+    this.pendingSkillEchoSuppressions.push(invocation);
+    return invocation;
+  }
+
+  private removeSkillEchoSuppression(entry: { name: string; instruction: string } | undefined): void {
+    if (!entry) return;
+    const index = this.pendingSkillEchoSuppressions.indexOf(entry);
+    if (index >= 0) this.pendingSkillEchoSuppressions.splice(index, 1);
+  }
+
+  private consumeSkillEchoSuppression(text: string): boolean {
+    const echo = parseSkillExpansionEcho(text);
+    if (!echo) return false;
+    const index = this.pendingSkillEchoSuppressions.findIndex(
+      (entry) => entry.name === echo.name && entry.instruction === echo.instruction,
+    );
+    if (index < 0) return false;
+    this.pendingSkillEchoSuppressions.splice(index, 1);
+    return true;
   }
 
   // Snapshot Pi's queues right before submitting a slash-prefixed prompt so we can diff after
@@ -1035,10 +1071,14 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
 
     // Pi extensions emit role="custom" messages to surface the expansion of slash commands
     // like `/skill:<name>` (the SKILL.md body) into the conversation. The user already sees
-    // their raw `/skill:...` text as a user bubble via the supervisor's pendingQueueDeliveries
-    // drain, so this echo is a duplicate. Suppress it when we have evidence (queue diff) that
-    // this custom text is the expansion of a recently-submitted slash command.
-    if (this.consumeSlashExpansion(text)) return undefined;
+    // their raw `/skill:...` text as a user bubble, so this echo is a duplicate. Suppress it
+    // when we have evidence that this custom text is the expansion of a recently-submitted
+    // slash command: either via the queue diff (streaming submits) or via structural matching
+    // against remembered /skill: invocations (idle submits, which never touch Pi's queue).
+    // Consume both trackers so neither leaks when the other matches first.
+    const suppressedAsQueuedExpansion = this.consumeSlashExpansion(text);
+    const suppressedAsSkillEcho = this.consumeSkillEchoSuppression(text);
+    if (suppressedAsQueuedExpansion || suppressedAsSkillEcho) return undefined;
 
     const display = message.display;
     return {
@@ -1323,6 +1363,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     const queueBeforeSlashExpansion = this.snapshotQueueForSlashExpansion(text);
     const pendingSlashSubmission = queueBeforeSlashExpansion ? { raw: text.trim(), beforeQueue: queueBeforeSlashExpansion } : undefined;
     if (pendingSlashSubmission) this.pendingSlashSubmissions.push(pendingSlashSubmission);
+    const skillEchoSuppression = this.registerSkillEchoSuppression(text);
     const promptPromise = this.inputRewriteObserver.runWithDelivery(expected.id, () => this.runtime.session.prompt(text, {
       ...options,
       preflightResult: (success: boolean) => {
@@ -1331,6 +1372,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
           logLifecycleEvent("piPromptPreflightRejected", { sessionId: this.id, ...this.lifecycleFields() });
           this.cancelExpectedInputDelivery(expected.id);
           this.removePendingSlashSubmission(pendingSlashSubmission);
+          this.removeSkillEchoSuppression(skillEchoSuppression);
           return;
         }
         accepted = true;
@@ -1352,6 +1394,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
         logLifecycleEvent("piPromptRejected", { sessionId: this.id, accepted, ...this.lifecycleFields() });
         this.cancelExpectedInputDelivery(expected.id);
         this.removePendingSlashSubmission(pendingSlashSubmission);
+        this.removeSkillEchoSuppression(skillEchoSuppression);
         if (accepted) {
           this.emitPromptFailureStatus(error);
           return;

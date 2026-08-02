@@ -54,6 +54,21 @@ struct PickyCuratedPluginInstallerTests {
         #expect(status == .installed(isPinned: true))
     }
 
+    @Test func statusPinsOnlyExactSemverSources() throws {
+        for (suffix, isPinned) in [("@1.2.3", true), ("@^1.2.0", false), ("@latest", false), ("", false)] {
+            let scratch = try ScratchCuratedPlugin()
+            try scratch.writeSettings(packages: ["\(source)\(suffix)"])
+
+            let status = PickyCuratedPluginInstaller.status(
+                source: source,
+                homeURL: scratch.home,
+                preferences: PickyPiInstallationPreferences(codingAgentDir: scratch.home.appendingPathComponent(".pi/agent").path)
+            )
+
+            #expect(status == .installed(isPinned: isPinned))
+        }
+    }
+
     @Test func statusUsesConfiguredPiCodingAgentDir() throws {
         let scratch = try ScratchCuratedPlugin()
         let customAgentDir = scratch.tmp.appendingPathComponent("custom-agent", isDirectory: true)
@@ -104,6 +119,17 @@ struct PickyCuratedPluginInstallerTests {
         let result = await PickyCuratedPluginInstaller.checkUpdates(client: client)
 
         #expect(result == .failure(.disconnected))
+    }
+
+    @Test func checkUpdatesReturnsFailureWhenDaemonCouldNotQueryRegistry() async {
+        let client = FakeCuratedPluginAgentClient()
+        client.sendHandler = { command in
+            client.availableUpdates(commandId: command.id, sources: [], failed: true)
+        }
+
+        let result = await PickyCuratedPluginInstaller.checkUpdates(client: client)
+
+        #expect(result == .failure(.failed("Package update check failed.")))
     }
 
     @Test @MainActor func availableUpdateSourcesMarkOnlyInstalledCuratedRowsAsUpdatable() {
@@ -249,14 +275,15 @@ private final class FakeCuratedPluginAgentClient: PickyAgentClient {
         continuation.yield(.disconnected)
     }
 
-    func availableUpdates(commandId: String, sources: [String]) {
+    func availableUpdates(commandId: String, sources: [String], failed: Bool? = nil) {
         continuation.yield(.protocolEvent(PickyEventEnvelope(
             id: "event-package-updates-\(commandId)",
             protocolVersion: pickyAgentProtocolVersion,
             timestamp: Date(),
             event: .packageUpdatesAvailable(PickyPackageUpdatesAvailableEvent(
                 commandId: commandId,
-                sources: sources
+                sources: sources,
+                failed: failed
             ))
         )))
     }

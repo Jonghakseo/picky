@@ -504,6 +504,7 @@ describe("AgentdServer", () => {
     await expect(waitForEvent(ws, "packageUpdatesAvailable")).resolves.toMatchObject({
       commandId: "cmd-package-updates-failure",
       sources: [],
+      failed: true,
     });
     ws.close();
   });

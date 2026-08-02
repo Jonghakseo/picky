@@ -4810,12 +4810,12 @@ struct PickySessionViewModelTests {
         """
         viewModel.apply(.protocolEvent(.fixture(eventJSON: eventJSON)))
 
-        try await viewModel.openSubagentRunResponse(sessionID: "subagent-session", runId: 12)
+        try await viewModel.openSubagentRunResponse(sessionID: "subagent-session", invocationID: "tool-1", runId: 12)
 
         let call = try #require(presenter.calls.first)
-        #expect(call.sessionID == "subagent-session:subagent-run:12")
+        #expect(call.sessionID == "subagent-session:subagent-run:tool-1:12")
         #expect(call.title == "reviewer #12 \u{2014} Response")
-        #expect(call.fileURL.lastPathComponent == "subagent-run-12.md")
+        #expect(call.fileURL.lastPathComponent == "subagent-run-tool-1-12.md")
         #expect(call.markdown == "# Review\n\nNo regressions found.")
         #expect(FileManager.default.fileExists(atPath: call.fileURL.path))
     }

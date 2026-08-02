@@ -662,6 +662,8 @@ enum PickyPackageOperation: String, Decodable, Equatable {
 struct PickyPackageUpdatesAvailableEvent: Decodable, Equatable {
     let commandId: String
     let sources: [String]
+    /// `true` means agentd could not query the registry; callers may retry silently.
+    let failed: Bool?
 }
 
 struct PickyPackageOperationProgressEvent: Decodable, Equatable {

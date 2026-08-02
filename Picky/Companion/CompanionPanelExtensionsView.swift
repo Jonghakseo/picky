@@ -181,8 +181,9 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
         isCheckingForUpdates = true
         Task { [weak self] in
             let result = await pluginReloadController.checkCuratedPackageUpdates()
-            guard !Task.isCancelled, let self else { return }
+            guard let self else { return }
             self.isCheckingForUpdates = false
+            guard !Task.isCancelled else { return }
             switch result {
             case .success(let sources):
                 self.hasCheckedForUpdates = true

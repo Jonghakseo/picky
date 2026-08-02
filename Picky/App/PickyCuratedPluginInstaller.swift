@@ -57,7 +57,7 @@ enum PickyCuratedPluginInstaller {
         ) else {
             return .notInstalled
         }
-        return .installed(isPinned: npmPackageIdentity(installedSource) != installedSource)
+        return .installed(isPinned: isPinnedPackageSource(installedSource))
     }
 
     @discardableResult
@@ -120,6 +120,9 @@ enum PickyCuratedPluginInstaller {
                             guard case .packageUpdatesAvailable(let result) = envelope.event,
                                   result.commandId == command.id else {
                                 continue
+                            }
+                            if result.failed == true {
+                                throw CommandError.failed("Package update check failed.")
                             }
                             return Set(result.sources)
                         case .disconnected:
@@ -226,14 +229,26 @@ enum PickyCuratedPluginInstaller {
     }
 
     private static func npmPackageIdentity(_ source: String) -> String {
-        guard source.hasPrefix("npm:") else { return source }
+        guard let versionIndex = npmVersionIndex(in: source) else { return source }
+        return "npm:" + String(source.dropFirst("npm:".count)[..<versionIndex])
+    }
+
+    private static func isPinnedPackageSource(_ source: String) -> Bool {
+        guard let versionIndex = npmVersionIndex(in: source) else { return false }
+        let package = source.dropFirst("npm:".count)
+        let version = String(package[package.index(after: versionIndex)...])
+        return version.range(of: #"^\d+\.\d+\.\d+$"#, options: .regularExpression) != nil
+    }
+
+    private static func npmVersionIndex(in source: String) -> String.Index? {
+        guard source.hasPrefix("npm:") else { return nil }
         let package = source.dropFirst("npm:".count)
         guard let versionIndex = package.lastIndex(of: "@"),
               versionIndex != package.startIndex,
               versionIndex < package.index(before: package.endIndex) else {
-            return source
+            return nil
         }
-        return "npm:" + String(package[..<versionIndex])
+        return versionIndex
     }
 
     private static func resolvedPreferences(_ preferences: PickyPiInstallationPreferences?, homeURL: URL) -> PickyPiInstallationPreferences {

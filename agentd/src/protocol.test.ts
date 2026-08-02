@@ -387,6 +387,16 @@ describe("protocol contract fixtures", () => {
     })).toMatchObject({ type: "packageUpdatesAvailable", sources: ["npm:@example/plugin"] });
 
     expect(EventEnvelopeSchema.parse({
+      id: "event-package-updates-failed",
+      protocolVersion: "2026-07-23",
+      timestamp: "2026-07-19T00:00:00.000Z",
+      type: "packageUpdatesAvailable",
+      commandId: "cmd-package-check-updates",
+      sources: [],
+      failed: true,
+    })).toMatchObject({ type: "packageUpdatesAvailable", sources: [], failed: true });
+
+    expect(EventEnvelopeSchema.parse({
       id: "event-package-progress",
       protocolVersion: "2026-07-23",
       timestamp: "2026-07-19T00:00:00.000Z",

@@ -234,11 +234,12 @@ struct PickyAgentClientTests {
         #expect(decodedInstall.source == "npm:@example/plugin")
 
         let available = try decoder.decode(PickyEventEnvelope.self, from: Data("""
-        {"id":"event-package-updates","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:01.000Z","type":"packageUpdatesAvailable","commandId":"cmd-package-check","sources":["npm:@example/plugin"]}
+        {"id":"event-package-updates","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:01.000Z","type":"packageUpdatesAvailable","commandId":"cmd-package-check","sources":["npm:@example/plugin"],"failed":true}
         """.utf8))
         if case .packageUpdatesAvailable(let event) = available.event {
             #expect(event.commandId == "cmd-package-check")
             #expect(event.sources == ["npm:@example/plugin"])
+            #expect(event.failed == true)
         } else { Issue.record("Expected packageUpdatesAvailable") }
 
         let progress = try decoder.decode(PickyEventEnvelope.self, from: Data("""

@@ -619,6 +619,7 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
     type: z.literal("packageUpdatesAvailable"),
     commandId: z.string().min(1),
     sources: z.array(z.string().min(1)),
+    failed: z.boolean().optional(),
   }),
   EventBaseSchema.extend({
     type: z.literal("packageOperationProgress"),

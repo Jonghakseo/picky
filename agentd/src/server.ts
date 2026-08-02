@@ -694,7 +694,7 @@ export class AgentdServer {
           logAgentd("package update check failed", {
             error: error instanceof Error ? error.message : String(error),
           });
-          this.send(ws, { type: "packageUpdatesAvailable", commandId, sources: [] });
+          this.send(ws, { type: "packageUpdatesAvailable", commandId, sources: [], failed: true });
         }
       } finally {
         this.activePackageManagers.delete(packageManager);

@@ -10,6 +10,16 @@ import AppKit
 import Combine
 import SwiftUI
 
+/// Resolves paths recorded by file tools without consulting the file system.
+/// Relative paths remain display-only because the tool history has no cwd context.
+enum PickyToolHistoryFilePathPolicy {
+    static func urlToOpen(for path: String) -> URL? {
+        let expandedPath = (path as NSString).expandingTildeInPath
+        guard (expandedPath as NSString).isAbsolutePath else { return nil }
+        return URL(fileURLWithPath: expandedPath)
+    }
+}
+
 @MainActor
 protocol PickyToolHistoryPresenting: AnyObject {
     func openHistory(sessionID: String, title: String, scope: PickyToolHistoryScope, toolsProvider: @escaping () -> [PickyToolActivity])
@@ -471,7 +481,7 @@ struct PickyToolHistoryEntryView: View {
     private func body(for detail: PickyToolHistoryDetail) -> some View {
         switch detail {
         case let .read(file, range, summary):
-            keyValueRow("file", value: file.map { AnyView(monospaceLink($0)) })
+            keyValueRow("file", value: file.map { AnyView(filePath($0)) })
             keyValueRow("range", value: range.map { AnyView(monospaceText($0)) })
             keyValueRow("result", value: summary.map { AnyView(secondaryText($0)) })
         case let .bash(command, title, output):
@@ -487,13 +497,13 @@ struct PickyToolHistoryEntryView: View {
                 keyValueBlock("output") { outputBlock(output) }
             }
         case let .edit(file, changes):
-            keyValueRow("file", value: file.map { AnyView(monospaceLink($0)) })
+            keyValueRow("file", value: file.map { AnyView(filePath($0)) })
             keyValueRow("edits", value: AnyView(secondaryText("\(changes.count) change\(changes.count == 1 ? "" : "s")")))
             ForEach(Array(changes.enumerated()), id: \.offset) { _, change in
                 diffBlock(change)
             }
         case let .write(file, content):
-            keyValueRow("file", value: file.map { AnyView(monospaceLink($0)) })
+            keyValueRow("file", value: file.map { AnyView(filePath($0)) })
             if let content {
                 keyValueBlock("content") { codeBlock(content) }
             }
@@ -549,6 +559,33 @@ struct PickyToolHistoryEntryView: View {
                 .foregroundStyle(DS.Colors.textTertiary)
             content()
         }
+    }
+
+    @ViewBuilder
+    private func filePath(_ path: String) -> some View {
+        if let url = PickyToolHistoryFilePathPolicy.urlToOpen(for: path) {
+            Button {
+                openFile(at: url)
+            } label: {
+                monospaceLink(path)
+            }
+            .buttonStyle(PickyToolHistoryFilePathButtonStyle())
+            .help(L10n.t("hud.toolHistory.file.open.help"))
+            .accessibilityLabel(L10n.t("hud.toolHistory.file.open.accessibilityLabel", path))
+            .contextMenu {
+                Button(L10n.t("hud.toolHistory.file.copyPath")) {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(path, forType: .string)
+                }
+            }
+        } else {
+            monospaceLink(path)
+        }
+    }
+
+    /// Isolated from the pure path policy so tests never invoke AppKit opening behavior.
+    private func openFile(at url: URL) {
+        NSWorkspace.shared.open(url)
     }
 
     private func monospaceLink(_ text: String) -> some View {
@@ -689,6 +726,31 @@ struct PickyToolHistoryEntryView: View {
             return String(format: "%.1fs", Double(ms) / 1000)
         }
         return "\(ms)ms"
+    }
+}
+
+private struct PickyToolHistoryFilePathButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovered = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .contentShape(Rectangle())
+            .background(
+                PickyHUDInteractionStateLayer.fill(
+                    isHovered: isHovered,
+                    isPressed: configuration.isPressed
+                )
+            )
+            .onHover { isHovered = $0 }
+            .animation(
+                reduceMotion ? nil : .easeOut(duration: DS.Animation.fast),
+                value: configuration.isPressed
+            )
+            .animation(
+                reduceMotion ? nil : .easeOut(duration: DS.Animation.fast),
+                value: isHovered
+            )
     }
 }
 

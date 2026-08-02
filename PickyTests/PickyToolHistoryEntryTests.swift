@@ -19,6 +19,23 @@ struct PickyToolHistoryEntryTests {
         #expect(PickyToolHistoryRenderer.category(for: "mcp__example__jira_getissue") == .other)
     }
 
+    @Test func filePathPolicyOpensAbsoluteAndTildeExpandedPathsOnly() throws {
+        let absoluteURL = try #require(PickyToolHistoryFilePathPolicy.urlToOpen(for: "/tmp/Picky Tool History.txt"))
+        #expect(absoluteURL.path == "/tmp/Picky Tool History.txt")
+
+        let homeDirectory = FileManager.default.homeDirectoryForCurrentUser.path
+        let tildeURL = try #require(PickyToolHistoryFilePathPolicy.urlToOpen(for: "~/Documents/tool-history.txt"))
+        #expect(tildeURL.path == "\(homeDirectory)/Documents/tool-history.txt")
+
+        let namedTildeURL = try #require(
+            PickyToolHistoryFilePathPolicy.urlToOpen(for: "~\(NSUserName())/Documents/tool-history.txt")
+        )
+        #expect(namedTildeURL.path == "\(homeDirectory)/Documents/tool-history.txt")
+
+        #expect(PickyToolHistoryFilePathPolicy.urlToOpen(for: "Picky/HUD/PickyHUDView.swift") == nil)
+        #expect(PickyToolHistoryFilePathPolicy.urlToOpen(for: "") == nil)
+    }
+
     @Test func readEntryExtractsFileAndRange() {
         let tool = PickyToolActivity(
             toolCallId: "call-1",

@@ -2518,6 +2518,55 @@
         }
       }
     },
+    "hud.toolHistory.file.copyPath": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy path"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "경로 복사"
+          }
+        }
+      }
+    },
+    "hud.toolHistory.file.open.accessibilityLabel": {
+      "comment": "Format: VoiceOver label for an absolute file path that opens in the default app. Arg is the displayed path.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open file %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 파일 열기"
+          }
+        }
+      }
+    },
+    "hud.toolHistory.file.open.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open file in the default app"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본 앱에서 파일 열기"
+          }
+        }
+      }
+    },
     "hud.toolHistory.empty": {
       "localizations": {
         "en": {

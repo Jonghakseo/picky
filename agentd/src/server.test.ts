@@ -53,6 +53,35 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
+  it("returns session diff responses only to the requesting client", async () => {
+    const requester = await connectWithHello();
+    const observer = await connectWithHello();
+    vi.spyOn(supervisor, "getSessionDiff").mockResolvedValue({
+      isGitRepo: true,
+      files: [{ path: "source.ts", status: "modified", additions: 2, deletions: 1, diff: "@@ -1 +1 @@" }],
+    });
+
+    requester.ws.send(JSON.stringify({
+      id: "cmd-session-diff",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "getSessionDiff",
+      sessionId: "session-diff",
+      view: "unstaged",
+    }));
+
+    await expect(nextEvent(requester.ws)).resolves.toMatchObject({
+      type: "sessionDiffResult",
+      sessionId: "session-diff",
+      view: "unstaged",
+      requestId: "cmd-session-diff",
+      isGitRepo: true,
+      files: [{ path: "source.ts", additions: 2, deletions: 1 }],
+    });
+    await expect(nextEventWithin(observer.ws, 50)).resolves.toBeUndefined();
+    requester.ws.close();
+    observer.ws.close();
+  });
+
   it("routes autocomplete capabilities, query, and apply responses only to the requesting client", async () => {
     const requester = await connectWithHello();
     const observer = await connectWithHello();

@@ -489,6 +489,10 @@ export class AgentdServer {
         const targets = await this.options.supervisor.listRewindTargets(cmd.sessionId);
         this.send(ws, { type: "rewindTargetsSnapshot", sessionId: cmd.sessionId, requestId: cmd.id, targets });
       },
+      getSessionDiff: async (cmd) => {
+        const result = await this.options.supervisor.getSessionDiff(cmd.sessionId, cmd.view);
+        this.send(ws, { type: "sessionDiffResult", sessionId: cmd.sessionId, view: cmd.view, requestId: cmd.id, ...result });
+      },
       rewindSession: async (cmd) => {
         const session = await this.options.supervisor.rewindToEntry(cmd.sessionId, cmd.entryId);
         this.broadcast({ type: "sessionUpdated", session: protocolSession(session) });
@@ -1007,6 +1011,7 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
     case "listSlashCommands":
     case "getAutocompleteCapabilities":
     case "listRewindTargets":
+    case "getSessionDiff":
     case "duplicatePickleSession":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId };
     case "autocompleteQuery":
@@ -1153,6 +1158,8 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, requestId: event.requestId, generation: event.generation, draftRevision: event.draftRevision, lines: event.lines.length };
     case "rewindTargetsSnapshot":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, requestId: event.requestId, targets: event.targets.length };
+    case "sessionDiffResult":
+      return { eventId: event.id, type: event.type, sessionId: event.sessionId, requestId: event.requestId, view: event.view, isGitRepo: event.isGitRepo ? 1 : 0, files: event.files.length, errorChars: event.errorMessage?.length };
     case "sessionRewound":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, editorTextChars: event.editorText?.length, removedIds: event.removedIds.length };
     case "sessionMessagesImported":

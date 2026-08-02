@@ -24,7 +24,9 @@ import { PickleSessionTitleRefresher } from "./application/pickle-session-title-
 import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY } from "./session-store.js";
 import type { SessionStore } from "./session-store.js";
 import type { AgentRuntime, RewindTarget, RuntimeAutocompleteApplyRequest, RuntimeAutocompleteCapabilities, RuntimeAutocompleteCompletion, RuntimeAutocompleteQuery, RuntimeAutocompleteSuggestions, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./runtime/types.js";
+import { readSessionDiff, type SessionDiffResult } from "./application/session-diff.js";
 import { listRewindTargets as rewindListTargets, rewindToEntry as runRewindToEntry, type RewindDeps } from "./application/session-rewind.js";
+import type { SessionDiffView } from "./domain/git-diff.js";
 import { hasActivity, zeroActivitySummary } from "./domain/activity-summary.js";
 import { mergeArtifacts } from "./domain/artifacts.js";
 import { mergeChangedFiles } from "./domain/changed-files.js";
@@ -1978,6 +1980,10 @@ export class SessionSupervisor extends EventEmitter {
 
   async listRewindTargets(sessionId: string): Promise<RewindTarget[]> {
     return rewindListTargets(this.rewindDeps(), sessionId);
+  }
+
+  async getSessionDiff(sessionId: string, view: SessionDiffView): Promise<SessionDiffResult> {
+    return await readSessionDiff(this.mustGet(sessionId).cwd, view);
   }
 
   async rewindToEntry(sessionId: string, entryId: string): Promise<PickyAgentSession> {

@@ -441,12 +441,31 @@ describe("protocol contract fixtures", () => {
     })).toMatchObject({ type: "listRewindTargets", sessionId: "session-001" });
 
     expect(CommandEnvelopeSchema.parse({
+      id: "cmd-session-diff",
+      protocolVersion: "2026-07-23",
+      type: "getSessionDiff",
+      sessionId: "session-001",
+      view: "unstaged",
+    })).toMatchObject({ type: "getSessionDiff", view: "unstaged" });
+
+    expect(CommandEnvelopeSchema.parse({
       id: "cmd-rewind",
       protocolVersion: "2026-07-23",
       type: "rewindSession",
       sessionId: "session-001",
       entryId: "entry-user-2",
     })).toMatchObject({ type: "rewindSession", entryId: "entry-user-2" });
+
+    expect(EventEnvelopeSchema.parse({
+      id: "event-session-diff",
+      protocolVersion: "2026-07-23",
+      timestamp: "2026-07-19T00:00:00.000Z",
+      type: "sessionDiffResult",
+      sessionId: "session-001",
+      view: "unstaged",
+      isGitRepo: true,
+      files: [{ path: "source.ts", status: "modified", additions: 3, deletions: 1, diff: "@@ -1 +1 @@" }],
+    })).toMatchObject({ type: "sessionDiffResult", files: [{ path: "source.ts", additions: 3 }] });
 
     expect(EventEnvelopeSchema.parse({
       id: "event-rewind-targets",

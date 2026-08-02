@@ -406,6 +406,11 @@ struct PickyMarkdownReportView: View {
     /// scaling. Heading sizes derive from this so the type ladder stays balanced.
     private static let bodyBaseSize: CGFloat = 15
     private static let codeBaseSize: CGFloat = 14
+    /// Readable measure for prose blocks (~45-75 characters at the base body size).
+    /// Tables and code may bleed wider; the whole column centers in the viewer.
+    private static let textColumnMaxWidth: CGFloat = 720
+    private static let bodyLineSpacing: CGFloat = 6
+    private static let tableCellLineSpacing: CGFloat = 4
     private static let slowTableWidthLogThreshold: TimeInterval = 0.05
 
     var body: some View {
@@ -414,7 +419,7 @@ struct PickyMarkdownReportView: View {
                 reportBlockView(presentation)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .center)
         .background(
             GeometryReader { proxy in
                 Color.clear
@@ -471,12 +476,14 @@ struct PickyMarkdownReportView: View {
                 .foregroundStyle(DS.Colors.textPrimary)
                 .padding(.top, level == 1 ? 2 : 8)
                 .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: scaled(Self.textColumnMaxWidth), alignment: .leading)
         case .paragraph(let text):
             Text(renderer.inlineAttributedString(for: text))
                 .font(.system(size: scaled(Self.bodyBaseSize), weight: .regular, design: .default))
                 .foregroundStyle(DS.Colors.textPrimary.opacity(0.92))
-                .lineSpacing(3)
+                .lineSpacing(scaled(Self.bodyLineSpacing))
                 .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: scaled(Self.textColumnMaxWidth), alignment: .leading)
         case .bullet(let text):
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("•")
@@ -485,9 +492,10 @@ struct PickyMarkdownReportView: View {
                 Text(renderer.inlineAttributedString(for: text))
                     .font(.system(size: scaled(Self.bodyBaseSize), weight: .regular, design: .default))
                     .foregroundStyle(DS.Colors.textPrimary.opacity(0.92))
-                    .lineSpacing(3)
+                    .lineSpacing(scaled(Self.bodyLineSpacing))
                     .fixedSize(horizontal: false, vertical: true)
             }
+            .frame(maxWidth: scaled(Self.textColumnMaxWidth), alignment: .leading)
         case .table(let headers, let rows):
             tableView(headers: headers, rows: rows)
         case .codeBlock(let text):
@@ -503,16 +511,18 @@ struct PickyMarkdownReportView: View {
                 RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous)
                     .stroke(DS.Colors.borderSubtle, lineWidth: 1)
             )
+            .frame(maxWidth: scaled(Self.textColumnMaxWidth), alignment: .leading)
         }
     }
 
     private func tableView(headers: [String], rows: [[String]]) -> some View {
         let widths = tableColumnWidths(headers: headers, rows: rows, availableWidth: containerWidth)
+        let tableWidth = widths.reduce(0, +)
         return ScrollView(.horizontal, showsIndicators: true) {
             VStack(alignment: .leading, spacing: 0) {
-                tableRow(headers, widths: widths, isHeader: true)
-                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                    tableRow(row, widths: widths, isHeader: false)
+                tableRow(headers, widths: widths, isHeader: true, isAlternate: false)
+                ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                    tableRow(row, widths: widths, isHeader: false, isAlternate: index % 2 == 1)
                 }
             }
             .background(DS.Colors.surface1, in: RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous))
@@ -522,22 +532,23 @@ struct PickyMarkdownReportView: View {
             )
             .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous))
         }
+        .frame(maxWidth: max(tableWidth, 1), alignment: .leading)
     }
 
-    private func tableRow(_ cells: [String], widths: [CGFloat], isHeader: Bool) -> some View {
+    private func tableRow(_ cells: [String], widths: [CGFloat], isHeader: Bool, isAlternate: Bool) -> some View {
         HStack(alignment: .top, spacing: 0) {
             ForEach(Array(cells.enumerated()), id: \.offset) { index, cell in
                 Text(renderer.inlineAttributedString(for: cell.isEmpty ? " " : cell))
                     .font(.system(size: scaled(Self.bodyBaseSize - 1), weight: isHeader ? .semibold : .regular, design: .default))
                     .foregroundStyle(isHeader ? DS.Colors.textPrimary : DS.Colors.textPrimary.opacity(0.92))
-                    .lineSpacing(2)
+                    .lineSpacing(scaled(Self.tableCellLineSpacing))
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
                     .frame(width: widths[index], alignment: .topLeading)
             }
         }
-        .background(isHeader ? DS.Colors.surface3.opacity(0.72) : DS.Colors.surface2.opacity(0.38))
+        .background(rowBackground(isHeader: isHeader, isAlternate: isAlternate))
         .overlay(alignment: .bottom) { Rectangle().fill(DS.Colors.borderSubtle).frame(height: 0.5) }
         .overlay(alignment: .topLeading) {
             GeometryReader { _ in
@@ -552,11 +563,17 @@ struct PickyMarkdownReportView: View {
         }
     }
 
+    private func rowBackground(isHeader: Bool, isAlternate: Bool) -> Color {
+        if isHeader { return DS.Colors.surface3.opacity(0.72) }
+        return DS.Colors.surface2.opacity(isAlternate ? 0.18 : 0.45)
+    }
+
     /// Content-driven column widths. Each column is measured against the widest
     /// single-line cell it holds (capped so a long cell wraps instead of
     /// stretching the table). When the table is narrower than the available
-    /// width, the slack is handed to the columns whose text was clipped by the
-    /// cap, so short columns stay tight rather than sharing a fixed floor.
+    /// width, clipped columns may grow toward their natural width — but only up
+    /// to what their content needs and a hard growth cap, so the table never
+    /// stretches to absorb window slack it cannot use for readability.
     private func tableColumnWidths(headers: [String], rows: [[String]], availableWidth: CGFloat) -> [CGFloat] {
         let startedAt = Date()
         let widths = computeTableColumnWidths(headers: headers, rows: rows, availableWidth: availableWidth)
@@ -602,10 +619,11 @@ struct PickyMarkdownReportView: View {
         let total = capped.reduce(0, +)
         guard availableWidth > total else { return capped }
 
-        let desire = zip(uncapped, capped).map { max($0 - $1, 0) }
+        let growthCap = maxColumnWidth * 1.5
+        let desire = zip(uncapped, capped).map { min(max($0 - $1, 0), max(growthCap - $1, 0)) }
         let desireTotal = desire.reduce(0, +)
         guard desireTotal > 0 else { return capped }
-        let extra = availableWidth - total
+        let extra = min(availableWidth - total, desireTotal)
         return zip(capped, desire).map { $0 + extra * ($1 / desireTotal) }
     }
 

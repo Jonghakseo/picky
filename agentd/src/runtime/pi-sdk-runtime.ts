@@ -1017,6 +1017,10 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       originatedBy: "pi_extension",
       ...(typeof display === "boolean" ? { display } : {}),
       ...(typeof message.customType === "string" ? { customType: message.customType } : {}),
+      // Pi emits custom messages for both passive extension output and messages delivered
+      // during a running turn. Preserve the authoritative session activity snapshot so the
+      // supervisor never mistakes an idle status update for a new user turn.
+      turnActive: this.runtime.session.isStreaming,
     };
   }
 

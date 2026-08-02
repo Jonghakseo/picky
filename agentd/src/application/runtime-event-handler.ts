@@ -157,6 +157,17 @@ export class RuntimeEventHandler {
 
   private async applyInputMessageEvent(sessionId: string, event: Extract<RuntimeEvent, { type: "input_message" }>): Promise<void> {
     if (event.originatedBy === "internal" || event.display === false) return;
+
+    // Pi extensions use custom messages for displayable context (such as subagent status) as
+    // well as turn-triggering input. Unlike role=user, custom messages start a turn only when
+    // the adapter observed authoritative Pi runtime activity. Preserve terminal state and
+    // completion tracking for idle custom messages while still showing them in the journal.
+    const startsTurn = event.role === "user" || event.turnActive === true;
+    if (!startsTurn) {
+      await this.dependencies.messageBuilder.recordUserText(sessionId, event.text, event.originatedBy === "pi_extension" ? "pi_extension" : event.originatedBy);
+      return;
+    }
+
     await this.dependencies.onInputMessage?.(sessionId, event);
     this.dependencies.finishAssistantMessage?.(sessionId);
     await this.dependencies.messageBuilder.flushAssistantText(sessionId);

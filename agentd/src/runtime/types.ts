@@ -81,7 +81,12 @@ export type RuntimeEvent =
   | { type: "thinking_delta"; delta: string }
   | { type: "queue_update"; steering: readonly string[]; followUp: readonly string[] }
   | { type: "input_delivery"; role: "user" | "custom"; text: string; originatedBy: "user" | "main_agent" | "pi_extension" | "internal"; queueKind?: "steering" | "followUp" }
-  | { type: "input_message"; role: "user" | "custom"; text: string; originatedBy: "user" | "main_agent" | "pi_extension" | "internal"; display?: boolean; customType?: string }
+  /**
+   * `turnActive` is adapter-only metadata rather than app-agentd wire protocol. Pi custom
+   * messages are displayable context by default; only a true value means the message arrived
+   * while Pi was running a turn and may safely revive a completed Pickle.
+   */
+  | { type: "input_message"; role: "user" | "custom"; text: string; originatedBy: "user" | "main_agent" | "pi_extension" | "internal"; display?: boolean; customType?: string; turnActive?: boolean }
   | { type: "session_replaced"; reason: "new"; cwd?: string; sessionFilePath?: string }
   | { type: "status"; status: RuntimeSessionStatus; inputId?: string; summary?: string; finalAnswer?: string; noTurnRan?: boolean; preserveSessionState?: boolean; assistantRun?: RuntimeAssistantRunMetadata; compactionStarted?: boolean; compactionCompleted?: boolean; compactionFailed?: boolean; compactionReason?: string }
   /**

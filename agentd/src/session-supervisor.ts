@@ -2498,6 +2498,9 @@ export class SessionSupervisor extends EventEmitter {
 
   private async handleRuntimeInputMessage(sessionId: string, event: Extract<RuntimeEvent, { type: "input_message" }>): Promise<void> {
     if (event.originatedBy !== "pi_extension") return;
+    // Idle custom extension messages are display-only context. They must not unpin a completed
+    // Pickle or clear its completion notification tracking; RuntimeEventHandler journals them.
+    if (event.role === "custom" && event.turnActive !== true) return;
     await this.preparePickleSessionForUserInput(sessionId);
   }
 

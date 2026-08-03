@@ -137,12 +137,33 @@ enum PickySkillInvocationPresentation {
         options: [.caseInsensitive]
     )
 
+    private static let slashCommandPattern = try? NSRegularExpression(
+        pattern: #"\A/skill:([\w.-]+)(?:\s+([\s\S]*))?\z"#
+    )
+
+    /// Both invocation shapes render the chip: the raw `/skill:name instruction` the user
+    /// typed (the only bubble left now that expansion echoes are suppressed) and the
+    /// expanded `<skill>` XML echo for sessions where the echo still surfaces.
     static func invocation(for message: PickySessionMessage) -> PickySkillInvocation? {
-        guard message.kind == .userText,
-              message.originatedBy == .piExtension,
-              let text = message.text
+        guard message.kind == .userText, let text = message.text else { return nil }
+        if message.originatedBy == .piExtension {
+            return invocation(in: text)
+        }
+        return slashInvocation(in: text)
+    }
+
+    private static func slashInvocation(in text: String) -> PickySkillInvocation? {
+        guard let slashCommandPattern else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fullRange = NSRange(trimmed.startIndex..<trimmed.endIndex, in: trimmed)
+        guard let match = slashCommandPattern.firstMatch(in: trimmed, range: fullRange),
+              let nameRange = Range(match.range(at: 1), in: trimmed)
         else { return nil }
-        return invocation(in: text)
+        let instruction = Range(match.range(at: 2), in: trimmed).map { String(trimmed[$0]) } ?? ""
+        return PickySkillInvocation(
+            name: String(trimmed[nameRange]),
+            instruction: instruction.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
     }
 
     private static func invocation(in text: String) -> PickySkillInvocation? {

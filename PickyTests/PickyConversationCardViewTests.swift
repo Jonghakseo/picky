@@ -1177,6 +1177,33 @@ struct PickyConversationCardViewTests {
         #expect(bubble.shouldOfferExpansion)
     }
 
+    @Test func rawSlashSkillUserMessageRendersChipWithInstructionPreview() {
+        let bubble = PickyUserBubbleView(
+            message: message("m-raw-skill", kind: .userText, text: "/skill:i-have-adhd \n\n아래 리뷰 대응해줘")
+        )
+
+        #expect(bubble.displayedSkillName == "i-have-adhd")
+        #expect(bubble.displayedMarkdownPreview == "아래 리뷰 대응해줘")
+        #expect(bubble.shouldOfferExpansion)
+    }
+
+    @Test func rawSlashSkillWithoutInstructionRendersChipOnly() {
+        let bubble = PickyUserBubbleView(message: message("m-raw-bare", kind: .userText, text: "/skill:create-pr"))
+
+        #expect(bubble.displayedSkillName == "create-pr")
+        #expect(bubble.displayedMarkdownPreview.isEmpty)
+        #expect(bubble.shouldOfferExpansion)
+    }
+
+    @Test func slashSkillMentionedMidSentenceDoesNotRenderChip() {
+        let bubble = PickyUserBubbleView(
+            message: message("m-mention", kind: .userText, text: "이전에 /skill:create-pr 쓰던 거 기억나?")
+        )
+
+        #expect(bubble.displayedSkillName == nil)
+        #expect(bubble.displayedMarkdownPreview == "이전에 /skill:create-pr 쓰던 거 기억나?")
+    }
+
     @Test func piSkillInvocationWithoutInstructionShowsChipOnly() {
         let skillMessage = "<skill name=\"create-pr\">\nbody\n</skill>"
         let bubble = PickyUserBubbleView(

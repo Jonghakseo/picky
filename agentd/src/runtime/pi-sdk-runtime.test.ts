@@ -1193,6 +1193,51 @@ describe("PiSdkRuntime", () => {
     expect(inputMessages).toEqual([]);
   });
 
+  it("surfaces a role=user skill expansion after its pending echo suppression expires", async () => {
+    const fakeSession = new SkillExpansionFakeSession();
+    const dateNow = vi.spyOn(Date, "now").mockReturnValue(0);
+    const handle = await makeRuntime(fakeSession).prewarm({ cwd: "/tmp/project", sessionId: "session-skill-expired-echo" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    try {
+      const rawText = "/skill:dynamic-workflow 다이나믹 워크플로우로 구현해줘";
+      await handle.followUp({ text: rawText, imagePaths: [] });
+      dateNow.mockReturnValue(30_001);
+      const expansion = fakeSession.expansionFor(rawText);
+      fakeSession.emit("event", { type: "message_start", message: { role: "user", content: expansion } });
+
+      expect(events).toContainEqual({
+        type: "input_message",
+        role: "user",
+        text: expansion,
+        originatedBy: "pi_extension",
+      });
+    } finally {
+      dateNow.mockRestore();
+    }
+  });
+
+  it("clears pending skill echo suppression when /new replaces the Pi session", async () => {
+    const fakeSession = new SkillExpansionFakeSession();
+    const handle = await makeRuntime(fakeSession).prewarm({ cwd: "/tmp/project", sessionId: "session-skill-new" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    const rawText = "/skill:dynamic-workflow 다이나믹 워크플로우로 구현해줘";
+    await handle.followUp({ text: rawText, imagePaths: [] });
+    await handle.followUp({ text: "/new", imagePaths: [] });
+    const expansion = fakeSession.expansionFor(rawText);
+    fakeSession.emit("event", { type: "message_start", message: { role: "user", content: expansion } });
+
+    expect(events).toContainEqual({
+      type: "input_message",
+      role: "user",
+      text: expansion,
+      originatedBy: "pi_extension",
+    });
+  });
+
   it("retires the pending suppression when the role=user expansion matches its expected delivery", async () => {
     const fakeSession = new SkillRewriteEchoSession();
     const runtime = makeRuntimeWithInputObserver(fakeSession);

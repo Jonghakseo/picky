@@ -836,6 +836,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
 
   async bindCurrentSession(): Promise<void> {
     logAgentd("pi bind session", { sessionId: this.id });
+    this.skillEchoSuppressions.clear();
     this.unsubscribe?.();
     // Mark "no current subscription" before the await so a concurrent re-entrant caller can
     // detect a race and abandon its late path. Without this, a `bindCurrentSession()` invoked

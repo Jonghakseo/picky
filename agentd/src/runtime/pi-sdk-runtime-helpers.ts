@@ -269,32 +269,52 @@ export function parseSkillExpansionEcho(text: string): SkillInvocation | undefin
 
 // Fallback for /skill: echo suppression when Pi never queues the prompt (idle-session submit):
 // the queue-diff mapping in the runtime has nothing to match, so remember the parsed invocation
-// of each submitted /skill: command and structurally match it against the role="custom" echo.
-export class SkillEchoSuppressionTracker {
-  private pending: SkillInvocation[] = [];
+// of each submitted /skill: command and structurally match it against the expansion echo.
+const skillEchoSuppressionTTLMilliseconds = 30_000; // Pi emits a matching expansion immediately; stale entries must not hide later terminal input.
 
-  constructor(private readonly cap: number) {}
+type PendingSkillInvocation = {
+  invocation: SkillInvocation;
+  registeredAt: number;
+};
+
+export class SkillEchoSuppressionTracker {
+  private pending: PendingSkillInvocation[] = [];
+
+  constructor(
+    private readonly cap: number,
+    private readonly now: () => number = Date.now,
+  ) {}
 
   register(rawText: string): SkillInvocation | undefined {
     const invocation = parseSkillSlashCommand(rawText);
     if (!invocation) return undefined;
     while (this.pending.length >= this.cap) this.pending.shift();
-    this.pending.push(invocation);
+    this.pending.push({ invocation, registeredAt: this.now() });
     return invocation;
   }
 
   remove(entry: SkillInvocation | undefined): void {
     if (!entry) return;
-    const index = this.pending.indexOf(entry);
+    const index = this.pending.findIndex((pending) => pending.invocation === entry);
     if (index >= 0) this.pending.splice(index, 1);
   }
 
+  clear(): void {
+    this.pending = [];
+  }
+
   consume(text: string): boolean {
+    this.removeExpiredEntries();
     const echo = parseSkillExpansionEcho(text);
     if (!echo) return false;
-    const index = this.pending.findIndex((entry) => entry.name === echo.name && entry.instruction === echo.instruction);
+    const index = this.pending.findIndex(({ invocation }) => invocation.name === echo.name && invocation.instruction === echo.instruction);
     if (index < 0) return false;
     this.pending.splice(index, 1);
     return true;
+  }
+
+  private removeExpiredEntries(): void {
+    const expiry = this.now() - skillEchoSuppressionTTLMilliseconds;
+    this.pending = this.pending.filter((entry) => entry.registeredAt > expiry);
   }
 }

@@ -1114,8 +1114,15 @@ enum PickyAnnotationSceneSemanticProvider {
 final class PickyScreenCaptureAnnotationSceneCapturer: PickyAnnotationSceneSnapshotCapturing {
     private struct PreparedDisplay {
         let filter: SCContentFilter
+        /// Live full-frame captures run at the stored context screenshot's pixel size so the
+        /// current fingerprint travels the exact same resample path as the capture-time
+        /// baseline (ScreenCaptureKit scale to source size, then one CGContext resample to
+        /// fingerprint size inside `PickyAnnotationSceneFingerprint.make`). Capturing straight
+        /// at fingerprint size lets ScreenCaptureKit's scaler disagree with CGContext's on
+        /// text-heavy pixels, which used to read as a permanent visual mismatch.
         let configuration: SCStreamConfiguration
-        let nativePixelSize: CGSize
+        let fingerprintSize: (width: Int, height: Int)
+        let displayBounds: CGRect
     }
 
     private let maximumDimension: Int
@@ -1130,8 +1137,8 @@ final class PickyScreenCaptureAnnotationSceneCapturer: PickyAnnotationSceneSnaps
         let key = screenshot.screenId ?? screenshot.id
         if let cached = baselineFingerprints[key] { return cached }
         let prepared = try await preparedDisplay(for: screenshot)
-        let width = prepared.configuration.width
-        let height = prepared.configuration.height
+        let width = prepared.fingerprintSize.width
+        let height = prepared.fingerprintSize.height
         if let stored = Self.storedBaselineFingerprint(for: screenshot, width: width, height: height) {
             baselineFingerprints[key] = stored
             return stored
@@ -1148,7 +1155,9 @@ final class PickyScreenCaptureAnnotationSceneCapturer: PickyAnnotationSceneSnaps
         let prepared = try await preparedDisplay(for: screenshot)
         return try await fingerprint(
             contentFilter: prepared.filter,
-            configuration: prepared.configuration
+            configuration: prepared.configuration,
+            fingerprintWidth: prepared.fingerprintSize.width,
+            fingerprintHeight: prepared.fingerprintSize.height
         )
     }
 
@@ -1168,11 +1177,15 @@ final class PickyScreenCaptureAnnotationSceneCapturer: PickyAnnotationSceneSnaps
     ) async throws -> PickyAnnotationSceneFingerprint {
         let prepared = try await preparedDisplay(for: screenshot)
         let configuration = try regionConfiguration(
-            for: screenshot,
             normalizedRegion: normalizedRegion,
             prepared: prepared
         )
-        return try await fingerprint(contentFilter: prepared.filter, configuration: configuration)
+        return try await fingerprint(
+            contentFilter: prepared.filter,
+            configuration: configuration,
+            fingerprintWidth: configuration.width,
+            fingerprintHeight: configuration.height
+        )
     }
 
     func reset() {
@@ -1196,25 +1209,33 @@ final class PickyScreenCaptureAnnotationSceneCapturer: PickyAnnotationSceneSnaps
         let excludedIDs = CompanionScreenCaptureUtility.contextCaptureExcludedWindowIDs(in: NSApp.windows)
         let excludedWindows = content.windows.filter { excludedIDs.contains($0.windowID) }
         let filter = SCContentFilter(display: display, excludingWindows: excludedWindows)
-        let size = maximumDimension == CompanionScreenCaptureUtility.annotationSceneFingerprintMaximumDimension
-            ? CompanionScreenCaptureUtility.annotationSceneFingerprintPixelSize(
-                displayWidth: display.width,
-                displayHeight: display.height
-            )
-            : CompanionScreenCaptureUtility.capturePixelSize(
+        let fingerprintSize = CompanionScreenCaptureUtility.capturePixelSize(
+            displayWidth: display.width,
+            displayHeight: display.height,
+            maximumDimension: maximumDimension
+        )
+        let captureSize: (width: Int, height: Int)
+        if let storedWidth = screenshot.screenshotWidthInPixels,
+           let storedHeight = screenshot.screenshotHeightInPixels,
+           storedWidth > 0, storedHeight > 0 {
+            captureSize = (storedWidth, storedHeight)
+        } else {
+            captureSize = CompanionScreenCaptureUtility.capturePixelSize(
                 displayWidth: display.width,
                 displayHeight: display.height,
-                maximumDimension: maximumDimension
+                maximumDimension: PickyScreenshotQuality.defaultMaximumDimension
             )
+        }
         let configuration = SCStreamConfiguration()
-        configuration.width = size.width
-        configuration.height = size.height
+        configuration.width = captureSize.width
+        configuration.height = captureSize.height
         configuration.showsCursor = false
         configuration.capturesAudio = false
         let prepared = PreparedDisplay(
             filter: filter,
             configuration: configuration,
-            nativePixelSize: CGSize(width: display.width, height: display.height)
+            fingerprintSize: fingerprintSize,
+            displayBounds: bounds
         )
         preparedDisplays[key] = prepared
         return prepared
@@ -1241,17 +1262,17 @@ final class PickyScreenCaptureAnnotationSceneCapturer: PickyAnnotationSceneSnaps
 
     private func fingerprint(
         contentFilter: SCContentFilter,
-        configuration: SCStreamConfiguration
+        configuration: SCStreamConfiguration,
+        fingerprintWidth: Int,
+        fingerprintHeight: Int
     ) async throws -> PickyAnnotationSceneFingerprint {
         let image = try await PickySystemPermissionGateway.shared.captureScreenshot(
             contentFilter: contentFilter,
             configuration: configuration
         )
         let captured = CapturedImage(image: image)
-        let width = configuration.width
-        let height = configuration.height
         let made = await Task.detached(priority: .utility) {
-            PickyAnnotationSceneFingerprint.make(from: captured.image, width: width, height: height)
+            PickyAnnotationSceneFingerprint.make(from: captured.image, width: fingerprintWidth, height: fingerprintHeight)
         }.value
         guard let made else {
             throw PickyAnnotationSceneCaptureError.fingerprintCreationFailed
@@ -1259,26 +1280,55 @@ final class PickyScreenCaptureAnnotationSceneCapturer: PickyAnnotationSceneSnaps
         return made
     }
 
+    /// The live ROI capture must yield the exact pixel dimensions of the baseline JPEG
+    /// crop; `evaluate` treats any dimension difference as a hard mismatch, which used to
+    /// clear annotations on every semantic signal when the stored screenshot resolution
+    /// differed from the display's point size.
     private func regionConfiguration(
-        for screenshot: PickyScreenshotContext,
         normalizedRegion: CGRect,
         prepared: PreparedDisplay
     ) throws -> SCStreamConfiguration {
-        guard let boundsValue = screenshot.bounds else { throw PickyAnnotationSceneCaptureError.missingDisplayBounds }
-        let region = normalizedRegion.standardized.intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
-        guard !region.isNull, !region.isEmpty else { throw PickyAnnotationSceneCaptureError.fingerprintCreationFailed }
+        let imageWidth = prepared.configuration.width
+        let imageHeight = prepared.configuration.height
+        guard let crop = Self.regionCropRect(
+            normalizedRegion: normalizedRegion,
+            imageWidth: imageWidth,
+            imageHeight: imageHeight
+        ) else {
+            throw PickyAnnotationSceneCaptureError.fingerprintCreationFailed
+        }
+        let bounds = prepared.displayBounds
         let configuration = SCStreamConfiguration()
         configuration.sourceRect = CGRect(
-            x: region.minX * boundsValue.width,
-            y: region.minY * boundsValue.height,
-            width: region.width * boundsValue.width,
-            height: region.height * boundsValue.height
+            x: crop.minX / CGFloat(imageWidth) * bounds.width,
+            y: crop.minY / CGFloat(imageHeight) * bounds.height,
+            width: crop.width / CGFloat(imageWidth) * bounds.width,
+            height: crop.height / CGFloat(imageHeight) * bounds.height
         )
-        configuration.width = max(1, Int((region.width * prepared.nativePixelSize.width).rounded()))
-        configuration.height = max(1, Int((region.height * prepared.nativePixelSize.height).rounded()))
+        configuration.width = Int(crop.width)
+        configuration.height = Int(crop.height)
         configuration.showsCursor = false
         configuration.capturesAudio = false
         return configuration
+    }
+
+    /// Shared crop math for baseline JPEG crops and live ROI captures so both sides
+    /// always produce identical pixel dimensions.
+    nonisolated static func regionCropRect(
+        normalizedRegion: CGRect,
+        imageWidth: Int,
+        imageHeight: Int
+    ) -> CGRect? {
+        let region = normalizedRegion.standardized.intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+        guard !region.isNull, !region.isEmpty else { return nil }
+        let crop = CGRect(
+            x: floor(region.minX * CGFloat(imageWidth)),
+            y: floor(region.minY * CGFloat(imageHeight)),
+            width: ceil(region.width * CGFloat(imageWidth)),
+            height: ceil(region.height * CGFloat(imageHeight))
+        ).intersection(CGRect(x: 0, y: 0, width: CGFloat(imageWidth), height: CGFloat(imageHeight))).integral
+        guard !crop.isNull, !crop.isEmpty else { return nil }
+        return crop
     }
 
     private nonisolated static func fingerprintFromImage(
@@ -1304,15 +1354,11 @@ final class PickyScreenCaptureAnnotationSceneCapturer: PickyAnnotationSceneSnaps
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
             throw PickyAnnotationSceneCaptureError.baselineUnavailable
         }
-        let region = normalizedRegion.standardized.intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
-        let crop = CGRect(
-            x: floor(region.minX * CGFloat(image.width)),
-            y: floor(region.minY * CGFloat(image.height)),
-            width: ceil(region.width * CGFloat(image.width)),
-            height: ceil(region.height * CGFloat(image.height))
-        ).intersection(CGRect(x: 0, y: 0, width: image.width, height: image.height)).integral
-        guard !crop.isNull,
-              !crop.isEmpty,
+        guard let crop = regionCropRect(
+            normalizedRegion: normalizedRegion,
+            imageWidth: image.width,
+            imageHeight: image.height
+        ),
               let croppedImage = image.cropping(to: crop),
               let fingerprint = PickyAnnotationSceneFingerprint.make(
                 from: croppedImage,

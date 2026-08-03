@@ -20,6 +20,42 @@ struct PickyScreenContextInclusionPolicyTests {
         }
     }
 
+    // MARK: - Screen labels (physical display identity)
+
+    @Test func focusedScreenLabel_includesDisplayNameForCursorAndFallbackDisplays() {
+        #expect(CompanionScreenCaptureUtility.contextScreenLabel(
+            scope: .focusedScreen,
+            displayName: "Built-in Retina Display",
+            isCursorScreen: true,
+            displayIndex: 0,
+            displayCount: 1
+        ) == "focused screen [Built-in Retina Display] — cursor is on this screen (primary focus)")
+        #expect(CompanionScreenCaptureUtility.contextScreenLabel(
+            scope: .focusedScreen,
+            displayName: "LG HDR 4K",
+            isCursorScreen: false,
+            displayIndex: 1,
+            displayCount: 2
+        ) == "focused screen [LG HDR 4K] — fallback display")
+    }
+
+    @Test func allScreensLabels_includeDisplayNameAndPosition() {
+        #expect(CompanionScreenCaptureUtility.contextScreenLabel(
+            scope: .allScreens,
+            displayName: "LG HDR 4K",
+            isCursorScreen: false,
+            displayIndex: 1,
+            displayCount: 2
+        ) == "screen 2 of 2 [LG HDR 4K] — secondary screen")
+        #expect(CompanionScreenCaptureUtility.contextScreenLabel(
+            scope: .allScreens,
+            displayName: nil,
+            isCursorScreen: true,
+            displayIndex: 0,
+            displayCount: 1
+        ) == "user's screen (cursor is here)")
+    }
+
     @Test func focusedScope_capturesFocusedOrInkedDisplays() {
         #expect(PickyScreenContextInclusionPolicy.isCaptureCandidate(
             scope: .focusedScreen, isFocused: true, hasInk: false

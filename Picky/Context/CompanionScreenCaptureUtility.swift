@@ -87,6 +87,32 @@ enum CompanionScreenCaptureUtility {
         })
     }
 
+    /// Names the captured display so the model can tell physically different screens
+    /// apart. The positional screen id (`screen1`, `screen2`, …) is cursor-relative and
+    /// therefore identical across turns even when the user switches monitors.
+    nonisolated static func contextScreenLabel(
+        scope: PickyScreenContextScope,
+        displayName: String?,
+        isCursorScreen: Bool,
+        displayIndex: Int,
+        displayCount: Int
+    ) -> String {
+        let identity = displayName.map { " [\($0)]" } ?? ""
+        if scope == .focusedScreen {
+            return isCursorScreen
+                ? "focused screen\(identity) — cursor is on this screen (primary focus)"
+                : "focused screen\(identity) — fallback display"
+        }
+        if displayCount == 1 {
+            return "user's screen\(identity) (cursor is here)"
+        }
+        if isCursorScreen {
+            return "screen \(displayIndex + 1) of \(displayCount)\(identity) "
+                + "— cursor is on this screen (primary focus)"
+        }
+        return "screen \(displayIndex + 1) of \(displayCount)\(identity) — secondary screen"
+    }
+
     nonisolated static func annotationSceneFingerprintPixelSize(
         displayWidth: Int,
         displayHeight: Int
@@ -263,19 +289,13 @@ enum CompanionScreenCaptureUtility {
                 continue
             }
 
-            let screenLabel: String
-            if scope == .focusedScreen {
-                screenLabel = isCursorScreen
-                    ? "focused screen — cursor is on this screen (primary focus)"
-                    : "focused screen — fallback display"
-            } else if displaysToCapture.count == 1 {
-                screenLabel = "user's screen (cursor is here)"
-            } else if isCursorScreen {
-                screenLabel = "screen \(displayIndex + 1) of \(displaysToCapture.count) "
-                    + "— cursor is on this screen (primary focus)"
-            } else {
-                screenLabel = "screen \(displayIndex + 1) of \(displaysToCapture.count) — secondary screen"
-            }
+            let screenLabel = contextScreenLabel(
+                scope: scope,
+                displayName: nsScreenByDisplayID[display.displayID]?.localizedName,
+                isCursorScreen: isCursorScreen,
+                displayIndex: displayIndex,
+                displayCount: displaysToCapture.count
+            )
 
             capturedScreens.append(CompanionScreenCapture(
                 displayID: display.displayID,

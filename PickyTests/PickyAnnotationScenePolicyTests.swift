@@ -1639,6 +1639,37 @@ struct PickyAnnotationScenePolicyTests {
         return PickyAnnotationSceneFingerprint(width: width, height: height, luminance: luminance)!
     }
 
+    // MARK: - Region crop symmetry
+
+    @Test func regionCropRect_pinsFloorCeilPixelMathSharedByBaselineCropAndLiveCapture() {
+        let region = CGRect(x: 0.137, y: 0.291, width: 0.243, height: 0.118)
+        let crop = PickyScreenCaptureAnnotationSceneCapturer.regionCropRect(
+            normalizedRegion: region, imageWidth: 1280, imageHeight: 800
+        )
+        // floor(0.137*1280)=175, floor(0.291*800)=232, ceil(0.243*1280)=312, ceil(0.118*800)=95
+        #expect(crop == CGRect(x: 175, y: 232, width: 312, height: 95))
+    }
+
+    @Test func regionCropRect_clampsToImageBoundsAndRejectsDegenerateRegions() {
+        let overflowing = PickyScreenCaptureAnnotationSceneCapturer.regionCropRect(
+            normalizedRegion: CGRect(x: 0.9, y: 0.9, width: 0.5, height: 0.5),
+            imageWidth: 1280, imageHeight: 800
+        )
+        #expect(overflowing != nil)
+        if let overflowing {
+            #expect(overflowing.maxX <= 1280)
+            #expect(overflowing.maxY <= 800)
+        }
+        #expect(PickyScreenCaptureAnnotationSceneCapturer.regionCropRect(
+            normalizedRegion: CGRect(x: 2, y: 2, width: 0.5, height: 0.5),
+            imageWidth: 1280, imageHeight: 800
+        ) == nil)
+        #expect(PickyScreenCaptureAnnotationSceneCapturer.regionCropRect(
+            normalizedRegion: .zero,
+            imageWidth: 1280, imageHeight: 800
+        ) == nil)
+    }
+
     /// Loads a real screenshot fixture from PickyTests/Fixtures and reduces it through the same
     /// resample + edge-mask pipeline the live capturer uses, at the annotation fingerprint size.
     private func fixtureFingerprint(_ name: String) throws -> PickyAnnotationSceneFingerprint {

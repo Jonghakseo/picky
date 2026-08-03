@@ -12,6 +12,7 @@ import SwiftUI
 
 struct PickyUserBubbleSurfaceView: NSViewRepresentable {
     let markdown: String
+    let skillName: String?
     let attachedImagesLabel: String?
     let originLabel: String?
     let isPiExtensionMessage: Bool
@@ -38,6 +39,7 @@ struct PickyUserBubbleSurfaceView: NSViewRepresentable {
         _ = appFontScale
         view.configure(
             markdown: markdown,
+            skillName: skillName,
             attachedImagesLabel: attachedImagesLabel,
             originLabel: originLabel,
             isPiExtensionMessage: isPiExtensionMessage,
@@ -69,6 +71,10 @@ final class PickyUserBubbleSurfaceNSView: NSView {
         static let labelSpacing: CGFloat = 4
         static let expansionSpacing: CGFloat = 7
         static let expansionButtonHeight: CGFloat = 22
+        static let headerIconSize: CGFloat = 13
+        static let headerItemSpacing: CGFloat = 6
+        static let headerMinimumNameWidth: CGFloat = 40
+        static let headerBodySpacing: CGFloat = 5
         static let maxBubbleWidthFallback: CGFloat = 320
         static let bubbleRadii = BubbleRadii(
             topLeft: PickyConversationBubbleLayout.bubbleRadius,
@@ -82,13 +88,17 @@ final class PickyUserBubbleSurfaceNSView: NSView {
     private let attachedImagesField = NSTextField(labelWithString: "")
     private let originField = NSTextField(labelWithString: "")
     private let expansionButton = NSButton(title: "", target: nil, action: nil)
+    private let skillIconView = NSImageView()
+    private let skillNameField = NSTextField(labelWithString: "")
+    private let skillMetaField = NSTextField(labelWithString: "Skill")
 
     private var maxBubbleWidth: CGFloat = Metrics.maxBubbleWidthFallback
+    private var skillName: String?
+    private var hasBodyText = false
     private var attachedImagesLabel: String?
     private var originLabel: String?
     private var isPiExtensionMessage = false
     private var expansionTitle: String?
-    private var actionText: String?
     private var onCopyText: (() -> Void)?
     private var onEditText: (() -> Void)?
     private var onToggleExpansion: (() -> Void)?
@@ -108,6 +118,7 @@ final class PickyUserBubbleSurfaceNSView: NSView {
 
         configureLabel(attachedImagesField)
         configureLabel(originField)
+        configureSkillHeaderViews()
 
         expansionButton.isBordered = false
         expansionButton.bezelStyle = .regularSquare
@@ -145,6 +156,7 @@ final class PickyUserBubbleSurfaceNSView: NSView {
 
     func configure(
         markdown: String,
+        skillName: String?,
         attachedImagesLabel: String?,
         originLabel: String?,
         isPiExtensionMessage: Bool,
@@ -163,12 +175,13 @@ final class PickyUserBubbleSurfaceNSView: NSView {
             onEditText: { [weak self] in self?.editTextClicked() }
         )
 
+        self.skillName = skillName
+        self.hasBodyText = !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         self.attachedImagesLabel = attachedImagesLabel
         self.originLabel = originLabel
         self.isPiExtensionMessage = isPiExtensionMessage
         self.maxBubbleWidth = max(0, maxBubbleWidth)
         self.expansionTitle = expansionTitle
-        self.actionText = markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : markdown
         self.onCopyText = onCopyText
         self.onEditText = onEditText
         self.onToggleExpansion = onToggleExpansion
@@ -176,9 +189,16 @@ final class PickyUserBubbleSurfaceNSView: NSView {
 
         configureLabel(attachedImagesField)
         configureLabel(originField)
+        configureSkillHeaderViews()
         configureExpansionButton(title: expansionTitle, systemImageName: expansionSystemImageName)
         setLabel(attachedImagesField, text: attachedImagesLabel)
         setLabel(originField, text: originLabel)
+        skillNameField.stringValue = skillName ?? ""
+        let hasSkillHeader = skillName != nil
+        skillIconView.isHidden = !hasSkillHeader
+        skillNameField.isHidden = !hasSkillHeader
+        skillMetaField.isHidden = !hasSkillHeader
+        markdownView.isHidden = !hasBodyText
         needsLayout = true
         needsDisplay = true
         invalidateIntrinsicContentSize()
@@ -203,17 +223,23 @@ final class PickyUserBubbleSurfaceNSView: NSView {
 
         let textWidth = max(0, bubbleRect.width - 2 * Metrics.horizontalPadding)
         var y = bubbleRect.minY + Metrics.verticalPadding
+        if skillName != nil {
+            layoutSkillHeader(in: bubbleRect, y: &y, textWidth: textWidth)
+            if hasBodyText { y += Metrics.headerBodySpacing }
+        }
         markdownView.frame = NSRect(
             x: bubbleRect.minX + Metrics.horizontalPadding,
             y: y,
             width: textWidth,
-            height: ceil(metrics.textHeight)
+            height: hasBodyText ? ceil(metrics.textHeight) : 0
         )
         y = markdownView.frame.maxY
 
         layoutLabel(attachedImagesField, in: bubbleRect, y: &y, textWidth: textWidth)
         layoutLabel(originField, in: bubbleRect, y: &y, textWidth: textWidth)
-        layoutExpansionButton(in: bubbleRect, y: &y, textWidth: textWidth)
+        if skillName == nil {
+            layoutExpansionButton(in: bubbleRect, y: &y, textWidth: textWidth)
+        }
         needsDisplay = true
     }
 
@@ -224,14 +250,17 @@ final class PickyUserBubbleSurfaceNSView: NSView {
         bubblePath(in: lastBubbleRect).fill()
     }
 
+    /// Copy/edit availability is decided by the SwiftUI layer (callbacks are nil when the
+    /// original message text is empty), not by the visible preview — a chip-only skill
+    /// bubble has an empty body yet still carries a copyable original message.
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = NSMenu()
-        if actionText != nil, onCopyText != nil {
+        if onCopyText != nil {
             let item = NSMenuItem(title: "Copy Text", action: #selector(copyTextClicked), keyEquivalent: "")
             item.target = self
             menu.addItem(item)
         }
-        if actionText != nil, onEditText != nil {
+        if onEditText != nil {
             let item = NSMenuItem(title: "Edit in Composer", action: #selector(editTextClicked), keyEquivalent: "")
             item.target = self
             menu.addItem(item)
@@ -260,29 +289,133 @@ final class PickyUserBubbleSurfaceNSView: NSView {
     private func bubbleMetrics(rootWidth: CGFloat) -> (bubbleWidth: CGFloat, bubbleHeight: CGFloat, textHeight: CGFloat) {
         let bubbleCap = min(maxBubbleWidth, rootWidth)
         let interiorCap = max(0, bubbleCap - 2 * Metrics.horizontalPadding)
-        let textSize = measuredTextContentSize(forWidth: interiorCap)
+        let hasSkillHeader = skillName != nil
+        let textSize = hasBodyText ? measuredTextContentSize(forWidth: interiorCap) : .zero
         let labelWidth = max(labelWidth(attachedImagesField), labelWidth(originField))
-        let expansionWidth = expansionButtonWidth()
-        let contentWidth = min(interiorCap, ceil(max(textSize.width, labelWidth, expansionWidth)))
+        let expansionWidth = hasSkillHeader ? 0 : expansionButtonWidth()
+        let headerWidth = hasSkillHeader ? skillHeaderNaturalWidth() : 0
+        let contentWidth = min(interiorCap, ceil(max(textSize.width, labelWidth, expansionWidth, headerWidth)))
         let bubbleWidth = min(bubbleCap, contentWidth + 2 * Metrics.horizontalPadding)
 
         let textHeight = ceil(textSize.height)
-        var bubbleHeight = Metrics.verticalPadding + textHeight
+        var bubbleHeight = Metrics.verticalPadding
+        if hasSkillHeader {
+            bubbleHeight += skillHeaderHeight()
+            if hasBodyText { bubbleHeight += Metrics.headerBodySpacing + textHeight }
+        } else {
+            bubbleHeight += textHeight
+        }
         if attachedImagesLabel != nil {
             bubbleHeight += Metrics.labelSpacing + ceil(attachedImagesField.fittingSize.height)
         }
         if originLabel != nil {
             bubbleHeight += Metrics.labelSpacing + ceil(originField.fittingSize.height)
         }
-        if expansionTitle != nil {
+        if expansionTitle != nil, !hasSkillHeader {
             bubbleHeight += Metrics.expansionSpacing + Metrics.expansionButtonHeight
         }
         bubbleHeight += Metrics.verticalPadding
         return (bubbleWidth, bubbleHeight, textHeight)
     }
 
+    private func skillHeaderHeight() -> CGFloat {
+        max(ceil(skillNameField.fittingSize.height), Metrics.headerIconSize)
+    }
+
+    /// Natural (untruncated) width of the chip header row; the name field is the
+    /// only compressible member, so the header never forces the bubble past its
+    /// cap — layout gives the name whatever width remains and lets it truncate.
+    private func skillHeaderNaturalWidth() -> CGFloat {
+        var width = Metrics.headerIconSize
+            + Metrics.headerItemSpacing + ceil(skillNameField.fittingSize.width)
+            + Metrics.headerItemSpacing + ceil(skillMetaField.fittingSize.width)
+        if !expansionButton.isHidden {
+            width += Metrics.headerItemSpacing + expansionButtonWidth()
+        }
+        return width
+    }
+
+    private func layoutSkillHeader(in bubbleRect: NSRect, y: inout CGFloat, textWidth: CGFloat) {
+        let headerHeight = skillHeaderHeight()
+        let leadingX = bubbleRect.minX + Metrics.horizontalPadding
+        var trailingX = leadingX + textWidth
+
+        if !expansionButton.isHidden {
+            let buttonWidth = min(textWidth, expansionButtonWidth())
+            expansionButton.frame = NSRect(
+                x: trailingX - buttonWidth,
+                y: y + (headerHeight - Metrics.expansionButtonHeight) / 2,
+                width: buttonWidth,
+                height: Metrics.expansionButtonHeight
+            )
+            trailingX = expansionButton.frame.minX - Metrics.headerItemSpacing
+        }
+
+        let metaWidth = ceil(skillMetaField.fittingSize.width)
+        let metaHeight = ceil(skillMetaField.fittingSize.height)
+        skillMetaField.frame = NSRect(
+            x: max(leadingX, trailingX - metaWidth),
+            y: y + (headerHeight - metaHeight) / 2,
+            width: min(metaWidth, max(0, trailingX - leadingX)),
+            height: metaHeight
+        )
+        trailingX = skillMetaField.frame.minX - Metrics.headerItemSpacing
+
+        skillIconView.frame = NSRect(
+            x: leadingX,
+            y: y + (headerHeight - Metrics.headerIconSize) / 2,
+            width: Metrics.headerIconSize,
+            height: Metrics.headerIconSize
+        )
+
+        let nameX = skillIconView.frame.maxX + Metrics.headerItemSpacing
+        let nameHeight = ceil(skillNameField.fittingSize.height)
+        skillNameField.frame = NSRect(
+            x: nameX,
+            y: y + (headerHeight - nameHeight) / 2,
+            width: max(0, trailingX - nameX),
+            height: nameHeight
+        )
+        y += headerHeight
+    }
+
     private func measuredTextContentSize(forWidth width: CGFloat) -> NSSize {
         markdownView.measuredSize(forWidth: width)
+    }
+
+    private func configureSkillHeaderViews() {
+        skillIconView.image = NSImage(
+            systemSymbolName: "bolt.fill",
+            accessibilityDescription: "Skill"
+        )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 10, weight: .semibold))
+        skillIconView.contentTintColor = NSColor(DS.Colors.info)
+        skillIconView.imageScaling = .scaleProportionallyUpOrDown
+        skillIconView.isHidden = true
+        if skillIconView.superview == nil { addSubview(skillIconView) }
+
+        skillNameField.font = NSFont.monospacedSystemFont(
+            ofSize: PickyHUDTypography.Size.supporting,
+            weight: .medium
+        )
+        skillNameField.textColor = NSColor(DS.Colors.textPrimary)
+        skillNameField.backgroundColor = .clear
+        skillNameField.isBordered = false
+        skillNameField.isEditable = false
+        skillNameField.isSelectable = false
+        skillNameField.lineBreakMode = .byTruncatingTail
+        skillNameField.maximumNumberOfLines = 1
+        skillNameField.isHidden = true
+        if skillNameField.superview == nil { addSubview(skillNameField) }
+
+        skillMetaField.font = NSFont.systemFont(ofSize: PickyHUDTypography.Size.minimumText, weight: .medium)
+        skillMetaField.textColor = NSColor(DS.Colors.textTertiary)
+        skillMetaField.backgroundColor = .clear
+        skillMetaField.isBordered = false
+        skillMetaField.isEditable = false
+        skillMetaField.isSelectable = false
+        skillMetaField.maximumNumberOfLines = 1
+        skillMetaField.isHidden = true
+        if skillMetaField.superview == nil { addSubview(skillMetaField) }
     }
 
     private func configureLabel(_ field: NSTextField) {
@@ -304,7 +437,7 @@ final class PickyUserBubbleSurfaceNSView: NSView {
     }
 
     private func configureExpansionButton(title: String?, systemImageName: String?) {
-        expansionButton.title = title ?? ""
+        expansionButton.title = skillName == nil ? (title ?? "") : ""
         if let systemImageName {
             let symbolConfig = NSImage.SymbolConfiguration(pointSize: 10, weight: .medium)
             expansionButton.image = NSImage(systemSymbolName: systemImageName, accessibilityDescription: title)?
@@ -384,12 +517,10 @@ final class PickyUserBubbleSurfaceNSView: NSView {
     }
 
     @objc private func copyTextClicked() {
-        guard actionText != nil else { return }
         onCopyText?()
     }
 
     @objc private func editTextClicked() {
-        guard actionText != nil else { return }
         onEditText?()
     }
 

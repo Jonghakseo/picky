@@ -23,6 +23,7 @@ struct PickyUserBubbleView: View {
             Spacer(minLength: PickyConversationBubbleLayout.oppositeSideReserve)
             PickyUserBubbleSurfaceView(
                 markdown: displayedMarkdown,
+                skillName: displayedSkillName,
                 attachedImagesLabel: displayedAttachedImagesLabel,
                 originLabel: originLabel,
                 isPiExtensionMessage: isPiExtensionMessage,
@@ -40,16 +41,20 @@ struct PickyUserBubbleView: View {
         .onChange(of: message.id) { _, _ in isExpanded = false }
     }
 
-    var displayedOriginLabel: String? { originLabel }
+    var displayedSkillName: String? {
+        PickySkillInvocationPresentation.invocation(for: message)?.name
+    }
     var displayedMarkdownPreview: String {
-        PickySkillInvocationPresentation.compactMarkdown(for: message)
-            ?? PickyAgentResponsePreview.truncatedMarkdown(message.text ?? "")
+        if let invocation = PickySkillInvocationPresentation.invocation(for: message) {
+            return PickyAgentResponsePreview.truncatedMarkdown(invocation.instruction)
+        }
+        return PickyAgentResponsePreview.truncatedMarkdown(message.text ?? "")
     }
     var displayedMarkdown: String {
         isExpanded ? message.text ?? "" : displayedMarkdownPreview
     }
     var shouldOfferExpansion: Bool {
-        PickySkillInvocationPresentation.compactMarkdown(for: message) != nil
+        PickySkillInvocationPresentation.invocation(for: message) != nil
             || PickyAgentResponsePreview.isTruncated(message.text ?? "")
     }
 
@@ -103,21 +108,23 @@ struct PickyUserBubbleView: View {
         message.originatedBy == .piExtension
     }
 
+    /// Pi-extension origin is conveyed by the bubble tint (and the skill chip when
+    /// present) — the "from Pi terminal" caption was pure chrome and is gone.
     private var originLabel: String? {
-        switch message.originatedBy {
-        case .mainAgent:
-            return "by Picky"
-        case .piExtension:
-            return "from Pi terminal"
-        case .user, nil:
-            return nil
-        }
+        message.originatedBy == .mainAgent ? "by Picky" : nil
     }
+
+    var displayedOriginLabel: String? { originLabel }
 
     var displayedAttachedImagesLabel: String? {
         guard let count = message.attachedImagesCount, count > 0 else { return nil }
         return "🖥️ \(count) attached"
     }
+}
+
+struct PickySkillInvocation: Equatable {
+    let name: String
+    let instruction: String
 }
 
 enum PickySkillInvocationPresentation {
@@ -130,19 +137,15 @@ enum PickySkillInvocationPresentation {
         options: [.caseInsensitive]
     )
 
-    static func compactMarkdown(for message: PickySessionMessage) -> String? {
+    static func invocation(for message: PickySessionMessage) -> PickySkillInvocation? {
         guard message.kind == .userText,
               message.originatedBy == .piExtension,
-              let text = message.text,
-              let invocation = invocation(in: text)
+              let text = message.text
         else { return nil }
-
-        let heading = "Skill · `\(invocation.name)`"
-        guard !invocation.instruction.isEmpty else { return heading }
-        return "\(heading)\n\n\(invocation.instruction)"
+        return invocation(in: text)
     }
 
-    private static func invocation(in text: String) -> (name: String, instruction: String)? {
+    private static func invocation(in text: String) -> PickySkillInvocation? {
         guard let openingTagPattern, let closingTagPattern else { return nil }
         let fullRange = NSRange(text.startIndex..<text.endIndex, in: text)
         guard let openingMatch = openingTagPattern.firstMatch(in: text, range: fullRange),
@@ -158,6 +161,9 @@ enum PickySkillInvocationPresentation {
               let closingEnd = Range(closingMatch.range, in: text)?.upperBound
         else { return nil }
 
-        return (name, String(text[closingEnd...]).trimmingCharacters(in: .whitespacesAndNewlines))
+        return PickySkillInvocation(
+            name: name,
+            instruction: String(text[closingEnd...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        )
     }
 }

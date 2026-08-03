@@ -1149,10 +1149,10 @@ struct PickyConversationCardViewTests {
         #expect(bubble.displayedOriginLabel == "by Picky")
     }
 
-    @Test func userBubbleShowsPiTerminalLabelWhenPiExtensionOriginated() {
+    @Test func userBubbleHidesOriginLabelForPiExtensionMessages() {
         let bubble = PickyUserBubbleView(message: message("m-pi", kind: .userText, text: "from terminal", originatedBy: .piExtension))
 
-        #expect(bubble.displayedOriginLabel == "from Pi terminal")
+        #expect(bubble.displayedOriginLabel == nil)
     }
 
     @Test func piSkillInvocationShowsSkillNameAndInstructionSuffixWhilePreservingExpansion() {
@@ -1171,9 +1171,20 @@ struct PickyConversationCardViewTests {
             message: message("m-skill", kind: .userText, text: skillMessage, originatedBy: .piExtension)
         )
 
-        let expected = "Skill · `i18n-upload`\n\nUpload the changed Korean strings now."
-        #expect(bubble.displayedMarkdownPreview == expected)
-        #expect(bubble.displayedMarkdown == expected)
+        #expect(bubble.displayedSkillName == "i18n-upload")
+        #expect(bubble.displayedMarkdownPreview == "Upload the changed Korean strings now.")
+        #expect(bubble.displayedMarkdown == "Upload the changed Korean strings now.")
+        #expect(bubble.shouldOfferExpansion)
+    }
+
+    @Test func piSkillInvocationWithoutInstructionShowsChipOnly() {
+        let skillMessage = "<skill name=\"create-pr\">\nbody\n</skill>"
+        let bubble = PickyUserBubbleView(
+            message: message("m-skill-bare", kind: .userText, text: skillMessage, originatedBy: .piExtension)
+        )
+
+        #expect(bubble.displayedSkillName == "create-pr")
+        #expect(bubble.displayedMarkdownPreview.isEmpty)
         #expect(bubble.shouldOfferExpansion)
     }
 
@@ -1189,7 +1200,8 @@ struct PickyConversationCardViewTests {
             message: message("m-unicode-skill", kind: .userText, text: skillMessage, originatedBy: .piExtension)
         )
 
-        #expect(bubble.displayedMarkdownPreview == "Skill · `릴리즈-노트`\n\n한국어 변경사항을 정리해줘 👩🏽‍💻")
+        #expect(bubble.displayedSkillName == "릴리즈-노트")
+        #expect(bubble.displayedMarkdownPreview == "한국어 변경사항을 정리해줘 👩🏽‍💻")
     }
 
     @Test func malformedPiSkillInvocationKeepsOriginalMessagePreview() {
@@ -1198,6 +1210,7 @@ struct PickyConversationCardViewTests {
             message: message("m-malformed-skill", kind: .userText, text: malformed, originatedBy: .piExtension)
         )
 
+        #expect(bubble.displayedSkillName == nil)
         #expect(bubble.displayedMarkdownPreview == malformed)
         #expect(!bubble.shouldOfferExpansion)
     }

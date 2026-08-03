@@ -1030,6 +1030,11 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     if (role === "user") {
       const expected = this.consumeExpectedInputDelivery(text);
       if (expected.suppress !== false) {
+        // This delivery already accounts for the /skill: expansion echo (matched via the
+        // observed RPC rewrite alias), so retire any structurally matching pending
+        // suppression — otherwise it would swallow a later identical, genuinely
+        // external skill message from the Pi terminal.
+        this.skillEchoSuppressions.consume(text);
         return {
           type: "input_delivery",
           role,
@@ -1038,6 +1043,13 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
           ...(expected.queueKind ? { queueKind: expected.queueKind } : {}),
         };
       }
+      // Pi can persist a /skill: expansion as a role="user" message instead of a
+      // role="custom" extension message. This is still the same server-side echo of
+      // Picky's raw slash command, so when it matches no expected delivery, consume a
+      // structurally matching pending invocation instead of surfacing a duplicate
+      // pi_extension bubble. Checked only after the expected-delivery path so a normal
+      // queued delivery still consumes its expectation and emits input_delivery.
+      if (this.skillEchoSuppressions.consume(text)) return undefined;
       return { type: "input_message", role, text, originatedBy: expected.originatedBy };
     }
 

@@ -184,14 +184,12 @@ struct PickySessionExtendedTerminalView: View {
     @ObservedObject var viewModel: PickySessionListViewModel
     var height: CGFloat = PickyHUDUtilityPanelPolicy.defaultHeight
     var showsPanelChrome = true
-    @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
 
     var body: some View {
         PickySessionExtendedTerminalContentView(
             session: session,
             viewModel: viewModel,
             terminalSession: viewModel.shellTerminalSession(for: session),
-            width: pickyHUDDetailWidth,
             height: height,
             showsPanelChrome: showsPanelChrome
         )
@@ -202,7 +200,6 @@ private struct PickySessionExtendedTerminalContentView: View {
     let session: PickySessionListViewModel.SessionCard
     @ObservedObject var viewModel: PickySessionListViewModel
     @ObservedObject var terminalSession: PickyShellTerminalSession
-    let width: CGFloat
     let height: CGFloat
     let showsPanelChrome: Bool
     @State private var attachmentID = UUID().uuidString
@@ -218,7 +215,8 @@ private struct PickySessionExtendedTerminalContentView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .padding(10)
-        .frame(width: width, height: height, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(height: height, alignment: .topLeading)
         .background {
             if showsPanelChrome {
                 addonBackground

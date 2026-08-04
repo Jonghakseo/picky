@@ -386,6 +386,7 @@ struct PickyHUDView: View {
                         onDragChanged: updateUtilityPanelHeight(for:),
                         onDragEnded: finishUtilityPanelResize
                     )
+                    .frame(width: placement.cardWidth)
                     PickySessionUtilityPanelView(
                         session: activeSession,
                         viewModel: viewModel,
@@ -404,6 +405,9 @@ struct PickyHUDView: View {
                             ) == .changes
                         )
                     }
+                    // The panel's GeometryReader is greedy; without an explicit width it
+                    // stretches past the conversation card when the host proposal is wider.
+                    .frame(width: placement.cardWidth)
                     .transition(.opacity)
                 }
             }

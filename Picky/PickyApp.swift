@@ -253,6 +253,9 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
                 PickyGeneratedReportsPruner().prune()
             }
             secureSurfaceWindowCoordinator.start()
+            companionManager.hudInkPassThroughHitTest = { [weak self] point in
+                self?.hudOverlayManager.containsInkPassThroughPoint(point) ?? false
+            }
             hudOverlayManager.start()
             // Best-effort install of /usr/local/bin/picky when we can do it
             // without prompting for credentials. Anything that would require

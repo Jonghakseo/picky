@@ -86,6 +86,10 @@ final class PickyHUDOverlayManager {
         var pendingShrinkTask: Task<Void, Never>?
         var lastContentSize: CGSize
         var lastCardMeasuredSize: CGSize?
+        /// Visible chrome frames (dock rail, conversation card) reported by
+        /// SwiftUI in the HUD root's top-left coordinate space. Consulted by
+        /// ink capture so only rendered pixels pass clicks through.
+        var visibleChromeFrames: [CGRect] = []
     }
 
     private struct ArchiveUndoToastEntry {
@@ -413,6 +417,9 @@ final class PickyHUDOverlayManager {
             onCardMeasuredSize: { [weak self] size in
                 self?.handleCardMeasuredSize(displayID: displayID, size: size)
             },
+            onVisibleChromeFramesChange: { [weak self] frames in
+                self?.handleVisibleChromeFramesChange(displayID: displayID, frames: frames)
+            },
             onCardResizeDragChanged: { [weak self] delta in
                 self?.handleCardResizeChanged(displayID: displayID, delta: delta)
             },
@@ -587,6 +594,32 @@ final class PickyHUDOverlayManager {
     }
 
     // MARK: - Resizing / placement
+
+    private func handleVisibleChromeFramesChange(displayID: CGDirectDisplayID, frames: [CGRect]) {
+        guard var entry = panelsByDisplayID[displayID] else { return }
+        entry.visibleChromeFrames = frames
+        panelsByDisplayID[displayID] = entry
+    }
+
+    /// True when `screenPoint` sits over visibly rendered HUD chrome (dock
+    /// rail, conversation card, or an archive-undo toast) on any display.
+    /// Used by ink capture: only these points may pass a gesture through.
+    func containsInkPassThroughPoint(_ screenPoint: CGPoint) -> Bool {
+        for entry in panelsByDisplayID.values where entry.panel.isVisible {
+            if PickyHUDInkPassThroughPolicy.contains(
+                screenPoint,
+                swiftUIFrames: entry.visibleChromeFrames,
+                panelFrame: entry.panel.frame
+            ) {
+                return true
+            }
+        }
+        // Toast panels are tightly sized around their visible capsule, so the
+        // window frame is already an accurate visible-content bound.
+        return archiveUndoToastsByDisplayID.values.contains {
+            $0.panel.isVisible && $0.panel.frame.contains(screenPoint)
+        }
+    }
 
     private func resizePanel(displayID: CGDirectDisplayID, toContentSize contentSize: CGSize, deferShrink: Bool) {
         PickyPerf.event("panel_resize_requested")

@@ -30,6 +30,11 @@ struct PickyHUDView: View {
     var onDockHandleDragEnded: () -> Void = { }
     var onDockHandleDoubleClick: () -> Void = { }
     var onCardMeasuredSize: (CGSize) -> Void = { _ in }
+    /// Reports the visible HUD chrome frames (dock rail, conversation card) in
+    /// the root's top-left SwiftUI coordinate space. The overlay manager uses
+    /// them so ink capture only passes clicks through to pixels the HUD
+    /// actually renders — never the transparent card-width reserve.
+    var onVisibleChromeFramesChange: ([CGRect]) -> Void = { _ in }
     var onCardResizeDragChanged: (CGPoint) -> Void = { _ in }
     var onCardResizeDragEnded: () -> Void = { }
     var onCardResizeReset: () -> Void = { }
@@ -153,6 +158,8 @@ struct PickyHUDView: View {
         return visibleSessions.first { $0.id == activeSessionID }
     }
 
+    static let visibleChromeCoordinateSpaceName = "PickyHUDVisibleChrome"
+
     var body: some View {
         let _ = PickyPerf.event("hud_root_body")
         hudContent
@@ -172,8 +179,12 @@ struct PickyHUDView: View {
             // ScrollView/TextEditor subtrees that perform one-frame measurement and
             // bottom-pinning on appear; animating that first layout exposes transient
             // pre-scroll positions as rows/composer floating outside the card.
+            .coordinateSpace(name: Self.visibleChromeCoordinateSpaceName)
             .onPreferenceChange(PickyHUDSizePreferenceKey.self, perform: handleHUDSizeChange)
             .onPreferenceChange(PickyHUDCardSizePreferenceKey.self, perform: handleCardMeasuredSize)
+            .onPreferenceChange(PickyHUDVisibleChromeFramePreferenceKey.self) {
+                onVisibleChromeFramesChange($0)
+            }
             .onAppear {
                 installCloseShortcutMonitor()
                 handleOpenSessionRequest(viewModel.openSessionRequest)
@@ -421,6 +432,7 @@ struct PickyHUDView: View {
                     .transition(.opacity)
                 }
             }
+            .background(PickyHUDVisibleChromeFrameReporter())
             .environment(\.pickyHUDDetailWidth, placement.cardWidth)
             .id(activeSession.id)
             .transition(.identity)
@@ -594,6 +606,9 @@ struct PickyHUDView: View {
                 onDockHandleDragEnded: onDockHandleDragEnded,
                 onDockHandleDoubleClick: onDockHandleDoubleClick
             )
+            // Measured before the mini-preview slack padding so only the rail
+            // itself counts as visible chrome for ink pass-through.
+            .background(PickyHUDVisibleChromeFrameReporter())
             // In horizontal mode the mini hover preview is centered on each dock
             // icon (`miniPreviewOffset` x = 0), so previewing an edge icon makes
             // the card extend up to `previewCardWidth/2 - sessionTileWidth/2`
@@ -1176,4 +1191,25 @@ struct PickyHUDView: View {
 
     private static let wKeyCode: UInt16 = 13
     private static let escKeyCode: UInt16 = 53
+}
+
+private struct PickyHUDVisibleChromeFramePreferenceKey: PreferenceKey {
+    static var defaultValue: [CGRect] = []
+
+    static func reduce(value: inout [CGRect], nextValue: () -> [CGRect]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
+/// Reports the frame of the chrome component it backs, measured in the HUD
+/// root's named coordinate space, for ink pass-through hit testing.
+private struct PickyHUDVisibleChromeFrameReporter: View {
+    var body: some View {
+        GeometryReader { proxy in
+            Color.clear.preference(
+                key: PickyHUDVisibleChromeFramePreferenceKey.self,
+                value: [proxy.frame(in: .named(PickyHUDView.visibleChromeCoordinateSpaceName))]
+            )
+        }
+    }
 }

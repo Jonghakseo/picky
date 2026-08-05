@@ -328,6 +328,9 @@ final class CompanionManager: ObservableObject {
     var screenContextDisplaySelectionSnapshotsByTextInputID: [UUID: PickyScreenContextDisplaySelectionSnapshot] = [:]
     private var failedQuickInputInkCapture: PickyInkCapture?
     var screenContextControlHitTest: (CGPoint) -> Bool = { _ in false }
+    /// True when the point sits over visibly rendered HUD chrome (dock rail,
+    /// conversation card, toast). Wired by the app to the HUD overlay manager.
+    var hudInkPassThroughHitTest: (CGPoint) -> Bool = { _ in false }
     /// Monotonic marker for observing when queued interaction events have published.
     private(set) var interactionProjectionSequence: UInt64 = 0
     lazy var interactionCoordinator: PickyInteractionCoordinator = {
@@ -767,14 +770,12 @@ final class CompanionManager: ObservableObject {
         if screenContextControlHitTest(point) { return true }
         guard source == .text else { return false }
         if quickInputPanelManager.containsInteractiveGlobalPoint(point) { return true }
-        return NSApp.windows.contains { window in
-            guard window is PickyHUDPanel else { return false }
-            // The HUD panel's frame reserves a transparent card-width column
-            // beside the dock rail. Only visibly rendered content may claim
-            // the gesture; a click on transparent pixels would fall through
-            // to the app underneath and steal key focus mid-ink.
-            return PickyInkWindowContentHitTest.windowClaimsGlobalPoint(window, point: point)
-        }
+        // The HUD panel's frame reserves a transparent card-width column beside
+        // the dock rail. Only visibly rendered chrome may claim the gesture; a
+        // click on transparent pixels would fall through to the app underneath
+        // and steal key focus mid-ink. Wired to the HUD overlay manager, which
+        // tracks the SwiftUI-reported chrome frames per display.
+        return hudInkPassThroughHitTest(point)
     }
 
     private func beginInkCapture(

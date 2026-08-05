@@ -551,6 +551,85 @@ struct PickyCompanionManagerTests {
         manager.stop()
     }
 
+    @Test func conversationCardHoverImmediatelyBeforePTTTargetsPickleOnFirstAttempt() async throws {
+        let client = FakeVoiceClient()
+        let selection = FakeVoiceSelectionStore()
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            selectionStore: selection
+        )
+        viewModel.apply(.protocolEvent(PickyEventEnvelope(
+            id: "evt-hovered-pickle",
+            protocolVersion: "2026-07-23",
+            timestamp: Date(timeIntervalSince1970: 1_800_000_000),
+            event: .sessionUpdated(session(id: "pickle-hovered", status: .completed))
+        )))
+        let card = PickyConversationCardView(
+            viewModel: viewModel,
+            session: try #require(viewModel.sessions.first)
+        )
+        let manager = CompanionManager(
+            agentClient: client,
+            selectionStore: selection,
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator()
+        )
+
+        card.updateVoiceFollowUpHover(true)
+        manager.handleShortcutTransition(.pressed)
+        manager.submitTranscriptToPickyAgent(transcript: "첫 시도부터 계속해줘")
+
+        try await waitUntil { client.commands.contains { $0.sessionId == "pickle-hovered" } }
+        let command = try #require(client.commands.first { $0.sessionId == "pickle-hovered" })
+        #expect(command.type == .followUp)
+        #expect(command.text == "첫 시도부터 계속해줘")
+        #expect(client.submissions.isEmpty)
+        card.updateVoiceFollowUpHover(false)
+        manager.stop()
+    }
+
+    @Test func deferredConversationCardHoverAfterPTTStillTargetsPickleOnFirstAttempt() async throws {
+        let client = FakeVoiceClient()
+        let selection = FakeVoiceSelectionStore()
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            selectionStore: selection
+        )
+        viewModel.apply(.protocolEvent(PickyEventEnvelope(
+            id: "evt-deferred-hovered-pickle",
+            protocolVersion: "2026-07-23",
+            timestamp: Date(timeIntervalSince1970: 1_800_000_000),
+            event: .sessionUpdated(session(id: "pickle-hovered", status: .completed))
+        )))
+        let card = PickyConversationCardView(
+            viewModel: viewModel,
+            session: try #require(viewModel.sessions.first)
+        )
+        let manager = CompanionManager(
+            agentClient: client,
+            selectionStore: selection,
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator()
+        )
+
+        // macOS can deliver the global shortcut transition before SwiftUI runs
+        // the onHover callback for the pointer movement that physically happened
+        // first. Model that framework event inversion deterministically.
+        manager.handleShortcutTransition(.pressed)
+        card.updateVoiceFollowUpHover(true)
+        manager.submitTranscriptToPickyAgent(transcript: "첫 시도부터 계속해줘")
+
+        try await waitUntil { !client.submissions.isEmpty || client.commands.contains { $0.sessionId == "pickle-hovered" } }
+        let command = client.commands.first { $0.sessionId == "pickle-hovered" }
+        withKnownIssue("PTT can snapshot a stale nil hover target before SwiftUI delivers onHover(true)") {
+            #expect(command?.type == .followUp)
+            #expect(command?.text == "첫 시도부터 계속해줘")
+            #expect(client.submissions.isEmpty)
+        }
+        card.updateVoiceFollowUpHover(false)
+        manager.stop()
+    }
+
     // Regression: between `stopPushToTalkFromKeyboardShortcut` and the eventual
     // `submitDraftText` -> `submitTranscriptToPickyAgent` callback, the dictation
     // publishers (isKeyboardRecording / isFinalizingTranscript / isPreparingToRecord)

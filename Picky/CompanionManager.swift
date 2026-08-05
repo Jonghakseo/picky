@@ -769,10 +769,7 @@ final class CompanionManager: ObservableObject {
         if quickInputPanelManager.containsInteractiveGlobalPoint(point) { return true }
         return NSApp.windows.contains { window in
             guard window is PickyHUDPanel, window.isVisible else { return false }
-            // HUD panels include transparent shadow and layout reserve. Do not
-            // widen that already-conservative frame with an additional
-            // pass-through ring, which can leak an ink mouse-down to the app.
-            return window.frame.contains(point)
+            return window.frame.insetBy(dx: -8, dy: -8).contains(point)
         }
     }
 

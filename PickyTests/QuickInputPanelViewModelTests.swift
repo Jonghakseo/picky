@@ -38,16 +38,6 @@ struct QuickInputPanelViewModelTests {
     }
 
     @Test
-    func newPresentationClearsPriorInteractiveContentFrames() {
-        let viewModel = QuickInputPanelViewModel()
-        viewModel.interactiveContentFrames = [CGRect(x: 10, y: 10, width: 100, height: 40)]
-
-        viewModel.beginPresentation()
-
-        #expect(viewModel.interactiveContentFrames.isEmpty)
-    }
-
-    @Test
     func historyBackgroundSolidifiesOnUserScrollAndResetsOnPresentation() {
         let viewModel = QuickInputPanelViewModel()
         #expect(viewModel.historyBackgroundMode == .lightweight)

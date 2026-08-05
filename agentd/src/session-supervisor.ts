@@ -2,7 +2,7 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { stat } from "node:fs/promises";
-import { extractChangedFilesFromExplicitText, extractSessionLinkArtifacts } from "./artifact-store.js";
+import { extractSessionLinkArtifacts } from "./artifact-store.js";
 import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { FollowUpLifecycleDiagnostics } from "./application/follow-up-lifecycle-diagnostics.js";
 import type { ReloadPluginsSummary, SessionSupervisorOptions } from "./application/session-supervisor-options.js";
@@ -22,18 +22,17 @@ import type { PickyShowAnnotationsRequest, PickyShowAnnotationsResult } from "./
 import { PickleVisualDslCoordinator, type PickleVisualDslLease } from "./application/pickle-visual-dsl-coordinator.js";
 import { PickleSessionTitleRefresher } from "./application/pickle-session-title-refresher.js";
 import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY, type SessionStore } from "./session-store.js";
+import { sessionWithAppendedLog } from "./session-log-append.js";
 import type { AgentRuntime, RewindTarget, RuntimeAutocompleteApplyRequest, RuntimeAutocompleteCapabilities, RuntimeAutocompleteCompletion, RuntimeAutocompleteQuery, RuntimeAutocompleteSuggestions, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./runtime/types.js";
 import { readSessionDiff, type SessionDiffResult } from "./application/session-diff.js";
 import { listRewindTargets as rewindListTargets, rewindToEntry as runRewindToEntry, type RewindDeps } from "./application/session-rewind.js";
 import type { SessionDiffView } from "./domain/git-diff.js";
 import { hasActivity, zeroActivitySummary } from "./domain/activity-summary.js";
-import { mergeArtifacts } from "./domain/artifacts.js";
-import { mergeChangedFiles } from "./domain/changed-files.js";
 import { diffQueueRemovedItems, dropAlreadyMaterializedQueueEntries, extractPickyPromptUserInstruction, queueItems, queueTextMatchesUserText, sameQueueItems, type PendingQueueDelivery } from "./domain/queue-policy.js";
 import { isTerminalStatus } from "./domain/session-status.js";
 import { countSystemMessages, sameTodoState, shouldReattachBlockedSessionOnStartup } from "./domain/session-state-policy.js";
 import { ARCHIVED_SESSION_RETENTION_DAYS, buildAppendedMainMessageState, buildArchivedSessionRestartCancellation, buildDuplicatedPickleSession, buildEmptyPickleSession, buildInterruptedRuntimeLiveStatePatch, buildOrphanedChildRecoverySession, buildPinnedPickleSession, buildResumedHandoffPickleSession, buildRuntimeReattachPatch, buildRuntimeSessionReplacementPatch, buildUnattachedRuntimeBlock, buildVisibleSession, projectMainAgentSessionInfo, projectMainReplyMetadata, projectMainRolloverPickleSessions, shouldPurgeArchivedSession } from "./domain/session-supervisor-projection-policy.js";
-import { normalizeDslWhitespace, userInputFromLogLine } from "./domain/session-text-policy.js";
+import { normalizeDslWhitespace } from "./domain/session-text-policy.js";
 import { HANDOFF_PREFIX, FOLLOWUP_PREFIX, STEER_PREFIX, EXTENSION_ANSWER_PREFIX } from "./domain/log-prefixes.js";
 import { cleanFinalAnswer } from "./domain/session-summary.js";
 import { settleActiveTools } from "./domain/tool-activity.js";
@@ -2919,22 +2918,7 @@ export class SessionSupervisor extends EventEmitter {
   private async appendLog(sessionId: string, line: string): Promise<void> {
     const piSessionFilePath = piSessionFilePathFromLogLine(line);
     await this.runSessionWrite(sessionId, async () => {
-      const session = this.mustGet(sessionId);
-      const changedFiles = mergeChangedFiles(session.changedFiles, extractChangedFilesFromExplicitText(line));
-      const userInput = userInputFromLogLine(line, [STEER_PREFIX, FOLLOWUP_PREFIX, HANDOFF_PREFIX, EXTENSION_ANSWER_PREFIX]);
-      const linkArtifacts = userInput
-        ? extractSessionLinkArtifacts(userInput).filter((artifact) => !session.artifacts.some((existing) => existing.url === artifact.url))
-        : [];
-      const artifacts = mergeArtifacts(session.artifacts, linkArtifacts);
-      const nextSession = {
-        ...session,
-        logs: [...session.logs, line],
-        changedFiles,
-        artifacts,
-        ...(piSessionFilePath ? { piSessionFilePath } : {}),
-        updatedAt: new Date().toISOString(),
-      };
-      await this.upsert(nextSession, { emitSession: false });
+      await this.upsert(sessionWithAppendedLog(this.mustGet(sessionId), line), { emitSession: false });
     });
     this.emit("log", sessionId, line);
     // STEER_PREFIX and FOLLOWUP_PREFIX user_text writes are intentionally NOT recorded here. The

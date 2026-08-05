@@ -5430,6 +5430,37 @@ describe("SessionSupervisor", () => {
     expect(updated.logs.includes("extension ui answer: Stop and review")).toBe(true);
   });
 
+  it("keeps a follow-up extension UI dialog pending when it arrives while the previous answer is being recorded", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    const session = await supervisor.create(context("chained dialogs"));
+
+    runtime.handle?.emit({
+      type: "extension_ui",
+      waitsForInput: true,
+      request: { id: "ui-first", sessionId: session.id, method: "select", title: "Pick a delay", options: ["delay-1"], createdAt: "2026-05-01T00:00:00.000Z" },
+    });
+    await settle();
+
+    // Mirror /delay-list: the extension opens its next dialog as soon as the
+    // first answer resolves, while the supervisor is still recording the answer.
+    runtime.handle!.onAnswerExtensionUi = (handle) => {
+      handle.emit({
+        type: "extension_ui",
+        waitsForInput: true,
+        request: { id: "ui-second", sessionId: session.id, method: "select", title: "delay-1 actions", options: ["send now", "cancel"], createdAt: "2026-05-01T00:00:01.000Z" },
+      });
+    };
+    await supervisor.answerExtensionUi(session.id, "ui-first", "delay-1");
+    await settle();
+
+    const updated = supervisor.get(session.id)!;
+    expect(updated.logs.includes("extension ui answer: delay-1")).toBe(true);
+    expect(updated.pendingExtensionUiRequest?.id).toBe("ui-second");
+    expect(updated.status).toBe("waiting_for_input");
+  });
+
   it("does not append an answer log when the user cancels an extension UI request", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
@@ -8194,6 +8225,7 @@ class ManualHandle implements RuntimeSessionHandle {
   onSteer?: (handle: ManualHandle, prompt: BuiltPrompt) => void;
   onCompact?: (handle: ManualHandle, customInstructions?: string) => void | Promise<void>;
   onUserBash?: (handle: ManualHandle, command: string, options?: { excludeFromContext?: boolean; onOutputChunk?: (chunk: string) => void }) => void | Promise<void>;
+  onAnswerExtensionUi?: (handle: ManualHandle, requestId: string, value: unknown) => void;
   compactCalls: Array<string | undefined> = [];
   constructor(readonly id: string) {}
   async followUp(prompt: BuiltPrompt): Promise<void> {
@@ -8270,6 +8302,7 @@ class ManualHandle implements RuntimeSessionHandle {
       if (options?.ignoreUnknown) return;
       throw new Error(`Unknown extension UI request: ${requestId}`);
     }
+    this.onAnswerExtensionUi?.(this, requestId, value);
   }
   async injectInitialBootstrap(messages: { user: string; assistant: string }): Promise<void> {
     this.bootstrapInjections.push(messages);

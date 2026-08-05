@@ -2757,13 +2757,29 @@ export class SessionSupervisor extends EventEmitter {
     if (!handle?.answerExtensionUi) throw new Error("Runtime session cannot answer extension UI requests");
     const pendingBeforeAnswer = this.mustGet(sessionId).pendingExtensionUiRequest;
     await handle.answerExtensionUi(requestId, value);
-    const session = this.mustGet(sessionId);
-    if (session.pendingExtensionUiRequest?.id === requestId) {
-      const pending = pendingBeforeAnswer?.id === requestId ? pendingBeforeAnswer : session.pendingExtensionUiRequest;
-      const summary = pending ? summarizeExtensionUiAnswer(pending, value) : undefined;
-      if (summary) await this.appendLog(sessionId, `${EXTENSION_ANSWER_PREFIX}${summary}`);
-      await this.patch(sessionId, { pendingExtensionUiRequest: undefined, status: "running", lastSummary: "Extension UI answered", thinkingPreview: undefined });
-    }
+    const pendingAfterAnswer = this.mustGet(sessionId).pendingExtensionUiRequest;
+    const answered = pendingBeforeAnswer?.id === requestId
+      ? pendingBeforeAnswer
+      : pendingAfterAnswer?.id === requestId ? pendingAfterAnswer : undefined;
+    const summary = answered ? summarizeExtensionUiAnswer(answered, value) : undefined;
+    if (summary) await this.appendLog(sessionId, `${EXTENSION_ANSWER_PREFIX}${summary}`);
+    // The extension may open a follow-up dialog immediately after receiving this
+    // answer (e.g. /delay-list picks an entry, then asks what to do with it). That
+    // dialog patches pendingExtensionUiRequest concurrently, so the clear below
+    // must re-check inside the serialized session write or it would clobber the
+    // new dialog and leave its question card permanently unanswerable.
+    await this.runSessionWrite(sessionId, async () => {
+      const current = this.mustGet(sessionId);
+      if (current.pendingExtensionUiRequest?.id !== requestId) return;
+      await this.upsert({
+        ...current,
+        pendingExtensionUiRequest: undefined,
+        status: "running",
+        lastSummary: "Extension UI answered",
+        thinkingPreview: undefined,
+        updatedAt: new Date().toISOString(),
+      });
+    });
     return this.mustGet(sessionId);
   }
 

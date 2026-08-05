@@ -50,7 +50,7 @@ struct PickyOSLogCollectorTests {
 
     @Test func systemFailureUsesUnfilteredCurrentProcessEvidence() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
-        let rendered = PickyOSLogCollector.collect(window: 600, now: now, preferredProcessID: 42) { scope, _ in
+        let rendered = PickyOSLogCollector.collect(window: 600, now: now, retainedProcessIDs: [42]) { scope, _ in
             if scope == .system { throw StoreError() }
             return [
                 PickyOSLogCollector.Entry(
@@ -69,9 +69,11 @@ struct PickyOSLogCollectorTests {
         #expect(!rendered.contains("processFilter=pid=42"))
     }
 
-    @Test func preferredLifecyclePIDFiltersPostRelaunchEntries() {
+    /// Regression: filtering to the previous run alone blinded every bug report
+    /// filed while the app was still running, which is the common case.
+    @Test func retainedPIDsKeepBothPreviousAndCurrentRunEvidence() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
-        let rendered = PickyOSLogCollector.collect(window: 600, now: now, preferredProcessID: 42) { _, _ in
+        let rendered = PickyOSLogCollector.collect(window: 600, now: now, retainedProcessIDs: [42, 99]) { _, _ in
             [
                 PickyOSLogCollector.Entry(
                     date: now.addingTimeInterval(-10),
@@ -85,14 +87,40 @@ struct PickyOSLogCollectorTests {
                     level: "N",
                     subsystem: PickyLog.subsystem,
                     processID: 99,
-                    message: "POST-RELAUNCH-EVIDENCE"
+                    message: "STILL-RUNNING-PROCESS-EVIDENCE"
+                ),
+                PickyOSLogCollector.Entry(
+                    date: now,
+                    level: "N",
+                    subsystem: PickyLog.subsystem,
+                    processID: 7,
+                    message: "UNRELATED-INSTANCE-EVIDENCE"
                 )
             ]
         }
 
-        #expect(rendered.contains("processFilter=pid=42"))
+        #expect(rendered.contains("processFilter=pid=42,99"))
         #expect(rendered.contains("CRASHED-PROCESS-EVIDENCE"))
-        #expect(!rendered.contains("POST-RELAUNCH-EVIDENCE"))
+        #expect(rendered.contains("STILL-RUNNING-PROCESS-EVIDENCE"))
+        #expect(!rendered.contains("UNRELATED-INSTANCE-EVIDENCE"))
+    }
+
+    @Test func emptyRetainedPIDsKeepEveryPickySubsystemProcess() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let rendered = PickyOSLogCollector.collect(window: 600, now: now) { _, _ in
+            [
+                PickyOSLogCollector.Entry(
+                    date: now,
+                    level: "N",
+                    subsystem: PickyLog.subsystem,
+                    processID: 7,
+                    message: "UNFILTERED-EVIDENCE"
+                )
+            ]
+        }
+
+        #expect(rendered.contains("processFilter=subsystem-only"))
+        #expect(rendered.contains("UNFILTERED-EVIDENCE"))
     }
 
     @Test func boundedEntryPolicyKeepsNewestFixedWorkingSet() {

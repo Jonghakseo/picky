@@ -107,13 +107,17 @@ final class PickyLifecycleDiagnosticsStore {
         return write(snapshot) ? snapshot : nil
     }
 
-    static func previousProcessID(from logsDirectory: URL) -> Int32? {
+    /// Both runs matter to diagnostics: the previous run explains a crash that
+    /// forced a relaunch, and the current run explains a bug reported while the
+    /// app is still up. Returning only one of them silently drops the evidence
+    /// for the other case.
+    static func recentProcessIDs(from logsDirectory: URL) -> Set<Int32> {
         let url = logsDirectory.appendingPathComponent(filename)
         guard let data = try? Data(contentsOf: url),
               let snapshot = try? JSONDecoder.diagnosticsDecoder.decode(PickyLifecycleDiagnosticsSnapshot.self, from: data) else {
-            return nil
+            return []
         }
-        return snapshot.previous?.processID
+        return Set([snapshot.current.processID, snapshot.previous?.processID].compactMap { $0 })
     }
 
     static func boundedSnapshotText(

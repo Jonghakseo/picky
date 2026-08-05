@@ -289,7 +289,7 @@ enum PickyDiagnosticsBundleBuilder {
     /// New crash/lifecycle evidence is bounded independently of existing
     /// stderr/watchdog limits: 256 KiB OSLog + 384 KiB IPS + 64 KiB agentd
     /// lifecycle events + 64 KiB app lifecycle/manifest data = 768 KiB.
-    static let maximumPreviousProcessOSLogBytes = 256 * 1024
+    static let maximumProcessOSLogBytes = 256 * 1024
     static let maximumIPSExcerptBytes = 384 * 1024
     static let maximumAgentdLifecycleEventBytes = 64 * 1024
     static let maximumLifecycleAndManifestBytes = 64 * 1024
@@ -423,13 +423,17 @@ enum PickyDiagnosticsBundleBuilder {
         try? lifecycleEvents.write(to: lifecycleEventsPath, atomically: true, encoding: .utf8)
 
         let oslogPath = stagingRoot.appendingPathComponent("picky-oslog.txt")
-        let previousProcessID = PickyLifecycleDiagnosticsStore.previousProcessID(from: logsDir)
-        let collectedOSLog = oslogProvider?() ?? PickyOSLogCollector.collectPreviousProcess(
-            preferredProcessID: previousProcessID
+        // Union with the live PID so a missing or stale lifecycle snapshot can
+        // never leave the filter pointing at a process that is already gone.
+        let retainedProcessIDs = PickyLifecycleDiagnosticsStore
+            .recentProcessIDs(from: logsDir)
+            .union([ProcessInfo.processInfo.processIdentifier])
+        let collectedOSLog = oslogProvider?() ?? PickyOSLogCollector.collectRecentProcesses(
+            retainedProcessIDs: retainedProcessIDs
         )
         let oslogText = PickyDiagnosticTextRedactor.truncateUTF8(
             PickyDiagnosticTextRedactor.redact(collectedOSLog),
-            maxBytes: maximumPreviousProcessOSLogBytes,
+            maxBytes: maximumProcessOSLogBytes,
             keepingNewest: true
         )
         do {
@@ -636,6 +640,9 @@ enum PickyDiagnosticsBundleBuilder {
         var lines = [
             "Picky watchdog diagnostics summary",
             "Privacy: scalar counts/durations plus bounded, redacted spin sample excerpts only; user chat, tool arguments, and tool results are excluded.",
+            // Stall counts are parsed out of picky-oslog.txt, so a zero count is
+            // only meaningful when that file actually captured entries.
+            "stallSource=picky-oslog.txt",
             "softStallDetectedCount=\(stallSummary.softStallDetectedCount)",
             "softStallRecoveredCount=\(stallSummary.softStallRecoveredCount)",
             "maxSoftStallAgeMs=\(stallSummary.maxSoftStallAgeMs)",

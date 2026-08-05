@@ -35,20 +35,21 @@ enum PickyOSLogCollector {
 
     /// Uses the system store on macOS 14.2+ (the app deployment target), then
     /// falls back if privacy permissions or the store itself reject the query.
-    static func collectPreviousProcess(
-        preferredProcessID: Int32? = nil,
+    static func collectRecentProcesses(
+        retainedProcessIDs: Set<Int32> = [],
         window: TimeInterval = defaultWindow,
         now: Date = Date()
     ) -> String {
-        collect(window: window, now: now, preferredProcessID: preferredProcessID, entryProvider: loadEntries)
+        collect(window: window, now: now, retainedProcessIDs: retainedProcessIDs, entryProvider: loadEntries)
     }
 
     /// Injectable collection policy for deterministic tests; the provider is
     /// the only boundary that reads the machine's unified logging store.
+    /// An empty `retainedProcessIDs` keeps every Picky-subsystem process.
     static func collect(
         window: TimeInterval,
         now: Date,
-        preferredProcessID: Int32? = nil,
+        retainedProcessIDs: Set<Int32> = [],
         entryProvider: EntryProvider
     ) -> String {
         let start = now.addingTimeInterval(-window)
@@ -58,11 +59,11 @@ enum PickyOSLogCollector {
                     try entryProvider(.system, start),
                     start: start,
                     end: now,
-                    preferredProcessID: preferredProcessID
+                    retainedProcessIDs: retainedProcessIDs
                 ),
                 scope: .system,
                 window: window,
-                preferredProcessID: preferredProcessID,
+                retainedProcessIDs: retainedProcessIDs,
                 fallbackReason: nil
             )
         } catch {
@@ -73,11 +74,11 @@ enum PickyOSLogCollector {
                         try entryProvider(.currentProcess, start),
                         start: start,
                         end: now,
-                        preferredProcessID: nil
+                        retainedProcessIDs: []
                     ),
                     scope: .currentProcess,
                     window: window,
-                    preferredProcessID: nil,
+                    retainedProcessIDs: [],
                     fallbackReason: "system unavailable: \(reason)"
                 )
             } catch {
@@ -85,7 +86,7 @@ enum PickyOSLogCollector {
                     entries: [],
                     scope: .currentProcess,
                     window: window,
-                    preferredProcessID: nil,
+                    retainedProcessIDs: [],
                     fallbackReason: "system unavailable; current-process unavailable: \(PickyDiagnosticTextRedactor.redact(error.localizedDescription))"
                 )
             }
@@ -99,15 +100,14 @@ enum PickyOSLogCollector {
         entries: [Entry],
         scope: Scope,
         window: TimeInterval,
-        preferredProcessID: Int32? = nil,
+        retainedProcessIDs: Set<Int32> = [],
         fallbackReason: String? = nil,
         maxBytes: Int = maximumRenderedBytes
     ) -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let filtered = entries.filter { entry in
-            entry.subsystem == PickyLog.subsystem
-                && (preferredProcessID == nil || entry.processID == preferredProcessID)
+            entry.subsystem == PickyLog.subsystem && retains(entry, retainedProcessIDs: retainedProcessIDs)
         }
         let boundedEntries = boundedNewestEntries(from: filtered, maximumCount: maximumCollectedEntries)
         let entryLimitTruncated = filtered.count > boundedEntries.count
@@ -115,7 +115,7 @@ enum PickyOSLogCollector {
             "# Picky OSLog diagnostics",
             "scope=\(scope.rawValue)",
             "subsystem=\(PickyLog.subsystem)",
-            "processFilter=\(preferredProcessID.map { "pid=\($0)" } ?? "subsystem-only")",
+            "processFilter=\(describeProcessFilter(retainedProcessIDs))",
             "entryLimit=\(maximumCollectedEntries)",
             "windowSeconds=\(Int(window))"
         ]
@@ -194,14 +194,25 @@ enum PickyOSLogCollector {
         _ entries: [Entry],
         start: Date,
         end: Date,
-        preferredProcessID: Int32?
+        retainedProcessIDs: Set<Int32>
     ) -> [Entry] {
         boundedNewestEntries(from: entries.filter {
             $0.date >= start
                 && $0.date <= end
                 && $0.subsystem == PickyLog.subsystem
-                && (preferredProcessID == nil || $0.processID == preferredProcessID)
+                && retains($0, retainedProcessIDs: retainedProcessIDs)
         })
+    }
+
+    private static func retains(_ entry: Entry, retainedProcessIDs: Set<Int32>) -> Bool {
+        guard !retainedProcessIDs.isEmpty else { return true }
+        guard let processID = entry.processID else { return false }
+        return retainedProcessIDs.contains(processID)
+    }
+
+    private static func describeProcessFilter(_ retainedProcessIDs: Set<Int32>) -> String {
+        guard !retainedProcessIDs.isEmpty else { return "subsystem-only" }
+        return "pid=" + retainedProcessIDs.sorted().map(String.init).joined(separator: ",")
     }
 
     private static func loadEntries(scope: Scope, start: Date) throws -> [Entry] {

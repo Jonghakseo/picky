@@ -65,6 +65,38 @@ struct PickyLifecycleDiagnosticsStoreTests {
         #expect(snapshot.previous?.exitReason == nil)
     }
 
+    /// Regression: diagnostics used to filter OSLog to the previous run only, so a
+    /// bug reported while the app was still up produced an empty log file.
+    @Test func recentProcessIDsCoverBothTheCurrentAndPreviousRun() throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let first = PickyLifecycleDiagnosticsStore(
+            logsDirectory: root,
+            now: { Date(timeIntervalSince1970: 1_700_000_000) },
+            makeRunID: { "first-run" },
+            processID: { 101 }
+        )
+        _ = first.recordLaunch(appVersion: "1.0", appBuild: "1")
+        _ = first.markCurrentRunClean(reason: .update)
+
+        let second = PickyLifecycleDiagnosticsStore(
+            logsDirectory: root,
+            now: { Date(timeIntervalSince1970: 1_700_000_100) },
+            makeRunID: { "second-run" },
+            processID: { 202 }
+        )
+        _ = second.recordLaunch(appVersion: "1.1", appBuild: "2")
+
+        #expect(PickyLifecycleDiagnosticsStore.recentProcessIDs(from: root) == [101, 202])
+    }
+
+    @Test func recentProcessIDsAreEmptyWithoutAPersistedSnapshot() throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        #expect(PickyLifecycleDiagnosticsStore.recentProcessIDs(from: root).isEmpty)
+    }
+
     @Test func persistedSnapshotSanitizesAndCapsOversizedScalarMetadata() throws {
         let root = try makeTemporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }

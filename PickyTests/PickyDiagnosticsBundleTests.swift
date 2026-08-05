@@ -486,12 +486,12 @@ struct PickyDiagnosticsBundleTests {
     }
 
     @Test func crashDiagnosticsConstantsForm768KiBAggregateBudget() {
-        #expect(PickyDiagnosticsBundleBuilder.maximumPreviousProcessOSLogBytes == 256 * 1024)
+        #expect(PickyDiagnosticsBundleBuilder.maximumProcessOSLogBytes == 256 * 1024)
         #expect(PickyDiagnosticsBundleBuilder.maximumIPSExcerptBytes == 384 * 1024)
         #expect(PickyDiagnosticsBundleBuilder.maximumAgentdLifecycleEventBytes == 64 * 1024)
         #expect(PickyDiagnosticsBundleBuilder.maximumLifecycleSnapshotBytes + PickyDiagnosticsBundleBuilder.maximumIPSManifestBytes == PickyDiagnosticsBundleBuilder.maximumLifecycleAndManifestBytes)
         #expect(
-            PickyDiagnosticsBundleBuilder.maximumPreviousProcessOSLogBytes
+            PickyDiagnosticsBundleBuilder.maximumProcessOSLogBytes
                 + PickyDiagnosticsBundleBuilder.maximumIPSExcerptBytes
                 + PickyDiagnosticsBundleBuilder.maximumAgentdLifecycleEventBytes
                 + PickyDiagnosticsBundleBuilder.maximumLifecycleAndManifestBytes

@@ -350,6 +350,7 @@ export class AgentdServer {
       const command = parseCommand(parsed);
       logAgentd("command received", commandLogFields(command));
       await this.dispatchCommand(ws, command);
+      this.send(ws, { type: "ack", commandId: command.id });
     } catch (error) {
       const commandId = typeof parsed === "object" && parsed && "id" in parsed ? String((parsed as { id: unknown }).id) : undefined;
       logAgentd("command failed", { commandId, error: error instanceof Error ? error.message : String(error) });
@@ -1174,6 +1175,8 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, baselineFound: event.baselineFound ? 1 : 0, importedMessageCount: event.importedMessageCount };
     case "error":
       return { eventId: event.id, type: event.type, commandId: event.commandId, code: event.code };
+    case "ack":
+      return { eventId: event.id, type: event.type, commandId: event.commandId };
   }
 }
 

@@ -1384,6 +1384,55 @@ struct PickyAgentClientRouterTests {
         #expect(rejection?.message == "fast reject")
     }
 
+    @Test func sendAwaitingErrorResolvesOnAckWithoutWaitingOutTimeout() async throws {
+        // agentd unicasts `type="ack"` after a command handler resolves. The
+        // router must treat that as confirmed success immediately — the
+        // deliberately huge timeout would otherwise stall this test, which is
+        // exactly the perceived-latency bug the ack race removes (the cancel
+        // pill waited the full heuristic window before settling the turn).
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(
+            configuration: PickyAgentDaemonPool.Configuration(token: "tok", appSupportRoot: root)
+        )
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        await router.connect()
+        try await waitUntil { primary.sentCommands.contains { $0.type == .registerAppCapabilities } }
+
+        let command = PickyCommandEnvelope(type: .abortMainAgent)
+        primary.onSendInject = { [weak primary] cmd in
+            primary?.emit(.protocolEvent(makeAckEnvelope(commandId: cmd.id)))
+        }
+
+        let start = ContinuousClock.now
+        let result = try await router.sendAwaitingError(command, timeout: 30)
+        #expect(result == nil)
+        #expect(ContinuousClock.now - start < .seconds(5))
+    }
+
+    @Test func sendAwaitingErrorIgnoresAckForUnrelatedCommand() async throws {
+        // An ack referencing a different commandId must not resolve the
+        // pending awaiter; the timeout fallback still governs it.
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(
+            configuration: PickyAgentDaemonPool.Configuration(token: "tok", appSupportRoot: root)
+        )
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        await router.connect()
+        try await waitUntil { primary.sentCommands.contains { $0.type == .registerAppCapabilities } }
+
+        let command = PickyCommandEnvelope(type: .abortMainAgent)
+        primary.onSendInject = { [weak primary] _ in
+            primary?.emit(.protocolEvent(makeAckEnvelope(commandId: "cmd-unrelated")))
+        }
+
+        let start = ContinuousClock.now
+        let result = try await router.sendAwaitingError(command, timeout: 0.3)
+        #expect(result == nil)
+        #expect(ContinuousClock.now - start >= .seconds(0.3))
+    }
+
     @Test func routerEventsBroadcastToMultipleSubscribers() async throws {
         // Regression: PickyApp wires the HUD viewModel and CompanionManager
         // to the same router so they share a single primary daemon socket.
@@ -1558,5 +1607,14 @@ private func makeErrorEnvelope(commandId: String, code: String = "bad_message", 
         protocolVersion: pickyAgentProtocolVersion,
         timestamp: Date(),
         event: .error(PickyErrorEvent(code: code, message: message, commandId: commandId))
+    )
+}
+
+private func makeAckEnvelope(commandId: String) -> PickyEventEnvelope {
+    PickyEventEnvelope(
+        id: "event-ack-\(commandId)",
+        protocolVersion: pickyAgentProtocolVersion,
+        timestamp: Date(),
+        event: .ack(PickyAckEvent(commandId: commandId))
     )
 }

@@ -532,6 +532,8 @@ private extension PickyEventEnvelope {
             return "type=terminalSessionSyncOutcome id=\(id) session=\(outcome.sessionId) baselineFound=\(outcome.baselineFound) imported=\(outcome.importedMessageCount)"
         case .error(let error):
             return "type=error id=\(id) command=\(error.commandId ?? "none") code=\(error.code)"
+        case .ack(let ack):
+            return "type=ack id=\(id) command=\(ack.commandId)"
         case .unknown(let type):
             return "type=unknown(\(type)) id=\(id)"
         }

@@ -73,13 +73,14 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     /// fail it immediately instead of letting the drain requeue it after the
     /// child has already disappeared.
     private var activeDrainingChildCommands: [String: ChildCommandDrain] = [:]
-    /// Per-command rejection callbacks keyed by `PickyCommandEnvelope.id`.
+    /// Per-command resolution callbacks keyed by `PickyCommandEnvelope.id`.
     /// Populated by `sendAwaitingError`; invoked by the event forwarder when
-    /// the daemon emits a `type="error"` event whose `commandId` matches a
+    /// the daemon emits a `type="error"` (rejection, non-nil argument) or
+    /// `type="ack"` (success, nil argument) event whose `commandId` matches a
     /// pending registration. Cleared by the timeout race in
-    /// `sendAwaitingError` if no error arrives, so this never grows
+    /// `sendAwaitingError` if neither arrives, so this never grows
     /// unboundedly.
-    private var pendingErrorHandlers: [String: (PickyErrorEvent) -> Void] = [:]
+    private var pendingErrorHandlers: [String: (PickyErrorEvent?) -> Void] = [:]
     /// Active `events` subscribers, keyed by a per-call UUID. The HUD view
     /// model and `CompanionManager` both subscribe to the same router so
     /// outbound commands and inbound events stay consistent across the
@@ -276,13 +277,16 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     }
 
     /// Sends `command` through the right (primary or child) client and races
-    /// the result against a `timeout` window during which the daemon may emit
-    /// a `type="error"` event referencing `command.id`. agentd unicasts those
-    /// rejections to the sender connection, so we intercept them inside
+    /// the daemon's per-command `type="ack"` / `type="error"` events
+    /// referencing `command.id` against a `timeout` fallback. agentd unicasts
+    /// both to the sender connection, so we intercept them inside
     /// `startForwardingEvents` and dispatch to the per-command handler set
     /// up here.
     ///
-    /// Three possible outcomes:
+    /// Four possible outcomes:
+    ///   * Daemon emits a matching `type="ack"` event → returns `nil`
+    ///     (confirmed success) as soon as the handler resolved — on
+    ///     localhost this is near-immediate, well before `timeout`.
     ///   * Daemon emits a matching `type="error"` event → returns the
     ///     `PickyErrorEvent` so the caller can surface a real failure.
     ///   * Underlying `send` throws (transport dead, missing-child-endpoint,
@@ -290,18 +294,10 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     ///     turns it into a user-visible error. Returning `nil` here would
     ///     mask a transport failure as success — exactly the silent-success
     ///     class of bug this method exists to prevent.
-    ///   * No error within `timeout` → returns `nil` (treated as success).
-    ///
-    /// **Known limitation:** agentd does not emit a positive ack today, so
-    /// the "no error within timeout" path is a heuristic. On a heavily
-    /// loaded daemon, a true rejection that arrives after `timeout` would
-    /// be classified as success. Mitigation paths, in order of effort:
-    ///   1. Widen `timeout` per call site for unreliable network paths.
-    ///   2. (Recommended structural fix) Teach agentd's command pipeline
-    ///      to emit `type="ack" commandId=...` on success, and switch this
-    ///      method to a deterministic `ack`/`error` race. That removes the
-    ///      heuristic entirely. Tracked as a separate, larger task because
-    ///      it requires changing the agentd protocol and the supervisor.
+    ///   * Neither within `timeout` → returns `nil` (treated as success).
+    ///     This heuristic fallback only remains for daemons predating the
+    ///     ack event (dev version skew); ack-capable daemons resolve
+    ///     deterministically.
     func sendAwaitingError(_ command: PickyCommandEnvelope, timeout: TimeInterval = 1.0) async throws -> PickyErrorEvent? {
         let commandId = command.id
         // The handler MUST be installed before `send` is dispatched. agentd
@@ -722,12 +718,16 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                 }
                 if case .protocolEvent(let envelope) = event {
                     self.rememberSessionEvent(envelope.event, ownerKey: key)
-                    // Dispatch `type="error"` rejections to any `sendAwaitingError`
-                    // caller blocked on this commandId. The event still falls
-                    // through to the regular fanout so subscribers (HUD viewModel)
-                    // can also react if they want to.
+                    // Dispatch `type="error"` rejections and `type="ack"`
+                    // confirmations to any `sendAwaitingError` caller blocked on
+                    // this commandId. The event still falls through to the
+                    // regular fanout so subscribers (HUD viewModel) can also
+                    // react if they want to.
                     if case .error(let errorEvent) = envelope.event {
                         self.dispatchPendingErrorHandler(errorEvent)
+                    }
+                    if case .ack(let ackEvent) = envelope.event {
+                        self.dispatchPendingAckHandler(ackEvent)
                     }
                     if key == "primary" {
                         switch envelope.event {
@@ -771,6 +771,14 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         guard let commandId = error.commandId,
               let handler = pendingErrorHandlers[commandId] else { return }
         handler(error)
+    }
+
+    /// Resolves a pending `sendAwaitingError` as confirmed success (nil error)
+    /// the moment the daemon acknowledges the command, instead of waiting out
+    /// the heuristic timeout.
+    private func dispatchPendingAckHandler(_ ack: PickyAckEvent) {
+        guard let handler = pendingErrorHandlers[ack.commandId] else { return }
+        handler(nil)
     }
 
     private func registerAppCapabilities(on client: PickyAgentClient) async {

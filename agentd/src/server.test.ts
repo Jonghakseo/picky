@@ -100,7 +100,7 @@ describe("AgentdServer", () => {
       type: "getAutocompleteCapabilities",
       sessionId: "session-autocomplete",
     }));
-    await expect(nextEvent(requester.ws)).resolves.toMatchObject({
+    await expect(waitForEvent(requester.ws, "autocompleteCapabilitiesSnapshot")).resolves.toMatchObject({
       type: "autocompleteCapabilitiesSnapshot",
       requestId: "cmd-autocomplete-capabilities",
       generation: 7,
@@ -119,7 +119,7 @@ describe("AgentdServer", () => {
       draftRevision: 3,
       draftFingerprint: "draft-3",
     }));
-    await expect(nextEvent(requester.ws)).resolves.toMatchObject({
+    await expect(waitForEvent(requester.ws, "autocompleteSuggestionsSnapshot")).resolves.toMatchObject({
       type: "autocompleteSuggestionsSnapshot",
       requestId: "cmd-autocomplete-query",
       draftRevision: 3,
@@ -142,7 +142,7 @@ describe("AgentdServer", () => {
       item: { value: ">worker", label: "Worker" },
       prefix: ">w",
     }));
-    await expect(nextEvent(requester.ws)).resolves.toMatchObject({
+    await expect(waitForEvent(requester.ws, "autocompleteCompletionApplied")).resolves.toMatchObject({
       type: "autocompleteCompletionApplied",
       requestId: "cmd-autocomplete-apply",
       lines: [">worker "],
@@ -244,6 +244,34 @@ describe("AgentdServer", () => {
     await waitUntil(() => vi.mocked(piOAuth.cancelOwnedBy).mock.calls.length === 1);
     expect(piOAuth.cancelOwnedBy).toHaveBeenCalledOnce();
     observer.ws.close();
+  });
+
+  it("unicasts an ack after a successfully handled command", async () => {
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({ id: "cmd-abort-main", protocolVersion: PROTOCOL_VERSION, type: "abortMainAgent" }));
+    const ack = await waitForEvent(ws, "ack");
+    expect(ack).toMatchObject({ type: "ack", commandId: "cmd-abort-main" });
+    ws.close();
+  });
+
+  it("acks after the handler's own events so command responses arrive first", async () => {
+    const { ws } = await connectWithHello();
+    const types: string[] = [];
+    ws.on("message", (data) => types.push((JSON.parse(data.toString()) as EventEnvelope).type));
+    ws.send(JSON.stringify({ id: "cmd-list", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
+    await waitUntil(() => types.includes("ack"));
+    expect(types.indexOf("sessionSnapshot")).toBeGreaterThanOrEqual(0);
+    expect(types.indexOf("sessionSnapshot")).toBeLessThan(types.indexOf("ack"));
+    ws.close();
+  });
+
+  it("emits error without ack when a command is rejected", async () => {
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({ id: "cmd-bad", protocolVersion: PROTOCOL_VERSION, type: "submit" }));
+    const rejection = await nextEvent(ws);
+    expect(rejection.type).toBe("error");
+    expect(await nextEventWithin(ws, 150)).toBeUndefined();
+    ws.close();
   });
 
   it("returns error for malformed JSON and keeps serving commands", async () => {

@@ -349,6 +349,7 @@ enum PickyEvent: Equatable {
     case sessionActivityUpdated(sessionId: String, activitySummary: PickyActivitySummary, seq: Int)
     case terminalSessionSyncOutcome(PickyTerminalSessionSyncOutcome)
     case error(PickyErrorEvent)
+    case ack(PickyAckEvent)
     case unknown(type: String)
 
 
@@ -401,6 +402,7 @@ enum PickyEvent: Equatable {
         case "piOAuthPromptRequested": return .piOAuthPromptRequested(try PickyPiOAuthPromptRequestEvent(from: decoder))
         case "piAuthenticationReloaded": return .piAuthenticationReloaded(try PickyPiAuthenticationReloadedEvent(from: decoder))
         case "error": return .error(try PickyErrorEvent(from: decoder))
+        case "ack": return .ack(try PickyAckEvent(from: decoder))
         default: return nil
         }
     }
@@ -770,6 +772,13 @@ struct PickyErrorEvent: Decodable, Equatable {
     let code: String
     let message: String
     let commandId: String?
+}
+
+/// Positive per-command acknowledgement unicast by agentd after a command
+/// handler resolves. Races against `error` in `sendAwaitingError` so callers
+/// settle as soon as the daemon confirms instead of waiting out the timeout.
+struct PickyAckEvent: Decodable, Equatable {
+    let commandId: String
 }
 
 struct PickyPickleHandoffRequest: Decodable, Equatable {

@@ -772,6 +772,10 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
     baselinePiMessageId: z.string().optional(),
   }),
   EventBaseSchema.extend({ type: z.literal("error"), code: z.string(), message: z.string(), commandId: z.string().optional() }),
+  // Positive per-command acknowledgement, unicast after a command handler
+  // resolves. Lets clients race ack/error deterministically instead of
+  // treating "no error within a timeout" as success.
+  EventBaseSchema.extend({ type: z.literal("ack"), commandId: z.string() }),
 ]);
 
 export type EventEnvelope = z.infer<typeof EventEnvelopeSchema>;

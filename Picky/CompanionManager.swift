@@ -2635,7 +2635,7 @@ final class CompanionManager: ObservableObject {
         case .hello, .sessionSnapshot, .artifactUpdated, .slashCommandsSnapshot,
              .piOAuthStatus, .piOAuthUrlRequested, .piOAuthPromptRequested, .piAuthenticationReloaded,
              .autocompleteCapabilitiesSnapshot, .autocompleteSuggestionsSnapshot, .autocompleteCompletionApplied,
-             .rewindTargetsSnapshot, .sessionDiffResult, .sessionRewound, .unknown,
+             .rewindTargetsSnapshot, .sessionDiffResult, .sessionRewound, .ack, .unknown,
              .sessionMessageAppended, .sessionMessagesImported, .sessionMessageReplaced, .sessionMessageRemoved, .sessionQueueUpdated, .sessionActivityUpdated, .terminalSessionSyncOutcome,
              .pickleHandoffRequested, .pickleBridgeRequested, .externalEntryRequested, .dockGroupsRequested, .pushToTalkControlRequested:
             break

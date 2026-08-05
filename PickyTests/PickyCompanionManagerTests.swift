@@ -170,10 +170,29 @@ private final class FakeVoiceSelectionStore: PickySessionSelectionStoring {
     var hoveredVoiceFollowUpSessionID: String?
     var screenContextTargetSessionID: String?
     var screenContextTargetSticky: Bool = false
+    private(set) var screenContextTargetRevision: UInt64 = 0
 
     func setScreenContextTarget(sessionID: String?, sticky: Bool) {
+        let normalizedSticky = sessionID == nil ? false : sticky
+        guard screenContextTargetSessionID != sessionID || screenContextTargetSticky != normalizedSticky else { return }
         screenContextTargetSessionID = sessionID
-        screenContextTargetSticky = sessionID == nil ? false : sticky
+        screenContextTargetSticky = normalizedSticky
+        screenContextTargetRevision &+= 1
+    }
+}
+
+@MainActor
+private final class FakeVoiceTargetResolver: PickyVoiceTargetResolving {
+    var sessionID: String?
+    private(set) var requestedScreenPoints: [CGPoint] = []
+
+    init(sessionID: String? = nil) {
+        self.sessionID = sessionID
+    }
+
+    func sessionID(at screenPoint: CGPoint) -> String? {
+        requestedScreenPoints.append(screenPoint)
+        return sessionID
     }
 }
 
@@ -530,18 +549,159 @@ struct PickyCompanionManagerTests {
         manager.stop()
     }
 
-    @Test func productionPTTWithoutScreenContextTargetKeepsFollowUpDispatch() async throws {
+    @Test func newerPTTPressKeepsOlderSnapshotUntilItsEffectSettles() throws {
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator()
+        )
+        let olderInputID = UUID()
+        let olderSnapshot = PickyVoiceInputTargetSnapshot(
+            inputID: olderInputID,
+            target: .pickle(
+                sessionID: "pickle-older",
+                origin: .armed(dispatchMode: .steer, sticky: false, revision: 7)
+            )
+        )
+        manager.interactionVoiceInputID = olderInputID
+        manager.voiceInputTargetSnapshotsByInputID[olderInputID] = olderSnapshot
+
+        manager.handleShortcutTransition(.pressed, pressedScreenPoint: .zero)
+
+        #expect(manager.voiceInputTargetSnapshotsByInputID[olderInputID] == olderSnapshot)
+        let newerInputID = try #require(manager.interactionVoiceInputID)
+        #expect(newerInputID != olderInputID)
+        manager.stop()
+    }
+
+    @Test func dictationErrorDoesNotClearSamePickleRearmedAtNewerRevision() async throws {
+        let selection = FakeVoiceSelectionStore()
+        selection.setScreenContextTarget(sessionID: "pickle-target", sticky: false)
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: selection,
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator()
+        )
+
+        manager.bindDictationErrors()
+        manager.handleShortcutTransition(.pressed, pressedScreenPoint: .zero)
+        let failedInputID = try #require(manager.interactionVoiceInputID)
+        selection.setScreenContextTarget(sessionID: nil, sticky: false)
+        selection.setScreenContextTarget(sessionID: "pickle-target", sticky: true)
+        let newerRevision = selection.screenContextTargetRevision
+
+        manager.buddyDictationManager.reportSessionError("dictation failed", inputID: failedInputID)
+
+        try await waitUntil { manager.interactionVoiceInputID == nil }
+        #expect(selection.screenContextTargetSessionID == "pickle-target")
+        #expect(selection.screenContextTargetSticky == true)
+        #expect(selection.screenContextTargetRevision == newerRevision)
+        #expect(manager.voiceInputTargetSnapshotsByInputID[failedInputID] == nil)
+        manager.stop()
+    }
+
+    @Test func staleDictationErrorOnlyRetiresItsOwnSnapshot() throws {
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator()
+        )
+        manager.bindDictationErrors()
+        let olderInputID = UUID()
+        let newerInputID = UUID()
+        manager.voiceInputTargetSnapshotsByInputID[olderInputID] = PickyVoiceInputTargetSnapshot(
+            inputID: olderInputID,
+            target: .pickle(sessionID: "pickle-old", origin: .pointer)
+        )
+        let newerSnapshot = PickyVoiceInputTargetSnapshot(
+            inputID: newerInputID,
+            target: .pickle(sessionID: "pickle-new", origin: .pointer)
+        )
+        manager.voiceInputTargetSnapshotsByInputID[newerInputID] = newerSnapshot
+        manager.interactionVoiceInputID = newerInputID
+        manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-new", caller: #function)
+
+        manager.buddyDictationManager.reportSessionError("stale failure", inputID: olderInputID)
+
+        #expect(manager.interactionVoiceInputID == newerInputID)
+        #expect(manager.voiceInputTargetSnapshotsByInputID[olderInputID] == nil)
+        #expect(manager.voiceInputTargetSnapshotsByInputID[newerInputID] == newerSnapshot)
+        #expect(manager.voiceFollowUpSessionIDForCurrentUtterance == "pickle-new")
+        manager.stop()
+    }
+
+    @Test func discardedVoiceInputRetiresCurrentSnapshotWithoutClearingArmedTarget() {
+        let selection = FakeVoiceSelectionStore()
+        selection.setScreenContextTarget(sessionID: "pickle-armed", sticky: true)
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: selection,
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator()
+        )
+        let inputID = UUID()
+        manager.interactionVoiceInputID = inputID
+        manager.voiceInputTargetSnapshotsByInputID[inputID] = PickyVoiceInputTargetSnapshot(
+            inputID: inputID,
+            target: .pickle(
+                sessionID: "pickle-armed",
+                origin: .armed(
+                    dispatchMode: .followUp,
+                    sticky: true,
+                    revision: selection.screenContextTargetRevision
+                )
+            )
+        )
+        manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-armed", caller: #function)
+
+        manager.handleDictationSessionEvent(.discarded(inputID: inputID))
+
+        #expect(manager.interactionVoiceInputID == nil)
+        #expect(manager.voiceInputTargetSnapshotsByInputID[inputID] == nil)
+        #expect(manager.voiceFollowUpSessionIDForCurrentUtterance == nil)
+        #expect(selection.screenContextTargetSessionID == "pickle-armed")
+        manager.stop()
+    }
+
+    @Test func rearmingSamePickleDuringVoiceTurnPreservesNewerTargetRevision() async throws {
         let client = FakeVoiceClient()
         let selection = FakeVoiceSelectionStore()
-        selection.hoveredVoiceFollowUpSessionID = "pickle-hovered"
+        selection.setScreenContextTarget(sessionID: "pickle-target", sticky: false)
+        let captureGate = FakeCaptureGate()
+        let manager = CompanionManager(
+            agentClient: client,
+            selectionStore: selection,
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(captureGate: captureGate),
+            armedPickleDispatchMode: .followUp
+        )
+
+        manager.handleShortcutTransition(.pressed, pressedScreenPoint: .zero)
+        manager.submitTranscriptToPickyAgent(transcript: "이전 입력")
+        await captureGate.waitUntilEntered()
+
+        selection.setScreenContextTarget(sessionID: nil, sticky: false)
+        selection.setScreenContextTarget(sessionID: "pickle-target", sticky: false)
+        let newerRevision = selection.screenContextTargetRevision
+        await captureGate.release()
+
+        try await waitUntil { client.commands.contains { $0.sessionId == "pickle-target" } }
+        #expect(selection.screenContextTargetSessionID == "pickle-target")
+        #expect(selection.screenContextTargetRevision == newerRevision)
+        manager.stop()
+    }
+
+    @Test func productionPTTPointerTargetKeepsFollowUpDispatch() async throws {
+        let client = FakeVoiceClient()
+        let selection = FakeVoiceSelectionStore()
+        let targetResolver = FakeVoiceTargetResolver(sessionID: "pickle-hovered")
         let manager = CompanionManager(
             agentClient: client,
             selectionStore: selection,
             voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(),
-            armedPickleDispatchMode: .steer
+            armedPickleDispatchMode: .steer,
+            voiceTargetResolver: targetResolver
         )
 
-        manager.handleShortcutTransition(.pressed)
+        manager.handleShortcutTransition(.pressed, pressedScreenPoint: CGPoint(x: 200, y: 300))
         manager.submitTranscriptToPickyAgent(transcript: "일반 후속 질문")
 
         try await waitUntil { client.commands.contains { $0.sessionId == "pickle-hovered" } }
@@ -569,14 +729,16 @@ struct PickyCompanionManagerTests {
             viewModel: viewModel,
             session: try #require(viewModel.sessions.first)
         )
+        let targetResolver = FakeVoiceTargetResolver(sessionID: "pickle-hovered")
         let manager = CompanionManager(
             agentClient: client,
             selectionStore: selection,
-            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator()
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(),
+            voiceTargetResolver: targetResolver
         )
 
         card.updateVoiceFollowUpHover(true)
-        manager.handleShortcutTransition(.pressed)
+        manager.handleShortcutTransition(.pressed, pressedScreenPoint: CGPoint(x: 640, y: 480))
         manager.submitTranscriptToPickyAgent(transcript: "첫 시도부터 계속해줘")
 
         try await waitUntil { client.commands.contains { $0.sessionId == "pickle-hovered" } }
@@ -591,6 +753,7 @@ struct PickyCompanionManagerTests {
     @Test func deferredConversationCardHoverAfterPTTStillTargetsPickleOnFirstAttempt() async throws {
         let client = FakeVoiceClient()
         let selection = FakeVoiceSelectionStore()
+        let targetResolver = FakeVoiceTargetResolver(sessionID: "pickle-hovered")
         let viewModel = PickySessionListViewModel(
             client: client,
             notificationCenter: PickyNoopNotificationCenter(),
@@ -609,24 +772,109 @@ struct PickyCompanionManagerTests {
         let manager = CompanionManager(
             agentClient: client,
             selectionStore: selection,
-            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator()
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(),
+            voiceTargetResolver: targetResolver
         )
 
-        // macOS can deliver the global shortcut transition before SwiftUI runs
-        // the onHover callback for the pointer movement that physically happened
-        // first. Model that framework event inversion deterministically.
-        manager.handleShortcutTransition(.pressed)
+        // The press-time pointer resolver must win even when SwiftUI delivers
+        // onHover(true) after the shortcut transition.
+        manager.handleShortcutTransition(.pressed, pressedScreenPoint: CGPoint(x: 640, y: 480))
         card.updateVoiceFollowUpHover(true)
         manager.submitTranscriptToPickyAgent(transcript: "첫 시도부터 계속해줘")
 
-        try await waitUntil { !client.submissions.isEmpty || client.commands.contains { $0.sessionId == "pickle-hovered" } }
-        let command = client.commands.first { $0.sessionId == "pickle-hovered" }
-        withKnownIssue("PTT can snapshot a stale nil hover target before SwiftUI delivers onHover(true)") {
-            #expect(command?.type == .followUp)
-            #expect(command?.text == "첫 시도부터 계속해줘")
-            #expect(client.submissions.isEmpty)
-        }
+        try await waitUntil { client.commands.contains { $0.sessionId == "pickle-hovered" } }
+        let command = try #require(client.commands.first { $0.sessionId == "pickle-hovered" })
+        #expect(command.type == .followUp)
+        #expect(command.text == "첫 시도부터 계속해줘")
+        #expect(client.submissions.isEmpty)
+        #expect(targetResolver.requestedScreenPoints == [CGPoint(x: 640, y: 480)])
         card.updateVoiceFollowUpHover(false)
+        manager.stop()
+    }
+
+    @Test func staleHoverDoesNotOverridePointerTargetAtPTTPress() async throws {
+        let client = FakeVoiceClient()
+        let selection = FakeVoiceSelectionStore()
+        selection.hoveredVoiceFollowUpSessionID = "pickle-stale"
+        let targetResolver = FakeVoiceTargetResolver(sessionID: "pickle-pointer")
+        let manager = CompanionManager(
+            agentClient: client,
+            selectionStore: selection,
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(),
+            voiceTargetResolver: targetResolver
+        )
+
+        manager.handleShortcutTransition(.pressed, pressedScreenPoint: CGPoint(x: 100, y: 200))
+        manager.submitTranscriptToPickyAgent(transcript: "포인터 대상에게 보내줘")
+
+        try await waitUntil { client.commands.contains { $0.sessionId == "pickle-pointer" } }
+        let command = try #require(client.commands.first { $0.sessionId == "pickle-pointer" })
+        #expect(command.type == .followUp)
+        #expect(client.commands.contains { $0.sessionId == "pickle-stale" } == false)
+        manager.stop()
+    }
+
+    @Test func globalShortcutPublisherResolvesTargetSynchronouslyWithoutSchedulerHop() {
+        let targetResolver = FakeVoiceTargetResolver(sessionID: "pickle-global")
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(),
+            voiceTargetResolver: targetResolver
+        )
+        let pressPoint = CGPoint(x: 321, y: 654)
+        manager.bindShortcutTransitions()
+
+        manager.globalPushToTalkShortcutMonitor.shortcutTransitionPublisher.send(.pressed(
+            PickyPTTPressObservation(
+                screenPoint: pressPoint,
+                observedAt: Date(timeIntervalSince1970: 1_800_000_000),
+                source: .keyboardShortcut
+            )
+        ))
+
+        #expect(targetResolver.requestedScreenPoints == [pressPoint])
+        #expect(manager.voiceFollowUpSessionIDForCurrentUtterance == "pickle-global")
+        manager.stop()
+    }
+
+    @Test func externalPTTUsesPointerLocationAtReceiptTime() async throws {
+        let client = FakeVoiceClient()
+        let targetResolver = FakeVoiceTargetResolver(sessionID: "pickle-external")
+        let receiptPoint = CGPoint(x: 777, y: 333)
+        let manager = CompanionManager(
+            agentClient: client,
+            selectionStore: FakeVoiceSelectionStore(),
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(),
+            voiceTargetResolver: targetResolver,
+            pointerLocationProvider: { receiptPoint }
+        )
+
+        manager.controlPushToTalkFromExternal(action: .press)
+        manager.submitTranscriptToPickyAgent(transcript: "외부 버튼 입력")
+
+        try await waitUntil { client.commands.contains { $0.sessionId == "pickle-external" } }
+        #expect(targetResolver.requestedScreenPoints == [receiptPoint])
+        manager.stop()
+    }
+
+    @Test func pointerMovementAfterPTTPressDoesNotRetargetCurrentUtterance() async throws {
+        let client = FakeVoiceClient()
+        let targetResolver = FakeVoiceTargetResolver(sessionID: "pickle-at-press")
+        let manager = CompanionManager(
+            agentClient: client,
+            selectionStore: FakeVoiceSelectionStore(),
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(),
+            voiceTargetResolver: targetResolver
+        )
+
+        manager.handleShortcutTransition(.pressed, pressedScreenPoint: CGPoint(x: 100, y: 200))
+        targetResolver.sessionID = "pickle-after-move"
+        manager.submitTranscriptToPickyAgent(transcript: "처음 대상을 유지해줘")
+
+        try await waitUntil { client.commands.contains { $0.sessionId == "pickle-at-press" } }
+        #expect(client.commands.contains { $0.sessionId == "pickle-after-move" } == false)
+        #expect(targetResolver.requestedScreenPoints.count == 1)
         manager.stop()
     }
 

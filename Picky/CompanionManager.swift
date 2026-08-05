@@ -210,6 +210,8 @@ final class CompanionManager: ObservableObject {
     /// default (`true`) so the existing teardown behavior is preserved.
     private let ownsAgentClientLifecycle: Bool
     private let selectionStore: PickySessionSelectionStoring
+    private let voiceTargetResolver: any PickyVoiceTargetResolving
+    private let pointerLocationProvider: @MainActor () -> CGPoint
     private let transcriptionProviderFactory: (PickySettings) -> any BuddyTranscriptionProvider
     private let speechPlaybackProviderFactory: (PickySettings) -> any PickySpeechPlaybackProvider
     private let interactionTimerScheduler: any PickyInteractionTimerScheduling
@@ -250,7 +252,9 @@ final class CompanionManager: ObservableObject {
         fontScaleStore: PickyAppFontScaleStore? = nil,
         speechWatchdogTimeout: TimeInterval? = nil,
         armedPickleDispatchMode: PickyArmedPickleDispatchMode? = nil,
-        annotationSceneMonitor: PickyAnnotationSceneMonitor? = nil
+        annotationSceneMonitor: PickyAnnotationSceneMonitor? = nil,
+        voiceTargetResolver: (any PickyVoiceTargetResolving)? = nil,
+        pointerLocationProvider: @escaping @MainActor () -> CGPoint = { NSEvent.mouseLocation }
     ) {
         let resolvedInitialSettings = initialSettings
             ?? Self.migrateLegacyCursorPreferenceIfNeeded(store: PickySettingsStore())
@@ -262,6 +266,8 @@ final class CompanionManager: ObservableObject {
         self.agentClient = agentClient
         self.ownsAgentClientLifecycle = ownsAgentClientLifecycle
         self.selectionStore = selectionStore
+        self.voiceTargetResolver = voiceTargetResolver ?? PickyVoiceTargetHitTestRegistry()
+        self.pointerLocationProvider = pointerLocationProvider
         self.transcriptionProviderFactory = resolvedTranscriptionProviderFactory
         self.speechPlaybackProviderFactory = resolvedSpeechPlaybackProviderFactory
         self.interactionTimerScheduler = interactionTimerScheduler ?? PickyTaskInteractionTimerScheduler()
@@ -315,7 +321,7 @@ final class CompanionManager: ObservableObject {
     private var directMessageContinuations: [UUID: CheckedContinuation<Bool, Never>] = [:]
     let inkCaptureCoordinator: any PickyInkCaptureCoordinating
     let pendingInkCaptures = PickyPendingInkCaptureStore()
-    var screenContextVoiceTargetByInputID: [UUID: String] = [:]
+    var voiceInputTargetSnapshotsByInputID: [UUID: PickyVoiceInputTargetSnapshot] = [:]
     var screenContextDisplayOverridesByTextInputID: [UUID: PickyScreenContextDisplayOverrides] = [:]
     var screenContextDisplaySelectionSnapshotsByTextInputID: [UUID: PickyScreenContextDisplaySelectionSnapshot] = [:]
     private var failedQuickInputInkCapture: PickyInkCapture?
@@ -868,18 +874,47 @@ final class CompanionManager: ObservableObject {
             }
     }
 
-    private func bindDictationErrors() {
-        dictationErrorCancellable = buddyDictationManager.$lastErrorMessage
-            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] message in
-                self?.voiceContextCapturePipeline.cancelAll()
-                self?.selectionStore.screenContextTargetSessionID = nil
-                self?.applyScreenContextTarget(nil)
-                self?.setVoiceFollowUpSessionIDForCurrentUtterance(nil)
-                self?.finishAwaitingAgentResponse(visibleText: message, spokenText: message)
+    // Internal so tests can exercise production terminal-event teardown without
+    // starting microphone hardware or the global event tap.
+    func bindDictationErrors() {
+        dictationErrorCancellable = buddyDictationManager.sessionEventPublisher
+            .sink { [weak self] event in
+                self?.handleDictationSessionEvent(event)
             }
+    }
+
+    func handleDictationSessionEvent(_ event: BuddyDictationSessionEvent) {
+        switch event {
+        case .failed(let inputID, let message):
+            guard let inputID else {
+                guard interactionVoiceInputID == nil else { return }
+                finishAwaitingAgentResponse(visibleText: message, spokenText: message)
+                return
+            }
+            let targetSnapshot = voiceInputTargetSnapshotsByInputID[inputID]
+            voiceContextCapturePipeline.cancel(inputID: inputID)
+            interactionCoordinator.accept(
+                .voiceStartFailed(message: message, inputID: inputID),
+                correlation: PickyInteractionCorrelation(inputID: inputID, source: .voice)
+            )
+            reduceVoiceInteraction(.sttFailed(inputID: inputID, message: message))
+            guard completeVoiceInteractionIfCurrent(inputID: inputID) else { return }
+            clearScreenContextTargetIfCurrent(targetSnapshot, includingSticky: true)
+            setVoiceFollowUpSessionIDForCurrentUtterance(nil, caller: "dictation-error")
+            finishAwaitingAgentResponse(visibleText: message, spokenText: message)
+
+        case .discarded(let inputID):
+            guard let inputID else { return }
+            voiceContextCapturePipeline.cancel(inputID: inputID)
+            interactionCoordinator.accept(
+                .voiceStartFailed(message: "Voice input discarded", inputID: inputID),
+                correlation: PickyInteractionCorrelation(inputID: inputID, source: .voice)
+            )
+            reduceVoiceInteraction(.sttFailed(inputID: inputID, message: "Voice input discarded"))
+            guard completeVoiceInteractionIfCurrent(inputID: inputID) else { return }
+            setVoiceFollowUpSessionIDForCurrentUtterance(nil, caller: "dictation-discarded")
+            updateVoicePresentation()
+        }
     }
 
     func refreshMainAgentModelOptions() {
@@ -1082,12 +1117,21 @@ final class CompanionManager: ObservableObject {
         voicePromptBubbleState = projection.promptBubbleState
     }
 
-    private func bindShortcutTransitions() {
+    // Internal so tests can verify the production Combine bridge remains
+    // synchronous without installing a global CGEvent tap.
+    func bindShortcutTransitions() {
         shortcutTransitionCancellable = globalPushToTalkShortcutMonitor
             .shortcutTransitionPublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] transition in
-                self?.handleShortcutTransition(transition)
+            .sink { [weak self] event in
+                // GlobalPushToTalkShortcutMonitor publishes synchronously from
+                // its main-run-loop event tap. Do not add a scheduler hop here:
+                // point and live card geometry must be resolved in the same turn.
+                switch event {
+                case .pressed(let observation):
+                    self?.handleShortcutTransition(.pressed, pressedScreenPoint: observation.screenPoint)
+                case .released:
+                    self?.handleShortcutTransition(.released)
+                }
             }
     }
 
@@ -1381,7 +1425,7 @@ final class CompanionManager: ObservableObject {
         switch action {
         case .press:
             guard !isPushToTalkShortcutHeld else { return }
-            handleShortcutTransition(.pressed)
+            handleShortcutTransition(.pressed, pressedScreenPoint: pointerLocationProvider())
         case .release:
             guard isPushToTalkShortcutHeld else { return }
             handleShortcutTransition(.released)
@@ -1390,7 +1434,10 @@ final class CompanionManager: ObservableObject {
 
     // Internal so PickyCompanionManagerTests can exercise the production PTT
     // transition through context capture and coordinator effect dispatch.
-    func handleShortcutTransition(_ transition: BuddyPushToTalkShortcut.ShortcutTransition) {
+    func handleShortcutTransition(
+        _ transition: BuddyPushToTalkShortcut.ShortcutTransition,
+        pressedScreenPoint: CGPoint? = nil
+    ) {
         // Defensive: even though GlobalPushToTalkShortcutMonitor short-circuits
         // its callback while paused, swallowing transitions here too keeps any
         // already-queued event from slipping through and dismissing the panel.
@@ -1410,16 +1457,31 @@ final class CompanionManager: ObservableObject {
             pendingAgentResponseStartedAt = nil
             currentVoicePromptPreview = nil
             voicePromptBubbleState = .hidden
-            let screenContextTargetSessionID = normalizedVoiceFollowUpSessionID(selectionStore.screenContextTargetSessionID)
-            let targetSessionID = screenContextTargetSessionID ?? normalizedVoiceFollowUpSessionID(selectionStore.hoveredVoiceFollowUpSessionID)
-            let inputID = UUID()
-            if let screenContextTargetSessionID {
-                screenContextVoiceTargetByInputID[inputID] = screenContextTargetSessionID
+            let armedTarget = normalizedVoiceFollowUpSessionID(selectionStore.screenContextTargetSessionID).map {
+                PickyScreenContextTargetSnapshot(
+                    sessionID: $0,
+                    sticky: selectionStore.screenContextTargetSticky,
+                    revision: selectionStore.screenContextTargetRevision
+                )
             }
+            let pressPoint = pressedScreenPoint ?? pointerLocationProvider()
+            let pointerTargetSessionID = voiceTargetResolver.sessionID(at: pressPoint)
+            let inputID = UUID()
+            let targetSnapshot = PickyVoiceInputTargetPolicy.resolve(
+                inputID: inputID,
+                armedTarget: armedTarget,
+                pointerSessionID: pointerTargetSessionID,
+                armedDispatchMode: armedPickleDispatchMode
+            )
+            // Keep older snapshots until their own effect reaches a terminal
+            // path. A queued effect may still need its captured steer/follow-up
+            // semantics after this newer press becomes current.
+            voiceInputTargetSnapshotsByInputID[inputID] = targetSnapshot
+            let targetSessionID = targetSnapshot.sessionID
             interactionVoiceInputID = inputID
             reduceVoiceInteraction(.pttPressed(inputID: inputID, targetSessionID: targetSessionID))
             beginInkCapture(source: .voice)
-            print("🎙️ Picky voice route — PTT pressed; screenContext=\(selectionStore.screenContextTargetSessionID ?? "<nil>") storeHover=\(selectionStore.hoveredVoiceFollowUpSessionID ?? "<nil>") prevTask=\(currentResponseTask != nil)")
+            print("🎙️ Picky voice route — PTT pressed; screenContext=\(selectionStore.screenContextTargetSessionID ?? "<nil>") pointerTarget=\(pointerTargetSessionID ?? "<nil>") point=(\(Int(pressPoint.x)),\(Int(pressPoint.y))) prevTask=\(currentResponseTask != nil)")
             setVoiceFollowUpSessionIDForCurrentUtterance(targetSessionID, caller: "PTT-pressed")
             interactionCoordinator.accept(
                 .voicePressed(targetSessionID: targetSessionID),
@@ -1451,6 +1513,7 @@ final class CompanionManager: ObservableObject {
             pendingKeyboardShortcutStartTask?.cancel()
             pendingKeyboardShortcutStartTask = Task {
                 await buddyDictationManager.startPushToTalkFromKeyboardShortcut(
+                    inputID: inputID,
                     currentDraftText: "",
                     updateDraftText: { _ in
                         // Partial transcripts are hidden (waveform-only UI)
@@ -1533,6 +1596,12 @@ final class CompanionManager: ObservableObject {
         } else {
             inputID = UUID()
             interactionVoiceInputID = inputID
+            voiceInputTargetSnapshotsByInputID[inputID] = PickyVoiceInputTargetPolicy.resolve(
+                inputID: inputID,
+                armedTarget: nil,
+                pointerSessionID: voiceFollowUpSessionID,
+                armedDispatchMode: armedPickleDispatchMode
+            )
             interactionCoordinator.accept(
                 .voicePressed(targetSessionID: voiceFollowUpSessionID),
                 correlation: PickyInteractionCorrelation(inputID: inputID, sessionID: voiceFollowUpSessionID, source: .voice)
@@ -1622,9 +1691,11 @@ final class CompanionManager: ObservableObject {
     private func pickleFollowUpContext(
         _ context: PickyContextPacket,
         sessionID: String,
-        preservesScreenContext: Bool = false
+        preservesScreenContext: Bool = false,
+        usesCurrentScreenContextTarget: Bool = true
     ) -> PickyContextPacket {
-        let isScreenContextTargeted = preservesScreenContext || selectionStore.screenContextTargetSessionID == sessionID
+        let isScreenContextTargeted = preservesScreenContext
+            || (usesCurrentScreenContextTarget && selectionStore.screenContextTargetSessionID == sessionID)
         let hasUserMarks = !context.inkMarks.isEmpty
         guard isScreenContextTargeted || hasUserMarks else {
             return PickyContextPacket(
@@ -1665,10 +1736,22 @@ final class CompanionManager: ObservableObject {
 
     func clearScreenContextTargetIfCurrent(_ sessionID: String?) {
         guard let sessionID, selectionStore.screenContextTargetSessionID == sessionID else { return }
-        // Sticky armed Pickles persist across follow-up/steer dispatches; only
-        // an explicit user gesture (re-tap, arming another Pickle) or a hard
-        // failure (dictation error, session removed) clears them.
+        // Normal completion never clears a sticky target. Hard failures use
+        // the revision-aware snapshot overload with `includingSticky: true`.
         if selectionStore.screenContextTargetSticky { return }
+        selectionStore.setScreenContextTarget(sessionID: nil, sticky: false)
+        applyScreenContextTarget(nil)
+    }
+
+    func clearScreenContextTargetIfCurrent(
+        _ snapshot: PickyVoiceInputTargetSnapshot?,
+        includingSticky: Bool = false
+    ) {
+        guard case .pickle(let sessionID, .armed(_, let sticky, let revision)) = snapshot?.target,
+              (!sticky || includingSticky),
+              selectionStore.screenContextTargetSessionID == sessionID,
+              selectionStore.screenContextTargetRevision == revision
+        else { return }
         selectionStore.setScreenContextTarget(sessionID: nil, sticky: false)
         applyScreenContextTarget(nil)
     }
@@ -2007,7 +2090,10 @@ final class CompanionManager: ObservableObject {
             guard let self else { return }
             do {
                 let receipt = try await submitOrIntercept(PickyAgentSubmission(transcript: transcript, context: context))
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled else {
+                    voiceInputTargetSnapshotsByInputID.removeValue(forKey: inputID)
+                    return
+                }
                 PickyAnalytics.trackUserMessageSent(transcript: transcript)
                 interactionCoordinator.effectCompleted(
                     .agentSubmissionAccepted(contextID: context.id, sessionID: receipt.sessionID, inputID: inputID),
@@ -2016,6 +2102,7 @@ final class CompanionManager: ObservableObject {
                 handleAgentSubmissionAccepted(receipt: receipt, source: "voice", contextID: context.id)
                 finishVoiceSubmissionIfIdle(inputID: inputID)
             } catch is CancellationError {
+                voiceInputTargetSnapshotsByInputID.removeValue(forKey: inputID)
                 // User spoke again — response was interrupted.
             } catch {
                 handleVoiceSubmissionFailure(error, inputID: inputID, contextID: context.id)
@@ -2026,13 +2113,18 @@ final class CompanionManager: ObservableObject {
     private func runFollowUpPickleEffect(inputID: UUID, sessionID: String, transcript: String, context: PickyContextPacket) {
         currentResponseTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            let isScreenContextTargetedInput = screenContextVoiceTargetByInputID.removeValue(forKey: inputID) == sessionID
-            if isScreenContextTargetedInput {
+            let targetSnapshot = voiceInputTargetSnapshotsByInputID[inputID]
+            if case .pickle(let snapshotSessionID, .armed(let dispatchMode, _, _)) = targetSnapshot?.target,
+               snapshotSessionID == sessionID {
                 let command: PickyCommandEnvelope
                 let source: String
-                switch armedPickleDispatchMode {
+                switch dispatchMode {
                 case .steer:
-                    let visualDslEnabled = prepareArmedPickleVisualDslContext(context, sessionID: sessionID)
+                    let visualDslEnabled = prepareArmedPickleVisualDslContext(
+                        context,
+                        sessionID: sessionID,
+                        isArmedTargetSnapshot: true
+                    )
                     command = PickyCommandEnvelope(
                         type: .steer,
                         context: context,
@@ -2042,8 +2134,17 @@ final class CompanionManager: ObservableObject {
                     )
                     source = "voice-steer"
                 case .followUp:
-                    let followUpContext = pickleFollowUpContext(context, sessionID: sessionID)
-                    let visualDslEnabled = prepareArmedPickleVisualDslContext(followUpContext, sessionID: sessionID)
+                    let followUpContext = pickleFollowUpContext(
+                        context,
+                        sessionID: sessionID,
+                        preservesScreenContext: true,
+                        usesCurrentScreenContextTarget: false
+                    )
+                    let visualDslEnabled = prepareArmedPickleVisualDslContext(
+                        followUpContext,
+                        sessionID: sessionID,
+                        isArmedTargetSnapshot: true
+                    )
                     command = PickyCommandEnvelope(
                         type: .followUp,
                         context: followUpContext,
@@ -2055,8 +2156,10 @@ final class CompanionManager: ObservableObject {
                 }
                 do {
                     try await agentClient.send(command)
-                    guard !Task.isCancelled else { return }
-                    clearScreenContextTargetIfCurrent(sessionID)
+                    guard !Task.isCancelled else {
+                        voiceInputTargetSnapshotsByInputID.removeValue(forKey: inputID)
+                        return
+                    }
                     let receipt = PickyAgentSubmissionReceipt(sessionID: sessionID, message: "")
                     interactionCoordinator.effectCompleted(
                         .agentSubmissionAccepted(contextID: context.id, sessionID: sessionID, inputID: inputID),
@@ -2065,6 +2168,7 @@ final class CompanionManager: ObservableObject {
                     handleAgentSubmissionAccepted(receipt: receipt, source: source, contextID: context.id)
                     finishVoiceSubmissionIfIdle(inputID: inputID)
                 } catch is CancellationError {
+                    voiceInputTargetSnapshotsByInputID.removeValue(forKey: inputID)
                     // User spoke again — response was interrupted.
                 } catch {
                     handleVoiceSubmissionFailure(error, inputID: inputID, contextID: context.id)
@@ -2073,8 +2177,16 @@ final class CompanionManager: ObservableObject {
             }
 
             do {
-                try await agentClient.send(PickyCommandEnvelope(type: .followUp, context: self.pickleFollowUpContext(context, sessionID: sessionID), sessionId: sessionID, text: transcript))
-                guard !Task.isCancelled else { return }
+                let followUpContext = self.pickleFollowUpContext(
+                    context,
+                    sessionID: sessionID,
+                    usesCurrentScreenContextTarget: false
+                )
+                try await agentClient.send(PickyCommandEnvelope(type: .followUp, context: followUpContext, sessionId: sessionID, text: transcript))
+                guard !Task.isCancelled else {
+                    voiceInputTargetSnapshotsByInputID.removeValue(forKey: inputID)
+                    return
+                }
                 let receipt = PickyAgentSubmissionReceipt(sessionID: sessionID, message: "")
                 interactionCoordinator.effectCompleted(
                     .agentSubmissionAccepted(contextID: context.id, sessionID: sessionID, inputID: inputID),
@@ -2083,6 +2195,7 @@ final class CompanionManager: ObservableObject {
                 handleAgentSubmissionAccepted(receipt: receipt, source: "voice-follow-up", contextID: context.id)
                 finishVoiceSubmissionIfIdle(inputID: inputID)
             } catch is CancellationError {
+                voiceInputTargetSnapshotsByInputID.removeValue(forKey: inputID)
                 // User spoke again — response was interrupted.
             } catch {
                 handleVoiceSubmissionFailure(error, inputID: inputID, contextID: context.id)
@@ -2098,18 +2211,20 @@ final class CompanionManager: ObservableObject {
             .transcriptFailed(message: message, inputID: inputID),
             correlation: PickyInteractionCorrelation(inputID: inputID, contextID: contextID, source: .agent)
         )
-        finishAwaitingAgentResponse(visibleText: "I captured that, but the local agent client is not ready yet.", spokenText: "I captured that, but the local agent client is not ready yet.")
+        let targetSnapshot = voiceInputTargetSnapshotsByInputID[inputID]
         if completeVoiceInteractionIfCurrent(inputID: inputID) {
-            clearScreenContextTargetIfCurrent(voiceFollowUpSessionIDForCurrentUtterance)
+            finishAwaitingAgentResponse(visibleText: "I captured that, but the local agent client is not ready yet.", spokenText: "I captured that, but the local agent client is not ready yet.")
+            clearScreenContextTargetIfCurrent(targetSnapshot)
             setVoiceFollowUpSessionIDForCurrentUtterance(nil, caller: "voice-submission-failure")
         }
     }
 
     private func finishVoiceSubmissionIfIdle(inputID: UUID) {
+        let targetSnapshot = voiceInputTargetSnapshotsByInputID[inputID]
         let completedCurrentInput = completeVoiceInteractionIfCurrent(inputID: inputID)
         print("🎙️ Picky voice route — responseTask end; cancelled=\(Task.isCancelled) selfBeforeReset=\(voiceFollowUpSessionIDForCurrentUtterance ?? "<nil>")")
         if completedCurrentInput {
-            clearScreenContextTargetIfCurrent(voiceFollowUpSessionIDForCurrentUtterance)
+            clearScreenContextTargetIfCurrent(targetSnapshot)
             setVoiceFollowUpSessionIDForCurrentUtterance(nil, caller: "responseTask-end")
         }
         if !Task.isCancelled, pendingAgentResponseStartedAt == nil, voiceState != .responding {
@@ -2120,6 +2235,7 @@ final class CompanionManager: ObservableObject {
 
     @discardableResult
     func completeVoiceInteractionIfCurrent(inputID: UUID) -> Bool {
+        voiceInputTargetSnapshotsByInputID.removeValue(forKey: inputID)
         guard interactionVoiceInputID == inputID else { return false }
         interactionVoiceInputID = nil
         return true

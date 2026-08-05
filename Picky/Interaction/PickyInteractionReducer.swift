@@ -1,6 +1,19 @@
 import CoreGraphics
 import Foundation
 
+private extension PickyInputPhase {
+    var voiceInputID: UUID? {
+        switch self {
+        case .voiceListening(let inputID, _),
+             .voiceFinalizing(let inputID, _, _),
+             .voiceSubmitting(let inputID, _, _):
+            inputID
+        case .idle, .textSubmitting:
+            nil
+        }
+    }
+}
+
 enum PickyAnnotationPointerTarget {
     /// Matches the existing rough draw-on duration closely enough for the buddy to hover
     /// while each annotation appears, without adding a second animation system.
@@ -225,11 +238,14 @@ struct PickyInteractionReducing {
     }
 
     private mutating func applyVoiceStartFailed(message: String, inputID: UUID) {
-        guard state.pendingVoiceInputs[inputID] != nil else {
+        guard state.pendingVoiceInputs.removeValue(forKey: inputID) != nil else {
             record(.staleEvent, "Ignored stale voice start failure: \(message)")
             return
         }
-        state.pendingVoiceInputs[inputID] = nil
+        guard state.input.voiceInputID == inputID else {
+            record(.staleEvent, "Retired superseded voice start failure: \(message)")
+            return
+        }
         state.input = .idle
         state = state.removingOverlayReason(.activeVoiceInput)
         record(.stateChanged, "Voice start failed")
@@ -260,12 +276,15 @@ struct PickyInteractionReducing {
     }
 
     private mutating func applyTranscriptFailed(message: String, inputID: UUID) {
-        state.queuedSpeechReplies.removeAll()
-        guard state.pendingVoiceInputs[inputID] != nil else {
+        guard state.pendingVoiceInputs.removeValue(forKey: inputID) != nil else {
             record(.staleEvent, "Ignored stale transcript failure: \(message)")
             return
         }
-        state.pendingVoiceInputs[inputID] = nil
+        guard state.input.voiceInputID == inputID else {
+            record(.staleEvent, "Retired superseded transcript failure: \(message)")
+            return
+        }
+        state.queuedSpeechReplies.removeAll()
         state.input = .idle
         preemptSpeakingOutputIfNeeded()
         state.output = .idle

@@ -246,6 +246,42 @@ struct PickyInteractionStateMachineTests {
         #expect(containsStopSpeech(reason: .superseded, speechID: speechA, in: transition.effects))
     }
 
+    @Test func supersededTranscriptFailureRetiresOnlyOlderPendingInput() {
+        var initial = PickyInteractionState()
+        initial.pendingVoiceInputs[inputA] = PickyVoiceInputState(targetSessionID: "pickle-old")
+        initial.pendingVoiceInputs[inputB] = PickyVoiceInputState(targetSessionID: "pickle-new")
+        initial.input = .voiceFinalizing(inputID: inputB, targetSessionID: "pickle-new", transcriptPreview: nil)
+        initial.output = .waitingForAgent(inputID: inputB, contextID: nil, promptPreview: "new")
+
+        let transition = reduce(
+            initial,
+            .transcriptFailed(message: "old failure", inputID: inputA),
+            id: timerB
+        )
+
+        #expect(transition.state.pendingVoiceInputs[inputA] == nil)
+        #expect(transition.state.pendingVoiceInputs[inputB] != nil)
+        #expect(transition.state.input == initial.input)
+        #expect(transition.state.output == initial.output)
+    }
+
+    @Test func supersededVoiceStartFailureDoesNotIdleNewerInput() {
+        var initial = PickyInteractionState()
+        initial.pendingVoiceInputs[inputA] = PickyVoiceInputState(targetSessionID: "pickle-old")
+        initial.pendingVoiceInputs[inputB] = PickyVoiceInputState(targetSessionID: "pickle-new")
+        initial.input = .voiceListening(inputID: inputB, targetSessionID: "pickle-new")
+
+        let transition = reduce(
+            initial,
+            .voiceStartFailed(message: "old start failure", inputID: inputA),
+            id: timerB
+        )
+
+        #expect(transition.state.pendingVoiceInputs[inputA] == nil)
+        #expect(transition.state.pendingVoiceInputs[inputB] != nil)
+        #expect(transition.state.input == initial.input)
+    }
+
     @Test func speakingPreemptedByQuickInputTextSubmissionFailedEmitsStopSpeechAndIdles() {
         var initial = speakingState(contextID: voiceContextID, speechID: speechA, timerID: timerA)
         initial.pendingTextInputs[inputB] = PickyTextInputState(text: "queued", source: .quickInput)

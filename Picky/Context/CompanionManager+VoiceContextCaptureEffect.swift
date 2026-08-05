@@ -21,19 +21,25 @@ extension CompanionManager {
                     fallbackInkCapture: pendingInkCaptures.consume(for: inputID)
                 )
                 guard let captureResult else {
-                    guard !Task.isCancelled else { return }
-                    screenContextVoiceTargetByInputID.removeValue(forKey: inputID)
+                    guard !Task.isCancelled else {
+                        voiceInputTargetSnapshotsByInputID.removeValue(forKey: inputID)
+                        return
+                    }
+                    let targetSnapshot = voiceInputTargetSnapshotsByInputID[inputID]
                     interactionCoordinator.effectCompleted(
                         .transcriptFailed(message: "Context capture returned no packet.", inputID: inputID),
                         correlation: PickyInteractionCorrelation(inputID: inputID, source: .voice)
                     )
                     if completeVoiceInteractionIfCurrent(inputID: inputID) {
-                        clearScreenContextTargetIfCurrent(targetSessionID)
+                        clearScreenContextTargetIfCurrent(targetSnapshot)
                         setVoiceFollowUpSessionIDForCurrentUtterance(nil)
                     }
                     return
                 }
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled else {
+                    voiceInputTargetSnapshotsByInputID.removeValue(forKey: inputID)
+                    return
+                }
                 interactionCoordinator.effectCompleted(
                     .voiceContextCaptured(
                         inputID: inputID,
@@ -44,10 +50,10 @@ extension CompanionManager {
                     correlation: PickyInteractionCorrelation(inputID: inputID, contextID: captureResult.contextPacket.id, source: .voice)
                 )
             } catch is CancellationError {
-                screenContextVoiceTargetByInputID.removeValue(forKey: inputID)
+                voiceInputTargetSnapshotsByInputID.removeValue(forKey: inputID)
                 // User spoke again — response was interrupted.
             } catch {
-                screenContextVoiceTargetByInputID.removeValue(forKey: inputID)
+                let targetSnapshot = voiceInputTargetSnapshotsByInputID[inputID]
                 let message = error.localizedDescription
                 PickyAnalytics.trackResponseError(error: message)
                 print("⚠️ Picky context capture error: \(error)")
@@ -55,11 +61,14 @@ extension CompanionManager {
                     .transcriptFailed(message: message, inputID: inputID),
                     correlation: PickyInteractionCorrelation(inputID: inputID, source: .voice)
                 )
-                finishAwaitingAgentResponse(
-                    visibleText: "I captured that, but the local agent client is not ready yet.",
-                    spokenText: "I captured that, but the local agent client is not ready yet."
-                )
-                completeVoiceInteractionIfCurrent(inputID: inputID)
+                if completeVoiceInteractionIfCurrent(inputID: inputID) {
+                    finishAwaitingAgentResponse(
+                        visibleText: "I captured that, but the local agent client is not ready yet.",
+                        spokenText: "I captured that, but the local agent client is not ready yet."
+                    )
+                    clearScreenContextTargetIfCurrent(targetSnapshot)
+                    setVoiceFollowUpSessionIDForCurrentUtterance(nil)
+                }
             }
         }
     }

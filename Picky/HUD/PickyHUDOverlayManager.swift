@@ -71,6 +71,7 @@ final class PickyHUDOverlayManager {
     private let fontScaleStore: PickyAppFontScaleStore
     private let visibilityStore: PickyHUDVisibilityStore
     private let settingsStore: PickySettingsStore
+    private let voiceTargetHitTestRegistry: PickyVoiceTargetHitTestRegistry
     private var visibilityCancellable: AnyCancellable?
     private let collapsedHeight: CGFloat = 180
     private let minimumHeight: CGFloat = 48
@@ -117,13 +118,15 @@ final class PickyHUDOverlayManager {
         appearanceStore: PickyAppearanceStore,
         fontScaleStore: PickyAppFontScaleStore,
         visibilityStore: PickyHUDVisibilityStore,
-        settingsStore: PickySettingsStore
+        settingsStore: PickySettingsStore,
+        voiceTargetHitTestRegistry: PickyVoiceTargetHitTestRegistry
     ) {
         self.viewModel = viewModel
         self.appearanceStore = appearanceStore
         self.fontScaleStore = fontScaleStore
         self.visibilityStore = visibilityStore
         self.settingsStore = settingsStore
+        self.voiceTargetHitTestRegistry = voiceTargetHitTestRegistry
         let settings = settingsStore.load()
         self.currentPositionsByDisplayID = settings.hudDockPositions
         self.currentDockSizePreset = settings.hudDockSizePreset
@@ -391,6 +394,7 @@ final class PickyHUDOverlayManager {
             panelIdentifier: panelIdentifier,
             displayID: displayID,
             placement: placement,
+            voiceTargetHitTestRegistry: voiceTargetHitTestRegistry,
             onSizeChange: { [weak self] size in
                 // SwiftUI animates the card reveal itself. Grow the transparent NSPanel
                 // immediately, but defer shrinking it until the collapse animation has

@@ -804,11 +804,9 @@ struct PickyConversationComposerView: View {
         return modifiers
     }
 
-    // Voice input is intentionally not exposed in the composer.
-    // Voice steering uses the existing hover + global PTT shortcut flow
-    // (CompanionManager.setVoiceFollowUpSessionIDForCurrentUtterance via
-    // selectionStore.hoveredVoiceFollowUpSessionID). The header already shows
-    // the active voice target with a mic.fill indicator.
+    // Voice input is intentionally not exposed in the composer. Global PTT
+    // resolves the live card under the pointer at press time; SwiftUI hover is
+    // presentation-only. The header shows the captured target with mic.fill.
 
     private var editorHeight: CGFloat {
         Self.editorHeight(forMeasuredContentHeight: measuredEditorContentHeight)

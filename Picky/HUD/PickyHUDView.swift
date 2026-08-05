@@ -20,6 +20,7 @@ struct PickyHUDView: View {
     /// configuration changes; the conversation card binds to it so it grows or
     /// shrinks within whatever space remains below the dock's top edge.
     @ObservedObject var placement: PickyHUDPlacement = PickyHUDPlacement()
+    var voiceTargetHitTestRegistry: PickyVoiceTargetHitTestRegistry? = nil
     var onSizeChange: (CGSize) -> Void = { _ in }
     /// Live delta callback for the dock anchor handle. Argument is the cursor's
     /// screen delta from drag start in both X and Y (`NSEvent.mouseLocation` based).
@@ -359,6 +360,15 @@ struct PickyHUDView: View {
                     onToggleUtilityPanel: { toggleUtilityPanel(sessionID: activeSession.id) }
                 )
                 .background(PickyHUDCardSizeReader())
+                .background {
+                    if let voiceTargetHitTestRegistry {
+                        PickyVoiceTargetHitRegionHost(
+                            sessionID: activeSession.id,
+                            isEligible: !viewModel.isInlineTerminalMode(sessionID: activeSession.id),
+                            registry: voiceTargetHitTestRegistry
+                        )
+                    }
+                }
                 .overlay(alignment: resizeHandleAlignment) {
                     PickyHUDCardResizeHandleHost(
                         onHoverChanged: { hovering in cardResizeInteraction.setHovered(hovering) },

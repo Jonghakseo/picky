@@ -13,7 +13,7 @@ import CoreGraphics
 import Foundation
 
 final class GlobalPushToTalkShortcutMonitor: ObservableObject {
-    let shortcutTransitionPublisher = PassthroughSubject<BuddyPushToTalkShortcut.ShortcutTransition, Never>()
+    let shortcutTransitionPublisher = PassthroughSubject<PickyGlobalPushToTalkEvent, Never>()
 
     /// Optional sink for raw flagsChanged/keyDown/keyUp events. Used by
     /// QuickInputDoubleTapDetector so we don't install a second CGEvent tap.
@@ -193,7 +193,11 @@ final class GlobalPushToTalkShortcutMonitor: ObservableObject {
             break
         case .pressed:
             isShortcutCurrentlyPressed = true
-            shortcutTransitionPublisher.send(.pressed)
+            shortcutTransitionPublisher.send(.pressed(PickyPTTPressObservation(
+                screenPoint: NSEvent.mouseLocation,
+                observedAt: Date(),
+                source: .keyboardShortcut
+            )))
         case .released:
             isShortcutCurrentlyPressed = false
             shortcutTransitionPublisher.send(.released)

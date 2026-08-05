@@ -32,6 +32,9 @@ protocol PickySessionSelectionStoring: AnyObject {
     var selectedSessionID: String? { get set }
     var hoveredVoiceFollowUpSessionID: String? { get set }
     var screenContextTargetSessionID: String? { get set }
+    /// Monotonic identity of the current armed-target semantics. Voice input
+    /// snapshots this value so completion cannot clear a target re-armed later.
+    var screenContextTargetRevision: UInt64 { get }
     /// Whether the currently armed screen-context target should persist across
     /// follow-up/steer dispatches. `false` means the existing one-shot behavior;
     /// `true` keeps the same Pickle armed until the user clicks it again or
@@ -44,6 +47,10 @@ protocol PickySessionSelectionStoring: AnyObject {
 }
 
 extension PickySessionSelectionStoring {
+    /// Test/legacy stores that do not track revisions retain the previous
+    /// compare-by-session behavior. Production overrides this with a counter.
+    var screenContextTargetRevision: UInt64 { 0 }
+
     /// Default fallback so legacy call sites (`store.screenContextTargetSessionID = id`)
     /// keep the one-shot semantics they always had.
     func setScreenContextTarget(sessionID: String?) {
@@ -79,6 +86,7 @@ final class PickyUserDefaultsSessionSelectionStore: PickySessionSelectionStoring
     private var transientScreenContextTargetSessionID: String?
     private var transientScreenContextTargetSticky: Bool = false
     private var transientScreenContextTargetLabel: String?
+    private var transientScreenContextTargetRevision: UInt64 = 0
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -109,6 +117,7 @@ final class PickyUserDefaultsSessionSelectionStore: PickySessionSelectionStoring
     }
 
     var screenContextTargetLabel: String? { transientScreenContextTargetLabel }
+    var screenContextTargetRevision: UInt64 { transientScreenContextTargetRevision }
 
     var screenContextTargetSticky: Bool {
         get { transientScreenContextTargetSticky }
@@ -116,6 +125,7 @@ final class PickyUserDefaultsSessionSelectionStore: PickySessionSelectionStoring
             let next = transientScreenContextTargetSessionID == nil ? false : newValue
             guard transientScreenContextTargetSticky != next else { return }
             transientScreenContextTargetSticky = next
+            transientScreenContextTargetRevision &+= 1
             postScreenContextTargetNotification()
         }
     }
@@ -128,13 +138,16 @@ final class PickyUserDefaultsSessionSelectionStore: PickySessionSelectionStoring
         let normalized = sessionID?.isEmpty == true ? nil : sessionID
         let normalizedSticky = normalized == nil ? false : sticky
         let normalizedLabel = normalized == nil ? nil : label?.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard transientScreenContextTargetSessionID != normalized
+        let semanticsChanged = transientScreenContextTargetSessionID != normalized
             || transientScreenContextTargetSticky != normalizedSticky
-            || transientScreenContextTargetLabel != normalizedLabel
-        else { return }
+        let labelChanged = transientScreenContextTargetLabel != normalizedLabel
+        guard semanticsChanged || labelChanged else { return }
         transientScreenContextTargetSessionID = normalized
         transientScreenContextTargetSticky = normalizedSticky
         transientScreenContextTargetLabel = normalizedLabel
+        if semanticsChanged {
+            transientScreenContextTargetRevision &+= 1
+        }
         postScreenContextTargetNotification()
     }
 

@@ -90,6 +90,9 @@ final class QuickInputPanelViewModel: ObservableObject {
     /// next presentation (predictable, no fade-back).
     @Published private(set) var historyBackgroundMode: QuickInputHistoryBackgroundMode = .lightweight
     @Published private(set) var isStartingNewSession = false
+    /// Frames are measured in the root SwiftUI coordinate space. The panel
+    /// manager translates them to AppKit before global ink-capture routing.
+    @Published var interactiveContentFrames: [CGRect] = []
 
     var onSubmit: (String, QuickInputRecipientProjection) -> Void = { _, _ in }
     var onStartNewSession: @MainActor () async -> String? = { nil }
@@ -121,6 +124,7 @@ final class QuickInputPanelViewModel: ObservableObject {
         self.recipient = recipient
         presentationID &+= 1
         historyBackgroundMode.resetForPresentation()
+        interactiveContentFrames = []
     }
 
     /// Driven by the panel manager's scroll-wheel monitor so only genuine user
@@ -128,6 +132,28 @@ final class QuickInputPanelViewModel: ObservableObject {
     func markHistoryUserScroll() {
         guard historyBackgroundMode == .lightweight else { return }
         historyBackgroundMode.recordUserScroll()
+    }
+}
+
+private struct QuickInputVisibleContentFramePreferenceKey: PreferenceKey {
+    static var defaultValue: [CGRect] = []
+
+    static func reduce(value: inout [CGRect], nextValue: () -> [CGRect]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
+private struct QuickInputVisibleContentFrameReporter: View {
+    var isVisible = true
+    var transform: (CGRect) -> CGRect = { $0 }
+
+    var body: some View {
+        GeometryReader { proxy in
+            Color.clear.preference(
+                key: QuickInputVisibleContentFramePreferenceKey.self,
+                value: isVisible ? [transform(proxy.frame(in: .named("QuickInputPanel")))] : []
+            )
+        }
     }
 }
 
@@ -187,6 +213,7 @@ struct QuickInputPanelView: View {
                         y: QuickInputPanelLayout.tightShadowYOffset
                     )
             )
+            .background(QuickInputVisibleContentFrameReporter())
 
             if let errorMessage = viewModel.errorMessage {
                 Text(errorMessage)
@@ -194,11 +221,16 @@ struct QuickInputPanelView: View {
                     .foregroundColor(DS.Colors.destructiveText)
                     .padding(.horizontal, 14)
                     .fixedSize(horizontal: false, vertical: true)
+                    .background(QuickInputVisibleContentFrameReporter())
             }
         }
         .frame(width: pillWidth, alignment: .leading)
         .padding(shadowOutset)
         .frame(width: QuickInputPanelLayout.panelWidth, alignment: .leading)
+        .coordinateSpace(name: "QuickInputPanel")
+        .onPreferenceChange(QuickInputVisibleContentFramePreferenceKey.self) {
+            viewModel.interactiveContentFrames = $0
+        }
         .onAppear { requestFieldFocus(for: viewModel.presentationID) }
         .onChange(of: viewModel.presentationID) { presentationID in
             requestFieldFocus(for: presentationID)
@@ -303,6 +335,7 @@ private struct QuickInputHistorySection: View {
                         ? L10n.t("messages.newSession.starting")
                         : ""
                 )
+                .background(QuickInputVisibleContentFrameReporter(isVisible: showsNewSessionAction))
             }
             .frame(height: QuickInputPanelLayout.historyActionRowHeight)
             .opacity(showsNewSessionAction ? 1 : 0)
@@ -524,6 +557,14 @@ private struct QuickInputHistoryCard: View {
             .accessibilityLabel("Recent conversation")
             .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.panel, style: .continuous))
             .background(QuickInputHistoryCardBackground(mode: effectiveBackgroundMode))
+            .background(
+                QuickInputVisibleContentFrameReporter { frame in
+                    QuickInputVisibleContentHitTestPolicy.visibleHistoryFrame(
+                        frame,
+                        backgroundMode: effectiveBackgroundMode
+                    )
+                }
+            )
             // Negative padding lets the mask cover the solid card's shadow
             // spill instead of clipping it at the card bounds.
             .mask(cardDissolveMask.padding(-QuickInputPanelLayout.shadowOutset))

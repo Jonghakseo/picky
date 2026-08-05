@@ -60,11 +60,18 @@ final class QuickInputPanelManager {
     var isSending: Bool { viewModel.isSending }
 
     func containsInteractiveGlobalPoint(_ point: CGPoint) -> Bool {
-        guard let panel, panel.isVisible else { return false }
-        return panel.frame
-            .insetBy(dx: shadowOutset, dy: shadowOutset)
-            .insetBy(dx: -8, dy: -8)
-            .contains(point)
+        guard let panel,
+              panel.isVisible,
+              let hostingView = panel.contentView else {
+            return false
+        }
+        let pointInWindow = panel.convertPoint(fromScreen: point)
+        let pointInHostingView = hostingView.convert(pointInWindow, from: nil)
+        return QuickInputVisibleContentHitTestPolicy.contains(
+            pointInHostingView,
+            swiftUIFrames: viewModel.interactiveContentFrames,
+            hostingViewSize: hostingView.bounds.size
+        )
     }
 
     init(
@@ -103,9 +110,12 @@ final class QuickInputPanelManager {
         lastCursorLocation = cursorLocation
         updateHistoryCardHeightLimit(near: cursorLocation)
         positionPanelNearCursor(cursorLocation)
+        // Clear the prior presentation's geometry before this retained panel is
+        // visible again. Until SwiftUI reports its new frames, ink capture owns
+        // the point rather than allowing a stale transparent region to leak.
+        viewModel.beginPresentation(recipient: recipient)
         panel?.makeKeyAndOrderFront(nil)
         panel?.orderFrontRegardless()
-        viewModel.beginPresentation(recipient: recipient)
         installScrollWheelMonitorIfNeeded()
         onVisibilityChange(true)
     }

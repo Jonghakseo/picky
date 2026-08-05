@@ -768,8 +768,12 @@ final class CompanionManager: ObservableObject {
         guard source == .text else { return false }
         if quickInputPanelManager.containsInteractiveGlobalPoint(point) { return true }
         return NSApp.windows.contains { window in
-            guard window is PickyHUDPanel, window.isVisible else { return false }
-            return window.frame.insetBy(dx: -8, dy: -8).contains(point)
+            guard window is PickyHUDPanel else { return false }
+            // The HUD panel's frame reserves a transparent card-width column
+            // beside the dock rail. Only visibly rendered content may claim
+            // the gesture; a click on transparent pixels would fall through
+            // to the app underneath and steal key focus mid-ink.
+            return PickyInkWindowContentHitTest.windowClaimsGlobalPoint(window, point: point)
         }
     }
 

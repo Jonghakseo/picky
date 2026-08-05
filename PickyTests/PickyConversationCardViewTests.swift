@@ -1638,9 +1638,9 @@ struct PickyConversationCardViewTests {
         #expect(list.hiddenHistoryCount == 0)
     }
 
-    @Test func visibleMessagesShowsLastFifteenUserTurnsWhenMoreExist() {
-        // With more than fifteen user turns, only the last fifteen turns (from the
-        // fifteenth-to-last user_text to the end of the message list) stay visible.
+    @Test func visibleMessagesShowsLastTenUserTurnsWhenMoreExist() {
+        // With more than ten user turns, only the last ten turns (from the
+        // tenth-to-last user_text to the end of the message list) stay visible.
         // Earlier turns load in steps via the "load earlier turns" pill.
         let session = makeConversationSession(
             status: .running,
@@ -1649,9 +1649,9 @@ struct PickyConversationCardViewTests {
         let viewModel = makeViewModel()
         let list = PickyConversationListView(session: session, viewModel: viewModel)
 
-        #expect(list.visibleMessages.first?.id == "u3")
-        #expect(list.visibleMessages.count == 30)
-        #expect(list.hiddenHistoryCount == 4)
+        #expect(list.visibleMessages.first?.id == "u8")
+        #expect(list.visibleMessages.count == 20)
+        #expect(list.hiddenHistoryCount == 14)
     }
 
     @Test func historyWindowPolicyDefaultsToBaseWindow() {
@@ -1659,12 +1659,12 @@ struct PickyConversationCardViewTests {
 
         let start = PickyConversationHistoryWindowPolicy.visibleStartIndex(messages: messages, expandedAnchorID: nil)
 
-        #expect(start.map { messages[$0].id } == "u6")
-        #expect(PickyConversationHistoryWindowPolicy.hiddenTurnCount(messages: messages, expandedAnchorID: nil) == 5)
+        #expect(start.map { messages[$0].id } == "u11")
+        #expect(PickyConversationHistoryWindowPolicy.hiddenTurnCount(messages: messages, expandedAnchorID: nil) == 10)
     }
 
     @Test func historyWindowPolicyShowsEverythingAtOrBelowBaseTurnCount() {
-        let messages = turnMessages(count: 15)
+        let messages = turnMessages(count: 10)
 
         #expect(PickyConversationHistoryWindowPolicy.visibleStartIndex(messages: messages, expandedAnchorID: nil) == nil)
         #expect(PickyConversationHistoryWindowPolicy.hiddenTurnCount(messages: messages, expandedAnchorID: nil) == 0)
@@ -1673,10 +1673,10 @@ struct PickyConversationCardViewTests {
     @Test func historyWindowPolicyLoadsOlderTurnsInStepsAndClampsAtStart() {
         let messages = turnMessages(count: 30)
 
-        // Base window starts at u16; first load steps back 10 turns to u6.
+        // Base window starts at u21; first load steps back 10 turns to u11.
         let firstAnchor = PickyConversationHistoryWindowPolicy.anchorIDAfterLoadingMore(messages: messages, expandedAnchorID: nil)
-        #expect(firstAnchor == "u6")
-        #expect(PickyConversationHistoryWindowPolicy.hiddenTurnCount(messages: messages, expandedAnchorID: firstAnchor) == 5)
+        #expect(firstAnchor == "u11")
+        #expect(PickyConversationHistoryWindowPolicy.hiddenTurnCount(messages: messages, expandedAnchorID: firstAnchor) == 10)
 
         // Second load clamps at the very first turn and reveals everything.
         let secondAnchor = PickyConversationHistoryWindowPolicy.anchorIDAfterLoadingMore(messages: messages, expandedAnchorID: firstAnchor)
@@ -1688,13 +1688,13 @@ struct PickyConversationCardViewTests {
     @Test func historyWindowPolicyPreservesExpandedHistoryWhenNewTurnsArrive() {
         var messages = turnMessages(count: 30)
         let anchor = PickyConversationHistoryWindowPolicy.anchorIDAfterLoadingMore(messages: messages, expandedAnchorID: nil)
-        #expect(anchor == "u6")
+        #expect(anchor == "u11")
 
         // Streaming five more turns must not slide the expanded window forward.
         messages += turnMessages(count: 5, startingAt: 31)
 
         let start = PickyConversationHistoryWindowPolicy.visibleStartIndex(messages: messages, expandedAnchorID: anchor)
-        #expect(start.map { messages[$0].id } == "u6")
+        #expect(start.map { messages[$0].id } == "u11")
     }
 
     @Test func historyWindowPolicyFallsBackToBaseWindowForUnknownAnchor() {
@@ -1702,7 +1702,7 @@ struct PickyConversationCardViewTests {
 
         let start = PickyConversationHistoryWindowPolicy.visibleStartIndex(messages: messages, expandedAnchorID: "missing-id")
 
-        #expect(start.map { messages[$0].id } == "u6")
+        #expect(start.map { messages[$0].id } == "u11")
     }
 
     @Test func visibleMessagesShowsAllWhenNoUserTextExists() {
@@ -1874,7 +1874,7 @@ struct PickyConversationCardViewTests {
     // MARK: - Turn card grouping
 
     @Test func turnGroupsExposeOneCardPerVisibleUserText() {
-        // visibleMessages 정책 (마지막 15개 user_text 부터) 과 turn 그룹화가 함께
+        // visibleMessages 정책 (마지막 10개 user_text 부터) 과 turn 그룹화가 함께
         // 동작해 세 개의 turn card 가 생기는지 검증.
         let session = makeConversationSession(
             status: .running,

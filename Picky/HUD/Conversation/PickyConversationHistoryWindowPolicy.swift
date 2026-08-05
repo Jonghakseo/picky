@@ -13,7 +13,10 @@
 import Foundation
 
 enum PickyConversationHistoryWindowPolicy {
-    static let baseTurnCount = 15
+    /// Keep in sync with `SNAPSHOT_VISIBLE_USER_TURN_COUNT` in agentd/src/server.ts:
+    /// the initial sessionSnapshot trims messages to this same window so the first
+    /// full sessionUpdated arrives without a visible layout shift.
+    static let baseTurnCount = 10
     static let loadMoreTurnStep = 10
 
     /// Index of the first message to render, or nil when every message is visible

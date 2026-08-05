@@ -1185,12 +1185,13 @@ const SNAPSHOT_TOOL_PREVIEW_CHAR_LIMIT = 240;
 const SNAPSHOT_THINKING_PREVIEW_CHAR_LIMIT = 240;
 const SNAPSHOT_CHANGED_FILE_LIMIT = 20;
 const SNAPSHOT_CHANGED_FILE_SUMMARY_CHAR_LIMIT = 240;
-// Keep in sync with `visibleMessages` in Picky/HUD/Conversation/PickyConversationListView.swift:
-// the HUD renders "from the 5th-last user_text message onward", so the initial
+// Keep in sync with `PickyConversationHistoryWindowPolicy.baseTurnCount` in
+// Picky/HUD/Conversation/PickyConversationHistoryWindowPolicy.swift: the HUD
+// renders "from the 10th-last user_text message onward", so the initial
 // snapshot must include at least that window. Otherwise the snapshot lands with
 // fewer turns than the next sessionUpdated, and the conversation list visibly
 // reflows once the full session arrives.
-const SNAPSHOT_VISIBLE_USER_TURN_COUNT = 5;
+const SNAPSHOT_VISIBLE_USER_TURN_COUNT = 10;
 const SNAPSHOT_FINAL_ANSWER_CHAR_LIMIT = 1_500;
 const SNAPSHOT_LAST_SUMMARY_CHAR_LIMIT = 700;
 

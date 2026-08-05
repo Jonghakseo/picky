@@ -69,9 +69,7 @@ struct PickyConversationListView: View {
                                 viewModel.dismissTerminalSyncOutcome(sessionID: session.id)
                             }
                         }
-                        if hiddenTurns > 0 {
-                            loadMoreHistoryButton(hiddenTurns: hiddenTurns, groups: groups)
-                        }
+                        historyTopMarker(hiddenTurns: hiddenTurns, groups: groups)
                         if messages.isEmpty && !hasQueueOrActivity {
                             Color.clear
                                 .frame(height: 24)
@@ -585,6 +583,41 @@ struct PickyConversationListView: View {
         max(0, session.messages.count - visibleMessages.count)
     }
 
+    /// Top-of-list marker, always rendered so its row height is reserved from the
+    /// first layout pass. The initial `sessionSnapshot` only carries the visible
+    /// window, so `hiddenTurns` is still 0 on first paint and only becomes
+    /// positive once the full session arrives. Rendering the pill conditionally
+    /// made it pop into existence at that moment and shifted the whole list down.
+    @ViewBuilder
+    private func historyTopMarker(hiddenTurns: Int, groups: [PickyTurnGroup]) -> some View {
+        if hiddenTurns > 0 {
+            loadMoreHistoryButton(hiddenTurns: hiddenTurns, groups: groups)
+        } else {
+            historyPillLabel(systemImage: "flag", text: L10n.t("hud.conversation.historyStart"))
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.bottom, 4)
+                .accessibilityAddTraits(.isStaticText)
+        }
+    }
+
+    /// Shared chrome for both top markers. Metrics must stay identical between
+    /// the two states or swapping them reintroduces the layout shift. Only the
+    /// actionable variant gets the capsule fill so the static marker does not
+    /// advertise a tap target it does not have.
+    private func historyPillLabel(systemImage: String, text: String, actionable: Bool = false) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: systemImage)
+                .pickyFont(size: 8.5, weight: .semibold)
+            Text(text)
+                .font(PickyHUDTypography.statusMedium)
+        }
+        .foregroundColor(DS.Colors.textTertiary)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 4)
+        .background(Capsule().fill(actionable ? DS.Colors.surface2.opacity(0.55) : .clear))
+        .overlay(Capsule().stroke(DS.Colors.borderSubtle.opacity(actionable ? 0.55 : 0), lineWidth: 0.5))
+    }
+
     private func loadMoreHistoryButton(hiddenTurns: Int, groups: [PickyTurnGroup]) -> some View {
         Button(action: {
             let previousTopGroupID = groups.first?.id
@@ -603,21 +636,15 @@ struct PickyConversationListView: View {
                 DispatchQueue.main.async { historyScrollTargetID = nil }
             }
         }) {
-            HStack(spacing: 5) {
-                Image(systemName: "clock.arrow.circlepath")
-                    .pickyFont(size: 8.5, weight: .semibold)
-                Text(L10n.t(
+            historyPillLabel(
+                systemImage: "clock.arrow.circlepath",
+                text: L10n.t(
                     "hud.conversation.loadMoreTurns",
                     Int64(min(PickyConversationHistoryWindowPolicy.loadMoreTurnStep, hiddenTurns)),
                     Int64(hiddenTurns)
-                ))
-                .font(PickyHUDTypography.statusMedium)
-            }
-            .foregroundColor(DS.Colors.textTertiary)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 4)
-            .background(Capsule().fill(DS.Colors.surface2.opacity(0.55)))
-            .overlay(Capsule().stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.5))
+                ),
+                actionable: true
+            )
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity, alignment: .center)

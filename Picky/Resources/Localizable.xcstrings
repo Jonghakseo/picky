@@ -1649,6 +1649,23 @@
         }
       }
     },
+    "hud.conversation.historyStart": {
+      "comment": "Static marker at the top of the conversation card shown when no earlier turns are hidden. Occupies the same row as the load-earlier-turns pill so the list does not shift when hidden history appears.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beginning of the conversation"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대화의 시작입니다"
+          }
+        }
+      }
+    },
     "hud.conversation.loadMoreTurns": {
       "comment": "Pill at the top of the conversation card that reveals earlier turns. First arg is how many turns the tap loads, second arg is the total hidden turn count.",
       "localizations": {

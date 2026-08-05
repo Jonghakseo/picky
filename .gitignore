@@ -10,6 +10,8 @@ Icon?
 # Xcode / Swift
 build/
 DerivedData/
+# Local opt-in signing overrides (see Signing.xcconfig)
+Signing.local.xcconfig
 **/*.xcworkspace/xcuserdata/
 *.playground/playground.xcworkspace/xcuserdata/
 *.moved-aside

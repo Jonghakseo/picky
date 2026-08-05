@@ -1,0 +1,27 @@
+// Local opt-in code signing for the Picky app target.
+//
+// Defaults below reproduce the committed project behavior exactly: signing stays
+// disabled, so plain Xcode/xcodebuild Debug builds are ad-hoc signed as before
+// and contributors without an Apple Development certificate are unaffected.
+//
+// Why opting in matters: macOS TCC keeps one authorization record per
+// (service, bundle id). An ad-hoc bundle's designated requirement is pinned to
+// its cdhash, which changes on every build, so each rebuild invalidates the
+// record shared with the signed app at build/dev-signed/export. Signing every
+// Debug build with the same Apple Development certificate gives all local Picky
+// copies one stable certificate-based requirement, and Microphone/Accessibility/
+// Screen Recording grants survive rebuilds.
+//
+// To opt in, create Signing.local.xcconfig (git-ignored) next to this file:
+//
+//   PICKY_CODE_SIGNING_ALLOWED = YES
+//   PICKY_DEVELOPMENT_TEAM = YOURTEAMID
+//   CODE_SIGN_IDENTITY = Apple Development
+//
+// scripts/package-signed-app.sh keeps working either way because command-line
+// build settings override xcconfig values.
+
+PICKY_CODE_SIGNING_ALLOWED = NO
+PICKY_DEVELOPMENT_TEAM =
+
+#include? "Signing.local.xcconfig"

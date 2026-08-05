@@ -31,6 +31,7 @@
 		28F22CBF2F56440300A0FC59 /* Picky.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Picky.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		28F22CCC2F56440300A0FC59 /* PickyTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PickyTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		28F22CD62F56440300A0FC59 /* PickyUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PickyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		28F22CF02F56440300A0FC59 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -94,6 +95,7 @@
 		28F22CB62F56440300A0FC59 = {
 			isa = PBXGroup;
 			children = (
+				28F22CF02F56440300A0FC59 /* Signing.xcconfig */,
 				28F22CC12F56440300A0FC59 /* Picky */,
 				28F22CCF2F56440300A0FC59 /* PickyTests */,
 				28F22CD92F56440300A0FC59 /* PickyUITests */,
@@ -444,10 +446,11 @@
 		};
 		28F22CE12F56440300A0FC59 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 28F22CF02F56440300A0FC59 /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_ALLOWED = "$(PICKY_CODE_SIGNING_ALLOWED)";
 				CODE_SIGN_ENTITLEMENTS = Picky/Picky.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -534,9 +537,10 @@
 		};
 		28F22CE42F56440300A0FC59 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 28F22CF02F56440300A0FC59 /* Signing.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_ALLOWED = "$(PICKY_CODE_SIGNING_ALLOWED)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "$(PICKY_DEVELOPMENT_TEAM)";
@@ -578,8 +582,9 @@
 		};
 		28F22CE72F56440300A0FC59 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 28F22CF02F56440300A0FC59 /* Signing.xcconfig */;
 			buildSettings = {
-				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_ALLOWED = "$(PICKY_CODE_SIGNING_ALLOWED)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "$(PICKY_DEVELOPMENT_TEAM)";

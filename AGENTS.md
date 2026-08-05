@@ -12,7 +12,7 @@ Picky is a local-first macOS command center for Pi sessions. It captures neutral
 
 - Do not restart the running Picky app unless the user explicitly asks.
 
-- Do not change Xcode defaults to always sign. Use `./scripts/package-signed-app.sh` only when a signed app bundle is needed.
+- Do not change Xcode defaults to always sign. Use `./scripts/package-signed-app.sh` only when a signed app bundle is needed. `Signing.xcconfig` keeps those defaults (ad-hoc, `CODE_SIGNING_ALLOWED = NO`); a developer may opt in locally by creating the git-ignored `Signing.local.xcconfig` so every Debug build shares one Apple Development identity and macOS TCC grants survive rebuilds.
 
 ## Current architecture
 

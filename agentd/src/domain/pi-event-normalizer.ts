@@ -1,6 +1,7 @@
 import type { PickyTodoState, PickyToolActivity, SessionStatus } from "../protocol.js";
 import type { RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeSessionStatus, ThinkingLevel } from "../runtime/types.js";
 import { sliceUtf16Safe } from "./safe-truncate.js";
+import { subagentLaunchIntentFromToolArgs } from "./subagent-run-state.js";
 import { todoStateFromPiSessionEntry } from "./todo-state.js";
 
 interface PiEventNormalizationContext {
@@ -63,12 +64,13 @@ export function normalizePiEvent(event: unknown, context: PiEventNormalizationCo
   }
 
   if (type === "tool_execution_start") {
-    const argsPreview = preview(piEvent.args);
+    const toolName = requiredString(piEvent.toolName, "toolName");
+    const argsPreview = toolArgsPreview(toolName, piEvent.args);
     return {
       kind: "tool",
       tool: {
         toolCallId: requiredString(piEvent.toolCallId, "toolCallId"),
-        name: requiredString(piEvent.toolName, "toolName"),
+        name: toolName,
         status: "running",
         preview: argsPreview,
         argsPreview,
@@ -263,6 +265,20 @@ function hasAssistantToolCalls(message: Record<string, unknown>): boolean {
 
 function hasToolResults(value: unknown): boolean {
   return Array.isArray(value) && value.length > 0;
+}
+
+// Long batch/chain tasks can push later --agent entries past the generic 500-char limit.
+// Preserve the complete launch shape while omitting task bodies that the inline summary does not render.
+function toolArgsPreview(toolName: string, args: unknown): string | undefined {
+  const defaultPreview = preview(args);
+  if (toolName !== "subagent" || !defaultPreview?.endsWith("...")) return defaultPreview;
+
+  const intent = subagentLaunchIntentFromToolArgs(args);
+  if (!intent || intent.action === "run") return defaultPreview;
+  const entries = intent.entries
+    .map((entry) => `--agent ${JSON.stringify(entry.agent)} --task _`)
+    .join(" ");
+  return preview({ command: `subagent ${intent.action} ${entries}` }) ?? defaultPreview;
 }
 
 function preview(value: unknown): string | undefined {

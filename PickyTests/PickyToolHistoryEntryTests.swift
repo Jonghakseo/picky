@@ -269,6 +269,24 @@ struct PickyToolHistoryEntryTests {
         #expect(PickyToolHistoryRenderer.inlineSummary(for: status.detail) == "status #3")
     }
 
+    @Test func compactedSubagentBatchPreviewListsEveryAgent() {
+        let tool = PickyToolActivity(
+            toolCallId: "subagent-long-batch",
+            name: "subagent",
+            status: "running",
+            argsPreview: #"{"command":"subagent batch --agent \"verifier\" --task _ --agent \"reviewer\" --task _ --agent \"challenger\" --task _"}"#
+        )
+        let entry = PickyToolHistoryRenderer.entry(from: tool, index: 1)
+
+        guard case let .subagent(mode, agents, _, _) = entry.detail else {
+            Issue.record("Expected compacted subagent batch detail")
+            return
+        }
+        #expect(mode == "batch")
+        #expect(agents == ["verifier", "reviewer", "challenger"])
+        #expect(PickyToolHistoryRenderer.inlineSummary(for: entry.detail) == "batch ×3 (verifier, reviewer, …)")
+    }
+
     @Test func subagentRecoversTruncatedCommandAndFallsBackForInvalidLaunch() {
         let recovered = PickyToolHistoryRenderer.entry(
             from: PickyToolActivity(

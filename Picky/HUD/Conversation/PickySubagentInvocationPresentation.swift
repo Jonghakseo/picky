@@ -89,12 +89,12 @@ struct PickySubagentInvocationPresentation: Equatable {
     var headerLabel: String {
         switch invocation.action {
         case .run:
-            return "◇ \(L10n.t("hud.subagent.invocation.run"))"
+            return L10n.t("hud.subagent.invocation.run")
         case .batch:
-            return "◇ \(L10n.t("hud.subagent.invocation.batch", Int64(totalCount)))"
+            return L10n.t("hud.subagent.invocation.batch", Int64(totalCount))
         case .chain:
             let startedCount = totalCount - pendingCount
-            return "◇ \(L10n.t("hud.subagent.invocation.chain", Int64(startedCount), Int64(totalCount)))"
+            return L10n.t("hud.subagent.invocation.chain", Int64(startedCount), Int64(totalCount))
         }
     }
 
@@ -161,13 +161,20 @@ struct PickySubagentInvocationPresentation: Equatable {
 
     func activityText(for row: PickySubagentInvocationRow) -> String? {
         guard row.status == .running, let activity = row.run?.lastActivity else { return nil }
-        var parts: [String] = []
-        if let toolName = activity.toolName { parts.append("✏ \(toolName)") }
-        if let count = activity.toolCallCount { parts.append("\(count) tools") }
         if let lastLine = activity.lastLine?.trimmingCharacters(in: .whitespacesAndNewlines), !lastLine.isEmpty {
-            parts.append(lastLine)
+            return lastLine.replacingOccurrences(of: #"^→\s*"#, with: "", options: .regularExpression)
         }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        guard let toolName = activity.toolName?.trimmingCharacters(in: .whitespacesAndNewlines), !toolName.isEmpty else { return nil }
+        return toolName
+    }
+
+    func toolCountText(for row: PickySubagentInvocationRow) -> String? {
+        guard row.status == .running, let count = row.run?.lastActivity?.toolCallCount else { return nil }
+        return "\(count) tools"
+    }
+
+    func contextUsage(for row: PickySubagentInvocationRow) -> PickyContextUsage? {
+        row.run?.lastActivity?.contextUsage
     }
 
     private static func rows(

@@ -273,9 +273,17 @@ describe("subagent run state", () => {
       lastToolName: "edit",
       toolCallCount: 12,
       lastLine: "updated presentation",
+      contextTokens: 84_000,
+      contextWindow: 200_000,
+      contextPercent: 42,
     })).toEqual({
       runId: 3,
-      lastActivity: { toolName: "edit", toolCallCount: 12, lastLine: "updated presentation" },
+      lastActivity: {
+        toolName: "edit",
+        toolCallCount: 12,
+        lastLine: "updated presentation",
+        contextUsage: { tokens: 84_000, contextWindow: 200_000, percent: 42 },
+      },
     });
     expect(subagentRunActivityUpdateFromDiagnostic({ runId: 3, agent: "worker" })).toBeUndefined();
   });

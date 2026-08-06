@@ -159,15 +159,25 @@ export function subagentRunActivityUpdateFromDiagnostic(data: unknown): Subagent
   const toolName = nonEmptyString(data.lastToolName) ? data.lastToolName : undefined;
   const toolCallCount = integer(data.toolCallCount);
   const lastLine = nonEmptyString(data.lastLine) ? data.lastLine : undefined;
-  if (!toolName && toolCallCount === undefined && !lastLine) return undefined;
+  const contextUsage = contextUsageFromActivity(data);
+  if (!toolName && toolCallCount === undefined && !lastLine && !contextUsage) return undefined;
   return {
     runId,
     lastActivity: {
       ...(toolName ? { toolName } : {}),
       ...(toolCallCount !== undefined && toolCallCount >= 0 ? { toolCallCount } : {}),
       ...(lastLine ? { lastLine } : {}),
+      ...(contextUsage ? { contextUsage } : {}),
     },
   };
+}
+
+function contextUsageFromActivity(data: Record<string, unknown>): NonNullable<PickySubagentRun["lastActivity"]>["contextUsage"] | undefined {
+  const tokens = integer(data.contextTokens);
+  const contextWindow = integer(data.contextWindow);
+  const percent = finiteNonnegativeNumber(data.contextPercent) ? data.contextPercent : undefined;
+  if (tokens === undefined || tokens < 0 || contextWindow === undefined || contextWindow <= 0 || percent === undefined) return undefined;
+  return { tokens, contextWindow, percent };
 }
 
 function commandFromToolArgs(args: unknown): string | undefined {

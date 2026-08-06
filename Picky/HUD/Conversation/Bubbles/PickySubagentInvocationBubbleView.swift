@@ -65,8 +65,8 @@ struct PickySubagentInvocationBubbleView: View {
         if presentation.isComplete && !isExpanded {
             let collapsedTone = presentation.collapsedTone
             HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.sm) {
-                Text(collapsedTone == .success ? "✓" : "×")
-                    .font(PickyHUDTypography.statusMonospacedMedium)
+                Image(systemName: collapsedTone == .success ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .pickyFont(size: 14, weight: .semibold)
                     .foregroundColor(color(for: collapsedTone))
                     .accessibilityHidden(true)
                 Text(presentation.collapsedText)
@@ -78,6 +78,10 @@ struct PickySubagentInvocationBubbleView: View {
             }
         } else {
             HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.sm) {
+                Image(systemName: "diamond.fill")
+                    .pickyFont(size: 13, weight: .semibold)
+                    .foregroundColor(DS.Colors.floatingGradientPurple)
+                    .accessibilityHidden(true)
                 Text(presentation.headerLabel)
                     .font(PickyHUDTypography.statusMonospacedMedium)
                     .foregroundColor(DS.Colors.floatingGradientPurple)
@@ -109,7 +113,7 @@ struct PickySubagentInvocationBubbleView: View {
                 .foregroundColor(DS.Colors.textTertiary)
                 .lineLimit(1)
             Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                .pickyFont(size: 9, weight: .semibold)
+                .pickyFont(size: 12, weight: .semibold)
                 .foregroundColor(DS.Colors.textTertiary)
                 .accessibilityHidden(true)
         }
@@ -134,10 +138,10 @@ struct PickySubagentInvocationBubbleView: View {
     private func rowContent(_ row: PickySubagentInvocationRow, now: Date) -> some View {
         VStack(alignment: .leading, spacing: DS.Spacing.xs) {
             HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.sm) {
-                Text(marker(for: row.status))
-                    .font(PickyHUDTypography.statusMonospacedMedium)
+                Image(systemName: symbolName(for: row.status))
+                    .pickyFont(size: 14, weight: .semibold)
                     .foregroundColor(color(for: row.status))
-                    .frame(width: DS.Spacing.md, alignment: .center)
+                    .frame(width: DS.Spacing.lg, alignment: .center)
                     .accessibilityHidden(true)
                 if let planIndex = row.planIndex, presentation.invocation.action == .chain {
                     Text("\(planIndex + 1).")
@@ -158,17 +162,33 @@ struct PickySubagentInvocationBubbleView: View {
                     .foregroundColor(row.status == .error ? DS.Colors.destructiveText : DS.Colors.textSecondary)
                     .lineLimit(1)
                 Spacer(minLength: DS.Spacing.xs)
+                if let usage = presentation.contextUsage(for: row) {
+                    PickySubagentContextUsageView(usage: usage)
+                }
                 Text(presentation.elapsedText(for: row, now: now))
                     .font(PickyHUDTypography.metaMonospacedMedium)
                     .foregroundColor(DS.Colors.textTertiary)
                     .lineLimit(1)
             }
             if let activity = presentation.activityText(for: row) {
-                Text(activity)
-                    .font(PickyHUDTypography.metaMonospacedMedium)
-                    .foregroundColor(DS.Colors.textTertiary)
-                    .lineLimit(1)
-                    .padding(.leading, DS.Spacing.md + DS.Spacing.sm)
+                HStack(spacing: DS.Spacing.sm) {
+                    Image(systemName: "arrow.right.circle.fill")
+                        .pickyFont(size: 13, weight: .medium)
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .frame(width: DS.Spacing.lg, alignment: .center)
+                        .accessibilityHidden(true)
+                    Text(activity)
+                        .font(PickyHUDTypography.metaMonospacedMedium)
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .lineLimit(1)
+                    Spacer(minLength: DS.Spacing.xs)
+                    if let toolCount = presentation.toolCountText(for: row) {
+                        Text(toolCount)
+                            .font(PickyHUDTypography.metaMonospacedMedium)
+                            .foregroundColor(DS.Colors.textTertiary)
+                            .lineLimit(1)
+                    }
+                }
             }
         }
         .padding(.vertical, DS.Spacing.xs)
@@ -179,7 +199,15 @@ struct PickySubagentInvocationBubbleView: View {
     }
 
     private func accessibilityRow(_ row: PickySubagentInvocationRow) -> String {
-        [markerDescription(for: row.status), row.agent, row.runIDText, row.displayText, presentation.activityText(for: row)]
+        [
+            markerDescription(for: row.status),
+            row.agent,
+            row.runIDText,
+            row.displayText,
+            presentation.activityText(for: row),
+            presentation.toolCountText(for: row),
+            presentation.contextUsage(for: row).flatMap { ContextUsageBatteryDisplay(usage: $0)?.tooltip },
+        ]
             .compactMap { $0 }
             .joined(separator: ", ")
     }
@@ -208,12 +236,12 @@ struct PickySubagentInvocationBubbleView: View {
         }
     }
 
-    private func marker(for status: PickySubagentInvocationRow.Status) -> String {
+    private func symbolName(for status: PickySubagentInvocationRow.Status) -> String {
         switch status {
-        case .pending: "○"
-        case .running: "⟳"
-        case .done: "✓"
-        case .error: "×"
+        case .pending: "circle"
+        case .running: "arrow.triangle.2.circlepath"
+        case .done: "checkmark.circle.fill"
+        case .error: "xmark.circle.fill"
         }
     }
 
@@ -224,6 +252,38 @@ struct PickySubagentInvocationBubbleView: View {
         case .done: L10n.t("hud.subagent.status.done")
         case .error: L10n.t("hud.subagent.status.error")
         }
+    }
+}
+
+private struct PickySubagentContextUsageView: View {
+    let display: ContextUsageBatteryDisplay
+
+    init?(usage: PickyContextUsage) {
+        guard let display = ContextUsageBatteryDisplay(usage: usage) else { return nil }
+        self.display = display
+    }
+
+    var body: some View {
+        HStack(spacing: DS.Spacing.xs) {
+            ZStack {
+                Circle()
+                    .stroke(DS.Colors.borderSubtle.opacity(0.7), lineWidth: 2)
+                Circle()
+                    .trim(from: 0, to: CGFloat(display.fraction))
+                    .stroke(display.barColor, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+            }
+            .frame(width: 16, height: 16)
+            Text(display.label)
+                .font(PickyHUDTypography.metaMonospacedMedium)
+                .fontWeight(.bold)
+                .foregroundColor(display.textColor.opacity(0.9))
+                .lineLimit(1)
+        }
+        .help(display.tooltip)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Context usage")
+        .accessibilityValue(display.label)
     }
 }
 

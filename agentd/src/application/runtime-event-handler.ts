@@ -497,6 +497,7 @@ export class RuntimeEventHandler {
       return;
     }
     const tools = session.tools.filter((tool) => tool.toolCallId !== event.toolCallId);
+    const subagentSummary = event.subagentSummary ?? previous?.subagentSummary;
     const nextTool: PickyToolActivity = {
       ...previous,
       toolCallId: event.toolCallId,
@@ -505,6 +506,7 @@ export class RuntimeEventHandler {
       preview: event.preview,
       argsPreview: event.argsPreview ?? previous?.argsPreview,
       resultPreview: event.resultPreview ?? previous?.resultPreview,
+      ...(subagentSummary ? { subagentSummary } : {}),
       startedAt: previous?.startedAt ?? new Date().toISOString(),
       endedAt: event.status === "running" ? previous?.endedAt : new Date().toISOString(),
     };

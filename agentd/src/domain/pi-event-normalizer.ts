@@ -1,4 +1,4 @@
-import type { PickyTodoState, PickyToolActivity, SessionStatus } from "../protocol.js";
+import type { PickySubagentToolSummary, PickyTodoState, PickyToolActivity, SessionStatus } from "../protocol.js";
 import type { RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeSessionStatus, ThinkingLevel } from "../runtime/types.js";
 import { sliceUtf16Safe } from "./safe-truncate.js";
 import { subagentLaunchIntentFromToolArgs } from "./subagent-run-state.js";
@@ -65,7 +65,8 @@ export function normalizePiEvent(event: unknown, context: PiEventNormalizationCo
 
   if (type === "tool_execution_start") {
     const toolName = requiredString(piEvent.toolName, "toolName");
-    const argsPreview = toolArgsPreview(toolName, piEvent.args);
+    const argsPreview = preview(piEvent.args);
+    const subagentSummary = subagentToolSummary(toolName, piEvent.args);
     return {
       kind: "tool",
       tool: {
@@ -74,6 +75,7 @@ export function normalizePiEvent(event: unknown, context: PiEventNormalizationCo
         status: "running",
         preview: argsPreview,
         argsPreview,
+        ...(subagentSummary ? { subagentSummary } : {}),
         startedAt: now,
       },
     };
@@ -170,7 +172,7 @@ export function runtimeEventFromPiEvent(event: unknown, context?: PiEventNormali
       ...(normalized.assistantRun ? { assistantRun: normalized.assistantRun } : {}),
     };
   }
-  if (normalized.kind === "tool") return { type: "tool", toolCallId: normalized.tool.toolCallId, name: normalized.tool.name, status: normalized.tool.status, preview: normalized.tool.preview, argsPreview: normalized.tool.argsPreview, resultPreview: normalized.tool.resultPreview };
+  if (normalized.kind === "tool") return { type: "tool", toolCallId: normalized.tool.toolCallId, name: normalized.tool.name, status: normalized.tool.status, preview: normalized.tool.preview, argsPreview: normalized.tool.argsPreview, resultPreview: normalized.tool.resultPreview, ...(normalized.tool.subagentSummary ? { subagentSummary: normalized.tool.subagentSummary } : {}) };
   if (normalized.kind === "todoState") return { type: "todo_state", todoState: normalized.todoState };
   if (normalized.kind === "extensionUi") return { type: "extension_ui", request: normalized.request, waitsForInput: normalized.waitsForInput };
   if (normalized.kind === "sessionInfo") return { type: "session_info", name: normalized.name };
@@ -267,18 +269,14 @@ function hasToolResults(value: unknown): boolean {
   return Array.isArray(value) && value.length > 0;
 }
 
-// Long batch/chain tasks can push later --agent entries past the generic 500-char limit.
-// Preserve the complete launch shape while omitting task bodies that the inline summary does not render.
-function toolArgsPreview(toolName: string, args: unknown): string | undefined {
-  const defaultPreview = preview(args);
-  if (toolName !== "subagent" || !defaultPreview?.endsWith("...")) return defaultPreview;
-
+function subagentToolSummary(toolName: string, args: unknown): PickySubagentToolSummary | undefined {
+  if (toolName !== "subagent") return undefined;
   const intent = subagentLaunchIntentFromToolArgs(args);
-  if (!intent || intent.action === "run") return defaultPreview;
-  const entries = intent.entries
-    .map((entry) => `--agent ${JSON.stringify(entry.agent)} --task _`)
-    .join(" ");
-  return preview({ command: `subagent ${intent.action} ${entries}` }) ?? defaultPreview;
+  if (!intent || intent.action === "run") return undefined;
+  return {
+    action: intent.action,
+    agents: intent.entries.map((entry) => entry.agent),
+  };
 }
 
 function preview(value: unknown): string | undefined {

@@ -1321,6 +1321,11 @@ struct PickyMainActivity: Codable, Equatable {
     }
 }
 
+struct PickySubagentToolSummary: Codable, Equatable {
+    let action: String
+    let agents: [String]
+}
+
 struct PickyToolActivity: Codable, Equatable, Identifiable {
     var id: String { toolCallId }
     let toolCallId: String
@@ -1329,16 +1334,28 @@ struct PickyToolActivity: Codable, Equatable, Identifiable {
     let preview: String?
     let argsPreview: String?
     let resultPreview: String?
+    let subagentSummary: PickySubagentToolSummary?
     let startedAt: Date?
     let endedAt: Date?
 
-    init(toolCallId: String, name: String, status: String, preview: String? = nil, argsPreview: String? = nil, resultPreview: String? = nil, startedAt: Date? = nil, endedAt: Date? = nil) {
+    init(
+        toolCallId: String,
+        name: String,
+        status: String,
+        preview: String? = nil,
+        argsPreview: String? = nil,
+        resultPreview: String? = nil,
+        subagentSummary: PickySubagentToolSummary? = nil,
+        startedAt: Date? = nil,
+        endedAt: Date? = nil
+    ) {
         self.toolCallId = toolCallId
         self.name = name
         self.status = status
         self.preview = preview
         self.argsPreview = argsPreview
         self.resultPreview = resultPreview
+        self.subagentSummary = subagentSummary
         self.startedAt = startedAt
         self.endedAt = endedAt
     }

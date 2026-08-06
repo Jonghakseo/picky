@@ -202,6 +202,39 @@ describe("RuntimeEventHandler", () => {
     expect(harness.notifyPickleCompletion).toHaveBeenCalledTimes(2);
   });
 
+  it("preserves subagent summary metadata when a tool settles", async () => {
+    const harness = inputHarness();
+
+    await harness.handler.handle("pickle-1", {
+      type: "tool",
+      toolCallId: "subagent-batch",
+      name: "subagent",
+      status: "running",
+      argsPreview: "truncated original args...",
+      subagentSummary: {
+        action: "batch",
+        agents: ["verifier", "reviewer", "challenger"],
+      },
+    });
+    await harness.handler.handle("pickle-1", {
+      type: "tool",
+      toolCallId: "subagent-batch",
+      name: "subagent",
+      status: "succeeded",
+      resultPreview: "done",
+    });
+
+    expect(harness.current().tools).toEqual([
+      expect.objectContaining({
+        argsPreview: "truncated original args...",
+        subagentSummary: {
+          action: "batch",
+          agents: ["verifier", "reviewer", "challenger"],
+        },
+      }),
+    ]);
+  });
+
   it("continues to start a turn for an extension user message", async () => {
     const harness = inputHarness({ status: "completed", finalAnswer: "Previous answer" });
 

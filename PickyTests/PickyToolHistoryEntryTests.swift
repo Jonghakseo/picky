@@ -269,17 +269,15 @@ struct PickyToolHistoryEntryTests {
         #expect(PickyToolHistoryRenderer.inlineSummary(for: status.detail) == "status #3")
     }
 
-    @Test func compactedSubagentBatchPreviewListsEveryAgent() {
-        let tool = PickyToolActivity(
-            toolCallId: "subagent-long-batch",
-            name: "subagent",
-            status: "running",
-            argsPreview: #"{"command":"subagent batch --agent \"verifier\" --task _ --agent \"reviewer\" --task _ --agent \"challenger\" --task _"}"#
-        )
+    @Test func structuredSubagentSummaryPreservesTruncatedArgsPreview() throws {
+        let truncatedArgs = #"{"command":"subagent batch --agent verifier --task \"long verifier task\" --agent reviewer --task \"long reviewer task..."#
+        let payload = #"{"toolCallId":"subagent-long-batch","name":"subagent","status":"running","argsPreview":"{\"command\":\"subagent batch --agent verifier --task \\\"long verifier task\\\" --agent reviewer --task \\\"long reviewer task...","subagentSummary":{"action":"batch","agents":["verifier","reviewer","challenger"]}}"#
+        let tool = try JSONDecoder().decode(PickyToolActivity.self, from: Data(payload.utf8))
         let entry = PickyToolHistoryRenderer.entry(from: tool, index: 1)
 
+        #expect(tool.argsPreview == truncatedArgs)
         guard case let .subagent(mode, agents, _, _) = entry.detail else {
-            Issue.record("Expected compacted subagent batch detail")
+            Issue.record("Expected structured subagent batch detail")
             return
         }
         #expect(mode == "batch")

@@ -89,7 +89,13 @@ enum PickyToolHistoryRenderer {
         let status = status(for: tool.status)
         let argsJSON = tool.argsPreview
         let result = tool.resultPreview ?? (status != .running ? tool.preview : nil)
-        let detail = detail(for: tool.name, category: category, argsJSON: argsJSON, result: result)
+        let detail = detail(
+            for: tool.name,
+            category: category,
+            argsJSON: argsJSON,
+            subagentSummary: tool.subagentSummary,
+            result: result
+        )
         return PickyToolHistoryEntry(
             id: tool.toolCallId,
             index: index,
@@ -148,10 +154,17 @@ enum PickyToolHistoryRenderer {
         }
     }
 
-    private static func detail(for name: String, category: PickyToolHistoryCategory, argsJSON: String?, result: String?) -> PickyToolHistoryDetail {
+    private static func detail(
+        for name: String,
+        category: PickyToolHistoryCategory,
+        argsJSON: String?,
+        subagentSummary: PickySubagentToolSummary?,
+        result: String?
+    ) -> PickyToolHistoryDetail {
         let args = parseArgs(argsJSON)
         switch name.lowercased() {
         case "subagent":
+            if let detail = subagentDetail(summary: subagentSummary, result: result) { return detail }
             if let detail = subagentDetail(args: args, fallbackJSON: argsJSON, result: result) { return detail }
         case "todo_write", "todowrite":
             if let detail = todoDetail(args: args) { return detail }
@@ -260,6 +273,18 @@ enum PickyToolHistoryRenderer {
         default:
             return nil
         }
+    }
+
+    private static func subagentDetail(
+        summary: PickySubagentToolSummary?,
+        result: String?
+    ) -> PickyToolHistoryDetail? {
+        guard let summary,
+              summary.action == "batch" || summary.action == "chain",
+              !summary.agents.isEmpty,
+              summary.agents.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+        else { return nil }
+        return .subagent(mode: summary.action, agents: summary.agents, task: nil, result: result)
     }
 
     private static func subagentDetail(args: [String: Any], fallbackJSON: String?, result: String?) -> PickyToolHistoryDetail? {

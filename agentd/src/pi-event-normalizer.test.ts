@@ -156,7 +156,7 @@ describe("normalizePiEvent", () => {
     expect(result.tool.argsPreview?.startsWith('{"command":"xcodebuild')).toBe(true);
   });
 
-  it("preserves every agent in long subagent batch previews", () => {
+  it("preserves every agent alongside long subagent batch previews", () => {
     const longTask = "Inspect the implementation and report only reproducible blockers. ".repeat(5);
     const result = normalizePiEvent({
       type: "tool_execution_start",
@@ -174,11 +174,13 @@ describe("normalizePiEvent", () => {
 
     expect(result.kind).toBe("tool");
     if (result.kind !== "tool") return;
-    const argsPreview = JSON.parse(result.tool.argsPreview ?? "{}") as { command?: string };
-    expect(argsPreview.command).toContain('--agent "verifier"');
-    expect(argsPreview.command).toContain('--agent "reviewer"');
-    expect(argsPreview.command).toContain('--agent "challenger"');
-    expect(result.tool.argsPreview?.length).toBeLessThanOrEqual(500);
+    expect(result.tool.argsPreview).toContain(longTask.slice(0, 80));
+    expect(result.tool.argsPreview).not.toContain("--agent challenger");
+    expect(result.tool.argsPreview?.length).toBe(500);
+    expect(result.tool.subagentSummary).toEqual({
+      action: "batch",
+      agents: ["verifier", "reviewer", "challenger"],
+    });
   });
 
   it("extracts normalized todo state from appended extension entries", () => {

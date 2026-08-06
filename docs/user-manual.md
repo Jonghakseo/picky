@@ -524,9 +524,9 @@ Answered or cancelled question bubbles collapse but can be expanded for review.
 
 When a Pickle launches Pi subagents (single `run`, parallel `batch`, or sequential `chain`), the conversation shows a dedicated bubble for each subagent invocation instead of a global overlay.
 
-While running, the bubble lists one row per agent with its status marker, agent name, run number, task preview, and elapsed time; chain invocations also show the step order. The bubble collapses to a one-line summary once every run settles, and can be expanded again at any time.
+While running, the bubble lists one row per agent with its status icon, agent name, run number, task preview, and elapsed time; chain invocations also show the step order. When available, a context-usage ring and percentage appear before the elapsed time. A second line shows the current activity once, with the cumulative tool-call count kept as separate right-aligned metadata; the count remains visible even when no activity text is available. The bubble collapses to a one-line summary once every run settles, and can be expanded again at any time.
 
-After a run completes, its row swaps the task preview for a preview of the subagent's response. Click a completed row to open the full response in the Markdown report viewer (the row tooltip still shows the original task). Full response text is kept for the most recent runs; older runs keep only the short preview.
+After a run completes, its row keeps the latest context-usage reading and swaps the task preview for a preview of the subagent's response. Click a completed row to open the full response in the Markdown report viewer (the row tooltip still shows the original task). Full response text is kept for the most recent runs; older runs keep only the short preview.
 
 ### 8.12 Tool History viewer
 
@@ -538,7 +538,7 @@ It can show:
 - Tool status and duration.
 - Bash output or generic tool details where available.
 - Edit diffs for file changes where available.
-- Dedicated layouts for todo-list updates and subagent launches.
+- Dedicated layouts for todo-list updates and subagent launches; batch and chain entries retain the complete launched-agent list even when their task text is long.
 - A scope toggle to switch between the current turn and the whole session.
 
 File paths shown for read/edit/write entries are clickable when they are absolute (including `~`-prefixed) paths: clicking opens the file with its default app, and a right-click menu offers **Copy path**.

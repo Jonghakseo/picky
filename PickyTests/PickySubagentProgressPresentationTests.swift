@@ -73,6 +73,16 @@ struct PickySubagentProgressPresentationTests {
         #expect(presentation.activityText(for: presentation.rows[0]) == "grep")
     }
 
+    @Test func showsToolCountWhenActivityHasNoText() throws {
+        let active = run(1, agent: "worker", status: .running, activity: .init(toolCallCount: 7))
+        let presentation = try #require(makePresentation(action: .run, planned: [plan("worker", "Inspect")], runs: [active]))
+        let row = presentation.rows[0]
+
+        #expect(presentation.activityText(for: row) == nil)
+        #expect(presentation.toolCountText(for: row) == "7 tools")
+        #expect(presentation.hasActivityRowContent(for: row))
+    }
+
     @Test func showsResponsePreviewOnlyAfterRunSettles() throws {
         let response = "# Result\n\nImplemented the presentation."
         let running = try #require(makePresentation(

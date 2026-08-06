@@ -170,17 +170,19 @@ struct PickySubagentInvocationBubbleView: View {
                     .foregroundColor(DS.Colors.textTertiary)
                     .lineLimit(1)
             }
-            if let activity = presentation.activityText(for: row) {
+            if presentation.hasActivityRowContent(for: row) {
                 HStack(spacing: DS.Spacing.sm) {
                     Image(systemName: "arrow.right.circle.fill")
                         .pickyFont(size: 13, weight: .medium)
                         .foregroundColor(DS.Colors.textTertiary)
                         .frame(width: DS.Spacing.lg, alignment: .center)
                         .accessibilityHidden(true)
-                    Text(activity)
-                        .font(PickyHUDTypography.metaMonospacedMedium)
-                        .foregroundColor(DS.Colors.textTertiary)
-                        .lineLimit(1)
+                    if let activity = presentation.activityText(for: row) {
+                        Text(activity)
+                            .font(PickyHUDTypography.metaMonospacedMedium)
+                            .foregroundColor(DS.Colors.textTertiary)
+                            .lineLimit(1)
+                    }
                     Spacer(minLength: DS.Spacing.xs)
                     if let toolCount = presentation.toolCountText(for: row) {
                         Text(toolCount)

@@ -173,6 +173,10 @@ struct PickySubagentInvocationPresentation: Equatable {
         return "\(count) tools"
     }
 
+    func hasActivityRowContent(for row: PickySubagentInvocationRow) -> Bool {
+        activityText(for: row) != nil || toolCountText(for: row) != nil
+    }
+
     func contextUsage(for row: PickySubagentInvocationRow) -> PickyContextUsage? {
         row.run?.lastActivity?.contextUsage
     }

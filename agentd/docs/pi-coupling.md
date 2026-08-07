@@ -307,6 +307,25 @@ Official source: [Pi coding-agent CHANGELOG 0.84.0](https://github.com/earendil-
   credential-related structural cast because Pi exposes no public live reload.
 - `pi-ai`, `pi-coding-agent`, and `pi-tui` are pinned together on `0.84.0`.
 
+### 0.84.0 -> 0.84.1
+
+Official source: [Pi coding-agent CHANGELOG 0.84.1](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/CHANGELOG.md#0841---2026-08-07).
+
+- Blocked extension `tool_call` handlers can now terminate an all-terminating batch
+  without another model call. Picky's bundled handoff extension registers only a
+  slash command, and agentd registers no `tool_call` event hook, so no adapter
+  change is required; user-installed extensions inherit the upstream behavior.
+- Pi fixes recursive extension TUI method wrappers. Picky supplies its own strict
+  `ExtensionUIContext` bridge rather than wrapping the interactive TUI context, so
+  this is an upstream robustness improvement with no host code migration.
+- `Agent.reset()` now rejects while an inherited agent run is active. Picky drives
+  the public `AgentSession` lifecycle and does not call `Agent.reset()`, so session
+  orchestration remains unchanged.
+- Qwen Token Plan Individual, `pi auth check`, fullscreen selection/scrolling, bash
+  environment guidance, and terminal theme detection do not change Picky's SDK
+  contracts or native HUD behavior.
+- `pi-ai`, `pi-coding-agent`, and `pi-tui` are pinned together on `0.84.1`.
+
 ## Backward-compatibility policy
 
 - **Capability sniffs (T2) MUST stay non-fatal.** A pi version that drops

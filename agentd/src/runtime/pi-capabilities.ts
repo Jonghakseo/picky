@@ -2,11 +2,9 @@
 // pi-capabilities.ts
 //
 // Centralised wrappers for the pi-coding-agent AgentSession surfaces Picky drives.
-// As of pi 0.80.x these methods are part of the public AgentSession type, so each
-// wrapper narrows the session to `Partial<Pick<AgentSession, ...>>` instead of an
-// `as unknown as { ... }` hand-written shape: the method signatures are now checked
-// against pi's real types, while `Partial` keeps every capability optional so the
-// runtime guard below stays valid. Each wrapper:
+// As of pi 0.84.x these methods are part of the public AgentSession type, so wrappers
+// read them directly from the typed session while retaining runtime guards for older or
+// reshuffled builds. Each wrapper:
 //
 //   1. Narrows to the capability in exactly one place so the next pi version bump
 //      only needs auditing here and the pi-coupling.md doc.
@@ -19,9 +17,8 @@
 //      so a pi upgrade that drops a method shows up loudly in `agentd.stdout.log`
 //      even when the user-visible fallback is silent.
 //
-// A few surfaces still need a structural cast where pi's published type diverges
-// from Picky's local shape (e.g. ExtensionRunner.emitUserBash, which pi mangles in
-// its public types); those are flagged inline.
+// A few surfaces still need a structural cast where pi does not expose a public API
+// (currently the live credential-store reload bridge); those are flagged inline.
 //
 // Backward-compatibility: callers must always treat "capability unavailable" as a
 // normal branch, never an error, so the daemon keeps running on older or reshuffled
@@ -29,7 +26,7 @@
 // instead of a capability wrapper.
 //
 
-import type { AgentSession, ModelRuntime } from "@earendil-works/pi-coding-agent";
+import type { AgentSession, ModelRuntime, UserBashEvent, UserBashEventResult } from "@earendil-works/pi-coding-agent";
 import type { ModelCycleDirection } from "../protocol.js";
 import type { RuntimeBashExecutionResult, ThinkingLevel } from "./types.js";
 import { logAgentd } from "../local-log.js";
@@ -44,18 +41,15 @@ export interface PiCycleModelResult {
   thinkingLevel?: ThinkingLevel;
 }
 
+type PiSessionModel = NonNullable<AgentSession["model"]>;
+
 export interface PiModelMetadata {
-  api?: string;
-  provider?: string;
-  modelId?: string;
+  api?: PiSessionModel["api"];
+  provider?: PiSessionModel["provider"];
+  modelId?: PiSessionModel["id"];
 }
 
-// "session.extensionRunner.emitUserBash" payload shape Picky has historically passed in.
-export interface PiUserBashEvent {
-  command: string;
-  excludeFromContext: boolean;
-  cwd: string;
-}
+export type PiUserBashEvent = Omit<UserBashEvent, "type">;
 
 // Per-process record of (sessionId, capability) pairs we have already warned about. Stops the
 // per-session log from repeating on every turn while still keeping the first observation loud.
@@ -95,7 +89,7 @@ export function __resetPiCapabilityCachesForTests(): void {
 // MARK: - Capability accessors
 
 export function trySetThinkingLevel(session: AgentSession, sessionId: string, level: ThinkingLevel): boolean {
-  const method = (session as Partial<Pick<AgentSession, "setThinkingLevel">>).setThinkingLevel;
+  const method = session.setThinkingLevel;
   if (typeof method !== "function") {
     warnOnceForAbsence(sessionId, "setThinkingLevel");
     return false;
@@ -106,7 +100,7 @@ export function trySetThinkingLevel(session: AgentSession, sessionId: string, le
 }
 
 export function tryCycleThinkingLevel(session: AgentSession, sessionId: string): ThinkingLevel | undefined {
-  const method = (session as Partial<Pick<AgentSession, "cycleThinkingLevel">>).cycleThinkingLevel;
+  const method = session.cycleThinkingLevel;
   if (typeof method !== "function") {
     warnOnceForAbsence(sessionId, "cycleThinkingLevel");
     return undefined;
@@ -120,7 +114,7 @@ export async function tryCycleModel(
   sessionId: string,
   direction: ModelCycleDirection,
 ): Promise<PiCycleModelResult | undefined> {
-  const method = (session as Partial<Pick<AgentSession, "cycleModel">>).cycleModel;
+  const method = session.cycleModel;
   if (typeof method !== "function") {
     warnOnceForAbsence(sessionId, "cycleModel");
     return undefined;
@@ -130,7 +124,7 @@ export async function tryCycleModel(
 }
 
 export function tryGetContextUsage(session: AgentSession, sessionId: string): PiContextUsage | undefined {
-  const method = (session as Partial<Pick<AgentSession, "getContextUsage">>).getContextUsage;
+  const method = session.getContextUsage;
   if (typeof method !== "function") {
     warnOnceForAbsence(sessionId, "getContextUsage");
     return undefined;
@@ -140,7 +134,7 @@ export function tryGetContextUsage(session: AgentSession, sessionId: string): Pi
 }
 
 export async function tryCompact(session: AgentSession, sessionId: string, instructions?: string): Promise<{ supported: true } | { supported: false }> {
-  const method = (session as Partial<Pick<AgentSession, "compact">>).compact;
+  const method = session.compact;
   if (typeof method !== "function") {
     warnOnceForAbsence(sessionId, "compact");
     return { supported: false };
@@ -151,7 +145,7 @@ export async function tryCompact(session: AgentSession, sessionId: string, instr
 }
 
 export async function tryReload(session: AgentSession, sessionId: string): Promise<{ supported: true } | { supported: false }> {
-  const method = (session as Partial<Pick<AgentSession, "reload">>).reload;
+  const method = session.reload;
   if (typeof method !== "function") {
     warnOnceForAbsence(sessionId, "reload");
     return { supported: false };
@@ -180,7 +174,7 @@ export async function reloadModelRuntimeCredentials(modelRuntime: ModelRuntime, 
 }
 
 export function tryRefreshSystemPromptFromActiveTools(session: AgentSession, sessionId: string): boolean {
-  const candidate = session as Partial<Pick<AgentSession, "getActiveToolNames" | "setActiveToolsByName">>;
+  const candidate = session;
   if (typeof candidate.getActiveToolNames !== "function" || typeof candidate.setActiveToolsByName !== "function") {
     warnOnceForAbsence(sessionId, "getActiveToolNames/setActiveToolsByName");
     return false;
@@ -197,7 +191,7 @@ export function tryRefreshSystemPromptFromActiveTools(session: AgentSession, ses
 }
 
 export function isCompacting(session: AgentSession): boolean {
-  return (session as Partial<Pick<AgentSession, "isCompacting">>).isCompacting === true;
+  return session.isCompacting === true;
 }
 
 // MARK: - User-bash bridge
@@ -212,7 +206,7 @@ export interface PiBashSurface {
    * pi-internal payload shape. Returns `undefined` when the underlying pi capability
    * is missing.
    */
-  emitUserBash?: (event: PiUserBashEvent) => Promise<{ result?: unknown; operations?: unknown } | undefined>;
+  emitUserBash?: (event: PiUserBashEvent) => Promise<UserBashEventResult | undefined>;
 }
 
 /**
@@ -221,17 +215,14 @@ export interface PiBashSurface {
  * bash must guard on the return value.
  */
 export function tryGetBashSurface(session: AgentSession, sessionId: string): PiBashSurface | undefined {
-  const candidate = session as Partial<Pick<AgentSession, "isBashRunning" | "executeBash" | "recordBashResult" | "extensionRunner">>;
+  const candidate = session;
   if (typeof candidate.executeBash !== "function" || typeof candidate.recordBashResult !== "function") {
     warnOnceForAbsence(sessionId, "executeBash/recordBashResult");
     return undefined;
   }
   recordPresence(sessionId, "executeBash");
   recordPresence(sessionId, "recordBashResult");
-  // pi mangles ExtensionRunner.emitUserBash in its published types, so this single field stays structural.
-  const runner = candidate.extensionRunner as undefined | {
-    emitUserBash?: (event: { type: "user_bash" } & PiUserBashEvent) => Promise<{ result?: unknown; operations?: unknown } | undefined>;
-  };
+  const runner = candidate.extensionRunner;
   const rawEmit = runner?.emitUserBash;
   if (typeof rawEmit === "function") {
     recordPresence(sessionId, "extensionRunner.emitUserBash");
@@ -260,14 +251,13 @@ export function readModelMetadata(session: AgentSession): PiModelMetadata | unde
 }
 
 function readStateModelFallback(session: AgentSession): AgentSession["model"] | undefined {
-  return ((session as Partial<Pick<AgentSession, "state">>).state as { model?: AgentSession["model"] } | undefined)?.model;
+  return session.state.model;
 }
 
 export function readThinkingLevel(session: AgentSession): ThinkingLevel | undefined {
-  const direct = (session as Partial<Pick<AgentSession, "thinkingLevel">>).thinkingLevel;
-  const fromDirect = parseThinkingLevel(direct);
+  const fromDirect = parseThinkingLevel(session.thinkingLevel);
   if (fromDirect) return fromDirect;
-  const fromState = parseThinkingLevel((session as Partial<Pick<AgentSession, "state">>).state?.thinkingLevel);
+  const fromState = parseThinkingLevel(session.state.thinkingLevel);
   return fromState;
 }
 

@@ -11,7 +11,7 @@ the **pre-upgrade checklist for every pi version bump**.
 
 | Tier | Examples | What breaking means | Where it's enforced |
 |------|----------|---------------------|---------------------|
-| **T1 — Public API** | `defineTool`, `loadSkills`, `createAgentSessionServices`, `ModelRuntime` provider auth/status/login, `SettingsManager`, `DefaultPackageManager`, `AgentSession.prompt`, `AgentSession.subscribe`, `AgentSession.bindExtensions` | Daemon cannot boot or pi cannot answer at all | `src/__tests__/pi-contract.test.ts` (hard fail), TypeScript types |
+| **T1 — Public API** | `defineTool`, `loadSkills`, `createAgentSessionServices`, `ModelRuntime` provider auth/status/login, `SettingsManager`, `DefaultPackageManager`, `AgentSession.prompt`, `AgentSession.subscribe`, `AgentSession.bindExtensions`, `AgentSession.messages`, `AgentSession.setScopedModels` | Daemon cannot boot or pi cannot answer at all | `src/__tests__/pi-contract.test.ts` (hard fail), TypeScript types |
 | **T2 — Capability sniffs** | `setThinkingLevel`, `cycleThinkingLevel`, `cycleModel`, `getContextUsage`, `compact`, `reload`, `executeBash`, `recordBashResult`, `isCompacting`, `extensionRunner.emitUserBash` | One pi runtime feature silently no-ops (e.g. `/compact` becomes "not supported", thinking level cycling does nothing) | `src/runtime/pi-capabilities.ts` wraps each sniff, logs `pi capability absent` per session; `pi-contract.test.ts` warns (not fails) on absence so back-compat builds keep passing |
 | **T3 — Internal shapes** | `session.state.messages` array layout, `ModelRuntime.credentials.store.reload` compatibility bridge, `assistantMessage.content[]` blocks (`{type:"text"}` / `{type:"toolCall"}` / `{type:"toolResult"}`), `session.model.{api,provider,id}` with `state.model` fallback, pi `subscribe()` event types (`agent_start`, `message_update`, `turn_end`, `agent_end`, ...) and field names (`stopReason`, `toolCallId`, `toolName`) | Subtle, hard-to-detect regressions (lost session file path, stale live credentials, dropped status events, malformed bootstrap, stale tool-call repair) | Centralised in `pi-event-normalizer.ts` + `pi-capabilities.ts`; credential reload and state shape are hard-gated in `pi-contract.test.ts` |
 | **T4 — Lifecycle assumptions** | `runtime.session.sessionFile` exposed synchronously after `createHandle()`, `reportDiagnostics()` scheduled via `setTimeout(0)`, `setRebindSession` invoked when pi swaps the inner session | Race conditions that drop events between handle creation and subscription | Documented inline in `pi-sdk-runtime.ts` (`bindCurrentSession` race guard, `createPrewarmedMainHandle` early-attach comment); fragile, no automated guard |
@@ -30,8 +30,9 @@ moved to `pi-capabilities.ts`; only **typed** pi surfaces remain inline:
   command catalog)
 - `this.runtime.session.resourceLoader.getSkills().skills`
 - `this.runtime.session.promptTemplates`
-- `this.runtime.session.state.messages` (T3 — direct mutation in
-  `injectInitialBootstrap` and `repairDanglingToolCalls`)
+- `this.runtime.session.messages` (T1 — typed read for bootstrap injection)
+- `this.runtime.session.state.messages` (T3 — typed direct mutation in
+  `injectInitialBootstrap`; defensive structural repair in `repairDanglingToolCalls`)
 - `this.runtime.session.sessionManager.appendMessage` (T3)
 - `this.runtime.setRebindSession(...)` (T4)
 - `this.runtime.session` subscribe/unsubscribe race guard (T4) — see the
@@ -39,12 +40,13 @@ moved to `pi-capabilities.ts`; only **typed** pi surfaces remain inline:
 
 ### Capability wrappers: `agentd/src/runtime/pi-capabilities.ts`
 
-Single chokepoint for every `as unknown as { foo?: ... }` cast against
-`AgentSession`. Each wrapper:
+Single chokepoint for optional `AgentSession` capabilities. Since Pi 0.84 these
+surfaces are read directly from the public type; runtime `typeof` guards remain so
+older or reshuffled builds still fail soft. Each wrapper:
 
-1. Performs the unsafe cast in exactly one place.
+1. Uses Pi's public method signature without a structural type assertion.
 2. Returns `undefined` / a discriminated `{ supported: false }` when the
-   underlying pi method is missing.
+   underlying pi method is missing at runtime.
 3. Logs `pi capability absent` once per (sessionId, capability) pair so a
    silent pi regression shows up in `agentd.stdout.log`.
 
@@ -278,6 +280,33 @@ When bumping pi (`agentd/package.json` `@earendil-works/pi-coding-agent`):
   definition, command registration, or model runtime changes. `pi-ai`,
   `pi-coding-agent`, and `pi-tui` are kept on the same `0.83.0` release line.
 
+### 0.83.0 -> 0.84.0
+
+Official source: [Pi coding-agent CHANGELOG 0.84.0](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/CHANGELOG.md#0840---2026-08-06).
+
+- JSON/RPC `message_update` now carries only `assistantMessageEvent` deltas. Picky's
+  SDK event normalizer already consumes only that field and assembles streamed text
+  in the supervisor, so no event adapter migration is required.
+- `ModelRegistry.refresh()` and `ModelRuntime.setRuntimeApiKey()` changed option and
+  result contracts. Picky uses `ModelRuntime.refresh({ allowNetwork: false })` for
+  local credential synchronization and does not call `ModelRegistry.refresh()` or
+  `setRuntimeApiKey()`, so the existing public path remains valid.
+- Provider refresh publication and OAuth `refreshToken` contracts changed. Picky
+  does not register a handwritten provider or OAuth refresh callback; user-loaded
+  extensions are composed by Pi's own service factory and inherit the new behavior.
+- Pi agent-core replaced its legacy harness session APIs with v4 lane-based APIs.
+  Picky does not import agent-core or removed experimental paths, so this remains a
+  transitive runtime change.
+- `AgentSession.messages`, `AgentSession.setScopedModels`, and
+  `ExtensionRunner.emitUserBash` are public typed surfaces in the pinned SDK. Picky
+  now uses those declarations directly, removing structural casts while retaining
+  runtime guards only for genuinely optional capabilities.
+- Synthetic bootstrap messages now use exported `UserMessage` / `AssistantMessage`
+  types and assign the typed `AgentState.messages` array without `as never`. The
+  private `ModelRuntime.credentials.store.reload` bridge remains the necessary
+  credential-related structural cast because Pi exposes no public live reload.
+- `pi-ai`, `pi-coding-agent`, and `pi-tui` are pinned together on `0.84.0`.
+
 ## Backward-compatibility policy
 
 - **Capability sniffs (T2) MUST stay non-fatal.** A pi version that drops
@@ -295,13 +324,11 @@ When bumping pi (`agentd/package.json` `@earendil-works/pi-coding-agent`):
 
 ## TODO: hardening backlog
 
-- **T3 compile-time gate for `session.state.messages` shape**: today the
-  `injectInitialBootstrap` and `repairDanglingToolCalls` paths mutate the
-  message array via `as never` casts. A pi reshape of the message record
-  would compile cleanly and break at runtime. Either expose a typed pi
-  helper (`pi.appendBootstrapPair(...)`, `pi.repairTranscript(...)`) or
-  ship a Picky-side typed adapter that builds the messages via pi's own
-  type exports.
+- **T3 typed repair helper for `session.state.messages`**: bootstrap injection is
+  now checked against Pi's exported message types, but `repairDanglingToolCalls`
+  still validates unknown historical/custom message shapes defensively before
+  mutating the array. A public Pi transcript-repair helper would remove that last
+  internal-shape dependency.
 - **T4 race elimination**: the `setTimeout(0) -> reportDiagnostics ->
   "pi session: <path>" -> piSessionFilePathFromLogLine` chain that
   triggered the 0.74 regression is still inherently racy. The supervisor

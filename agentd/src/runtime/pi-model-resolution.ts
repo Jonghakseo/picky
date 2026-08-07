@@ -95,9 +95,7 @@ function modelsEqual(left: RuntimeModel, right: RuntimeModel): boolean {
 
 export function applyScopedModelsForCycling(session: AgentSession, scopedModels: ScopedModelOption[]): void {
   if (scopedModels.length === 0) return;
-  const setScopedModels = (session as AgentSession & { setScopedModels?: (scopedModels: ScopedModelOption[]) => void }).setScopedModels;
-  if (typeof setScopedModels !== "function") return;
-  setScopedModels.call(session, scopedModels);
+  session.setScopedModels(scopedModels);
 }
 
 export function currentModelId(session: AgentSession): string | undefined {

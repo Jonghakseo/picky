@@ -11,6 +11,7 @@ import {
   getAgentDir,
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
+import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
 import { CombinedAutocompleteProvider, type SlashCommand } from "@earendil-works/pi-tui";
 import type { BuiltPrompt } from "../prompt-builder.js";
 import { ExtensionUiBridge, type DialogMethod } from "../application/extension-ui-bridge.js";
@@ -776,7 +777,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   }
 
   async injectInitialBootstrap(messages: { user: string; assistant: string }): Promise<void> {
-    const existing = (this.runtime.session.state.messages ?? []) as unknown[];
+    const existing = this.runtime.session.messages ?? this.runtime.session.state.messages;
     if (existing.length > 0) {
       logAgentd("pi inject bootstrap skipped", { sessionId: this.id, reason: "non-empty session", existingCount: existing.length });
       return;
@@ -784,7 +785,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     await this.appendSyntheticMessages(messages, existing);
   }
 
-  private async appendSyntheticMessages(messages: { user: string; assistant: string }, existing: unknown[]): Promise<void> {
+  private async appendSyntheticMessages(messages: { user: string; assistant: string }, existing: AgentSession["messages"]): Promise<void> {
     const session = this.runtime.session;
     const modelMetadata = piReadModelMetadata(session);
     if (!modelMetadata?.api || !modelMetadata.provider || !modelMetadata.modelId) {
@@ -794,14 +795,14 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     const { api, provider, modelId } = modelMetadata;
 
     const now = Date.now();
-    const userMessage = {
-      role: "user" as const,
+    const userMessage: UserMessage = {
+      role: "user",
       content: messages.user,
       timestamp: now,
     };
-    const assistantMessage = {
-      role: "assistant" as const,
-      content: [{ type: "text" as const, text: messages.assistant }],
+    const assistantMessage: AssistantMessage = {
+      role: "assistant",
+      content: [{ type: "text", text: messages.assistant }],
       api,
       provider,
       model: modelId,
@@ -813,14 +814,14 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
         totalTokens: 0,
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
       },
-      stopReason: "stop" as const,
+      stopReason: "stop",
       timestamp: now,
     };
 
     try {
-      session.sessionManager.appendMessage(userMessage as never);
-      session.sessionManager.appendMessage(assistantMessage as never);
-      session.state.messages = [...existing, userMessage, assistantMessage] as never;
+      session.sessionManager.appendMessage(userMessage);
+      session.sessionManager.appendMessage(assistantMessage);
+      session.state.messages = [...existing, userMessage, assistantMessage];
       logAgentd("pi inject bootstrap", {
         sessionId: this.id,
         userChars: messages.user.length,

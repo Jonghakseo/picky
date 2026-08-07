@@ -25,6 +25,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import * as pi from "@earendil-works/pi-coding-agent";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
 
 const HARD_PACKAGE_EXPORTS = [
   // Session factories that PiSdkRuntime calls in every path.
@@ -54,6 +55,8 @@ const HARD_SESSION_MEMBERS = [
   "steeringMode",
   "followUpMode",
   "state",
+  "messages",
+  "setScopedModels",
   "sessionManager",
   "extensionRunner",
   "resourceLoader",
@@ -88,13 +91,13 @@ describe("pi-coding-agent contract", () => {
 
   it("AgentSession exposes every hard-contract member after createAgentSessionFromServices", async () => {
     const session = await createTestSession();
-    const missing = HARD_SESSION_MEMBERS.filter((name) => !memberPresent(session as unknown, name));
+    const missing = HARD_SESSION_MEMBERS.filter((name) => !memberPresent(session, name));
     expect(missing, `Missing AgentSession members: ${missing.join(", ")}`).toEqual([]);
   });
 
   it("AgentSession soft-contract surfaces are present (warn-only)", async () => {
     const session = await createTestSession();
-    const missing = SOFT_SESSION_MEMBERS.filter((name) => !memberPresent(session as unknown, name));
+    const missing = SOFT_SESSION_MEMBERS.filter((name) => !memberPresent(session, name));
     if (missing.length > 0) {
       // Backward-compat: do not fail. Log once so the next test run captures it and
       // the operator can decide whether to bump pi-coupling.md, pin pi, or push.
@@ -104,7 +107,7 @@ describe("pi-coding-agent contract", () => {
 
   it("extensionRunner exposes emitUserBash (soft, warn-only)", async () => {
     const session = await createTestSession();
-    const runner = (session as unknown as { extensionRunner?: { emitUserBash?: unknown } }).extensionRunner;
+    const runner = session.extensionRunner;
     if (!runner || typeof runner.emitUserBash !== "function") {
       console.warn("[pi-contract] extensionRunner.emitUserBash missing in installed pi; user-bash hooks fall back to direct executeBash.");
     }
@@ -125,13 +128,13 @@ describe("pi-coding-agent contract", () => {
     // Picky's transcript repair and bootstrap injector read/write session.state.messages
     // directly. If pi reshapes the state container, those code paths break silently.
     const session = await createTestSession();
-    const state = (session as unknown as { state?: { messages?: unknown } }).state;
+    const state = session.state;
     expect(state, "AgentSession.state must exist").toBeDefined();
-    expect(Array.isArray(state?.messages) || state?.messages === undefined, "AgentSession.state.messages must be an array (or initially undefined)").toBe(true);
+    expect(Array.isArray(state.messages), "AgentSession.state.messages must be an array").toBe(true);
   });
 });
 
-async function createTestSession(): Promise<unknown> {
+async function createTestSession(): Promise<AgentSession> {
   const cwd = await mkdtemp(join(tmpdir(), "picky-pi-contract-cwd-"));
   const agentDir = await mkdtemp(join(tmpdir(), "picky-pi-contract-agent-"));
   // Use the high-level createAgentSession entry point with isolated cwd and agentDir
@@ -139,7 +142,7 @@ async function createTestSession(): Promise<unknown> {
   // Pi auto-resolves SessionManager/SettingsManager/ResourceLoader from these paths,
   // keeping the test focused on the surface Picky touches without duplicating the
   // runtime wiring.
-  const result = await (pi as unknown as { createAgentSession: (options: { cwd: string; agentDir: string }) => Promise<{ session: unknown }> }).createAgentSession({ cwd, agentDir });
+  const result = await pi.createAgentSession({ cwd, agentDir });
   return result.session;
 }
 

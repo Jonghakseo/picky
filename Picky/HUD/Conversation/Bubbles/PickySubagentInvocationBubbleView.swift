@@ -162,8 +162,8 @@ struct PickySubagentInvocationBubbleView: View {
                     .foregroundColor(row.status == .error ? DS.Colors.destructiveText : DS.Colors.textSecondary)
                     .lineLimit(1)
                 Spacer(minLength: DS.Spacing.xs)
-                if let contextUsage = presentation.contextUsagePresentation(for: row) {
-                    PickySubagentContextUsageView(display: contextUsage)
+                if let usage = presentation.contextUsage(for: row) {
+                    PickySubagentContextUsageView(usage: usage)
                 }
                 Text(presentation.elapsedText(for: row, now: now))
                     .font(PickyHUDTypography.metaMonospacedMedium)
@@ -208,7 +208,7 @@ struct PickySubagentInvocationBubbleView: View {
             row.displayText,
             presentation.activityText(for: row),
             presentation.toolCountText(for: row),
-            presentation.contextUsagePresentation(for: row)?.tooltip,
+            presentation.contextUsage(for: row).flatMap { ContextUsageBatteryDisplay(usage: $0)?.tooltip },
         ]
             .compactMap { $0 }
             .joined(separator: ", ")
@@ -258,44 +258,34 @@ struct PickySubagentInvocationBubbleView: View {
 }
 
 private struct PickySubagentContextUsageView: View {
-    let display: PickySubagentContextUsagePresentation
+    let display: ContextUsageBatteryDisplay
+
+    init?(usage: PickyContextUsage) {
+        guard let display = ContextUsageBatteryDisplay(usage: usage) else { return nil }
+        self.display = display
+    }
 
     var body: some View {
         HStack(spacing: DS.Spacing.xs) {
             ZStack {
                 Circle()
                     .stroke(DS.Colors.borderSubtle.opacity(0.7), lineWidth: 1.5)
-                if let fraction = display.fraction {
-                    Circle()
-                        .trim(from: 0, to: CGFloat(fraction))
-                        .stroke(indicatorColor, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                } else {
-                    Circle()
-                        .stroke(DS.Colors.textTertiary.opacity(0.7), style: StrokeStyle(lineWidth: 1.5, dash: [2, 2]))
-                }
+                Circle()
+                    .trim(from: 0, to: CGFloat(display.fraction))
+                    .stroke(display.barColor, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
             }
             .frame(width: 12, height: 12)
             Text(display.label)
                 .font(PickyHUDTypography.metaMonospacedMedium)
                 .fontWeight(.bold)
-                .foregroundColor(indicatorColor.opacity(0.9))
+                .foregroundColor(display.textColor.opacity(0.9))
                 .lineLimit(1)
         }
         .help(display.tooltip)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Context usage")
-        .accessibilityValue(display.tooltip)
-    }
-
-    private var indicatorColor: Color {
-        switch display.level {
-        case .countOnly: DS.Colors.textTertiary
-        case .low: DS.Colors.successText
-        case .medium: DS.Colors.info
-        case .high: DS.Colors.warningText
-        case .critical: DS.Colors.destructiveText
-        }
+        .accessibilityValue(display.label)
     }
 }
 

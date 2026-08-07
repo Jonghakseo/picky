@@ -598,11 +598,11 @@ describe("protocol contract fixtures", () => {
     expect(PickyAgentSessionSchema.parse({
       id: "session-001", title: "Pickle", status: "running", createdAt: "2026-08-02T00:00:00.000Z", updatedAt: "2026-08-02T00:00:00.000Z",
       logs: [], tools: [], artifacts: [], changedFiles: [],
-      subagentRuns: [{ runId: 1, agent: "worker", task: "Implement", status: "done", resultText: "Full markdown response", invocationId: "tool-subagent-1", lastActivity: { toolName: "edit", toolCallCount: 2, contextTokens: 84_000, contextUsage: { tokens: 84_000, contextWindow: 200_000, percent: 42 } } }],
+      subagentRuns: [{ runId: 1, agent: "worker", task: "Implement", status: "done", resultText: "Full markdown response", invocationId: "tool-subagent-1", lastActivity: { toolName: "edit", toolCallCount: 2, contextUsage: { tokens: 84_000, contextWindow: 200_000, percent: 42 } } }],
     }).subagentRuns[0]).toMatchObject({
       resultText: "Full markdown response",
       invocationId: "tool-subagent-1",
-      lastActivity: { toolName: "edit", contextTokens: 84_000, contextUsage: { tokens: 84_000, contextWindow: 200_000, percent: 42 } },
+      lastActivity: { toolName: "edit", contextUsage: { tokens: 84_000, contextWindow: 200_000, percent: 42 } },
     });
   });
 

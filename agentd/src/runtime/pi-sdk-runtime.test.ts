@@ -561,7 +561,7 @@ describe("PiSdkRuntime", () => {
     });
     fakeSession.emit("event", {
       type: "entry_appended",
-      entry: { type: "custom", customType: "subagent-activity", data: { schemaVersion: 1, recordedAt: "2026-08-02T05:26:43.115Z", runId: 3, agent: "worker", lastToolName: "edit", toolCallCount: 12, lastLine: "updated presentation", contextTokens: 84_000 } },
+      entry: { type: "custom", customType: "subagent-activity", data: { schemaVersion: 1, recordedAt: "2026-08-02T05:26:43.115Z", runId: 3, agent: "worker", lastToolName: "edit", toolCallCount: 12, lastLine: "updated presentation", contextTokens: 84_000, contextWindow: 200_000, contextPercent: 42 } },
     });
 
     expect(events).toContainEqual({
@@ -580,7 +580,7 @@ describe("PiSdkRuntime", () => {
       expect.objectContaining({ runId: 4, task: "Implement fix", status: "running", invocationId: "subagent-1" }),
       expect.objectContaining({ runId: 3, task: "Inspect files", status: "done", elapsedMs: 5_000, invocationId: "subagent-1" }),
       expect.objectContaining({ runId: 4, task: "Implement fix", status: "error", elapsedMs: 4_000, invocationId: "subagent-1" }),
-      expect.objectContaining({ runId: 3, lastActivity: { toolName: "edit", toolCallCount: 12, lastLine: "updated presentation", contextTokens: 84_000 } }),
+      expect.objectContaining({ runId: 3, lastActivity: { toolName: "edit", toolCallCount: 12, lastLine: "updated presentation", contextUsage: { tokens: 84_000, contextWindow: 200_000, percent: 42 } } }),
     ]);
     expect(updates.every((event) => event.update.resultPreview === undefined)).toBe(true);
   });

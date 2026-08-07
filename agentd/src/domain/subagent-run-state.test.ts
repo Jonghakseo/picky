@@ -264,7 +264,7 @@ describe("subagent run state", () => {
     expect(updated).toEqual([{ runId: 4, agent: "worker", task: "new task", status: "running" }]);
   });
 
-  it("preserves token-only context activity emitted by the current subagent extension", () => {
+  it("keeps tool activity without fabricating usage from a legacy token-only payload", () => {
     expect(subagentRunActivityUpdateFromDiagnostic({
       schemaVersion: 1,
       recordedAt: "2026-08-02T05:26:36.115Z",
@@ -280,7 +280,6 @@ describe("subagent run state", () => {
         toolName: "edit",
         toolCallCount: 12,
         lastLine: "updated presentation",
-        contextTokens: 84_000,
       },
     });
   });
@@ -297,7 +296,6 @@ describe("subagent run state", () => {
     })).toEqual({
       runId: 3,
       lastActivity: {
-        contextTokens: 84_000,
         contextUsage: { tokens: 84_000, contextWindow: 200_000, percent: 42 },
       },
     });

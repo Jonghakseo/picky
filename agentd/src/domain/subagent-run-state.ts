@@ -159,16 +159,14 @@ export function subagentRunActivityUpdateFromDiagnostic(data: unknown): Subagent
   const toolName = nonEmptyString(data.lastToolName) ? data.lastToolName : undefined;
   const toolCallCount = integer(data.toolCallCount);
   const lastLine = nonEmptyString(data.lastLine) ? data.lastLine : undefined;
-  const contextTokens = nonnegativeInteger(data.contextTokens);
   const contextUsage = contextUsageFromActivity(data);
-  if (!toolName && toolCallCount === undefined && !lastLine && contextTokens === undefined && !contextUsage) return undefined;
+  if (!toolName && toolCallCount === undefined && !lastLine && !contextUsage) return undefined;
   return {
     runId,
     lastActivity: {
       ...(toolName ? { toolName } : {}),
       ...(toolCallCount !== undefined && toolCallCount >= 0 ? { toolCallCount } : {}),
       ...(lastLine ? { lastLine } : {}),
-      ...(contextTokens !== undefined ? { contextTokens } : {}),
       ...(contextUsage ? { contextUsage } : {}),
     },
   };
@@ -565,11 +563,6 @@ function finiteNonnegativeNumber(value: unknown): value is number {
 
 function integer(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) ? value : undefined;
-}
-
-function nonnegativeInteger(value: unknown): number | undefined {
-  const parsed = integer(value);
-  return parsed !== undefined && parsed >= 0 ? parsed : undefined;
 }
 
 function nonEmptyString(value: unknown): value is string {

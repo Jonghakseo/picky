@@ -54,7 +54,7 @@ struct PickySubagentProgressPresentationTests {
 
         #expect(presentation.activityText(for: row) == "read ~/project/AGENTS.md")
         #expect(presentation.toolCountText(for: row) == "12 tools")
-        #expect(presentation.contextUsagePresentation(for: row)?.label == "42%")
+        #expect(presentation.contextUsage(for: row) == usage)
 
         let done = try #require(PickySubagentInvocationPresentation(
             invocation: presentation.invocation,
@@ -63,23 +63,7 @@ struct PickySubagentProgressPresentationTests {
         ))
         #expect(done.activityText(for: done.rows[0]) == nil)
         #expect(done.toolCountText(for: done.rows[0]) == nil)
-        #expect(done.contextUsagePresentation(for: done.rows[0])?.label == "42%")
-    }
-
-    @Test func presentsTokenOnlyContextUsageWithoutInventingAPercentage() throws {
-        let active = run(
-            1,
-            agent: "worker",
-            status: .running,
-            activity: .init(contextTokens: 71_803)
-        )
-        let presentation = try #require(makePresentation(action: .run, planned: [plan("worker", "Implement")], runs: [active]))
-        let contextUsage = try #require(presentation.contextUsagePresentation(for: presentation.rows[0]))
-
-        #expect(contextUsage.fraction == nil)
-        #expect(contextUsage.label == "72k")
-        #expect(contextUsage.level == .countOnly)
-        #expect(contextUsage.tooltip == "Context usage: 71,803 tokens (limit unavailable)")
+        #expect(done.contextUsage(for: done.rows[0]) == usage)
     }
 
     @Test func fallsBackToTheStructuredToolWhenNoActivityPreviewExists() throws {
@@ -126,14 +110,13 @@ struct PickySubagentProgressPresentationTests {
 
     @Test func decodesInvocationMessageAndOptionalRunFields() throws {
         let data = Data("""
-        {"id":"session-1","title":"Pickle","status":"running","createdAt":"2026-07-14T01:00:00.000Z","updatedAt":"2026-07-14T01:00:00.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[],"subagentRuns":[{"runId":1,"agent":"worker","task":"Inspect","status":"running","resultText":"# Findings\\n- Result","invocationId":"tool-1","lastActivity":{"toolName":"read","toolCallCount":2,"lastLine":"opened file","contextTokens":84000,"contextUsage":{"tokens":84000,"contextWindow":200000,"percent":42}}}],"messages":[{"id":"invocation-1","kind":"subagent_invocation","createdAt":"2026-07-14T01:00:00.000Z","subagentInvocation":{"invocationId":"tool-1","action":"run","planned":[{"agent":"worker","task":"Inspect"}],"completed":true}}]}
+        {"id":"session-1","title":"Pickle","status":"running","createdAt":"2026-07-14T01:00:00.000Z","updatedAt":"2026-07-14T01:00:00.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[],"subagentRuns":[{"runId":1,"agent":"worker","task":"Inspect","status":"running","resultText":"# Findings\\n- Result","invocationId":"tool-1","lastActivity":{"toolName":"read","toolCallCount":2,"lastLine":"opened file","contextUsage":{"tokens":84000,"contextWindow":200000,"percent":42}}}],"messages":[{"id":"invocation-1","kind":"subagent_invocation","createdAt":"2026-07-14T01:00:00.000Z","subagentInvocation":{"invocationId":"tool-1","action":"run","planned":[{"agent":"worker","task":"Inspect"}],"completed":true}}]}
         """.utf8)
         let session = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyAgentSession.self, from: data)
 
         #expect(session.subagentRuns.first?.invocationId == "tool-1")
         #expect(session.subagentRuns.first?.resultText == "# Findings\n- Result")
         #expect(session.subagentRuns.first?.lastActivity?.toolCallCount == 2)
-        #expect(session.subagentRuns.first?.lastActivity?.contextTokens == 84_000)
         #expect(session.subagentRuns.first?.lastActivity?.contextUsage?.percent == 42)
         #expect(session.messages.first?.kind == .subagentInvocation)
         #expect(session.messages.first?.subagentInvocation?.planned.first?.agent == "worker")

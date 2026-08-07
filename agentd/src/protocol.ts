@@ -186,7 +186,6 @@ export const PickySubagentRunSchema = z.object({
     toolName: z.string().optional(),
     toolCallCount: z.number().int().nonnegative().optional(),
     lastLine: z.string().optional(),
-    contextTokens: z.number().int().nonnegative().optional(),
     contextUsage: z.object({
       tokens: z.number().nullable(),
       contextWindow: z.number().positive(),

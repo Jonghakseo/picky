@@ -40,6 +40,51 @@ struct PickySubagentInvocationRow: Equatable, Identifiable {
     }
 }
 
+struct PickySubagentContextUsagePresentation: Equatable {
+    enum Level: Equatable { case countOnly, low, medium, high, critical }
+
+    let fraction: Double?
+    let label: String
+    let tooltip: String
+    let level: Level
+
+    init?(activity: PickySubagentLastActivity?) {
+        guard let activity else { return nil }
+        if let usage = activity.contextUsage, let percent = usage.percent {
+            let clamped = max(0, min(100, percent))
+            self.fraction = clamped / 100
+            self.label = "\(Int(clamped.rounded()))%"
+            self.level = switch clamped {
+            case 90...: .critical
+            case 75..<90: .high
+            case 50..<75: .medium
+            default: .low
+            }
+            if let tokens = usage.tokens {
+                self.tooltip = "Context usage: \(tokens.formatted())/\(usage.contextWindow.formatted()) tokens (\(label))"
+            } else {
+                self.tooltip = "Context usage: \(label) of \(usage.contextWindow.formatted()) tokens"
+            }
+            return
+        }
+
+        guard let tokens = activity.contextUsage?.tokens ?? activity.contextTokens, tokens >= 0 else { return nil }
+        self.fraction = nil
+        self.label = Self.compactTokenLabel(tokens)
+        self.tooltip = "Context usage: \(tokens.formatted()) tokens (limit unavailable)"
+        self.level = .countOnly
+    }
+
+    private static func compactTokenLabel(_ tokens: Int) -> String {
+        guard tokens >= 1_000 else { return "\(tokens)" }
+        let thousands = Double(tokens) / 1_000
+        if thousands < 10 {
+            return String(format: "%.1fk", thousands).replacingOccurrences(of: ".0k", with: "k")
+        }
+        return "\(Int(thousands.rounded()))k"
+    }
+}
+
 enum PickySubagentInvocationExpansionPolicy {
     static func isExpanded(savedValue: Bool?, isComplete: Bool) -> Bool {
         savedValue ?? !isComplete
@@ -177,8 +222,8 @@ struct PickySubagentInvocationPresentation: Equatable {
         activityText(for: row) != nil || toolCountText(for: row) != nil
     }
 
-    func contextUsage(for row: PickySubagentInvocationRow) -> PickyContextUsage? {
-        row.run?.lastActivity?.contextUsage
+    func contextUsagePresentation(for row: PickySubagentInvocationRow) -> PickySubagentContextUsagePresentation? {
+        PickySubagentContextUsagePresentation(activity: row.run?.lastActivity)
     }
 
     private static func rows(

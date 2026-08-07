@@ -66,7 +66,7 @@ struct PickySubagentInvocationBubbleView: View {
             let collapsedTone = presentation.collapsedTone
             HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.sm) {
                 Image(systemName: collapsedTone == .success ? "checkmark.circle.fill" : "xmark.circle.fill")
-                    .pickyFont(size: 14, weight: .semibold)
+                    .pickyFont(size: 10.5, weight: .semibold)
                     .foregroundColor(color(for: collapsedTone))
                     .accessibilityHidden(true)
                 Text(presentation.collapsedText)
@@ -79,7 +79,7 @@ struct PickySubagentInvocationBubbleView: View {
         } else {
             HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.sm) {
                 Image(systemName: "diamond.fill")
-                    .pickyFont(size: 13, weight: .semibold)
+                    .pickyFont(size: 9.75, weight: .semibold)
                     .foregroundColor(DS.Colors.floatingGradientPurple)
                     .accessibilityHidden(true)
                 Text(presentation.headerLabel)
@@ -139,7 +139,7 @@ struct PickySubagentInvocationBubbleView: View {
         VStack(alignment: .leading, spacing: DS.Spacing.xs) {
             HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.sm) {
                 Image(systemName: symbolName(for: row.status))
-                    .pickyFont(size: 14, weight: .semibold)
+                    .pickyFont(size: 10.5, weight: .semibold)
                     .foregroundColor(color(for: row.status))
                     .frame(width: DS.Spacing.lg, alignment: .center)
                     .accessibilityHidden(true)
@@ -162,8 +162,8 @@ struct PickySubagentInvocationBubbleView: View {
                     .foregroundColor(row.status == .error ? DS.Colors.destructiveText : DS.Colors.textSecondary)
                     .lineLimit(1)
                 Spacer(minLength: DS.Spacing.xs)
-                if let usage = presentation.contextUsage(for: row) {
-                    PickySubagentContextUsageView(usage: usage)
+                if let contextUsage = presentation.contextUsagePresentation(for: row) {
+                    PickySubagentContextUsageView(display: contextUsage)
                 }
                 Text(presentation.elapsedText(for: row, now: now))
                     .font(PickyHUDTypography.metaMonospacedMedium)
@@ -173,7 +173,7 @@ struct PickySubagentInvocationBubbleView: View {
             if presentation.hasActivityRowContent(for: row) {
                 HStack(spacing: DS.Spacing.sm) {
                     Image(systemName: "arrow.right.circle.fill")
-                        .pickyFont(size: 13, weight: .medium)
+                        .pickyFont(size: 9.75, weight: .medium)
                         .foregroundColor(DS.Colors.textTertiary)
                         .frame(width: DS.Spacing.lg, alignment: .center)
                         .accessibilityHidden(true)
@@ -208,7 +208,7 @@ struct PickySubagentInvocationBubbleView: View {
             row.displayText,
             presentation.activityText(for: row),
             presentation.toolCountText(for: row),
-            presentation.contextUsage(for: row).flatMap { ContextUsageBatteryDisplay(usage: $0)?.tooltip },
+            presentation.contextUsagePresentation(for: row)?.tooltip,
         ]
             .compactMap { $0 }
             .joined(separator: ", ")
@@ -258,34 +258,44 @@ struct PickySubagentInvocationBubbleView: View {
 }
 
 private struct PickySubagentContextUsageView: View {
-    let display: ContextUsageBatteryDisplay
-
-    init?(usage: PickyContextUsage) {
-        guard let display = ContextUsageBatteryDisplay(usage: usage) else { return nil }
-        self.display = display
-    }
+    let display: PickySubagentContextUsagePresentation
 
     var body: some View {
         HStack(spacing: DS.Spacing.xs) {
             ZStack {
                 Circle()
-                    .stroke(DS.Colors.borderSubtle.opacity(0.7), lineWidth: 2)
-                Circle()
-                    .trim(from: 0, to: CGFloat(display.fraction))
-                    .stroke(display.barColor, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
+                    .stroke(DS.Colors.borderSubtle.opacity(0.7), lineWidth: 1.5)
+                if let fraction = display.fraction {
+                    Circle()
+                        .trim(from: 0, to: CGFloat(fraction))
+                        .stroke(indicatorColor, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                } else {
+                    Circle()
+                        .stroke(DS.Colors.textTertiary.opacity(0.7), style: StrokeStyle(lineWidth: 1.5, dash: [2, 2]))
+                }
             }
-            .frame(width: 16, height: 16)
+            .frame(width: 12, height: 12)
             Text(display.label)
                 .font(PickyHUDTypography.metaMonospacedMedium)
                 .fontWeight(.bold)
-                .foregroundColor(display.textColor.opacity(0.9))
+                .foregroundColor(indicatorColor.opacity(0.9))
                 .lineLimit(1)
         }
         .help(display.tooltip)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Context usage")
-        .accessibilityValue(display.label)
+        .accessibilityValue(display.tooltip)
+    }
+
+    private var indicatorColor: Color {
+        switch display.level {
+        case .countOnly: DS.Colors.textTertiary
+        case .low: DS.Colors.successText
+        case .medium: DS.Colors.info
+        case .high: DS.Colors.warningText
+        case .critical: DS.Colors.destructiveText
+        }
     }
 }
 

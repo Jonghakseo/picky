@@ -21,6 +21,7 @@ struct PickySubagentLastActivity: Codable, Equatable {
     var toolName: String? = nil
     var toolCallCount: Int? = nil
     var lastLine: String? = nil
+    var contextTokens: Int? = nil
     var contextUsage: PickyContextUsage? = nil
 }
 

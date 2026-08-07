@@ -264,7 +264,7 @@ describe("subagent run state", () => {
     expect(updated).toEqual([{ runId: 4, agent: "worker", task: "new task", status: "running" }]);
   });
 
-  it("parses optional future activity without treating unrelated diagnostics as activity", () => {
+  it("preserves token-only context activity emitted by the current subagent extension", () => {
     expect(subagentRunActivityUpdateFromDiagnostic({
       schemaVersion: 1,
       recordedAt: "2026-08-02T05:26:36.115Z",
@@ -274,14 +274,30 @@ describe("subagent run state", () => {
       toolCallCount: 12,
       lastLine: "updated presentation",
       contextTokens: 84_000,
-      contextWindow: 200_000,
-      contextPercent: 42,
     })).toEqual({
       runId: 3,
       lastActivity: {
         toolName: "edit",
         toolCallCount: 12,
         lastLine: "updated presentation",
+        contextTokens: 84_000,
+      },
+    });
+  });
+
+  it("parses optional percentage context activity without treating unrelated diagnostics as activity", () => {
+    expect(subagentRunActivityUpdateFromDiagnostic({
+      schemaVersion: 1,
+      recordedAt: "2026-08-02T05:26:36.115Z",
+      runId: 3,
+      agent: "worker",
+      contextTokens: 84_000,
+      contextWindow: 200_000,
+      contextPercent: 42,
+    })).toEqual({
+      runId: 3,
+      lastActivity: {
+        contextTokens: 84_000,
         contextUsage: { tokens: 84_000, contextWindow: 200_000, percent: 42 },
       },
     });

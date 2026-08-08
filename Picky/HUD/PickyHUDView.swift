@@ -21,7 +21,8 @@ struct PickyHUDView: View {
     /// shrinks within whatever space remains below the dock's top edge.
     @ObservedObject var placement: PickyHUDPlacement = PickyHUDPlacement()
     var voiceTargetHitTestRegistry: PickyVoiceTargetHitTestRegistry? = nil
-    var onSizeChange: (CGSize) -> Void = { _ in }
+    var openPerformanceTracker: PickyHUDOpenPerformanceTracker? = nil
+    var onSizeChange: (_ size: CGSize, _ activeSessionID: String?) -> Void = { _, _ in }
     /// Live delta callback for the dock anchor handle. Argument is the cursor's
     /// screen delta from drag start in both X and Y (`NSEvent.mouseLocation` based).
     /// The overlay manager converts the Y delta into an anchor percent and the X
@@ -244,7 +245,7 @@ struct PickyHUDView: View {
                 activeSessionID: activeID,
                 extensionUiRequestID: activeSession?.pendingExtensionUiRequest?.id,
                 shouldHoldHeight: shouldHoldPanelHeightDuringActiveTurn,
-                onSizeChange: onSizeChange
+                onSizeChange: { size in onSizeChange(size, activeID) }
             )
         }
     }
@@ -436,6 +437,10 @@ struct PickyHUDView: View {
             .environment(\.pickyHUDDetailWidth, placement.cardWidth)
             .id(activeSession.id)
             .transition(.identity)
+            .onAppear {
+                PickyPerf.event("hud_open_card_mounted")
+                openPerformanceTracker?.markCardMounted(sessionID: activeSession.id)
+            }
             .onDisappear(perform: resetCardResizeInteraction)
         }
     }
@@ -831,6 +836,16 @@ struct PickyHUDView: View {
             current: heldSession,
             clicked: sessionID
         )
+        if nextHeldSession == nil {
+            openPerformanceTracker?.cancel(sessionID: sessionID)
+        } else if let session = visibleSessions.first(where: { $0.id == sessionID }) {
+            PickyPerf.event("hud_open_click")
+            openPerformanceTracker?.start(
+                sessionID: sessionID,
+                messageCount: session.messages.count,
+                wasUnread: viewModel.unreadSessionIDs.contains(sessionID)
+            )
+        }
         heldSession = nextHeldSession
         if nextHeldSession == nil {
             if hoverPreviewSessionID == sessionID { hoverPreviewSessionID = nil }

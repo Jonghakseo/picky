@@ -393,17 +393,34 @@ final class PickyHUDOverlayManager {
             ),
             collapsedGroupOverrides: dockGroupCollapse(for: displayID)
         )
+        let openPerformanceTracker = PickyHUDOpenPerformanceTracker()
         let hudRoot = PickyHUDView(
             viewModel: viewModel,
             panelIdentifier: panelIdentifier,
             displayID: displayID,
             placement: placement,
             voiceTargetHitTestRegistry: voiceTargetHitTestRegistry,
-            onSizeChange: { [weak self] size in
+            openPerformanceTracker: openPerformanceTracker,
+            onSizeChange: { [weak self] size, activeSessionID in
                 // SwiftUI animates the card reveal itself. Grow the transparent NSPanel
                 // immediately, but defer shrinking it until the collapse animation has
                 // finished so shadows/content aren't clipped by the outer container.
-                self?.resizePanel(displayID: displayID, toContentSize: size, deferShrink: true)
+                guard let self else { return }
+                if let activeSessionID, openPerformanceTracker.isTracking(sessionID: activeSessionID) {
+                    self.resizePanel(
+                        displayID: displayID,
+                        toContentSize: size,
+                        deferShrink: true
+                    ) { resizeMilliseconds in
+                        PickyPerf.event("hud_open_panel_ready")
+                        openPerformanceTracker.markPanelReady(
+                            sessionID: activeSessionID,
+                            panelResizeMilliseconds: resizeMilliseconds
+                        )
+                    }
+                } else {
+                    self.resizePanel(displayID: displayID, toContentSize: size, deferShrink: true)
+                }
             },
             onDockHandleDragChanged: { [weak self] delta in
                 self?.handleDockDragChanged(displayID: displayID, delta: delta)
@@ -621,7 +638,12 @@ final class PickyHUDOverlayManager {
         }
     }
 
-    private func resizePanel(displayID: CGDirectDisplayID, toContentSize contentSize: CGSize, deferShrink: Bool) {
+    private func resizePanel(
+        displayID: CGDirectDisplayID,
+        toContentSize contentSize: CGSize,
+        deferShrink: Bool,
+        completion: ((_ frameUpdateMilliseconds: Int) -> Void)? = nil
+    ) {
         PickyPerf.event("panel_resize_requested")
         guard var entry = panelsByDisplayID[displayID] else { return }
         guard let screen = screen(for: displayID) else { return }
@@ -649,7 +671,12 @@ final class PickyHUDOverlayManager {
                     current.pendingShrinkTask = nil
                     self.panelsByDisplayID[displayID] = current
                 }
-                self.resizePanel(displayID: displayID, toContentSize: contentSize, deferShrink: false)
+                self.resizePanel(
+                    displayID: displayID,
+                    toContentSize: contentSize,
+                    deferShrink: false,
+                    completion: completion
+                )
             }
             entry.lastContentSize = contentSize
             panelsByDisplayID[displayID] = entry
@@ -662,9 +689,23 @@ final class PickyHUDOverlayManager {
         panelsByDisplayID[displayID] = entry
 
         if entry.panel.frame.integral != targetFrame.integral {
-            PickyPerf.interval("panel_resize_set_frame") {
-                entry.panel.setFrame(targetFrame, display: true)
+            if let completion {
+                let frameUpdateStartedAt = ProcessInfo.processInfo.systemUptime
+                PickyPerf.interval("panel_resize_set_frame") {
+                    entry.panel.setFrame(targetFrame, display: true)
+                }
+                let frameUpdateMilliseconds = max(
+                    0,
+                    Int(((ProcessInfo.processInfo.systemUptime - frameUpdateStartedAt) * 1_000).rounded())
+                )
+                completion(frameUpdateMilliseconds)
+            } else {
+                PickyPerf.interval("panel_resize_set_frame") {
+                    entry.panel.setFrame(targetFrame, display: true)
+                }
             }
+        } else {
+            completion?(0)
         }
     }
 

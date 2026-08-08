@@ -10,6 +10,22 @@ was done. The same steps work for any future symptom.
 
 ## Available instrumentation
 
+### End-user feedback summary
+
+`Picky/HUD/PickyHUDOpenPerformanceTracker.swift` measures the individual
+Pickle dock-icon path from click to card mount and panel-resize completion.
+It emits one notice-level, scalar-only `latency` OSLog record per completed
+open in Release and Debug builds. The feedback diagnostics bundle already
+collects recent Picky OSLog entries, so reports can include fields such as
+`totalMs`, `mountMs`, `postMountMs`, `panelResizeMs`, `messageCount`, and
+`wasUnread` without including a session ID, title, message text, or path.
+
+This summary localizes whether the delay is before card mount or after mount,
+but it intentionally does not replace Instruments: individual SwiftUI body,
+AppKit lifecycle, and markdown measurement costs remain Debug-only signposts.
+
+### Local Instruments detail
+
 `Picky/Feedback/PickyPerf.swift` exposes a thin `OSSignposter` wrapper:
 
 ```swift

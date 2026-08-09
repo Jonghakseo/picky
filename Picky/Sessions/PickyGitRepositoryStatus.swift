@@ -8,9 +8,13 @@
 import Foundation
 
 struct PickyGitRepositoryStatus: Equatable {
-    private static let statusCacheLock = NSLock()
-    private static var statusCache: [String: PickyGitRepositoryStatus] = [:]
-    private static var inFlightPrefetchKeys: Set<String> = []
+    private static let refreshCache = PickyGitRepositoryStatusRefreshCache { cwd in
+        await withCheckedContinuation { continuation in
+            subprocessQueue.addOperation {
+                continuation.resume(returning: loadSynchronously(cwd: cwd))
+            }
+        }
+    }
 
     /// Dedicated queue for blocking *background* git/gh subprocess invocations
     /// (HUD status probes, prefetches). Keeping these off Swift's cooperative
@@ -109,21 +113,11 @@ struct PickyGitRepositoryStatus: Equatable {
     }
 
     static func cached(cwd: String?) -> PickyGitRepositoryStatus? {
-        guard let cacheKey = cacheKey(cwd: cwd) else { return nil }
-        statusCacheLock.lock()
-        defer { statusCacheLock.unlock() }
-        return statusCache[cacheKey]
+        refreshCache.cached(cwd: cwd)
     }
 
-    static func load(cwd: String?) async -> PickyGitRepositoryStatus? {
-        let cacheKey = cacheKey(cwd: cwd)
-        let status = await withCheckedContinuation { continuation in
-            subprocessQueue.addOperation {
-                continuation.resume(returning: loadSynchronously(cwd: cwd))
-            }
-        }
-        updateCache(status, for: cacheKey)
-        return status
+    static func load(cwd: String?, maximumAge: TimeInterval = 0) async -> PickyGitRepositoryStatus? {
+        await refreshCache.load(cwd: cwd, maximumAge: maximumAge)
     }
 
     static func loadSynchronously(cwd: String?) -> PickyGitRepositoryStatus? {
@@ -301,23 +295,6 @@ struct PickyGitRepositoryStatus: Equatable {
         return (ahead: ahead, behind: behind)
     }
 
-    private static func updateCache(_ status: PickyGitRepositoryStatus?, for cacheKey: String?) {
-        guard let cacheKey else { return }
-        statusCacheLock.lock()
-        defer { statusCacheLock.unlock() }
-        if let status {
-            statusCache[cacheKey] = status
-        } else {
-            statusCache.removeValue(forKey: cacheKey)
-        }
-    }
-
-    private static func cacheKey(cwd: String?) -> String? {
-        let trimmedCwd = cwd?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !trimmedCwd.isEmpty else { return nil }
-        return URL(fileURLWithPath: trimmedCwd).standardizedFileURL.path
-    }
-
     private static func currentBranchName(cwd: String) -> String {
         let branch = git(["branch", "--show-current"], cwd: cwd)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !branch.isEmpty { return branch }
@@ -461,38 +438,12 @@ struct PickyGitRepositoryStatus: Equatable {
     }
 
     /// Warm the cache for `cwd` so the HUD can render git context on the very first card paint.
-    /// No-ops when the cache already has a value or when an identical prefetch is in flight.
+    /// No-ops when the cache already has a value or an identical generation is in flight.
     static func prefetchIfNeeded(cwd: String?) {
-        guard let cacheKey = cacheKey(cwd: cwd) else { return }
-        guard claimPrefetchSlot(for: cacheKey) else { return }
-
-        subprocessQueue.addOperation {
-            let status = loadSynchronously(cwd: cwd)
-            releasePrefetchSlot(for: cacheKey)
-            updateCache(status, for: cacheKey)
-        }
-    }
-
-    private static func claimPrefetchSlot(for cacheKey: String) -> Bool {
-        statusCacheLock.lock()
-        defer { statusCacheLock.unlock() }
-        if statusCache[cacheKey] != nil || inFlightPrefetchKeys.contains(cacheKey) {
-            return false
-        }
-        inFlightPrefetchKeys.insert(cacheKey)
-        return true
-    }
-
-    private static func releasePrefetchSlot(for cacheKey: String) {
-        statusCacheLock.lock()
-        defer { statusCacheLock.unlock() }
-        inFlightPrefetchKeys.remove(cacheKey)
+        refreshCache.prefetchIfNeeded(cwd: cwd)
     }
 
     static func invalidateCache(cwd: String?) {
-        guard let cacheKey = cacheKey(cwd: cwd) else { return }
-        statusCacheLock.lock()
-        defer { statusCacheLock.unlock() }
-        statusCache.removeValue(forKey: cacheKey)
+        refreshCache.invalidate(cwd: cwd)
     }
 }

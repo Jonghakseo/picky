@@ -18,6 +18,99 @@ struct PickyGitRepositoryStatusTests {
         #expect(PickyGitContextRefreshPolicy.shouldAutoRefreshGit(for: .cancelled) == false)
     }
 
+    @Test func refreshCacheReusesFreshValueUntilTTLExpires() async throws {
+        let clock = TestGitStatusClock(now: 100)
+        let loader = ManualGitStatusLoader()
+        let cache = PickyGitRepositoryStatusRefreshCache(clock: { clock.value }) { cwd in
+            await loader.load(cwd: cwd)
+        }
+        var calls = loader.calls.makeAsyncIterator()
+
+        async let first = cache.load(cwd: "/repo", maximumAge: 5)
+        let firstRequest = try #require(await calls.next())
+        let initial = Self.status(repositoryName: "initial")
+        loader.complete(requestID: firstRequest.id, with: initial)
+        #expect(await first == initial)
+
+        clock.value = 104
+        #expect(await cache.load(cwd: "/repo", maximumAge: 5) == initial)
+        #expect(loader.callCount == 1)
+
+        clock.value = 106
+        async let refreshed = cache.load(cwd: "/repo", maximumAge: 5)
+        let refreshRequest = try #require(await calls.next())
+        let updated = Self.status(repositoryName: "updated")
+        loader.complete(requestID: refreshRequest.id, with: updated)
+        #expect(await refreshed == updated)
+        #expect(loader.callCount == 2)
+    }
+
+    @Test func refreshCacheCoalescesConcurrentLoadsForSameGeneration() async throws {
+        let loader = ManualGitStatusLoader()
+        let cache = PickyGitRepositoryStatusRefreshCache(clock: { 100 }) { cwd in
+            await loader.load(cwd: cwd)
+        }
+        var calls = loader.calls.makeAsyncIterator()
+
+        async let first = cache.load(cwd: "/repo", maximumAge: 0)
+        async let second = cache.load(cwd: "/repo", maximumAge: 0)
+        let request = try #require(await calls.next())
+        var bothCallersJoined = false
+        for _ in 0..<1_000 {
+            if cache.inFlightWaiterCount(cwd: "/repo") == 2 {
+                bothCallersJoined = true
+                break
+            }
+            await Task.yield()
+        }
+        #expect(bothCallersJoined)
+        let value = Self.status(repositoryName: "coalesced")
+        loader.complete(requestID: request.id, with: value)
+
+        #expect(await first == value)
+        #expect(await second == value)
+        #expect(loader.callCount == 1)
+    }
+
+    @Test func refreshCacheInvalidationDiscardsOlderInFlightCompletion() async throws {
+        let loader = ManualGitStatusLoader()
+        let cache = PickyGitRepositoryStatusRefreshCache(clock: { 100 }) { cwd in
+            await loader.load(cwd: cwd)
+        }
+        var calls = loader.calls.makeAsyncIterator()
+
+        async let value = cache.load(cwd: "/repo", maximumAge: 5)
+        let staleRequest = try #require(await calls.next())
+        cache.invalidate(cwd: "/repo")
+        let currentRequest = try #require(await calls.next())
+
+        loader.complete(requestID: staleRequest.id, with: Self.status(repositoryName: "stale"))
+        let current = Self.status(repositoryName: "current")
+        loader.complete(requestID: currentRequest.id, with: current)
+
+        #expect(await value == current)
+        #expect(cache.cached(cwd: "/repo") == current)
+        #expect(loader.callCount == 2)
+    }
+
+    @Test func refreshCacheTemporarilyCachesNegativeResult() async throws {
+        let clock = TestGitStatusClock(now: 100)
+        let loader = ManualGitStatusLoader()
+        let cache = PickyGitRepositoryStatusRefreshCache(clock: { clock.value }) { cwd in
+            await loader.load(cwd: cwd)
+        }
+        var calls = loader.calls.makeAsyncIterator()
+
+        async let first = cache.load(cwd: "/not-a-repo", maximumAge: 5)
+        let request = try #require(await calls.next())
+        loader.complete(requestID: request.id, with: nil)
+        #expect(await first == nil)
+
+        clock.value = 103
+        #expect(await cache.load(cwd: "/not-a-repo", maximumAge: 5) == nil)
+        #expect(loader.callCount == 1)
+    }
+
     @Test func parsesDiffAndCommitPositionStats() {
         let diff = PickyGitRepositoryStatus.parseNumstat("2\t1\tSources/App.swift\n-\t-\tAssets/logo.png\n3\t0\tREADME.md\n")
         #expect(diff.insertions == 5)
@@ -179,6 +272,20 @@ struct PickyGitRepositoryStatusTests {
         #expect(PickyGitRepositoryStatus.cached(cwd: directory.path) == dirtyStatus)
     }
 
+    private static func status(repositoryName: String) -> PickyGitRepositoryStatus {
+        PickyGitRepositoryStatus(
+            repositoryName: repositoryName,
+            branchName: "main",
+            hasUncommittedChanges: false,
+            insertions: 0,
+            deletions: 0,
+            aheadCount: 0,
+            behindCount: 0,
+            remoteWebURL: nil,
+            branchWebURL: nil
+        )
+    }
+
     private func makeTemporaryDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("picky-git-status-\(UUID().uuidString)", isDirectory: true)
@@ -196,5 +303,73 @@ struct PickyGitRepositoryStatusTests {
         try process.run()
         process.waitUntilExit()
         #expect(process.terminationStatus == 0)
+    }
+}
+
+private final class TestGitStatusClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedValue: TimeInterval
+
+    init(now: TimeInterval) {
+        storedValue = now
+    }
+
+    var value: TimeInterval {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return storedValue
+        }
+        set {
+            lock.lock()
+            storedValue = newValue
+            lock.unlock()
+        }
+    }
+}
+
+private final class ManualGitStatusLoader: @unchecked Sendable {
+    struct Request: Sendable {
+        let id: Int
+        let cwd: String?
+    }
+
+    let calls: AsyncStream<Request>
+
+    private let lock = NSLock()
+    private let callContinuation: AsyncStream<Request>.Continuation
+    private var nextRequestID = 0
+    private var continuations: [Int: CheckedContinuation<PickyGitRepositoryStatus?, Never>] = [:]
+    private var storedCallCount = 0
+
+    init() {
+        var continuation: AsyncStream<Request>.Continuation?
+        calls = AsyncStream { continuation = $0 }
+        callContinuation = continuation!
+    }
+
+    var callCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedCallCount
+    }
+
+    func load(cwd: String?) async -> PickyGitRepositoryStatus? {
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            nextRequestID += 1
+            let request = Request(id: nextRequestID, cwd: cwd)
+            continuations[request.id] = continuation
+            storedCallCount += 1
+            lock.unlock()
+            callContinuation.yield(request)
+        }
+    }
+
+    func complete(requestID: Int, with value: PickyGitRepositoryStatus?) {
+        lock.lock()
+        let continuation = continuations.removeValue(forKey: requestID)
+        lock.unlock()
+        continuation?.resume(returning: value)
     }
 }

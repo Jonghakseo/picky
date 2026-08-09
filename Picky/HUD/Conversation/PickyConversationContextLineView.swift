@@ -12,6 +12,7 @@ import UserNotifications
 enum PickyGitContextRefreshPolicy {
     static let completedSessionRefreshIntervalNanoseconds: UInt64 = 60_000_000_000
     static let updatedAtRefreshBucketSeconds: TimeInterval = 5
+    static let statusFreshnessDuration: TimeInterval = 5
 
     static func shouldAutoRefreshGit(for status: PickySessionStatus) -> Bool {
         status == .completed
@@ -95,9 +96,13 @@ struct PickyConversationContextLineView: View {
                 gitStatus = cachedStatus
             }
 
-            // SWR step 2: revalidate git (cheap, always run so insertions/ahead-behind stay accurate).
+            // SWR step 2: revalidate git when the short shared freshness window expires.
+            // Rapid reopen and mini-preview callers coalesce on the same cwd/generation.
             let freshGit = await PickyPerf.interval("context_line_git_load") {
-                await PickyGitRepositoryStatus.load(cwd: session.cwd)
+                await PickyGitRepositoryStatus.load(
+                    cwd: session.cwd,
+                    maximumAge: PickyGitContextRefreshPolicy.statusFreshnessDuration
+                )
             }
             guard !Task.isCancelled else { return }
             PickyPerf.event("context_line_git_state_publish")

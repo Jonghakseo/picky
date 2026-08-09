@@ -1259,7 +1259,10 @@ private struct PickyHUDMiniPreviewCardView: View {
                 gitStatus = cached
             }
             let freshGit = await PickyPerf.interval("mini_preview_git_load") {
-                await PickyGitRepositoryStatus.load(cwd: session.cwd)
+                await PickyGitRepositoryStatus.load(
+                    cwd: session.cwd,
+                    maximumAge: PickyGitContextRefreshPolicy.statusFreshnessDuration
+                )
             }
             guard !Task.isCancelled else { return }
             gitStatus = freshGit

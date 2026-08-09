@@ -93,6 +93,21 @@ struct PickyGitRepositoryStatusTests {
         #expect(loader.callCount == 2)
     }
 
+    @Test func cancelledRefreshReturnsWithoutInvokingLoader() async {
+        let loader = ImmediateGitStatusLoader(value: Self.status(repositoryName: "unexpected"))
+        let cache = PickyGitRepositoryStatusRefreshCache(clock: { 100 }) { cwd in
+            await loader.load(cwd: cwd)
+        }
+
+        let result = await Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await cache.load(cwd: "/repo", maximumAge: 0)
+        }.value
+
+        #expect(result == nil)
+        #expect(loader.callCount == 0)
+    }
+
     @Test func refreshCacheTemporarilyCachesNegativeResult() async throws {
         let clock = TestGitStatusClock(now: 100)
         let loader = ManualGitStatusLoader()
@@ -325,6 +340,29 @@ private final class TestGitStatusClock: @unchecked Sendable {
             storedValue = newValue
             lock.unlock()
         }
+    }
+}
+
+private final class ImmediateGitStatusLoader: @unchecked Sendable {
+    private let lock = NSLock()
+    private let value: PickyGitRepositoryStatus?
+    private var storedCallCount = 0
+
+    init(value: PickyGitRepositoryStatus?) {
+        self.value = value
+    }
+
+    var callCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedCallCount
+    }
+
+    func load(cwd: String?) async -> PickyGitRepositoryStatus? {
+        lock.lock()
+        storedCallCount += 1
+        lock.unlock()
+        return value
     }
 }
 

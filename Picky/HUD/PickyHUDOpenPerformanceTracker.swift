@@ -39,6 +39,7 @@ struct PickyHUDOpenPerformanceMeasurement: Equatable {
     }
 }
 
+@MainActor
 final class PickyHUDOpenPerformanceTracker {
     struct AttemptToken: Equatable, Hashable {
         fileprivate let generation: UInt64

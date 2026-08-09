@@ -1,6 +1,7 @@
 import Testing
 @testable import Picky
 
+@MainActor
 @Suite("HUD open performance tracker")
 struct PickyHUDOpenPerformanceTrackerTests {
     @Test func completedDockOpenEmitsInteractiveAndPanelSettledMilestones() throws {

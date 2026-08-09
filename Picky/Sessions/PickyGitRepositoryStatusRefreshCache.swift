@@ -7,7 +7,7 @@ import Foundation
 /// share one loader invocation; invalidation advances the generation and wakes
 /// old waiters so stale completions cannot repopulate the cache or publish into
 /// the current UI.
-final class PickyGitRepositoryStatusRefreshCache {
+final class PickyGitRepositoryStatusRefreshCache: @unchecked Sendable {
     typealias Clock = () -> TimeInterval
     typealias Loader = (_ cwd: String?) async -> PickyGitRepositoryStatus?
 
@@ -52,6 +52,7 @@ final class PickyGitRepositoryStatusRefreshCache {
     func load(cwd: String?, maximumAge: TimeInterval) async -> PickyGitRepositoryStatus? {
         guard let key = Self.cacheKey(cwd: cwd) else { return nil }
         while true {
+            guard !Task.isCancelled else { return nil }
             switch await refreshOnce(cwd: cwd, key: key, maximumAge: maximumAge) {
             case .value(let value):
                 return value

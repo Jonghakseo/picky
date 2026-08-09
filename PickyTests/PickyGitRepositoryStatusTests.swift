@@ -353,15 +353,11 @@ private final class ImmediateGitStatusLoader: @unchecked Sendable {
     }
 
     var callCount: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return storedCallCount
+        lock.withLock { storedCallCount }
     }
 
     func load(cwd: String?) async -> PickyGitRepositoryStatus? {
-        lock.lock()
-        storedCallCount += 1
-        lock.unlock()
+        lock.withLock { storedCallCount += 1 }
         return value
     }
 }

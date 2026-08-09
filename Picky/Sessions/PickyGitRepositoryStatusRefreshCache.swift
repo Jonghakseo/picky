@@ -8,8 +8,8 @@ import Foundation
 /// old waiters so stale completions cannot repopulate the cache or publish into
 /// the current UI.
 final class PickyGitRepositoryStatusRefreshCache: @unchecked Sendable {
-    typealias Clock = () -> TimeInterval
-    typealias Loader = (_ cwd: String?) async -> PickyGitRepositoryStatus?
+    typealias Clock = @Sendable () -> TimeInterval
+    typealias Loader = @Sendable (_ cwd: String?) async -> PickyGitRepositoryStatus?
 
     private struct Entry {
         let value: PickyGitRepositoryStatus?

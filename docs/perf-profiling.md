@@ -171,6 +171,22 @@ remaining calls are cache hits at <1µs each).
 because SwiftUI fan-out amplifies how often layout runs. Measure first,
 cache the deterministic callee, only then chase ViewModel structure.
 
+## Case study: 2026-08 repeated open of a long latest response
+
+A later profile compared a small Pickle (88 ms card mount) with a Pickle that
+contained one 2,856pt-high latest response (230 ms card mount, 425 ms average
+main-thread microhang). Markdown parsing remained negligible. The long bubble's
+text measurement cost about 114–120 ms in each of two initial layout passes and
+accounted for 55% of sampled main-thread work.
+
+The existing width map lived on each AppKit bubble instance, so closing and
+reopening the card discarded it. `PickyBubbleMeasurementCache` adds a bounded
+process-wide layer that stores aggregate and per-block sizes only. Its key uses
+the full immutable markdown, exact effective width, font scale, and code-preview
+policy. Never bucket or round the width independently: even an adjacent width
+can cross a line-wrap boundary and produce a different height. Cache eviction
+must always fall back to the original measurement path with identical output.
+
 ## When the cleanup decision is "keep" vs "remove"
 
 - **Keep** signposts on functions whose perf you want to track over time

@@ -115,55 +115,82 @@ final class PickyBubbleMarkdownContentView: NSView {
         }
     }
 
-    /// Width-keyed cache. AppKit's layout cycle invokes `measuredSize(forWidth:)`
-    /// many times during a single pass, but — critically — `PickyAgentBubbleSurfaceNSView`
-    /// measures at TWO alternating widths per pass: the bubble cap
-    /// (`measuredBubbleWidth`) and the narrower content-fit width
-    /// (`measuredBubbleHeight`/`layout`). A single-slot `(width, size)` cache
-    /// thrashes between those two values and misses on essentially every call,
-    /// which profiling caught dominating HUD time again (~93% of hud-perf,
-    /// single measures up to ~1.1s while expanding large bubbles). Keep a small
-    /// per-width map instead so both widths stay resident across the pass.
-    /// Bounded because a bubble realistically only sees a handful of widths
-    /// (cap + content-fit, plus transient widths during a panel drag).
-    private var measuredSizeCache: [CGFloat: NSSize] = [:]
+    /// Exact-width local cache for the current NSView lifetime. Reopening a card
+    /// recreates its AppKit bubble views, so misses also consult the bounded
+    /// process-wide cache below. The shared key includes the full immutable
+    /// markdown, exact effective width, font scale, and code-preview policy;
+    /// adjacent widths never share a height because line wrapping may differ.
+    private var measuredSizeCache: [CGFloat: PickyBubbleMeasurement] = [:]
     private static let measuredSizeCacheLimit = 8
+    private static let sharedMeasurementCache = PickyBubbleMeasurementCache()
 
     func measuredSize(forWidth width: CGFloat) -> NSSize {
+        measurement(forWidth: width).contentSize
+    }
+
+    private func measurement(forWidth width: CGFloat) -> PickyBubbleMeasurement {
         if let cached = measuredSizeCache[width] {
             return cached
         }
-        let startedAt = Date()
-        let measured: NSSize = PickyPerf.interval("bubble_measured_size") {
-            let clamped = max(0, width)
-            guard clamped > 0, !blockViews.isEmpty else { return .zero }
 
-            var measuredWidth: CGFloat = 0
-            var measuredHeight: CGFloat = 0
-            for (index, blockView) in blockViews.enumerated() {
-                let size = blockView.measuredSize(forWidth: clamped)
-                measuredWidth = max(measuredWidth, size.width)
-                measuredHeight += ceil(size.height)
-                if index < blockViews.count - 1 {
-                    measuredHeight += Metrics.blockSpacing
-                }
-            }
-            return NSSize(width: min(clamped, ceil(measuredWidth)), height: ceil(measuredHeight))
-        }
-        logSlowMeasurementIfNeeded(
-            name: "bubble measured size slow",
-            duration: Date().timeIntervalSince(startedAt),
-            details: "width=\(Int(max(0, width).rounded())) blocks=\(blockViews.count) measuredWidth=\(Int(measured.width.rounded())) measuredHeight=\(Int(measured.height.rounded()))"
+        let clamped = max(0, width)
+        let cacheKey = PickyBubbleMeasurementCacheKey(
+            markdown: lastMarkdown ?? "",
+            effectiveWidth: clamped,
+            fontScale: cachedFontScale,
+            codeBlockMaxLines: cachedCodeBlockMaxLines
         )
+        let startedAt = Date()
+        let resolution = Self.sharedMeasurementCache.resolve(key: cacheKey) {
+            PickyPerf.interval("bubble_measured_size") {
+                guard clamped > 0, !blockViews.isEmpty else {
+                    return PickyBubbleMeasurement(contentSize: .zero, blockSizes: [])
+                }
+
+                var measuredWidth: CGFloat = 0
+                var measuredHeight: CGFloat = 0
+                var blockSizes: [NSSize] = []
+                blockSizes.reserveCapacity(blockViews.count)
+                for (index, blockView) in blockViews.enumerated() {
+                    let size = blockView.measuredSize(forWidth: clamped)
+                    blockSizes.append(size)
+                    measuredWidth = max(measuredWidth, size.width)
+                    measuredHeight += ceil(size.height)
+                    if index < blockViews.count - 1 {
+                        measuredHeight += Metrics.blockSpacing
+                    }
+                }
+                return PickyBubbleMeasurement(
+                    contentSize: NSSize(
+                        width: min(clamped, ceil(measuredWidth)),
+                        height: ceil(measuredHeight)
+                    ),
+                    blockSizes: blockSizes
+                )
+            }
+        }
+        PickyPerf.event(
+            resolution.wasCached
+                ? "bubble_measurement_shared_cache_hit"
+                : "bubble_measurement_shared_cache_miss"
+        )
+        if !resolution.wasCached {
+            let measured = resolution.measurement.contentSize
+            logSlowMeasurementIfNeeded(
+                name: "bubble measured size slow",
+                duration: Date().timeIntervalSince(startedAt),
+                details: "width=\(Int(clamped.rounded())) blocks=\(blockViews.count) measuredWidth=\(Int(measured.width.rounded())) measuredHeight=\(Int(measured.height.rounded()))"
+            )
+        }
         if measuredSizeCache.count >= Self.measuredSizeCacheLimit {
             measuredSizeCache.removeAll(keepingCapacity: true)
         }
-        measuredSizeCache[width] = measured
-        return measured
+        measuredSizeCache[width] = resolution.measurement
+        return resolution.measurement
     }
 
-    /// Invalidate the measured-size cache. Called whenever the underlying
-    /// `blockViews` are rebuilt so the next layout pass measures fresh.
+    /// Invalidate only this view's exact-width map. Older shared entries remain
+    /// safe because content, font scale, and preview policy are part of the key.
     private func invalidateMeasuredSizeCache() {
         measuredSizeCache.removeAll(keepingCapacity: true)
     }
@@ -185,9 +212,12 @@ final class PickyBubbleMarkdownContentView: NSView {
 
     override func layout() {
         super.layout()
+        let measurement = measurement(forWidth: bounds.width)
+        guard measurement.blockSizes.count == blockViews.count else { return }
+
         var y: CGFloat = 0
         for (index, blockView) in blockViews.enumerated() {
-            let size = blockView.measuredSize(forWidth: bounds.width)
+            let size = measurement.blockSizes[index]
             blockView.frame = NSRect(x: 0, y: y, width: min(bounds.width, ceil(size.width)), height: ceil(size.height))
             y += ceil(size.height)
             if index < blockViews.count - 1 {

@@ -406,15 +406,16 @@ final class PickyHUDOverlayManager {
                 // immediately, but defer shrinking it until the collapse animation has
                 // finished so shadows/content aren't clipped by the outer container.
                 guard let self else { return }
-                if let activeSessionID, openPerformanceTracker.isTracking(sessionID: activeSessionID) {
+                if let activeSessionID,
+                   let attemptToken = openPerformanceTracker.activeToken(sessionID: activeSessionID) {
                     self.resizePanel(
                         displayID: displayID,
                         toContentSize: size,
                         deferShrink: true
                     ) { resizeMilliseconds in
-                        PickyPerf.event("hud_open_panel_ready")
-                        openPerformanceTracker.markPanelReady(
-                            sessionID: activeSessionID,
+                        PickyPerf.event("hud_open_panel_settled")
+                        openPerformanceTracker.markPanelSettled(
+                            token: attemptToken,
                             panelResizeMilliseconds: resizeMilliseconds
                         )
                     }

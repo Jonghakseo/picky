@@ -17,7 +17,11 @@ struct PickyConversationListView: View {
     var fillsAvailableHeight = false
     /// Whether the card reserves a top overlay control above transcript rows.
     var hasProgressOverlay = false
+    /// Fires once the initial bottom anchor is confirmed inside the viewport.
+    /// This is a geometry-ready milestone, not a generic next-runloop guess.
+    var onInitialBottomPinReady: () -> Void = { }
     @State private var hasAppeared = false
+    @State private var hasReportedInitialBottomPinReady = false
     @State private var isPinnedToBottom = true
     @State private var hasUnreadContentSinceUnpinning = false
     @State private var scrollViewportHeight: CGFloat = 0
@@ -146,6 +150,7 @@ struct PickyConversationListView: View {
             .task(id: session.id) {
                 expandedHistoryAnchorID = nil
                 historyScrollTargetID = nil
+                hasReportedInitialBottomPinReady = false
                 // Session changes always start at the most recent content. VStack is
                 // eager, so the bottom sentinel is in the view tree by this point.
                 if PickyConversationScrollPolicy.shouldAutoScroll(
@@ -709,9 +714,17 @@ struct PickyConversationListView: View {
             maxY: bottomAnchorMaxY,
             viewportHeight: scrollViewportHeight
         ) {
+            let completedProgrammaticBottomPin = isAwaitingProgrammaticBottomPin
             isPinnedToBottom = true
             hasUnreadContentSinceUnpinning = false
             isAwaitingProgrammaticBottomPin = false
+            if PickyConversationScrollPolicy.shouldReportInitialBottomPinReady(
+                completedProgrammaticBottomPin: completedProgrammaticBottomPin,
+                hasReported: hasReportedInitialBottomPinReady
+            ) {
+                hasReportedInitialBottomPinReady = true
+                onInitialBottomPinReady()
+            }
         } else if !isAwaitingProgrammaticBottomPin {
             isPinnedToBottom = false
         }
@@ -724,6 +737,10 @@ struct PickyConversationListView: View {
         } else {
             PickyPerf.event("conversation_scroll_to_bottom_instant")
         }
+        // A short transcript can already be bottom-pinned before the deferred
+        // scroll executes. Re-check the stored geometry after arming the pin so
+        // that path reports readiness without waiting for a preference change.
+        updatePinnedStateFromViewportGeometry()
         DispatchQueue.main.async {
             if animated {
                 withAnimation(PickyConversationScrollPolicy.liveUpdateAnimation) {
@@ -817,6 +834,13 @@ enum PickyConversationScrollPolicy {
 
     static func isBottomAnchorPinned(maxY: CGFloat, viewportHeight: CGFloat) -> Bool {
         maxY <= viewportHeight + bottomPinThreshold
+    }
+
+    static func shouldReportInitialBottomPinReady(
+        completedProgrammaticBottomPin: Bool,
+        hasReported: Bool
+    ) -> Bool {
+        completedProgrammaticBottomPin && !hasReported
     }
 
     static func shouldRepinAfterQuestionCollapse(

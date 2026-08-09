@@ -1591,6 +1591,21 @@ struct PickyConversationCardViewTests {
         ))
     }
 
+    @Test func conversationScrollPolicyReportsInitialReadyOnlyForFirstCompletedProgrammaticPin() {
+        #expect(PickyConversationScrollPolicy.shouldReportInitialBottomPinReady(
+            completedProgrammaticBottomPin: true,
+            hasReported: false
+        ))
+        #expect(!PickyConversationScrollPolicy.shouldReportInitialBottomPinReady(
+            completedProgrammaticBottomPin: false,
+            hasReported: false
+        ))
+        #expect(!PickyConversationScrollPolicy.shouldReportInitialBottomPinReady(
+            completedProgrammaticBottomPin: true,
+            hasReported: true
+        ))
+    }
+
     @Test func conversationScrollPolicyShowsAndHidesJumpToLatestForUnreadRemoteContent() {
         let current = PickyConversationBottomScrollTrigger(
             latestMessageID: "message-1",

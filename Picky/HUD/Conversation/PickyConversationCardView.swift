@@ -26,6 +26,7 @@ struct PickyConversationCardView: View {
     var isCommandShortcutHintVisible = false
     var isUtilityPanelOpen = false
     var onToggleUtilityPanel: () -> Void = { }
+    var onInitialContentReady: () -> Void = { }
     @State private var droppedFilePaths: [String] = []
     @State private var isFileDropTargeted = false
     @State private var showingRewindPicker = false
@@ -76,6 +77,11 @@ struct PickyConversationCardView: View {
         .background(cardBackground)
         .contentShape(Rectangle())
         .environment(\.pickyHUDDetailWidth, width)
+        .onAppear {
+            if isInlineTerminalMode {
+                onInitialContentReady()
+            }
+        }
         .onDrop(of: PickyConversationFileDrop.acceptedTypeIdentifiers, isTargeted: $isFileDropTargeted, perform: handleFileDrop)
         .onHover(perform: updateVoiceFollowUpHover)
         .sheet(isPresented: $showingRewindPicker) {
@@ -119,7 +125,8 @@ struct PickyConversationCardView: View {
                 viewModel: viewModel,
                 isCommandShortcutHintVisible: isCommandShortcutHintVisible,
                 fillsAvailableHeight: fillsAvailableHeight,
-                hasProgressOverlay: todoPresentation != nil
+                hasProgressOverlay: todoPresentation != nil,
+                onInitialBottomPinReady: onInitialContentReady
             )
             .overlay(alignment: .top) {
                 VStack(alignment: .trailing, spacing: DS.Spacing.sm) {

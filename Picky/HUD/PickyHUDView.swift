@@ -354,6 +354,7 @@ struct PickyHUDView: View {
             let utilityPanelIsOpen = isUtilityPanelOpen(sessionID: activeSession.id)
                 && !viewModel.isInlineTerminalMode(sessionID: activeSession.id)
             let utilityPanelHeight = resolvedUtilityPanelHeight
+            let openAttemptToken = openPerformanceTracker?.activeToken(sessionID: activeSession.id)
             VStack(alignment: .leading, spacing: 0) {
                 PickyConversationCardView(
                     viewModel: viewModel,
@@ -369,7 +370,12 @@ struct PickyHUDView: View {
                     focusRequestID: composerFocusRequestID,
                     isCommandShortcutHintVisible: isCommandShortcutHintVisible,
                     isUtilityPanelOpen: utilityPanelIsOpen,
-                    onToggleUtilityPanel: { toggleUtilityPanel(sessionID: activeSession.id) }
+                    onToggleUtilityPanel: { toggleUtilityPanel(sessionID: activeSession.id) },
+                    onInitialContentReady: {
+                        guard let openAttemptToken else { return }
+                        PickyPerf.event("hud_open_interactive")
+                        openPerformanceTracker?.markInteractive(token: openAttemptToken)
+                    }
                 )
                 .background(PickyHUDCardSizeReader())
                 .background {
@@ -438,8 +444,9 @@ struct PickyHUDView: View {
             .id(activeSession.id)
             .transition(.identity)
             .onAppear {
+                guard let openAttemptToken else { return }
                 PickyPerf.event("hud_open_card_mounted")
-                openPerformanceTracker?.markCardMounted(sessionID: activeSession.id)
+                openPerformanceTracker?.markCardMounted(token: openAttemptToken)
             }
             .onDisappear(perform: resetCardResizeInteraction)
         }

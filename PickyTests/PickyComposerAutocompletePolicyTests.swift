@@ -81,6 +81,22 @@ struct PickyComposerAutocompletePolicyTests {
         ))
     }
 
+    @Test func leavesPathCompletionToExplicitTabInsteadOfAutoTriggering() {
+        for text in [".", "finished.", "./src", "../src", "src/foo", "~/dev"] {
+            #expect(!PickyComposerAutocompletePolicy.shouldQuery(
+                text: text,
+                cursorLocation: nil,
+                triggerCharacters: []
+            ), "\(text) must not open completions without an explicit Tab")
+        }
+
+        #expect(PickyComposerAutocompletePolicy.shouldQuery(
+            text: "@../src",
+            cursorLocation: nil,
+            triggerCharacters: []
+        ))
+    }
+
     @Test func doesNotRequeryPathCompletionAfterAcceptedFileAddsTrailingSpace() {
         let completedFile = "@frontend/apps/web/tests/styled-tw-migration/HOW_TO_PARALLEL_MIGRATION.md "
 

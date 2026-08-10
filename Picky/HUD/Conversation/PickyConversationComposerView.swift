@@ -779,7 +779,36 @@ struct PickyConversationComposerView: View {
             cycleThinkingLevel()
             return true
         }
-        return acceptSelectedAutocomplete()
+        if acceptSelectedAutocomplete() { return true }
+        return requestForcedAutocomplete()
+    }
+
+    /// Tab is the only entry point for path completion, matching Pi's editor.
+    /// Pi sends forced requests without its natural-trigger debounce, so this
+    /// queries directly instead of going through the debounced query task.
+    private func requestForcedAutocomplete() -> Bool {
+        guard !isComposerInputDisabled,
+              let capabilities = autocompleteCapabilities,
+              capabilities.generation > 0,
+              autocompleteApplyRequestID == nil,
+              !autocompleteInput.isComposing,
+              let position = PickyComposerAutocompletePolicy.cursorPosition(
+                in: autocompleteInput.text,
+                utf16Offset: autocompleteInput.cursorLocation
+              )
+        else { return false }
+        isAutocompleteDismissed = false
+        autocompleteQueryRequestID = viewModel.queryAutocomplete(
+            sessionID: session.id,
+            generation: capabilities.generation,
+            lines: position.lines,
+            cursorLine: position.line,
+            cursorCol: position.column,
+            draftRevision: autocompleteInput.revision,
+            draftFingerprint: autocompleteInput.fingerprint,
+            force: true
+        )
+        return true
     }
 
     private func handleComposerEscapeKey() -> Bool {

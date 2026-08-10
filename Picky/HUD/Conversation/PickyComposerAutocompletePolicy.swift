@@ -95,10 +95,11 @@ nonisolated enum PickyComposerAutocompletePolicy {
         if beforeCursor.hasPrefix("/") { return true }
         let token = activeToken(in: beforeCursor)
         if token.hasPrefix("@") { return true }
-        if token.contains("/") || token.hasPrefix(".") || token.hasPrefix("~/") { return true }
-        // Pi's provider can resolve an empty path prefix, but Pi's editor only asks
-        // for it on explicit Tab. Natural re-query here would reopen cwd results
-        // immediately after an accepted file completion appends its trailing space.
+        // Bare path tokens ('.', './x', '../x', 'x/y') deliberately do not auto-trigger.
+        // Pi owns that heuristic inside its provider, which only ever runs after Pi's
+        // editor triggered on '/', a trigger character, or an explicit Tab; hoisting it
+        // into this gate made ordinary prose like a sentence-ending '.' open the picker.
+        // Tab reaches the same completions through a forced query instead.
         return triggerCharacters.contains { trigger in
             !trigger.isEmpty && token.hasPrefix(trigger)
         }

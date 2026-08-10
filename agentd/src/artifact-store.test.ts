@@ -156,6 +156,20 @@ describe("session link extraction", () => {
     ]);
   });
 
+  it("excludes markdown emphasis wrappers from links", () => {
+    expect(extractSessionLinks([
+      "Bold **https://github.com/creatrip/product/pull/4845**",
+      "Italic *https://github.com/creatrip/picky/pull/123*",
+      "Strike ~~https://github.com/creatrip/picky/pull/124~~",
+      "**PR: https://github.com/creatrip/picky/issues/125**",
+    ].join("\n"))).toEqual([
+      { kind: "github", title: "#4845", url: "https://github.com/creatrip/product/pull/4845" },
+      { kind: "github", title: "#123", url: "https://github.com/creatrip/picky/pull/123" },
+      { kind: "github", title: "#124", url: "https://github.com/creatrip/picky/pull/124" },
+      { kind: "github", title: "#125", url: "https://github.com/creatrip/picky/issues/125" },
+    ]);
+  });
+
   it("keeps URL-safe punctuation that can appear inside link paths", () => {
     expect(extractSessionLinks([
       "Notion https://www.notion.so/foo(bar)",

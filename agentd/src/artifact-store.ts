@@ -148,7 +148,9 @@ function linearIssueKey(url: string): string | undefined {
 }
 
 function normalizeLinkUrl(rawUrl: string): string | undefined {
-  let trimmed = rawUrl.replace(/(?:&quot;|&#34;|&apos;|&#39;)+$/g, "").replace(/[.,;:!?]+$/g, "");
+  // Trailing punctuation follows GFM autolink rules, so markdown emphasis
+  // wrappers such as `**https://example.com**` do not leak into the URL.
+  let trimmed = rawUrl.replace(/(?:&quot;|&#34;|&apos;|&#39;)+$/g, "").replace(/[.,;:!?*~_]+$/g, "");
   while (trimmed.endsWith(")") && countCharacter(trimmed, ")") > countCharacter(trimmed, "(")) trimmed = trimmed.slice(0, -1);
   const parsed = safeUrl(trimmed);
   if (!parsed || (parsed.protocol !== "http:" && parsed.protocol !== "https:")) return undefined;

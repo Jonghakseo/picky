@@ -479,12 +479,15 @@ Controls:
 
 When file mention syntax is detected, Picky suggests files relative to the Pickle cwd.
 
+Suggestions open automatically for `@` mentions. A bare path token such as `.`, `./src`, or `docs/guide` does not open the panel on its own, so ordinary prose like a sentence-ending period stays untouched; press Tab to request path completions for the token at the caret.
+
 File search runs on the `fd` binary, resolved from `~/.pi/agent/bin/fd`, Homebrew, or system paths. If `fd` is not installed, the panel shows "File search requires fd (not installed)".
 
 Controls:
 
+- Tab: request path completions when no suggestion is selected.
 - Up/Down: move selection.
-- Tab or Return: accept.
+- Tab or Return: accept selected suggestion.
 - Escape: dismiss.
 
 Directory suggestions can keep the autocomplete open so you can continue drilling down.

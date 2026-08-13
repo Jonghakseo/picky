@@ -381,6 +381,9 @@ extension PickyMarkdownInlineTextView {
                 .font: font,
                 .foregroundColor: run.link != nil ? linkColor : baseColor
             ]
+            if run.inlinePresentationIntent?.contains(.strikethrough) == true {
+                attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+            }
             if let link = run.link {
                 attrs[.link] = link
             }

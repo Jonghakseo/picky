@@ -123,6 +123,28 @@ struct PickyMarkdownInlineTextViewTests {
         #expect(linkColor != bodyColor)
     }
 
+    @Test func strikethroughRunKeepsMarkdownPresentation() {
+        let attributed = PickyMarkdownInlineTextView.buildAttributedString(from: [
+            .paragraph("before ~~100~~ after")
+        ])
+
+        #expect(attributed.string == "before 100 after")
+        let struckRange = (attributed.string as NSString).range(of: "100")
+        let struckStyle = attributed.attribute(
+            .strikethroughStyle,
+            at: struckRange.location,
+            effectiveRange: nil
+        ) as? Int
+        let surroundingStyle = attributed.attribute(
+            .strikethroughStyle,
+            at: 0,
+            effectiveRange: nil
+        ) as? Int
+
+        #expect(struckStyle == NSUnderlineStyle.single.rawValue)
+        #expect(surroundingStyle == nil)
+    }
+
     @Test func emptyBlockListProducesEmptyString() {
         let attributed = PickyMarkdownInlineTextView.buildAttributedString(from: [])
         #expect(attributed.string.isEmpty)

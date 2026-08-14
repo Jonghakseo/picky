@@ -10,7 +10,10 @@ import Combine
 import SwiftUI
 
 struct PickyHUDView: View {
-    @ObservedObject var viewModel: PickySessionListViewModel
+    /// Imperative session actions and full-card resolvers use this plain
+    /// reference. The root observes only the VM-owned dock projection below.
+    let viewModel: PickySessionListViewModel
+    @ObservedObject var dockState: PickyHUDDockState
     var panelIdentifier: NSUserInterfaceItemIdentifier?
     /// Display this panel renders on. Used to route notification-driven open
     /// requests to only the screen the user clicked the banner on.
@@ -65,6 +68,8 @@ struct PickyHUDView: View {
     @State private var cardResizeInteraction = PickyHUDCardResizeInteractionState()
     @State private var sizeReporter = PickyHUDSizeReporter()
 
+    private var dockSnapshot: PickyHUDDockSnapshot { dockState.snapshot }
+
     private var dockMetrics: PickyHUDDockMetrics {
         PickyHUDDockMetrics(preset: placement.dockSizePreset)
     }
@@ -74,7 +79,7 @@ struct PickyHUDView: View {
     /// newest last) so the projector's fallback branch keeps newcomers at
     /// the bottom of the dock next to the `+` slot.
     private var visibleSessionUniverse: [String] {
-        Array(viewModel.sessions.reversed().map(\.id))
+        Array(dockSnapshot.activeSessions.reversed().map(\.id))
     }
 
     /// Projection of the persisted dock layout against the current visible
@@ -82,7 +87,7 @@ struct PickyHUDView: View {
     /// and shortcut/drag hit-testing.
     private var dockProjection: PickyDockProjection {
         PickyDockProjector.project(
-            layout: viewModel.dockLayout,
+            layout: dockSnapshot.dockLayout,
             visibleSessionIDs: visibleSessionUniverse,
             collapsedOverrides: placement.collapsedGroupOverrides
         )
@@ -95,7 +100,7 @@ struct PickyHUDView: View {
     private func toggleDockGroupCollapsedForThisDisplay(_ groupID: String) {
         let result = PickyHUDDockGroupCollapsePolicy.toggleResult(
             groupID: groupID,
-            groups: viewModel.dockLayout.groups,
+            groups: dockSnapshot.dockLayout.groups,
             overrides: placement.collapsedGroupOverrides,
             openedSessionID: openedSessionID
         )
@@ -126,12 +131,12 @@ struct PickyHUDView: View {
     /// (fresh install or no manual reorders), the projector falls back
     /// to appending sessions in newest-last order so the visual ordering
     /// matches the legacy behavior.
-    private var visibleSessions: [PickySessionListViewModel.SessionCard] {
-        let cardByID = Dictionary(
-            viewModel.sessions.map { ($0.id, $0) },
+    private var visibleSessions: [PickyHUDDockSession] {
+        let sessionByID = Dictionary(
+            dockSnapshot.activeSessions.map { ($0.id, $0) },
             uniquingKeysWith: { lhs, _ in lhs }
         )
-        return dockProjection.slots.compactMap { cardByID[$0.sessionID] }
+        return dockProjection.slots.compactMap { sessionByID[$0.sessionID] }
     }
 
     /// Session ids in dock render order. Used for ⌘N shortcut resolution
@@ -154,7 +159,7 @@ struct PickyHUDView: View {
         return nil
     }
 
-    private var activeSession: PickySessionListViewModel.SessionCard? {
+    private var activeSession: PickyHUDDockSession? {
         guard let activeSessionID else { return nil }
         return visibleSessions.first { $0.id == activeSessionID }
     }
@@ -188,7 +193,7 @@ struct PickyHUDView: View {
             }
             .onAppear {
                 installCloseShortcutMonitor()
-                handleOpenSessionRequest(viewModel.openSessionRequest)
+                handleOpenSessionRequest(dockSnapshot.openSessionRequest)
                 markFocusedActiveSessionReadIfNeeded()
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
@@ -205,17 +210,17 @@ struct PickyHUDView: View {
                 resetCardResizeInteraction()
                 markFocusedActiveSessionReadIfNeeded()
             }
-            .onChange(of: viewModel.unreadSessionIDs) { _, _ in
+            .onChange(of: dockSnapshot.unreadSessionIDs) { _, _ in
                 markFocusedActiveSessionReadIfNeeded()
             }
             .onChange(of: visibleSessionIDs) { _, _ in
                 openPendingManualPickleIfVisible()
                 openPendingRequestedSessionIfVisible()
             }
-            .onChange(of: viewModel.openSessionRequest) { _, request in
+            .onChange(of: dockSnapshot.openSessionRequest) { _, request in
                 handleOpenSessionRequest(request)
             }
-            .onChange(of: viewModel.screenContextArmCollapseToken) { _, _ in
+            .onChange(of: dockSnapshot.screenContextArmCollapseToken) { _, _ in
                 // Arming a Pickle (one-shot or sticky) from any entry point —
                 // header tap/long-press, dock context menu, ⌘K — collapses
                 // the expanded card so the user can immediately drive the
@@ -249,7 +254,7 @@ struct PickyHUDView: View {
             sizeReporter.handleMeasuredSize(
                 panelSize,
                 activeSessionID: activeID,
-                extensionUiRequestID: activeSession?.pendingExtensionUiRequest?.id,
+                extensionUiRequestID: activeSessionID.flatMap { viewModel.activeSessionCard(sessionID: $0)?.pendingExtensionUiRequest?.id },
                 shouldHoldHeight: shouldHoldPanelHeightDuringActiveTurn,
                 onSizeChange: { size in onSizeChange(size, activeID) }
             )
@@ -356,7 +361,15 @@ struct PickyHUDView: View {
 
     @ViewBuilder
     private var conversationCard: some View {
-        if let activeSession {
+        if let activeSessionID {
+            PickyHUDConversationCardResolver(viewModel: viewModel, sessionID: activeSessionID) { session in
+                conversationCard(for: session)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func conversationCard(for activeSession: PickySessionListViewModel.SessionCard) -> some View {
             let utilityPanelIsOpen = isUtilityPanelOpen(sessionID: activeSession.id)
                 && !viewModel.isInlineTerminalMode(sessionID: activeSession.id)
             let utilityPanelHeight = resolvedUtilityPanelHeight
@@ -455,7 +468,6 @@ struct PickyHUDView: View {
                 openPerformanceTracker?.markCardMounted(token: openAttemptToken)
             }
             .onDisappear(perform: resetCardResizeInteraction)
-        }
     }
 
     private var isCardResizeHandleVisible: Bool {
@@ -571,22 +583,23 @@ struct PickyHUDView: View {
         // `isLoadingInitialSessionSnapshot` flag is paired with a 4s safety
         // watchdog in `PickySessionListViewModel` so a stalled handshake can
         // never leave the dock permanently invisible.
-        if !viewModel.isLoadingInitialSessionSnapshot {
+        if !dockSnapshot.isLoadingInitialSessionSnapshot {
             PickyHUDDockRailView(
                 sessions: visibleSessions,
-                allSessions: viewModel.sessions,
+                viewModel: viewModel,
+                allSessions: dockSnapshot.activeSessions,
                 baseProjection: dockProjection,
-                layout: viewModel.dockLayout,
+                layout: dockSnapshot.dockLayout,
                 collapsedGroupOverrides: placement.collapsedGroupOverrides,
                 activeSessionID: activeSession?.id,
                 openedSessionID: openedSessionID,
                 previewSessionID: hoverPreviewSessionID,
-                screenContextTargetSessionID: viewModel.screenContextTargetSessionID,
-                screenContextTargetSticky: viewModel.screenContextTargetSticky,
+                screenContextTargetSessionID: dockSnapshot.screenContextTargetSessionID,
+                screenContextTargetSticky: dockSnapshot.screenContextTargetSticky,
                 dockSide: placement.dockSide,
                 isCommandShortcutHintVisible: isCommandShortcutHintVisible,
-                pendingDoneFlashSessionIDs: viewModel.pendingDoneFlashSessionIDs,
-                unreadSessionIDs: viewModel.unreadSessionIDs,
+                pendingDoneFlashSessionIDs: dockSnapshot.pendingDoneFlashSessionIDs,
+                unreadSessionIDs: dockSnapshot.unreadSessionIDs,
                 metrics: dockMetrics,
                 availableRailLength: placement.availableDockRailLength,
                 onHoverSession: previewDockSession,
@@ -696,13 +709,13 @@ struct PickyHUDView: View {
     }
 
     private var visiblePinnedPickleCwds: [String] {
-        PickyRecentPickleFolderPolicy.visiblePinnedCwds(viewModel.pinnedPickleCwds, exists: Self.isExistingDirectory)
+        PickyRecentPickleFolderPolicy.visiblePinnedCwds(dockSnapshot.pinnedPickleCwds, exists: Self.isExistingDirectory)
     }
 
     private var visibleRecentPickleCwds: [String] {
         PickyRecentPickleFolderPolicy.visibleRecentCwds(
-            viewModel.recentPickleCwds,
-            pinned: viewModel.pinnedPickleCwds,
+            dockSnapshot.recentPickleCwds,
+            pinned: dockSnapshot.pinnedPickleCwds,
             exists: Self.isExistingDirectory
         )
     }
@@ -800,7 +813,7 @@ struct PickyHUDView: View {
     private func expandGroupForOpeningIfNeeded(_ sessionID: String) {
         let result = PickyHUDDockGroupCollapsePolicy.expandResultForOpening(
             sessionID: sessionID,
-            groups: viewModel.dockLayout.groups,
+            groups: dockSnapshot.dockLayout.groups,
             overrides: placement.collapsedGroupOverrides
         )
         guard result.didExpand else { return }
@@ -813,7 +826,7 @@ struct PickyHUDView: View {
     private func isGroupCollapsedOnThisDisplay(_ groupID: String) -> Bool {
         PickyHUDDockGroupCollapsePolicy.isCollapsed(
             groupID: groupID,
-            groups: viewModel.dockLayout.groups,
+            groups: dockSnapshot.dockLayout.groups,
             overrides: placement.collapsedGroupOverrides
         )
     }
@@ -851,12 +864,12 @@ struct PickyHUDView: View {
         )
         if nextHeldSession == nil {
             openPerformanceTracker?.cancel(sessionID: sessionID)
-        } else if let session = visibleSessions.first(where: { $0.id == sessionID }) {
+        } else if let session = viewModel.activeSessionCard(sessionID: sessionID) {
             PickyPerf.event("hud_open_click")
             openPerformanceTracker?.start(
                 sessionID: sessionID,
                 messageCount: session.messages.count,
-                wasUnread: viewModel.unreadSessionIDs.contains(sessionID)
+                wasUnread: dockSnapshot.unreadSessionIDs.contains(sessionID)
             )
         }
         heldSession = nextHeldSession
@@ -895,7 +908,9 @@ struct PickyHUDView: View {
 
     private func archiveSession(_ sessionID: String) {
         cancelPendingClose()
-        let title = (visibleSessions + viewModel.sessions).first(where: { $0.id == sessionID })?.title ?? "Pickle"
+        let title = visibleSessions.first(where: { $0.id == sessionID })?.title
+            ?? viewModel.activeSessionCard(sessionID: sessionID)?.title
+            ?? "Pickle"
         viewModel.archive(sessionID: sessionID)
         utilityPanelOpenSessionIDs.remove(sessionID)
         utilityPanelSelections.removeValue(forKey: sessionID)
@@ -980,10 +995,11 @@ struct PickyHUDView: View {
             }
         }
         let visibleIDs = visibleSessions.map(\.id)
+        let activeCard = activeSessionID.flatMap { viewModel.activeSessionCard(sessionID: $0) }
 
         if PickyHUDKeyboardShortcutPolicy.isComposerFocusShortcut(keyCode: event.keyCode, modifiers: flags),
-           let activeSession,
-           !viewModel.isInlineTerminalMode(sessionID: activeSession.id),
+           let activeCard,
+           !viewModel.isInlineTerminalMode(sessionID: activeCard.id),
            !isTextInputFocused(in: keyWindow) {
             focusActiveComposer()
             return true
@@ -1010,9 +1026,9 @@ struct PickyHUDView: View {
             keyCode: event.keyCode,
             charactersIgnoringModifiers: event.charactersIgnoringModifiers,
             modifiers: flags
-        ), let activeSession,
-           activeSession.hasLatestAgentResponseReport {
-            openLatestAgentResponseReport(sessionID: activeSession.id)
+        ), let activeCard,
+           activeCard.hasLatestAgentResponseReport {
+            openLatestAgentResponseReport(sessionID: activeCard.id)
             return true
         }
 
@@ -1020,9 +1036,9 @@ struct PickyHUDView: View {
             keyCode: event.keyCode,
             charactersIgnoringModifiers: event.charactersIgnoringModifiers,
             modifiers: flags
-        ), let activeSession,
-           activeSession.piSessionFilePath != nil {
-            viewModel.toggleInlineTerminalMode(sessionID: activeSession.id)
+        ), let activeCard,
+           activeCard.piSessionFilePath != nil {
+            viewModel.toggleInlineTerminalMode(sessionID: activeCard.id)
             return true
         }
 
@@ -1030,9 +1046,9 @@ struct PickyHUDView: View {
             keyCode: event.keyCode,
             charactersIgnoringModifiers: event.charactersIgnoringModifiers,
             modifiers: flags
-        ), let activeSession,
-           activeSession.piSessionFilePath != nil {
-            viewModel.openTerminalOverlay(sessionID: activeSession.id)
+        ), let activeCard,
+           activeCard.piSessionFilePath != nil {
+            viewModel.openTerminalOverlay(sessionID: activeCard.id)
             return true
         }
 
@@ -1040,8 +1056,8 @@ struct PickyHUDView: View {
             keyCode: event.keyCode,
             charactersIgnoringModifiers: event.charactersIgnoringModifiers,
             modifiers: flags
-        ), let activeSession {
-            toggleNotifyOnCompletion(session: activeSession)
+        ), let activeCard {
+            toggleNotifyOnCompletion(session: activeCard)
             return true
         }
 
@@ -1049,9 +1065,9 @@ struct PickyHUDView: View {
             keyCode: event.keyCode,
             charactersIgnoringModifiers: event.charactersIgnoringModifiers,
             modifiers: flags
-        ), let activeSession,
-           !viewModel.isInlineTerminalMode(sessionID: activeSession.id) {
-            toggleUtilityPanel(sessionID: activeSession.id)
+        ), let activeCard,
+           !viewModel.isInlineTerminalMode(sessionID: activeCard.id) {
+            toggleUtilityPanel(sessionID: activeCard.id)
             return true
         }
 
@@ -1059,8 +1075,8 @@ struct PickyHUDView: View {
             keyCode: event.keyCode,
             charactersIgnoringModifiers: event.charactersIgnoringModifiers,
             modifiers: flags
-        ), let activeSession {
-            viewModel.toggleThinkingBlocks(sessionID: activeSession.id)
+        ), let activeCard {
+            viewModel.toggleThinkingBlocks(sessionID: activeCard.id)
             return true
         }
 
@@ -1068,9 +1084,9 @@ struct PickyHUDView: View {
             keyCode: event.keyCode,
             charactersIgnoringModifiers: event.charactersIgnoringModifiers,
             modifiers: flags
-        ), let activeSession,
+        ), let activeCard,
            !isTextInputFocused(in: keyWindow) {
-            toggleScreenContextTarget(activeSession.id)
+            toggleScreenContextTarget(activeCard.id)
             return true
         }
 
@@ -1217,6 +1233,22 @@ struct PickyHUDView: View {
 
     private static let wKeyCode: UInt16 = 13
     private static let escKeyCode: UInt16 = 53
+}
+
+/// Full-card observation is isolated to this mounted subtree. Its explicit
+/// identity prevents a newly opened Pickle from retaining the previous card's
+/// local SwiftUI state while dock icons continue to use lightweight snapshots.
+private struct PickyHUDConversationCardResolver<Content: View>: View {
+    @ObservedObject var viewModel: PickySessionListViewModel
+    let sessionID: String
+    @ViewBuilder let content: (PickySessionListViewModel.SessionCard) -> Content
+
+    var body: some View {
+        if let session = viewModel.activeSessionCard(sessionID: sessionID) {
+            content(session)
+                .id(sessionID)
+        }
+    }
 }
 
 private struct PickyHUDVisibleChromeFramePreferenceKey: PreferenceKey {

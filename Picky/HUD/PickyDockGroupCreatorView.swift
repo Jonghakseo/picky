@@ -13,7 +13,7 @@ struct PickyDockGroupCreatorView: View {
     /// All live Pickles in the dock universe, including members hidden by a
     /// collapsed group. The creator lists them with checkboxes so the user can
     /// hand-pick which ones land in the new group.
-    let availableSessions: [PickySessionListViewModel.SessionCard]
+    let availableSessions: [PickyHUDDockSession]
     /// Accent color the new group will adopt — surfaced as a small swatch
     /// in the header so the user knows which color rotation they'll land
     /// on. Always derived from the live group count so the swatch matches
@@ -114,7 +114,7 @@ struct PickyDockGroupCreatorView: View {
         }
     }
 
-    private func memberRow(for session: PickySessionListViewModel.SessionCard) -> some View {
+    private func memberRow(for session: PickyHUDDockSession) -> some View {
         let isSelected = selectedMemberIDs.contains(session.id)
         return Button {
             if isSelected {

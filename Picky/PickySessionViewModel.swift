@@ -4,18 +4,26 @@ import Foundation
 
 @MainActor
 final class PickySessionListViewModel: ObservableObject {
-    @Published private(set) var sessions: [SessionCard] = []
+    @Published private(set) var sessions: [SessionCard] = [] {
+        didSet { scheduleDockStateSync() }
+    }
     @Published private(set) var archivedSessions: [SessionCard] = []
     @Published private(set) var selectedSessionID: String?
     let voiceFollowUpHoverState = PickyVoiceFollowUpHoverState()
     var hoveredVoiceFollowUpSessionID: String? { voiceFollowUpHoverState.sessionID }
     @Published private(set) var activeVoiceFollowUpSessionID: String?
-    @Published private(set) var screenContextTargetSessionID: String?
+    @Published private(set) var screenContextTargetSessionID: String? {
+        didSet { scheduleDockStateSync() }
+    }
     /// `true` when the armed Pickle should keep receiving Picky inputs until
     /// the user clicks it again or arms another. `false` is the legacy one-shot
     /// behavior. Always `false` when `screenContextTargetSessionID` is nil.
-    @Published private(set) var screenContextTargetSticky: Bool = false
-    @Published private(set) var screenContextArmCollapseToken: UUID = UUID()
+    @Published private(set) var screenContextTargetSticky: Bool = false {
+        didSet { scheduleDockStateSync() }
+    }
+    @Published private(set) var screenContextArmCollapseToken: UUID = UUID() {
+        didSet { publishDockStateImmediately() }
+    }
     @Published var lastError: String?
     @Published private(set) var lastOpenedArtifactPath: String?
     /// Published mirror of `PickySessionSlashCommandController` cache state.
@@ -37,7 +45,9 @@ final class PickySessionListViewModel: ObservableObject {
     @Published private(set) var todoProgressExpandedBySessionID: [String: Bool] = [:]
     /// Per-invocation expansion survives conversation-card teardown while the HUD is closed.
     @Published private(set) var subagentInvocationExpandedBySessionID: [String: [String: Bool]] = [:]
-    @Published private(set) var pendingDoneFlashSessionIDs: Set<String> = []
+    @Published private(set) var pendingDoneFlashSessionIDs: Set<String> = [] {
+        didSet { publishDockStateImmediately() }
+    }
     /// Sessions whose detail card is currently presented as an inline Pi TUI instead of
     /// the SwiftUI chat/composer. This is intentionally UI-only state: the daemon and
     /// existing terminal overlay keep their current behavior.
@@ -64,11 +74,21 @@ final class PickySessionListViewModel: ObservableObject {
     /// Sessions that finished or are waiting for input but have not been opened
     /// by the user yet. Lives on the view model (single source of truth) so all
     /// dock instances render the indicator in sync.
-    @Published private(set) var unreadSessionIDs: Set<String> = []
-    @Published private(set) var recentPickleCwds: [String]
-    @Published private(set) var pinnedPickleCwds: [String]
-    @Published private(set) var isLoadingInitialSessionSnapshot = true
-    @Published private(set) var openSessionRequest: PickyHUDOpenSessionRequest?
+    @Published private(set) var unreadSessionIDs: Set<String> = [] {
+        didSet { scheduleDockStateSync() }
+    }
+    @Published private(set) var recentPickleCwds: [String] {
+        didSet { scheduleDockStateSync() }
+    }
+    @Published private(set) var pinnedPickleCwds: [String] {
+        didSet { scheduleDockStateSync() }
+    }
+    @Published private(set) var isLoadingInitialSessionSnapshot = true {
+        didSet { scheduleDockStateSync() }
+    }
+    @Published private(set) var openSessionRequest: PickyHUDOpenSessionRequest? {
+        didSet { publishDockStateImmediately() }
+    }
     /// Fires every time a dock card is opened (the user clicked it to expand).
     /// Distinct from `selectedSessionID` so subscribers can react to repeated
     /// open gestures on the same session. Used by the onboarding flow to
@@ -101,7 +121,14 @@ final class PickySessionListViewModel: ObservableObject {
     /// Persisted dock layout (groups + ordered top-level entries). Source of
     /// truth for the dock rail's visual ordering once any group has been
     /// created. Empty layout falls back to the legacy `manualOrder` flow.
-    @Published private(set) var dockLayout: PickyDockLayout = .empty
+    @Published private(set) var dockLayout: PickyDockLayout = .empty {
+        didSet { publishDockStateImmediately() }
+    }
+    /// Stable, dock-only observation boundary. Its identity never changes.
+    let dockState = PickyHUDDockState()
+    private var isDockStateSyncScheduled = false
+    private var dockStateMutationDepth = 0
+    private var needsImmediateDockStateSyncAfterMutation = false
     private let dockLayoutController: PickySessionDockLayoutController
     private enum PendingDockGroupAssignment {
         case groupName(String)
@@ -234,6 +261,73 @@ final class PickySessionListViewModel: ObservableObject {
                       let text = notification.userInfo?[PickyComposerDraftAppendNotification.textKey] as? String else { return }
                 self?.appendComposerDraftText(text, sessionID: sessionID)
             }
+        syncDockStateNow()
+    }
+
+    /// Resolves the current active card at the point an imperative HUD action
+    /// runs. Dock rendering intentionally uses `PickyHUDDockSession` instead.
+    func activeSessionCard(sessionID: String) -> SessionCard? {
+        sessions.first { $0.id == sessionID }
+    }
+
+    /// Test seam for the coalesced dock snapshot. Production mutations always
+    /// settle on the next main-queue turn, so an upsert never exposes its
+    /// remove/append intermediate state to dock observers.
+    func flushDockStateForTesting() {
+        guard isDockStateSyncScheduled else { return }
+        isDockStateSyncScheduled = false
+        syncDockStateNow()
+    }
+
+    private func scheduleDockStateSync() {
+        guard !isDockStateSyncScheduled else { return }
+        isDockStateSyncScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isDockStateSyncScheduled else { return }
+            self.isDockStateSyncScheduled = false
+            self.syncDockStateNow()
+        }
+    }
+
+    /// Ordered UI signals and direct manipulation must reach every HUD before
+    /// the caller clears its transient interaction state. Publishing here also
+    /// settles any coalesced session mutation that happened earlier in the same
+    /// logical event, while the queued block becomes a no-op.
+    private func publishDockStateImmediately() {
+        if dockStateMutationDepth > 0 {
+            needsImmediateDockStateSyncAfterMutation = true
+            return
+        }
+        isDockStateSyncScheduled = false
+        syncDockStateNow()
+    }
+
+    private func beginDockStateMutation() {
+        dockStateMutationDepth += 1
+    }
+
+    private func endDockStateMutation() {
+        precondition(dockStateMutationDepth > 0)
+        dockStateMutationDepth -= 1
+        guard dockStateMutationDepth == 0, needsImmediateDockStateSyncAfterMutation else { return }
+        needsImmediateDockStateSyncAfterMutation = false
+        publishDockStateImmediately()
+    }
+
+    private func syncDockStateNow() {
+        dockState.publish(PickyHUDDockSnapshot(
+            activeSessions: sessions.map(PickyHUDDockSession.init(session:)),
+            dockLayout: dockLayout,
+            screenContextTargetSessionID: screenContextTargetSessionID,
+            screenContextTargetSticky: screenContextTargetSticky,
+            screenContextArmCollapseToken: screenContextArmCollapseToken,
+            pendingDoneFlashSessionIDs: pendingDoneFlashSessionIDs,
+            unreadSessionIDs: unreadSessionIDs,
+            pinnedPickleCwds: pinnedPickleCwds,
+            recentPickleCwds: recentPickleCwds,
+            isLoadingInitialSessionSnapshot: isLoadingInitialSessionSnapshot,
+            openSessionRequest: openSessionRequest
+        ))
     }
 
     func start() {
@@ -502,6 +596,9 @@ final class PickySessionListViewModel: ObservableObject {
     /// has never heard of it. Distinct from `archive(sessionID:)` (which
     /// sends a daemon command) since the demo session is purely client-side.
     func removeOnboardingDemoSession(sessionID: String) {
+        beginDockStateMutation()
+        defer { endDockStateMutation() }
+
         sessions.removeAll { $0.id == sessionID }
         archivedSessions.removeAll { $0.id == sessionID }
         unreadSessionIDs.remove(sessionID)
@@ -1414,6 +1511,9 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     func archive(sessionID: String) {
+        beginDockStateMutation()
+        defer { endDockStateMutation() }
+
         pickySessionLog("archive session=\(sessionID)")
         if isInlineTerminalMode(sessionID: sessionID) {
             disableInlineTerminalMode(sessionID: sessionID)
@@ -1491,6 +1591,9 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     func unarchive(sessionID: String) {
+        beginDockStateMutation()
+        defer { endDockStateMutation() }
+
         pickySessionLog("unarchive session=\(sessionID)")
         archiveCommitTasks.removeValue(forKey: sessionID)?.cancel()
         releasedArchivedChildSessionIDs.remove(sessionID)
@@ -1547,6 +1650,9 @@ final class PickySessionListViewModel: ObservableObject {
     /// runtime handle; the UI only exposes the affordance for archived rows so a
     /// successful path is the only path the user ever sees.
     func deleteArchivedSession(sessionID: String) {
+        beginDockStateMutation()
+        defer { endDockStateMutation() }
+
         pickySessionLog("delete archived session=\(sessionID)")
         archiveCommitTasks.removeValue(forKey: sessionID)?.cancel()
         releasedArchivedChildSessionIDs.remove(sessionID)
@@ -1621,6 +1727,9 @@ final class PickySessionListViewModel: ObservableObject {
     /// send `listSessions`, so this is not a pure reducer; treat it as the
     /// canonical event-application seam, called once per delivered event.
     func apply(_ event: PickyClientEvent) {
+        beginDockStateMutation()
+        defer { endDockStateMutation() }
+
         switch event {
         case .connected:
             lastConnectedAt = Date()
@@ -2601,6 +2710,9 @@ final class PickySessionListViewModel: ObservableObject {
     /// "Ungroup" action). When false, the group's member sessions are
     /// archived too ("Delete group + archive pickles").
     func removeDockGroup(id: String, keepMembers: Bool) {
+        beginDockStateMutation()
+        defer { endDockStateMutation() }
+
         let removedMemberIDs = dockLayoutController.removeGroup(id: id, keepMembers: keepMembers)
         dockLayout = dockLayoutController.layout
         if !keepMembers {

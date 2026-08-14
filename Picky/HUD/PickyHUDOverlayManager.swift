@@ -396,6 +396,7 @@ final class PickyHUDOverlayManager {
         let openPerformanceTracker = PickyHUDOpenPerformanceTracker()
         let hudRoot = PickyHUDView(
             viewModel: viewModel,
+            dockState: viewModel.dockState,
             panelIdentifier: panelIdentifier,
             displayID: displayID,
             placement: placement,

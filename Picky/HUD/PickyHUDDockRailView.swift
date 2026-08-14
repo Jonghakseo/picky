@@ -2,11 +2,13 @@ import AppKit
 import SwiftUI
 
 struct PickyHUDDockRailView: View {
-    let sessions: [PickySessionListViewModel.SessionCard]
+    let sessions: [PickyHUDDockSession]
+    /// Plain reference forwarded to the hover-preview resolver only.
+    let viewModel: PickySessionListViewModel
     /// Every live session card, including those hidden inside collapsed
     /// groups. `sessions` only carries the dock-visible slots, so the
     /// collapsed-group folder grid resolves its members from here.
-    let allSessions: [PickySessionListViewModel.SessionCard]
+    let allSessions: [PickyHUDDockSession]
     /// Projection of the *persisted* layout. Read through the `projection`
     /// computed property below, which overlays the in-flight drag preview
     /// so callers (render + hit-test) transparently see the prospective
@@ -488,7 +490,7 @@ struct PickyHUDDockRailView: View {
 
     @ViewBuilder
     private func iconView(
-        for session: PickySessionListViewModel.SessionCard,
+        for session: PickyHUDDockSession,
         slot: PickyDockSlot
     ) -> some View {
         if draggingSessionID == session.id {
@@ -504,6 +506,7 @@ struct PickyHUDDockRailView: View {
         } else {
             PickyHUDDockIconView(
                 session: session,
+                viewModel: viewModel,
                 index: slot.visibleIndex,
                 isActive: activeSessionID == session.id,
                 isOpened: openedSessionID == session.id,
@@ -552,6 +555,7 @@ struct PickyHUDDockRailView: View {
             GeometryReader { geo in
                 PickyHUDDockIconView(
                     session: card,
+                    viewModel: viewModel,
                     index: 0,
                     isActive: activeSessionID == id,
                     isOpened: false,

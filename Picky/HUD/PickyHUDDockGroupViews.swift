@@ -398,7 +398,7 @@ struct PickyDockMiniPickleGlyph: View {
 /// unread chip in the top-right corner mirrors the per-Pickle blue
 /// unread dot pattern.
 struct PickyHUDDockCollapsedGroupBadge: View {
-    let members: [PickySessionListViewModel.SessionCard]
+    let members: [PickyHUDDockSession]
     let unreadCount: Int
     let tint: Color
     let metrics: PickyHUDDockMetrics
@@ -412,7 +412,7 @@ struct PickyHUDDockCollapsedGroupBadge: View {
     @State private var isHovered = false
 
     private enum GridCell: Identifiable {
-        case member(PickySessionListViewModel.SessionCard)
+        case member(PickyHUDDockSession)
         case overflow(Int)
         case empty(Int)
 

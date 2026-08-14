@@ -2,7 +2,10 @@ import AppKit
 import SwiftUI
 
 struct PickyHUDDockIconView: View {
-    let session: PickySessionListViewModel.SessionCard
+    let session: PickyHUDDockSession
+    /// Held as a plain reference. Only the mounted hover-preview resolver
+    /// observes it for high-frequency full-session detail changes.
+    let viewModel: PickySessionListViewModel
     let index: Int
     let isActive: Bool
     let isOpened: Bool
@@ -33,7 +36,6 @@ struct PickyHUDDockIconView: View {
     /// NSView being recreated mid-drag.
     var onReorderHandoff: (NSPoint) -> Void = { _ in }
 
-    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var completionFlashIntensity: Double = 0
     @State private var completionFlashTask: Task<Void, Never>?
     @State private var archiveFeedbackStartTask: Task<Void, Never>?
@@ -45,7 +47,6 @@ struct PickyHUDDockIconView: View {
     private enum DockPickleAsset: String {
         case help = "PickleDockHelp"
         case wait = "PickleDockWait"
-        case wink = "PickleDockWink"
     }
 
     var body: some View {
@@ -99,7 +100,11 @@ struct PickyHUDDockIconView: View {
         }
         .overlay(alignment: .center) {
             if isPreviewed {
-                PickyHUDMiniPreviewCardView(session: session, metrics: metrics)
+                PickyHUDMiniPreviewResolver(
+                    viewModel: viewModel,
+                    sessionID: session.id,
+                    metrics: metrics
+                )
                     .offset(x: miniPreviewOffset.width, y: miniPreviewOffset.height)
                     .transition(.opacity)
                     .allowsHitTesting(false)
@@ -142,8 +147,21 @@ struct PickyHUDDockIconView: View {
         }
         .animation(.spring(response: 0.2, dampingFraction: 0.78), value: isArchivePressing)
         .accessibilityLabel("Preview \(session.title)")
+        .accessibilityValue(accessibilityStatusLabel)
         .accessibilityHint("Click to open or close. Press and hold for 1.5 seconds to archive this Pickle.")
         .accessibilityAddTraits(.isButton)
+    }
+
+    private var accessibilityStatusLabel: String {
+        switch session.status {
+        case .queued: "Queued"
+        case .running: "Running"
+        case .waiting_for_input: "Waiting for input"
+        case .blocked: "Blocked"
+        case .completed: "Completed"
+        case .failed: "Failed"
+        case .cancelled: "Cancelled"
+        }
     }
 
     private var archiveProgressRing: some View {
@@ -208,21 +226,10 @@ struct PickyHUDDockIconView: View {
     }
 
     private var dockIconContent: some View {
-        // Todo progress is independent of the running-state timeline. Resolve it
-        // once for this body evaluation so timeline ticks only update the breath
-        // and wink drawing.
         let todoProgressPresentation = PickyTodoProgressPresentation(state: session.todoState)
 
         return VStack(spacing: max(1, 2 * metrics.scale)) {
             ZStack {
-                // Drive the breath from a throttled `TimelineView` instead of a
-                // `withAnimation(.repeatForever)` toggle. The previous toggle
-                // approach leaked SwiftUI's repeating animation: once started,
-                // the implicit repeat kept interpolating the halo + glyph even
-                // after the state flag was reset, so the dock icon kept
-                // breathing after the Pickle finished. With `TimelineView` the
-                // animation is purely a function of time, and removing the view
-                // (when `session.status != .running`) hard-stops it.
                 if isScreenContextArmed {
                     ZStack {
                         dockTodoProgressRing(todoProgressPresentation)
@@ -236,22 +243,10 @@ struct PickyHUDDockIconView: View {
                     }
                 } else if session.status == .running {
                     ZStack {
-                        if accessibilityReduceMotion {
-                            runningDockGlyph(phase: 0.5, isWinkVisible: false)
-                        } else {
-                            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
-                                let _ = PickyPerf.event("dock_icon_timeline_tick")
-                                runningDockGlyph(
-                                    phase: breathingPhase(at: context.date),
-                                    isWinkVisible: isRunningWinkVisible(at: context.date)
-                                )
-                            }
-                        }
-
-                        // Keep todo progress outside the timeline: it changes
-                        // only with session data, not elapsed time. The ring is
-                        // layered above the halo and its centered glyph does not
-                        // overlap the ring, preserving the existing appearance.
+                        // The active ring gives running Pickles a shape-based,
+                        // static cue. It is larger than the TODO progress ring,
+                        // so both states remain legible without sustained motion.
+                        runningDockGlyph()
                         dockTodoProgressRing(todoProgressPresentation)
                     }
                 } else {
@@ -276,20 +271,13 @@ struct PickyHUDDockIconView: View {
         .opacity(isArchivePressing ? 0.64 : 1)
     }
 
-    private func runningDockGlyph(phase: CGFloat, isWinkVisible: Bool) -> some View {
+    private func runningDockGlyph() -> some View {
         ZStack {
             Circle()
-                .stroke(statusColor.opacity(0.16 + 0.36 * phase), lineWidth: 1.0)
-                .frame(width: metrics.sessionLogoSide, height: metrics.sessionLogoSide)
-                .scaleEffect(1.0 + 0.12 * phase)
-            Group {
-                if isWinkVisible {
-                    dockPickleAsset(.wink)
-                } else {
-                    normalPickleGlyph()
-                }
-            }
-            .scaleEffect(0.965 + 0.08 * phase)
+                .stroke(statusColor.opacity(0.72), lineWidth: max(1.1, 1.25 * metrics.scale))
+                .frame(width: metrics.sessionLogoSide * 1.18, height: metrics.sessionLogoSide * 1.18)
+                .accessibilityHidden(true)
+            normalPickleGlyph()
         }
     }
 
@@ -424,34 +412,6 @@ struct PickyHUDDockIconView: View {
         }
     }
 
-    /// `0...1` triangular-eased phase driven purely by wall-clock time. Used by
-    /// the running-state `TimelineView` so the breath halts immediately when
-    /// the view is removed, instead of leaking an implicit repeating animation.
-    private func breathingPhase(at date: Date) -> CGFloat {
-        let period: TimeInterval = 2.1
-        let t = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period) / period
-        let raw = sin(t * 2 * .pi - .pi / 2) * 0.5 + 0.5
-        return CGFloat(raw)
-    }
-
-    /// Deterministic, wall-clock driven wink window for running Pickles.
-    /// Keeping this stateless avoids timer tasks that can outlive status changes.
-    private func isRunningWinkVisible(at date: Date) -> Bool {
-        let period: TimeInterval = 7.25
-        let duration: TimeInterval = 0.34
-        let raw = (date.timeIntervalSinceReferenceDate + runningWinkPhaseOffset)
-            .truncatingRemainder(dividingBy: period)
-        let phase = raw < 0 ? raw + period : raw
-        return phase < duration
-    }
-
-    private var runningWinkPhaseOffset: TimeInterval {
-        let seed = session.id.unicodeScalars.reduce(0) { partial, scalar in
-            ((partial &* 31) &+ Int(scalar.value)) & 0x7fffffff
-        }
-        return TimeInterval(seed % 5_000) / 1_000
-    }
-
     private func runCompletionFlash() {
         completionFlashTask?.cancel()
         onDoneFlashConsumed()
@@ -557,7 +517,8 @@ struct PickyHUDDockIconView: View {
 }
 
 #Preview("Picky HUD") {
-    PickyHUDView(viewModel: PickySessionListViewModel(client: LocalStubPickyAgentClient(), notificationCenter: PickyNoopNotificationCenter()))
+    let viewModel = PickySessionListViewModel(client: LocalStubPickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
+    PickyHUDView(viewModel: viewModel, dockState: viewModel.dockState)
 }
 
 // MARK: - Dock icon clicks (AppKit-backed for immediate single-click open)
@@ -1173,6 +1134,22 @@ final class PickyHUDDockAnchorHandleNSView: NSView {
     }
 
     override var acceptsFirstResponder: Bool { false }
+}
+
+/// Deliberately the only dock subtree that observes full session cards. It is
+/// mounted only for a hovered preview, keeping tool/message/log publications
+/// out of every icon and rail.
+private struct PickyHUDMiniPreviewResolver: View {
+    @ObservedObject var viewModel: PickySessionListViewModel
+    let sessionID: String
+    let metrics: PickyHUDDockMetrics
+
+    var body: some View {
+        if let session = viewModel.activeSessionCard(sessionID: sessionID) {
+            PickyHUDMiniPreviewCardView(session: session, metrics: metrics)
+                .id("\(sessionID)|\(session.cwd ?? "")")
+        }
+    }
 }
 
 private struct PickyHUDMiniPreviewCardView: View {

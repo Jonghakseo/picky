@@ -4,6 +4,7 @@
 //
 
 import AppKit
+import Combine
 import Foundation
 import Testing
 @testable import Picky
@@ -681,6 +682,118 @@ struct PickySessionViewModelTests {
 
         #expect(viewModel.sessions.map(\.id) == ["running", "waiting", "completed"])
         #expect(viewModel.sessions.contains { $0.id == "completed" && $0.status == .completed })
+    }
+
+    @MainActor @Test func dockSessionProjectionExcludesConversationDetailsAndIncludesDockPresentation() throws {
+        let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running"))))
+        let baselineCard = try #require(viewModel.sessions.first)
+        let baseline = PickyHUDDockSession(session: baselineCard)
+
+        var detailsChanged = baselineCard
+        detailsChanged.tools = [PickyToolActivity(toolCallId: "tool-2", name: "bash", status: "running", preview: "building", startedAt: nil, endedAt: nil)]
+        detailsChanged.logPreview = "building"
+        detailsChanged.messages = [.fixture(id: "message-1", kind: .agentText, text: "details")]
+        detailsChanged.updatedAt = Date(timeIntervalSince1970: 1_800_000_500)
+        #expect(PickyHUDDockSession(session: detailsChanged) == baseline)
+
+        var titleChanged = baselineCard
+        titleChanged.title = "Renamed"
+        #expect(PickyHUDDockSession(session: titleChanged) != baseline)
+        var cwdChanged = baselineCard
+        cwdChanged.cwd = "/tmp/other"
+        #expect(PickyHUDDockSession(session: cwdChanged) != baseline)
+        var statusChanged = baselineCard
+        statusChanged.status = .completed
+        #expect(PickyHUDDockSession(session: statusChanged) != baseline)
+
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionTodoStateUpdated(seq: 1))))
+        let todoCard = try #require(viewModel.sessions.first)
+        #expect(PickyHUDDockSession(session: todoCard) != baseline)
+    }
+
+    @MainActor @Test func toolOnlyEventChangesFullSessionWithoutPublishingDockSnapshot() {
+        let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running"))))
+        viewModel.flushDockStateForTesting()
+        let baseline = viewModel.dockState.snapshot
+        var publishedSnapshots: [PickyHUDDockSnapshot] = []
+        let cancellable = viewModel.dockState.$snapshot.dropFirst().sink { publishedSnapshots.append($0) }
+
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.tool(sessionId: "session-1", toolCallId: "tool-1", name: "bash", status: "running", preview: "pnpm test"))))
+        viewModel.flushDockStateForTesting()
+
+        #expect(viewModel.sessions.first?.tools.count == 1)
+        #expect(viewModel.dockState.snapshot == baseline)
+        #expect(publishedSnapshots.isEmpty)
+        _ = cancellable
+    }
+
+    @MainActor @Test func statusTransitionPublishesOneCompleteDockSnapshot() {
+        let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running"))))
+        viewModel.flushDockStateForTesting()
+        var publishedSnapshots: [PickyHUDDockSnapshot] = []
+        let cancellable = viewModel.dockState.$snapshot.dropFirst().sink { publishedSnapshots.append($0) }
+
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "Done"))))
+        viewModel.flushDockStateForTesting()
+
+        #expect(publishedSnapshots.count == 1)
+        #expect(publishedSnapshots.allSatisfy { $0.activeSessions.contains(where: { $0.id == "session-1" }) })
+        #expect(viewModel.dockState.snapshot.activeSessions.first?.status == .completed)
+        _ = cancellable
+    }
+
+    @MainActor @Test func orderedOpenRequestsPublishWithoutCoalescing() {
+        let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
+        var publishedRequests: [PickyHUDOpenSessionRequest] = []
+        let cancellable = viewModel.dockState.$snapshot
+            .dropFirst()
+            .compactMap(\.openSessionRequest)
+            .sink { publishedRequests.append($0) }
+
+        viewModel.requestOpenSession(sessionID: "first")
+        viewModel.requestOpenSession(sessionID: "second")
+
+        #expect(publishedRequests.map(\.sessionID) == ["first", "second"])
+        _ = cancellable
+    }
+
+    @MainActor @Test func dockLayoutMutationPublishesSynchronously() {
+        let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
+        var publishedSnapshots: [PickyHUDDockSnapshot] = []
+        let cancellable = viewModel.dockState.$snapshot.dropFirst().sink { publishedSnapshots.append($0) }
+
+        let groupID = viewModel.createDockGroup(name: "Active")
+
+        #expect(viewModel.dockState.snapshot.dockLayout == viewModel.dockLayout)
+        #expect(viewModel.dockState.snapshot.dockLayout.groups.contains(where: { $0.id == groupID }))
+        #expect(publishedSnapshots.count == 1)
+        _ = cancellable
+    }
+
+    @MainActor @Test func archivingArmedSessionPublishesOnlyFinalDockSnapshot() {
+        let viewModel = PickySessionListViewModel(
+            client: FakePickyAgentClient(),
+            notificationCenter: PickyNoopNotificationCenter(),
+            selectionStore: FakeSelectionStore(),
+            archiveStore: FakeArchiveStore(),
+            manualOrderStore: FakeManualOrderStore()
+        )
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running"))))
+        viewModel.flushDockStateForTesting()
+        viewModel.armScreenContextTarget(sessionID: "session-1", sticky: true)
+        var publishedSnapshots: [PickyHUDDockSnapshot] = []
+        let cancellable = viewModel.dockState.$snapshot.dropFirst().sink { publishedSnapshots.append($0) }
+
+        viewModel.archive(sessionID: "session-1")
+
+        #expect(publishedSnapshots.count == 1)
+        #expect(publishedSnapshots[0].activeSessions.isEmpty)
+        #expect(publishedSnapshots[0].screenContextTargetSessionID == nil)
+        #expect(!publishedSnapshots[0].screenContextTargetSticky)
+        _ = cancellable
     }
 
     @MainActor @Test func toolEventsCorrelateByToolCallId() {

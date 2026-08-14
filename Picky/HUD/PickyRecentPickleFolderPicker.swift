@@ -34,7 +34,7 @@ extension View {
         onPinPickleFolder: @escaping (String) -> Void,
         onUnpinPickleFolder: @escaping (String) -> Void,
         onReorderPinnedPickleFolders: @escaping ([String]) -> Void = { _ in },
-        availableSessionsForGroupCreation: [PickySessionListViewModel.SessionCard] = [],
+        availableSessionsForGroupCreation: [PickyHUDDockSession] = [],
         suggestedGroupColor: PickyDockGroupColor = .teal,
         onCreateGroup: ((_ name: String, _ memberIDs: [String]) -> Void)? = nil
     ) -> some View {
@@ -67,7 +67,7 @@ struct PickyRecentPickleFolderPickerView: View {
     let onPinPickleFolder: (String) -> Void
     let onUnpinPickleFolder: (String) -> Void
     let onReorderPinnedPickleFolders: ([String]) -> Void
-    let availableSessionsForGroupCreation: [PickySessionListViewModel.SessionCard]
+    let availableSessionsForGroupCreation: [PickyHUDDockSession]
     let suggestedGroupColor: PickyDockGroupColor
     let onCreateGroup: ((_ name: String, _ memberIDs: [String]) -> Void)?
 

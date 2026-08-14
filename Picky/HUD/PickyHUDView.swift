@@ -195,6 +195,12 @@ struct PickyHUDView: View {
                 guard isCurrentHUDPanel(notification.object) else { return }
                 markFocusedActiveSessionReadIfNeeded()
             }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { notification in
+                isCommandShortcutHintVisible = PickyHUDCommandShortcutHintPolicy.visibility(
+                    current: isCommandShortcutHintVisible,
+                    after: .hudPanelDidResignKey(isCurrentHUDPanel: isCurrentHUDPanel(notification.object))
+                )
+            }
             .onChange(of: activeSessionID) { _, _ in
                 resetCardResizeInteraction()
                 markFocusedActiveSessionReadIfNeeded()
@@ -1173,15 +1179,13 @@ struct PickyHUDView: View {
     }
 
     private func updateCommandShortcutHintVisibility(modifierFlags: NSEvent.ModifierFlags) {
-        guard let keyWindow = NSApp.keyWindow as? PickyHUDPanel else {
-            isCommandShortcutHintVisible = false
-            return
-        }
-        if let panelIdentifier, keyWindow.identifier != panelIdentifier {
-            isCommandShortcutHintVisible = false
-            return
-        }
-        isCommandShortcutHintVisible = modifierFlags.contains(.command)
+        isCommandShortcutHintVisible = PickyHUDCommandShortcutHintPolicy.visibility(
+            current: isCommandShortcutHintVisible,
+            after: .modifierFlagsChanged(
+                modifierFlags: modifierFlags,
+                isCurrentHUDPanelKey: isCurrentHUDPanel(NSApp.keyWindow)
+            )
+        )
     }
 
     private func cancelPendingClose() {

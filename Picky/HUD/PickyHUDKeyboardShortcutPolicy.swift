@@ -25,6 +25,16 @@ enum PickyHUDKeyboardShortcutPolicy {
             && (keyCode == returnKeyCode || keyCode == keypadEnterKeyCode)
     }
 
+    /// Only the panel itself or no responder represents an unintentional input
+    /// fallback. Any mounted responder, including an NSHostingView, owns its
+    /// own keyboard intent and must not be replaced by the composer shortcut.
+    static func isPanelFirstResponderFallback(
+        _ firstResponder: NSResponder?,
+        panel: NSResponder
+    ) -> Bool {
+        firstResponder == nil || firstResponder === panel
+    }
+
     /// While a Pi TUI terminal is focused, the HUD forwards virtually every key to
     /// the terminal so cmd-based TUI shortcuts (⌘C, ⌘V, ⌘arrows, etc.) reach Pi.
     /// Cmd+T (toggle back to chat), Cmd+E (hide the local extended terminal),

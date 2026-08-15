@@ -16,6 +16,42 @@ final class PickyHUDPanel: PickySecureSurfacePanel, PickyScreenCaptureExcludedWi
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
+    /// Input intent is scoped to one panel. SwiftUI may briefly leave a panel
+    /// as its own responder while preserving the mounted native input view;
+    /// restore only this responder on the next key event, never when the panel
+    /// becomes key, so a click can still choose a different control first.
+    private weak var lastNativeInputResponder: NSView?
+
+    /// Records native input only after AppKit accepted it as this panel's
+    /// first responder. This also captures terminal focus because SwiftTerm's
+    /// responder override is not open for subclassing.
+    override func makeFirstResponder(_ responder: NSResponder?) -> Bool {
+        let result = super.makeFirstResponder(responder)
+        if result,
+           let responder = responder as? NSView,
+           responder.window === self,
+           responder is PickyIMENSTextView || responder is PickySwiftTermView {
+            lastNativeInputResponder = responder
+        }
+        return result
+    }
+
+    /// Restores the panel's remembered native input only from an unintentional
+    /// panel/window fallback. Any real current responder is user intent and
+    /// must remain untouched.
+    @discardableResult
+    func restoreRememberedNativeInputResponderIfNeeded() -> Bool {
+        guard isFirstResponderFallback else { return false }
+        guard let responder = lastNativeInputResponder else { return false }
+        guard responder.window === self, responder.acceptsFirstResponder else {
+            if responder.window !== self {
+                lastNativeInputResponder = nil
+            }
+            return false
+        }
+        return makeFirstResponder(responder)
+    }
+
     override func sendEvent(_ event: NSEvent) {
         if event.type == .leftMouseDown || event.type == .rightMouseDown {
             makeKey()
@@ -23,12 +59,18 @@ final class PickyHUDPanel: PickySecureSurfacePanel, PickyScreenCaptureExcludedWi
                 resignFocusedControl()
             }
         }
-        if event.type == .keyDown,
-           let terminal = focusedTerminalView,
-           terminal.handleMacLineEditingShortcut(event) {
-            return
+        if event.type == .keyDown {
+            restoreRememberedNativeInputResponderIfNeeded()
+            if let terminal = focusedTerminalView,
+               terminal.handleMacLineEditingShortcut(event) {
+                return
+            }
         }
         super.sendEvent(event)
+    }
+
+    var isFirstResponderFallback: Bool {
+        PickyHUDKeyboardShortcutPolicy.isPanelFirstResponderFallback(firstResponder, panel: self)
     }
 
     private var focusedTerminalView: PickySwiftTermView? {
@@ -59,8 +101,15 @@ final class PickyHUDPanel: PickySecureSurfacePanel, PickyScreenCaptureExcludedWi
 
     @discardableResult
     func resignFocusedControl() -> Bool {
-        guard firstResponder != nil else { return false }
-        return makeFirstResponder(nil)
+        guard firstResponder != nil else {
+            lastNativeInputResponder = nil
+            return false
+        }
+        let didResign = makeFirstResponder(nil)
+        if didResign {
+            lastNativeInputResponder = nil
+        }
+        return didResign
     }
 }
 

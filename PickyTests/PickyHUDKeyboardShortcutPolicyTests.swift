@@ -25,6 +25,17 @@ struct PickyHUDKeyboardShortcutPolicyTests {
         #expect(PickyHUDKeyboardShortcutPolicy.isComposerFocusShortcut(keyCode: 36, modifiers: .command) == false)
     }
 
+    @Test func composerFocusRoutingAllowsOnlyPanelFallbackResponders() {
+        let panel = NSResponder()
+        let contentView = NSView()
+        let otherResponder = NSResponder()
+
+        #expect(PickyHUDKeyboardShortcutPolicy.isPanelFirstResponderFallback(nil, panel: panel))
+        #expect(PickyHUDKeyboardShortcutPolicy.isPanelFirstResponderFallback(panel, panel: panel))
+        #expect(!PickyHUDKeyboardShortcutPolicy.isPanelFirstResponderFallback(contentView, panel: panel))
+        #expect(!PickyHUDKeyboardShortcutPolicy.isPanelFirstResponderFallback(otherResponder, panel: panel))
+    }
+
     @Test func terminalFocusInterceptsHUDShellShortcutsButPassesInputShortcutsThrough() {
         #expect(PickyHUDKeyboardShortcutPolicy.shouldInterceptWhileTerminalFocused(keyCode: 17, charactersIgnoringModifiers: "t", modifiers: .command) == true)
         #expect(PickyHUDKeyboardShortcutPolicy.shouldInterceptWhileTerminalFocused(keyCode: 14, charactersIgnoringModifiers: "e", modifiers: .command) == true)

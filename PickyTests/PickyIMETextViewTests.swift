@@ -201,6 +201,180 @@ struct PickyIMETextViewTests {
         #expect(panel.firstResponder === textView)
     }
 
+    @Test func hudPanelRestoresComposerOnlyAfterItBecomesFirstResponder() throws {
+        let panel = Self.makeHUDPanel()
+        let composer = PickyIMENSTextView(frame: panel.contentView?.bounds ?? .zero)
+        panel.contentView = composer
+        defer { panel.close() }
+
+        #expect(!panel.restoreRememberedNativeInputResponderIfNeeded())
+        #expect(panel.makeFirstResponder(composer))
+        #expect(panel.makeFirstResponder(nil))
+
+        #expect(panel.restoreRememberedNativeInputResponderIfNeeded())
+        #expect(panel.firstResponder === composer)
+    }
+
+    @Test func hudPanelSendEventRestoresComposerAndDeliversCharacter() throws {
+        let panel = Self.makeHUDPanel()
+        let composer = PickyIMENSTextView(frame: panel.contentView?.bounds ?? .zero)
+        panel.contentView = composer
+        defer { panel.close() }
+
+        #expect(panel.makeFirstResponder(composer))
+        #expect(panel.makeFirstResponder(nil))
+        let event = try #require(Self.characterKeyEvent("x", keyCode: 7, windowNumber: panel.windowNumber))
+
+        panel.sendEvent(event)
+
+        #expect(panel.firstResponder === composer)
+        #expect(composer.string == "x")
+    }
+
+    @Test func hudPanelsKeepRememberedNativeInputRespondersIndependent() throws {
+        let firstPanel = Self.makeHUDPanel()
+        let secondPanel = Self.makeHUDPanel()
+        let firstComposer = PickyIMENSTextView(frame: firstPanel.contentView?.bounds ?? .zero)
+        let secondComposer = PickyIMENSTextView(frame: secondPanel.contentView?.bounds ?? .zero)
+        firstPanel.contentView = firstComposer
+        secondPanel.contentView = secondComposer
+        defer {
+            firstPanel.close()
+            secondPanel.close()
+        }
+
+        #expect(firstPanel.makeFirstResponder(firstComposer))
+        #expect(secondPanel.makeFirstResponder(secondComposer))
+        #expect(firstPanel.makeFirstResponder(nil))
+        #expect(secondPanel.makeFirstResponder(nil))
+
+        #expect(firstPanel.restoreRememberedNativeInputResponderIfNeeded())
+        #expect(secondPanel.restoreRememberedNativeInputResponderIfNeeded())
+        #expect(firstPanel.firstResponder === firstComposer)
+        #expect(secondPanel.firstResponder === secondComposer)
+    }
+
+    @Test func hudPanelRejectsRememberedInputDetachedFromItsPanel() throws {
+        let panel = Self.makeHUDPanel()
+        let otherPanel = Self.makeHUDPanel()
+        let composer = PickyIMENSTextView(frame: panel.contentView?.bounds ?? .zero)
+        panel.contentView = composer
+        defer {
+            panel.close()
+            otherPanel.close()
+        }
+
+        #expect(panel.makeFirstResponder(composer))
+        #expect(panel.makeFirstResponder(nil))
+        otherPanel.contentView = composer
+
+        #expect(!panel.restoreRememberedNativeInputResponderIfNeeded())
+        #expect(panel.firstResponder !== composer)
+    }
+
+    @Test func hudPanelPreservesAnotherIntentionalFirstResponder() throws {
+        let panel = Self.makeHUDPanel()
+        let contentView = NSView(frame: panel.contentView?.bounds ?? .zero)
+        let composer = PickyIMENSTextView(frame: contentView.bounds)
+        let titleEditor = NSTextView(frame: contentView.bounds)
+        contentView.addSubview(composer)
+        contentView.addSubview(titleEditor)
+        panel.contentView = contentView
+        defer { panel.close() }
+
+        #expect(panel.makeFirstResponder(composer))
+        #expect(panel.makeFirstResponder(titleEditor))
+
+        #expect(!panel.restoreRememberedNativeInputResponderIfNeeded())
+        #expect(panel.firstResponder === titleEditor)
+    }
+
+    @Test func hudPanelDoesNotRestoreWhenContentViewIsFirstResponder() throws {
+        let panel = Self.makeHUDPanel()
+        let contentView = PickyFirstResponderContentView(frame: panel.contentView?.bounds ?? .zero)
+        let composer = PickyIMENSTextView(frame: contentView.bounds)
+        contentView.addSubview(composer)
+        panel.contentView = contentView
+        defer { panel.close() }
+
+        #expect(panel.makeFirstResponder(composer))
+        #expect(panel.makeFirstResponder(contentView))
+
+        #expect(!panel.restoreRememberedNativeInputResponderIfNeeded())
+        #expect(panel.firstResponder === contentView)
+    }
+
+    @Test func hudPanelIntentionalBlurPreventsSubsequentKeyEventRestore() throws {
+        let panel = Self.makeHUDPanel()
+        let composer = PickyIMENSTextView(frame: panel.contentView?.bounds ?? .zero)
+        panel.contentView = composer
+        defer { panel.close() }
+
+        #expect(panel.makeFirstResponder(composer))
+        #expect(panel.resignFocusedControl())
+        let event = try #require(Self.characterKeyEvent("x", keyCode: 7, windowNumber: panel.windowNumber))
+
+        panel.sendEvent(event)
+
+        #expect(panel.firstResponder !== composer)
+        #expect(composer.string.isEmpty)
+    }
+
+    @Test func hudPanelIntentionalBlurClearsRememberedInputFromPanelFallback() throws {
+        let panel = Self.makeHUDPanel()
+        let composer = PickyIMENSTextView(frame: panel.contentView?.bounds ?? .zero)
+        panel.contentView = composer
+        defer { panel.close() }
+
+        #expect(panel.makeFirstResponder(composer))
+        #expect(panel.makeFirstResponder(nil))
+        #expect(panel.firstResponder === panel)
+        #expect(panel.resignFocusedControl())
+
+        #expect(!panel.restoreRememberedNativeInputResponderIfNeeded())
+    }
+
+    @Test func hudPanelRestoresTerminalAfterItBecomesFirstResponder() throws {
+        let panel = Self.makeHUDPanel()
+        let terminal = PickySwiftTermView(frame: panel.contentView?.bounds ?? .zero)
+        panel.contentView = terminal
+        defer { panel.close() }
+
+        #expect(panel.makeFirstResponder(terminal))
+        #expect(panel.makeFirstResponder(nil))
+
+        #expect(panel.restoreRememberedNativeInputResponderIfNeeded())
+        #expect(panel.firstResponder === terminal)
+    }
+
+    private static func makeHUDPanel() -> PickyHUDPanel {
+        PickyHUDPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 240, height: 120),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+    }
+
+    private static func characterKeyEvent(
+        _ characters: String,
+        keyCode: UInt16,
+        windowNumber: Int
+    ) -> NSEvent? {
+        NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: windowNumber,
+            context: nil,
+            characters: characters,
+            charactersIgnoringModifiers: characters,
+            isARepeat: false,
+            keyCode: keyCode
+        )
+    }
+
     private static func returnKeyEvent(modifiers: NSEvent.ModifierFlags = []) -> NSEvent {
         NSEvent.keyEvent(
             with: .keyDown,
@@ -215,4 +389,8 @@ struct PickyIMETextViewTests {
             keyCode: PickyIMENSTextView.returnKeyCode
         )!
     }
+}
+
+private final class PickyFirstResponderContentView: NSView {
+    override var acceptsFirstResponder: Bool { true }
 }

@@ -460,7 +460,6 @@ struct PickyHUDView: View {
             }
             .background(PickyHUDVisibleChromeFrameReporter())
             .environment(\.pickyHUDDetailWidth, placement.cardWidth)
-            .id(activeSession.id)
             .transition(.identity)
             .onAppear {
                 guard let openAttemptToken else { return }
@@ -979,6 +978,7 @@ struct PickyHUDView: View {
         updateCommandShortcutHintVisibility(modifierFlags: event.modifierFlags)
         guard let keyWindow = NSApp.keyWindow as? PickyHUDPanel else { return false }
         if let panelIdentifier, keyWindow.identifier != panelIdentifier { return false }
+        keyWindow.restoreRememberedNativeInputResponderIfNeeded()
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
         if let focusedTerminal = focusedTerminalView(in: keyWindow) {
             // SwiftTerm drops/misroutes ⌘← ⌘→ ⌘⌫, so translate them to readline
@@ -998,6 +998,7 @@ struct PickyHUDView: View {
         let activeCard = activeSessionID.flatMap { viewModel.activeSessionCard(sessionID: $0) }
 
         if PickyHUDKeyboardShortcutPolicy.isComposerFocusShortcut(keyCode: event.keyCode, modifiers: flags),
+           keyWindow.isFirstResponderFallback,
            let activeCard,
            !viewModel.isInlineTerminalMode(sessionID: activeCard.id),
            !isTextInputFocused(in: keyWindow) {

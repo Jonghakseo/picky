@@ -326,6 +326,31 @@ Official source: [Pi coding-agent CHANGELOG 0.84.1](https://github.com/earendil-
   contracts or native HUD behavior.
 - `pi-ai`, `pi-coding-agent`, and `pi-tui` are pinned together on `0.84.1`.
 
+### 0.84.1 -> 0.84.2
+
+Official source: [Pi coding-agent CHANGELOG 0.84.2](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/CHANGELOG.md#0842---2026-08-14).
+
+- `pi.sendUserMessage()` can now explicitly expand commands, skills, and prompt
+  templates through `expandPromptTemplates`. Picky's bundled handoff extension
+  registers a slash command but does not call `sendUserMessage()`, so no extension
+  migration is required.
+- `pi.sendMessage(..., { triggerTurn: false })` now records custom messages without
+  steering an active run. Picky does not call this extension API; agentd drives
+  turns through `AgentSession.prompt()`, so routing behavior remains unchanged.
+- Fallback rendering for extension tool results now collapses long output and honors
+  expansion. Picky renders tool activity in its native HUD and does not consume the
+  interactive TUI fallback renderer, so this is an upstream robustness improvement.
+- JSON/RPC `message_update` events now retain cumulative usage while streaming.
+  Picky embeds the SDK and derives context usage from `AgentSession.getContextUsage()`
+  through its capability wrapper rather than consuming JSON/RPC cumulative usage.
+- Configurable default tools preserve extension and SDK custom tools. Picky supplies
+  custom tools through `createAgentSessionServices()` and benefits from this fix
+  without a host-side contract change.
+- Fullscreen search, exit-output settings, theme selection, provider transport fixes,
+  and the `nanoid` development dependency security update do not alter Picky's native
+  HUD or the SDK surfaces in the T1-T4 coupling map.
+- `pi-ai`, `pi-coding-agent`, and `pi-tui` are pinned together on `0.84.2`.
+
 ## Backward-compatibility policy
 
 - **Capability sniffs (T2) MUST stay non-fatal.** A pi version that drops

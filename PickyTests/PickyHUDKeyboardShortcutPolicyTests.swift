@@ -25,7 +25,7 @@ struct PickyHUDKeyboardShortcutPolicyTests {
         #expect(PickyHUDKeyboardShortcutPolicy.isComposerFocusShortcut(keyCode: 36, modifiers: .command) == false)
     }
 
-    @Test func composerFocusRoutingAllowsOnlyPanelFallbackResponders() {
+    @MainActor @Test func composerFocusRoutingAllowsOnlyPanelFallbackResponders() {
         let panel = NSResponder()
         let contentView = NSView()
         let otherResponder = NSResponder()

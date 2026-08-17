@@ -111,6 +111,30 @@ final class PickyHUDPanel: PickySecureSurfacePanel, PickyScreenCaptureExcludedWi
         }
         return didResign
     }
+
+    /// The overlay manager owns the observable projection; this panel only
+    /// reports AppKit's post-ordering visibility so secure-surface suppression
+    /// and restoration follow the real `NSPanel` state.
+    var onActualVisibilityChanged: ((Bool) -> Void)?
+
+    override func orderOut(_ sender: Any?) {
+        super.orderOut(sender)
+        reportActualVisibility()
+    }
+
+    override func orderFrontRegardless() {
+        super.orderFrontRegardless()
+        reportActualVisibility()
+    }
+
+    override func orderOutForSecureSurfaceSuppression() {
+        super.orderOutForSecureSurfaceSuppression()
+        reportActualVisibility()
+    }
+
+    private func reportActualVisibility() {
+        onActualVisibilityChanged?(isVisible)
+    }
 }
 
 @MainActor
@@ -119,6 +143,7 @@ final class PickyHUDOverlayManager {
     private let appearanceStore: PickyAppearanceStore
     private let fontScaleStore: PickyAppFontScaleStore
     private let visibilityStore: PickyHUDVisibilityStore
+    private let actualPanelVisibilityStore: PickyHUDActualPanelVisibilityStore
     private let settingsStore: PickySettingsStore
     private let voiceTargetHitTestRegistry: PickyVoiceTargetHitTestRegistry
     private var visibilityCancellable: AnyCancellable?
@@ -171,6 +196,7 @@ final class PickyHUDOverlayManager {
         appearanceStore: PickyAppearanceStore,
         fontScaleStore: PickyAppFontScaleStore,
         visibilityStore: PickyHUDVisibilityStore,
+        actualPanelVisibilityStore: PickyHUDActualPanelVisibilityStore? = nil,
         settingsStore: PickySettingsStore,
         voiceTargetHitTestRegistry: PickyVoiceTargetHitTestRegistry
     ) {
@@ -178,6 +204,7 @@ final class PickyHUDOverlayManager {
         self.appearanceStore = appearanceStore
         self.fontScaleStore = fontScaleStore
         self.visibilityStore = visibilityStore
+        self.actualPanelVisibilityStore = actualPanelVisibilityStore ?? PickyHUDActualPanelVisibilityStore()
         self.settingsStore = settingsStore
         self.voiceTargetHitTestRegistry = voiceTargetHitTestRegistry
         let settings = settingsStore.load()
@@ -362,6 +389,7 @@ final class PickyHUDOverlayManager {
             entry.panel.contentView = nil
         }
         panelsByDisplayID.removeAll()
+        actualPanelVisibilityStore.removeAllPanels()
         archiveUndoToastsByDisplayID.removeAll()
     }
 
@@ -380,6 +408,7 @@ final class PickyHUDOverlayManager {
             if let entry = panelsByDisplayID.removeValue(forKey: displayID) {
                 entry.pendingShrinkTask?.cancel()
                 entry.panel.orderOut(nil)
+                actualPanelVisibilityStore.removePanel(for: displayID)
             }
         }
         for displayID in archiveUndoToastsByDisplayID.keys where !liveDisplayIDs.contains(displayID) {
@@ -428,6 +457,7 @@ final class PickyHUDOverlayManager {
         hudPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         let panelIdentifier = NSUserInterfaceItemIdentifier("picky-hud-\(displayID)")
         hudPanel.identifier = panelIdentifier
+        actualPanelVisibilityStore.track(hudPanel, for: displayID)
 
         let initialPosition = position(for: displayID)
         let placement = PickyHUDPlacement(
@@ -449,6 +479,8 @@ final class PickyHUDOverlayManager {
             panelIdentifier: panelIdentifier,
             displayID: displayID,
             placement: placement,
+            visibilityStore: visibilityStore,
+            actualPanelVisibilityStore: actualPanelVisibilityStore,
             voiceTargetHitTestRegistry: voiceTargetHitTestRegistry,
             openPerformanceTracker: openPerformanceTracker,
             onSizeChange: { [weak self] size, activeSessionID in

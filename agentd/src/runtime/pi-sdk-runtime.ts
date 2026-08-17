@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { isAbsolute, resolve } from "node:path";
 import {
   type AgentSession,
   type AgentSessionRuntime,
@@ -242,6 +245,11 @@ interface ExpectedInputDelivery {
   aliases?: Set<string>;
 }
 
+interface WriteFileMetadata {
+  filePath: string;
+  fileExistedBefore: boolean;
+}
+
 class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private listeners = new Set<(event: RuntimeEvent) => void>();
   private unsubscribe?: () => void;
@@ -279,6 +287,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private autocompleteGeneration = 0;
   private autocompleteQueryController: AbortController | undefined;
   private readonly subagentInvocationTracker = new SubagentInvocationTracker();
+  private readonly writeFileMetadataByToolCallId = new Map<string, WriteFileMetadata>();
 
   constructor(
     readonly id: string,
@@ -983,7 +992,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     const recoveryEvent = this.runtimeEventFromRecoveryPiEvent(record);
     if (recoveryEvent) return recoveryEvent;
 
-    const runtimeEvent = runtimeEventFromPiEvent(event, {
+    let runtimeEvent = runtimeEventFromPiEvent(event, {
       hasQueuedSteering: this.queuedSteeringCount > 0,
       hasQueuedFollowUp: this.queuedFollowUpCount > 0,
       hasPendingExtensionUiRequest: this.pendingExtensionUiRequestIds.size > 0,
@@ -995,6 +1004,11 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       currentModel: currentModelId(this.runtime.session),
       currentThinkingLevel: currentThinkingLevel(this.runtime.session) ?? this.configuredThinkingLevel,
     });
+
+    if (runtimeEvent?.type === "tool") {
+      const writeFileMetadata = this.writeFileMetadataForToolEvent(record, runtimeEvent);
+      if (writeFileMetadata) runtimeEvent = { ...runtimeEvent, ...writeFileMetadata };
+    }
 
     if (runtimeEvent?.type === "extension_ui" && runtimeEvent.waitsForInput) {
       const requestId = typeof runtimeEvent.request.id === "string" ? runtimeEvent.request.id : undefined;
@@ -1018,6 +1032,25 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     }
 
     return runtimeEvent;
+  }
+
+  private writeFileMetadataForToolEvent(
+    event: Record<string, unknown>,
+    runtimeEvent: Extract<RuntimeEvent, { type: "tool" }>,
+  ): WriteFileMetadata | undefined {
+    if (runtimeEvent.name !== "write") return undefined;
+    if (runtimeEvent.status === "running") {
+      const existing = this.writeFileMetadataByToolCallId.get(runtimeEvent.toolCallId);
+      if (event.type !== "tool_execution_start") return existing;
+      const filePath = writeFilePathFromRawArgs(event.args, this.runtime.cwd);
+      if (!filePath) return undefined;
+      const metadata = { filePath, fileExistedBefore: existsSync(filePath) };
+      this.writeFileMetadataByToolCallId.set(runtimeEvent.toolCallId, metadata);
+      return metadata;
+    }
+    const metadata = this.writeFileMetadataByToolCallId.get(runtimeEvent.toolCallId);
+    this.writeFileMetadataByToolCallId.delete(runtimeEvent.toolCallId);
+    return metadata;
   }
 
   private runtimeEventFromInputMessagePiEvent(event: Record<string, unknown>): RuntimeEvent | undefined {
@@ -1495,4 +1528,17 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private emit(event: RuntimeEvent): void {
     for (const listener of this.listeners) listener(event);
   }
+}
+
+export function writeFilePathFromRawArgs(args: unknown, cwd: string): string | undefined {
+  const rawArgs = asRecord(args);
+  const rawPath = stringValue(rawArgs.path)
+    ?? stringValue(rawArgs.file_path)
+    ?? stringValue(rawArgs.filePath)
+    ?? stringValue(rawArgs.file);
+  if (!rawPath || rawPath.includes("\0")) return undefined;
+  const expanded = rawPath === "~" || rawPath.startsWith("~/")
+    ? `${homedir()}${rawPath.slice(1)}`
+    : rawPath;
+  return resolve(isAbsolute(expanded) ? expanded : cwd, expanded);
 }

@@ -1,5 +1,7 @@
+import { existsSync } from "node:fs";
 import { extractChangedFilesFromExplicitText, extractSessionLinkArtifacts } from "../artifact-store.js";
 import { mergeArtifacts } from "../domain/artifacts.js";
+import { extractFileArtifactsFromAnswerText, fileArtifactFromWrite } from "../domain/file-artifacts.js";
 import { mergeChangedFiles } from "../domain/changed-files.js";
 import { sliceUtf16Safe } from "../domain/safe-truncate.js";
 import { isTerminalStatus } from "../domain/session-status.js";
@@ -32,7 +34,9 @@ interface RuntimeEventHandlerDependencies {
   getSession(sessionId: string): PickyAgentSession;
   patchSession(sessionId: string, patch: Partial<PickyAgentSession>, options?: { emitSession?: boolean }): Promise<void>;
   emitToolActivityUpdated(sessionId: string, tool: PickyToolActivity): void;
+  emitArtifactUpdated?(sessionId: string, artifact: PickyAgentSession["artifacts"][number]): void;
   updateTodoState(sessionId: string, todoState: PickyAgentSession["todoState"]): Promise<void>;
+  fileExists?(path: string): boolean;
   updateSubagentRuns?(sessionId: string, update: Extract<RuntimeEvent, { type: "subagent_run_update" }>["update"]): Promise<void>;
   consumeNoTurnRanSessionStateRestore?(sessionId: string): Partial<PickyAgentSession> | undefined;
   appendLog(sessionId: string, line: string): Promise<void>;
@@ -314,6 +318,11 @@ export class RuntimeEventHandler {
       patch.finalAnswer = finalAnswer;
       patch.changedFiles = mergeChangedFiles(currentSession.changedFiles, extractChangedFilesFromExplicitText(finalAnswer));
     }
+    const flushedAssistantText = finalAnswer ?? cleanFinalAnswer(this.assistantDrafts.get(sessionId));
+    const fileArtifacts = (terminal || event.status === "waiting_for_input") && flushedAssistantText
+      ? extractFileArtifactsFromAnswerText(flushedAssistantText, currentSession.cwd ?? process.cwd(), this.dependencies.fileExists ?? existsSync)
+      : [];
+    if (fileArtifacts.length > 0) patch.artifacts = mergeArtifacts(currentSession.artifacts, fileArtifacts);
     // Surface PR/GitHub/Slack/etc. link badges in the HUD as soon as the assistant message that
     // contains the URL is committed for a non-terminal status. Previously `materializeTerminalArtifacts`
     // only ran on completed/failed/cancelled, so a `/skill:create-pr` follow-up that left the
@@ -321,14 +330,13 @@ export class RuntimeEventHandler {
     // row until either a new patch refreshed the `gh pr view` cache or the session eventually
     // terminated. Terminal events still flow through materializeTerminalArtifacts below so the
     // `artifact` listener fires there.
-    if (!terminal && event.status === "waiting_for_input") {
-      const flushedAssistantText = finalAnswer ?? cleanFinalAnswer(this.assistantDrafts.get(sessionId));
-      if (flushedAssistantText) {
-        const linkArtifacts = extractSessionLinkArtifacts(flushedAssistantText).filter((artifact) => !currentSession.artifacts.some((existing) => existing.url === artifact.url));
-        if (linkArtifacts.length > 0) patch.artifacts = mergeArtifacts(currentSession.artifacts, linkArtifacts);
-      }
+    if (!terminal && event.status === "waiting_for_input" && flushedAssistantText) {
+      const existingArtifacts = patch.artifacts ?? currentSession.artifacts;
+      const linkArtifacts = extractSessionLinkArtifacts(flushedAssistantText).filter((artifact) => !existingArtifacts.some((existing) => existing.url === artifact.url));
+      if (linkArtifacts.length > 0) patch.artifacts = mergeArtifacts(existingArtifacts, linkArtifacts);
     }
     await this.dependencies.patchSession(sessionId, patch);
+    for (const artifact of fileArtifacts) this.dependencies.emitArtifactUpdated?.(sessionId, artifact);
     if (restoreManualTerminalStatus) this.manualTerminalCompactionStatuses.delete(sessionId);
     if (terminal) {
       this.assistantDrafts.set(sessionId, "");
@@ -514,6 +522,16 @@ export class RuntimeEventHandler {
     logAgentd("tool activity", { sessionId, tool: event.name, status: event.status, previewChars: event.preview?.length });
     await this.dependencies.patchSession(sessionId, { tools }, { emitSession: false });
     this.dependencies.emitToolActivityUpdated(sessionId, nextTool);
+    if (event.name !== "write" || event.status !== "succeeded") return;
+    const artifact = fileArtifactFromWrite({
+      filePath: event.filePath,
+      fileExistedBefore: event.fileExistedBefore,
+      now: new Date().toISOString(),
+    });
+    if (!artifact) return;
+    const currentArtifacts = this.dependencies.getSession(sessionId).artifacts;
+    await this.dependencies.patchSession(sessionId, { artifacts: mergeArtifacts(currentArtifacts, [artifact]) });
+    this.dependencies.emitArtifactUpdated?.(sessionId, artifact);
   }
 }
 

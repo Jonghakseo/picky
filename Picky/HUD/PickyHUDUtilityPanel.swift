@@ -11,16 +11,23 @@ import SwiftUI
 /// here so their selection, accessibility, and tab treatment stay consistent.
 enum PickyHUDUtilityPanelTab: String, CaseIterable, Hashable, Identifiable {
     case terminal
-    case changes
+    case activity
+    case artifacts
 
     var id: Self { self }
 
     var title: String {
         switch self {
         case .terminal: L10n.t("hud.utilityPanel.tab.terminal")
-        case .changes: L10n.t("hud.utilityPanel.tab.changes")
+        case .activity: L10n.t("hud.utilityPanel.tab.activity")
+        case .artifacts: L10n.t("hud.utilityPanel.tab.artifacts")
         }
     }
+}
+
+enum PickyHUDUtilityPanelTabBadge: Equatable {
+    case count(Int)
+    case running
 }
 
 /// Pure state and layout policy for the Pickle utility panel.
@@ -31,23 +38,6 @@ enum PickyHUDUtilityPanelPolicy {
     static let maximumHeightFraction: CGFloat = 0.6
     static let resizeGripHeight: CGFloat = 12
     static let minimumConversationCardHeight: CGFloat = 320
-
-    static func selectedTab(
-        for sessionID: String,
-        selections: [String: PickyHUDUtilityPanelTab]
-    ) -> PickyHUDUtilityPanelTab {
-        selections[sessionID] ?? .terminal
-    }
-
-    static func selectionsAfterSelecting(
-        _ tab: PickyHUDUtilityPanelTab,
-        sessionID: String,
-        selections: [String: PickyHUDUtilityPanelTab]
-    ) -> [String: PickyHUDUtilityPanelTab] {
-        var next = selections
-        next[sessionID] = tab
-        return next
-    }
 
     static func openSessionIDsAfterToggling(
         sessionID: String,
@@ -78,31 +68,30 @@ enum PickyHUDUtilityPanelPolicy {
     }
 }
 
-/// A compact tabbed shell whose `changesContent` slot is intentionally owned by
-/// the caller. The diff feature can replace the placeholder and provide a badge
-/// count without changing terminal lifetime or the panel chrome.
-struct PickySessionUtilityPanelView<ChangesContent: View>: View {
+/// A compact three-tab shell. The terminal stays mounted behind the other tabs
+/// so its process and scroll state survive utility-panel navigation.
+struct PickySessionUtilityPanelView: View {
     let session: PickySessionListViewModel.SessionCard
     @ObservedObject var viewModel: PickySessionListViewModel
     @Binding var selectedTab: PickyHUDUtilityPanelTab
     let height: CGFloat
-    let changesBadgeCount: Int?
-    private let changesContent: ChangesContent
+    let artifactsBadge: PickyHUDUtilityPanelTabBadge?
+    let activityBadge: PickyHUDUtilityPanelTabBadge?
 
     init(
         session: PickySessionListViewModel.SessionCard,
         viewModel: PickySessionListViewModel,
         selectedTab: Binding<PickyHUDUtilityPanelTab>,
         height: CGFloat,
-        changesBadgeCount: Int? = nil,
-        @ViewBuilder changesContent: () -> ChangesContent
+        artifactsBadge: PickyHUDUtilityPanelTabBadge? = nil,
+        activityBadge: PickyHUDUtilityPanelTabBadge? = nil
     ) {
         self.session = session
         self.viewModel = viewModel
         self._selectedTab = selectedTab
         self.height = height
-        self.changesBadgeCount = changesBadgeCount
-        self.changesContent = changesContent()
+        self.artifactsBadge = artifactsBadge
+        self.activityBadge = activityBadge
     }
 
     var body: some View {
@@ -122,11 +111,15 @@ struct PickySessionUtilityPanelView<ChangesContent: View>: View {
                     .allowsHitTesting(selectedTab == .terminal)
                     .accessibilityHidden(selectedTab != .terminal)
 
-                    changesContent
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .opacity(selectedTab == .changes ? 1 : 0)
-                        .allowsHitTesting(selectedTab == .changes)
-                        .accessibilityHidden(selectedTab != .changes)
+                    PickySessionActivityView(session: session)
+                        .opacity(selectedTab == .activity ? 1 : 0)
+                        .allowsHitTesting(selectedTab == .activity)
+                        .accessibilityHidden(selectedTab != .activity)
+
+                    PickySessionArtifactsView(artifacts: session.artifacts)
+                        .opacity(selectedTab == .artifacts ? 1 : 0)
+                        .allowsHitTesting(selectedTab == .artifacts)
+                        .accessibilityHidden(selectedTab != .artifacts)
                 }
             }
         }
@@ -155,10 +148,8 @@ struct PickySessionUtilityPanelView<ChangesContent: View>: View {
             HStack(spacing: DS.Spacing.xs) {
                 Text(tab.title)
                     .font(PickyHUDTypography.supportingMedium)
-                if tab == .changes, let changesBadgeCount, changesBadgeCount > 0 {
-                    Text("\(changesBadgeCount)")
-                        .font(PickyHUDTypography.metaSemibold)
-                        .foregroundColor(DS.Colors.accentText)
+                if let badge = badge(for: tab) {
+                    badgeView(badge)
                 }
             }
             .foregroundColor(isSelected ? DS.Colors.textPrimary : DS.Colors.textSecondary)
@@ -176,6 +167,28 @@ struct PickySessionUtilityPanelView<ChangesContent: View>: View {
         .hoverAffordance()
     }
 
+    private func badge(for tab: PickyHUDUtilityPanelTab) -> PickyHUDUtilityPanelTabBadge? {
+        switch tab {
+        case .terminal: nil
+        case .activity: activityBadge
+        case .artifacts: artifactsBadge
+        }
+    }
+
+    @ViewBuilder
+    private func badgeView(_ badge: PickyHUDUtilityPanelTabBadge) -> some View {
+        switch badge {
+        case let .count(count):
+            if count > 0 {
+                Text("\(count)")
+                    .font(PickyHUDTypography.metaSemibold)
+                    .foregroundColor(DS.Colors.accentText)
+            }
+        case .running:
+            PickyHUDUtilityPanelRunningBadge()
+        }
+    }
+
     private var panelBackground: some View {
         RoundedRectangle(cornerRadius: DS.CornerRadius.panel, style: .continuous)
             .fill(DS.Colors.surface1)
@@ -186,15 +199,28 @@ struct PickySessionUtilityPanelView<ChangesContent: View>: View {
     }
 }
 
-struct PickyHUDUtilityPanelChangesPlaceholderView: View {
+private struct PickyHUDUtilityPanelRunningBadge: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isPulsing = false
+
     var body: some View {
-        Text(L10n.t("hud.utilityPanel.changes.placeholder"))
-            .font(PickyHUDTypography.supporting)
-            .foregroundColor(DS.Colors.textSecondary)
-            .multilineTextAlignment(.center)
-            .padding(DS.Spacing.lg)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .accessibilityLabel(L10n.t("hud.utilityPanel.changes.placeholder"))
+        Image(systemName: "circle.fill")
+            .font(PickyHUDTypography.minimum)
+            .foregroundColor(DS.Colors.info)
+            .opacity(isPulsing ? 0.48 : 1)
+            .accessibilityLabel(L10n.t("hud.activity.badge.running"))
+            .onAppear { updatePulse() }
+            .onChange(of: reduceMotion) { _, _ in updatePulse() }
+    }
+
+    private func updatePulse() {
+        guard !reduceMotion else {
+            isPulsing = false
+            return
+        }
+        withAnimation(.easeInOut(duration: DS.Animation.fast).repeatForever(autoreverses: true)) {
+            isPulsing = true
+        }
     }
 }
 

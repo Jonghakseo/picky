@@ -34,6 +34,19 @@ struct PickyToolHistoryEntryTests {
 
         #expect(PickyToolHistoryFilePathPolicy.urlToOpen(for: "Picky/HUD/PickyHUDView.swift") == nil)
         #expect(PickyToolHistoryFilePathPolicy.urlToOpen(for: "") == nil)
+
+        let cwdRelativeURL = try #require(
+            PickyToolHistoryFilePathPolicy.urlToOpen(
+                for: "reports/final.md",
+                cwd: "/tmp/picky-session"
+            )
+        )
+        #expect(cwdRelativeURL.path == "/tmp/picky-session/reports/final.md")
+    }
+
+    @Test func onlyEmbeddedActivityRowsAllowFinderReveal() {
+        #expect(PickyToolHistoryEntryContext.detachedViewer.allowsFileReveal == false)
+        #expect(PickyToolHistoryEntryContext.embeddedActivity.allowsFileReveal)
     }
 
     @Test func readEntryExtractsFileAndRange() {
@@ -539,6 +552,32 @@ struct PickyToolHistoryEntryTests {
         )
 
         #expect(visible.map(\.id) == ["read", "edit"])
+    }
+
+    @Test func activityFiltersGroupFilesCommandsAgentsAndFailures() {
+        let agent = PickyToolHistoryRenderer.entry(
+            from: PickyToolActivity(
+                toolCallId: "agent",
+                name: "subagent",
+                status: "succeeded",
+                subagentSummary: PickySubagentToolSummary(action: "batch", agents: ["worker"])
+            ),
+            index: 1
+        )
+        let file = PickyToolHistoryRenderer.entry(
+            from: PickyToolActivity(toolCallId: "file", name: "write", status: "succeeded"),
+            index: 2
+        )
+        let command = PickyToolHistoryRenderer.entry(
+            from: PickyToolActivity(toolCallId: "command", name: "bash", status: "failed"),
+            index: 3
+        )
+        let entries = [agent, file, command]
+
+        #expect(PickyToolHistoryFilterPolicy.activityEntries(from: entries, filter: .agents).map(\.id) == ["agent"])
+        #expect(PickyToolHistoryFilterPolicy.activityEntries(from: entries, filter: .files).map(\.id) == ["file"])
+        #expect(PickyToolHistoryFilterPolicy.activityEntries(from: entries, filter: .commands).map(\.id) == ["command"])
+        #expect(PickyToolHistoryFilterPolicy.activityEntries(from: entries, filter: .failures).map(\.id) == ["command"])
     }
 
     @Test func failureAndTextFiltersCombineWithCategoryFilters() {

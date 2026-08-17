@@ -331,6 +331,21 @@ struct PickyConversationCardViewTests {
         #expect(PickyConversationContextLineView.hasContent(for: session))
     }
 
+    @Test func artifactTrayExcludesFileArtifactsWithoutHidingExistingReportsOrLinks() {
+        let file = PickyArtifact(id: "file", kind: "file", title: "Generated report", path: "/tmp/generated.md", url: nil, updatedAt: baseDate)
+        let report = PickyArtifact(id: "report", kind: "report", title: "Existing report", path: "/tmp/report.md", url: nil, updatedAt: baseDate)
+        let link = PickyArtifact(id: "link", kind: "github", title: "Pull request", path: nil, url: URL(string: "https://github.com/creatrip/picky/pull/42"), updatedAt: baseDate)
+
+        #expect(PickyArtifactTrayPresentation.trayArtifacts(from: [file, report, link]).map(\.id) == ["report", "link"])
+        #expect(PickyArtifactTrayPresentation.trayCount(for: [file]) == 0)
+        #expect(PickyArtifactTrayPresentation.trayCount(for: [file, report, link]) == 2)
+
+        var fileOnlySession = makeConversationSession(status: .completed)
+        fileOnlySession.cwd = nil
+        fileOnlySession.artifacts = [file]
+        #expect(!PickyConversationContextLineView.hasContent(for: fileOnlySession))
+    }
+
     @Test func questionBubbleBodyTextDoesNotDuplicateTitle() {
         let titledOnly = extensionUiRequest(title: "짧은 테스트", prompt: nil)
         let samePrompt = extensionUiRequest(title: "짧은 테스트", prompt: " 짧은 테스트 ")

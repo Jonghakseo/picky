@@ -54,7 +54,32 @@ struct PickyToolHistoryEntry: Identifiable, Equatable {
     let status: PickyToolHistoryStatus
     let durationMs: Int?
     let startedAt: Date?
+    /// Preserves the structured runtime signal even when the display parser cannot
+    /// recover a complete subagent command from a truncated args preview.
+    let isAgentActivity: Bool
     let detail: PickyToolHistoryDetail
+
+    init(
+        id: String,
+        index: Int,
+        name: String,
+        category: PickyToolHistoryCategory,
+        status: PickyToolHistoryStatus,
+        durationMs: Int?,
+        startedAt: Date?,
+        isAgentActivity: Bool = false,
+        detail: PickyToolHistoryDetail
+    ) {
+        self.id = id
+        self.index = index
+        self.name = name
+        self.category = category
+        self.status = status
+        self.durationMs = durationMs
+        self.startedAt = startedAt
+        self.isAgentActivity = isAgentActivity
+        self.detail = detail
+    }
 }
 
 enum PickyToolHistoryScope: Equatable {
@@ -104,6 +129,7 @@ enum PickyToolHistoryRenderer {
             status: status,
             durationMs: durationMs(start: tool.startedAt, end: tool.endedAt),
             startedAt: tool.startedAt,
+            isAgentActivity: tool.subagentSummary != nil,
             detail: detail
         )
     }

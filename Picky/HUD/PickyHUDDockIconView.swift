@@ -518,7 +518,14 @@ struct PickyHUDDockIconView: View {
 
 #Preview("Picky HUD") {
     let viewModel = PickySessionListViewModel(client: LocalStubPickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-    PickyHUDView(viewModel: viewModel, dockState: viewModel.dockState)
+    let visibilityStore = PickyHUDVisibilityStore()
+    let actualPanelVisibilityStore = PickyHUDActualPanelVisibilityStore()
+    PickyHUDView(
+        viewModel: viewModel,
+        dockState: viewModel.dockState,
+        visibilityStore: visibilityStore,
+        actualPanelVisibilityStore: actualPanelVisibilityStore
+    )
 }
 
 // MARK: - Dock icon clicks (AppKit-backed for immediate single-click open)

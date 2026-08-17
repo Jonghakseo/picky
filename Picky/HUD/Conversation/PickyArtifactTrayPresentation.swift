@@ -33,8 +33,14 @@ struct PickyArtifactTrayPresentation: Equatable, Identifiable {
         action = Self.primaryAction(for: artifact, fileManager: fileManager, homeURL: homeURL)
     }
 
+    /// File artifacts have a dedicated utility-panel surface. The conversation tray
+    /// remains the home for link and report artifacts only.
+    static func trayArtifacts(from artifacts: [PickyArtifact]) -> [PickyArtifact] {
+        artifacts.filter { $0.kind != "file" }
+    }
+
     static func trayCount(for artifacts: [PickyArtifact]) -> Int {
-        artifacts.count
+        trayArtifacts(from: artifacts).count
     }
 
     static func title(for artifact: PickyArtifact) -> String {
@@ -79,7 +85,7 @@ struct PickyArtifactTrayPresentation: Equatable, Identifiable {
         return standardizedPath
     }
 
-    private static func localFileURL(_ rawPath: String, homeURL: URL) -> URL? {
+    static func localFileURL(_ rawPath: String, homeURL: URL) -> URL? {
         let path = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !path.isEmpty else { return nil }
         let expandedPath: String

@@ -143,11 +143,15 @@ struct PickyConversationContextLineView: View {
     /// request state require a working directory, which already supplies the
     /// primary context line.
     static func hasContent(for session: PickySessionListViewModel.SessionCard) -> Bool {
-        session.compactCwdDescription != nil || !session.artifacts.isEmpty
+        session.compactCwdDescription != nil || !PickyArtifactTrayPresentation.trayArtifacts(from: session.artifacts).isEmpty
+    }
+
+    private var trayArtifacts: [PickyArtifact] {
+        PickyArtifactTrayPresentation.trayArtifacts(from: session.artifacts)
     }
 
     private var hasLinkContext: Bool {
-        !session.artifacts.isEmpty || pullRequestStatus != nil
+        !trayArtifacts.isEmpty || pullRequestStatus != nil
     }
 
     private var hasPrimaryContext: Bool {
@@ -164,8 +168,8 @@ struct PickyConversationContextLineView: View {
 
     private var linkContextLine: some View {
         HStack(spacing: 6) {
-            if !session.artifacts.isEmpty {
-                PickyArtifactTrayButton(artifacts: session.artifacts)
+            if !trayArtifacts.isEmpty {
+                PickyArtifactTrayButton(artifacts: trayArtifacts)
             }
             linkBadges
                 .layoutPriority(2)

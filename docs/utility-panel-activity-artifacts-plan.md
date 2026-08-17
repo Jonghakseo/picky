@@ -1,6 +1,6 @@
 # Utility panel redesign: Activity + Artifacts tabs
 
-Status: plan v2 (2026-08-15, revised after stress-interview review). Replaces the Pickle utility panel `변경사항` (changes) tab with an `활동` (activity) tab and adds a `작업물` (artifacts) tab.
+Status: P0 implemented (2026-08-17). The Pickle utility panel now replaces `변경사항` (changes) with `활동` (activity) and adds a file-only `작업물` (artifacts) tab. P1/P2 remain planned below.
 
 ## Motivation
 
@@ -16,7 +16,7 @@ The changes tab (whole-repo unstaged/staged git diff, read-only) is rarely used:
 
 ## Artifact definition (final)
 
-An artifact is a **non-source file the session created or updated** (documents, data, images: `md`, `csv`, `json` reports, `png`, `svg`, `pdf`, `html`, `xlsx`, …). "Created or updated" is deliberate: Pi `write` is create-or-overwrite and pre-write existence alone cannot prove novelty, so both count; capture records `fileExistedBefore` so the UI can label 생성/갱신.
+An artifact is a **non-source file the session created or updated** (documents, data, images: `md`, `csv`, `json` reports, `png`, `svg`, `pdf`, `html`, `xlsx`, …). "Created or updated" is deliberate: Pi `write` is create-or-overwrite and pre-write existence alone cannot prove novelty, so both count. P0 records `fileExistedBefore` internally at tool start; exposing a 생성/갱신 label in the UI is deferred to P1.
 
 Capture paths — exactly two:
 
@@ -31,7 +31,7 @@ Exclusions (anti-noise):
 - Re-registration of the same path updates `updatedAt` (reuse `mergeArtifacts`, `agentd/src/domain/artifacts.ts:3`) and re-arms the unseen badge instead of adding a duplicate row.
 - A later-deleted file keeps its row with a "deleted" state (reuse `PickyArtifactTrayPresentation.PrimaryAction.missingPath`).
 
-Known heuristic limits (accepted): extension allowlist misses unlisted/extension-less outputs and may over-capture repo-doc overwrites (e.g. `README.md`). Mitigations: allowlist is one constant; final-answer mention capture requires the file to exist on disk at extraction time; the 생성/갱신 label keeps overwrites honest. Revisit with real-session sampling after P0 ships; `register_artifact` stays rejected.
+Known heuristic limits (accepted): extension allowlist misses unlisted/extension-less outputs and may over-capture repo-doc overwrites (e.g. `README.md`). Mitigations: allowlist is one constant; final-answer mention capture requires the file to exist on disk at extraction time; temporary/system-temp paths are excluded. Revisit with real-session sampling after P0 ships; `register_artifact` stays rejected.
 
 ## Data contracts
 
@@ -70,11 +70,11 @@ Known heuristic limits (accepted): extension allowlist misses unlisted/extension
 
 ### Artifacts tab
 
-- Flat list, newest first: icon, filename, directory (`~`-abbreviated), 생성/갱신 label, relative time.
+- Flat list, newest first: icon, filename, directory (`~`-abbreviated), relative time. A 생성/갱신 label is deferred to P1.
 - Row actions: 열기 / Finder / 경로 복사. This exceeds `PickyArtifactTrayPresentation`'s single-`primaryAction` model, so the tab gets a small dedicated row-action policy (open file / reveal / copy path) that reuses the tray's path-resolution and `missingPath` logic.
 - Deleted files: dimmed row, strikethrough name, "경로 복사" only.
 - Tab badge: count of artifacts added/updated since last viewed.
-- **Unseen state owner (P0)**: no per-session utility UI state store exists today (tab selection is an in-memory `@State` dictionary in `PickyHUDView`; only panel height persists). P0 introduces a UserDefaults-backed per-session store holding `selectedTab` + `lastSeenArtifactsAt`, with cleanup on session removal/archive pruning. Mark-seen fires only while the tab is selected **and** the HUD is visible; an artifact updated while visible is immediately seen. No `changes`-value migration is needed since current selection was never persisted.
+- **Unseen state owner (P0)**: P0 introduces a UserDefaults-backed per-session store holding `selectedTab` + `lastSeenArtifactsAt`, with cleanup on session removal/archive pruning. Mark-seen fires only while the tab is selected and the corresponding `NSPanel` is actually visible. `PickyHUDActualPanelVisibilityStore` is fed by real window ordering operations, including secure-surface suppression/restoration and display removal; configured dock visibility alone is not treated as seen. No `changes`-value migration is needed since the previous selection was never persisted.
 - Empty state explains the capture rule ("세션이 새로 만든 문서·데이터·이미지 파일이 여기에 모여요").
 
 ## Implementation phases
@@ -100,6 +100,7 @@ Swift:
 
 ### P1 — timeline 고도화
 
+- Surface the captured create/update provenance in the artifact model and show the 생성/갱신 label.
 - `turnIndex` (supervisor-owned counter, protocol optional field, Swift decode, legacy bucket).
 - `getSessionToolHistory` full-history request on first tab open (lifts the 200-cap for reconnected sessions).
 - Turn grouping, investigation-run collapsing (pure policy + tests), summary strip (incl. agent count), running-section pinning, failure red-dot badge, failed-row composer prefill.
@@ -123,3 +124,5 @@ Follow `docs/refactoring-principles.md`: characterization tests before porting (
 ## Review log
 
 Stress-interview (verifier/reviewer/challenger, 2026-08-15) findings incorporated in v2: tray contamination guard, structured write-path capture replacing argsPreview parsing, created-or-updated provenance, snapshot 200-cap handling, supervisor-owned turn identity, unseen-state store design, tool-history viewer parity gate, dual-flush answer extraction, session-cwd path resolution, per-file diff caching design, both-sides contract tests, corrected `extractChangedFilesFromExplicitText` location.
+
+P0 implementation used a worker→verifier→reviewer dynamic workflow with two bounded fix cycles. Final validation (2026-08-17): agentd lint/build passed with 969 tests passed and 1 skipped; Swift build passed with 1,822 tests passed. Final targeted review found no P0/P1 issues. The review additionally tightened temp-path exclusions, kept Finder actions scoped to embedded activity, deferred turn-aware failure badges to P1, and made unseen handling depend on actual `NSPanel` visibility through secure-surface suppression/restoration and display removal.

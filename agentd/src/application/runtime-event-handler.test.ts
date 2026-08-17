@@ -235,6 +235,70 @@ describe("RuntimeEventHandler", () => {
     ]);
   });
 
+  it("captures file artifacts from write success, waiting-for-input, and terminal answer flushes", async () => {
+    const existingPaths = new Set([
+      "/workspace/reports/waiting.md",
+      "/workspace/reports/done.pdf",
+    ]);
+    const harness = inputHarness({ cwd: "/workspace" }, (path) => existingPaths.has(path));
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-08-15T10:00:00.000Z"));
+      await harness.handler.handle("pickle-1", {
+        type: "tool",
+        toolCallId: "write-report",
+        name: "write",
+        status: "succeeded",
+        filePath: "/workspace/reports/write.csv",
+        fileExistedBefore: false,
+      });
+      vi.setSystemTime(new Date("2026-08-15T10:00:01.000Z"));
+      await harness.handler.handle("pickle-1", {
+        type: "tool",
+        toolCallId: "write-report-again",
+        name: "write",
+        status: "succeeded",
+        filePath: "/workspace/reports/write.csv",
+        fileExistedBefore: true,
+      });
+      await harness.handler.handle("pickle-1", {
+        type: "status",
+        status: "waiting_for_input",
+        finalAnswer: "Created `reports/waiting.md`.",
+      });
+      await harness.handler.handle("pickle-1", {
+        type: "status",
+        status: "completed",
+        finalAnswer: "Saved `reports/done.pdf`.",
+      });
+
+      expect(harness.current().artifacts).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: "file", path: "/workspace/reports/write.csv", updatedAt: "2026-08-15T10:00:01.000Z" }),
+        expect.objectContaining({ kind: "file", path: "/workspace/reports/waiting.md" }),
+        expect.objectContaining({ kind: "file", path: "/workspace/reports/done.pdf" }),
+      ]));
+      expect(harness.current().artifacts).toHaveLength(3);
+      expect(harness.emitArtifactUpdated).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("leaves legacy write success events without structured paths artifact-free", async () => {
+    const harness = inputHarness();
+
+    await harness.handler.handle("pickle-1", {
+      type: "tool",
+      toolCallId: "legacy-write",
+      name: "write",
+      status: "succeeded",
+      argsPreview: '{"path":"reports/legacy.md"}',
+    });
+
+    expect(harness.current().artifacts).toEqual([]);
+    expect(harness.emitArtifactUpdated).not.toHaveBeenCalled();
+  });
+
   it("continues to start a turn for an extension user message", async () => {
     const harness = inputHarness({ status: "completed", finalAnswer: "Previous answer" });
 
@@ -254,7 +318,7 @@ describe("RuntimeEventHandler", () => {
   });
 });
 
-function inputHarness(initial: Partial<PickyAgentSession> = {}) {
+function inputHarness(initial: Partial<PickyAgentSession> = {}, fileExists: (path: string) => boolean = () => false) {
   let current = { ...session(), ...initial };
   const patchSession = vi.fn(async (_sessionId: string, patch: Partial<PickyAgentSession>) => {
     current = { ...current, ...patch };
@@ -263,10 +327,13 @@ function inputHarness(initial: Partial<PickyAgentSession> = {}) {
   const recordUserText = vi.fn(async () => {});
   const materializeTerminalArtifacts = vi.fn(async () => {});
   const notifyPickleCompletion = vi.fn(async () => {});
+  const emitArtifactUpdated = vi.fn();
   const handler = new RuntimeEventHandler({
     getSession: () => current,
     patchSession,
     emitToolActivityUpdated: () => {},
+    emitArtifactUpdated,
+    fileExists,
     updateTodoState: async () => {},
     appendLog: async () => {},
     materializeTerminalArtifacts,
@@ -301,5 +368,6 @@ function inputHarness(initial: Partial<PickyAgentSession> = {}) {
     recordUserText,
     materializeTerminalArtifacts,
     notifyPickleCompletion,
+    emitArtifactUpdated,
   };
 }

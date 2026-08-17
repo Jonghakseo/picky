@@ -8,17 +8,10 @@ import Testing
 @testable import Picky
 
 struct PickyHUDUtilityPanelPolicyTests {
-    @Test func tabSelectionDefaultsToTerminalAndRemainsScopedToItsSession() {
-        let initial: [String: PickyHUDUtilityPanelTab] = ["other": .terminal]
-        let selections = PickyHUDUtilityPanelPolicy.selectionsAfterSelecting(
-            .changes,
-            sessionID: "pickle-a",
-            selections: initial
-        )
-
-        #expect(PickyHUDUtilityPanelPolicy.selectedTab(for: "pickle-a", selections: selections) == .changes)
-        #expect(PickyHUDUtilityPanelPolicy.selectedTab(for: "other", selections: selections) == .terminal)
-        #expect(PickyHUDUtilityPanelPolicy.selectedTab(for: "unseen", selections: selections) == .terminal)
+    @Test func utilityPanelTabsExposeTerminalActivityAndArtifacts() {
+        #expect(PickyHUDUtilityPanelTab.allCases == [.terminal, .activity, .artifacts])
+        #expect(PickyHUDUtilityPanelTab(rawValue: "changes") == nil)
+        #expect(PickyHUDUtilityPanelTab(rawValue: "unknown") == nil)
     }
 
     @Test func panelHeightClampsToMinimumAndAvailableHeightFraction() {

@@ -253,6 +253,7 @@ export class SessionSupervisor extends EventEmitter {
       getSession: (sessionId) => this.mustGet(sessionId),
       patchSession: (sessionId, patch, options) => this.patch(sessionId, patch, options),
       emitToolActivityUpdated: (sessionId, tool) => this.emit("toolActivityUpdated", sessionId, tool),
+      emitArtifactUpdated: (sessionId, artifact) => this.emit("artifact", sessionId, artifact),
       updateTodoState: (sessionId, todoState) => this.updateTodoState(sessionId, todoState),
       updateSubagentRuns: (sessionId, update) => this.subagentRunUpdater.update(sessionId, update),
       consumeNoTurnRanSessionStateRestore: (sessionId) => this.consumeNoTurnRanSessionStateRestore(sessionId),

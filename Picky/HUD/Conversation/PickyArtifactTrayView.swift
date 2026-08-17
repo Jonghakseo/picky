@@ -12,8 +12,12 @@ struct PickyArtifactTrayButton: View {
     let artifacts: [PickyArtifact]
     @State private var isPresented = false
 
+    private var trayArtifacts: [PickyArtifact] {
+        PickyArtifactTrayPresentation.trayArtifacts(from: artifacts)
+    }
+
     var body: some View {
-        let count = PickyArtifactTrayPresentation.trayCount(for: artifacts)
+        let count = PickyArtifactTrayPresentation.trayCount(for: trayArtifacts)
         Button { isPresented = true } label: {
             Label("\(count)", systemImage: "tray.full")
                 .font(PickyHUDTypography.badgeSemibold)
@@ -29,7 +33,7 @@ struct PickyArtifactTrayButton: View {
         // PickyHUDPanel is key-capable despite its nonactivating style, so a native
         // popover preserves macOS focus and Escape dismissal without a custom panel.
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
-            PickyArtifactTrayPopover(artifacts: artifacts, isPresented: $isPresented)
+            PickyArtifactTrayPopover(artifacts: trayArtifacts, isPresented: $isPresented)
         }
     }
 }

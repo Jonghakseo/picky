@@ -1,8 +1,10 @@
 import { EventEmitter } from "node:events";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { AutocompleteItem, AutocompleteProvider } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 import * as localLog from "../local-log.js";
-import { PiSdkRuntime } from "./pi-sdk-runtime.js";
+import { PiSdkRuntime, writeFilePathFromRawArgs } from "./pi-sdk-runtime.js";
 import type { RuntimeEvent } from "./types.js";
 
 class FakeSession extends EventEmitter {
@@ -807,6 +809,57 @@ describe("PiSdkRuntime", () => {
     expect(updates).toContainEqual(expect.objectContaining({
       update: expect.objectContaining({ task: "Second task", invocationId: "subagent-second" }),
     }));
+  });
+
+  it("captures normalized raw write paths across start and success events without relying on argsPreview", async () => {
+    const fakeSession = new FakeSession();
+    const handle = await makeRuntime(fakeSession).prewarm({ cwd: process.cwd(), sessionId: "session-write-artifact" });
+    const events: RuntimeEvent[] = [];
+    handle.subscribe((event) => events.push(event));
+    const longPath = `reports/${"nested/".repeat(90)}요약 파일.md`;
+
+    fakeSession.emit("event", {
+      type: "tool_execution_start",
+      toolCallId: "write-new",
+      toolName: "write",
+      args: { contents: "x".repeat(600), path: longPath },
+    });
+    fakeSession.emit("event", {
+      type: "tool_execution_update",
+      toolCallId: "write-new",
+      toolName: "write",
+      partialResult: "writing",
+    });
+    fakeSession.emit("event", {
+      type: "tool_execution_end",
+      toolCallId: "write-new",
+      toolName: "write",
+      result: "written",
+    });
+    fakeSession.emit("event", {
+      type: "tool_execution_start",
+      toolCallId: "write-existing",
+      toolName: "write",
+      args: { path: "package.json" },
+    });
+    fakeSession.emit("event", {
+      type: "tool_execution_end",
+      toolCallId: "write-existing",
+      toolName: "write",
+      result: "written",
+    });
+
+    expect(writeFilePathFromRawArgs("invalid", process.cwd())).toBeUndefined();
+    expect(writeFilePathFromRawArgs({ path: "~/Desktop/요약 파일.md" }, process.cwd())).toBe(join(homedir(), "Desktop/요약 파일.md"));
+
+    const writeEvents = events.filter((event): event is Extract<RuntimeEvent, { type: "tool" }> => event.type === "tool" && event.name === "write");
+    expect(writeEvents).toEqual([
+      expect.objectContaining({ toolCallId: "write-new", status: "running", filePath: writeFilePathFromRawArgs({ path: longPath }, process.cwd()), fileExistedBefore: false }),
+      expect.objectContaining({ toolCallId: "write-new", status: "running", filePath: writeFilePathFromRawArgs({ path: longPath }, process.cwd()), fileExistedBefore: false }),
+      expect.objectContaining({ toolCallId: "write-new", status: "succeeded", filePath: writeFilePathFromRawArgs({ path: longPath }, process.cwd()), fileExistedBefore: false }),
+      expect.objectContaining({ toolCallId: "write-existing", status: "running", filePath: writeFilePathFromRawArgs({ path: "package.json" }, process.cwd()), fileExistedBefore: true }),
+      expect.objectContaining({ toolCallId: "write-existing", status: "succeeded", filePath: writeFilePathFromRawArgs({ path: "package.json" }, process.cwd()), fileExistedBefore: true }),
+    ]);
   });
 
   it("executes user bash directly through the Pi session and preserves context inclusion flag", async () => {

@@ -104,6 +104,33 @@ struct PickySecureSurfaceWindowCoordinatorTests {
         #expect(panel.secureSurfaceVisibilityRevision == 1)
     }
 
+    @Test func secureSuppressionAndRestorationUpdateTheHUDActualVisibilityStore() {
+        let displayID: CGDirectDisplayID = 42
+        let visibilityStore = PickyHUDActualPanelVisibilityStore()
+        let hud = PickyHUDPanel(
+            contentRect: .zero,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        hud.level = .floating
+        visibilityStore.track(hud, for: displayID)
+        defer { hud.orderOut(nil) }
+
+        hud.orderFrontRegardless()
+        #expect(visibilityStore.isVisible(for: displayID))
+
+        let coordinator = PickySecureSurfaceWindowCoordinator(
+            frontmostBundleIDProvider: { nil },
+            windowsProvider: { [hud] }
+        )
+        coordinator.apply(frontmostBundleID: "com.apple.AppStore")
+        #expect(!visibilityStore.isVisible(for: displayID))
+
+        coordinator.apply(frontmostBundleID: "com.apple.Safari")
+        #expect(visibilityStore.isVisible(for: displayID))
+    }
+
     private func makeCoordinator(
         windows: [FakeSecureSurfaceWindow]
     ) -> PickySecureSurfaceWindowCoordinator {

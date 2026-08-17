@@ -1217,6 +1217,96 @@
         "ko": { "stringUnit": { "state": "translated", "value": "변경사항이 여기에 표시됩니다" } }
       }
     },
+    "hud.utilityPanel.tab.activity": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Activity" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "활동" } }
+      }
+    },
+    "hud.utilityPanel.tab.artifacts": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Artifacts" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "작업물" } }
+      }
+    },
+    "hud.activity.accessibilityLabel": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Session activity" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "세션 활동" } }
+      }
+    },
+    "hud.activity.empty": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Tool activity will appear here" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "도구 활동이 여기에 표시됩니다" } }
+      }
+    },
+    "hud.activity.filter.all": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "All" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "전체" } }
+      }
+    },
+    "hud.activity.filter.files": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Files" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "파일" } }
+      }
+    },
+    "hud.activity.filter.commands": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Commands" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "커맨드" } }
+      }
+    },
+    "hud.activity.filter.agents": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Agents" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "에이전트" } }
+      }
+    },
+    "hud.activity.filter.failures": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Failures" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "실패" } }
+      }
+    },
+    "hud.activity.badge.running": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Tool running" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "도구 실행 중" } }
+      }
+    },
+    "hud.artifacts.accessibilityLabel": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Session file artifacts" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "세션 파일 작업물" } }
+      }
+    },
+    "hud.artifacts.empty": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Documents, data, and image files newly created by this session appear here" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "세션이 새로 만든 문서·데이터·이미지 파일이 여기에 모여요" } }
+      }
+    },
+    "hud.artifacts.action.open": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Open" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "열기" } }
+      }
+    },
+    "hud.artifacts.action.reveal": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Reveal in Finder" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Finder에서 보기" } }
+      }
+    },
+    "hud.artifacts.action.copyPath": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Copy Path" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "경로 복사" } }
+      }
+    },
     "hud.utilityPanel.state.closed": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Closed" } },

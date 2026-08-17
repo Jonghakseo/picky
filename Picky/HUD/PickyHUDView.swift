@@ -23,6 +23,8 @@ struct PickyHUDView: View {
     /// configuration changes; the conversation card binds to it so it grows or
     /// shrinks within whatever space remains below the dock's top edge.
     @ObservedObject var placement: PickyHUDPlacement = PickyHUDPlacement()
+    @ObservedObject var visibilityStore: PickyHUDVisibilityStore
+    @ObservedObject var actualPanelVisibilityStore: PickyHUDActualPanelVisibilityStore
     var voiceTargetHitTestRegistry: PickyVoiceTargetHitTestRegistry? = nil
     var openPerformanceTracker: PickyHUDOpenPerformanceTracker? = nil
     var onSizeChange: (_ size: CGSize, _ activeSessionID: String?) -> Void = { _, _ in }
@@ -60,7 +62,7 @@ struct PickyHUDView: View {
     @State private var isCommandShortcutHintVisible = false
     @State private var composerFocusRequestID = 0
     @State private var utilityPanelOpenSessionIDs: Set<String> = []
-    @State private var utilityPanelSelections: [String: PickyHUDUtilityPanelTab] = [:]
+    @StateObject private var utilityPanelStateStore = PickySessionUtilityUIStateStore.shared
     @State private var utilityPanelResizeStartHeight: CGFloat?
     @State private var utilityPanelHeightOverride: CGFloat?
     @AppStorage(PickyHUDUtilityPanelPolicy.heightStorageKey) private var storedUtilityPanelHeight = PickyHUDUtilityPanelPolicy.defaultHeight
@@ -168,6 +170,8 @@ struct PickyHUDView: View {
 
     var body: some View {
         let _ = PickyPerf.event("hud_root_body")
+        // Read the published revision so persisted utility tab changes redraw this HUD.
+        let _ = utilityPanelStateStore.revision
         hudContent
             // Measure the HUD's intrinsic content height before the hosting view
             // applies the current panel height. Without this, active streaming
@@ -216,6 +220,15 @@ struct PickyHUDView: View {
             .onChange(of: visibleSessionIDs) { _, _ in
                 openPendingManualPickleIfVisible()
                 openPendingRequestedSessionIfVisible()
+            }
+            .onChange(of: dockSnapshot.activeSessions.map(\.id)) { _, currentSessionIDs in
+                utilityPanelStateStore.removeAll(except: Set(currentSessionIDs))
+            }
+            .onChange(of: visibilityStore.snapshot) { _, _ in
+                markActiveArtifactsSeenIfNeeded()
+            }
+            .onChange(of: actualPanelVisibilityStore.snapshot) { _, _ in
+                markActiveArtifactsSeenIfNeeded()
             }
             .onChange(of: dockSnapshot.openSessionRequest) { _, request in
                 handleOpenSessionRequest(request)
@@ -439,18 +452,12 @@ struct PickyHUDView: View {
                         viewModel: viewModel,
                         selectedTab: utilityPanelTabBinding(for: activeSession.id),
                         height: utilityPanelHeight,
-                        changesBadgeCount: PickySessionDiffPresentation.badgeCount(
-                            for: viewModel.sessionDiffState(for: activeSession.id)
-                        )
-                    ) {
-                        PickySessionChangesView(
-                            sessionID: activeSession.id,
-                            viewModel: viewModel,
-                            isVisible: PickyHUDUtilityPanelPolicy.selectedTab(
-                                for: activeSession.id,
-                                selections: utilityPanelSelections
-                            ) == .changes
-                        )
+                        artifactsBadge: artifactBadge(for: activeSession),
+                        activityBadge: activityBadge(for: activeSession)
+                    )
+                    .onAppear { markArtifactsSeenIfNeeded(for: activeSession) }
+                    .onChange(of: activeSession.artifacts) { _, _ in
+                        markArtifactsSeenIfNeeded(for: activeSession)
                     }
                     // The panel's GeometryReader is greedy; without an explicit width it
                     // stretches past the conversation card when the host proposal is wider.
@@ -539,19 +546,40 @@ struct PickyHUDView: View {
 
     private func utilityPanelTabBinding(for sessionID: String) -> Binding<PickyHUDUtilityPanelTab> {
         Binding(
-            get: {
-                PickyHUDUtilityPanelPolicy.selectedTab(
-                    for: sessionID,
-                    selections: utilityPanelSelections
-                )
-            },
+            get: { utilityPanelStateStore.selectedTab(for: sessionID) },
             set: { selectedTab in
-                utilityPanelSelections = PickyHUDUtilityPanelPolicy.selectionsAfterSelecting(
-                    selectedTab,
-                    sessionID: sessionID,
-                    selections: utilityPanelSelections
-                )
+                utilityPanelStateStore.select(selectedTab, for: sessionID)
+                if let session = viewModel.activeSessionCard(sessionID: sessionID) {
+                    markArtifactsSeenIfNeeded(for: session)
+                }
             }
+        )
+    }
+
+    private func artifactBadge(for session: PickySessionListViewModel.SessionCard) -> PickyHUDUtilityPanelTabBadge? {
+        let count = PickySessionArtifactsPresentation.unseenCount(
+            artifacts: session.artifacts,
+            lastSeenArtifactsAt: utilityPanelStateStore.lastSeenArtifactsAt(for: session.id)
+        )
+        return count > 0 ? .count(count) : nil
+    }
+
+    private func activityBadge(for session: PickySessionListViewModel.SessionCard) -> PickyHUDUtilityPanelTabBadge? {
+        session.activeTool != nil ? .running : nil
+    }
+
+    private func markActiveArtifactsSeenIfNeeded() {
+        guard let activeSession,
+              let session = viewModel.activeSessionCard(sessionID: activeSession.id)
+        else { return }
+        markArtifactsSeenIfNeeded(for: session)
+    }
+
+    private func markArtifactsSeenIfNeeded(for session: PickySessionListViewModel.SessionCard) {
+        utilityPanelStateStore.markArtifactsSeen(
+            for: session.id,
+            isArtifactsTabSelected: utilityPanelStateStore.selectedTab(for: session.id) == .artifacts,
+            isHUDPanelVisible: actualPanelVisibilityStore.isVisible(for: displayID) && isUtilityPanelOpen(sessionID: session.id)
         )
     }
 
@@ -912,7 +940,7 @@ struct PickyHUDView: View {
             ?? "Pickle"
         viewModel.archive(sessionID: sessionID)
         utilityPanelOpenSessionIDs.remove(sessionID)
-        utilityPanelSelections.removeValue(forKey: sessionID)
+        utilityPanelStateStore.remove(sessionID: sessionID)
         if heldSession?.sessionID == sessionID { heldSession = nil }
         if hoverPreviewSessionID == sessionID { hoverPreviewSessionID = nil }
         if suppressedHoverSessionID == sessionID { suppressedHoverSessionID = nil }

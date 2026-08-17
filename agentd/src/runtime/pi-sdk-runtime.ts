@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { homedir } from "node:os";
-import { isAbsolute, resolve } from "node:path";
 import {
   type AgentSession,
   type AgentSessionRuntime,
@@ -15,7 +13,6 @@ import {
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
-import { CombinedAutocompleteProvider, type SlashCommand } from "@earendil-works/pi-tui";
 import type { BuiltPrompt } from "../prompt-builder.js";
 import { ExtensionUiBridge, type DialogMethod } from "../application/extension-ui-bridge.js";
 import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
@@ -66,27 +63,17 @@ import {
   numberValue,
   queueKindFromStreamingBehavior,
   repairDanglingToolCalls,
-  resolveAutocompleteFdPath,
   shouldEmitContextUsageSnapshotAfterPiEvent,
   SkillEchoSuppressionTracker,
   sliceUtf16,
   stringValue,
   textFromPiMessageContent,
 } from "./pi-sdk-runtime-helpers.js";
+import { createBaseAutocompleteProvider, PICKY_BUILTIN_SLASH_COMMANDS } from "./pi-autocomplete-provider.js";
+import { writeFilePathFromRawArgs } from "./write-file-path.js";
 
-// Re-exported so existing importers (e.g. pi-sdk-runtime-rewind.test.ts) keep working.
-export { branchTranscriptFromEntries };
-
-// Picky exposes a curated subset of Pi's BUILTIN_SLASH_COMMANDS. Each entry must be backed by a
-// public AgentSession API call inside handleBuiltinSlashCommand below; do not list a command we
-// cannot actually execute, otherwise users will see autocomplete suggestions that silently fall
-// through to the LLM as plain user text.
-const PICKY_BUILTIN_SLASH_COMMANDS: ReadonlyArray<{ name: string; description: string }> = [
-  { name: "new", description: "Start a fresh Pi session in this Picky card" },
-  { name: "name", description: "Set the Pi session display name (usage: /name <session name>)" },
-  { name: "compact", description: "Manually compact the session context (optional: /compact <focus instructions>)" },
-  { name: "reload", description: "Reload Pi skills, extensions, prompts, and context files" },
-];
+// Re-exported so existing importers keep working.
+export { branchTranscriptFromEntries, writeFilePathFromRawArgs };
 
 // Soft cap for the per-session `slashExpansions` map. A long-lived Pi session can submit many
 // slash commands; in pathological cases Pi may never emit the matching role="custom" echo (e.g.
@@ -1472,31 +1459,6 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     }
   }
 
-  private createBaseAutocompleteProvider(): CombinedAutocompleteProvider {
-    const commands: SlashCommand[] = [
-      ...PICKY_BUILTIN_SLASH_COMMANDS,
-      ...(this.getSessionFilePath() ? [{ name: "tree", description: "Rewind to an earlier message" }] : []),
-      ...this.runtime.session.extensionRunner.getRegisteredCommands().map((command) => ({
-        name: command.invocationName,
-        description: command.description,
-        getArgumentCompletions: command.getArgumentCompletions,
-      })),
-      ...this.runtime.session.promptTemplates.map((template) => ({
-        name: template.name,
-        description: template.description,
-      })),
-      ...this.runtime.session.resourceLoader.getSkills().skills.map((skill) => ({
-        name: `skill:${skill.name}`,
-        description: skill.description,
-      })),
-    ];
-    return new CombinedAutocompleteProvider(
-      commands,
-      this.runtime.session.sessionManager.getCwd(),
-      resolveAutocompleteFdPath(),
-    );
-  }
-
   private createBridge(): ExtensionUiBridge {
     this.autocompleteQueryController?.abort();
     this.autocompleteQueryController = undefined;
@@ -1505,7 +1467,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       disableBlockingDialogs: this.bridgeOptions.disableBlockingDialogs ?? false,
       allowedBlockingDialogMethods: this.bridgeOptions.allowedBlockingDialogMethods,
       autocompleteGeneration: generation,
-      createBaseAutocompleteProvider: () => this.createBaseAutocompleteProvider(),
+      createBaseAutocompleteProvider: () => createBaseAutocompleteProvider(this.runtime, Boolean(this.getSessionFilePath())),
     });
     bridge.on("request", (request, waitsForInput) => {
       const waits = Boolean(waitsForInput);
@@ -1528,17 +1490,4 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private emit(event: RuntimeEvent): void {
     for (const listener of this.listeners) listener(event);
   }
-}
-
-export function writeFilePathFromRawArgs(args: unknown, cwd: string): string | undefined {
-  const rawArgs = asRecord(args);
-  const rawPath = stringValue(rawArgs.path)
-    ?? stringValue(rawArgs.file_path)
-    ?? stringValue(rawArgs.filePath)
-    ?? stringValue(rawArgs.file);
-  if (!rawPath || rawPath.includes("\0")) return undefined;
-  const expanded = rawPath === "~" || rawPath.startsWith("~/")
-    ? `${homedir()}${rawPath.slice(1)}`
-    : rawPath;
-  return resolve(isAbsolute(expanded) ? expanded : cwd, expanded);
 }

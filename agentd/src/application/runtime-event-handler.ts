@@ -1,6 +1,6 @@
 import { extractChangedFilesFromExplicitText, extractSessionLinkArtifacts } from "../artifact-store.js";
 import { mergeArtifacts } from "../domain/artifacts.js";
-import { fileArtifactFromWrite } from "../domain/file-artifacts.js";
+import { fileArtifactFromWrite } from "./file-artifacts.js";
 import { mergeChangedFiles } from "../domain/changed-files.js";
 import { sliceUtf16Safe } from "../domain/safe-truncate.js";
 import { isTerminalStatus } from "../domain/session-status.js";

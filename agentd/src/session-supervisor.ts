@@ -2991,7 +2991,6 @@ export class SessionSupervisor extends EventEmitter {
     await this.store.save(session);
     if (options.emitSession ?? true) this.emit("session", session);
   }
-
   private mustGet(sessionId: string): PickyAgentSession {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`Unknown session: ${sessionId}`);

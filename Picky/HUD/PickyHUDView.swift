@@ -452,8 +452,7 @@ struct PickyHUDView: View {
                         viewModel: viewModel,
                         selectedTab: utilityPanelTabBinding(for: activeSession.id),
                         height: utilityPanelHeight,
-                        artifactsBadge: artifactBadge(for: activeSession),
-                        activityBadge: activityBadge(for: activeSession)
+                        artifactsBadge: artifactBadge(for: activeSession)
                     )
                     .onAppear { markArtifactsSeenIfNeeded(for: activeSession) }
                     .onChange(of: activeSession.artifacts) { _, _ in
@@ -562,10 +561,6 @@ struct PickyHUDView: View {
             lastSeenArtifactsAt: utilityPanelStateStore.lastSeenArtifactsAt(for: session.id)
         )
         return count > 0 ? .count(count) : nil
-    }
-
-    private func activityBadge(for session: PickySessionListViewModel.SessionCard) -> PickyHUDUtilityPanelTabBadge? {
-        session.activeTool != nil ? .running : nil
     }
 
     private func markActiveArtifactsSeenIfNeeded() {

@@ -54,32 +54,7 @@ struct PickyToolHistoryEntry: Identifiable, Equatable {
     let status: PickyToolHistoryStatus
     let durationMs: Int?
     let startedAt: Date?
-    /// Preserves the structured runtime signal even when the display parser cannot
-    /// recover a complete subagent command from a truncated args preview.
-    let isAgentActivity: Bool
     let detail: PickyToolHistoryDetail
-
-    init(
-        id: String,
-        index: Int,
-        name: String,
-        category: PickyToolHistoryCategory,
-        status: PickyToolHistoryStatus,
-        durationMs: Int?,
-        startedAt: Date?,
-        isAgentActivity: Bool = false,
-        detail: PickyToolHistoryDetail
-    ) {
-        self.id = id
-        self.index = index
-        self.name = name
-        self.category = category
-        self.status = status
-        self.durationMs = durationMs
-        self.startedAt = startedAt
-        self.isAgentActivity = isAgentActivity
-        self.detail = detail
-    }
 }
 
 enum PickyToolHistoryScope: Equatable {
@@ -129,7 +104,6 @@ enum PickyToolHistoryRenderer {
             status: status,
             durationMs: durationMs(start: tool.startedAt, end: tool.endedAt),
             startedAt: tool.startedAt,
-            isAgentActivity: tool.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "subagent" || tool.subagentSummary != nil || isSubagentDetail(detail),
             detail: detail
         )
     }
@@ -157,11 +131,6 @@ enum PickyToolHistoryRenderer {
         let value = end.timeIntervalSince(start) * 1000
         guard value.isFinite, value >= 0 else { return nil }
         return Int(value.rounded())
-    }
-
-    private static func isSubagentDetail(_ detail: PickyToolHistoryDetail) -> Bool {
-        if case .subagent = detail { return true }
-        return false
     }
 
     static func displayCategory(for detail: PickyToolHistoryDetail) -> PickyToolHistoryDisplayCategory {

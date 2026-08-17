@@ -15,22 +15,22 @@ struct PickySessionUtilityUIStateStoreTests {
         defer { fixture.defaults.removePersistentDomain(forName: fixture.suiteName) }
 
         let store = PickySessionUtilityUIStateStore(defaults: fixture.defaults)
-        store.select(.progress, for: "pickle-a")
-        store.select(.artifacts, for: "pickle-b")
+        store.select(.artifacts, for: "pickle-a")
 
         let reloaded = PickySessionUtilityUIStateStore(defaults: fixture.defaults)
-        #expect(reloaded.selectedTab(for: "pickle-a") == .progress)
-        #expect(reloaded.selectedTab(for: "pickle-b") == .artifacts)
+        #expect(reloaded.selectedTab(for: "pickle-a") == .artifacts)
         #expect(reloaded.selectedTab(for: "missing") == .terminal)
 
         let stalePayload = try JSONSerialization.data(withJSONObject: [
-            "migrated": ["selectedTabRawValue": "activity"],
-            "stale": ["selectedTabRawValue": "changes"]
+            "activity": ["selectedTabRawValue": "activity"],
+            "progress": ["selectedTabRawValue": "progress"],
+            "changes": ["selectedTabRawValue": "changes"]
         ])
         fixture.defaults.set(stalePayload, forKey: PickySessionUtilityUIStateStore.storageKey)
         let staleReloaded = PickySessionUtilityUIStateStore(defaults: fixture.defaults)
-        #expect(staleReloaded.selectedTab(for: "migrated") == .progress)
-        #expect(staleReloaded.selectedTab(for: "stale") == .terminal)
+        #expect(staleReloaded.selectedTab(for: "activity") == .terminal)
+        #expect(staleReloaded.selectedTab(for: "progress") == .terminal)
+        #expect(staleReloaded.selectedTab(for: "changes") == .terminal)
     }
 
     @Test func markArtifactsSeenRequiresTheSelectedTabAndAnActuallyVisiblePanel() throws {

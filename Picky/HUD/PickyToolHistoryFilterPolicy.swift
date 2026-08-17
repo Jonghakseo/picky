@@ -14,16 +14,6 @@ struct PickyToolHistoryFilterResult: Equatable {
     var visibleCount: Int { entries.count }
 }
 
-enum PickyToolHistoryActivityFilter: CaseIterable, Equatable, Identifiable {
-    case all
-    case files
-    case commands
-    case agents
-    case failures
-
-    var id: Self { self }
-}
-
 enum PickyToolHistoryFilterPolicy {
     static func filter(
         entries: [PickyToolHistoryEntry],
@@ -38,24 +28,6 @@ enum PickyToolHistoryFilterPolicy {
             let matchesQuery = normalizedQuery.isEmpty || searchableText(for: entry)
                 .localizedCaseInsensitiveContains(normalizedQuery)
             return matchesCategory && matchesFailure && matchesQuery
-        }
-    }
-
-    static func activityEntries(
-        from entries: [PickyToolHistoryEntry],
-        filter selectedFilter: PickyToolHistoryActivityFilter
-    ) -> [PickyToolHistoryEntry] {
-        switch selectedFilter {
-        case .all:
-            entries
-        case .files:
-            filter(entries: entries, selectedCategories: [.edit, .write])
-        case .commands:
-            filter(entries: entries, selectedCategories: [.bash])
-        case .agents:
-            entries.filter(\.isAgentActivity)
-        case .failures:
-            filter(entries: entries, failuresOnly: true)
         }
     }
 

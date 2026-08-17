@@ -11,7 +11,6 @@ import SwiftUI
 /// here so their selection, accessibility, and tab treatment stay consistent.
 enum PickyHUDUtilityPanelTab: String, CaseIterable, Hashable, Identifiable {
     case terminal
-    case progress
     case artifacts
 
     var id: Self { self }
@@ -19,7 +18,6 @@ enum PickyHUDUtilityPanelTab: String, CaseIterable, Hashable, Identifiable {
     var title: String {
         switch self {
         case .terminal: L10n.t("hud.utilityPanel.tab.terminal")
-        case .progress: L10n.t("hud.utilityPanel.tab.progress")
         case .artifacts: L10n.t("hud.utilityPanel.tab.artifacts")
         }
     }
@@ -27,7 +25,6 @@ enum PickyHUDUtilityPanelTab: String, CaseIterable, Hashable, Identifiable {
 
 enum PickyHUDUtilityPanelTabBadge: Equatable {
     case count(Int)
-    case running
 }
 
 /// Pure state and layout policy for the Pickle utility panel.
@@ -68,7 +65,7 @@ enum PickyHUDUtilityPanelPolicy {
     }
 }
 
-/// A compact three-tab shell. The terminal stays mounted behind the other tabs
+/// A compact two-tab shell. The terminal stays mounted behind the artifacts tab
 /// so its process and scroll state survive utility-panel navigation.
 struct PickySessionUtilityPanelView: View {
     let session: PickySessionListViewModel.SessionCard
@@ -76,22 +73,19 @@ struct PickySessionUtilityPanelView: View {
     @Binding var selectedTab: PickyHUDUtilityPanelTab
     let height: CGFloat
     let artifactsBadge: PickyHUDUtilityPanelTabBadge?
-    let activityBadge: PickyHUDUtilityPanelTabBadge?
 
     init(
         session: PickySessionListViewModel.SessionCard,
         viewModel: PickySessionListViewModel,
         selectedTab: Binding<PickyHUDUtilityPanelTab>,
         height: CGFloat,
-        artifactsBadge: PickyHUDUtilityPanelTabBadge? = nil,
-        activityBadge: PickyHUDUtilityPanelTabBadge? = nil
+        artifactsBadge: PickyHUDUtilityPanelTabBadge? = nil
     ) {
         self.session = session
         self.viewModel = viewModel
         self._selectedTab = selectedTab
         self.height = height
         self.artifactsBadge = artifactsBadge
-        self.activityBadge = activityBadge
     }
 
     var body: some View {
@@ -111,11 +105,6 @@ struct PickySessionUtilityPanelView: View {
                     .opacity(selectedTab == .terminal ? 1 : 0)
                     .allowsHitTesting(selectedTab == .terminal)
                     .accessibilityHidden(selectedTab != .terminal)
-
-                    PickySessionProgressView(session: session)
-                        .opacity(selectedTab == .progress ? 1 : 0)
-                        .allowsHitTesting(selectedTab == .progress)
-                        .accessibilityHidden(selectedTab != .progress)
 
                     PickySessionArtifactsView(artifacts: session.artifacts)
                         .opacity(selectedTab == .artifacts ? 1 : 0)
@@ -171,7 +160,6 @@ struct PickySessionUtilityPanelView: View {
     private func badge(for tab: PickyHUDUtilityPanelTab) -> PickyHUDUtilityPanelTabBadge? {
         switch tab {
         case .terminal: nil
-        case .progress: activityBadge
         case .artifacts: artifactsBadge
         }
     }
@@ -185,8 +173,6 @@ struct PickySessionUtilityPanelView: View {
                     .font(PickyHUDTypography.metaSemibold)
                     .foregroundColor(DS.Colors.accentText)
             }
-        case .running:
-            PickyHUDUtilityPanelRunningBadge()
         }
     }
 
@@ -197,31 +183,6 @@ struct PickySessionUtilityPanelView: View {
                 RoundedRectangle(cornerRadius: DS.CornerRadius.panel, style: .continuous)
                     .stroke(DS.Colors.borderSubtle, lineWidth: 0.5)
             )
-    }
-}
-
-private struct PickyHUDUtilityPanelRunningBadge: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isPulsing = false
-
-    var body: some View {
-        Image(systemName: "circle.fill")
-            .font(PickyHUDTypography.minimum)
-            .foregroundColor(DS.Colors.info)
-            .opacity(isPulsing ? 0.48 : 1)
-            .accessibilityLabel(L10n.t("hud.progress.badge.running"))
-            .onAppear { updatePulse() }
-            .onChange(of: reduceMotion) { _, _ in updatePulse() }
-    }
-
-    private func updatePulse() {
-        guard !reduceMotion else {
-            isPulsing = false
-            return
-        }
-        withAnimation(.easeInOut(duration: DS.Animation.fast).repeatForever(autoreverses: true)) {
-            isPulsing = true
-        }
     }
 }
 

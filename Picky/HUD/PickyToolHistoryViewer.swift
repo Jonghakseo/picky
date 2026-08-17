@@ -11,27 +11,12 @@ import Combine
 import SwiftUI
 
 /// Resolves paths recorded by file tools without consulting the file system.
-/// The detached history viewer has no cwd and therefore keeps relative paths
-/// display-only; embedded session activity passes its cwd to make those paths actionable.
-enum PickyToolHistoryEntryContext: Equatable {
-    case detachedViewer
-    case embeddedActivity
-
-    var allowsFileReveal: Bool { self == .embeddedActivity }
-}
-
+/// Relative paths remain display-only because the tool history has no cwd context.
 enum PickyToolHistoryFilePathPolicy {
-    static func urlToOpen(for path: String, cwd: String? = nil) -> URL? {
-        let trimmedPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedPath.isEmpty else { return nil }
-        let expandedPath = (trimmedPath as NSString).expandingTildeInPath
-        if (expandedPath as NSString).isAbsolutePath {
-            return URL(fileURLWithPath: expandedPath).standardizedFileURL
-        }
-        guard let cwd = cwd?.trimmingCharacters(in: .whitespacesAndNewlines), !cwd.isEmpty else { return nil }
-        return URL(fileURLWithPath: cwd, isDirectory: true)
-            .appendingPathComponent(expandedPath)
-            .standardizedFileURL
+    static func urlToOpen(for path: String) -> URL? {
+        let expandedPath = (path as NSString).expandingTildeInPath
+        guard (expandedPath as NSString).isAbsolutePath else { return nil }
+        return URL(fileURLWithPath: expandedPath)
     }
 }
 
@@ -426,19 +411,7 @@ struct PickyToolHistoryViewerWindowView: View {
 
 struct PickyToolHistoryEntryView: View {
     let entry: PickyToolHistoryEntry
-    let cwd: String?
-    let context: PickyToolHistoryEntryContext
     @State private var isResultExpanded = false
-
-    init(
-        entry: PickyToolHistoryEntry,
-        cwd: String? = nil,
-        context: PickyToolHistoryEntryContext = .detachedViewer
-    ) {
-        self.entry = entry
-        self.cwd = cwd
-        self.context = context
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -590,7 +563,7 @@ struct PickyToolHistoryEntryView: View {
 
     @ViewBuilder
     private func filePath(_ path: String) -> some View {
-        if let url = PickyToolHistoryFilePathPolicy.urlToOpen(for: path, cwd: cwd) {
+        if let url = PickyToolHistoryFilePathPolicy.urlToOpen(for: path) {
             Button {
                 openFile(at: url)
             } label: {
@@ -603,11 +576,6 @@ struct PickyToolHistoryEntryView: View {
                 Button(L10n.t("hud.toolHistory.file.copyPath")) {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(path, forType: .string)
-                }
-                if context.allowsFileReveal {
-                    Button(L10n.t("hud.artifacts.action.reveal")) {
-                        NSWorkspace.shared.activateFileViewerSelecting([url])
-                    }
                 }
             }
         } else {

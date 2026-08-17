@@ -29,7 +29,6 @@ final class PickySessionUtilityUIStateStore: ObservableObject {
 
     func selectedTab(for sessionID: String) -> PickyHUDUtilityPanelTab {
         guard let rawValue = records[sessionID]?.selectedTabRawValue else { return .terminal }
-        if rawValue == "activity" { return .progress }
         return PickyHUDUtilityPanelTab(rawValue: rawValue) ?? .terminal
     }
 

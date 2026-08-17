@@ -9,9 +9,10 @@ import Testing
 @testable import Picky
 
 struct PickyHUDUtilityPanelPolicyTests {
-    @Test func utilityPanelTabsExposeTerminalProgressAndArtifacts() {
-        #expect(PickyHUDUtilityPanelTab.allCases == [.terminal, .progress, .artifacts])
+    @Test func utilityPanelTabsExposeTerminalAndArtifacts() {
+        #expect(PickyHUDUtilityPanelTab.allCases == [.terminal, .artifacts])
         #expect(PickyHUDUtilityPanelTab(rawValue: "activity") == nil)
+        #expect(PickyHUDUtilityPanelTab(rawValue: "progress") == nil)
         #expect(PickyHUDUtilityPanelTab(rawValue: "changes") == nil)
         #expect(PickyHUDUtilityPanelTab(rawValue: "unknown") == nil)
     }

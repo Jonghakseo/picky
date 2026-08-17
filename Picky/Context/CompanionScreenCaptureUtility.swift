@@ -74,7 +74,24 @@ enum CompanionScreenCaptureUtility {
         let displaySelectionSnapshot: PickyScreenContextDisplaySelectionSnapshot?
     }
 
-    static let annotationSceneFingerprintMaximumDimension = 256
+    /// The captured CGImage is immutable and only read during postprocessing;
+    /// boxing lets that work run off the main actor without a data race.
+    private struct CapturedImage: @unchecked Sendable {
+        let image: CGImage
+    }
+
+    private struct CursorMarker: Sendable {
+        let screenshotX: Double
+        let screenshotY: Double
+    }
+
+    private struct ScreenshotPostprocessingResult: Sendable {
+        let annotationSceneFingerprint: PickyAnnotationSceneFingerprint
+        let jpegData: Data
+        let annotationColorSampleGrid: PickyScreenshotColorSampleGrid?
+    }
+
+    nonisolated static let annotationSceneFingerprintMaximumDimension = 256
 
     static func shouldExcludeWindowFromContextCapture(_ window: NSWindow) -> Bool {
         window is PickyScreenCaptureExcludedWindow
@@ -254,13 +271,6 @@ enum CompanionScreenCaptureUtility {
                 displayWidth: display.width,
                 displayHeight: display.height
             )
-            guard let annotationSceneFingerprint = PickyAnnotationSceneFingerprint.make(
-                from: cgImage,
-                width: fingerprintSize.width,
-                height: fingerprintSize.height
-            ) else {
-                continue
-            }
 
             let cursorContext: PickyCursorContext?
             if isCursorScreen {
@@ -283,11 +293,23 @@ enum CompanionScreenCaptureUtility {
                 cursorContext = nil
             }
 
-            let modelContextImage = cursorContext.map { imageWithCursorMarker(on: cgImage, cursor: $0) } ?? cgImage
-            guard let jpegData = NSBitmapImageRep(cgImage: modelContextImage)
-                    .representation(using: .jpeg, properties: [.compressionFactor: 0.8]) else {
-                continue
+            let cursorMarker = cursorContext.map {
+                CursorMarker(
+                    screenshotX: $0.screenshotPixel.x,
+                    screenshotY: $0.screenshotPixel.y
+                )
             }
+            let capturedImage = CapturedImage(image: cgImage)
+            let postprocessed = await Task.detached(priority: .userInitiated) {
+                PickyPerf.interval("screenshot_postprocess") {
+                    CompanionScreenCaptureUtility.postprocess(
+                        capturedImage: capturedImage,
+                        cursorMarker: cursorMarker,
+                        fingerprintSize: fingerprintSize
+                    )
+                }
+            }.value
+            guard let postprocessed else { continue }
 
             let screenLabel = contextScreenLabel(
                 scope: scope,
@@ -299,7 +321,7 @@ enum CompanionScreenCaptureUtility {
 
             capturedScreens.append(CompanionScreenCapture(
                 displayID: display.displayID,
-                imageData: jpegData,
+                imageData: postprocessed.jpegData,
                 label: screenLabel,
                 isCursorScreen: isCursorScreen,
                 displayWidthInPoints: Int(displayFrame.width),
@@ -308,8 +330,8 @@ enum CompanionScreenCaptureUtility {
                 screenshotWidthInPixels: configuration.width,
                 screenshotHeightInPixels: configuration.height,
                 cursor: cursorContext,
-                annotationColorSampleGrid: PickyScreenshotColorSampleGrid.make(from: cgImage),
-                annotationSceneFingerprint: annotationSceneFingerprint
+                annotationColorSampleGrid: postprocessed.annotationColorSampleGrid,
+                annotationSceneFingerprint: postprocessed.annotationSceneFingerprint
             ))
         }
 
@@ -362,7 +384,34 @@ enum CompanionScreenCaptureUtility {
         }
     }
 
-    private static func imageWithCursorMarker(on image: CGImage, cursor: PickyCursorContext) -> CGImage {
+    nonisolated private static func postprocess(
+        capturedImage: CapturedImage,
+        cursorMarker: CursorMarker?,
+        fingerprintSize: (width: Int, height: Int)
+    ) -> ScreenshotPostprocessingResult? {
+        let image = capturedImage.image
+        guard let annotationSceneFingerprint = PickyAnnotationSceneFingerprint.make(
+            from: image,
+            width: fingerprintSize.width,
+            height: fingerprintSize.height
+        ) else {
+            return nil
+        }
+
+        let modelContextImage = cursorMarker.map { imageWithCursorMarker(on: image, cursor: $0) } ?? image
+        guard let jpegData = NSBitmapImageRep(cgImage: modelContextImage)
+                .representation(using: .jpeg, properties: [.compressionFactor: 0.8]) else {
+            return nil
+        }
+
+        return ScreenshotPostprocessingResult(
+            annotationSceneFingerprint: annotationSceneFingerprint,
+            jpegData: jpegData,
+            annotationColorSampleGrid: PickyScreenshotColorSampleGrid.make(from: image)
+        )
+    }
+
+    nonisolated private static func imageWithCursorMarker(on image: CGImage, cursor: CursorMarker) -> CGImage {
         let width = image.width
         let height = image.height
         guard let context = CGContext(
@@ -380,8 +429,8 @@ enum CompanionScreenCaptureUtility {
         context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
 
         let center = CGPoint(
-            x: min(max(cursor.screenshotPixel.x, 0), Double(width - 1)),
-            y: min(max(Double(height) - cursor.screenshotPixel.y, 0), Double(height - 1))
+            x: min(max(cursor.screenshotX, 0), Double(width - 1)),
+            y: min(max(Double(height) - cursor.screenshotY, 0), Double(height - 1))
         )
         let markerRect = CGRect(x: center.x - 7, y: center.y - 7, width: 14, height: 14)
         context.setStrokeColor(CGColor(gray: 0, alpha: 0.9))

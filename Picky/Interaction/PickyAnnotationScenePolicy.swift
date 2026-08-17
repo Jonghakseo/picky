@@ -64,7 +64,7 @@ struct PickyAnnotationSceneFingerprint: Equatable, Sendable {
 
     /// Produces the common single-resample luminance representation used for both
     /// capture-time baselines and live annotation-scene samples.
-    static func make(from image: CGImage, width: Int, height: Int) -> Self? {
+    nonisolated static func make(from image: CGImage, width: Int, height: Int) -> Self? {
         var luminance = [UInt8](repeating: 0, count: width * height)
         guard width > 0,
               height > 0,

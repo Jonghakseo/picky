@@ -46,7 +46,7 @@ struct PickyScreenshotColorSampleGrid: Equatable, Sendable {
         return make(from: image, maximumDimension: maximumDimension)
     }
 
-    static func make(from image: CGImage, maximumDimension: Int = 64) -> Self? {
+    nonisolated static func make(from image: CGImage, maximumDimension: Int = 64) -> Self? {
         let scale = min(1, Double(maximumDimension) / Double(max(image.width, image.height)))
         let targetWidth = max(1, Int((Double(image.width) * scale).rounded()))
         let targetHeight = max(1, Int((Double(image.height) * scale).rounded()))

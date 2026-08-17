@@ -29,6 +29,7 @@ final class PickySessionUtilityUIStateStore: ObservableObject {
 
     func selectedTab(for sessionID: String) -> PickyHUDUtilityPanelTab {
         guard let rawValue = records[sessionID]?.selectedTabRawValue else { return .terminal }
+        if rawValue == "activity" { return .progress }
         return PickyHUDUtilityPanelTab(rawValue: rawValue) ?? .terminal
     }
 
@@ -48,11 +49,11 @@ final class PickySessionUtilityUIStateStore: ObservableObject {
     /// clears the artifact badge accidentally.
     func markArtifactsSeen(
         for sessionID: String,
-        at date: Date = Date(),
+        at date: Date?,
         isArtifactsTabSelected: Bool,
         isHUDPanelVisible: Bool
     ) {
-        guard isArtifactsTabSelected, isHUDPanelVisible else { return }
+        guard isArtifactsTabSelected, isHUDPanelVisible, let date else { return }
         var record = records[sessionID] ?? Record(selectedTabRawValue: PickyHUDUtilityPanelTab.artifacts.rawValue, lastSeenArtifactsAt: nil)
         guard record.lastSeenArtifactsAt.map({ $0 < date }) ?? true else { return }
         record.lastSeenArtifactsAt = date

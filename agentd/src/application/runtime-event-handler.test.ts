@@ -235,12 +235,8 @@ describe("RuntimeEventHandler", () => {
     ]);
   });
 
-  it("captures file artifacts from write success, waiting-for-input, and terminal answer flushes", async () => {
-    const existingPaths = new Set([
-      "/workspace/reports/waiting.md",
-      "/workspace/reports/done.pdf",
-    ]);
-    const harness = inputHarness({ cwd: "/workspace" }, (path) => existingPaths.has(path));
+  it("captures file artifacts only from write successes and re-arms same-path updates", async () => {
+    const harness = inputHarness({ cwd: "/workspace" });
     vi.useFakeTimers();
     try {
       vi.setSystemTime(new Date("2026-08-15T10:00:00.000Z"));
@@ -252,7 +248,6 @@ describe("RuntimeEventHandler", () => {
         filePath: "/workspace/reports/write.csv",
         fileExistedBefore: false,
       });
-      vi.setSystemTime(new Date("2026-08-15T10:00:01.000Z"));
       await harness.handler.handle("pickle-1", {
         type: "tool",
         toolCallId: "write-report-again",
@@ -261,24 +256,25 @@ describe("RuntimeEventHandler", () => {
         filePath: "/workspace/reports/write.csv",
         fileExistedBefore: true,
       });
+      vi.setSystemTime(new Date("2026-08-15T09:59:59.000Z"));
       await harness.handler.handle("pickle-1", {
-        type: "status",
-        status: "waiting_for_input",
-        finalAnswer: "Created `reports/waiting.md`.",
+        type: "tool",
+        toolCallId: "write-report-after-clock-rollback",
+        name: "write",
+        status: "succeeded",
+        filePath: "/workspace/reports/write.csv",
+        fileExistedBefore: true,
       });
       await harness.handler.handle("pickle-1", {
         type: "status",
         status: "completed",
-        finalAnswer: "Saved `reports/done.pdf`.",
+        finalAnswer: "An existing local PDF is at `/workspace/reports/done.pdf`.",
       });
 
-      expect(harness.current().artifacts).toEqual(expect.arrayContaining([
-        expect.objectContaining({ kind: "file", path: "/workspace/reports/write.csv", updatedAt: "2026-08-15T10:00:01.000Z" }),
-        expect.objectContaining({ kind: "file", path: "/workspace/reports/waiting.md" }),
-        expect.objectContaining({ kind: "file", path: "/workspace/reports/done.pdf" }),
-      ]));
-      expect(harness.current().artifacts).toHaveLength(3);
-      expect(harness.emitArtifactUpdated).toHaveBeenCalledTimes(4);
+      expect(harness.current().artifacts).toEqual([
+        expect.objectContaining({ kind: "file", path: "/workspace/reports/write.csv", updatedAt: "2026-08-15T10:00:00.002Z" }),
+      ]);
+      expect(harness.emitArtifactUpdated).toHaveBeenCalledTimes(3);
     } finally {
       vi.useRealTimers();
     }
@@ -318,7 +314,7 @@ describe("RuntimeEventHandler", () => {
   });
 });
 
-function inputHarness(initial: Partial<PickyAgentSession> = {}, fileExists: (path: string) => boolean = () => false) {
+function inputHarness(initial: Partial<PickyAgentSession> = {}) {
   let current = { ...session(), ...initial };
   const patchSession = vi.fn(async (_sessionId: string, patch: Partial<PickyAgentSession>) => {
     current = { ...current, ...patch };
@@ -333,7 +329,6 @@ function inputHarness(initial: Partial<PickyAgentSession> = {}, fileExists: (pat
     patchSession,
     emitToolActivityUpdated: () => {},
     emitArtifactUpdated,
-    fileExists,
     updateTodoState: async () => {},
     appendLog: async () => {},
     materializeTerminalArtifacts,

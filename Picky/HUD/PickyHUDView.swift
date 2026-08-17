@@ -578,6 +578,7 @@ struct PickyHUDView: View {
     private func markArtifactsSeenIfNeeded(for session: PickySessionListViewModel.SessionCard) {
         utilityPanelStateStore.markArtifactsSeen(
             for: session.id,
+            at: PickySessionArtifactsPresentation.latestUpdatedAt(artifacts: session.artifacts),
             isArtifactsTabSelected: utilityPanelStateStore.selectedTab(for: session.id) == .artifacts,
             isHUDPanelVisible: actualPanelVisibilityStore.isVisible(for: displayID) && isUtilityPanelOpen(sessionID: session.id)
         )

@@ -3,15 +3,41 @@
 //  PickyTests
 //
 
+import AppKit
 import SwiftUI
 import Testing
 @testable import Picky
 
 struct PickyHUDUtilityPanelPolicyTests {
-    @Test func utilityPanelTabsExposeTerminalActivityAndArtifacts() {
-        #expect(PickyHUDUtilityPanelTab.allCases == [.terminal, .activity, .artifacts])
+    @Test func utilityPanelTabsExposeTerminalProgressAndArtifacts() {
+        #expect(PickyHUDUtilityPanelTab.allCases == [.terminal, .progress, .artifacts])
+        #expect(PickyHUDUtilityPanelTab(rawValue: "activity") == nil)
         #expect(PickyHUDUtilityPanelTab(rawValue: "changes") == nil)
         #expect(PickyHUDUtilityPanelTab(rawValue: "unknown") == nil)
+    }
+
+    @Test func hiddenTerminalRequestsFocusOnlyForTheTerminalTab() {
+        #expect(PickySessionExtendedTerminalFocusPolicy.shouldRequestFocus(isFocusEligible: true))
+        #expect(!PickySessionExtendedTerminalFocusPolicy.shouldRequestFocus(isFocusEligible: false))
+    }
+
+    @Test @MainActor func switchingAwayFromTerminalResignsTerminalOrDescendantFocus() {
+        let panel = PickyHUDPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 240, height: 120),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        let terminal = PickySwiftTermView(frame: panel.contentView?.bounds ?? .zero)
+        let descendant = NSTextView(frame: terminal.bounds)
+        terminal.addSubview(descendant)
+        panel.contentView = terminal
+        defer { panel.close() }
+
+        #expect(panel.makeFirstResponder(descendant))
+        #expect(PickySessionExtendedTerminalFocusPolicy.terminalOwnsFirstResponder(panel.firstResponder, terminalView: terminal))
+        #expect(PickySessionExtendedTerminalFocusPolicy.resignTerminalFocusIfIneligible(terminal, isFocusEligible: false))
+        #expect(!PickySessionExtendedTerminalFocusPolicy.terminalOwnsFirstResponder(panel.firstResponder, terminalView: terminal))
     }
 
     @Test func panelHeightClampsToMinimumAndAvailableHeightFraction() {

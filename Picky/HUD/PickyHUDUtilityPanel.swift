@@ -11,7 +11,7 @@ import SwiftUI
 /// here so their selection, accessibility, and tab treatment stay consistent.
 enum PickyHUDUtilityPanelTab: String, CaseIterable, Hashable, Identifiable {
     case terminal
-    case activity
+    case progress
     case artifacts
 
     var id: Self { self }
@@ -19,7 +19,7 @@ enum PickyHUDUtilityPanelTab: String, CaseIterable, Hashable, Identifiable {
     var title: String {
         switch self {
         case .terminal: L10n.t("hud.utilityPanel.tab.terminal")
-        case .activity: L10n.t("hud.utilityPanel.tab.activity")
+        case .progress: L10n.t("hud.utilityPanel.tab.progress")
         case .artifacts: L10n.t("hud.utilityPanel.tab.artifacts")
         }
     }
@@ -105,16 +105,17 @@ struct PickySessionUtilityPanelView: View {
                         session: session,
                         viewModel: viewModel,
                         height: proxy.size.height,
-                        showsPanelChrome: false
+                        showsPanelChrome: false,
+                        isFocusEligible: selectedTab == .terminal
                     )
                     .opacity(selectedTab == .terminal ? 1 : 0)
                     .allowsHitTesting(selectedTab == .terminal)
                     .accessibilityHidden(selectedTab != .terminal)
 
-                    PickySessionActivityView(session: session)
-                        .opacity(selectedTab == .activity ? 1 : 0)
-                        .allowsHitTesting(selectedTab == .activity)
-                        .accessibilityHidden(selectedTab != .activity)
+                    PickySessionProgressView(session: session)
+                        .opacity(selectedTab == .progress ? 1 : 0)
+                        .allowsHitTesting(selectedTab == .progress)
+                        .accessibilityHidden(selectedTab != .progress)
 
                     PickySessionArtifactsView(artifacts: session.artifacts)
                         .opacity(selectedTab == .artifacts ? 1 : 0)
@@ -170,7 +171,7 @@ struct PickySessionUtilityPanelView: View {
     private func badge(for tab: PickyHUDUtilityPanelTab) -> PickyHUDUtilityPanelTabBadge? {
         switch tab {
         case .terminal: nil
-        case .activity: activityBadge
+        case .progress: activityBadge
         case .artifacts: artifactsBadge
         }
     }
@@ -208,7 +209,7 @@ private struct PickyHUDUtilityPanelRunningBadge: View {
             .font(PickyHUDTypography.minimum)
             .foregroundColor(DS.Colors.info)
             .opacity(isPulsing ? 0.48 : 1)
-            .accessibilityLabel(L10n.t("hud.activity.badge.running"))
+            .accessibilityLabel(L10n.t("hud.progress.badge.running"))
             .onAppear { updatePulse() }
             .onChange(of: reduceMotion) { _, _ in updatePulse() }
     }

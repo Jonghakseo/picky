@@ -1217,64 +1217,10 @@
         "ko": { "stringUnit": { "state": "translated", "value": "변경사항이 여기에 표시됩니다" } }
       }
     },
-    "hud.utilityPanel.tab.activity": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Activity" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "활동" } }
-      }
-    },
     "hud.utilityPanel.tab.artifacts": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Artifacts" } },
         "ko": { "stringUnit": { "state": "translated", "value": "작업물" } }
-      }
-    },
-    "hud.activity.accessibilityLabel": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Session activity" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "세션 활동" } }
-      }
-    },
-    "hud.activity.empty": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Tool activity will appear here" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "도구 활동이 여기에 표시됩니다" } }
-      }
-    },
-    "hud.activity.filter.all": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "All" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "전체" } }
-      }
-    },
-    "hud.activity.filter.files": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Files" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "파일" } }
-      }
-    },
-    "hud.activity.filter.commands": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Commands" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "커맨드" } }
-      }
-    },
-    "hud.activity.filter.agents": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Agents" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "에이전트" } }
-      }
-    },
-    "hud.activity.filter.failures": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Failures" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "실패" } }
-      }
-    },
-    "hud.activity.badge.running": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Tool running" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "도구 실행 중" } }
       }
     },
     "hud.artifacts.accessibilityLabel": {
@@ -1285,8 +1231,8 @@
     },
     "hud.artifacts.empty": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Documents, data, and image files newly created by this session appear here" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "세션이 새로 만든 문서·데이터·이미지 파일이 여기에 모여요" } }
+        "en": {"stringUnit": {"state": "translated", "value": "Files Pi saved with its file-writing tool—documents, data, and images—appear here"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "Pi가 파일 저장 도구로 저장한 문서·데이터·이미지가 여기에 모여요"}}
       }
     },
     "hud.artifacts.action.open": {
@@ -9092,6 +9038,216 @@
             "value": "Picky의 로컬 Edge TTS 서비스가 HTTP %lld 오류로 실패했습니다."
           }
         }
+      }
+    },
+    "hud.utilityPanel.tab.progress": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Progress"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "진행"}}
+      }
+    },
+    "hud.progress.accessibilityLabel": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Session progress"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "세션 진행 상황"}}
+      }
+    },
+    "hud.progress.recent": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Recent progress"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "최근 진행"}}
+      }
+    },
+    "hud.progress.current": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Current work"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "현재 작업"}}
+      }
+    },
+    "hud.progress.idle": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Recent work is complete"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "최근 작업이 완료됐어요"}}
+      }
+    },
+    "hud.progress.summary.files": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "%lld files"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "파일 %lld개"}}
+      }
+    },
+    "hud.progress.summary.commands": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "%lld commands"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "명령 %lld개"}}
+      }
+    },
+    "hud.progress.summary.agents": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "%lld agents"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "에이전트 %lld개"}}
+      }
+    },
+    "hud.progress.keyProgress": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Key progress"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "주요 진행"}}
+      }
+    },
+    "hud.progress.investigation": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Investigation %lld"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "조사 %lld건"}}
+      }
+    },
+    "hud.progress.details.show": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Show %lld detailed activities"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "세부 활동 %lld건 보기"}}
+      }
+    },
+    "hud.progress.details.hide": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Hide detailed activities"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "세부 활동 숨기기"}}
+      }
+    },
+    "hud.progress.empty": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Important progress will appear here"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "중요한 진행이 여기에 표시됩니다"}}
+      }
+    },
+    "hud.progress.entry.edit": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Edited %@"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "%@ 편집"}}
+      }
+    },
+    "hud.progress.entry.write": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Wrote %@"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "%@ 작성"}}
+      }
+    },
+    "hud.progress.entry.command": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Command"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "명령 실행"}}
+      }
+    },
+    "hud.progress.entry.agent": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Agent %@"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "에이전트 %@"}}
+      }
+    },
+    "hud.progress.entry.agentUnknown": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Agent activity"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "에이전트 작업"}}
+      }
+    },
+    "hud.progress.entry.file": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "file"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "파일"}}
+      }
+    },
+    "hud.progress.status.running": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Running"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "실행 중"}}
+      }
+    },
+    "hud.progress.status.succeeded": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Completed"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "완료"}}
+      }
+    },
+    "hud.progress.status.failed": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Failed"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "실패"}}
+      }
+    },
+    "hud.progress.badge.running": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Tool running"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "도구 실행 중"}}
+      }
+    },
+    "hud.progress.status.working": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Working"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "작업 중"}}
+      }
+    },
+    "hud.progress.status.needsInput": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Needs input"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "입력 대기"}}
+      }
+    },
+    "hud.progress.status.blocked": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Blocked"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "차단됨"}}
+      }
+    },
+    "hud.progress.status.queued": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Queued"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "대기 중"}}
+      }
+    },
+    "hud.progress.status.cancelled": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Cancelled"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "취소됨"}}
+      }
+    },
+    "hud.progress.working": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Pi is working between steps"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "Pi가 다음 작업을 준비하고 있어요"}}
+      }
+    },
+    "hud.progress.needsInput": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Waiting for your response"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "응답을 기다리고 있어요"}}
+      }
+    },
+    "hud.progress.sessionFailed": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "The session failed"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "세션이 실패했어요"}}
+      }
+    },
+    "hud.progress.blocked": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "The session is blocked"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "세션이 차단됐어요"}}
+      }
+    },
+    "hud.progress.queued": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Waiting to start"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "시작을 기다리고 있어요"}}
+      }
+    },
+    "hud.progress.cancelled": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "The session was cancelled"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "세션이 취소됐어요"}}
+      }
+    },
+    "hud.progress.moreInDetails": {
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "%lld older items are in details"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "이전 항목 %lld건은 세부 활동에서 볼 수 있어요"}}
       }
     }
   },

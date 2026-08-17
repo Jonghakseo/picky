@@ -15,19 +15,21 @@ struct PickySessionUtilityUIStateStoreTests {
         defer { fixture.defaults.removePersistentDomain(forName: fixture.suiteName) }
 
         let store = PickySessionUtilityUIStateStore(defaults: fixture.defaults)
-        store.select(.activity, for: "pickle-a")
+        store.select(.progress, for: "pickle-a")
         store.select(.artifacts, for: "pickle-b")
 
         let reloaded = PickySessionUtilityUIStateStore(defaults: fixture.defaults)
-        #expect(reloaded.selectedTab(for: "pickle-a") == .activity)
+        #expect(reloaded.selectedTab(for: "pickle-a") == .progress)
         #expect(reloaded.selectedTab(for: "pickle-b") == .artifacts)
         #expect(reloaded.selectedTab(for: "missing") == .terminal)
 
         let stalePayload = try JSONSerialization.data(withJSONObject: [
+            "migrated": ["selectedTabRawValue": "activity"],
             "stale": ["selectedTabRawValue": "changes"]
         ])
         fixture.defaults.set(stalePayload, forKey: PickySessionUtilityUIStateStore.storageKey)
         let staleReloaded = PickySessionUtilityUIStateStore(defaults: fixture.defaults)
+        #expect(staleReloaded.selectedTab(for: "migrated") == .progress)
         #expect(staleReloaded.selectedTab(for: "stale") == .terminal)
     }
 
@@ -92,6 +94,21 @@ struct PickySessionUtilityUIStateStoreTests {
         #expect(store.lastSeenArtifactsAt(for: "pickle-a") == nil)
     }
 
+    @Test func openingAnEmptyArtifactsTabDoesNotHideAnOlderDelayedArtifact() throws {
+        let fixture = try makeDefaults()
+        defer { fixture.defaults.removePersistentDomain(forName: fixture.suiteName) }
+        let store = PickySessionUtilityUIStateStore(defaults: fixture.defaults)
+        let delayedArtifact = Date(timeIntervalSince1970: 100)
+
+        store.markArtifactsSeen(for: "pickle-a", at: nil, isArtifactsTabSelected: true, isHUDPanelVisible: true)
+        store.select(.terminal, for: "pickle-a")
+        #expect(store.lastSeenArtifactsAt(for: "pickle-a") == nil)
+        #expect(PickySessionArtifactsPresentation.unseenCount(
+            artifacts: [PickyArtifact(id: "delayed", kind: "file", title: "Delayed", path: "/tmp/delayed.pdf", url: nil, updatedAt: delayedArtifact)],
+            lastSeenArtifactsAt: store.lastSeenArtifactsAt(for: "pickle-a")
+        ) == 1)
+    }
+
     @Test func artifactsPresentationFiltersSortsAndCountsUnseenFiles() {
         let older = Date(timeIntervalSince1970: 100)
         let newer = Date(timeIntervalSince1970: 200)
@@ -102,6 +119,7 @@ struct PickySessionUtilityUIStateStoreTests {
         ]
 
         #expect(PickySessionArtifactsPresentation.fileArtifacts(from: artifacts).map(\.id) == ["new-file", "old-file"])
+        #expect(PickySessionArtifactsPresentation.latestUpdatedAt(artifacts: artifacts) == newer)
         #expect(PickySessionArtifactsPresentation.unseenCount(artifacts: artifacts, lastSeenArtifactsAt: nil) == 2)
         #expect(PickySessionArtifactsPresentation.unseenCount(artifacts: artifacts, lastSeenArtifactsAt: older) == 1)
         #expect(PickySessionArtifactsPresentation.unseenCount(artifacts: artifacts, lastSeenArtifactsAt: newer) == 0)

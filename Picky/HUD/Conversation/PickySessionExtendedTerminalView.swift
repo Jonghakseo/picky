@@ -179,11 +179,30 @@ final class PickyShellTerminalModel: ObservableObject, PickyTerminalProcessEvent
     }
 }
 
+enum PickySessionExtendedTerminalFocusPolicy {
+    static func shouldRequestFocus(isFocusEligible: Bool) -> Bool { isFocusEligible }
+
+    static func terminalOwnsFirstResponder(_ firstResponder: NSResponder?, terminalView: NSView) -> Bool {
+        guard let responderView = firstResponder as? NSView else { return false }
+        return responderView === terminalView || responderView.isDescendant(of: terminalView)
+    }
+
+    @discardableResult
+    static func resignTerminalFocusIfIneligible(_ terminalView: NSView, isFocusEligible: Bool) -> Bool {
+        guard !isFocusEligible,
+              let window = terminalView.window,
+              terminalOwnsFirstResponder(window.firstResponder, terminalView: terminalView)
+        else { return false }
+        return window.makeFirstResponder(nil)
+    }
+}
+
 struct PickySessionExtendedTerminalView: View {
     let session: PickySessionListViewModel.SessionCard
     @ObservedObject var viewModel: PickySessionListViewModel
     var height: CGFloat = PickyHUDUtilityPanelPolicy.defaultHeight
     var showsPanelChrome = true
+    var isFocusEligible = true
 
     var body: some View {
         PickySessionExtendedTerminalContentView(
@@ -191,7 +210,8 @@ struct PickySessionExtendedTerminalView: View {
             viewModel: viewModel,
             terminalSession: viewModel.shellTerminalSession(for: session),
             height: height,
-            showsPanelChrome: showsPanelChrome
+            showsPanelChrome: showsPanelChrome,
+            isFocusEligible: isFocusEligible
         )
     }
 }
@@ -202,6 +222,7 @@ private struct PickySessionExtendedTerminalContentView: View {
     @ObservedObject var terminalSession: PickyShellTerminalSession
     let height: CGFloat
     let showsPanelChrome: Bool
+    let isFocusEligible: Bool
     @State private var attachmentID = UUID().uuidString
 
     private var isActiveAttachment: Bool {
@@ -250,7 +271,7 @@ private struct PickySessionExtendedTerminalContentView: View {
     @ViewBuilder
     private var terminalBody: some View {
         if isActiveAttachment {
-            PickyShellTerminalViewRepresentable(terminalSession: terminalSession)
+            PickyShellTerminalViewRepresentable(terminalSession: terminalSession, isFocusEligible: isFocusEligible)
                 .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
@@ -303,25 +324,40 @@ private struct PickySessionExtendedTerminalContentView: View {
 
 private struct PickyShellTerminalViewRepresentable: NSViewRepresentable {
     @ObservedObject var terminalSession: PickyShellTerminalSession
+    let isFocusEligible: Bool
+
+    final class Coordinator {
+        var isFocusEligible = false
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> PickySwiftTermView {
         let terminalView = terminalSession.terminalView
         terminalView.processDelegate = terminalSession.model.processDelegate
         terminalView.configurePickyAppearance(fontScale: terminalSession.model.fontScale)
         terminalSession.attach()
-        DispatchQueue.main.async {
-            terminalView.window?.makeFirstResponder(terminalView)
-        }
+        context.coordinator.isFocusEligible = isFocusEligible
+        requestFocusIfEligible(terminalView, coordinator: context.coordinator)
         return terminalView
     }
 
     func updateNSView(_ terminalView: PickySwiftTermView, context: Context) {
         terminalView.processDelegate = terminalSession.model.processDelegate
         terminalView.applyFontScale(terminalSession.model.fontScale)
-        if terminalView.window?.firstResponder == nil {
-            DispatchQueue.main.async {
-                terminalView.window?.makeFirstResponder(terminalView)
-            }
+        context.coordinator.isFocusEligible = isFocusEligible
+        PickySessionExtendedTerminalFocusPolicy.resignTerminalFocusIfIneligible(
+            terminalView,
+            isFocusEligible: isFocusEligible
+        )
+        requestFocusIfEligible(terminalView, coordinator: context.coordinator)
+    }
+
+    private func requestFocusIfEligible(_ terminalView: PickySwiftTermView, coordinator: Coordinator) {
+        guard PickySessionExtendedTerminalFocusPolicy.shouldRequestFocus(isFocusEligible: isFocusEligible) else { return }
+        DispatchQueue.main.async {
+            guard coordinator.isFocusEligible, terminalView.window?.firstResponder == nil else { return }
+            terminalView.window?.makeFirstResponder(terminalView)
         }
     }
 }

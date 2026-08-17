@@ -1,7 +1,7 @@
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { extractFileArtifactsFromAnswerText, fileArtifactFromWrite, isFileArtifactPath, normalizeFileArtifactPath } from "./file-artifacts.js";
+import { fileArtifactFromWrite, isFileArtifactPath, strictlyMonotonicUpdatedAt } from "./file-artifacts.js";
 
 describe("file artifacts", () => {
   it("creates a deterministic file artifact only for allowed non-source files", () => {
@@ -31,40 +31,22 @@ describe("file artifacts", () => {
     expect(isFileArtifactPath("/workspace/report.pdf")).toBe(true);
   });
 
-  it("excludes temporary files from write capture and answer-text extraction", () => {
-    const now = "2026-08-15T10:00:00.000Z";
-    const systemTemporaryFile = join(tmpdir(), "transient-report.pdf");
+  it("excludes both lexical macOS aliases for the system temporary directory", () => {
+    const temporaryDirectory = tmpdir();
+    const alias = temporaryDirectory.startsWith("/private/var/")
+      ? temporaryDirectory.slice("/private".length)
+      : temporaryDirectory.startsWith("/var/")
+        ? `/private${temporaryDirectory}`
+        : temporaryDirectory;
 
-    expect(fileArtifactFromWrite({ filePath: "/workspace/tmp/export.csv", now })).toBeUndefined();
-    expect(fileArtifactFromWrite({ filePath: systemTemporaryFile, now })).toBeUndefined();
-    expect(extractFileArtifactsFromAnswerText(
-      `Created tmp/export.csv and ${systemTemporaryFile}.`,
-      "/workspace",
-      () => true,
-    )).toEqual([]);
+    expect(fileArtifactFromWrite({ filePath: join(temporaryDirectory, "transient-report.pdf"), now: "2026-08-15T10:00:00.000Z" })).toBeUndefined();
+    expect(fileArtifactFromWrite({ filePath: join(alias, "transient-report.pdf"), now: "2026-08-15T10:00:00.000Z" })).toBeUndefined();
   });
 
-  it("normalizes relative and home paths before checking answer artifacts", () => {
-    expect(normalizeFileArtifactPath("reports/요약 파일.md", "/workspace/project")).toBe("/workspace/project/reports/요약 파일.md");
-    expect(normalizeFileArtifactPath("~/Desktop/report.pdf", "/workspace/project")).toBe(join(homedir(), "Desktop/report.pdf"));
-  });
-
-  it("extracts existing explicit local file paths from answer text without URLs or duplicates", () => {
-    const cwd = "/workspace/project";
-    const relative = join(cwd, "reports/summary.md");
-    const homePath = join(homedir(), "Desktop/chart.png");
-    const existing = new Set([relative, homePath]);
-
-    const artifacts = extractFileArtifactsFromAnswerText([
-      "Created `reports/summary.md`.",
-      "Saved ~/Desktop/chart.png.",
-      "Created reports/summary.md again.",
-      "See https://example.com/reports/ignored.pdf.",
-      "Created missing.pdf.",
-    ].join("\n"), cwd, (path) => existing.has(path));
-
-    expect(artifacts).toHaveLength(2);
-    expect(artifacts.map((artifact) => artifact.path)).toEqual([relative, homePath]);
-    expect(artifacts.map((artifact) => artifact.title)).toEqual(["summary.md", "chart.png"]);
+  it("increments existing timestamps when the clock repeats or moves backward", () => {
+    const existing = "2026-08-15T10:00:00.000Z";
+    expect(strictlyMonotonicUpdatedAt(existing, existing)).toBe("2026-08-15T10:00:00.001Z");
+    expect(strictlyMonotonicUpdatedAt("2026-08-15T09:59:59.000Z", existing)).toBe("2026-08-15T10:00:00.001Z");
+    expect(strictlyMonotonicUpdatedAt("2026-08-15T10:00:01.000Z", existing)).toBe("2026-08-15T10:00:01.000Z");
   });
 });

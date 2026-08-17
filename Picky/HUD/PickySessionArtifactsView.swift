@@ -69,6 +69,10 @@ enum PickySessionArtifactsPresentation {
         guard let lastSeenArtifactsAt else { return files.count }
         return files.count { $0.updatedAt > lastSeenArtifactsAt }
     }
+
+    static func latestUpdatedAt(artifacts: [PickyArtifact]) -> Date? {
+        fileArtifacts(from: artifacts).map(\.updatedAt).max()
+    }
 }
 
 struct PickySessionArtifactsView: View {
@@ -146,7 +150,8 @@ private struct PickySessionArtifactRow: View {
         .background(DS.Colors.surface2.opacity(0.55))
         .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous))
         .opacity(presentation.isMissing ? 0.62 : 1)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(presentation.title), \(presentation.directory)")
     }
 
     @ViewBuilder

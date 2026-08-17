@@ -129,7 +129,7 @@ enum PickyToolHistoryRenderer {
             status: status,
             durationMs: durationMs(start: tool.startedAt, end: tool.endedAt),
             startedAt: tool.startedAt,
-            isAgentActivity: tool.subagentSummary != nil,
+            isAgentActivity: tool.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "subagent" || tool.subagentSummary != nil || isSubagentDetail(detail),
             detail: detail
         )
     }
@@ -157,6 +157,11 @@ enum PickyToolHistoryRenderer {
         let value = end.timeIntervalSince(start) * 1000
         guard value.isFinite, value >= 0 else { return nil }
         return Int(value.rounded())
+    }
+
+    private static func isSubagentDetail(_ detail: PickyToolHistoryDetail) -> Bool {
+        if case .subagent = detail { return true }
+        return false
     }
 
     static func displayCategory(for detail: PickyToolHistoryDetail) -> PickyToolHistoryDisplayCategory {

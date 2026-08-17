@@ -300,15 +300,15 @@ enum CompanionScreenCaptureUtility {
                 )
             }
             let capturedImage = CapturedImage(image: cgImage)
-            let postprocessed = await Task.detached(priority: .userInitiated) {
-                PickyPerf.interval("screenshot_postprocess") {
+            let postprocessed = await PickyPerf.interval("screenshot_postprocess") {
+                await Task.detached(priority: .userInitiated) {
                     CompanionScreenCaptureUtility.postprocess(
                         capturedImage: capturedImage,
                         cursorMarker: cursorMarker,
                         fingerprintSize: fingerprintSize
                     )
-                }
-            }.value
+                }.value
+            }
             guard let postprocessed else { continue }
 
             let screenLabel = contextScreenLabel(

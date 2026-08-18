@@ -26,7 +26,12 @@ export const FILE_ARTIFACT_EXTENSIONS = new Set([
   "txt",
 ]);
 
-export const FILE_ARTIFACT_EXCLUDED_DIRECTORIES = new Set(["node_modules", "build", "dist", "out", "tmp", "temp"]);
+export const FILE_ARTIFACT_EXCLUDED_DIRECTORIES = new Set(["node_modules", "build", "dist", "out"]);
+
+const TEMPORARY_DIRECTORY_SEGMENTS = new Set(["tmp", "temp"]);
+
+/** Handoff briefs and reports are written to temporary directories but stay user-facing work. */
+const TEMPORARY_ARTIFACT_EXTENSIONS = new Set(["md", "markdown"]);
 
 export interface FileArtifactFromWriteInput {
   filePath?: string;
@@ -51,11 +56,14 @@ export function strictlyMonotonicUpdatedAt(candidate: string, existing?: string)
 
 export function isFileArtifactPath(path: string, temporaryDirectories: readonly string[] = systemTemporaryDirectoryAliases()): boolean {
   const normalizedPath = resolve(path);
+  const extension = extname(normalizedPath).slice(1).toLowerCase();
+  if (!FILE_ARTIFACT_EXTENSIONS.has(extension)) return false;
   const segments = normalizedPath.split(sep).filter(Boolean);
   if (segments.some((segment) => segment.startsWith("."))) return false;
   if (segments.some((segment) => FILE_ARTIFACT_EXCLUDED_DIRECTORIES.has(segment))) return false;
-  if (temporaryDirectories.some((directory) => isWithinDirectory(normalizedPath, directory))) return false;
-  return FILE_ARTIFACT_EXTENSIONS.has(extname(normalizedPath).slice(1).toLowerCase());
+  if (TEMPORARY_ARTIFACT_EXTENSIONS.has(extension)) return true;
+  if (segments.some((segment) => TEMPORARY_DIRECTORY_SEGMENTS.has(segment))) return false;
+  return !temporaryDirectories.some((directory) => isWithinDirectory(normalizedPath, directory));
 }
 
 function systemTemporaryDirectoryAliases(): string[] {

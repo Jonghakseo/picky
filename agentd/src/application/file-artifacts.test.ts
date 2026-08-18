@@ -31,6 +31,14 @@ describe("file artifacts", () => {
     expect(isFileArtifactPath("/workspace/report.pdf")).toBe(true);
   });
 
+  it("keeps markdown written to temporary directories as an artifact", () => {
+    expect(isFileArtifactPath("/tmp/handoff-image-cdn-longtail.md", ["/tmp"])).toBe(true);
+    expect(isFileArtifactPath("/workspace/tmp/notes.markdown")).toBe(true);
+    expect(fileArtifactFromWrite({ filePath: join(tmpdir(), "handoff.md"), now: "2026-08-15T10:00:00.000Z" })).toMatchObject({ kind: "file", title: "handoff.md" });
+    expect(isFileArtifactPath("/tmp/node_modules/readme.md", ["/tmp"])).toBe(false);
+    expect(isFileArtifactPath("/tmp/.cache/report.md", ["/tmp"])).toBe(false);
+  });
+
   it("excludes both lexical macOS aliases for the system temporary directory", () => {
     const temporaryDirectory = tmpdir();
     const alias = temporaryDirectory.startsWith("/private/var/")

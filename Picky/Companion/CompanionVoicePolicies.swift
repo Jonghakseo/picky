@@ -49,6 +49,47 @@ struct CompanionVoicePresentationState: Equatable {
     let promptBubbleState: CompanionVoicePromptBubbleState
 }
 
+/// Single derivation of the cursor's voice state.
+///
+/// The cursor color must come from one pure function, not from scattered
+/// writes: every axis that can claim the cursor is resolved here with one
+/// fixed priority — live capture > speech playback > waiting > idle.
+/// Because `listening` is anchored on the raw capture flags (physical PTT
+/// key, active recording), late asynchronous cleanup of a previous turn can
+/// never downgrade an actively captured cursor, no matter how it interleaves.
+enum PickyCursorVoiceStatePolicy {
+    struct Inputs {
+        /// Projection of `PickyVoiceInteractionMachine` (voice-owned turns).
+        var machineState: CompanionVoiceState
+        /// PTT key held, keyboard-shortcut recording, or mic-button recording.
+        var isCapturingVoiceInput: Bool
+        /// STT is finalizing a transcript or the recorder is preparing.
+        var isFinalizingTranscript: Bool
+        /// A voice-owned agent response is in flight (`pendingAgentResponseStartedAt`).
+        var hasPendingAgentResponse: Bool
+        /// Canonical interaction reducer output is `.speaking`.
+        var isCoordinatorSpeaking: Bool
+        /// Canonical Quick Input / CLI turn is waiting with cursor presentation.
+        var isWaitingForCursorResponse: Bool
+    }
+
+    static func resolve(_ inputs: Inputs) -> CompanionVoiceState {
+        if inputs.isCapturingVoiceInput || inputs.machineState == .listening {
+            return .listening
+        }
+        if inputs.machineState == .responding || inputs.isCoordinatorSpeaking {
+            return .responding
+        }
+        if inputs.machineState == .processing
+            || inputs.isFinalizingTranscript
+            || inputs.hasPendingAgentResponse
+            || inputs.isWaitingForCursorResponse {
+            return .processing
+        }
+        return .idle
+    }
+}
+
 /// The subset of persisted settings that changes the live STT/TTS providers.
 /// Settings saves are global, so unrelated edits (for example the main model)
 /// must not rebuild the voice stack or interrupt an active cursor reply.

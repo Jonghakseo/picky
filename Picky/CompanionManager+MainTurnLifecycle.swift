@@ -48,22 +48,28 @@ extension CompanionManager {
         }
 
         isVoiceInputAudioSuppressionActive = true
+        // Audio suppression is purely an output-axis concern. The cursor
+        // presentation is derived by PickyCursorVoiceStatePolicy, which
+        // already ranks live voice input above any agent playback state.
         stopCurrentSpeech()
-        // Voice input (PTT) means the user is taking over: drop any active
-        // agent state so the UI flips off the yellow loading / blue speaking
-        // indicator immediately and the STT subsystem can promote to
-        // `.listening` on its own.
-        if voiceState == .responding || voiceState == .processing {
-            voiceState = .idle
-        }
     }
 
     func interruptSpokenResponseForVoiceInput() {
-        // Capture before this PTT press can begin a new turn. The abort command
-        // must still precede that submission, but its eventual success must not
-        // settle the new turn that follows this key press.
+        // Capture before this barge-in settles local state or begins a new
+        // turn. The abort command must still precede the next submission, but
+        // its eventual acknowledgment must not touch the turn that follows.
         let cancellation = makeMainTurnCancellation()
         stopCurrentSpeech()
+        // Barge-in means the interrupted turn is over for the local
+        // presentation the moment the user takes the microphone: settle it
+        // synchronously instead of waiting for the daemon round trip.
+        if cancellation.shouldSettleLocalState {
+            settleMainTurnAfterCancellation()
+        }
+        // Open a new turn generation so the captured cancellation's late
+        // acknowledgment fails `cancelMainTurn`'s generation guard instead of
+        // settling (and resetting) the user's next voice input.
+        mainTurnGeneration &+= 1
         Task { [weak self] in
             _ = await self?.cancelMainTurn(cancellation, stopsLocalSpeech: false)
         }
@@ -172,7 +178,6 @@ extension CompanionManager {
         clearMainActivitiesImmediately()
         activeMainTurnFollowUpSessionID = nil
         currentVoicePromptPreview = nil
-        voicePromptBubbleState = .hidden
         // This is the same abort reduction used by the voice interruption path.
         // It clears the voice projection even though agentd's abort command has
         // no matching mainTurnSettled event.
@@ -272,7 +277,6 @@ extension CompanionManager {
             responseStateTask = nil
             pendingAgentResponseStartedAt = nil
             currentVoicePromptPreview = nil
-            voicePromptBubbleState = .hidden
             setVoiceFollowUpSessionIDForCurrentUtterance(nil, caller: "session-terminated-\(status.rawValue)")
             // Re-run the voice presentation pipeline. With pendingAgentResponseStartedAt
             // cleared and no dictation in progress, this falls through to the
@@ -299,8 +303,7 @@ extension CompanionManager {
         deferredFinishAwaitingAgentResponseSessionID = nil
         pendingAgentResponseStartedAt = nil
         currentVoicePromptPreview = nil
-        voicePromptBubbleState = .hidden
-        if voiceState == .processing {
+        if voiceInteractionState.phase == .loading {
             reduceVoiceInteraction(.reset)
         } else {
             updateVoicePresentation()

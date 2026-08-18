@@ -97,6 +97,11 @@ enum PickyVoiceInteractionEvent: Equatable {
     case textReply(text: String)
     case speechFinished(speechID: UUID, now: Date)
     case speechFailed(speechID: UUID, now: Date)
+    /// Speech playback was cut off outside the machine (audio suppression,
+    /// provider teardown, coordinator preemption). Unlike `.reset` this is a
+    /// guarded no-op unless the named speech is actually playing, so a stale
+    /// asynchronous stop can never destroy an active input or loading turn.
+    case speechInterrupted(speechID: UUID?)
     case minimumDisplayTimerFired(timerID: UUID, now: Date)
     case promptBubbleAutoHide
     case abort
@@ -174,6 +179,8 @@ private struct PickyVoiceInteractionReducing {
             applyTextReply(text: text)
         case .speechFinished(let speechID, let now), .speechFailed(let speechID, let now):
             applySpeechCompleted(speechID: speechID, now: now)
+        case .speechInterrupted(let speechID):
+            applySpeechInterrupted(speechID: speechID)
         case .minimumDisplayTimerFired(let timerID, let now):
             applyMinimumDisplayTimerFired(timerID: timerID, now: now)
         case .promptBubbleAutoHide:
@@ -280,6 +287,12 @@ private struct PickyVoiceInteractionReducing {
     private mutating func applySpeechCompleted(speechID: UUID, now: Date) {
         guard state.context.activeSpeechID == speechID else { return }
         completeCurrentSpeech(now: now)
+    }
+
+    private mutating func applySpeechInterrupted(speechID: UUID?) {
+        guard state.phase == .speaking else { return }
+        if let speechID, speechID != state.context.activeSpeechID { return }
+        clearToIdle(scheduleHide: true)
     }
 
     private mutating func applyMinimumDisplayTimerFired(timerID: UUID, now: Date) {

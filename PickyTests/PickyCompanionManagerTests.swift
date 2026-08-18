@@ -1289,6 +1289,62 @@ struct PickyCompanionManagerTests {
         #expect(manager.latestAgentSessionSummary == "말하는 중")
     }
 
+    @Test func pttPressDuringSpokenResponseKeepsListeningThroughAsyncCleanup() async throws {
+        // Regression: pressing PTT while a spoken response plays used to
+        // flicker the cursor and strand it on idle. The canonical coordinator
+        // drains `.voicePressed` asynchronously and its `.stopSpeech` effect
+        // then reset the whole voice machine while the key was still held.
+        let speechProvider = FakeSpeechPlaybackProvider()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider,
+            transcriptionProviderFactory: { _ in FakeTranscriptionProvider() }
+        )
+        manager.speakSystemMessage("긴 음성 응답을 재생하는 중입니다")
+        #expect(manager.voiceState == .responding)
+
+        manager.handleShortcutTransition(.pressed, pressedScreenPoint: .zero)
+        #expect(manager.voiceState == .listening)
+        #expect(speechProvider.isSpeaking == false)
+
+        // Let the coordinator drain `.voicePressed`, run its `.stopSpeech`
+        // effect, and let any dictation-start fallout land. The cursor must
+        // stay listening the whole time the key is held.
+        try await settle()
+        #expect(manager.voiceState == .listening)
+
+        manager.handleShortcutTransition(.released)
+        manager.stop()
+    }
+
+    @Test func staleBargeInCancellationDoesNotResetHeldVoiceMachineInput() async throws {
+        // Regression: barge-in fires `cancelMainTurn` for the interrupted turn.
+        // Its daemon round trip can complete seconds later, and the settle used
+        // to reduce `.abort` into the voice machine while the user was already
+        // holding the next PTT input. The barge-in now opens a new turn
+        // generation, so the stale settle must be rejected.
+        let client = FakeVoiceClient()
+        let gate = FakeAbortGate()
+        client.abortMainAgentGate = gate
+        let manager = CompanionManager(agentClient: client, selectionStore: FakeVoiceSelectionStore())
+        manager.beginAwaitingAgentResponse(recognizedTranscript: "이전 질문")
+        #expect(manager.voiceState == .processing)
+
+        manager.interruptSpokenResponseForVoiceInput()
+        let inputID = UUID()
+        manager.reduceVoiceInteraction(.pttPressed(inputID: inputID, targetSessionID: nil))
+        #expect(manager.voiceInteractionState.phase == .pttInput)
+
+        await gate.release()
+        try await waitUntil { client.calls.contains("send:abortMainAgent") }
+        try await settle()
+
+        #expect(manager.voiceInteractionState.phase == .pttInput)
+        #expect(manager.voiceInteractionState.context.inputID == inputID)
+        manager.stop()
+    }
+
     @Test func voiceInputInterruptSendsMainAgentAbortBeforeNextTranscriptRouting() async throws {
         let client = FakeVoiceClient()
         let selection = FakeVoiceSelectionStore()

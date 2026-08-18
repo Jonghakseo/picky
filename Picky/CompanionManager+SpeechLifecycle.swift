@@ -83,15 +83,21 @@ extension CompanionManager {
         }
     }
 
+    /// Stops audio output only. Ending playback is an *effect*, not an
+    /// interaction transition: the voice machine merely gets a guarded
+    /// `.speechInterrupted` for the stopped utterance, so a stale or
+    /// concurrent stop (coordinator preemption, audio suppression) can never
+    /// reset an active PTT input or a loading turn to idle.
     func stopCurrentSpeech() {
         logSpeech("stop current speech active=\(activeSpeechID?.uuidString ?? "none") interaction=\(interactionSpeechID?.uuidString ?? "none") providerSpeaking=\(speechPlaybackProvider.isSpeaking)")
-        reduceVoiceInteraction(.reset)
+        let interruptedSpeechID = activeSpeechID
         activeSpeechID = nil
         deferredInteractionSpeechTask?.cancel()
         deferredInteractionSpeechTask = nil
         responseStateTask?.cancel()
         responseStateTask = nil
         speechPlaybackProvider.stopSpeaking()
+        reduceVoiceInteraction(.speechInterrupted(speechID: interruptedSpeechID))
     }
 
     func stopCurrentInteractionSpeech(speechID requestedSpeechID: UUID?) {

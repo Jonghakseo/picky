@@ -1063,32 +1063,36 @@ final class CompanionManager: ObservableObject {
         let isMicrophoneRecording = isMicrophoneRecording ?? buddyDictationManager.isRecordingFromMicrophoneButton
         let isFinalizing = isFinalizing ?? buddyDictationManager.isFinalizingTranscript
         let isPreparing = isPreparing ?? buddyDictationManager.isPreparingToRecord
-        let isVoiceInputActive = isPushToTalkShortcutHeld || isKeyboardRecording || isMicrophoneRecording || isFinalizing || isPreparing
+        let isCapturing = isPushToTalkShortcutHeld || isKeyboardRecording || isMicrophoneRecording
+        let isVoiceInputActive = isCapturing || isFinalizing || isPreparing
         updateVoiceInputAudioSuppression(isVoiceInputActive: isVoiceInputActive)
-        if voiceInteractionState.phase == .speaking {
-            applyVoiceInteractionProjection(voiceInteractionState.projection)
-        } else if isPushToTalkShortcutHeld || isKeyboardRecording || isMicrophoneRecording {
+
+        // Align the voice machine with reality using semantic events only.
+        // The cursor presentation itself is derived by
+        // PickyCursorVoiceStatePolicy below, so a briefly stale machine can
+        // no longer flicker the cursor.
+        if isCapturing {
             if voiceInteractionState.phase != .pttInput, let interactionVoiceInputID {
                 reduceVoiceInteraction(.pttPressed(inputID: interactionVoiceInputID, targetSessionID: voiceFollowUpSessionIDForCurrentUtterance))
-            } else {
-                applyVoiceInteractionProjection(CompanionVoicePresentationState(voiceState: .listening, promptBubbleState: voiceInteractionState.projection.promptBubbleState))
             }
         } else if isFinalizing || isPreparing || pendingAgentResponseStartedAt != nil {
             if voiceInteractionState.phase == .idle {
                 reduceVoiceInteraction(.loadingStarted(inputID: interactionVoiceInputID, transcript: currentVoicePromptPreview, targetSessionID: voiceFollowUpSessionIDForCurrentUtterance, now: Date(), promptBubbleVisibility: .visible))
-            } else {
-                applyVoiceInteractionProjection(voiceInteractionState.projection)
             }
-        } else {
+        } else if voiceInteractionState.phase != .speaking {
             reduceVoiceInteraction(.reset)
         }
-        let presentation = voiceInteractionState.projection
+
+        applyCursorVoicePresentation(
+            isCapturingVoiceInput: isCapturing,
+            isFinalizingTranscript: isFinalizing || isPreparing
+        )
 
         // If the user pressed and released the hotkey without saying anything,
         // no response task runs — schedule the transient hide here so the overlay
         // doesn't get stuck. Only do this when no response is in flight, otherwise
         // the brief idle gap between recording and processing would prematurely hide the overlay.
-        if presentation.voiceState == .idle, pendingAgentResponseStartedAt == nil {
+        if voiceState == .idle, pendingAgentResponseStartedAt == nil {
             // Note: hover ID reset is intentionally NOT done here. The reducer can
             // briefly report idle right after PTT release (between
             // `stopPushToTalkFromKeyboardShortcut` and the subsequent finalize +
@@ -1106,7 +1110,7 @@ final class CompanionManager: ObservableObject {
     func reduceVoiceInteraction(_ event: PickyVoiceInteractionEvent) -> PickyVoiceInteractionTransition {
         let transition = PickyVoiceInteractionMachine.reduce(state: voiceInteractionState, event: event)
         voiceInteractionState = transition.state
-        applyVoiceInteractionProjection(transition.state.projection)
+        applyCursorVoicePresentation()
         let streamedResponseOwnsBubble = interactionCoordinator.projection.state.streamedResponseText != nil
         if !streamedResponseOwnsBubble,
            let responseText = transition.state.context.responseBubbleText,
@@ -1119,9 +1123,33 @@ final class CompanionManager: ObservableObject {
         return transition
     }
 
-    private func applyVoiceInteractionProjection(_ projection: CompanionVoicePresentationState) {
-        voiceState = projection.voiceState
-        voicePromptBubbleState = projection.promptBubbleState
+    /// The only writer of `voiceState` / `voicePromptBubbleState`. Reads every
+    /// axis fresh and resolves them through `PickyCursorVoiceStatePolicy`, so
+    /// call sites request a recomputation instead of assigning cursor state.
+    /// Capture flags may be passed in when the caller holds newer values than
+    /// the dictation manager's published properties (Combine sink delivery).
+    func applyCursorVoicePresentation(
+        isCapturingVoiceInput: Bool? = nil,
+        isFinalizingTranscript: Bool? = nil
+    ) {
+        let machineProjection = voiceInteractionState.projection
+        let isCapturing = isCapturingVoiceInput ?? (
+            isPushToTalkShortcutHeld
+                || buddyDictationManager.isRecordingFromKeyboardShortcut
+                || buddyDictationManager.isRecordingFromMicrophoneButton
+        )
+        let isFinalizing = isFinalizingTranscript ?? (
+            buddyDictationManager.isFinalizingTranscript || buddyDictationManager.isPreparingToRecord
+        )
+        voiceState = PickyCursorVoiceStatePolicy.resolve(PickyCursorVoiceStatePolicy.Inputs(
+            machineState: machineProjection.voiceState,
+            isCapturingVoiceInput: isCapturing,
+            isFinalizingTranscript: isFinalizing,
+            hasPendingAgentResponse: pendingAgentResponseStartedAt != nil,
+            isCoordinatorSpeaking: interactionCoordinator.projection.isSpeaking,
+            isWaitingForCursorResponse: isWaitingForCursorResponse
+        ))
+        voicePromptBubbleState = machineProjection.promptBubbleState
     }
 
     // Internal so tests can verify the production Combine bridge remains
@@ -1463,7 +1491,6 @@ final class CompanionManager: ObservableObject {
             interruptSpokenResponseForVoiceInput()
             pendingAgentResponseStartedAt = nil
             currentVoicePromptPreview = nil
-            voicePromptBubbleState = .hidden
             let armedTarget = normalizedVoiceFollowUpSessionID(selectionStore.screenContextTargetSessionID).map {
                 PickyScreenContextTargetSnapshot(
                     sessionID: $0,
@@ -1930,7 +1957,11 @@ final class CompanionManager: ObservableObject {
             && (hasActiveVisualNarration || projection.state.streamedResponseText != nil)
         if isProgressiveResponseVisible, let latestDisplayText = projection.latestDisplayText {
             latestAgentSessionSummary = latestDisplayText
-            voicePromptBubbleState = .hidden
+            if voicePromptBubbleState != .hidden {
+                // Route the hide through the machine so the single-writer
+                // presentation cannot resurrect the bubble on the next pass.
+                reduceVoiceInteraction(.promptBubbleAutoHide)
+            }
         }
         let previousProjectedSceneIdentity = projectedAnnotationSceneIdentity
         projectedAnnotationSceneIdentity = projection.state.annotationSceneIdentity
@@ -1961,37 +1992,30 @@ final class CompanionManager: ObservableObject {
                 latestAgentSessionSummary = latestDisplayText
             }
             currentVoicePromptPreview = nil
-            voicePromptBubbleState = .hidden
-            voiceState = .responding
+            if voicePromptBubbleState != .hidden {
+                reduceVoiceInteraction(.promptBubbleAutoHide)
+            }
         case .idle:
             break
         case .suppressedReply:
             clearPendingAgentResponseTiming()
         case .waitingForAgent:
-            if projection.isWaitingForCursorResponse {
-                voiceState = .processing
-            }
+            break
         }
 
-        // Safety net: any path that leaves the cursor in `.responding` while the
-        // projection is no longer speaking must clear the responding state, otherwise
-        // the cursor response bubble lingers indefinitely.
-        //
-        // The reducer cleans up `.speaking` when transitioning to a non-`.speaking`
-        // output (stopSpeech effect + speakingResponse overlay drop), so under normal
-        // flow this guard is paired with the reducer-side preemption. It also catches
-        // edge cases the reducer might miss: the `.speaking → .idle` direct path via
-        // `.speechFinished`, voicePressed-driven cleanup, and any future event that
-        // forgets to call `preemptSpeakingOutputIfNeeded`.
-        //
-        // Gated by `interactionSpeechID != nil` so a `speakSystemMessage` flow (which
-        // sets `voiceState = .responding` without a corresponding `.speaking` projection)
-        // is never clipped by an unrelated projection update.
-        if voiceState == .responding, !projection.isSpeaking, interactionSpeechID != nil {
-            voiceState = .idle
+        // Safety net: if the canonical projection is no longer speaking but the
+        // voice machine still thinks the tracked interaction utterance plays,
+        // interrupt that utterance so the cursor cannot stay `.responding`
+        // forever. `.speechInterrupted` is speechID-guarded, so an unrelated
+        // `speakSystemMessage` utterance is never clipped by this pass.
+        if !projection.isSpeaking, let staleSpeechID = interactionSpeechID {
+            if voiceInteractionState.phase == .speaking {
+                reduceVoiceInteraction(.speechInterrupted(speechID: staleSpeechID))
+            }
             interactionSpeechID = nil
             scheduleTransientHideIfNeeded()
         }
+        applyCursorVoicePresentation()
     }
 
     private func clearPendingAgentResponseTiming() {
@@ -2234,9 +2258,15 @@ final class CompanionManager: ObservableObject {
             clearScreenContextTargetIfCurrent(targetSnapshot)
             setVoiceFollowUpSessionIDForCurrentUtterance(nil, caller: "responseTask-end")
         }
-        if !Task.isCancelled, pendingAgentResponseStartedAt == nil, voiceState != .responding {
-            voiceState = .idle
-            scheduleTransientHideIfNeeded()
+        if !Task.isCancelled, pendingAgentResponseStartedAt == nil {
+            if voiceInteractionState.phase == .loading {
+                reduceVoiceInteraction(.reset)
+            } else {
+                applyCursorVoicePresentation()
+            }
+            if voiceState == .idle {
+                scheduleTransientHideIfNeeded()
+            }
         }
     }
 
@@ -2421,6 +2451,9 @@ final class CompanionManager: ObservableObject {
         logSpeech("interaction finish accepted speechID=\(speechID) didFinish=\(didFinish) context=\(contextID ?? "none") providerSpeaking=\(speechPlaybackProvider.isSpeaking)")
         reduceVoiceInteraction(didFinish ? .speechFinished(speechID: speechID, now: Date()) : .speechFailed(speechID: speechID, now: Date()))
         activeSpeechID = nil
+        if interactionSpeechID == speechID {
+            interactionSpeechID = nil
+        }
         responseStateTask?.cancel()
         responseStateTask = nil
         interactionCoordinator.effectCompleted(
@@ -2712,9 +2745,10 @@ final class CompanionManager: ObservableObject {
         responseStateTask = nil
         pendingAgentResponseStartedAt = nil
         currentVoicePromptPreview = nil
-        voicePromptBubbleState = .hidden
-        if voiceState == .processing {
+        if voiceInteractionState.phase == .loading {
             reduceVoiceInteraction(.reset)
+        } else {
+            applyCursorVoicePresentation()
         }
     }
 

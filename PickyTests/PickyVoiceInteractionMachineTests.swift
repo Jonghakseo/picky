@@ -133,6 +133,57 @@ struct PickyVoiceInteractionMachineTests {
         #expect(state.effectsToRun.contains(.captureContext(inputID: inputA, transcript: "늦게 도착한 STT", targetSessionID: nil)))
     }
 
+    @Test func speechInterruptedStopsActiveSpeechAndClearsQueue() {
+        var state = PickyVoiceInteractionState()
+        state = reduce(state, .agentReply(text: "first", shouldSpeak: true, speechID: speechA, timerID: timerA, inputID: inputA, now: now))
+        state = reduce(state, .agentReply(text: "second", shouldSpeak: true, speechID: speechB, timerID: timerB, inputID: inputB, now: now))
+
+        state = reduce(state, .speechInterrupted(speechID: speechA))
+        #expect(state.phase == .idle)
+        #expect(state.context.activeSpeechID == nil)
+        #expect(state.context.speechQueue.isEmpty)
+    }
+
+    @Test func speechInterruptedWithoutSpeechIDClearsWhateverIsSpeaking() {
+        var state = PickyVoiceInteractionState()
+        state = reduce(state, .agentReply(text: "first", shouldSpeak: true, speechID: speechA, timerID: timerA, inputID: inputA, now: now))
+
+        state = reduce(state, .speechInterrupted(speechID: nil))
+        #expect(state.phase == .idle)
+    }
+
+    @Test func speechInterruptedWithStaleSpeechIDIsIgnored() {
+        var state = PickyVoiceInteractionState()
+        state = reduce(state, .agentReply(text: "first", shouldSpeak: true, speechID: speechA, timerID: timerA, inputID: inputA, now: now))
+
+        state = reduce(state, .speechInterrupted(speechID: speechB))
+        #expect(state.phase == .speaking)
+        #expect(state.context.activeSpeechID == speechA)
+    }
+
+    @Test func speechInterruptedDuringPTTInputIsIgnored() {
+        // Regression: a stale asynchronous speech stop (coordinator preemption
+        // effect, audio suppression) arriving after the user pressed PTT must
+        // not reset the active input turn to idle.
+        var state = PickyVoiceInteractionState()
+        state = reduce(state, .agentReply(text: "first", shouldSpeak: true, speechID: speechA, timerID: timerA, inputID: inputA, now: now))
+        state = reduce(state, .pttPressed(inputID: inputB, targetSessionID: nil))
+
+        state = reduce(state, .speechInterrupted(speechID: speechA))
+        #expect(state.phase == .pttInput)
+        #expect(state.context.inputID == inputB)
+        #expect(state.projection.voiceState == .listening)
+    }
+
+    @Test func speechInterruptedDuringLoadingIsIgnored() {
+        var state = PickyVoiceInteractionState()
+        state = reduce(state, .loadingStarted(inputID: inputA, transcript: "질문", targetSessionID: nil, now: now, promptBubbleVisibility: .visible))
+
+        state = reduce(state, .speechInterrupted(speechID: nil))
+        #expect(state.phase == .loading)
+        #expect(state.projection.voiceState == .processing)
+    }
+
     private func reduce(_ state: PickyVoiceInteractionState, _ event: PickyVoiceInteractionEvent) -> PickyVoiceInteractionState {
         PickyVoiceInteractionMachine.reduce(state: state, event: event).state
     }

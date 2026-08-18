@@ -1332,6 +1332,11 @@ struct PickyCompanionManagerTests {
         #expect(manager.voiceState == .processing)
 
         manager.interruptSpokenResponseForVoiceInput()
+        // Model the held key exactly like the production press path: the raw
+        // capture flag and the machine event must stay in sync, otherwise a
+        // delayed dictation-state emission re-derives the presentation with
+        // every capture flag false and legitimately resets the machine.
+        manager.isPushToTalkShortcutHeld = true
         let inputID = UUID()
         manager.reduceVoiceInteraction(.pttPressed(inputID: inputID, targetSessionID: nil))
         #expect(manager.voiceInteractionState.phase == .pttInput)
@@ -1342,6 +1347,7 @@ struct PickyCompanionManagerTests {
 
         #expect(manager.voiceInteractionState.phase == .pttInput)
         #expect(manager.voiceInteractionState.context.inputID == inputID)
+        manager.isPushToTalkShortcutHeld = false
         manager.stop()
     }
 

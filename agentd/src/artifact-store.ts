@@ -154,7 +154,22 @@ function normalizeLinkUrl(rawUrl: string): string | undefined {
   while (trimmed.endsWith(")") && countCharacter(trimmed, ")") > countCharacter(trimmed, "(")) trimmed = trimmed.slice(0, -1);
   const parsed = safeUrl(trimmed);
   if (!parsed || (parsed.protocol !== "http:" && parsed.protocol !== "https:")) return undefined;
+  if (!hasPlausibleHost(parsed)) return undefined;
   return parsed.toString();
+}
+
+// Prose placeholders such as `https://...?d=32` parse as valid URLs whose host
+// is not a real domain, so they must not reach the artifact dock.
+function hasPlausibleHost(parsed: URL): boolean {
+  const host = parsed.hostname.toLowerCase();
+  if (!host) return false;
+  if (host.startsWith("[")) return true;
+  if (/^[0-9]+(?:\.[0-9]+)*$/.test(host)) return true;
+  if (host === "localhost") return true;
+  const labels = host.split(".");
+  if (labels.length < 2) return false;
+  if (!labels.every((label) => /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label))) return false;
+  return /^(?:xn--[a-z0-9-]+|[a-z]{2,})$/.test(labels[labels.length - 1]!);
 }
 
 function canonicalSessionLinkUrl(url: string, kind: SessionLinkKind): string {

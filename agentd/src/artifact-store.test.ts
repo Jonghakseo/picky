@@ -170,6 +170,19 @@ describe("session link extraction", () => {
     ]);
   });
 
+  it("ignores prose placeholders that are not real hosts", () => {
+    expect(extractSessionLinks([
+      "기형 쿼리 `f=webp 750w, https://...` 가 존재",
+      "`f=webp16w,https://...?d=32` 형태",
+      "Local http://localhost:3000/health and http://127.0.0.1:8080/status",
+      "Real https://cf.creatrip.com/original/blog/1491/b0e.jpg",
+    ].join("\n"))).toEqual([
+      { kind: "link", title: "localhost", url: "http://localhost:3000/health" },
+      { kind: "link", title: "127.0.0.1", url: "http://127.0.0.1:8080/status" },
+      { kind: "link", title: "cf.creatrip.com", url: "https://cf.creatrip.com/original/blog/1491/b0e.jpg" },
+    ]);
+  });
+
   it("keeps URL-safe punctuation that can appear inside link paths", () => {
     expect(extractSessionLinks([
       "Notion https://www.notion.so/foo(bar)",

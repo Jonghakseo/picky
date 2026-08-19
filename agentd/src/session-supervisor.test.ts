@@ -2847,6 +2847,57 @@ describe("SessionSupervisor", () => {
     expect(restored?.tools).toHaveLength(400);
   });
 
+  it("persists a later thinking message and preview with one full session save", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-thinking-preview-single-save-"));
+    const runtime = new ManualRuntime();
+    const store = new SessionStore(dir);
+    const saveSpy = vi.spyOn(store, "save");
+    const supervisor = new SessionSupervisor(runtime, store);
+    await supervisor.load();
+    const session = await supervisor.create(context("single thinking flush save"));
+
+    runtime.handle?.emit({ type: "thinking_delta", delta: "inspect" });
+    await waitUntilAsync(async () => {
+      const restored = (await store.loadAll()).find((entry) => entry.id === session.id);
+      return restored?.thinkingPreview === "inspect";
+    });
+    saveSpy.mockClear();
+    const sessionEvents: PickyAgentSession[] = [];
+    supervisor.on("session", (emitted) => sessionEvents.push(emitted));
+
+    runtime.handle?.emit({ type: "thinking_delta", delta: " more" });
+    let restored: PickyAgentSession | undefined;
+    await waitUntilAsync(async () => {
+      restored = (await store.loadAll()).find((entry) => entry.id === session.id);
+      return restored?.thinkingPreview === "inspect more";
+    });
+    await Promise.resolve();
+
+    expect(saveSpy).toHaveBeenCalledTimes(1);
+    expect(sessionEvents).toEqual([]);
+    expect(restored?.messages?.at(-1)).toMatchObject({ kind: "agent_thinking", text: "inspect more" });
+    expect(restored?.thinkingPreview).toBe("inspect more");
+  });
+
+  it("journals whitespace-only thinking without creating an empty preview", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-thinking-preview-whitespace-"));
+    const runtime = new ManualRuntime();
+    const store = new SessionStore(dir);
+    const supervisor = new SessionSupervisor(runtime, store);
+    await supervisor.load();
+    const session = await supervisor.create(context("whitespace thinking preview"));
+
+    runtime.handle?.emit({ type: "thinking_delta", delta: "   \n" });
+    let restored: PickyAgentSession | undefined;
+    await waitUntilAsync(async () => {
+      restored = (await store.loadAll()).find((entry) => entry.id === session.id);
+      return restored?.messages?.some((message) => message.kind === "agent_thinking") === true;
+    });
+
+    expect(restored?.messages?.at(-1)).toMatchObject({ kind: "agent_thinking", text: "   \n" });
+    expect(restored?.thinkingPreview).toBeUndefined();
+  });
+
   it("restores persisted Pickle-session markers from handoff logs", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const firstSupervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));

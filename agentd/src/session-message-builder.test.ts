@@ -7,18 +7,36 @@ function makeBuilder() {
   let now = "2026-05-01T00:00:00.000Z";
   const messages: PickySessionMessage[] = [];
   const events: Array<{ type: "appended"; message: PickySessionMessage; seq: number } | { type: "imported"; messages: readonly PickySessionMessage[]; seq: number } | { type: "replaced"; messageId: string; message: PickySessionMessage; seq: number } | { type: "removed"; messageId: string; seq: number }> = [];
+  const syncs: Array<{ thinkingPreview?: string }> = [];
+  const operations: string[] = [];
+  let nextSyncError: Error | undefined;
   const builder = new SessionMessageBuilder({
-    emitAppended: async (_sessionId, message, eventSeq) => { events.push({ type: "appended", message, seq: eventSeq }); },
-    emitImported: async (_sessionId, importedMessages, eventSeq) => { events.push({ type: "imported", messages: importedMessages, seq: eventSeq }); },
-    emitReplaced: async (_sessionId, messageId, message, eventSeq) => { events.push({ type: "replaced", messageId, message, seq: eventSeq }); },
-    emitRemoved: async (_sessionId, messageId, eventSeq) => { events.push({ type: "removed", messageId, seq: eventSeq }); },
+    emitAppended: async (_sessionId, message, eventSeq) => { events.push({ type: "appended", message, seq: eventSeq }); operations.push("emit:appended"); },
+    emitImported: async (_sessionId, importedMessages, eventSeq) => { events.push({ type: "imported", messages: importedMessages, seq: eventSeq }); operations.push("emit:imported"); },
+    emitReplaced: async (_sessionId, messageId, message, eventSeq) => { events.push({ type: "replaced", messageId, message, seq: eventSeq }); operations.push("emit:replaced"); },
+    emitRemoved: async (_sessionId, messageId, eventSeq) => { events.push({ type: "removed", messageId, seq: eventSeq }); operations.push("emit:removed"); },
     nextSeq: () => ++seq,
     now: () => now,
-    syncSessionMessages: async (_sessionId, nextMessages) => {
+    syncSessionMessages: async (_sessionId, nextMessages, patch) => {
+      syncs.push(patch ?? {});
+      operations.push("sync");
+      if (nextSyncError) {
+        const error = nextSyncError;
+        nextSyncError = undefined;
+        throw error;
+      }
       messages.splice(0, messages.length, ...nextMessages);
     },
   });
-  return { builder, events, messages, setNow: (value: string) => { now = value; } };
+  return {
+    builder,
+    events,
+    messages,
+    operations,
+    syncs,
+    failNextSync: (message = "sync failed") => { nextSyncError = new Error(message); },
+    setNow: (value: string) => { now = value; },
+  };
 }
 
 describe("SessionMessageBuilder", () => {
@@ -77,6 +95,43 @@ describe("SessionMessageBuilder", () => {
     ]);
     expect(messages[0].id).toBe(firstThinkingId);
     expect(messages[1].id).not.toBe(firstThinkingId);
+  });
+
+  it("persists each thinking preview in the same sync before emitting its message event", async () => {
+    const { builder, messages, operations, syncs } = makeBuilder();
+
+    await builder.appendThinkingDelta("session-1", "think", { thinkingPreview: "think" });
+    await builder.appendThinkingDelta("session-1", " more", { thinkingPreview: "think more" });
+
+    expect(messages).toMatchObject([{ kind: "agent_thinking", text: "think more" }]);
+    expect(syncs).toEqual([{ thinkingPreview: "think" }, { thinkingPreview: "think more" }]);
+    expect(operations).toEqual(["sync", "emit:appended", "sync", "emit:replaced"]);
+  });
+
+  it("retries a failed initial thinking sync as an append with the cumulative draft", async () => {
+    const { builder, events, failNextSync, messages } = makeBuilder();
+    failNextSync("disk unavailable");
+
+    await expect(builder.appendThinkingDelta("session-1", "think", { thinkingPreview: "think" })).rejects.toThrow("disk unavailable");
+    expect(events).toEqual([]);
+    expect(messages).toEqual([]);
+
+    await builder.appendThinkingDelta("session-1", " more", { thinkingPreview: "think more" });
+
+    expect(events).toMatchObject([{ type: "appended", message: { kind: "agent_thinking", text: "think more" } }]);
+    expect(messages).toMatchObject([{ kind: "agent_thinking", text: "think more" }]);
+  });
+
+  it("retries a failed thinking replacement as a replacement instead of a duplicate append", async () => {
+    const { builder, events, failNextSync, messages } = makeBuilder();
+    await builder.appendThinkingDelta("session-1", "think", { thinkingPreview: "think" });
+    failNextSync("disk unavailable");
+
+    await expect(builder.appendThinkingDelta("session-1", " more", { thinkingPreview: "think more" })).rejects.toThrow("disk unavailable");
+    await builder.appendThinkingDelta("session-1", " again", { thinkingPreview: "think more again" });
+
+    expect(events.map((event) => event.type)).toEqual(["appended", "replaced"]);
+    expect(messages).toMatchObject([{ kind: "agent_thinking", text: "think more again" }]);
   });
 
   it("strips ANSI color sequences from extension notification messages", async () => {

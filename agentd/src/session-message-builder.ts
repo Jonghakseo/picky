@@ -5,6 +5,10 @@ import type { PickyActivitySummary, PickyAssistantRunMetadata, PickyCommandRecei
 
 type MessageOrigin = "user" | "main_agent" | "pi_extension";
 
+export interface SessionMessageSyncPatch {
+  thinkingPreview: string;
+}
+
 interface SessionMessageBuilderDeps {
   emitAppended(sessionId: string, message: PickySessionMessage, seq: number): Promise<void>;
   emitImported(sessionId: string, messages: readonly PickySessionMessage[], seq: number): Promise<void>;
@@ -12,7 +16,7 @@ interface SessionMessageBuilderDeps {
   emitRemoved(sessionId: string, messageId: string, seq: number): Promise<void>;
   nextSeq(sessionId: string): number;
   now(): string;
-  syncSessionMessages(sessionId: string, messages: readonly PickySessionMessage[]): Promise<void>;
+  syncSessionMessages(sessionId: string, messages: readonly PickySessionMessage[], patch?: SessionMessageSyncPatch): Promise<void>;
 }
 
 interface JournalEntry {
@@ -269,8 +273,8 @@ export class SessionMessageBuilder {
     await this.enqueue(sessionId, async () => this.appendAssistantTextNow(sessionId, text, assistantRun));
   }
 
-  async appendThinkingDelta(sessionId: string, delta: string): Promise<void> {
-    await this.enqueue(sessionId, async () => this.appendThinkingDeltaNow(sessionId, delta));
+  async appendThinkingDelta(sessionId: string, delta: string, patch?: SessionMessageSyncPatch): Promise<void> {
+    await this.enqueue(sessionId, async () => this.appendThinkingDeltaNow(sessionId, delta, patch));
   }
 
   async flushThinking(sessionId: string): Promise<void> {
@@ -314,7 +318,7 @@ export class SessionMessageBuilder {
     });
   }
 
-  private async appendThinkingDeltaNow(sessionId: string, delta: string): Promise<void> {
+  private async appendThinkingDeltaNow(sessionId: string, delta: string, patch?: SessionMessageSyncPatch): Promise<void> {
     if (!delta) return;
     const state = this.stateFor(sessionId);
     state.thinkingDraft += delta;
@@ -326,12 +330,24 @@ export class SessionMessageBuilder {
         kind: "agent_thinking",
         createdAt: this.deps.now(),
         text: state.thinkingDraft,
-      });
+      }, { patch });
       return;
     }
-    const entry = state.journal.find((candidate) => candidate.message.id === state.activeThinkingId);
-    if (!entry) return;
-    await this.replaceInternal(sessionId, state.activeThinkingId, { ...entry.message, text: state.thinkingDraft });
+    const index = state.journal.findIndex((candidate) => candidate.message.id === state.activeThinkingId);
+    if (index < 0) return;
+    const entry = state.journal[index]!;
+    const message = { ...entry.message, text: state.thinkingDraft };
+    if (entry.seq === 0) {
+      // The initial sync failed before its append event was emitted. Keep the cumulative draft,
+      // retry the same append, and never send a replacement for an ID the client has not seen.
+      state.journal[index] = { seq: 0, message };
+      await this.sync(sessionId, state, patch);
+      const seq = this.deps.nextSeq(sessionId);
+      state.journal[index] = { seq, message };
+      await this.deps.emitAppended(sessionId, message, seq);
+      return;
+    }
+    await this.replaceInternal(sessionId, state.activeThinkingId, message, { patch });
   }
 
   private async flushThinkingNow(sessionId: string): Promise<void> {
@@ -362,26 +378,32 @@ export class SessionMessageBuilder {
   private async appendInternal(
     sessionId: string,
     message: PickySessionMessage,
-    options: { preserveTimestamp?: boolean } = {},
+    options: { preserveTimestamp?: boolean; patch?: SessionMessageSyncPatch } = {},
   ): Promise<void> {
     const state = this.stateFor(sessionId);
     if (state.journal.some((entry) => entry.message.id === message.id) || state.removedIds.has(message.id)) return;
     const createdAt = options.preserveTimestamp ? message.createdAt : this.monotonicCreatedAt(state, message.createdAt);
     const normalizedMessage = { ...message, createdAt };
     const index = state.journal.push({ seq: 0, message: normalizedMessage }) - 1;
-    await this.sync(sessionId, state);
+    await this.sync(sessionId, state, options.patch);
     const seq = this.deps.nextSeq(sessionId);
     state.journal[index] = { seq, message: normalizedMessage };
     await this.deps.emitAppended(sessionId, normalizedMessage, seq);
   }
 
-  private async replaceInternal(sessionId: string, messageId: string, message: PickySessionMessage): Promise<void> {
+  private async replaceInternal(
+    sessionId: string,
+    messageId: string,
+    message: PickySessionMessage,
+    options: { patch?: SessionMessageSyncPatch } = {},
+  ): Promise<void> {
     const state = this.states.get(sessionId);
     if (!state || state.removedIds.has(messageId)) return;
     const index = state.journal.findIndex((entry) => entry.message.id === messageId);
     if (index < 0) return;
-    state.journal[index] = { seq: 0, message };
-    await this.sync(sessionId, state);
+    const previousSeq = state.journal[index]!.seq;
+    state.journal[index] = { seq: previousSeq, message };
+    await this.sync(sessionId, state, options.patch);
     const seq = this.deps.nextSeq(sessionId);
     state.journal[index] = { seq, message };
     await this.deps.emitReplaced(sessionId, messageId, message, seq);
@@ -399,8 +421,8 @@ export class SessionMessageBuilder {
     await this.deps.emitRemoved(sessionId, messageId, seq);
   }
 
-  private async sync(sessionId: string, state: SessionState): Promise<void> {
-    await this.deps.syncSessionMessages(sessionId, state.journal.map((entry) => entry.message));
+  private async sync(sessionId: string, state: SessionState, patch?: SessionMessageSyncPatch): Promise<void> {
+    await this.deps.syncSessionMessages(sessionId, state.journal.map((entry) => entry.message), patch);
   }
 
   private monotonicCreatedAt(state: SessionState, proposed: string): string {

@@ -45,7 +45,7 @@ import { buildPinnedPickleSessionLogs, piSessionFilePathFromHandoffTranscript, t
 import { buildMainAgentRolloverSummary, MAIN_AGENT_COMPACT_IDLE_MS, MAIN_AGENT_MESSAGE_LIMIT, MAIN_AGENT_RESTART_TEARDOWN_SESSION_BYTES, MAIN_AGENT_SUMMARY_PICKLE_SESSION_LIMIT, mainRolloverReason, normalizeMainAgentState, quickReplyOriginFromContextSource, type QuickReplyMetadata } from "./domain/main-agent-policy.js";
 import type { ToolCategory } from "./domain/tool-categorizer.js";
 import { logAgentd } from "./local-log.js";
-import { SessionMessageBuilder } from "./session-message-builder.js";
+import { SessionMessageBuilder, type SessionMessageSyncPatch } from "./session-message-builder.js";
 
 export class SessionSupervisor extends EventEmitter {
   private sessions = new Map<string, PickyAgentSession>();
@@ -229,7 +229,7 @@ export class SessionSupervisor extends EventEmitter {
       emitRemoved: async (sessionId, messageId, seq) => { await this.chainEmit(sessionId, async () => { this.emit("messageRemoved", sessionId, messageId, seq); }); },
       nextSeq: (sessionId) => this.nextSeq(sessionId),
       now: () => new Date().toISOString(),
-      syncSessionMessages: async (sessionId, messages) => { await this.syncSessionMessages(sessionId, messages); },
+      syncSessionMessages: async (sessionId, messages, patch) => { await this.syncSessionMessages(sessionId, messages, patch); },
     });
     this.terminalSessionCoordinator = new TerminalSessionCoordinator({
       getSession: (sessionId) => this.sessions.get(sessionId),
@@ -2960,9 +2960,15 @@ export class SessionSupervisor extends EventEmitter {
     });
   }
 
-  private async syncSessionMessages(sessionId: string, messages: readonly PickySessionMessage[]): Promise<void> {
+  private async syncSessionMessages(
+    sessionId: string,
+    messages: readonly PickySessionMessage[],
+    patch?: SessionMessageSyncPatch,
+  ): Promise<void> {
     await this.runSessionWrite(sessionId, async () => {
-      const session = { ...this.mustGet(sessionId), messages: [...messages], updatedAt: new Date().toISOString() };
+      // Read the current session inside the serialized write boundary so a concurrent queue,
+      // log, tool, or lifecycle patch cannot be overwritten by a stale precomputed snapshot.
+      const session = { ...this.mustGet(sessionId), ...patch, messages: [...messages], updatedAt: new Date().toISOString() };
       this.sessions.set(session.id, session);
       await this.store.save(session);
     });

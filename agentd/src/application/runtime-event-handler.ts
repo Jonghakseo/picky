@@ -22,7 +22,7 @@ interface RuntimeMessageJournal {
   recordUserText(sessionId: string, text: string, originatedBy: "user" | "main_agent" | "pi_extension"): Promise<void>;
   appendAssistantDelta(sessionId: string, delta: string): void;
   flushAssistantText(sessionId: string, assistantRun?: PickyAssistantRunMetadata): Promise<void>;
-  appendThinkingDelta(sessionId: string, delta: string): Promise<void>;
+  appendThinkingDelta(sessionId: string, delta: string, patch?: { thinkingPreview: string }): Promise<void>;
   flushThinking(sessionId: string): Promise<void>;
   clearAllThinking(sessionId: string): Promise<void>;
   recordActivitySnapshot(sessionId: string, activitySnapshot: PickyActivitySummary): Promise<void>;
@@ -411,11 +411,22 @@ export class RuntimeEventHandler {
     this.pendingThinkingFlushes.delete(sessionId);
 
     const flush = (async () => {
-      if (pending.delta) await this.dependencies.messageBuilder.appendThinkingDelta(sessionId, pending.delta);
-      if (pending.preview && pending.preview !== this.dependencies.getSession(sessionId).thinkingPreview) {
-        // The preview remains durable for reconnect snapshots, but the live HUD has no
-        // consumer that needs a full PickyAgentSession for each 150 ms thinking flush.
-        await this.dependencies.patchSession(sessionId, { thinkingPreview: pending.preview }, { emitSession: false });
+      const currentPreview = this.dependencies.getSession(sessionId).thinkingPreview;
+      // Preserve the previous truthy-preview semantics: whitespace-only thinking deltas still
+      // journal their text but must not create or clear the reconnect preview.
+      const thinkingPreview = pending.preview && pending.preview !== currentPreview ? pending.preview : undefined;
+      if (pending.delta) {
+        // Persist the thinking message and reconnect preview in one full-session save. The
+        // message builder emits its granular append/replace event only after that save succeeds.
+        await this.dependencies.messageBuilder.appendThinkingDelta(
+          sessionId,
+          pending.delta,
+          thinkingPreview ? { thinkingPreview } : undefined,
+        );
+      } else if (thinkingPreview) {
+        // Defensive fallback for a preview-only pending flush. Normal queueing always supplies
+        // an accepted delta, so this path intentionally keeps the existing write-through patch.
+        await this.dependencies.patchSession(sessionId, { thinkingPreview }, { emitSession: false });
       }
     })();
     this.activeThinkingFlushes.set(sessionId, flush);

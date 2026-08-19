@@ -15,6 +15,10 @@ export interface PendingQueueDelivery extends MaterializedQueueDeliveryIdentity 
   visualDslLeaseId?: string;
 }
 
+export function queueSubmissionSummary(isCompacting: boolean | undefined, fallback: string): string {
+  return isCompacting ? "Compacting session…" : fallback;
+}
+
 export function dropAlreadyMaterializedQueueEntries<T extends MaterializedQueueDeliveryIdentity>(
   queues: { steering: readonly string[]; followUp: readonly string[] },
   pendingDeliveries: readonly T[],

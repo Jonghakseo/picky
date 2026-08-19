@@ -28,7 +28,7 @@ import { readSessionDiff, type SessionDiffResult } from "./application/session-d
 import { listRewindTargets as rewindListTargets, rewindToEntry as runRewindToEntry, type RewindDeps } from "./application/session-rewind.js";
 import type { SessionDiffView } from "./domain/git-diff.js";
 import { hasActivity, zeroActivitySummary } from "./domain/activity-summary.js";
-import { diffQueueRemovedItems, dropAlreadyMaterializedQueueEntries, extractPickyPromptUserInstruction, queueItems, queueTextMatchesUserText, sameQueueItems, type PendingQueueDelivery } from "./domain/queue-policy.js";
+import { diffQueueRemovedItems, dropAlreadyMaterializedQueueEntries, extractPickyPromptUserInstruction, queueItems, queueSubmissionSummary, queueTextMatchesUserText, sameQueueItems, type PendingQueueDelivery } from "./domain/queue-policy.js";
 import { isTerminalStatus } from "./domain/session-status.js";
 import { countSystemMessages, sameTodoState, shouldReattachBlockedSessionOnStartup } from "./domain/session-state-policy.js";
 import { ARCHIVED_SESSION_RETENTION_DAYS, buildAppendedMainMessageState, buildArchivedSessionRestartCancellation, buildDuplicatedPickleSession, buildEmptyPickleSession, buildInterruptedRuntimeLiveStatePatch, buildOrphanedChildRecoverySession, buildPinnedPickleSession, buildResumedHandoffPickleSession, buildRuntimeReattachPatch, buildRuntimeSessionReplacementPatch, buildUnattachedRuntimeBlock, buildVisibleSession, projectMainAgentSessionInfo, projectMainReplyMetadata, projectMainRolloverPickleSessions, shouldPurgeArchivedSession } from "./domain/session-supervisor-projection-policy.js";
@@ -954,7 +954,6 @@ export class SessionSupervisor extends EventEmitter {
     this.emit("quickReply", contextId, text, metadata);
   }
 
-
   async createPickleFromHandoff(context: PickyContextPacket, handoff: { title: string; instructions: string; cwd?: string }): Promise<PickyAgentSession> {
     const cwd = normalizeOptionalString(handoff.cwd) ?? context.cwd;
     const handoffContext = cwd ? { ...context, cwd } : context;
@@ -1026,7 +1025,6 @@ export class SessionSupervisor extends EventEmitter {
       this.pendingRuntimeAbortControllers.delete(id);
     }
   }
-
 
   async createEmptyPickleSession(context: PickyContextPacket): Promise<PickyAgentSession> {
     if (!this.runtime.prewarm) throw new Error("Runtime cannot prewarm empty Pickle sessions");
@@ -2112,14 +2110,7 @@ export class SessionSupervisor extends EventEmitter {
     logAgentd("follow-up requested", { sessionId, textChars: text.length, contextId: context?.id, images: prompt.imagePaths.length, visualDsl: visualDslLease ? 1 : 0 });
     await this.appendLog(sessionId, `${FOLLOWUP_PREFIX}${text}`);
     const commandReceiptId = await this.recordNonSkillSlashCommandReceipt(sessionId, text);
-    await this.patch(sessionId, {
-      status: "running",
-      // Preserve the compaction summary so the HUD keeps its compaction overlay and queue
-      // guidance visible while this follow-up waits in the runtime-owned compaction queue.
-      lastSummary: handle.isCompacting ? "Compacting session…" : "Follow-up queued",
-      finalAnswer: undefined,
-      thinkingPreview: undefined,
-    });
+    await this.patch(sessionId, { status: "running", lastSummary: queueSubmissionSummary(handle.isCompacting, "Follow-up queued"), finalAnswer: undefined, thinkingPreview: undefined });
     const delivery = this.pushPendingQueueDelivery(sessionId, text, "user", {
       kind: "followUp",
       attachedImagesCount: prompt.imagePaths.length,
@@ -2711,14 +2702,7 @@ export class SessionSupervisor extends EventEmitter {
         await this.patch(sessionId, { status: previousSession.status, lastSummary: previousSession.lastSummary, thinkingPreview: previousSession.thinkingPreview });
       }
     } else {
-      await this.patch(sessionId, {
-        status: "running",
-        // See the follow-up path: queueing during compaction must not erase the HUD's
-        // compaction state before Pi emits compaction_end.
-        lastSummary: handle.isCompacting ? "Compacting session…" : "Steering message sent",
-        finalAnswer: undefined,
-        thinkingPreview: undefined,
-      });
+      await this.patch(sessionId, { status: "running", lastSummary: queueSubmissionSummary(handle.isCompacting, "Steering message sent"), finalAnswer: undefined, thinkingPreview: undefined });
     }
     return this.mustGet(sessionId);
   }
@@ -2745,8 +2729,7 @@ export class SessionSupervisor extends EventEmitter {
     const cancellationMessagesBefore = countSystemMessages(beforeAbort, "Cancelled by user");
     logAgentd("abort requested", { sessionId, hasHandle: Boolean(handle) });
     if (handle) {
-      // Match Pi TUI full-abort semantics: discard all queued input before Pi emits abort/
-      // compaction terminal events, so an aborted compaction cannot replay stale user input.
+      // Match Pi TUI full-abort semantics by discarding queued input before terminal events.
       await this.clearQueue(sessionId, "all");
       await handle.abort();
       await this.waitForRuntimeEvents(sessionId);

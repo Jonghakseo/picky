@@ -70,6 +70,7 @@ import {
   textFromPiMessageContent,
 } from "./pi-sdk-runtime-helpers.js";
 import { createBaseAutocompleteProvider, PICKY_BUILTIN_SLASH_COMMANDS } from "./pi-autocomplete-provider.js";
+import { isRegisteredExtensionCommand, PiPromptQueue, type PiQueueSnapshot } from "./pi-prompt-queue.js";
 import { writeFilePathFromRawArgs } from "./write-file-path.js";
 
 // Re-exported so existing importers keep working.
@@ -237,11 +238,6 @@ interface WriteFileMetadata {
   fileExistedBefore: boolean;
 }
 
-interface CompactionQueuedPrompt {
-  prompt: BuiltPrompt;
-  streamingBehavior: "steer" | "followUp";
-}
-
 class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private listeners = new Set<(event: RuntimeEvent) => void>();
   private unsubscribe?: () => void;
@@ -249,11 +245,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private readonly transcriptRepairLogLine?: string;
   private queuedSteeringCount = 0;
   private queuedFollowUpCount = 0;
-  // Pi only queues prompts while a turn is streaming. During compaction its TUI keeps a
-  // separate queue, then replays it on compaction_end; retain the complete BuiltPrompt so
-  // attachments and steer/follow-up semantics survive the same boundary in Picky.
-  private compactionQueuedPrompts: CompactionQueuedPrompt[] = [];
-  private isFlushingCompactionQueue = false;
+  private readonly promptQueue: PiPromptQueue;
   private pendingExtensionUiRequestIds = new Set<string>();
   private hostPendingExtensionUiPresent?: () => boolean;
   private pendingTerminalError?: Extract<RuntimeEvent, { type: "status" }>;
@@ -261,15 +253,6 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private initialPromptTimer?: ReturnType<typeof setTimeout>;
   private expectedInputDeliveries: ExpectedInputDelivery[] = [];
   private pendingPromptPreflightDeliveryIds = new Set<string>();
-  // Pi expands slash commands like `/skill:<name>` server-side before enqueueing, so the queue
-  // snapshot and the matching role="custom" message_start carry the expansion (e.g. the SKILL.md
-  // body) instead of the raw text the user typed. We learn `expansion -> raw` mappings from Pi's
-  // queue updates (including the first synchronous queue_update Pi emits before preflightResult)
-  // and from a post-acceptance queue diff, then translate every outbound view of the queue
-  // (queue_update events, getSteeringMessages/getFollowUpMessages) so downstream code sees the raw
-  // text consistently and suppress the duplicate role="custom" echo when it arrives.
-  private slashExpansions = new Map<string, { raw: string; count: number }>();
-  private pendingSlashSubmissions: Array<{ raw: string; beforeQueue?: ReadonlyMap<string, number> }> = [];
   private readonly skillEchoSuppressions = new SkillEchoSuppressionTracker(SLASH_EXPANSION_MAP_CAP);
   // After an explicit abort() we synthesize a `status: cancelled` event right away. Pi will
   // still drain the aborted turn and eventually emit its own turn_end/agent_end with
@@ -293,6 +276,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     private readonly bridgeOptions: { disableBlockingDialogs?: boolean; allowedBlockingDialogMethods?: readonly DialogMethod[] } = {},
     private readonly inputRewriteObserver: PiInputRewriteObserver = new PiInputRewriteObserver(() => {}),
   ) {
+    this.promptQueue = new PiPromptQueue(id, SLASH_EXPANSION_MAP_CAP);
     this.uiBridge = this.createBridge();
     this.transcriptRepairLogLine = repairDanglingToolCalls(runtime.session);
     this.runtime.setRebindSession(async () => this.bindCurrentSession());
@@ -623,30 +607,10 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
 
   clearQueue(): { steering: string[]; followUp: string[] } {
     const cleared = this.runtime.session.clearQueue();
-    const queuedDuringCompaction = this.compactionQueuedPrompts;
-    this.compactionQueuedPrompts = [];
-    // Drop cached slash-command expansion mappings whose Pi-side entries were just cleared.
-    // Without this the mapping would leak indefinitely whenever the user discards a queued
-    // slash command before Pi delivers its role="custom" echo.
-    for (const entry of [...cleared.steering, ...cleared.followUp]) {
-      this.slashExpansions.delete(this.normalizedSlashExpansionKey(entry));
-      this.skillEchoSuppressions.consume(entry);
-    }
+    for (const entry of [...cleared.steering, ...cleared.followUp]) this.skillEchoSuppressions.consume(entry);
+    const result = this.promptQueue.clear(cleared);
     this.emitCombinedQueueUpdate();
-    return {
-      steering: [
-        ...cleared.steering.map((entry) => this.translateQueueEntry(entry)),
-        ...queuedDuringCompaction
-          .filter((entry) => entry.streamingBehavior === "steer")
-          .map((entry) => entry.prompt.text),
-      ],
-      followUp: [
-        ...cleared.followUp.map((entry) => this.translateQueueEntry(entry)),
-        ...queuedDuringCompaction
-          .filter((entry) => entry.streamingBehavior === "followUp")
-          .map((entry) => entry.prompt.text),
-      ],
-    };
+    return result;
   }
 
   listRewindTargets(): RewindTarget[] {
@@ -678,29 +642,18 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   getActiveBranchTranscript(): RewindBranchMessage[] { return branchTranscriptFromEntries(this.runtime.session.sessionManager.getBranch()); }
   getTodoStateResolution() { return resolveTodoStateFromPiSessionEntries(this.runtime.session.sessionManager.getBranch()); }
 
-  getSteeringMessages(): readonly string[] {
-    return this.combinedQueueSnapshot().steering;
-  }
+  getSteeringMessages(): readonly string[] { return this.combinedQueueSnapshot().steering; }
+  getFollowUpMessages(): readonly string[] { return this.combinedQueueSnapshot().followUp; }
 
-  getFollowUpMessages(): readonly string[] {
-    return this.combinedQueueSnapshot().followUp;
+  private piQueueSnapshot(): PiQueueSnapshot {
+    return {
+      steering: this.runtime.session.getSteeringMessages(),
+      followUp: this.runtime.session.getFollowUpMessages(),
+    };
   }
 
   private combinedQueueSnapshot(): { steering: string[]; followUp: string[] } {
-    return {
-      steering: [
-        ...this.runtime.session.getSteeringMessages().map((entry) => this.translateQueueEntry(entry)),
-        ...this.compactionQueuedPrompts
-          .filter((entry) => entry.streamingBehavior === "steer")
-          .map((entry) => entry.prompt.text),
-      ],
-      followUp: [
-        ...this.runtime.session.getFollowUpMessages().map((entry) => this.translateQueueEntry(entry)),
-        ...this.compactionQueuedPrompts
-          .filter((entry) => entry.streamingBehavior === "followUp")
-          .map((entry) => entry.prompt.text),
-      ],
-    };
+    return this.promptQueue.combinedSnapshot(this.piQueueSnapshot());
   }
 
   private emitCombinedQueueUpdate(): void {
@@ -708,102 +661,6 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     this.queuedSteeringCount = steering.length;
     this.queuedFollowUpCount = followUp.length;
     this.emit({ type: "queue_update", steering, followUp });
-  }
-
-  private translateQueueEntry(text: string): string {
-    return this.slashExpansions.get(this.normalizedSlashExpansionKey(text))?.raw ?? text;
-  }
-
-  private normalizedSlashExpansionKey(text: string): string {
-    return text.trim();
-  }
-
-  private registerSlashExpansion(expansion: string, rawText: string): void {
-    const expansionKey = this.normalizedSlashExpansionKey(expansion);
-    const raw = rawText.trim();
-    if (!expansionKey || !raw || expansionKey === raw) return;
-    const existing = this.slashExpansions.get(expansionKey);
-    if (existing) {
-      existing.count += 1;
-      return;
-    }
-    // Bound the map: if it grows past the cap, drop the oldest entries so a long-lived
-    // session that repeatedly invokes slash commands without ever receiving custom echoes
-    // (e.g. extensions that don't echo, or unrelated cleanup paths) cannot leak memory.
-    while (this.slashExpansions.size >= SLASH_EXPANSION_MAP_CAP) {
-      const oldestKey = this.slashExpansions.keys().next().value;
-      if (oldestKey === undefined) break;
-      this.slashExpansions.delete(oldestKey);
-    }
-    this.slashExpansions.set(expansionKey, { raw, count: 1 });
-    logAgentd("pi slash expansion captured", {
-      sessionId: this.id,
-      rawChars: raw.length,
-      expansionChars: expansionKey.length,
-    });
-  }
-
-  private consumeSlashExpansion(expansion: string): boolean {
-    const expansionKey = this.normalizedSlashExpansionKey(expansion);
-    const existing = this.slashExpansions.get(expansionKey);
-    if (!existing) return false;
-    existing.count -= 1;
-    if (existing.count <= 0) this.slashExpansions.delete(expansionKey);
-    return true;
-  }
-
-  private removePendingSlashSubmission(pending: { raw: string; beforeQueue?: ReadonlyMap<string, number> } | undefined): void {
-    if (!pending) return;
-    const index = this.pendingSlashSubmissions.indexOf(pending);
-    if (index >= 0) this.pendingSlashSubmissions.splice(index, 1);
-  }
-
-
-  // Snapshot Pi's queues right before submitting a slash-prefixed prompt so we can diff after
-  // acceptance to learn which queue entry Pi created from our raw text. The before-set keeps us
-  // from re-mapping entries that were already queued by an earlier prompt.
-  private snapshotQueueForSlashExpansion(rawText: string): ReadonlyMap<string, number> | undefined {
-    if (!rawText.trim().startsWith("/")) return undefined;
-    const counts = new Map<string, number>();
-    for (const entry of [...this.runtime.session.getSteeringMessages(), ...this.runtime.session.getFollowUpMessages()]) {
-      const key = this.normalizedSlashExpansionKey(entry);
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
-    return counts;
-  }
-
-  private rememberSlashExpansionFromQueue(beforeQueue: ReadonlyMap<string, number> | undefined, rawText: string): void {
-    if (!beforeQueue) return;
-    const after = [
-      ...this.runtime.session.getSteeringMessages(),
-      ...this.runtime.session.getFollowUpMessages(),
-    ];
-    const raw = rawText.trim();
-    const hasPendingRaw = this.pendingSlashSubmissions.some((submission) => submission.raw === raw);
-    const seen = new Map<string, number>();
-    for (const entry of after) {
-      const entryKey = this.normalizedSlashExpansionKey(entry);
-      const occurrence = (seen.get(entryKey) ?? 0) + 1;
-      seen.set(entryKey, occurrence);
-      if (entryKey === raw) continue;
-      if (occurrence <= (beforeQueue.get(entryKey) ?? 0)) continue;
-      if (this.slashExpansions.has(entryKey) && !hasPendingRaw) continue;
-      this.registerSlashExpansion(entry, raw);
-    }
-  }
-
-  private rememberPendingSlashExpansionsFromQueueUpdate(entries: readonly string[]): void {
-    const seen = new Map<string, number>();
-    for (const entry of entries) {
-      const entryKey = this.normalizedSlashExpansionKey(entry);
-      const occurrence = (seen.get(entryKey) ?? 0) + 1;
-      seen.set(entryKey, occurrence);
-      if (!entryKey || this.slashExpansions.has(entryKey)) continue;
-      const pending = this.pendingSlashSubmissions.find((submission) => submission.raw !== entryKey && occurrence > (submission.beforeQueue?.get(entryKey) ?? 0));
-      if (!pending) continue;
-      this.registerSlashExpansion(entry, pending.raw);
-      this.removePendingSlashSubmission(pending);
-    }
   }
 
   get steeringMode(): PickyQueueMode {
@@ -886,10 +743,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     // A Pi rebind replaces the active session just as the TUI's renderCurrentSessionState()
     // boundary does. Adapter-owned compaction input belongs to the prior session and must not
     // survive into the replacement session or be replayed by a later compaction_end event.
-    if (this.compactionQueuedPrompts.length > 0) {
-      this.compactionQueuedPrompts = [];
-      this.emitCombinedQueueUpdate();
-    }
+    if (this.promptQueue.discardCompactionPrompts()) this.emitCombinedQueueUpdate();
     this.skillEchoSuppressions.clear();
     this.unsubscribe?.();
     // Mark "no current subscription" before the await so a concurrent re-entrant caller can
@@ -988,25 +842,14 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     if (record.type === "queue_update") {
       const rawSteering = Array.isArray(record.steering) ? (record.steering as readonly string[]) : [];
       const rawFollowUp = Array.isArray(record.followUp) ? (record.followUp as readonly string[]) : [];
-      this.rememberPendingSlashExpansionsFromQueueUpdate([...rawSteering, ...rawFollowUp]);
+      this.promptQueue.rememberQueueUpdate([...rawSteering, ...rawFollowUp]);
       // Translate Pi-side queue entries back to the raw text the user typed so downstream code
       // sees the raw slash command instead of its server-side expansion. We intentionally do NOT
       // drop expansion mappings here even when Pi dequeues the entry, because the matching
       // role="custom" message_start typically arrives just after the queue_update and still
       // needs the mapping to suppress its duplicate echo. Cleanup happens on custom-echo
       // consumption, clearQueue, and an upper size cap.
-      const steering = [
-        ...rawSteering.map((entry) => this.translateQueueEntry(entry)),
-        ...this.compactionQueuedPrompts
-          .filter((entry) => entry.streamingBehavior === "steer")
-          .map((entry) => entry.prompt.text),
-      ];
-      const followUp = [
-        ...rawFollowUp.map((entry) => this.translateQueueEntry(entry)),
-        ...this.compactionQueuedPrompts
-          .filter((entry) => entry.streamingBehavior === "followUp")
-          .map((entry) => entry.prompt.text),
-      ];
+      const { steering, followUp } = this.promptQueue.combinedSnapshot({ steering: rawSteering, followUp: rawFollowUp });
       this.queuedSteeringCount = steering.length;
       this.queuedFollowUpCount = followUp.length;
       logLifecycleEvent("piRuntimeEvent", { sessionId: this.id, piEvent: "queue_update", ...this.lifecycleFields() });
@@ -1149,7 +992,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     // slash command: either via the queue diff (streaming submits) or via structural matching
     // against remembered /skill: invocations (idle submits, which never touch Pi's queue).
     // Consume both trackers so neither leaks when the other matches first.
-    const suppressedAsQueuedExpansion = this.consumeSlashExpansion(text);
+    const suppressedAsQueuedExpansion = this.promptQueue.consumeExpansion(text);
     const suppressedAsSkillEcho = this.skillEchoSuppressions.consume(text);
     if (suppressedAsQueuedExpansion || suppressedAsSkillEcho) return undefined;
 
@@ -1183,7 +1026,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     const matchedIndex = expectedInputDeliveryIndex(
       this.expectedInputDeliveries,
       text,
-      (candidate) => this.translateQueueEntry(candidate),
+      (candidate) => this.promptQueue.translate(candidate),
     );
     if (matchedIndex >= 0) return this.expectedInputDeliveries.splice(matchedIndex, 1)[0]!;
 
@@ -1202,14 +1045,14 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     if (!alias || alias === raw) return;
     delivery.aliases ??= new Set<string>();
     delivery.aliases.add(alias);
-    this.registerSlashExpansion(alias, raw);
+    this.promptQueue.registerAlias(alias, raw);
   }
 
   // Public view of the runtime's learned expansion mappings so the terminal-sync dedup can
   // reverse Pi's server-side rewrite on an imported JSONL line back to the raw text Picky
   // already recorded. Identity when nothing was learned.
   reverseInputExpansion(text: string): string {
-    return this.translateQueueEntry(text);
+    return this.promptQueue.translate(text);
   }
 
   private cancelExpectedInputDelivery(id: string): void {
@@ -1246,7 +1089,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     if (event.type === "compaction_end") {
       const reason = stringValue(event.reason);
       const errorMessage = stringValue(event.errorMessage);
-      const hasQueuedCompactionPrompts = this.compactionQueuedPrompts.length > 0;
+      const hasQueuedCompactionPrompts = this.promptQueue.hasCompactionPrompts;
       if (!errorMessage && event.aborted !== true && event.result != null) {
         piTryRefreshSystemPromptFromActiveTools(this.runtime.session, this.id);
       }
@@ -1309,8 +1152,9 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
 
   private async promptWithOptions(prompt: BuiltPrompt, streamingBehavior?: "steer" | "followUp"): Promise<boolean> {
     if (await this.handleBuiltinSlashCommand(prompt.text)) return true;
-    if (streamingBehavior && piIsCompacting(this.runtime.session) && !this.isExtensionCommand(prompt.text)) {
-      this.compactionQueuedPrompts.push({ prompt, streamingBehavior });
+    const extensionCommands = this.runtime.session.extensionRunner.getRegisteredCommands();
+    if (streamingBehavior && piIsCompacting(this.runtime.session) && !isRegisteredExtensionCommand(prompt.text, extensionCommands)) {
+      this.promptQueue.enqueueDuringCompaction(prompt, streamingBehavior);
       this.emitCombinedQueueUpdate();
       return false;
     }
@@ -1321,77 +1165,33 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     });
   }
 
-  private isExtensionCommand(text: string): boolean {
-    const trimmed = text.trim();
-    if (!trimmed.startsWith("/")) return false;
-    const commandName = trimmed.slice(1).split(/\s/, 1)[0];
-    if (!commandName) return false;
-    return this.runtime.session.extensionRunner.getRegisteredCommands()
-      .some((command) => command.invocationName === commandName);
-  }
-
   private async queuePromptForActiveTurn(prompt: BuiltPrompt, streamingBehavior: "steer" | "followUp"): Promise<void> {
     const expected = this.expectInputDelivery(prompt.text, "internal", true, queueKindFromStreamingBehavior(streamingBehavior));
-    const queueBeforeSlashExpansion = this.snapshotQueueForSlashExpansion(prompt.text);
-    const pendingSlashSubmission = queueBeforeSlashExpansion ? { raw: prompt.text.trim(), beforeQueue: queueBeforeSlashExpansion } : undefined;
-    if (pendingSlashSubmission) this.pendingSlashSubmissions.push(pendingSlashSubmission);
+    const pendingSlashSubmission = this.promptQueue.beginSlashSubmission(prompt.text, this.piQueueSnapshot());
     const skillEchoSuppression = this.skillEchoSuppressions.register(prompt.text);
     try {
       const images = await imageOptions(prompt.imagePaths);
       await this.inputRewriteObserver.runWithDelivery(expected.id, () => streamingBehavior === "steer"
         ? this.runtime.session.steer(prompt.text, images)
         : this.runtime.session.followUp(prompt.text, images));
-      this.rememberSlashExpansionFromQueue(queueBeforeSlashExpansion, prompt.text);
-      this.removePendingSlashSubmission(pendingSlashSubmission);
+      this.promptQueue.completeSlashSubmission(pendingSlashSubmission, this.piQueueSnapshot());
     } catch (error) {
       this.cancelExpectedInputDelivery(expected.id);
-      this.removePendingSlashSubmission(pendingSlashSubmission);
+      this.promptQueue.cancelSlashSubmission(pendingSlashSubmission);
       this.skillEchoSuppressions.remove(skillEchoSuppression);
       throw error;
     }
   }
 
   private async flushCompactionQueue(willRetry: boolean): Promise<void> {
-    if (this.isFlushingCompactionQueue || this.compactionQueuedPrompts.length === 0) return;
-    this.isFlushingCompactionQueue = true;
-    let restoredAfterPreflightFailure = false;
-    const queuedPrompts = this.compactionQueuedPrompts;
-    this.compactionQueuedPrompts = [];
-    this.emitCombinedQueueUpdate();
-
-    try {
-      for (let index = 0; index < queuedPrompts.length; index += 1) {
-        const queued = queuedPrompts[index]!;
-        try {
-          // A retry already owns the next turn, so every item joins its queue. Otherwise the
-          // first item starts a turn and the remaining items retain their queue modes behind it.
-          if (willRetry || index > 0) {
-            await this.queuePromptForActiveTurn(queued.prompt, queued.streamingBehavior);
-          } else {
-            await this.promptWithOptions(queued.prompt, queued.streamingBehavior);
-          }
-        } catch (error) {
-          // A prompt that Pi rejected before preflight acceptance has not been delivered. Put it
-          // and every later item back ahead of any newly queued input so dequeue/retry cannot lose
-          // or reorder the user's messages.
-          this.compactionQueuedPrompts = [
-            ...queuedPrompts.slice(index),
-            ...this.compactionQueuedPrompts,
-          ];
-          restoredAfterPreflightFailure = true;
-          this.emitCombinedQueueUpdate();
-          this.emitPromptFailureStatus(error);
-          return;
-        }
-      }
-    } finally {
-      this.isFlushingCompactionQueue = false;
-      // Compaction can restart while the prior queue is flushing. Once Pi reports it settled,
-      // replay any items that were re-queued into the next eligible turn.
-      if (!restoredAfterPreflightFailure && !piIsCompacting(this.runtime.session) && this.compactionQueuedPrompts.length > 0) {
-        queueMicrotask(() => void this.flushCompactionQueue(willRetry));
-      }
-    }
+    await this.promptQueue.flushCompactionQueue({
+      willRetry,
+      isCompacting: () => piIsCompacting(this.runtime.session),
+      startPrompt: async (prompt, behavior) => { await this.promptWithOptions(prompt, behavior); },
+      queuePrompt: (prompt, behavior) => this.queuePromptForActiveTurn(prompt, behavior),
+      onQueueChanged: () => this.emitCombinedQueueUpdate(),
+      onError: (error) => this.emitPromptFailureStatus(error),
+    });
   }
 
   // Pi exposes session.setSessionName(), runtime.newSession(), and session.compact() as public
@@ -1525,9 +1325,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
 
     const expected = this.expectInputDelivery(text, "internal", true, queueKindFromStreamingBehavior(options.streamingBehavior));
     this.pendingPromptPreflightDeliveryIds.add(expected.id);
-    const queueBeforeSlashExpansion = this.snapshotQueueForSlashExpansion(text);
-    const pendingSlashSubmission = queueBeforeSlashExpansion ? { raw: text.trim(), beforeQueue: queueBeforeSlashExpansion } : undefined;
-    if (pendingSlashSubmission) this.pendingSlashSubmissions.push(pendingSlashSubmission);
+    const pendingSlashSubmission = this.promptQueue.beginSlashSubmission(text, this.piQueueSnapshot());
     const skillEchoSuppression = this.skillEchoSuppressions.register(text);
     const promptPromise = this.inputRewriteObserver.runWithDelivery(expected.id, () => this.runtime.session.prompt(text, {
       ...options,
@@ -1536,7 +1334,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
         if (!success) {
           logLifecycleEvent("piPromptPreflightRejected", { sessionId: this.id, ...this.lifecycleFields() });
           this.cancelExpectedInputDelivery(expected.id);
-          this.removePendingSlashSubmission(pendingSlashSubmission);
+          this.promptQueue.cancelSlashSubmission(pendingSlashSubmission);
           this.skillEchoSuppressions.remove(skillEchoSuppression);
           return;
         }
@@ -1558,7 +1356,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
         promptResolved = true;
         logLifecycleEvent("piPromptRejected", { sessionId: this.id, accepted, ...this.lifecycleFields() });
         this.cancelExpectedInputDelivery(expected.id);
-        this.removePendingSlashSubmission(pendingSlashSubmission);
+        this.promptQueue.cancelSlashSubmission(pendingSlashSubmission);
         this.skillEchoSuppressions.remove(skillEchoSuppression);
         if (accepted) {
           this.emitPromptFailureStatus(error);
@@ -1582,8 +1380,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     // to learn whether Pi expanded our raw slash command into a different queue entry. The
     // resulting map is what lets the rest of this class translate Pi's queue snapshot back to
     // the raw text the user typed.
-    this.rememberSlashExpansionFromQueue(queueBeforeSlashExpansion, text);
-    this.removePendingSlashSubmission(pendingSlashSubmission);
+    this.promptQueue.completeSlashSubmission(pendingSlashSubmission, this.piQueueSnapshot());
     const handledSynchronously = promptResolved ? this.maybeEmitImmediateCompletion(wasStreaming) : false;
     if (handledSynchronously || (promptResolved && !this.isExpectedInputQueued(text))) this.cancelExpectedInputDelivery(expected.id);
     logLifecycleEvent("piPromptAccepted", {

@@ -457,10 +457,9 @@ describe("SessionSupervisor", () => {
   });
 
   it("broadcasts activitySummary via sessionActivityUpdated without an accompanying full sessionUpdated", async () => {
-    // Phase 1 of the live-update slim-down: streaming tool/thinking turns previously fired a full
-    // sessionUpdated (full PickyAgentSession payload) on top of every sessionActivityUpdated, which
-    // doubled HUD decode/render work on busy turns. The activitySummary patch must stay disk-
-    // persistent but stop emitting a session event; only the dedicated activity event is allowed.
+    // Streaming tool/thinking turns previously fired a full sessionUpdated (full PickyAgentSession
+    // payload) on top of every sessionActivityUpdated. Both live projections remain disk-persistent,
+    // but neither preview-only patch may emit a full session event.
     const runtime = new ManualRuntime();
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-activity-no-session-update-"));
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
@@ -477,19 +476,18 @@ describe("SessionSupervisor", () => {
     // assertion we care about here.
     runtime.handle!.emit({ type: "thinking_delta", delta: "reasoning step" });
     await waitUntil(() => activityEvents.length === 1);
+    await waitUntil(() => supervisor.get(session.id)?.thinkingPreview === "reasoning step");
+
+    // Disk persistence still mirrors both live projections so reconnect/snapshot is correct.
+    let restored: PickyAgentSession | undefined;
+    await waitUntilAsync(async () => {
+      restored = (await new SessionStore(dir).loadAll()).find((entry) => entry.id === session.id);
+      return restored?.thinkingPreview === "reasoning step";
+    });
+    await Promise.resolve();
 
     expect(activityEvents.map((event) => event.summary)).toEqual([{ read: 0, bash: 0, edit: 0, write: 0, thinking: 1, other: 0 }]);
-    // The thinking delta itself triggers a thinkingPreview patch (which still emits a session
-    // until Phase 3); the activitySummary patch is the one we are guaranteeing is silent now.
-    // A full sessionUpdated for activity would push this past the single thinkingPreview emit.
-    expect(sessionEvents.length).toBeLessThanOrEqual(1);
-    if (sessionEvents.length === 1) {
-      expect(sessionEvents[0]?.thinkingPreview).toBe("reasoning step");
-    }
-
-    // Disk persistence still mirrors the new activitySummary so reconnect/snapshot is correct.
-    const persisted = await new SessionStore(dir).loadAll();
-    const restored = persisted.find((entry) => entry.id === session.id);
+    expect(sessionEvents).toHaveLength(0);
     expect(restored?.activitySummary).toEqual({ read: 0, bash: 0, edit: 0, write: 0, thinking: 1, other: 0 });
   });
 
@@ -2814,6 +2812,39 @@ describe("SessionSupervisor", () => {
     await settle();
 
     expect(supervisor.get(session.id)?.thinkingPreview).toBeUndefined();
+  });
+
+  it("persists thinking previews without broadcasting full sessions for large histories", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-thinking-preview-payload-"));
+    const runtime = new ManualRuntime();
+    const store = new SessionStore(dir);
+    const supervisor = new SessionSupervisor(runtime, store);
+    await supervisor.load();
+    const session = await supervisor.create(context("large thinking preview payload"));
+    const current = supervisor.get(session.id)!;
+    current.tools = Array.from({ length: 400 }, (_, index) => ({
+      toolCallId: `tool-${index}`,
+      name: "read",
+      status: "succeeded" as const,
+      preview: "x".repeat(240),
+      argsPreview: "y".repeat(240),
+      resultPreview: "z".repeat(240),
+    }));
+    const sessionEventBytes: number[] = [];
+    supervisor.on("session", (emitted) => sessionEventBytes.push(Buffer.byteLength(JSON.stringify(emitted), "utf8")));
+
+    runtime.handle?.emit({ type: "thinking_delta", delta: "inspect the large session" });
+    await waitUntil(() => supervisor.get(session.id)?.thinkingPreview === "inspect the large session");
+
+    expect(sessionEventBytes).toEqual([]);
+    let restored: PickyAgentSession | undefined;
+    await waitUntilAsync(async () => {
+      restored = (await store.loadAll()).find((entry) => entry.id === session.id);
+      return restored?.thinkingPreview === "inspect the large session";
+    });
+    await Promise.resolve();
+    expect(sessionEventBytes).toEqual([]);
+    expect(restored?.tools).toHaveLength(400);
   });
 
   it("restores persisted Pickle-session markers from handoff logs", async () => {
@@ -8414,6 +8445,14 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
   const deadline = Date.now() + 1_000;
   while (!predicate()) {
     if (Date.now() > deadline) throw new Error("Timed out waiting for condition");
+    await delay(10);
+  }
+}
+
+async function waitUntilAsync(predicate: () => Promise<boolean>): Promise<void> {
+  const deadline = Date.now() + 1_000;
+  while (!(await predicate())) {
+    if (Date.now() > deadline) throw new Error("Timed out waiting for async condition");
     await delay(10);
   }
 }

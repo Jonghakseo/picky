@@ -413,7 +413,9 @@ export class RuntimeEventHandler {
     const flush = (async () => {
       if (pending.delta) await this.dependencies.messageBuilder.appendThinkingDelta(sessionId, pending.delta);
       if (pending.preview && pending.preview !== this.dependencies.getSession(sessionId).thinkingPreview) {
-        await this.dependencies.patchSession(sessionId, { thinkingPreview: pending.preview });
+        // The preview remains durable for reconnect snapshots, but the live HUD has no
+        // consumer that needs a full PickyAgentSession for each 150 ms thinking flush.
+        await this.dependencies.patchSession(sessionId, { thinkingPreview: pending.preview }, { emitSession: false });
       }
     })();
     this.activeThinkingFlushes.set(sessionId, flush);

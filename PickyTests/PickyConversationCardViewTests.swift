@@ -552,7 +552,7 @@ struct PickyConversationCardViewTests {
         #expect(PickyQueuedInputText.displayText(from: envelope) == expected)
     }
 
-    @Test func compactingPhaseShowsOverlayAndAllowsComposerEditingWhileBlockingSend() {
+    @Test func compactingPhaseShowsOverlayAndAllowsComposerQueueSubmission() {
         let session = makeConversationSession(status: .running, lastSummary: "Compacting after context overflow…")
         let viewModel = makeViewModel()
         let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
@@ -561,8 +561,10 @@ struct PickyConversationCardViewTests {
         #expect(session.isCompacting)
         #expect(snapshot.compactingOverlayCount == 1)
         #expect(!composer.isComposerInputDisabled)
-        #expect(composer.placeholderText == "Compacting…")
-        #expect(composer.sendHelpText == "Session is compacting")
+        #expect(composer.defaultSubmitKind == .steer)
+        #expect(composer.optionReturnSubmitKind == .followUp)
+        #expect(composer.placeholderText == "Queue a message for after compaction…")
+        #expect(composer.sendHelpText == "Queue message until compaction completes")
     }
 
     @Test func compactCompletionSystemMessageRendersDedicatedBubble() {

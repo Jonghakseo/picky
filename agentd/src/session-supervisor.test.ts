@@ -711,6 +711,26 @@ describe("SessionSupervisor", () => {
     expect(runtime.handle!.getFollowUpMessages()).toEqual([]);
   });
 
+  it("clears queued input before aborting and does not journal it as delivered", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-abort-clear-queue-test-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("abort queued input"));
+    const handle = runtime.handle!;
+    handle.isStreaming = true;
+
+    await supervisor.followUp(session.id, "do not deliver after abort");
+    await waitUntil(() => supervisor.get(session.id)?.queuedFollowUps?.[0]?.text === "do not deliver after abort");
+
+    await supervisor.abort(session.id);
+
+    expect(handle.queueSnapshotsAtAbort).toEqual([{ steering: [], followUp: [] }]);
+    expect(supervisor.get(session.id)?.queuedSteers).toEqual([]);
+    expect(supervisor.get(session.id)?.queuedFollowUps).toEqual([]);
+    expect(userTexts(supervisor.get(session.id))).not.toContain("do not deliver after abort");
+  });
+
   it("lists and resumes Pickle sessions created from a legacy handoff log", async () => {
     const supervisor = await makeSupervisor();
     const regular = await supervisor.create(context("regular"));
@@ -8247,6 +8267,7 @@ class ManualHandle implements RuntimeSessionHandle {
   queuedSteerTexts: string[] = [];
   steerOutcome: { handledSynchronously: boolean } = { handledSynchronously: false };
   aborts = 0;
+  queueSnapshotsAtAbort: Array<{ steering: string[]; followUp: string[] }> = [];
   reloadAuthenticationCalls = 0;
   reloadAuthenticationError?: Error;
   async steer(prompt: BuiltPrompt): Promise<{ handledSynchronously: boolean }> {
@@ -8260,6 +8281,10 @@ class ManualHandle implements RuntimeSessionHandle {
     return this.steerOutcome;
   }
   async abort(): Promise<void> {
+    this.queueSnapshotsAtAbort.push({
+      steering: [...this.queuedSteerTexts],
+      followUp: [...this.queuedFollowUpTexts],
+    });
     this.aborts += 1;
   }
   async reloadAuthentication(): Promise<void> {

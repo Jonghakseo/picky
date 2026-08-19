@@ -922,12 +922,8 @@ struct PickyConversationComposerView: View {
         false
     }
 
-    private var isComposerSubmissionBlocked: Bool {
-        session.isCompacting
-    }
-
     private var isSendDisabled: Bool {
-        isComposerSubmissionBlocked || defaultSubmitKind == nil || (!hasDraftText && attachments.isEmpty)
+        defaultSubmitKind == nil || (!hasDraftText && attachments.isEmpty)
     }
 
     private var hasDraftText: Bool {
@@ -1197,7 +1193,7 @@ struct PickyConversationComposerView: View {
     }
 
     private var placeholder: String {
-        if session.isCompacting { return "Compacting…" }
+        if session.isCompacting { return "Queue a message for after compaction…" }
         if isFileDropTargeted { return "Drop files or screenshots anywhere to insert paths" }
         switch session.status {
         case .running, .queued, .waiting_for_input:
@@ -1212,8 +1208,8 @@ struct PickyConversationComposerView: View {
     }
 
     var sendHelpText: String {
-        if isComposerSubmissionBlocked {
-            return "Session is compacting"
+        if session.isCompacting {
+            return "Queue message until compaction completes"
         }
         guard defaultSubmitKind != nil else {
             return "This session cannot accept composer input"
@@ -1257,7 +1253,6 @@ struct PickyConversationComposerView: View {
     }
 
     private func submit(_ kind: PickyConversationComposerSubmitKind?) {
-        guard !isComposerSubmissionBlocked else { return }
         let submittedSessionID = session.id
         let submittedAttachmentIDs = Set(attachments.map(\.id))
         let attachmentPaths = attachments.map(\.path)

@@ -2112,7 +2112,14 @@ export class SessionSupervisor extends EventEmitter {
     logAgentd("follow-up requested", { sessionId, textChars: text.length, contextId: context?.id, images: prompt.imagePaths.length, visualDsl: visualDslLease ? 1 : 0 });
     await this.appendLog(sessionId, `${FOLLOWUP_PREFIX}${text}`);
     const commandReceiptId = await this.recordNonSkillSlashCommandReceipt(sessionId, text);
-    await this.patch(sessionId, { status: "running", lastSummary: "Follow-up queued", finalAnswer: undefined, thinkingPreview: undefined });
+    await this.patch(sessionId, {
+      status: "running",
+      // Preserve the compaction summary so the HUD keeps its compaction overlay and queue
+      // guidance visible while this follow-up waits in the runtime-owned compaction queue.
+      lastSummary: handle.isCompacting ? "Compacting session…" : "Follow-up queued",
+      finalAnswer: undefined,
+      thinkingPreview: undefined,
+    });
     const delivery = this.pushPendingQueueDelivery(sessionId, text, "user", {
       kind: "followUp",
       attachedImagesCount: prompt.imagePaths.length,
@@ -2704,7 +2711,14 @@ export class SessionSupervisor extends EventEmitter {
         await this.patch(sessionId, { status: previousSession.status, lastSummary: previousSession.lastSummary, thinkingPreview: previousSession.thinkingPreview });
       }
     } else {
-      await this.patch(sessionId, { status: "running", lastSummary: "Steering message sent", finalAnswer: undefined, thinkingPreview: undefined });
+      await this.patch(sessionId, {
+        status: "running",
+        // See the follow-up path: queueing during compaction must not erase the HUD's
+        // compaction state before Pi emits compaction_end.
+        lastSummary: handle.isCompacting ? "Compacting session…" : "Steering message sent",
+        finalAnswer: undefined,
+        thinkingPreview: undefined,
+      });
     }
     return this.mustGet(sessionId);
   }
@@ -2731,6 +2745,9 @@ export class SessionSupervisor extends EventEmitter {
     const cancellationMessagesBefore = countSystemMessages(beforeAbort, "Cancelled by user");
     logAgentd("abort requested", { sessionId, hasHandle: Boolean(handle) });
     if (handle) {
+      // Match Pi TUI full-abort semantics: discard all queued input before Pi emits abort/
+      // compaction terminal events, so an aborted compaction cannot replay stale user input.
+      await this.clearQueue(sessionId, "all");
       await handle.abort();
       await this.waitForRuntimeEvents(sessionId);
     }

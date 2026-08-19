@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
-import { homedir } from "node:os";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AutocompleteItem, AutocompleteProvider } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
@@ -242,6 +243,56 @@ class QueuedPromptStartSession extends FakeSession {
     }
     (options as { preflightResult?: (success: boolean) => void } | undefined)?.preflightResult?.(true);
     await new Promise<void>(() => undefined);
+  }
+}
+
+class CompactionFlushSession extends FakeSession {
+  private flushResolved?: () => void;
+  private readonly flushed = new Promise<void>((resolve) => {
+    this.flushResolved = resolve;
+  });
+
+  waitForFlush(): Promise<void> {
+    return this.flushed;
+  }
+
+  override async prompt(text: string, options?: unknown): Promise<void> {
+    this.prompts.push(text);
+    this.promptOptions.push(options);
+    this.isStreaming = true;
+    this.emit("event", { type: "agent_start" });
+    (options as { preflightResult?: (success: boolean) => void } | undefined)?.preflightResult?.(true);
+  }
+
+  override async followUp(text: string): Promise<void> {
+    this.followUps.push(text);
+    this.followUpQueue.push(text);
+    this.emit("event", { type: "queue_update", steering: [...this.steeringQueue], followUp: [...this.followUpQueue] });
+    this.flushResolved?.();
+  }
+}
+
+class RetryCompactionFlushSession extends FakeSession {
+  private flushResolved?: () => void;
+  private readonly flushed = new Promise<void>((resolve) => {
+    this.flushResolved = resolve;
+  });
+
+  waitForFlush(): Promise<void> {
+    return this.flushed;
+  }
+
+  override async steer(text: string): Promise<void> {
+    this.steers.push(text);
+    this.steeringQueue.push(text);
+    this.emit("event", { type: "queue_update", steering: [...this.steeringQueue], followUp: [...this.followUpQueue] });
+  }
+
+  override async followUp(text: string): Promise<void> {
+    this.followUps.push(text);
+    this.followUpQueue.push(text);
+    this.emit("event", { type: "queue_update", steering: [...this.steeringQueue], followUp: [...this.followUpQueue] });
+    this.flushResolved?.();
   }
 }
 
@@ -935,6 +986,147 @@ describe("PiSdkRuntime", () => {
     expect(events).toContainEqual({ type: "queue_update", steering: ["retry stopped session"], followUp: [] });
     expect(events).toContainEqual({ type: "input_delivery", role: "user", text: "retry stopped session", originatedBy: "internal", queueKind: "steering" });
     expect(events).not.toContainEqual({ type: "input_message", role: "user", text: "retry stopped session", originatedBy: "internal" });
+  });
+
+  it("queues compacting steer and follow-up prompts, then flushes them in submission order with their images", async () => {
+    const fakeSession = new CompactionFlushSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-compaction-queue" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+    const directory = await mkdtemp(join(tmpdir(), "picky-compaction-queue-"));
+    const imagePath = join(directory, "context.png");
+    await writeFile(imagePath, "queued image");
+
+    try {
+      fakeSession.isCompacting = true;
+      await handle.steer({ text: "steer after compaction", imagePaths: [imagePath] });
+      await handle.followUp({ text: "follow up after compaction", imagePaths: [] });
+
+      expect(fakeSession.prompts).toEqual([]);
+      expect(handle.getSteeringMessages()).toEqual(["steer after compaction"]);
+      expect(handle.getFollowUpMessages()).toEqual(["follow up after compaction"]);
+      expect(events).toContainEqual({
+        type: "queue_update",
+        steering: ["steer after compaction"],
+        followUp: ["follow up after compaction"],
+      });
+
+      const flushed = fakeSession.waitForFlush();
+      fakeSession.isCompacting = false;
+      fakeSession.emit("event", { type: "compaction_end", reason: "threshold", willRetry: false, aborted: false, result: { summary: "요약" } });
+      await flushed;
+
+      expect(fakeSession.prompts).toEqual(["steer after compaction"]);
+      expect(fakeSession.promptOptions[0]).toMatchObject({
+        source: "rpc",
+        streamingBehavior: "steer",
+        images: [{ type: "image", mimeType: "image/png", data: Buffer.from("queued image").toString("base64") }],
+      });
+      expect(fakeSession.followUps).toEqual(["follow up after compaction"]);
+      expect(handle.getSteeringMessages()).toEqual([]);
+      expect(handle.getFollowUpMessages()).toEqual(["follow up after compaction"]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("queues every compacting input into the active retry turn", async () => {
+    const fakeSession = new RetryCompactionFlushSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-compaction-retry-queue" });
+    fakeSession.isCompacting = true;
+
+    await handle.steer({ text: "retry steering", imagePaths: [] });
+    await handle.followUp({ text: "retry follow-up", imagePaths: [] });
+
+    const flushed = fakeSession.waitForFlush();
+    fakeSession.isCompacting = false;
+    fakeSession.emit("event", { type: "compaction_end", reason: "overflow", willRetry: true, aborted: false, result: { summary: "요약" } });
+    await flushed;
+
+    expect(fakeSession.prompts).toEqual([]);
+    expect(fakeSession.steers).toEqual(["retry steering"]);
+    expect(fakeSession.followUps).toEqual(["retry follow-up"]);
+    expect(handle.getSteeringMessages()).toEqual(["retry steering"]);
+    expect(handle.getFollowUpMessages()).toEqual(["retry follow-up"]);
+  });
+
+  it("flushes queued prompts after a failed compaction instead of stranding them", async () => {
+    const fakeSession = new CompactionFlushSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-compaction-failed-queue" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+    fakeSession.isCompacting = true;
+
+    await handle.steer({ text: "recover steering", imagePaths: [] });
+    await handle.followUp({ text: "recover follow-up", imagePaths: [] });
+
+    const flushed = fakeSession.waitForFlush();
+    fakeSession.isCompacting = false;
+    fakeSession.emit("event", {
+      type: "compaction_end",
+      reason: "threshold",
+      willRetry: false,
+      errorMessage: "Auto-compaction failed: summarizer overloaded",
+    });
+    await flushed;
+
+    expect(fakeSession.prompts).toEqual(["recover steering"]);
+    expect(fakeSession.followUps).toEqual(["recover follow-up"]);
+    expect(statusEvents(events)).toContainEqual({
+      type: "status",
+      status: "running",
+      summary: "Auto-compaction failed: summarizer overloaded",
+      compactionFailed: true,
+      compactionReason: "threshold",
+    });
+  });
+
+  it("clearQueue returns and removes Pi and compaction queues together", async () => {
+    const fakeSession = new FakeSession();
+    fakeSession.steeringQueue = ["Pi steering"];
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-compaction-clear" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+    fakeSession.isCompacting = true;
+
+    await handle.steer({ text: "compaction steering", imagePaths: [] });
+    await handle.followUp({ text: "compaction follow-up", imagePaths: [] });
+
+    expect(handle.clearQueue()).toEqual({
+      steering: ["Pi steering", "compaction steering"],
+      followUp: ["compaction follow-up"],
+    });
+    expect(handle.getSteeringMessages()).toEqual([]);
+    expect(handle.getFollowUpMessages()).toEqual([]);
+    expect(events).toContainEqual({ type: "queue_update", steering: [], followUp: [] });
+  });
+
+  it("discards compaction input when rebinding so a later compaction end cannot replay it", async () => {
+    const fakeSession = new FakeSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-compaction-rebind" });
+    fakeSession.isCompacting = true;
+
+    await handle.steer({ text: "old session steering", imagePaths: [] });
+    await handle.followUp({ text: "old session follow-up", imagePaths: [] });
+    expect(handle.getSteeringMessages()).toEqual(["old session steering"]);
+    expect(handle.getFollowUpMessages()).toEqual(["old session follow-up"]);
+
+    await (handle as unknown as { bindCurrentSession: () => Promise<void> }).bindCurrentSession();
+
+    expect(handle.getSteeringMessages()).toEqual([]);
+    expect(handle.getFollowUpMessages()).toEqual([]);
+    fakeSession.isCompacting = false;
+    fakeSession.emit("event", { type: "compaction_end", reason: "threshold", willRetry: false, aborted: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(fakeSession.prompts).toEqual([]);
+    expect(fakeSession.steers).toEqual([]);
+    expect(fakeSession.followUps).toEqual([]);
   });
 
   it("does not consume a pending delivery for an unobserved non-exact user event", async () => {

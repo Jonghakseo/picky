@@ -599,9 +599,10 @@ Selecting **Compact** asks Pi to compress older session context so the Pickle ca
 
 What you will see:
 
-- While compaction is running, the card shows a **Compacting…** overlay and the composer is disabled.
+- While compaction is running, the card shows a **Compacting…** overlay. The composer remains editable and accepts steer or follow-up messages; submitted messages appear in the queue and run in submission order after compaction finishes.
+- Use `Option + Up` if you want to pull those queued messages back into the composer and clear the queue before they run.
 - On success, a **Session compacted** system bubble appears in the conversation.
-- On failure, an error bubble explains the reason.
+- On failure, an error bubble explains the reason; queued messages are still released so they are not stranded.
 
 ### 9.4 Message rewind
 

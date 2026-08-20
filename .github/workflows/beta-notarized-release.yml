@@ -30,6 +30,11 @@ on:
         required: true
         default: false
         type: boolean
+      allow_legacy_tag:
+        description: "Allow an existing historical tag that predates the canonical version policy"
+        required: true
+        default: false
+        type: boolean
   release:
     types: [published]
 
@@ -57,6 +62,22 @@ jobs:
     timeout-minutes: 90
 
     steps:
+      - name: Check out release ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag_name }}
+          fetch-depth: 0
+
+      - name: Check out current release policy
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: .release-policy
+          fetch-depth: 1
+
+      - name: Test release helper scripts
+        run: python3 -m unittest discover -s .release-policy/scripts/tests -p 'test_*.py'
+
       - name: Resolve release target
         id: release_meta
         env:
@@ -69,6 +90,7 @@ jobs:
           INPUT_RELEASE_CHANNEL: ${{ inputs.release_channel }}
           INPUT_CREATE_RELEASE_IF_MISSING: ${{ inputs.create_release_if_missing }}
           INPUT_PRERELEASE: ${{ inputs.prerelease }}
+          INPUT_ALLOW_LEGACY_TAG: ${{ inputs.allow_legacy_tag }}
         run: |
           set -euo pipefail
 
@@ -82,12 +104,14 @@ jobs:
               release_channel="stable"
             fi
             create_release_if_missing="false"
+            allow_legacy_tag="false"
           else
             target_tag="${INPUT_TAG_NAME}"
             release_name="${INPUT_RELEASE_NAME}"
             release_channel="${INPUT_RELEASE_CHANNEL:-stable}"
             create_release_if_missing="${INPUT_CREATE_RELEASE_IF_MISSING:-true}"
             prerelease="${INPUT_PRERELEASE:-false}"
+            allow_legacy_tag="${INPUT_ALLOW_LEGACY_TAG:-false}"
           fi
 
           if [[ -z "${target_tag}" ]]; then
@@ -99,10 +123,27 @@ jobs:
             release_name="Picky ${target_tag}"
           fi
 
-          marketing_version=""
-          version_candidate="${target_tag#v}"
-          if [[ "${version_candidate}" =~ ^[0-9]+([.][0-9A-Za-z][0-9A-Za-z-]*)*$ ]]; then
-            marketing_version="${version_candidate}"
+          if [[ "${allow_legacy_tag}" == "true" && "${create_release_if_missing}" != "false" ]]; then
+            echo "allow_legacy_tag=true is restricted to rerunning an existing historical GitHub Release" >&2
+            exit 1
+          fi
+
+          metadata_args=(
+            python3 .release-policy/scripts/release-version-policy.py resolve
+            --tag "${target_tag}"
+            --release-channel "${release_channel}"
+            --prerelease "${prerelease}"
+          )
+          if [[ "${allow_legacy_tag}" == "true" ]]; then
+            metadata_args+=(--allow-legacy)
+          fi
+          release_metadata="$("${metadata_args[@]}")"
+          rm -rf "${GITHUB_WORKSPACE}/.release-policy"
+          marketing_version="$(jq -r .marketingVersion <<<"${release_metadata}")"
+          tag_policy="$(jq -r .tagPolicy <<<"${release_metadata}")"
+          allow_legacy_marketing_version="0"
+          if [[ "${tag_policy}" == "legacy" ]]; then
+            allow_legacy_marketing_version="1"
           fi
 
           {
@@ -110,6 +151,8 @@ jobs:
             echo "target_ref=${target_tag}"
             echo "release_channel=${release_channel}"
             echo "marketing_version=${marketing_version}"
+            echo "tag_policy=${tag_policy}"
+            echo "allow_legacy_marketing_version=${allow_legacy_marketing_version}"
             echo "create_release_if_missing=${create_release_if_missing}"
             echo "prerelease=${prerelease}"
             echo "release_name<<EOF"
@@ -117,11 +160,27 @@ jobs:
             echo "EOF"
           } >> "${GITHUB_OUTPUT}"
 
-      - name: Check out release ref
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ steps.release_meta.outputs.target_ref }}
-          fetch-depth: 0
+      - name: Validate existing GitHub Release state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_TAG: ${{ steps.release_meta.outputs.target_tag }}
+          CREATE_RELEASE_IF_MISSING: ${{ steps.release_meta.outputs.create_release_if_missing }}
+          PRERELEASE: ${{ steps.release_meta.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          if release_json="$(gh release view "${TARGET_TAG}" --json isPrerelease,url 2>/dev/null)"; then
+            actual_prerelease="$(jq -r .isPrerelease <<<"${release_json}")"
+            if [[ "${actual_prerelease}" != "${PRERELEASE}" ]]; then
+              echo "GitHub Release prerelease=${actual_prerelease} does not match requested prerelease=${PRERELEASE} for ${TARGET_TAG}" >&2
+              exit 1
+            fi
+            exit 0
+          fi
+
+          if [[ "${CREATE_RELEASE_IF_MISSING}" != "true" ]]; then
+            echo "GitHub Release does not exist for ${TARGET_TAG}, and create_release_if_missing=false" >&2
+            exit 1
+          fi
 
       - name: Show toolchain versions
         id: toolchain
@@ -203,6 +262,7 @@ jobs:
           PICKY_DEVELOPMENT_TEAM: ${{ secrets.PICKY_DEVELOPMENT_TEAM }}
           PICKY_RELEASE_CHANNEL: ${{ steps.release_meta.outputs.release_channel }}
           PICKY_MARKETING_VERSION: ${{ steps.release_meta.outputs.marketing_version }}
+          PICKY_ALLOW_LEGACY_MARKETING_VERSION: ${{ steps.release_meta.outputs.allow_legacy_marketing_version }}
           # In-app feedback Slack settings are baked into PickyFeedbackSecrets.json
           # by package-signed-app.sh and sealed by the subsequent re-sign step.
           PICKY_SLACK_BOT_TOKEN: ${{ secrets.PICKY_SLACK_BOT_TOKEN }}
@@ -417,8 +477,14 @@ jobs:
         run: |
           set -euo pipefail
           if gh release view "${TARGET_TAG}" >/dev/null 2>&1; then
-            gh release view "${TARGET_TAG}" --json tagName,name,isPrerelease,url
-            release_url="$(gh release view "${TARGET_TAG}" --json url --jq .url)"
+            release_json="$(gh release view "${TARGET_TAG}" --json tagName,name,isPrerelease,url)"
+            echo "${release_json}"
+            actual_prerelease="$(jq -r .isPrerelease <<<"${release_json}")"
+            if [[ "${actual_prerelease}" != "${PRERELEASE}" ]]; then
+              echo "GitHub Release prerelease=${actual_prerelease} does not match requested prerelease=${PRERELEASE} for ${TARGET_TAG}" >&2
+              exit 1
+            fi
+            release_url="$(jq -r .url <<<"${release_json}")"
             echo "release_url=${release_url}" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
@@ -428,9 +494,11 @@ jobs:
             exit 1
           fi
 
-          create_args=(release create "${TARGET_TAG}" --title "${RELEASE_NAME}" --notes "Automated ${APP_NAME} ${RELEASE_CHANNEL} release.")
+          create_args=(release create "${TARGET_TAG}" --verify-tag --title "${RELEASE_NAME}" --notes "Automated ${APP_NAME} ${RELEASE_CHANNEL} release.")
           if [[ "${PRERELEASE}" == "true" ]]; then
-            create_args+=(--prerelease)
+            create_args+=(--prerelease --latest=false)
+          else
+            create_args+=(--latest)
           fi
           gh "${create_args[@]}"
           release_url="$(gh release view "${TARGET_TAG}" --json url --jq .url)"
@@ -548,6 +616,13 @@ jobs:
           PY
 
           gh release edit "${TARGET_TAG}" --notes-file "${updated_notes}"
+
+      - name: Mark stable release as Latest
+        if: ${{ steps.release_meta.outputs.release_channel == 'stable' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_TAG: ${{ steps.release_meta.outputs.target_tag }}
+        run: gh release edit "${TARGET_TAG}" --latest
 
       - name: Notify Slack that notarized DMG is ready
         env:

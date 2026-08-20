@@ -70,10 +70,12 @@ run_swiftlint_warning_first() {
 
 require_command git "Install Git."
 require_command node "Install Node.js 22.19.0."
+require_command python3 "Install Python 3."
 
 # Fail fast on architectural regressions, including the file-size ratchet, before
 # invoking any slower dependency checks, builds, or test suites.
 run_step "architecture guard" node scripts/check-architecture-rules.js
+run_step "release helper tests" python3 -m unittest discover -s scripts/tests -p 'test_*.py'
 
 require_command pnpm "Install pnpm 10.15.1 or run Corepack setup."
 require_command swiftlint "Install it with: brew install swiftlint"

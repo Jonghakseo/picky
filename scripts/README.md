@@ -85,8 +85,9 @@ PICKY_DEVELOPMENT_TEAM="TEAMID" \
 | `PICKY_SLACK_BOT_TOKEN` | empty | Slack Bot User OAuth Token for in-app feedback. Empty disables feedback. |
 | `PICKY_SLACK_CHANNEL_ID` | empty | Slack destination channel for in-app feedback. Empty disables feedback. |
 | `PICKY_PACKAGE_BUILD_DIR` | `build/package` | Package build output root. |
-| `PICKY_MARKETING_VERSION` | Xcode `MARKETING_VERSION` | Override `CFBundleShortVersionString`. |
-| `PICKY_BUILD_NUMBER` | git commit count | Override `CFBundleVersion`. |
+| `PICKY_MARKETING_VERSION` | Xcode `MARKETING_VERSION` | Override numeric `CFBundleShortVersionString` (`X.Y` or `X.Y.Z`). Channel suffixes are rejected. |
+| `PICKY_ALLOW_LEGACY_MARKETING_VERSION` | `0` | Set to `1` only when CI explicitly reruns a historical non-numeric release tag. Never use for new packages. |
+| `PICKY_BUILD_NUMBER` | git commit count | Override `CFBundleVersion`; never decrease it for later source revisions. The same commit may share a build number across explicit channels. |
 | `PICKY_RELEASE_CHANNEL` | `alpha` | Build channel used in labels/zip names. |
 | `PICKY_BUILD_LABEL` | `<channel>.<build>-<sha>-<timestamp>` | Human-readable build label. |
 | `PICKY_ZIP_PATH` | versioned zip under `build/package` | Exact zip output path. |
@@ -154,6 +155,31 @@ Build a styled DMG locally:
   --app build/package/export/Picky.app \
   --output build/package/Picky-test.dmg \
   --volname Picky
+```
+
+## `release-version-policy.py` — canonical release tag validation
+
+Validates the release tag, channel, GitHub Pre-release state, and bundle
+marketing version before CI packages an app:
+
+```bash
+python3 scripts/release-version-policy.py resolve \
+  --tag 0.8.5-beta.1 \
+  --release-channel beta \
+  --prerelease true
+```
+
+New stable tags use `X.Y.Z`; new beta tags use `X.Y.Z-beta.N`. Both produce a
+numeric `CFBundleShortVersionString=X.Y.Z`. Existing plain-number beta and
+`*-stable` tags can be rerun only with the explicit `--allow-legacy` escape
+hatch. The release workflow exposes that as `allow_legacy_tag=true` and also
+requires `create_release_if_missing=false` so the escape hatch cannot create a
+new legacy release.
+
+Run release helper tests with:
+
+```bash
+python3 -m unittest discover -s scripts/tests -p 'test_*.py'
 ```
 
 ## `release.sh`

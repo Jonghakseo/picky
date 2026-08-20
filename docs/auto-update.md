@@ -123,12 +123,31 @@ gh release create auto-update --title "Picky appcast" --notes "Sparkle appcast a
 https://github.com/Jonghakseo/picky/releases/download/auto-update/appcast.xml
 ```
 
+## Release version policy
+
+New releases use channel-canonical SemVer tags while keeping the bundle's
+marketing version numeric:
+
+| Channel | Tag | GitHub Release | `CFBundleShortVersionString` |
+| --- | --- | --- | --- |
+| stable | `X.Y.Z` | normal release, Latest | `X.Y.Z` |
+| beta | `X.Y.Z-beta.N` | Pre-release, not Latest | `X.Y.Z` |
+| alpha (when CI-published) | `X.Y.Z-alpha.N` | Pre-release, not Latest | `X.Y.Z` |
+
+The tag has no `v` prefix. Existing plain-number beta and `*-stable` releases
+remain untouched. Manual reruns of an existing historical GitHub Release must
+set `allow_legacy_tag=true` and `create_release_if_missing=false`; new releases
+must never use that escape hatch.
+`scripts/release-version-policy.py` validates the tag, channel, GitHub
+prerelease state, and numeric marketing version before packaging.
+
 ## Release flow
 
-1. Push the version tag (e.g. `v1.0.5`) and publish a normal GitHub Release to
-   run `.github/workflows/beta-notarized-release.yml` as a **stable** build.
-   Publish a GitHub pre-release or trigger `workflow_dispatch` with
-   `release_channel=beta` for a beta build.
+1. Push a canonical tag. Publish `X.Y.Z` as a normal GitHub Release to run
+   `.github/workflows/beta-notarized-release.yml` as a **stable** build, or
+   publish `X.Y.Z-beta.N` as a GitHub Pre-release for a **beta** build. A manual
+   `workflow_dispatch` must provide matching `release_channel` and `prerelease`
+   values.
 2. The workflow:
    - Builds the signed app, notarizes the `.app`, staples it.
    - Builds the user-facing `.dmg` and notarizes/staples that.

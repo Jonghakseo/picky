@@ -95,6 +95,12 @@ sanitize_version_part() {
 
 MARKETING_VERSION="${PICKY_MARKETING_VERSION:-$(read_project_setting MARKETING_VERSION)}"
 MARKETING_VERSION="${MARKETING_VERSION:-1.0}"
+ALLOW_LEGACY_MARKETING_VERSION="${PICKY_ALLOW_LEGACY_MARKETING_VERSION:-0}"
+if [[ "${ALLOW_LEGACY_MARKETING_VERSION}" == "1" ]]; then
+  echo "⚠️  Allowing historical non-numeric marketing version: ${MARKETING_VERSION}" >&2
+else
+  python3 "${ROOT_DIR}/scripts/release-version-policy.py" validate-marketing-version "${MARKETING_VERSION}" >/dev/null
+fi
 BUILD_NUMBER="${PICKY_BUILD_NUMBER:-$(git -C "${ROOT_DIR}" rev-list --count HEAD 2>/dev/null || true)}"
 BUILD_NUMBER="${BUILD_NUMBER:-$(date -u +%Y%m%d%H%M)}"
 RELEASE_CHANNEL="${PICKY_RELEASE_CHANNEL:-alpha}"

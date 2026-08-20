@@ -32,8 +32,15 @@ The repo includes `.github/workflows/beta-notarized-release.yml` for CI-based be
 
 Supported triggers:
 
-- **Manual:** Actions → **Build notarized release** → Run workflow → provide an existing `tag_name` and set `release_channel=beta`.
-- **Release publish:** publishing a GitHub pre-release builds the release tag as beta; normal releases build as stable.
+- **Manual:** Actions → **Build notarized release** → Run workflow → provide an existing `X.Y.Z-beta.N` tag, set `release_channel=beta`, and set `prerelease=true`.
+- **Release publish:** publishing an `X.Y.Z-beta.N` GitHub Pre-release builds beta; publishing a normal `X.Y.Z` release builds stable.
+
+New beta tags must use `X.Y.Z-beta.N` with `N` starting at 1. The app bundle
+keeps numeric `CFBundleShortVersionString=X.Y.Z`; channel identity stays in
+`PickyBuildInfo.json`, the build label, GitHub release metadata, and Sparkle's
+explicit channel. Existing historical plain-number beta tags are not renamed;
+rerunning an existing historical release requires `allow_legacy_tag=true` and
+`create_release_if_missing=false`.
 
 The workflow uses `macos-15` by default. If an Apple Silicon runner is required, set repository variable `PICKY_MACOS_RUNNER` to the runner label available to the repository, for example `macos-15-xlarge`. GitHub documents runner labels and custom runner selection here: <https://docs.github.com/actions/using-jobs/choosing-the-runner-for-a-job>.
 
@@ -63,20 +70,21 @@ Then paste the clipboard into `PICKY_DEVELOPER_ID_CERT_BASE64`. Do not commit th
 
 ### Manual workflow run
 
-Before running CI, create and push a tag:
+Before running CI, create and push a canonical beta tag:
 
 ```bash
-git tag picky-beta-YYYYMMDD
-git push origin picky-beta-YYYYMMDD
+git tag -a 0.8.5-beta.1 -m "0.8.5-beta.1"
+git push origin 0.8.5-beta.1
 ```
 
 Run the workflow with:
 
 ```text
-tag_name: picky-beta-YYYYMMDD
+tag_name: 0.8.5-beta.1
 release_channel: beta
 create_release_if_missing: true
 prerelease: true
+allow_legacy_tag: false
 ```
 
 The workflow creates the GitHub Release if missing, uploads the final `Picky-<version>-beta.<build>-<sha>-<timestamp>.dmg` plus the Sparkle update zip, updates the appcast, and appends SHA256/notary/appcast metadata to the release notes. GitHub's release automation APIs are documented here: <https://docs.github.com/rest/releases/releases>.

@@ -93,11 +93,14 @@ function extractRawLinkCandidates(text: string): string[] {
 function isLinkDelimiter(char: string, next: string | undefined, urlStart: number, text: string): boolean {
   if (/[\s<>"{}|\\^[\]]/.test(char)) return true;
 
-  // A closing quote/backtick ends a URL only when it pairs with a wrapper
-  // immediately before the URL (for example, `https://example.com`). Keeping
-  // this contextual avoids truncating valid path characters such as
-  // `abc'def` and `foo`bar`.
-  if ((char === "'" || char === "`") && text[urlStart - 1] === char) {
+  // A closing backtick always ends a URL when an opening backtick immediately
+  // precedes it, including before a suffix such as `https://example.com`를.
+  // Backticks in unwrapped paths such as foo`bar remain part of the URL.
+  if (char === "`" && text[urlStart - 1] === char) return true;
+
+  // A closing quote ends a URL only when it pairs with a wrapper immediately
+  // before the URL and is followed by a prose delimiter.
+  if (char === "'" && text[urlStart - 1] === char) {
     return next === undefined || /[\s<>"'`{}|\\^[\],.;:!?)]/.test(next);
   }
   return false;

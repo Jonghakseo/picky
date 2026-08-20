@@ -149,9 +149,11 @@ describe("session link extraction", () => {
   it("excludes closing quote and backtick wrappers from links", () => {
     expect(extractSessionLinks([
       "Code `https://github.com/creatrip/picky/pull/123`",
+      "Korean suffix `https://github.com/creatrip/product/pull/4969`를 참고",
       "Quote 'https://github.com/creatrip/picky/pull/124',",
     ].join("\n"))).toEqual([
       { kind: "github", title: "#123", url: "https://github.com/creatrip/picky/pull/123" },
+      { kind: "github", title: "#4969", url: "https://github.com/creatrip/product/pull/4969" },
       { kind: "github", title: "#124", url: "https://github.com/creatrip/picky/pull/124" },
     ]);
   });

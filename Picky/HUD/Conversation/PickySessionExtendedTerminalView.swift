@@ -74,15 +74,19 @@ final class PickyShellTerminalSession: ObservableObject {
     let model: PickyShellTerminalModel
     let terminalView: PickySwiftTermView
 
+    private let processHost: (any PickyTerminalProcessHosting)?
+
     init(
         sessionID: String,
         title: String,
         cwd: String?,
-        fontScalePersister: PickyTerminalFontScalePersister
+        fontScalePersister: PickyTerminalFontScalePersister,
+        processHost: (any PickyTerminalProcessHosting)? = nil
     ) {
         self.sessionID = sessionID
         self.title = title
         self.cwd = cwd
+        self.processHost = processHost
         self.model = PickyShellTerminalModel(
             title: title,
             cwd: cwd,
@@ -94,7 +98,7 @@ final class PickyShellTerminalSession: ObservableObject {
     }
 
     func attach() {
-        model.attach(terminalView)
+        model.attachProcessHost(processHost ?? terminalView)
     }
 
     func close() {
@@ -110,8 +114,9 @@ final class PickyShellTerminalModel: ObservableObject, PickyTerminalProcessEvent
     let title: String
     let cwd: String?
 
-    private weak var terminalView: LocalProcessTerminalView?
+    private weak var terminalView: (any PickyTerminalProcessHosting)?
     private var didStartProcess = false
+    private var isClosed = false
     private(set) lazy var processDelegate = PickyTerminalProcessDelegate(handler: self)
     private let fontScalePersister: PickyTerminalFontScalePersister?
 
@@ -127,19 +132,34 @@ final class PickyShellTerminalModel: ObservableObject, PickyTerminalProcessEvent
         self.statusText = "Ready in \(Self.compactPath(PickyShellTerminalCommand.workingDirectory(from: cwd)))"
     }
 
-    func attach(_ terminalView: LocalProcessTerminalView) {
+    /// The process host is an adapter boundary so lifecycle behavior can be
+    /// characterized without spawning a real shell.
+    func attachProcessHost(_ terminalView: any PickyTerminalProcessHosting) {
+        guard !isClosed else {
+            terminalView.processDelegate = nil
+            return
+        }
+        terminalView.processDelegate = processDelegate
         self.terminalView = terminalView
         startProcessIfNeeded(in: terminalView)
     }
 
     func close() {
-        terminalView?.terminate()
-        terminalView = nil
-        didStartProcess = false
+        guard !isClosed else { return }
+        isClosed = true
+        guard didStartProcess, let terminalView else {
+            self.terminalView = nil
+            statusText = "Shell closed"
+            return
+        }
+        terminalView.processDelegate = nil
+        terminalView.terminatePickyProcess()
+        self.terminalView = nil
         statusText = "Shell closed"
     }
 
     func processExited(exitCode: Int32?) {
+        terminalView?.processDelegate = nil
         terminalView = nil
         didStartProcess = false
         if let exitCode {
@@ -154,13 +174,13 @@ final class PickyShellTerminalModel: ObservableObject, PickyTerminalProcessEvent
         statusText = "Shell in \(Self.compactPath(PickyShellTerminalCommand.workingDirectory(from: cwd)))"
     }
 
-    private func startProcessIfNeeded(in terminalView: LocalProcessTerminalView) {
-        guard !didStartProcess else { return }
+    private func startProcessIfNeeded(in terminalView: any PickyTerminalProcessHosting) {
+        guard !didStartProcess, !isClosed else { return }
         didStartProcess = true
         let shell = PickyShellTerminalCommand.resolvedShell()
         let workingDirectory = PickyShellTerminalCommand.workingDirectory(from: cwd)
         statusText = "\((shell as NSString).lastPathComponent) in \(Self.compactPath(workingDirectory))"
-        terminalView.startProcess(
+        terminalView.startPickyProcess(
             executable: shell,
             args: [],
             environment: PickyShellTerminalCommand.makeEnvironment(),

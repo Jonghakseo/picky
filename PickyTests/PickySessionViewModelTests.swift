@@ -6,6 +6,7 @@
 import AppKit
 import Combine
 import Foundation
+import SwiftTerm
 import Testing
 @testable import Picky
 
@@ -110,6 +111,29 @@ private final class FakeArchiveStore: PickySessionArchiveStoring {
 
 private final class FakeManualOrderStore: PickySessionManualOrderStoring {
     var manualOrder: [String] = []
+}
+
+@MainActor
+private final class ShellArchiveProcessHost: PickyTerminalProcessHosting {
+    weak var processDelegate: LocalProcessTerminalViewDelegate?
+    let processID: pid_t = 42
+    private(set) var startCount = 0
+    private(set) var terminateCount = 0
+    var onTerminate: (() -> Void)?
+
+    func startPickyProcess(
+        executable: String,
+        args: [String],
+        environment: [String]?,
+        currentDirectory: String?
+    ) {
+        startCount += 1
+    }
+
+    func terminatePickyProcess() {
+        terminateCount += 1
+        onTerminate?()
+    }
 }
 
 private final class FakeViewModelDockLayoutStore: PickyDockLayoutStoring {
@@ -2908,6 +2932,45 @@ struct PickySessionViewModelTests {
         try await wait { viewModel.archivedSessions.first(where: { $0.id == "pickle-1" })?.lastSummary == "Updated" }
         #expect(viewModel.sessions.map(\.id) == ["main-1"])
         #expect(viewModel.archivedSessions.first(where: { $0.id == "pickle-1" })?.lastSummary == "Updated")
+    }
+
+    @MainActor @Test func archivingShellSessionClosesItBeforeMovingTheCardToArchivedState() throws {
+        let host = ShellArchiveProcessHost()
+        let fontScalePersister = PickyTerminalFontScalePersister(load: { 1 }, save: { _ in })
+        var shellSession: PickyShellTerminalSession?
+        let viewModel = PickySessionListViewModel(
+            client: FakePickyAgentClient(),
+            notificationCenter: PickyNoopNotificationCenter(),
+            archiveStore: FakeArchiveStore(),
+            shellTerminalSessionFactory: { session in
+                let created = PickyShellTerminalSession(
+                    sessionID: session.id,
+                    title: session.title,
+                    cwd: session.cwd,
+                    fontScalePersister: fontScalePersister,
+                    processHost: host
+                )
+                shellSession = created
+                return created
+            }
+        )
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "shell-archive", status: "completed"))))
+        let session = try #require(viewModel.sessions.first)
+        let allocatedSession = viewModel.shellTerminalSession(for: session)
+        allocatedSession.attach()
+        var wasActiveWhenTerminated: Bool?
+        host.onTerminate = {
+            wasActiveWhenTerminated = viewModel.sessions.contains(where: { $0.id == "shell-archive" })
+        }
+
+        viewModel.archive(sessionID: "shell-archive")
+
+        #expect(shellSession === allocatedSession)
+        #expect(host.startCount == 1)
+        #expect(host.terminateCount == 1)
+        #expect(wasActiveWhenTerminated == true)
+        #expect(viewModel.sessions.isEmpty)
+        #expect(viewModel.archivedSessions.map(\.id) == ["shell-archive"])
     }
 
     @MainActor @Test func sessionSnapshotPrunesManualArchiveIDsForRemovedSessions() {

@@ -445,6 +445,7 @@ protocol PickyTerminalProcessHosting: AnyObject {
         environment: [String]?,
         currentDirectory: String?
     )
+    func terminatePickyProcess()
 }
 
 extension LocalProcessTerminalView: PickyTerminalProcessHosting {
@@ -462,6 +463,10 @@ extension LocalProcessTerminalView: PickyTerminalProcessHosting {
             environment: environment,
             currentDirectory: currentDirectory
         )
+    }
+
+    func terminatePickyProcess() {
+        terminate()
     }
 }
 
@@ -1003,6 +1008,9 @@ enum PickyTerminalFontResolver {
 }
 
 final class PickySwiftTermView: LocalProcessTerminalView {
+    // Gate 0 characterization: explicit `send(txt:)` and SwiftTerm terminal-protocol
+    // replies both reach `LocalProcessTerminalView.send(source:data)` without origin metadata.
+    // Do not add a final input gate here until a safe source distinction exists.
     /// Cell size at scale 1.0. Bumped from the original 11.5pt because users reported
     /// the in-app terminal felt cramped on Retina displays compared to Ghostty.
     static let baseFontSize: CGFloat = 13

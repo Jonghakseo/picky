@@ -1,6 +1,6 @@
 # Pickle Multi-Terminal Control Plan
 
-_Status: Gate 0 design drafted; awaiting explicit approval; implementation blocked and not started_
+_Status: Gate 0 approved; Task 1 in progress (automated characterization complete; manual performance/security gates pending); Tasks 2–12 blocked_
 
 _Last updated: 2026-08-20_
 
@@ -77,12 +77,14 @@ private var shellTerminalSessionsBySessionID: [String: PickyShellTerminalSession
 
 ### App-owned PTY
 
-`PickyShellTerminalModel.startProcessIfNeeded` calls SwiftTerm's `LocalProcessTerminalView.startProcess`. `PickySwiftTermView` already subclasses `LocalProcessTerminalView`. The currently resolved SwiftTerm revision exposes the APIs needed by this plan, but the Xcode package requirement still follows `main`; Gate 0 requires pinning the verified revision before implementation:
+`PickyShellTerminalModel.startProcessIfNeeded` calls SwiftTerm's `LocalProcessTerminalView.startProcess`. `PickySwiftTermView` already subclasses `LocalProcessTerminalView`. The Xcode package requirement is pinned to verified revision `86456ca32aaa81cadb4ca8dbe8be4546ffbccd18`, which exposes the APIs needed by this plan:
 
 - `open func dataReceived(slice:)` for output revision observation;
 - `send(txt:)` / `send(_:)` / process input for agent writes;
 - terminal buffer line/data access for rendered tail reads;
 - `terminate()` and process delegate callbacks for closure and exit state.
+
+Task 1 characterization also confirms that explicit `send(txt:)` and internally generated `terminal.sendResponse(text:)` converge on `LocalProcessTerminalView.send(source:data)` with identical source and byte parameters. SwiftTerm exposes no origin metadata at that final sink, so Task 1 does not install an input gate there; a later gate must preserve terminal-protocol replies while enforcing exclusive user/agent control.
 
 ### Missing agent control channel
 
@@ -900,7 +902,7 @@ Suggested focused suites:
 
 ## Gate 0 design approval gate
 
-**Current state:** the following design contract is drafted but not approved. No implementation task below may start until the user explicitly approves Gate 0. Approval authorizes the implementation workflow; signed-app launches, Picky restarts, child-daemon restarts, and manual security tests still require their own explicit approval at the relevant gate.
+**Current state:** Gate 0 is approved for the Task 1 characterization scope. This approval does not authorize signed-app launches, Picky restarts, child-daemon restarts, manual security tests, or implementation beyond Task 1; each remains blocked pending its relevant explicit approval.
 
 ### Gate 0 locked decisions
 
@@ -958,12 +960,12 @@ Suggested focused suites:
 
 ### Gate 0 approval checklist
 
-- [ ] Product owner approves the identity, lease, privacy, capability, rollout, and active-Pickle reveal contracts above.
+- [x] Product owner approves the identity, lease, privacy, capability, rollout, and active-Pickle reveal contracts above.
 - [ ] The performance baseline scenario and threshold are written down.
-- [ ] The SwiftTerm revision to pin is recorded.
+- [x] The SwiftTerm revision to pin is recorded: `86456ca32aaa81cadb4ca8dbe8be4546ffbccd18`.
 - [ ] The signed TCC/security spike is approved separately before it is run.
-- [ ] Isolated worktrees/checkpoint commits are approved, or implementation is restricted to one writer at a time on the main worktree.
-- [ ] No implementation, app restart, daemon restart, or manual acceptance run has occurred.
+- [x] Implementation is restricted to one writer at a time on the main worktree.
+- [x] No app restart, daemon restart, or manual acceptance run has occurred.
 
 ### Adaptive implementation workflow after approval
 
@@ -1010,16 +1012,19 @@ Never parallel-edit `PickySessionExtendedTerminalView.swift`, either protocol sc
 
 ## Implementation sequence
 
-**Approval hold:** all tasks below are pending Gate 0 approval. The task numbers remain as the file-level implementation map; execution follows the adaptive waves above rather than treating Tasks 1–12 as one uninterrupted linear worker.
+**Scope hold:** Task 1 remains in progress only for its manual baseline/security gates; its automated characterization is complete. Tasks 2–12 remain blocked pending the integrated green checkpoint and their listed gates; the task numbers remain a file-level implementation map rather than one uninterrupted workflow.
 
 ### Task 1: Pin and characterize the current shell boundary
 
 **Files:**
 
-- modify the SwiftTerm package requirement in `Picky.xcodeproj/project.pbxproj`
+- modify the SwiftTerm package requirement in `Picky.xcodeproj/project.pbxproj` and its resolved pin
+- modify `Picky/HUD/Conversation/PickySessionExtendedTerminalView.swift`
+- modify `Picky/Sessions/PickyTerminalOverlay.swift`
+- modify `Picky/PickySessionViewModel.swift`
 - modify `PickyTests/PickyTerminalLifecycleTests.swift`
-- modify `PickyTests/PickyHUDUtilityPanelPolicyTests.swift`
-- modify `PickyTests/PickyTerminalAttachmentCoordinatorTests.swift`
+- modify `PickyTests/PickySessionViewModelTests.swift`
+- validate `PickyTests/PickyHUDUtilityPanelPolicyTests.swift` and `PickyTests/PickyTerminalAttachmentCoordinatorTests.swift`
 
 **Work:**
 
@@ -1031,6 +1036,8 @@ Never parallel-edit `PickySessionExtendedTerminalView.swift`, either protocol sc
 - preserve the two-tab utility policy;
 - document current archive closure behavior;
 - capture the pre-change terminal mount/switch signpost baseline.
+
+**Task 1 status:** automated pin, lifecycle/archive, attachment, two-tab, and final-send-path characterization are complete. Task 1 remains in progress because the signed TCC/security spike and pre-change HUD signpost/mount baseline are unchecked and require explicit approval; no structural workspace, protocol, UI, or control-gate work is authorized.
 
 **Validation:** targeted terminal/utility suites and package resolution must pass before structural changes.
 
@@ -1411,7 +1418,7 @@ Do not roll back by granting the Pickle unrestricted access to all user terminal
 
 ## Technical review record
 
-This design was reviewed from four independent worker perspectives (Swift architecture, concurrency/state machine, agentd/protocol/privacy, and delivery DAG), then independently checked by verifier and challenger roles. Gate 0 remains awaiting explicit user approval; no implementation has started.
+This design was reviewed from four independent worker perspectives (Swift architecture, concurrency/state machine, agentd/protocol/privacy, and delivery DAG), then independently checked by verifier and challenger roles. Gate 0 is approved for Task 1 only; no implementation beyond the recorded Task 1 characterization has started.
 
 Common conclusions:
 

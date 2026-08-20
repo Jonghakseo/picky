@@ -71,6 +71,7 @@ final class PickySessionListViewModel: ObservableObject {
     /// add-on intentionally keeps the shell process alive so reopening resumes the
     /// same terminal session.
     private var shellTerminalSessionsBySessionID: [String: PickyShellTerminalSession] = [:]
+    private let shellTerminalSessionFactory: (SessionCard) -> PickyShellTerminalSession
     /// Sessions that finished or are waiting for input but have not been opened
     /// by the user yet. Lives on the view model (single source of truth) so all
     /// dock instances render the indicator in sync.
@@ -200,7 +201,8 @@ final class PickySessionListViewModel: ObservableObject {
         manualPickleChildSpawner: (any PickyManualPickleChildSpawning)? = nil,
         childSessionReleaser: (any PickyChildSessionReleasing)? = nil,
         archiveCommitDelayNanoseconds: UInt64 = PickyHUDArchiveUndoToastPolicy.durationNanoseconds,
-        manualPickleSessionIdFactory: @escaping () -> String = { "session-\(UUID().uuidString)" }
+        manualPickleSessionIdFactory: @escaping () -> String = { "session-\(UUID().uuidString)" },
+        shellTerminalSessionFactory: ((SessionCard) -> PickyShellTerminalSession)? = nil
     ) {
         self.client = client
         self.notificationCenter = notificationCenter
@@ -232,6 +234,14 @@ final class PickySessionListViewModel: ObservableObject {
         self.childSessionReleaser = childSessionReleaser
         self.archiveCommitDelayNanoseconds = archiveCommitDelayNanoseconds
         self.manualPickleSessionIdFactory = manualPickleSessionIdFactory
+        self.shellTerminalSessionFactory = shellTerminalSessionFactory ?? { session in
+            PickyShellTerminalSession(
+                sessionID: session.id,
+                title: session.title,
+                cwd: session.cwd,
+                fontScalePersister: PickyTerminalFontScalePersister.defaultSettings()
+            )
+        }
         self.selectedSessionID = selectionStore.selectedSessionID
         self.voiceFollowUpHoverState.sessionID = selectionStore.hoveredVoiceFollowUpSessionID
         self.screenContextTargetSessionID = selectionStore.screenContextTargetSessionID
@@ -1388,12 +1398,7 @@ final class PickySessionListViewModel: ObservableObject {
         if let existing = shellTerminalSessionsBySessionID[session.id] {
             return existing
         }
-        let shellSession = PickyShellTerminalSession(
-            sessionID: session.id,
-            title: session.title,
-            cwd: session.cwd,
-            fontScalePersister: PickyTerminalFontScalePersister.defaultSettings()
-        )
+        let shellSession = shellTerminalSessionFactory(session)
         shellTerminalSessionsBySessionID[session.id] = shellSession
         return shellSession
     }

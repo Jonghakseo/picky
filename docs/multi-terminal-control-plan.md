@@ -1,8 +1,8 @@
 # Pickle Multi-Terminal Control Plan
 
-_Status: proposed; product decision and technical review complete, implementation not started_
+_Status: Gate 0 design drafted; awaiting explicit approval; implementation blocked and not started_
 
-_Last updated: 2026-08-19_
+_Last updated: 2026-08-20_
 
 ## Summary
 
@@ -24,7 +24,7 @@ The core invariant is:
 
 - Keep the utility panel at two top-level tabs: `Terminal | Artifacts`.
 - Do not reintroduce Activity, Progress, Changes, or raw tool-history tabs.
-- Keep PTYs in Picky.app using the pinned SwiftTerm dependency for v1.
+- Keep PTYs in Picky.app using SwiftTerm for v1; pin the package requirement to the currently verified revision before implementation begins.
 - Support multiple terminals within one Pickle; do not add split panes in v1.
 - A terminal created by the Pickle is shared with that Pickle by default.
 - A terminal created by the user is private by default.
@@ -75,7 +75,7 @@ private var shellTerminalSessionsBySessionID: [String: PickyShellTerminalSession
 
 ### App-owned PTY
 
-`PickyShellTerminalModel.startProcessIfNeeded` calls SwiftTerm's `LocalProcessTerminalView.startProcess`. `PickySwiftTermView` already subclasses `LocalProcessTerminalView` and can use the pinned SwiftTerm APIs needed by this plan:
+`PickyShellTerminalModel.startProcessIfNeeded` calls SwiftTerm's `LocalProcessTerminalView.startProcess`. `PickySwiftTermView` already subclasses `LocalProcessTerminalView`. The currently resolved SwiftTerm revision exposes the APIs needed by this plan, but the Xcode package requirement still follows `main`; Gate 0 requires pinning the verified revision before implementation:
 
 - `open func dataReceived(slice:)` for output revision observation;
 - `send(txt:)` / `send(_:)` / process input for agent writes;
@@ -101,9 +101,10 @@ This plan borrows its bounded tool contract, named-key semantics, ordered mutati
 5. Give the owning Pickle an explicit, scoped, observable terminal tool.
 6. Keep user-created terminals private until the user opts in.
 7. Prevent user/agent input collisions with an exclusive mutation lease.
-8. Make create/write/close safe against stale generation, duplicate request, archive, and disconnect races.
+8. Make create/write/close safe against stale workspace instance, generation, terminal incarnation, duplicate request, archive, app restart, and disconnect races.
 9. Keep reads bounded and distinguish rendered snapshots from raw incremental streams.
-10. Preserve local-first behavior and avoid a new native Node dependency.
+10. Prevent terminal input, output, and private metadata from leaking through tool activity, protocol logs, snapshots, or persisted session state.
+11. Preserve local-first behavior and avoid a new native Node dependency.
 
 ## Non-goals
 
@@ -145,9 +146,14 @@ This plan borrows its bounded tool contract, named-key semantics, ordered mutati
 ### Mutation safety
 
 - User and Pickle mutations are mutually exclusive.
-- Every mutating request targets an explicit terminal ID and carries workspace generation and lease epoch.
-- Terminal IDs are monotonic within a workspace generation and are never reused.
+- Every workspace receives an unpredictable `workspaceInstanceID`; it changes after app restart and whenever a new workspace incarnation is created.
+- Every terminal process receives a `terminalIncarnation`; async start/exit callbacks must match it before mutating state.
+- Every mutating request targets an explicit terminal ID and carries workspace instance ID, workspace generation, terminal incarnation when applicable, and lease epoch.
+- Terminal IDs are monotonic within one workspace instance and generation and are never reused there.
 - Archive/revoke increments workspace generation before closing processes.
+- App restart invalidates every pre-restart terminal reference even if a later workspace reuses the same session ID, generation number, or terminal ID.
+- The operation ledger reserves mutation IDs before the first suspension, coalesces identical in-flight duplicates, rejects the same ID with a different canonical payload fingerprint, and retains bounded completed outcomes.
+- Every mutation revalidates workspace instance, generation, terminal incarnation, permission, controller, and lease immediately before its side effect.
 - Late requests and late completions are idempotent no-ops or structured stale errors.
 
 ## Recommended architecture
@@ -193,6 +199,7 @@ Exact names may be adjusted during implementation, but the responsibilities must
 ```swift
 struct PickyTerminalWorkspaceState: Equatable {
     let sessionID: String
+    let workspaceInstanceID: String
     var generation: UInt64
     var orderedTerminalIDs: [String]
     var selectedTerminalID: String?
@@ -207,6 +214,7 @@ struct PickyTerminalInstanceState: Equatable, Identifiable {
     enum ProcessStatus: Equatable { case starting, running, exited(Int32?), failed(String), closing }
 
     let id: String
+    let terminalIncarnation: String
     var name: String
     let origin: Origin
     var permission: Permission
@@ -220,12 +228,13 @@ struct PickyTerminalInstanceState: Equatable, Identifiable {
 
 `PickyTerminalWorkspaceController` owns:
 
-- `[sessionID: Workspace]`;
-- a monotonic generation tombstone per session ID, retained after workspace removal;
-- terminal process adapters keyed by `(sessionID, terminalID)`;
-- resource-limit accounting;
-- mutation chains and idempotency results;
-- archive/revoke and child-lifecycle transitions;
+- `[sessionID: Workspace]` with an unpredictable workspace instance ID;
+- a monotonic generation tombstone per session ID, retained after workspace removal for the app lifetime;
+- terminal process adapters keyed by `(sessionID, workspaceInstanceID, terminalID, terminalIncarnation)`;
+- resource-limit accounting that retains slots until confirmed process exit;
+- mutation chains and a bounded in-flight/completed operation ledger keyed by workspace identity and operation ID;
+- bounded read waiters with per-terminal and global caps and exactly-once settlement;
+- archive/revoke and child-connection/process lifecycle transitions;
 - request handling on `@MainActor`.
 
 A pure `PickyTerminalWorkspacePolicy` decides:
@@ -234,7 +243,8 @@ A pure `PickyTerminalWorkspacePolicy` decides:
 - monotonic terminal IDs such as `term-1`, `term-2`;
 - permission transitions;
 - controller/lease transitions;
-- stale generation and stale lease rejection;
+- stale workspace instance, generation, terminal incarnation, and lease rejection;
+- operation fingerprint collision behavior;
 - resource-limit errors;
 - workspace revoke effects.
 
@@ -270,17 +280,21 @@ Refactor `PickyShellTerminalModel` so process startup is an explicit operation, 
 
 - One selected terminal ID is shared across every projection of a Pickle workspace.
 - Preserve the existing invariant that one SwiftTerm `NSView` cannot attach to multiple parents.
-- Generalize attachment identity from Pickle session only to `(sessionID, terminalID, attachmentID)`.
+- Replace the current globally active shell attachment record with attachment ownership keyed by terminal instance: `(sessionID, workspaceInstanceID, terminalID) -> attachmentID`.
+- An attachment request also carries `terminalIncarnation` so a stale view cannot mount a replacement process.
 - Switching tabs detaches the old selected terminal view and attaches the new selected terminal without restarting either process.
 - Inactive terminal processes and buffers remain alive.
 
 ### Closure
 
 - User closure is always allowed and invalidates pending Pickle mutations before terminating the PTY.
-- Pickle closure requires shared permission, Pickle controller lease, matching generation, and matching lease epoch.
+- Pickle closure requires shared permission, Pickle controller lease, matching workspace instance, generation, terminal incarnation, and lease epoch.
+- Closing first marks the terminal unavailable to new input, then requests process termination.
+- A live-terminal capacity slot is released only after the matching process incarnation confirms exit; a stale exit callback cannot release a replacement terminal's slot.
+- The process adapter must define bounded termination escalation and a structured close-timeout outcome for an unresponsive shell rather than treating `terminate()` as confirmed death.
 - Closing the selected terminal selects the nearest remaining terminal deterministically.
 - Closing the last terminal shows an empty state; it does not immediately create a replacement.
-- Process exit keeps a lightweight exited tab until the user closes it, allowing output inspection.
+- Natural process exit keeps a lightweight exited tab until the user closes it, allowing output inspection.
 
 ### Archive and deletion
 
@@ -297,10 +311,12 @@ Unarchive starts with no terminals and allocates a generation strictly newer tha
 
 ### Child-daemon lifecycle
 
-- Transient WebSocket disconnect: keep terminal processes, fail in-flight RPCs, revoke active Pickle mutation leases, and show control unavailable.
+- Every connection/disconnect/exit callback carries the router's child connection generation; callbacks from an older child generation are ignored.
+- Transient WebSocket disconnect: keep terminal processes, fail in-flight RPCs, revoke active Pickle mutation leases, settle pending reads, and show control unavailable.
 - Child process exit/crash: keep terminals available to the user, downgrade shared terminals to user controller, and require explicit hand-back after a replacement child connects.
+- Reconnect never restores Pickle mutation control automatically.
 - Explicit child release after archive/delete: workspace is already revoked and closes normally.
-- App termination: existing app lifecycle terminates app-owned PTYs; no durable restoration is attempted.
+- App termination: existing app lifecycle terminates app-owned PTYs; no durable restoration is attempted. A later app process creates a new unpredictable workspace instance ID, so pre-restart references are stale.
 
 ## Permission and controller model
 
@@ -319,6 +335,11 @@ Permission answers whether the Pickle may observe or operate the terminal. Contr
 - Clicking/focusing a Pickle-controlled terminal presents a clear takeover action instead of silently merging control.
 - Once the user takes control, increment `leaseEpoch` before accepting user input.
 - Queued Pickle mutations carrying the old epoch fail with `stale_control_lease`.
+- Every byte headed to the PTY is classified as `user`, `agent`, or `terminalProtocol` and passes through one final sink gate.
+- User-originated keyboard, IME commit, paste, drag/drop, and line-editing bytes require current user control immediately before forwarding.
+- Agent input uses an explicitly tagged adapter path and requires matching workspace instance, generation, terminal incarnation, Pickle controller, and lease at the same sink.
+- Terminal-protocol replies generated internally by SwiftTerm are never treated as user or agent input; they may pass only for the current running terminal incarnation. Task 1 characterization must prove whether SwiftTerm exposes enough origin information to enforce this classification without breaking TUIs.
+- Handing control to the Pickle must resign terminal focus and resolve or cancel marked text before agent bytes are accepted.
 - The controller remains `user` until the user explicitly chooses `Hand Control to Pickle`.
 - Do not automatically return control on blur or idle; Picky cannot reliably prove that a partially typed shell line is safe to merge.
 
@@ -396,11 +417,14 @@ Proposed operations:
 
 ```text
 list
-create(name?, cwd?)
-read(terminalId, generation, lines?, maxChars?, afterRevision?, waitForOutputMs?, quietPeriodMs?)
-write(terminalId, generation, leaseEpoch, input?/inputKeys?/inputPaste?)
-close(terminalId, generation, leaseEpoch)
+create(workspaceInstanceId, generation, name?, cwd?)
+read(workspaceInstanceId, terminalId, terminalIncarnation, generation, lines?, maxChars?, afterRevision?, waitForOutputMs?, quietPeriodMs?)
+write(workspaceInstanceId, terminalId, terminalIncarnation, generation, leaseEpoch, input?/inputKeys?/inputPaste?)
+close(workspaceInstanceId, terminalId, terminalIncarnation, generation, leaseEpoch)
+operationStatus(workspaceInstanceId, generation, operationId, operationFingerprint)
 ```
+
+`list` is the discovery operation and returns the current workspace instance ID. For an active, non-archived Pickle with no workspace yet, it may allocate an empty workspace identity without starting a process; it must never recreate an archived/revoked workspace. All later operations must echo the returned identity. `operationStatus` is read-only and reports the bounded ledger state for an outcome-unknown mutation without replaying the side effect.
 
 ### Deliberately excluded in v1
 
@@ -416,8 +440,8 @@ close(terminalId, generation, leaseEpoch)
 
 Return:
 
-- workspace generation;
-- shared terminal IDs, names, status, controller, lease epoch, cwd, and output revision;
+- workspace instance ID and generation;
+- shared terminal IDs, terminal incarnations, names, status, controller, lease epoch, cwd, and output revision;
 - selected terminal ID only when that terminal is shared;
 - private terminal count without private names or metadata;
 - resource-limit values and remaining capacity.
@@ -431,7 +455,9 @@ Return only after the PTY start attempt has produced `running` or structured `fa
 Read returns a rendered terminal tail rather than raw PTY bytes:
 
 ```text
+workspaceInstanceId
 terminalId
+terminalIncarnation
 generation
 outputRevision
 status
@@ -465,24 +491,28 @@ A write:
 
 Named keys borrow `interactive_shell` semantics for a small documented set such as `enter`, `escape`, `tab`, arrows, `ctrl+c`, `ctrl+d`, `ctrl+l`, `ctrl+z`, and `alt+x`. Keep the encoder in a pure tested module.
 
-### Close result
+### Close and operation-status results
 
-Close invalidates the terminal before process termination, returns the current workspace generation and updated selection snapshot, and treats a duplicate operation ID as the same completion rather than closing another terminal.
+Close invalidates the terminal before process termination, returns the current workspace identity/generation and updated selection snapshot, and treats a duplicate operation ID as the same logical mutation rather than closing another terminal. Capacity remains occupied until the matching process incarnation confirms exit.
+
+`operationStatus` returns `pending`, `succeeded`, `failed`, `outcome_unknown`, `not_found`, or `payload_mismatch` plus the original operation ID and fingerprint. It never exposes terminal input/output or private metadata and never executes a mutation.
 
 ## Reverse RPC protocol
 
 ### Capability handshake
 
-Add `terminalControl` to app capabilities.
+Add `terminalControl` to app capabilities without changing the replacement semantics of the existing `registerAppCapabilities` command.
 
-To preserve compatibility with older daemons:
+To preserve compatibility with older daemons and support explicit rollout/rollback:
 
-1. register existing capabilities first using the current command;
-2. register `terminalControl` in a second command;
-3. change new agentd capability registration from replacement to set union;
-4. tolerate the second command being rejected by an older daemon without losing existing capability registration.
+1. register the existing legacy capability set using `registerAppCapabilities`;
+2. add new `addAppCapabilities` and `removeAppCapabilities` commands in the new protocol;
+3. after the app-side handler is ready and the local terminal-control feature gate is enabled, send `addAppCapabilities(["terminalControl"])`;
+4. before handler teardown or feature disablement, send `removeAppCapabilities(["terminalControl"])` when possible;
+5. tolerate an older daemon rejecting the new command while retaining the legacy capabilities registered by step 1;
+6. scope capability state to one WebSocket connection so reconnect starts from an empty set.
 
-The Pickle tool returns a structured unavailable result when no connected app client has `terminalControl`.
+The Pickle tool returns a structured unavailable result when no connected app client has `terminalControl`. Agent terminal control remains behind a default-off local feature gate until the automated, security, manual, and performance gates pass; this is not a user-facing preference.
 
 ### Event
 
@@ -494,9 +524,12 @@ Proposed app-directed event:
   "requestId": "terminal-...",
   "sessionId": "pickle-session-id",
   "operationId": "pi-tool-call-id",
+  "operationFingerprint": "sha256-canonical-operation",
   "operation": {
     "type": "write",
+    "workspaceInstanceId": "workspace-random-id",
     "terminalId": "term-2",
+    "terminalIncarnation": "terminal-random-id",
     "generation": 4,
     "leaseEpoch": 7,
     "inputKeys": ["ctrl+c"]
@@ -511,6 +544,7 @@ Proposed app-directed event:
   "type": "completeTerminalControlRequest",
   "requestId": "terminal-...",
   "operationId": "pi-tool-call-id",
+  "operationFingerprint": "sha256-canonical-operation",
   "result": { "...": "bounded typed result" }
 }
 ```
@@ -523,10 +557,16 @@ Errors use stable codes plus a user/model-readable message:
 - `terminal_not_found`
 - `terminal_private`
 - `user_has_control`
+- `stale_workspace_instance`
 - `stale_workspace_generation`
+- `stale_terminal_incarnation`
 - `stale_control_lease`
+- `operation_payload_mismatch`
 - `terminal_limit_reached`
 - `terminal_exited`
+- `terminal_closing`
+- `read_waiter_limit_reached`
+- `close_timeout`
 - `request_timeout`
 - `outcome_unknown`
 
@@ -535,15 +575,20 @@ Do not include terminal output in structured logs or error diagnostics.
 ### Request lifetime
 
 - Use a bounded timeout, default 5 seconds for non-waiting operations and slightly above the requested read wait for waiting reads.
-- Disconnect rejects pending requests.
-- Abort removes the daemon waiter, but a mutation already dispatched to the app may have completed; report outcome as unknown rather than retrying automatically.
-- The tool should reconcile unknown create/write/close outcomes through `list` or `read`, not issue blind retries.
+- Pending records bind the selected recipient WebSocket, configured child session ID, request ID, operation ID, and operation fingerprint.
+- A completion is accepted only from the selected recipient WebSocket with every bound identity matching; foreign, late, and duplicate completions do not settle or mutate another request.
+- Disconnect rejects pending requests exactly once.
+- Abort removes the daemon waiter, but a mutation already dispatched to the app may have completed; report `outcome_unknown` with the operation ID/fingerprint rather than retrying automatically.
+- Reconcile unknown create/write/close outcomes through `operationStatus`; `list` or `read` may provide context but are not authoritative proof of whether a side effect occurred.
+- No transport layer automatically retries a mutation.
 
 ### Idempotency
 
-- Use the Pi tool call ID as `operationId` for mutations.
-- App-side controller caches recent mutation results by `(sessionID, workspaceGeneration, operationId)` with a bounded TTL/count.
-- Repeating the same operation ID returns the cached result.
+- Use the Pi tool call ID as `operationId` for mutations and return it with the canonical operation fingerprint in mutation results and `outcome_unknown` errors.
+- The app-side controller synchronously reserves the ledger entry before the first `await`.
+- The ledger key includes `(sessionID, workspaceInstanceID, workspaceGeneration, operationId)` and stores the canonical operation fingerprint.
+- Identical in-flight duplicates coalesce; completed duplicates return the bounded cached result; the same ID with a different fingerprint fails with `operation_payload_mismatch`.
+- Ledger count/TTL eviction is deterministic and cannot permit an old operation to target a replacement workspace or terminal incarnation.
 - `requestId` correlates one transport attempt; `operationId` identifies the logical mutation.
 - A new tool call ID is a new explicit mutation, not an automatic retry.
 
@@ -551,12 +596,13 @@ Do not include terminal output in structured logs or error diagnostics.
 
 ### Per-terminal mutation serialization
 
-Serialize create/write/close mutations through workspace/terminal command chains. Reads may observe current state concurrently but must take one atomic MainActor snapshot of generation, revision, status, and rendered tail.
+Serialize create through a workspace command chain and write/close through terminal command chains. Reserve operation IDs before enqueueing. Reads may observe current state concurrently but must take one atomic MainActor snapshot of workspace instance, generation, terminal incarnation, revision, status, permission, and rendered tail.
 
 ### Write versus close
 
-- Close first invalidates terminal generation/state, then schedules process termination.
-- A queued write revalidates generation and lease immediately before sending bytes.
+- Close first invalidates terminal state, then schedules process termination.
+- A queued write revalidates workspace instance, generation, terminal incarnation, permission, controller, and lease at the final PTY byte sink immediately before sending bytes.
+- User-originated input passes through the same exclusive-control sink rather than relying only on focus state.
 - A late write fails rather than targeting an exited or replacement terminal.
 
 ### User takeover versus queued Pickle write
@@ -568,7 +614,7 @@ Serialize create/write/close mutations through workspace/terminal command chains
 ### Archive versus active request
 
 - Archive revokes and increments workspace generation before yielding.
-- Pending reads wake with `workspace_revoked`.
+- Pending reads settle exactly once with `workspace_revoked`.
 - Pending mutations revalidate and fail.
 - A late completion cannot recreate workspace state.
 
@@ -588,14 +634,15 @@ This prevents the tool from treating a transport acknowledgment as command compl
 Initial safe caps:
 
 - maximum 4 terminals per Pickle;
-- maximum 8 live shell terminals across the app;
-- bounded idempotency cache per workspace;
+- maximum 8 live or closing shell terminals across the app;
+- bounded mutation ledger per workspace;
+- bounded pending read waiters per terminal and across the app;
 - bounded rendered read output as specified above;
-- existing SwiftTerm scrollback preserved initially, with memory measured under the maximum live-terminal scenario before release.
+- a shell-terminal-specific scrollback/image-resource policy set before agent control is enabled, without lowering inline Pi TUI history globally.
 
-If profiling shows unacceptable memory, add a shell-terminal-specific scrollback limit rather than lowering inline Pi TUI history globally.
+A closing terminal retains its capacity slot until the matching process incarnation confirms exit. Creation failures are structured and visible. Do not evict or kill an existing terminal automatically to make room.
 
-Creation failures are structured and visible. Do not evict or kill an existing terminal automatically to make room.
+Before enablement, run maximum-capacity soak/profiling with sustained output, long lines, ANSI redraw, alternate-screen TUIs, and supported terminal graphics payloads. Record memory and render responsiveness rather than assuming terminal count alone bounds resource use.
 
 ## Swift concurrency and performance
 
@@ -603,6 +650,8 @@ Creation failures are structured and visible. Do not evict or kill an existing t
 - Use a lock only for the minimal output-revision counter if SwiftTerm calls `dataReceived` off MainActor; do not mutate observable UI state from that callback.
 - Query rendered terminal state on MainActor.
 - Waiting reads use bounded async suspension; never block with semaphores.
+- A waiter is registered by opaque token only after an atomic revision check, rechecks immediately after registration, resets its quiet timer on later revisions, and settles exactly once on output, timeout, exit, close, permission revoke, workspace revoke, disconnect, or cancellation.
+- Enforce explicit per-terminal and global waiter caps.
 - Avoid one `Task` per terminal row or per output chunk.
 - Do not publish terminal output chunks through the main session view model.
 - Publish only coarse state changes: terminal list, selection, process status, permission/controller, and output revision when a waiting reader requires it.
@@ -641,10 +690,12 @@ In `agentd/src/protocol.ts`:
 - keep optional/additive fields backward compatible;
 - bound every string/array/count accepted from the model and app.
 
-### Prompt/tool presentation
+### Prompt/tool presentation and privacy
 
-- Tool activity should show terminal operation, terminal ID/name when shared, and success/failure.
-- Do not journal full terminal output in logs or long-lived Pickle summaries beyond the normal bounded tool result already entering Pi context.
+- Tool activity may show only the terminal operation, shared terminal ID/name, safe status/error code, and success/failure.
+- `picky_terminal` start/update/end events receive terminal-specific normalization before generic previews are built.
+- Never copy terminal input, pasted text, rendered output, private terminal name/cwd/status, environment, or full result text into tool activity, WebSocket snapshots, persisted session JSON, summaries, structured logs, or error diagnostics.
+- Add integrated canary tests that scan normalized activity, runtime session state, outbound snapshots/events, persistence output, and logs. The bounded tool result may still enter Pi's immediate tool context as required for the model to continue.
 - Do not add terminal command policy to Picky prompts.
 
 ## Swift app design
@@ -668,7 +719,9 @@ Refactor `PickyShellTerminalSession`/`PickyShellTerminalModel` to support explic
 Extend `PickySwiftTermView` only at stable override points:
 
 - output revision observation through `dataReceived(slice:)`;
-- explicit agent-input path that does not masquerade as user takeover;
+- final user-input interception through `send(source:data:)`;
+- explicit origin-tagged agent-input path;
+- both paths delegate authorization to the shell adapter/controller immediately before forwarding bytes to the process;
 - existing IME, drag/drop, line-editing, font, appearance, and scrollback behavior unchanged.
 
 ### Router bridge
@@ -679,7 +732,8 @@ In `PickyAgentClientRouter.swift`:
 - handle `terminalControlRequested` before general event broadcast;
 - derive expected session ID from `child:<sessionID>` and require payload equality;
 - reply on the same child client that sent the request;
-- register the new capability additively;
+- add/remove the new capability only after the handler and default-off local feature gate are ready;
+- forward transient socket disconnect and child process exit with the router child generation so stale lifecycle callbacks are ignored;
 - return typed errors if the controller is unavailable during startup/shutdown.
 
 ### Session lifecycle wiring
@@ -703,7 +757,8 @@ In `PickySessionViewModel.swift`:
   - split shell process adapter from one-terminal presentation
   - add selected-terminal workspace content
 - `Picky/Sessions/PickyTerminalOverlay.swift`
-  - extend `PickySwiftTermView` output revision and agent-input hooks without changing overlay behavior
+  - pin verified SwiftTerm assumptions in characterization coverage
+  - extend `PickySwiftTermView` output revision and final input-gate hooks without changing overlay behavior
 - `Picky/Domain/PickyTerminalAttachmentCoordinator.swift`
   - generalize attachment identity to include terminal instance
 - `Picky/PickySessionViewModel.swift`
@@ -734,9 +789,11 @@ In `PickySessionViewModel.swift`:
 - `agentd/src/server.test.ts`
   - bridge integration and race/error cases
 - `agentd/src/protocol.ts`
-  - request/result/event/command schemas
+  - request/result/event/command schemas, including additive capability commands and operation-status lookup
 - `agentd/src/protocol.test.ts`
   - parsing, bounds, optional compatibility
+- `agentd/src/domain/pi-event-normalizer.ts` and its tests
+  - terminal-specific activity redaction before generic previews or persistence
 
 ### Contracts
 
@@ -785,8 +842,8 @@ Suggested focused suites:
   - No packaged runtime smoke because no new native dependency is added.
   - No real `~/.pi`, installed extension, or running-daemon dependency.
   - No full UI snapshot/golden testing.
-- **Fake boundaries:** terminal process driver, clock, operation ID, WebSocket app client, child connection key, read-wait scheduler.
-- **Race cases:** duplicate mutation ID, lost reply, write-vs-close, takeover-vs-queued-write, archive-vs-request, disconnect-vs-completion, stale generation, stale lease, private terminal access.
+- **Fake boundaries:** terminal process driver, clock, workspace/terminal identity factory, operation ID/fingerprint, WebSocket app client, child connection key/generation, read-wait scheduler, activity persistence sink.
+- **Race cases:** duplicate in-flight mutation ID, operation payload mismatch, lost reply and ledger lookup, write-vs-close, takeover-vs-user/agent queued bytes, archive-vs-request, app-restart ABA, disconnect-vs-completion, stale child callback, stale generation/incarnation/lease, waiter registration race, private terminal access and persistence.
 
 ### Required automated scenarios
 
@@ -823,25 +880,148 @@ Suggested focused suites:
 31. Protocol fixtures decode in Swift and validate in TypeScript.
 32. Existing inline Pi terminal and detached terminal overlay tests remain unchanged.
 33. VoiceOver projection exposes selection, status, permission, and controller without color-only meaning.
+34. A pre-restart workspace reference cannot access a post-restart workspace even when session ID, generation, and terminal ID match.
+35. A delayed start/exit callback for an old terminal incarnation cannot mutate or release capacity for its replacement.
+36. User keyboard, IME commit, paste, drag/drop, line-editing shortcut, and agent writes are all rejected at the final PTY byte sink when their controller/lease is stale.
+37. Simultaneous duplicate mutations send bytes or close a process exactly once; the same operation ID with a different fingerprint is rejected.
+38. `operationStatus` reconciles a mutation whose side effect completed but transport completion was lost, without replaying it.
+39. Output arriving between revision check and waiter registration is observed; every waiter settles exactly once on all terminal/workspace/permission/connection transitions.
+40. A completion from a different capable app socket is rejected while the original recipient may still complete the request.
+41. An old child generation's disconnect/exit callback cannot revoke control belonging to a replacement child.
+42. Terminal tool start/update/end canary secrets are absent from normalized activity, runtime session state, snapshots/events, persistence, and logs.
+43. Closing/unresponsive terminals retain capacity until confirmed exit and cannot release a replacement incarnation's slot.
+44. Legacy capability registration survives rejection of additive terminal-control commands, and explicit removal stops new terminal events on the same socket.
+45. Agent control remains unavailable while the local feature gate is off, even when protocol schemas and UI are present.
+
+## Gate 0 design approval gate
+
+**Current state:** the following design contract is drafted but not approved. No implementation task below may start until the user explicitly approves Gate 0. Approval authorizes the implementation workflow; signed-app launches, Picky restarts, child-daemon restarts, and manual security tests still require their own explicit approval at the relevant gate.
+
+### Gate 0 locked decisions
+
+1. **Identity and stale barriers**
+   - Add unpredictable `workspaceInstanceID` and per-process `terminalIncarnation`.
+   - Carry them through state, protocol operations/results, callbacks, attachment ownership, mutation ledger keys, and tests.
+   - Preserve generation and lease epoch as separate monotonic barriers within a workspace instance.
+
+2. **Exclusive input enforcement**
+   - Authorize bytes at the final PTY sink, not only in SwiftUI focus/action code.
+   - Classify `user`, `agent`, and internally generated `terminalProtocol` bytes; revalidate the appropriate controller/lease/incarnation immediately before process input.
+   - Characterize SwiftTerm's origin information before implementation; do not block required terminal-protocol replies or misclassify them as human input.
+   - Hand-back to the Pickle resigns focus and resolves/cancels marked text before agent writes are allowed.
+
+3. **Mutation ledger and unknown outcomes**
+   - Reserve before the first suspension, coalesce identical in-flight duplicates, fingerprint canonical payloads, and bound completed outcomes.
+   - Add read-only `operationStatus`; never reconcile a mutation by blind retry.
+
+4. **Read waiter ownership**
+   - Cap waiters per terminal and globally.
+   - Use atomic revision checks around registration and exactly-once settlement for every output/timeout/lifecycle path.
+
+5. **Connection and completion integrity**
+   - Bind requests to recipient socket, child session, child generation, request ID, operation ID, and fingerprint.
+   - Distinguish transient WebSocket disconnect from child process exit and ignore stale child-generation callbacks.
+
+6. **Capability compatibility and rollout**
+   - Keep `registerAppCapabilities` replacement semantics.
+   - Add separate additive/removal commands for `terminalControl` and tolerate older-daemon rejection.
+   - Keep agent terminal control behind a default-off local feature gate until final approval.
+
+7. **Privacy boundary**
+   - Redact terminal input/output and private metadata before generic tool preview normalization.
+   - Require integrated canary scans across activity, snapshots, persistence, and logs.
+
+8. **Process/resource lifecycle**
+   - Pin the verified SwiftTerm revision before implementation.
+   - Confirm process exit before releasing capacity; define bounded close escalation.
+   - Set shell-specific scrollback/resource limits and record maximum-capacity soak results.
+
+9. **Security and performance evidence**
+   - Record a pre-change HUD signpost/mount baseline and agree on the acceptance threshold before UI implementation.
+   - With explicit launch approval, compare protected-resource behavior of child agentd and an app-owned PTY in a signed build. If the app-owned PTY receives materially broader authority, stop and revisit the backend or least-privileged helper boundary.
+
+10. **Frozen cross-lane interfaces**
+    - Tool name: `picky_terminal`.
+    - Freeze the tool-to-server callback signature, operation/result/error types, redaction allowlist, and feature-gate behavior before isolated workers branch.
+    - One owner controls Swift/TypeScript protocol schemas and fixtures as one atomic contract set.
+
+### Gate 0 approval checklist
+
+- [ ] Product owner approves the identity, lease, privacy, capability, and rollout contracts above.
+- [ ] The performance baseline scenario and threshold are written down.
+- [ ] The SwiftTerm revision to pin is recorded.
+- [ ] The signed TCC/security spike is approved separately before it is run.
+- [ ] Isolated worktrees/checkpoint commits are approved, or implementation is restricted to one writer at a time on the main worktree.
+- [ ] No implementation, app restart, daemon restart, or manual acceptance run has occurred.
+
+### Adaptive implementation workflow after approval
+
+```text
+Gate 0 approval
+  -> Wave 1 parallel: adapter characterization | pure policy | cross-language contract | activity redaction
+  -> Gate 1 integrated green checkpoint
+  -> Wave 2 parallel: workspace controller | agentd reverse RPC | tool core (not registered)
+  -> Gate 2 integrated green checkpoint
+  -> sequential ViewModel/lifecycle integration
+  -> parallel router integration | terminal UI
+  -> tool/capability enablement behind default-off feature gate
+  -> Gate 3 fake end-to-end integration
+  -> verifier + reviewer + challenger + security-auditor, maximum two hardening cycles
+  -> Gate 4 broad automated validation
+  -> Gate 5 explicit manual/security/performance approval and feature enablement
+```
+
+Rules:
+
+- The main orchestrator alone integrates lane checkpoints and reruns the integrated gate before downstream workers branch.
+- Parallel workers never edit the same file; dependent lanes branch only from a recorded green checkpoint.
+- Review agents report findings but do not modify production code; fixes return to the owning implementation lane.
+- Private-data disclosure, cross-session routing, stale bytes after revoke/takeover, process resurrection, or protocol mismatch blocks progression.
+- Deterministic barriers/fake clocks enumerate race interleavings; repeated test runs alone are not accepted as concurrency proof.
+- Maximum two hardening cycles. If P0/P1 findings remain, stop at the last green checkpoint and request a design decision.
+
+Lane ownership after approval:
+
+| Lane | Scope | Exclusive ownership while active |
+| --- | --- | --- |
+| Adapter characterization | Task 1 and Task 3 | `PickySessionExtendedTerminalView.swift`, minimal `PickyTerminalOverlay.swift` hooks, lifecycle/output tests |
+| Pure app domain | Task 2, then Task 4 after Gate 1 | new `Picky/Sessions/TerminalWorkspace/` policy/controller files and tests |
+| Cross-language contract | Task 7 | Swift protocol, TypeScript protocol, fixtures, both contract suites as one atomic set |
+| Activity privacy | redaction portion of Tasks 10–11 | `pi-event-normalizer` and activity/persistence canary tests |
+| Agentd bridge | Task 8 | `server.ts` and server tests |
+| Tool core | Task 10 before enablement | terminal tool files/tests; no `bootstrap.ts` until Gate 3 |
+| App lifecycle integration | Task 5 | `PickySessionViewModel.swift`, attachment coordinator, lifecycle tests |
+| Router integration | Task 9 | client/router files and tests |
+| Terminal UI | Task 6 after adapter ownership releases | utility panel, terminal presentation, localization, projection tests |
+| Hardening | Task 11 | tests first; production fixes return to the owning lane |
+
+Never parallel-edit `PickySessionExtendedTerminalView.swift`, either protocol schema, `PickySessionViewModel.swift`, `PickyAgentClientRouter.swift`, `agentd/src/server.ts`, or `agentd/src/bootstrap.ts`.
 
 ## Implementation sequence
 
-### Task 1: Characterize current shell behavior
+**Approval hold:** all tasks below are pending Gate 0 approval. The task numbers remain as the file-level implementation map; execution follows the adaptive waves above rather than treating Tasks 1–12 as one uninterrupted linear worker.
+
+### Task 1: Pin and characterize the current shell boundary
 
 **Files:**
 
+- modify the SwiftTerm package requirement in `Picky.xcodeproj/project.pbxproj`
 - modify `PickyTests/PickyTerminalLifecycleTests.swift`
 - modify `PickyTests/PickyHUDUtilityPanelPolicyTests.swift`
 - modify `PickyTests/PickyTerminalAttachmentCoordinatorTests.swift`
 
 **Work:**
 
+- pin the verified SwiftTerm revision and record the required override points;
+- characterize whether SwiftTerm distinguishes user input from internally generated terminal-protocol replies at the final send path;
+- introduce only the minimal fakeable characterization seam needed before structural refactoring;
 - prove the current terminal survives utility-tab switching and view remount;
 - prove one process starts once per shell session;
 - preserve the two-tab utility policy;
-- document current archive closure behavior.
+- document current archive closure behavior;
+- capture the pre-change terminal mount/switch signpost baseline.
 
-**Validation:** targeted terminal/utility suites must pass before structural changes.
+**Validation:** targeted terminal/utility suites and package resolution must pass before structural changes.
 
 ### Task 2: Add pure workspace state and policy
 
@@ -854,9 +1034,10 @@ Suggested focused suites:
 **Work:**
 
 - implement deterministic order/selection;
-- monotonic IDs;
+- unpredictable workspace instance IDs, terminal incarnations, and monotonic terminal IDs;
 - permission/controller/lease transitions;
-- generation tombstones and revoke/unarchive behavior;
+- generation tombstones and revoke/unarchive/app-restart behavior;
+- operation fingerprint mismatch decisions;
 - per-workspace limit decisions and explicit effects.
 
 **Validation:** pure policy suite only.
@@ -873,8 +1054,10 @@ Suggested focused suites:
 
 - separate `start` from `attach`;
 - introduce a fakeable process/session protocol;
+- gate all user and agent bytes at the final PTY sink with explicit origin and lease/incarnation revalidation;
 - preserve process delegate ownership, IME, drag/drop, font, appearance, and close behavior;
-- add output revision observation and rendered snapshot API.
+- add output revision observation and rendered snapshot API;
+- define confirmed-exit closure, bounded termination escalation, and stale callback rejection.
 
 **Validation:** lifecycle and output snapshot suites.
 
@@ -889,11 +1072,11 @@ Suggested focused suites:
 **Work:**
 
 - own terminal process adapters;
-- enforce global limits;
+- enforce global limits through confirmed process exit;
 - serialize mutations;
-- implement idempotency cache;
-- implement read wait/quiet logic;
-- implement revoke and child lifecycle transitions.
+- implement the pre-suspension mutation ledger, payload fingerprinting, and operation-status lookup;
+- implement bounded read waiters and deterministic wait/quiet logic;
+- implement revoke and child lifecycle transitions using child connection generations.
 
 **Validation:** orchestration suite with fake driver/clock/scheduler.
 
@@ -910,8 +1093,8 @@ Suggested focused suites:
 
 - route shell access through the workspace controller;
 - preserve inline and detached Pi terminal paths;
-- wire archive, remove, child exit, and cleanup;
-- generalize attachment identity.
+- wire archive, remove, transient disconnect, child exit, and cleanup with composable lifecycle callbacks;
+- generalize attachment ownership per workspace/terminal incarnation rather than retaining one global active shell attachment.
 
 **Validation:** ViewModel lifecycle and attachment suites.
 
@@ -945,9 +1128,10 @@ Suggested focused suites:
 
 **Work:**
 
-- schemas, bounds, capability, event, completion, errors;
-- mixed capability registration behavior;
-- additive/optional compatibility.
+- schemas and bounds for workspace instance, terminal incarnation, operation fingerprint/status, capability, event, completion, and errors;
+- `addAppCapabilities`/`removeAppCapabilities` while preserving legacy replacement registration;
+- fixture names ending in `.request.json` or `.event.json` so both contract harnesses execute them;
+- mixed capability registration behavior and additive/optional compatibility.
 
 **Validation:** `test:contracts` plus Swift protocol contract suite.
 
@@ -960,10 +1144,10 @@ Suggested focused suites:
 
 **Work:**
 
-- pending request owner, timeout, disconnect, stop, completion;
-- additive capability registration;
-- operation/request id correlation;
-- no mutation auto-retry.
+- pending request owner, timeout, disconnect, stop, abort, and exactly-once completion;
+- additive/removal capability handling without changing legacy replacement semantics;
+- recipient-socket, child-session, request/operation ID, and fingerprint correlation;
+- operation-status reconciliation and no mutation auto-retry.
 
 **Validation:** focused server tests, typecheck, lint.
 
@@ -979,10 +1163,11 @@ Suggested focused suites:
 **Work:**
 
 - decode event;
-- verify child connection ownership;
+- verify child connection ownership and child generation;
 - invoke workspace handler;
 - reply on the same child client;
-- register capability without regressing older daemon behavior.
+- add/remove capability only when the default-off local feature gate and handler are ready;
+- forward transient disconnect separately from child process exit without regressing older daemon behavior.
 
 **Validation:** client/router suites and protocol contracts.
 
@@ -997,11 +1182,12 @@ Suggested focused suites:
 
 **Work:**
 
-- child-only registration;
-- bounded operation schema;
+- build and test the child-only tool core before registration;
+- bounded operation schema including operation-status lookup;
 - language-neutral prompt text;
-- structured results/errors;
-- operationId derived from Pi tool call ID.
+- structured redacted activity/results/errors;
+- operationId derived from Pi tool call ID;
+- edit `bootstrap.ts` only after router scope tests and Gate 3 integration pass, and keep registration behind the default-off local feature gate.
 
 **Validation:** focused tool/bootstrap tests and agentd typecheck/lint/build.
 
@@ -1013,13 +1199,15 @@ Suggested focused suites:
 
 **Work:**
 
-- duplicate/lost acknowledgment;
-- user takeover with queued write;
-- write/close ordering;
-- archive during request;
-- transient disconnect and permanent child exit;
-- stale generation and stale lease;
-- private terminal data non-disclosure.
+- duplicate in-flight operation and payload mismatch;
+- lost acknowledgment and operation-status reconciliation;
+- user takeover with queued user/agent bytes at every input path;
+- write/close ordering and unresponsive process termination;
+- archive or app restart during request;
+- transient disconnect, permanent child exit, and stale child-generation callback;
+- stale workspace instance, generation, terminal incarnation, and lease;
+- waiter registration/settlement races;
+- private terminal data non-disclosure across activity, snapshots, persistence, and logs.
 
 **Validation:** targeted suites followed by full serial agentd tests and relevant Swift suites.
 
@@ -1032,11 +1220,13 @@ Suggested focused suites:
 
 **Work:**
 
+- with explicit approval, run the signed security spike comparing protected-resource behavior of child agentd and an app-owned PTY;
 - manually verify multiple terminals, IME, copy/paste, drag/drop, hidden process continuity, permission/controller transitions, archive, and child restart;
-- profile Terminal/Artifacts switching and terminal tab selection;
-- record resource usage at maximum configured terminal count.
+- profile Terminal/Artifacts switching and terminal tab selection against the Gate 0 baseline/threshold;
+- record resource usage and responsiveness at maximum configured terminal count under sustained/graphical output;
+- enable terminal control by default only after automated, security, manual, and performance evidence is approved.
 
-**Constraint:** do not restart the running Picky app without explicit user approval.
+**Constraint:** do not launch/restart the running Picky app or child daemon without explicit user approval.
 
 ## Validation commands
 
@@ -1057,6 +1247,7 @@ xcodebuild -project Picky.xcodeproj -scheme Picky \
 # Agentd focused files
 pnpm --dir agentd exec vitest run \
   src/application/terminal-control-tool.test.ts \
+  src/domain/pi-event-normalizer.test.ts \
   src/server.test.ts \
   src/protocol.test.ts
 
@@ -1114,18 +1305,22 @@ No packaged Node/native-addon smoke is required for this design because it delib
 
 ### Input compatibility
 
-Verify Korean IME input, command-arrow/delete line editing, copy/paste, bracketed paste, file drag/drop, Ctrl-C, alternate screen TUIs, and terminal focus routing across terminal-tab switches.
+Verify Korean IME input, command-arrow/delete line editing, copy/paste, bracketed paste, file drag/drop, Ctrl-C, alternate screen TUIs, and terminal focus routing across terminal-tab switches. Exercise takeover/hand-back while each input source is queued or marked and confirm the final PTY gate sends no stale bytes.
+
+### Signed privilege-boundary spike
+
+With explicit approval to launch a signed test build, run equivalent protected-resource probes from the existing child agentd path and an app-owned PTY. Record the responsible process and observed access without capturing private user data. If the app-owned PTY receives materially broader TCC authority, stop rollout and revisit agentd ownership or a least-privileged helper boundary before enabling Pickle terminal control.
 
 ## Observability
 
 Add scalar structured logs for:
 
-- workspace create/revoke/remove;
-- terminal create/start/exit/close with session ID and terminal ID only;
+- workspace create/revoke/remove with session ID and non-secret instance identifiers;
+- terminal create/start/exit/close with session ID, terminal ID, and non-secret incarnation identifier only;
 - permission/controller/lease transition;
 - request start/finish/error code/latency;
 - duplicate operation result reuse;
-- stale generation/lease rejection;
+- stale workspace instance/generation/terminal incarnation/lease rejection;
 - resource-limit rejection;
 - disconnect/child-exit downgrade.
 
@@ -1153,16 +1348,18 @@ terminal_control_rpc
 ### Compatibility
 
 - The tool is capability-gated; without a supporting app it returns unavailable.
-- Terminal events are emitted only to clients that registered `terminalControl`.
-- New app capability registration must not erase existing capabilities or break older daemons.
-- App and bundled agentd ship together, but contract tests still cover missing/new capability combinations.
+- Agent terminal control is also behind a default-off local feature gate until Gate 5 approval.
+- Terminal events are emitted only to clients that added `terminalControl` after the app handler became ready.
+- The existing replacement registration remains unchanged; additive/removal commands must not erase legacy capabilities and may be rejected safely by older daemons.
+- App and bundled agentd ship together, but contract tests still cover old/new app-daemon combinations, same-socket removal, and reconnect from an empty capability set.
 
 ### Rollback
 
 A safe rollback may:
 
+- leave the local feature gate off or return it to off;
 - disable child registration of `picky_terminal`;
-- stop registering `terminalControl` capability;
+- remove or stop adding the `terminalControl` capability;
 - retain the multi-terminal user UI and app-owned workspaces;
 - keep the additive protocol schemas ignored while the capability is absent.
 
@@ -1176,20 +1373,26 @@ Do not roll back by granting the Pickle unrestricted access to all user terminal
 - User-created terminals are private by default.
 - Shared permission and exclusive controller state are visible and accessible.
 - User and Pickle writes cannot merge under tested takeover races.
-- Pickle operations are scoped to the owning child session and explicit terminal ID.
-- Reads are bounded rendered snapshots with explicit revision/wait semantics.
-- Mutations are generation/lease checked, serialized, and idempotent by operation ID.
-- Archive, disconnect, child exit, duplicate completion, and lost acknowledgment paths are safe and observable.
+- Pickle operations are scoped to the owning child session, workspace instance, explicit terminal ID, and terminal incarnation.
+- Reads are bounded rendered snapshots with explicit revision/wait semantics and bounded exactly-once waiter ownership.
+- User and agent bytes are authorized at the final PTY sink.
+- Mutations are workspace-instance/generation/incarnation/lease checked, serialized, fingerprinted, and idempotent by operation ID.
+- Unknown mutation outcomes are reconciled through read-only operation status, never blind retry.
+- Archive, app restart, disconnect, stale child callback, child exit, duplicate/foreign completion, and lost acknowledgment paths are safe and observable.
+- Terminal activity, snapshots, persisted state, logs, and errors contain no terminal input/output or private metadata.
 - Protocol schemas, fixtures, Swift decoding, TypeScript validation, and both contract suites agree.
 - Existing inline Pi terminal and detached terminal overlay behavior remains intact.
 - Targeted tests, full agentd validation, relevant Swift tests, and macOS build pass.
-- HUD terminal switching is profiled and does not introduce material mount/layout regression.
+- SwiftTerm is pinned to the characterized revision before feature implementation.
+- HUD terminal switching is profiled against an approved baseline/threshold and does not introduce material mount/layout regression.
+- Maximum-capacity terminal memory/render soak and signed privilege-boundary results are recorded and approved.
 - Manual IME, paste, drag/drop, long-running process, permission, and lifecycle scenarios are recorded.
-- The running Picky app was not restarted without explicit user approval.
+- Agent terminal control remains default-off until Gate 5 approval.
+- The running Picky app or child daemon was not launched/restarted without explicit user approval.
 
 ## Technical review record
 
-This design was reviewed from verifier, reviewer, and challenger perspectives before documentation.
+This design was reviewed from four independent worker perspectives (Swift architecture, concurrency/state machine, agentd/protocol/privacy, and delivery DAG), then independently checked by verifier and challenger roles. Gate 0 remains awaiting explicit user approval; no implementation has started.
 
 Common conclusions:
 
@@ -1201,14 +1404,22 @@ Common conclusions:
 - archive must revoke before closing;
 - raw incremental output should be omitted until it has loss-aware cursor semantics;
 - request IDs alone do not provide mutation idempotency;
-- user takeover requires a lease/epoch that invalidates queued agent writes.
+- user takeover requires a lease/epoch and a final PTY byte-sink gate that invalidates queued user/agent writes;
+- workspace instance and terminal incarnation identities are required to prevent app-restart and async-callback ABA;
+- terminal tool activity requires pre-preview redaction and integrated persistence canaries;
+- foreign socket completions and stale child-generation callbacks must be rejected;
+- unknown mutation outcomes need read-only ledger status rather than list/read heuristics;
+- capability rollout should use separate additive/removal commands while preserving legacy replacement semantics;
+- implementation should proceed through integrated green checkpoints and independent hardening gates.
 
 Residual risk:
 
-- SwiftTerm focus and input-origin behavior still require runtime verification;
-- memory use at maximum terminal count must be measured;
+- SwiftTerm focus, marked-text, final input-gate, close, and process-tree behavior still require runtime verification against the pinned revision;
+- app-owned PTY versus child-agentd TCC authority requires an explicitly approved signed-build comparison;
+- memory/render behavior at maximum terminal count and terminal graphics output must be measured;
 - read quiet-time defaults may need adjustment against real shells and TUIs;
-- mixed app/daemon capability registration requires explicit contract tests.
+- mixed app/daemon capability add/remove behavior requires explicit contract tests;
+- the concrete feature-gate implementation must remain local-only and non-user-facing until rollout approval.
 
 ## Reference map
 
@@ -1226,4 +1437,6 @@ Residual risk:
 - Child routing and reverse bridge: `Picky/PickyAgentClientRouter.swift`, `agentd/src/server.ts`, `agentd/src/bootstrap.ts`
 - `interactive_shell` reference implementation: `~/.pi/agent/extensions/interactive-shell/`
 - SwiftTerm official source/docs: https://github.com/migueldeicaza/SwiftTerm
+- Verified SwiftTerm local-process source: https://github.com/migueldeicaza/SwiftTerm/blob/86456ca32aaa81cadb4ca8dbe8be4546ffbccd18/Sources/SwiftTerm/Mac/MacLocalTerminalView.swift
+- Apple responsible-process/TCC context: https://developer.apple.com/forums/thread/731504
 - node-pty official source/docs: https://github.com/microsoft/node-pty

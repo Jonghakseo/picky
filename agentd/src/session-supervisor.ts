@@ -1156,7 +1156,6 @@ export class SessionSupervisor extends EventEmitter {
     return handle?.getSessionFilePath?.();
   }
 
-
   async pinPickleSession(context: PickyContextPacket, title?: string): Promise<PickyAgentSession> {
     const now = new Date().toISOString();
     const id = this.sessionIdFactory();
@@ -2960,14 +2959,9 @@ export class SessionSupervisor extends EventEmitter {
     });
   }
 
-  private async syncSessionMessages(
-    sessionId: string,
-    messages: readonly PickySessionMessage[],
-    patch?: SessionMessageSyncPatch,
-  ): Promise<void> {
+  private async syncSessionMessages(sessionId: string, messages: readonly PickySessionMessage[], patch?: SessionMessageSyncPatch): Promise<void> {
     await this.runSessionWrite(sessionId, async () => {
-      // Read the current session inside the serialized write boundary so a concurrent queue,
-      // log, tool, or lifecycle patch cannot be overwritten by a stale precomputed snapshot.
+      // Read inside the write boundary so concurrent patches cannot be overwritten by a stale snapshot.
       const session = { ...this.mustGet(sessionId), ...patch, messages: [...messages], updatedAt: new Date().toISOString() };
       this.sessions.set(session.id, session);
       await this.store.save(session);

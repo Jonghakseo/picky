@@ -8,6 +8,12 @@
 import AVFoundation
 import Foundation
 
+enum BuddyPCM16AudioSignalDetector {
+    static func isDigitallySilent(_ audioData: Data) -> Bool {
+        !audioData.contains { $0 != 0 }
+    }
+}
+
 final class BuddyPCM16AudioConverter {
     private let targetAudioFormat: AVAudioFormat
     private var audioConverter: AVAudioConverter?

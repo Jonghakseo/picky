@@ -210,6 +210,7 @@ enum AzureOpenAIAudioProviderError: LocalizedError {
     case notConfigured(String)
     case invalidEndpoint(String)
     case noAudioCaptured
+    case noSpeechDetected
     case emptyResponse
     case httpError(statusCode: Int, body: String)
     case playbackFailed(String)
@@ -222,6 +223,8 @@ enum AzureOpenAIAudioProviderError: LocalizedError {
             return "Invalid Azure OpenAI audio endpoint for path: \(path)."
         case .noAudioCaptured:
             return "No audio was captured for Azure OpenAI transcription."
+        case .noSpeechDetected:
+            return "No speech detected in Azure OpenAI transcription audio."
         case .emptyResponse:
             return "Azure OpenAI returned an empty audio response."
         case .httpError(let statusCode, let body):

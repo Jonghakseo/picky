@@ -169,6 +169,8 @@ Basic flow:
 6. Replies appear in the Picky cursor bubble, the Status → Recent conversation sub-page, or the Pickle HUD depending on routing.
 7. If TTS is enabled, Picky also reads replies aloud.
 
+> **Clamshell mode:** Apple silicon and T2-equipped Mac laptops hardware-disconnect the built-in microphone when the lid closes ([Apple Platform Security](https://support.apple.com/guide/security/hardware-microphone-disconnect-secbbd20b00b/web)). Select an external microphone in **System Settings → Sound → Input** before using Push-to-Talk with the lid closed. If Azure STT receives only digital silence, Picky skips the network request and reports that no speech was detected instead of accepting a fabricated transcript.
+
 ### 4.1 Voice interruption
 
 Starting a new voice input interrupts an in-progress spoken response. This lets you quickly correct, redirect, or continue without waiting for TTS to finish.

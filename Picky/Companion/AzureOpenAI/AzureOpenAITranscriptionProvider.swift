@@ -168,6 +168,15 @@ private final class AzureOpenAITranscriptionSession: BuddyStreamingTranscription
             deliverErrorIfNeeded(AzureOpenAIAudioProviderError.noAudioCaptured)
             return
         }
+        guard !BuddyPCM16AudioSignalDetector.isDigitallySilent(audioData) else {
+            PickyLog.notice(
+                .latency,
+                prefix: "⏱️ Picky latency —",
+                message: "event=sttRequestSkipped provider=azure reason=digitalSilence audioBytes=\(audioData.count)"
+            )
+            deliverErrorIfNeeded(AzureOpenAIAudioProviderError.noSpeechDetected)
+            return
+        }
 
         let wavData = BuddyWAVFileBuilder.buildWAVData(
             fromPCM16MonoAudio: audioData,

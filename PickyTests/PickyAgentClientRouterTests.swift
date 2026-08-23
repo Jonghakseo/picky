@@ -947,7 +947,7 @@ struct PickyAgentClientRouterTests {
             cwd: "/tmp/ws",
             createdAt: Date(),
             updatedAt: Date(),
-            logs: [],
+            logs: ["persisted log"],
             tools: [],
             artifacts: [],
             changedFiles: [],
@@ -969,6 +969,7 @@ struct PickyAgentClientRouterTests {
         )))
         var completedSession = session
         completedSession.status = .completed
+        completedSession.logs = []
         primary.emit(.protocolEvent(PickyEventEnvelope(
             id: "thin-meta",
             protocolVersion: pickyAgentProtocolVersion,
@@ -983,6 +984,7 @@ struct PickyAgentClientRouterTests {
         let summary = try #require(primary.sentCommands.last { $0.type == .completePickleBridgeRequest }?.sessions?.first { $0.id == session.id })
         #expect(summary.status == .completed)
         #expect(summary.messages.isEmpty)
+        #expect(summary.logs == ["persisted log"])
         #expect(summary.messageJournalAvailable == false)
     }
 

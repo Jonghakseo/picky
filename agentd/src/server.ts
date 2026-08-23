@@ -1387,7 +1387,7 @@ function protocolSession(session: PickyAgentSession): PickyAgentSessionParsed {
 }
 
 function protocolSessionMeta(session: PickyAgentSession): PickyAgentSessionMeta {
-  const { messages: _, ...meta } = session;
+  const { messages: _, logs: __, ...meta } = session;
   return PickyAgentSessionMetaSchema.parse(meta);
 }
 

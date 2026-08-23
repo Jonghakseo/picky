@@ -344,7 +344,7 @@ export type PickyAgentSession = Omit<PickyAgentSessionParsed, "messages" | "queu
 // clients receive message mutations through the ordered sessionMessage* events,
 // while reconnect/sessionSnapshot and lifecycle sessionUpdated events retain full
 // message hydration.
-export const PickyAgentSessionMetaSchema = PickyAgentSessionSchema.omit({ messages: true });
+export const PickyAgentSessionMetaSchema = PickyAgentSessionSchema.omit({ messages: true, logs: true });
 export type PickyAgentSessionMeta = z.infer<typeof PickyAgentSessionMetaSchema>;
 
 export const PickyPointerOverlayRequestSchema = z.object({

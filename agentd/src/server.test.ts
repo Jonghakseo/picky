@@ -53,7 +53,7 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
-  it("broadcasts patch metadata without messages while full snapshots retain message hydration", async () => {
+  it("broadcasts bounded patch metadata while full snapshots retain journal hydration", async () => {
     const { ws } = await connectWithHello();
     const session = await supervisor.create(context("thin metadata update"));
     const message = {
@@ -62,9 +62,10 @@ describe("AgentdServer", () => {
       createdAt: "2026-08-23T00:00:00.000Z",
       text: "Retain this in the reconnect snapshot",
     };
+    const largeLog = "x".repeat(1_000_000);
     await (supervisor as unknown as {
       upsert(session: PickyAgentSession, options: { emitSession: boolean }): Promise<void>;
-    }).upsert({ ...session, messages: [message] }, { emitSession: false });
+    }).upsert({ ...session, messages: [message], logs: [largeLog] }, { emitSession: false });
 
     const metaUpdate = nextEvent(ws);
     await (supervisor as unknown as {
@@ -78,6 +79,8 @@ describe("AgentdServer", () => {
     const event = await metaUpdate;
     if (event.type === "sessionMetaUpdated") {
       expect(event.session).not.toHaveProperty("messages");
+      expect(event.session).not.toHaveProperty("logs");
+      expect(Buffer.byteLength(JSON.stringify(event))).toBeLessThan(2_000);
     }
 
     ws.send(JSON.stringify({ id: "cmd-list-thin-meta", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
@@ -85,6 +88,10 @@ describe("AgentdServer", () => {
     expect(snapshot).toMatchObject({
       sessions: [{ id: session.id, messages: [message] }],
     });
+    if (snapshot.type === "sessionSnapshot") {
+      const hydratedSession = snapshot.sessions.find((candidate) => candidate.id === session.id);
+      expect(hydratedSession?.logs).toEqual([`${"x".repeat(600)}…`]);
+    }
     ws.close();
   });
 

@@ -913,6 +913,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
             // seen in a full snapshot. Preserve the cached journal otherwise.
             guard let existing = sessionCache[session.id] else { return }
             session.messages = existing.messages
+            session.logs = existing.logs
             rememberSession(session, ownerKey: ownerKey)
         case .sessionSnapshot(let snapshot):
             let snapshotSessionIDs = Set(snapshot.sessions.map(\.id))

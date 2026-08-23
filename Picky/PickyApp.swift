@@ -440,26 +440,36 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             switch key {
             case "mainAgent.model":
                 do {
-                    // agentd has no positive setting-ack event. A successful
-                    // send means this ordered WebSocket command was accepted
-                    // by the transport; the normal settings notification also
-                    // keeps CompanionManager's broader daemon sync in step.
-                    try await hudAgentClientRouter.send(PickyCommandEnvelope(
-                        type: .setMainAgentModel,
-                        mainAgentModelPattern: settingsStore.load().mainAgentModelPattern
-                    ))
+                    let rejection = try await hudAgentClientRouter.sendAwaitingError(
+                        PickyCommandEnvelope(
+                            type: .setMainAgentModel,
+                            mainAgentModelPattern: settingsStore.load().mainAgentModelPattern
+                        ),
+                        timeout: 5.0,
+                        requireAcknowledgement: true
+                    )
+                    if let rejection {
+                        applied = false
+                        applicationError = rejection.message
+                    }
                 } catch {
                     applied = false
                     applicationError = error.localizedDescription
                 }
             case "mainAgent.thinkingLevel":
                 do {
-                    // See the model branch above for the transport-level
-                    // applied criterion used until agentd exposes an ack.
-                    try await hudAgentClientRouter.send(PickyCommandEnvelope(
-                        type: .setMainAgentThinkingLevel,
-                        mainAgentThinkingLevel: settingsStore.load().mainAgentThinkingLevel
-                    ))
+                    let rejection = try await hudAgentClientRouter.sendAwaitingError(
+                        PickyCommandEnvelope(
+                            type: .setMainAgentThinkingLevel,
+                            mainAgentThinkingLevel: settingsStore.load().mainAgentThinkingLevel
+                        ),
+                        timeout: 5.0,
+                        requireAcknowledgement: true
+                    )
+                    if let rejection {
+                        applied = false
+                        applicationError = rejection.message
+                    }
                 } catch {
                     applied = false
                     applicationError = error.localizedDescription

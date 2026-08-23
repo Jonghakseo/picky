@@ -23,7 +23,10 @@ describe("internal Picky CLI installer", () => {
     });
 
     const script = await readFile(wrapper, "utf8");
-    expect(script).toContain("export PICKY_CLI_CALLER=mainAgent");
+    // The wrapper is shared by every session hosted in the primary daemon, so it
+    // must stay caller-neutral: main-agent identity is claimed per invocation via
+    // --from-main, never via ambient environment.
+    expect(script).not.toContain("PICKY_CLI_CALLER");
     expect(script).toContain("PICKY_APP_SUPPORT_DIR='/");
     expect(script).toContain("Picky'\\''s Test'");
     expect(script).toContain("exec '/bundled/node' '");

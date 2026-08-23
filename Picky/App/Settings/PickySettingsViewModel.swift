@@ -124,8 +124,19 @@ private enum PickySettingsSnapshotMerger {
 
         var merged = runtimeObject
         for (key, draftValue) in draftObject {
-            guard let baselineValue = baselineObject[key], let runtimeValue = runtimeObject[key] else {
+            guard let baselineValue = baselineObject[key] else {
+                // The panel added this key after its baseline snapshot, so its
+                // explicit draft value is the only value to retain.
                 merged[key] = draftValue
+                continue
+            }
+            guard let runtimeValue = runtimeObject[key] else {
+                // Runtime deliberately removed this existing key (for example,
+                // a per-display dock visibility override). Keep that deletion
+                // unless the panel changed the same key after opening.
+                if !valuesAreEqual(draftValue, baselineValue) {
+                    merged[key] = draftValue
+                }
                 continue
             }
             merged[key] = mergeValue(draftValue, baseline: baselineValue, runtime: runtimeValue)

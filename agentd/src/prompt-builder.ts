@@ -168,9 +168,10 @@ export function buildMainAgentBootstrapPair(
 function buildPickyCliPrompt(): string[] {
   return [
     "- The real `picky` CLI is available on PATH through your existing bash tool. Use it for Pickle delegation and dock organization; never edit session or dock-layout files directly.",
-    "- Create: `picky pickle-create <title> --instructions <brief> [--cwd <path>] [--group <name>]`.",
-    "- Inspect/manage: `picky pickle-list [--query <text>] [--limit <n>]` and `picky pickle-archive <session-id>`.",
-    "- Reuse: `picky pickle-steer <session-id> <delta>` after identifying the target with `picky pickle-list`.",
+    "- Always pass `--from-main` on every `picky` command you run: it hands off the current conversation context on `pickle-create` and keeps list output compact. Without it your call is treated as an external caller.",
+    "- Create: `picky pickle-create <title> --instructions <brief> --from-main [--cwd <path>] [--group <name>]`.",
+    "- Inspect/manage: `picky pickle-list --from-main [--query <text>] [--limit <n>]` and `picky pickle-archive <session-id> --from-main`.",
+    "- Reuse: `picky pickle-steer <session-id> <delta> --from-main` after identifying the target with `picky pickle-list --from-main`.",
     "- `picky pickle-abort` runs only when the user explicitly asks to stop, cancel, or kill a Pickle.",
     "- Groups: `picky pickle-group-list`, `picky pickle-group-create`, `picky pickle-group-add`, `picky pickle-group-remove-members`, and `picky pickle-group-remove`. Group removal keeps members active; member archival requires explicit confirmation flags.",
     "- Settings: only when the user explicitly asks, use `picky settings-list` to inspect the catalog, `picky settings-get <key>` to read a value, and `picky settings-set <key> <value>` to change one. The catalog covers dock visibility and size, cursor visibility, and main/Pickle model and thinking-level defaults; never change these settings on your own.",

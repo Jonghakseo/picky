@@ -341,6 +341,68 @@ struct PickySettingsPolishTests {
         #expect(saved.cursor.enableIdleAnimations == false)
     }
 
+    @MainActor @Test func settingsViewModelSavePreservesRuntimeRemovalOfUnchangedDockOverride() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let store = PickySettingsStore(appSupportRoot: root)
+        var initial = PickySettings.defaults(appSupportRoot: root)
+        initial.defaultCwd = project.path
+        initial.mainAgentCwd = project.path
+        initial.worktreeParent = project.path
+        initial.hudDockVisibilityByDisplayID = ["42": false]
+        try store.save(initial)
+
+        let viewModel = PickySettingsViewModel(store: store)
+        var runtime = store.load()
+        _ = try PickySettingsCLIExposure.apply(
+            key: "hud.dockVisible",
+            value: .bool(true),
+            toggle: false,
+            displayId: "42",
+            to: &runtime
+        )
+        try store.save(runtime)
+
+        viewModel.settings.notifications.notifyOnCompleted = true
+        #expect(viewModel.save())
+
+        let saved = store.load()
+        #expect(saved.notifications.notifyOnCompleted)
+        #expect(saved.hudDockVisibilityByDisplayID.isEmpty)
+    }
+
+    @MainActor @Test func settingsViewModelSaveLetsPanelEditRestoreRuntimeRemovedDockOverride() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let store = PickySettingsStore(appSupportRoot: root)
+        var initial = PickySettings.defaults(appSupportRoot: root)
+        initial.defaultCwd = project.path
+        initial.mainAgentCwd = project.path
+        initial.worktreeParent = project.path
+        initial.hudDockVisibilityByDisplayID = ["42": false]
+        try store.save(initial)
+
+        let viewModel = PickySettingsViewModel(store: store)
+        var runtime = store.load()
+        _ = try PickySettingsCLIExposure.apply(
+            key: "hud.dockVisible",
+            value: .bool(true),
+            toggle: false,
+            displayId: "42",
+            to: &runtime
+        )
+        try store.save(runtime)
+
+        viewModel.settings.hudDockVisibilityByDisplayID["42"] = true
+        #expect(viewModel.save())
+
+        #expect(store.load().hudDockVisibilityByDisplayID == ["42": true])
+    }
+
     @Test func reorderPinnedPickleCwdsAppliesNewOrderAndPreservesUnlistedPins() {
         var settings = PickySettings.defaults()
         settings.pinPickleCwd("/pickytest/a")

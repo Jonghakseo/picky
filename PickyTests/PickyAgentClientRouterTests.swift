@@ -1623,7 +1623,11 @@ struct PickyAgentClientRouterTests {
         try await waitUntil { primary.sentCommands.contains { $0.type == .registerAppCapabilities } }
 
         let command = PickyCommandEnvelope(type: .steer, sessionId: "session-X", text: "hello")
-        async let awaiter: PickyErrorEvent? = router.sendAwaitingError(command, timeout: 2.0)
+        async let awaiter: PickyErrorEvent? = router.sendAwaitingError(
+            command,
+            timeout: 2.0,
+            requireAcknowledgement: true
+        )
 
         try await waitUntil { primary.sentCommands.contains { $0.id == command.id } }
         primary.emit(.protocolEvent(makeErrorEnvelope(commandId: command.id, message: "Unknown session: session-X")))
@@ -1761,7 +1765,7 @@ struct PickyAgentClientRouterTests {
         #expect(rejection?.message == "fast reject")
     }
 
-    @Test func sendAwaitingErrorResolvesOnAckWithoutWaitingOutTimeout() async throws {
+    @Test func sendAwaitingErrorResolvesStrictCommandOnAckWithoutWaitingOutTimeout() async throws {
         // agentd unicasts `type="ack"` after a command handler resolves. The
         // router must treat that as confirmed success immediately — the
         // deliberately huge timeout would otherwise stall this test, which is
@@ -1782,7 +1786,11 @@ struct PickyAgentClientRouterTests {
         }
 
         let start = ContinuousClock.now
-        let result = try await router.sendAwaitingError(command, timeout: 30)
+        let result = try await router.sendAwaitingError(
+            command,
+            timeout: 30,
+            requireAcknowledgement: true
+        )
         #expect(result == nil)
         #expect(ContinuousClock.now - start < .seconds(5))
     }

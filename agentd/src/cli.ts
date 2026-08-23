@@ -22,8 +22,13 @@ interface PickleCreateOptions extends SharedOptions {
 type SessionSnapshotEvent = Extract<EventEnvelope, { type: "sessionSnapshot" }>;
 type SessionArchivedAuthoritativeEvent = Extract<EventEnvelope, { type: "sessionArchivedAuthoritative" }>;
 
-const isMainAgentCaller = process.env.PICKY_CLI_CALLER === "mainAgent";
-const callerFields = isMainAgentCaller ? { caller: "mainAgent" as const } : {};
+// Set from the explicit `--from-main` flag in a preAction hook. The Picky main
+// agent identifies itself per invocation; ambient environment variables are
+// intentionally not consulted so sessions sharing the daemon environment (for
+// example Pickles hosted in the primary daemon) can never inherit the
+// main-agent identity by accident.
+let isMainAgentCaller = false;
+let callerFields: { caller: "mainAgent" } | Record<string, never> = {};
 const MAIN_AGENT_LIST_DEFAULT = 10;
 const MAIN_AGENT_LIST_MAX = 20;
 const MAIN_AGENT_ID_MAX_CHARS = 128;
@@ -34,6 +39,7 @@ program
   .name("picky")
   .description("Programmatic interface to a running Picky.app. Creates and manages Pickles, dock groups, push-to-talk, and main-session submissions.")
   .version(VERSION, "-v, --version", "Print the picky CLI version and exit")
+  .option("--from-main", "Identify this invocation as the Picky main agent: pickle-create hands off the current main-turn context and list output stays compact")
   .addHelpText("after", `
 Examples:
   $ picky submit "정리 좀 해줘"
@@ -901,6 +907,20 @@ function printWaitResult(ack: ExternalEntryAck, replyText: string, asJson: boole
 // Use `Option`'s default fallback so commander's auto-help / --help / help <cmd> work
 // out of the box without us having to think about edge cases.
 void Option;
+
+// Accept `--from-main` both before and after the subcommand name.
+function registerFromMainOption(command: Command): void {
+  for (const sub of command.commands) {
+    sub.option("--from-main", "Identify this invocation as the Picky main agent");
+    registerFromMainOption(sub);
+  }
+}
+registerFromMainOption(program);
+
+program.hook("preAction", (_thisCommand, actionCommand) => {
+  isMainAgentCaller = Boolean(actionCommand.optsWithGlobals().fromMain);
+  callerFields = isMainAgentCaller ? { caller: "mainAgent" } : {};
+});
 
 program.parseAsync(process.argv).catch((error) => {
   process.stderr.write(`picky: ${(error as Error).message ?? String(error)}\n`);

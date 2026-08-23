@@ -293,7 +293,7 @@ describe("picky cli", () => {
       const cmd = command as { sessionId: string; archived: boolean };
       send({ type: "sessionArchivedAuthoritative", sessionId: cmd.sessionId, archived: cmd.archived });
     });
-    const result = await runCli(["pickle-archive", "p-1"], { PICKY_CLI_CALLER: "mainAgent" });
+    const result = await runCli(["pickle-archive", "p-1", "--from-main"]);
     expect(result.code).toBe(0);
     expect(result.stdout).toContain("Archived Pickle p-1");
     expect(server.received.find((command) => (command as { type?: string }).type === "setPickleArchived")).toMatchObject({ type: "setPickleArchived", caller: "mainAgent", sessionId: "p-1", archived: true });
@@ -366,7 +366,7 @@ describe("picky cli", () => {
       });
     });
 
-    const result = await runCli(["pickle-group-list"], { PICKY_CLI_CALLER: "mainAgent" });
+    const result = await runCli(["pickle-group-list", "--from-main"]);
 
     expect(result.code).toBe(0);
     expect(result.stdout.trim().split("\n")).toHaveLength(1);
@@ -396,8 +396,8 @@ describe("picky cli", () => {
     });
 
     const result = await runCli([
-      "pickle-create", "Audit", "--instructions", "Inspect the release", "--cwd", "/tmp/product",
-    ], { PICKY_CLI_CALLER: "mainAgent" });
+      "pickle-create", "Audit", "--instructions", "Inspect the release", "--cwd", "/tmp/product", "--from-main",
+    ]);
 
     expect(result.code).toBe(0);
     expect(server.received[0]).toMatchObject({
@@ -408,6 +408,36 @@ describe("picky cli", () => {
       cwd: "/tmp/product",
     });
     expect(server.received[0]).not.toHaveProperty("captureContext");
+  });
+
+  it("ignores ambient PICKY_CLI_CALLER env so co-hosted sessions never inherit the main-agent identity", async () => {
+    // Regression: the primary daemon prepends a shared `picky` wrapper to PATH for
+    // every in-process session. When the wrapper exported PICKY_CLI_CALLER=mainAgent,
+    // a Pickle running `picky pickle-create --no-context` was routed to
+    // createPickleFromMain and rejected with "No active Picky main context to hand off".
+    server.onCommand("createPickleFromExternal", (command, send) => {
+      send({ type: "externalEntryAck", commandId: (command as { id: string }).id, kind: "createPickle", sessionId: "pickle-ext-env" });
+    });
+
+    const result = await runCli(
+      ["pickle-create", "Orchestrator", "--instructions", "Rewrite setup", "--no-context"],
+      { PICKY_CLI_CALLER: "mainAgent" },
+    );
+
+    expect(result.code).toBe(0);
+    expect(server.received[0]).toMatchObject({ type: "createPickleFromExternal", captureContext: false });
+    expect(server.received[0]).not.toHaveProperty("caller");
+  });
+
+  it("accepts --from-main before the subcommand name", async () => {
+    server.onCommand("listPickles", (_, send) => {
+      send({ type: "sessionSnapshot", sessions: [] });
+    });
+
+    const result = await runCli(["--from-main", "pickle-list"]);
+
+    expect(result.code).toBe(0);
+    expect(server.received[0]).toMatchObject({ type: "listPickles", caller: "mainAgent" });
   });
 
   it("main-agent list bounds rows and normalizes user-controlled fields", async () => {
@@ -436,7 +466,7 @@ describe("picky cli", () => {
       });
     });
 
-    const result = await runCli(["pickle-list"], { PICKY_CLI_CALLER: "mainAgent" });
+    const result = await runCli(["pickle-list", "--from-main"]);
     expect(result.code).toBe(0);
     expect(result.stdout.trim().split("\n")).toHaveLength(10);
     expect(result.stdout).toContain("p-1 spoofed-row-");
@@ -450,17 +480,16 @@ describe("picky cli", () => {
     expect(result.stdout).toContain("…");
     expect(server.received[0]).toMatchObject({ type: "listPickles", caller: "mainAgent" });
 
-    const json = await runCli(["pickle-list", "--json"], { PICKY_CLI_CALLER: "mainAgent" });
+    const json = await runCli(["pickle-list", "--json", "--from-main"]);
     expect(json.code).toBe(64);
     expect(json.stderr).toContain("--json is not available");
   });
 
   it("main-agent CLI rejects recursive submit, PTT, wait, and empty Pickle creation", async () => {
-    const env = { PICKY_CLI_CALLER: "mainAgent" };
-    expect((await runCli(["submit", "recurse"], env)).code).toBe(64);
-    expect((await runCli(["ptt", "press"], env)).code).toBe(64);
-    expect((await runCli(["pickle-create", "Audit", "--instructions", "Inspect", "--wait"], env)).code).toBe(64);
-    expect((await runCli(["pickle-create", "--empty"], env)).code).toBe(64);
+    expect((await runCli(["submit", "recurse", "--from-main"])).code).toBe(64);
+    expect((await runCli(["ptt", "press", "--from-main"])).code).toBe(64);
+    expect((await runCli(["pickle-create", "Audit", "--instructions", "Inspect", "--wait", "--from-main"])).code).toBe(64);
+    expect((await runCli(["pickle-create", "--empty", "--from-main"])).code).toBe(64);
     expect(server.received).toEqual([]);
   });
 
@@ -472,7 +501,7 @@ describe("picky cli", () => {
       send({ type: "sessionUpdated", session: sessionFixture({ id: (command as { sessionId: string }).sessionId, title: "T", status: "running" }) });
     });
 
-    const result = await runCli(["pickle-steer", "p-1", "focus on tests"], { PICKY_CLI_CALLER: "mainAgent" });
+    const result = await runCli(["pickle-steer", "p-1", "focus on tests", "--from-main"]);
 
     expect(result.code).toBe(0);
     expect(server.received.find((command) => (command as { type?: string }).type === "controlPickle")).toMatchObject({
@@ -488,14 +517,12 @@ describe("picky cli", () => {
     server.onCommand("manageDockGroups", (_, send) => {
       send({ type: "dockGroupsSnapshot", groups: [] });
     });
-    const env = { PICKY_CLI_CALLER: "mainAgent" };
-
-    expect((await runCli(["pickle-group-create", "Research", "p-1", "p-2"], env)).code).toBe(0);
-    expect((await runCli(["pickle-group-add", "group-1", "p-3"], env)).code).toBe(0);
-    expect((await runCli(["pickle-group-remove-members", "group-1", "p-1"], env)).code).toBe(0);
-    expect((await runCli(["pickle-group-remove", "group-1"], env)).code).toBe(0);
-    expect((await runCli(["pickle-group-delete", "group-1"], env)).code).toBe(64);
-    expect((await runCli(["pickle-group-delete", "group-1", "--archive-members", "--confirm"], env)).code).toBe(0);
+    expect((await runCli(["pickle-group-create", "Research", "p-1", "p-2", "--from-main"])).code).toBe(0);
+    expect((await runCli(["pickle-group-add", "group-1", "p-3", "--from-main"])).code).toBe(0);
+    expect((await runCli(["pickle-group-remove-members", "group-1", "p-1", "--from-main"])).code).toBe(0);
+    expect((await runCli(["pickle-group-remove", "group-1", "--from-main"])).code).toBe(0);
+    expect((await runCli(["pickle-group-delete", "group-1", "--from-main"])).code).toBe(64);
+    expect((await runCli(["pickle-group-delete", "group-1", "--archive-members", "--confirm", "--from-main"])).code).toBe(0);
 
     const mutations = server.received.filter((command) => (command as { type?: string }).type === "manageDockGroups");
     expect(mutations).toEqual([

@@ -13,6 +13,8 @@ import type { EdgeTTSService } from "./edge-tts-service.js";
 import { PackageOperations, type PackageManager, type PackageManagerFactoryOptions } from "./application/package-operations.js";
 export { createDefaultPackageManager, type DefaultPackageManagerDependencies } from "./application/package-operations.js";
 import type { PiOAuthHandling } from "./application/pi-oauth-service.js";
+import { SettingsControlBroker, SettingsControlError } from "./application/settings-control-broker.js";
+export { APP_SETTINGS_CONTROL_UNAVAILABLE } from "./application/settings-control-broker.js";
 
 export interface AgentdServerOptions {
   port: number;
@@ -77,19 +79,6 @@ const PUSH_TO_TALK_CONTROL_TIMEOUT_MS = 2_000;
 export const APP_DOCK_GROUPS_UNAVAILABLE = "Picky app dock groups unavailable";
 const APP_DOCK_GROUPS_TIMEOUT = "Picky app dock groups request timed out";
 const DOCK_GROUPS_TIMEOUT_MS = 4_000;
-export const APP_SETTINGS_CONTROL_UNAVAILABLE = "Picky app settings control unavailable";
-const APP_SETTINGS_CONTROL_TIMEOUT = "Picky app settings control timed out";
-// The app waits up to 5s for main-agent setting acknowledgement; leave room
-// for that result to return rather than masking a persisted-but-unapplied state.
-const SETTINGS_CONTROL_TIMEOUT_MS = 15_000;
-
-/** Carries an app-provided settings error code to the external CLI unchanged. */
-class SettingsControlError extends Error {
-  constructor(readonly code: string, message: string) {
-    super(message);
-    this.name = "SettingsControlError";
-  }
-}
 
 export class AgentdServer {
   private httpServer?: HttpServer;
@@ -101,7 +90,7 @@ export class AgentdServer {
   private pendingExternalEntries = new Map<string, ExternalEntryPending>();
   private pendingPushToTalkControls = new Map<string, PushToTalkControlPending>();
   private pendingDockGroupsRequests = new Map<string, DockGroupsPending>();
-  private pendingPickySettingsRequests = new Map<string, PickySettingsPending>();
+  private readonly settingsControl: SettingsControlBroker;
   private readonly packageOperations: PackageOperations;
   /**
    * FIFO queue of external CLI submissions. Per the agreed Q3 policy, only one
@@ -122,6 +111,10 @@ export class AgentdServer {
       createPackageManager: options.createPackageManager,
       getAgentDir: options.getAgentDir,
       packageOperationTimeoutMs: options.packageOperationTimeoutMs,
+      send: (ws, event) => { this.send(ws, event); },
+    });
+    this.settingsControl = new SettingsControlBroker({
+      firstSettingsControlApp: () => this.firstClientWithCapability("settingsControl"),
       send: (ws, event) => { this.send(ws, event); },
     });
   }
@@ -249,11 +242,7 @@ export class AgentdServer {
       pending.reject(new Error(APP_DOCK_GROUPS_UNAVAILABLE));
     }
     this.pendingDockGroupsRequests.clear();
-    for (const pending of this.pendingPickySettingsRequests.values()) {
-      clearTimeout(pending.timer);
-      pending.reject(new SettingsControlError("APP_SETTINGS_CONTROL_UNAVAILABLE", APP_SETTINGS_CONTROL_UNAVAILABLE));
-    }
-    this.pendingPickySettingsRequests.clear();
+    this.settingsControl.rejectAll();
     for (const client of this.clients) client.close();
     await this.packageOperations.stop();
     this.options.edgeTTS?.dispose();
@@ -344,12 +333,7 @@ export class AgentdServer {
           this.pendingDockGroupsRequests.delete(requestId);
         }
       }
-      for (const [requestId, pending] of this.pendingPickySettingsRequests) {
-        if (pending.app !== ws) continue;
-        clearTimeout(pending.timer);
-        pending.reject(new SettingsControlError("APP_SETTINGS_CONTROL_UNAVAILABLE", APP_SETTINGS_CONTROL_UNAVAILABLE));
-        this.pendingPickySettingsRequests.delete(requestId);
-      }
+      this.settingsControl.rejectForApp(ws);
       const cancelledOAuthLogins = this.options.piOAuth?.cancelOwnedBy(ws) ?? 0;
       logAgentd("ws disconnected", { clients: this.clients.size, cancelledOAuthLogins });
     });
@@ -547,15 +531,15 @@ export class AgentdServer {
       completePickleHandoff: (cmd) => this.completePendingPickleHandoff(cmd),
       registerAppCapabilities: (cmd) => this.registerAppCapabilities(ws, cmd.capabilities),
       listPickySettings: async (cmd) => {
-        const result = await this.requestPickySettings({ action: "list", caller: cmd.caller });
+        const result = await this.settingsControl.request({ action: "list", caller: cmd.caller });
         this.send(ws, { type: "pickySettingsAck", commandId: cmd.id, result });
       },
       getPickySettings: async (cmd) => {
-        const result = await this.requestPickySettings({ action: "get", key: cmd.key, caller: cmd.caller });
+        const result = await this.settingsControl.request({ action: "get", key: cmd.key, caller: cmd.caller });
         this.send(ws, { type: "pickySettingsAck", commandId: cmd.id, result });
       },
       setPickySettings: async (cmd) => {
-        const result = await this.requestPickySettings({
+        const result = await this.settingsControl.request({
           action: "set",
           key: cmd.key,
           value: cmd.value,
@@ -565,7 +549,7 @@ export class AgentdServer {
         });
         this.send(ws, { type: "pickySettingsAck", commandId: cmd.id, result });
       },
-      completePickySettingsRequest: (cmd) => this.completePendingPickySettingsRequest(ws, cmd),
+      completePickySettingsRequest: (cmd) => this.settingsControl.complete(ws, cmd),
       completePickleBridgeRequest: (cmd) => this.completePendingPickleBridgeRequest(cmd),
       submitMainFromExternal: (cmd) => this.enqueueExternalEntry(ws, cmd.id, "submitMain", { text: cmd.text, captureContext: cmd.captureContext, cwd: cmd.cwd }),
       createPickleFromExternal: (cmd) => this.enqueueExternalEntry(ws, cmd.id, "createPickle", { title: cmd.title, instructions: cmd.instructions, captureContext: cmd.captureContext, cwd: cmd.cwd, group: cmd.group }),
@@ -956,46 +940,6 @@ export class AgentdServer {
     pending.resolve();
   }
 
-  private requestPickySettings(request: AppPickySettingsRequest, timeoutMs = SETTINGS_CONTROL_TIMEOUT_MS): Promise<Record<string, unknown>> {
-    const app = this.firstClientWithCapability("settingsControl");
-    if (!app) return Promise.reject(new SettingsControlError("APP_SETTINGS_CONTROL_UNAVAILABLE", APP_SETTINGS_CONTROL_UNAVAILABLE));
-    const requestId = `picky-settings-${randomUUID()}`;
-    return new Promise<Record<string, unknown>>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        const pending = this.pendingPickySettingsRequests.get(requestId);
-        if (!pending) return;
-        this.pendingPickySettingsRequests.delete(requestId);
-        pending.reject(new SettingsControlError("APP_SETTINGS_CONTROL_TIMEOUT", APP_SETTINGS_CONTROL_TIMEOUT));
-      }, timeoutMs);
-      this.pendingPickySettingsRequests.set(requestId, { resolve, reject, timer, app });
-      this.send(app, { type: "pickySettingsRequested", requestId, ...request });
-    });
-  }
-
-  private completePendingPickySettingsRequest(
-    ws: WebSocket,
-    command: Extract<ReturnType<typeof parseCommand>, { type: "completePickySettingsRequest" }>,
-  ): void {
-    const pending = this.pendingPickySettingsRequests.get(command.requestId);
-    if (!pending) throw new Error(`Unknown Picky settings request: ${command.requestId}`);
-    if (pending.app !== ws) {
-      logAgentd("ignored settings completion from non-recipient app socket", { requestId: command.requestId });
-      return;
-    }
-    this.pendingPickySettingsRequests.delete(command.requestId);
-    clearTimeout(pending.timer);
-    if (command.errorCode || command.errorMessage) {
-      pending.reject(new SettingsControlError(command.errorCode ?? "SETTINGS_CONTROL_FAILED", command.errorMessage ?? "Picky settings request failed"));
-      return;
-    }
-    if (command.result === undefined) {
-      pending.reject(new SettingsControlError("SETTINGS_CONTROL_INVALID_RESULT", `Missing result for Picky settings request: ${command.requestId}`));
-      return;
-    }
-    // The wire protocol permits any JSON result, while this v1 catalog always returns an object.
-    pending.resolve(command.result as Record<string, unknown>);
-  }
-
   private broadcast(event: EventPayload): void {
     if (this.clients.size === 0) return;
     let bytes = 0;
@@ -1092,25 +1036,6 @@ interface DockGroupsPending {
   resolve: (groups: DockGroup[]) => void;
   reject: (error: Error) => void;
   timer: NodeJS.Timeout;
-  app: WebSocket;
-}
-
-type PickySettingsAction = "list" | "get" | "set";
-
-interface AppPickySettingsRequest {
-  action: PickySettingsAction;
-  key?: string;
-  value?: unknown;
-  toggle?: boolean;
-  displayId?: string;
-  caller?: "mainAgent";
-}
-
-interface PickySettingsPending {
-  resolve: (result: Record<string, unknown>) => void;
-  reject: (error: Error) => void;
-  timer: NodeJS.Timeout;
-  /** Only this recipient app socket may complete the request. */
   app: WebSocket;
 }
 

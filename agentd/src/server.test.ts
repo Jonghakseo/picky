@@ -1291,8 +1291,8 @@ describe("AgentdServer", () => {
       capabilities: ["settingsControl"],
     }));
     await waitForRegisteredCapability("settingsControl");
-    const serverForTest = server as unknown as { requestPickySettings: (request: { action: "list" }, timeoutMs: number) => Promise<unknown> };
-    const pending = serverForTest.requestPickySettings({ action: "list" }, 20);
+    const serverForTest = server as unknown as { settingsControl: { request: (request: { action: "list" }, timeoutMs: number) => Promise<unknown> } };
+    const pending = serverForTest.settingsControl.request({ action: "list" }, 20);
     const outcome = pending.then(
       () => ({ ok: true }),
       (error: unknown) => error,
@@ -1349,8 +1349,8 @@ describe("AgentdServer", () => {
       capabilities: ["settingsControl"],
     }));
     await waitForRegisteredCapability("settingsControl");
-    const serverForTest = server as unknown as { requestPickySettings: (request: { action: "list" }) => Promise<unknown> };
-    const pending = serverForTest.requestPickySettings({ action: "list" });
+    const serverForTest = server as unknown as { settingsControl: { request: (request: { action: "list" }) => Promise<unknown> } };
+    const pending = serverForTest.settingsControl.request({ action: "list" });
     const outcome = pending.then(
       () => ({ ok: true }),
       (error: unknown) => error,

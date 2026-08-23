@@ -1198,6 +1198,168 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
+  it("round-trips list, get, and set settings commands through the settings-capable app", async () => {
+    const app = await connectWithHello();
+    app.ws.send(JSON.stringify({
+      id: "cmd-register-settings",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "registerAppCapabilities",
+      capabilities: ["settingsControl"],
+    }));
+    await waitForRegisteredCapability("settingsControl");
+    const cli = await connectWithHello();
+
+    for (const command of [
+      { id: "cmd-settings-list", type: "listPickySettings" },
+      { id: "cmd-settings-get", type: "getPickySettings", key: "cursor.visible" },
+      { id: "cmd-settings-set", type: "setPickySettings", key: "hud.dockVisible", value: true, toggle: false, displayId: "display-1", caller: "mainAgent" },
+    ]) {
+      cli.ws.send(JSON.stringify({ protocolVersion: PROTOCOL_VERSION, ...command }));
+      const request = await waitForEvent(app.ws, "pickySettingsRequested");
+      expect(request).toMatchObject({
+        type: "pickySettingsRequested",
+        action: command.type === "listPickySettings" ? "list" : command.type === "getPickySettings" ? "get" : "set",
+      });
+      if (command.type === "setPickySettings") {
+        expect(request).toMatchObject({ key: "hud.dockVisible", value: true, displayId: "display-1", caller: "mainAgent" });
+      }
+      if (request.type !== "pickySettingsRequested") throw new Error("expected settings request");
+      app.ws.send(JSON.stringify({
+        id: `complete-${command.id}`,
+        protocolVersion: PROTOCOL_VERSION,
+        type: "completePickySettingsRequest",
+        requestId: request.requestId,
+        result: command.type === "listPickySettings"
+          ? { entries: [{ key: "cursor.visible", currentValue: true }] }
+          : command.type === "getPickySettings"
+            ? { key: "cursor.visible", value: true }
+            : { key: "hud.dockVisible", value: true, persisted: true, applied: true, restartRequired: false, revision: 1 },
+      }));
+      const ack = await waitForEvent(cli.ws, "pickySettingsAck");
+      expect(ack).toMatchObject({ type: "pickySettingsAck", commandId: command.id });
+    }
+    app.ws.close();
+    cli.ws.close();
+  });
+
+  it("rejects settings commands when no settings-capable app is connected", async () => {
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({ id: "cmd-settings-unavailable", protocolVersion: PROTOCOL_VERSION, type: "listPickySettings" }));
+    await expect(waitForEvent(ws, "error")).resolves.toMatchObject({
+      commandId: "cmd-settings-unavailable",
+      code: "APP_SETTINGS_CONTROL_UNAVAILABLE",
+    });
+    ws.close();
+  });
+
+  it("preserves an app settings error code for the requesting CLI socket", async () => {
+    const app = await connectWithHello();
+    app.ws.send(JSON.stringify({
+      id: "cmd-register-settings-error",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "registerAppCapabilities",
+      capabilities: ["settingsControl"],
+    }));
+    await waitForRegisteredCapability("settingsControl");
+    const cli = await connectWithHello();
+    cli.ws.send(JSON.stringify({ id: "cmd-settings-disallowed", protocolVersion: PROTOCOL_VERSION, type: "setPickySettings", key: "cursor.visible", value: true, caller: "mainAgent" }));
+    const request = await waitForEvent(app.ws, "pickySettingsRequested");
+    if (request.type !== "pickySettingsRequested") throw new Error("expected settings request");
+    app.ws.send(JSON.stringify({
+      id: "cmd-complete-settings-disallowed",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "completePickySettingsRequest",
+      requestId: request.requestId,
+      errorCode: "SETTINGS_KEY_NOT_ALLOWED_FOR_MAIN_AGENT",
+      errorMessage: "This setting is not allowed for the Picky main agent",
+    }));
+    await expect(waitForEvent(cli.ws, "error")).resolves.toMatchObject({
+      commandId: "cmd-settings-disallowed",
+      code: "SETTINGS_KEY_NOT_ALLOWED_FOR_MAIN_AGENT",
+      message: "This setting is not allowed for the Picky main agent",
+    });
+    app.ws.close();
+    cli.ws.close();
+  });
+
+  it("times out a settings request when the recipient app does not complete it", async () => {
+    const app = await connectWithHello();
+    app.ws.send(JSON.stringify({
+      id: "cmd-register-settings-timeout",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "registerAppCapabilities",
+      capabilities: ["settingsControl"],
+    }));
+    await waitForRegisteredCapability("settingsControl");
+    const serverForTest = server as unknown as { requestPickySettings: (request: { action: "list" }, timeoutMs: number) => Promise<unknown> };
+    const pending = serverForTest.requestPickySettings({ action: "list" }, 20);
+    const outcome = pending.then(
+      () => ({ ok: true }),
+      (error: unknown) => error,
+    );
+    await waitForEvent(app.ws, "pickySettingsRequested");
+    await expect(outcome).resolves.toMatchObject({ code: "APP_SETTINGS_CONTROL_TIMEOUT" });
+    app.ws.close();
+  });
+
+  it("ignores a settings completion from a socket other than the request recipient", async () => {
+    const app = await connectWithHello();
+    app.ws.send(JSON.stringify({
+      id: "cmd-register-settings-recipient",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "registerAppCapabilities",
+      capabilities: ["settingsControl"],
+    }));
+    await waitForRegisteredCapability("settingsControl");
+    const impostor = await connectWithHello();
+    const cli = await connectWithHello();
+    cli.ws.send(JSON.stringify({ id: "cmd-settings-provenance", protocolVersion: PROTOCOL_VERSION, type: "getPickySettings", key: "cursor.visible" }));
+    const request = await waitForEvent(app.ws, "pickySettingsRequested");
+    if (request.type !== "pickySettingsRequested") throw new Error("expected settings request");
+    impostor.ws.send(JSON.stringify({
+      id: "cmd-settings-impostor-complete",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "completePickySettingsRequest",
+      requestId: request.requestId,
+      result: { key: "cursor.visible", value: false },
+    }));
+    await expect(nextEventWithin(cli.ws, 50)).resolves.toBeUndefined();
+    app.ws.send(JSON.stringify({
+      id: "cmd-settings-recipient-complete",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "completePickySettingsRequest",
+      requestId: request.requestId,
+      result: { key: "cursor.visible", value: true },
+    }));
+    await expect(waitForEvent(cli.ws, "pickySettingsAck")).resolves.toMatchObject({
+      commandId: "cmd-settings-provenance",
+      result: { key: "cursor.visible", value: true },
+    });
+    app.ws.close();
+    impostor.ws.close();
+    cli.ws.close();
+  });
+
+  it("rejects a pending settings request when its recipient app disconnects", async () => {
+    const app = await connectWithHello();
+    app.ws.send(JSON.stringify({
+      id: "cmd-register-settings-disconnect",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "registerAppCapabilities",
+      capabilities: ["settingsControl"],
+    }));
+    await waitForRegisteredCapability("settingsControl");
+    const serverForTest = server as unknown as { requestPickySettings: (request: { action: "list" }) => Promise<unknown> };
+    const pending = serverForTest.requestPickySettings({ action: "list" });
+    const outcome = pending.then(
+      () => ({ ok: true }),
+      (error: unknown) => error,
+    );
+    await waitForEvent(app.ws, "pickySettingsRequested");
+    app.ws.close();
+    await expect(outcome).resolves.toMatchObject({ code: "APP_SETTINGS_CONTROL_UNAVAILABLE" });
+  });
+
   it("creates a Pickle from the active main context despite a retired disabled setting", async () => {
     await supervisor.setDisabledBuiltinTools(["picky_start_pickle"]);
     const app = await connectWithHello();

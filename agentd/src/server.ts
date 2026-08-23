@@ -77,6 +77,17 @@ const PUSH_TO_TALK_CONTROL_TIMEOUT_MS = 2_000;
 export const APP_DOCK_GROUPS_UNAVAILABLE = "Picky app dock groups unavailable";
 const APP_DOCK_GROUPS_TIMEOUT = "Picky app dock groups request timed out";
 const DOCK_GROUPS_TIMEOUT_MS = 4_000;
+export const APP_SETTINGS_CONTROL_UNAVAILABLE = "Picky app settings control unavailable";
+const APP_SETTINGS_CONTROL_TIMEOUT = "Picky app settings control timed out";
+const SETTINGS_CONTROL_TIMEOUT_MS = 5_000;
+
+/** Carries an app-provided settings error code to the external CLI unchanged. */
+class SettingsControlError extends Error {
+  constructor(readonly code: string, message: string) {
+    super(message);
+    this.name = "SettingsControlError";
+  }
+}
 
 export class AgentdServer {
   private httpServer?: HttpServer;
@@ -88,6 +99,7 @@ export class AgentdServer {
   private pendingExternalEntries = new Map<string, ExternalEntryPending>();
   private pendingPushToTalkControls = new Map<string, PushToTalkControlPending>();
   private pendingDockGroupsRequests = new Map<string, DockGroupsPending>();
+  private pendingPickySettingsRequests = new Map<string, PickySettingsPending>();
   private readonly packageOperations: PackageOperations;
   /**
    * FIFO queue of external CLI submissions. Per the agreed Q3 policy, only one
@@ -235,6 +247,11 @@ export class AgentdServer {
       pending.reject(new Error(APP_DOCK_GROUPS_UNAVAILABLE));
     }
     this.pendingDockGroupsRequests.clear();
+    for (const pending of this.pendingPickySettingsRequests.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(new SettingsControlError("APP_SETTINGS_CONTROL_UNAVAILABLE", APP_SETTINGS_CONTROL_UNAVAILABLE));
+    }
+    this.pendingPickySettingsRequests.clear();
     for (const client of this.clients) client.close();
     await this.packageOperations.stop();
     this.options.edgeTTS?.dispose();
@@ -325,6 +342,12 @@ export class AgentdServer {
           this.pendingDockGroupsRequests.delete(requestId);
         }
       }
+      for (const [requestId, pending] of this.pendingPickySettingsRequests) {
+        if (pending.app !== ws) continue;
+        clearTimeout(pending.timer);
+        pending.reject(new SettingsControlError("APP_SETTINGS_CONTROL_UNAVAILABLE", APP_SETTINGS_CONTROL_UNAVAILABLE));
+        this.pendingPickySettingsRequests.delete(requestId);
+      }
       const cancelledOAuthLogins = this.options.piOAuth?.cancelOwnedBy(ws) ?? 0;
       logAgentd("ws disconnected", { clients: this.clients.size, cancelledOAuthLogins });
     });
@@ -359,7 +382,12 @@ export class AgentdServer {
     } catch (error) {
       const commandId = typeof parsed === "object" && parsed && "id" in parsed ? String((parsed as { id: unknown }).id) : undefined;
       logAgentd("command failed", { commandId, error: error instanceof Error ? error.message : String(error) });
-      this.send(ws, { type: "error", code: "bad_message", message: error instanceof Error ? error.message : String(error), commandId });
+      this.send(ws, {
+        type: "error",
+        code: error instanceof SettingsControlError ? error.code : "bad_message",
+        message: error instanceof Error ? error.message : String(error),
+        commandId,
+      });
     }
   }
 
@@ -516,6 +544,26 @@ export class AgentdServer {
       createPickleFromHandoff: (cmd) => this.options.supervisor.createPickleFromHandoff(cmd.context, { title: cmd.title, instructions: cmd.instructions, cwd: cmd.cwd }),
       completePickleHandoff: (cmd) => this.completePendingPickleHandoff(cmd),
       registerAppCapabilities: (cmd) => this.registerAppCapabilities(ws, cmd.capabilities),
+      listPickySettings: async (cmd) => {
+        const result = await this.requestPickySettings({ action: "list", caller: cmd.caller });
+        this.send(ws, { type: "pickySettingsAck", commandId: cmd.id, result });
+      },
+      getPickySettings: async (cmd) => {
+        const result = await this.requestPickySettings({ action: "get", key: cmd.key, caller: cmd.caller });
+        this.send(ws, { type: "pickySettingsAck", commandId: cmd.id, result });
+      },
+      setPickySettings: async (cmd) => {
+        const result = await this.requestPickySettings({
+          action: "set",
+          key: cmd.key,
+          value: cmd.value,
+          ...(cmd.toggle !== undefined ? { toggle: cmd.toggle } : {}),
+          ...(cmd.displayId !== undefined ? { displayId: cmd.displayId } : {}),
+          caller: cmd.caller,
+        });
+        this.send(ws, { type: "pickySettingsAck", commandId: cmd.id, result });
+      },
+      completePickySettingsRequest: (cmd) => this.completePendingPickySettingsRequest(ws, cmd),
       completePickleBridgeRequest: (cmd) => this.completePendingPickleBridgeRequest(cmd),
       submitMainFromExternal: (cmd) => this.enqueueExternalEntry(ws, cmd.id, "submitMain", { text: cmd.text, captureContext: cmd.captureContext, cwd: cmd.cwd }),
       createPickleFromExternal: (cmd) => this.enqueueExternalEntry(ws, cmd.id, "createPickle", { title: cmd.title, instructions: cmd.instructions, captureContext: cmd.captureContext, cwd: cmd.cwd, group: cmd.group }),
@@ -906,6 +954,46 @@ export class AgentdServer {
     pending.resolve();
   }
 
+  private requestPickySettings(request: AppPickySettingsRequest, timeoutMs = SETTINGS_CONTROL_TIMEOUT_MS): Promise<Record<string, unknown>> {
+    const app = this.firstClientWithCapability("settingsControl");
+    if (!app) return Promise.reject(new SettingsControlError("APP_SETTINGS_CONTROL_UNAVAILABLE", APP_SETTINGS_CONTROL_UNAVAILABLE));
+    const requestId = `picky-settings-${randomUUID()}`;
+    return new Promise<Record<string, unknown>>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const pending = this.pendingPickySettingsRequests.get(requestId);
+        if (!pending) return;
+        this.pendingPickySettingsRequests.delete(requestId);
+        pending.reject(new SettingsControlError("APP_SETTINGS_CONTROL_TIMEOUT", APP_SETTINGS_CONTROL_TIMEOUT));
+      }, timeoutMs);
+      this.pendingPickySettingsRequests.set(requestId, { resolve, reject, timer, app });
+      this.send(app, { type: "pickySettingsRequested", requestId, ...request });
+    });
+  }
+
+  private completePendingPickySettingsRequest(
+    ws: WebSocket,
+    command: Extract<ReturnType<typeof parseCommand>, { type: "completePickySettingsRequest" }>,
+  ): void {
+    const pending = this.pendingPickySettingsRequests.get(command.requestId);
+    if (!pending) throw new Error(`Unknown Picky settings request: ${command.requestId}`);
+    if (pending.app !== ws) {
+      logAgentd("ignored settings completion from non-recipient app socket", { requestId: command.requestId });
+      return;
+    }
+    this.pendingPickySettingsRequests.delete(command.requestId);
+    clearTimeout(pending.timer);
+    if (command.errorCode || command.errorMessage) {
+      pending.reject(new SettingsControlError(command.errorCode ?? "SETTINGS_CONTROL_FAILED", command.errorMessage ?? "Picky settings request failed"));
+      return;
+    }
+    if (command.result === undefined) {
+      pending.reject(new SettingsControlError("SETTINGS_CONTROL_INVALID_RESULT", `Missing result for Picky settings request: ${command.requestId}`));
+      return;
+    }
+    // The wire protocol permits any JSON result, while this v1 catalog always returns an object.
+    pending.resolve(command.result as Record<string, unknown>);
+  }
+
   private broadcast(event: EventPayload): void {
     if (this.clients.size === 0) return;
     let bytes = 0;
@@ -1005,6 +1093,25 @@ interface DockGroupsPending {
   app: WebSocket;
 }
 
+type PickySettingsAction = "list" | "get" | "set";
+
+interface AppPickySettingsRequest {
+  action: PickySettingsAction;
+  key?: string;
+  value?: unknown;
+  toggle?: boolean;
+  displayId?: string;
+  caller?: "mainAgent";
+}
+
+interface PickySettingsPending {
+  resolve: (result: Record<string, unknown>) => void;
+  reject: (error: Error) => void;
+  timer: NodeJS.Timeout;
+  /** Only this recipient app socket may complete the request. */
+  app: WebSocket;
+}
+
 function buildNeutralCliContext(payload: { cwd?: string; transcript?: string }): PickyContextPacket {
   return {
     id: `context-cli-${randomUUID()}`,
@@ -1066,6 +1173,14 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, requestId: command.requestId, sessionId: command.sessionId, errorChars: command.errorMessage?.length };
     case "registerAppCapabilities":
       return { commandId: command.id, type: command.type, capabilities: command.capabilities.join(",") };
+    case "listPickySettings":
+      return { commandId: command.id, type: command.type, caller: command.caller };
+    case "getPickySettings":
+      return { commandId: command.id, type: command.type, key: command.key, caller: command.caller };
+    case "setPickySettings":
+      return { commandId: command.id, type: command.type, key: command.key, toggle: command.toggle ? 1 : 0, displayId: command.displayId, caller: command.caller };
+    case "completePickySettingsRequest":
+      return { commandId: command.id, type: command.type, requestId: command.requestId, errorCode: command.errorCode, errorChars: command.errorMessage?.length };
     case "completePickleBridgeRequest":
       return { commandId: command.id, type: command.type, requestId: command.requestId, sessions: command.sessions?.length, sessionId: command.session?.id, delivered: command.delivered === undefined ? undefined : command.delivered ? 1 : 0, errorChars: command.errorMessage?.length };
     case "submitMainFromExternal":
@@ -1247,10 +1362,11 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, commandId: event.commandId, kind: event.kind, sessionId: event.sessionId, contextId: event.contextId, errorChars: event.errorMessage?.length };
     case "externalEntryAccepted":
       return { eventId: event.id, type: event.type, commandId: event.commandId, kind: event.kind, sessionId: event.sessionId, contextId: event.contextId, group: event.group };
-    case "dockGroupsRequested":
-      return { eventId: event.id, type: event.type, requestId: event.requestId };
+    case "dockGroupsRequested": return { eventId: event.id, type: event.type, requestId: event.requestId };
     case "dockGroupsSnapshot":
       return { eventId: event.id, type: event.type, groups: event.groups.length };
+    case "pickySettingsRequested": return { eventId: event.id, type: event.type, requestId: event.requestId, action: event.action, key: event.key, caller: event.caller };
+    case "pickySettingsAck": return { eventId: event.id, type: event.type, commandId: event.commandId };
     case "pushToTalkControlRequested":
       return { eventId: event.id, type: event.type, requestId: event.requestId, action: event.action };
     case "pushToTalkControlAck":

@@ -616,6 +616,68 @@ describe("picky cli", () => {
     expect(server.received[1]).toMatchObject({ type: "controlPushToTalkFromExternal", action: "release" });
   });
 
+  it("settings commands request catalog values and preserve typed boolean and toggle inputs", async () => {
+    server.onCommand("listPickySettings", (command, send) => {
+      send({
+        type: "pickySettingsAck",
+        commandId: (command as { id: string }).id,
+        result: { entries: [{ key: "cursor.visible", currentValue: true }] },
+      });
+    });
+    server.onCommand("getPickySettings", (command, send) => {
+      send({
+        type: "pickySettingsAck",
+        commandId: (command as { id: string }).id,
+        result: { key: "cursor.visible", value: true },
+      });
+    });
+    server.onCommand("setPickySettings", (command, send) => {
+      const cmd = command as { id: string; key: string; value: unknown };
+      send({
+        type: "pickySettingsAck",
+        commandId: cmd.id,
+        result: { key: cmd.key, value: cmd.value, persisted: true, applied: true, restartRequired: false, revision: 4 },
+      });
+    });
+
+    const list = await runCli(["settings-list"]);
+    const get = await runCli(["settings-get", "cursor.visible", "--json"]);
+    const boolSet = await runCli(["settings-set", "cursor.visible", "off"]);
+    const toggleSet = await runCli(["settings-set", "hud.dockVisible", "toggle", "--display", "display-1"]);
+
+    expect(list).toMatchObject({ code: 0 });
+    expect(list.stdout).toContain("cursor.visible\ttrue");
+    expect(get.code).toBe(0);
+    expect(JSON.parse(get.stdout)).toMatchObject({ type: "pickySettingsAck", result: { key: "cursor.visible", value: true } });
+    expect(boolSet.stdout).toContain("Updated cursor.visible=false");
+    expect(toggleSet.stdout).toContain("Updated hud.dockVisible=toggle");
+    expect(server.received).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "setPickySettings", key: "cursor.visible", value: false }),
+      expect.objectContaining({ type: "setPickySettings", key: "hud.dockVisible", value: "toggle", toggle: true, displayId: "display-1" }),
+    ]));
+  });
+
+  it("settings-set rejects display targeting for settings other than hud.dockVisible", async () => {
+    const result = await runCli(["settings-set", "cursor.visible", "true", "--display", "display-1"]);
+    expect(result.code).toBe(64);
+    expect(result.stderr).toContain("--display is available only for hud.dockVisible");
+    expect(server.received).toHaveLength(0);
+  });
+
+  it("settings commands surface daemon error codes as CLI failures", async () => {
+    server.onCommand("getPickySettings", (command, send) => {
+      send({
+        type: "error",
+        commandId: (command as { id: string }).id,
+        code: "SETTINGS_KEY_NOT_FOUND",
+        message: "Unknown Picky setting: does.not.exist",
+      });
+    });
+    const result = await runCli(["settings-get", "does.not.exist"]);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("Unknown Picky setting: does.not.exist");
+  });
+
   it("--help exits 0 and prints command list", async () => {
     const result = await runCli(["--help"]);
     expect(result.code).toBe(0);

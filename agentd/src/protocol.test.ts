@@ -538,6 +538,55 @@ describe("protocol contract fixtures", () => {
     })).toMatchObject({ type: "pushToTalkControlAck", action: "release" });
   });
 
+  it("parses Picky settings commands and round-trip events", () => {
+    expect(CommandEnvelopeSchema.parse({
+      id: "cmd-settings-list",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "listPickySettings",
+      caller: "mainAgent",
+    })).toMatchObject({ type: "listPickySettings", caller: "mainAgent" });
+
+    expect(CommandEnvelopeSchema.parse({
+      id: "cmd-settings-set",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "setPickySettings",
+      key: "hud.dockVisible",
+      value: true,
+      displayId: "display-1",
+    })).toMatchObject({ type: "setPickySettings", key: "hud.dockVisible", value: true, displayId: "display-1" });
+
+    expect(CommandEnvelopeSchema.parse({
+      id: "cmd-settings-complete",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "completePickySettingsRequest",
+      requestId: "picky-settings-1",
+      result: { key: "hud.dockVisible", value: true },
+    })).toMatchObject({ type: "completePickySettingsRequest", requestId: "picky-settings-1" });
+
+    expect(EventEnvelopeSchema.parse({
+      id: "event-settings-request",
+      protocolVersion: PROTOCOL_VERSION,
+      timestamp: "2026-07-19T00:00:00.000Z",
+      type: "pickySettingsRequested",
+      requestId: "picky-settings-1",
+      action: "set",
+      key: "hud.dockVisible",
+      value: true,
+      toggle: false,
+      displayId: "display-1",
+      caller: "mainAgent",
+    })).toMatchObject({ type: "pickySettingsRequested", action: "set", caller: "mainAgent" });
+
+    expect(EventEnvelopeSchema.parse({
+      id: "event-settings-ack",
+      protocolVersion: PROTOCOL_VERSION,
+      timestamp: "2026-07-19T00:00:00.000Z",
+      type: "pickySettingsAck",
+      commandId: "cmd-settings-set",
+      result: { key: "hud.dockVisible", value: true, persisted: true, applied: true, restartRequired: false, revision: 1 },
+    })).toMatchObject({ type: "pickySettingsAck", commandId: "cmd-settings-set" });
+  });
+
   it("parses session message events with full message payloads", () => {
     expect(() =>
       EventEnvelopeSchema.parse({

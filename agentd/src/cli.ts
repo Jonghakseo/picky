@@ -54,6 +54,9 @@ Examples:
   $ picky pickle-group-remove group-abc
   $ picky ptt press
   $ picky ptt release
+  $ picky settings-list
+  $ picky settings-set hud.dockVisible toggle
+  $ picky settings-set cursor.visible off
 
 Environment:
   PICKY_APP_SUPPORT_DIR   Override the directory containing agentd-connection.json
@@ -402,6 +405,60 @@ Examples:
 void ptt;
 
 program
+  .command("settings-list")
+  .description("List Picky settings that can be read or changed through the running app.")
+  .option("--json", "Emit the raw settings acknowledgement JSON to stdout")
+  .action(async (options: SharedOptions) => {
+    await runWithErrorHandling(async () => {
+      const connection = await loadCliConnection();
+      const ack = await sendCommand(connection, { type: "listPickySettings", ...callerFields }, {
+        matchEvent: matchPickySettingsAck,
+      });
+      printPickySettingsResult("list", ack, options.json);
+    });
+  });
+
+program
+  .command("settings-get <key>")
+  .description("Read one Picky setting by catalog key.")
+  .option("--json", "Emit the raw settings acknowledgement JSON to stdout")
+  .action(async (key: string, options: SharedOptions) => {
+    await runWithErrorHandling(async () => {
+      const connection = await loadCliConnection();
+      const ack = await sendCommand(connection, { type: "getPickySettings", key, ...callerFields }, {
+        matchEvent: matchPickySettingsAck,
+      });
+      printPickySettingsResult("get", ack, options.json);
+    });
+  });
+
+program
+  .command("settings-set <key> <value>")
+  .description("Change one Picky setting. Boolean values accept true/false/on/off; toggle is available for catalog entries that allow it.")
+  .option("--display <id>", "Target a display for hud.dockVisible")
+  .option("--json", "Emit the raw settings acknowledgement JSON to stdout")
+  .action(async (key: string, rawValue: string, options: SharedOptions & { display?: string }) => {
+    await runWithErrorHandling(async () => {
+      if (options.display && key !== "hud.dockVisible") {
+        fail("--display is available only for hud.dockVisible", 64);
+      }
+      const parsed = parsePickySettingValue(rawValue);
+      const connection = await loadCliConnection();
+      const ack = await sendCommand(connection, {
+        type: "setPickySettings",
+        key,
+        value: parsed.value,
+        ...(parsed.toggle ? { toggle: true } : {}),
+        ...(options.display ? { displayId: options.display } : {}),
+        ...callerFields,
+      }, {
+        matchEvent: matchPickySettingsAck,
+      });
+      printPickySettingsResult("set", ack, options.json);
+    });
+  });
+
+program
   .command("pickle-steer <session-id> <text>")
   .description("Steer an existing Pickle at its next steering point.")
   .action(async (sessionId: string, text: string) => {
@@ -699,6 +756,51 @@ type PushToTalkControlAction = "press" | "release";
 interface PushToTalkControlAck {
   commandId: string;
   action: PushToTalkControlAction;
+}
+
+type PickySettingsAck = Extract<EventEnvelope, { type: "pickySettingsAck" }>;
+
+function matchPickySettingsAck(event: EventEnvelope, commandId: string): PickySettingsAck | null {
+  if (event.type !== "pickySettingsAck" || event.commandId !== commandId) return null;
+  return event;
+}
+
+function parsePickySettingValue(raw: string): { value: boolean | string; toggle?: true } {
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === "true" || normalized === "on") return { value: true };
+  if (normalized === "false" || normalized === "off") return { value: false };
+  if (normalized === "toggle") return { value: raw, toggle: true };
+  return { value: raw };
+}
+
+function printPickySettingsResult(action: "list" | "get" | "set", ack: PickySettingsAck, asJson: boolean | undefined): void {
+  if (asJson) {
+    process.stdout.write(`${JSON.stringify(ack, null, 2)}\n`);
+    return;
+  }
+  const result = ack.result as Record<string, unknown>;
+  if (action === "list" && Array.isArray(result.entries)) {
+    for (const entry of result.entries) {
+      if (!entry || typeof entry !== "object") continue;
+      const { key, currentValue } = entry as { key?: unknown; currentValue?: unknown };
+      if (typeof key === "string") process.stdout.write(`${key}\t${formatPickySettingValue(currentValue)}\n`);
+    }
+    return;
+  }
+  if (action === "get" && typeof result.key === "string") {
+    process.stdout.write(`${result.key}=${formatPickySettingValue(result.value)}\n`);
+    return;
+  }
+  if (action === "set" && typeof result.key === "string") {
+    const applied = result.applied === false ? " (saved; pending application)" : "";
+    process.stdout.write(`Updated ${result.key}=${formatPickySettingValue(result.value)}${applied}\n`);
+    return;
+  }
+  process.stdout.write(`${JSON.stringify(result)}\n`);
+}
+
+function formatPickySettingValue(value: unknown): string {
+  return typeof value === "string" ? value : JSON.stringify(value);
 }
 
 function matchPushToTalkControlAck(action: PushToTalkControlAction): (event: EventEnvelope, commandId: string) => EventEnvelope | null {

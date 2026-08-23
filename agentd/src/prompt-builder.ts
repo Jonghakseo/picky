@@ -173,6 +173,7 @@ function buildPickyCliPrompt(): string[] {
     "- Reuse: `picky pickle-steer <session-id> <delta>` after identifying the target with `picky pickle-list`.",
     "- `picky pickle-abort` runs only when the user explicitly asks to stop, cancel, or kill a Pickle.",
     "- Groups: `picky pickle-group-list`, `picky pickle-group-create`, `picky pickle-group-add`, `picky pickle-group-remove-members`, and `picky pickle-group-remove`. Group removal keeps members active; member archival requires explicit confirmation flags.",
+    "- Settings: only when the user explicitly asks, use `picky settings-list` to inspect the catalog, `picky settings-get <key>` to read a value, and `picky settings-set <key> <value>` to change one. The catalog covers dock visibility and size, cursor visibility, and main/Pickle model and thinking-level defaults; never change these settings on your own.",
     "- Never call `picky submit`, `picky ptt`, or any `--wait` option from the main agent: they target Picky itself and can recursively interrupt or block the current turn.",
     "- If an existing AGENTS.md mentions legacy `picky_start_pickle`, `picky_pickle_sessions`, `picky_steer_pickle`, `picky_abort_pickle`, or `picky_manage_pickle_groups` tools, translate them to the equivalent `picky` CLI commands; those individual tools are retired and the CLI capabilities are always available.",
     "- Pickle hover follow-ups bypass you and go directly to a Pickle.",

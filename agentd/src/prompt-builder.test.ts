@@ -41,6 +41,12 @@ describe("neutral prompt builder", () => {
     expect(pair.user).toContain("picky pickle-steer");
     expect(pair.user).toContain("picky pickle-group-remove");
     expect(pair.user).toContain("individual tools are retired");
+    expect(pair.user).toContain("`picky settings-list`");
+    expect(pair.user).toContain("`picky settings-get <key>`");
+    expect(pair.user).toContain("`picky settings-set <key> <value>`");
+    expect(pair.user).toContain("dock visibility and size, cursor visibility, and main/Pickle model and thinking-level defaults");
+    expect(pair.user).toContain("only when the user explicitly asks");
+    expect(pair.user).toContain("never change these settings on your own");
     expect(pair.user).toContain("Never call `picky submit`");
     // Persona + routing thresholds belong in the user-editable AGENTS.md, not
     // hard-coded prompt text.

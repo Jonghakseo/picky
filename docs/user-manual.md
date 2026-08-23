@@ -833,9 +833,9 @@ Running Pickles can still cycle model/thinking independently from these defaults
 
 ### 13.5 Tools
 
-Built-in capabilities available to agents. Pickle creation/listing/steering/abort/group rows gate the corresponding main-agent `picky` CLI commands, while other rows remove their dedicated tool from the agent tool list. **Screen pointing & drawing** controls all agent-authored pointer and shape overlays as one capability.
+Built-in capabilities that add dedicated agent context can be disabled here. Pickle creation, listing, steering, abort, archive, and dock-group management use the local `picky` CLI and are always available, so they do not appear as toggles. **Screen pointing & drawing** controls all agent-authored pointer and shape overlays as one capability.
 
-Changes apply to the main agent immediately and interrupt any in-progress turn. Pickles that started before the change keep their existing tool list until the next turn.
+Tool changes apply to the main agent immediately and interrupt any in-progress turn. Pickles that started before the change keep their existing tool list until the next turn.
 
 ### 13.6 Voice (STT & TTS)
 

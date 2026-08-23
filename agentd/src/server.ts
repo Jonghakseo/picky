@@ -365,8 +365,7 @@ export class AgentdServer {
   // eslint-disable-next-line max-lines-per-function -- The exhaustive typed command registry stays centralized so protocol commands cannot be registered without dispatch behavior.
   private async dispatchCommand(ws: WebSocket, command: ParsedCommand): Promise<void> {
     const handlers: CommandHandlerMap = {
-      listSessions: (cmd) => {
-        this.assertMainCliCapability(cmd.caller, "picky_pickle_sessions");
+      listSessions: () => {
         this.send(ws, { type: "sessionSnapshot", sessions: compactSessionsForSnapshot(this.options.supervisor.list()).map(protocolSession) });
       },
       listMainMessages: (cmd) => this.send(ws, { type: "mainMessagesSnapshot", messages: this.options.supervisor.listMainMessages() }),
@@ -520,8 +519,7 @@ export class AgentdServer {
       submitMainFromExternal: (cmd) => this.enqueueExternalEntry(ws, cmd.id, "submitMain", { text: cmd.text, captureContext: cmd.captureContext, cwd: cmd.cwd }),
       createPickleFromExternal: (cmd) => this.enqueueExternalEntry(ws, cmd.id, "createPickle", { title: cmd.title, instructions: cmd.instructions, captureContext: cmd.captureContext, cwd: cmd.cwd, group: cmd.group }),
       createPickleFromMain: (cmd) => this.createPickleFromMainCli(ws, cmd),
-      listPickles: async (cmd) => {
-        this.assertMainCliCapability(cmd.caller, "picky_pickle_sessions");
+      listPickles: async () => {
         const result = await this.requestPickleBridgeFromApp({ operation: "listSessions" });
         this.send(ws, { type: "sessionSnapshot", sessions: (result.sessions ?? []).map(protocolSession) });
       },
@@ -532,8 +530,6 @@ export class AgentdServer {
         this.send(ws, { type: "sessionUpdated", session: protocolSession(session) });
       },
       controlPickle: async (cmd) => {
-        const capability = cmd.pickleAction === "abort" ? "picky_abort_pickle" : "picky_steer_pickle";
-        this.assertMainCliCapability(cmd.caller, capability);
         if ((cmd.pickleAction === "steer" || cmd.pickleAction === "followUp") && !cmd.text) {
           throw new Error(`${cmd.pickleAction} requires text`);
         }
@@ -544,22 +540,18 @@ export class AgentdServer {
         this.send(ws, { type: "sessionUpdated", session: protocolSession(result.session) });
       },
       setPickleArchived: async (cmd) => {
-        this.assertMainCliCapability(cmd.caller, "picky_pickle_sessions");
         await this.requestPickleBridgeFromApp({ operation: "setArchived", sessionId: cmd.sessionId, archived: cmd.archived });
         this.send(ws, { type: "sessionArchivedAuthoritative", sessionId: cmd.sessionId, archived: cmd.archived });
       },
       deletePickle: async (cmd) => {
-        this.assertMainCliCapability(cmd.caller, "picky_pickle_sessions");
         const result = await this.requestPickleBridgeFromApp({ operation: "delete", sessionId: cmd.sessionId });
         this.send(ws, { type: "sessionSnapshot", sessions: (result.sessions ?? []).map(protocolSession) });
       },
-      listDockGroups: async (cmd) => {
-        this.assertMainCliCapability(cmd.caller, "picky_manage_pickle_groups");
+      listDockGroups: async () => {
         const groups = await this.requestDockGroups();
         this.send(ws, { type: "dockGroupsSnapshot", groups });
       },
       manageDockGroups: async (cmd) => {
-        this.assertMainCliCapability(cmd.caller, "picky_manage_pickle_groups");
         const result = await this.requestPickleBridgeFromApp({
           operation: "manageGroups",
           groupAction: cmd.groupAction,
@@ -581,11 +573,9 @@ export class AgentdServer {
       setNotifyMainOnCompletion: (cmd) => this.options.supervisor.setNotifyMainOnCompletion(cmd.sessionId, cmd.enabled),
       notifyMainOfPickleCompletion: (cmd) => this.options.supervisor.deliverMainAgentPickleCompletion(cmd.sessionId, cmd.prompt, cmd.cwd),
       setSessionArchived: (cmd) => {
-        this.assertMainCliCapability(cmd.caller, "picky_pickle_sessions");
         return this.options.supervisor.setSessionArchived(cmd.sessionId, cmd.archived);
       },
       deleteSession: async (cmd) => {
-        this.assertMainCliCapability(cmd.caller, "picky_pickle_sessions");
         await this.options.supervisor.deleteSession(cmd.sessionId);
         this.broadcast({
           type: "sessionSnapshot",
@@ -598,15 +588,12 @@ export class AgentdServer {
       syncTerminalSession: (cmd) => this.options.supervisor.syncTerminalSession(cmd.sessionId, cmd.baselinePiMessageId),
       setTerminalSessionTailEnabled: (cmd) => this.options.supervisor.setTerminalSessionTailEnabled(cmd.sessionId, cmd.enabled),
       followUp: (cmd) => {
-        this.assertMainCliCapability(cmd.caller, "picky_steer_pickle");
         return this.options.supervisor.followUp(cmd.sessionId, cmd.text, cmd.context, cmd.visualDslEnabled === true);
       },
       steer: (cmd) => {
-        this.assertMainCliCapability(cmd.caller, "picky_steer_pickle");
         return this.options.supervisor.steer(cmd.sessionId, cmd.text, cmd.context, cmd.visualDslEnabled === true);
       },
       abort: (cmd) => {
-        this.assertMainCliCapability(cmd.caller, "picky_abort_pickle");
         return this.options.supervisor.abort(cmd.sessionId);
       },
       answerExtensionUi: (cmd) => this.options.supervisor.answerExtensionUi(cmd.sessionId, cmd.requestId, cmd.value),
@@ -683,7 +670,6 @@ export class AgentdServer {
   ): Promise<void> {
     try {
       if (command.caller !== "mainAgent") throw new Error("createPickleFromMain is available only to the Picky main agent CLI");
-      this.assertMainCliCapability(command.caller, "picky_start_pickle");
       const context = this.options.supervisor.currentMainContext();
       if (!context) throw new Error("No active Picky main context to hand off");
       const cwd = command.cwd?.trim() || this.options.getDefaultCwd?.() || context.cwd?.trim() || process.cwd();
@@ -715,13 +701,6 @@ export class AgentdServer {
         kind: "createPickle",
         errorMessage: error instanceof Error ? error.message : String(error),
       });
-    }
-  }
-
-  private assertMainCliCapability(caller: "mainAgent" | undefined, legacyCapability: string): void {
-    if (caller !== "mainAgent") return;
-    if (this.options.supervisor.getDisabledBuiltinTools().has(legacyCapability)) {
-      throw new Error(`Picky CLI capability is disabled in Settings: ${legacyCapability}`);
     }
   }
 

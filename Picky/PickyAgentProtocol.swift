@@ -9,26 +9,16 @@ import Foundation
 
 let pickyAgentProtocolVersion = "2026-08-23"
 
-/// User-configurable Picky main-agent capabilities. The delegation raw values
-/// retain their former tool names so existing disabled settings keep applying
-/// after delegation moved to the real `picky` CLI through bash.
+/// User-configurable Picky main-agent tools. Pickle delegation and management
+/// use the local `picky` CLI through bash and are always available, so only
+/// capabilities that still add dedicated agent context belong here.
 enum PickyBuiltinTool: String, Codable, CaseIterable, Hashable, Sendable {
-    case startPickle = "picky_start_pickle"
-    case pickleSessions = "picky_pickle_sessions"
-    case steerPickle = "picky_steer_pickle"
-    case abortPickle = "picky_abort_pickle"
-    case managePickleGroups = "picky_manage_pickle_groups"
     case screenOverlay = "picky_screen_overlay"
     case readUserGuide = "read_picky_user_guide"
 
     /// L10n key for the user-facing display name shown in the settings UI.
     var displayNameKey: String {
         switch self {
-        case .startPickle: "settings.builtinTools.tool.startPickle.name"
-        case .pickleSessions: "settings.builtinTools.tool.pickleSessions.name"
-        case .steerPickle: "settings.builtinTools.tool.steerPickle.name"
-        case .abortPickle: "settings.builtinTools.tool.abortPickle.name"
-        case .managePickleGroups: "settings.builtinTools.tool.managePickleGroups.name"
         case .screenOverlay: "settings.builtinTools.tool.screenOverlay.name"
         case .readUserGuide: "settings.builtinTools.tool.readUserGuide.name"
         }
@@ -37,11 +27,6 @@ enum PickyBuiltinTool: String, Codable, CaseIterable, Hashable, Sendable {
     /// L10n key for the short description shown under the tool name.
     var descriptionKey: String {
         switch self {
-        case .startPickle: "settings.builtinTools.tool.startPickle.description"
-        case .pickleSessions: "settings.builtinTools.tool.pickleSessions.description"
-        case .steerPickle: "settings.builtinTools.tool.steerPickle.description"
-        case .abortPickle: "settings.builtinTools.tool.abortPickle.description"
-        case .managePickleGroups: "settings.builtinTools.tool.managePickleGroups.description"
         case .screenOverlay: "settings.builtinTools.tool.screenOverlay.description"
         case .readUserGuide: "settings.builtinTools.tool.readUserGuide.description"
         }

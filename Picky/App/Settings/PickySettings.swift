@@ -558,10 +558,9 @@ struct PickySettings: Codable, Equatable {
     /// Selected Microsoft Edge Read Aloud voice when `.edge` is the TTS provider.
     /// This has no effect until the user explicitly selects Edge TTS.
     var edgeTTSVoice: String
-    /// Names of Picky built-in tools the user has explicitly disabled. Empty by
-    /// default; the daemon filters these out of the main agent runtime on next
-    /// reset. Unknown names are tolerated so older clients survive new tool
-    /// additions.
+    /// Picky built-in tools the user has explicitly disabled. Pickle CLI
+    /// operations are always available and are not represented here. Retired
+    /// or unknown raw values from older settings files are discarded on load.
     var disabledBuiltinTools: Set<PickyBuiltinTool>
     /// Full Azure OpenAI audio/transcriptions URL copied from the Azure portal.
     /// Picky parses the base endpoint, deployment name, and api-version from it.

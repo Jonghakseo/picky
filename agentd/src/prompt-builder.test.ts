@@ -67,21 +67,26 @@ describe("neutral prompt builder", () => {
     expect(pair.user).toContain("Do not expose internal tool logs verbatim");
   });
 
-  it("marks disabled main-agent CLI capabilities instead of advertising their commands", () => {
+  it("always advertises Pickle CLI capabilities despite retired disabled settings", () => {
     const pair = buildMainAgentBootstrapPair({
-      disabledBuiltinTools: new Set(["picky_start_pickle", "picky_abort_pickle", "picky_manage_pickle_groups"]),
+      disabledBuiltinTools: new Set([
+        "picky_start_pickle",
+        "picky_pickle_sessions",
+        "picky_steer_pickle",
+        "picky_abort_pickle",
+        "picky_manage_pickle_groups",
+      ]),
     });
 
-    expect(pair.user).toContain("Pickle creation is disabled in Settings");
-    expect(pair.user).toContain("Pickle abort is disabled in Settings");
-    expect(pair.user).toContain("Pickle group management is disabled in Settings");
-    expect(pair.user).not.toContain("- Create: `picky pickle-create");
-    expect(pair.user).not.toContain("- Groups: `picky pickle-group-list");
+    expect(pair.user).toContain("- Create: `picky pickle-create");
     expect(pair.user).toContain("Inspect/manage: `picky pickle-list");
     expect(pair.user).toContain("`picky pickle-archive <session-id>`");
+    expect(pair.user).toContain("Reuse: `picky pickle-steer");
+    expect(pair.user).toContain("`picky pickle-abort`");
+    expect(pair.user).toContain("- Groups: `picky pickle-group-list");
+    expect(pair.user).not.toContain("disabled in Settings");
     expect(pair.user).not.toContain("picky pickle-remove");
     expect(pair.user).not.toContain("picky pickle-delete");
-    expect(pair.user).toContain("Reuse: `picky pickle-steer");
   });
 
   it("gates the inline visual DSL prompt by the screen-overlay identifier", () => {

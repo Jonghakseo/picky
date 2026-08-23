@@ -47,6 +47,8 @@ import type { ToolCategory } from "./domain/tool-categorizer.js";
 import { logAgentd } from "./local-log.js";
 import { SessionMessageBuilder, type SessionMessageSyncPatch } from "./session-message-builder.js";
 
+const RETIRED_PICKLE_CLI_CAPABILITIES = new Set(["picky_start_pickle", "picky_pickle_sessions", "picky_steer_pickle", "picky_abort_pickle", "picky_manage_pickle_groups"]);
+
 export class SessionSupervisor extends EventEmitter {
   private sessions = new Map<string, PickyAgentSession>();
   private runtimeHandles = new Map<string, RuntimeSessionHandle>();
@@ -774,7 +776,7 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   async setDisabledBuiltinTools(names: readonly string[]): Promise<void> {
-    const disabled = new Set(names);
+    const disabled = new Set(names.filter((name) => !RETIRED_PICKLE_CLI_CAPABILITIES.has(name)));
     const previous = this.disabledBuiltinTools;
     const same = previous.size === disabled.size && [...disabled].every((name) => previous.has(name));
     this.disabledBuiltinTools = disabled;
@@ -791,10 +793,6 @@ export class SessionSupervisor extends EventEmitter {
     this.detachMainHandleForInterruption();
     if (currentHandle) await this.abortResetMainHandle(currentHandle, "builtin-tools-switch");
     await this.patchMainState({ sessionFilePath: undefined });
-  }
-
-  getDisabledBuiltinTools(): ReadonlySet<string> {
-    return this.disabledBuiltinTools;
   }
 
   /** Current value of Picky's TTS toggle for main-agent audio-producing runtimes. */

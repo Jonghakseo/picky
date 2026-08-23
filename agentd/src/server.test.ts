@@ -1148,7 +1148,8 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
-  it("creates a Pickle from the active main context for the internal CLI", async () => {
+  it("creates a Pickle from the active main context despite a retired disabled setting", async () => {
+    await supervisor.setDisabledBuiltinTools(["picky_start_pickle"]);
     const app = await connectWithHello();
     app.ws.send(JSON.stringify({
       id: "cmd-register-main-cli-handoff",
@@ -1253,7 +1254,8 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
-  it("routes CLI dock-group mutations through the app-owned bridge", async () => {
+  it("routes CLI dock-group mutations despite a retired disabled setting", async () => {
+    await supervisor.setDisabledBuiltinTools(["picky_manage_pickle_groups"]);
     const app = await connectWithHello();
     app.ws.send(JSON.stringify({ id: "cmd-register-cli-groups", protocolVersion: PROTOCOL_VERSION, type: "registerAppCapabilities", capabilities: ["pickleBridge"] }));
     await waitForRegisteredCapability("pickleBridge");
@@ -1291,7 +1293,8 @@ describe("AgentdServer", () => {
     cli.ws.close();
   });
 
-  it("routes main-agent CLI session operations through the child-aware app bridge", async () => {
+  it("routes main-agent CLI session operations despite retired disabled settings", async () => {
+    await supervisor.setDisabledBuiltinTools(["picky_pickle_sessions", "picky_steer_pickle"]);
     const app = await connectWithHello();
     app.ws.send(JSON.stringify({ id: "cmd-register-cli-sessions", protocolVersion: PROTOCOL_VERSION, type: "registerAppCapabilities", capabilities: ["pickleBridge"] }));
     await waitForRegisteredCapability("pickleBridge");
@@ -1334,11 +1337,16 @@ describe("AgentdServer", () => {
     cli.ws.close();
   });
 
-  it("rejects disabled main-agent CLI capabilities before side effects", async () => {
+  it("routes main-agent CLI abort despite a retired disabled setting", async () => {
     await supervisor.setDisabledBuiltinTools(["picky_abort_pickle"]);
-    const { ws } = await connectWithHello();
-    ws.send(JSON.stringify({
-      id: "cmd-disabled-main-cli-abort",
+    const app = await connectWithHello();
+    app.ws.send(JSON.stringify({ id: "cmd-register-cli-abort", protocolVersion: PROTOCOL_VERSION, type: "registerAppCapabilities", capabilities: ["pickleBridge"] }));
+    await waitForRegisteredCapability("pickleBridge");
+    const cli = await connectWithHello();
+    const session = makeSession({ id: "pickle-1", status: "cancelled" });
+
+    cli.ws.send(JSON.stringify({
+      id: "cmd-main-cli-abort",
       protocolVersion: PROTOCOL_VERSION,
       type: "controlPickle",
       pickleAction: "abort",
@@ -1346,10 +1354,20 @@ describe("AgentdServer", () => {
       sessionId: "pickle-1",
     }));
 
-    const error = await waitForEvent(ws, "error");
-    expect(error).toMatchObject({ commandId: "cmd-disabled-main-cli-abort" });
-    if (error.type === "error") expect(error.message).toContain("picky_abort_pickle");
-    ws.close();
+    const request = await waitForEvent(app.ws, "pickleBridgeRequested");
+    expect(request).toMatchObject({ operation: "abort", sessionId: "pickle-1" });
+    if (request.type !== "pickleBridgeRequested") throw new Error("expected abort bridge request");
+    const update = waitForEvent(cli.ws, "sessionUpdated");
+    app.ws.send(JSON.stringify({
+      id: "cmd-complete-cli-abort",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "completePickleBridgeRequest",
+      requestId: request.requestId,
+      session,
+    }));
+    await expect(update).resolves.toMatchObject({ session: { id: "pickle-1", status: "cancelled" } });
+    app.ws.close();
+    cli.ws.close();
   });
 
   it("rejects a pending Pickle bridge request when its recipient disconnects", async () => {

@@ -100,6 +100,38 @@ struct PickySettingsPolishTests {
         #expect(PickyUpdaterController.allowedChannels(forReleaseChannel: "alpha").isEmpty)
     }
 
+    @Test func settingsDiscardRetiredPickleCliCapabilityToggles() throws {
+        let legacyJSON = """
+        {
+          "defaultCwd": "/tmp",
+          "worktreeParent": "",
+          "preferredToolVisibility": "visible in context only",
+          "readOnlyInvestigationPreference": true,
+          "daemonPath": "/tmp/agentd",
+          "logPath": "/tmp/logs",
+          "disabledBuiltinTools": [
+            "picky_start_pickle",
+            "picky_pickle_sessions",
+            "picky_steer_pickle",
+            "picky_abort_pickle",
+            "picky_manage_pickle_groups",
+            "picky_screen_overlay"
+          ]
+        }
+        """.data(using: .utf8)!
+
+        let settings = try JSONDecoder().decode(PickySettings.self, from: legacyJSON)
+
+        #expect(settings.disabledBuiltinTools == [.screenOverlay])
+        #expect(Set(PickyBuiltinTool.allCases) == [.screenOverlay, .readUserGuide])
+        let encoded = String(decoding: try JSONEncoder().encode(settings), as: UTF8.self)
+        #expect(!encoded.contains("picky_start_pickle"))
+        #expect(!encoded.contains("picky_pickle_sessions"))
+        #expect(!encoded.contains("picky_steer_pickle"))
+        #expect(!encoded.contains("picky_abort_pickle"))
+        #expect(!encoded.contains("picky_manage_pickle_groups"))
+    }
+
     @Test func settingsNoLongerPersistPerPickleRuntimeAndIgnoreLegacyField() throws {
         let defaults = PickySettings.defaults()
         let encoded = try JSONEncoder().encode(defaults)

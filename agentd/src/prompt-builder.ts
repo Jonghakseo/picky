@@ -121,7 +121,7 @@ export function buildMainAgentBootstrapPair(
   const trimmedSummary = options.compactSummary?.trim();
   const disabledBuiltinTools = options.disabledBuiltinTools ?? new Set<string>();
   const visualOverlaySection = buildVisualOverlayDslPrompt(disabledBuiltinTools);
-  const pickyCliSection = buildPickyCliPrompt(disabledBuiltinTools);
+  const pickyCliSection = buildPickyCliPrompt();
   const replyStyleSection: string[] = [
     "## Direct reply style for Picky TTS",
     "",
@@ -165,41 +165,18 @@ export function buildMainAgentBootstrapPair(
   return { user, assistant };
 }
 
-function buildPickyCliPrompt(disabled: ReadonlySet<string>): string[] {
-  const lines = [
+function buildPickyCliPrompt(): string[] {
+  return [
     "- The real `picky` CLI is available on PATH through your existing bash tool. Use it for Pickle delegation and dock organization; never edit session or dock-layout files directly.",
-  ];
-  if (!disabled.has("picky_start_pickle")) {
-    lines.push("- Create: `picky pickle-create <title> --instructions <brief> [--cwd <path>] [--group <name>]`.");
-  } else {
-    lines.push("- Pickle creation is disabled in Settings; do not call `picky pickle-create`.");
-  }
-  if (!disabled.has("picky_pickle_sessions")) {
-    lines.push("- Inspect/manage: `picky pickle-list [--query <text>] [--limit <n>]` and `picky pickle-archive <session-id>`.");
-  } else {
-    lines.push("- Pickle listing, archive, and restore are disabled in Settings.");
-  }
-  if (!disabled.has("picky_steer_pickle")) {
-    lines.push("- Reuse: `picky pickle-steer <session-id> <delta>` after identifying the target with `picky pickle-list`.");
-  } else {
-    lines.push("- Pickle steering and follow-up are disabled in Settings.");
-  }
-  if (!disabled.has("picky_abort_pickle")) {
-    lines.push("- `picky pickle-abort` runs only when the user explicitly asks to stop, cancel, or kill a Pickle.");
-  } else {
-    lines.push("- Pickle abort is disabled in Settings.");
-  }
-  if (!disabled.has("picky_manage_pickle_groups")) {
-    lines.push("- Groups: `picky pickle-group-list`, `picky pickle-group-create`, `picky pickle-group-add`, `picky pickle-group-remove-members`, and `picky pickle-group-remove`. Group removal keeps members active; member archival requires explicit confirmation flags.");
-  } else {
-    lines.push("- Pickle group management is disabled in Settings.");
-  }
-  lines.push(
+    "- Create: `picky pickle-create <title> --instructions <brief> [--cwd <path>] [--group <name>]`.",
+    "- Inspect/manage: `picky pickle-list [--query <text>] [--limit <n>]` and `picky pickle-archive <session-id>`.",
+    "- Reuse: `picky pickle-steer <session-id> <delta>` after identifying the target with `picky pickle-list`.",
+    "- `picky pickle-abort` runs only when the user explicitly asks to stop, cancel, or kill a Pickle.",
+    "- Groups: `picky pickle-group-list`, `picky pickle-group-create`, `picky pickle-group-add`, `picky pickle-group-remove-members`, and `picky pickle-group-remove`. Group removal keeps members active; member archival requires explicit confirmation flags.",
     "- Never call `picky submit`, `picky ptt`, or any `--wait` option from the main agent: they target Picky itself and can recursively interrupt or block the current turn.",
-    "- If an existing AGENTS.md mentions legacy `picky_start_pickle`, `picky_pickle_sessions`, `picky_steer_pickle`, `picky_abort_pickle`, or `picky_manage_pickle_groups` tools, translate only enabled capabilities to the equivalent `picky` CLI commands; those individual tools are retired.",
+    "- If an existing AGENTS.md mentions legacy `picky_start_pickle`, `picky_pickle_sessions`, `picky_steer_pickle`, `picky_abort_pickle`, or `picky_manage_pickle_groups` tools, translate them to the equivalent `picky` CLI commands; those individual tools are retired and the CLI capabilities are always available.",
     "- Pickle hover follow-ups bypass you and go directly to a Pickle.",
-  );
-  return lines;
+  ];
 }
 
 function appendPickleVisualOverlayDslPrompt(lines: string[], context: PickyContextPacket, options: PickleTurnPromptOptions): void {

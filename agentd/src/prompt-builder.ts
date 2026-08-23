@@ -1,4 +1,3 @@
-import { PICKLE_TOOL_NAMES } from "./application/picky-tool-names.js";
 import type { PickyContextPacket } from "./protocol.js";
 
 export interface BuiltPrompt {
@@ -120,7 +119,9 @@ export function buildMainAgentBootstrapPair(
     ? { compactSummary: optionsOrSummary }
     : optionsOrSummary ?? {};
   const trimmedSummary = options.compactSummary?.trim();
-  const visualOverlaySection = buildVisualOverlayDslPrompt(options.disabledBuiltinTools ?? new Set());
+  const disabledBuiltinTools = options.disabledBuiltinTools ?? new Set<string>();
+  const visualOverlaySection = buildVisualOverlayDslPrompt(disabledBuiltinTools);
+  const pickyCliSection = buildPickyCliPrompt();
   const replyStyleSection: string[] = [
     "## Direct reply style for Picky TTS",
     "",
@@ -135,13 +136,11 @@ export function buildMainAgentBootstrapPair(
     "",
     "## Standing Picky persona and routing",
     "",
-    `Your persona, Pickle delegation policy, and any project-specific guidance live in the \`AGENTS.md\` Pi loaded from the current working directory. Treat that file as authoritative for what Picky is and when to delegate to a Pickle. Do not duplicate or invent rules here; if the file is missing, behave as a thin assistant that replies in the user's language, delegates non-trivial work to a Pickle via \`${PICKLE_TOOL_NAMES.start}\`, and consults \`${PICKLE_TOOL_NAMES.sessions}\` to steer an existing Pickle when reuse fits the context.`,
+    "Your persona, Pickle delegation policy, and any project-specific guidance live in the `AGENTS.md` Pi loaded from the current working directory. Treat that file as authoritative for what Picky is and when to delegate to a Pickle. Do not duplicate or invent rules here; if the file is missing, behave as a thin assistant that replies in the user's language, delegates non-trivial work with `picky pickle-create`, and consults `picky pickle-list` before steering an existing Pickle.",
     "",
     "## Picky-specific runtime facts",
     "",
-    `- Available delegation tools: \`${PICKLE_TOOL_NAMES.start}\`, \`${PICKLE_TOOL_NAMES.sessions}\`, \`${PICKLE_TOOL_NAMES.steer}\`, \`${PICKLE_TOOL_NAMES.abort}\`. Only the picky_* tools surface Pickles in the Picky dock; never simulate them with bash or by editing session files.`,
-    `- \`${PICKLE_TOOL_NAMES.abort}\` only runs when the user explicitly asks to stop, cancel, or kill a Pickle; if the target is ambiguous, resolve it with \`${PICKLE_TOOL_NAMES.sessions}\`.`,
-    `- Pickle hover follow-ups bypass you and go directly to a Pickle. When reusing a running Pickle fits, prefer \`${PICKLE_TOOL_NAMES.steer}\`, identifying the target with \`${PICKLE_TOOL_NAMES.sessions}\` as needed.`,
+    ...pickyCliSection,
     ...visualOverlaySection,
 
     "- If the user request Source is `text`, treat the request text as deliberate typed input, not speech recognition output.",
@@ -154,7 +153,7 @@ export function buildMainAgentBootstrapPair(
           "",
           "## Previous Picky epoch summary",
           "",
-          "The summary below is a memo from a previous conversation that Picky carried over while rolling a long Picky session into a new Pi session. Use it only as reference; if the user asks about existing delegated work or progress, always check the latest state via picky_pickle_sessions.",
+          "The summary below is a memo from a previous conversation that Picky carried over while rolling a long Picky session into a new Pi session. Use it only as reference; if the user asks about existing delegated work or progress, always check the latest state via `picky pickle-list`.",
           "",
           trimmedSummary,
         ]
@@ -164,6 +163,20 @@ export function buildMainAgentBootstrapPair(
   ].join("\n");
   const assistant = "OK";
   return { user, assistant };
+}
+
+function buildPickyCliPrompt(): string[] {
+  return [
+    "- The real `picky` CLI is available on PATH through your existing bash tool. Use it for Pickle delegation and dock organization; never edit session or dock-layout files directly.",
+    "- Create: `picky pickle-create <title> --instructions <brief> [--cwd <path>] [--group <name>]`.",
+    "- Inspect/manage: `picky pickle-list [--query <text>] [--limit <n>]` and `picky pickle-archive <session-id>`.",
+    "- Reuse: `picky pickle-steer <session-id> <delta>` after identifying the target with `picky pickle-list`.",
+    "- `picky pickle-abort` runs only when the user explicitly asks to stop, cancel, or kill a Pickle.",
+    "- Groups: `picky pickle-group-list`, `picky pickle-group-create`, `picky pickle-group-add`, `picky pickle-group-remove-members`, and `picky pickle-group-remove`. Group removal keeps members active; member archival requires explicit confirmation flags.",
+    "- Never call `picky submit`, `picky ptt`, or any `--wait` option from the main agent: they target Picky itself and can recursively interrupt or block the current turn.",
+    "- If an existing AGENTS.md mentions legacy `picky_start_pickle`, `picky_pickle_sessions`, `picky_steer_pickle`, `picky_abort_pickle`, or `picky_manage_pickle_groups` tools, translate them to the equivalent `picky` CLI commands; those individual tools are retired and the CLI capabilities are always available.",
+    "- Pickle hover follow-ups bypass you and go directly to a Pickle.",
+  ];
 }
 
 function appendPickleVisualOverlayDslPrompt(lines: string[], context: PickyContextPacket, options: PickleTurnPromptOptions): void {

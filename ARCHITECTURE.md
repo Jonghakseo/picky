@@ -50,7 +50,7 @@ local Pi environment
 1. User invokes Picky by a configurable push-to-talk shortcut or quick-input shortcut. Defaults are `Control+Option` for voice and double-tap `Control` for text entry.
 2. `Picky.app` captures transcript, active app/window, browser context, selected text, screenshots, cwd, and optional selected session.
 3. App sends `routeTask`/`createTask` to `picky-agentd`.
-4. If Picky mode is enabled, daemon routes through the always-on Picky runtime. Simple requests can receive `quickReply`; complex work is delegated through `picky_start_pickle` to a visible Pickle session.
+4. If Picky mode is enabled, daemon routes through the always-on Picky runtime. Simple requests can receive `quickReply`; complex work is delegated with the local `picky` CLI through the main agent's existing bash tool to a visible Pickle session.
 5. Pickle session runs through Pi SDK; daemon normalizes runtime events into HUD events.
 
 ### Follow-up
@@ -155,7 +155,7 @@ agentd/src/
   local-log.ts                          daemon logging
 
   application/
-    handoff-tool.ts                     Picky tools: start/list/follow-up Pickle sessions
+    internal-picky-cli.ts               Primary-only local CLI wrapper/PATH installation
     pointer-tool.ts                     Picky pointer overlay request tool
     ask-user-question-tool.ts           Pickle ask_user_question bridge
     pi-session-syncer.ts                Pi session JSONL/history sync helpers

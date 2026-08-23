@@ -313,8 +313,9 @@ Create a group:
 - Click the `+` slot → **New Group…**, give it a name, and optionally pick initial Pickles and an accent color.
 - An empty group shows a dashed `+` tile. Click it to pick a working folder and start a new Pickle that lands directly in that group; the tile also stays a drop target for dragging existing Pickles in.
 
-Manage membership by dragging:
+Manage membership:
 
+- Ask the Picky main agent to organize existing Pickles. It uses the local `picky` CLI to list groups, create a named group, add/remove exact Pickle session IDs, or ungroup while keeping members. These operations update the same persisted dock layout used by the UI.
 - Drag a Pickle onto a group to move it in; drag it above the first slot or below the last slot to pull it back out to the top level. The dock previews where it will land and commits the move only when you release.
 - Drag a group's header to reorder the whole group within the dock. Hold it clearly **outside** the dock and a **Remove** label appears; release there to remove the group (macOS Dock style). A group that still contains Pickles asks for confirmation before archiving them; an empty group is removed immediately.
 
@@ -744,7 +745,7 @@ The subsections below describe each leaf in the order it appears on the index.
 | App language | System default, English, 한국어 | Most UI retranslates immediately. Some macOS-owned surfaces require relaunch. |
 | Install `picky` shell command | Button | Installs or uninstalls the `picky` launcher in `/usr/local/bin` (or the closest writable directory). Useful because Picky is an `LSUIElement` app whose panels never activate the macOS top menu bar, so a normal "Install Shell Command…" menu item would never be visible. |
 
-After installing the shell command, use it to drive Picky from a terminal or hardware automation:
+After installing the shell command, use it to drive Picky from a terminal or hardware automation. The Picky main agent does not depend on this optional installation: primary agentd gives its existing bash tool an internal `picky` command automatically.
 
 ```bash
 picky submit "summarize the current screen"
@@ -752,13 +753,19 @@ picky pickle-create "Research" --instructions "Compare the open tabs" --group "R
 picky pickle-list --archived --query sentry
 picky pickle-archive <session-id>
 picky pickle-unarchive <session-id>
+picky pickle-steer <session-id> "focus on production impact"
+picky pickle-abort <session-id>
 picky pickle-group-list
-picky pickle-followup <session-id> "focus on production impact"
+picky pickle-group-create "Research" <session-id>...
+picky pickle-group-add <group-id> <session-id>...
+picky pickle-group-remove-members <group-id> <session-id>...
+picky pickle-group-remove <group-id>                # keeps members active
+picky pickle-group-delete <group-id> --archive-members --confirm
 picky ptt press
 picky ptt release
 ```
 
-`picky pickle-create --group <name>` places the new Pickle in the named dock group, creating that group when needed. If multiple groups share the same name, Picky uses the first matching group in dock order. `picky pickle-list --archived` shows Pickles hidden from the dock; add `--query <text>` to search by ID, title, cwd, status, summary, or final answer. `picky pickle-archive <session-id>` hides a Pickle, and `picky pickle-unarchive <session-id>` restores it while it is still inside Picky's current 7-day archived-session retention window. `picky pickle-group-list --json` returns group IDs, names, colors, collapsed state, and member session IDs for scripting.
+`picky pickle-create --group <name>` places the new Pickle in the named dock group, creating that group when needed. If multiple groups share the same name, Picky uses the first matching group in dock order. `picky pickle-list` includes each grouped Pickle's exact group ID and name; `--json` adds a compact `dockGroup` object to each grouped session. `picky pickle-list --archived` shows Pickles hidden from the dock; add `--query <text>` to search by ID, title, cwd, status, summary, or final answer. `picky pickle-archive` archives a Pickle, and `picky pickle-unarchive` restores it while it remains inside Picky's archived-session retention window. `picky pickle-group-remove` removes only the group and keeps members active, while `picky pickle-group-delete --archive-members --confirm` removes the group and archives its members. `picky pickle-group-list --json` returns group IDs, names, colors, collapsed state, and member session IDs for external scripting; main-agent CLI calls use bounded text output instead.
 
 ### 13.2 Shortcuts
 
@@ -826,9 +833,9 @@ Running Pickles can still cycle model/thinking independently from these defaults
 
 ### 13.5 Tools
 
-Built-in tools that the agents can call. Each row is an individual toggle; turning a tool off removes it from the agent's tool list entirely so it cannot be called. **Screen pointing & drawing** controls all agent-authored pointer and shape overlays as one capability.
+Built-in capabilities that add dedicated agent context can be disabled here. Pickle creation, listing, steering, abort, archive, and dock-group management use the local `picky` CLI and are always available, so they do not appear as toggles. **Screen pointing & drawing** controls all agent-authored pointer and shape overlays as one capability.
 
-Changes apply to the main agent immediately and interrupt any in-progress turn. Pickles that started before the change keep their existing tool list until the next turn.
+Tool changes apply to the main agent immediately and interrupt any in-progress turn. Pickles that started before the change keep their existing tool list until the next turn.
 
 ### 13.6 Voice (STT & TTS)
 

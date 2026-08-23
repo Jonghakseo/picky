@@ -49,6 +49,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     private let pool: PickyAgentDaemonPool
     private let clientFactory: PickyAgentClientFactoryProtocol
     private let handoffPickleSessionIdFactory: () -> String
+    private let permanentDeletionAcknowledgementTimeout: TimeInterval
     private var childClients: [String: PickyAgentClient] = [:]
     private var eventTasks: [String: Task<Void, Never>] = [:]
     private var primaryConnectStarted = false
@@ -184,19 +185,28 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     /// same app-side press/release path as the global keyboard shortcut.
     var pushToTalkControlHandler: ((PickyPushToTalkControlRequest) async throws -> Void)?
 
-    /// Provides app-owned dock groups for `picky pickle-group-list`.
+    /// Provides app-owned dock groups for `picky pickle-group-list` and main-agent queries.
     var dockGroupsProvider: (() async -> [PickyDockGroupPayload])?
+
+    /// Applies main-agent group mutations through the app-owned dock layout source of truth.
+    var dockGroupsManager: ((PickyDockGroupManagementRequest) async throws -> [PickyDockGroupPayload])?
+
+    /// Finalizes local deletion state after the owning child daemon has acknowledged
+    /// durable deletion. The handler must not send another delete command.
+    var pickleDeletionCleanupHandler: ((String) async throws -> Void)?
 
     init(
         primaryClient: PickyAgentClient,
         pool: PickyAgentDaemonPool,
         clientFactory: PickyAgentClientFactoryProtocol = DefaultPickyAgentClientFactory(),
-        handoffPickleSessionIdFactory: @escaping () -> String = { "session-\(UUID().uuidString)" }
+        handoffPickleSessionIdFactory: @escaping () -> String = { "session-\(UUID().uuidString)" },
+        permanentDeletionAcknowledgementTimeout: TimeInterval = 5
     ) {
         self.primaryClient = primaryClient
         self.pool = pool
         self.clientFactory = clientFactory
         self.handoffPickleSessionIdFactory = handoffPickleSessionIdFactory
+        self.permanentDeletionAcknowledgementTimeout = permanentDeletionAcknowledgementTimeout
         // Drop the cached websocket client (and stop its reconnect loop) the moment the pool
         // notices the underlying child daemon has exited. Without this, the legacy receiveLoop
         // in WebSocketPickyAgentClient would keep reconnecting forever to a dead random port.
@@ -294,11 +304,16 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     ///     turns it into a user-visible error. Returning `nil` here would
     ///     mask a transport failure as success — exactly the silent-success
     ///     class of bug this method exists to prevent.
-    ///   * Neither within `timeout` → returns `nil` (treated as success).
-    ///     This heuristic fallback only remains for daemons predating the
-    ///     ack event (dev version skew); ack-capable daemons resolve
-    ///     deterministically.
-    func sendAwaitingError(_ command: PickyCommandEnvelope, timeout: TimeInterval = 1.0) async throws -> PickyErrorEvent? {
+    ///   * Neither within `timeout` → returns `nil` (treated as success), unless
+    ///     `requireAcknowledgement` is true. Strict callers, such as permanent
+    ///     deletion, must never finalize local state without a positive ack.
+    ///     The heuristic fallback only remains for older, non-destructive
+    ///     commands during daemon version skew.
+    func sendAwaitingError(
+        _ command: PickyCommandEnvelope,
+        timeout: TimeInterval = 1.0,
+        requireAcknowledgement: Bool = false
+    ) async throws -> PickyErrorEvent? {
         let commandId = command.id
         // The handler MUST be installed before `send` is dispatched. agentd
         // unicasts `type="error"` rejections on the same socket during
@@ -335,7 +350,11 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                     return
                 }
                 try? await Task.sleep(nanoseconds: UInt64(max(0, timeout) * 1_000_000_000))
-                resume(.success(nil))
+                if requireAcknowledgement {
+                    resume(.failure(PickyAgentClientRouterError.commandAcknowledgementTimedOut(commandId: commandId)))
+                } else {
+                    resume(.success(nil))
+                }
             }
         }
     }
@@ -636,16 +655,56 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
             case .listSessions:
                 let groups = await dockGroupsProvider?() ?? []
                 await completePickleBridge(request, on: responseClient, sessions: cachedPickleSessions(), groups: groups)
-            case .steer:
+            case .steer, .followUp:
                 guard let sessionId = request.sessionId, let text = request.text else { throw PickyAgentClientRouterError.invalidBridgeRequest }
                 let client = try await connectedClient(for: sessionId)
-                try await client.send(PickyCommandEnvelope(type: .steer, sessionId: sessionId, text: text))
+                let commandType: PickyCommandType = request.operation == .steer ? .steer : .followUp
+                try await client.send(PickyCommandEnvelope(type: commandType, sessionId: sessionId, text: text))
                 await completePickleBridge(request, on: responseClient, session: sessionCache[sessionId])
             case .abort:
                 guard let sessionId = request.sessionId else { throw PickyAgentClientRouterError.invalidBridgeRequest }
                 let client = try await connectedClient(for: sessionId)
                 try await client.send(PickyCommandEnvelope(type: .abort, sessionId: sessionId))
                 await completePickleBridge(request, on: responseClient, session: sessionCache[sessionId])
+            case .setArchived:
+                guard let sessionId = request.sessionId, let archived = request.archived else { throw PickyAgentClientRouterError.invalidBridgeRequest }
+                let client = try await connectedClient(for: sessionId)
+                try await client.send(PickyCommandEnvelope(type: .setSessionArchived, sessionId: sessionId, archived: archived))
+                if var session = sessionCache[sessionId] {
+                    session.archived = archived
+                    sessionCache[sessionId] = session
+                }
+                await completePickleBridge(request, on: responseClient, session: sessionCache[sessionId], delivered: true)
+            case .delete:
+                guard let sessionId = request.sessionId,
+                      let finalizeDeletion = pickleDeletionCleanupHandler else {
+                    throw PickyAgentClientRouterError.invalidBridgeRequest
+                }
+                let rejection = try await sendAwaitingError(
+                    PickyCommandEnvelope(type: .deleteSession, sessionId: sessionId),
+                    timeout: permanentDeletionAcknowledgementTimeout,
+                    requireAcknowledgement: true
+                )
+                if let rejection {
+                    throw PickyAgentClientRouterError.bridgeCommandRejected(rejection.message)
+                }
+                try await finalizeDeletion(sessionId)
+                sessionCache[sessionId] = nil
+                sessionOwnerKeys[sessionId] = nil
+                releaseChild(sessionId: sessionId)
+                await completePickleBridge(request, on: responseClient, sessions: cachedPickleSessions(), delivered: true)
+            case .manageGroups:
+                guard let action = request.groupAction,
+                      let manager = dockGroupsManager else {
+                    throw PickyAgentClientRouterError.invalidBridgeRequest
+                }
+                let groups = try await manager(PickyDockGroupManagementRequest(
+                    action: action,
+                    groupId: request.groupId,
+                    name: request.name,
+                    sessionIds: request.sessionIds ?? []
+                ))
+                await completePickleBridge(request, on: responseClient, groups: groups)
             case .notifyMainOfPickleCompletion:
                 // Forward the child-built completion prompt to the primary daemon, which owns
                 // the main Picky agent and can followUp on its behalf. The child cannot do this
@@ -876,6 +935,8 @@ enum PickyAgentClientRouterError: LocalizedError, Equatable {
     case missingChildEndpoint(sessionId: String)
     case sessionCreationTimedOut(sessionId: String)
     case invalidBridgeRequest
+    case bridgeCommandRejected(String)
+    case commandAcknowledgementTimedOut(commandId: String)
     case unknownChildSession(sessionId: String)
     case routerUnavailable
     case externalEntryProviderUnavailable
@@ -886,6 +947,8 @@ enum PickyAgentClientRouterError: LocalizedError, Equatable {
         case .missingChildEndpoint(let sessionId): "Pickle child runtime is unavailable for session \(sessionId)."
         case .sessionCreationTimedOut(let sessionId): "Timed out waiting for Pickle session \(sessionId) to start."
         case .invalidBridgeRequest: "Invalid Pickle bridge request."
+        case .bridgeCommandRejected(let message): message
+        case .commandAcknowledgementTimedOut(let commandId): "Timed out waiting for child Pickle command acknowledgement: \(commandId)."
         case .unknownChildSession(let sessionId): "Unknown child Pickle session: \(sessionId)."
         case .routerUnavailable: "Picky router is unavailable."
         case .externalEntryProviderUnavailable: "Picky context provider is not ready for external CLI entry."

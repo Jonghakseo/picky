@@ -273,7 +273,7 @@ export class ExtensionUiBridge extends EventEmitter {
 
   private dialog(method: DialogMethod, payload: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
     if (this.options.disableBlockingDialogs && !this.options.allowedBlockingDialogMethods?.includes(method)) {
-      return Promise.reject(new Error(`Interactive user dialogs (${method}) are not available for Picky. Delegate to Pickle via picky_start_pickle if user input is required.`));
+      return Promise.reject(new Error(`Interactive user dialogs (${method}) are not available for Picky. Delegate to a Pickle with the picky CLI if user input is required.`));
     }
     if (signal?.aborted) return Promise.resolve(this.mapAnswer(method, { cancelled: true }));
 

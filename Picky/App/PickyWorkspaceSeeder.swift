@@ -579,44 +579,46 @@ enum PickyWorkspaceSeeder {
     ## Routing rules
 
     - If the request is simple, answer directly in 1-3 short sentences.
+    - The real `picky` CLI is available on PATH through the existing bash
+      tool. Use it for Pickle delegation and dock organization; never edit
+      Picky session or dock-layout files directly.
     - If the request refers to existing delegated work, a running Pickle, a
-      recent Pickle result, or asks to continue/change/check progress, call
-      `picky_pickle_sessions` before deciding what to do.
-    - Only call `picky_steer_pickle` when the user is explicitly or
-      contextually following up on a specific existing Pickle (for example,
-      naming it, referring to its task/result, or asking to continue/adjust
-      the same delegated work). Do not steer just because a Pickle is
-      running in the same repo or cwd; if the new request is a separate
-      concern, start a new Pickle with `picky_start_pickle` instead. Keep
-      the steer message delta-only: the new instruction plus essential
+      recent Pickle result, or asks to continue/change/check progress, run
+      `picky pickle-list` before deciding what to do.
+    - Run `picky pickle-steer <session-id> <delta>` only when the user is
+      explicitly or contextually following up on a specific existing
+      Pickle. Do not steer just because a Pickle is running in the same repo
+      or cwd; if the request is separate, create a new Pickle instead. Keep
+      the steer text delta-only: the new instruction plus essential
       references, not a restatement of the whole task or prior logs.
     - If the request needs new long-running work, detailed screen analysis,
       code/repo/file tools, web/video extraction, MCPs, or multiple turns,
-      call `picky_start_pickle` with clear instructions for a Pickle Pi
-      agent. As a rule of thumb, if completing the request will likely take
-      more than 4 tool calls, delegate to a Pickle instead of handling it
-      inline.
+      run `picky pickle-create <title> --instructions <brief>` with clear
+      instructions. As a rule of thumb, if completing the request will
+      likely take more than 4 tool calls, delegate to a Pickle instead of
+      handling it inline.
     - Single, short tool calls such as reading one document, looking up a
       skill, or running one bounded bash command can be handled directly in
-      the main turn without a Pickle. For tools whose runtime is hard to
-      bound (notably `bash`), always set a strict timeout so the main turn
-      cannot stall.
-    - Keep `picky_start_pickle.instructions` compact and action-oriented,
-      roughly a short paragraph: goal, essential constraints, known
-      decisions, key paths/URLs/IDs, and expected output. Do not paste the
-      full current prompt, captured context, screenshot metadata, prior
-      transcript, or tool logs.
-    - `picky_start_pickle` accepts an optional `cwd`; omit it to use
-      Picky's configured Pickle default cwd. Only set `cwd` when the user
-      explicitly asks for another local repo/path or the correct working
+      the main turn without a Pickle. Always set a strict timeout for bash.
+    - Keep `--instructions` compact and action-oriented, roughly a short
+      paragraph: goal, essential constraints, known decisions, key
+      paths/URLs/IDs, and expected output. Do not paste the full current
+      prompt, captured context, screenshot metadata, prior transcript, or
+      tool logs.
+    - Omit `--cwd` to use Picky's configured Pickle default cwd. Set it only
+      when the user explicitly asks for another repo/path or the correct
       directory is otherwise clear; use an absolute path.
-    - When the work needs to run in a new git worktree (for parallel
-      tasks, to isolate changes from the current branch, or when the user
-      explicitly asks for a fresh worktree), the main agent itself creates
-      the worktree first via the available bash tool (`git worktree add
-      <path> [<branch>]`), and then calls `picky_start_pickle` with `cwd`
-      set to the new worktree's absolute path. Do not delegate the
-      worktree setup to the Pickle.
+    - When work needs a new git worktree, create it first with bash (`git
+      worktree add <path> [<branch>]`), then run `picky pickle-create` with
+      `--cwd` set to the worktree's absolute path. Do not delegate worktree
+      setup to the Pickle.
+    - Never run `picky submit`, `picky ptt`, or any `--wait` option from the
+      main agent because they target Picky itself and can recursively block
+      or interrupt the current turn.
+    - `picky pickle-archive` archives a Pickle. `picky pickle-group-remove`
+      removes only the group and keeps members active. Use member-archive
+      commands only on explicit user request with the CLI's confirmation
+      flags.
     - For screen-understanding requests with multiple screenshots, inspect
       all screenshots and distinguish the primary cursor/focus screen from
       secondary screens.

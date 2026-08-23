@@ -40,7 +40,7 @@ echo "📦 Creating production agentd runtime at ${RUNTIME_DIR}..."
   "${PNPM_BIN}" --filter picky-agentd deploy --prod --legacy "${RUNTIME_DIR}"
 )
 
-# Keep the bundle focused on files needed by `node dist/index.js`.
+# Keep the bundle focused on files needed by `node dist/index.js` and the bundled `picky` CLI.
 rm -rf \
   "${RUNTIME_DIR}/src" \
   "${RUNTIME_DIR}/tsconfig.json" \
@@ -72,17 +72,24 @@ if [[ ! -f "${RUNTIME_DIR}/dist/index.js" ]]; then
   exit 1
 fi
 
+if [[ ! -f "${RUNTIME_DIR}/dist/cli.js" ]]; then
+  echo "❌ Packaged agentd runtime is missing dist/cli.js: ${RUNTIME_DIR}" >&2
+  exit 1
+fi
+
 if [[ ! -d "${RUNTIME_DIR}/node_modules" ]]; then
   echo "❌ Packaged agentd runtime is missing node_modules: ${RUNTIME_DIR}" >&2
   exit 1
 fi
 
 node --check "${RUNTIME_DIR}/dist/index.js" >/dev/null
+node --check "${RUNTIME_DIR}/dist/cli.js" >/dev/null
 
 cat <<EOF
 ✅ picky-agentd runtime is ready.
 
 Runtime: ${RUNTIME_DIR}
 Entry: ${RUNTIME_DIR}/dist/index.js
+CLI: ${RUNTIME_DIR}/dist/cli.js
 Launch: node "${RUNTIME_DIR}/dist/index.js"
 EOF

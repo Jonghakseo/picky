@@ -8,6 +8,10 @@ import Testing
 @testable import Picky
 
 struct ProtocolContractTests {
+    @Test func exposesCurrentProtocolVersion() {
+        #expect(pickyAgentProtocolVersion == "2026-08-23")
+    }
+
     @Test func decodesEveryProtocolFixture() throws {
         let decoder = JSONDecoder.pickyAgentProtocolDecoder()
         let fixtures = try fixtureURLs(in: "contracts/protocol")

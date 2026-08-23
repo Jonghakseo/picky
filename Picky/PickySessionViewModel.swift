@@ -122,7 +122,7 @@ final class PickySessionListViewModel: ObservableObject {
     /// Persisted dock layout (groups + ordered top-level entries). Source of
     /// truth for the dock rail's visual ordering once any group has been
     /// created. Empty layout falls back to the legacy `manualOrder` flow.
-    @Published private(set) var dockLayout: PickyDockLayout = .empty {
+    @Published internal(set) var dockLayout: PickyDockLayout = .empty {
         didSet { publishDockStateImmediately() }
     }
     /// Stable, dock-only observation boundary. Its identity never changes.
@@ -130,12 +130,13 @@ final class PickySessionListViewModel: ObservableObject {
     private var isDockStateSyncScheduled = false
     private var dockStateMutationDepth = 0
     private var needsImmediateDockStateSyncAfterMutation = false
-    private let dockLayoutController: PickySessionDockLayoutController
+    internal let dockLayoutController: PickySessionDockLayoutController
     private enum PendingDockGroupAssignment {
         case groupName(String)
         case groupID(String)
     }
     private var pendingDockGroupAssignments: [String: PendingDockGroupAssignment] = [:]
+    internal var dockLayoutReconciliationSuspensionDepth = 0
     private let composerDraftController: PickySessionComposerDraftController
     private var slashCommandController: PickySessionSlashCommandController!
     private let recentPickleFolderStore: PickyRecentPickleFolderStoring
@@ -312,11 +313,11 @@ final class PickySessionListViewModel: ObservableObject {
         syncDockStateNow()
     }
 
-    private func beginDockStateMutation() {
+    internal func beginDockStateMutation() {
         dockStateMutationDepth += 1
     }
 
-    private func endDockStateMutation() {
+    internal func endDockStateMutation() {
         precondition(dockStateMutationDepth > 0)
         dockStateMutationDepth -= 1
         guard dockStateMutationDepth == 0, needsImmediateDockStateSyncAfterMutation else { return }
@@ -1655,10 +1656,17 @@ final class PickySessionListViewModel: ObservableObject {
     /// runtime handle; the UI only exposes the affordance for archived rows so a
     /// successful path is the only path the user ever sees.
     func deleteArchivedSession(sessionID: String) {
+        Task { try? await client.send(PickyCommandEnvelope(type: .deleteSession, sessionId: sessionID)) }
+        finalizeDeletedArchivedSession(sessionID: sessionID)
+    }
+
+    /// Local half of permanent deletion, called directly by Settings or only after
+    /// the CLI bridge receives an authoritative child-daemon ack.
+    func finalizeDeletedArchivedSession(sessionID: String) {
         beginDockStateMutation()
         defer { endDockStateMutation() }
 
-        pickySessionLog("delete archived session=\(sessionID)")
+        pickySessionLog("finalize deleted archived session=\(sessionID)")
         archiveCommitTasks.removeValue(forKey: sessionID)?.cancel()
         releasedArchivedChildSessionIDs.remove(sessionID)
 
@@ -1669,8 +1677,6 @@ final class PickySessionListViewModel: ObservableObject {
         var manuallyArchivedIDs = archiveStore.manuallyArchivedSessionIDs
         manuallyArchivedIDs.remove(sessionID)
         archiveStore.manuallyArchivedSessionIDs = manuallyArchivedIDs
-
-        Task { try? await client.send(PickyCommandEnvelope(type: .deleteSession, sessionId: sessionID)) }
 
         // Mirror removeOnboardingDemoSession's cleanup: prune every per-session
         // map so a future incoming sessionUpdated for an unrelated session id
@@ -2606,7 +2612,8 @@ final class PickySessionListViewModel: ObservableObject {
     /// layout from that ordering (reversed because manualOrder stores newest
     /// first and `entries` is top-down = oldest first). New sessions then
     /// fall through to the standard "append to end" branch below.
-    private func reconcileDockLayout() {
+    internal func reconcileDockLayout() {
+        guard dockLayoutReconciliationSuspensionDepth == 0 else { return }
         let changed = dockLayoutController.reconcile(
             activeSessionIDs: sessions.map(\.id),
             archivedSessionIDs: archivedSessions.map(\.id),
@@ -2614,18 +2621,6 @@ final class PickySessionListViewModel: ObservableObject {
         )
         if changed { dockLayout = dockLayoutController.layout }
         drainPendingDockGroupAssignments()
-    }
-
-    func dockGroupsSnapshotForCLI() -> [PickyDockGroupPayload] {
-        dockLayout.groups.map { group in
-            PickyDockGroupPayload(
-                id: group.id,
-                name: group.name,
-                color: group.colorRaw,
-                memberSessionIds: group.memberSessionIDs,
-                collapsed: group.isCollapsed
-            )
-        }
     }
 
     func assignSessionToDockGroup(sessionID: String, groupName: String) {

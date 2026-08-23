@@ -90,7 +90,7 @@ When the user asks about a feature, start here before broad searching:
 - Session policy helpers (user bash format, slash commands, pi session files, handoff pin, main-agent limits): `agentd/src/domain/user-bash-format.ts`, `agentd/src/domain/slash-commands.ts`, `agentd/src/domain/pi-session-files.ts`, `agentd/src/domain/pickle-handoff-context.ts`, `agentd/src/domain/main-agent-policy.ts`, `agentd/src/domain/queue-policy.ts`
 - agentd prompt/context construction: `agentd/src/prompt-builder.ts`, `contracts/prompts/`, `contracts/context/`
 - Pi SDK runtime adapter: `agentd/src/runtime/pi-sdk-runtime.ts`, `agentd/src/runtime/types.ts`, `agentd/src/runtime/mock-runtime.ts`
-- Picky/Pickle session tools: `agentd/src/application/handoff-tool.ts`
+- Picky CLI / main-agent delegation: `agentd/src/cli.ts`, `agentd/src/application/internal-picky-cli.ts`, `agentd/src/server.ts`
 - Pickle interactive input bridge: `agentd/src/application/ask-user-question-tool.ts`, `agentd/src/application/extension-ui-bridge.ts`
 - Pi session sync: `agentd/src/application/pi-session-syncer.ts`
 - Artifacts/reports/changed files: `agentd/src/artifact-store.ts`, `agentd/src/domain/`, `Picky/HUD/PickyArtifactReporter.swift`, `Picky/HUD/PickyReportViewer.swift`

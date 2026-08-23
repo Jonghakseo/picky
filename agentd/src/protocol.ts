@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const PROTOCOL_VERSION = "2026-07-23";
+export const PROTOCOL_VERSION = "2026-08-23";
 
 const isoTimestamp = z.string().datetime({ offset: true });
 
@@ -423,7 +423,11 @@ export const DockGroupSchema = z.object({
 });
 export type DockGroup = z.infer<typeof DockGroupSchema>;
 
-const CommandBaseSchema = z.object({ id: z.string(), protocolVersion: z.literal(PROTOCOL_VERSION) });
+const CommandBaseSchema = z.object({
+  id: z.string(),
+  protocolVersion: z.literal(PROTOCOL_VERSION),
+  caller: z.literal("mainAgent").optional(),
+});
 export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("routeTask"), context: PickyContextPacketSchema }),
   CommandBaseSchema.extend({ type: z.literal("createTask"), context: PickyContextPacketSchema }),
@@ -433,10 +437,23 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("registerAppCapabilities"), capabilities: z.array(z.enum(["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl"])).min(1) }),
   CommandBaseSchema.extend({ type: z.literal("submitMainFromExternal"), text: z.string().min(1), captureContext: z.boolean().default(true), cwd: z.string().min(1).optional() }),
   CommandBaseSchema.extend({ type: z.literal("createPickleFromExternal"), title: z.string().min(1), instructions: z.string().min(1), captureContext: z.boolean().default(true), cwd: z.string().min(1).optional(), group: z.string().min(1).optional() }),
+  CommandBaseSchema.extend({ type: z.literal("createPickleFromMain"), title: z.string().min(1), instructions: z.string().min(1), cwd: z.string().min(1).optional(), group: z.string().min(1).optional() }),
   CommandBaseSchema.extend({ type: z.literal("controlPushToTalkFromExternal"), action: PickyPushToTalkControlActionSchema }),
   CommandBaseSchema.extend({ type: z.literal("completePushToTalkControlRequest"), requestId: z.string().min(1), errorMessage: z.string().min(1).optional() }),
   CommandBaseSchema.extend({ type: z.literal("completeExternalEntryRequest"), requestId: z.string().min(1), context: PickyContextPacketSchema.optional(), errorMessage: z.string().min(1).optional() }),
+  CommandBaseSchema.extend({ type: z.literal("listPickles") }),
+  CommandBaseSchema.extend({ type: z.literal("getPickle"), sessionId: z.string().min(1) }),
+  CommandBaseSchema.extend({ type: z.literal("controlPickle"), pickleAction: z.enum(["steer", "followUp", "abort"]), sessionId: z.string().min(1), text: z.string().min(1).optional() }),
+  CommandBaseSchema.extend({ type: z.literal("setPickleArchived"), sessionId: z.string().min(1), archived: z.boolean() }),
+  CommandBaseSchema.extend({ type: z.literal("deletePickle"), sessionId: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("listDockGroups") }),
+  CommandBaseSchema.extend({
+    type: z.literal("manageDockGroups"),
+    groupAction: z.enum(["create", "addMembers", "removeMembers", "removeGroup", "archiveGroup"]),
+    groupId: z.string().min(1).optional(),
+    name: z.string().min(1).optional(),
+    sessionIds: z.array(z.string().min(1)).max(50).optional(),
+  }),
   CommandBaseSchema.extend({ type: z.literal("completeDockGroupsRequest"), requestId: z.string().min(1), groups: z.array(DockGroupSchema).optional(), errorMessage: z.string().min(1).optional() }),
   CommandBaseSchema.extend({
     type: z.literal("completePickleBridgeRequest"),
@@ -678,11 +695,16 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
   EventBaseSchema.extend({
     type: z.literal("pickleBridgeRequested"),
     requestId: z.string().min(1),
-    operation: z.enum(["listSessions", "steer", "abort", "notifyMainOfPickleCompletion"]),
+    operation: z.enum(["listSessions", "steer", "followUp", "abort", "setArchived", "delete", "manageGroups", "notifyMainOfPickleCompletion"]),
     sessionId: z.string().optional(),
     text: z.string().optional(),
     prompt: z.string().optional(),
     cwd: z.string().optional(),
+    groupAction: z.enum(["list", "create", "addMembers", "removeMembers", "removeGroup", "archiveGroup"]).optional(),
+    groupId: z.string().optional(),
+    name: z.string().optional(),
+    sessionIds: z.array(z.string()).optional(),
+    archived: z.boolean().optional(),
   }),
   EventBaseSchema.extend({
     type: z.literal("externalEntryRequested"),

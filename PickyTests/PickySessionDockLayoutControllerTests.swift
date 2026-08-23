@@ -65,6 +65,35 @@ final class PickySessionDockLayoutControllerTests: XCTestCase {
         XCTAssertEqual(store.savedLayouts.last?.entryDescriptions, ["session:b", "group:old[d]", "group:\(groupID)[a,c,e]"])
     }
 
+    func testAddSessionsToGroupPersistsOneAtomicLayoutMutation() throws {
+        let store = FakeDockLayoutStore(layout: PickyDockLayout(entries: [
+            .session(id: "a"),
+            .group(PickyDockGroup(id: "g", name: "G", color: .teal, memberSessionIDs: ["b"])),
+            .group(PickyDockGroup(id: "old", name: "Old", color: .blue, memberSessionIDs: ["c"])),
+            .session(id: "d")
+        ]))
+        let controller = PickySessionDockLayoutController(store: store)
+
+        XCTAssertTrue(try controller.addSessionsPersisting(["a", "c"], toGroup: "g"))
+
+        XCTAssertEqual(controller.layout.entryDescriptions, ["group:g[b,a,c]", "group:old[]", "session:d"])
+        XCTAssertEqual(store.savedLayouts.map(\.entryDescriptions), [["group:g[b,a,c]", "group:old[]", "session:d"]])
+    }
+
+    func testRemoveSessionsFromGroupMovesThemToTopLevelInRequestOrderAndPersistsOnce() throws {
+        let store = FakeDockLayoutStore(layout: PickyDockLayout(entries: [
+            .session(id: "a"),
+            .group(PickyDockGroup(id: "g", name: "G", color: .teal, memberSessionIDs: ["b", "c", "d"])),
+            .session(id: "e")
+        ]))
+        let controller = PickySessionDockLayoutController(store: store)
+
+        XCTAssertTrue(try controller.removeSessionsFromGroupPersisting(["d", "b"]))
+
+        XCTAssertEqual(controller.layout.entryDescriptions, ["session:a", "group:g[c]", "session:e", "session:d", "session:b"])
+        XCTAssertEqual(store.savedLayouts.map(\.entryDescriptions), [["session:a", "group:g[c]", "session:e", "session:d", "session:b"]])
+    }
+
     func testRemoveGroupKeepingMembersSplicesMembersBackAndPersists() {
         let store = FakeDockLayoutStore(layout: PickyDockLayout(entries: [
             .session(id: "a"),
@@ -155,6 +184,23 @@ final class PickySessionDockLayoutControllerTests: XCTestCase {
             ["session:a"],
             ["session:a", "session:b", "session:c"]
         ])
+    }
+
+    func testPersistingGroupMutationPropagatesSaveFailureWithoutPublishingLayout() {
+        let initial = PickyDockLayout(entries: [
+            .session(id: "a"),
+            .group(PickyDockGroup(id: "g", name: "G", color: .teal, memberSessionIDs: ["b"]))
+        ])
+        let store = FakeDockLayoutStore(layout: initial)
+        store.errorToThrow = FakeDockLayoutStore.SaveError.failed
+        var errors: [Error] = []
+        let controller = PickySessionDockLayoutController(store: store) { errors.append($0) }
+
+        XCTAssertThrowsError(try controller.addSessionsPersisting(["a"], toGroup: "g"))
+
+        XCTAssertEqual(controller.layout, initial)
+        XCTAssertTrue(store.savedLayouts.isEmpty)
+        XCTAssertEqual(errors.count, 1)
     }
 
     func testSaveFailureDoesNotCrashAndStillUpdatesControllerLayout() {

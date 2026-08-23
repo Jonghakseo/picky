@@ -1,6 +1,6 @@
 {
   "id": "cmd-package-update-001",
-  "protocolVersion": "2026-07-23",
+  "protocolVersion": "2026-08-23",
   "type": "updatePackage",
   "source": "npm:@example/pi-extension"
 }

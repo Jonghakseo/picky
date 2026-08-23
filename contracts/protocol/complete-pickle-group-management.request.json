@@ -1,0 +1,15 @@
+{
+  "id": "cmd-complete-pickle-group-management-001",
+  "protocolVersion": "2026-08-23",
+  "type": "completePickleBridgeRequest",
+  "requestId": "pickle-bridge-groups-001",
+  "groups": [
+    {
+      "id": "research",
+      "name": "Research",
+      "color": 6,
+      "memberSessionIds": ["pickle-1", "pickle-2"],
+      "collapsed": false
+    }
+  ]
+}

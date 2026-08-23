@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { BrowserMetadataSchema, CommandEnvelopeSchema, EventEnvelopeSchema, PickyAgentSessionSchema } from "./protocol.js";
+import { BrowserMetadataSchema, CommandEnvelopeSchema, EventEnvelopeSchema, PickyAgentSessionSchema, PROTOCOL_VERSION } from "./protocol.js";
 
 const contractsRoot = join(process.cwd(), "..", "contracts", "protocol");
 
@@ -54,7 +54,7 @@ function unknownFixtureKeys(schema: z.ZodTypeAny, fixture: unknown, path = ""): 
 function pointerOverlayEvent(extraRequestFields: Record<string, unknown> = {}) {
   return {
     id: "event-pointer-legacy",
-    protocolVersion: "2026-07-23",
+    protocolVersion: PROTOCOL_VERSION,
     timestamp: "2026-07-19T00:00:00.000Z",
     type: "pointerOverlayRequested",
     request: {
@@ -71,7 +71,7 @@ function pointerOverlayEvent(extraRequestFields: Record<string, unknown> = {}) {
 function annotationOverlayEvent(annotation: Record<string, unknown>) {
   return {
     id: "event-annotation-legacy",
-    protocolVersion: "2026-07-23",
+    protocolVersion: PROTOCOL_VERSION,
     timestamp: "2026-07-19T00:00:00.000Z",
     type: "annotationOverlayRequested",
     request: {
@@ -109,24 +109,30 @@ describe("protocol contract fixtures", () => {
     });
   }
 
+  it("keeps the hello fixture protocol and supported versions current", () => {
+    const fixture = JSON.parse(readFileSync(join(contractsRoot, "hello.event.json"), "utf8"));
+    expect(fixture.protocolVersion).toBe(PROTOCOL_VERSION);
+    expect(fixture.supportedProtocolVersions).toEqual([PROTOCOL_VERSION]);
+  });
+
   it("parses main activity and extension UI protocol variants", () => {
     expect(CommandEnvelopeSchema.parse({
       id: "cmd-main-ui-answer",
-      protocolVersion: "2026-07-23",
+      protocolVersion: PROTOCOL_VERSION,
       type: "answerMainExtensionUi",
       requestId: "main-ui-1",
       value: { choice: "continue" },
     })).toMatchObject({ type: "answerMainExtensionUi", requestId: "main-ui-1" });
     expect(EventEnvelopeSchema.parse({
       id: "event-main-activity",
-      protocolVersion: "2026-07-23",
+      protocolVersion: PROTOCOL_VERSION,
       timestamp: "2026-07-23T00:00:00.000Z",
       type: "mainActivityUpdated",
       activity: { kind: "tool", toolCallId: "tool-1", toolName: "read", status: "running" },
     })).toMatchObject({ type: "mainActivityUpdated", activity: { toolName: "read" } });
     expect(EventEnvelopeSchema.parse({
       id: "event-main-ui-cancelled",
-      protocolVersion: "2026-07-23",
+      protocolVersion: PROTOCOL_VERSION,
       timestamp: "2026-07-23T00:00:00.000Z",
       type: "mainExtensionUiCancelled",
       requestId: "main-ui-1",
@@ -135,7 +141,7 @@ describe("protocol contract fixtures", () => {
 
   it("detects nested unknown keys in event fixtures", () => {    const fixture = {
       id: "event-pointer-overlay",
-      protocolVersion: "2026-07-23",
+      protocolVersion: PROTOCOL_VERSION,
       timestamp: "2026-07-19T00:00:00.000Z",
       type: "pointerOverlayRequested",
       request: {
@@ -258,7 +264,7 @@ describe("protocol contract fixtures", () => {
     expect(() =>
       CommandEnvelopeSchema.parse({
         id: "cmd-pin",
-        protocolVersion: "2026-07-23",
+        protocolVersion: PROTOCOL_VERSION,
         type: "pinPickleSession",
         title: "Pinned Pi session",
         context: {
@@ -278,7 +284,7 @@ describe("protocol contract fixtures", () => {
     expect(() =>
       CommandEnvelopeSchema.parse({
         id: "cmd-empty-pickle",
-        protocolVersion: "2026-07-23",
+        protocolVersion: PROTOCOL_VERSION,
         type: "createEmptyPickleSession",
         context: {
           id: "context-empty-pickle",
@@ -301,7 +307,7 @@ describe("protocol contract fixtures", () => {
       expect(() =>
         CommandEnvelopeSchema.parse({
           id: `cmd-pickle-${command.type}`,
-          protocolVersion: "2026-07-23",
+          protocolVersion: PROTOCOL_VERSION,
           ...command,
         }),
       ).not.toThrow();
@@ -311,7 +317,7 @@ describe("protocol contract fixtures", () => {
   it("parses steer commands with optional captured context", () => {
     const parsed = CommandEnvelopeSchema.parse({
       id: "cmd-steer-context",
-      protocolVersion: "2026-07-23",
+      protocolVersion: PROTOCOL_VERSION,
       type: "steer",
       sessionId: "session-001",
       text: "look at this screenshot",
@@ -340,7 +346,7 @@ describe("protocol contract fixtures", () => {
       expect(() =>
         CommandEnvelopeSchema.parse({
           id: `cmd-clear-${kind}`,
-          protocolVersion: "2026-07-23",
+          protocolVersion: PROTOCOL_VERSION,
           type: "clearQueue",
           sessionId: "session-001",
           kind,
@@ -352,34 +358,34 @@ describe("protocol contract fixtures", () => {
   it("parses package operation commands and progress/completion events", () => {
     expect(CommandEnvelopeSchema.parse({
       id: "cmd-package-install",
-      protocolVersion: "2026-07-23",
+      protocolVersion: PROTOCOL_VERSION,
       type: "installPackage",
       source: "npm:@example/plugin",
     })).toMatchObject({ type: "installPackage", source: "npm:@example/plugin" });
 
     expect(CommandEnvelopeSchema.parse({
       id: "cmd-package-remove",
-      protocolVersion: "2026-07-23",
+      protocolVersion: PROTOCOL_VERSION,
       type: "removePackage",
       source: "npm:@example/plugin",
     })).toMatchObject({ type: "removePackage", source: "npm:@example/plugin" });
 
     expect(CommandEnvelopeSchema.parse({
       id: "cmd-package-check-updates",
-      protocolVersion: "2026-07-23",
+      protocolVersion: PROTOCOL_VERSION,
       type: "checkPackageUpdates",
     })).toMatchObject({ type: "checkPackageUpdates" });
 
     expect(CommandEnvelopeSchema.parse({
       id: "cmd-package-update",
-      protocolVersion: "2026-07-23",
+      protocolVersion: PROTOCOL_VERSION,
       type: "updatePackage",
       source: "npm:@example/plugin",
     })).toMatchObject({ type: "updatePackage", source: "npm:@example/plugin" });
 
     expect(EventEnvelopeSchema.parse({
       id: "event-package-updates",
-      protocolVersion: "2026-07-23",
+      protocolVersion: PROTOCOL_VERSION,
       timestamp: "2026-07-19T00:00:00.000Z",
       type: "packageUpdatesAvailable",
       commandId: "cmd-package-check-updates",
@@ -388,7 +394,7 @@ describe("protocol contract fixtures", () => {
 
     expect(EventEnvelopeSchema.parse({
       id: "event-package-updates-failed",
-      protocolVersion: "2026-07-23",
+      protocolVersion: PROTOCOL_VERSION,
       timestamp: "2026-07-19T00:00:00.000Z",
       type: "packageUpdatesAvailable",
       commandId: "cmd-package-check-updates",
@@ -398,7 +404,7 @@ describe("protocol contract fixtures", () => {
 
     expect(EventEnvelopeSchema.parse({
       id: "event-package-progress",
-      protocolVersion: "2026-07-23",
+      protocolVersion: PROTOCOL_VERSION,
       timestamp: "2026-07-19T00:00:00.000Z",
       type: "packageOperationProgress",
       requestId: "cmd-package-install",
@@ -409,7 +415,7 @@ describe("protocol contract fixtures", () => {
 
     expect(EventEnvelopeSchema.parse({
       id: "event-package-completed",
-      protocolVersion: "2026-07-23",
+      protocolVersion: PROTOCOL_VERSION,
       timestamp: "2026-07-19T00:00:00.000Z",
       type: "packageOperationCompleted",
       requestId: "cmd-package-update",
@@ -423,7 +429,7 @@ describe("protocol contract fixtures", () => {
   it("parses slim todo state updates including authoritative clears", () => {
     expect(EventEnvelopeSchema.parse({
       id: "event-todo-state",
-      protocolVersion: "2026-07-23",
+      protocolVersion: PROTOCOL_VERSION,
       timestamp: "2026-07-14T01:00:00.000Z",
       type: "sessionTodoStateUpdated",
       sessionId: "session-001",
@@ -435,14 +441,14 @@ describe("protocol contract fixtures", () => {
   it("parses message rewind commands and events", () => {
     expect(CommandEnvelopeSchema.parse({
       id: "cmd-list-rewind",
-      protocolVersion: "2026-07-23",
+      protocolVersion: PROTOCOL_VERSION,
       type: "listRewindTargets",
       sessionId: "session-001",
     })).toMatchObject({ type: "listRewindTargets", sessionId: "session-001" });
 
     expect(CommandEnvelopeSchema.parse({
       id: "cmd-session-diff",
-      protocolVersion: "2026-07-23",
+      protocolVersion: PROTOCOL_VERSION,
       type: "getSessionDiff",
       sessionId: "session-001",
       view: "unstaged",
@@ -450,7 +456,7 @@ describe("protocol contract fixtures", () => {
     })).toMatchObject({ type: "getSessionDiff", view: "unstaged", requestId: "request-session-diff" });
     expect(() => CommandEnvelopeSchema.parse({
       id: "cmd-session-diff-missing-request",
-      protocolVersion: "2026-07-23",
+      protocolVersion: PROTOCOL_VERSION,
       type: "getSessionDiff",
       sessionId: "session-001",
       view: "unstaged",
@@ -458,7 +464,7 @@ describe("protocol contract fixtures", () => {
 
     expect(CommandEnvelopeSchema.parse({
       id: "cmd-rewind",
-      protocolVersion: "2026-07-23",
+      protocolVersion: PROTOCOL_VERSION,
       type: "rewindSession",
       sessionId: "session-001",
       entryId: "entry-user-2",
@@ -466,7 +472,7 @@ describe("protocol contract fixtures", () => {
 
     expect(EventEnvelopeSchema.parse({
       id: "event-session-diff",
-      protocolVersion: "2026-07-23",
+      protocolVersion: PROTOCOL_VERSION,
       timestamp: "2026-07-19T00:00:00.000Z",
       type: "sessionDiffResult",
       sessionId: "session-001",
@@ -479,7 +485,7 @@ describe("protocol contract fixtures", () => {
 
     expect(EventEnvelopeSchema.parse({
       id: "event-rewind-targets",
-      protocolVersion: "2026-07-23",
+      protocolVersion: PROTOCOL_VERSION,
       timestamp: "2026-07-19T00:00:00.000Z",
       type: "rewindTargetsSnapshot",
       sessionId: "session-001",
@@ -489,7 +495,7 @@ describe("protocol contract fixtures", () => {
 
     expect(EventEnvelopeSchema.parse({
       id: "event-rewound",
-      protocolVersion: "2026-07-23",
+      protocolVersion: PROTOCOL_VERSION,
       timestamp: "2026-07-19T00:00:00.000Z",
       type: "sessionRewound",
       sessionId: "session-001",
@@ -501,21 +507,21 @@ describe("protocol contract fixtures", () => {
   it("parses external push-to-talk control command and events", () => {
     expect(CommandEnvelopeSchema.parse({
       id: "cmd-ptt-press",
-      protocolVersion: "2026-07-23",
+      protocolVersion: PROTOCOL_VERSION,
       type: "controlPushToTalkFromExternal",
       action: "press",
     })).toMatchObject({ type: "controlPushToTalkFromExternal", action: "press" });
 
     expect(CommandEnvelopeSchema.parse({
       id: "cmd-ptt-complete",
-      protocolVersion: "2026-07-23",
+      protocolVersion: PROTOCOL_VERSION,
       type: "completePushToTalkControlRequest",
       requestId: "ptt-control-1",
     })).toMatchObject({ type: "completePushToTalkControlRequest", requestId: "ptt-control-1" });
 
     expect(EventEnvelopeSchema.parse({
       id: "event-ptt-request",
-      protocolVersion: "2026-07-23",
+      protocolVersion: PROTOCOL_VERSION,
       timestamp: "2026-07-19T00:00:00.000Z",
       type: "pushToTalkControlRequested",
       requestId: "ptt-control-1",
@@ -524,7 +530,7 @@ describe("protocol contract fixtures", () => {
 
     expect(EventEnvelopeSchema.parse({
       id: "event-ptt-ack",
-      protocolVersion: "2026-07-23",
+      protocolVersion: PROTOCOL_VERSION,
       timestamp: "2026-07-19T00:00:00.000Z",
       type: "pushToTalkControlAck",
       commandId: "cmd-ptt-release",
@@ -536,7 +542,7 @@ describe("protocol contract fixtures", () => {
     expect(() =>
       EventEnvelopeSchema.parse({
         id: "event-message-appended",
-        protocolVersion: "2026-07-23",
+        protocolVersion: PROTOCOL_VERSION,
         timestamp: "2026-05-05T00:00:00.000Z",
         type: "sessionMessageAppended",
         sessionId: "session-001",
@@ -557,7 +563,7 @@ describe("protocol contract fixtures", () => {
     expect(() =>
       EventEnvelopeSchema.parse({
         id: "event-notify-message",
-        protocolVersion: "2026-07-23",
+        protocolVersion: PROTOCOL_VERSION,
         timestamp: "2026-05-05T00:00:00.000Z",
         type: "sessionMessageAppended",
         sessionId: "session-001",
@@ -577,7 +583,7 @@ describe("protocol contract fixtures", () => {
     expect(() =>
       EventEnvelopeSchema.parse({
         id: "event-subagent-invocation",
-        protocolVersion: "2026-07-23",
+        protocolVersion: PROTOCOL_VERSION,
         timestamp: "2026-08-02T00:00:00.000Z",
         type: "sessionMessageAppended",
         sessionId: "session-001",
@@ -610,7 +616,7 @@ describe("protocol contract fixtures", () => {
     expect(() =>
       EventEnvelopeSchema.parse({
         id: "event-activity-message",
-        protocolVersion: "2026-07-23",
+        protocolVersion: PROTOCOL_VERSION,
         timestamp: "2026-05-05T00:00:00.000Z",
         type: "sessionMessageAppended",
         sessionId: "session-001",
@@ -628,7 +634,7 @@ describe("protocol contract fixtures", () => {
   it("parses session queue updates with optional mode fields", () => {
     const base = {
       id: "event-queue-updated",
-      protocolVersion: "2026-07-23",
+      protocolVersion: PROTOCOL_VERSION,
       timestamp: "2026-05-05T00:00:00.000Z",
       type: "sessionQueueUpdated",
       sessionId: "session-001",

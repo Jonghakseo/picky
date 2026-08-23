@@ -3,7 +3,7 @@
 //  Picky
 //
 //  Installs (and uninstalls) a `/usr/local/bin/picky` shell wrapper that execs
-//  the bundled `dist/cli.js` via the user's node binary. Mirrors the
+//  the bundled `dist/cli.js` via Picky's bundled Node runtime when present,
 //  Cursor/VSCode "Install Shell Command" UX: idempotent, restartable from the
 //  app menu, and able to detect a stale install (wrapper points at a different
 //  Picky.app — typically the alpha vs stable build).
@@ -11,8 +11,9 @@
 //  Why a generated wrapper instead of a symlink:
 //   1. We can pin the absolute Picky.app path so the CLI keeps working when
 //      the user moves the app, without forcing them to relink.
-//   2. The wrapper picks `node` itself (PATH search + curated fallbacks) so
-//      launchd / cron callers that have a stripped PATH still work.
+//   2. The wrapper prefers Picky's bundled Node, then picks `node` itself
+//      (PATH search + curated fallbacks) so launchd / cron callers with a
+//      stripped PATH still work.
 //   3. Build pipeline does not need to prepend a shebang to dist/cli.js.
 //
 
@@ -111,6 +112,9 @@ enum ShellCommandInstaller {
         \(pickyAppPathMarker)\(escapeShell(appPath))
         PICKY_RESOURCES="${PICKY_AGENTD_ROOT_OVERRIDE:-${PICKY_APP_PATH}/Contents/Resources/agentd}"
         PICKY_NODE="${PICKY_NODE_OVERRIDE:-}"
+        if [ -z "$PICKY_NODE" ] && [ -x "${PICKY_APP_PATH}/Contents/Resources/agentd-runtime/bin/node" ]; then
+          PICKY_NODE="${PICKY_APP_PATH}/Contents/Resources/agentd-runtime/bin/node"
+        fi
         if [ -z "$PICKY_NODE" ]; then
           PICKY_NODE="$(command -v node 2>/dev/null || true)"
         fi

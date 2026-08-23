@@ -377,6 +377,14 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return [] }
             return self.hudSessionViewModel.dockGroupsSnapshotForCLI()
         }
+        router.dockGroupsManager = { [weak self] request in
+            guard let self else { throw PickyAgentClientRouterError.routerUnavailable }
+            return try self.hudSessionViewModel.manageDockGroups(request)
+        }
+        router.pickleDeletionCleanupHandler = { [weak self] sessionID in
+            guard let self else { throw PickyAgentClientRouterError.routerUnavailable }
+            self.hudSessionViewModel.finalizeDeletedArchivedSession(sessionID: sessionID)
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

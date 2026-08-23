@@ -7,26 +7,18 @@
 
 import Foundation
 
-let pickyAgentProtocolVersion = "2026-07-23"
+let pickyAgentProtocolVersion = "2026-08-23"
 
-/// Identifiers for Picky's built-in tools exposed to the main agent.
-/// These names mirror `name:` on each `defineTool(...)` call in
-/// `agentd/src/application/*-tool.ts` and must stay in sync with the daemon.
+/// User-configurable Picky main-agent tools. Pickle delegation and management
+/// use the local `picky` CLI through bash and are always available, so only
+/// capabilities that still add dedicated agent context belong here.
 enum PickyBuiltinTool: String, Codable, CaseIterable, Hashable, Sendable {
-    case startPickle = "picky_start_pickle"
-    case pickleSessions = "picky_pickle_sessions"
-    case steerPickle = "picky_steer_pickle"
-    case abortPickle = "picky_abort_pickle"
     case screenOverlay = "picky_screen_overlay"
     case readUserGuide = "read_picky_user_guide"
 
     /// L10n key for the user-facing display name shown in the settings UI.
     var displayNameKey: String {
         switch self {
-        case .startPickle: "settings.builtinTools.tool.startPickle.name"
-        case .pickleSessions: "settings.builtinTools.tool.pickleSessions.name"
-        case .steerPickle: "settings.builtinTools.tool.steerPickle.name"
-        case .abortPickle: "settings.builtinTools.tool.abortPickle.name"
         case .screenOverlay: "settings.builtinTools.tool.screenOverlay.name"
         case .readUserGuide: "settings.builtinTools.tool.readUserGuide.name"
         }
@@ -35,10 +27,6 @@ enum PickyBuiltinTool: String, Codable, CaseIterable, Hashable, Sendable {
     /// L10n key for the short description shown under the tool name.
     var descriptionKey: String {
         switch self {
-        case .startPickle: "settings.builtinTools.tool.startPickle.description"
-        case .pickleSessions: "settings.builtinTools.tool.pickleSessions.description"
-        case .steerPickle: "settings.builtinTools.tool.steerPickle.description"
-        case .abortPickle: "settings.builtinTools.tool.abortPickle.description"
         case .screenOverlay: "settings.builtinTools.tool.screenOverlay.description"
         case .readUserGuide: "settings.builtinTools.tool.readUserGuide.description"
         }
@@ -50,6 +38,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
     let protocolVersion: String
     let type: PickyCommandType
     var context: PickyContextPacket?
+    var caller: String?
     var sessionId: String?
     var text: String?
     var source: String?
@@ -82,6 +71,11 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var baselinePiMessageId: String?
     var disabledBuiltinTools: [String]?
     var action: PickyPushToTalkControlAction?
+    var groupAction: PickyDockGroupManagementAction?
+    var pickleAction: PickyPickleCLIAction?
+    var groupId: String?
+    var name: String?
+    var sessionIds: [String]?
     var entryId: String?
     var generation: Int?
     var lines: [String]?
@@ -100,6 +94,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         id: String = "cmd-\(UUID().uuidString)",
         type: PickyCommandType,
         context: PickyContextPacket? = nil,
+        caller: String? = nil,
         sessionId: String? = nil,
         text: String? = nil,
         source: String? = nil,
@@ -130,6 +125,11 @@ struct PickyCommandEnvelope: Codable, Equatable {
         baselinePiMessageId: String? = nil,
         disabledBuiltinTools: [String]? = nil,
         action: PickyPushToTalkControlAction? = nil,
+        groupAction: PickyDockGroupManagementAction? = nil,
+        pickleAction: PickyPickleCLIAction? = nil,
+        groupId: String? = nil,
+        name: String? = nil,
+        sessionIds: [String]? = nil,
         entryId: String? = nil,
         generation: Int? = nil,
         lines: [String]? = nil,
@@ -146,6 +146,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.protocolVersion = pickyAgentProtocolVersion
         self.type = type
         self.context = context
+        self.caller = caller
         self.sessionId = sessionId
         self.text = text
         self.source = source
@@ -175,6 +176,11 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.kind = kind
         self.baselinePiMessageId = baselinePiMessageId
         self.action = action
+        self.groupAction = groupAction
+        self.pickleAction = pickleAction
+        self.groupId = groupId
+        self.name = name
+        self.sessionIds = sessionIds
         self.entryId = entryId
         self.disabledBuiltinTools = disabledBuiltinTools
         self.generation = generation
@@ -208,6 +214,13 @@ enum PickyCommandType: String, Codable, Equatable {
     case completePickleBridgeRequest
     case completeExternalEntryRequest
     case completeDockGroupsRequest
+    case createPickleFromMain
+    case listPickles
+    case getPickle
+    case controlPickle
+    case setPickleArchived
+    case deletePickle
+    case manageDockGroups
     case controlPushToTalkFromExternal
     case completePushToTalkControlRequest
     case duplicatePickleSession
@@ -811,15 +824,6 @@ struct PickyExternalEntryAcceptedEvent: Decodable, Equatable {
     let group: String?
 }
 
-/// App-owned dock group snapshot exchanged with the CLI via agentd.
-struct PickyDockGroupPayload: Codable, Equatable {
-    let id: String
-    let name: String
-    let color: Int
-    let memberSessionIds: [String]
-    let collapsed: Bool
-}
-
 private struct PickyDockGroupsRequestedPayload: Decodable { let requestId: String }
 
 enum PickyPushToTalkControlAction: String, Codable, Equatable {
@@ -830,22 +834,6 @@ enum PickyPushToTalkControlAction: String, Codable, Equatable {
 struct PickyPushToTalkControlRequest: Decodable, Equatable {
     let requestId: String
     let action: PickyPushToTalkControlAction
-}
-
-enum PickyPickleBridgeOperation: String, Decodable, Equatable {
-    case listSessions
-    case steer
-    case abort
-    case notifyMainOfPickleCompletion
-}
-
-struct PickyPickleBridgeRequest: Decodable, Equatable {
-    let requestId: String
-    let operation: PickyPickleBridgeOperation
-    let sessionId: String?
-    let text: String?
-    let prompt: String?
-    let cwd: String?
 }
 
 struct PickyTerminalSessionSyncOutcome: Decodable, Equatable {
@@ -1279,8 +1267,7 @@ struct PickyContextUsage: Codable, Equatable {
 
     // The agentd Zod schema requires `tokens` and `percent` to be present as
     // number|null. Swift's synthesized encoder omits nil keys, which would
-    // make completePickleBridgeRequest fail validation and cause
-    // picky_pickle_sessions to time out, so emit explicit nulls here.
+    // make app-daemon session payload validation fail, so emit explicit nulls here.
     private enum CodingKeys: String, CodingKey { case tokens, contextWindow, percent }
 
     func encode(to encoder: Encoder) throws {

@@ -1,0 +1,9 @@
+{
+  "id": "cmd-control-pickle-001",
+  "protocolVersion": "2026-08-23",
+  "type": "controlPickle",
+  "caller": "mainAgent",
+  "pickleAction": "steer",
+  "sessionId": "pickle-1",
+  "text": "Focus on tests"
+}

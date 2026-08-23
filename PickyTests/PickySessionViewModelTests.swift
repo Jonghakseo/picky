@@ -5237,6 +5237,91 @@ struct PickySessionViewModelTests {
         #expect(card.queuedFollowUps.map(\.text) == ["queued follow-up"])
     }
 
+    @MainActor @Test func sessionMetaUpdatedBeforeHydrationDeliversTerminalNotificationAfterSnapshot() {
+        let notifications = PickyNoopNotificationCenter()
+        let preferences = PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
+            notifyOnCompleted: true,
+            notifyOnFailed: true,
+            notifyOnWaitingForInput: true
+        ))
+        let viewModel = PickySessionListViewModel(
+            client: FakePickyAgentClient(),
+            notificationCenter: notifications,
+            notificationPreferencesProvider: preferences
+        )
+
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMetaUpdated(
+            id: "terminal-race",
+            status: "completed",
+            summary: "Done"
+        ))))
+        #expect(viewModel.sessions.isEmpty)
+
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionSnapshot(
+            id: "terminal-race",
+            status: "completed",
+            summary: "Done",
+            updatedAt: "2026-05-01T00:00:05.000Z"
+        ))))
+
+        #expect(notifications.delivered.filter { $0.identifier == "terminal-race:completed" }.count == 1)
+    }
+
+    @MainActor @Test func sessionUpdatedBeforeHydrationDeliversTerminalNotification() {
+        let notifications = PickyNoopNotificationCenter()
+        let preferences = PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
+            notifyOnCompleted: true,
+            notifyOnFailed: true,
+            notifyOnWaitingForInput: true
+        ))
+        let viewModel = PickySessionListViewModel(
+            client: FakePickyAgentClient(),
+            notificationCenter: notifications,
+            notificationPreferencesProvider: preferences
+        )
+
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "terminal-race",
+            status: "completed",
+            summary: "Done"
+        ))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionSnapshot(
+            id: "terminal-race",
+            status: "completed",
+            summary: "Done",
+            updatedAt: "2026-05-01T00:00:05.000Z"
+        ))))
+
+        #expect(notifications.delivered.filter { $0.identifier == "terminal-race:completed" }.count == 1)
+    }
+
+    @MainActor @Test func sessionMetaUpdatedAfterHydrationDeliversTerminalNotification() {
+        let notifications = PickyNoopNotificationCenter()
+        let preferences = PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
+            notifyOnCompleted: true,
+            notifyOnFailed: true,
+            notifyOnWaitingForInput: true
+        ))
+        let viewModel = PickySessionListViewModel(
+            client: FakePickyAgentClient(),
+            notificationCenter: notifications,
+            notificationPreferencesProvider: preferences
+        )
+
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "terminal-race",
+            status: "running"
+        ))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMetaUpdated(
+            id: "terminal-race",
+            status: "completed",
+            summary: "Done",
+            updatedAt: "2026-05-01T00:00:05.000Z"
+        ))))
+
+        #expect(notifications.delivered.filter { $0.identifier == "terminal-race:completed" }.count == 1)
+    }
+
     @MainActor @Test func sessionMetaUpdatedBeforeHydrationDoesNotCreateAnEmptyConversation() {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
 

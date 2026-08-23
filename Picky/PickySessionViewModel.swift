@@ -177,6 +177,11 @@ final class PickySessionListViewModel: ObservableObject {
     private var screenContextTargetCancellable: AnyCancellable?
     private var composerDraftAppendCancellable: AnyCancellable?
     private var deliveredNotificationKeys = Set<String>()
+    /// Terminal thin updates that precede initial journal hydration. They must
+    /// not create an empty card, but their live transition still needs to run
+    /// through `upsert` once a full session payload arrives so notifications
+    /// are not silently cold-seeded.
+    private var pendingTerminalMetaBySessionID: [String: PickyAgentSession] = [:]
     private let slashCommandSuggestionSlowLogThreshold: TimeInterval = 0.02
     private var lastIncrementalSeqBySessionID: [String: Int] = [:]
     private var hasExplicitSelection = false
@@ -1919,6 +1924,9 @@ final class PickySessionListViewModel: ObservableObject {
             applyManualOrderToActiveSessions()
         }
         for card in cards {
+            applyPendingTerminalMetaIfNeeded(for: card.id)
+        }
+        for card in cards {
             PickyGitRepositoryStatus.prefetchIfNeeded(cwd: card.cwd)
             PickyGitHubPullRequestStatus.prefetchIfNeeded(cwd: card.cwd)
         }
@@ -1971,6 +1979,7 @@ final class PickySessionListViewModel: ObservableObject {
                 preserveIncrementalConversationState: lastIncrementalSeqBySessionID[session.id] != nil
             )
         }
+        applyPendingTerminalMetaIfNeeded(for: session.id)
         if visibleSessionDiffSessionIDs.contains(session.id),
            PickySessionDiffPresentation.isSettledTransition(from: previousCard?.status, to: incomingCard.status) {
             requestSessionDiff(sessionID: session.id)
@@ -1979,11 +1988,17 @@ final class PickySessionListViewModel: ObservableObject {
 
     /// Merges a patch-driven update without allowing its intentionally omitted
     /// conversation fields to replace a hydrated/incremental conversation.
-    /// A meta event that races ahead of the initial session snapshot is dropped:
-    /// it cannot safely establish a card because it does not carry the journal.
+    /// A meta event that races ahead of the initial session snapshot cannot
+    /// establish a card because it does not carry the journal. Terminal events
+    /// are retained until hydration so their live notification is not lost.
     private func applySessionMetaUpdated(_ session: PickyAgentSession) {
         guard let previousCard = (sessions + archivedSessions).first(where: { $0.id == session.id }) else {
-            pickySessionLog("session meta ignored before hydration session=\(session.id) status=\(session.status.rawValue)")
+            if session.status.isTerminal {
+                pendingTerminalMetaBySessionID[session.id] = session
+                pickySessionLog("session terminal meta pending hydration session=\(session.id) status=\(session.status.rawValue)")
+            } else {
+                pickySessionLog("session meta ignored before hydration session=\(session.id) status=\(session.status.rawValue)")
+            }
             return
         }
         PickyPerf.event("vm_event_session_meta_updated")
@@ -2021,6 +2036,11 @@ final class PickySessionListViewModel: ObservableObject {
            PickySessionDiffPresentation.isSettledTransition(from: previousCard.status, to: incomingCard.status) {
             requestSessionDiff(sessionID: session.id)
         }
+    }
+
+    private func applyPendingTerminalMetaIfNeeded(for sessionID: String) {
+        guard let pendingTerminalMeta = pendingTerminalMetaBySessionID.removeValue(forKey: sessionID) else { return }
+        applySessionMetaUpdated(pendingTerminalMeta)
     }
 
     private func applySessionDiffResult(_ result: PickySessionDiffResult) {

@@ -108,7 +108,7 @@ For every bundled extension or skill the tab shows:
 Currently bundled:
 
 - **Pi handoff command** — adds a `/handoff-to-picky` slash command to local Pi. When the source Pi turn is idle, it pins the conversation to Picky as a completed Pickle card seeded with the recent turns of the source session; when Pi is busy, it aborts the source turn, snapshots that Pi session, resumes it as a Pickle, and sends the handoff instruction (default: `continue`). After installing, restart Pi or run `/reload`.
-- **Picky CLI skill** — teaches local Pi how to use the `picky` shell command for submitting to Picky, creating/steering Pickles, and controlling Picky push-to-talk.
+- **Picky CLI skill** — teaches local Pi how to use the `picky` shell command for submitting to Picky, creating/steering Pickles, controlling Picky push-to-talk, and reading or changing the CLI-exposed Picky settings.
 
 A **Curated extensions** section under the bundled list lists a small set of useful third-party Pi extensions. Each row shows the extension name, the command or tool it adds, a short description, and an install/remove control that installs the extension from npm into the local Pi setup. Examples include `/diff-review` for native diff review, `ask_user_question` for structured clarification forms, `show_widget` for native generative UI windows, `/delay` for scheduling a one-shot follow-up prompt after a chosen delay, and `subagent` for delegating work to parallel Pi subagents.
 
@@ -763,9 +763,31 @@ picky pickle-group-remove <group-id>                # keeps members active
 picky pickle-group-delete <group-id> --archive-members --confirm
 picky ptt press
 picky ptt release
+picky settings-list --json
+picky settings-get hud.dockVisible
+picky settings-set hud.dockVisible toggle --display <display-id>
+picky settings-set mainAgent.model "claude*sonnet"
 ```
 
 `picky pickle-create --group <name>` places the new Pickle in the named dock group, creating that group when needed. If multiple groups share the same name, Picky uses the first matching group in dock order. `picky pickle-list` includes each grouped Pickle's exact group ID and name; `--json` adds a compact `dockGroup` object to each grouped session. `picky pickle-list --archived` shows Pickles hidden from the dock; add `--query <text>` to search by ID, title, cwd, status, summary, or final answer. `picky pickle-archive` archives a Pickle, and `picky pickle-unarchive` restores it while it remains inside Picky's archived-session retention window. `picky pickle-group-remove` removes only the group and keeps members active, while `picky pickle-group-delete --archive-members --confirm` removes the group and archives its members. `picky pickle-group-list --json` returns group IDs, names, colors, collapsed state, and member session IDs for external scripting; main-agent CLI calls use bounded text output instead.
+
+### 13.1.1 CLI settings control
+
+`picky settings-list`, `picky settings-get <key>`, and `picky settings-set <key> <value>` read and change a small allowlisted subset of Picky settings while Picky.app is running (the commands fail with a clear error when the app is not connected). The current keys are:
+
+| Key | Type | Notes |
+| --- | --- | --- |
+| `hud.dockVisible` | bool, `toggle` | Optional `--display <id>` targets one display; without it, all displays change together. A display ID that is not currently connected is stored as an offline override and takes effect when that display returns. |
+| `hud.dockSizePreset` | enum | Same presets as Settings → HUD. |
+| `cursor.visible` | bool, `toggle` | Shows or hides the Pi cursor overlay. |
+| `mainAgent.model` | string pattern | Applied to the running main session; the CLI reports `saved but not applied: <reason>` if the daemon rejects or times out. |
+| `mainAgent.thinkingLevel` | enum | Same applied/pending semantics as the model key. |
+| `pickleAgent.model` | string pattern | Affects newly created Pickles only. |
+| `pickleAgent.thinkingLevel` | enum | Affects newly created Pickles only. |
+
+`settings-list` prints each key's type, allowed values, and current value; `--json` returns the full catalog for scripting. `settings-set` responses distinguish `persisted` (written to `settings.json`) from `applied` (live in the running app/daemon). API keys, git chip actions, and other sensitive fields are intentionally not exposed through the CLI.
+
+The Picky main agent can also run these commands itself: asking Picky to "hide the dock", "turn off the cursor", or "switch the model" changes the setting through the same allowlist. The agent is instructed to change settings only when you explicitly ask.
 
 ### 13.2 Shortcuts
 

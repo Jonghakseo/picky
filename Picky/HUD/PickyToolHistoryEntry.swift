@@ -31,13 +31,13 @@ struct PickyToolHistoryTodoItem: Equatable {
 }
 
 enum PickyToolHistoryDetail: Equatable {
-    case read(file: String?, range: String?, resultSummary: String?)
-    case bash(command: String?, title: String?, output: String?)
+    case read(file: String?, range: String?)
+    case bash(command: String?, title: String?)
     case edit(file: String?, changes: [PickyToolHistoryEditChange])
     case write(file: String?, content: String?)
-    case subagent(mode: String, agents: [String], task: String?, result: String?)
+    case subagent(mode: String, agents: [String], task: String?)
     case todo(summary: String, items: [PickyToolHistoryTodoItem])
-    case generic(argsJSON: String?, result: String?)
+    case generic(argsJSON: String?)
 }
 
 enum PickyToolHistoryDisplayCategory: Equatable {
@@ -55,6 +55,29 @@ struct PickyToolHistoryEntry: Identifiable, Equatable {
     let durationMs: Int?
     let startedAt: Date?
     let detail: PickyToolHistoryDetail
+    let result: PickyToolHistoryResult?
+
+    init(
+        id: String,
+        index: Int,
+        name: String,
+        category: PickyToolHistoryCategory,
+        status: PickyToolHistoryStatus,
+        durationMs: Int?,
+        startedAt: Date?,
+        detail: PickyToolHistoryDetail,
+        result: PickyToolHistoryResult? = nil
+    ) {
+        self.id = id
+        self.index = index
+        self.name = name
+        self.category = category
+        self.status = status
+        self.durationMs = durationMs
+        self.startedAt = startedAt
+        self.detail = detail
+        self.result = result
+    }
 }
 
 enum PickyToolHistoryScope: Equatable {
@@ -88,14 +111,20 @@ enum PickyToolHistoryRenderer {
         let category = category(for: tool.name)
         let status = status(for: tool.status)
         let argsJSON = tool.argsPreview
-        let result = tool.resultPreview ?? (status != .running ? tool.preview : nil)
+        let resultText = tool.resultPreview ?? (status != .running ? tool.preview : nil)
         let detail = detail(
             for: tool.name,
             category: category,
             argsJSON: argsJSON,
-            subagentSummary: tool.subagentSummary,
-            result: result
+            subagentSummary: tool.subagentSummary
         )
+        let result = resultText.map {
+            PickyToolHistoryResult(
+                text: $0,
+                isTruncated: tool.resultPreviewTruncated == true,
+                isRepaired: tool.resultPreviewRepaired == true
+            )
+        }
         return PickyToolHistoryEntry(
             id: tool.toolCallId,
             index: index,
@@ -104,7 +133,8 @@ enum PickyToolHistoryRenderer {
             status: status,
             durationMs: durationMs(start: tool.startedAt, end: tool.endedAt),
             startedAt: tool.startedAt,
-            detail: detail
+            detail: detail,
+            result: result
         )
     }
 
@@ -158,14 +188,13 @@ enum PickyToolHistoryRenderer {
         for name: String,
         category: PickyToolHistoryCategory,
         argsJSON: String?,
-        subagentSummary: PickySubagentToolSummary?,
-        result: String?
+        subagentSummary: PickySubagentToolSummary?
     ) -> PickyToolHistoryDetail {
         let args = parseArgs(argsJSON)
         switch name.lowercased() {
         case "subagent":
-            if let detail = subagentDetail(summary: subagentSummary, result: result) { return detail }
-            if let detail = subagentDetail(args: args, fallbackJSON: argsJSON, result: result) { return detail }
+            if let detail = subagentDetail(summary: subagentSummary) { return detail }
+            if let detail = subagentDetail(args: args, fallbackJSON: argsJSON) { return detail }
         case "todo_write", "todowrite":
             if let detail = todoDetail(args: args) { return detail }
         default:
@@ -175,13 +204,11 @@ enum PickyToolHistoryRenderer {
         switch category {
         case .read:
             let file = stringValue(args, keys: ["path", "file", "file_path", "filePath"], fallbackJSON: argsJSON)
-            let range = readRange(args)
-            let resultSummary = result.map { summarizeReadResult($0) }
-            return .read(file: file, range: range, resultSummary: resultSummary)
+            return .read(file: file, range: readRange(args))
         case .bash:
             let command = stringValue(args, keys: ["command", "cmd", "script"], fallbackJSON: argsJSON)
             let title = stringValue(args, keys: ["title"], fallbackJSON: argsJSON)
-            return .bash(command: command, title: title, output: result)
+            return .bash(command: command, title: title)
         case .edit:
             let file = stringValue(args, keys: ["path", "file", "file_path", "filePath"], fallbackJSON: argsJSON)
             return .edit(file: file, changes: editChanges(args, fallbackJSON: argsJSON))
@@ -190,7 +217,7 @@ enum PickyToolHistoryRenderer {
             let content = stringValue(args, keys: ["content", "text", "body"], fallbackJSON: argsJSON)
             return .write(file: file, content: content)
         case .other:
-            return .generic(argsJSON: prettyJSON(argsJSON) ?? argsJSON, result: result)
+            return .generic(argsJSON: prettyJSON(argsJSON) ?? argsJSON)
         }
     }
 
@@ -241,7 +268,7 @@ enum PickyToolHistoryRenderer {
 
     static func inlineSummary(for detail: PickyToolHistoryDetail) -> String? {
         switch detail {
-        case let .subagent(mode, agents, task, _):
+        case let .subagent(mode, agents, task):
             let action = mode.split(separator: "·", maxSplits: 1).first.map { $0.trimmingCharacters(in: .whitespaces) } ?? mode
             switch action {
             case "run", "continue":
@@ -276,18 +303,17 @@ enum PickyToolHistoryRenderer {
     }
 
     private static func subagentDetail(
-        summary: PickySubagentToolSummary?,
-        result: String?
+        summary: PickySubagentToolSummary?
     ) -> PickyToolHistoryDetail? {
         guard let summary,
               summary.action == "batch" || summary.action == "chain",
               !summary.agents.isEmpty,
               summary.agents.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
         else { return nil }
-        return .subagent(mode: summary.action, agents: summary.agents, task: nil, result: result)
+        return .subagent(mode: summary.action, agents: summary.agents, task: nil)
     }
 
-    private static func subagentDetail(args: [String: Any], fallbackJSON: String?, result: String?) -> PickyToolHistoryDetail? {
+    private static func subagentDetail(args: [String: Any], fallbackJSON: String?) -> PickyToolHistoryDetail? {
         guard let command = stringValue(args, keys: ["command"], fallbackJSON: fallbackJSON) else { return nil }
         let tokens = shellTokens(command)
         guard tokens.first?.value == "subagent", let action = tokens.dropFirst().first?.value else { return nil }
@@ -302,7 +328,7 @@ enum PickyToolHistoryRenderer {
             guard !agent.isEmpty, !task.isEmpty else { return nil }
             let flags = tokens[3..<delimiter].map(\.value).filter { $0.hasPrefix("--") }
             let mode = ([action] + flags).joined(separator: " · ")
-            return .subagent(mode: mode, agents: [agent], task: task, result: result)
+            return .subagent(mode: mode, agents: [agent], task: task)
         }
 
         if action == "batch" || action == "chain" {
@@ -325,13 +351,13 @@ enum PickyToolHistoryRenderer {
                 }
             }
             guard !agents.isEmpty else { return nil }
-            return .subagent(mode: action, agents: agents, task: nil, result: result)
+            return .subagent(mode: action, agents: agents, task: nil)
         }
 
         let controlActions = Set(["status", "detail", "list", "abort"])
         guard controlActions.contains(action) else { return nil }
         let suffix = tokens.dropFirst(2).map(\.value).joined(separator: " ")
-        return .subagent(mode: suffix.isEmpty ? action : "\(action) \(suffix)", agents: [], task: nil, result: result)
+        return .subagent(mode: suffix.isEmpty ? action : "\(action) \(suffix)", agents: [], task: nil)
     }
 
     private static func todoDetail(args: [String: Any]) -> PickyToolHistoryDetail? {
@@ -484,7 +510,7 @@ enum PickyToolHistoryRenderer {
         }
     }
 
-    private static func summarizeReadResult(_ result: String) -> String {
+    static func summarizeReadResult(_ result: String) -> String {
         let lines = result.split(whereSeparator: \.isNewline).count
         let bytes = result.utf8.count
         return "\(lines) lines · \(formatBytes(bytes))"

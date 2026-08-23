@@ -520,6 +520,8 @@ export class RuntimeEventHandler {
       preview: event.preview,
       argsPreview: event.argsPreview ?? previous?.argsPreview,
       resultPreview: event.resultPreview ?? previous?.resultPreview,
+      ...(event.resultPreviewTruncated || previous?.resultPreviewTruncated ? { resultPreviewTruncated: true } : {}),
+      ...(event.resultPreviewRepaired || previous?.resultPreviewRepaired ? { resultPreviewRepaired: true } : {}),
       ...(subagentSummary ? { subagentSummary } : {}),
       startedAt: previous?.startedAt ?? new Date().toISOString(),
       endedAt: event.status === "running" ? previous?.endedAt : new Date().toISOString(),

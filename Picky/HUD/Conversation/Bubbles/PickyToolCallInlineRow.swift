@@ -137,13 +137,13 @@ struct PickyToolCallInlineRow: View {
             return summary
         }
         switch entry.detail {
-        case let .read(file, range, _):
+        case let .read(file, range):
             let resolved = file ?? recoveredPath()
             guard let resolved else { return nil }
             let base = shortenPath(resolved)
             if let range { return "\(base) \(range)" }
             return base
-        case let .bash(command, title, _):
+        case let .bash(command, title):
             return (title ?? command).map(firstLine)
         case let .edit(file, changes):
             let resolved = file ?? recoveredPath()
@@ -156,7 +156,7 @@ struct PickyToolCallInlineRow: View {
             return resolved.map(shortenPath)
         case .subagent, .todo:
             return nil
-        case let .generic(argsJSON, _):
+        case let .generic(argsJSON):
             return argsJSON.map(firstLine)
         }
     }

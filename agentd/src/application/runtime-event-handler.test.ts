@@ -235,6 +235,35 @@ describe("RuntimeEventHandler", () => {
     ]);
   });
 
+  it("preserves terminal JSON preview metadata across later sparse updates", async () => {
+    const harness = inputHarness();
+
+    await harness.handler.handle("pickle-1", {
+      type: "tool",
+      toolCallId: "json-result",
+      name: "mcp__example__search",
+      status: "succeeded",
+      resultPreview: '{"items":[]}',
+      resultPreviewTruncated: true,
+      resultPreviewRepaired: true,
+    });
+    await harness.handler.handle("pickle-1", {
+      type: "tool",
+      toolCallId: "json-result",
+      name: "mcp__example__search",
+      status: "succeeded",
+      preview: "completed",
+    });
+
+    expect(harness.current().tools).toEqual([
+      expect.objectContaining({
+        resultPreview: '{"items":[]}',
+        resultPreviewTruncated: true,
+        resultPreviewRepaired: true,
+      }),
+    ]);
+  });
+
   it("captures file artifacts only from write successes and re-arms same-path updates", async () => {
     const harness = inputHarness({ cwd: "/workspace" });
     vi.useFakeTimers();

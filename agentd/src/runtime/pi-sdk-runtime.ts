@@ -404,13 +404,16 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
         }, { excludeFromContext, operations: eventResult?.operations });
 
       if (eventResult?.result) bash.recordBashResult(trimmedCommand, result, { excludeFromContext });
+      const resultPreview = bashResultPreview(result);
       this.emit({
         type: "tool",
         toolCallId,
         name: "bash",
         status: result.exitCode && result.exitCode !== 0 ? "failed" : "succeeded",
         preview: trimmedCommand,
-        resultPreview: bashResultPreview(result),
+        resultPreview: resultPreview.text,
+        ...(resultPreview.truncated ? { resultPreviewTruncated: true } : {}),
+        ...(resultPreview.repaired ? { resultPreviewRepaired: true } : {}),
       });
       return result;
     } catch (error) {

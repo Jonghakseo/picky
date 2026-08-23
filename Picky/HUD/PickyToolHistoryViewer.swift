@@ -417,7 +417,7 @@ struct PickyToolHistoryEntryView: View {
         VStack(alignment: .leading, spacing: 0) {
             head
             Divider().overlay(DS.Colors.borderSubtle.opacity(0.6))
-            body(for: entry.detail)
+            body(for: entry)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
         }
@@ -427,7 +427,10 @@ struct PickyToolHistoryEntryView: View {
                 .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
         )
         .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.medium))
-        .onAppear { isResultExpanded = entry.status == .failed && entry.category == .other }
+        .onAppear {
+            isResultExpanded = entry.category == .bash
+                || (entry.status == .failed && entry.category == .other)
+        }
     }
 
     private var head: some View {
@@ -478,13 +481,12 @@ struct PickyToolHistoryEntryView: View {
     }
 
     @ViewBuilder
-    private func body(for detail: PickyToolHistoryDetail) -> some View {
-        switch detail {
-        case let .read(file, range, summary):
+    private func body(for entry: PickyToolHistoryEntry) -> some View {
+        switch entry.detail {
+        case let .read(file, range):
             keyValueRow("file", value: file.map { AnyView(filePath($0)) })
             keyValueRow("range", value: range.map { AnyView(monospaceText($0)) })
-            keyValueRow("result", value: summary.map { AnyView(secondaryText($0)) })
-        case let .bash(command, title, output):
+        case let .bash(command, title):
             if let title {
                 keyValueRow("title", value: AnyView(secondaryText(title)))
             }
@@ -492,9 +494,6 @@ struct PickyToolHistoryEntryView: View {
                 keyValueBlock("$") { codeBlock(command) }
             } else {
                 keyValueRow("$", value: AnyView(secondaryText("(command not captured)")))
-            }
-            if let output {
-                keyValueBlock("output") { outputBlock(output) }
             }
         case let .edit(file, changes):
             keyValueRow("file", value: file.map { AnyView(filePath($0)) })
@@ -507,7 +506,7 @@ struct PickyToolHistoryEntryView: View {
             if let content {
                 keyValueBlock("content") { codeBlock(content) }
             }
-        case let .subagent(mode, agents, task, result):
+        case let .subagent(mode, agents, task):
             keyValueRow("mode", value: AnyView(monospaceText(mode)))
             if !agents.isEmpty {
                 keyValueRow("agent", value: AnyView(secondaryText(agents.joined(separator: ", "))))
@@ -515,22 +514,39 @@ struct PickyToolHistoryEntryView: View {
             if let task {
                 keyValueBlock("task") { codeBlock(task) }
             }
-            if let result {
-                resultDisclosure(result)
-            }
         case let .todo(summary, items):
             keyValueRow("op", value: AnyView(secondaryText(summary)))
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 todoItemRow(item)
             }
-        case let .generic(argsJSON, result):
+        case let .generic(argsJSON):
             if let argsJSON {
                 keyValueBlock("arguments") { codeBlock(argsJSON) }
             } else {
                 keyValueRow("arguments", value: AnyView(secondaryText("(none)")))
             }
-            if let result {
-                resultDisclosure(result)
+        }
+        resultBody(for: entry)
+    }
+
+    @ViewBuilder
+    private func resultBody(for entry: PickyToolHistoryEntry) -> some View {
+        if let result = entry.result {
+            let presentation = PickyToolResultPresentation.make(from: result)
+            switch presentation {
+            case .json:
+                resultDisclosure(presentation, characterCount: result.text.count)
+            case .text(let text, _):
+                switch entry.detail {
+                case .read:
+                    keyValueRow("result", value: AnyView(secondaryText(PickyToolHistoryRenderer.summarizeReadResult(text))))
+                case .bash:
+                    keyValueBlock("output") { outputBlock(text) }
+                case .subagent, .generic:
+                    resultDisclosure(presentation, characterCount: text.count)
+                case .edit, .write, .todo:
+                    EmptyView()
+                }
             }
         }
     }
@@ -687,34 +703,63 @@ struct PickyToolHistoryEntryView: View {
         .background(background)
     }
 
-    private func resultDisclosure(_ result: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+    private func resultDisclosure(_ presentation: PickyToolResultPresentation, characterCount: Int) -> some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.xs) {
             Button {
                 isResultExpanded.toggle()
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: isResultExpanded ? "chevron.down" : "chevron.right")
                         .pickyFont(size: 9, weight: .semibold)
-                    Text("result")
+                    Text(L10n.t("hud.toolHistory.result.label"))
                         .pickyFont(size: 11, weight: .medium)
+                    if case let .json(_, state) = presentation {
+                        resultBadge(for: state)
+                    }
                     Spacer()
-                    Text(isResultExpanded ? "expanded" : "collapsed · \(result.count) chars")
+                    Text(isResultExpanded
+                        ? L10n.t("hud.toolHistory.result.expanded")
+                        : L10n.t("hud.toolHistory.result.collapsed", Int64(characterCount)))
                         .pickyFont(size: 10.5, design: .monospaced)
                         .foregroundStyle(DS.Colors.textTertiary)
                 }
                 .foregroundStyle(DS.Colors.textSecondary)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, DS.Spacing.sm)
                 .padding(.vertical, 6)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(DS.Colors.surface2.opacity(0.5))
                 .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.small))
                 .overlay(RoundedRectangle(cornerRadius: DS.CornerRadius.small).stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5))
+                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PickyToolHistoryResultDisclosureButtonStyle())
+            .accessibilityLabel(L10n.t("hud.toolHistory.result.label"))
+            .accessibilityValue(isResultExpanded
+                ? L10n.t("hud.toolHistory.result.expanded")
+                : L10n.t("hud.toolHistory.result.collapsed", Int64(characterCount)))
             if isResultExpanded {
-                outputBlock(result)
+                switch presentation {
+                case .json(let root, _):
+                    PickyToolJSONResultView(root: root)
+                case .text(let text, _):
+                    outputBlock(text)
+                }
             }
         }
+    }
+
+    private func resultBadge(for state: PickyJSONResultState) -> some View {
+        let label = switch state {
+        case .json: L10n.t("hud.toolHistory.result.badge.json")
+        case .repaired: L10n.t("hud.toolHistory.result.badge.repaired")
+        case .partial: L10n.t("hud.toolHistory.result.badge.partial")
+        }
+        return Text(label)
+            .font(PickyHUDTypography.metaMonospacedSemibold)
+            .foregroundStyle(state == .json ? DS.Colors.textSecondary : DS.Colors.warningText)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Capsule().fill((state == .json ? DS.Colors.surface3 : DS.Colors.warning).opacity(0.14)))
     }
 
     private func formatDuration(_ ms: Int) -> String {
@@ -726,6 +771,25 @@ struct PickyToolHistoryEntryView: View {
             return String(format: "%.1fs", Double(ms) / 1000)
         }
         return "\(ms)ms"
+    }
+}
+
+private struct PickyToolHistoryResultDisclosureButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovered = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                PickyHUDInteractionStateLayer.fill(
+                    isHovered: isHovered,
+                    isPressed: configuration.isPressed
+                )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.small))
+            .onHover { isHovered = $0 }
+            .animation(reduceMotion ? nil : .easeOut(duration: DS.Animation.fast), value: configuration.isPressed)
+            .animation(reduceMotion ? nil : .easeOut(duration: DS.Animation.fast), value: isHovered)
     }
 }
 

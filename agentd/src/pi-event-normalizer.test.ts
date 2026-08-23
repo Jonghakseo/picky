@@ -274,6 +274,22 @@ describe("normalizePiEvent", () => {
     expect(normalizePiEvent(await fixture("tool-end-error.json"))).toMatchObject({ kind: "tool", tool: { toolCallId: "call-2", status: "failed" } });
   });
 
+  it("repairs and labels truncated JSON tool results", () => {
+    const end = normalizePiEvent({
+      type: "tool_execution_end",
+      toolCallId: "call-json",
+      toolName: "mcp__example__search",
+      result: { items: Array.from({ length: 30 }, (_, index) => ({ index, title: "result ".repeat(10) })) },
+    });
+
+    expect(end.kind).toBe("tool");
+    if (end.kind !== "tool") return;
+    expect(end.tool.resultPreviewTruncated).toBe(true);
+    expect(end.tool.resultPreviewRepaired).toBe(true);
+    expect(end.tool.resultPreview!.length).toBeLessThanOrEqual(500);
+    expect(() => JSON.parse(end.tool.resultPreview!)).not.toThrow();
+  });
+
   it("marks dialog extension UI as waiting for input", async () => {
     expect(normalizePiEvent(await fixture("extension-ui-request-confirm.json"))).toMatchObject({ kind: "extensionUi", waitsForInput: true });
     expect(normalizePiEvent({ type: "extension_ui_request", id: "ui-form", method: "askUserQuestion", questions: [] })).toMatchObject({ kind: "extensionUi", waitsForInput: true });

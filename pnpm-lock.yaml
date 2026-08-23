@@ -34,6 +34,9 @@ importers:
       commander:
         specifier: ^14.0.3
         version: 14.0.3
+      jsonrepair:
+        specifier: 3.15.0
+        version: 3.15.0
       msedge-tts:
         specifier: 2.0.7
         version: 2.0.7(patch_hash=8da09d18bc1fe00d9317de8ef8dd9dc93e03db75be52ca683b5fa9aa1664615d)
@@ -1605,6 +1608,10 @@ packages:
 
   json-stable-stringify-without-jsonify@1.0.1:
     resolution: {integrity: sha512-Bdboy+l7tA3OGW6FjyFHWkP5LuByj1Tk33Ljyq0axyzdk9//JSi2u3fP1QSmd1KNwq6VOKYGlAu87CisVir6Pw==}
+
+  jsonrepair@3.15.0:
+    resolution: {integrity: sha512-wy8OTjwsJwQRnQJkKnMJJ9vcytRdBPAgIF/Hy6+s1dAj42BHMKiyL8JzEieIl3JY7idt8eyHwBWTO8mh/+mtwA==}
+    hasBin: true
 
   jwa@2.0.1:
     resolution: {integrity: sha512-hRF04fqJIP8Abbkq5NKGN0Bbr3JxlQ+qhZufXVr0DvujKy93ZCbXZMHDL4EOtodSbCWxOqR8MS1tXA5hwqCXDg==}
@@ -3638,6 +3645,8 @@ snapshots:
   json-schema-traverse@1.0.0: {}
 
   json-stable-stringify-without-jsonify@1.0.1: {}
+
+  jsonrepair@3.15.0: {}
 
   jwa@2.0.1:
     dependencies:

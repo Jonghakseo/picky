@@ -142,7 +142,19 @@ export const PickySubagentToolSummarySchema = z.object({
   agents: z.array(z.string().min(1)).min(1),
 });
 export type PickySubagentToolSummary = z.infer<typeof PickySubagentToolSummarySchema>;
-export const PickyToolActivitySchema = z.object({ toolCallId: z.string(), name: z.string(), status: z.enum(["running", "succeeded", "failed"]), preview: z.string().optional(), argsPreview: z.string().optional(), resultPreview: z.string().optional(), subagentSummary: PickySubagentToolSummarySchema.optional(), startedAt: isoTimestamp.optional(), endedAt: isoTimestamp.optional() });
+export const PickyToolActivitySchema = z.object({
+  toolCallId: z.string(),
+  name: z.string(),
+  status: z.enum(["running", "succeeded", "failed"]),
+  preview: z.string().optional(),
+  argsPreview: z.string().optional(),
+  resultPreview: z.string().optional(),
+  resultPreviewTruncated: z.boolean().optional(),
+  resultPreviewRepaired: z.boolean().optional(),
+  subagentSummary: PickySubagentToolSummarySchema.optional(),
+  startedAt: isoTimestamp.optional(),
+  endedAt: isoTimestamp.optional(),
+});
 export type PickyToolActivity = z.infer<typeof PickyToolActivitySchema>;
 export const PickyMainActivitySchema = z.object({
   kind: z.enum(["thinking", "tool"]),

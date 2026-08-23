@@ -48,13 +48,14 @@ struct PickyToolHistoryEntryTests {
         let entry = PickyToolHistoryRenderer.entry(from: tool, index: 1)
         #expect(entry.category == .read)
         #expect(entry.status == .succeeded)
-        guard case let .read(file, range, summary) = entry.detail else {
+        guard case let .read(file, range) = entry.detail else {
             Issue.record("Expected read detail, got \(entry.detail)")
             return
         }
         #expect(file == "Picky/HUD/PickyHUDView.swift")
         #expect(range == "L1–L50")
-        #expect(summary?.contains("3 lines") == true)
+        #expect(entry.result?.text == "line one\nline two\nline three")
+        #expect(entry.result.map { PickyToolHistoryRenderer.summarizeReadResult($0.text) }?.contains("3 lines") == true)
     }
 
     @Test func bashEntryExposesCommandAndOutput() {
@@ -68,13 +69,13 @@ struct PickyToolHistoryEntryTests {
         )
         let entry = PickyToolHistoryRenderer.entry(from: tool, index: 2)
         #expect(entry.category == .bash)
-        guard case let .bash(command, title, output) = entry.detail else {
+        guard case let .bash(command, title) = entry.detail else {
             Issue.record("Expected bash detail")
             return
         }
         #expect(command == "pnpm test")
         #expect(title == nil)
-        #expect(output == "Tests 316 passed")
+        #expect(entry.result?.text == "Tests 316 passed")
     }
 
     @Test func bashEntryExposesTitleWhenProvided() {
@@ -85,7 +86,7 @@ struct PickyToolHistoryEntryTests {
             argsPreview: #"{"command":"pnpm test","title":"에이전트 테스트 실행"}"#
         )
         let entry = PickyToolHistoryRenderer.entry(from: tool, index: 2)
-        guard case let .bash(command, title, _) = entry.detail else {
+        guard case let .bash(command, title) = entry.detail else {
             Issue.record("Expected bash detail")
             return
         }
@@ -102,7 +103,7 @@ struct PickyToolHistoryEntryTests {
             argsPreview: truncatedArgs
         )
         let entry = PickyToolHistoryRenderer.entry(from: tool, index: 1)
-        guard case let .bash(command, _, _) = entry.detail else {
+        guard case let .bash(command, _) = entry.detail else {
             Issue.record("Expected bash detail")
             return
         }
@@ -191,13 +192,33 @@ struct PickyToolHistoryEntryTests {
         )
         let entry = PickyToolHistoryRenderer.entry(from: tool, index: 5)
         #expect(entry.category == .other)
-        guard case let .generic(argsJSON, result) = entry.detail else {
+        guard case let .generic(argsJSON) = entry.detail else {
             Issue.record("Expected generic detail")
             return
         }
         #expect(argsJSON?.contains("\"issue_key\"") == true)
         #expect(argsJSON?.contains("  ") == true)
-        #expect(result == "{\"key\":\"COM-123\"}")
+        #expect(entry.result?.text == "{\"key\":\"COM-123\"}")
+    }
+
+    @Test func resultProjectionPreservesOptionalRepairMetadata() {
+        let entry = PickyToolHistoryRenderer.entry(
+            from: PickyToolActivity(
+                toolCallId: "json-result",
+                name: "mcp__example__search",
+                status: "succeeded",
+                resultPreview: #"{"items":[]}"#,
+                resultPreviewTruncated: true,
+                resultPreviewRepaired: true
+            ),
+            index: 1
+        )
+
+        #expect(entry.result == PickyToolHistoryResult(
+            text: #"{"items":[]}"#,
+            isTruncated: true,
+            isRepaired: true
+        ))
     }
 
     @Test func subagentRunParsesQuotedTaskFlagsAndInlinePresentation() {
@@ -210,7 +231,7 @@ struct PickyToolHistoryEntryTests {
         )
         let entry = PickyToolHistoryRenderer.entry(from: tool, index: 1)
 
-        guard case let .subagent(mode, agents, task, result) = entry.detail else {
+        guard case let .subagent(mode, agents, task) = entry.detail else {
             Issue.record("Expected structured subagent detail")
             return
         }
@@ -218,7 +239,7 @@ struct PickyToolHistoryEntryTests {
         #expect(mode == "run · --main")
         #expect(agents == ["worker"])
         #expect(task == "Review the changed files")
-        #expect(result == "completed")
+        #expect(entry.result?.text == "completed")
         #expect(PickyToolHistoryRenderer.inlineSummary(for: entry.detail) == "run worker · Review the changed files")
         #expect(PickyToolHistoryRenderer.displayCategory(for: entry.detail) == .agent)
 
@@ -247,7 +268,7 @@ struct PickyToolHistoryEntryTests {
             index: 2
         )
 
-        guard case let .subagent(batchMode, batchAgents, batchTask, _) = batch.detail else {
+        guard case let .subagent(batchMode, batchAgents, batchTask) = batch.detail else {
             Issue.record("Expected batch detail")
             return
         }
@@ -276,7 +297,7 @@ struct PickyToolHistoryEntryTests {
         let entry = PickyToolHistoryRenderer.entry(from: tool, index: 1)
 
         #expect(tool.argsPreview == truncatedArgs)
-        guard case let .subagent(mode, agents, _, _) = entry.detail else {
+        guard case let .subagent(mode, agents, _) = entry.detail else {
             Issue.record("Expected structured subagent batch detail")
             return
         }
@@ -295,7 +316,7 @@ struct PickyToolHistoryEntryTests {
             ),
             index: 1
         )
-        guard case let .subagent(mode, agents, task, _) = recovered.detail else {
+        guard case let .subagent(mode, agents, task) = recovered.detail else {
             Issue.record("Expected recovered subagent detail")
             return
         }
@@ -313,12 +334,12 @@ struct PickyToolHistoryEntryTests {
             ),
             index: 2
         )
-        guard case let .generic(argsJSON, result) = invalid.detail else {
+        guard case let .generic(argsJSON) = invalid.detail else {
             Issue.record("Expected generic fallback")
             return
         }
         #expect(argsJSON?.contains("subagent run worker") == true)
-        #expect(result == "unchanged")
+        #expect(invalid.result?.text == "unchanged")
     }
 
     @Test func todoReplaceBuildsChecklistAndInlineSummary() {
@@ -381,12 +402,12 @@ struct PickyToolHistoryEntryTests {
             resultPreview: "ignored"
         )
         let entry = PickyToolHistoryRenderer.entry(from: tool, index: 1)
-        guard case let .generic(argsJSON, result) = entry.detail else {
+        guard case let .generic(argsJSON) = entry.detail else {
             Issue.record("Expected generic fallback")
             return
         }
         #expect(argsJSON?.contains("Missing status") == true)
-        #expect(result == "ignored")
+        #expect(entry.result?.text == "ignored")
     }
 
     @Test func durationComputesFromStartAndEnd() {
@@ -442,7 +463,7 @@ struct PickyToolHistoryEntryTests {
             status: "succeeded",
             argsPreview: #"{"path":"a.swift","offset":40}"#
         )
-        guard case let .read(_, range1, _) = PickyToolHistoryRenderer.entry(from: offsetOnly, index: 1).detail else {
+        guard case let .read(_, range1) = PickyToolHistoryRenderer.entry(from: offsetOnly, index: 1).detail else {
             Issue.record("Expected read detail"); return
         }
         #expect(range1 == "from L40")
@@ -453,7 +474,7 @@ struct PickyToolHistoryEntryTests {
             status: "succeeded",
             argsPreview: #"{"path":"a.swift","limit":120}"#
         )
-        guard case let .read(_, range2, _) = PickyToolHistoryRenderer.entry(from: limitOnly, index: 1).detail else {
+        guard case let .read(_, range2) = PickyToolHistoryRenderer.entry(from: limitOnly, index: 1).detail else {
             Issue.record("Expected read detail"); return
         }
         #expect(range2 == "first 120 lines")
@@ -464,7 +485,7 @@ struct PickyToolHistoryEntryTests {
             status: "succeeded",
             argsPreview: #"{"path":"a.swift"}"#
         )
-        guard case let .read(_, range3, _) = PickyToolHistoryRenderer.entry(from: neither, index: 1).detail else {
+        guard case let .read(_, range3) = PickyToolHistoryRenderer.entry(from: neither, index: 1).detail else {
             Issue.record("Expected read detail"); return
         }
         #expect(range3 == nil)
@@ -507,13 +528,13 @@ struct PickyToolHistoryEntryTests {
             resultPreview: "ok"
         )
         let entry = PickyToolHistoryRenderer.entry(from: tool, index: 1)
-        guard case let .generic(argsJSON, result) = entry.detail else {
+        guard case let .generic(argsJSON) = entry.detail else {
             Issue.record("Expected generic detail"); return
         }
         // prettyJSON should have returned nil, so the renderer keeps the raw preview
         // verbatim instead of dropping context into the void.
         #expect(argsJSON == invalid)
-        #expect(result == "ok")
+        #expect(entry.result?.text == "ok")
     }
 
     @Test func durationReturnsNilWhenBoundsAreMissingOrInverted() {
@@ -584,7 +605,7 @@ struct PickyToolHistoryEntryTests {
                 status: .succeeded,
                 durationMs: nil,
                 startedAt: nil,
-                detail: .read(file: "Config.swift", range: "L1–L10", resultSummary: "10 lines")
+                detail: .read(file: "Config.swift", range: "L1–L10")
             ),
             PickyToolHistoryEntry(
                 id: "failed-bash",
@@ -594,7 +615,8 @@ struct PickyToolHistoryEntryTests {
                 status: .failed,
                 durationMs: nil,
                 startedAt: nil,
-                detail: .bash(command: "deploy preview", title: nil, output: "retry after failure")
+                detail: .bash(command: "deploy preview", title: nil),
+                result: .init(text: "retry after failure", isTruncated: false, isRepaired: false)
             ),
             PickyToolHistoryEntry(
                 id: "edit",

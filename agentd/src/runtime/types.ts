@@ -96,7 +96,7 @@ export type RuntimeEvent =
    * every text block of the agent run into one playback.
    */
   | { type: "turn_text_complete"; text: string; inputId?: string; assistantRun?: RuntimeAssistantRunMetadata }
-  | { type: "tool"; toolCallId: string; name: string; status: "running" | "succeeded" | "failed"; preview?: string; argsPreview?: string; resultPreview?: string; subagentSummary?: PickySubagentToolSummary; filePath?: string; fileExistedBefore?: boolean }
+  | { type: "tool"; toolCallId: string; name: string; status: "running" | "succeeded" | "failed"; preview?: string; argsPreview?: string; resultPreview?: string; resultPreviewTruncated?: boolean; resultPreviewRepaired?: boolean; subagentSummary?: PickySubagentToolSummary; filePath?: string; fileExistedBefore?: boolean }
   | { type: "todo_state"; todoState?: PickyTodoState }
   | { type: "subagent_invocation"; invocation: PickySubagentInvocation }
   | { type: "subagent_run_update"; update: PickySubagentRun }

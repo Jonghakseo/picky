@@ -927,7 +927,30 @@ describe("PiSdkRuntime", () => {
     expect(fakeSession.bashExecutions).toEqual([{ command: "pwd", excludeFromContext: true }]);
     expect(fakeSession.recordedBashResults).toHaveLength(1);
     expect(events).toContainEqual(expect.objectContaining({ type: "tool", name: "bash", status: "running", preview: "pwd" }));
-    expect(events).toContainEqual(expect.objectContaining({ type: "tool", name: "bash", status: "succeeded", preview: "pwd" }));
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "tool",
+      name: "bash",
+      status: "succeeded",
+      preview: "pwd",
+      resultPreview: "ok: /tmp/project",
+    }));
+  });
+
+  it("emits direct bash JSON without the plain-text status prefix", async () => {
+    const fakeSession = new FakeSession();
+    fakeSession.userBashResult = { output: '{"items":[1,2,3]}\n', exitCode: 0, cancelled: false, truncated: false };
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm!({ cwd: "/tmp/project", sessionId: "session-1" });
+    const events: RuntimeEvent[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    await handle.executeUserBash!("printf json");
+
+    const terminal = events.find((event): event is Extract<RuntimeEvent, { type: "tool" }> => event.type === "tool" && event.status === "succeeded");
+    expect(terminal?.resultPreview).toBe('{"items":[1,2,3]}');
+    expect(terminal?.resultPreview).not.toMatch(/^ok:/);
+    expect(terminal?.resultPreviewTruncated).toBeUndefined();
+    expect(terminal?.resultPreviewRepaired).toBeUndefined();
   });
 
   it("records extension-provided user bash results without invoking local bash", async () => {

@@ -5,6 +5,7 @@ import { extname, join } from "node:path";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { RewindBranchMessage, RuntimeBashExecutionResult, RuntimeEvent } from "./types.js";
 import type { PiUserBashEvent } from "./pi-capabilities.js";
+import { buildToolResultPreview, isJSONObjectOrArrayText, type ToolResultPreview } from "../domain/tool-result-preview.js";
 
 // Pure helpers extracted from pi-sdk-runtime.ts to keep that file focused on the
 // runtime/session classes. These are stateless (aside from the cached fd path)
@@ -79,10 +80,24 @@ export function normalizeBashExecutionResult(value: unknown): RuntimeBashExecuti
   };
 }
 
-export function bashResultPreview(result: RuntimeBashExecutionResult): string {
+export function bashResultPreview(result: RuntimeBashExecutionResult): ToolResultPreview {
   const prefix = result.cancelled ? "cancelled" : result.exitCode && result.exitCode !== 0 ? `exit ${result.exitCode}` : "ok";
   const output = result.output.trim();
-  return output ? `${prefix}: ${sliceUtf16(output, 500)}` : prefix;
+  if (!output) return { text: prefix, truncated: result.truncated, repaired: false };
+
+  const outputPreview = buildToolResultPreview(output);
+  if (isJSONObjectOrArrayText(outputPreview.text)) {
+    return {
+      ...outputPreview,
+      truncated: outputPreview.truncated || result.truncated,
+    };
+  }
+
+  const prefixed = buildToolResultPreview(`${prefix}: ${output}`);
+  return {
+    ...prefixed,
+    truncated: prefixed.truncated || result.truncated,
+  };
 }
 
 export function sliceUtf16(value: string, maxChars: number): string {

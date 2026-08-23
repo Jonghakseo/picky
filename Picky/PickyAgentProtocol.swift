@@ -1344,6 +1344,8 @@ struct PickyToolActivity: Codable, Equatable, Identifiable {
     let preview: String?
     let argsPreview: String?
     let resultPreview: String?
+    let resultPreviewTruncated: Bool?
+    let resultPreviewRepaired: Bool?
     let subagentSummary: PickySubagentToolSummary?
     let startedAt: Date?
     let endedAt: Date?
@@ -1355,6 +1357,8 @@ struct PickyToolActivity: Codable, Equatable, Identifiable {
         preview: String? = nil,
         argsPreview: String? = nil,
         resultPreview: String? = nil,
+        resultPreviewTruncated: Bool? = nil,
+        resultPreviewRepaired: Bool? = nil,
         subagentSummary: PickySubagentToolSummary? = nil,
         startedAt: Date? = nil,
         endedAt: Date? = nil
@@ -1365,6 +1369,8 @@ struct PickyToolActivity: Codable, Equatable, Identifiable {
         self.preview = preview
         self.argsPreview = argsPreview
         self.resultPreview = resultPreview
+        self.resultPreviewTruncated = resultPreviewTruncated
+        self.resultPreviewRepaired = resultPreviewRepaired
         self.subagentSummary = subagentSummary
         self.startedAt = startedAt
         self.endedAt = endedAt

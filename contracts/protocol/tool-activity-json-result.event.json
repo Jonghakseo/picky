@@ -1,0 +1,18 @@
+{
+  "id": "event-tool-json-001",
+  "protocolVersion": "2026-08-23",
+  "timestamp": "2026-05-01T00:00:03.000Z",
+  "type": "toolActivityUpdated",
+  "sessionId": "session-001",
+  "tool": {
+    "toolCallId": "tool-json-001",
+    "name": "mcp__example__search",
+    "status": "succeeded",
+    "preview": "{\"items\":[]}",
+    "resultPreview": "{\"items\":[]}",
+    "resultPreviewTruncated": true,
+    "resultPreviewRepaired": true,
+    "startedAt": "2026-05-01T00:00:02.000Z",
+    "endedAt": "2026-05-01T00:00:03.000Z"
+  }
+}

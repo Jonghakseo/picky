@@ -2,6 +2,7 @@ import type { PickySubagentToolSummary, PickyTodoState, PickyToolActivity, Sessi
 import type { RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeSessionStatus, ThinkingLevel } from "../runtime/types.js";
 import { sliceUtf16Safe } from "./safe-truncate.js";
 import { subagentLaunchIntentFromToolArgs } from "./subagent-run-state.js";
+import { buildToolResultPreview, reorderForPreview } from "./tool-result-preview.js";
 import { todoStateFromPiSessionEntry } from "./todo-state.js";
 
 interface PiEventNormalizationContext {
@@ -95,15 +96,17 @@ export function normalizePiEvent(event: unknown, context: PiEventNormalizationCo
   }
 
   if (type === "tool_execution_end") {
-    const resultPreview = preview(piEvent.result);
+    const result = buildToolResultPreview(piEvent.result);
     return {
       kind: "tool",
       tool: {
         toolCallId: requiredString(piEvent.toolCallId, "toolCallId"),
         name: requiredString(piEvent.toolName, "toolName"),
         status: piEvent.isError === true ? "failed" : "succeeded",
-        preview: resultPreview,
-        resultPreview,
+        preview: result.text,
+        resultPreview: result.text,
+        ...(result.truncated ? { resultPreviewTruncated: true } : {}),
+        ...(result.repaired ? { resultPreviewRepaired: true } : {}),
         endedAt: now,
       },
     };
@@ -172,7 +175,18 @@ export function runtimeEventFromPiEvent(event: unknown, context?: PiEventNormali
       ...(normalized.assistantRun ? { assistantRun: normalized.assistantRun } : {}),
     };
   }
-  if (normalized.kind === "tool") return { type: "tool", toolCallId: normalized.tool.toolCallId, name: normalized.tool.name, status: normalized.tool.status, preview: normalized.tool.preview, argsPreview: normalized.tool.argsPreview, resultPreview: normalized.tool.resultPreview, ...(normalized.tool.subagentSummary ? { subagentSummary: normalized.tool.subagentSummary } : {}) };
+  if (normalized.kind === "tool") return {
+    type: "tool",
+    toolCallId: normalized.tool.toolCallId,
+    name: normalized.tool.name,
+    status: normalized.tool.status,
+    preview: normalized.tool.preview,
+    argsPreview: normalized.tool.argsPreview,
+    resultPreview: normalized.tool.resultPreview,
+    ...(normalized.tool.resultPreviewTruncated ? { resultPreviewTruncated: true } : {}),
+    ...(normalized.tool.resultPreviewRepaired ? { resultPreviewRepaired: true } : {}),
+    ...(normalized.tool.subagentSummary ? { subagentSummary: normalized.tool.subagentSummary } : {}),
+  };
   if (normalized.kind === "todoState") return { type: "todo_state", todoState: normalized.todoState };
   if (normalized.kind === "extensionUi") return { type: "extension_ui", request: normalized.request, waitsForInput: normalized.waitsForInput };
   if (normalized.kind === "sessionInfo") return { type: "session_info", name: normalized.name };
@@ -290,27 +304,6 @@ function preview(value: unknown): string | undefined {
     text = JSON.stringify(value);
   }
   return text.length > 500 ? `${sliceUtf16Safe(text, 497)}...` : text;
-}
-
-/// Reorders object keys so high-signal fields (file path, command) appear at
-/// the head of the serialized preview. Without this the 500-char truncation can
-/// drop the only field the HUD inline tool row actually surfaces — e.g. an
-/// `edit` call carrying a long `edits[].oldText/newText` payload would shift
-/// `path` past the cut-off and render as an empty row in the conversation card.
-function reorderForPreview(obj: Record<string, unknown>): Record<string, unknown> {
-  const priorityKeys = ["path", "file_path", "filePath", "file", "command"];
-  const out: Record<string, unknown> = {};
-  for (const key of priorityKeys) {
-    if (Object.prototype.hasOwnProperty.call(obj, key)) {
-      out[key] = obj[key];
-    }
-  }
-  for (const [key, value] of Object.entries(obj)) {
-    if (!Object.prototype.hasOwnProperty.call(out, key)) {
-      out[key] = value;
-    }
-  }
-  return out;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

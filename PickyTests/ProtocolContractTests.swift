@@ -28,6 +28,25 @@ struct ProtocolContractTests {
         #expect(session.tools.isEmpty)
     }
 
+    @Test func decodesJSONToolResultMetadataAndLegacyPayloads() throws {
+        let decoder = JSONDecoder.pickyAgentProtocolDecoder()
+        let fixture = try #require(try fixtureURLs(in: "contracts/protocol").first {
+            $0.lastPathComponent == "tool-activity-json-result.event.json"
+        })
+        let envelope = try decoder.decode(PickyEventEnvelope.self, from: Data(contentsOf: fixture))
+        guard case let .toolActivityUpdated(_, tool) = envelope.event else {
+            Issue.record("Expected tool activity update")
+            return
+        }
+        #expect(tool.resultPreviewTruncated == true)
+        #expect(tool.resultPreviewRepaired == true)
+
+        let legacy = #"{"toolCallId":"legacy","name":"read","status":"succeeded","resultPreview":"plain"}"#
+        let legacyTool = try decoder.decode(PickyToolActivity.self, from: Data(legacy.utf8))
+        #expect(legacyTool.resultPreviewTruncated == nil)
+        #expect(legacyTool.resultPreviewRepaired == nil)
+    }
+
     @Test func decodesEveryProtocolFixture() throws {
         let decoder = JSONDecoder.pickyAgentProtocolDecoder()
         let fixtures = try fixtureURLs(in: "contracts/protocol")

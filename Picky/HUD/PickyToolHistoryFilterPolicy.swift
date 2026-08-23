@@ -51,21 +51,21 @@ enum PickyToolHistoryFilterPolicy {
     static func searchableText(for entry: PickyToolHistoryEntry) -> String {
         let detailText: [String?]
         switch entry.detail {
-        case let .read(file, range, resultSummary):
-            detailText = [file, range, resultSummary]
-        case let .bash(command, title, output):
-            detailText = [command, title, output]
+        case let .read(file, range):
+            detailText = [file, range]
+        case let .bash(command, title):
+            detailText = [command, title]
         case let .edit(file, changes):
             detailText = [file] + changes.flatMap { [Optional($0.oldText), Optional($0.newText)] }
         case let .write(file, content):
             detailText = [file, content]
-        case let .subagent(mode, agents, task, result):
-            detailText = [mode, task, result] + agents.map(Optional.some)
+        case let .subagent(mode, agents, task):
+            detailText = [mode, task] + agents.map(Optional.some)
         case let .todo(summary, items):
             detailText = [summary] + items.map { $0.text }
-        case let .generic(argsJSON, result):
-            detailText = [argsJSON, result]
+        case let .generic(argsJSON):
+            detailText = [argsJSON]
         }
-        return ([entry.name] + detailText.compactMap { $0 }).joined(separator: "\n")
+        return ([entry.name, entry.result?.text] + detailText).compactMap { $0 }.joined(separator: "\n")
     }
 }

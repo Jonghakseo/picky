@@ -798,7 +798,8 @@ function printPickySettingsResult(action: "list" | "get" | "set", ack: PickySett
     return;
   }
   if (action === "set" && typeof result.key === "string") {
-    const applied = result.applied === false ? " (saved; pending application)" : "";
+    const applicationError = typeof result.errorMessage === "string" ? `: ${result.errorMessage}` : "";
+    const applied = result.applied === false ? ` (saved but not applied${applicationError})` : "";
     process.stdout.write(`Updated ${result.key}=${formatPickySettingValue(result.value)}${applied}\n`);
     return;
   }

@@ -79,7 +79,9 @@ const APP_DOCK_GROUPS_TIMEOUT = "Picky app dock groups request timed out";
 const DOCK_GROUPS_TIMEOUT_MS = 4_000;
 export const APP_SETTINGS_CONTROL_UNAVAILABLE = "Picky app settings control unavailable";
 const APP_SETTINGS_CONTROL_TIMEOUT = "Picky app settings control timed out";
-const SETTINGS_CONTROL_TIMEOUT_MS = 5_000;
+// The app waits up to 5s for main-agent setting acknowledgement; leave room
+// for that result to return rather than masking a persisted-but-unapplied state.
+const SETTINGS_CONTROL_TIMEOUT_MS = 15_000;
 
 /** Carries an app-provided settings error code to the external CLI unchanged. */
 class SettingsControlError extends Error {

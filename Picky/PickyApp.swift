@@ -375,129 +375,36 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func wirePickySettingsControlHandler(on router: PickyAgentClientRouter) {
-        router.pickySettingsControlHandler = { [weak self] request in
-            guard let self else { throw PickyAgentClientRouterError.routerUnavailable }
-            return try await self.handlePickySettingsRequest(request)
-        }
-    }
-
-    private func handlePickySettingsRequest(_ request: PickySettingsRequest) async throws -> JSONValue {
-        switch request.action {
-        case .list:
-            let settings = settingsStore.load()
-            let entries = try PickySettingsCLIExposure.entries.map { entry in
-                try PickySettingsCLIExposure.metadataPayload(
-                    for: entry,
-                    currentValue: PickySettingsCLIExposure.currentValue(for: entry.key, in: settings)
-                )
-            }
-            return .object(["entries": .array(entries)])
-        case .get:
-            guard let key = request.key else {
-                throw PickySettingsCLIExposureError(code: "SETTINGS_KEY_REQUIRED", message: "A Picky setting key is required.")
-            }
-            return .object([
-                "key": .string(key),
-                "value": try PickySettingsCLIExposure.currentValue(for: key, in: settingsStore.load())
-            ])
-        case .set:
-            guard let key = request.key, let value = request.value else {
-                throw PickySettingsCLIExposureError(code: "SETTINGS_KEY_AND_VALUE_REQUIRED", message: "A Picky setting key and value are required.")
-            }
-            let entry = try PickySettingsCLIExposure.entry(for: key)
-            try PickySettingsCLIExposure.validateAccess(for: entry, caller: request.caller)
-            if let displayId = request.displayId {
-                guard key == "hud.dockVisible", UInt32(displayId) != nil else {
-                    throw PickySettingsCLIExposureError(code: "SETTINGS_INVALID_DISPLAY_ID", message: "hud.dockVisible display IDs must be unsigned integers.")
-                }
-            }
-
-            var updatedValue: JSONValue?
-            let revision = try settingsMutationCoordinator.applyPatch { settings in
-                updatedValue = try PickySettingsCLIExposure.apply(
-                    key: key,
-                    value: value,
-                    toggle: request.toggle ?? false,
-                    displayId: request.displayId,
-                    to: &settings
-                )
-            }
-            let persistedValue = try requiredUpdatedValue(updatedValue)
-
-            if key == "hud.dockVisible", case .bool(let visible) = persistedValue {
-                if let displayId = request.displayId, let displayID = UInt32(displayId) {
-                    hudVisibilityStore.setVisible(visible, for: displayID, persist: false)
+        let handler = PickySettingsControlHandler(
+            settingsStore: settingsStore,
+            mutationCoordinator: settingsMutationCoordinator,
+            applyDockVisibility: { [weak self] visible, displayID in
+                guard let self else { return }
+                if let displayID {
+                    self.hudVisibilityStore.setVisible(visible, for: displayID, persist: false)
                 } else {
-                    hudVisibilityStore.setAllVisible(visible, persist: false)
+                    self.hudVisibilityStore.setAllVisible(visible, persist: false)
                 }
                 // Preserve the store's canonical override representation even
                 // when the effective visibility did not change.
-                hudVisibilityStore.reloadFromSettings()
-            }
-
-            var applied = true
-            var applicationError: String?
-            switch key {
-            case "mainAgent.model":
+                self.hudVisibilityStore.reloadFromSettings()
+            },
+            applyMainAgentCommand: { [weak self] command in
+                guard let self else { return "Picky settings control is no longer available." }
                 do {
-                    let rejection = try await hudAgentClientRouter.sendAwaitingError(
-                        PickyCommandEnvelope(
-                            type: .setMainAgentModel,
-                            mainAgentModelPattern: settingsStore.load().mainAgentModelPattern
-                        ),
+                    return try await self.hudAgentClientRouter.sendAwaitingError(
+                        command,
                         timeout: 5.0,
                         requireAcknowledgement: true
-                    )
-                    if let rejection {
-                        applied = false
-                        applicationError = rejection.message
-                    }
+                    )?.message
                 } catch {
-                    applied = false
-                    applicationError = error.localizedDescription
+                    return error.localizedDescription
                 }
-            case "mainAgent.thinkingLevel":
-                do {
-                    let rejection = try await hudAgentClientRouter.sendAwaitingError(
-                        PickyCommandEnvelope(
-                            type: .setMainAgentThinkingLevel,
-                            mainAgentThinkingLevel: settingsStore.load().mainAgentThinkingLevel
-                        ),
-                        timeout: 5.0,
-                        requireAcknowledgement: true
-                    )
-                    if let rejection {
-                        applied = false
-                        applicationError = rejection.message
-                    }
-                } catch {
-                    applied = false
-                    applicationError = error.localizedDescription
-                }
-            default:
-                break
             }
-
-            var result: [String: JSONValue] = [
-                "key": .string(key),
-                "value": try PickySettingsCLIExposure.currentValue(for: key, in: settingsStore.load(), displayId: request.displayId),
-                "persisted": .bool(true),
-                "applied": .bool(applied),
-                "restartRequired": .bool(entry.restartRequired),
-                "revision": .number(Double(revision))
-            ]
-            if let applicationError {
-                result["errorMessage"] = .string(applicationError)
-            }
-            return .object(result)
+        )
+        router.pickySettingsControlHandler = { request in
+            try await handler.handle(request)
         }
-    }
-
-    private func requiredUpdatedValue(_ value: JSONValue?) throws -> JSONValue {
-        guard let value else {
-            throw PickySettingsCLIExposureError(code: "SETTINGS_CONTROL_FAILED", message: "Picky setting mutation did not produce a value.")
-        }
-        return value
     }
 
     private func wireDockGroupsProvider(on router: PickyAgentClientRouter) {

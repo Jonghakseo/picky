@@ -684,6 +684,31 @@ describe("picky cli", () => {
     ]));
   });
 
+  it("settings-set reports a persisted setting that could not be applied", async () => {
+    server.onCommand("setPickySettings", (command, send) => {
+      const cmd = command as { id: string; key: string; value: unknown };
+      send({
+        type: "pickySettingsAck",
+        commandId: cmd.id,
+        result: {
+          key: cmd.key,
+          value: cmd.value,
+          persisted: true,
+          applied: false,
+          errorMessage: "Picky agent command acknowledgement timed out",
+          restartRequired: false,
+          revision: 4,
+        },
+      });
+    });
+
+    const result = await runCli(["settings-set", "mainAgent.model", "model/a"]);
+
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("Updated mainAgent.model=model/a");
+    expect(result.stdout).toContain("saved but not applied: Picky agent command acknowledgement timed out");
+  });
+
   it("settings-set rejects display targeting for settings other than hud.dockVisible", async () => {
     const result = await runCli(["settings-set", "cursor.visible", "true", "--display", "display-1"]);
     expect(result.code).toBe(64);

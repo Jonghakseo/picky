@@ -250,6 +250,97 @@ struct PickySettingsPolishTests {
         #expect(saved.pinnedPickleCwds == [pinnedProject.path])
     }
 
+    /// A settings panel holds a snapshot while external controls can update the
+    /// same settings file. Saving an unrelated panel change must preserve that
+    /// newer external value rather than writing the stale snapshot back.
+    @MainActor @Test func settingsViewModelSavePreservesExternalCursorVisibilityAfterUnrelatedPanelChange() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let store = PickySettingsStore(appSupportRoot: root)
+        var initial = PickySettings.defaults(appSupportRoot: root)
+        initial.defaultCwd = project.path
+        initial.mainAgentCwd = project.path
+        initial.worktreeParent = project.path
+        try store.save(initial)
+
+        let viewModel = PickySettingsViewModel(store: store)
+        var external = store.load()
+        external.cursor.showPiCursor = false
+        try store.save(external)
+
+        viewModel.settings.notifications.notifyOnCompleted = true
+        #expect(viewModel.save())
+
+        let saved = store.load()
+        #expect(saved.notifications.notifyOnCompleted)
+        #expect(!saved.cursor.showPiCursor)
+    }
+
+    @MainActor @Test func settingsMutationCoordinatorPatchesLatestSettingsAndPublishesRevision() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let store = PickySettingsStore(appSupportRoot: root)
+        var initial = PickySettings.defaults(appSupportRoot: root)
+        initial.defaultCwd = project.path
+        initial.mainAgentCwd = project.path
+        initial.worktreeParent = project.path
+        try store.save(initial)
+
+        let preferencesStore = PickyNotificationPreferencesStore(settingsStore: store)
+        let coordinator = PickySettingsMutationCoordinator(store: store)
+
+        #expect(try coordinator.applyPatch { $0.notifications.notifyOnCompleted = true } == 1)
+        #expect(store.load().notifications.notifyOnCompleted)
+        #expect(preferencesStore.notificationPreferences.notifyOnCompleted)
+        #expect(try coordinator.applyPatch { $0.cursor.showPiCursor = false } == 2)
+        #expect(!store.load().cursor.showPiCursor)
+    }
+
+    @MainActor @Test func settingsViewModelSaveKeepsExternalControlValuesUnlessThePanelChangedThatLeaf() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let store = PickySettingsStore(appSupportRoot: root)
+        var initial = PickySettings.defaults(appSupportRoot: root)
+        initial.defaultCwd = project.path
+        initial.mainAgentCwd = project.path
+        initial.worktreeParent = project.path
+        try store.save(initial)
+
+        let viewModel = PickySettingsViewModel(store: store)
+        let coordinator = PickySettingsMutationCoordinator(store: store)
+        try coordinator.applyPatch { settings in
+            settings.hudDockVisible = false
+            settings.hudDockVisibilityByDisplayID = ["42": true]
+            settings.hudDockSizePreset = .large
+            settings.mainAgentModelPattern = "external/main"
+            settings.mainAgentThinkingLevel = .max
+            settings.pickleAgentModelPattern = "external/pickle"
+            settings.pickleAgentThinkingLevel = .xhigh
+            settings.cursor.showPiCursor = false
+        }
+
+        viewModel.settings.mainAgentModelPattern = "panel/main"
+        viewModel.settings.cursor.enableIdleAnimations = false
+        #expect(viewModel.save())
+
+        let saved = store.load()
+        #expect(saved.hudDockVisible == false)
+        #expect(saved.hudDockVisibilityByDisplayID == ["42": true])
+        #expect(saved.hudDockSizePreset == .large)
+        #expect(saved.mainAgentModelPattern == "panel/main")
+        #expect(saved.mainAgentThinkingLevel == .max)
+        #expect(saved.pickleAgentModelPattern == "external/pickle")
+        #expect(saved.pickleAgentThinkingLevel == .xhigh)
+        #expect(saved.cursor.showPiCursor == false)
+        #expect(saved.cursor.enableIdleAnimations == false)
+    }
+
     @Test func reorderPinnedPickleCwdsAppliesNewOrderAndPreservesUnlistedPins() {
         var settings = PickySettings.defaults()
         settings.pinPickleCwd("/pickytest/a")

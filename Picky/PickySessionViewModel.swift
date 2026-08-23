@@ -627,6 +627,7 @@ final class PickySessionListViewModel: ObservableObject {
         slashCommandController.clear(sessionID: sessionID)
         syncSlashCommands()
         lastIncrementalSeqBySessionID.removeValue(forKey: sessionID)
+        pendingTerminalMetaBySessionID.removeValue(forKey: sessionID)
         releasedArchivedChildSessionIDs.remove(sessionID)
         if screenContextTargetSessionID == sessionID {
             clearScreenContextTargetState()
@@ -1698,6 +1699,7 @@ final class PickySessionListViewModel: ObservableObject {
         slashCommandController.clear(sessionID: sessionID)
         syncSlashCommands()
         lastIncrementalSeqBySessionID.removeValue(forKey: sessionID)
+        pendingTerminalMetaBySessionID.removeValue(forKey: sessionID)
         if screenContextTargetSessionID == sessionID {
             clearScreenContextTargetState()
         }
@@ -1997,6 +1999,7 @@ final class PickySessionListViewModel: ObservableObject {
                 pendingTerminalMetaBySessionID[session.id] = session
                 pickySessionLog("session terminal meta pending hydration session=\(session.id) status=\(session.status.rawValue)")
             } else {
+                pendingTerminalMetaBySessionID.removeValue(forKey: session.id)
                 pickySessionLog("session meta ignored before hydration session=\(session.id) status=\(session.status.rawValue)")
             }
             return
@@ -2048,7 +2051,9 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     private func applyPendingTerminalMetaIfNeeded(for sessionID: String) {
-        guard let pendingTerminalMeta = pendingTerminalMetaBySessionID.removeValue(forKey: sessionID) else { return }
+        guard let pendingTerminalMeta = pendingTerminalMetaBySessionID.removeValue(forKey: sessionID),
+              let hydratedCard = (sessions + archivedSessions).first(where: { $0.id == sessionID }),
+              pendingTerminalMeta.updatedAt > hydratedCard.updatedAt else { return }
         applySessionMetaUpdated(pendingTerminalMeta)
     }
 
@@ -2396,6 +2401,7 @@ final class PickySessionListViewModel: ObservableObject {
         unreadSessionIDs = unreadSessionIDs.filter { knownSessionIDs.contains($0) }
         releasedArchivedChildSessionIDs = releasedArchivedChildSessionIDs.filter { knownSessionIDs.contains($0) }
         lastIncrementalSeqBySessionID = lastIncrementalSeqBySessionID.filter { knownSessionIDs.contains($0.key) }
+        pendingTerminalMetaBySessionID = pendingTerminalMetaBySessionID.filter { knownSessionIDs.contains($0.key) }
         let removedInlineTerminalIDs = inlineTerminalSessionIDs.subtracting(knownSessionIDs)
         inlineTerminalSessionIDs = inlineTerminalSessionIDs.filter { knownSessionIDs.contains($0) }
         for sessionID in removedInlineTerminalIDs {

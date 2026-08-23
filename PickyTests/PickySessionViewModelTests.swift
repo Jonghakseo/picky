@@ -5253,7 +5253,8 @@ struct PickySessionViewModelTests {
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMetaUpdated(
             id: "terminal-race",
             status: "completed",
-            summary: "Done"
+            summary: "Done",
+            updatedAt: "2026-05-01T00:00:06.000Z"
         ))))
         #expect(viewModel.sessions.isEmpty)
 
@@ -5265,6 +5266,107 @@ struct PickySessionViewModelTests {
         ))))
 
         #expect(notifications.delivered.filter { $0.identifier == "terminal-race:completed" }.count == 1)
+    }
+
+    @MainActor @Test func sessionMetaUpdatedBeforeHydrationDiscardsStaleTerminalAfterNewerRunningSnapshot() throws {
+        let notifications = PickyNoopNotificationCenter()
+        let preferences = PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
+            notifyOnCompleted: true,
+            notifyOnFailed: true,
+            notifyOnWaitingForInput: true
+        ))
+        let viewModel = PickySessionListViewModel(
+            client: FakePickyAgentClient(),
+            notificationCenter: notifications,
+            notificationPreferencesProvider: preferences
+        )
+
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMetaUpdated(
+            id: "retransition",
+            status: "completed",
+            summary: "Done",
+            updatedAt: "2026-05-01T00:00:03.000Z"
+        ))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMetaUpdated(
+            id: "retransition",
+            status: "running",
+            summary: "Resumed",
+            updatedAt: "2026-05-01T00:00:04.000Z"
+        ))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionSnapshot(
+            id: "retransition",
+            status: "running",
+            summary: "Resumed",
+            updatedAt: "2026-05-01T00:00:05.000Z"
+        ))))
+
+        let card = try #require(viewModel.sessions.first { $0.id == "retransition" })
+        #expect(card.status == .running)
+        #expect(notifications.delivered.filter { $0.identifier == "retransition:completed" }.isEmpty)
+    }
+
+    @MainActor @Test func completeSnapshotDiscardsPendingTerminalForRemovedSession() throws {
+        let notifications = PickyNoopNotificationCenter()
+        let preferences = PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
+            notifyOnCompleted: true,
+            notifyOnFailed: true,
+            notifyOnWaitingForInput: true
+        ))
+        let viewModel = PickySessionListViewModel(
+            client: FakePickyAgentClient(),
+            notificationCenter: notifications,
+            notificationPreferencesProvider: preferences
+        )
+
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMetaUpdated(
+            id: "orphan",
+            status: "completed",
+            summary: "Done",
+            updatedAt: "2026-05-01T00:00:03.000Z"
+        ))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.emptySessionSnapshot())))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "orphan",
+            status: "running",
+            summary: "Fresh run",
+            updatedAt: "2026-05-01T00:01:00.000Z"
+        ))))
+
+        let card = try #require(viewModel.sessions.first { $0.id == "orphan" })
+        #expect(card.status == .running)
+        #expect(notifications.delivered.filter { $0.identifier == "orphan:completed" }.isEmpty)
+    }
+
+    @MainActor @Test func deletingSessionDiscardsPendingTerminalForThatID() throws {
+        let notifications = PickyNoopNotificationCenter()
+        let preferences = PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
+            notifyOnCompleted: true,
+            notifyOnFailed: true,
+            notifyOnWaitingForInput: true
+        ))
+        let viewModel = PickySessionListViewModel(
+            client: FakePickyAgentClient(),
+            notificationCenter: notifications,
+            notificationPreferencesProvider: preferences
+        )
+
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMetaUpdated(
+            id: "deleted",
+            status: "completed",
+            summary: "Done",
+            updatedAt: "2026-05-01T00:00:03.000Z"
+        ))))
+        viewModel.finalizeDeletedArchivedSession(sessionID: "deleted")
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "deleted",
+            status: "running",
+            summary: "Fresh run",
+            updatedAt: "2026-05-01T00:01:00.000Z"
+        ))))
+
+        let card = try #require(viewModel.sessions.first { $0.id == "deleted" })
+        #expect(card.status == .running)
+        #expect(notifications.delivered.filter { $0.identifier == "deleted:completed" }.isEmpty)
     }
 
     @MainActor @Test func sessionUpdatedBeforeHydrationDeliversTerminalNotification() {

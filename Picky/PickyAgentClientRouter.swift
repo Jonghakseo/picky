@@ -185,6 +185,11 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     /// same app-side press/release path as the global keyboard shortcut.
     var pushToTalkControlHandler: ((PickyPushToTalkControlRequest) async throws -> Void)?
 
+    /// Applies a local CLI settings request through app-owned settings stores.
+    /// The router only owns the request/reply transport; policy and persistence
+    /// remain in the app composition root.
+    var pickySettingsControlHandler: ((PickySettingsRequest) async throws -> JSONValue)?
+
     /// Provides app-owned dock groups for `picky pickle-group-list` and main-agent queries.
     var dockGroupsProvider: (() async -> [PickyDockGroupPayload])?
 
@@ -814,6 +819,11 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                                 await self?.handlePushToTalkControlRequest(request)
                             }
                             continue
+                        case .pickySettingsRequested(let request):
+                            Task { @MainActor [weak self] in
+                                await self?.handlePickySettingsRequest(request)
+                            }
+                            continue
                         case .dockGroupsRequested(let requestId):
                             Task { @MainActor [weak self] in
                                 await self?.handleDockGroupsRequest(requestId: requestId)
@@ -852,7 +862,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     private func registerAppCapabilities(on client: PickyAgentClient) async {
         try? await client.send(PickyCommandEnvelope(
             type: .registerAppCapabilities,
-            capabilities: ["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl"]
+            capabilities: ["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl", "settingsControl"]
         ))
     }
 
@@ -900,6 +910,28 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                 type: .completePushToTalkControlRequest,
                 requestId: request.requestId,
                 errorMessage: error.localizedDescription
+            ))
+        }
+    }
+
+    private func handlePickySettingsRequest(_ request: PickySettingsRequest) async {
+        do {
+            guard let handler = pickySettingsControlHandler else {
+                throw PickyAgentClientRouterError.pickySettingsControlHandlerUnavailable
+            }
+            let result = try await handler(request)
+            try await primaryClient.send(PickyCommandEnvelope(
+                type: .completePickySettingsRequest,
+                requestId: request.requestId,
+                result: result
+            ))
+        } catch {
+            let exposureError = error as? PickySettingsCLIExposureError
+            try? await primaryClient.send(PickyCommandEnvelope(
+                type: .completePickySettingsRequest,
+                requestId: request.requestId,
+                errorMessage: exposureError?.message ?? error.localizedDescription,
+                errorCode: exposureError?.code
             ))
         }
     }
@@ -958,6 +990,7 @@ enum PickyAgentClientRouterError: LocalizedError, Equatable {
     case routerUnavailable
     case externalEntryProviderUnavailable
     case pushToTalkControlHandlerUnavailable
+    case pickySettingsControlHandlerUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -970,6 +1003,7 @@ enum PickyAgentClientRouterError: LocalizedError, Equatable {
         case .routerUnavailable: "Picky router is unavailable."
         case .externalEntryProviderUnavailable: "Picky context provider is not ready for external CLI entry."
         case .pushToTalkControlHandlerUnavailable: "Picky push-to-talk control handler is not ready for external CLI input."
+        case .pickySettingsControlHandlerUnavailable: "Picky settings control handler is not ready for external CLI input."
         }
     }
 }

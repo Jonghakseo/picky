@@ -303,6 +303,32 @@ private func makePushToTalkControlRequestEvent(
     return try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: data)
 }
 
+private func makePickySettingsRequestEvent(
+    requestId: String = "settings-control-1",
+    action: String = "set",
+    key: String? = "cursor.visible",
+    value: Any? = true,
+    toggle: Bool? = nil,
+    displayId: String? = nil,
+    caller: String? = nil
+) throws -> PickyEventEnvelope {
+    var payload: [String: Any] = [
+        "id": "event-settings-control",
+        "protocolVersion": "2026-07-23",
+        "timestamp": "2026-05-01T00:00:00.000Z",
+        "type": "pickySettingsRequested",
+        "requestId": requestId,
+        "action": action,
+    ]
+    if let key { payload["key"] = key }
+    if let value { payload["value"] = value }
+    if let toggle { payload["toggle"] = toggle }
+    if let displayId { payload["displayId"] = displayId }
+    if let caller { payload["caller"] = caller }
+    let data = try JSONSerialization.data(withJSONObject: payload)
+    return try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: data)
+}
+
 private func makePickleHandoffRequestEvent() throws -> PickyEventEnvelope {
     let json = """
     {
@@ -395,7 +421,7 @@ struct PickyAgentClientRouterTests {
 
         let registrations = primary.sentCommands.filter { $0.type == .registerAppCapabilities }
         #expect(registrations.count == registrationsBeforeReconnect + 1)
-        #expect(registrations.last?.capabilities == ["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl"])
+        #expect(registrations.last?.capabilities == ["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl", "settingsControl"])
     }
 
     @Test func sendsCompleteExternalEntryWithCapturedContextWhenProviderResolves() async throws {
@@ -477,6 +503,32 @@ struct PickyAgentClientRouterTests {
         #expect(completion.errorMessage == nil)
     }
 
+    @Test func sendsCompletePickySettingsRequestWithHandlerResult() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(
+            configuration: PickyAgentDaemonPool.Configuration(token: "tok", appSupportRoot: root)
+        )
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        router.pickySettingsControlHandler = { request in
+            #expect(request.action == .set)
+            #expect(request.key == "cursor.visible")
+            #expect(request.value == .bool(true))
+            #expect(request.caller == "mainAgent")
+            return .object(["key": .string("cursor.visible"), "value": .bool(true)])
+        }
+
+        await router.connect()
+        primary.emit(.protocolEvent(try makePickySettingsRequestEvent(caller: "mainAgent")))
+
+        try await waitUntil { primary.sentCommands.contains { $0.type == .completePickySettingsRequest } }
+        let completion = try #require(primary.sentCommands.first { $0.type == .completePickySettingsRequest })
+        #expect(completion.requestId == "settings-control-1")
+        #expect(completion.result == .object(["key": .string("cursor.visible"), "value": .bool(true)]))
+        #expect(completion.errorCode == nil)
+        #expect(completion.errorMessage == nil)
+    }
+
     @Test func sendsCompletePushToTalkControlWithErrorMessageWhenHandlerThrows() async throws {
         let primary = StubAgentClient(id: "primary")
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
@@ -522,7 +574,7 @@ struct PickyAgentClientRouterTests {
         let child = try #require(clientFactory.madeClients.first?.client)
         try await waitUntil { child.sentCommands.contains { $0.type == .registerAppCapabilities } }
         let registration = try #require(child.sentCommands.first { $0.type == .registerAppCapabilities })
-        #expect(registration.capabilities == ["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl"])
+        #expect(registration.capabilities == ["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl", "settingsControl"])
         #expect(primary.sentCommands.filter { $0.type == .registerAppCapabilities }.isEmpty)
     }
 

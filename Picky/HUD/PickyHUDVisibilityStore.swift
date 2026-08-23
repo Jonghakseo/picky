@@ -51,7 +51,17 @@ final class PickyHUDVisibilityStore: ObservableObject {
         snapshot.isVisible(for: displayID)
     }
 
-    func setVisible(_ isVisible: Bool, for displayID: CGDirectDisplayID) {
+    /// Updates the live owner after another component has atomically persisted
+    /// the same visibility fields through the settings mutation coordinator.
+    func reloadFromSettings() {
+        let settings = settingsStore.load()
+        snapshot = PickyHUDDockVisibilitySnapshot(
+            defaultVisibility: settings.hudDockVisible,
+            overridesByDisplayID: settings.hudDockVisibilityByDisplayID
+        )
+    }
+
+    func setVisible(_ isVisible: Bool, for displayID: CGDirectDisplayID, persist: Bool = true) {
         guard snapshot.isVisible(for: displayID) != isVisible else { return }
 
         var next = snapshot
@@ -62,7 +72,7 @@ final class PickyHUDVisibilityStore: ObservableObject {
             next.overridesByDisplayID[key] = isVisible
         }
         snapshot = next
-        persist()
+        if persist { self.persist() }
     }
 
     func toggle(for displayID: CGDirectDisplayID) {
@@ -71,10 +81,10 @@ final class PickyHUDVisibilityStore: ObservableObject {
 
     /// Reserved for actions that intentionally reveal every monitor, such as
     /// notification routing when macOS cannot identify a target display.
-    func setAllVisible(_ isVisible: Bool) {
+    func setAllVisible(_ isVisible: Bool, persist: Bool = true) {
         guard snapshot.defaultVisibility != isVisible || !snapshot.overridesByDisplayID.isEmpty else { return }
         snapshot = PickyHUDDockVisibilitySnapshot(defaultVisibility: isVisible, overridesByDisplayID: [:])
-        persist()
+        if persist { self.persist() }
     }
 
     private func persist() {

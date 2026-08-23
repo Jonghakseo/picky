@@ -504,6 +504,8 @@ private extension PickyEventEnvelope {
             return "type=dockGroupsRequested id=\(id) request=\(requestId)"
         case .pushToTalkControlRequested(let request):
             return "type=pushToTalkControlRequested id=\(id) request=\(request.requestId) action=\(request.action.rawValue)"
+        case .pickySettingsRequested(let request):
+            return "type=pickySettingsRequested id=\(id) request=\(request.requestId) action=\(request.action.rawValue) key=\(request.key ?? "none")"
         case .slashCommandsSnapshot(let sessionId, let requestId, let commands):
             return "type=slashCommandsSnapshot id=\(id) session=\(sessionId) request=\(requestId ?? "none") commands=\(commands.count)"
         case .autocompleteCapabilitiesSnapshot(let snapshot):

@@ -1843,7 +1843,7 @@ final class PickySessionListViewModel: ObservableObject {
              .mainAgentSessionInfoUpdated, .mainAgentModelsSnapshot,
              .piOAuthStatus, .piOAuthUrlRequested, .piOAuthPromptRequested, .piAuthenticationReloaded,
              .pointerOverlayRequested, .annotationOverlayRequested, .pickleHandoffRequested, .pickleBridgeRequested, .externalEntryRequested,
-             .dockGroupsRequested, .pushToTalkControlRequested, .hello, .pluginsReloaded,
+             .dockGroupsRequested, .pushToTalkControlRequested, .pickySettingsRequested, .hello, .pluginsReloaded,
              .packageUpdatesAvailable, .packageOperationProgress, .packageOperationCompleted, .ack, .unknown:
             break
         }

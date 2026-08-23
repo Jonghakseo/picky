@@ -53,6 +53,8 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var instructions: String?
     var cwd: String?
     var errorMessage: String?
+    var errorCode: String?
+    var result: JSONValue?
     var capabilities: [String]?
     var sessions: [PickyAgentSession]?
     var groups: [PickyDockGroupPayload]?
@@ -109,6 +111,8 @@ struct PickyCommandEnvelope: Codable, Equatable {
         instructions: String? = nil,
         cwd: String? = nil,
         errorMessage: String? = nil,
+        errorCode: String? = nil,
+        result: JSONValue? = nil,
         capabilities: [String]? = nil,
         sessions: [PickyAgentSession]? = nil,
         groups: [PickyDockGroupPayload]? = nil,
@@ -161,6 +165,8 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.instructions = instructions
         self.cwd = cwd
         self.errorMessage = errorMessage
+        self.errorCode = errorCode
+        self.result = result
         self.capabilities = capabilities
         self.sessions = sessions
         self.groups = groups
@@ -223,6 +229,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case manageDockGroups
     case controlPushToTalkFromExternal
     case completePushToTalkControlRequest
+    case completePickySettingsRequest
     case duplicatePickleSession
     case pinPickleSession
     case clearQueue
@@ -348,6 +355,7 @@ enum PickyEvent: Equatable {
     case externalEntryAccepted(PickyExternalEntryAcceptedEvent)
     case dockGroupsRequested(requestId: String)
     case pushToTalkControlRequested(PickyPushToTalkControlRequest)
+    case pickySettingsRequested(PickySettingsRequest)
     case slashCommandsSnapshot(sessionId: String, requestId: String?, commands: [PickySlashCommand])
     case autocompleteCapabilitiesSnapshot(PickyAutocompleteCapabilitiesSnapshot)
     case autocompleteSuggestionsSnapshot(PickyAutocompleteSuggestionsSnapshot)
@@ -538,6 +546,8 @@ enum PickyEvent: Equatable {
             return .dockGroupsRequested(requestId: payload.requestId)
         case "pushToTalkControlRequested":
             return .pushToTalkControlRequested(try PickyPushToTalkControlRequest(from: decoder))
+        case "pickySettingsRequested":
+            return .pickySettingsRequested(try PickySettingsRequest(from: decoder))
         default: return nil
         }
     }
@@ -841,6 +851,22 @@ enum PickyPushToTalkControlAction: String, Codable, Equatable {
 struct PickyPushToTalkControlRequest: Decodable, Equatable {
     let requestId: String
     let action: PickyPushToTalkControlAction
+}
+
+enum PickySettingsRequestAction: String, Decodable, Equatable {
+    case list
+    case get
+    case set
+}
+
+struct PickySettingsRequest: Decodable, Equatable {
+    let requestId: String
+    let action: PickySettingsRequestAction
+    let key: String?
+    let value: JSONValue?
+    let toggle: Bool?
+    let displayId: String?
+    let caller: String?
 }
 
 struct PickyTerminalSessionSyncOutcome: Decodable, Equatable {

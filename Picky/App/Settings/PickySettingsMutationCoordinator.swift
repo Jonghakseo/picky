@@ -20,9 +20,9 @@ final class PickySettingsMutationCoordinator {
     /// Applies a narrow mutation to the latest persisted settings, then notifies
     /// runtime owners that they should refresh their settings-backed state.
     @discardableResult
-    func applyPatch(_ mutate: (inout PickySettings) -> Void) throws -> Int {
+    func applyPatch(_ mutate: (inout PickySettings) throws -> Void) throws -> Int {
         var updated = store.load()
-        mutate(&updated)
+        try mutate(&updated)
         try store.save(updated)
         NotificationCenter.default.post(name: .pickySettingsDidSave, object: nil)
 

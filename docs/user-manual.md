@@ -751,8 +751,7 @@ After installing the shell command, use it to drive Picky from a terminal or har
 picky submit "summarize the current screen"
 picky pickle-create "Research" --instructions "Compare the open tabs" --group "Research"
 picky pickle-list --archived --query sentry
-picky pickle-remove <session-id>                    # safe default: archive
-picky pickle-delete <session-id> --confirm          # archived terminal Pickles only
+picky pickle-archive <session-id>
 picky pickle-unarchive <session-id>
 picky pickle-steer <session-id> "focus on production impact"
 picky pickle-abort <session-id>
@@ -766,7 +765,7 @@ picky ptt press
 picky ptt release
 ```
 
-`picky pickle-create --group <name>` places the new Pickle in the named dock group, creating that group when needed. If multiple groups share the same name, Picky uses the first matching group in dock order. `picky pickle-list --archived` shows Pickles hidden from the dock; add `--query <text>` to search by ID, title, cwd, status, summary, or final answer. `picky pickle-remove` is the safe removal path and archives the Pickle; `picky pickle-delete --confirm` permanently deletes only an already-archived terminal Pickle. `picky pickle-group-remove` removes only the group and keeps members active, while `picky pickle-group-delete --archive-members --confirm` removes the group and archives its members. `picky pickle-group-list --json` returns group IDs, names, colors, collapsed state, and member session IDs for external scripting; main-agent CLI calls use bounded text output instead.
+`picky pickle-create --group <name>` places the new Pickle in the named dock group, creating that group when needed. If multiple groups share the same name, Picky uses the first matching group in dock order. `picky pickle-list --archived` shows Pickles hidden from the dock; add `--query <text>` to search by ID, title, cwd, status, summary, or final answer. `picky pickle-archive` archives a Pickle, and `picky pickle-unarchive` restores it while it remains inside Picky's archived-session retention window. `picky pickle-group-remove` removes only the group and keeps members active, while `picky pickle-group-delete --archive-members --confirm` removes the group and archives its members. `picky pickle-group-list --json` returns group IDs, names, colors, collapsed state, and member session IDs for external scripting; main-agent CLI calls use bounded text output instead.
 
 ### 13.2 Shortcuts
 

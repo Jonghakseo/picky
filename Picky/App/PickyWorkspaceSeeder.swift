@@ -615,10 +615,10 @@ enum PickyWorkspaceSeeder {
     - Never run `picky submit`, `picky ptt`, or any `--wait` option from the
       main agent because they target Picky itself and can recursively block
       or interrupt the current turn.
-    - `picky pickle-remove` archives a Pickle. `picky pickle-group-remove`
-      removes only the group and keeps members active. Use permanent or
-      member-archive commands only on explicit user request with the CLI's
-      confirmation flags.
+    - `picky pickle-archive` archives a Pickle. `picky pickle-group-remove`
+      removes only the group and keeps members active. Use member-archive
+      commands only on explicit user request with the CLI's confirmation
+      flags.
     - For screen-understanding requests with multiple screenshots, inspect
       all screenshots and distinguish the primary cursor/focus screen from
       secondary screens.

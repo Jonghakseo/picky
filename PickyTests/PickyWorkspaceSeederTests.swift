@@ -41,6 +41,9 @@ struct PickyWorkspaceSeederTests {
         #expect(body.contains("# Picky main agent"))
         #expect(body.contains("picky pickle-create"))
         #expect(body.contains("picky pickle-list"))
+        #expect(body.contains("picky pickle-archive"))
+        #expect(!body.contains("picky pickle-remove"))
+        #expect(!body.contains("picky pickle-delete"))
         #expect(body.contains("Never run `picky submit`"))
     }
 

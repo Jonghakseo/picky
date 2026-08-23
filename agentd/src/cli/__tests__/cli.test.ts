@@ -262,19 +262,19 @@ describe("picky cli", () => {
     expect(result.stderr).toContain("--archived cannot be combined with --include-archived");
   });
 
-  it("pickle-archive sends setSessionArchived(true) and waits for the authoritative event", async () => {
-    server.onCommand("listPickles", (command, send) => {
-      void command;
-      send({ type: "sessionSnapshot", sessions: [sessionFixture({ id: "p-1", title: "Archive me", status: "completed" })] });
+  it("main-agent pickle-archive sends a caller-tagged setSessionArchived(true) and waits for the authoritative event", async () => {
+    server.onCommand("getPickle", (command, send) => {
+      const sessionId = (command as { sessionId: string }).sessionId;
+      send({ type: "sessionUpdated", session: sessionFixture({ id: sessionId, title: "Archive me", status: "completed" }) });
     });
     server.onCommand("setPickleArchived", (command, send) => {
       const cmd = command as { sessionId: string; archived: boolean };
       send({ type: "sessionArchivedAuthoritative", sessionId: cmd.sessionId, archived: cmd.archived });
     });
-    const result = await runCli(["pickle-archive", "p-1"]);
+    const result = await runCli(["pickle-archive", "p-1"], { PICKY_CLI_CALLER: "mainAgent" });
     expect(result.code).toBe(0);
     expect(result.stdout).toContain("Archived Pickle p-1");
-    expect(server.received.find((command) => (command as { type?: string }).type === "setPickleArchived")).toMatchObject({ type: "setPickleArchived", sessionId: "p-1", archived: true });
+    expect(server.received.find((command) => (command as { type?: string }).type === "setPickleArchived")).toMatchObject({ type: "setPickleArchived", caller: "mainAgent", sessionId: "p-1", archived: true });
   });
 
   it("pickle-archive is a safe no-op for an already archived session", async () => {
@@ -447,31 +447,6 @@ describe("picky cli", () => {
     });
   });
 
-  it("safe remove archives while permanent delete requires confirmation and an archived terminal Pickle", async () => {
-    server.onCommand("getPickle", (command, send) => {
-      const id = (command as { sessionId: string }).sessionId;
-      send({ type: "sessionUpdated", session: sessionFixture({ id, title: "T", status: "completed", archived: id === "delete-me" }) });
-    });
-    server.onCommand("setPickleArchived", (command, send) => {
-      const cmd = command as { sessionId: string; archived: boolean };
-      send({ type: "sessionArchivedAuthoritative", sessionId: cmd.sessionId, archived: cmd.archived });
-    });
-    server.onCommand("deletePickle", (_, send) => {
-      send({ type: "sessionSnapshot", sessions: [] });
-    });
-    const env = { PICKY_CLI_CALLER: "mainAgent" };
-
-    const removed = await runCli(["pickle-remove", "remove-me"], env);
-    expect(removed.code).toBe(0);
-    expect(server.received.find((command) => (command as { type?: string }).type === "setPickleArchived")).toMatchObject({ caller: "mainAgent", sessionId: "remove-me", archived: true });
-
-    const missingConfirm = await runCli(["pickle-delete", "delete-me"], env);
-    expect(missingConfirm.code).toBe(64);
-    const deleted = await runCli(["pickle-delete", "delete-me", "--confirm"], env);
-    expect(deleted.code).toBe(0);
-    expect(server.received.find((command) => (command as { type?: string }).type === "deletePickle")).toMatchObject({ caller: "mainAgent", sessionId: "delete-me" });
-  });
-
   it("group CLI commands map to explicit app-owned mutations", async () => {
     server.onCommand("manageDockGroups", (_, send) => {
       send({ type: "dockGroupsSnapshot", groups: [] });
@@ -610,6 +585,9 @@ describe("picky cli", () => {
     expect(result.stdout).toContain("submit");
     expect(result.stdout).toContain("pickle-create");
     expect(result.stdout).toContain("pickle-list");
+    expect(result.stdout).toContain("pickle-archive");
+    expect(result.stdout).not.toContain("pickle-remove");
+    expect(result.stdout).not.toContain("pickle-delete");
     expect(result.stdout).toContain("pickle-followup");
     expect(result.stdout).toContain("pickle-abort");
     expect(result.stdout).toContain("ptt");

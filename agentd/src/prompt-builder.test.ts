@@ -78,6 +78,9 @@ describe("neutral prompt builder", () => {
     expect(pair.user).not.toContain("- Create: `picky pickle-create");
     expect(pair.user).not.toContain("- Groups: `picky pickle-group-list");
     expect(pair.user).toContain("Inspect/manage: `picky pickle-list");
+    expect(pair.user).toContain("`picky pickle-archive <session-id>`");
+    expect(pair.user).not.toContain("picky pickle-remove");
+    expect(pair.user).not.toContain("picky pickle-delete");
     expect(pair.user).toContain("Reuse: `picky pickle-steer");
   });
 

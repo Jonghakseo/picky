@@ -44,8 +44,7 @@ Examples:
   $ picky pickle-list --json
   $ picky pickle-list --include-archived
   $ picky pickle-list --archived --query "sentry"
-  $ picky pickle-remove pickle-abc
-  $ picky pickle-delete pickle-abc --confirm
+  $ picky pickle-archive pickle-abc
   $ picky pickle-unarchive pickle-abc
   $ picky pickle-steer pickle-abc "production 환경으로 다시"
   $ picky pickle-abort pickle-abc
@@ -243,40 +242,6 @@ Examples:
       }
       const event = await setPickleArchiveState(connection, sessionId, true);
       printArchiveStateResult(event, options.json, `Archived Pickle ${sessionId}`);
-    });
-  });
-
-program
-  .command("pickle-remove <session-id>")
-  .description("Safely remove a Pickle from the dock by archiving it.")
-  .action(async (sessionId: string) => {
-    await runWithErrorHandling(async () => {
-      const connection = await loadCliConnection();
-      const session = await requireSessionForArchiveAction(connection, sessionId);
-      if (session.archived === true) {
-        process.stdout.write(`Pickle already removed from dock: ${sessionId}\n`);
-        return;
-      }
-      await setPickleArchiveState(connection, sessionId, true);
-      process.stdout.write(`Removed Pickle from dock: ${sessionId}\n`);
-    });
-  });
-
-program
-  .command("pickle-delete <session-id>")
-  .description("Permanently delete an archived terminal Pickle. Requires --confirm.")
-  .option("--confirm", "Confirm permanent deletion")
-  .action(async (sessionId: string, options: { confirm?: boolean }) => {
-    await runWithErrorHandling(async () => {
-      if (!options.confirm) fail("pickle-delete requires --confirm", 64);
-      const connection = await loadCliConnection();
-      const session = await requireSessionForArchiveAction(connection, sessionId);
-      if (session.archived !== true) fail(`Pickle session ${sessionId} must be archived before permanent deletion`, 1);
-      if (!isTerminalStatus(session.status)) fail(`Pickle session ${sessionId} must be terminal before permanent deletion`, 1);
-      await sendCommand(connection, { type: "deletePickle", sessionId, ...callerFields }, {
-        matchEvent: (event) => event.type === "sessionSnapshot" && !event.sessions.some((candidate) => candidate.id === sessionId) ? event : null,
-      });
-      process.stdout.write(`Permanently deleted Pickle ${sessionId}\n`);
     });
   });
 
@@ -535,10 +500,6 @@ function parseListLimit(raw: string | undefined): number {
 
 function rejectForMainAgent(command: string): void {
   if (isMainAgentCaller) fail(`${command} cannot be called from the Picky main agent`, 64);
-}
-
-function isTerminalStatus(status: PickyAgentSession["status"]): boolean {
-  return status === "completed" || status === "failed" || status === "cancelled";
 }
 
 /**

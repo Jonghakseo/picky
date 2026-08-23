@@ -5433,13 +5433,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Allow CLI listing, archive, restore, and permanent deletion of eligible Pickles."
+            "value": "Allow CLI listing, archive, and restore of Pickles."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "CLI를 통한 Pickle 조회, 보관, 복원과 조건을 충족한 Pickle의 영구 삭제를 허용해요."
+            "value": "CLI를 통한 Pickle 조회, 보관과 복원을 허용해요."
           }
         }
       }

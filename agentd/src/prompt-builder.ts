@@ -175,9 +175,9 @@ function buildPickyCliPrompt(disabled: ReadonlySet<string>): string[] {
     lines.push("- Pickle creation is disabled in Settings; do not call `picky pickle-create`.");
   }
   if (!disabled.has("picky_pickle_sessions")) {
-    lines.push("- Inspect/manage: `picky pickle-list [--query <text>] [--limit <n>]`, `picky pickle-remove`, and explicit-confirmation `picky pickle-delete`.");
+    lines.push("- Inspect/manage: `picky pickle-list [--query <text>] [--limit <n>]` and `picky pickle-archive <session-id>`.");
   } else {
-    lines.push("- Pickle listing, archive, restore, and deletion are disabled in Settings.");
+    lines.push("- Pickle listing, archive, and restore are disabled in Settings.");
   }
   if (!disabled.has("picky_steer_pickle")) {
     lines.push("- Reuse: `picky pickle-steer <session-id> <delta>` after identifying the target with `picky pickle-list`.");

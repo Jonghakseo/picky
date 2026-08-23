@@ -5213,15 +5213,37 @@ struct PickySessionViewModelTests {
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "live-conversation", messageId: "m-1", text: "rendered answer", seq: 1))))
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionQueueUpdated(sessionId: "live-conversation", steering: [], followUp: ["queued follow-up"], steeringMode: nil, followUpMode: nil, seq: 2))))
 
-        // Runtime status/tool patches still broadcast full sessionUpdated snapshots. They often
-        // carry transient empty conversation arrays because the granular message/queue events are
-        // the live render source of truth. Those snapshots must not make bubbles disappear.
+        // Full lifecycle snapshots must preserve the live incremental projection.
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "live-conversation", status: "completed", summary: "Done", updatedAt: "2026-05-01T00:00:05.000Z"))))
 
         let card = try #require(viewModel.sessions.first)
         #expect(card.status == .completed)
         #expect(card.messages.map(\.text) == ["rendered answer"])
         #expect(card.queuedFollowUps.map(\.text) == ["queued follow-up"])
+    }
+
+    @MainActor @Test func sessionMetaUpdatedPreservesIncrementalConversationStateAndAppliesStatus() throws {
+        let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "live-conversation", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "live-conversation", messageId: "m-1", text: "rendered answer", seq: 1))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionQueueUpdated(sessionId: "live-conversation", steering: [], followUp: ["queued follow-up"], steeringMode: nil, followUpMode: nil, seq: 2))))
+
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMetaUpdated(id: "live-conversation", status: "completed", summary: "Done", updatedAt: "2026-05-01T00:00:05.000Z"))))
+
+        let card = try #require(viewModel.sessions.first)
+        #expect(card.status == .completed)
+        #expect(card.lastSummary == "Done")
+        #expect(card.messages.map(\.text) == ["rendered answer"])
+        #expect(card.queuedFollowUps.map(\.text) == ["queued follow-up"])
+    }
+
+    @MainActor @Test func sessionMetaUpdatedBeforeHydrationDoesNotCreateAnEmptyConversation() {
+        let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
+
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMetaUpdated(id: "not-hydrated", status: "completed", summary: "Done"))))
+
+        #expect(viewModel.sessions.isEmpty)
+        #expect(viewModel.archivedSessions.isEmpty)
     }
 
     @MainActor @Test func sessionUpdatedWithNewPiSessionFileResetsIncrementalConversationState() throws {
@@ -5446,6 +5468,23 @@ private enum EventJSON {
         let encodedPinned = pinned.map { ",\"pinned\":\($0)" } ?? ""
         return """
         {"id":"event-\(id)-\(status)","protocolVersion":"2026-07-23","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":\(encodedCwd),"createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]\(encodedPiSessionFilePath)\(encodedNotify)\(encodedPinned)}}
+        """
+    }
+
+    static func sessionMetaUpdated(
+        id: String = "session-1",
+        title: String = "Investigate current screen",
+        status: String = "running",
+        summary: String = "Started",
+        createdAt: String = "2026-05-01T00:00:00.000Z",
+        updatedAt: String = "2026-05-01T00:00:00.000Z",
+        logs: [String] = [],
+        cwd: String = testProjectCwd
+    ) -> String {
+        let encodedLogs = String(decoding: try! JSONEncoder().encode(logs), as: UTF8.self)
+        let encodedCwd = String(decoding: try! JSONEncoder().encode(cwd), as: UTF8.self)
+        return """
+        {"id":"meta-\(id)-\(status)","protocolVersion":"2026-08-23","timestamp":"\(updatedAt)","type":"sessionMetaUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":\(encodedCwd),"createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]}}
         """
     }
 

@@ -5,7 +5,7 @@ import type { WebSocket } from "ws";
 import { isAuthorized } from "./auth.js";
 import { FOLLOWUP_PREFIX, HANDOFF_PREFIX, STEER_PREFIX } from "./domain/log-prefixes.js";
 import { sliceUtf16Safe } from "./domain/safe-truncate.js";
-import { PROTOCOL_VERSION, PickyAgentSessionSchema, parseCommand, type DockGroup, type EventEnvelope, type PickyAgentSession, type PickyAgentSessionParsed, type PickyContextPacket, type PickyPushToTalkControlAction } from "./protocol.js";
+import { PROTOCOL_VERSION, PickyAgentSessionMetaSchema, PickyAgentSessionSchema, parseCommand, type DockGroup, type EventEnvelope, type PickyAgentSession, type PickyAgentSessionMeta, type PickyAgentSessionParsed, type PickyContextPacket, type PickyPushToTalkControlAction } from "./protocol.js";
 import type { SessionSupervisor } from "./session-supervisor.js";
 import { logAgentd } from "./local-log.js";
 import { EdgeTTSServiceError } from "./edge-tts-service.js";
@@ -130,6 +130,7 @@ export class AgentdServer {
     });
 
     this.options.supervisor.on("session", (session) => this.broadcast({ type: "sessionUpdated", session: protocolSession(session) }));
+    this.options.supervisor.on("sessionMeta", (session) => this.broadcast({ type: "sessionMetaUpdated", session: protocolSessionMeta(session) }));
     this.options.supervisor.on("sessionArchivedAuthoritative", (sessionId: string, archived: boolean) => this.broadcast({ type: "sessionArchivedAuthoritative", sessionId, archived }));
     this.options.supervisor.on("resourcesReloaded", (sessionId) => this.broadcast({ type: "sessionResourcesReloaded", sessionId }));
     this.options.supervisor.on("log", (sessionId, line) => this.broadcast({ type: "sessionLogAppended", sessionId, line }));
@@ -1206,6 +1207,7 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
     case "sessionSnapshot":
       return { eventId: event.id, type: event.type, sessions: event.sessions.length };
     case "sessionUpdated":
+    case "sessionMetaUpdated":
       return { eventId: event.id, type: event.type, sessionId: event.session.id, status: event.session.status };
     case "sessionArchivedAuthoritative":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, archived: event.archived ? 1 : 0 };
@@ -1382,6 +1384,11 @@ function isImportantSnapshotLog(line: string): boolean {
 
 function protocolSession(session: PickyAgentSession): PickyAgentSessionParsed {
   return PickyAgentSessionSchema.parse(session);
+}
+
+function protocolSessionMeta(session: PickyAgentSession): PickyAgentSessionMeta {
+  const { messages: _, ...meta } = session;
+  return PickyAgentSessionMetaSchema.parse(meta);
 }
 
 function truncateSnapshotLogLine(line: string): string {

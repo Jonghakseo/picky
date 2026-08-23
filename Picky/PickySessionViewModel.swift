@@ -1776,6 +1776,8 @@ final class PickySessionListViewModel: ObservableObject {
             applySessionSnapshot(snapshot)
         case .sessionUpdated(let session):
             applySessionUpdated(session)
+        case .sessionMetaUpdated(let session):
+            applySessionMetaUpdated(session)
         case .sessionArchivedAuthoritative(let sessionId, let archived):
             applySessionArchivedAuthoritative(sessionID: sessionId, archived: archived)
         case .sessionLogAppended(let sessionId, let line):
@@ -1971,6 +1973,52 @@ final class PickySessionListViewModel: ObservableObject {
         }
         if visibleSessionDiffSessionIDs.contains(session.id),
            PickySessionDiffPresentation.isSettledTransition(from: previousCard?.status, to: incomingCard.status) {
+            requestSessionDiff(sessionID: session.id)
+        }
+    }
+
+    /// Merges a patch-driven update without allowing its intentionally omitted
+    /// conversation fields to replace a hydrated/incremental conversation.
+    /// A meta event that races ahead of the initial session snapshot is dropped:
+    /// it cannot safely establish a card because it does not carry the journal.
+    private func applySessionMetaUpdated(_ session: PickyAgentSession) {
+        guard let previousCard = (sessions + archivedSessions).first(where: { $0.id == session.id }) else {
+            pickySessionLog("session meta ignored before hydration session=\(session.id) status=\(session.status.rawValue)")
+            return
+        }
+        PickyPerf.event("vm_event_session_meta_updated")
+        pickySessionLog("session meta updated session=\(session.id) status=\(session.status.rawValue)")
+        var incomingCard = PickyPerf.interval("vm_session_meta_from_agent_session") {
+            SessionCard.fromAgentSession(session)
+        }
+        // These are owned by ordered granular events while a session is live.
+        // Carrying the existing projection also prevents a metadata event from
+        // looking like a fresh empty Pi session when it omits `messages`.
+        incomingCard.messages = previousCard.messages
+        incomingCard.queuedSteers = previousCard.queuedSteers
+        incomingCard.queuedFollowUps = previousCard.queuedFollowUps
+        incomingCard.steeringMode = previousCard.steeringMode
+        incomingCard.followUpMode = previousCard.followUpMode
+        incomingCard.activitySummary = previousCard.activitySummary
+        reconcileTodoProgressExpansion(
+            sessionID: session.id,
+            previousState: previousCard.todoState,
+            currentState: incomingCard.todoState
+        )
+        reconcileSubagentInvocationExpansion(
+            sessionID: session.id,
+            messages: incomingCard.messages,
+            previousRuns: previousCard.subagentRuns,
+            currentRuns: incomingCard.subagentRuns
+        )
+        if shouldInvalidateSlashCommandCache(previous: previousCard, incoming: incomingCard) {
+            invalidateSlashCommandCache(sessionID: session.id)
+        }
+        PickyPerf.interval("vm_event_session_meta_updated_upsert") {
+            upsert(incomingCard, preserveIncrementalConversationState: true)
+        }
+        if visibleSessionDiffSessionIDs.contains(session.id),
+           PickySessionDiffPresentation.isSettledTransition(from: previousCard.status, to: incomingCard.status) {
             requestSessionDiff(sessionID: session.id)
         }
     }

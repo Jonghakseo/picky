@@ -316,7 +316,11 @@ enum PickyEvent: Equatable {
     case piOAuthPromptRequested(PickyPiOAuthPromptRequestEvent)
     case piAuthenticationReloaded(PickyPiAuthenticationReloadedEvent)
     case sessionSnapshot(PickySessionSnapshot)
+    /// Full lifecycle snapshot used to hydrate the conversation journal.
     case sessionUpdated(PickyAgentSession)
+    /// Patch-driven session state that deliberately omits `messages`; clients
+    /// merge it into an already hydrated session projection.
+    case sessionMetaUpdated(PickyAgentSession)
     /// Authoritative archive-flag change signaled by agentd. Picky's session
     /// view model trusts THIS event to update its local
     /// `manuallyArchivedSessionIDs` UserDefaults; it deliberately ignores the
@@ -429,6 +433,9 @@ enum PickyEvent: Equatable {
         case "sessionUpdated":
             let payload = try PickySessionUpdatedPayload(from: decoder)
             return .sessionUpdated(payload.session)
+        case "sessionMetaUpdated":
+            let payload = try PickySessionUpdatedPayload(from: decoder)
+            return .sessionMetaUpdated(payload.session)
         case "sessionArchivedAuthoritative":
             let payload = try PickySessionArchivedAuthoritativePayload(from: decoder)
             return .sessionArchivedAuthoritative(sessionId: payload.sessionId, archived: payload.archived)

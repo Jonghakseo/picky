@@ -12,6 +12,20 @@ struct ProtocolContractTests {
         #expect(pickyAgentProtocolVersion == "2026-08-23")
     }
 
+    @Test func decodesSessionMetaUpdateWithoutConversationMessages() throws {
+        let url = try #require(try fixtureURLs(in: "contracts/protocol").first { $0.lastPathComponent == "session-meta-updated.event.json" })
+        let data = try Data(contentsOf: url)
+        let envelope = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: data)
+
+        guard case .sessionMetaUpdated(let session) = envelope.event else {
+            Issue.record("Expected sessionMetaUpdated event")
+            return
+        }
+        #expect(session.id == "session-001")
+        #expect(session.status == .running)
+        #expect(session.messages.isEmpty)
+    }
+
     @Test func decodesEveryProtocolFixture() throws {
         let decoder = JSONDecoder.pickyAgentProtocolDecoder()
         let fixtures = try fixtureURLs(in: "contracts/protocol")

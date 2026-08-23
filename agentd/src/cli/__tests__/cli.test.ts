@@ -580,7 +580,7 @@ describe("picky cli", () => {
     server.onCommand("controlPickle", (command, send) => {
       const cmd = command as { sessionId: string };
       send({
-        type: "sessionUpdated",
+        type: "sessionMetaUpdated",
         session: sessionFixture({ id: cmd.sessionId, title: "T", status: "cancelled" }),
       });
     });

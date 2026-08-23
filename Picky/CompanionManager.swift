@@ -2432,7 +2432,7 @@ final class CompanionManager: ObservableObject {
 
     func applyAgentEvent(_ event: PickyEvent) {
         switch event {
-        case .sessionUpdated(let session):
+        case .sessionUpdated(let session), .sessionMetaUpdated(let session):
             handleSessionStatusTransition(session: session)
             updatePassiveAgentSummary(session.lastSummary ?? "\(session.title) · \(session.status.rawValue)")
         case .sessionResourcesReloaded, .sessionLogAppended, .toolActivityUpdated, .sessionTodoStateUpdated, .sessionSubagentRunsUpdated, .sessionArchivedAuthoritative, .pluginsReloaded,

@@ -53,6 +53,41 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
+  it("broadcasts patch metadata without messages while full snapshots retain message hydration", async () => {
+    const { ws } = await connectWithHello();
+    const session = await supervisor.create(context("thin metadata update"));
+    const message = {
+      id: "message-hydration",
+      kind: "agent_text" as const,
+      createdAt: "2026-08-23T00:00:00.000Z",
+      text: "Retain this in the reconnect snapshot",
+    };
+    await (supervisor as unknown as {
+      upsert(session: PickyAgentSession, options: { emitSession: boolean }): Promise<void>;
+    }).upsert({ ...session, messages: [message] }, { emitSession: false });
+
+    const metaUpdate = nextEvent(ws);
+    await (supervisor as unknown as {
+      patch(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void>;
+    }).patch(session.id, { status: "completed", lastSummary: "Done" });
+
+    await expect(metaUpdate).resolves.toMatchObject({
+      type: "sessionMetaUpdated",
+      session: { id: session.id, status: "completed", lastSummary: "Done" },
+    });
+    const event = await metaUpdate;
+    if (event.type === "sessionMetaUpdated") {
+      expect(event.session).not.toHaveProperty("messages");
+    }
+
+    ws.send(JSON.stringify({ id: "cmd-list-thin-meta", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
+    const snapshot = await waitForEvent(ws, "sessionSnapshot");
+    expect(snapshot).toMatchObject({
+      sessions: [{ id: session.id, messages: [message] }],
+    });
+    ws.close();
+  });
+
   it("returns session diff responses only to the requesting client", async () => {
     const requester = await connectWithHello();
     const observer = await connectWithHello();

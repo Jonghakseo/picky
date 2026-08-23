@@ -429,7 +429,7 @@ Examples:
       // event today. Use a short ack timeout and resolve as soon as a session update
       // tagged with the same session id arrives, which the supervisor emits when the
       // queued follow-up lands.
-      // For v1 we simply send the command and exit on the next sessionUpdated for
+      // Exit on the next session update (full lifecycle or thin metadata) for
       // this session, with a small grace period.
       void options;
       await sendPickleInput(connection, "followUp", sessionId, text);
@@ -449,7 +449,7 @@ Examples:
       const connection = await loadCliConnection();
       await ensureSessionIsSteerable(connection, sessionId, "abort");
       await sendCommand(connection, { type: "controlPickle", pickleAction: "abort", sessionId, ...callerFields }, {
-        matchEvent: (event) => event.type === "sessionUpdated" && event.session.id === sessionId ? event : null,
+        matchEvent: (event) => isSessionUpdateFor(event, sessionId) ? event : null,
         timeoutMs: 4_000,
       });
       process.stdout.write(`Abort requested for ${sessionId}\n`);
@@ -463,7 +463,7 @@ async function sendPickleInput(
   text: string,
 ): Promise<void> {
   await sendCommand(connection, { type: "controlPickle", pickleAction: type, sessionId, text, ...callerFields }, {
-    matchEvent: (event) => event.type === "sessionUpdated" && event.session.id === sessionId ? event : null,
+    matchEvent: (event) => isSessionUpdateFor(event, sessionId) ? event : null,
     timeoutMs: 4_000,
   });
 }
@@ -741,8 +741,8 @@ function matchMainReplyForContext(event: EventEnvelope, ack: ExternalEntryAck): 
   if (event.type === "quickReply" && (event as { contextId?: string }).contextId === ack.contextId) {
     return (event as { text?: string }).text ?? "";
   }
-  if (ack.sessionId && event.type === "sessionUpdated") {
-    const session = (event as { session?: { id?: string; status?: string; finalAnswer?: string; lastSummary?: string } }).session;
+  if (ack.sessionId && isSessionUpdate(event)) {
+    const session = event.session;
     if (session?.id === ack.sessionId && (session.status === "completed" || session.status === "failed" || session.status === "cancelled")) {
       return session.finalAnswer ?? session.lastSummary ?? "";
     }
@@ -755,13 +755,21 @@ function matchMainReplyForContext(event: EventEnvelope, ack: ExternalEntryAck): 
  * reaches a terminal status and surface its final answer.
  */
 function matchPickleFinalAnswerForSession(event: EventEnvelope, ack: ExternalEntryAck): string | null {
-  if (!ack.sessionId || event.type !== "sessionUpdated") return null;
-  const session = (event as { session?: { id?: string; status?: string; finalAnswer?: string; lastSummary?: string } }).session;
+  if (!ack.sessionId || !isSessionUpdate(event)) return null;
+  const session = event.session;
   if (session?.id !== ack.sessionId) return null;
   if (session.status === "completed" || session.status === "failed" || session.status === "cancelled") {
     return session.finalAnswer ?? session.lastSummary ?? "";
   }
   return null;
+}
+
+function isSessionUpdate(event: EventEnvelope): event is Extract<EventEnvelope, { type: "sessionUpdated" | "sessionMetaUpdated" }> {
+  return event.type === "sessionUpdated" || event.type === "sessionMetaUpdated";
+}
+
+function isSessionUpdateFor(event: EventEnvelope, sessionId: string): event is Extract<EventEnvelope, { type: "sessionUpdated" | "sessionMetaUpdated" }> {
+  return isSessionUpdate(event) && event.session.id === sessionId;
 }
 
 function printAck(ack: ExternalEntryAck | EventEnvelope, asJson: boolean | undefined, defaultMessage: string): void {

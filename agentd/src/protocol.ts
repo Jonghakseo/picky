@@ -337,6 +337,13 @@ export const PickyAgentSessionSchema = z.object({
 export type PickyAgentSessionParsed = z.infer<typeof PickyAgentSessionSchema>;
 export type PickyAgentSession = Omit<PickyAgentSessionParsed, "messages" | "queuedSteers" | "queuedFollowUps" | "steeringMode" | "followUpMode" | "activitySummary" | "subagentRuns"> & Partial<Pick<PickyAgentSessionParsed, "messages" | "queuedSteers" | "queuedFollowUps" | "steeringMode" | "followUpMode" | "activitySummary" | "subagentRuns">>;
 
+// Patch-driven metadata updates deliberately omit the conversation journal. Live
+// clients receive message mutations through the ordered sessionMessage* events,
+// while reconnect/sessionSnapshot and lifecycle sessionUpdated events retain full
+// message hydration.
+export const PickyAgentSessionMetaSchema = PickyAgentSessionSchema.omit({ messages: true });
+export type PickyAgentSessionMeta = z.infer<typeof PickyAgentSessionMetaSchema>;
+
 export const PickyPointerOverlayRequestSchema = z.object({
   id: z.string().min(1),
   contextId: z.string().optional(),
@@ -638,6 +645,7 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
   }),
   EventBaseSchema.extend({ type: z.literal("sessionSnapshot"), sessions: z.array(PickyAgentSessionSchema) }),
   EventBaseSchema.extend({ type: z.literal("sessionUpdated"), session: PickyAgentSessionSchema }),
+  EventBaseSchema.extend({ type: z.literal("sessionMetaUpdated"), session: PickyAgentSessionMetaSchema }),
   // Explicit signal that a session's `archived` flag was just (un)set on the
   // daemon side. Picky's session view model trusts THIS event to update its
   // local `manuallyArchivedSessionIDs` UserDefaults; it deliberately ignores

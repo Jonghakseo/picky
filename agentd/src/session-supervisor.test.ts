@@ -1025,7 +1025,7 @@ describe("SessionSupervisor", () => {
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir), { sessionIdFactory: () => "pending-create-steer-order" });
     await supervisor.load();
     const summaries: string[] = [];
-    supervisor.on("session", (session: PickyAgentSession) => {
+    supervisor.on("sessionMeta", (session: PickyAgentSession) => {
       if (session.id === "pending-create-steer-order" && session.lastSummary) summaries.push(session.lastSummary);
     });
 
@@ -2065,7 +2065,7 @@ describe("SessionSupervisor", () => {
     await supervisor.load();
     const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
     const statusTransitions: string[] = [];
-    supervisor.on("session", (session: PickyAgentSession) => {
+    supervisor.on("sessionMeta", (session: PickyAgentSession) => {
       if (session.id === pickle.id) statusTransitions.push(`${session.status}:${session.lastSummary}`);
     });
 
@@ -5467,7 +5467,7 @@ describe("SessionSupervisor", () => {
     expect(updated.artifacts.some((artifact) => artifact.kind === "github" && artifact.url === "https://github.com/example/product/pull/2993")).toBe(true);
   });
 
-  it("emits terminal session update before terminal artifacts", async () => {
+  it("emits terminal session meta update before terminal artifacts", async () => {
     // Use a link in the final answer so the materializer emits a github
     // artifact at terminal status — this is the only artifact type produced
     // automatically now that session report file generation is gone.
@@ -5475,22 +5475,22 @@ describe("SessionSupervisor", () => {
     const runtime = new ManualRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     const events: string[] = [];
-    supervisor.on("session", (updated) => {
-      if (updated.status === "completed") events.push("session:completed");
+    supervisor.on("sessionMeta", (updated) => {
+      if (updated.status === "completed") events.push("sessionMeta:completed");
     });
     supervisor.on("artifact", (_sessionId, artifact) => events.push(`artifact:${artifact.kind}`));
     // Emit the GitHub URL inside the assistant's final answer so it shows up in
     // session.finalAnswer when the materializer runs at terminal status — not in
     // the initial context (which would emit the artifact at create time, before
-    // session:completed).
+    // sessionMeta:completed).
     const session = await supervisor.create(context("ordering terminal"));
 
     runtime.handle?.emit({ type: "assistant_delta", delta: "Done. PR: https://github.com/acme/repo/pull/99" });
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
 
-    expect(events.indexOf("session:completed")).toBeGreaterThanOrEqual(0);
-    expect(events.indexOf("artifact:github")).toBeGreaterThan(events.indexOf("session:completed"));
+    expect(events.indexOf("sessionMeta:completed")).toBeGreaterThanOrEqual(0);
+    expect(events.indexOf("artifact:github")).toBeGreaterThan(events.indexOf("sessionMeta:completed"));
     expect(supervisor.get(session.id)?.status).toBe("completed");
   });
 
@@ -5583,13 +5583,13 @@ describe("SessionSupervisor", () => {
     expect(updated.logs.some((line) => line.startsWith("extension ui answer:"))).toBe(false);
   });
 
-  it("emits waiting_for_input session update before extension UI request", async () => {
+  it("emits waiting_for_input session meta update before extension UI request", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     const events: string[] = [];
-    supervisor.on("session", (updated) => {
-      if (updated.status === "waiting_for_input") events.push("session:waiting_for_input");
+    supervisor.on("sessionMeta", (updated) => {
+      if (updated.status === "waiting_for_input") events.push("sessionMeta:waiting_for_input");
     });
     supervisor.on("extensionUiRequest", (request) => events.push(`extension:${request.id}`));
     const session = await supervisor.create(context("extension ordering"));
@@ -5601,7 +5601,7 @@ describe("SessionSupervisor", () => {
     });
     await settle();
 
-    expect(events).toEqual(["session:waiting_for_input", "extension:question-1"]);
+    expect(events).toEqual(["sessionMeta:waiting_for_input", "extension:question-1"]);
     expect(supervisor.get(session.id)?.pendingExtensionUiRequest?.id).toBe("question-1");
   });
 

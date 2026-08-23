@@ -1943,13 +1943,13 @@ export class SessionSupervisor extends EventEmitter {
       ? { archived: true, archivedAt: new Date().toISOString() }
       : { archived: false, archivedAt: undefined };
     await this.patch(sessionId, patch);
-    // Emit a dedicated event in addition to the patch-driven sessionUpdated so
-    // the client knows this archive-state change is authoritative (rather than
+    // Emit a dedicated event in addition to the patch-driven sessionMetaUpdated
+    // so the client knows this archive-state change is authoritative (rather than
     // a stale `archived` field on an unrelated update). Picky's view model
     // mirrors this into its local manuallyArchivedSessionIDs UserDefaults so
     // tool-initiated unarchive (picky_unarchive_pickle) actually pops the
     // dock card back — the local intent set is the source of truth for dock
-    // placement and is otherwise never touched by remote sessionUpdated.
+    // placement and is otherwise never touched by remote sessionUpdated/sessionMetaUpdated.
     this.emit("sessionArchivedAuthoritative", sessionId, archived);
     return this.mustGet(sessionId);
   }
@@ -2901,7 +2901,7 @@ export class SessionSupervisor extends EventEmitter {
         ? titleForEmptyPickleSession({ ...(nextContext ?? {}), cwd } as PickyContextPacket)
         : current.title,
       sessionFilePath: event.sessionFilePath,
-    }));
+    }), { emitFullSession: true });
     logAgentd("runtime session replaced", { sessionId, reason: event.reason, cwd, sessionFilePath: event.sessionFilePath });
   }
 
@@ -2940,10 +2940,13 @@ export class SessionSupervisor extends EventEmitter {
     for (const artifact of materialized.emittedArtifacts) this.emit("artifact", sessionId, artifact);
   }
 
-  private async patch(sessionId: string, patch: Partial<PickyAgentSession>, options: { emitSession?: boolean } = {}): Promise<void> {
+  private async patch(sessionId: string, patch: Partial<PickyAgentSession>, options: { emitSession?: boolean; emitFullSession?: boolean } = {}): Promise<void> {
     await this.runSessionWrite(sessionId, async () => {
       const session = { ...this.mustGet(sessionId), ...patch, updatedAt: new Date().toISOString() };
-      await this.upsert(session, options);
+      await this.upsert(session, { emitSession: false });
+      if (options.emitSession ?? true) {
+        this.emit(options.emitFullSession ? "session" : "sessionMeta", session);
+      }
     });
   }
 

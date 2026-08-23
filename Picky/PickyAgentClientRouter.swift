@@ -899,6 +899,12 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         switch event {
         case .sessionUpdated(let session):
             rememberSession(session, ownerKey: ownerKey)
+        case .sessionMetaUpdated(var session):
+            // A thin update cannot hydrate a session that this router has not
+            // seen in a full snapshot. Preserve the cached journal otherwise.
+            guard let existing = sessionCache[session.id] else { return }
+            session.messages = existing.messages
+            rememberSession(session, ownerKey: ownerKey)
         case .sessionSnapshot(let snapshot):
             let snapshotSessionIDs = Set(snapshot.sessions.map(\.id))
             if snapshot.isComplete {

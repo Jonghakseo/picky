@@ -948,7 +948,7 @@ struct PickyAgentClientRouterTests {
             createdAt: Date(),
             updatedAt: Date(),
             logs: ["persisted log"],
-            tools: [],
+            tools: [PickyToolActivity(toolCallId: "t-1", name: "bash", status: "succeeded", preview: "ran tests")],
             artifacts: [],
             changedFiles: [],
             messages: [firstMessage]
@@ -970,6 +970,7 @@ struct PickyAgentClientRouterTests {
         var completedSession = session
         completedSession.status = .completed
         completedSession.logs = []
+        completedSession.tools = []
         primary.emit(.protocolEvent(PickyEventEnvelope(
             id: "thin-meta",
             protocolVersion: pickyAgentProtocolVersion,
@@ -985,6 +986,7 @@ struct PickyAgentClientRouterTests {
         #expect(summary.status == .completed)
         #expect(summary.messages.isEmpty)
         #expect(summary.logs == ["persisted log"])
+        #expect(summary.tools.map(\.toolCallId) == ["t-1"])
         #expect(summary.messageJournalAvailable == false)
     }
 

@@ -5227,6 +5227,7 @@ struct PickySessionViewModelTests {
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "live-conversation", status: "running"))))
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "live-conversation", messageId: "m-1", text: "rendered answer", seq: 1))))
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionQueueUpdated(sessionId: "live-conversation", steering: [], followUp: ["queued follow-up"], steeringMode: nil, followUpMode: nil, seq: 2))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.tool(sessionId: "live-conversation", toolCallId: "t-1", name: "bash", status: "succeeded", preview: "ran tests"))))
 
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMetaUpdated(id: "live-conversation", status: "completed", summary: "Done", updatedAt: "2026-05-01T00:00:05.000Z"))))
 
@@ -5235,6 +5236,7 @@ struct PickySessionViewModelTests {
         #expect(card.lastSummary == "Done")
         #expect(card.messages.map(\.text) == ["rendered answer"])
         #expect(card.queuedFollowUps.map(\.text) == ["queued follow-up"])
+        #expect(card.tools.map(\.toolCallId) == ["t-1"])
     }
 
     @MainActor @Test func sessionMetaUpdatedBeforeHydrationDeliversTerminalNotificationAfterSnapshot() {
@@ -5665,13 +5667,11 @@ private enum EventJSON {
         summary: String = "Started",
         createdAt: String = "2026-05-01T00:00:00.000Z",
         updatedAt: String = "2026-05-01T00:00:00.000Z",
-        logs: [String] = [],
         cwd: String = testProjectCwd
     ) -> String {
-        let encodedLogs = String(decoding: try! JSONEncoder().encode(logs), as: UTF8.self)
         let encodedCwd = String(decoding: try! JSONEncoder().encode(cwd), as: UTF8.self)
         return """
-        {"id":"meta-\(id)-\(status)","protocolVersion":"2026-08-23","timestamp":"\(updatedAt)","type":"sessionMetaUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":\(encodedCwd),"createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]}}
+        {"id":"meta-\(id)-\(status)","protocolVersion":"2026-08-23","timestamp":"\(updatedAt)","type":"sessionMetaUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":\(encodedCwd),"createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","artifacts":[],"changedFiles":[]}}
         """
     }
 

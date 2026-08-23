@@ -914,6 +914,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
             guard let existing = sessionCache[session.id] else { return }
             session.messages = existing.messages
             session.logs = existing.logs
+            session.tools = existing.tools
             rememberSession(session, ownerKey: ownerKey)
         case .sessionSnapshot(let snapshot):
             let snapshotSessionIDs = Set(snapshot.sessions.map(\.id))

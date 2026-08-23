@@ -2011,9 +2011,10 @@ final class PickySessionListViewModel: ObservableObject {
         }
         // These are owned by ordered granular events while a session is live.
         // Carrying the existing projection also prevents a metadata event from
-        // looking like a fresh empty Pi session when it omits `messages` and
-        // `logs`.
+        // looking like a fresh empty Pi session when it omits `messages`,
+        // `logs`, and `tools`.
         incomingCard.messages = previousCard.messages
+        incomingCard.tools = previousCard.tools
         incomingCard.logPreview = previousCard.logPreview
         incomingCard.lastRequestText = previousCard.lastRequestText
         incomingCard.lastRequestAt = previousCard.lastRequestAt

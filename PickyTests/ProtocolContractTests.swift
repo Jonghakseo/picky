@@ -25,6 +25,7 @@ struct ProtocolContractTests {
         #expect(session.status == .running)
         #expect(session.messages.isEmpty)
         #expect(session.logs.isEmpty)
+        #expect(session.tools.isEmpty)
     }
 
     @Test func decodesEveryProtocolFixture() throws {

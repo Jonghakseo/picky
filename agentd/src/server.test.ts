@@ -63,9 +63,15 @@ describe("AgentdServer", () => {
       text: "Retain this in the reconnect snapshot",
     };
     const largeLog = "x".repeat(1_000_000);
+    const accumulatedTools = Array.from({ length: 200 }, (_, index) => ({
+      toolCallId: `tool-${index}`,
+      name: "bash",
+      status: "succeeded" as const,
+      preview: "p".repeat(400),
+    }));
     await (supervisor as unknown as {
       upsert(session: PickyAgentSession, options: { emitSession: boolean }): Promise<void>;
-    }).upsert({ ...session, messages: [message], logs: [largeLog] }, { emitSession: false });
+    }).upsert({ ...session, messages: [message], logs: [largeLog], tools: accumulatedTools }, { emitSession: false });
 
     const metaUpdate = nextEvent(ws);
     await (supervisor as unknown as {
@@ -80,6 +86,7 @@ describe("AgentdServer", () => {
     if (event.type === "sessionMetaUpdated") {
       expect(event.session).not.toHaveProperty("messages");
       expect(event.session).not.toHaveProperty("logs");
+      expect(event.session).not.toHaveProperty("tools");
       expect(Buffer.byteLength(JSON.stringify(event))).toBeLessThan(2_000);
     }
 
@@ -91,6 +98,7 @@ describe("AgentdServer", () => {
     if (snapshot.type === "sessionSnapshot") {
       const hydratedSession = snapshot.sessions.find((candidate) => candidate.id === session.id);
       expect(hydratedSession?.logs).toEqual([`${"x".repeat(600)}…`]);
+      expect(hydratedSession?.tools).toHaveLength(accumulatedTools.length);
     }
     ws.close();
   });

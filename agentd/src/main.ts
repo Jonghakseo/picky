@@ -5,6 +5,7 @@ import { PROTOCOL_VERSION } from "./protocol.js";
 import { logAgentd } from "./local-log.js";
 import { parseParentPid, startParentExitWatcher } from "./parent-watchdog.js";
 import { PARENT_EXIT_FORCE_SHUTDOWN_MS } from "./domain/shutdown-policy.js";
+import { installInternalPickyCli } from "./application/internal-picky-cli.js";
 
 // pi extensions run in-process within agentd. A throw from a passive hook
 // (e.g. an idle-timer screensaver calling `ctx.ui.custom`, or an extension
@@ -59,6 +60,8 @@ if (config.mode === "primary") {
     startedAt: new Date().toISOString(),
   });
   logAgentd("connection info written", { path: connectionInfoPath });
+  const cliPath = await installInternalPickyCli({ appSupportDir: config.appSupportDir });
+  logAgentd("main-agent picky CLI installed", { path: cliPath });
 }
 
 console.log(`picky-agentd listening on 127.0.0.1:${boundPort}`);

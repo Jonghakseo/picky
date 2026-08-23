@@ -1,0 +1,10 @@
+{
+  "id": "cmd-create-pickle-from-main-001",
+  "protocolVersion": "2026-08-23",
+  "type": "createPickleFromMain",
+  "caller": "mainAgent",
+  "title": "Release audit",
+  "instructions": "Inspect merged changes and report risks",
+  "cwd": "/tmp/product",
+  "group": "Release"
+}

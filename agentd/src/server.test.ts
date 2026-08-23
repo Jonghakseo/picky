@@ -1148,6 +1148,56 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
+  it("creates a Pickle from the active main context for the internal CLI", async () => {
+    const app = await connectWithHello();
+    app.ws.send(JSON.stringify({
+      id: "cmd-register-main-cli-handoff",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "registerAppCapabilities",
+      capabilities: ["pickleHandoff", "externalEntry"],
+    }));
+    await waitForRegisteredCapability("pickleHandoff");
+    const activeContext = context("delegate from main context");
+    vi.spyOn(supervisor, "currentMainContext").mockReturnValue(activeContext);
+
+    const cli = await connectWithHello();
+    cli.ws.send(JSON.stringify({
+      id: "cmd-main-cli-create",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "createPickleFromMain",
+      caller: "mainAgent",
+      title: "Audit",
+      instructions: "Inspect the release",
+      group: "Release",
+    }));
+
+    const request = await waitForEvent(app.ws, "pickleHandoffRequested");
+    expect(request).toMatchObject({
+      type: "pickleHandoffRequested",
+      context: { id: activeContext.id },
+      title: "Audit",
+      instructions: "Inspect the release",
+    });
+    if (request.type !== "pickleHandoffRequested") throw new Error("expected handoff request");
+    const ackPromise = waitForEvent(cli.ws, "externalEntryAck");
+    app.ws.send(JSON.stringify({
+      id: "cmd-complete-main-cli-handoff",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "completePickleHandoff",
+      requestId: request.requestId,
+      sessionId: "pickle-main-cli",
+      title: "Audit",
+      cwd: "/tmp",
+    }));
+
+    const accepted = await waitForEvent(app.ws, "externalEntryAccepted");
+    expect(accepted).toMatchObject({ sessionId: "pickle-main-cli", group: "Release" });
+    const ack = await ackPromise;
+    expect(ack).toMatchObject({ commandId: "cmd-main-cli-create", kind: "createPickle", sessionId: "pickle-main-cli" });
+    app.ws.close();
+    cli.ws.close();
+  });
+
   it("requests child-aware Pickle bridge operations from a capable app client", async () => {
     const { ws } = await connectWithHello();
     ws.send(JSON.stringify({ id: "cmd-register", protocolVersion: PROTOCOL_VERSION, type: "registerAppCapabilities", capabilities: ["pickleBridge"] }));
@@ -1166,6 +1216,139 @@ describe("AgentdServer", () => {
       sessions: [expect.objectContaining({ id: "child-pickle" })],
       groups: [expect.objectContaining({ id: "research", memberSessionIds: ["child-pickle"] })],
     });
+    ws.close();
+  });
+
+  it("round-trips main-agent Pickle group management through the app bridge", async () => {
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({ id: "cmd-register-group-bridge", protocolVersion: PROTOCOL_VERSION, type: "registerAppCapabilities", capabilities: ["pickleBridge"] }));
+    await waitForRegisteredCapability("pickleBridge");
+
+    const pending = server.requestPickleBridgeFromApp({
+      operation: "manageGroups",
+      groupAction: "addMembers",
+      groupId: "research",
+      sessionIds: ["pickle-1", "pickle-2"],
+    });
+    const request = await nextEvent(ws);
+    expect(request).toMatchObject({
+      type: "pickleBridgeRequested",
+      operation: "manageGroups",
+      groupAction: "addMembers",
+      groupId: "research",
+      sessionIds: ["pickle-1", "pickle-2"],
+    });
+    if (request.type !== "pickleBridgeRequested") throw new Error("expected bridge request");
+
+    const groups = [{ id: "research", name: "Research", color: 6, memberSessionIds: ["pickle-1", "pickle-2"], collapsed: false }];
+    ws.send(JSON.stringify({
+      id: "cmd-complete-group-bridge",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "completePickleBridgeRequest",
+      requestId: request.requestId,
+      groups,
+    }));
+
+    await expect(pending).resolves.toEqual({ sessions: undefined, groups, session: undefined, delivered: undefined });
+    ws.close();
+  });
+
+  it("routes CLI dock-group mutations through the app-owned bridge", async () => {
+    const app = await connectWithHello();
+    app.ws.send(JSON.stringify({ id: "cmd-register-cli-groups", protocolVersion: PROTOCOL_VERSION, type: "registerAppCapabilities", capabilities: ["pickleBridge"] }));
+    await waitForRegisteredCapability("pickleBridge");
+    const cli = await connectWithHello();
+
+    cli.ws.send(JSON.stringify({
+      id: "cmd-cli-group-add",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "manageDockGroups",
+      caller: "mainAgent",
+      groupAction: "addMembers",
+      groupId: "research",
+      sessionIds: ["pickle-1", "pickle-2"],
+    }));
+    const request = await waitForEvent(app.ws, "pickleBridgeRequested");
+    expect(request).toMatchObject({
+      operation: "manageGroups",
+      groupAction: "addMembers",
+      groupId: "research",
+      sessionIds: ["pickle-1", "pickle-2"],
+    });
+    if (request.type !== "pickleBridgeRequested") throw new Error("expected bridge request");
+    const groups = [{ id: "research", name: "Research", color: 6, memberSessionIds: ["pickle-1", "pickle-2"], collapsed: false }];
+    app.ws.send(JSON.stringify({
+      id: "cmd-complete-cli-groups",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "completePickleBridgeRequest",
+      requestId: request.requestId,
+      groups,
+    }));
+
+    const snapshot = await waitForEvent(cli.ws, "dockGroupsSnapshot");
+    expect(snapshot).toMatchObject({ groups });
+    app.ws.close();
+    cli.ws.close();
+  });
+
+  it("routes main-agent CLI session operations through the child-aware app bridge", async () => {
+    const app = await connectWithHello();
+    app.ws.send(JSON.stringify({ id: "cmd-register-cli-sessions", protocolVersion: PROTOCOL_VERSION, type: "registerAppCapabilities", capabilities: ["pickleBridge"] }));
+    await waitForRegisteredCapability("pickleBridge");
+    const cli = await connectWithHello();
+    const session = makeSession({ id: "pickle-cli" });
+
+    cli.ws.send(JSON.stringify({ id: "cmd-cli-list", protocolVersion: PROTOCOL_VERSION, type: "listPickles", caller: "mainAgent" }));
+    const listRequest = await waitForEvent(app.ws, "pickleBridgeRequested");
+    expect(listRequest).toMatchObject({ operation: "listSessions" });
+    if (listRequest.type !== "pickleBridgeRequested") throw new Error("expected list bridge request");
+    const listSnapshot = waitForEvent(cli.ws, "sessionSnapshot");
+    app.ws.send(JSON.stringify({ id: "cmd-complete-cli-list", protocolVersion: PROTOCOL_VERSION, type: "completePickleBridgeRequest", requestId: listRequest.requestId, sessions: [session] }));
+    await expect(listSnapshot).resolves.toMatchObject({ sessions: [expect.objectContaining({ id: "pickle-cli" })] });
+
+    cli.ws.send(JSON.stringify({ id: "cmd-cli-steer", protocolVersion: PROTOCOL_VERSION, type: "controlPickle", caller: "mainAgent", pickleAction: "steer", sessionId: "pickle-cli", text: "focus" }));
+    const steerRequest = await waitForEvent(app.ws, "pickleBridgeRequested");
+    expect(steerRequest).toMatchObject({ operation: "steer", sessionId: "pickle-cli", text: "focus" });
+    if (steerRequest.type !== "pickleBridgeRequested") throw new Error("expected steer bridge request");
+    const steerUpdate = waitForEvent(cli.ws, "sessionUpdated");
+    app.ws.send(JSON.stringify({ id: "cmd-complete-cli-steer", protocolVersion: PROTOCOL_VERSION, type: "completePickleBridgeRequest", requestId: steerRequest.requestId, session }));
+    await expect(steerUpdate).resolves.toMatchObject({ session: { id: "pickle-cli" } });
+
+    cli.ws.send(JSON.stringify({ id: "cmd-cli-archive", protocolVersion: PROTOCOL_VERSION, type: "setPickleArchived", caller: "mainAgent", sessionId: "pickle-cli", archived: true }));
+    const archiveRequest = await waitForEvent(app.ws, "pickleBridgeRequested");
+    expect(archiveRequest).toMatchObject({ operation: "setArchived", sessionId: "pickle-cli", archived: true });
+    if (archiveRequest.type !== "pickleBridgeRequested") throw new Error("expected archive bridge request");
+    const archiveAck = waitForEvent(cli.ws, "sessionArchivedAuthoritative");
+    app.ws.send(JSON.stringify({ id: "cmd-complete-cli-archive", protocolVersion: PROTOCOL_VERSION, type: "completePickleBridgeRequest", requestId: archiveRequest.requestId, delivered: true }));
+    await expect(archiveAck).resolves.toMatchObject({ sessionId: "pickle-cli", archived: true });
+
+    cli.ws.send(JSON.stringify({ id: "cmd-cli-delete", protocolVersion: PROTOCOL_VERSION, type: "deletePickle", caller: "mainAgent", sessionId: "pickle-cli" }));
+    const deleteRequest = await waitForEvent(app.ws, "pickleBridgeRequested");
+    expect(deleteRequest).toMatchObject({ operation: "delete", sessionId: "pickle-cli" });
+    if (deleteRequest.type !== "pickleBridgeRequested") throw new Error("expected delete bridge request");
+    const deleteSnapshot = waitForEvent(cli.ws, "sessionSnapshot");
+    app.ws.send(JSON.stringify({ id: "cmd-complete-cli-delete", protocolVersion: PROTOCOL_VERSION, type: "completePickleBridgeRequest", requestId: deleteRequest.requestId, sessions: [], delivered: true }));
+    await expect(deleteSnapshot).resolves.toMatchObject({ sessions: [] });
+
+    app.ws.close();
+    cli.ws.close();
+  });
+
+  it("rejects disabled main-agent CLI capabilities before side effects", async () => {
+    await supervisor.setDisabledBuiltinTools(["picky_abort_pickle"]);
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({
+      id: "cmd-disabled-main-cli-abort",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "controlPickle",
+      pickleAction: "abort",
+      caller: "mainAgent",
+      sessionId: "pickle-1",
+    }));
+
+    const error = await waitForEvent(ws, "error");
+    expect(error).toMatchObject({ commandId: "cmd-disabled-main-cli-abort" });
+    if (error.type === "error") expect(error.message).toContain("picky_abort_pickle");
     ws.close();
   });
 

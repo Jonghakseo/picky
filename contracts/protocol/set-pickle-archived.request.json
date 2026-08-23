@@ -1,0 +1,8 @@
+{
+  "id": "cmd-set-pickle-archived-001",
+  "protocolVersion": "2026-08-23",
+  "type": "setPickleArchived",
+  "caller": "mainAgent",
+  "sessionId": "pickle-1",
+  "archived": true
+}

@@ -2,6 +2,7 @@ import { Command, Option } from "commander";
 import type { EventEnvelope, PickyAgentSession } from "./protocol.js";
 import { loadCliConnection, PickyCliDaemonNotRunningError } from "./cli/connection-loader.js";
 import { sendCommand, sendCommandAndWaitForReply, PickyCliConnectionError, PickyCliServerError, PickyCliTimeoutError } from "./cli/ws-client.js";
+import { sliceUtf16Safe } from "./domain/safe-truncate.js";
 
 const VERSION = "0.1.0";
 
@@ -9,13 +10,29 @@ interface SharedOptions {
   json?: boolean;
 }
 
+interface PickleCreateOptions extends SharedOptions {
+  instructions?: string;
+  empty?: boolean;
+  context?: boolean;
+  cwd?: string;
+  group?: string;
+  wait?: boolean;
+}
+
 type SessionSnapshotEvent = Extract<EventEnvelope, { type: "sessionSnapshot" }>;
 type SessionArchivedAuthoritativeEvent = Extract<EventEnvelope, { type: "sessionArchivedAuthoritative" }>;
+
+const isMainAgentCaller = process.env.PICKY_CLI_CALLER === "mainAgent";
+const callerFields = isMainAgentCaller ? { caller: "mainAgent" as const } : {};
+const MAIN_AGENT_LIST_DEFAULT = 10;
+const MAIN_AGENT_LIST_MAX = 20;
+const MAIN_AGENT_ID_MAX_CHARS = 128;
+const MAIN_AGENT_TEXT_MAX_CHARS = 200;
 
 const program = new Command();
 program
   .name("picky")
-  .description("Programmatic interface to a running Picky.app. Submits text into the main session, creates Pickles, and lists/aborts/follows up on existing Pickles.")
+  .description("Programmatic interface to a running Picky.app. Creates and manages Pickles, dock groups, push-to-talk, and main-session submissions.")
   .version(VERSION, "-v, --version", "Print the picky CLI version and exit")
   .addHelpText("after", `
 Examples:
@@ -27,11 +44,15 @@ Examples:
   $ picky pickle-list --json
   $ picky pickle-list --include-archived
   $ picky pickle-list --archived --query "sentry"
-  $ picky pickle-archive pickle-abc
+  $ picky pickle-remove pickle-abc
+  $ picky pickle-delete pickle-abc --confirm
   $ picky pickle-unarchive pickle-abc
-  $ picky pickle-group-list
-  $ picky pickle-followup pickle-abc "production 환경으로 다시"
+  $ picky pickle-steer pickle-abc "production 환경으로 다시"
   $ picky pickle-abort pickle-abc
+  $ picky pickle-group-list
+  $ picky pickle-group-create "Research" pickle-abc pickle-def
+  $ picky pickle-group-add group-abc pickle-ghi
+  $ picky pickle-group-remove group-abc
   $ picky ptt press
   $ picky ptt release
 
@@ -61,6 +82,7 @@ Examples:
 `)
   .action(async (text: string, options: SharedOptions & { context?: boolean; cwd?: string; wait?: boolean }) => {
     await runWithErrorHandling(async () => {
+      rejectForMainAgent("submit");
       const connection = await loadCliConnection();
       const command = {
         type: "submitMainFromExternal",
@@ -98,64 +120,71 @@ Examples:
   $ picky pickle-create "리서치" --instructions "경쟁사 조사" --group "Research"
 `)
   .option("--wait", "Keep the connection open until the Pickle finishes, then print its final answer (default: fire-and-forget)")
-  .action(async (title: string | undefined, options: SharedOptions & { instructions?: string; empty?: boolean; context?: boolean; cwd?: string; group?: string; wait?: boolean }) => {
-    await runWithErrorHandling(async () => {
-      const connection = await loadCliConnection();
-      const group = options.group !== undefined ? options.group.trim() : undefined;
-      if (options.group !== undefined && group?.length === 0) {
-        fail("--group cannot be empty", 64);
-      }
-      if (options.empty) {
-        if (title || options.instructions) {
-          fail("--empty cannot be combined with a title or --instructions", 64);
-        }
-        const emptyCmd = {
-          type: "createPickleFromExternal",
-          title: "Untitled Pickle",
-          instructions: "(empty pickle session)",
-          captureContext: options.context !== false,
-          ...(options.cwd ? { cwd: options.cwd } : {}),
-          ...(group ? { group } : {}),
-        } as const;
-        if (!options.wait) {
-          const ack = await sendCommand(connection, emptyCmd, { matchEvent: matchExternalEntryAck("createPickle") });
-          printAck(ack, options.json, "Created empty Pickle");
-          return;
-        }
-        const { ack, replyText } = await sendCommandAndWaitForReply<ExternalEntryAck>(connection, emptyCmd, {
-          matchAck: matchExternalEntryAckParsed("createPickle"),
-          matchReply: matchPickleFinalAnswerForSession,
-        });
-        printWaitResult(ack, replyText, options.json, "Created empty Pickle");
-        return;
-      }
-      if (!title) {
-        fail("Missing required <title>. Use `picky pickle-create --help` for usage, or pass --empty.", 64);
-      }
-      if (!options.instructions || options.instructions.trim().length === 0) {
-        fail("Missing required --instructions. Use `picky pickle-create --help` for usage, or pass --empty.", 64);
-      }
-      const namedCmd = {
-        type: "createPickleFromExternal",
-        title,
-        instructions: options.instructions,
-        captureContext: options.context !== false,
-        ...(options.cwd ? { cwd: options.cwd } : {}),
-        ...(group ? { group } : {}),
-      } as const;
-      if (!options.wait) {
-        const ack = await sendCommand(connection, namedCmd, { matchEvent: matchExternalEntryAck("createPickle") });
-        printAck(ack, options.json, "Created Pickle");
-        return;
-      }
-      const { ack, replyText } = await sendCommandAndWaitForReply<ExternalEntryAck>(connection, namedCmd, {
-        matchAck: matchExternalEntryAckParsed("createPickle"),
-        matchReply: matchPickleFinalAnswerForSession,
-      });
-      printWaitResult(ack, replyText, options.json, "Created Pickle");
-    });
+  .action(async (title: string | undefined, options: PickleCreateOptions) => {
+    await runWithErrorHandling(() => runPickleCreate(title, options));
   });
 void pickleCreate;
+
+async function runPickleCreate(title: string | undefined, options: PickleCreateOptions): Promise<void> {
+  if (isMainAgentCaller && options.wait) fail("--wait is not available from the Picky main agent", 64);
+  if (isMainAgentCaller && options.empty) fail("--empty is not available from the Picky main agent", 64);
+  const group = options.group?.trim();
+  if (options.group !== undefined && !group) fail("--group cannot be empty", 64);
+  const connection = await loadCliConnection();
+  if (options.empty) return await createEmptyPickle(connection, title, options, group);
+  return await createNamedPickle(connection, title, options, group);
+}
+
+async function createEmptyPickle(
+  connection: Awaited<ReturnType<typeof loadCliConnection>>,
+  title: string | undefined,
+  options: PickleCreateOptions,
+  group: string | undefined,
+): Promise<void> {
+  if (title || options.instructions) fail("--empty cannot be combined with a title or --instructions", 64);
+  const command = {
+    type: "createPickleFromExternal" as const,
+    title: "Untitled Pickle",
+    instructions: "(empty pickle session)",
+    captureContext: options.context !== false,
+    ...(options.cwd ? { cwd: options.cwd } : {}),
+    ...(group ? { group } : {}),
+  };
+  if (!options.wait) {
+    const ack = await sendCommand(connection, command, { matchEvent: matchExternalEntryAck("createPickle") });
+    printAck(ack, options.json, "Created empty Pickle");
+    return;
+  }
+  const { ack, replyText } = await sendCommandAndWaitForReply<ExternalEntryAck>(connection, command, {
+    matchAck: matchExternalEntryAckParsed("createPickle"),
+    matchReply: matchPickleFinalAnswerForSession,
+  });
+  printWaitResult(ack, replyText, options.json, "Created empty Pickle");
+}
+
+async function createNamedPickle(
+  connection: Awaited<ReturnType<typeof loadCliConnection>>,
+  title: string | undefined,
+  options: PickleCreateOptions,
+  group: string | undefined,
+): Promise<void> {
+  if (!title) fail("Missing required <title>. Use `picky pickle-create --help` for usage, or pass --empty.", 64);
+  const instructions = options.instructions?.trim();
+  if (!instructions) fail("Missing required --instructions. Use `picky pickle-create --help` for usage, or pass --empty.", 64);
+  const command = isMainAgentCaller
+    ? { type: "createPickleFromMain" as const, title, instructions, ...callerFields, ...(options.cwd ? { cwd: options.cwd } : {}), ...(group ? { group } : {}) }
+    : { type: "createPickleFromExternal" as const, title, instructions, captureContext: options.context !== false, ...(options.cwd ? { cwd: options.cwd } : {}), ...(group ? { group } : {}) };
+  if (!options.wait) {
+    const ack = await sendCommand(connection, command, { matchEvent: matchExternalEntryAck("createPickle") });
+    printAck(ack, options.json, "Created Pickle");
+    return;
+  }
+  const { ack, replyText } = await sendCommandAndWaitForReply<ExternalEntryAck>(connection, command, {
+    matchAck: matchExternalEntryAckParsed("createPickle"),
+    matchReply: matchPickleFinalAnswerForSession,
+  });
+  printWaitResult(ack, replyText, options.json, "Created Pickle");
+}
 
 program
   .command("pickle-list")
@@ -164,6 +193,7 @@ program
   .option("--include-archived", "Include archived Pickle sessions hidden from the Picky dock")
   .option("--archived", "List only archived Pickle sessions hidden from the Picky dock")
   .option("--query <text>", "Filter the selected Pickle set by id, title, cwd, status, summary, or final answer")
+  .option("--limit <count>", "Maximum rows to print (main-agent calls default to 10 and cap at 20)")
   .addHelpText("after", `
 Examples:
   $ picky pickle-list
@@ -171,14 +201,15 @@ Examples:
   $ picky pickle-list --archived
   $ picky pickle-list --archived --query "sentry"
 `)
-  .action(async (options: SharedOptions & { includeArchived?: boolean; archived?: boolean; query?: string }) => {
+  .action(async (options: SharedOptions & { includeArchived?: boolean; archived?: boolean; query?: string; limit?: string }) => {
     await runWithErrorHandling(async () => {
       if (options.archived && options.includeArchived) {
         fail("--archived cannot be combined with --include-archived", 64);
       }
+      if (isMainAgentCaller && options.json) fail("--json is not available from the Picky main agent; use --query and --limit", 64);
       const connection = await loadCliConnection();
       const snapshot = await fetchSessionSnapshot(connection);
-      const sessions = filterSessionsForList(snapshot.sessions, options);
+      const sessions = filterSessionsForList(snapshot.sessions, options).slice(0, parseListLimit(options.limit));
       const visibleSnapshot = { ...snapshot, sessions };
       if (options.json) {
         process.stdout.write(`${JSON.stringify(visibleSnapshot, null, 2)}\n`);
@@ -216,6 +247,40 @@ Examples:
   });
 
 program
+  .command("pickle-remove <session-id>")
+  .description("Safely remove a Pickle from the dock by archiving it.")
+  .action(async (sessionId: string) => {
+    await runWithErrorHandling(async () => {
+      const connection = await loadCliConnection();
+      const session = await requireSessionForArchiveAction(connection, sessionId);
+      if (session.archived === true) {
+        process.stdout.write(`Pickle already removed from dock: ${sessionId}\n`);
+        return;
+      }
+      await setPickleArchiveState(connection, sessionId, true);
+      process.stdout.write(`Removed Pickle from dock: ${sessionId}\n`);
+    });
+  });
+
+program
+  .command("pickle-delete <session-id>")
+  .description("Permanently delete an archived terminal Pickle. Requires --confirm.")
+  .option("--confirm", "Confirm permanent deletion")
+  .action(async (sessionId: string, options: { confirm?: boolean }) => {
+    await runWithErrorHandling(async () => {
+      if (!options.confirm) fail("pickle-delete requires --confirm", 64);
+      const connection = await loadCliConnection();
+      const session = await requireSessionForArchiveAction(connection, sessionId);
+      if (session.archived !== true) fail(`Pickle session ${sessionId} must be archived before permanent deletion`, 1);
+      if (!isTerminalStatus(session.status)) fail(`Pickle session ${sessionId} must be terminal before permanent deletion`, 1);
+      await sendCommand(connection, { type: "deletePickle", sessionId, ...callerFields }, {
+        matchEvent: (event) => event.type === "sessionSnapshot" && !event.sessions.some((candidate) => candidate.id === sessionId) ? event : null,
+      });
+      process.stdout.write(`Permanently deleted Pickle ${sessionId}\n`);
+    });
+  });
+
+program
   .command("pickle-unarchive <session-id>")
   .description("Restore an archived Pickle session so it reappears in the Picky dock, if it is still within the retention window.")
   .option("--json", "Emit the archive-state event JSON to stdout")
@@ -247,8 +312,9 @@ Examples:
 `)
   .action(async (options: SharedOptions) => {
     await runWithErrorHandling(async () => {
+      if (isMainAgentCaller && options.json) fail("--json is not available from the Picky main agent", 64);
       const connection = await loadCliConnection();
-      const snapshot = await sendCommand(connection, { type: "listDockGroups" }, {
+      const snapshot = await sendCommand(connection, { type: "listDockGroups", ...callerFields }, {
         matchEvent: (event) => (event.type === "dockGroupsSnapshot" ? event : null),
       });
       if (snapshot.type !== "dockGroupsSnapshot") return;
@@ -262,9 +328,63 @@ Examples:
         return;
       }
       for (const group of groups) {
-        const name = group.name.trim().length > 0 ? group.name : "(untitled)";
-        process.stdout.write(`${group.id}\t${name}\tmembers=${group.memberSessionIds.length}\n`);
+        const name = isMainAgentCaller
+          ? normalizeMainAgentListText(group.name, MAIN_AGENT_TEXT_MAX_CHARS) || "(untitled)"
+          : group.name.trim().length > 0 ? group.name : "(untitled)";
+        const members = isMainAgentCaller ? formatGroupMemberIDs(group.memberSessionIds) : String(group.memberSessionIds.length);
+        const id = isMainAgentCaller ? normalizeMainAgentListText(group.id, MAIN_AGENT_ID_MAX_CHARS) : group.id;
+        process.stdout.write(`${id}\t${name}\tmembers=${members}\n`);
       }
+    });
+  });
+
+program
+  .command("pickle-group-create <name> [session-ids...]")
+  .description("Create a persisted Picky dock group, optionally with existing Pickle session IDs.")
+  .action(async (name: string, sessionIds: string[]) => {
+    await runWithErrorHandling(async () => {
+      await runDockGroupMutation({ groupAction: "create", name, sessionIds });
+    });
+  });
+
+program
+  .command("pickle-group-add <group-id> <session-ids...>")
+  .description("Move existing Pickles into a dock group by exact IDs.")
+  .action(async (groupId: string, sessionIds: string[]) => {
+    await runWithErrorHandling(async () => {
+      await runDockGroupMutation({ groupAction: "addMembers", groupId, sessionIds });
+    });
+  });
+
+program
+  .command("pickle-group-remove-members <group-id> <session-ids...>")
+  .description("Move members out of a group while keeping the Pickles active in the top-level dock.")
+  .action(async (groupId: string, sessionIds: string[]) => {
+    await runWithErrorHandling(async () => {
+      await runDockGroupMutation({ groupAction: "removeMembers", groupId, sessionIds });
+    });
+  });
+
+program
+  .command("pickle-group-remove <group-id>")
+  .description("Remove a dock group and keep all of its Pickles active at top level.")
+  .action(async (groupId: string) => {
+    await runWithErrorHandling(async () => {
+      await runDockGroupMutation({ groupAction: "removeGroup", groupId });
+    });
+  });
+
+program
+  .command("pickle-group-delete <group-id>")
+  .description("Remove a dock group and archive every Pickle in it. Requires explicit confirmation flags.")
+  .option("--archive-members", "Archive every group member")
+  .option("--confirm", "Confirm the destructive group operation")
+  .action(async (groupId: string, options: { archiveMembers?: boolean; confirm?: boolean }) => {
+    await runWithErrorHandling(async () => {
+      if (!options.archiveMembers || !options.confirm) {
+        fail("pickle-group-delete requires --archive-members --confirm", 64);
+      }
+      await runDockGroupMutation({ groupAction: "archiveGroup", groupId });
     });
   });
 
@@ -282,6 +402,7 @@ Examples:
 `)
   .action(async (options: SharedOptions) => {
     await runWithErrorHandling(async () => {
+      rejectForMainAgent("ptt");
       const connection = await loadCliConnection();
       const ack = await sendCommand(connection, { type: "controlPushToTalkFromExternal", action: "press" }, {
         matchEvent: matchPushToTalkControlAck("press"),
@@ -300,6 +421,7 @@ Examples:
 `)
   .action(async (options: SharedOptions) => {
     await runWithErrorHandling(async () => {
+      rejectForMainAgent("ptt");
       const connection = await loadCliConnection();
       const ack = await sendCommand(connection, { type: "controlPushToTalkFromExternal", action: "release" }, {
         matchEvent: matchPushToTalkControlAck("release"),
@@ -308,6 +430,18 @@ Examples:
     });
   });
 void ptt;
+
+program
+  .command("pickle-steer <session-id> <text>")
+  .description("Steer an existing Pickle at its next steering point.")
+  .action(async (sessionId: string, text: string) => {
+    await runWithErrorHandling(async () => {
+      const connection = await loadCliConnection();
+      await ensureSessionIsSteerable(connection, sessionId, "follow-up");
+      await sendPickleInput(connection, "steer", sessionId, text);
+      process.stdout.write(`Steering sent to ${sessionId}\n`);
+    });
+  });
 
 program
   .command("pickle-followup <session-id> <text>")
@@ -327,20 +461,8 @@ Examples:
       // queued follow-up lands.
       // For v1 we simply send the command and exit on the next sessionUpdated for
       // this session, with a small grace period.
-      await sendCommand(connection, {
-        type: "followUp",
-        sessionId,
-        text,
-        ...(options.context === false ? {} : {}),
-      }, {
-        matchEvent: (event) => (event.type === "sessionUpdated" && (event as { session: { id: string } }).session.id === sessionId ? event : null),
-        timeoutMs: 4_000,
-      }).catch((error) => {
-        // followUp does not strictly need an ack — if no sessionUpdated arrives in time,
-        // the command was still sent. Surface only hard server errors.
-        if (error instanceof PickyCliServerError) throw error;
-        if (error instanceof PickyCliConnectionError) throw error;
-      });
+      void options;
+      await sendPickleInput(connection, "followUp", sessionId, text);
       process.stdout.write(`Queued follow-up for ${sessionId}\n`);
     });
   });
@@ -356,16 +478,68 @@ Examples:
     await runWithErrorHandling(async () => {
       const connection = await loadCliConnection();
       await ensureSessionIsSteerable(connection, sessionId, "abort");
-      await sendCommand(connection, { type: "abort", sessionId }, {
-        matchEvent: (event) => (event.type === "sessionUpdated" && (event as { session: { id: string } }).session.id === sessionId ? event : null),
+      await sendCommand(connection, { type: "controlPickle", pickleAction: "abort", sessionId, ...callerFields }, {
+        matchEvent: (event) => event.type === "sessionUpdated" && event.session.id === sessionId ? event : null,
         timeoutMs: 4_000,
-      }).catch((error) => {
-        if (error instanceof PickyCliServerError) throw error;
-        if (error instanceof PickyCliConnectionError) throw error;
       });
       process.stdout.write(`Abort requested for ${sessionId}\n`);
     });
   });
+
+async function sendPickleInput(
+  connection: Awaited<ReturnType<typeof loadCliConnection>>,
+  type: "steer" | "followUp",
+  sessionId: string,
+  text: string,
+): Promise<void> {
+  await sendCommand(connection, { type: "controlPickle", pickleAction: type, sessionId, text, ...callerFields }, {
+    matchEvent: (event) => event.type === "sessionUpdated" && event.session.id === sessionId ? event : null,
+    timeoutMs: 4_000,
+  });
+}
+
+async function runDockGroupMutation(input: {
+  groupAction: "create" | "addMembers" | "removeMembers" | "removeGroup" | "archiveGroup";
+  groupId?: string;
+  name?: string;
+  sessionIds?: string[];
+}): Promise<void> {
+  const connection = await loadCliConnection();
+  const snapshot = await sendCommand(connection, {
+    type: "manageDockGroups",
+    ...input,
+    ...callerFields,
+  }, {
+    matchEvent: (event) => event.type === "dockGroupsSnapshot" ? event : null,
+  });
+  if (snapshot.type !== "dockGroupsSnapshot") return;
+  process.stdout.write(`Updated Pickle dock groups (${snapshot.groups.length} groups)\n`);
+}
+
+function formatGroupMemberIDs(sessionIds: string[]): string {
+  if (sessionIds.length === 0) return "none";
+  const shown = sessionIds
+    .slice(0, 50)
+    .map((sessionId) => normalizeMainAgentListText(sessionId, MAIN_AGENT_ID_MAX_CHARS))
+    .join(",");
+  const remaining = sessionIds.length - 50;
+  return remaining > 0 ? `${shown},…(+${remaining})` : shown;
+}
+
+function parseListLimit(raw: string | undefined): number {
+  if (raw === undefined) return isMainAgentCaller ? MAIN_AGENT_LIST_DEFAULT : Number.MAX_SAFE_INTEGER;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) fail("--limit must be a positive integer", 64);
+  return isMainAgentCaller ? Math.min(parsed, MAIN_AGENT_LIST_MAX) : parsed;
+}
+
+function rejectForMainAgent(command: string): void {
+  if (isMainAgentCaller) fail(`${command} cannot be called from the Picky main agent`, 64);
+}
+
+function isTerminalStatus(status: PickyAgentSession["status"]): boolean {
+  return status === "completed" || status === "failed" || status === "cancelled";
+}
 
 /**
  * Sanity-check that the target Pickle exists and is not archived before we
@@ -378,8 +552,7 @@ Examples:
  * command at all.
  */
 async function ensureSessionIsSteerable(connection: Awaited<ReturnType<typeof loadCliConnection>>, sessionId: string, action: "follow-up" | "abort"): Promise<void> {
-  const snapshot = await fetchSessionSnapshot(connection);
-  const target = snapshot.sessions.find((session) => session.id === sessionId);
+  const target = await fetchSessionByID(connection, sessionId);
   if (!target) fail(`Pickle session not found: ${sessionId}`, 1);
   if (target.archived === true) {
     fail(`Pickle session ${sessionId} is archived; un-archive it from the Picky dock before sending a ${action}.`, 1);
@@ -387,14 +560,24 @@ async function ensureSessionIsSteerable(connection: Awaited<ReturnType<typeof lo
 }
 
 async function requireSessionForArchiveAction(connection: Awaited<ReturnType<typeof loadCliConnection>>, sessionId: string): Promise<PickyAgentSession> {
-  const snapshot = await fetchSessionSnapshot(connection);
-  const target = snapshot.sessions.find((session) => session.id === sessionId);
+  const target = await fetchSessionByID(connection, sessionId);
   if (!target) fail(`Pickle session not found: ${sessionId}`, 1);
   return target;
 }
 
+async function fetchSessionByID(connection: Awaited<ReturnType<typeof loadCliConnection>>, sessionId: string): Promise<PickyAgentSession | undefined> {
+  if (!isMainAgentCaller) {
+    const snapshot = await fetchSessionSnapshot(connection);
+    return snapshot.sessions.find((session) => session.id === sessionId);
+  }
+  const event = await sendCommand(connection, { type: "getPickle", sessionId, ...callerFields }, {
+    matchEvent: (candidate) => candidate.type === "sessionUpdated" && candidate.session.id === sessionId ? candidate : null,
+  });
+  return event.type === "sessionUpdated" ? event.session : undefined;
+}
+
 async function fetchSessionSnapshot(connection: Awaited<ReturnType<typeof loadCliConnection>>): Promise<SessionSnapshotEvent> {
-  return await sendCommand(connection, { type: "listSessions" }, {
+  return await sendCommand(connection, { type: "listPickles", ...callerFields }, {
     matchEvent: (event) => (event.type === "sessionSnapshot" ? event as SessionSnapshotEvent : null),
   });
 }
@@ -425,11 +608,30 @@ function formatSessionListRow(session: PickyAgentSession): string {
   const cwd = session.cwd ? ` cwd=${session.cwd}` : "";
   const archived = session.archived === true ? " archived=true" : "";
   const archivedAt = session.archived === true && session.archivedAt ? ` archivedAt=${session.archivedAt}` : "";
-  return `${session.id}\t${session.status}\t${session.title}${cwd}${archived}${archivedAt}`;
+  if (!isMainAgentCaller) return `${session.id}\t${session.status}\t${session.title}${cwd}${archived}${archivedAt}`;
+
+  const pendingInput = session.pendingExtensionUiRequest ? " pendingInput=true" : "";
+  const changedFiles = session.changedFiles.length > 0 ? ` changedFiles=${session.changedFiles.length}` : "";
+  const summarySource = session.lastSummary ?? session.finalAnswer;
+  const summary = summarySource
+    ? ` summary=${normalizeMainAgentListText(summarySource, MAIN_AGENT_TEXT_MAX_CHARS)}`
+    : "";
+  const id = normalizeMainAgentListText(session.id, MAIN_AGENT_ID_MAX_CHARS);
+  const title = normalizeMainAgentListText(session.title, MAIN_AGENT_TEXT_MAX_CHARS);
+  const normalizedCwd = session.cwd ? ` cwd=${normalizeMainAgentListText(session.cwd, MAIN_AGENT_TEXT_MAX_CHARS)}` : "";
+  return `${id}\t${session.status}\t${title}${normalizedCwd}${archived} updatedAt=${normalizeMainAgentListText(session.updatedAt, MAIN_AGENT_ID_MAX_CHARS)}${pendingInput}${changedFiles}${summary}`;
+}
+
+function normalizeMainAgentListText(value: string, maxChars: number): string {
+  return truncateCliText(value.replaceAll(/\s+/g, " ").trim(), maxChars);
+}
+
+function truncateCliText(value: string, maxChars: number): string {
+  return value.length <= maxChars ? value : `${sliceUtf16Safe(value, maxChars - 1)}…`;
 }
 
 async function setPickleArchiveState(connection: Awaited<ReturnType<typeof loadCliConnection>>, sessionId: string, archived: boolean): Promise<SessionArchivedAuthoritativeEvent> {
-  return await sendCommand(connection, { type: "setSessionArchived", sessionId, archived }, {
+  return await sendCommand(connection, { type: "setPickleArchived", sessionId, archived, ...callerFields }, {
     matchEvent: (event) => {
       if (event.type !== "sessionArchivedAuthoritative") return null;
       const archiveEvent = event as SessionArchivedAuthoritativeEvent;

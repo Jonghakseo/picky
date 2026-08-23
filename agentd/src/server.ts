@@ -25,6 +25,7 @@ export interface AgentdServerOptions {
   /** Bounds client-visible package operations; the queue remains held until underlying mutation exits. */
   packageOperationTimeoutMs?: number;
   setDefaultCwd?: (cwd: string) => void;
+  getDefaultCwd?: () => string;
   /** Primary-only. Child daemons intentionally omit the local Edge TTS routes. */
   edgeTTS?: EdgeTTSService;
   /** Primary-only provider authentication coordinator. */
@@ -51,8 +52,11 @@ export interface AppPickleHandoffResult {
 
 export type AppPickleBridgeRequest =
   | { operation: "listSessions" }
-  | { operation: "steer"; sessionId: string; text: string }
+  | { operation: "steer" | "followUp"; sessionId: string; text: string }
   | { operation: "abort"; sessionId: string }
+  | { operation: "setArchived"; sessionId: string; archived: boolean }
+  | { operation: "delete"; sessionId: string }
+  | { operation: "manageGroups"; groupAction: "list" | "create" | "addMembers" | "removeMembers" | "removeGroup" | "archiveGroup"; groupId?: string; name?: string; sessionIds?: string[] }
   | { operation: "notifyMainOfPickleCompletion"; sessionId: string; prompt: string; cwd?: string };
 
 export interface AppPickleBridgeResult {
@@ -361,7 +365,10 @@ export class AgentdServer {
   // eslint-disable-next-line max-lines-per-function -- The exhaustive typed command registry stays centralized so protocol commands cannot be registered without dispatch behavior.
   private async dispatchCommand(ws: WebSocket, command: ParsedCommand): Promise<void> {
     const handlers: CommandHandlerMap = {
-      listSessions: (cmd) => this.send(ws, { type: "sessionSnapshot", sessions: compactSessionsForSnapshot(this.options.supervisor.list()).map(protocolSession) }),
+      listSessions: (cmd) => {
+        this.assertMainCliCapability(cmd.caller, "picky_pickle_sessions");
+        this.send(ws, { type: "sessionSnapshot", sessions: compactSessionsForSnapshot(this.options.supervisor.list()).map(protocolSession) });
+      },
       listMainMessages: (cmd) => this.send(ws, { type: "mainMessagesSnapshot", messages: this.options.supervisor.listMainMessages() }),
       listMainAgentModels: async (cmd) => this.send(ws, { type: "mainAgentModelsSnapshot", models: await this.options.supervisor.listMainAgentModels() }),
       getPiOAuthStatus: async (cmd) => {
@@ -512,9 +519,55 @@ export class AgentdServer {
       completePickleBridgeRequest: (cmd) => this.completePendingPickleBridgeRequest(cmd),
       submitMainFromExternal: (cmd) => this.enqueueExternalEntry(ws, cmd.id, "submitMain", { text: cmd.text, captureContext: cmd.captureContext, cwd: cmd.cwd }),
       createPickleFromExternal: (cmd) => this.enqueueExternalEntry(ws, cmd.id, "createPickle", { title: cmd.title, instructions: cmd.instructions, captureContext: cmd.captureContext, cwd: cmd.cwd, group: cmd.group }),
-      listDockGroups: async () => {
+      createPickleFromMain: (cmd) => this.createPickleFromMainCli(ws, cmd),
+      listPickles: async (cmd) => {
+        this.assertMainCliCapability(cmd.caller, "picky_pickle_sessions");
+        const result = await this.requestPickleBridgeFromApp({ operation: "listSessions" });
+        this.send(ws, { type: "sessionSnapshot", sessions: (result.sessions ?? []).map(protocolSession) });
+      },
+      getPickle: async (cmd) => {
+        const result = await this.requestPickleBridgeFromApp({ operation: "listSessions" });
+        const session = result.sessions?.find((candidate) => candidate.id === cmd.sessionId);
+        if (!session) throw new Error(`Pickle session not found: ${cmd.sessionId}`);
+        this.send(ws, { type: "sessionUpdated", session: protocolSession(session) });
+      },
+      controlPickle: async (cmd) => {
+        const capability = cmd.pickleAction === "abort" ? "picky_abort_pickle" : "picky_steer_pickle";
+        this.assertMainCliCapability(cmd.caller, capability);
+        if ((cmd.pickleAction === "steer" || cmd.pickleAction === "followUp") && !cmd.text) {
+          throw new Error(`${cmd.pickleAction} requires text`);
+        }
+        const result = await this.requestPickleBridgeFromApp(cmd.pickleAction === "abort"
+          ? { operation: "abort", sessionId: cmd.sessionId }
+          : { operation: cmd.pickleAction, sessionId: cmd.sessionId, text: cmd.text! });
+        if (!result.session) throw new Error(`No Pickle session returned for ${cmd.pickleAction}: ${cmd.sessionId}`);
+        this.send(ws, { type: "sessionUpdated", session: protocolSession(result.session) });
+      },
+      setPickleArchived: async (cmd) => {
+        this.assertMainCliCapability(cmd.caller, "picky_pickle_sessions");
+        await this.requestPickleBridgeFromApp({ operation: "setArchived", sessionId: cmd.sessionId, archived: cmd.archived });
+        this.send(ws, { type: "sessionArchivedAuthoritative", sessionId: cmd.sessionId, archived: cmd.archived });
+      },
+      deletePickle: async (cmd) => {
+        this.assertMainCliCapability(cmd.caller, "picky_pickle_sessions");
+        const result = await this.requestPickleBridgeFromApp({ operation: "delete", sessionId: cmd.sessionId });
+        this.send(ws, { type: "sessionSnapshot", sessions: (result.sessions ?? []).map(protocolSession) });
+      },
+      listDockGroups: async (cmd) => {
+        this.assertMainCliCapability(cmd.caller, "picky_manage_pickle_groups");
         const groups = await this.requestDockGroups();
         this.send(ws, { type: "dockGroupsSnapshot", groups });
+      },
+      manageDockGroups: async (cmd) => {
+        this.assertMainCliCapability(cmd.caller, "picky_manage_pickle_groups");
+        const result = await this.requestPickleBridgeFromApp({
+          operation: "manageGroups",
+          groupAction: cmd.groupAction,
+          ...(cmd.groupId ? { groupId: cmd.groupId } : {}),
+          ...(cmd.name ? { name: cmd.name } : {}),
+          ...(cmd.sessionIds ? { sessionIds: cmd.sessionIds } : {}),
+        });
+        this.send(ws, { type: "dockGroupsSnapshot", groups: result.groups ?? [] });
       },
       completeDockGroupsRequest: (cmd) => this.completePendingDockGroupsRequest(cmd),
       controlPushToTalkFromExternal: async (cmd) => {
@@ -527,8 +580,12 @@ export class AgentdServer {
       pinPickleSession: (cmd) => this.options.supervisor.pinPickleSession(cmd.context, cmd.title),
       setNotifyMainOnCompletion: (cmd) => this.options.supervisor.setNotifyMainOnCompletion(cmd.sessionId, cmd.enabled),
       notifyMainOfPickleCompletion: (cmd) => this.options.supervisor.deliverMainAgentPickleCompletion(cmd.sessionId, cmd.prompt, cmd.cwd),
-      setSessionArchived: (cmd) => this.options.supervisor.setSessionArchived(cmd.sessionId, cmd.archived),
+      setSessionArchived: (cmd) => {
+        this.assertMainCliCapability(cmd.caller, "picky_pickle_sessions");
+        return this.options.supervisor.setSessionArchived(cmd.sessionId, cmd.archived);
+      },
       deleteSession: async (cmd) => {
+        this.assertMainCliCapability(cmd.caller, "picky_pickle_sessions");
         await this.options.supervisor.deleteSession(cmd.sessionId);
         this.broadcast({
           type: "sessionSnapshot",
@@ -540,9 +597,18 @@ export class AgentdServer {
       clearQueue: (cmd) => this.options.supervisor.clearQueue(cmd.sessionId, cmd.kind),
       syncTerminalSession: (cmd) => this.options.supervisor.syncTerminalSession(cmd.sessionId, cmd.baselinePiMessageId),
       setTerminalSessionTailEnabled: (cmd) => this.options.supervisor.setTerminalSessionTailEnabled(cmd.sessionId, cmd.enabled),
-      followUp: (cmd) => this.options.supervisor.followUp(cmd.sessionId, cmd.text, cmd.context, cmd.visualDslEnabled === true),
-      steer: (cmd) => this.options.supervisor.steer(cmd.sessionId, cmd.text, cmd.context, cmd.visualDslEnabled === true),
-      abort: (cmd) => this.options.supervisor.abort(cmd.sessionId),
+      followUp: (cmd) => {
+        this.assertMainCliCapability(cmd.caller, "picky_steer_pickle");
+        return this.options.supervisor.followUp(cmd.sessionId, cmd.text, cmd.context, cmd.visualDslEnabled === true);
+      },
+      steer: (cmd) => {
+        this.assertMainCliCapability(cmd.caller, "picky_steer_pickle");
+        return this.options.supervisor.steer(cmd.sessionId, cmd.text, cmd.context, cmd.visualDslEnabled === true);
+      },
+      abort: (cmd) => {
+        this.assertMainCliCapability(cmd.caller, "picky_abort_pickle");
+        return this.options.supervisor.abort(cmd.sessionId);
+      },
       answerExtensionUi: (cmd) => this.options.supervisor.answerExtensionUi(cmd.sessionId, cmd.requestId, cmd.value),
       answerMainExtensionUi: (cmd) => this.options.supervisor.answerMainExtensionUi(cmd.requestId, cmd.value),
       installPackage: (cmd) => this.packageOperations.runOperation(ws, cmd.id, "install", cmd.source),
@@ -609,6 +675,54 @@ export class AgentdServer {
       return;
     }
     pending.resolve({ sessions: command.sessions, groups: command.groups, session: command.session, delivered: command.delivered });
+  }
+
+  private async createPickleFromMainCli(
+    ws: WebSocket,
+    command: Extract<ParsedCommand, { type: "createPickleFromMain" }>,
+  ): Promise<void> {
+    try {
+      if (command.caller !== "mainAgent") throw new Error("createPickleFromMain is available only to the Picky main agent CLI");
+      this.assertMainCliCapability(command.caller, "picky_start_pickle");
+      const context = this.options.supervisor.currentMainContext();
+      if (!context) throw new Error("No active Picky main context to hand off");
+      const cwd = command.cwd?.trim() || this.options.getDefaultCwd?.() || context.cwd?.trim() || process.cwd();
+      const session = await this.requestPickleHandoffFromApp({
+        context,
+        title: command.title,
+        instructions: command.instructions,
+        cwd,
+      });
+      this.broadcastToCapability("externalEntry", {
+        type: "externalEntryAccepted",
+        commandId: command.id,
+        kind: "createPickle",
+        sessionId: session.sessionId,
+        contextId: context.id,
+        ...(command.group ? { group: command.group } : {}),
+      });
+      this.send(ws, {
+        type: "externalEntryAck",
+        commandId: command.id,
+        kind: "createPickle",
+        sessionId: session.sessionId,
+        contextId: context.id,
+      });
+    } catch (error) {
+      this.send(ws, {
+        type: "externalEntryAck",
+        commandId: command.id,
+        kind: "createPickle",
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private assertMainCliCapability(caller: "mainAgent" | undefined, legacyCapability: string): void {
+    if (caller !== "mainAgent") return;
+    if (this.options.supervisor.getDisabledBuiltinTools().has(legacyCapability)) {
+      throw new Error(`Picky CLI capability is disabled in Settings: ${legacyCapability}`);
+    }
   }
 
   /**
@@ -978,6 +1092,8 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, textChars: command.text.length, captureContext: command.captureContext ? 1 : 0, cwd: command.cwd };
     case "createPickleFromExternal":
       return { commandId: command.id, type: command.type, titleChars: command.title.length, instructionChars: command.instructions.length, captureContext: command.captureContext ? 1 : 0, cwd: command.cwd };
+    case "createPickleFromMain":
+      return { commandId: command.id, type: command.type, titleChars: command.title.length, instructionChars: command.instructions.length, cwd: command.cwd, caller: command.caller };
     case "controlPushToTalkFromExternal":
       return { commandId: command.id, type: command.type, action: command.action };
     case "completePushToTalkControlRequest":
@@ -986,6 +1102,8 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, requestId: command.requestId, hasContext: command.context ? 1 : 0, errorChars: command.errorMessage?.length };
     case "completeDockGroupsRequest":
       return { commandId: command.id, type: command.type, requestId: command.requestId, groups: command.groups?.length, errorChars: command.errorMessage?.length };
+    case "manageDockGroups":
+      return { commandId: command.id, type: command.type, action: command.groupAction, groupId: command.groupId, sessions: command.sessionIds?.length, caller: command.caller };
     case "notifyMainOfPickleCompletion":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, promptChars: command.prompt.length, cwd: command.cwd };
     case "followUp":
@@ -996,7 +1114,13 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
     case "setSessionArchived":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, archived: command.archived ? 1 : 0 };
     case "deleteSession":
-      return { commandId: command.id, type: command.type, sessionId: command.sessionId };
+    case "deletePickle":
+    case "getPickle":
+      return { commandId: command.id, type: command.type, sessionId: command.sessionId, caller: command.caller };
+    case "controlPickle":
+      return { commandId: command.id, type: command.type, sessionId: command.sessionId, action: command.pickleAction, textChars: command.text?.length, caller: command.caller };
+    case "setPickleArchived":
+      return { commandId: command.id, type: command.type, sessionId: command.sessionId, archived: command.archived ? 1 : 0, caller: command.caller };
     case "cycleSessionThinkingLevel":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId };
     case "cycleSessionModel":
@@ -1047,6 +1171,7 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
     case "setMainAgentTTSEnabled":
       return { commandId: command.id, type: command.type, enabled: command.enabled ? 1 : 0 };
     case "listSessions":
+    case "listPickles":
     case "listDockGroups":
     case "listMainMessages":
     case "listMainAgentModels":

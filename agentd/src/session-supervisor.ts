@@ -830,7 +830,7 @@ export class SessionSupervisor extends EventEmitter {
 
   // ----- Pickle inspection -----
   //
-  // `picky_pickle_sessions` is a list. When the user asks "how's that pickle
+  // `picky pickle-list` is a list. When the user asks "how's that pickle
   // going?" the model needs a deeper but still bounded summary of one
   // specific session without spawning another Pickle (which would recursively
   // delegate). We surface the SessionSupervisor's in-memory PickyAgentSession

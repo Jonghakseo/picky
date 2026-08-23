@@ -39,7 +39,7 @@ private final class FakeWebSocketFactory: PickyWebSocketTaskMaking {
 private enum EventJSON {
     static func hello() -> String {
         """
-        {"id":"event-hello","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:00.000Z","type":"hello","serverName":"picky-agentd","supportedProtocolVersions":["2026-07-23"]}
+        {"id":"event-hello","protocolVersion":"\(pickyAgentProtocolVersion)","timestamp":"2026-05-01T00:00:00.000Z","type":"hello","serverName":"picky-agentd","supportedProtocolVersions":["\(pickyAgentProtocolVersion)"]}
         """
     }
 }
@@ -97,7 +97,7 @@ struct PickyAgentClientTests {
         let listJSON = try #require(String(data: listData, encoding: .utf8))
         #expect(listJSON.contains("\"type\":\"listRewindTargets\"") || listJSON.contains("\"type\" : \"listRewindTargets\""))
         #expect(listJSON.contains("\"sessionId\":\"session-1\"") || listJSON.contains("\"sessionId\" : \"session-1\""))
-        #expect(listJSON.contains("\"protocolVersion\":\"2026-07-23\"") || listJSON.contains("\"protocolVersion\" : \"2026-07-23\""))
+        #expect(listJSON.contains("\"protocolVersion\":\"\(pickyAgentProtocolVersion)\"") || listJSON.contains("\"protocolVersion\" : \"\(pickyAgentProtocolVersion)\""))
 
         let rewindData = try encoder.encode(PickyCommandEnvelope(id: "cmd-rewind", type: .rewindSession, sessionId: "session-1", entryId: "entry-3"))
         let rewindJSON = try #require(String(data: rewindData, encoding: .utf8))
@@ -223,7 +223,7 @@ struct PickyAgentClientTests {
         let session = await iterator.next()
 
         if case .protocolEvent(let event)? = hello {
-            #expect(event.event == .hello(PickyHelloEvent(serverName: "picky-agentd", supportedProtocolVersions: ["2026-07-23"])))
+            #expect(event.event == .hello(PickyHelloEvent(serverName: "picky-agentd", supportedProtocolVersions: [pickyAgentProtocolVersion])))
         } else { Issue.record("Expected hello") }
 
         if case .protocolEvent(let event)? = session,

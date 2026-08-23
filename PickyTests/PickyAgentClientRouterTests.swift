@@ -224,12 +224,31 @@ private func makeEmptySessionSnapshotEvent() -> PickyEventEnvelope {
     )
 }
 
-private func makePickleBridgeRequestEvent(operation: String, sessionId: String? = nil, text: String? = nil, prompt: String? = nil, cwd: String? = nil) throws -> PickyEventEnvelope {
+private func makePickleBridgeRequestEvent(
+    operation: String,
+    sessionId: String? = nil,
+    text: String? = nil,
+    prompt: String? = nil,
+    cwd: String? = nil,
+    groupAction: String? = nil,
+    groupId: String? = nil,
+    name: String? = nil,
+    sessionIds: [String]? = nil,
+    archived: Bool? = nil
+) throws -> PickyEventEnvelope {
     var fields = "\"operation\": \"\(operation)\""
     if let sessionId { fields += ", \"sessionId\": \"\(sessionId)\"" }
     if let text { fields += ", \"text\": \"\(text)\"" }
     if let prompt { fields += ", \"prompt\": \"\(prompt)\"" }
     if let cwd { fields += ", \"cwd\": \"\(cwd)\"" }
+    if let groupAction { fields += ", \"groupAction\": \"\(groupAction)\"" }
+    if let groupId { fields += ", \"groupId\": \"\(groupId)\"" }
+    if let name { fields += ", \"name\": \"\(name)\"" }
+    if let sessionIds {
+        let encoded = try JSONEncoder().encode(sessionIds)
+        fields += ", \"sessionIds\": \(String(decoding: encoded, as: UTF8.self))"
+    }
+    if let archived { fields += ", \"archived\": \(archived ? "true" : "false")" }
     let json = """
     {
       "id": "event-bridge",
@@ -950,6 +969,214 @@ struct PickyAgentClientRouterTests {
         )])
     }
 
+    @Test func pickleBridgeRoutesGroupManagementToAppOwnerAndReturnsUpdatedGroups() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(
+            configuration: PickyAgentDaemonPool.Configuration(token: "tok", appSupportRoot: root)
+        )
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        var received: PickyDockGroupManagementRequest?
+        router.dockGroupsManager = { request in
+            received = request
+            return [PickyDockGroupPayload(
+                id: "research",
+                name: "Research",
+                color: 6,
+                memberSessionIds: request.sessionIds,
+                collapsed: false
+            )]
+        }
+
+        await router.connect()
+        primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(
+            operation: "manageGroups",
+            groupAction: "addMembers",
+            groupId: "research",
+            sessionIds: ["pickle-1", "pickle-2"]
+        )))
+
+        try await waitUntil {
+            primary.sentCommands.contains { $0.type == .completePickleBridgeRequest && $0.groups?.first?.memberSessionIds == ["pickle-1", "pickle-2"] }
+        }
+        #expect(received == PickyDockGroupManagementRequest(
+            action: .addMembers,
+            groupId: "research",
+            name: nil,
+            sessionIds: ["pickle-1", "pickle-2"]
+        ))
+    }
+
+    @Test func pickleBridgeRoutesArchiveAndDeleteThroughTheOwningClient() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(
+            configuration: PickyAgentDaemonPool.Configuration(token: "tok", appSupportRoot: root)
+        )
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        var deletedSessionIDs: [String] = []
+        router.pickleDeletionCleanupHandler = { deletedSessionIDs.append($0) }
+        primary.onSendInject = { command in
+            if command.type == .deleteSession {
+                primary.emit(.protocolEvent(makeAckEnvelope(commandId: command.id)))
+            }
+        }
+
+        await router.connect()
+        primary.emit(.protocolEvent(makeSessionUpdatedEvent(id: "pickle-manage")))
+        primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(
+            operation: "setArchived",
+            sessionId: "pickle-manage",
+            archived: true
+        )))
+        try await waitUntil {
+            primary.sentCommands.contains { $0.type == .setSessionArchived && $0.sessionId == "pickle-manage" && $0.archived == true }
+                && primary.sentCommands.contains { $0.type == .completePickleBridgeRequest && $0.delivered == true }
+        }
+
+        primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(
+            operation: "delete",
+            sessionId: "pickle-manage"
+        )))
+        try await waitUntil {
+            deletedSessionIDs == ["pickle-manage"]
+                && primary.sentCommands.contains { command in
+                    command.type == .completePickleBridgeRequest
+                        && command.delivered == true
+                        && command.sessions?.contains(where: { $0.id == "pickle-manage" }) == false
+                }
+        }
+    }
+
+    @Test func pickleBridgeDoesNotFinalizeDeletionWhenChildRejectsIt() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(
+            configuration: PickyAgentDaemonPool.Configuration(token: "tok", appSupportRoot: root)
+        )
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        var deletedSessionIDs: [String] = []
+        router.pickleDeletionCleanupHandler = { deletedSessionIDs.append($0) }
+        primary.onSendInject = { command in
+            if command.type == .deleteSession {
+                primary.emit(.protocolEvent(makeErrorEnvelope(commandId: command.id, message: "delete rejected")))
+            }
+        }
+
+        await router.connect()
+        primary.emit(.protocolEvent(makeSessionUpdatedEvent(id: "pickle-rejected")))
+        primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(
+            operation: "delete",
+            sessionId: "pickle-rejected"
+        )))
+
+        try await waitUntil {
+            primary.sentCommands.contains { command in
+                command.type == .completePickleBridgeRequest
+                    && command.errorMessage?.contains("delete rejected") == true
+            }
+        }
+        #expect(deletedSessionIDs.isEmpty)
+    }
+
+    @Test func pickleBridgeReleasesChildOnlyAfterAcknowledgedAndFinalizedDeletion() async throws {
+        let sessionID = "pickle-delete-success"
+        let setup = try await setUpRouterWithChildren(sessionIds: [sessionID])
+        let child = try #require(setup.children.first)
+        var finalizedSessionIDs: [String] = []
+        setup.router.pickleDeletionCleanupHandler = { deletedSessionID in
+            #expect(deletedSessionID == sessionID)
+            #expect(child.disconnectCalls == 0)
+            #expect(setup.pool.endpoint(for: sessionID) != nil)
+            finalizedSessionIDs.append(deletedSessionID)
+        }
+        child.onSendInject = { command in
+            if command.type == .deleteSession {
+                child.emit(.protocolEvent(makeAckEnvelope(commandId: command.id)))
+            }
+        }
+
+        setup.primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(operation: "delete", sessionId: sessionID)))
+
+        try await waitUntil {
+            finalizedSessionIDs == [sessionID]
+                && child.disconnectCalls == 1
+                && setup.pool.endpoint(for: sessionID) == nil
+                && setup.primary.sentCommands.contains {
+                    $0.type == .completePickleBridgeRequest && $0.delivered == true
+                }
+        }
+    }
+
+    @Test func pickleBridgeKeepsChildWhenPermanentDeletionIsRejected() async throws {
+        let sessionID = "pickle-delete-rejected"
+        let setup = try await setUpRouterWithChildren(sessionIds: [sessionID])
+        let child = try #require(setup.children.first)
+        var finalizedSessionIDs: [String] = []
+        setup.router.pickleDeletionCleanupHandler = { finalizedSessionIDs.append($0) }
+        child.onSendInject = { command in
+            if command.type == .deleteSession {
+                child.emit(.protocolEvent(makeErrorEnvelope(commandId: command.id, message: "delete rejected")))
+            }
+        }
+
+        setup.primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(operation: "delete", sessionId: sessionID)))
+
+        try await waitUntil {
+            setup.primary.sentCommands.contains {
+                $0.type == .completePickleBridgeRequest && $0.errorMessage?.contains("delete rejected") == true
+            }
+        }
+        #expect(finalizedSessionIDs.isEmpty)
+        #expect(child.disconnectCalls == 0)
+        #expect(setup.pool.endpoint(for: sessionID) != nil)
+    }
+
+    @Test func pickleBridgeKeepsChildWhenPermanentDeletionAcknowledgementTimesOut() async throws {
+        let sessionID = "pickle-delete-timeout"
+        let setup = try await setUpRouterWithChildren(sessionIds: [sessionID], permanentDeletionAcknowledgementTimeout: 0.01)
+        let child = try #require(setup.children.first)
+        var finalizedSessionIDs: [String] = []
+        setup.router.pickleDeletionCleanupHandler = { finalizedSessionIDs.append($0) }
+
+        setup.primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(operation: "delete", sessionId: sessionID)))
+
+        try await waitUntil {
+            setup.primary.sentCommands.contains {
+                $0.type == .completePickleBridgeRequest && $0.errorMessage?.contains("Timed out waiting for child Pickle command acknowledgement") == true
+            }
+        }
+        #expect(finalizedSessionIDs.isEmpty)
+        #expect(child.disconnectCalls == 0)
+        #expect(setup.pool.endpoint(for: sessionID) != nil)
+    }
+
+    @Test func pickleBridgeKeepsChildWhenPermanentDeletionFinalizationFails() async throws {
+        struct FinalizationFailure: LocalizedError {
+            var errorDescription: String? { "local deletion cleanup failed" }
+        }
+
+        let sessionID = "pickle-delete-finalize-failure"
+        let setup = try await setUpRouterWithChildren(sessionIds: [sessionID])
+        let child = try #require(setup.children.first)
+        setup.router.pickleDeletionCleanupHandler = { _ in throw FinalizationFailure() }
+        child.onSendInject = { command in
+            if command.type == .deleteSession {
+                child.emit(.protocolEvent(makeAckEnvelope(commandId: command.id)))
+            }
+        }
+
+        setup.primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(operation: "delete", sessionId: sessionID)))
+
+        try await waitUntil {
+            setup.primary.sentCommands.contains {
+                $0.type == .completePickleBridgeRequest && $0.errorMessage == "local deletion cleanup failed"
+            }
+        }
+        #expect(child.disconnectCalls == 0)
+        #expect(setup.pool.endpoint(for: sessionID) != nil)
+    }
+
     @Test func pickleBridgeListEvictsOnlySessionsAbsentFromEmittingDaemonSnapshot() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
         let agentd = root.appendingPathComponent("agentd", isDirectory: true)
@@ -1291,6 +1518,23 @@ struct PickyAgentClientRouterTests {
         #expect(primary.sentCommands.contains { $0.id == command.id })
     }
 
+    @Test func sendAwaitingErrorRequiresAckForStrictCommands() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(
+            configuration: PickyAgentDaemonPool.Configuration(token: "tok", appSupportRoot: root)
+        )
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        await router.connect()
+        try await waitUntil { primary.sentCommands.contains { $0.type == .registerAppCapabilities } }
+
+        let command = PickyCommandEnvelope(type: .deleteSession, sessionId: "session-no-ack")
+        await #expect(throws: PickyAgentClientRouterError.commandAcknowledgementTimedOut(commandId: command.id)) {
+            _ = try await router.sendAwaitingError(command, timeout: 0.05, requireAcknowledgement: true)
+        }
+        #expect(primary.sentCommands.contains { $0.id == command.id })
+    }
+
     @Test func sendAwaitingErrorRethrowsTransportFailures() async throws {
         // Regression: when the underlying transport fails (websocket dead,
         // encoding error, missing-child-endpoint, …) `sendAwaitingError`
@@ -1563,12 +1807,16 @@ struct PickyAgentClientRouterTests {
 
 private struct RouterBroadcastSetup {
     let router: PickyAgentClientRouter
+    let pool: PickyAgentDaemonPool
     let primary: StubAgentClient
     let children: [StubAgentClient]
 }
 
 @MainActor
-private func setUpRouterWithChildren(sessionIds: [String]) async throws -> RouterBroadcastSetup {
+private func setUpRouterWithChildren(
+    sessionIds: [String],
+    permanentDeletionAcknowledgementTimeout: TimeInterval = 5
+) async throws -> RouterBroadcastSetup {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
     let agentd = root.appendingPathComponent("agentd", isDirectory: true)
     try makeStubAgentdPackage(at: agentd)
@@ -1584,7 +1832,12 @@ private func setUpRouterWithChildren(sessionIds: [String]) async throws -> Route
         factory: poolFactory
     )
     let clientFactory = StubClientFactory()
-    let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: clientFactory)
+    let router = PickyAgentClientRouter(
+        primaryClient: primary,
+        pool: pool,
+        clientFactory: clientFactory,
+        permanentDeletionAcknowledgementTimeout: permanentDeletionAcknowledgementTimeout
+    )
     await router.connect()
 
     var children: [StubAgentClient] = []
@@ -1598,7 +1851,7 @@ private func setUpRouterWithChildren(sessionIds: [String]) async throws -> Route
         }
         children.append(stub)
     }
-    return RouterBroadcastSetup(router: router, primary: primary, children: children)
+    return RouterBroadcastSetup(router: router, pool: pool, primary: primary, children: children)
 }
 
 private func makeErrorEnvelope(commandId: String, code: String = "bad_message", message: String) -> PickyEventEnvelope {

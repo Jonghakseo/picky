@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { PICKLE_TOOL_NAMES } from "./application/picky-tool-names.js";
 import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPickleCompletionPrompt, buildMainAgentPrompt, buildPicklePrompt, buildSteerPrompt } from "./prompt-builder.js";
 import { PickyContextPacketSchema } from "./protocol.js";
 
@@ -37,10 +36,12 @@ describe("neutral prompt builder", () => {
 
   it("defers persona and Pickle routing rules to the cwd's AGENTS.md", () => {
     const pair = buildMainAgentBootstrapPair();
-    // Tool names must still be advertised so the agent knows what is available.
-    for (const toolName of Object.values(PICKLE_TOOL_NAMES)) {
-      expect(pair.user).toContain(toolName);
-    }
+    expect(pair.user).toContain("picky pickle-create");
+    expect(pair.user).toContain("picky pickle-list");
+    expect(pair.user).toContain("picky pickle-steer");
+    expect(pair.user).toContain("picky pickle-group-remove");
+    expect(pair.user).toContain("individual tools are retired");
+    expect(pair.user).toContain("Never call `picky submit`");
     // Persona + routing thresholds belong in the user-editable AGENTS.md, not
     // hard-coded prompt text.
     expect(pair.user).toContain("AGENTS.md");
@@ -64,6 +65,20 @@ describe("neutral prompt builder", () => {
     expect(prompt.text).toContain("- Source: text");
     expect(pair.user).toContain("deliberate typed input, not speech recognition output");
     expect(pair.user).toContain("Do not expose internal tool logs verbatim");
+  });
+
+  it("marks disabled main-agent CLI capabilities instead of advertising their commands", () => {
+    const pair = buildMainAgentBootstrapPair({
+      disabledBuiltinTools: new Set(["picky_start_pickle", "picky_abort_pickle", "picky_manage_pickle_groups"]),
+    });
+
+    expect(pair.user).toContain("Pickle creation is disabled in Settings");
+    expect(pair.user).toContain("Pickle abort is disabled in Settings");
+    expect(pair.user).toContain("Pickle group management is disabled in Settings");
+    expect(pair.user).not.toContain("- Create: `picky pickle-create");
+    expect(pair.user).not.toContain("- Groups: `picky pickle-group-list");
+    expect(pair.user).toContain("Inspect/manage: `picky pickle-list");
+    expect(pair.user).toContain("Reuse: `picky pickle-steer");
   });
 
   it("gates the inline visual DSL prompt by the screen-overlay identifier", () => {

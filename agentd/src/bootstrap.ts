@@ -1,12 +1,11 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { AgentdServer, APP_PICKLE_HANDOFF_UNAVAILABLE, type AppPickleBridgeRequest, type AppPickleBridgeResult, type AppPickleHandoffRequest, type AppPickleHandoffResult } from "./server.js";
+import { AgentdServer, APP_PICKLE_HANDOFF_UNAVAILABLE, type AppPickleBridgeRequest, type AppPickleBridgeResult } from "./server.js";
 import { defaultAppSupportRoot } from "./artifact-store.js";
 import { SessionStore } from "./session-store.js";
 import { SessionSupervisor } from "./session-supervisor.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import { PiSdkRuntime } from "./runtime/pi-sdk-runtime.js";
 import { ConservativeMockTaskRouter } from "./task-router.js";
-import { createPickyAbortPickleTool, createPickyPickleSessionsTool, createPickyStartPickleTool, createPickySteerPickleTool, type PickyHandoffRequest, type PickyPickleAbortRequest, type PickyPickleSteerRequest } from "./application/handoff-tool.js";
 import { createPickyAskUserQuestionTool } from "./application/ask-user-question-tool.js";
 import { createReadPickyUserGuideTool, readPickyUserGuide } from "./application/user-guide-tool.js";
 import { stabilizeProcessCwd, type ProcessCwdStabilizerResult } from "./process-cwd.js";
@@ -154,7 +153,7 @@ export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOv
 
   const currentDefaultCwd = { value: config.defaultCwd };
   const supervisorRef: { current?: SessionSupervisor } = {};
-  const appPickleHandoffRef: { current?: (request: AppPickleHandoffRequest) => Promise<AppPickleHandoffResult>; bridge?: (request: AppPickleBridgeRequest) => Promise<AppPickleBridgeResult> } = {};
+  const appPickleBridgeRef: { current?: (request: AppPickleBridgeRequest) => Promise<AppPickleBridgeResult> } = {};
 
   const runtime = overrides.runtimeFactory
     ? overrides.runtimeFactory(config)
@@ -166,12 +165,10 @@ export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOv
           customTools: [createPickyAskUserQuestionTool()],
         });
 
-  // Picky main-agent runtime + delegation tools (`picky_start_pickle`, `picky_pickle_sessions`,
-  // `picky_steer_pickle`, `picky_open_pickle_response`) are primary-only. Child daemons run a
-  // single Pickle session and must not register them — they would call back into the primary
-  // supervisor that lives in a different process.
+  // The primary main agent delegates through the real `picky` CLI using its existing bash tool.
+  // Child daemons run one Pickle session and never receive that primary-only CLI environment.
   const primaryMain = config.mode === "primary"
-    ? buildPrimaryMainRuntime(config, supervisorRef, currentDefaultCwd, appPickleHandoffRef, overrides)
+    ? buildPrimaryMainRuntime(config, supervisorRef, currentDefaultCwd, overrides)
     : undefined;
   const mainRuntime = primaryMain?.runtime;
   const mainCustomToolsBuilder = primaryMain?.toolsBuilder;
@@ -188,8 +185,8 @@ export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOv
   // never need the bridge (they own the main runtime in-process) and leave it undefined.
   const forwardPickleCompletionToPrimary = config.mode === "child"
     ? async (request: { sessionId: string; prompt: string; cwd?: string }) => {
-        if (!appPickleHandoffRef.bridge) throw new Error(APP_PICKLE_HANDOFF_UNAVAILABLE);
-        await appPickleHandoffRef.bridge({ operation: "notifyMainOfPickleCompletion", ...request });
+        if (!appPickleBridgeRef.current) throw new Error(APP_PICKLE_HANDOFF_UNAVAILABLE);
+        await appPickleBridgeRef.current({ operation: "notifyMainOfPickleCompletion", ...request });
       }
     : undefined;
   const supervisor = new SessionSupervisor(runtime, store, {
@@ -209,14 +206,14 @@ export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOv
       currentDefaultCwd.value = cwd;
       logAgentd("default cwd updated", { defaultCwd: cwd });
     },
+    getDefaultCwd: () => currentDefaultCwd.value,
     // Edge Read Aloud is a primary-only opt-in adapter. A child daemon must
     // never expose this route because it is not the app-owned daemon whose
     // connection token is published to the Settings client.
     edgeTTS: config.mode === "primary" ? new EdgeTTSService() : undefined,
     piOAuth: config.mode === "primary" ? new PiOAuthService() : undefined,
   });
-  appPickleHandoffRef.current = (request) => server.requestPickleHandoffFromApp(request);
-  appPickleHandoffRef.bridge = (request) => server.requestPickleBridgeFromApp(request);
+  appPickleBridgeRef.current = (request) => server.requestPickleBridgeFromApp(request);
 
   return {
     config,
@@ -253,7 +250,6 @@ function buildPrimaryMainRuntime(
   config: AgentdConfig,
   supervisorRef: { current?: SessionSupervisor },
   currentDefaultCwd: { value: string },
-  appPickleHandoffRef: { current?: (request: AppPickleHandoffRequest) => Promise<AppPickleHandoffResult>; bridge?: (request: AppPickleBridgeRequest) => Promise<AppPickleBridgeResult> },
   overrides: ComposeOverrides,
 ): PrimaryMainRuntimeBundle | undefined {
   if (config.useMockRuntime) return undefined;
@@ -263,56 +259,9 @@ function buildPrimaryMainRuntime(
     return { runtime: overridden, toolsBuilder: () => [] };
   }
 
-  const requireSupervisor = (): SessionSupervisor => {
-    if (!supervisorRef.current) throw new Error("Supervisor not constructed yet");
-    return supervisorRef.current;
-  };
-
-  const startPickleFromMainContext = async (request: PickyHandoffRequest) => {
-    const supervisor = requireSupervisor();
-    const context = supervisor.currentMainContext();
-    if (!context) throw new Error("No active Picky context to hand off.");
-    const cwd = request.cwd?.trim() || currentDefaultCwd.value;
-    logAgentd("pickle start requested", { contextId: context.id, titleChars: request.title.length, instructionChars: request.instructions.length, cwd });
-    if (!appPickleHandoffRef.current) throw new Error(APP_PICKLE_HANDOFF_UNAVAILABLE);
-    const session = await appPickleHandoffRef.current({ context, title: request.title, instructions: request.instructions, cwd });
-    logAgentd("pickle started via app handoff", { contextId: context.id, sessionId: session.sessionId, titleChars: session.title.length, cwd: session.cwd });
-    return session;
-  };
-
-  const listPickleSessions = async () => {
-    if (!appPickleHandoffRef.bridge) throw new Error(APP_PICKLE_HANDOFF_UNAVAILABLE);
-    const result = await appPickleHandoffRef.bridge({ operation: "listSessions" });
-    return { sessions: result.sessions ?? [], groups: result.groups ?? [] };
-  };
-
-  const steerPickleSession = async (request: PickyPickleSteerRequest) => {
-    if (!appPickleHandoffRef.bridge) throw new Error(APP_PICKLE_HANDOFF_UNAVAILABLE);
-    logAgentd("pickle steer requested", { sessionId: request.sessionId, textChars: request.message.length });
-    const result = await appPickleHandoffRef.bridge({ operation: "steer", sessionId: request.sessionId, text: request.message });
-    if (!result.session) throw new Error(`No Pickle session returned for steer: ${request.sessionId}`);
-    logAgentd("pickle steer sent", { sessionId: result.session.id, status: result.session.status });
-    return result.session;
-  };
-
-  const abortPickleSession = async (request: PickyPickleAbortRequest) => {
-    if (!appPickleHandoffRef.bridge) throw new Error(APP_PICKLE_HANDOFF_UNAVAILABLE);
-    logAgentd("pickle abort requested", { sessionId: request.sessionId });
-    const result = await appPickleHandoffRef.bridge({ operation: "abort", sessionId: request.sessionId });
-    if (!result.session) throw new Error(`No Pickle session returned for abort: ${request.sessionId}`);
-    logAgentd("pickle abort sent", { sessionId: result.session.id, status: result.session.status });
-    return result.session;
-  };
-
-  // Picky built-in tools registered to the main agent. The main runtime permits
-  // ask_user_question only; all other blocking dialog methods remain disabled.
-  // The user can disable individual entries from the settings UI; `toolsBuilder`
-  // returns the subset that should be active.
+  // Picky-specific main-agent tools that are not CLI operations. Pickle delegation itself
+  // intentionally uses the real `picky` command through Pi's existing bash tool.
   const allBuiltinTools: ToolDefinition[] = [
-    createPickyStartPickleTool(startPickleFromMainContext),
-    createPickyPickleSessionsTool(listPickleSessions),
-    createPickySteerPickleTool(steerPickleSession),
-    createPickyAbortPickleTool(abortPickleSession),
     createPickyAskUserQuestionTool(),
     createReadPickyUserGuideTool(readPickyUserGuide),
   ];

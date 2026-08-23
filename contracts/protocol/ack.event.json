@@ -1,6 +1,6 @@
 {
   "id": "event-ack",
-  "protocolVersion": "2026-07-23",
+  "protocolVersion": "2026-08-23",
   "timestamp": "2026-07-19T00:00:00.000Z",
   "type": "ack",
   "commandId": "cmd-abort-main"

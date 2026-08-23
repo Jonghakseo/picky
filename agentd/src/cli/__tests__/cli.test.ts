@@ -58,10 +58,10 @@ afterEach(async () => {
   await server.stop();
 });
 
-async function runCli(args: string[]): Promise<{ stdout: string; stderr: string; code: number }> {
+async function runCli(args: string[], env: NodeJS.ProcessEnv = {}): Promise<{ stdout: string; stderr: string; code: number }> {
   try {
     const result = await execFileAsync(tsxBin, [cliEntry, ...args], {
-      env: { ...process.env, PICKY_APP_SUPPORT_DIR: appSupportDir },
+      env: { ...process.env, PICKY_APP_SUPPORT_DIR: appSupportDir, ...env },
     });
     return { stdout: result.stdout, stderr: result.stderr, code: 0 };
   } catch (error) {
@@ -177,7 +177,7 @@ describe("picky cli", () => {
   });
 
   it("pickle-list prints non-archived sessions in tab-separated form", async () => {
-    server.onCommand("listSessions", (command, send) => {
+    server.onCommand("listPickles", (command, send) => {
       void command;
       send({
         type: "sessionSnapshot",
@@ -194,7 +194,7 @@ describe("picky cli", () => {
   });
 
   it("pickle-list --include-archived includes archived sessions", async () => {
-    server.onCommand("listSessions", (command, send) => {
+    server.onCommand("listPickles", (command, send) => {
       void command;
       send({
         type: "sessionSnapshot",
@@ -211,7 +211,7 @@ describe("picky cli", () => {
   });
 
   it("pickle-list --json emits the filtered snapshot", async () => {
-    server.onCommand("listSessions", (command, send) => {
+    server.onCommand("listPickles", (command, send) => {
       void command;
       send({ type: "sessionSnapshot", sessions: [sessionFixture({ id: "visible" }), sessionFixture({ id: "archived", archived: true })] });
     });
@@ -223,7 +223,7 @@ describe("picky cli", () => {
   });
 
   it("pickle-list --archived prints only archived sessions with archive metadata", async () => {
-    server.onCommand("listSessions", (command, send) => {
+    server.onCommand("listPickles", (command, send) => {
       void command;
       send({
         type: "sessionSnapshot",
@@ -240,7 +240,7 @@ describe("picky cli", () => {
   });
 
   it("pickle-list --query filters the selected session set", async () => {
-    server.onCommand("listSessions", (command, send) => {
+    server.onCommand("listPickles", (command, send) => {
       void command;
       send({
         type: "sessionSnapshot",
@@ -263,55 +263,55 @@ describe("picky cli", () => {
   });
 
   it("pickle-archive sends setSessionArchived(true) and waits for the authoritative event", async () => {
-    server.onCommand("listSessions", (command, send) => {
+    server.onCommand("listPickles", (command, send) => {
       void command;
       send({ type: "sessionSnapshot", sessions: [sessionFixture({ id: "p-1", title: "Archive me", status: "completed" })] });
     });
-    server.onCommand("setSessionArchived", (command, send) => {
+    server.onCommand("setPickleArchived", (command, send) => {
       const cmd = command as { sessionId: string; archived: boolean };
       send({ type: "sessionArchivedAuthoritative", sessionId: cmd.sessionId, archived: cmd.archived });
     });
     const result = await runCli(["pickle-archive", "p-1"]);
     expect(result.code).toBe(0);
     expect(result.stdout).toContain("Archived Pickle p-1");
-    expect(server.received.find((command) => (command as { type?: string }).type === "setSessionArchived")).toMatchObject({ type: "setSessionArchived", sessionId: "p-1", archived: true });
+    expect(server.received.find((command) => (command as { type?: string }).type === "setPickleArchived")).toMatchObject({ type: "setPickleArchived", sessionId: "p-1", archived: true });
   });
 
   it("pickle-archive is a safe no-op for an already archived session", async () => {
-    server.onCommand("listSessions", (command, send) => {
+    server.onCommand("listPickles", (command, send) => {
       void command;
       send({ type: "sessionSnapshot", sessions: [sessionFixture({ id: "p-archived", title: "Archived", status: "completed", archived: true })] });
     });
     const result = await runCli(["pickle-archive", "p-archived"]);
     expect(result.code).toBe(0);
     expect(result.stdout).toContain("Pickle already archived: p-archived");
-    expect(server.received.some((command) => (command as { type?: string }).type === "setSessionArchived")).toBe(false);
+    expect(server.received.some((command) => (command as { type?: string }).type === "setPickleArchived")).toBe(false);
   });
 
   it("pickle-unarchive sends setSessionArchived(false) and waits for the authoritative event", async () => {
-    server.onCommand("listSessions", (command, send) => {
+    server.onCommand("listPickles", (command, send) => {
       void command;
       send({ type: "sessionSnapshot", sessions: [sessionFixture({ id: "p-1", title: "Restore me", status: "completed", archived: true })] });
     });
-    server.onCommand("setSessionArchived", (command, send) => {
+    server.onCommand("setPickleArchived", (command, send) => {
       const cmd = command as { sessionId: string; archived: boolean };
       send({ type: "sessionArchivedAuthoritative", sessionId: cmd.sessionId, archived: cmd.archived });
     });
     const result = await runCli(["pickle-unarchive", "p-1"]);
     expect(result.code).toBe(0);
     expect(result.stdout).toContain("Restored Pickle p-1");
-    expect(server.received.find((command) => (command as { type?: string }).type === "setSessionArchived")).toMatchObject({ type: "setSessionArchived", sessionId: "p-1", archived: false });
+    expect(server.received.find((command) => (command as { type?: string }).type === "setPickleArchived")).toMatchObject({ type: "setPickleArchived", sessionId: "p-1", archived: false });
   });
 
   it("pickle-unarchive refuses an unknown session id", async () => {
-    server.onCommand("listSessions", (command, send) => {
+    server.onCommand("listPickles", (command, send) => {
       void command;
       send({ type: "sessionSnapshot", sessions: [sessionFixture({ id: "p-1", title: "Known", status: "completed", archived: true })] });
     });
     const result = await runCli(["pickle-unarchive", "missing"]);
     expect(result.code).toBe(1);
     expect(result.stderr).toContain("Pickle session not found: missing");
-    expect(server.received.some((command) => (command as { type?: string }).type === "setSessionArchived")).toBe(false);
+    expect(server.received.some((command) => (command as { type?: string }).type === "setPickleArchived")).toBe(false);
   });
 
   it("pickle-group-list prints dock groups", async () => {
@@ -329,6 +329,30 @@ describe("picky cli", () => {
     expect(result.stdout).toContain("group-1\tResearch\tmembers=2");
   });
 
+  it("main-agent group list normalizes and bounds user-controlled fields", async () => {
+    const longMemberId = `member-${"x".repeat(200)}`;
+    server.onCommand("listDockGroups", (_, send) => {
+      send({
+        type: "dockGroupsSnapshot",
+        groups: [{
+          id: "group-1\nspoofed-row",
+          name: `Research\t${"y".repeat(240)}`,
+          color: 6,
+          memberSessionIds: ["p-1\nspoofed-member", longMemberId],
+          collapsed: false,
+        }],
+      });
+    });
+
+    const result = await runCli(["pickle-group-list"], { PICKY_CLI_CALLER: "mainAgent" });
+
+    expect(result.code).toBe(0);
+    expect(result.stdout.trim().split("\n")).toHaveLength(1);
+    expect(result.stdout).toContain("group-1 spoofed-row\tResearch");
+    expect(result.stdout).toContain("members=p-1 spoofed-member,member-");
+    expect(result.stdout).toContain("…");
+  });
+
   it("pickle-group-list --json emits dock groups JSON", async () => {
     server.onCommand("listDockGroups", (command, send) => {
       void command;
@@ -337,6 +361,138 @@ describe("picky cli", () => {
     const result = await runCli(["pickle-group-list", "--json"]);
     expect(result.code).toBe(0);
     expect(JSON.parse(result.stdout)).toMatchObject([{ id: "group-1", name: "Research" }]);
+  });
+
+  it("main-agent pickle-create preserves the internal caller and uses current-context command", async () => {
+    server.onCommand("createPickleFromMain", (command, send) => {
+      send({
+        type: "externalEntryAck",
+        commandId: (command as { id: string }).id,
+        kind: "createPickle",
+        sessionId: "main-pickle-1",
+      });
+    });
+
+    const result = await runCli([
+      "pickle-create", "Audit", "--instructions", "Inspect the release", "--cwd", "/tmp/product",
+    ], { PICKY_CLI_CALLER: "mainAgent" });
+
+    expect(result.code).toBe(0);
+    expect(server.received[0]).toMatchObject({
+      type: "createPickleFromMain",
+      caller: "mainAgent",
+      title: "Audit",
+      instructions: "Inspect the release",
+      cwd: "/tmp/product",
+    });
+    expect(server.received[0]).not.toHaveProperty("captureContext");
+  });
+
+  it("main-agent list bounds rows and normalizes user-controlled fields", async () => {
+    server.onCommand("listPickles", (_, send) => {
+      send({
+        type: "sessionSnapshot",
+        sessions: Array.from({ length: 25 }, (_, index) => sessionFixture({
+          id: index === 0 ? `p-1\nspoofed-row-${"x".repeat(160)}` : `p-${index + 1}`,
+          title: index === 0 ? `Pickle\t${"y".repeat(240)}` : `Pickle ${index + 1}`,
+          cwd: index === 0 ? `/tmp\n${"z".repeat(240)}` : undefined,
+          ...(index === 0 ? { lastSummary: "Found a\nrelease risk", changedFiles: [{ path: "src/a.ts", status: "M" }] } : {}),
+        })),
+      });
+    });
+
+    const result = await runCli(["pickle-list"], { PICKY_CLI_CALLER: "mainAgent" });
+    expect(result.code).toBe(0);
+    expect(result.stdout.trim().split("\n")).toHaveLength(10);
+    expect(result.stdout).toContain("p-1 spoofed-row-");
+    expect(result.stdout).toContain("Pickle y");
+    expect(result.stdout).toContain("cwd=/tmp z");
+    expect(result.stdout).toContain("updatedAt=");
+    expect(result.stdout).toContain("changedFiles=1");
+    expect(result.stdout).toContain("summary=Found a release risk");
+    expect(result.stdout).toContain("…");
+    expect(server.received[0]).toMatchObject({ type: "listPickles", caller: "mainAgent" });
+
+    const json = await runCli(["pickle-list", "--json"], { PICKY_CLI_CALLER: "mainAgent" });
+    expect(json.code).toBe(64);
+    expect(json.stderr).toContain("--json is not available");
+  });
+
+  it("main-agent CLI rejects recursive submit, PTT, wait, and empty Pickle creation", async () => {
+    const env = { PICKY_CLI_CALLER: "mainAgent" };
+    expect((await runCli(["submit", "recurse"], env)).code).toBe(64);
+    expect((await runCli(["ptt", "press"], env)).code).toBe(64);
+    expect((await runCli(["pickle-create", "Audit", "--instructions", "Inspect", "--wait"], env)).code).toBe(64);
+    expect((await runCli(["pickle-create", "--empty"], env)).code).toBe(64);
+    expect(server.received).toEqual([]);
+  });
+
+  it("main-agent pickle-steer uses child-aware preflight and sends a caller-tagged control", async () => {
+    server.onCommand("getPickle", (command, send) => {
+      send({ type: "sessionUpdated", session: sessionFixture({ id: (command as { sessionId: string }).sessionId, title: "T", status: "running" }) });
+    });
+    server.onCommand("controlPickle", (command, send) => {
+      send({ type: "sessionUpdated", session: sessionFixture({ id: (command as { sessionId: string }).sessionId, title: "T", status: "running" }) });
+    });
+
+    const result = await runCli(["pickle-steer", "p-1", "focus on tests"], { PICKY_CLI_CALLER: "mainAgent" });
+
+    expect(result.code).toBe(0);
+    expect(server.received.find((command) => (command as { type?: string }).type === "controlPickle")).toMatchObject({
+      type: "controlPickle",
+      pickleAction: "steer",
+      caller: "mainAgent",
+      sessionId: "p-1",
+      text: "focus on tests",
+    });
+  });
+
+  it("safe remove archives while permanent delete requires confirmation and an archived terminal Pickle", async () => {
+    server.onCommand("getPickle", (command, send) => {
+      const id = (command as { sessionId: string }).sessionId;
+      send({ type: "sessionUpdated", session: sessionFixture({ id, title: "T", status: "completed", archived: id === "delete-me" }) });
+    });
+    server.onCommand("setPickleArchived", (command, send) => {
+      const cmd = command as { sessionId: string; archived: boolean };
+      send({ type: "sessionArchivedAuthoritative", sessionId: cmd.sessionId, archived: cmd.archived });
+    });
+    server.onCommand("deletePickle", (_, send) => {
+      send({ type: "sessionSnapshot", sessions: [] });
+    });
+    const env = { PICKY_CLI_CALLER: "mainAgent" };
+
+    const removed = await runCli(["pickle-remove", "remove-me"], env);
+    expect(removed.code).toBe(0);
+    expect(server.received.find((command) => (command as { type?: string }).type === "setPickleArchived")).toMatchObject({ caller: "mainAgent", sessionId: "remove-me", archived: true });
+
+    const missingConfirm = await runCli(["pickle-delete", "delete-me"], env);
+    expect(missingConfirm.code).toBe(64);
+    const deleted = await runCli(["pickle-delete", "delete-me", "--confirm"], env);
+    expect(deleted.code).toBe(0);
+    expect(server.received.find((command) => (command as { type?: string }).type === "deletePickle")).toMatchObject({ caller: "mainAgent", sessionId: "delete-me" });
+  });
+
+  it("group CLI commands map to explicit app-owned mutations", async () => {
+    server.onCommand("manageDockGroups", (_, send) => {
+      send({ type: "dockGroupsSnapshot", groups: [] });
+    });
+    const env = { PICKY_CLI_CALLER: "mainAgent" };
+
+    expect((await runCli(["pickle-group-create", "Research", "p-1", "p-2"], env)).code).toBe(0);
+    expect((await runCli(["pickle-group-add", "group-1", "p-3"], env)).code).toBe(0);
+    expect((await runCli(["pickle-group-remove-members", "group-1", "p-1"], env)).code).toBe(0);
+    expect((await runCli(["pickle-group-remove", "group-1"], env)).code).toBe(0);
+    expect((await runCli(["pickle-group-delete", "group-1"], env)).code).toBe(64);
+    expect((await runCli(["pickle-group-delete", "group-1", "--archive-members", "--confirm"], env)).code).toBe(0);
+
+    const mutations = server.received.filter((command) => (command as { type?: string }).type === "manageDockGroups");
+    expect(mutations).toEqual([
+      expect.objectContaining({ caller: "mainAgent", groupAction: "create", name: "Research", sessionIds: ["p-1", "p-2"] }),
+      expect.objectContaining({ caller: "mainAgent", groupAction: "addMembers", groupId: "group-1", sessionIds: ["p-3"] }),
+      expect.objectContaining({ caller: "mainAgent", groupAction: "removeMembers", groupId: "group-1", sessionIds: ["p-1"] }),
+      expect.objectContaining({ caller: "mainAgent", groupAction: "removeGroup", groupId: "group-1" }),
+      expect.objectContaining({ caller: "mainAgent", groupAction: "archiveGroup", groupId: "group-1" }),
+    ]);
   });
 
   it("submit surfaces server errorMessage with exit code 1", async () => {
@@ -368,11 +524,11 @@ describe("picky cli", () => {
     expect(stderr).toContain("Picky daemon is not reachable");
   });
 
-  it("pickle-followup sends followUp command and prints queued message", async () => {
-    server.onCommand("listSessions", (_, send) => {
+  it("pickle-followup sends a child-aware follow-up control and prints queued message", async () => {
+    server.onCommand("listPickles", (_, send) => {
       send({ type: "sessionSnapshot", sessions: [sessionFixture({ id: "p-1", title: "T", status: "running" })] });
     });
-    server.onCommand("followUp", (command, send) => {
+    server.onCommand("controlPickle", (command, send) => {
       const cmd = command as { sessionId: string };
       send({
         type: "sessionUpdated",
@@ -382,34 +538,34 @@ describe("picky cli", () => {
     const result = await runCli(["pickle-followup", "p-1", "more please"]);
     expect(result.code).toBe(0);
     expect(result.stdout).toContain("Queued follow-up for p-1");
-    expect(server.received.find((command) => (command as { type?: string }).type === "followUp")).toMatchObject({ type: "followUp", sessionId: "p-1", text: "more please" });
+    expect(server.received.find((command) => (command as { type?: string }).type === "controlPickle")).toMatchObject({ type: "controlPickle", pickleAction: "followUp", sessionId: "p-1", text: "more please" });
   });
 
   it("pickle-followup refuses to steer an archived Pickle and never sends followUp", async () => {
-    server.onCommand("listSessions", (_, send) => {
+    server.onCommand("listPickles", (_, send) => {
       send({ type: "sessionSnapshot", sessions: [sessionFixture({ id: "p-archived", title: "A", status: "completed", archived: true })] });
     });
     const result = await runCli(["pickle-followup", "p-archived", "hey"]);
     expect(result.code).toBe(1);
     expect(result.stderr).toContain("is archived");
-    expect(server.received.some((command) => (command as { type?: string }).type === "followUp")).toBe(false);
+    expect(server.received.some((command) => (command as { type?: string }).type === "controlPickle")).toBe(false);
   });
 
   it("pickle-followup refuses an unknown session id and never sends followUp", async () => {
-    server.onCommand("listSessions", (_, send) => {
+    server.onCommand("listPickles", (_, send) => {
       send({ type: "sessionSnapshot", sessions: [sessionFixture({ id: "p-1", title: "T", status: "running" })] });
     });
     const result = await runCli(["pickle-followup", "p-missing", "hey"]);
     expect(result.code).toBe(1);
     expect(result.stderr).toContain("Pickle session not found: p-missing");
-    expect(server.received.some((command) => (command as { type?: string }).type === "followUp")).toBe(false);
+    expect(server.received.some((command) => (command as { type?: string }).type === "controlPickle")).toBe(false);
   });
 
-  it("pickle-abort sends abort command and prints requested message", async () => {
-    server.onCommand("listSessions", (_, send) => {
+  it("pickle-abort sends a child-aware abort control and prints requested message", async () => {
+    server.onCommand("listPickles", (_, send) => {
       send({ type: "sessionSnapshot", sessions: [sessionFixture({ id: "p-1", title: "T", status: "running" })] });
     });
-    server.onCommand("abort", (command, send) => {
+    server.onCommand("controlPickle", (command, send) => {
       const cmd = command as { sessionId: string };
       send({
         type: "sessionUpdated",
@@ -422,13 +578,13 @@ describe("picky cli", () => {
   });
 
   it("pickle-abort refuses to abort an archived Pickle and never sends abort", async () => {
-    server.onCommand("listSessions", (_, send) => {
+    server.onCommand("listPickles", (_, send) => {
       send({ type: "sessionSnapshot", sessions: [sessionFixture({ id: "p-archived", title: "A", status: "running", archived: true })] });
     });
     const result = await runCli(["pickle-abort", "p-archived"]);
     expect(result.code).toBe(1);
     expect(result.stderr).toContain("is archived");
-    expect(server.received.some((command) => (command as { type?: string }).type === "abort")).toBe(false);
+    expect(server.received.some((command) => (command as { type?: string }).type === "controlPickle")).toBe(false);
   });
 
   it("ptt press and release send push-to-talk control commands", async () => {

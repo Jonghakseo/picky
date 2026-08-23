@@ -189,6 +189,57 @@ struct ShellCommandInstallerTests {
         #expect(!FileManager.default.fileExists(atPath: env.installPath.path))
     }
 
+    @Test func wrapperPrefersBundledNodeOverSystemNode() throws {
+        let env = try TempEnvironment()
+        defer { env.cleanup() }
+        let bundledNode = env.bundleURL.appendingPathComponent("Contents/Resources/agentd-runtime/bin/node")
+        try FileManager.default.createDirectory(at: bundledNode.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "#!/bin/sh\nprintf 'bundled:%s\\n' \"$1\"\n".write(to: bundledNode, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: bundledNode.path)
+        try ShellCommandInstaller.install(bundleURL: env.bundleURL, installPath: env.installPath, privilegedCommandRunner: RecordingRunner())
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = [env.installPath.path]
+        process.environment = ["PATH": "/usr/bin"]
+        let stdoutPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = Pipe()
+        try process.run()
+        process.waitUntilExit()
+
+        let output = String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cliPath = env.bundleURL.appendingPathComponent("Contents/Resources/agentd/dist/cli.js").path
+        #expect(process.terminationStatus == 0)
+        #expect(output == "bundled:\(cliPath)")
+    }
+
+    @Test func wrapperFallsBackToSystemNodeWhenBundledNodeIsMissing() throws {
+        let env = try TempEnvironment()
+        defer { env.cleanup() }
+        let fallbackBin = env.root.appendingPathComponent("fallback-bin", isDirectory: true)
+        let fallbackNode = fallbackBin.appendingPathComponent("node")
+        try FileManager.default.createDirectory(at: fallbackBin, withIntermediateDirectories: true)
+        try "#!/bin/sh\nprintf 'system:%s\\n' \"$1\"\n".write(to: fallbackNode, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fallbackNode.path)
+        try ShellCommandInstaller.install(bundleURL: env.bundleURL, installPath: env.installPath, privilegedCommandRunner: RecordingRunner())
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = [env.installPath.path]
+        process.environment = ["PATH": fallbackBin.path]
+        let stdoutPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = Pipe()
+        try process.run()
+        process.waitUntilExit()
+
+        let output = String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cliPath = env.bundleURL.appendingPathComponent("Contents/Resources/agentd/dist/cli.js").path
+        #expect(process.terminationStatus == 0)
+        #expect(output == "system:\(cliPath)")
+    }
+
     @Test func wrapperResolvesCliPathWithoutEmbeddedQuotes() throws {
         // Regression: the previous template inlined the single-quoted Picky.app path
         // inside `${PICKY_AGENTD_ROOT_OVERRIDE:-'...'/Contents/...}`, but POSIX sh treats

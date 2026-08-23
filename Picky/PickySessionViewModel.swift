@@ -31,7 +31,7 @@ final class PickySessionListViewModel: ObservableObject {
     @Published private(set) var slashCommandsBySessionID: [String: [PickySlashCommand]] = [:]
     /// Per-session git-diff projections. Populated only while the Changes utility tab is visible.
     @Published private(set) var sessionDiffStatesBySessionID: [String: PickySessionDiffState] = [:]
-    private var visibleSessionDiffSessionIDs = Set<String>()
+    var visibleSessionDiffSessionIDs = Set<String>()
     /// High-frequency autocomplete responses bypass `objectWillChange` so typing does not
     /// invalidate every conversation bubble observing this view model. The active composer
     /// filters this stream by session, generation, request id, draft revision, and cursor.
@@ -181,7 +181,7 @@ final class PickySessionListViewModel: ObservableObject {
     /// not create an empty card, but their live transition still needs to run
     /// through `upsert` once a full session payload arrives so notifications
     /// are not silently cold-seeded.
-    private var pendingTerminalMetaBySessionID: [String: PickyAgentSession] = [:]
+    var pendingTerminalMetaBySessionID: [String: PickyAgentSession] = [:]
     private let slashCommandSuggestionSlowLogThreshold: TimeInterval = 0.02
     private var lastIncrementalSeqBySessionID: [String: Int] = [:]
     private var hasExplicitSelection = false
@@ -682,7 +682,7 @@ final class PickySessionListViewModel: ObservableObject {
         requestSessionDiff(sessionID: sessionID, view: view)
     }
 
-    private func requestSessionDiff(sessionID: String, view requestedView: PickySessionDiffView? = nil) {
+    func requestSessionDiff(sessionID: String, view requestedView: PickySessionDiffView? = nil) {
         guard card(sessionID: sessionID) != nil else { return }
         let view = requestedView ?? sessionDiffState(for: sessionID).view
         let requestID = "session-diff-\(UUID().uuidString)"
@@ -1988,76 +1988,6 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
-    /// Merges a patch-driven update without allowing its intentionally omitted
-    /// conversation fields to replace a hydrated/incremental conversation.
-    /// A meta event that races ahead of the initial session snapshot cannot
-    /// establish a card because it does not carry the journal. Terminal events
-    /// are retained until hydration so their live notification is not lost.
-    private func applySessionMetaUpdated(_ session: PickyAgentSession) {
-        guard let previousCard = (sessions + archivedSessions).first(where: { $0.id == session.id }) else {
-            if session.status.isTerminal {
-                pendingTerminalMetaBySessionID[session.id] = session
-                pickySessionLog("session terminal meta pending hydration session=\(session.id) status=\(session.status.rawValue)")
-            } else {
-                pendingTerminalMetaBySessionID.removeValue(forKey: session.id)
-                pickySessionLog("session meta ignored before hydration session=\(session.id) status=\(session.status.rawValue)")
-            }
-            return
-        }
-        PickyPerf.event("vm_event_session_meta_updated")
-        pickySessionLog("session meta updated session=\(session.id) status=\(session.status.rawValue)")
-        var incomingCard = PickyPerf.interval("vm_session_meta_from_agent_session") {
-            SessionCard.fromAgentSession(session)
-        }
-        // These are owned by ordered granular events while a session is live.
-        // Carrying the existing projection also prevents a metadata event from
-        // looking like a fresh empty Pi session when it omits `messages`,
-        // `logs`, and `tools`.
-        incomingCard.messages = previousCard.messages
-        incomingCard.tools = previousCard.tools
-        incomingCard.logPreview = previousCard.logPreview
-        incomingCard.lastRequestText = previousCard.lastRequestText
-        incomingCard.lastRequestAt = previousCard.lastRequestAt
-        if session.piSessionFilePath == nil {
-            incomingCard.piSessionFilePath = previousCard.piSessionFilePath
-        }
-        incomingCard.hasRuntimeDetachedFollowUpRejection = previousCard.hasRuntimeDetachedFollowUpRejection
-        incomingCard.isMainAgentHandoff = previousCard.isMainAgentHandoff
-        incomingCard.queuedSteers = previousCard.queuedSteers
-        incomingCard.queuedFollowUps = previousCard.queuedFollowUps
-        incomingCard.steeringMode = previousCard.steeringMode
-        incomingCard.followUpMode = previousCard.followUpMode
-        incomingCard.activitySummary = previousCard.activitySummary
-        reconcileTodoProgressExpansion(
-            sessionID: session.id,
-            previousState: previousCard.todoState,
-            currentState: incomingCard.todoState
-        )
-        reconcileSubagentInvocationExpansion(
-            sessionID: session.id,
-            messages: incomingCard.messages,
-            previousRuns: previousCard.subagentRuns,
-            currentRuns: incomingCard.subagentRuns
-        )
-        if shouldInvalidateSlashCommandCache(previous: previousCard, incoming: incomingCard) {
-            invalidateSlashCommandCache(sessionID: session.id)
-        }
-        PickyPerf.interval("vm_event_session_meta_updated_upsert") {
-            upsert(incomingCard, preserveIncrementalConversationState: true)
-        }
-        if visibleSessionDiffSessionIDs.contains(session.id),
-           PickySessionDiffPresentation.isSettledTransition(from: previousCard.status, to: incomingCard.status) {
-            requestSessionDiff(sessionID: session.id)
-        }
-    }
-
-    private func applyPendingTerminalMetaIfNeeded(for sessionID: String) {
-        guard let pendingTerminalMeta = pendingTerminalMetaBySessionID.removeValue(forKey: sessionID),
-              let hydratedCard = (sessions + archivedSessions).first(where: { $0.id == sessionID }),
-              pendingTerminalMeta.updatedAt > hydratedCard.updatedAt else { return }
-        applySessionMetaUpdated(pendingTerminalMeta)
-    }
-
     private func applySessionDiffResult(_ result: PickySessionDiffResult) {
         let current = sessionDiffState(for: result.sessionId)
         let next = PickySessionDiffState.reducing(current: current, result: result)
@@ -2306,14 +2236,14 @@ final class PickySessionListViewModel: ObservableObject {
         return true
     }
 
-    private func shouldInvalidateSlashCommandCache(previous: SessionCard?, incoming: SessionCard) -> Bool {
+    func shouldInvalidateSlashCommandCache(previous: SessionCard?, incoming: SessionCard) -> Bool {
         guard let previous else { return false }
         return previous.cwd != incoming.cwd
             || previous.piSessionFilePath != incoming.piSessionFilePath
             || (SessionCard.isRuntimeReattachLogLine(incoming.logPreview) && previous.logPreview != incoming.logPreview)
     }
 
-    private func invalidateSlashCommandCache(sessionID: String, refreshIfPreviouslyRequested: Bool = false) {
+    func invalidateSlashCommandCache(sessionID: String, refreshIfPreviouslyRequested: Bool = false) {
         slashCommandController.invalidate(
             sessionID: sessionID,
             refreshIfPreviouslyRequested: refreshIfPreviouslyRequested
@@ -2329,7 +2259,7 @@ final class PickySessionListViewModel: ObservableObject {
         slashCommandController.refreshIfStillLoading(sessionID: sessionID)
     }
 
-    private func reconcileTodoProgressExpansion(
+    func reconcileTodoProgressExpansion(
         sessionID: String,
         previousState: PickyTodoState?,
         currentState: PickyTodoState?
@@ -2353,7 +2283,7 @@ final class PickySessionListViewModel: ObservableObject {
         setTodoProgressExpanded(false, sessionID: sessionID)
     }
 
-    private func reconcileSubagentInvocationExpansion(
+    func reconcileSubagentInvocationExpansion(
         sessionID: String,
         messages: [PickySessionMessage],
         previousRuns: [PickySubagentRun],
@@ -2432,7 +2362,7 @@ final class PickySessionListViewModel: ObservableObject {
         return manuallyArchivedIDs
     }
 
-    private func upsert(_ card: SessionCard, preserveIncrementalConversationState: Bool = false) {
+    func upsert(_ card: SessionCard, preserveIncrementalConversationState: Bool = false) {
         PickyPerf.event("vm_upsert_called")
         let archivedIDs = effectiveArchivedSessionIDs(for: [card])
         let shouldArchive = archivedIDs.contains(card.id)

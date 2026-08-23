@@ -16,6 +16,8 @@ export const MAIN_AGENT_COMPACT_IDLE_MS = 5 * 60 * 1000;
 // session file has grown past this size. In-place compaction appends to the same file, so a
 // long-lived session bloats over time; a fresh short session stays small and resumes normally.
 export const MAIN_AGENT_RESTART_TEARDOWN_SESSION_BYTES = 2_000_000;
+// Main-agent tool names retired in favor of the picky CLI; kept disabled for compatibility.
+export const RETIRED_PICKLE_CLI_CAPABILITIES = new Set(["picky_start_pickle", "picky_pickle_sessions", "picky_steer_pickle", "picky_abort_pickle", "picky_manage_pickle_groups"]);
 export const MAIN_AGENT_COMPACT_SUMMARY_LIMIT = 4_000;
 export const MAIN_AGENT_SUMMARY_MESSAGE_LIMIT = 16;
 export const MAIN_AGENT_SUMMARY_PICKLE_SESSION_LIMIT = 10;

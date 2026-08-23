@@ -42,12 +42,10 @@ import { appendLiveBashOutput, formatUserBashFailureSystemMessage, formatUserBas
 import { isNonSkillSlashCommand, isNoTurnStateRestoringSlashCommand, isReloadSlashCommand, normalizeSlashCommands } from "./domain/slash-commands.js";
 import { hasPickleSessionMarkerLog, piSessionFilePathForSession, piSessionFilePathFromLogLine, withPiSessionFileFromLogs } from "./domain/pi-session-files.js";
 import { buildPinnedPickleSessionLogs, piSessionFilePathFromHandoffTranscript, titleForEmptyPickleSession } from "./domain/pickle-handoff-context.js";
-import { buildMainAgentRolloverSummary, MAIN_AGENT_COMPACT_IDLE_MS, MAIN_AGENT_MESSAGE_LIMIT, MAIN_AGENT_RESTART_TEARDOWN_SESSION_BYTES, MAIN_AGENT_SUMMARY_PICKLE_SESSION_LIMIT, mainRolloverReason, normalizeMainAgentState, quickReplyOriginFromContextSource, type QuickReplyMetadata } from "./domain/main-agent-policy.js";
+import { buildMainAgentRolloverSummary, MAIN_AGENT_COMPACT_IDLE_MS, MAIN_AGENT_MESSAGE_LIMIT, MAIN_AGENT_RESTART_TEARDOWN_SESSION_BYTES, MAIN_AGENT_SUMMARY_PICKLE_SESSION_LIMIT, mainRolloverReason, normalizeMainAgentState, quickReplyOriginFromContextSource, RETIRED_PICKLE_CLI_CAPABILITIES, type QuickReplyMetadata } from "./domain/main-agent-policy.js";
 import type { ToolCategory } from "./domain/tool-categorizer.js";
 import { logAgentd } from "./local-log.js";
 import { SessionMessageBuilder, type SessionMessageSyncPatch } from "./session-message-builder.js";
-
-const RETIRED_PICKLE_CLI_CAPABILITIES = new Set(["picky_start_pickle", "picky_pickle_sessions", "picky_steer_pickle", "picky_abort_pickle", "picky_manage_pickle_groups"]);
 
 export class SessionSupervisor extends EventEmitter {
   private sessions = new Map<string, PickyAgentSession>();

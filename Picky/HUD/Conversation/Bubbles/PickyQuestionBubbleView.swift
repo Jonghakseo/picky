@@ -237,6 +237,7 @@ struct PickyQuestionBubbleView: View {
                             .textFieldStyle(.roundedBorder)
                             .font(PickyHUDTypography.supporting)
                             .disabled(formState.radioValues[key] != PickyAskUserQuestionFormState.otherSentinel)
+                            .onSubmit { submitAskUserQuestion() }
                     }
                 }
             case .checkbox:
@@ -250,12 +251,14 @@ struct PickyQuestionBubbleView: View {
                         TextField("Other…", text: binding($formState.otherValues, key: key))
                             .textFieldStyle(.roundedBorder)
                             .font(PickyHUDTypography.supporting)
+                            .onSubmit { submitAskUserQuestion() }
                     }
                 }
             case .text:
                 TextField(question.placeholder ?? "Response…", text: binding($formState.textValues, key: key))
                     .textFieldStyle(.roundedBorder)
                     .font(PickyHUDTypography.supporting)
+                    .onSubmit { submitAskUserQuestion() }
             }
         }
         .padding(.vertical, 2)

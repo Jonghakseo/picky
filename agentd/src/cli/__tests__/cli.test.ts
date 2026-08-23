@@ -41,6 +41,9 @@ let appSupportDir: string;
 
 beforeEach(async () => {
   server = await startMockAgentd();
+  server.onCommand("listDockGroups", (_, send) => {
+    send({ type: "dockGroupsSnapshot", groups: [] });
+  });
   appSupportDir = await mkdtemp(join(tmpdir(), "picky-cli-test-"));
   await writeConnectionInfo(appSupportDir, {
     protocolVersion: PROTOCOL_VERSION,
@@ -176,7 +179,7 @@ describe("picky cli", () => {
     });
   });
 
-  it("pickle-list prints non-archived sessions in tab-separated form", async () => {
+  it("pickle-list includes each visible session's dock group id and name", async () => {
     server.onCommand("listPickles", (command, send) => {
       void command;
       send({
@@ -187,9 +190,15 @@ describe("picky cli", () => {
         ],
       });
     });
+    server.onCommand("listDockGroups", (_, send) => {
+      send({
+        type: "dockGroupsSnapshot",
+        groups: [{ id: "group-1", name: "Research", color: 6, memberSessionIds: ["p-1"], collapsed: false }],
+      });
+    });
     const result = await runCli(["pickle-list"]);
     expect(result.code).toBe(0);
-    expect(result.stdout).toContain("p-1\trunning\tFirst cwd=/tmp/a");
+    expect(result.stdout).toContain("p-1\trunning\tFirst cwd=/tmp/a groupId=group-1 group=Research");
     expect(result.stdout).not.toContain("p-2\tcompleted\tSecond");
   });
 
@@ -210,16 +219,29 @@ describe("picky cli", () => {
     expect(result.stdout).toContain("p-2\tcompleted\tSecond");
   });
 
-  it("pickle-list --json emits the filtered snapshot", async () => {
+  it("pickle-list --json emits the filtered snapshot with dock-group metadata", async () => {
     server.onCommand("listPickles", (command, send) => {
       void command;
       send({ type: "sessionSnapshot", sessions: [sessionFixture({ id: "visible" }), sessionFixture({ id: "archived", archived: true })] });
     });
+    server.onCommand("listDockGroups", (_, send) => {
+      send({
+        type: "dockGroupsSnapshot",
+        groups: [{ id: "group-json", name: "JSON group", color: 4, memberSessionIds: ["visible"], collapsed: true }],
+      });
+    });
     const result = await runCli(["pickle-list", "--json"]);
     expect(result.code).toBe(0);
     const parsed = JSON.parse(result.stdout);
-    expect(parsed).toMatchObject({ type: "sessionSnapshot", sessions: [expect.objectContaining({ id: "visible" })] });
+    expect(parsed).toMatchObject({
+      type: "sessionSnapshot",
+      sessions: [{
+        id: "visible",
+        dockGroup: { id: "group-json", name: "JSON group", color: 4, collapsed: true },
+      }],
+    });
     expect(parsed.sessions).toHaveLength(1);
+    expect(parsed.sessions[0].dockGroup).not.toHaveProperty("memberSessionIds");
   });
 
   it("pickle-list --archived prints only archived sessions with archive metadata", async () => {
@@ -389,15 +411,28 @@ describe("picky cli", () => {
   });
 
   it("main-agent list bounds rows and normalizes user-controlled fields", async () => {
+    const firstSessionId = `p-1\nspoofed-row-${"x".repeat(160)}`;
     server.onCommand("listPickles", (_, send) => {
       send({
         type: "sessionSnapshot",
         sessions: Array.from({ length: 25 }, (_, index) => sessionFixture({
-          id: index === 0 ? `p-1\nspoofed-row-${"x".repeat(160)}` : `p-${index + 1}`,
+          id: index === 0 ? firstSessionId : `p-${index + 1}`,
           title: index === 0 ? `Pickle\t${"y".repeat(240)}` : `Pickle ${index + 1}`,
           cwd: index === 0 ? `/tmp\n${"z".repeat(240)}` : undefined,
           ...(index === 0 ? { lastSummary: "Found a\nrelease risk", changedFiles: [{ path: "src/a.ts", status: "M" }] } : {}),
         })),
+      });
+    });
+    server.onCommand("listDockGroups", (_, send) => {
+      send({
+        type: "dockGroupsSnapshot",
+        groups: [{
+          id: "group-1\nspoofed-group-id",
+          name: `Research\t${"g".repeat(240)}`,
+          color: 6,
+          memberSessionIds: [firstSessionId],
+          collapsed: false,
+        }],
       });
     });
 
@@ -408,6 +443,8 @@ describe("picky cli", () => {
     expect(result.stdout).toContain("Pickle y");
     expect(result.stdout).toContain("cwd=/tmp z");
     expect(result.stdout).toContain("updatedAt=");
+    expect(result.stdout).toContain("groupId=group-1 spoofed-group-id");
+    expect(result.stdout).toContain("group=Research g");
     expect(result.stdout).toContain("changedFiles=1");
     expect(result.stdout).toContain("summary=Found a release risk");
     expect(result.stdout).toContain("…");

@@ -1,5 +1,5 @@
 import { Command, Option } from "commander";
-import type { EventEnvelope, PickyAgentSession } from "./protocol.js";
+import type { DockGroup, EventEnvelope, PickyAgentSession } from "./protocol.js";
 import { loadCliConnection, PickyCliDaemonNotRunningError } from "./cli/connection-loader.js";
 import { sendCommand, sendCommandAndWaitForReply, PickyCliConnectionError, PickyCliServerError, PickyCliTimeoutError } from "./cli/ws-client.js";
 import { sliceUtf16Safe } from "./domain/safe-truncate.js";
@@ -188,7 +188,7 @@ async function createNamedPickle(
 program
   .command("pickle-list")
   .description("List non-archived Pickle sessions shown in the Picky dock.")
-  .option("--json", "Emit the session snapshot JSON to stdout")
+  .option("--json", "Emit the filtered session snapshot JSON with dock-group metadata")
   .option("--include-archived", "Include archived Pickle sessions hidden from the Picky dock")
   .option("--archived", "List only archived Pickle sessions hidden from the Picky dock")
   .option("--query <text>", "Filter the selected Pickle set by id, title, cwd, status, summary, or final answer")
@@ -208,8 +208,13 @@ Examples:
       if (isMainAgentCaller && options.json) fail("--json is not available from the Picky main agent; use --query and --limit", 64);
       const connection = await loadCliConnection();
       const snapshot = await fetchSessionSnapshot(connection);
+      const dockGroups = await fetchDockGroups(connection);
+      const groupBySessionId = indexDockGroupsBySessionId(dockGroups);
       const sessions = filterSessionsForList(snapshot.sessions, options).slice(0, parseListLimit(options.limit));
-      const visibleSnapshot = { ...snapshot, sessions };
+      const visibleSnapshot = {
+        ...snapshot,
+        sessions: sessions.map((session) => sessionWithDockGroup(session, groupBySessionId.get(session.id))),
+      };
       if (options.json) {
         process.stdout.write(`${JSON.stringify(visibleSnapshot, null, 2)}\n`);
         return;
@@ -219,7 +224,7 @@ Examples:
         return;
       }
       for (const session of sessions) {
-        process.stdout.write(`${formatSessionListRow(session)}\n`);
+        process.stdout.write(`${formatSessionListRow(session, groupBySessionId.get(session.id))}\n`);
       }
     });
   });
@@ -543,6 +548,31 @@ async function fetchSessionSnapshot(connection: Awaited<ReturnType<typeof loadCl
   });
 }
 
+async function fetchDockGroups(connection: Awaited<ReturnType<typeof loadCliConnection>>): Promise<DockGroup[]> {
+  const snapshot = await sendCommand(connection, { type: "listDockGroups", ...callerFields }, {
+    matchEvent: (event) => event.type === "dockGroupsSnapshot" ? event : null,
+  });
+  return snapshot.type === "dockGroupsSnapshot" ? snapshot.groups : [];
+}
+
+function indexDockGroupsBySessionId(groups: DockGroup[]): Map<string, DockGroup> {
+  const result = new Map<string, DockGroup>();
+  for (const group of groups) {
+    for (const sessionId of group.memberSessionIds) {
+      if (!result.has(sessionId)) result.set(sessionId, group);
+    }
+  }
+  return result;
+}
+
+function sessionWithDockGroup(session: PickyAgentSession, group: DockGroup | undefined): PickyAgentSession & { dockGroup?: Omit<DockGroup, "memberSessionIds"> } {
+  if (!group) return session;
+  return {
+    ...session,
+    dockGroup: { id: group.id, name: group.name, color: group.color, collapsed: group.collapsed },
+  };
+}
+
 function filterSessionsForList(sessions: PickyAgentSession[], options: { includeArchived?: boolean; archived?: boolean; query?: string }): PickyAgentSession[] {
   const selected = options.archived
     ? sessions.filter((session) => session.archived === true)
@@ -565,11 +595,12 @@ function sessionSearchText(session: PickyAgentSession): string {
   ].filter((value): value is string => typeof value === "string" && value.length > 0).join(" ").toLowerCase();
 }
 
-function formatSessionListRow(session: PickyAgentSession): string {
+function formatSessionListRow(session: PickyAgentSession, group: DockGroup | undefined): string {
   const cwd = session.cwd ? ` cwd=${session.cwd}` : "";
   const archived = session.archived === true ? " archived=true" : "";
   const archivedAt = session.archived === true && session.archivedAt ? ` archivedAt=${session.archivedAt}` : "";
-  if (!isMainAgentCaller) return `${session.id}\t${session.status}\t${session.title}${cwd}${archived}${archivedAt}`;
+  const dockGroup = formatSessionDockGroup(group, false);
+  if (!isMainAgentCaller) return `${session.id}\t${session.status}\t${session.title}${cwd}${archived}${archivedAt}${dockGroup}`;
 
   const pendingInput = session.pendingExtensionUiRequest ? " pendingInput=true" : "";
   const changedFiles = session.changedFiles.length > 0 ? ` changedFiles=${session.changedFiles.length}` : "";
@@ -580,7 +611,15 @@ function formatSessionListRow(session: PickyAgentSession): string {
   const id = normalizeMainAgentListText(session.id, MAIN_AGENT_ID_MAX_CHARS);
   const title = normalizeMainAgentListText(session.title, MAIN_AGENT_TEXT_MAX_CHARS);
   const normalizedCwd = session.cwd ? ` cwd=${normalizeMainAgentListText(session.cwd, MAIN_AGENT_TEXT_MAX_CHARS)}` : "";
-  return `${id}\t${session.status}\t${title}${normalizedCwd}${archived} updatedAt=${normalizeMainAgentListText(session.updatedAt, MAIN_AGENT_ID_MAX_CHARS)}${pendingInput}${changedFiles}${summary}`;
+  const normalizedDockGroup = formatSessionDockGroup(group, true);
+  return `${id}\t${session.status}\t${title}${normalizedCwd}${archived} updatedAt=${normalizeMainAgentListText(session.updatedAt, MAIN_AGENT_ID_MAX_CHARS)}${normalizedDockGroup}${pendingInput}${changedFiles}${summary}`;
+}
+
+function formatSessionDockGroup(group: DockGroup | undefined, normalize: boolean): string {
+  if (!group) return "";
+  const id = normalize ? normalizeMainAgentListText(group.id, MAIN_AGENT_ID_MAX_CHARS) : group.id;
+  const name = normalize ? normalizeMainAgentListText(group.name, MAIN_AGENT_TEXT_MAX_CHARS) : group.name;
+  return ` groupId=${id} group=${name || "(untitled)"}`;
 }
 
 function normalizeMainAgentListText(value: string, maxChars: number): string {

@@ -316,6 +316,9 @@ export const PickyAgentSessionSchema = z.object({
   artifacts: z.array(PickyArtifactSchema).default([]),
   changedFiles: z.array(PickyChangedFileSchema).default([]),
   messages: z.array(PickySessionMessageSchema).default([]),
+  // `false` marks a bridge list summary whose empty messages collection is
+  // deliberately not an authoritative journal.
+  messageJournalAvailable: z.boolean().optional(),
   queuedSteers: z.array(PickyQueueItemSchema).default([]),
   queuedFollowUps: z.array(PickyQueueItemSchema).default([]),
   steeringMode: PickyQueueModeSchema.default("one-at-a-time"),

@@ -909,6 +909,83 @@ struct PickyAgentClientRouterTests {
         #expect(drainedFollowUp)
     }
 
+    @Test func pickleBridgeListDoesNotExposeStaleIncrementalMessages() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(
+            configuration: PickyAgentDaemonPool.Configuration(token: "tok", appSupportRoot: root)
+        )
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        let firstMessage = PickySessionMessage(
+            id: "message-a",
+            kind: .agentText,
+            createdAt: Date(),
+            originatedBy: .mainAgent,
+            text: "A",
+            question: nil,
+            cancelledAt: nil,
+            activitySnapshot: nil,
+            errorContext: nil,
+            errorMessage: nil
+        )
+        let appendedMessage = PickySessionMessage(
+            id: "message-b",
+            kind: .agentText,
+            createdAt: Date(),
+            originatedBy: .mainAgent,
+            text: "B",
+            question: nil,
+            cancelledAt: nil,
+            activitySnapshot: nil,
+            errorContext: nil,
+            errorMessage: nil
+        )
+        let session = PickyAgentSession(
+            id: "pickle-summary",
+            title: "Summary",
+            status: .running,
+            cwd: "/tmp/ws",
+            createdAt: Date(),
+            updatedAt: Date(),
+            logs: [],
+            tools: [],
+            artifacts: [],
+            changedFiles: [],
+            messages: [firstMessage]
+        )
+
+        await router.connect()
+        primary.emit(.protocolEvent(PickyEventEnvelope(
+            id: "full-session",
+            protocolVersion: pickyAgentProtocolVersion,
+            timestamp: Date(),
+            event: .sessionUpdated(session)
+        )))
+        primary.emit(.protocolEvent(PickyEventEnvelope(
+            id: "appended-message",
+            protocolVersion: pickyAgentProtocolVersion,
+            timestamp: Date(),
+            event: .sessionMessageAppended(sessionId: session.id, message: appendedMessage, seq: 1)
+        )))
+        var completedSession = session
+        completedSession.status = .completed
+        primary.emit(.protocolEvent(PickyEventEnvelope(
+            id: "thin-meta",
+            protocolVersion: pickyAgentProtocolVersion,
+            timestamp: Date(),
+            event: .sessionMetaUpdated(completedSession)
+        )))
+        primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(operation: "listSessions")))
+
+        try await waitUntil {
+            primary.sentCommands.contains { $0.type == .completePickleBridgeRequest && $0.sessions?.contains { $0.id == session.id } == true }
+        }
+        let summary = try #require(primary.sentCommands.last { $0.type == .completePickleBridgeRequest }?.sessions?.first { $0.id == session.id })
+        #expect(summary.status == .completed)
+        #expect(summary.messages.isEmpty)
+        #expect(summary.messageJournalAvailable == false)
+    }
+
     @Test func pickleBridgeListIncludesPrimarySnapshotSessions() async throws {
         let primary = StubAgentClient(id: "primary")
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)

@@ -1152,6 +1152,9 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
     var artifacts: [PickyArtifact]
     var changedFiles: [PickyChangedFile]
     var messages: [PickySessionMessage] = []
+    /// `false` means this is a bridge list summary; its empty `messages`
+    /// collection is intentionally not an authoritative journal.
+    var messageJournalAvailable: Bool? = nil
     var queuedSteers: [PickyQueueItem] = []
     var queuedFollowUps: [PickyQueueItem] = []
     var steeringMode: PickyQueueMode = .oneAtATime
@@ -1166,7 +1169,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case id, title, status, cwd, piSessionFilePath, createdAt, updatedAt, lastSummary, thinkingPreview, finalAnswer, logs, tools, todoState, subagentRuns, artifacts, changedFiles
-        case messages, queuedSteers, queuedFollowUps, steeringMode, followUpMode, activitySummary, contextUsage, currentAssistantRun
+        case messages, messageJournalAvailable, queuedSteers, queuedFollowUps, steeringMode, followUpMode, activitySummary, contextUsage, currentAssistantRun
         case pendingExtensionUiRequest, notifyMainOnCompletion, archived, pinned
     }
 
@@ -1188,6 +1191,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         artifacts: [PickyArtifact],
         changedFiles: [PickyChangedFile],
         messages: [PickySessionMessage] = [],
+        messageJournalAvailable: Bool? = nil,
         queuedSteers: [PickyQueueItem] = [],
         queuedFollowUps: [PickyQueueItem] = [],
         steeringMode: PickyQueueMode = .oneAtATime,
@@ -1217,6 +1221,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         self.artifacts = artifacts
         self.changedFiles = changedFiles
         self.messages = messages
+        self.messageJournalAvailable = messageJournalAvailable
         self.queuedSteers = queuedSteers
         self.queuedFollowUps = queuedFollowUps
         self.steeringMode = steeringMode
@@ -1249,6 +1254,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         artifacts = try container.decodeIfPresent([PickyArtifact].self, forKey: .artifacts) ?? []
         changedFiles = try container.decodeIfPresent([PickyChangedFile].self, forKey: .changedFiles) ?? []
         messages = try container.decodeIfPresent([PickySessionMessage].self, forKey: .messages) ?? []
+        messageJournalAvailable = try container.decodeIfPresent(Bool.self, forKey: .messageJournalAvailable)
         queuedSteers = try container.decodeIfPresent([PickyQueueItem].self, forKey: .queuedSteers) ?? []
         queuedFollowUps = try container.decodeIfPresent([PickyQueueItem].self, forKey: .queuedFollowUps) ?? []
         steeringMode = try container.decodeIfPresent(PickyQueueMode.self, forKey: .steeringMode) ?? .oneAtATime

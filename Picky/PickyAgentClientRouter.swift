@@ -654,7 +654,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
             switch request.operation {
             case .listSessions:
                 let groups = await dockGroupsProvider?() ?? []
-                await completePickleBridge(request, on: responseClient, sessions: cachedPickleSessions(), groups: groups)
+                await completePickleBridge(request, on: responseClient, sessions: cachedPickleSessionSummaries(), groups: groups)
             case .steer, .followUp:
                 guard let sessionId = request.sessionId, let text = request.text else { throw PickyAgentClientRouterError.invalidBridgeRequest }
                 let client = try await connectedClient(for: sessionId)
@@ -692,7 +692,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                 sessionCache[sessionId] = nil
                 sessionOwnerKeys[sessionId] = nil
                 releaseChild(sessionId: sessionId)
-                await completePickleBridge(request, on: responseClient, sessions: cachedPickleSessions(), delivered: true)
+                await completePickleBridge(request, on: responseClient, sessions: cachedPickleSessionSummaries(), delivered: true)
             case .manageGroups:
                 guard let action = request.groupAction,
                       let manager = dockGroupsManager else {
@@ -723,9 +723,18 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         }
     }
 
-    private func cachedPickleSessions() -> [PickyAgentSession] {
+    /// Bridge list operations expose session summaries, not message journals.
+    /// The cache only receives full lifecycle payloads plus granular journal
+    /// events, so it cannot safely claim journal authority between hydrations.
+    private func cachedPickleSessionSummaries() -> [PickyAgentSession] {
         sessionCache.values
             .sorted { $0.updatedAt > $1.updatedAt }
+            .map { session in
+                var summary = session
+                summary.messages = []
+                summary.messageJournalAvailable = false
+                return summary
+            }
     }
 
     private func completePickleBridge(

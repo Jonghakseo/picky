@@ -26,15 +26,15 @@ struct PickySessionRevisionCursorTests {
         var cursor = PickySessionRevisionCursor(epoch: "epoch-1", revision: 4)
 
         #expect(cursor.receive(transaction: try transaction(epoch: "epoch-1", baseRevision: 6, revision: 7)) == .requestRecovery)
-        #expect(cursor.receive(transaction: try transaction(epoch: "epoch-1", baseRevision: 7, revision: 8)) == .bufferOrDiscard)
+        #expect(cursor.receive(transaction: try transaction(epoch: "epoch-1", baseRevision: 7, revision: 8)) == .buffer)
     }
 
     @Test func blocksTransactionsAfterEpochChangesUntilMatchingSnapshotArrives() throws {
         var cursor = PickySessionRevisionCursor(epoch: "epoch-1", revision: 4)
 
-        #expect(cursor.receive(transaction: try transaction(epoch: "epoch-2", baseRevision: 4, revision: 5)) == .bufferOrDiscard)
-        #expect(cursor.receive(transaction: try transaction(epoch: "epoch-2", baseRevision: 5, revision: 6)) == .bufferOrDiscard)
-        #expect(cursor.receive(snapshot: try snapshot(epoch: "epoch-1", revision: 5)) == .bufferOrDiscard)
+        #expect(cursor.receive(transaction: try transaction(epoch: "epoch-2", baseRevision: 4, revision: 5)) == .requestRecovery)
+        #expect(cursor.receive(transaction: try transaction(epoch: "epoch-2", baseRevision: 5, revision: 6)) == .buffer)
+        #expect(cursor.receive(snapshot: try snapshot(epoch: "epoch-1", revision: 5)) == .discard)
         #expect(cursor.receive(snapshot: try snapshot(epoch: "epoch-2", revision: 5)) == .apply)
         #expect(cursor.receive(transaction: try transaction(epoch: "epoch-2", baseRevision: 4, revision: 5)) == .dropStaleOrDuplicate)
     }

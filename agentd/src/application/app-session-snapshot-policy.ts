@@ -56,29 +56,69 @@ export function boundedSessionForAppHydration(session: PickyAgentSessionParsed):
   session?: PickyAgentSessionParsed;
   omittedFields: string[];
 } {
-  if (sessionUpdatedPayloadFitsAppFrame(session)) return { session, omittedFields: [] };
+  return boundedSessionForFrame(session, (candidate) => ({ type: "sessionUpdated", session: candidate }), {
+    minimal: minimalSessionForAppSnapshot,
+    minimalOmittedFields: ["subagentRuns", "tools", "messages", "extendedMetadata"],
+  });
+}
+
+/**
+ * Reuses the P0 hydration field-drop order while measuring the actual dormant
+ * v2 recovery envelope. Unlike app hydration, every omission here names a
+ * persisted session field so Swift can clear or mark that child store
+ * unavailable instead of silently retaining stale data.
+ */
+export function boundedSessionForProjectionSnapshot(
+  session: PickyAgentSessionParsed,
+  metadata: { requestId?: string; epoch: string },
+): { session?: PickyAgentSessionParsed; omittedFields: string[] } {
+  return boundedSessionForFrame(session, (candidate, omittedFields) => ({
+    type: "sessionProjectionSnapshot",
+    ...(metadata.requestId === undefined ? {} : { requestId: metadata.requestId }),
+    sessionId: candidate.id,
+    epoch: metadata.epoch,
+    revision: candidate.revision,
+    complete: omittedFields.length === 0,
+    omittedFields,
+    projection: candidate,
+  }), {
+    // The app's minimal list summary does not need a durable cursor, whereas a
+    // projection recovery snapshot does. Preserve the source revision even
+    // when every large child section is omitted.
+    minimal: (candidate) => protocolSession({ ...minimalSessionForAppSnapshot(candidate), revision: candidate.revision }),
+    minimalOmittedFields: [
+      "logs", "tools", "todoState", "subagentRuns", "artifacts", "changedFiles", "messages",
+      "messageJournalAvailable", "queuedSteers", "queuedFollowUps", "steeringMode", "followUpMode",
+      "currentAssistantRun", "pendingExtensionUiRequest",
+    ],
+  });
+}
+
+function boundedSessionForFrame(
+  session: PickyAgentSessionParsed,
+  payload: (candidate: PickyAgentSessionParsed, omittedFields: string[]) => EventPayload,
+  fallback: { minimal: (session: PickyAgentSessionParsed) => PickyAgentSessionParsed; minimalOmittedFields: string[] },
+): { session?: PickyAgentSessionParsed; omittedFields: string[] } {
+  if (eventPayloadByteLength(payload(session, [])) <= APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT) return { session, omittedFields: [] };
 
   const withoutSubagentRuns = protocolSession({ ...session, subagentRuns: [] });
-  if (sessionUpdatedPayloadFitsAppFrame(withoutSubagentRuns)) {
+  if (eventPayloadByteLength(payload(withoutSubagentRuns, ["subagentRuns"])) <= APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT) {
     return { session: withoutSubagentRuns, omittedFields: ["subagentRuns"] };
   }
 
   const withoutTools = protocolSession({ ...withoutSubagentRuns, tools: [] });
-  if (sessionUpdatedPayloadFitsAppFrame(withoutTools)) {
+  if (eventPayloadByteLength(payload(withoutTools, ["subagentRuns", "tools"])) <= APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT) {
     return { session: withoutTools, omittedFields: ["subagentRuns", "tools"] };
   }
 
   const withoutMessages = protocolSession({ ...withoutTools, messages: [], messageJournalAvailable: false });
-  if (sessionUpdatedPayloadFitsAppFrame(withoutMessages)) {
+  if (eventPayloadByteLength(payload(withoutMessages, ["subagentRuns", "tools", "messages"])) <= APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT) {
     return { session: withoutMessages, omittedFields: ["subagentRuns", "tools", "messages"] };
   }
 
-  const minimalSession = minimalSessionForAppSnapshot(session);
-  if (sessionUpdatedPayloadFitsAppFrame(minimalSession)) {
-    return {
-      session: minimalSession,
-      omittedFields: ["subagentRuns", "tools", "messages", "extendedMetadata"],
-    };
+  const minimalSession = fallback.minimal(session);
+  if (eventPayloadByteLength(payload(minimalSession, fallback.minimalOmittedFields)) <= APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT) {
+    return { session: minimalSession, omittedFields: fallback.minimalOmittedFields };
   }
   return { omittedFields: ["entireSession"] };
 }

@@ -141,6 +141,7 @@ export class SessionSupervisor extends EventEmitter {
   private pendingRuntimeAbortControllers = new Map<string, AbortController>();
   private pendingAbortOperations = new Map<string, Promise<PickyAgentSession>>();
   private sessionSeq = new Map<string, number>();
+  private readonly sessionProjectionEpoch = randomUUID();
   private queueUpdateChains = new Map<string, Promise<void>>();
   private activityUpdateChains = new Map<string, Promise<void>>();
   private turnActivity = new Map<string, PickyActivitySummary>();
@@ -399,6 +400,7 @@ export class SessionSupervisor extends EventEmitter {
     return this.sessions.get(id);
   }
 
+  async withSessionProjectionBarrier(sessionId: string, work: (snapshot: { session: PickyAgentSession; epoch: string }) => Promise<void>): Promise<void> { await this.runSessionWrite(sessionId, async () => { await this.chainEmit(sessionId, async () => { await work({ session: this.mustGet(sessionId), epoch: this.sessionProjectionEpoch }); }); }); }
   currentMainContext(): PickyContextPacket | undefined {
     return this.mainContext;
   }

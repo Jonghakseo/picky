@@ -884,6 +884,24 @@ struct ProtocolContractTests {
         #expect(decoded.kind == .all)
     }
 
+    @Test func encodesProjectionSnapshotRecoveryCommand() throws {
+        let command = PickyCommandEnvelope(
+            id: "cmd-projection-recovery",
+            type: .getSessionProjectionSnapshot,
+            sessionId: "session-001",
+            requestId: "recovery-001"
+        )
+
+        let decoded = try JSONDecoder.pickyAgentProtocolDecoder().decode(
+            PickyCommandEnvelope.self,
+            from: JSONEncoder.pickyAgentProtocolEncoder().encode(command)
+        )
+        #expect(decoded.type == .getSessionProjectionSnapshot)
+        #expect(decoded.sessionId == "session-001")
+        #expect(decoded.requestId == "recovery-001")
+        #expect(decoded.protocolVersion == pickyAgentProtocolVersion)
+    }
+
     @Test func decodesProjectionMetaPatchWithAbsentNullAndValueUpdates() throws {
         let patch = try JSONDecoder.pickyAgentProtocolDecoder().decode(
             PickySessionMetaPatch.self,

@@ -863,6 +863,20 @@ describe("protocol contract fixtures", () => {
     });
   });
 
+  it("decodes a projection snapshot recovery command without changing the protocol version", () => {
+    expect(CommandEnvelopeSchema.parse({
+      id: "cmd-projection-recovery",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "getSessionProjectionSnapshot",
+      requestId: "recovery-001",
+      sessionId: "session-001",
+    })).toMatchObject({
+      type: "getSessionProjectionSnapshot",
+      requestId: "recovery-001",
+      sessionId: "session-001",
+    });
+  });
+
   it("rejects invalid protocol versions", () => {
     expect(() => CommandEnvelopeSchema.parse({ id: "bad", protocolVersion: "old", type: "listSessions" })).toThrow(/Invalid literal value/);
   });

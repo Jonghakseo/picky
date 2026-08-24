@@ -409,6 +409,126 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
+  it("returns a bounded projection recovery snapshot only to its requesting socket", async () => {
+    const requester = await connectWithHello();
+    const observer = await connectWithHello();
+    const session = await supervisor.create(context("projection recovery"));
+    const oversizedSession = {
+      ...session,
+      messages: [{
+        id: "oversized-projection-message",
+        kind: "agent_text" as const,
+        createdAt: "2026-08-24T00:00:00.000Z",
+        text: "m".repeat(9 * 1024 * 1024),
+      }],
+    };
+    await (supervisor as unknown as {
+      upsert(session: PickyAgentSession, options: { emitSession: boolean }): Promise<void>;
+    }).upsert(oversizedSession, { emitSession: false });
+
+    const observerFrames: string[] = [];
+    observer.ws.on("message", (data) => observerFrames.push(data.toString()));
+    requester.ws.send(JSON.stringify({
+      id: "cmd-projection-recovery",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "getSessionProjectionSnapshot",
+      requestId: "recovery-001",
+      sessionId: session.id,
+    }));
+
+    const recovery = await waitForEvent(requester.ws, "sessionProjectionSnapshot");
+    await waitForEvent(requester.ws, "ack");
+    expect(recovery).toMatchObject({
+      requestId: "recovery-001",
+      sessionId: session.id,
+      complete: false,
+      omittedFields: ["subagentRuns", "tools", "messages"],
+      projection: { id: session.id, messages: [], messageJournalAvailable: false },
+    });
+    if (recovery.type === "sessionProjectionSnapshot") {
+      expect(recovery.revision).toBeGreaterThanOrEqual(1);
+      expect(recovery.projection.revision).toBe(recovery.revision);
+    }
+    expect(Buffer.byteLength(JSON.stringify(recovery), "utf8")).toBeLessThan(8 * 1024 * 1024);
+    expect(observerFrames.map((frame) => JSON.parse(frame) as EventEnvelope).filter((event) => event.type === "sessionProjectionSnapshot")).toEqual([]);
+    requester.ws.close();
+    observer.ws.close();
+  });
+
+  it("rejects recovery for a missing projection session", async () => {
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({
+      id: "cmd-missing-projection-recovery",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "getSessionProjectionSnapshot",
+      requestId: "recovery-missing",
+      sessionId: "missing-session",
+    }));
+
+    await expect(waitForEvent(ws, "error")).resolves.toMatchObject({
+      commandId: "cmd-missing-projection-recovery",
+      message: "Unknown session: missing-session",
+    });
+    ws.close();
+  });
+
+  it("runs recovery snapshot publication through the supervisor projection barrier", async () => {
+    const { ws } = await connectWithHello();
+    const session = await supervisor.create(context("projection barrier"));
+    const barrier = vi.spyOn(supervisor, "withSessionProjectionBarrier");
+
+    ws.send(JSON.stringify({
+      id: "cmd-projection-barrier",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "getSessionProjectionSnapshot",
+      requestId: "recovery-barrier",
+      sessionId: session.id,
+    }));
+
+    await waitForEvent(ws, "sessionProjectionSnapshot");
+    expect(barrier).toHaveBeenCalledWith(session.id, expect.any(Function));
+    ws.close();
+  });
+
+  it("rejects a duplicate recovery request for the same socket and session while the first is in flight", async () => {
+    const { ws } = await connectWithHello();
+    trackEvents(ws);
+    const session = await supervisor.create(context("duplicate projection recovery"));
+    let entered!: () => void;
+    const enteredBarrier = new Promise<void>((resolve) => { entered = resolve; });
+    let release!: () => void;
+    const releaseBarrier = new Promise<void>((resolve) => { release = resolve; });
+    vi.spyOn(supervisor, "withSessionProjectionBarrier").mockImplementationOnce(async (_, work) => {
+      entered();
+      await releaseBarrier;
+      await work({ session: supervisor.get(session.id)!, epoch: "test-epoch" });
+    });
+
+    ws.send(JSON.stringify({
+      id: "cmd-projection-first",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "getSessionProjectionSnapshot",
+      requestId: "recovery-first",
+      sessionId: session.id,
+    }));
+    await enteredBarrier;
+    ws.send(JSON.stringify({
+      id: "cmd-projection-duplicate",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "getSessionProjectionSnapshot",
+      requestId: "recovery-duplicate",
+      sessionId: session.id,
+    }));
+
+    await expect(waitForEvent(ws, "error")).resolves.toMatchObject({
+      commandId: "cmd-projection-duplicate",
+      message: `Projection recovery already pending for session: ${session.id}`,
+    });
+    release();
+    await expect(waitForEvent(ws, "sessionProjectionSnapshot")).resolves.toMatchObject({ requestId: "recovery-first" });
+    ws.close();
+  });
+
   it("returns session diff responses only to the requesting client", async () => {
     const requester = await connectWithHello();
     const observer = await connectWithHello();

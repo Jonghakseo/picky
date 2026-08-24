@@ -11,7 +11,12 @@ enum PickySessionRevisionCursorDecision: Equatable {
     case apply
     case dropStaleOrDuplicate
     case requestRecovery
-    case bufferOrDiscard
+    /// The recovery coordinator owns buffered transactions; the cursor owns
+    /// only ordering state and never retains a second copy.
+    case buffer
+    /// A response or event cannot be applied to this cursor and must not be
+    /// retained (for example, a stale recovery response for another epoch).
+    case discard
 }
 
 /// Per-session revision policy for the dormant projection-v2 protocol. The
@@ -29,12 +34,22 @@ struct PickySessionRevisionCursor {
     }
 
     mutating func receive(transaction: PickySessionProjectionTransaction) -> PickySessionRevisionCursorDecision {
-        guard let epoch, let revision else { return .bufferOrDiscard }
-        if awaitingSnapshotEpoch != nil { return .bufferOrDiscard }
+        guard let epoch, let revision else {
+            awaitingSnapshotEpoch = transaction.epoch
+            if recoveryRequested { return .buffer }
+            recoveryRequested = true
+            return .requestRecovery
+        }
+        if let awaitingSnapshotEpoch {
+            if transaction.epoch != awaitingSnapshotEpoch {
+                self.awaitingSnapshotEpoch = transaction.epoch
+            }
+            return .buffer
+        }
         guard transaction.epoch == epoch else {
             awaitingSnapshotEpoch = transaction.epoch
-            recoveryRequested = false
-            return .bufferOrDiscard
+            recoveryRequested = true
+            return .requestRecovery
         }
         guard transaction.revision > revision else { return .dropStaleOrDuplicate }
         guard transaction.baseRevision == revision else {
@@ -42,7 +57,7 @@ struct PickySessionRevisionCursor {
                 recoveryRequested = true
                 return .requestRecovery
             }
-            return .bufferOrDiscard
+            return .buffer
         }
 
         self.revision = transaction.revision
@@ -51,23 +66,19 @@ struct PickySessionRevisionCursor {
     }
 
     mutating func receive(snapshot: PickySessionProjectionSnapshot) -> PickySessionRevisionCursorDecision {
-        guard snapshot.complete else { return .bufferOrDiscard }
-
         if let awaitingSnapshotEpoch {
-            guard snapshot.epoch == awaitingSnapshotEpoch else { return .bufferOrDiscard }
+            guard snapshot.epoch == awaitingSnapshotEpoch else { return .discard }
             install(snapshot)
             return .apply
         }
 
-        if let epoch, let revision {
-            guard snapshot.epoch == epoch else {
-                awaitingSnapshotEpoch = snapshot.epoch
-                recoveryRequested = false
-                return .bufferOrDiscard
-            }
-            guard snapshot.revision >= revision else { return .dropStaleOrDuplicate }
+        if let epoch, let revision, snapshot.epoch == epoch, snapshot.revision < revision {
+            return .dropStaleOrDuplicate
         }
 
+        // An epoch-bearing snapshot is authoritative at its serialized server
+        // barrier. It is therefore safe to install a new epoch even when this
+        // cursor has not yet observed its first transaction.
         install(snapshot)
         return .apply
     }

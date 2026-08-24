@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT,
   boundedSessionForAppHydration,
+  boundedSessionForProjectionSnapshot,
   eventPayloadByteLength,
   minimalSessionForAppSnapshot,
   sessionUpdatedPayloadFitsAppFrame,
@@ -95,5 +96,63 @@ describe("app session snapshot policy", () => {
     expect(measured).toBeGreaterThan(JSON.stringify(payload).length);
     expect(sessionUpdatedPayloadFitsAppFrame(session())).toBe(true);
     expect(eventPayloadByteLength({ type: "sessionUpdated", session: session({ id: oversizedText(9) }) })).toBeGreaterThan(APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT);
+  });
+
+  it("uses the app hydration omission order for bounded projection snapshots", () => {
+    const result = boundedSessionForProjectionSnapshot(session({
+      messages: [{ id: "message", kind: "agent_text", createdAt: "2026-08-24T00:00:00.000Z", text: oversizedText(9) }],
+    }), {
+      requestId: "recovery-001",
+      epoch: "daemon-epoch-001",
+    });
+
+    expect(result.omittedFields).toEqual(["subagentRuns", "tools", "messages"]);
+    expect(result.session?.messages).toEqual([]);
+    expect(result.session?.messageJournalAvailable).toBe(false);
+    expect(result.session).toBeDefined();
+    expect(eventPayloadByteLength({
+      type: "sessionProjectionSnapshot",
+      requestId: "recovery-001",
+      sessionId: "snapshot-policy-session",
+      epoch: "daemon-epoch-001",
+      revision: result.session?.revision ?? 0,
+      complete: false,
+      omittedFields: result.omittedFields,
+      projection: result.session!,
+    })).toBeLessThanOrEqual(APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT);
+  });
+
+  it("builds a bounded bootstrap projection snapshot without recovery correlation", () => {
+    const result = boundedSessionForProjectionSnapshot(session(), {
+      epoch: "daemon-epoch-001",
+    });
+
+    expect(result.session?.revision).toBe(0);
+    expect(eventPayloadByteLength({
+      type: "sessionProjectionSnapshot",
+      sessionId: "snapshot-policy-session",
+      epoch: "daemon-epoch-001",
+      revision: result.session?.revision ?? 0,
+      complete: result.omittedFields.length === 0,
+      omittedFields: result.omittedFields,
+      projection: result.session!,
+    })).toBeLessThanOrEqual(APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT);
+  });
+
+  it("preserves the durable revision when the projection snapshot reaches the minimal fallback", () => {
+    const result = boundedSessionForProjectionSnapshot(session({
+      revision: 17,
+      queuedSteers: [{ id: "queued", text: oversizedText(9), enqueuedAt: "2026-08-24T00:00:00.000Z" }],
+    }), {
+      requestId: "recovery-minimal",
+      epoch: "daemon-epoch-001",
+    });
+
+    expect(result.omittedFields).toEqual([
+      "logs", "tools", "todoState", "subagentRuns", "artifacts", "changedFiles", "messages",
+      "messageJournalAvailable", "queuedSteers", "queuedFollowUps", "steeringMode", "followUpMode",
+      "currentAssistantRun", "pendingExtensionUiRequest",
+    ]);
+    expect(result.session?.revision).toBe(17);
   });
 });

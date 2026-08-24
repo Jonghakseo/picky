@@ -634,6 +634,9 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("getSessionDiff"), sessionId: z.string(), view: PickySessionDiffViewSchema, requestId: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("rewindSession"), sessionId: z.string(), entryId: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("getSession"), sessionId: z.string() }),
+  // Dormant until W6.5: recovery snapshots are unicast only and do not select
+  // a v2 socket dialect or enable transaction broadcasts.
+  CommandBaseSchema.extend({ type: z.literal("getSessionProjectionSnapshot"), requestId: z.string().min(1), sessionId: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("answerExtensionUi"), sessionId: z.string(), requestId: z.string(), value: z.unknown().optional() }),
   CommandBaseSchema.extend({ type: z.literal("answerMainExtensionUi"), requestId: z.string().min(1), value: z.unknown().optional() }),
   CommandBaseSchema.extend({ type: z.literal("installPackage"), source: z.string().min(1) }),

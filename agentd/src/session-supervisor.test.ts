@@ -72,6 +72,39 @@ describe("SessionSupervisor", () => {
     expect(sessionMetaEvents).toHaveLength(1);
   });
 
+  it("serializes a projection recovery publication before a later session revision", async () => {
+    const supervisor = await makeSupervisor();
+    const session = await supervisor.create(context("projection barrier"));
+    const initialRevision = supervisor.get(session.id)?.revision ?? 0;
+    const internals = supervisor as unknown as {
+      patch(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void>;
+    };
+    const publicationOrder: string[] = [];
+    supervisor.on("sessionMeta", () => publicationOrder.push("revision"));
+    let release!: () => void;
+    const holdPublication = new Promise<void>((resolve) => { release = resolve; });
+    let entered!: () => void;
+    const enteredBarrier = new Promise<void>((resolve) => { entered = resolve; });
+
+    const recovery = supervisor.withSessionProjectionBarrier(session.id, async ({ session: snapshot }) => {
+      publicationOrder.push(`snapshot:${snapshot.revision}`);
+      entered();
+      await holdPublication;
+    });
+    await enteredBarrier;
+
+    let patchSettled = false;
+    const laterRevision = internals.patch(session.id, { title: "Updated after recovery snapshot" }).then(() => { patchSettled = true; });
+    await Promise.resolve();
+    expect(patchSettled).toBe(false);
+
+    release();
+    await Promise.all([recovery, laterRevision]);
+
+    expect(publicationOrder).toEqual([`snapshot:${initialRevision}`, "revision"]);
+    expect(supervisor.get(session.id)?.revision).toBe(initialRevision + 1);
+  });
+
   it("semantic no-op patch preserves the timestamp without saving or emitting a session update", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-semantic-no-op-"));
     const store = new SessionStore(dir);

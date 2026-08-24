@@ -6,6 +6,7 @@ import { isAuthorized } from "./auth.js";
 import { FOLLOWUP_PREFIX, HANDOFF_PREFIX, STEER_PREFIX } from "./domain/log-prefixes.js";
 import { PROTOCOL_VERSION, PickyAgentSessionMetaSchema, PickyAgentSessionSchema, parseCommand, type DockGroup, type EventEnvelope, type PickyAgentSession, type PickyAgentSessionMeta, type PickyAgentSessionParsed, type PickyContextPacket, type PickyPushToTalkControlAction } from "./protocol.js";
 import { APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT, boundedSessionForAppHydration, compactSessionForAppSnapshot, eventPayloadByteLength, minimalSessionForAppSnapshot, truncateText } from "./application/app-session-snapshot-policy.js";
+import { ProjectionRecoveryRequestGate } from "./application/session-projection-recovery.js";
 import type { SessionSupervisor } from "./session-supervisor.js";
 import { logAgentd } from "./local-log.js";
 import { EdgeTTSServiceError } from "./edge-tts-service.js";
@@ -85,6 +86,7 @@ export class AgentdServer {
   private wsServer?: WebSocketServer;
   private clients = new Set<WebSocket>();
   private appCapabilities = new WeakMap<WebSocket, Set<string>>();
+  private readonly projectionRecoveryRequestGate = new ProjectionRecoveryRequestGate();
   private pendingPickleHandoffs = new Map<string, { resolve: (result: AppPickleHandoffResult) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
   private pendingPickleBridgeRequests = new Map<string, { resolve: (result: AppPickleBridgeResult) => void; reject: (error: Error) => void; timer: NodeJS.Timeout; app: WebSocket }>();
   private pendingExternalEntries = new Map<string, ExternalEntryPending>();
@@ -525,6 +527,7 @@ export class AgentdServer {
         if (!session) throw new Error(`Unknown session: ${cmd.sessionId}`);
         this.send(ws, { type: "sessionUpdated", session: protocolSession(session) });
       },
+      getSessionProjectionSnapshot: (cmd) => this.projectionRecoveryRequestGate.send(ws, { withSessionProjectionBarrier: (sessionId, work) => this.options.supervisor.withSessionProjectionBarrier(sessionId, work), send: (payload) => { this.send(ws, payload); } }, cmd),
       routeTask: (cmd) => this.options.supervisor.route(cmd.context),
       createTask: (cmd) => this.options.supervisor.create(cmd.context),
       createEmptyPickleSession: (cmd) => this.options.supervisor.createEmptyPickleSession(cmd.context),
@@ -1201,6 +1204,7 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, enabled: command.enabled ? 1 : 0 };
     case "abort":
     case "getSession":
+    case "getSessionProjectionSnapshot":
     case "listSlashCommands":
     case "getAutocompleteCapabilities":
     case "listRewindTargets":

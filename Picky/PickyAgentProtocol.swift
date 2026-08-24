@@ -260,7 +260,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case listRewindTargets
     case getSessionDiff
     case rewindSession
-    case getSession
+    case getSession, getSessionProjectionSnapshot
     case answerExtensionUi
     case answerMainExtensionUi
     case setNotifyMainOnCompletion

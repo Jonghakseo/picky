@@ -2,7 +2,7 @@ import { appendFile, mkdir, mkdtemp, readFile, truncate, writeFile } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import type { ModelCycleDirection, PickyAgentSession, PickyContextPacket, PickyMainAgentState, PickyPreparedVisualNarrationVisual, PickyVisualNarrationSegmentIdentity } from "./protocol.js";
+import type { ModelCycleDirection, PickyAgentSession, PickyContextPacket, PickyMainAgentState, PickyPreparedVisualNarrationVisual, PickySessionMessage, PickyVisualNarrationSegmentIdentity } from "./protocol.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import type { BuiltPrompt } from "./prompt-builder.js";
 import type { AgentRuntime, AnswerExtensionUiOptions, RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeTodoStateResolution, ThinkingLevel } from "./runtime/types.js";
@@ -62,11 +62,13 @@ describe("SessionSupervisor", () => {
     await expect(internals.patch(session.id, { title: "Persisted title" })).rejects.toThrow("disk full");
 
     expect(supervisor.get(session.id)?.title).toBe(session.title);
+    expect(supervisor.get(session.id)?.revision).toBe(session.revision);
     expect(sessionMetaEvents).toEqual([]);
 
     await internals.patch(session.id, { title: "Persisted title" });
 
     expect(supervisor.get(session.id)?.title).toBe("Persisted title");
+    expect(supervisor.get(session.id)?.revision).toBe((session.revision ?? 0) + 1);
     expect(sessionMetaEvents).toHaveLength(1);
   });
 
@@ -83,6 +85,7 @@ describe("SessionSupervisor", () => {
 
     await internals.patch(session.id, { title: "Updated title" });
     const updatedAt = supervisor.get(session.id)?.updatedAt;
+    const revision = supervisor.get(session.id)?.revision;
     save.mockClear();
     const sessionEvents: PickyAgentSession[] = [];
     const sessionMetaEvents: PickyAgentSession[] = [];
@@ -92,9 +95,34 @@ describe("SessionSupervisor", () => {
     await internals.patch(session.id, { title: "Updated title" });
 
     expect(supervisor.get(session.id)?.updatedAt).toBe(updatedAt);
+    expect(supervisor.get(session.id)?.revision).toBe(revision);
     expect(save).not.toHaveBeenCalled();
     expect(sessionEvents).toEqual([]);
     expect(sessionMetaEvents).toEqual([]);
+  });
+
+  it("persists newly constructed sessions at zero and increments each commit family once", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-revision-commit-"));
+    const store = new SessionStore(dir);
+    const save = vi.spyOn(store, "save");
+    const supervisor = new SessionSupervisor(new MockRuntime(), store);
+    await supervisor.load();
+    const session = await supervisor.create(context("revision commit families"));
+    expect(save.mock.calls[0]?.[0].revision).toBe(0);
+    const internals = supervisor as unknown as {
+      syncSessionMessages(sessionId: string, messages: readonly PickySessionMessage[]): Promise<void>;
+      updateTodoState(sessionId: string, todoState: PickyAgentSession["todoState"]): Promise<void>;
+    };
+
+    const startingRevision = session.revision ?? 0;
+    await internals.syncSessionMessages(session.id, []);
+    expect(supervisor.get(session.id)?.revision).toBe(startingRevision + 1);
+
+    await internals.updateTodoState(session.id, { tasks: [], updatedAt: "2026-08-24T00:00:00.000Z" });
+    expect(supervisor.get(session.id)?.revision).toBe(startingRevision + 2);
+
+    await supervisor.applyQueueUpdate(session.id, ["steer"], []);
+    expect(supervisor.get(session.id)?.revision).toBe(startingRevision + 3);
   });
 
   it("reloads credentials on every attached Pickle and main runtime handle", async () => {

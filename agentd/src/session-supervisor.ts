@@ -32,6 +32,7 @@ import { diffQueueRemovedItems, dropAlreadyMaterializedQueueEntries, extractPick
 import { isTerminalStatus } from "./domain/session-status.js";
 import { countSystemMessages, sameTodoState, shouldReattachBlockedSessionOnStartup } from "./domain/session-state-policy.js";
 import { isSemanticNoOpPatch } from "./domain/session-patch-policy.js";
+import { nextRevision } from "./domain/session-revision-policy.js";
 import { ARCHIVED_SESSION_RETENTION_DAYS, buildAppendedMainMessageState, buildArchivedSessionRestartCancellation, buildDuplicatedPickleSession, buildEmptyPickleSession, buildInterruptedRuntimeLiveStatePatch, buildOrphanedChildRecoverySession, buildPinnedPickleSession, buildResumedHandoffPickleSession, buildRuntimeReattachPatch, buildRuntimeSessionReplacementPatch, buildUnattachedRuntimeBlock, buildVisibleSession, projectMainAgentSessionInfo, projectMainReplyMetadata, projectMainRolloverPickleSessions, shouldPurgeArchivedSession } from "./domain/session-supervisor-projection-policy.js";
 import { normalizeDslWhitespace } from "./domain/session-text-policy.js";
 import { HANDOFF_PREFIX, FOLLOWUP_PREFIX, STEER_PREFIX, EXTENSION_ANSWER_PREFIX } from "./domain/log-prefixes.js";
@@ -2006,7 +2007,6 @@ export class SessionSupervisor extends EventEmitter {
     return handle;
   }
 
-
   async steerPickleSession(sessionId: string, text: string): Promise<PickyAgentSession> {
     if (!this.isPickleSession(sessionId)) throw new Error(`Session is not a Pickle: ${sessionId}`);
     return this.steer(sessionId, text);
@@ -2308,7 +2308,6 @@ export class SessionSupervisor extends EventEmitter {
     if (!list.some((entry) => entry.id === delivery.id)) list.push(delivery);
     this.materializedQueueDeliveries.set(sessionId, list);
   }
-
 
   private rememberNoTurnRanSessionState(sessionId: string, session = this.mustGet(sessionId)): void {
     this.noTurnRanSessionStateRestores.set(sessionId, {
@@ -2965,8 +2964,8 @@ export class SessionSupervisor extends EventEmitter {
     const sessionId = typeof sessionOrId === "string" ? sessionOrId : sessionOrId.id; let result: SessionCommit | undefined;
     await this.runSessionWrite(sessionId, async () => {
       const before = this.sessions.get(sessionId);
-      const after = typeof sessionOrId === "string" ? build!(this.mustGet(sessionId)) : sessionOrId;
-      const changed = after !== before;
+      const proposed = typeof sessionOrId === "string" ? build!(this.mustGet(sessionId)) : sessionOrId; const changed = proposed !== before;
+      const after = changed && before ? { ...proposed, revision: nextRevision(before.revision ?? 0, true) } : proposed;
       if (changed) { await this.store.save(after); this.sessions.set(sessionId, after); }
       result = { before, after, changed };
     });

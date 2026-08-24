@@ -49,8 +49,8 @@ const expectedBudgets: Record<FixtureVariant, ReplayBudget> = {
       artifact: 1,
       log: 0,
     },
-    totalEncodedEventBytes: 3_278,
-    maxEncodedEventBytes: 1_367,
+    totalEncodedEventBytes: 3_292,
+    maxEncodedEventBytes: 1_381,
   },
   withoutArtifacts: {
     counts: {
@@ -66,8 +66,8 @@ const expectedBudgets: Record<FixtureVariant, ReplayBudget> = {
       artifact: 0,
       log: 0,
     },
-    totalEncodedEventBytes: 3_032,
-    maxEncodedEventBytes: 1_334,
+    totalEncodedEventBytes: 3_046,
+    maxEncodedEventBytes: 1_348,
   },
 };
 

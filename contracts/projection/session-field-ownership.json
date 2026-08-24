@@ -1,5 +1,6 @@
 [
   {"field":"id","persistenceOwner":"session-supervisor.commit","v1Event":"sessionUpdated","v2Mutation":"metaPatch","swiftStore":"PickySessionMetaStore","snapshotSemantics":"replace","p0OmissionBehavior":"never-omitted","consumers":["session-list"]},
+  {"field":"revision","persistenceOwner":"session-supervisor.commit","v1Event":"sessionUpdated","v2Mutation":"transactionEnvelope","swiftStore":"PickySessionRevisionCursor","snapshotSemantics":"replace","p0OmissionBehavior":"never-omitted","consumers":["session-projection-recovery"]},
   {"field":"title","persistenceOwner":"session-supervisor.commit","v1Event":"sessionMetaUpdated","v2Mutation":"metaPatch","swiftStore":"PickySessionMetaStore","snapshotSemantics":"replace","p0OmissionBehavior":"never-omitted","consumers":["dock-icon","conversation-header"]},
   {"field":"status","persistenceOwner":"session-supervisor.commit","v1Event":"sessionMetaUpdated","v2Mutation":"metaPatch","swiftStore":"PickySessionMetaStore","snapshotSemantics":"replace","p0OmissionBehavior":"never-omitted","consumers":["dock-icon","conversation-header"]},
   {"field":"cwd","persistenceOwner":"session-supervisor.commit","v1Event":"sessionMetaUpdated","v2Mutation":"metaPatch","swiftStore":"PickySessionMetaStore","snapshotSemantics":"clear-if-omitted-explicit","p0OmissionBehavior":"never-omitted","consumers":["conversation-context"]},

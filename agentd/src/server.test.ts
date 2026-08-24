@@ -177,8 +177,8 @@ describe("AgentdServer", () => {
     expect(replayFrames.map(({ event }) => event.type)).toEqual(["sessionSnapshot", ...Array(94).fill("sessionUpdated")]);
     expect(budget).toEqual({
       frameCount: 95,
-      maxSingleFrameBytes: 47_233,
-      totalEncodedBytes: 117_599,
+      maxSingleFrameBytes: 48_455,
+      totalEncodedBytes: 120_043,
     });
     // Exact fixture bytes ratchet projection changes; keep this independent transport cap.
     expect(budget.maxSingleFrameBytes).toBeLessThan(8 * 1024 * 1024);
@@ -230,7 +230,7 @@ describe("AgentdServer", () => {
     };
 
     expect(replayFrames.map(({ event }) => event.type)).toEqual(["sessionSnapshot", ...Array(94).fill("sessionUpdated")]);
-    expect(budget).toEqual({ frameCount: 95, maxSingleFrameBytes: 47_233, totalEncodedBytes: 117_599 });
+    expect(budget).toEqual({ frameCount: 95, maxSingleFrameBytes: 48_455, totalEncodedBytes: 120_043 });
     expect(budget.maxSingleFrameBytes).toBeLessThan(8 * 1024 * 1024);
     expect(sessions.map((session) => boundedSessionForAppHydration(PickyAgentSessionSchema.parse(session)).omittedFields)).toEqual(Array.from({ length: 94 }, () => []));
     replacement.ws.close();

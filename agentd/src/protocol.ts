@@ -313,6 +313,7 @@ export type PickySessionMessage = z.infer<typeof PickySessionMessageSchema>;
 
 export const PickyAgentSessionSchema = z.object({
   id: z.string(),
+  revision: z.number().int().nonnegative().default(0),
   title: z.string(),
   status: SessionStatusSchema,
   cwd: z.string().optional(),
@@ -351,7 +352,7 @@ export const PickyAgentSessionSchema = z.object({
 });
 
 export type PickyAgentSessionParsed = z.infer<typeof PickyAgentSessionSchema>;
-export type PickyAgentSession = Omit<PickyAgentSessionParsed, "messages" | "queuedSteers" | "queuedFollowUps" | "steeringMode" | "followUpMode" | "activitySummary" | "subagentRuns"> & Partial<Pick<PickyAgentSessionParsed, "messages" | "queuedSteers" | "queuedFollowUps" | "steeringMode" | "followUpMode" | "activitySummary" | "subagentRuns">>;
+export type PickyAgentSession = Omit<PickyAgentSessionParsed, "revision" | "messages" | "queuedSteers" | "queuedFollowUps" | "steeringMode" | "followUpMode" | "activitySummary" | "subagentRuns"> & Partial<Pick<PickyAgentSessionParsed, "revision" | "messages" | "queuedSteers" | "queuedFollowUps" | "steeringMode" | "followUpMode" | "activitySummary" | "subagentRuns">>;
 
 // Patch-driven metadata updates deliberately omit the conversation journal. Live
 // clients receive message mutations through the ordered sessionMessage* events,
@@ -661,7 +662,7 @@ export const PickySessionProjectionTransactionEventSchema = EventBaseSchema.exte
   sessionId: z.string(),
   epoch: z.string(),
   baseRevision: z.number().int().nonnegative(),
-  revision: z.number().int(),
+  revision: z.number().int().nonnegative(),
   mutations: z.array(PickySessionProjectionMutationSchema).min(1),
 });
 export const PickySessionProjectionSnapshotEventSchema = EventBaseSchema.extend({

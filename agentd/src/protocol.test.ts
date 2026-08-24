@@ -709,6 +709,18 @@ describe("protocol contract fixtures", () => {
     expect(() => PickySessionMetaPatchSchema.parse({ finalAnswer: "owned elsewhere" })).toThrow();
   });
 
+  it("defaults legacy session revisions to zero and rejects unsafe revisions", () => {
+    const session = {
+      id: "session-revision", title: "Revision", status: "running", createdAt: "2026-08-24T00:00:00.000Z", updatedAt: "2026-08-24T00:00:00.000Z",
+      logs: [], tools: [], artifacts: [], changedFiles: [],
+    };
+
+    expect(PickyAgentSessionSchema.parse(session).revision).toBe(0);
+    for (const revision of [-1, 1.5, Number.NaN]) {
+      expect(() => PickyAgentSessionSchema.parse({ ...session, revision })).toThrow();
+    }
+  });
+
   it("requires ordered non-empty projection transactions and known mutation variants", () => {
     const transaction = {
       id: "event-projection-transaction",
@@ -784,8 +796,11 @@ describe("protocol contract fixtures", () => {
   });
 
   it("keeps projection mutation ownership and schema variants in exact parity", () => {
+    // `transactionEnvelope` carries the durable session revision and is not a
+    // field mutation variant; it remains outside the mutation discriminated union.
+    const transactionEnvelopeMutations = new Set(["transactionEnvelope"]);
     expect(new Set(PickySessionProjectionMutationVariantSchema.options.map((option) => option.shape.type.value))).toEqual(
-      new Set(persistedSessionFieldOwnership.flatMap(mutationNames)),
+      new Set(persistedSessionFieldOwnership.flatMap(mutationNames).filter((name) => !transactionEnvelopeMutations.has(name))),
     );
   });
 

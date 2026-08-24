@@ -154,15 +154,26 @@ function appendUniqueLog(logs: string[], line: string): string[] {
 }
 
 function migrateLegacySession(value: unknown): { value: unknown; changed: boolean } {
-  if (!value || typeof value !== "object" || !Array.isArray((value as { messages?: unknown }).messages)) return { value, changed: false };
+  if (!value || typeof value !== "object" || Array.isArray(value)) return { value, changed: false };
+
+  const session = value as { revision?: unknown; messages?: unknown };
   let changed = false;
-  const session = value as { messages: unknown[] };
-  const messages = session.messages.map((message) => {
-    if (!message || typeof message !== "object" || (message as { kind?: unknown }).kind !== "agent_report") return message;
+  const migrated: Record<string, unknown> = { ...session };
+  if (!("revision" in session)) {
+    migrated.revision = 0;
     changed = true;
-    return { ...message, kind: "agent_text" };
-  });
-  return changed ? { value: { ...value, messages }, changed } : { value, changed: false };
+  }
+
+  if (Array.isArray(session.messages)) {
+    const messages = session.messages.map((message) => {
+      if (!message || typeof message !== "object" || (message as { kind?: unknown }).kind !== "agent_report") return message;
+      changed = true;
+      return { ...message, kind: "agent_text" };
+    });
+    migrated.messages = messages;
+  }
+
+  return changed ? { value: migrated, changed: true } : { value, changed: false };
 }
 
 function projectLegacyToolResultJSONPreviews(session: PickyAgentSession): PickyAgentSession {

@@ -1003,7 +1003,7 @@ struct ProtocolContractTests {
 
         #expect(Set(ownership.map(\.swiftStore)) == [
             "PickySessionActivityStore", "PickySessionArtifactStore", "PickySessionExtensionUiStore",
-            "PickySessionLogStore", "PickySessionMessageStore", "PickySessionMetaStore",
+            "PickySessionLogStore", "PickySessionMessageStore", "PickySessionMetaStore", "PickySessionRevisionCursor",
             "PickySessionQueueStore", "PickySessionSubagentStore", "PickySessionTodoStore", "PickySessionToolStore",
         ])
         #expect(ownership.allSatisfy { ["replace", "merge", "clear-if-omitted-explicit"].contains($0.snapshotSemantics) })

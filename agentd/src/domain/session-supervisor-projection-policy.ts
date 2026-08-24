@@ -21,6 +21,7 @@ export function buildResumedHandoffPickleSession(input: {
 }): PickyAgentSession {
   return {
     id: input.id,
+    revision: 0,
     title: input.title,
     status: "queued",
     cwd: input.cwd,
@@ -48,6 +49,7 @@ export function buildEmptyPickleSession(input: {
 }): PickyAgentSession {
   return {
     id: input.id,
+    revision: 0,
     title: input.title,
     status: "waiting_for_input",
     cwd: input.cwd,
@@ -74,6 +76,7 @@ export function buildDuplicatedPickleSession(input: {
   const sourceMessages = input.source.messages ?? [];
   return {
     id: input.id,
+    revision: 0,
     title: `(copy) ${baseTitle}`,
     status: "waiting_for_input",
     cwd: input.cwd,
@@ -106,6 +109,7 @@ export function buildPinnedPickleSession(input: {
 }): PickyAgentSession {
   return {
     id: input.id,
+    revision: 0,
     title: input.title,
     status: "completed",
     cwd: input.context.cwd,
@@ -134,6 +138,7 @@ export function buildVisibleSession(input: {
 }): PickyAgentSession {
   return {
     id: input.id,
+    revision: 0,
     title: input.title,
     status: "queued",
     cwd: input.cwd,

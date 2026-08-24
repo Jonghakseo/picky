@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -13,6 +13,7 @@ function makeSession(overrides: Partial<PickyAgentSession> = {}): PickyAgentSess
   const now = new Date().toISOString();
   return {
     id: "session-test",
+    revision: 0,
     title: "Test",
     status: "queued",
     cwd: "/tmp",
@@ -36,6 +37,27 @@ describe("SessionStore (legacy / primary layout)", () => {
     expect(readdirSync(join(root, "sessions")).sort()).toEqual(["alpha.json", "beta.json"]);
     const all = await store.loadAll();
     expect(all.map((session) => session.id).sort()).toEqual(["alpha", "beta"]);
+  });
+
+  it("normalizes a legacy session without revision to zero and persists the migration", async () => {
+    const root = tmpRoot();
+    const store = new SessionStore(root);
+    const { revision: _revision, ...legacy } = makeSession({ id: "legacy-revision" });
+    const sessionsDir = join(root, "sessions");
+    mkdirSync(sessionsDir, { recursive: true });
+    writeFileSync(join(sessionsDir, "legacy-revision.json"), JSON.stringify(legacy));
+
+    const [loaded] = await store.loadAll();
+
+    expect(loaded?.revision).toBe(0);
+    expect(JSON.parse(readFileSync(join(sessionsDir, "legacy-revision.json"), "utf8"))).toMatchObject({ revision: 0 });
+  });
+
+  it("preserves revision across save and reload", async () => {
+    const store = new SessionStore(tmpRoot());
+    await store.save(makeSession({ id: "revision-round-trip", revision: 7 }));
+
+    expect((await store.loadAll())[0]?.revision).toBe(7);
   });
 
   it("projects legacy truncated JSON tool previews without rewriting session files", async () => {

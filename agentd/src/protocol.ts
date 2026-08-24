@@ -360,6 +360,60 @@ export type PickyAgentSession = Omit<PickyAgentSessionParsed, "messages" | "queu
 export const PickyAgentSessionMetaSchema = PickyAgentSessionSchema.omit({ messages: true, logs: true, tools: true });
 export type PickyAgentSessionMeta = z.infer<typeof PickyAgentSessionMetaSchema>;
 
+// Projection v2 patches only scalar metadata. Collections and specialized state
+// have explicit mutations so a field's ownership cannot be hidden in metaPatch.
+export const PickySessionMetaPatchSchema = z.object({
+  id: z.string().optional(),
+  title: z.string().optional(),
+  status: SessionStatusSchema.optional(),
+  cwd: z.union([z.string(), z.null()]).optional(),
+  piSessionFilePath: z.union([z.string(), z.null()]).optional(),
+  createdAt: isoTimestamp.optional(),
+  updatedAt: isoTimestamp.optional(),
+  lastSummary: z.union([z.string(), z.null()]).optional(),
+  thinkingPreview: z.union([z.string(), z.null()]).optional(),
+  messageJournalAvailable: z.union([z.boolean(), z.null()]).optional(),
+  contextUsage: z.union([z.object({
+    tokens: z.number().nullable(),
+    contextWindow: z.number(),
+    percent: z.number().nullable(),
+  }), z.null()]).optional(),
+  currentAssistantRun: z.union([PickyAssistantRunMetadataSchema, z.null()]).optional(),
+  notifyMainOnCompletion: z.union([z.boolean(), z.null()]).optional(),
+  archived: z.union([z.boolean(), z.null()]).optional(),
+  archivedAt: z.union([isoTimestamp, z.null()]).optional(),
+  pinned: z.union([z.boolean(), z.null()]).optional(),
+}).strict();
+export type PickySessionMetaPatch = z.infer<typeof PickySessionMetaPatchSchema>;
+
+export const PickySessionProjectionMutationVariantSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("metaPatch"), patch: PickySessionMetaPatchSchema }),
+  z.object({ type: z.literal("messageAppend"), message: PickySessionMessageSchema }),
+  z.object({ type: z.literal("messageReplace"), messageId: z.string(), message: PickySessionMessageSchema }),
+  z.object({ type: z.literal("messageRemove"), messageId: z.string() }),
+  z.object({ type: z.literal("messagesImport"), messages: z.array(PickySessionMessageSchema) }),
+  z.object({ type: z.literal("logAppend"), line: z.string() }),
+  z.object({ type: z.literal("toolUpsert"), tool: PickyToolActivitySchema }),
+  z.object({ type: z.literal("todoSet"), todoState: PickyTodoStateSchema.nullable() }),
+  z.object({ type: z.literal("subagentRunsSet"), runs: z.array(PickySubagentRunSchema) }),
+  z.object({ type: z.literal("artifactUpsert"), artifact: PickyArtifactSchema }),
+  z.object({ type: z.literal("changedFilesSet"), changedFiles: z.array(PickyChangedFileSchema) }),
+  z.object({ type: z.literal("queueSet"), queuedSteers: z.array(PickyQueueItemSchema), queuedFollowUps: z.array(PickyQueueItemSchema), steeringMode: PickyQueueModeSchema, followUpMode: PickyQueueModeSchema }),
+  z.object({ type: z.literal("activitySet"), activitySummary: PickyActivitySummarySchema }),
+  z.object({ type: z.literal("finalAnswerSet"), finalAnswer: z.string().nullable() }),
+  z.object({ type: z.literal("extensionUiRequestSet"), request: PickyExtensionUiRequestSchema.nullable() }),
+]);
+export const PickySessionProjectionMutationSchema = PickySessionProjectionMutationVariantSchema.superRefine((mutation, context) => {
+  if (mutation.type === "messageReplace" && mutation.messageId !== mutation.message.id) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "messageId must match message.id",
+      path: ["messageId"],
+    });
+  }
+});
+export type PickySessionProjectionMutation = z.infer<typeof PickySessionProjectionMutationSchema>;
+
 export const PickyPointerOverlayRequestSchema = z.object({
   id: z.string().min(1),
   contextId: z.string().optional(),
@@ -589,7 +643,28 @@ const QuickReplyKindSchema = z.preprocess((value) => {
   return value;
 }, z.enum(["main", "pickleCompletion", "router", "handoffAck", "error", "unknown"]));
 
-export const EventEnvelopeSchema = z.discriminatedUnion("type", [
+// These schemas are intentionally dormant until the atomic v2 protocol cutover:
+// server.ts must not broadcast either projection event before that change.
+export const PickySessionProjectionTransactionEventSchema = EventBaseSchema.extend({
+  type: z.literal("sessionProjectionTransaction"),
+  sessionId: z.string(),
+  epoch: z.string(),
+  baseRevision: z.number().int().nonnegative(),
+  revision: z.number().int(),
+  mutations: z.array(PickySessionProjectionMutationSchema).min(1),
+});
+export const PickySessionProjectionSnapshotEventSchema = EventBaseSchema.extend({
+  type: z.literal("sessionProjectionSnapshot"),
+  requestId: z.string().optional(),
+  sessionId: z.string(),
+  epoch: z.string(),
+  revision: z.number().int().nonnegative(),
+  complete: z.boolean(),
+  omittedFields: z.array(z.string()),
+  projection: PickyAgentSessionSchema,
+});
+
+export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
   EventBaseSchema.extend({ type: z.literal("hello"), serverName: z.literal("picky-agentd"), supportedProtocolVersions: z.array(z.string()) }),
   EventBaseSchema.extend({
     type: z.literal("quickReply"),
@@ -676,6 +751,8 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
     reloadedHandleCount: z.number().int().nonnegative(),
   }),
   EventBaseSchema.extend({ type: z.literal("sessionSnapshot"), sessions: z.array(PickyAgentSessionSchema) }),
+  PickySessionProjectionTransactionEventSchema,
+  PickySessionProjectionSnapshotEventSchema,
   EventBaseSchema.extend({ type: z.literal("sessionUpdated"), session: PickyAgentSessionSchema }),
   EventBaseSchema.extend({ type: z.literal("sessionMetaUpdated"), session: PickyAgentSessionMetaSchema }),
   // Explicit signal that a session's `archived` flag was just (un)set on the
@@ -864,6 +941,59 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
   // treating "no error within a timeout" as success.
   EventBaseSchema.extend({ type: z.literal("ack"), commandId: z.string() }),
 ]);
+
+export const EventEnvelopeSchema = EventEnvelopeVariantSchema.superRefine((event, context) => {
+  if (event.type === "sessionProjectionTransaction") {
+    if (event.revision <= event.baseRevision) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "revision must be greater than baseRevision",
+        path: ["revision"],
+      });
+    }
+
+    event.mutations.forEach((mutation, index) => {
+      if (mutation.type === "extensionUiRequestSet" && mutation.request?.sessionId !== undefined && mutation.request.sessionId !== event.sessionId) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "extension UI request sessionId must match transaction sessionId",
+          path: ["mutations", index, "request", "sessionId"],
+        });
+      }
+    });
+  }
+
+  if (event.type === "sessionProjectionSnapshot") {
+    const sessionFields = new Set(Object.keys(PickyAgentSessionSchema.shape));
+    const seenOmittedFields = new Set<string>();
+
+    event.omittedFields.forEach((field, index) => {
+      if (!sessionFields.has(field)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "omittedFields must contain persisted session fields",
+          path: ["omittedFields", index],
+        });
+      }
+      if (seenOmittedFields.has(field)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "omittedFields must not contain duplicates",
+          path: ["omittedFields", index],
+        });
+      }
+      seenOmittedFields.add(field);
+    });
+
+    if (event.complete && event.omittedFields.length > 0) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "complete snapshots must not omit fields",
+        path: ["omittedFields"],
+      });
+    }
+  }
+});
 
 export type EventEnvelope = z.infer<typeof EventEnvelopeSchema>;
 

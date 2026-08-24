@@ -1,0 +1,23 @@
+{
+  "id": "event-projection-transaction-001",
+  "protocolVersion": "2026-08-23",
+  "timestamp": "2026-08-24T00:00:00.000Z",
+  "type": "sessionProjectionTransaction",
+  "sessionId": "session-001",
+  "epoch": "epoch-001",
+  "baseRevision": 4,
+  "revision": 5,
+  "mutations": [
+    {
+      "type": "metaPatch",
+      "patch": {
+        "status": "completed",
+        "updatedAt": "2026-08-24T00:00:00.000Z"
+      }
+    },
+    {
+      "type": "finalAnswerSet",
+      "finalAnswer": "Completed successfully."
+    }
+  ]
+}

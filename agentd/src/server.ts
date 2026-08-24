@@ -1256,12 +1256,10 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
 // eslint-disable-next-line complexity -- This exhaustive protocol projection intentionally mirrors every event variant without executing behavior.
 function eventLogFields(event: EventEnvelope): Record<string, string | number | undefined> {
   switch (event.type) {
-    case "hello":
-      return { eventId: event.id, type: event.type };
+    case "hello": return { eventId: event.id, type: event.type };
     case "quickReply":
       return { eventId: event.id, type: event.type, contextId: event.contextId, textChars: event.text.length, originSource: event.originSource, replyKind: event.replyKind, sessionId: event.sessionId };
-    case "mainTurnSettled":
-      return { eventId: event.id, type: event.type, contextId: event.contextId };
+    case "mainTurnSettled": return { eventId: event.id, type: event.type, contextId: event.contextId };
     case "mainNarrationChunk":
       return { eventId: event.id, type: event.type, contextId: event.contextId, textChars: event.text.length, originSource: event.originSource, replyKind: event.replyKind, sessionId: event.sessionId };
     case "mainVisualNarrationSegmentPrepared":
@@ -1270,8 +1268,7 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, contextId: event.identity.contextId, turnToken: event.identity.turnToken, ordinal: event.identity.ordinal, sentenceIndex: event.index, textChars: event.text.length };
     case "mainVisualNarrationSegmentCommitted":
       return { eventId: event.id, type: event.type, contextId: event.identity.contextId, turnToken: event.identity.turnToken, ordinal: event.identity.ordinal, sentenceCount: event.sentenceCount, textChars: event.text?.length ?? 0 };
-    case "mainMessagesSnapshot":
-      return { eventId: event.id, type: event.type, messages: event.messages.length };
+    case "mainMessagesSnapshot": return { eventId: event.id, type: event.type, messages: event.messages.length };
     case "mainMessageAppended":
       return { eventId: event.id, type: event.type, role: event.message.role, textChars: event.message.text.length };
     case "mainAgentModelsSnapshot":
@@ -1294,6 +1291,9 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, hasSessionFile: event.sessionFilePath ? 1 : 0, hasCwd: event.cwd ? 1 : 0 };
     case "sessionSnapshot":
       return { eventId: event.id, type: event.type, sessions: event.sessions.length };
+    case "sessionProjectionTransaction":
+    case "sessionProjectionSnapshot":
+      return { eventId: event.id, type: event.type, sessionId: event.sessionId, revision: event.revision };
     case "sessionUpdated":
     case "sessionMetaUpdated":
       return { eventId: event.id, type: event.type, sessionId: event.session.id, status: event.session.status };

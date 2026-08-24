@@ -2,14 +2,15 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { BrowserMetadataSchema, CommandEnvelopeSchema, EventEnvelopeSchema, PickyAgentSessionSchema, PROTOCOL_VERSION } from "./protocol.js";
+import { BrowserMetadataSchema, CommandEnvelopeSchema, EventEnvelopeSchema, EventEnvelopeVariantSchema, PickyAgentSessionSchema, PickySessionMetaPatchSchema, PickySessionProjectionMutationSchema, PickySessionProjectionMutationVariantSchema, PROTOCOL_VERSION } from "./protocol.js";
+import { mutationNames, persistedSessionFieldOwnership } from "./domain/session-projection-ownership.js";
 
 const contractsRoot = join(process.cwd(), "..", "contracts", "protocol");
 
 type Fixture = Record<string, unknown>;
 
 function eventVariantSchema(fixture: Fixture) {
-  const schema = EventEnvelopeSchema.options.find((option) => option.shape.type.value === fixture.type);
+  const schema = EventEnvelopeVariantSchema.options.find((option) => option.shape.type.value === fixture.type);
   if (!schema) throw new Error(`No event schema for fixture type ${String(fixture.type)}`);
   return schema;
 }
@@ -701,8 +702,136 @@ describe("protocol contract fixtures", () => {
     expect(() => EventEnvelopeSchema.parse({ ...base, steeringMode: "one-at-a-time", followUpMode: "all" })).not.toThrow();
   });
 
+  it("preserves absent, null, and value semantics for projection meta patches", () => {
+    expect(PickySessionMetaPatchSchema.parse({})).toEqual({});
+    expect(PickySessionMetaPatchSchema.parse({ cwd: null })).toEqual({ cwd: null });
+    expect(PickySessionMetaPatchSchema.parse({ title: "Renamed Pickle" })).toEqual({ title: "Renamed Pickle" });
+    expect(() => PickySessionMetaPatchSchema.parse({ finalAnswer: "owned elsewhere" })).toThrow();
+  });
 
+  it("requires ordered non-empty projection transactions and known mutation variants", () => {
+    const transaction = {
+      id: "event-projection-transaction",
+      protocolVersion: PROTOCOL_VERSION,
+      timestamp: "2026-08-24T00:00:00.000Z",
+      type: "sessionProjectionTransaction",
+      sessionId: "session-001",
+      epoch: "epoch-001",
+      baseRevision: 3,
+      revision: 4,
+      mutations: [{ type: "metaPatch", patch: { status: "completed" } }],
+    };
 
+    expect(() => EventEnvelopeSchema.parse(transaction)).not.toThrow();
+    expect(() => EventEnvelopeSchema.parse({ ...transaction, revision: 3 })).toThrow();
+    expect(() => EventEnvelopeSchema.parse({ ...transaction, mutations: [] })).toThrow();
+    expect(() => PickySessionProjectionMutationSchema.parse({ type: "unknown" })).toThrow();
+  });
+
+  it("rejects message replacements whose identifiers disagree", () => {
+    expect(() => PickySessionProjectionMutationSchema.parse({
+      type: "messageReplace",
+      messageId: "message-original",
+      message: { id: "message-replacement", kind: "agent_text", createdAt: "2026-08-24T00:00:00.000Z", text: "Updated answer" },
+    })).toThrow();
+  });
+
+  it("rejects extension UI requests for another transaction session", () => {
+    expect(() => EventEnvelopeSchema.parse({
+      id: "event-projection-extension-ui",
+      protocolVersion: PROTOCOL_VERSION,
+      timestamp: "2026-08-24T00:00:00.000Z",
+      type: "sessionProjectionTransaction",
+      sessionId: "session-001",
+      epoch: "epoch-001",
+      baseRevision: 3,
+      revision: 4,
+      mutations: [{
+        type: "extensionUiRequestSet",
+        request: {
+          id: "extension-request-001",
+          sessionId: "other-session",
+          method: "confirm",
+          createdAt: "2026-08-24T00:00:00.000Z",
+        },
+      }],
+    })).toThrow();
+  });
+
+  it("round-trips every ownership mutation variant", () => {
+    const mutations: Record<string, unknown> = {
+      metaPatch: { type: "metaPatch", patch: { title: "Updated title" } },
+      messageAppend: { type: "messageAppend", message: { id: "message-001", kind: "agent_text", createdAt: "2026-08-24T00:00:00.000Z", text: "Answer" } },
+      messageReplace: { type: "messageReplace", messageId: "message-001", message: { id: "message-001", kind: "agent_text", createdAt: "2026-08-24T00:00:00.000Z", text: "Updated answer" } },
+      messageRemove: { type: "messageRemove", messageId: "message-001" },
+      messagesImport: { type: "messagesImport", messages: [] },
+      logAppend: { type: "logAppend", line: "completed" },
+      toolUpsert: { type: "toolUpsert", tool: { toolCallId: "tool-001", name: "read", status: "succeeded" } },
+      todoSet: { type: "todoSet", todoState: null },
+      subagentRunsSet: { type: "subagentRunsSet", runs: [] },
+      artifactUpsert: { type: "artifactUpsert", artifact: { id: "artifact-001", kind: "report", title: "Report", updatedAt: "2026-08-24T00:00:00.000Z" } },
+      changedFilesSet: { type: "changedFilesSet", changedFiles: [] },
+      queueSet: { type: "queueSet", queuedSteers: [], queuedFollowUps: [], steeringMode: "one-at-a-time", followUpMode: "one-at-a-time" },
+      activitySet: { type: "activitySet", activitySummary: { read: 0, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 } },
+      finalAnswerSet: { type: "finalAnswerSet", finalAnswer: null },
+      extensionUiRequestSet: { type: "extensionUiRequestSet", request: null },
+    };
+
+    for (const [type, mutation] of Object.entries(mutations)) {
+      expect(PickySessionProjectionMutationSchema.parse(mutation)).toEqual(mutation);
+      expect(mutationNamesForOwnership()).toContain(type);
+    }
+  });
+
+  it("keeps projection mutation ownership and schema variants in exact parity", () => {
+    expect(new Set(PickySessionProjectionMutationVariantSchema.options.map((option) => option.shape.type.value))).toEqual(
+      new Set(persistedSessionFieldOwnership.flatMap(mutationNames)),
+    );
+  });
+
+  it("keeps meta patch fields in exact parity with manifest ownership", () => {
+    expect(new Set(Object.keys(PickySessionMetaPatchSchema.shape))).toEqual(
+      new Set(persistedSessionFieldOwnership
+        .filter((entry) => entry.v2Mutation === "metaPatch")
+        .map((entry) => entry.field)),
+    );
+  });
+
+  it("rejects inconsistent projection snapshot omission metadata", () => {
+    const snapshot = {
+      id: "event-projection-snapshot",
+      protocolVersion: PROTOCOL_VERSION,
+      timestamp: "2026-08-24T00:00:00.000Z",
+      type: "sessionProjectionSnapshot",
+      requestId: "snapshot-001",
+      sessionId: "session-001",
+      epoch: "epoch-001",
+      revision: 4,
+      complete: false,
+      omittedFields: ["messages"],
+      projection: {
+        id: "session-001",
+        title: "Projection",
+        status: "running",
+        createdAt: "2026-08-24T00:00:00.000Z",
+        updatedAt: "2026-08-24T00:00:00.000Z",
+      },
+    };
+
+    expect(EventEnvelopeSchema.parse(snapshot)).toMatchObject({ type: "sessionProjectionSnapshot", complete: false, omittedFields: ["messages"] });
+    expect(() => EventEnvelopeSchema.parse({ ...snapshot, complete: true })).toThrow();
+    expect(() => EventEnvelopeSchema.parse({ ...snapshot, omittedFields: ["notAStoredSessionField"] })).toThrow();
+    expect(() => EventEnvelopeSchema.parse({ ...snapshot, omittedFields: ["messages", "messages"] })).toThrow();
+  });
+
+  it("keeps v2 projection events dormant in the server", () => {
+    const serverSource = readFileSync(new URL("./server.ts", import.meta.url), "utf8");
+    expect(serverSource).not.toMatch(/(?:broadcast|send)\(\{[\s\S]{0,300}type:\s*["']sessionProjection(?:Transaction|Snapshot)["']/);
+  });
+
+  function mutationNamesForOwnership() {
+    return persistedSessionFieldOwnership.flatMap(mutationNames);
+  }
 
   it("rejects invalid protocol versions", () => {
     expect(() => CommandEnvelopeSchema.parse({ id: "bad", protocolVersion: "old", type: "listSessions" })).toThrow(/Invalid literal value/);

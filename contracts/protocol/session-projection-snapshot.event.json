@@ -1,0 +1,19 @@
+{
+  "id": "event-projection-snapshot-001",
+  "protocolVersion": "2026-08-23",
+  "timestamp": "2026-08-24T00:00:00.000Z",
+  "type": "sessionProjectionSnapshot",
+  "requestId": "snapshot-001",
+  "sessionId": "session-001",
+  "epoch": "epoch-001",
+  "revision": 5,
+  "complete": false,
+  "omittedFields": ["messages", "logs"],
+  "projection": {
+    "id": "session-001",
+    "title": "Bounded projection",
+    "status": "completed",
+    "createdAt": "2026-08-24T00:00:00.000Z",
+    "updatedAt": "2026-08-24T00:00:00.000Z"
+  }
+}

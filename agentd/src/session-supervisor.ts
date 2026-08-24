@@ -2935,15 +2935,10 @@ export class SessionSupervisor extends EventEmitter {
   private async materializeTerminalArtifacts(sessionId: string): Promise<void> {
     const materialized = await this.artifactMaterializer.materializeTerminalArtifacts(this.mustGet(sessionId));
     if (!materialized) return;
-    // Persistence-only patch: the terminal status metadata was already broadcast by the
-    // status path, and the granular `artifact` events below are the live projection owners.
-    // Re-emitting full session meta here would duplicate the completed broadcast (perf
-    // regression fixed in W1.3). The planned W5 terminal unit-of-work folds this write and
-    // the artifact publication into one durable commit.
+    // Persist artifacts without duplicating terminal meta; granular events own the live projection until W5 combines them.
     await this.patch(sessionId, { artifacts: materialized.artifacts }, { emitSession: false });
     for (const artifact of materialized.emittedArtifacts) this.emit("artifact", sessionId, artifact);
   }
-
   private async patch(sessionId: string, patch: Partial<PickyAgentSession>, options: { emitSession?: boolean; emitFullSession?: boolean } = {}): Promise<void> {
     await this.runSessionWrite(sessionId, async () => {
       const current = this.mustGet(sessionId);
@@ -2955,7 +2950,6 @@ export class SessionSupervisor extends EventEmitter {
       }
     });
   }
-
   private async updateTodoState(sessionId: string, todoState: PickyAgentSession["todoState"]): Promise<void> {
     const current = this.mustGet(sessionId).todoState;
     if (sameTodoState(current, todoState)) return;
@@ -2965,7 +2959,6 @@ export class SessionSupervisor extends EventEmitter {
       this.emit("todoStateUpdated", sessionId, todoState, seq);
     });
   }
-
   private async syncSessionMessages(sessionId: string, messages: readonly PickySessionMessage[], patch?: SessionMessageSyncPatch): Promise<void> {
     await this.runSessionWrite(sessionId, async () => {
       // Read inside the write boundary so concurrent patches cannot be overwritten by a stale snapshot.
@@ -2974,7 +2967,6 @@ export class SessionSupervisor extends EventEmitter {
       await this.store.save(session);
     });
   }
-
   private async runSessionWrite(sessionId: string, work: () => Promise<void>): Promise<void> {
     const previous = this.patchChains.get(sessionId) ?? Promise.resolve();
     const next = previous.catch(() => undefined).then(work);

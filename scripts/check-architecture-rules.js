@@ -348,13 +348,23 @@ function lineCount(file) {
   return fs.readFileSync(file, "utf8").split("\n").length;
 }
 
-const HUD_SESSION_LIST_VIEW_MODEL_REFERENCE_BASELINE = 63;
-const observableSessionArrayPattern = /^\s*(?!private\b)(?:@[A-Za-z_][A-Za-z0-9_]*(?:\([^\n]*\))?\s*)*(?:var|let)\s+[A-Za-z_][A-Za-z0-9_]*\s*:\s*\[\s*(SessionCard|PickySessionMessage|PickyAgentSession)\s*\](?!\s*\{)/gm;
+// Lower-only ratchet: count code references after stripping Swift comments and strings.
+// When a refactor lowers this count, re-run the count, pin the new lower value here, and
+// update the self-test. Never raise this baseline; new concrete HUD references must be removed.
+const HUD_SESSION_LIST_VIEW_MODEL_REFERENCE_BASELINE = 58;
+const observableSessionArrayPattern = /^\s*(?:@[A-Za-z_][A-Za-z0-9_]*(?:\([^\n]*\))?\s*)*((?:(?:public|internal|package|fileprivate|private(?:\(set\))?|static|class|final|lazy|weak|unowned|nonisolated)\s+)*)(var|let)\s+[A-Za-z_][A-Za-z0-9_]*\s*:\s*\[\s*(SessionCard|PickySessionMessage|PickyAgentSession)\s*\](?!\s*\{)/gm;
 
 function observableSessionArrayViolations(source) {
   const stripped = stripSwiftCommentsAndStrings(source);
   if (!/@Observable\b/.test(stripped)) return [];
-  return [...stripped.matchAll(observableSessionArrayPattern)].map((match) => match[1]);
+  return [...stripped.matchAll(observableSessionArrayPattern)]
+    .filter((match) => !(match[1].trim() === "private" && match[2] === "var"))
+    .map((match) => match[3]);
+}
+
+function hudSessionListViewModelReferenceCount() {
+  return walk("Picky/HUD", (candidate) => candidate.endsWith(".swift"))
+    .reduce((count, file) => count + (stripSwiftCommentsAndStrings(fs.readFileSync(file, "utf8")).match(/\bPickySessionListViewModel\b/g)?.length ?? 0), 0);
 }
 
 function hudSessionListViewModelReferenceExceedsBaseline(referenceCount) {
@@ -369,8 +379,7 @@ function checkSessionProjectionRules() {
     }
   }
 
-  const referenceCount = walk("Picky/HUD", (candidate) => candidate.endsWith(".swift"))
-    .reduce((count, file) => count + (fs.readFileSync(file, "utf8").match(/\bPickySessionListViewModel\b/g)?.length ?? 0), 0);
+  const referenceCount = hudSessionListViewModelReferenceCount();
   if (hudSessionListViewModelReferenceExceedsBaseline(referenceCount)) {
     addError(`Picky/HUD concrete PickySessionListViewModel references grew to ${referenceCount}, above recorded baseline ${HUD_SESSION_LIST_VIEW_MODEL_REFERENCE_BASELINE}.`);
   }
@@ -383,6 +392,17 @@ function checkSessionProjectionGuardFixtures() {
       var cards: [SessionCard] = []
       var messages: [PickySessionMessage] = []
       var sessions: [PickyAgentSession] = []
+    }
+  `;
+  const blockedAccessModifiedStore = `
+    @Observable
+    final class SessionStore {
+      internal var cards: [SessionCard] = []
+      public private(set) var messages: [PickySessionMessage] = []
+      package var sessions: [PickyAgentSession] = []
+      static var cachedCards: [SessionCard] = []
+      private(set) var cachedMessages: [PickySessionMessage] = []
+      private static var cachedSessions: [PickyAgentSession] = []
     }
   `;
   const allowedPrivateStore = `
@@ -400,11 +420,17 @@ function checkSessionProjectionGuardFixtures() {
   if (observableSessionArrayViolations(blockedStore).length !== 3) {
     addError("Session-projection guard self-test failed to block non-private Observable session arrays.");
   }
+  if (observableSessionArrayViolations(blockedAccessModifiedStore).length !== 6) {
+    addError("Session-projection guard self-test failed to block access-modified Observable session arrays.");
+  }
   if (observableSessionArrayViolations(allowedPrivateStore).length !== 0) {
     addError("Session-projection guard self-test incorrectly blocked a private Observable session array.");
   }
   if (observableSessionArrayViolations(allowedNonObservableStore).length !== 0) {
     addError("Session-projection guard self-test incorrectly blocked a non-Observable store.");
+  }
+  if (hudSessionListViewModelReferenceCount() !== HUD_SESSION_LIST_VIEW_MODEL_REFERENCE_BASELINE) {
+    addError("Session-projection guard self-test HUD reference count drifted from its recorded baseline.");
   }
   if (hudSessionListViewModelReferenceExceedsBaseline(HUD_SESSION_LIST_VIEW_MODEL_REFERENCE_BASELINE)) {
     addError("Session-projection guard self-test incorrectly rejected the HUD reference baseline.");

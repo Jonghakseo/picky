@@ -177,14 +177,63 @@ describe("AgentdServer", () => {
     expect(replayFrames.map(({ event }) => event.type)).toEqual(["sessionSnapshot", ...Array(94).fill("sessionUpdated")]);
     expect(budget).toEqual({
       frameCount: 95,
-      maxSingleFrameBytes: expect.any(Number),
-      totalEncodedBytes: expect.any(Number),
+      maxSingleFrameBytes: 47_233,
+      totalEncodedBytes: 117_599,
     });
+    // Exact fixture bytes ratchet projection changes; keep this independent transport cap.
     expect(budget.maxSingleFrameBytes).toBeLessThan(8 * 1024 * 1024);
-    expect(budget.totalEncodedBytes).toBeGreaterThan(50_000);
-    expect(budget.totalEncodedBytes).toBeLessThan(250_000);
     expect(sessions.map((session) => boundedSessionForAppHydration(PickyAgentSessionSchema.parse(session)).omittedFields)).toEqual(Array.from({ length: 94 }, () => []));
     ws.close();
+  });
+
+  it("reuses the bounded bootstrap route after registered-app reconnect", async () => {
+    const sessions = makeNormalSessionBootstrapFixtures();
+    vi.spyOn(supervisor, "list").mockReturnValue(sessions);
+
+    const first = await connectWithHello();
+    first.ws.send(JSON.stringify({
+      id: "cmd-register-bootstrap-reconnect-first-app",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "registerAppCapabilities",
+      capabilities: ["pickleBridge"],
+    }));
+    await waitForEvent(first.ws, "ack");
+    first.ws.close();
+    await once(first.ws, "close");
+
+    const replacement = await connectWithHello();
+    replacement.ws.send(JSON.stringify({
+      id: "cmd-register-bootstrap-reconnect-replacement-app",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "registerAppCapabilities",
+      capabilities: ["pickleBridge"],
+    }));
+    await waitForEvent(replacement.ws, "ack");
+
+    const rawFrames: string[] = [];
+    const captureFrame = (data: WebSocket.RawData) => rawFrames.push(data.toString());
+    replacement.ws.on("message", captureFrame);
+    replacement.ws.send(JSON.stringify({ id: "cmd-list-bootstrap-reconnect", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
+    await waitUntil(() => rawFrames.some((frame) => {
+      const event = JSON.parse(frame) as EventEnvelope;
+      return event.type === "ack" && event.commandId === "cmd-list-bootstrap-reconnect";
+    }));
+    replacement.ws.off("message", captureFrame);
+
+    const replayFrames = rawFrames
+      .map((frame) => ({ frame, event: JSON.parse(frame) as EventEnvelope }))
+      .filter(({ event }) => event.type === "sessionSnapshot" || event.type === "sessionUpdated");
+    const budget = {
+      frameCount: replayFrames.length,
+      maxSingleFrameBytes: Math.max(...replayFrames.map(({ frame }) => Buffer.byteLength(frame, "utf8"))),
+      totalEncodedBytes: replayFrames.reduce((total, { frame }) => total + Buffer.byteLength(frame, "utf8"), 0),
+    };
+
+    expect(replayFrames.map(({ event }) => event.type)).toEqual(["sessionSnapshot", ...Array(94).fill("sessionUpdated")]);
+    expect(budget).toEqual({ frameCount: 95, maxSingleFrameBytes: 47_233, totalEncodedBytes: 117_599 });
+    expect(budget.maxSingleFrameBytes).toBeLessThan(8 * 1024 * 1024);
+    expect(sessions.map((session) => boundedSessionForAppHydration(PickyAgentSessionSchema.parse(session)).omittedFields)).toEqual(Array.from({ length: 94 }, () => []));
+    replacement.ws.close();
   });
 
   it("reuses the bounded bootstrap route after deletion for registered app clients", async () => {

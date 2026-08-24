@@ -15,35 +15,96 @@ final class PickySettingsViewModel: ObservableObject {
     @Published var settings: PickySettings
     @Published private(set) var validationError: String?
 
-    private let store: PickySettingsStore
-    /// The disk snapshot from when the panel opened or last saved. It lets a
-    /// later save distinguish fields edited in this panel from stale fields.
+    private let persistence: PickySettingsPersistenceCoordinator
+    /// The latest durable snapshot. It becomes the next admission baseline
+    /// once all currently queued panel saves have settled.
     private var savedBaseline: PickySettings
+    /// The most recently admitted draft. Comparing against it makes a rapid
+    /// change back to the durable value an explicit reversal of the
+    /// preceding queued draft instead of an "unchanged" leaf.
+    private var admissionBaseline: PickySettings
+    @Published private(set) var isSaving = false
+    private var activeSaveCount = 0
 
-    init(store: PickySettingsStore = PickySettingsStore()) {
-        self.store = store
+    init(
+        store: PickySettingsStore = PickySettingsStore(),
+        persistence: PickySettingsPersistenceCoordinator? = nil
+    ) {
+        self.persistence = persistence ?? .shared(for: store)
         let initialSettings = store.load()
         self.settings = initialSettings
         self.savedBaseline = initialSettings
+        self.admissionBaseline = initialSettings
     }
 
-    func save() -> Bool {
+    /// Synchronously admits the current draft into the settings FIFO. The
+    /// completion reports durable success, so AppKit callers never show Saved
+    /// merely because a background task was created.
+    func save(completion: @escaping @MainActor (Bool) -> Void = { _ in }) {
+        let draft = settings
+        let priorAdmissionBaseline = admissionBaseline
+        admissionBaseline = draft
+        beginSave()
+        persistence.enqueue(
+            notification: .settingsDidSave,
+            mutation: { latest in
+                latest = try PickySettingsSnapshotMerger.merge(
+                    draft: draft,
+                    baseline: priorAdmissionBaseline,
+                    runtime: latest
+                )
+            },
+            completion: { [weak self] result in
+                guard let self else { return }
+                completion(self.completeSave(result, draft: draft))
+            }
+        )
+    }
+
+    /// Durable convenience for tests and async callers that must await the
+    /// atomic file transaction rather than use the completion-based UI path.
+    @discardableResult
+    func saveDurably() async -> Bool {
+        let draft = settings
+        let priorAdmissionBaseline = admissionBaseline
+        admissionBaseline = draft
+        beginSave()
+        let result: Result<PickySettings, Error>
         do {
-            // The settings panel holds a cached snapshot while other runtime
-            // owners (including the CLI settings bridge) can update the file.
-            // Merge only values changed from this panel's baseline; untouched
-            // leaves retain the newest disk-backed value.
-            let updated = try PickySettingsSnapshotMerger.merge(
-                draft: settings,
-                baseline: savedBaseline,
-                runtime: store.load()
-            )
-            try store.save(updated)
-            let savedSettings = store.load()
-            settings = savedSettings
-            savedBaseline = savedSettings
+            result = .success(try await persistence.persist(notification: .settingsDidSave) { latest in
+                latest = try PickySettingsSnapshotMerger.merge(
+                    draft: draft,
+                    baseline: priorAdmissionBaseline,
+                    runtime: latest
+                )
+            })
+        } catch {
+            result = .failure(error)
+        }
+        return completeSave(result, draft: draft)
+    }
+
+    private func beginSave() {
+        activeSaveCount += 1
+        isSaving = true
+    }
+
+    private func completeSave(_ result: Result<PickySettings, Error>, draft: PickySettings) -> Bool {
+        defer {
+            activeSaveCount -= 1
+            isSaving = activeSaveCount > 0
+            if activeSaveCount == 0 {
+                admissionBaseline = savedBaseline
+            }
+        }
+        do {
+            let committed = try result.get()
+            // A user may continue editing while the write is in flight. Rebase
+            // those post-admission edits onto the committed snapshot instead
+            // of replacing them with the older captured draft.
+            settings = try PickySettingsSnapshotMerger.merge(draft: settings, baseline: draft, runtime: committed)
+            savedBaseline = committed
             validationError = nil
-            NotificationCenter.default.post(name: .pickySettingsDidSave, object: nil)
             return true
         } catch {
             validationError = error.localizedDescription
@@ -51,8 +112,8 @@ final class PickySettingsViewModel: ObservableObject {
         }
     }
 
-    /// Updates one of the two shortcut specs, refusing if the new spec would
-    /// collide with the other shortcut. Returns true on success.
+    /// Updates the draft shortcut spec, refusing collisions. Call `save` (or
+    /// `saveDurably`) to persist it; the return value is not durable success.
     func updateShortcut(
         _ newSpec: PickyShortcutSpec,
         keyPath: WritableKeyPath<PickySettings, PickyShortcutSpec>,
@@ -70,10 +131,11 @@ final class PickySettingsViewModel: ObservableObject {
         var updated = settings
         updated[keyPath: keyPath] = newSpec
         settings = updated
-        return save()
+        return true
     }
 
-    /// Restores both shortcut specs to their default values.
+    /// Restores both shortcut specs in the draft. Call `save` (or
+    /// `saveDurably`) to persist them.
     @discardableResult
     func resetShortcutsToDefaults() -> Bool {
         validationError = nil
@@ -81,7 +143,7 @@ final class PickySettingsViewModel: ObservableObject {
         updated.pushToTalkShortcut = .defaultPushToTalk
         updated.quickInputShortcut = .defaultQuickInput
         settings = updated
-        return save()
+        return true
     }
 }
 

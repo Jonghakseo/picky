@@ -51,6 +51,7 @@ struct PickyDetachedPanelFramePersister {
         legacyDefaults: UserDefaults? = .standard
     ) -> PickyDetachedPanelFramePersister {
         let key = kind.rawValue
+        let persistence = PickySettingsPersistenceCoordinator.shared(for: settingsStore)
         return PickyDetachedPanelFramePersister(
             load: {
                 if let stored = settingsStore.load().detachedPanelFrames[key] {
@@ -66,9 +67,9 @@ struct PickyDetachedPanelFramePersister {
                 return nil
             },
             save: { rect in
-                var current = settingsStore.load()
-                current.detachedPanelFrames[key] = PickyDetachedPanelFrame(rect)
-                try? settingsStore.save(current)
+                persistence.enqueue {
+                    $0.detachedPanelFrames[key] = PickyDetachedPanelFrame(rect)
+                }
             }
         )
     }

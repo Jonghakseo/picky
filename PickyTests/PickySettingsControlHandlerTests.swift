@@ -95,6 +95,43 @@ struct PickySettingsControlHandlerTests {
         #expect(second["revision"] == .number(2))
         #expect(settingsStore.load().mainAgentModelPattern == "model/b")
     }
+
+    @MainActor
+    @Test func returnsCommittedDisplaySpecificDockVisibility() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-control-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+
+        let settingsStore = PickySettingsStore(appSupportRoot: root)
+        var initialSettings = PickySettings.defaults(appSupportRoot: root)
+        initialSettings.defaultCwd = project.path
+        initialSettings.mainAgentCwd = project.path
+        initialSettings.worktreeParent = project.path
+        initialSettings.hudDockVisible = true
+        try settingsStore.save(initialSettings)
+
+        let handler = PickySettingsControlHandler(
+            settingsStore: settingsStore,
+            mutationCoordinator: PickySettingsMutationCoordinator(store: settingsStore),
+            applyDockVisibility: { _, _ in },
+            applyMainAgentCommand: { _ in nil }
+        )
+        let result = try await handler.handle(PickySettingsRequest(
+            requestId: "display-visibility",
+            action: .set,
+            key: "hud.dockVisible",
+            value: .bool(false),
+            toggle: false,
+            displayId: "42",
+            caller: nil
+        ))
+
+        let payload = try #require(result.objectValue)
+        #expect(payload["value"] == .bool(false))
+        #expect(settingsStore.load().hudDockVisible)
+        #expect(settingsStore.load().hudDockVisibilityByDisplayID["42"] == false)
+    }
 }
 
 private extension JSONValue {

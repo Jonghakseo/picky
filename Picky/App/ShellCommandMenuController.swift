@@ -29,9 +29,11 @@ final class ShellCommandMenuController: NSObject {
     /// auto-install opt-out flag from here is picked up by
     /// `autoInstallShellCommandIfPermitted()` on the next launch.
     private let settingsStore: PickySettingsStore
+    private let persistence: PickySettingsPersistenceCoordinator
 
     private override init() {
         self.settingsStore = PickySettingsStore()
+        self.persistence = .shared(for: settingsStore)
         super.init()
     }
 
@@ -40,6 +42,7 @@ final class ShellCommandMenuController: NSObject {
     /// settings file.
     init(settingsStore: PickySettingsStore) {
         self.settingsStore = settingsStore
+        self.persistence = .shared(for: settingsStore)
         super.init()
     }
 
@@ -120,17 +123,10 @@ final class ShellCommandMenuController: NSObject {
     }
 
     private func setAutoInstallOptedOut(_ value: Bool) {
-        var settings = settingsStore.load()
-        guard settings.shellCommandAutoInstallOptedOut != value else { return }
-        settings.shellCommandAutoInstallOptedOut = value
-        do {
-            try settingsStore.save(settings)
-            NotificationCenter.default.post(name: .pickySettingsDidSave, object: nil)
-        } catch {
-            // Opt-out state is non-critical — the user can always re-flip it
-            // from Settings. Don't surface a transient disk failure as an
-            // alert; just log it so debug builds can spot a regression.
-            print("⚠️ Picky: failed to persist shell command opt-out flag: \(error)")
+        // Always admit the latest intent. Reading the file here can observe an
+        // older value while a preceding install/uninstall write is still queued.
+        persistence.enqueue(notification: .settingsDidSave) {
+            $0.shellCommandAutoInstallOptedOut = value
         }
     }
 

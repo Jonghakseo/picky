@@ -65,27 +65,60 @@ struct PickyPasteboardClipboardWriter: PickyClipboardWriting {
 /// Read/write access to the persisted dock layout (groups + ordered
 /// session/group refs). Production uses the same `settings.json` Picky has
 /// always used; tests inject a fake implementation.
+@MainActor
 protocol PickyDockLayoutStoring {
     func load() -> PickyDockLayout
-    func save(_ layout: PickyDockLayout) throws
+    /// Synchronously admits a UI mutation into its FIFO persistence boundary.
+    /// Completion reports the eventual worker result on the main actor.
+    func enqueueSave(
+        _ layout: PickyDockLayout,
+        completion: @escaping @MainActor (Result<Void, Error>) -> Void
+    )
+    /// Returns only after a durable write has completed.
+    func saveDurably(_ layout: PickyDockLayout) async throws
 }
 
+extension PickyDockLayoutStoring {
+    func saveDurably(_ layout: PickyDockLayout) async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            enqueueSave(layout) { continuation.resume(with: $0) }
+        }
+    }
+}
+
+@MainActor
 struct PickyNoopDockLayoutStore: PickyDockLayoutStoring {
+    nonisolated init() {}
+
     func load() -> PickyDockLayout { .empty }
-    func save(_ layout: PickyDockLayout) throws {}
+    func enqueueSave(
+        _ layout: PickyDockLayout,
+        completion: @escaping @MainActor (Result<Void, Error>) -> Void
+    ) {
+        completion(.success(()))
+    }
 }
 
+@MainActor
 struct PickySettingsDockLayoutStore: PickyDockLayoutStoring {
     var settingsStore: PickySettingsStore = PickySettingsStore()
+
+    private var persistence: PickySettingsPersistenceCoordinator {
+        .shared(for: settingsStore)
+    }
 
     func load() -> PickyDockLayout {
         settingsStore.load().dockLayout
     }
 
-    func save(_ layout: PickyDockLayout) throws {
-        var settings = settingsStore.load()
-        settings.dockLayout = layout
-        try settingsStore.save(settings)
+    func enqueueSave(
+        _ layout: PickyDockLayout,
+        completion: @escaping @MainActor (Result<Void, Error>) -> Void
+    ) {
+        persistence.enqueue(
+            mutation: { $0.dockLayout = layout },
+            completion: { result in completion(result.map { _ in () }) }
+        )
     }
 }
 

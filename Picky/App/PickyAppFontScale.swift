@@ -22,9 +22,11 @@ final class PickyAppFontScaleStore: ObservableObject {
     @Published private(set) var scale: Double
 
     private let settingsStore: PickySettingsStore
+    private let persistence: PickySettingsPersistenceCoordinator
 
     init(settingsStore: PickySettingsStore = PickySettingsStore()) {
         self.settingsStore = settingsStore
+        self.persistence = .shared(for: settingsStore)
         self.scale = PickyFontScales.clampedApp(settingsStore.load().fontScales.app)
         Self.staticScale = self.scale
     }
@@ -51,13 +53,7 @@ final class PickyAppFontScaleStore: ObservableObject {
     }
 
     private func persist(_ value: Double) {
-        var current = settingsStore.load()
-        current.fontScales.app = value
-        do {
-            try settingsStore.save(current)
-        } catch {
-            print("⚠️ PickyAppFontScaleStore: failed to persist app font scale: \(error.localizedDescription)")
-        }
+        persistence.enqueue { $0.fontScales.app = value }
     }
 
     // MARK: - Static accessor

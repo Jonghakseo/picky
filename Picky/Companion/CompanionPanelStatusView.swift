@@ -386,7 +386,7 @@ private struct CompanionPanelUpdateSection: View {
             get: { settingsViewModel.settings.updatesAutomaticChecksEnabled },
             set: { newValue in
                 settingsViewModel.settings.updatesAutomaticChecksEnabled = newValue
-                _ = settingsViewModel.save()
+                settingsViewModel.save()
             }
         )
     }

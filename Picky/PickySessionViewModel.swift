@@ -457,52 +457,70 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     func removeRecentPickleFolder(_ cwd: String) {
-        do {
-            recentPickleCwds = try recentPickleFolderStore.remove(cwd: cwd)
-            lastError = nil
-        } catch {
-            lastError = error.localizedDescription
+        recentPickleFolderStore.remove(cwd: cwd) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let recent):
+                self.recentPickleCwds = recent
+                self.lastError = nil
+            case .failure(let error):
+                self.lastError = error.localizedDescription
+            }
         }
     }
 
     func pinPickleFolder(_ cwd: String) {
-        do {
-            let updated = try recentPickleFolderStore.pin(cwd: cwd)
-            pinnedPickleCwds = updated.pinned
-            recentPickleCwds = updated.recent
-            lastError = nil
-        } catch {
-            lastError = error.localizedDescription
+        recentPickleFolderStore.pin(cwd: cwd) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let updated):
+                self.pinnedPickleCwds = updated.pinned
+                self.recentPickleCwds = updated.recent
+                self.lastError = nil
+            case .failure(let error):
+                self.lastError = error.localizedDescription
+            }
         }
     }
 
     func unpinPickleFolder(_ cwd: String) {
-        do {
-            let updated = try recentPickleFolderStore.unpin(cwd: cwd)
-            pinnedPickleCwds = updated.pinned
-            recentPickleCwds = updated.recent
-            lastError = nil
-        } catch {
-            lastError = error.localizedDescription
+        recentPickleFolderStore.unpin(cwd: cwd) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let updated):
+                self.pinnedPickleCwds = updated.pinned
+                self.recentPickleCwds = updated.recent
+                self.lastError = nil
+            case .failure(let error):
+                self.lastError = error.localizedDescription
+            }
         }
     }
 
     func reorderPinnedPickleFolders(_ cwds: [String]) {
-        do {
-            pinnedPickleCwds = try recentPickleFolderStore.reorderPinned(cwds: cwds)
-            lastError = nil
-        } catch {
-            lastError = error.localizedDescription
+        recentPickleFolderStore.reorderPinned(cwds: cwds) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let pinned):
+                self.pinnedPickleCwds = pinned
+                self.lastError = nil
+            case .failure(let error):
+                self.lastError = error.localizedDescription
+            }
         }
     }
 
     private func recordRecentPickleFolder(_ cwd: String) {
-        do {
-            recentPickleCwds = try recentPickleFolderStore.record(cwd: cwd)
-        } catch {
-            // A Pickle already started successfully; keep the session creation result and
-            // surface only the persistence failure for diagnostics.
-            lastError = error.localizedDescription
+        recentPickleFolderStore.record(cwd: cwd) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let recent):
+                self.recentPickleCwds = recent
+            case .failure(let error):
+                // A Pickle already started successfully; keep the session creation result and
+                // surface only the persistence failure for diagnostics.
+                self.lastError = error.localizedDescription
+            }
         }
     }
 

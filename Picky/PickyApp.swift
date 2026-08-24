@@ -32,7 +32,12 @@ enum PickyApp {
 final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     private var menuBarPanelManager: MenuBarPanelManager?
     private let settingsStore = PickySettingsStore()
-    private lazy var settingsMutationCoordinator = PickySettingsMutationCoordinator(store: settingsStore)
+    private lazy var settingsPersistence = PickySettingsPersistenceCoordinator.shared(for: settingsStore)
+    private let settingsTerminationDrain = PickySettingsTerminationDrain()
+    private lazy var settingsMutationCoordinator = PickySettingsMutationCoordinator(
+        store: settingsStore,
+        persistence: settingsPersistence
+    )
     private var settingsSaveObserver: NSObjectProtocol?
     /// Single bounded snapshot used to distinguish the prior crash/force-quit
     /// from a clean app termination after the next launch.
@@ -414,12 +419,37 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         }
         router.dockGroupsManager = { [weak self] request in
             guard let self else { throw PickyAgentClientRouterError.routerUnavailable }
-            return try self.hudSessionViewModel.manageDockGroups(request)
+            return try await self.hudSessionViewModel.manageDockGroups(request)
         }
         router.pickleDeletionCleanupHandler = { [weak self] sessionID in
             guard let self else { throw PickyAgentClientRouterError.routerUnavailable }
             self.hudSessionViewModel.finalizeDeletedArchivedSession(sessionID: sessionID)
         }
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !Self.isRunningUnitTests else { return .terminateNow }
+        guard settingsPersistence.hasPendingWork else { return .terminateNow }
+        _ = settingsTerminationDrain.beginRace(
+            drain: { [settingsPersistence] completion in
+                settingsPersistence.drain { result in
+                    completion((try? result.get()) != nil)
+                }
+            },
+            scheduleTimeout: { completion in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: completion)
+            },
+            onSettled: { didDrain in
+                if didDrain {
+                    sender.reply(toApplicationShouldTerminate: true)
+                } else {
+                    PickyRelauncher.cancelPendingRelaunch()
+                    print("⚠️ Picky settings drain failed or timed out; cancelling termination to preserve accepted writes.")
+                    sender.reply(toApplicationShouldTerminate: false)
+                }
+            }
+        )
+        return .terminateLater
     }
 
     func applicationWillTerminate(_ notification: Notification) {

@@ -104,12 +104,11 @@ struct PickyTerminalFontScalePersister {
     let save: (Double) -> Void
 
     static func defaultSettings(settingsStore: PickySettingsStore = PickySettingsStore()) -> PickyTerminalFontScalePersister {
-        PickyTerminalFontScalePersister(
+        let persistence = PickySettingsPersistenceCoordinator.shared(for: settingsStore)
+        return PickyTerminalFontScalePersister(
             load: { settingsStore.load().fontScales.terminal },
             save: { newScale in
-                var current = settingsStore.load()
-                current.fontScales.terminal = PickyFontScales.clamped(newScale)
-                try? settingsStore.save(current)
+                persistence.enqueue { $0.fontScales.terminal = PickyFontScales.clamped(newScale) }
             }
         )
     }
@@ -199,6 +198,7 @@ final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
     /// Shared settings store used to load/persist the terminal zoom level.
     /// Falls back to the default settings location for tests and previews.
     private var settingsStore = PickySettingsStore()
+    private var settingsPersistence = PickySettingsPersistenceCoordinator.shared()
 
     private init() {}
 
@@ -212,6 +212,7 @@ final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
         self.appearanceStore = appearanceStore
         self.fontScaleStore = fontScaleStore
         self.settingsStore = settingsStore
+        self.settingsPersistence = .shared(for: settingsStore)
     }
 
     func openTerminal(
@@ -311,12 +312,11 @@ final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
 
     private func makeFontScalePersister() -> PickyTerminalFontScalePersister {
         let store = settingsStore
+        let persistence = settingsPersistence
         return PickyTerminalFontScalePersister(
             load: { store.load().fontScales.terminal },
             save: { newScale in
-                var current = store.load()
-                current.fontScales.terminal = PickyFontScales.clamped(newScale)
-                try? store.save(current)
+                persistence.enqueue { $0.fontScales.terminal = PickyFontScales.clamped(newScale) }
             }
         )
     }

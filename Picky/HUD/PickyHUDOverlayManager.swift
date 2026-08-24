@@ -145,6 +145,7 @@ final class PickyHUDOverlayManager {
     private let visibilityStore: PickyHUDVisibilityStore
     private let actualPanelVisibilityStore: PickyHUDActualPanelVisibilityStore
     private let settingsStore: PickySettingsStore
+    private let settingsPersistence: PickySettingsPersistenceCoordinator
     private let voiceTargetHitTestRegistry: PickyVoiceTargetHitTestRegistry
     private var visibilityCancellable: AnyCancellable?
     private let collapsedHeight: CGFloat = 180
@@ -206,6 +207,7 @@ final class PickyHUDOverlayManager {
         self.visibilityStore = visibilityStore
         self.actualPanelVisibilityStore = actualPanelVisibilityStore ?? PickyHUDActualPanelVisibilityStore()
         self.settingsStore = settingsStore
+        self.settingsPersistence = .shared(for: settingsStore)
         self.voiceTargetHitTestRegistry = voiceTargetHitTestRegistry
         let settings = settingsStore.load()
         self.currentPositionsByDisplayID = settings.hudDockPositions
@@ -222,9 +224,8 @@ final class PickyHUDOverlayManager {
     /// per-monitor collapse state survives relaunch.
     private func handleDockGroupCollapseChanged(displayID: CGDirectDisplayID, overrides: [String: Bool]) {
         dockGroupCollapseByDisplayID[String(displayID)] = overrides
-        var settings = settingsStore.load()
-        settings.hudDockGroupCollapse = dockGroupCollapseByDisplayID
-        try? settingsStore.save(settings)
+        let collapseByDisplayID = dockGroupCollapseByDisplayID
+        settingsPersistence.enqueue { $0.hudDockGroupCollapse = collapseByDisplayID }
     }
 
     /// Get the live position for a display. Returns defaults for unknown displays.
@@ -1003,9 +1004,8 @@ final class PickyHUDOverlayManager {
         }
         repositionAllPanels()
 
-        var settings = settingsStore.load()
-        settings.hudDockPositions = currentPositionsByDisplayID
-        try? settingsStore.save(settings)
+        let positionsByDisplayID = currentPositionsByDisplayID
+        settingsPersistence.enqueue { $0.hudDockPositions = positionsByDisplayID }
     }
 
     private func handleDockDragChanged(displayID: CGDirectDisplayID, delta: CGPoint) {
@@ -1111,9 +1111,8 @@ final class PickyHUDOverlayManager {
 
     private func handleDockDragEnded() {
         dragStartPositionsByDisplayID = nil
-        var settings = settingsStore.load()
-        settings.hudDockPositions = currentPositionsByDisplayID
-        try? settingsStore.save(settings)
+        let positionsByDisplayID = currentPositionsByDisplayID
+        settingsPersistence.enqueue { $0.hudDockPositions = positionsByDisplayID }
     }
 
     private func handleCardMeasuredSize(displayID: CGDirectDisplayID, size: CGSize) {
@@ -1157,9 +1156,8 @@ final class PickyHUDOverlayManager {
 
     private func handleCardResizeEnded() {
         resizeStartCardSizesByDisplayID = nil
-        var settings = settingsStore.load()
-        settings.hudCardSizes = currentCardSizesByDisplayID
-        try? settingsStore.save(settings)
+        let cardSizesByDisplayID = currentCardSizesByDisplayID
+        settingsPersistence.enqueue { $0.hudCardSizes = cardSizesByDisplayID }
     }
 
     private func handleCardResizeReset(displayID: CGDirectDisplayID) {
@@ -1170,9 +1168,8 @@ final class PickyHUDOverlayManager {
             entry.placement.panelWidth = panelWidth(for: displayID)
         }
         repositionAllPanels()
-        var settings = settingsStore.load()
-        settings.hudCardSizes = currentCardSizesByDisplayID
-        try? settingsStore.save(settings)
+        let cardSizesByDisplayID = currentCardSizesByDisplayID
+        settingsPersistence.enqueue { $0.hudCardSizes = cardSizesByDisplayID }
     }
 
     private func computeAvailableCardMaxWidth(for screen: NSScreen, dockSide: PickyHUDDockSide) -> CGFloat {

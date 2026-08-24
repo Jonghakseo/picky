@@ -15,6 +15,9 @@ final class PickySessionDockLayoutController {
     private let onSaveError: (Error) -> Void
 
     private(set) var layout: PickyDockLayout
+    /// Monotonic admission revision prevents an awaited durable mutation from
+    /// publishing over a newer UI or CLI mutation admitted while suspended.
+    private var layoutRevision: UInt64 = 0
 
     init(
         store: PickyDockLayoutStoring,
@@ -71,9 +74,9 @@ final class PickySessionDockLayoutController {
     /// Main-agent group mutations must not report success until the durable
     /// dock layout write succeeds. Unlike the UI path above, a save error
     /// leaves the published controller layout unchanged and propagates.
-    func createGroupPersisting(name: String, withMemberIDs memberSessionIDs: [String]) throws -> String {
+    func createGroupPersisting(name: String, withMemberIDs memberSessionIDs: [String]) async throws -> String {
         let mutation = groupCreation(name: name, memberSessionIDs: memberSessionIDs)
-        _ = try applyPersisting(mutation.layout, changed: mutation.layout != layout)
+        _ = try await applyPersisting(mutation.layout, changed: mutation.layout != layout)
         return mutation.groupID
     }
 
@@ -100,10 +103,10 @@ final class PickySessionDockLayoutController {
         return removedMemberIDs
     }
 
-    func removeGroupPersisting(id: String, keepMembers: Bool) throws -> [String] {
+    func removeGroupPersisting(id: String, keepMembers: Bool) async throws -> [String] {
         var next = layout
         let removedMemberIDs = next.removeGroup(id: id, keepMembers: keepMembers)
-        _ = try applyPersisting(next, changed: next != layout)
+        _ = try await applyPersisting(next, changed: next != layout)
         return removedMemberIDs
     }
 
@@ -118,24 +121,24 @@ final class PickySessionDockLayoutController {
     /// the whole mutation once. This is the programmatic counterpart to the
     /// dock's per-session drag path and shares the same layout primitive.
     @discardableResult
-    func addSessionsPersisting(_ sessionIDs: [String], toGroup groupID: String) throws -> Bool {
+    func addSessionsPersisting(_ sessionIDs: [String], toGroup groupID: String) async throws -> Bool {
         var next = layout
         for sessionID in sessionIDs {
             let memberIndex = next.group(withID: groupID)?.memberSessionIDs.count ?? 0
             next.move(session: sessionID, to: .group(id: groupID, memberIndex: memberIndex))
         }
-        return try applyPersisting(next, changed: next != layout)
+        return try await applyPersisting(next, changed: next != layout)
     }
 
     /// Move validated members out of a group to the bottom of the top-level
     /// dock while preserving the request order. Pickles remain active.
     @discardableResult
-    func removeSessionsFromGroupPersisting(_ sessionIDs: [String]) throws -> Bool {
+    func removeSessionsFromGroupPersisting(_ sessionIDs: [String]) async throws -> Bool {
         var next = layout
         for sessionID in sessionIDs {
             next.move(session: sessionID, to: .topLevel(index: next.entries.count))
         }
-        return try applyPersisting(next, changed: next != layout)
+        return try await applyPersisting(next, changed: next != layout)
     }
 
     @discardableResult
@@ -167,17 +170,22 @@ final class PickySessionDockLayoutController {
     @discardableResult
     private func apply(_ next: PickyDockLayout, changed: Bool) -> Bool {
         guard changed else { return false }
+        layoutRevision &+= 1
         layout = next
         persist()
         return true
     }
 
     @discardableResult
-    private func applyPersisting(_ next: PickyDockLayout, changed: Bool) throws -> Bool {
+    private func applyPersisting(_ next: PickyDockLayout, changed: Bool) async throws -> Bool {
         guard changed else { return false }
+        layoutRevision &+= 1
+        let admissionRevision = layoutRevision
         do {
-            try store.save(next)
-            layout = next
+            try await store.saveDurably(next)
+            if layoutRevision == admissionRevision {
+                layout = next
+            }
             return true
         } catch {
             onSaveError(error)
@@ -186,10 +194,9 @@ final class PickySessionDockLayoutController {
     }
 
     private func persist() {
-        do {
-            try store.save(layout)
-        } catch {
-            onSaveError(error)
+        store.enqueueSave(layout) { [weak self] result in
+            guard case .failure(let error) = result else { return }
+            self?.onSaveError(error)
         }
     }
 }

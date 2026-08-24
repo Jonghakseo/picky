@@ -10,7 +10,7 @@ import Testing
 
 @MainActor
 struct PickyOnboardingActivationTests {
-    @Test func shouldShowOnboardingIsTrueOnFreshInstallAndFalseAfterCompletion() throws {
+    @Test func shouldShowOnboardingIsTrueOnFreshInstallAndFalseAfterCompletion() async throws {
         let context = try makeContext()
         let activator = PickyOnboardingActivator(settingsStore: context.store)
 
@@ -18,23 +18,26 @@ struct PickyOnboardingActivationTests {
         #expect(activator.shouldShowOnboarding == true)
 
         activator.markOnboardingComplete()
+        await PickySettingsPersistenceCoordinator.shared(for: context.store).flush()
         #expect(activator.shouldShowOnboarding == false)
         #expect(context.store.load().onboardingCompletedVersion == PickyOnboardingVersion.current)
     }
 
-    @Test func resetOnboardingForReplayPutsTheUserBackInTheEligiblePool() throws {
+    @Test func resetOnboardingForReplayPutsTheUserBackInTheEligiblePool() async throws {
         let context = try makeContext()
         let activator = PickyOnboardingActivator(settingsStore: context.store)
         activator.markOnboardingComplete()
+        await PickySettingsPersistenceCoordinator.shared(for: context.store).flush()
         #expect(activator.shouldShowOnboarding == false)
 
         activator.resetOnboardingForReplay()
+        await PickySettingsPersistenceCoordinator.shared(for: context.store).flush()
 
         #expect(activator.shouldShowOnboarding == true)
         #expect(context.store.load().onboardingCompletedVersion == 0)
     }
 
-    @Test func markCompleteWritesThroughEvenWhenCalledTwice() throws {
+    @Test func markCompleteWritesThroughEvenWhenCalledTwice() async throws {
         // Idempotency matters because the overlay may flush its completion call
         // on both a successful finish and on dismissal. Two writes should not
         // surface visible state changes after the first.
@@ -42,8 +45,10 @@ struct PickyOnboardingActivationTests {
         let activator = PickyOnboardingActivator(settingsStore: context.store)
 
         activator.markOnboardingComplete()
+        await PickySettingsPersistenceCoordinator.shared(for: context.store).flush()
         let snapshot = context.store.load().onboardingCompletedVersion
         activator.markOnboardingComplete()
+        await PickySettingsPersistenceCoordinator.shared(for: context.store).flush()
 
         #expect(context.store.load().onboardingCompletedVersion == snapshot)
         #expect(snapshot == PickyOnboardingVersion.current)

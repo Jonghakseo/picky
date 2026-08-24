@@ -509,11 +509,20 @@ final class CompanionManager: ObservableObject {
         defaults: UserDefaults = .standard
     ) -> PickySettings {
         var settings = store.load()
-        if defaults.object(forKey: "isPickyCursorEnabled") != nil {
-            if !defaults.bool(forKey: "isPickyCursorEnabled") && settings.cursor.showPiCursor {
-                settings.cursor.showPiCursor = false
-                try? store.save(settings)
-            }
+        guard defaults.object(forKey: "isPickyCursorEnabled") != nil else {
+            return settings
+        }
+        if !defaults.bool(forKey: "isPickyCursorEnabled") && settings.cursor.showPiCursor {
+            settings.cursor.showPiCursor = false
+            PickySettingsPersistenceCoordinator.shared(for: store).enqueue(
+                mutation: { $0.cursor.showPiCursor = false },
+                completion: { result in
+                    if case .success = result {
+                        defaults.removeObject(forKey: "isPickyCursorEnabled")
+                    }
+                }
+            )
+        } else {
             defaults.removeObject(forKey: "isPickyCursorEnabled")
         }
         return settings

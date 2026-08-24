@@ -9,25 +9,33 @@ import Foundation
 /// settings snapshot over unrelated runtime changes.
 @MainActor
 final class PickySettingsMutationCoordinator {
-    private let store: PickySettingsStore
+    private let persistence: PickySettingsPersistenceCoordinator
 
     private(set) var revision = 0
 
-    init(store: PickySettingsStore = PickySettingsStore()) {
-        self.store = store
+    init(
+        store: PickySettingsStore = PickySettingsStore(),
+        persistence: PickySettingsPersistenceCoordinator? = nil
+    ) {
+        self.persistence = persistence ?? .shared(for: store)
     }
 
-    /// Applies a narrow mutation to the latest persisted settings, then notifies
-    /// runtime owners that they should refresh their settings-backed state.
+    /// Applies a narrow mutation to the worker's latest persisted settings,
+    /// then notifies runtime owners only after the atomic write succeeds.
     @discardableResult
-    func applyPatch(_ mutate: (inout PickySettings) throws -> Void) throws -> Int {
-        var updated = store.load()
-        try mutate(&updated)
-        try store.save(updated)
-        NotificationCenter.default.post(name: .pickySettingsDidSave, object: nil)
+    func applyPatch(_ mutate: @escaping PickySettingsPersistenceCoordinator.Mutation) async throws -> Int {
+        try await applyPatchReturningSettings(mutate).revision
+    }
 
+    /// Returns the normalized snapshot actually written by the worker. Callers
+    /// must derive response values from this result rather than capture mutable
+    /// MainActor state inside the background mutation closure.
+    func applyPatchReturningSettings(
+        _ mutate: @escaping PickySettingsPersistenceCoordinator.Mutation
+    ) async throws -> (settings: PickySettings, revision: Int) {
+        let settings = try await persistence.persist(notification: .settingsDidSave, mutation: mutate)
         revision += 1
-        return revision
+        return (settings, revision)
     }
 }
 
@@ -113,9 +121,8 @@ final class PickySettingsControlHandler {
             }
         }
 
-        var updatedValue: JSONValue?
-        let revision = try mutationCoordinator.applyPatch { settings in
-            updatedValue = try PickySettingsCLIExposure.apply(
+        let committed = try await mutationCoordinator.applyPatchReturningSettings { settings in
+            _ = try PickySettingsCLIExposure.apply(
                 key: key,
                 value: value,
                 toggle: request.toggle ?? false,
@@ -123,7 +130,12 @@ final class PickySettingsControlHandler {
                 to: &settings
             )
         }
-        let persistedValue = try requiredUpdatedValue(updatedValue)
+        let persistedValue = try PickySettingsCLIExposure.currentValue(
+            for: key,
+            in: committed.settings,
+            displayId: request.displayId
+        )
+        let revision = committed.revision
 
         if key == "hud.dockVisible", case .bool(let visible) = persistedValue {
             applyDockVisibility(visible, request.displayId.flatMap(UInt32.init))
@@ -162,10 +174,4 @@ final class PickySettingsControlHandler {
         return await applyMainAgentCommand(command)
     }
 
-    private func requiredUpdatedValue(_ value: JSONValue?) throws -> JSONValue {
-        guard let value else {
-            throw PickySettingsCLIExposureError(code: "SETTINGS_CONTROL_FAILED", message: "Picky setting mutation did not produce a value.")
-        }
-        return value
-    }
 }

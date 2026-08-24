@@ -199,6 +199,58 @@ struct PickySettingsPolishTests {
         #expect(PickyRelauncher.shellQuoted("/tmp/Picky's App.app") == "'/tmp/Picky'\\''s App.app'")
     }
 
+    @Test func relauncherWaitsForParentExitBeforeOpeningReplacement() {
+        let command = PickyRelauncher.relaunchShellCommand(
+            bundlePath: "/Applications/Picky.app",
+            delay: 0,
+            parentPID: 4242
+        )
+        #expect(command.contains("/bin/kill -0 4242"))
+        #expect(command.contains("then /usr/bin/open '/Applications/Picky.app'"))
+        #expect(command.contains("exit 0"))
+    }
+
+    @Test func relauncherChecksCancellationMarkerBeforeOpeningReplacement() {
+        let command = PickyRelauncher.relaunchShellCommand(
+            bundlePath: "/Applications/Picky.app",
+            delay: 0,
+            parentPID: 4242,
+            cancellationPath: "/tmp/picky-relaunch.cancel"
+        )
+        #expect(command.components(separatedBy: "if [ -e '/tmp/picky-relaunch.cancel' ]").count == 3)
+        #expect(command.contains("/bin/rm -f '/tmp/picky-relaunch.cancel'"))
+    }
+
+    @Test func relauncherCancellationCreatesMarkerForScheduledHelper() {
+        let cancellationURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("picky-relaunch-test-\(UUID().uuidString).cancel")
+        defer { try? FileManager.default.removeItem(at: cancellationURL) }
+
+        #expect(PickyRelauncher.scheduleRelaunch(
+            bundleURL: URL(fileURLWithPath: "/Applications/Picky.app"),
+            parentPID: 4242,
+            cancellationURL: cancellationURL,
+            processRunner: { _ in }
+        ))
+        PickyRelauncher.cancelPendingRelaunch()
+
+        #expect(FileManager.default.fileExists(atPath: cancellationURL.path))
+    }
+
+    @Test func relauncherDoesNotTerminateWhenHelperSchedulingFails() {
+        var didTerminate = false
+        let didSchedule = PickyRelauncher.relaunchAndTerminate(
+            bundleURL: URL(fileURLWithPath: "/Applications/Picky.app"),
+            processRunner: { _ in
+                throw NSError(domain: "PickyRelauncherTests", code: 1)
+            },
+            terminate: { didTerminate = true }
+        )
+
+        #expect(!didSchedule)
+        #expect(!didTerminate)
+    }
+
     @Test func restartRequirementIgnoresPiBinaryPathChanges() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-restart-requirement-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -221,7 +273,7 @@ struct PickySettingsPolishTests {
         #expect(requirement == .none)
     }
 
-    @MainActor @Test func settingsViewModelSavePreservesRuntimeRecentPickleFolders() throws {
+    @MainActor @Test func settingsViewModelSavePreservesRuntimeRecentPickleFolders() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let project = root.appendingPathComponent("project", isDirectory: true)
@@ -242,7 +294,7 @@ struct PickySettingsPolishTests {
         try store.save(runtimeSettings)
 
         viewModel.settings.mainAgentThinkingLevel = .high
-        #expect(viewModel.save())
+        #expect(await viewModel.saveDurably())
 
         let saved = store.load()
         #expect(saved.mainAgentThinkingLevel == .high)
@@ -253,7 +305,7 @@ struct PickySettingsPolishTests {
     /// A settings panel holds a snapshot while external controls can update the
     /// same settings file. Saving an unrelated panel change must preserve that
     /// newer external value rather than writing the stale snapshot back.
-    @MainActor @Test func settingsViewModelSavePreservesExternalCursorVisibilityAfterUnrelatedPanelChange() throws {
+    @MainActor @Test func settingsViewModelSavePreservesExternalCursorVisibilityAfterUnrelatedPanelChange() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let project = root.appendingPathComponent("project", isDirectory: true)
@@ -271,14 +323,14 @@ struct PickySettingsPolishTests {
         try store.save(external)
 
         viewModel.settings.notifications.notifyOnCompleted = true
-        #expect(viewModel.save())
+        #expect(await viewModel.saveDurably())
 
         let saved = store.load()
         #expect(saved.notifications.notifyOnCompleted)
         #expect(!saved.cursor.showPiCursor)
     }
 
-    @MainActor @Test func settingsMutationCoordinatorPatchesLatestSettingsAndPublishesRevision() throws {
+    @MainActor @Test func settingsMutationCoordinatorPatchesLatestSettingsAndPublishesRevision() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let project = root.appendingPathComponent("project", isDirectory: true)
@@ -293,14 +345,14 @@ struct PickySettingsPolishTests {
         let preferencesStore = PickyNotificationPreferencesStore(settingsStore: store)
         let coordinator = PickySettingsMutationCoordinator(store: store)
 
-        #expect(try coordinator.applyPatch { $0.notifications.notifyOnCompleted = true } == 1)
+        #expect(try await coordinator.applyPatch { $0.notifications.notifyOnCompleted = true } == 1)
         #expect(store.load().notifications.notifyOnCompleted)
         #expect(preferencesStore.notificationPreferences.notifyOnCompleted)
-        #expect(try coordinator.applyPatch { $0.cursor.showPiCursor = false } == 2)
+        #expect(try await coordinator.applyPatch { $0.cursor.showPiCursor = false } == 2)
         #expect(!store.load().cursor.showPiCursor)
     }
 
-    @MainActor @Test func settingsViewModelSaveKeepsExternalControlValuesUnlessThePanelChangedThatLeaf() throws {
+    @MainActor @Test func settingsViewModelSaveKeepsExternalControlValuesUnlessThePanelChangedThatLeaf() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let project = root.appendingPathComponent("project", isDirectory: true)
@@ -314,7 +366,7 @@ struct PickySettingsPolishTests {
 
         let viewModel = PickySettingsViewModel(store: store)
         let coordinator = PickySettingsMutationCoordinator(store: store)
-        try coordinator.applyPatch { settings in
+        try await coordinator.applyPatch { settings in
             settings.hudDockVisible = false
             settings.hudDockVisibilityByDisplayID = ["42": true]
             settings.hudDockSizePreset = .large
@@ -327,7 +379,7 @@ struct PickySettingsPolishTests {
 
         viewModel.settings.mainAgentModelPattern = "panel/main"
         viewModel.settings.cursor.enableIdleAnimations = false
-        #expect(viewModel.save())
+        #expect(await viewModel.saveDurably())
 
         let saved = store.load()
         #expect(saved.hudDockVisible == false)
@@ -341,7 +393,7 @@ struct PickySettingsPolishTests {
         #expect(saved.cursor.enableIdleAnimations == false)
     }
 
-    @MainActor @Test func settingsViewModelSavePreservesRuntimeRemovalOfUnchangedDockOverride() throws {
+    @MainActor @Test func settingsViewModelSavePreservesRuntimeRemovalOfUnchangedDockOverride() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let project = root.appendingPathComponent("project", isDirectory: true)
@@ -366,14 +418,14 @@ struct PickySettingsPolishTests {
         try store.save(runtime)
 
         viewModel.settings.notifications.notifyOnCompleted = true
-        #expect(viewModel.save())
+        #expect(await viewModel.saveDurably())
 
         let saved = store.load()
         #expect(saved.notifications.notifyOnCompleted)
         #expect(saved.hudDockVisibilityByDisplayID.isEmpty)
     }
 
-    @MainActor @Test func settingsViewModelSaveLetsPanelEditRestoreRuntimeRemovedDockOverride() throws {
+    @MainActor @Test func settingsViewModelSaveLetsPanelEditRestoreRuntimeRemovedDockOverride() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let project = root.appendingPathComponent("project", isDirectory: true)
@@ -398,7 +450,7 @@ struct PickySettingsPolishTests {
         try store.save(runtime)
 
         viewModel.settings.hudDockVisibilityByDisplayID["42"] = true
-        #expect(viewModel.save())
+        #expect(await viewModel.saveDurably())
 
         #expect(store.load().hudDockVisibilityByDisplayID == ["42": true])
     }
@@ -420,7 +472,7 @@ struct PickySettingsPolishTests {
         #expect(settings.pinnedPickleCwds == ["/pickytest/b", "/pickytest/a", "/pickytest/c"])
     }
 
-    @MainActor @Test func settingsViewModelSavePreservesFooterControlledPreferences() throws {
+    @MainActor @Test func settingsViewModelSavePreservesFooterControlledPreferences() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let project = root.appendingPathComponent("project", isDirectory: true)
@@ -440,7 +492,7 @@ struct PickySettingsPolishTests {
         visibilityStore.setVisible(false, for: displayID)
 
         viewModel.settings.mainAgentThinkingLevel = .high
-        #expect(viewModel.save())
+        #expect(await viewModel.saveDurably())
 
         let saved = store.load()
         #expect(saved.mainAgentThinkingLevel == .high)
@@ -584,7 +636,7 @@ struct PickySettingsPolishTests {
         #expect(settings.hudDockVisibilityByDisplayID.isEmpty)
     }
 
-    @MainActor @Test func hudVisibilityStoreTogglesOnlySpecifiedDisplayAndPersistsThroughSettingsFile() throws {
+    @MainActor @Test func hudVisibilityStoreTogglesOnlySpecifiedDisplayAndPersistsThroughSettingsFile() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let project = root.appendingPathComponent("project", isDirectory: true)
@@ -605,12 +657,14 @@ struct PickySettingsPolishTests {
         visibility.toggle(for: displayA)
         #expect(!visibility.isVisible(for: displayA))
         #expect(visibility.isVisible(for: displayB))
+        await PickySettingsPersistenceCoordinator.shared(for: settingsStore).flush()
         #expect(settingsStore.load().hudDockVisibilityByDisplayID[String(displayA)] == false)
 
         visibility.toggle(for: displayB)
         visibility.toggle(for: displayA)
         #expect(visibility.isVisible(for: displayA))
         #expect(!visibility.isVisible(for: displayB))
+        await PickySettingsPersistenceCoordinator.shared(for: settingsStore).flush()
         #expect(settingsStore.load().hudDockVisibilityByDisplayID == [String(displayB): false])
 
         let rehydrated = PickyHUDVisibilityStore(settingsStore: settingsStore)
@@ -623,7 +677,7 @@ struct PickySettingsPolishTests {
     /// not the store property — must already describe the post-change state.
     /// Regression: applying the pre-change state lagged every dock toggle by
     /// one mutation, so toggling display A visibly toggled display B first.
-    @MainActor @Test func hudVisibilityChangeEmissionsCarryPostChangeStateForPanelSync() throws {
+    @MainActor @Test func hudVisibilityChangeEmissionsCarryPostChangeStateForPanelSync() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let project = root.appendingPathComponent("project", isDirectory: true)
@@ -647,6 +701,7 @@ struct PickySettingsPolishTests {
         store.toggle(for: displayA)
         store.toggle(for: displayA)
         store.toggle(for: displayB)
+        await PickySettingsPersistenceCoordinator.shared(for: settingsStore).flush()
 
         #expect(emissions.map(\.a) == [true, false, true, true])
         #expect(emissions.map(\.b) == [true, true, true, false])
@@ -989,7 +1044,7 @@ struct PickySettingsPolishTests {
         #expect(store.load().appearance == .light)
     }
 
-    @Test func appearanceStoreToggleAndPersistsThroughSettingsFile() async throws {
+    @MainActor @Test func appearanceStoreToggleAndPersistsThroughSettingsFile() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
         let project = root.appendingPathComponent("project", isDirectory: true)
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
@@ -1004,6 +1059,7 @@ struct PickySettingsPolishTests {
 
         await appearance.toggle()
         await #expect(appearance.mode == .light)
+        await PickySettingsPersistenceCoordinator.shared(for: settingsStore).flush()
 
         let reloaded = settingsStore.load()
         #expect(reloaded.appearance == .light)

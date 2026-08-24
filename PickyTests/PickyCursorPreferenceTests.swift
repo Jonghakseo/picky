@@ -74,16 +74,30 @@ struct PickyCursorPreferenceTests {
 
     // MARK: - Legacy key migration
 
-    @Test func migrationFoldsLegacyDisabledFlagIntoSettings() {
+    @Test func migrationFoldsLegacyDisabledFlagIntoSettings() async {
         let store = makeTempStore()
         let defaults = makeDefaults()
         defaults.set(false, forKey: "isPickyCursorEnabled")
 
         let migrated = CompanionManager.migrateLegacyCursorPreferenceIfNeeded(store: store, defaults: defaults)
+        await PickySettingsPersistenceCoordinator.shared(for: store).flush()
 
         #expect(!migrated.cursor.showPiCursor)
         #expect(!store.load().cursor.showPiCursor)
         #expect(defaults.object(forKey: "isPickyCursorEnabled") == nil)
+    }
+
+    @Test func migrationRetainsLegacyFlagWhenSettingsWriteFails() async throws {
+        let store = makeTempStore()
+        try FileManager.default.createDirectory(at: store.url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("not json".utf8).write(to: store.url, options: .atomic)
+        let defaults = makeDefaults()
+        defaults.set(false, forKey: "isPickyCursorEnabled")
+
+        _ = CompanionManager.migrateLegacyCursorPreferenceIfNeeded(store: store, defaults: defaults)
+        await PickySettingsPersistenceCoordinator.shared(for: store).flush()
+
+        #expect(defaults.object(forKey: "isPickyCursorEnabled") != nil)
     }
 
     @Test func migrationRemovesLegacyEnabledFlagWithoutChangingSettings() {

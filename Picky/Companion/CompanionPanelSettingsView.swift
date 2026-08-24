@@ -1812,22 +1812,19 @@ struct CompanionPanelSettingsView: View {
         keyPath: WritableKeyPath<PickySettings, PickyShortcutSpec>,
         conflictsWith other: PickyShortcutSpec
     ) {
-        let succeeded = viewModel.updateShortcut(newSpec, keyPath: keyPath, conflictsWith: other)
-        if succeeded {
-            saveStatuses.markSaved(.shortcuts)
-            scheduleSaveStatusReset(for: .shortcuts)
-        } else {
+        guard viewModel.updateShortcut(newSpec, keyPath: keyPath, conflictsWith: other) else {
             saveStatuses.markDirty(.shortcuts)
+            return
         }
+        saveSectionDurably(.shortcuts)
     }
 
     private func resetShortcutsToDefaults() {
-        if viewModel.resetShortcutsToDefaults() {
-            saveStatuses.markSaved(.shortcuts)
-            scheduleSaveStatusReset(for: .shortcuts)
-        } else {
+        guard viewModel.resetShortcutsToDefaults() else {
             saveStatuses.markDirty(.shortcuts)
+            return
         }
+        saveSectionDurably(.shortcuts)
     }
 
     /// Flips the persisted onboarding revision back to zero so the takeover
@@ -1836,12 +1833,17 @@ struct CompanionPanelSettingsView: View {
     /// contract.
     private func replayOnboarding() {
         viewModel.settings.onboardingCompletedVersion = 0
-        let succeeded = viewModel.save()
-        if succeeded {
-            saveStatuses.markSaved(.onboarding)
-            scheduleSaveStatusReset(for: .onboarding)
-        } else {
-            saveStatuses.markDirty(.onboarding)
+        saveSectionDurably(.onboarding)
+    }
+
+    private func saveSectionDurably(_ section: CompanionPanelSettingsSection) {
+        viewModel.save { didSave in
+            if didSave {
+                self.saveStatuses.markSaved(section)
+                self.scheduleSaveStatusReset(for: section)
+            } else {
+                self.saveStatuses.markDirty(section)
+            }
         }
     }
 
@@ -1961,19 +1963,20 @@ struct CompanionPanelSettingsView: View {
             }
         }
         let shouldPreserveDirtyPickleDraft = section == .pickle && pickleCwdDraft != viewModel.settings.defaultCwd
-        let succeeded = viewModel.save()
-        if succeeded {
-            if !shouldPreserveDirtyPickleDraft {
-                syncDraft(for: section)
-                saveStatuses.markSaved(section)
-                scheduleSaveStatusReset(for: section)
+        viewModel.save { didSave in
+            if didSave {
+                if !shouldPreserveDirtyPickleDraft {
+                    self.syncDraft(for: section)
+                    self.saveStatuses.markSaved(section)
+                    self.scheduleSaveStatusReset(for: section)
+                } else {
+                    self.saveStatuses.markDirty(section)
+                }
             } else {
-                saveStatuses.markDirty(section)
+                self.saveStatuses.markDirty(section)
+                self.saveStatusResets[section]?.cancel()
+                self.saveStatusResets[section] = nil
             }
-        } else {
-            saveStatuses.markDirty(section)
-            saveStatusResets[section]?.cancel()
-            saveStatusResets[section] = nil
         }
     }
 

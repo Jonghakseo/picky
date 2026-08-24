@@ -45,10 +45,17 @@ private final class CLIGroupDockLayoutStore: PickyDockLayoutStoring {
 
     func load() -> PickyDockLayout { storedLayout }
 
-    func save(_ layout: PickyDockLayout) throws {
-        if let errorToThrow { throw errorToThrow }
+    func enqueueSave(
+        _ layout: PickyDockLayout,
+        completion: @escaping @MainActor (Result<Void, Error>) -> Void
+    ) {
+        if let errorToThrow {
+            completion(.failure(errorToThrow))
+            return
+        }
         storedLayout = layout
         savedLayouts.append(layout)
+        completion(.success(()))
     }
 }
 
@@ -214,7 +221,7 @@ struct PickySessionViewModelDockGroupCLITests {
         #expect(viewModel.dockLayout.cliGroupTestEntryDescriptions == ["group:g1[]", "group:g2[new-pickle]"])
     }
 
-    @MainActor @Test func mainAgentCreatesGroupWithKnownMembersAndPersists() throws {
+    @MainActor @Test func mainAgentCreatesGroupWithKnownMembersAndPersists() async throws {
         let dockLayoutStore = CLIGroupDockLayoutStore(layout: PickyDockLayout(entries: [
             .session(id: "a"),
             .session(id: "b")
@@ -226,7 +233,7 @@ struct PickySessionViewModelDockGroupCLITests {
         )
         viewModel.apply(.protocolEvent(Self.sessionSnapshot(["b", "a"])))
 
-        let groups = try viewModel.manageDockGroups(PickyDockGroupManagementRequest(
+        let groups = try await viewModel.manageDockGroups(PickyDockGroupManagementRequest(
             action: .create,
             groupId: nil,
             name: "  Research  ",
@@ -240,7 +247,7 @@ struct PickySessionViewModelDockGroupCLITests {
         #expect(dockLayoutStore.savedLayouts.count == 1)
     }
 
-    @MainActor @Test func mainAgentAddsAndRemovesMembersThroughPersistedDockLayout() throws {
+    @MainActor @Test func mainAgentAddsAndRemovesMembersThroughPersistedDockLayout() async throws {
         let dockLayoutStore = CLIGroupDockLayoutStore(layout: PickyDockLayout(entries: [
             .session(id: "a"),
             .group(PickyDockGroup(id: "g", name: "Research", color: .teal, memberSessionIDs: ["b"])),
@@ -253,7 +260,7 @@ struct PickySessionViewModelDockGroupCLITests {
         )
         viewModel.apply(.protocolEvent(Self.sessionSnapshot(["c", "b", "a"])))
 
-        _ = try viewModel.manageDockGroups(PickyDockGroupManagementRequest(
+        _ = try await viewModel.manageDockGroups(PickyDockGroupManagementRequest(
             action: .addMembers,
             groupId: "g",
             name: nil,
@@ -261,7 +268,7 @@ struct PickySessionViewModelDockGroupCLITests {
         ))
         #expect(viewModel.dockLayout.cliGroupTestEntryDescriptions == ["group:g[b,a,c]"])
 
-        _ = try viewModel.manageDockGroups(PickyDockGroupManagementRequest(
+        _ = try await viewModel.manageDockGroups(PickyDockGroupManagementRequest(
             action: .removeMembers,
             groupId: "g",
             name: nil,
@@ -274,7 +281,7 @@ struct PickySessionViewModelDockGroupCLITests {
         ])
     }
 
-    @MainActor @Test func mainAgentRemovesGroupWhileKeepingMembersActive() throws {
+    @MainActor @Test func mainAgentRemovesGroupWhileKeepingMembersActive() async throws {
         let dockLayoutStore = CLIGroupDockLayoutStore(layout: PickyDockLayout(entries: [
             .session(id: "a"),
             .group(PickyDockGroup(id: "g", name: "Research", color: .teal, memberSessionIDs: ["b", "c"]))
@@ -286,7 +293,7 @@ struct PickySessionViewModelDockGroupCLITests {
         )
         viewModel.apply(.protocolEvent(Self.sessionSnapshot(["c", "b", "a"])))
 
-        _ = try viewModel.manageDockGroups(PickyDockGroupManagementRequest(
+        _ = try await viewModel.manageDockGroups(PickyDockGroupManagementRequest(
             action: .removeGroup,
             groupId: "g",
             name: nil,
@@ -299,7 +306,7 @@ struct PickySessionViewModelDockGroupCLITests {
         #expect(dockLayoutStore.savedLayouts.map(\.cliGroupTestEntryDescriptions) == [["session:a", "session:b", "session:c"]])
     }
 
-    @MainActor @Test func mainAgentDeletesGroupByArchivingMembers() throws {
+    @MainActor @Test func mainAgentDeletesGroupByArchivingMembers() async throws {
         let dockLayoutStore = CLIGroupDockLayoutStore(layout: PickyDockLayout(entries: [
             .session(id: "a"),
             .group(PickyDockGroup(id: "g", name: "Research", color: .teal, memberSessionIDs: ["b", "c"]))
@@ -313,7 +320,7 @@ struct PickySessionViewModelDockGroupCLITests {
         )
         viewModel.apply(.protocolEvent(Self.sessionSnapshot(["c", "b", "a"])))
 
-        _ = try viewModel.manageDockGroups(PickyDockGroupManagementRequest(
+        _ = try await viewModel.manageDockGroups(PickyDockGroupManagementRequest(
             action: .archiveGroup,
             groupId: "g",
             name: nil,
@@ -326,7 +333,7 @@ struct PickySessionViewModelDockGroupCLITests {
         #expect(dockLayoutStore.savedLayouts.map(\.cliGroupTestEntryDescriptions) == [["session:a"]])
     }
 
-    @MainActor @Test func groupArchiveSaveFailureLeavesMembersActiveAndGrouped() {
+    @MainActor @Test func groupArchiveSaveFailureLeavesMembersActiveAndGrouped() async {
         let dockLayoutStore = CLIGroupDockLayoutStore(layout: PickyDockLayout(entries: [
             .session(id: "a"),
             .group(PickyDockGroup(id: "g", name: "Research", color: .teal, memberSessionIDs: ["b", "c"]))
@@ -341,8 +348,8 @@ struct PickySessionViewModelDockGroupCLITests {
         viewModel.apply(.protocolEvent(Self.sessionSnapshot(["c", "b", "a"])))
         dockLayoutStore.errorToThrow = CLIGroupDockLayoutStore.SaveError.failed
 
-        #expect(throws: CLIGroupDockLayoutStore.SaveError.self) {
-            try viewModel.manageDockGroups(PickyDockGroupManagementRequest(
+        await #expect(throws: CLIGroupDockLayoutStore.SaveError.self) {
+            try await viewModel.manageDockGroups(PickyDockGroupManagementRequest(
                 action: .archiveGroup,
                 groupId: "g",
                 name: nil,
@@ -355,7 +362,7 @@ struct PickySessionViewModelDockGroupCLITests {
         #expect(viewModel.dockLayout.cliGroupTestEntryDescriptions == ["session:a", "group:g[b,c]"])
     }
 
-    @MainActor @Test func mainAgentRejectsUnknownSessionsBeforeMutatingLayout() {
+    @MainActor @Test func mainAgentRejectsUnknownSessionsBeforeMutatingLayout() async {
         let dockLayoutStore = CLIGroupDockLayoutStore(layout: PickyDockLayout(entries: [
             .session(id: "a"),
             .group(PickyDockGroup(id: "g", name: "Research", color: .teal, memberSessionIDs: ["b"]))
@@ -367,8 +374,8 @@ struct PickySessionViewModelDockGroupCLITests {
         )
         viewModel.apply(.protocolEvent(Self.sessionSnapshot(["b", "a"])))
 
-        #expect(throws: PickyDockGroupManagementError.sessionNotFound("missing")) {
-            try viewModel.manageDockGroups(PickyDockGroupManagementRequest(
+        await #expect(throws: PickyDockGroupManagementError.sessionNotFound("missing")) {
+            try await viewModel.manageDockGroups(PickyDockGroupManagementRequest(
                 action: .addMembers,
                 groupId: "g",
                 name: nil,

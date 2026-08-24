@@ -46,30 +46,33 @@ private final class FakeRecentPickleFolderStore: PickyRecentPickleFolderStoring 
         self.pinnedPickleCwds = pinnedPickleCwds
     }
 
-    func record(cwd: String) throws -> [String] {
+    func record(cwd: String, completion: @escaping @MainActor (Result<[String], Error>) -> Void) {
         recorded.append(cwd)
-        guard !pinnedPickleCwds.contains(cwd) else { return recentPickleCwds }
+        guard !pinnedPickleCwds.contains(cwd) else {
+            completion(.success(recentPickleCwds))
+            return
+        }
         recentPickleCwds.removeAll { $0 == cwd }
         recentPickleCwds.insert(cwd, at: 0)
-        return recentPickleCwds
+        completion(.success(recentPickleCwds))
     }
 
-    func remove(cwd: String) throws -> [String] {
+    func remove(cwd: String, completion: @escaping @MainActor (Result<[String], Error>) -> Void) {
         removed.append(cwd)
         recentPickleCwds.removeAll { $0 == cwd }
-        return recentPickleCwds
+        completion(.success(recentPickleCwds))
     }
 
-    func pin(cwd: String) throws -> (pinned: [String], recent: [String]) {
+    func pin(cwd: String, completion: @escaping @MainActor (Result<(pinned: [String], recent: [String]), Error>) -> Void) {
         pinned.append(cwd)
         if !pinnedPickleCwds.contains(cwd) {
             pinnedPickleCwds.append(cwd)
         }
         recentPickleCwds.removeAll { $0 == cwd }
-        return (pinnedPickleCwds, recentPickleCwds)
+        completion(.success((pinnedPickleCwds, recentPickleCwds)))
     }
 
-    func unpin(cwd: String) throws -> (pinned: [String], recent: [String]) {
+    func unpin(cwd: String, completion: @escaping @MainActor (Result<(pinned: [String], recent: [String]), Error>) -> Void) {
         unpinned.append(cwd)
         let wasPinned = pinnedPickleCwds.contains(cwd)
         pinnedPickleCwds.removeAll { $0 == cwd }
@@ -77,10 +80,10 @@ private final class FakeRecentPickleFolderStore: PickyRecentPickleFolderStoring 
             recentPickleCwds.removeAll { $0 == cwd }
             recentPickleCwds.insert(cwd, at: 0)
         }
-        return (pinnedPickleCwds, recentPickleCwds)
+        completion(.success((pinnedPickleCwds, recentPickleCwds)))
     }
 
-    func reorderPinned(cwds: [String]) throws -> [String] {
+    func reorderPinned(cwds: [String], completion: @escaping @MainActor (Result<[String], Error>) -> Void) {
         reordered.append(cwds)
         let known = Set(pinnedPickleCwds)
         var result = cwds.filter { known.contains($0) }
@@ -88,7 +91,7 @@ private final class FakeRecentPickleFolderStore: PickyRecentPickleFolderStoring 
             result.append(cwd)
         }
         pinnedPickleCwds = result
-        return pinnedPickleCwds
+        completion(.success(pinnedPickleCwds))
     }
 }
 
@@ -148,9 +151,13 @@ private final class FakeViewModelDockLayoutStore: PickyDockLayoutStoring {
         storedLayout
     }
 
-    func save(_ layout: PickyDockLayout) throws {
+    func enqueueSave(
+        _ layout: PickyDockLayout,
+        completion: @escaping @MainActor (Result<Void, Error>) -> Void
+    ) {
         storedLayout = layout
         savedLayouts.append(layout)
+        completion(.success(()))
     }
 }
 

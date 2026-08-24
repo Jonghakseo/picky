@@ -705,6 +705,7 @@ final class PickyReportViewerPresenter: PickyReportPresenting {
     /// Shared settings store used to load/persist the markdown report zoom level.
     /// Falls back to the default settings location for tests and previews.
     private var settingsStore = PickySettingsStore()
+    private var settingsPersistence = PickySettingsPersistenceCoordinator.shared()
 
     private init() {}
 
@@ -718,6 +719,7 @@ final class PickyReportViewerPresenter: PickyReportPresenting {
         self.appearanceStore = appearanceStore
         self.fontScaleStore = fontScaleStore
         self.settingsStore = settingsStore
+        self.settingsPersistence = .shared(for: settingsStore)
     }
 
     func openReport(sessionID: String, title: String, fileURL: URL, markdown: String) throws {
@@ -789,24 +791,22 @@ final class PickyReportViewerPresenter: PickyReportPresenting {
 
     private func makeFontScalePersister() -> PickyMarkdownReportFontScalePersister {
         let store = settingsStore
+        let persistence = settingsPersistence
         return PickyMarkdownReportFontScalePersister(
             load: { store.load().fontScales.markdownReport },
             save: { newScale in
-                var current = store.load()
-                current.fontScales.markdownReport = PickyFontScales.clamped(newScale)
-                try? store.save(current)
+                persistence.enqueue { $0.fontScales.markdownReport = PickyFontScales.clamped(newScale) }
             }
         )
     }
 
     private func makeOutlineVisibilityPersister() -> PickyReportOutlineVisibilityPersister {
         let store = settingsStore
+        let persistence = settingsPersistence
         return PickyReportOutlineVisibilityPersister(
             load: { store.load().reportViewerOutlinePresented },
             save: { isPresented in
-                var current = store.load()
-                current.reportViewerOutlinePresented = isPresented
-                try? store.save(current)
+                persistence.enqueue { $0.reportViewerOutlinePresented = isPresented }
             }
         )
     }

@@ -31,9 +31,11 @@ enum PickyOnboardingVersion {
 @MainActor
 final class PickyOnboardingActivator {
     private let settingsStore: PickySettingsStore
+    private let persistence: PickySettingsPersistenceCoordinator
 
     init(settingsStore: PickySettingsStore = PickySettingsStore()) {
         self.settingsStore = settingsStore
+        self.persistence = .shared(for: settingsStore)
     }
 
     /// True when the persisted completion version is behind the build's
@@ -60,17 +62,7 @@ final class PickyOnboardingActivator {
         }
     }
 
-    private func update(_ mutate: (inout PickySettings) -> Void) {
-        var settings = settingsStore.load()
-        mutate(&settings)
-        do {
-            try settingsStore.save(settings)
-            NotificationCenter.default.post(name: .pickySettingsDidSave, object: nil)
-        } catch {
-            // Onboarding state is non-critical; if persistence fails the user
-            // can always retrigger via Settings. Swallow rather than throw so
-            // a transient disk issue doesn't crash the menu bar.
-            print("⚠️ Picky onboarding: failed to persist completion flag: \(error)")
-        }
+    private func update(_ mutate: @escaping PickySettingsPersistenceCoordinator.Mutation) {
+        persistence.enqueue(notification: .settingsDidSave, mutation: mutate)
     }
 }

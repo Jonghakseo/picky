@@ -37,9 +37,11 @@ final class PickyHUDVisibilityStore: ObservableObject {
     @Published private(set) var snapshot: PickyHUDDockVisibilitySnapshot
 
     private let settingsStore: PickySettingsStore
+    private let persistence: PickySettingsPersistenceCoordinator
 
     init(settingsStore: PickySettingsStore = PickySettingsStore()) {
         self.settingsStore = settingsStore
+        self.persistence = .shared(for: settingsStore)
         let settings = settingsStore.load()
         self.snapshot = PickyHUDDockVisibilitySnapshot(
             defaultVisibility: settings.hudDockVisible,
@@ -88,15 +90,10 @@ final class PickyHUDVisibilityStore: ObservableObject {
     }
 
     private func persist() {
-        var settings = settingsStore.load()
-        settings.hudDockVisible = snapshot.defaultVisibility
-        settings.hudDockVisibilityByDisplayID = snapshot.overridesByDisplayID
-        do {
-            try settingsStore.save(settings)
-        } catch {
-            // Keep the live panel state responsive even if settings persistence
-            // temporarily fails (for example on a read-only test volume).
-            print("⚠️ PickyHUDVisibilityStore: failed to persist HUD visibility: \(error.localizedDescription)")
+        let snapshot = snapshot
+        persistence.enqueue {
+            $0.hudDockVisible = snapshot.defaultVisibility
+            $0.hudDockVisibilityByDisplayID = snapshot.overridesByDisplayID
         }
     }
 }

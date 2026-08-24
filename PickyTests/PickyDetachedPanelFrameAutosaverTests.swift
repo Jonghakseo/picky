@@ -55,7 +55,7 @@ struct PickyDetachedPanelFrameTests {
 @MainActor
 @Suite("PickyDetachedPanelFramePersister")
 struct PickyDetachedPanelFramePersisterTests {
-    @Test func backedPersisterRoundTripsThroughSettingsJSON() throws {
+    @Test func backedPersisterRoundTripsThroughSettingsJSON() async throws {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-test-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: temp) }
@@ -73,12 +73,13 @@ struct PickyDetachedPanelFramePersisterTests {
         #expect(persister.load() == nil)
 
         persister.save(CGRect(x: 50, y: 60, width: 700, height: 500))
+        await PickySettingsPersistenceCoordinator.shared(for: store).flush()
 
         let loaded = persister.load()
         #expect(loaded == CGRect(x: 50, y: 60, width: 700, height: 500))
     }
 
-    @Test func migratesLegacyAutosaveValueWhenSettingsHaveNoEntry() throws {
+    @Test func migratesLegacyAutosaveValueWhenSettingsHaveNoEntry() async throws {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-test-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: temp) }
@@ -101,6 +102,7 @@ struct PickyDetachedPanelFramePersisterTests {
 
         // Once the user moves the panel, the new value wins over the legacy one.
         persister.save(CGRect(x: 100, y: 100, width: 800, height: 600))
+        await PickySettingsPersistenceCoordinator.shared(for: store).flush()
         #expect(persister.load() == CGRect(x: 100, y: 100, width: 800, height: 600))
     }
 
@@ -108,7 +110,7 @@ struct PickyDetachedPanelFramePersisterTests {
     /// reports are open at once." With NSWindow.setFrameAutosaveName, the second
     /// panel to claim the same name silently no-ops every save. With the new
     /// persister, both panels write to the same key and the latest move wins.
-    @Test func multiplePanelKindsWriteToTheSameKey() throws {
+    @Test func multiplePanelKindsWriteToTheSameKey() async throws {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-test-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: temp) }
@@ -125,6 +127,7 @@ struct PickyDetachedPanelFramePersisterTests {
 
         persisterA.save(CGRect(x: 0, y: 0, width: 600, height: 400))
         persisterB.save(CGRect(x: 200, y: 100, width: 800, height: 500))
+        await PickySettingsPersistenceCoordinator.shared(for: store).flush()
 
         // Both persisters share the same on-disk slot, so whichever moved last is
         // what the next launch (or the next opened panel) will see.
@@ -132,7 +135,7 @@ struct PickyDetachedPanelFramePersisterTests {
         #expect(persisterB.load() == CGRect(x: 200, y: 100, width: 800, height: 500))
     }
 
-    @Test func differentKindsAreStoredIndependently() throws {
+    @Test func differentKindsAreStoredIndependently() async throws {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-test-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: temp) }
@@ -151,6 +154,7 @@ struct PickyDetachedPanelFramePersisterTests {
         report.save(CGRect(x: 1, y: 2, width: 100, height: 100))
         toolHistory.save(CGRect(x: 3, y: 4, width: 200, height: 200))
         terminal.save(CGRect(x: 5, y: 6, width: 300, height: 300))
+        await PickySettingsPersistenceCoordinator.shared(for: store).flush()
 
         #expect(report.load() == CGRect(x: 1, y: 2, width: 100, height: 100))
         #expect(toolHistory.load() == CGRect(x: 3, y: 4, width: 200, height: 200))

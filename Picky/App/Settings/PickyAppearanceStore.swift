@@ -17,9 +17,11 @@ final class PickyAppearanceStore: ObservableObject {
     @Published var mode: PickyAppearanceMode
 
     private let settingsStore: PickySettingsStore
+    private let persistence: PickySettingsPersistenceCoordinator
 
     init(settingsStore: PickySettingsStore = PickySettingsStore()) {
         self.settingsStore = settingsStore
+        self.persistence = .shared(for: settingsStore)
         self.mode = settingsStore.load().appearance
     }
 
@@ -34,15 +36,7 @@ final class PickyAppearanceStore: ObservableObject {
     }
 
     private func persist(_ newMode: PickyAppearanceMode) {
-        var current = settingsStore.load()
-        current.appearance = newMode
-        do {
-            try settingsStore.save(current)
-        } catch {
-            // Persistence failure should not break the in-memory toggle; just log it.
-            // Settings file may live on a read-only volume during tests/CI runs.
-            print("⚠️ PickyAppearanceStore: failed to persist appearance: \(error.localizedDescription)")
-        }
+        persistence.enqueue { $0.appearance = newMode }
     }
 }
 

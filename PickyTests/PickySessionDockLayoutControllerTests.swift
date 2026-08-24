@@ -65,7 +65,7 @@ final class PickySessionDockLayoutControllerTests: XCTestCase {
         XCTAssertEqual(store.savedLayouts.last?.entryDescriptions, ["session:b", "group:old[d]", "group:\(groupID)[a,c,e]"])
     }
 
-    func testAddSessionsToGroupPersistsOneAtomicLayoutMutation() throws {
+    func testAddSessionsToGroupPersistsOneAtomicLayoutMutation() async throws {
         let store = FakeDockLayoutStore(layout: PickyDockLayout(entries: [
             .session(id: "a"),
             .group(PickyDockGroup(id: "g", name: "G", color: .teal, memberSessionIDs: ["b"])),
@@ -74,13 +74,14 @@ final class PickySessionDockLayoutControllerTests: XCTestCase {
         ]))
         let controller = PickySessionDockLayoutController(store: store)
 
-        XCTAssertTrue(try controller.addSessionsPersisting(["a", "c"], toGroup: "g"))
+        let didPersist = try await controller.addSessionsPersisting(["a", "c"], toGroup: "g")
+        XCTAssertTrue(didPersist)
 
         XCTAssertEqual(controller.layout.entryDescriptions, ["group:g[b,a,c]", "group:old[]", "session:d"])
         XCTAssertEqual(store.savedLayouts.map(\.entryDescriptions), [["group:g[b,a,c]", "group:old[]", "session:d"]])
     }
 
-    func testRemoveSessionsFromGroupMovesThemToTopLevelInRequestOrderAndPersistsOnce() throws {
+    func testRemoveSessionsFromGroupMovesThemToTopLevelInRequestOrderAndPersistsOnce() async throws {
         let store = FakeDockLayoutStore(layout: PickyDockLayout(entries: [
             .session(id: "a"),
             .group(PickyDockGroup(id: "g", name: "G", color: .teal, memberSessionIDs: ["b", "c", "d"])),
@@ -88,7 +89,8 @@ final class PickySessionDockLayoutControllerTests: XCTestCase {
         ]))
         let controller = PickySessionDockLayoutController(store: store)
 
-        XCTAssertTrue(try controller.removeSessionsFromGroupPersisting(["d", "b"]))
+        let didPersist = try await controller.removeSessionsFromGroupPersisting(["d", "b"])
+        XCTAssertTrue(didPersist)
 
         XCTAssertEqual(controller.layout.entryDescriptions, ["session:a", "group:g[c]", "session:e", "session:d", "session:b"])
         XCTAssertEqual(store.savedLayouts.map(\.entryDescriptions), [["session:a", "group:g[c]", "session:e", "session:d", "session:b"]])
@@ -186,7 +188,29 @@ final class PickySessionDockLayoutControllerTests: XCTestCase {
         ])
     }
 
-    func testPersistingGroupMutationPropagatesSaveFailureWithoutPublishingLayout() {
+    func testDurableMutationDoesNotPublishOverNewerUIAdmission() async throws {
+        let initial = PickyDockLayout(entries: [
+            .session(id: "a"),
+            .session(id: "b")
+        ])
+        let store = SuspendedDurableDockLayoutStore(layout: initial)
+        let controller = PickySessionDockLayoutController(store: store)
+
+        let durableMutation = Task {
+            try await controller.createGroupPersisting(name: "CLI", withMemberIDs: ["a"])
+        }
+        await store.waitUntilDurableSaveStarts()
+
+        let uiGroupID = controller.createGroup(name: "UI", withMemberIDs: ["b"])
+        let newerUILayout = controller.layout
+        store.resumeDurableSave()
+        _ = try await durableMutation.value
+
+        XCTAssertEqual(controller.layout, newerUILayout)
+        XCTAssertNotNil(controller.layout.group(withID: uiGroupID))
+    }
+
+    func testPersistingGroupMutationPropagatesSaveFailureWithoutPublishingLayout() async {
         let initial = PickyDockLayout(entries: [
             .session(id: "a"),
             .group(PickyDockGroup(id: "g", name: "G", color: .teal, memberSessionIDs: ["b"]))
@@ -196,7 +220,10 @@ final class PickySessionDockLayoutControllerTests: XCTestCase {
         var errors: [Error] = []
         let controller = PickySessionDockLayoutController(store: store) { errors.append($0) }
 
-        XCTAssertThrowsError(try controller.addSessionsPersisting(["a"], toGroup: "g"))
+        do {
+            _ = try await controller.addSessionsPersisting(["a"], toGroup: "g")
+            XCTFail("Expected durable persistence failure")
+        } catch {}
 
         XCTAssertEqual(controller.layout, initial)
         XCTAssertTrue(store.savedLayouts.isEmpty)
@@ -217,6 +244,50 @@ final class PickySessionDockLayoutControllerTests: XCTestCase {
     }
 }
 
+private final class SuspendedDurableDockLayoutStore: PickyDockLayoutStoring {
+    private var storedLayout: PickyDockLayout
+    private var durableSaveStarted = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var durableSaveContinuation: CheckedContinuation<Void, Never>?
+
+    init(layout: PickyDockLayout) {
+        storedLayout = layout
+    }
+
+    func load() -> PickyDockLayout { storedLayout }
+
+    func enqueueSave(
+        _ layout: PickyDockLayout,
+        completion: @escaping @MainActor (Result<Void, Error>) -> Void
+    ) {
+        storedLayout = layout
+        completion(.success(()))
+    }
+
+    func saveDurably(_ layout: PickyDockLayout) async throws {
+        durableSaveStarted = true
+        let waiters = startWaiters
+        startWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+        await withCheckedContinuation { continuation in
+            durableSaveContinuation = continuation
+        }
+        storedLayout = layout
+    }
+
+    func waitUntilDurableSaveStarts() async {
+        guard !durableSaveStarted else { return }
+        await withCheckedContinuation { continuation in
+            startWaiters.append(continuation)
+        }
+    }
+
+    func resumeDurableSave() {
+        durableSaveContinuation?.resume()
+        durableSaveContinuation = nil
+    }
+}
+
 private final class FakeDockLayoutStore: PickyDockLayoutStoring {
     enum SaveError: Error { case failed }
 
@@ -232,10 +303,17 @@ private final class FakeDockLayoutStore: PickyDockLayoutStoring {
         storedLayout
     }
 
-    func save(_ layout: PickyDockLayout) throws {
-        if let errorToThrow { throw errorToThrow }
+    func enqueueSave(
+        _ layout: PickyDockLayout,
+        completion: @escaping @MainActor (Result<Void, Error>) -> Void
+    ) {
+        if let errorToThrow {
+            completion(.failure(errorToThrow))
+            return
+        }
         storedLayout = layout
         savedLayouts.append(layout)
+        completion(.success(()))
     }
 }
 

@@ -3,7 +3,8 @@ import type { Dirent } from "node:fs";
 import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isTerminalStatus } from "./domain/session-status.js";
-import { PickyAgentSessionSchema, PickyMainAgentStateSchema, type PickyAgentSession, type PickyMainAgentState } from "./protocol.js";
+import { buildToolResultPreview } from "./domain/tool-result-preview.js";
+import { PickyAgentSessionSchema, PickyMainAgentStateSchema, type PickyAgentSession, type PickyMainAgentState, type PickyToolActivity } from "./protocol.js";
 
 export const ORPHANED_CHILD_SESSION_RECOVERY_LOG = "orphaned child Pickle session recovered from scoped metadata";
 export const ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY = "Child Pickle daemon is not attached after Picky restart; send a follow-up or steer message to continue.";
@@ -116,7 +117,7 @@ export class SessionStore {
       const migrated = migrateLegacySession(raw);
       const session = PickyAgentSessionSchema.parse(migrated.value);
       if (migrated.changed && persistMigration) await this.save(session);
-      return session;
+      return projectLegacyToolResultPreviews(session);
     } catch (error) {
       console.warn(`Skipping unreadable Picky session metadata ${filePath}: ${messageOf(error)}`);
       return undefined;
@@ -162,6 +163,32 @@ function migrateLegacySession(value: unknown): { value: unknown; changed: boolea
     return { ...message, kind: "agent_text" };
   });
   return changed ? { value: { ...value, messages }, changed } : { value, changed: false };
+}
+
+function projectLegacyToolResultPreviews(session: PickyAgentSession): PickyAgentSession {
+  let changed = false;
+  const tools = session.tools.map((tool) => {
+    const projected = projectLegacyToolResultPreview(tool);
+    if (projected !== tool) changed = true;
+    return projected;
+  });
+  return changed ? { ...session, tools } : session;
+}
+
+function projectLegacyToolResultPreview(tool: PickyToolActivity): PickyToolActivity {
+  const original = tool.resultPreview;
+  if (!original || tool.resultPreviewRepaired === true) return tool;
+
+  const result = buildToolResultPreview(original);
+  if (!result.text || !result.repaired) return tool;
+
+  return {
+    ...tool,
+    resultPreview: result.text,
+    ...(tool.preview === original ? { preview: result.text } : {}),
+    ...(result.truncated || tool.resultPreviewTruncated ? { resultPreviewTruncated: true } : {}),
+    resultPreviewRepaired: true,
+  };
 }
 
 function safeName(value: string): string {

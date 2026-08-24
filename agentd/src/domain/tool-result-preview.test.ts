@@ -33,6 +33,19 @@ describe("buildToolResultPreview", () => {
     expect(() => JSON.parse(result.text!)).not.toThrow();
   });
 
+  it("repairs legacy fixed-budget JSON previews ending in three dots", () => {
+    const prefix = '{"content":[{"type":"text","text":"';
+    const maxChars = 80;
+    const source = `${prefix}${"x".repeat(maxChars - prefix.length - 3)}...`;
+    const result = buildToolResultPreview(source, maxChars);
+
+    expect(source).toHaveLength(maxChars);
+    expect(result.truncated).toBe(true);
+    expect(result.repaired).toBe(true);
+    expect(result.text!.length).toBeLessThanOrEqual(maxChars);
+    expect(() => JSON.parse(result.text!)).not.toThrow();
+  });
+
   it("repairs malformed JSON below the budget without marking it partial", () => {
     const result = buildToolResultPreview("{name: 'Picky'}");
 

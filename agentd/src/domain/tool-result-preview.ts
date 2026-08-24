@@ -19,12 +19,19 @@ export function buildToolResultPreview(value: unknown, maxChars = DEFAULT_MAX_CH
     return boundedPlainText(text, maxChars);
   }
 
-  const sourceTruncated = text.length > maxChars;
-  if (!sourceTruncated && isValidJSON(text)) {
+  const isCompleteJSON = isValidJSON(text);
+  if (text.length <= maxChars && isCompleteJSON) {
     return { text, truncated: false, repaired: false };
   }
 
-  const repaired = repairWithinBudget(text, maxChars);
+  // Before structured preview metadata existed, result previews were cut to
+  // exactly 500 UTF-16 units by replacing the final three units with `...`.
+  // Treat that recognizable wire shape as truncated source so persisted
+  // sessions can be projected through the same repair policy on load.
+  const legacyTruncated = text.length === maxChars && text.endsWith("...");
+  const sourceTruncated = text.length > maxChars || legacyTruncated;
+  const repairSource = legacyTruncated ? text.slice(0, -3) : text;
+  const repaired = repairWithinBudget(repairSource, maxChars, sourceTruncated);
   if (repaired !== undefined) {
     return {
       text: repaired.text,
@@ -71,7 +78,11 @@ function isValidJSON(text: string): boolean {
   }
 }
 
-function repairWithinBudget(source: string, maxChars: number): { text: string; sourceWasReduced: boolean } | undefined {
+function repairWithinBudget(
+  source: string,
+  maxChars: number,
+  allowSourceReduction = source.length > maxChars,
+): { text: string; sourceWasReduced: boolean } | undefined {
   if (maxChars <= 0) return undefined;
 
   if (source.length <= maxChars) {
@@ -80,13 +91,13 @@ function repairWithinBudget(source: string, maxChars: number): { text: string; s
       if (repaired.length <= maxChars && isValidJSON(repaired)) {
         return { text: repaired, sourceWasReduced: false };
       }
-      return undefined;
+      if (!allowSourceReduction) return undefined;
     } catch {
-      return undefined;
+      if (!allowSourceReduction) return undefined;
     }
   }
 
-  const initialLength = maxChars;
+  const initialLength = Math.min(source.length - 1, maxChars);
   for (let length = initialLength; length > 0; length -= 1) {
     const prefix = sliceUtf16Safe(source, length);
     if (!prefix.trim()) continue;

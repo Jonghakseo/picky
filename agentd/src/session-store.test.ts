@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, existsSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -36,6 +36,36 @@ describe("SessionStore (legacy / primary layout)", () => {
     expect(readdirSync(join(root, "sessions")).sort()).toEqual(["alpha.json", "beta.json"]);
     const all = await store.loadAll();
     expect(all.map((session) => session.id).sort()).toEqual(["alpha", "beta"]);
+  });
+
+  it("projects legacy truncated JSON tool previews without rewriting session files", async () => {
+    const root = tmpRoot();
+    const store = new SessionStore(root);
+    const prefix = '{"content":[{"type":"text","text":"';
+    const legacyPreview = `${prefix}${"x".repeat(500 - prefix.length - 3)}...`;
+    await store.save(makeSession({
+      id: "legacy-json-preview",
+      tools: [{
+        toolCallId: "tool-legacy-json",
+        name: "bash",
+        status: "failed",
+        preview: legacyPreview,
+        resultPreview: legacyPreview,
+      }],
+    }));
+
+    const [loaded] = await store.loadAll();
+    const tool = loaded?.tools[0];
+    expect(tool?.resultPreviewTruncated).toBe(true);
+    expect(tool?.resultPreviewRepaired).toBe(true);
+    expect(tool!.resultPreview!.length).toBeLessThanOrEqual(500);
+    expect(() => JSON.parse(tool!.resultPreview!)).not.toThrow();
+    expect(tool?.preview).toBe(tool?.resultPreview);
+
+    const stored = JSON.parse(readFileSync(join(root, "sessions", "legacy-json-preview.json"), "utf8")) as PickyAgentSession;
+    expect(stored.tools[0]?.resultPreview).toBe(legacyPreview);
+    expect(stored.tools[0]?.resultPreviewTruncated).toBeUndefined();
+    expect(stored.tools[0]?.resultPreviewRepaired).toBeUndefined();
   });
 
   it("deletes a flat session JSON file", async () => {

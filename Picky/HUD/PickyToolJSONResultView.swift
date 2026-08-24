@@ -16,6 +16,7 @@ struct PickyToolJSONResultView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(DS.Spacing.sm)
         }
+        .defaultScrollAnchor(.topLeading)
         .frame(maxHeight: 260)
         .background(DS.Colors.surface3.opacity(0.6))
         .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.small))

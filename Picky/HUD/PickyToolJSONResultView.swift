@@ -10,16 +10,37 @@ import SwiftUI
 struct PickyToolJSONResultView: View {
     let root: PickyJSONNode
 
+    @State private var viewportWidth: CGFloat = 0
+
     var body: some View {
         ScrollView([.horizontal, .vertical], showsIndicators: true) {
             PickyToolJSONNodeView(node: root, label: nil, depth: 0)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minWidth: contentMinWidth, alignment: .leading)
                 .padding(DS.Spacing.sm)
         }
         .defaultScrollAnchor(.topLeading)
         .frame(maxHeight: 260)
+        .background {
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear { updateViewportWidth(proxy.size.width) }
+                    .onChange(of: proxy.size.width) { _, width in
+                        updateViewportWidth(width)
+                    }
+            }
+        }
         .background(DS.Colors.surface3.opacity(0.6))
         .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.small))
+    }
+
+    private var contentMinWidth: CGFloat {
+        max(0, viewportWidth - (DS.Spacing.sm * 2))
+    }
+
+    private func updateViewportWidth(_ width: CGFloat) {
+        let roundedWidth = width.rounded()
+        guard viewportWidth != roundedWidth else { return }
+        viewportWidth = roundedWidth
     }
 }
 

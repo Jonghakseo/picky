@@ -54,8 +54,115 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
+  it("keeps negotiating sockets free of legacy session projection broadcasts", async () => {
+    const { ws } = await connectWithHello();
+    trackEvents(ws);
+
+    await supervisor.create(context("negotiating projection"));
+    ws.send(JSON.stringify({ id: "cmd-negotiating-control", protocolVersion: PROTOCOL_VERSION, type: "listMainMessages" }));
+    await waitForEvent(ws, "ack");
+
+    expect(eventBuffers.get(ws)?.filter((event) => event.type === "sessionUpdated" || event.type === "sessionMetaUpdated")).toEqual([]);
+    ws.close();
+  });
+
+  it("locks no-capability CLI projection commands to v1", async () => {
+    const session = await supervisor.create(context("legacy cli projection"));
+    const { ws } = await connectWithHello();
+    trackEvents(ws);
+
+    ws.send(JSON.stringify({ id: "cmd-legacy-cli-list", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
+    await expect(waitForEvent(ws, "sessionSnapshot")).resolves.toMatchObject({ sessions: [{ id: session.id }] });
+    await waitForEvent(ws, "ack");
+
+    await (supervisor as unknown as {
+      patch(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void>;
+    }).patch(session.id, { status: "completed" });
+    await expect(waitForEvent(ws, "sessionMetaUpdated")).resolves.toMatchObject({ session: { id: session.id, status: "completed" } });
+    ws.close();
+  });
+
+  it("locks older app capabilities to v1 and preserves the bounded bootstrap path", async () => {
+    const session = await supervisor.create(context("legacy app projection"));
+    const { ws } = await connectWithHello();
+    trackEvents(ws);
+
+    ws.send(JSON.stringify({
+      id: "cmd-register-legacy-app",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "registerAppCapabilities",
+      capabilities: ["pickleBridge"],
+    }));
+    await waitForEvent(ws, "ack");
+    ws.send(JSON.stringify({ id: "cmd-legacy-app-list", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
+    await expect(waitForEvent(ws, "sessionSnapshot")).resolves.toMatchObject({ sessions: [{ id: session.id, messages: [] }] });
+    await expect(waitForEvent(ws, "sessionUpdated")).resolves.toMatchObject({ session: { id: session.id } });
+    await waitForEvent(ws, "ack");
+    ws.close();
+  });
+
+  it("keeps v2 sockets free of legacy projections and rejects a dialect change", async () => {
+    const session = await supervisor.create(context("v2 projection filtering"));
+    const { ws } = await connectWithHello();
+    trackEvents(ws);
+
+    ws.send(JSON.stringify({
+      id: "cmd-register-v2-app",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "registerAppCapabilities",
+      capabilities: ["sessionProjectionV2"],
+    }));
+    await waitForEvent(ws, "ack");
+    ws.send(JSON.stringify({ id: "cmd-v2-direct-session", protocolVersion: PROTOCOL_VERSION, type: "getSession", sessionId: session.id }));
+    await waitForEvent(ws, "ack");
+    ws.send(JSON.stringify({
+      id: "cmd-reregister-v1-app",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "registerAppCapabilities",
+      capabilities: ["pickleBridge"],
+    }));
+    await expect(waitForEvent(ws, "error")).resolves.toMatchObject({
+      commandId: "cmd-reregister-v1-app",
+      message: "Socket dialect is locked to v2; cannot change to v1",
+    });
+
+    await (supervisor as unknown as {
+      patch(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void>;
+    }).patch(session.id, { status: "completed" });
+    ws.send(JSON.stringify({ id: "cmd-v2-control", protocolVersion: PROTOCOL_VERSION, type: "listMainMessages" }));
+    await waitForEvent(ws, "ack");
+
+    expect(eventBuffers.get(ws)?.filter((event) => event.type === "sessionUpdated" || event.type === "sessionMetaUpdated" || event.type === "sessionSnapshot")).toEqual([]);
+    ws.close();
+  });
+
+  it("rejects recovery snapshots before a socket locks v2", async () => {
+    const session = await supervisor.create(context("v1 recovery rejected"));
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({ id: "cmd-v1-list", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
+    await waitForEvent(ws, "sessionSnapshot");
+    await waitForEvent(ws, "ack");
+
+    ws.send(JSON.stringify({
+      id: "cmd-v1-projection-recovery",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "getSessionProjectionSnapshot",
+      requestId: "recovery-v1",
+      sessionId: session.id,
+    }));
+    await expect(waitForEvent(ws, "error")).resolves.toMatchObject({
+      commandId: "cmd-v1-projection-recovery",
+      message: "Session projection recovery requires v2 socket dialect",
+    });
+    ws.close();
+  });
+
   it("broadcasts bounded patch metadata while full snapshots retain journal hydration", async () => {
     const { ws } = await connectWithHello();
+    // An unregistered CLI locks v1 on its first legacy projection command.
+    ws.send(JSON.stringify({ id: "cmd-lock-thin-meta-v1", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
+    await waitForEvent(ws, "sessionSnapshot");
+    await waitForEvent(ws, "ack");
     const session = await supervisor.create(context("thin metadata update"));
     const message = {
       id: "message-hydration",
@@ -411,6 +518,7 @@ describe("AgentdServer", () => {
 
   it("returns a bounded projection recovery snapshot only to its requesting socket", async () => {
     const requester = await connectWithHello();
+    await registerV2(requester.ws, "cmd-register-recovery-requester");
     const observer = await connectWithHello();
     const session = await supervisor.create(context("projection recovery"));
     const oversizedSession = {
@@ -457,6 +565,7 @@ describe("AgentdServer", () => {
 
   it("rejects recovery for a missing projection session", async () => {
     const { ws } = await connectWithHello();
+    await registerV2(ws, "cmd-register-missing-recovery");
     ws.send(JSON.stringify({
       id: "cmd-missing-projection-recovery",
       protocolVersion: PROTOCOL_VERSION,
@@ -474,6 +583,7 @@ describe("AgentdServer", () => {
 
   it("runs recovery snapshot publication through the supervisor projection barrier", async () => {
     const { ws } = await connectWithHello();
+    await registerV2(ws, "cmd-register-projection-barrier");
     const session = await supervisor.create(context("projection barrier"));
     const barrier = vi.spyOn(supervisor, "withSessionProjectionBarrier");
 
@@ -492,6 +602,7 @@ describe("AgentdServer", () => {
 
   it("rejects a duplicate recovery request for the same socket and session while the first is in flight", async () => {
     const { ws } = await connectWithHello();
+    await registerV2(ws, "cmd-register-duplicate-recovery");
     trackEvents(ws);
     const session = await supervisor.create(context("duplicate projection recovery"));
     let entered!: () => void;
@@ -1418,6 +1529,9 @@ describe("AgentdServer", () => {
 
   it("broadcasts toolActivityUpdated events", async () => {
     const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({ id: "cmd-lock-tool-events-v1", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
+    await waitForEvent(ws, "sessionSnapshot");
+    await waitForEvent(ws, "ack");
     const pendingToolEvent = waitForEvent(ws, "toolActivityUpdated");
 
     supervisor.emit("toolActivityUpdated", "session-tools", { toolCallId: "tool-1", name: "bash", status: "running", preview: "npm test" });
@@ -1432,6 +1546,9 @@ describe("AgentdServer", () => {
 
   it("broadcasts slim todo state updates including clear", async () => {
     const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({ id: "cmd-lock-todo-events-v1", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
+    await waitForEvent(ws, "sessionSnapshot");
+    await waitForEvent(ws, "ack");
     const pendingUpdate = waitForEvent(ws, "sessionTodoStateUpdated");
     supervisor.emit("todoStateUpdated", "session-todo", {
       tasks: [{ id: "todo-1", content: "Implement HUD", status: "in_progress" }],
@@ -2147,6 +2264,39 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
+  it("locks submitMainFromExternal CLI sockets to v1 for created and terminal session projections", async () => {
+    const { ws } = await connectWithHello();
+    trackEvents(ws);
+
+    ws.send(JSON.stringify({
+      id: "cmd-cli-submit-wait-projection",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "submitMainFromExternal",
+      text: "create a Pickle and wait",
+      captureContext: false,
+    }));
+
+    const created = await waitForEvent(ws, "sessionUpdated");
+    expect(created).toMatchObject({ session: { status: "queued" } });
+    if (created.type !== "sessionUpdated") throw new Error("Expected a session update");
+    const sessionId = created.session.id;
+
+    await expect(waitForEvent(ws, "externalEntryAck")).resolves.toMatchObject({
+      commandId: "cmd-cli-submit-wait-projection",
+      kind: "submitMain",
+      sessionId,
+    });
+
+    await (supervisor as unknown as {
+      patch(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void>;
+    }).patch(sessionId, { status: "completed" });
+    await expect(waitForMatchingEvent(
+      ws,
+      (event) => event.type === "sessionMetaUpdated" && event.session.id === sessionId && event.session.status === "completed",
+    )).resolves.toMatchObject({ session: { id: sessionId, status: "completed" } });
+    ws.close();
+  });
+
   it("createPickleFromExternal with captureContext=false creates a Pickle session and acks with sessionId", async () => {
     const create = vi.spyOn(supervisor, "createPickleFromHandoff");
     const { ws } = await connectWithHello();
@@ -2622,6 +2772,16 @@ async function nextEvent(ws: WebSocket): Promise<EventEnvelope> {
   return JSON.parse(data.toString()) as EventEnvelope;
 }
 
+async function registerV2(ws: WebSocket, id: string): Promise<void> {
+  ws.send(JSON.stringify({
+    id,
+    protocolVersion: PROTOCOL_VERSION,
+    type: "registerAppCapabilities",
+    capabilities: ["sessionProjectionV2"],
+  }));
+  await waitForEvent(ws, "ack");
+}
+
 const eventBuffers = new WeakMap<WebSocket, EventEnvelope[]>();
 
 function trackEvents(ws: WebSocket): void {
@@ -2646,6 +2806,25 @@ async function waitForEvent(ws: WebSocket, type: EventEnvelope["type"], timeoutM
     await sleep(20);
   }
   throw new Error(`Timed out waiting for event ${type}; buffered=${buffer.map((e) => e.type).join(",")}`);
+}
+
+async function waitForMatchingEvent(
+  ws: WebSocket,
+  predicate: (event: EventEnvelope) => boolean,
+  timeoutMs = 2_000,
+): Promise<EventEnvelope> {
+  trackEvents(ws);
+  const buffer = eventBuffers.get(ws)!;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const index = buffer.findIndex(predicate);
+    if (index >= 0) {
+      const [match] = buffer.splice(index, 1);
+      return match!;
+    }
+    await sleep(20);
+  }
+  throw new Error(`Timed out waiting for matching event; buffered=${buffer.map((event) => event.type).join(",")}`);
 }
 
 async function nextEventWithin(ws: WebSocket, timeoutMs: number): Promise<EventEnvelope | undefined> {

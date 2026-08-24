@@ -7,6 +7,7 @@ import { FOLLOWUP_PREFIX, HANDOFF_PREFIX, STEER_PREFIX } from "./domain/log-pref
 import { PROTOCOL_VERSION, PickyAgentSessionMetaSchema, PickyAgentSessionSchema, parseCommand, type DockGroup, type EventEnvelope, type PickyAgentSession, type PickyAgentSessionMeta, type PickyAgentSessionParsed, type PickyContextPacket, type PickyPushToTalkControlAction } from "./protocol.js";
 import { APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT, boundedSessionForAppHydration, compactSessionForAppSnapshot, eventPayloadByteLength, minimalSessionForAppSnapshot, truncateText } from "./application/app-session-snapshot-policy.js";
 import { ProjectionRecoveryRequestGate } from "./application/session-projection-recovery.js";
+import { isLegacySessionProjectionEventType, SocketDialectRegistry } from "./application/socket-dialect.js";
 import type { SessionSupervisor } from "./session-supervisor.js";
 import { logAgentd } from "./local-log.js";
 import { EdgeTTSServiceError } from "./edge-tts-service.js";
@@ -86,6 +87,7 @@ export class AgentdServer {
   private wsServer?: WebSocketServer;
   private clients = new Set<WebSocket>();
   private appCapabilities = new WeakMap<WebSocket, Set<string>>();
+  private readonly socketDialects = new SocketDialectRegistry();
   private readonly projectionRecoveryRequestGate = new ProjectionRecoveryRequestGate();
   private pendingPickleHandoffs = new Map<string, { resolve: (result: AppPickleHandoffResult) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
   private pendingPickleBridgeRequests = new Map<string, { resolve: (result: AppPickleBridgeResult) => void; reject: (error: Error) => void; timer: NodeJS.Timeout; app: WebSocket }>();
@@ -381,6 +383,7 @@ export class AgentdServer {
 
   // eslint-disable-next-line max-lines-per-function -- The exhaustive typed command registry stays centralized so protocol commands cannot be registered without dispatch behavior.
   private async dispatchCommand(ws: WebSocket, command: ParsedCommand): Promise<void> {
+    this.socketDialects.lockLegacyProjectionCommand(ws, command.type);
     const handlers: CommandHandlerMap = {
       listSessions: () => {
         const sessions = compactSessionsForSnapshot(this.options.supervisor.list()).map(protocolSession);
@@ -527,7 +530,11 @@ export class AgentdServer {
         if (!session) throw new Error(`Unknown session: ${cmd.sessionId}`);
         this.send(ws, { type: "sessionUpdated", session: protocolSession(session) });
       },
-      getSessionProjectionSnapshot: (cmd) => this.projectionRecoveryRequestGate.send(ws, { withSessionProjectionBarrier: (sessionId, work) => this.options.supervisor.withSessionProjectionBarrier(sessionId, work), send: (payload) => { this.send(ws, payload); } }, cmd),
+      // Recovery frames are v2-only until the W6.5 atomic cutover.
+      getSessionProjectionSnapshot: (cmd) => {
+        if (this.socketDialects.get(ws) !== "v2") throw new Error("Session projection recovery requires v2 socket dialect");
+        return this.projectionRecoveryRequestGate.send(ws, { withSessionProjectionBarrier: (sessionId, work) => this.options.supervisor.withSessionProjectionBarrier(sessionId, work), send: (payload) => { this.send(ws, payload); } }, cmd);
+      },
       routeTask: (cmd) => this.options.supervisor.route(cmd.context),
       createTask: (cmd) => this.options.supervisor.create(cmd.context),
       createEmptyPickleSession: (cmd) => this.options.supervisor.createEmptyPickleSession(cmd.context),
@@ -655,29 +662,26 @@ export class AgentdServer {
     const handler = handlers[command.type] as (command: ParsedCommand) => unknown;
     await handler(command);
   }
-
   private requirePiOAuth(): PiOAuthHandling {
     if (!this.options.piOAuth) throw new Error("Pi OAuth is available only on the primary daemon");
     return this.options.piOAuth;
   }
-
   private registerAppCapabilities(ws: WebSocket, capabilities: string[]): void {
+    const dialect = this.socketDialects.lockFromCapabilities(ws, capabilities);
     this.appCapabilities.set(ws, new Set(capabilities));
-    logAgentd("app capabilities registered", { capabilities: capabilities.join(",") });
+    logAgentd("app capabilities registered", { capabilities: capabilities.join(","), dialect });
   }
-
   private sendSessionSnapshot(ws: WebSocket, sessions: PickyAgentSessionParsed[]): void {
+    if (this.socketDialects.get(ws) !== "v1") return;
     if (this.appCapabilities.has(ws)) {
       this.sendAppSessionSnapshot(ws, sessions);
       return;
     }
     this.send(ws, { type: "sessionSnapshot", sessions });
   }
-
   private broadcastSessionSnapshot(sessions: PickyAgentSessionParsed[]): void {
     for (const client of this.clients) this.sendSessionSnapshot(client, sessions);
   }
-
   private sendAppSessionSnapshot(ws: WebSocket, sessions: PickyAgentSessionParsed[]): void {
     const lightweightSessions = sessions.map(compactSessionForAppSnapshot);
     const lightweightPayload = { type: "sessionSnapshot", sessions: lightweightSessions } as const;
@@ -712,7 +716,6 @@ export class AgentdServer {
       this.send(ws, { type: "sessionUpdated", session: hydration.session });
     }
   }
-
   private firstClientWithCapability(capability: string): WebSocket | undefined {
     for (const client of this.clients) {
       if (this.appCapabilities.get(client)?.has(capability)) return client;
@@ -993,12 +996,15 @@ export class AgentdServer {
     if (this.clients.size === 0) return;
     let bytes = 0;
     let type: string | undefined;
+    let clients = 0;
     for (const client of this.clients) {
+      if (isLegacySessionProjectionEventType(event.type) && this.socketDialects.get(client) !== "v1") continue;
       const sent = this.send(client, event);
       bytes = sent.bytes;
       type = sent.type;
+      clients += 1;
     }
-    logAgentd("event broadcast", { type, clients: this.clients.size, bytes });
+    logAgentd("event broadcast", { type, clients, bytes });
   }
 
   private broadcastToCapability(capability: string, event: EventPayload): void {
@@ -1016,6 +1022,7 @@ export class AgentdServer {
   }
 
   private send(ws: WebSocket, payload: EventPayload): { bytes: number; type: string } {
+    if (isLegacySessionProjectionEventType(payload.type) && this.socketDialects.get(ws) !== "v1") return { bytes: 0, type: payload.type };
     const event: EventEnvelope = sanitizeForJson({ id: `event-${randomUUID()}`, protocolVersion: PROTOCOL_VERSION, timestamp: new Date().toISOString(), ...payload } as EventEnvelope);
     const json = JSON.stringify(event);
     logAgentd("event sent", eventLogFields(event));
@@ -1023,7 +1030,6 @@ export class AgentdServer {
     return { bytes: Buffer.byteLength(json, "utf8"), type: event.type };
   }
 }
-
 const EDGE_TTS_HTTP_BODY_LIMIT_BYTES = 64 * 1024;
 
 async function readEdgeTTSRequest(request: IncomingMessage): Promise<{ input: string; voice: string }> {

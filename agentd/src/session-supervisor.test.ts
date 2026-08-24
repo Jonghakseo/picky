@@ -46,6 +46,33 @@ type CommittedVisualNarrationTestEvent = {
 };
 
 describe("SessionSupervisor", () => {
+  it("semantic no-op patch preserves the timestamp without saving or emitting a session update", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-semantic-no-op-"));
+    const store = new SessionStore(dir);
+    const save = vi.spyOn(store, "save");
+    const supervisor = new SessionSupervisor(new MockRuntime(), store);
+    await supervisor.load();
+    const session = await supervisor.create(context("semantic no-op"));
+    const internals = supervisor as unknown as {
+      patch(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void>;
+    };
+
+    await internals.patch(session.id, { title: "Updated title" });
+    const updatedAt = supervisor.get(session.id)?.updatedAt;
+    save.mockClear();
+    const sessionEvents: PickyAgentSession[] = [];
+    const sessionMetaEvents: PickyAgentSession[] = [];
+    supervisor.on("session", (emitted: PickyAgentSession) => sessionEvents.push(emitted));
+    supervisor.on("sessionMeta", (emitted: PickyAgentSession) => sessionMetaEvents.push(emitted));
+
+    await internals.patch(session.id, { title: "Updated title" });
+
+    expect(supervisor.get(session.id)?.updatedAt).toBe(updatedAt);
+    expect(save).not.toHaveBeenCalled();
+    expect(sessionEvents).toEqual([]);
+    expect(sessionMetaEvents).toEqual([]);
+  });
+
   it("reloads credentials on every attached Pickle and main runtime handle", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-auth-reload-"));
     const pickleRuntime = new ManualRuntime();

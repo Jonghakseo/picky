@@ -38,7 +38,7 @@ const expectedBudgets: Record<FixtureVariant, ReplayBudget> = {
   withArtifacts: {
     counts: {
       session: 0,
-      sessionMeta: 2,
+      sessionMeta: 1,
       messageAppended: 3,
       messagesImported: 0,
       messageReplaced: 0,
@@ -49,8 +49,8 @@ const expectedBudgets: Record<FixtureVariant, ReplayBudget> = {
       artifact: 1,
       log: 0,
     },
-    totalEncodedEventBytes: 4_799,
-    maxEncodedEventBytes: 1_521,
+    totalEncodedEventBytes: 3_278,
+    maxEncodedEventBytes: 1_367,
   },
   withoutArtifacts: {
     counts: {
@@ -82,11 +82,16 @@ describe("terminal completion replay budget", () => {
       expect(result.persisted?.finalAnswer).toContain("Completed the investigation.");
       expect(result.persisted?.messages).toHaveLength(2);
       expect(result.persisted?.artifacts).toHaveLength(variant === "withArtifacts" ? 1 : 0);
+      expect(result.reconnectSnapshot?.artifacts).toHaveLength(variant === "withArtifacts" ? 1 : 0);
     });
   }
 });
 
-async function replayTerminalCompletion(events: RuntimeFixture[FixtureVariant]): Promise<{ budget: ReplayBudget; persisted: PickyAgentSession | undefined }> {
+async function replayTerminalCompletion(events: RuntimeFixture[FixtureVariant]): Promise<{
+  budget: ReplayBudget;
+  persisted: PickyAgentSession | undefined;
+  reconnectSnapshot: PickyAgentSession | undefined;
+}> {
   const root = await mkdtemp(join(tmpdir(), "picky-terminal-completion-replay-"));
   try {
     const runtime = new TerminalReplayRuntime();
@@ -105,13 +110,16 @@ async function replayTerminalCompletion(events: RuntimeFixture[FixtureVariant]):
         && Boolean(current.finalAnswer)
         && (current.messages ?? []).length === 2
         && current.artifacts.length === (expectsArtifacts ? 1 : 0)
-        && emissionRecorder.count("sessionMeta") === (expectsArtifacts ? 2 : 1)
+        && emissionRecorder.count("sessionMeta") === 1
         && emissionRecorder.count("artifact") === (expectsArtifacts ? 1 : 0);
     });
 
+    const reconnectSupervisor = new SessionSupervisor(new TerminalReplayRuntime(), store);
+    await reconnectSupervisor.load();
     return {
       budget: emissionRecorder.budget(),
       persisted: (await store.loadAll()).find((candidate) => candidate.id === session.id),
+      reconnectSnapshot: reconnectSupervisor.list().find((candidate) => candidate.id === session.id),
     };
   } finally {
     await rm(root, { recursive: true, force: true });

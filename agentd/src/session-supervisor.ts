@@ -31,6 +31,7 @@ import { hasActivity, zeroActivitySummary } from "./domain/activity-summary.js";
 import { diffQueueRemovedItems, dropAlreadyMaterializedQueueEntries, extractPickyPromptUserInstruction, queueItems, queueSubmissionSummary, queueTextMatchesUserText, sameQueueItems, type PendingQueueDelivery } from "./domain/queue-policy.js";
 import { isTerminalStatus } from "./domain/session-status.js";
 import { countSystemMessages, sameTodoState, shouldReattachBlockedSessionOnStartup } from "./domain/session-state-policy.js";
+import { isSemanticNoOpPatch } from "./domain/session-patch-policy.js";
 import { ARCHIVED_SESSION_RETENTION_DAYS, buildAppendedMainMessageState, buildArchivedSessionRestartCancellation, buildDuplicatedPickleSession, buildEmptyPickleSession, buildInterruptedRuntimeLiveStatePatch, buildOrphanedChildRecoverySession, buildPinnedPickleSession, buildResumedHandoffPickleSession, buildRuntimeReattachPatch, buildRuntimeSessionReplacementPatch, buildUnattachedRuntimeBlock, buildVisibleSession, projectMainAgentSessionInfo, projectMainReplyMetadata, projectMainRolloverPickleSessions, shouldPurgeArchivedSession } from "./domain/session-supervisor-projection-policy.js";
 import { normalizeDslWhitespace } from "./domain/session-text-policy.js";
 import { HANDOFF_PREFIX, FOLLOWUP_PREFIX, STEER_PREFIX, EXTENSION_ANSWER_PREFIX } from "./domain/log-prefixes.js";
@@ -2934,13 +2935,20 @@ export class SessionSupervisor extends EventEmitter {
   private async materializeTerminalArtifacts(sessionId: string): Promise<void> {
     const materialized = await this.artifactMaterializer.materializeTerminalArtifacts(this.mustGet(sessionId));
     if (!materialized) return;
-    await this.patch(sessionId, { artifacts: materialized.artifacts });
+    // Persistence-only patch: the terminal status metadata was already broadcast by the
+    // status path, and the granular `artifact` events below are the live projection owners.
+    // Re-emitting full session meta here would duplicate the completed broadcast (perf
+    // regression fixed in W1.3). The planned W5 terminal unit-of-work folds this write and
+    // the artifact publication into one durable commit.
+    await this.patch(sessionId, { artifacts: materialized.artifacts }, { emitSession: false });
     for (const artifact of materialized.emittedArtifacts) this.emit("artifact", sessionId, artifact);
   }
 
   private async patch(sessionId: string, patch: Partial<PickyAgentSession>, options: { emitSession?: boolean; emitFullSession?: boolean } = {}): Promise<void> {
     await this.runSessionWrite(sessionId, async () => {
-      const session = { ...this.mustGet(sessionId), ...patch, updatedAt: new Date().toISOString() };
+      const current = this.mustGet(sessionId);
+      if (isSemanticNoOpPatch(current, patch)) return;
+      const session = { ...current, ...patch, updatedAt: new Date().toISOString() };
       await this.upsert(session, { emitSession: false });
       if (options.emitSession ?? true) {
         this.emit(options.emitFullSession ? "session" : "sessionMeta", session);

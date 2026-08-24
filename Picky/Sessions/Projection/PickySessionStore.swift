@@ -5,7 +5,7 @@
 
 import Observation
 
-/// Stable child-store aggregate for a single session. It is dormant until W4.5.
+/// Stable child-store aggregate for a single session.
 @MainActor
 @Observable
 final class PickySessionStore {
@@ -21,8 +21,34 @@ final class PickySessionStore {
     let activityStore = PickySessionActivityStore()
     let extensionUiStore = PickySessionExtensionUiStore()
 
+    /// SessionCard has a handful of presentation-only values that have no
+    /// daemon field owner (for example an optimistic request timestamp). Keep
+    /// only those scalar values beside their owning child stores; never retain
+    /// a writable SessionCard or session-list array.
+    @ObservationIgnored private var presentation = PickySessionCardPresentation.empty
+
     init(sessionID: String) {
         self.sessionID = sessionID
+    }
+
+    /// Imports the current v1 façade card into independently-owned sections.
+    /// Empty v1 collections are the only representation available for a P0
+    /// omitted section at this boundary, so they explicitly clear the child to
+    /// `.unavailable` rather than retaining a previous hydrated value.
+    func replace(card: PickySessionListViewModel.SessionCard) {
+        precondition(card.id == sessionID)
+        metaStore.replace(PickySessionMetadata(card: card))
+        presentation = PickySessionCardPresentation(card: card)
+
+        replaceLogs(for: card)
+        replaceTools(for: card)
+        replaceTodo(for: card)
+        replaceSubagentRuns(for: card)
+        replaceArtifacts(for: card)
+        replaceMessages(for: card)
+        replaceQueue(for: card)
+        activityStore.replace(card.activitySummary)
+        replaceExtensionUiRequest(for: card)
     }
 
     /// Rebuilds the legacy card input from independently owned child snapshots.
@@ -34,7 +60,6 @@ final class PickySessionStore {
             return nil
         }
 
-        let logs = logStore.logsState.loadedValue ?? []
         let tools = toolStore.toolsState.loadedValue ?? []
         let todoState: PickyTodoState? = {
             guard case .loaded(let value) = todoStore.todoState else { return nil }
@@ -44,48 +69,161 @@ final class PickySessionStore {
         let artifacts = artifactStore.artifactsState.loadedValue ?? []
         let changedFiles = artifactStore.changedFilesProjectionState.loadedValue ?? []
         let messages = conversationStore.messagesState.loadedValue ?? []
-        let messageJournalAvailable: Bool? = {
-            guard case .loaded(let value) = conversationStore.messageJournalAvailabilityState else { return nil }
-            return value
-        }()
         let queue = queueStore.queueState.loadedValue
+        let queueModes = queueStore.queueModes
         let activity = activityStore.activityState.loadedValue ?? .zero
         let request: PickyExtensionUiRequest? = {
             guard case .loaded(let value) = extensionUiStore.requestState else { return nil }
             return value
         }()
 
-        return .fromAgentSession(PickyAgentSession(
+        return PickySessionListViewModel.SessionCard(
             id: metadata.id,
             title: metadata.title,
             status: metadata.status,
             cwd: metadata.cwd,
-            piSessionFilePath: metadata.piSessionFilePath,
             createdAt: metadata.createdAt,
             updatedAt: metadata.updatedAt,
-            lastSummary: metadata.lastSummary,
+            lastSummary: metadata.lastSummary ?? "",
             thinkingPreview: metadata.thinkingPreview,
-            finalAnswer: metadata.finalAnswer,
-            logs: logs,
+            logPreview: presentation.logPreview,
+            lastRequestText: presentation.lastRequestText,
+            lastRequestAt: presentation.lastRequestAt,
             tools: tools,
             todoState: todoState,
             subagentRuns: subagentRuns,
             artifacts: artifacts,
             changedFiles: changedFiles,
             messages: messages,
-            messageJournalAvailable: messageJournalAvailable,
             queuedSteers: queue?.steers ?? [],
             queuedFollowUps: queue?.followUps ?? [],
-            steeringMode: queue?.steeringMode ?? .oneAtATime,
-            followUpMode: queue?.followUpMode ?? .oneAtATime,
+            steeringMode: queueModes.steeringMode,
+            followUpMode: queueModes.followUpMode,
             activitySummary: activity,
+            lastTerminalSyncOutcome: presentation.lastTerminalSyncOutcome,
             contextUsage: metadata.contextUsage,
             currentAssistantRun: metadata.currentAssistantRun,
             pendingExtensionUiRequest: request,
+            piSessionFilePath: metadata.piSessionFilePath,
             notifyMainOnCompletion: metadata.notifyMainOnCompletion,
-            archived: metadata.archived,
-            pinned: metadata.pinned
-        ))
+            pinned: metadata.pinned ?? false,
+            archived: metadata.archived ?? false,
+            hasRuntimeDetachedFollowUpRejection: presentation.hasRuntimeDetachedFollowUpRejection,
+            isMainAgentHandoff: presentation.isMainAgentHandoff
+        )
+    }
+
+    private func replaceLogs(for card: PickySessionListViewModel.SessionCard) {
+        guard !card.logPreview.isEmpty else {
+            logStore.markUnavailable()
+            return
+        }
+        logStore.replace([card.logPreview])
+    }
+
+    private func replaceTools(for card: PickySessionListViewModel.SessionCard) {
+        guard !card.tools.isEmpty else {
+            toolStore.markUnavailable()
+            return
+        }
+        toolStore.replace(card.tools)
+    }
+
+    private func replaceTodo(for card: PickySessionListViewModel.SessionCard) {
+        guard let todoState = card.todoState else {
+            todoStore.markUnavailable()
+            return
+        }
+        todoStore.replace(todoState)
+    }
+
+    private func replaceSubagentRuns(for card: PickySessionListViewModel.SessionCard) {
+        guard !card.subagentRuns.isEmpty else {
+            subagentStore.markUnavailable()
+            return
+        }
+        subagentStore.replace(card.subagentRuns)
+    }
+
+    private func replaceArtifacts(for card: PickySessionListViewModel.SessionCard) {
+        guard !card.artifacts.isEmpty || !card.changedFiles.isEmpty else {
+            artifactStore.markUnavailable()
+            return
+        }
+        artifactStore.replace(artifacts: card.artifacts, changedFiles: card.changedFiles)
+    }
+
+    private func replaceMessages(for card: PickySessionListViewModel.SessionCard) {
+        guard !card.messages.isEmpty else {
+            conversationStore.markMessagesUnavailable()
+            return
+        }
+        conversationStore.replaceMessages(card.messages)
+        conversationStore.replaceMessageJournalAvailability(true)
+    }
+
+    private func replaceQueue(for card: PickySessionListViewModel.SessionCard) {
+        guard !card.queuedSteers.isEmpty || !card.queuedFollowUps.isEmpty else {
+            queueStore.markUnavailable(steeringMode: card.steeringMode, followUpMode: card.followUpMode)
+            return
+        }
+        queueStore.replace(
+            steers: card.queuedSteers,
+            followUps: card.queuedFollowUps,
+            steeringMode: card.steeringMode,
+            followUpMode: card.followUpMode
+        )
+    }
+
+    private func replaceExtensionUiRequest(for card: PickySessionListViewModel.SessionCard) {
+        guard let request = card.pendingExtensionUiRequest else {
+            extensionUiStore.markUnavailable()
+            return
+        }
+        extensionUiStore.replace(request)
+    }
+}
+
+private struct PickySessionCardPresentation {
+    let logPreview: String
+    let lastRequestText: String?
+    let lastRequestAt: Date?
+    let lastTerminalSyncOutcome: PickyTerminalSessionSyncOutcome?
+    let hasRuntimeDetachedFollowUpRejection: Bool
+    let isMainAgentHandoff: Bool
+
+    static let empty = Self(
+        logPreview: "",
+        lastRequestText: nil,
+        lastRequestAt: nil,
+        lastTerminalSyncOutcome: nil,
+        hasRuntimeDetachedFollowUpRejection: false,
+        isMainAgentHandoff: false
+    )
+
+    init(card: PickySessionListViewModel.SessionCard) {
+        logPreview = card.logPreview
+        lastRequestText = card.lastRequestText
+        lastRequestAt = card.lastRequestAt
+        lastTerminalSyncOutcome = card.lastTerminalSyncOutcome
+        hasRuntimeDetachedFollowUpRejection = card.hasRuntimeDetachedFollowUpRejection
+        isMainAgentHandoff = card.isMainAgentHandoff
+    }
+
+    private init(
+        logPreview: String,
+        lastRequestText: String?,
+        lastRequestAt: Date?,
+        lastTerminalSyncOutcome: PickyTerminalSessionSyncOutcome?,
+        hasRuntimeDetachedFollowUpRejection: Bool,
+        isMainAgentHandoff: Bool
+    ) {
+        self.logPreview = logPreview
+        self.lastRequestText = lastRequestText
+        self.lastRequestAt = lastRequestAt
+        self.lastTerminalSyncOutcome = lastTerminalSyncOutcome
+        self.hasRuntimeDetachedFollowUpRejection = hasRuntimeDetachedFollowUpRejection
+        self.isMainAgentHandoff = isMainAgentHandoff
     }
 }
 

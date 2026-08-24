@@ -16,10 +16,17 @@ struct PickySessionProjectionStorageRelay: Equatable {
     let changesArchivedSessions: Bool
 }
 
+/// Presentation-only adapter that preserves v1's per-assignment façade
+/// publications. It is deliberately outside `PickySessionProjectionStorage`:
+/// registry ownership remains defined by semantic operations and one final
+/// storage snapshot, while the façade can retain its legacy publish budget.
 @MainActor
-protocol PickyLegacySessionProjectionStorageRelaying: PickySessionProjectionStorage {
-    var legacyRelaySteps: [PickySessionProjectionStorageRelay] { get }
+protocol PickySessionProjectionStorageV1Relaying: PickySessionProjectionStorage {
+    var v1RelaySteps: [PickySessionProjectionStorageRelay] { get }
 }
+
+@MainActor
+protocol PickyLegacySessionProjectionStorageRelaying: PickySessionProjectionStorageV1Relaying {}
 
 /// Array-backed v1 implementation retained until the registry backend is enabled.
 @MainActor
@@ -28,7 +35,7 @@ final class PickyLegacySessionProjectionStorage: PickyLegacySessionProjectionSto
     private var archived: [PickySessionListViewModel.SessionCard] = []
     private let changesSubject = PassthroughSubject<PickySessionProjectionStorageSnapshot, Never>()
 
-    private(set) var legacyRelaySteps: [PickySessionProjectionStorageRelay] = []
+    private(set) var v1RelaySteps: [PickySessionProjectionStorageRelay] = []
     var activeSessions: [PickySessionListViewModel.SessionCard] { active }
     var archivedSessions: [PickySessionListViewModel.SessionCard] { archived }
     var changes: AnyPublisher<PickySessionProjectionStorageSnapshot, Never> { changesSubject.eraseToAnyPublisher() }
@@ -163,7 +170,7 @@ final class PickyLegacySessionProjectionStorage: PickyLegacySessionProjectionSto
     }
 
     private func publish(_ steps: [PickySessionProjectionStorageRelay]) {
-        legacyRelaySteps = steps
+        v1RelaySteps = steps
         changesSubject.send(snapshot())
     }
 

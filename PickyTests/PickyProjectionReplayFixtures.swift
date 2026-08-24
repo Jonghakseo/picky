@@ -15,7 +15,8 @@ enum PickyProjectionReplayFixtures {
 
     static func makeViewModel(
         notificationCenter: PickyNoopNotificationCenter = PickyNoopNotificationCenter(),
-        selectedSessionID: String? = nil
+        selectedSessionID: String? = nil,
+        sessionProjectionStorage: (any PickySessionProjectionStorage)? = nil
     ) -> PickySessionListViewModel {
         PickySessionListViewModel(
             client: FakePickyAgentClient(),
@@ -24,7 +25,8 @@ enum PickyProjectionReplayFixtures {
             archiveStore: ProjectionReplayArchiveStore(),
             manualOrderStore: ProjectionReplayManualOrderStore(),
             composerDraftStore: ProjectionReplayComposerDraftStore(),
-            composerAttachmentDraftStore: ProjectionReplayComposerAttachmentDraftStore()
+            composerAttachmentDraftStore: ProjectionReplayComposerAttachmentDraftStore(),
+            sessionProjectionStorage: sessionProjectionStorage
         )
     }
 

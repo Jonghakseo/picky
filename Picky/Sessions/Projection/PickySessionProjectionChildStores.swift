@@ -50,6 +50,29 @@ struct PickySessionMetadata: Equatable {
         self.archivedAt = archivedAt
         pinned = session.pinned
     }
+
+    /// W4's v1 façade boundary supplies an already-built card. `finalAnswer`
+    /// is not represented by that legacy value model, so it remains dormant
+    /// until the v2 mutation path writes metadata directly.
+    init(card: PickySessionListViewModel.SessionCard, revision: Int = 0, archivedAt: Date? = nil) {
+        id = card.id
+        self.revision = revision
+        title = card.title
+        status = card.status
+        cwd = card.cwd
+        piSessionFilePath = card.piSessionFilePath
+        createdAt = card.createdAt
+        updatedAt = card.updatedAt
+        lastSummary = card.lastSummary
+        thinkingPreview = card.thinkingPreview
+        finalAnswer = nil
+        contextUsage = card.contextUsage
+        currentAssistantRun = card.currentAssistantRun
+        notifyMainOnCompletion = card.notifyMainOnCompletion
+        archived = card.archived
+        self.archivedAt = archivedAt
+        pinned = card.pinned
+    }
 }
 
 @MainActor
@@ -261,8 +284,15 @@ final class PickySessionArtifactStore {
 struct PickySessionQueueProjection: Equatable {
     let steers: [PickyQueueItem]
     let followUps: [PickyQueueItem]
+}
+
+/// Queue delivery modes are scalar session metadata, independent from the
+/// availability of the queued-item collection in a bounded hydration payload.
+struct PickySessionQueueModes: Equatable {
     let steeringMode: PickyQueueMode
     let followUpMode: PickyQueueMode
+
+    static let `default` = Self(steeringMode: .oneAtATime, followUpMode: .oneAtATime)
 }
 
 @MainActor
@@ -270,6 +300,7 @@ struct PickySessionQueueProjection: Equatable {
 final class PickySessionQueueStore {
     @ObservationIgnored private var itemsByID: [String: PickyQueueItem] = [:]
     @ObservationIgnored private var state: PickyProjectionSectionState<PickySessionQueueProjection> = .unavailable
+    @ObservationIgnored private var modes = PickySessionQueueModes.default
     private(set) var orderedSteerIDs: [String] = []
     private(set) var orderedFollowUpIDs: [String] = []
     private(set) var valueRevision = 0
@@ -279,11 +310,17 @@ final class PickySessionQueueStore {
         return state
     }
 
+    var queueModes: PickySessionQueueModes {
+        _ = valueRevision
+        return modes
+    }
+
     func replace(steers: [PickyQueueItem], followUps: [PickyQueueItem], steeringMode: PickyQueueMode, followUpMode: PickyQueueMode) {
         orderedSteerIDs = stableIDs(for: steers, prefix: "steer")
         orderedFollowUpIDs = stableIDs(for: followUps, prefix: "follow-up")
         itemsByID = Dictionary(uniqueKeysWithValues: zip(orderedSteerIDs + orderedFollowUpIDs, steers + followUps))
-        state = .loaded(PickySessionQueueProjection(steers: steers, followUps: followUps, steeringMode: steeringMode, followUpMode: followUpMode))
+        state = .loaded(PickySessionQueueProjection(steers: steers, followUps: followUps))
+        modes = PickySessionQueueModes(steeringMode: steeringMode, followUpMode: followUpMode)
         valueRevision += 1
     }
 
@@ -292,11 +329,12 @@ final class PickySessionQueueStore {
         return itemsByID[id]
     }
 
-    func markUnavailable() {
+    func markUnavailable(steeringMode: PickyQueueMode = .oneAtATime, followUpMode: PickyQueueMode = .oneAtATime) {
         orderedSteerIDs = []
         orderedFollowUpIDs = []
         itemsByID = [:]
         state = .unavailable
+        modes = PickySessionQueueModes(steeringMode: steeringMode, followUpMode: followUpMode)
         valueRevision += 1
     }
 

@@ -190,7 +190,8 @@ final class PickySessionListViewModel: ObservableObject {
     private var lastIncrementalSeqBySessionID: [String: Int] = [:]
     private var hasExplicitSelection = false
     private let sessionProjectionStorage: any PickySessionProjectionStorage
-    private let legacySessionProjectionStorage: (any PickyLegacySessionProjectionStorageRelaying)?
+    /// v1 presentation adapter only; storage ownership remains backend-neutral.
+    private let v1SessionProjectionStorageRelay: (any PickySessionProjectionStorageV1Relaying)?
     private var sessionProjectionStorageCancellable: AnyCancellable?
 
     init(
@@ -218,9 +219,11 @@ final class PickySessionListViewModel: ObservableObject {
         shellTerminalSessionFactory: ((SessionCard) -> PickyShellTerminalSession)? = nil, sessionProjectionStorage: (any PickySessionProjectionStorage)? = nil
     ) {
         self.client = client
-        let resolvedSessionProjectionStorage = sessionProjectionStorage ?? PickyLegacySessionProjectionStorage()
+        // A ViewModel owns exactly one backend for its lifetime. There is no
+        // live migration from the legacy arrays to the registry.
+        let resolvedSessionProjectionStorage = sessionProjectionStorage ?? PickyRegistrySessionProjectionStorage()
         self.sessionProjectionStorage = resolvedSessionProjectionStorage
-        self.legacySessionProjectionStorage = resolvedSessionProjectionStorage as? any PickyLegacySessionProjectionStorageRelaying
+        self.v1SessionProjectionStorageRelay = resolvedSessionProjectionStorage as? any PickySessionProjectionStorageV1Relaying
         self.notificationCenter = notificationCenter
         self.notificationPreferencesProvider = notificationPreferencesProvider
         self.selectionStore = selectionStore
@@ -2461,15 +2464,15 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Legacy storage boundary
+    // MARK: - Storage presentation boundary
 
     private func relaySessionProjectionStorageChange(_ snapshot: PickySessionProjectionStorageSnapshot) {
-        guard let legacySessionProjectionStorage else {
+        guard let v1SessionProjectionStorageRelay else {
             sessions = snapshot.activeSessions
             archivedSessions = snapshot.archivedSessions
             return
         }
-        for step in legacySessionProjectionStorage.legacyRelaySteps {
+        for step in v1SessionProjectionStorageRelay.v1RelaySteps {
             if step.changesActiveSessions { sessions = step.snapshot.activeSessions }
             if step.changesArchivedSessions { archivedSessions = step.snapshot.archivedSessions }
         }

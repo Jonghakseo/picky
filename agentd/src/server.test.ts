@@ -103,6 +103,158 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
+  it("hydrates registered app sessions without exceeding the WebSocket frame budget", async () => {
+    const sessions = makeLargeSessionSnapshotFixtures();
+    vi.spyOn(supervisor, "list").mockReturnValue(sessions);
+
+    const { ws } = await connectWithHello();
+    const rawFrames: string[] = [];
+    const captureFrame = (data: WebSocket.RawData) => rawFrames.push(data.toString());
+    ws.on("message", captureFrame);
+    ws.send(JSON.stringify({
+      id: "cmd-register-large-snapshot-app",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "registerAppCapabilities",
+      capabilities: ["pickleBridge"],
+    }));
+    ws.send(JSON.stringify({ id: "cmd-list-large-app-snapshot", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
+    await waitUntil(() => rawFrames.some((frame) => {
+      const event = JSON.parse(frame) as EventEnvelope;
+      return event.type === "ack" && event.commandId === "cmd-list-large-app-snapshot";
+    }));
+    ws.off("message", captureFrame);
+
+    const events = rawFrames.map((frame) => JSON.parse(frame) as EventEnvelope);
+    const snapshot = events.find((event) => event.type === "sessionSnapshot");
+    const hydrationEvents = events.filter((event) => event.type === "sessionUpdated");
+    expect(snapshot).toMatchObject({
+      type: "sessionSnapshot",
+      sessions: sessions.map((session) => ({ id: session.id, messages: [], messageJournalAvailable: false })),
+    });
+    expect(hydrationEvents).toHaveLength(sessions.length);
+    expect(hydrationEvents).toEqual(expect.arrayContaining(sessions.map((session) => expect.objectContaining({
+      type: "sessionUpdated",
+      session: expect.objectContaining({ id: session.id, messages: session.messages }),
+    }))));
+    expect(events.findIndex((event) => event.type === "sessionSnapshot")).toBeLessThan(events.findIndex((event) => event.type === "sessionUpdated"));
+    expect(Math.max(...rawFrames.map((frame) => Buffer.byteLength(frame, "utf8")))).toBeLessThan(8 * 1024 * 1024);
+    ws.close();
+  });
+
+  it("degrades a single oversized session hydration instead of exceeding the app frame budget", async () => {
+    const oversizedSession: PickyAgentSession = {
+      id: "oversized-single-session",
+      title: "Oversized single session",
+      status: "completed",
+      createdAt: "2026-08-23T00:00:00.000Z",
+      updatedAt: "2026-08-23T00:00:01.000Z",
+      logs: [],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+      messages: [{
+        id: "oversized-single-message",
+        kind: "agent_text",
+        createdAt: "2026-08-23T00:00:01.000Z",
+        text: "m".repeat(9 * 1024 * 1024),
+      }],
+    };
+    vi.spyOn(supervisor, "list").mockReturnValue([oversizedSession]);
+
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({
+      id: "cmd-register-oversized-session-app",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "registerAppCapabilities",
+      capabilities: ["pickleBridge"],
+    }));
+    await waitForEvent(ws, "ack");
+
+    const rawFrames: string[] = [];
+    const captureFrame = (data: WebSocket.RawData) => rawFrames.push(data.toString());
+    ws.on("message", captureFrame);
+    ws.send(JSON.stringify({ id: "cmd-list-oversized-session", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
+    await waitForEvent(ws, "ack");
+    ws.off("message", captureFrame);
+
+    const hydration = rawFrames
+      .map((frame) => JSON.parse(frame) as EventEnvelope)
+      .find((event) => event.type === "sessionUpdated");
+    expect(hydration).toMatchObject({
+      type: "sessionUpdated",
+      session: { id: oversizedSession.id, messages: [], messageJournalAvailable: false },
+    });
+    expect(Math.max(...rawFrames.map((frame) => Buffer.byteLength(frame, "utf8")))).toBeLessThan(8 * 1024 * 1024);
+    ws.close();
+  });
+
+  it("bounds registered app session snapshots broadcast after deletion", async () => {
+    const sessions = makeLargeSessionSnapshotFixtures();
+    vi.spyOn(supervisor, "list").mockReturnValue(sessions);
+    vi.spyOn(supervisor, "deleteSession").mockResolvedValue();
+
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({
+      id: "cmd-register-delete-snapshot-app",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "registerAppCapabilities",
+      capabilities: ["pickleBridge"],
+    }));
+    await waitForEvent(ws, "ack");
+
+    const rawFrames: string[] = [];
+    const captureFrame = (data: WebSocket.RawData) => rawFrames.push(data.toString());
+    ws.on("message", captureFrame);
+    ws.send(JSON.stringify({
+      id: "cmd-delete-large-snapshot-session",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "deleteSession",
+      sessionId: "deleted-session",
+    }));
+    await waitForEvent(ws, "ack");
+    ws.off("message", captureFrame);
+
+    const events = rawFrames.map((frame) => JSON.parse(frame) as EventEnvelope);
+    expect(events.filter((event) => event.type === "sessionSnapshot")).toHaveLength(1);
+    expect(events.filter((event) => event.type === "sessionUpdated")).toHaveLength(sessions.length);
+    expect(Math.max(...rawFrames.map((frame) => Buffer.byteLength(frame, "utf8")))).toBeLessThan(8 * 1024 * 1024);
+    ws.close();
+  });
+
+  it("returns a bounded error instead of an empty authoritative snapshot when metadata cannot fit", async () => {
+    const oversizedMetadataSession = makeSession({
+      id: "s".repeat(9 * 1024 * 1024),
+      title: "Oversized metadata session",
+    });
+    vi.spyOn(supervisor, "list").mockReturnValue([oversizedMetadataSession]);
+
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({
+      id: "cmd-register-oversized-metadata-app",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "registerAppCapabilities",
+      capabilities: ["pickleBridge"],
+    }));
+    await waitForEvent(ws, "ack");
+
+    const rawFrames: string[] = [];
+    const captureFrame = (data: WebSocket.RawData) => rawFrames.push(data.toString());
+    ws.on("message", captureFrame);
+    ws.send(JSON.stringify({ id: "cmd-list-oversized-metadata", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
+    await waitForEvent(ws, "ack");
+    ws.off("message", captureFrame);
+
+    const events = rawFrames.map((frame) => JSON.parse(frame) as EventEnvelope);
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "error",
+      code: "session_snapshot_too_large",
+    }));
+    expect(events.some((event) => event.type === "sessionSnapshot")).toBe(false);
+    expect(events.some((event) => event.type === "sessionUpdated")).toBe(false);
+    expect(Math.max(...rawFrames.map((frame) => Buffer.byteLength(frame, "utf8")))).toBeLessThan(8 * 1024 * 1024);
+    ws.close();
+  });
+
   it("returns session diff responses only to the requesting client", async () => {
     const requester = await connectWithHello();
     const observer = await connectWithHello();
@@ -2155,6 +2307,20 @@ function makeSession(overrides: Partial<PickyAgentSession> = {}): PickyAgentSess
     changedFiles: [],
     ...overrides,
   };
+}
+
+function makeLargeSessionSnapshotFixtures(): PickyAgentSession[] {
+  const largeMessageText = "m".repeat(1_000_000);
+  return Array.from({ length: 20 }, (_, index) => makeSession({
+    id: `large-session-${index}`,
+    title: `Large session ${index}`,
+    messages: [{
+      id: `large-message-${index}`,
+      kind: "agent_text",
+      createdAt: "2026-08-23T00:00:01.000Z",
+      text: largeMessageText,
+    }],
+  }));
 }
 
 async function connectWithHello(): Promise<{ ws: WebSocket; hello: EventEnvelope }> {

@@ -381,7 +381,8 @@ export class AgentdServer {
   private async dispatchCommand(ws: WebSocket, command: ParsedCommand): Promise<void> {
     const handlers: CommandHandlerMap = {
       listSessions: () => {
-        this.send(ws, { type: "sessionSnapshot", sessions: compactSessionsForSnapshot(this.options.supervisor.list()).map(protocolSession) });
+        const sessions = compactSessionsForSnapshot(this.options.supervisor.list()).map(protocolSession);
+        this.sendSessionSnapshot(ws, sessions);
       },
       listMainMessages: (cmd) => this.send(ws, { type: "mainMessagesSnapshot", messages: this.options.supervisor.listMainMessages() }),
       listMainAgentModels: async (cmd) => this.send(ws, { type: "mainAgentModelsSnapshot", models: await this.options.supervisor.listMainAgentModels() }),
@@ -612,10 +613,8 @@ export class AgentdServer {
       },
       deleteSession: async (cmd) => {
         await this.options.supervisor.deleteSession(cmd.sessionId);
-        this.broadcast({
-          type: "sessionSnapshot",
-          sessions: compactSessionsForSnapshot(this.options.supervisor.list()).map(protocolSession),
-        });
+        const sessions = compactSessionsForSnapshot(this.options.supervisor.list()).map(protocolSession);
+        this.broadcastSessionSnapshot(sessions);
       },
       cycleSessionThinkingLevel: (cmd) => this.options.supervisor.cycleSessionThinkingLevel(cmd.sessionId),
       cycleSessionModel: (cmd) => this.options.supervisor.cycleSessionModel(cmd.sessionId, cmd.direction),
@@ -662,6 +661,53 @@ export class AgentdServer {
   private registerAppCapabilities(ws: WebSocket, capabilities: string[]): void {
     this.appCapabilities.set(ws, new Set(capabilities));
     logAgentd("app capabilities registered", { capabilities: capabilities.join(",") });
+  }
+
+  private sendSessionSnapshot(ws: WebSocket, sessions: PickyAgentSessionParsed[]): void {
+    if (this.appCapabilities.has(ws)) {
+      this.sendAppSessionSnapshot(ws, sessions);
+      return;
+    }
+    this.send(ws, { type: "sessionSnapshot", sessions });
+  }
+
+  private broadcastSessionSnapshot(sessions: PickyAgentSessionParsed[]): void {
+    for (const client of this.clients) this.sendSessionSnapshot(client, sessions);
+  }
+
+  private sendAppSessionSnapshot(ws: WebSocket, sessions: PickyAgentSessionParsed[]): void {
+    const lightweightSessions = sessions.map(compactSessionForAppSnapshot);
+    const lightweightPayload = { type: "sessionSnapshot", sessions: lightweightSessions } as const;
+    if (eventPayloadByteLength(lightweightPayload) <= APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT) {
+      this.send(ws, lightweightPayload);
+    } else {
+      const minimalSessions = sessions.map(minimalSessionForAppSnapshot);
+      const minimalPayload = { type: "sessionSnapshot", sessions: minimalSessions } as const;
+      if (eventPayloadByteLength(minimalPayload) <= APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT) {
+        logAgentd("app session snapshot reduced to minimal metadata", { sessions: sessions.length });
+        this.send(ws, minimalPayload);
+      } else {
+        logAgentd("app session snapshot metadata exceeds frame budget", { sessions: sessions.length });
+        this.send(ws, {
+          type: "error",
+          code: "session_snapshot_too_large",
+          message: "Session metadata exceeds the safe app transport limit.",
+        });
+        return;
+      }
+    }
+
+    for (const session of sessions) {
+      const hydration = boundedSessionForAppHydration(session);
+      if (hydration.omittedFields.length > 0) {
+        logAgentd("app session hydration reduced to frame budget", {
+          sessionId: session.id,
+          omittedFields: hydration.omittedFields.join(","),
+        });
+      }
+      if (!hydration.session) continue;
+      this.send(ws, { type: "sessionUpdated", session: hydration.session });
+    }
   }
 
   private firstClientWithCapability(capability: string): WebSocket | undefined {
@@ -1329,6 +1375,12 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
   }
 }
 
+const APP_EVENT_FRAME_BYTE_LIMIT = 8 * 1024 * 1024;
+const APP_EVENT_ENVELOPE_BYTE_RESERVE = 4 * 1024;
+const APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT = APP_EVENT_FRAME_BYTE_LIMIT - APP_EVENT_ENVELOPE_BYTE_RESERVE;
+const APP_SNAPSHOT_TITLE_CHAR_LIMIT = 500;
+const APP_SNAPSHOT_PATH_CHAR_LIMIT = 2_000;
+
 const SNAPSHOT_LOG_LIMIT = 16;
 const SNAPSHOT_IMPORTANT_LOG_LIMIT = 6;
 const SNAPSHOT_LOG_CHAR_LIMIT = 600;
@@ -1358,6 +1410,92 @@ export function compactSessionsForSnapshot(sessions: PickyAgentSession[]): Picky
     changedFiles: compactSnapshotChangedFiles(session.changedFiles),
     messages: compactSnapshotMessages(session.messages),
   }));
+}
+
+function compactSessionForAppSnapshot(session: PickyAgentSessionParsed): PickyAgentSessionParsed {
+  return protocolSession({
+    ...session,
+    logs: [],
+    tools: [],
+    subagentRuns: [],
+    messages: [],
+    messageJournalAvailable: false,
+  });
+}
+
+function minimalSessionForAppSnapshot(session: PickyAgentSessionParsed): PickyAgentSessionParsed {
+  return protocolSession({
+    id: session.id,
+    title: truncateText(session.title, APP_SNAPSHOT_TITLE_CHAR_LIMIT),
+    status: session.status,
+    cwd: session.cwd ? truncateText(session.cwd, APP_SNAPSHOT_PATH_CHAR_LIMIT) : session.cwd,
+    piSessionFilePath: session.piSessionFilePath ? truncateText(session.piSessionFilePath, APP_SNAPSHOT_PATH_CHAR_LIMIT) : session.piSessionFilePath,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    lastSummary: session.lastSummary,
+    thinkingPreview: session.thinkingPreview,
+    finalAnswer: session.finalAnswer,
+    logs: [],
+    tools: [],
+    subagentRuns: [],
+    artifacts: [],
+    changedFiles: [],
+    messages: [],
+    messageJournalAvailable: false,
+    activitySummary: session.activitySummary,
+    contextUsage: session.contextUsage,
+    notifyMainOnCompletion: session.notifyMainOnCompletion,
+    archived: session.archived,
+    archivedAt: session.archivedAt,
+    pinned: session.pinned,
+  });
+}
+
+function boundedSessionForAppHydration(session: PickyAgentSessionParsed): {
+  session?: PickyAgentSessionParsed;
+  omittedFields: string[];
+} {
+  if (sessionUpdatedPayloadFitsAppFrame(session)) return { session, omittedFields: [] };
+
+  const withoutSubagentRuns = protocolSession({ ...session, subagentRuns: [] });
+  if (sessionUpdatedPayloadFitsAppFrame(withoutSubagentRuns)) {
+    return { session: withoutSubagentRuns, omittedFields: ["subagentRuns"] };
+  }
+
+  const withoutTools = protocolSession({ ...withoutSubagentRuns, tools: [] });
+  if (sessionUpdatedPayloadFitsAppFrame(withoutTools)) {
+    return { session: withoutTools, omittedFields: ["subagentRuns", "tools"] };
+  }
+
+  const withoutMessages = protocolSession({ ...withoutTools, messages: [], messageJournalAvailable: false });
+  if (sessionUpdatedPayloadFitsAppFrame(withoutMessages)) {
+    return { session: withoutMessages, omittedFields: ["subagentRuns", "tools", "messages"] };
+  }
+
+  const minimalSession = minimalSessionForAppSnapshot(session);
+  if (sessionUpdatedPayloadFitsAppFrame(minimalSession)) {
+    return {
+      session: minimalSession,
+      omittedFields: ["subagentRuns", "tools", "messages", "extendedMetadata"],
+    };
+  }
+  return {
+    omittedFields: ["entireSession"],
+  };
+}
+
+function sessionUpdatedPayloadFitsAppFrame(session: PickyAgentSessionParsed): boolean {
+  return eventPayloadByteLength({ type: "sessionUpdated", session }) <= APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT;
+}
+
+function eventPayloadByteLength(payload: EventPayload): number {
+  const event = {
+    id: "event-00000000-0000-0000-0000-000000000000",
+    protocolVersion: PROTOCOL_VERSION,
+    timestamp: "2026-01-01T00:00:00.000Z",
+    ...payload,
+  };
+  return Buffer.byteLength(JSON.stringify(event), "utf8");
 }
 
 // Snapshot mirrors the HUD's visible window so the initial snapshot and the next

@@ -500,11 +500,11 @@ final class OnboardingFlowController {
 
     private func beginAwaitingArchive() {
         guard let hudViewModel, let demoSessionId else { return }
-        archiveCancellable = hudViewModel.$archivedSessions
+        archiveCancellable = hudViewModel.archivedSessionIDsPublisher
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] cards in
+            .sink { [weak self] archivedSessionIDs in
                 guard let self else { return }
-                if cards.contains(where: { $0.id == demoSessionId }) {
+                if archivedSessionIDs.contains(demoSessionId) {
                     self.didArchiveDemoSession = true
                     self.archiveCancellable = nil
                     self.enter(.outro)

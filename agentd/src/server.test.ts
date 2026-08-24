@@ -6,9 +6,10 @@ import { Readable } from "node:stream";
 import WebSocket from "ws";
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PROTOCOL_VERSION, parseCommand, type EventEnvelope, type PickyAgentSession, type PickyContextPacket, type PickyExtensionUiRequest } from "./protocol.js";
+import { PROTOCOL_VERSION, PickyAgentSessionSchema, parseCommand, type EventEnvelope, type PickyAgentSession, type PickyContextPacket, type PickyExtensionUiRequest } from "./protocol.js";
 import { MockRuntime, type MockRuntimeSession } from "./runtime/mock-runtime.js";
 import { AgentdServer, commandLogFields, compactSessionsForSnapshot, createDefaultPackageManager, sanitizeForJson } from "./server.js";
+import { boundedSessionForAppHydration } from "./application/app-session-snapshot-policy.js";
 import { EdgeTTSService, type EdgeTTSClient } from "./edge-tts-service.js";
 import { SessionStore } from "./session-store.js";
 import { SessionSupervisor } from "./session-supervisor.js";
@@ -138,6 +139,110 @@ describe("AgentdServer", () => {
     }))));
     expect(events.findIndex((event) => event.type === "sessionSnapshot")).toBeLessThan(events.findIndex((event) => event.type === "sessionUpdated"));
     expect(Math.max(...rawFrames.map((frame) => Buffer.byteLength(frame, "utf8")))).toBeLessThan(8 * 1024 * 1024);
+    ws.close();
+  });
+
+  it("records a deterministic 94-session registered-app bootstrap budget", async () => {
+    const sessions = makeNormalSessionBootstrapFixtures();
+    vi.spyOn(supervisor, "list").mockReturnValue(sessions);
+
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({
+      id: "cmd-register-bootstrap-budget-app",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "registerAppCapabilities",
+      capabilities: ["pickleBridge"],
+    }));
+    await waitForEvent(ws, "ack");
+
+    const rawFrames: string[] = [];
+    const captureFrame = (data: WebSocket.RawData) => rawFrames.push(data.toString());
+    ws.on("message", captureFrame);
+    ws.send(JSON.stringify({ id: "cmd-list-bootstrap-budget", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
+    await waitUntil(() => rawFrames.some((frame) => {
+      const event = JSON.parse(frame) as EventEnvelope;
+      return event.type === "ack" && event.commandId === "cmd-list-bootstrap-budget";
+    }));
+    ws.off("message", captureFrame);
+
+    const replayFrames = rawFrames
+      .map((frame) => ({ frame, event: JSON.parse(frame) as EventEnvelope }))
+      .filter(({ event }) => event.type === "sessionSnapshot" || event.type === "sessionUpdated");
+    const budget = {
+      frameCount: replayFrames.length,
+      maxSingleFrameBytes: Math.max(...replayFrames.map(({ frame }) => Buffer.byteLength(frame, "utf8"))),
+      totalEncodedBytes: replayFrames.reduce((total, { frame }) => total + Buffer.byteLength(frame, "utf8"), 0),
+    };
+
+    expect(replayFrames.map(({ event }) => event.type)).toEqual(["sessionSnapshot", ...Array(94).fill("sessionUpdated")]);
+    expect(budget).toEqual({
+      frameCount: 95,
+      maxSingleFrameBytes: expect.any(Number),
+      totalEncodedBytes: expect.any(Number),
+    });
+    expect(budget.maxSingleFrameBytes).toBeLessThan(8 * 1024 * 1024);
+    expect(budget.totalEncodedBytes).toBeGreaterThan(50_000);
+    expect(budget.totalEncodedBytes).toBeLessThan(250_000);
+    expect(sessions.map((session) => boundedSessionForAppHydration(PickyAgentSessionSchema.parse(session)).omittedFields)).toEqual(Array.from({ length: 94 }, () => []));
+    ws.close();
+  });
+
+  it("reuses the bounded bootstrap route after deletion for registered app clients", async () => {
+    const sessions = makeNormalSessionBootstrapFixtures();
+    vi.spyOn(supervisor, "list").mockReturnValue(sessions);
+    vi.spyOn(supervisor, "deleteSession").mockResolvedValue();
+
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({
+      id: "cmd-register-delete-bootstrap-budget-app",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "registerAppCapabilities",
+      capabilities: ["pickleBridge"],
+    }));
+    await waitForEvent(ws, "ack");
+
+    const rawFrames: string[] = [];
+    const captureFrame = (data: WebSocket.RawData) => rawFrames.push(data.toString());
+    ws.on("message", captureFrame);
+    ws.send(JSON.stringify({
+      id: "cmd-delete-bootstrap-budget",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "deleteSession",
+      sessionId: "deleted-session",
+    }));
+    await waitUntil(() => rawFrames.some((frame) => {
+      const event = JSON.parse(frame) as EventEnvelope;
+      return event.type === "ack" && event.commandId === "cmd-delete-bootstrap-budget";
+    }));
+    ws.off("message", captureFrame);
+
+    const replayEvents = rawFrames
+      .map((frame) => JSON.parse(frame) as EventEnvelope)
+      .filter((event) => event.type === "sessionSnapshot" || event.type === "sessionUpdated");
+    expect(replayEvents.map((event) => event.type)).toEqual(["sessionSnapshot", ...Array(94).fill("sessionUpdated")]);
+    ws.close();
+  });
+
+  it("keeps the aggregate legacy snapshot for unregistered clients", async () => {
+    const sessions = makeNormalSessionBootstrapFixtures();
+    vi.spyOn(supervisor, "list").mockReturnValue(sessions);
+
+    const { ws } = await connectWithHello();
+    const rawFrames: string[] = [];
+    const captureFrame = (data: WebSocket.RawData) => rawFrames.push(data.toString());
+    ws.on("message", captureFrame);
+    ws.send(JSON.stringify({ id: "cmd-list-bootstrap-budget-legacy", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
+    await waitUntil(() => rawFrames.some((frame) => {
+      const event = JSON.parse(frame) as EventEnvelope;
+      return event.type === "ack" && event.commandId === "cmd-list-bootstrap-budget-legacy";
+    }));
+    ws.off("message", captureFrame);
+
+    const events = rawFrames.map((frame) => JSON.parse(frame) as EventEnvelope);
+    const snapshots = events.filter((event) => event.type === "sessionSnapshot");
+    expect(snapshots).toHaveLength(1);
+    expect(events.filter((event) => event.type === "sessionUpdated")).toHaveLength(0);
+    expect(snapshots[0]).toMatchObject({ type: "sessionSnapshot", sessions: sessions.map((session) => ({ id: session.id })) });
     ws.close();
   });
 
@@ -2319,6 +2424,19 @@ function makeLargeSessionSnapshotFixtures(): PickyAgentSession[] {
       kind: "agent_text",
       createdAt: "2026-08-23T00:00:01.000Z",
       text: largeMessageText,
+    }],
+  }));
+}
+
+function makeNormalSessionBootstrapFixtures(): PickyAgentSession[] {
+  return Array.from({ length: 94 }, (_, index) => makeSession({
+    id: `bootstrap-session-${index}`,
+    title: `Bootstrap session ${index}`,
+    messages: [{
+      id: `bootstrap-message-${index}`,
+      kind: "agent_text",
+      createdAt: "2026-08-23T00:00:01.000Z",
+      text: `Normal bootstrap message ${index}`,
     }],
   }));
 }

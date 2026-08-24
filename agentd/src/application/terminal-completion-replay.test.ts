@@ -49,8 +49,10 @@ const expectedBudgets: Record<FixtureVariant, ReplayBudget> = {
       artifact: 1,
       log: 0,
     },
-    totalEncodedEventBytes: 3_292,
-    maxEncodedEventBytes: 1_381,
+    // W5 publishes terminal meta from the one committed projection, so the existing artifact
+    // is present in that metadata frame as well as its legacy granular artifact event.
+    totalEncodedEventBytes: 3_445,
+    maxEncodedEventBytes: 1_534,
   },
   withoutArtifacts: {
     counts: {
@@ -66,8 +68,10 @@ const expectedBudgets: Record<FixtureVariant, ReplayBudget> = {
       artifact: 0,
       log: 0,
     },
-    totalEncodedEventBytes: 3_046,
-    maxEncodedEventBytes: 1_348,
+    // The committed terminal metadata normalizes the same projection one byte shorter than the
+    // former patch-before-materialization sequence; event kinds and counts are unchanged.
+    totalEncodedEventBytes: 3_045,
+    maxEncodedEventBytes: 1_347,
   },
 };
 

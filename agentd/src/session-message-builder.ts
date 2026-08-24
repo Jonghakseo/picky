@@ -35,8 +35,8 @@ interface SessionState {
 
 /**
  * Immutable view of the message-builder state a future terminal transaction needs.
- * This deliberately exposes no operation-chain promise: W5.4 owns terminal serialization
- * at SessionSupervisor.runSessionWrite rather than entering this builder's write queue.
+ * This deliberately exposes no operation-chain promise: W5.4 reserves this builder's operation
+ * chain before taking the snapshot, then nests the supervisor durable-write boundary inside it.
  */
 export interface SessionMessageTerminalSnapshot {
   readonly journal: readonly PickySessionMessage[];
@@ -288,7 +288,25 @@ export class SessionMessageBuilder {
   }
 
   async appendThinkingDelta(sessionId: string, delta: string, patch?: SessionMessageSyncPatch): Promise<void> {
-    await this.enqueue(sessionId, async () => this.appendThinkingDeltaNow(sessionId, delta, patch));
+    await this.runOperation(sessionId, async () => this.appendThinkingDeltaNow(sessionId, delta, patch));
+  }
+
+  /** Runs a caller-owned journal mutation in this session's serialized operation chain. */
+  async runOperation(sessionId: string, operation: () => Promise<void>): Promise<void> {
+    await this.enqueue(sessionId, operation);
+  }
+
+  /** RuntimeEventHandler uses this only while it already owns runOperation's chain slot. */
+  async appendThinkingDeltaInOperation(sessionId: string, delta: string, patch?: SessionMessageSyncPatch): Promise<void> {
+    await this.appendThinkingDeltaNow(sessionId, delta, patch);
+  }
+
+  /**
+   * Reserves the same operation chain used by every journal write for a terminal transaction.
+   * New journal work submitted after this call queues behind the terminal durable save.
+   */
+  async runExclusiveTerminalOperation(sessionId: string, operation: () => Promise<void>): Promise<void> {
+    await this.enqueue(sessionId, operation);
   }
 
   async flushThinking(sessionId: string): Promise<void> {
@@ -322,8 +340,23 @@ export class SessionMessageBuilder {
   }
 
   /**
+   * Installs the durable terminal journal after its sole supervisor-owned save succeeds.
+   * No message event is emitted here: SessionSupervisor replays the v1 compatibility sequence
+   * from the same committed projection before it notifies Pickle completion listeners.
+   */
+  commitTerminalSession(sessionId: string, messages: readonly PickySessionMessage[]): void {
+    this.states.set(sessionId, {
+      journal: messages.map((message, index) => ({ seq: index + 1, message: structuredClone(message) })),
+      removedIds: new Set(),
+      cancelledIds: new Set(),
+      assistantDraft: "",
+      thinkingDraft: "",
+    });
+  }
+
+  /**
    * Returns a detached, read-only terminal snapshot without flushing, persisting, or emitting.
-   * The terminal transaction planner consumes this before W5.4 takes over the write boundary.
+   * The terminal transaction planner consumes this while it owns the builder operation boundary.
    */
   terminalSnapshot(sessionId: string): SessionMessageTerminalSnapshot {
     const state = this.states.get(sessionId);
@@ -401,8 +434,11 @@ export class SessionMessageBuilder {
     const next = previous.then(operation);
     const tracked = next.catch(() => undefined);
     this.operationChains.set(sessionId, tracked);
-    await next;
-    if (this.operationChains.get(sessionId) === tracked) this.operationChains.delete(sessionId);
+    try {
+      await next;
+    } finally {
+      if (this.operationChains.get(sessionId) === tracked) this.operationChains.delete(sessionId);
+    }
   }
 
   private async appendInternal(

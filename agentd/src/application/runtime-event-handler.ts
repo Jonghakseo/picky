@@ -23,6 +23,8 @@ interface RuntimeMessageJournal {
   appendAssistantDelta(sessionId: string, delta: string): void;
   flushAssistantText(sessionId: string, assistantRun?: PickyAssistantRunMetadata): Promise<void>;
   appendThinkingDelta(sessionId: string, delta: string, patch?: { thinkingPreview: string }): Promise<void>;
+  runOperation?(sessionId: string, operation: () => Promise<void>): Promise<void>;
+  appendThinkingDeltaInOperation?(sessionId: string, delta: string, patch?: { thinkingPreview: string }): Promise<void>;
   flushThinking(sessionId: string): Promise<void>;
   clearAllThinking(sessionId: string): Promise<void>;
   recordActivitySnapshot(sessionId: string, activitySnapshot: PickyActivitySummary): Promise<void>;
@@ -39,6 +41,8 @@ interface RuntimeEventHandlerDependencies {
   consumeNoTurnRanSessionStateRestore?(sessionId: string): Partial<PickyAgentSession> | undefined;
   appendLog(sessionId: string, line: string): Promise<void>;
   materializeTerminalArtifacts(sessionId: string): Promise<void>;
+  /** SessionSupervisor supplies this durable terminal path; unit harnesses may exercise legacy status logic without it. */
+  finalizeTerminal?(sessionId: string, event: Extract<RuntimeEvent, { type: "status" }>): Promise<void>;
   applyQueueUpdate(sessionId: string, steering: readonly string[], followUp: readonly string[]): Promise<void>;
   incrementActivity(sessionId: string, category: ToolCategory): Promise<void>;
   commitTurnActivity(sessionId: string): Promise<void>;
@@ -116,6 +120,13 @@ export class RuntimeEventHandler {
     };
   }
 
+  /** Individual post-commit reset hooks map one-for-one to the transient ownership manifest. */
+  resetTerminalAssistantDraft(sessionId: string): void { this.assistantDrafts.set(sessionId, ""); }
+  resetTerminalThinkingDraft(sessionId: string): void { this.thinkingDrafts.set(sessionId, ""); }
+  resetTerminalThinkingActive(sessionId: string): void { this.thinkingActive.set(sessionId, false); }
+  clearTerminalPendingThinkingFlush(sessionId: string): void { this.clearPendingThinkingFlush(sessionId); }
+  markTerminalRunProcessed(sessionId: string): void { this.processedTerminalRuns.add(sessionId); }
+
   beginManualTerminalCompaction(sessionId: string, status: "cancelled" | "failed"): void {
     this.manualTerminalCompactionStatuses.set(sessionId, status);
   }
@@ -160,13 +171,18 @@ export class RuntimeEventHandler {
     if (event.type === "thinking_delta") return this.applyThinkingEvent(sessionId, event);
     if (event.type === "queue_update") return this.dependencies.applyQueueUpdate(sessionId, event.steering, event.followUp);
     if (event.type === "status") {
-      await this.drainPendingThinkingFlush(sessionId);
-      this.thinkingActive.set(sessionId, false);
       const terminal = ["completed", "failed", "cancelled"].includes(event.status);
+      // A terminal event owns its entire staged operation. Draining or clearing drafts before
+      // SessionSupervisor saves would leak transient state when that sole save rejects.
+      if (!terminal) {
+        await this.drainPendingThinkingFlush(sessionId);
+        this.thinkingActive.set(sessionId, false);
+      }
       const ignoredTransientBusy = this.isIgnoredTransientBusyStatus(sessionId, event);
-      if (!ignoredTransientBusy && (terminal || event.status === "waiting_for_input")) this.dependencies.finishAssistantMessage?.(sessionId);
+      if (!ignoredTransientBusy && event.status === "waiting_for_input") this.dependencies.finishAssistantMessage?.(sessionId);
       await this.applyStatusEvent(sessionId, event);
       if (!ignoredTransientBusy && terminal && isTerminalStatus(this.dependencies.getSession(sessionId).status)) {
+        this.dependencies.finishAssistantMessage?.(sessionId);
         this.dependencies.finishAssistantRun?.(sessionId, event.finalAnswer);
       }
       return;
@@ -297,6 +313,16 @@ export class RuntimeEventHandler {
       if (restore) await this.dependencies.patchSession(sessionId, restore);
       return;
     }
+    // Compaction terminal markers restore the active turn rather than finalizing it; preserve
+    // their established running-state path until compaction has actually completed its retry.
+    if (terminal && !event.noTurnRan && !event.compactionCompleted && !event.compactionFailed && this.dependencies.finalizeTerminal) {
+      await this.dependencies.finalizeTerminal(sessionId, {
+        ...event,
+        ...(sanitizedFinalAnswer === undefined ? {} : { finalAnswer: sanitizedFinalAnswer }),
+      });
+      return;
+    }
+
     if (terminal) this.processedTerminalRuns.add(sessionId);
 
     if (event.compactionCompleted && !hasLatestCompactCompletionMessage(currentSession)) {
@@ -432,39 +458,44 @@ export class RuntimeEventHandler {
   }
 
   private async flushPendingThinking(sessionId: string): Promise<void> {
-    const pending = this.pendingThinkingFlushes.get(sessionId);
-    if (!pending) {
-      await (this.activeThinkingFlushes.get(sessionId) ?? Promise.resolve());
-      return;
-    }
-
-    if (pending.timer) clearTimeout(pending.timer);
-    this.pendingThinkingFlushes.delete(sessionId);
-
-    const flush = (async () => {
-      const currentPreview = this.dependencies.getSession(sessionId).thinkingPreview;
-      // Preserve the previous truthy-preview semantics: whitespace-only thinking deltas still
-      // journal their text but must not create or clear the reconnect preview.
-      const thinkingPreview = pending.preview && pending.preview !== currentPreview ? pending.preview : undefined;
-      if (pending.delta) {
-        // Persist the thinking message and reconnect preview in one full-session save. The
-        // message builder emits its granular append/replace event only after that save succeeds.
-        await this.dependencies.messageBuilder.appendThinkingDelta(
-          sessionId,
-          pending.delta,
-          thinkingPreview ? { thinkingPreview } : undefined,
-        );
-      } else if (thinkingPreview) {
-        // Defensive fallback for a preview-only pending flush. Normal queueing always supplies
-        // an accepted delta, so this path intentionally keeps the existing write-through patch.
-        await this.dependencies.patchSession(sessionId, { thinkingPreview }, { emitSession: false });
-      }
-    })();
+    // The terminal transaction occupies this same builder chain. Deferring pending consumption
+    // until this operation owns its slot prevents a timer that fires during terminal save from
+    // capturing the pre-terminal journal and persisting it after the terminal projection.
+    const operation = async () => this.flushPendingThinkingInOperation(sessionId);
+    const flush = this.dependencies.messageBuilder.runOperation
+      ? this.dependencies.messageBuilder.runOperation(sessionId, operation)
+      : operation();
     this.activeThinkingFlushes.set(sessionId, flush);
     try {
       await flush;
     } finally {
       if (this.activeThinkingFlushes.get(sessionId) === flush) this.activeThinkingFlushes.delete(sessionId);
+    }
+  }
+
+  private async flushPendingThinkingInOperation(sessionId: string): Promise<void> {
+    const pending = this.pendingThinkingFlushes.get(sessionId);
+    if (!pending) return;
+
+    if (pending.timer) clearTimeout(pending.timer);
+    this.pendingThinkingFlushes.delete(sessionId);
+    const currentPreview = this.dependencies.getSession(sessionId).thinkingPreview;
+    // Preserve the previous truthy-preview semantics: whitespace-only thinking deltas still
+    // journal their text but must not create or clear the reconnect preview.
+    const thinkingPreview = pending.preview && pending.preview !== currentPreview ? pending.preview : undefined;
+    if (pending.delta) {
+      // Persist the thinking message and reconnect preview in one full-session save. The
+      // message builder emits its granular append/replace event only after that save succeeds.
+      const patch = thinkingPreview ? { thinkingPreview } : undefined;
+      if (this.dependencies.messageBuilder.appendThinkingDeltaInOperation) {
+        await this.dependencies.messageBuilder.appendThinkingDeltaInOperation(sessionId, pending.delta, patch);
+      } else {
+        await this.dependencies.messageBuilder.appendThinkingDelta(sessionId, pending.delta, patch);
+      }
+    } else if (thinkingPreview) {
+      // Defensive fallback for a preview-only pending flush. Normal queueing always supplies
+      // an accepted delta, so this path intentionally keeps the existing write-through patch.
+      await this.dependencies.patchSession(sessionId, { thinkingPreview }, { emitSession: false });
     }
   }
 

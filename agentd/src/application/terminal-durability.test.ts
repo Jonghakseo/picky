@@ -20,40 +20,160 @@ const context: PickyContextPacket = {
 
 type SupervisorInternals = {
   applyRuntimeEvent(sessionId: string, event: RuntimeEvent): Promise<void>;
-  messageBuilder: { terminalSnapshot(sessionId: string): { journal: readonly { kind: string; text?: string }[] } };
-  runtimeEventHandler: { terminalSnapshot(sessionId: string): { assistantDraft: string } };
+  messageBuilder: {
+    terminalSnapshot(sessionId: string): { journal: readonly { kind: string; text?: string }[] };
+    appendThinkingDelta(sessionId: string, delta: string): Promise<void>;
+    runOperation(sessionId: string, operation: () => Promise<void>): Promise<void>;
+    states: Map<string, unknown>;
+    operationChains: Map<string, Promise<void>>;
+  };
+  runtimeEventHandler: {
+    terminalSnapshot(sessionId: string): unknown;
+    assistantDrafts: Map<string, string>;
+    thinkingDrafts: Map<string, string>;
+    thinkingActive: Map<string, boolean>;
+    pendingThinkingFlushes: Map<string, unknown>;
+    activeThinkingFlushes: Map<string, Promise<void>>;
+    processedTerminalRuns: Set<string>;
+    seenToolCallIds: Map<string, Set<string>>;
+    manualTerminalCompactionStatuses: Map<string, string>;
+  };
+  turnActivity: Map<string, unknown>;
+  patchChains: Map<string, Promise<void>>;
+  emitChains: Map<string, Promise<void>>;
+  sessionSeq: Map<string, number>;
+  pickleCompletionNotified: Set<string>;
+  pickleCompletionInFlight: Set<string>;
+  pendingPickleCompletions: string[];
   applyQueueUpdateWithModes(sessionId: string, steering: readonly string[], followUp: readonly string[], steeringMode: "one-at-a-time", followUpMode: "one-at-a-time"): Promise<void>;
 };
 
-/** W5.1 characterization tests: these pins intentionally describe the unsafe v1 terminal path. */
-describe("terminal durability characterization", () => {
-  it("TODAY leaks staged message-builder state when the terminal status save fails", async () => {
+/** W5.4–W5.5 terminal transaction contracts. */
+describe("terminal durability", () => {
+  it("leaves every terminal transient untouched when the one staged save fails", async () => {
     const root = await mkdtemp(join(tmpdir(), "picky-terminal-durability-"));
     try {
       const store = new SessionStore(root);
-      const supervisor = new SessionSupervisor(new ManualRuntime(), store, { sessionIdFactory: () => "durability-session" });
+      const notifications: string[] = [];
+      const supervisor = new SessionSupervisor(new ManualRuntime(), store, {
+        sessionIdFactory: () => "durability-session",
+        forwardPickleCompletionToPrimary: async ({ sessionId }) => { notifications.push(sessionId); },
+      });
       await supervisor.load();
       const session = await supervisor.create(context);
+      (supervisor as unknown as { pickleSessionIds: Set<string> }).pickleSessionIds.add(session.id);
       const internals = supervisor as unknown as SupervisorInternals;
       const frames: unknown[] = [];
       supervisor.on("sessionMeta", (frame) => frames.push(frame));
 
       await internals.applyRuntimeEvent(session.id, { type: "assistant_delta", delta: "draft answer" });
+      await internals.messageBuilder.runOperation(session.id, async () => {});
+      const transientsBefore = transientSnapshot(internals, session.id);
       vi.spyOn(store, "save").mockRejectedValueOnce(new Error("disk full"));
 
-      // TODO(W5.4): one staged terminal operation must leave all these values unchanged on
-      // failure. v1 flushes the message builder before the terminal session patch commits.
       await expect(internals.applyRuntimeEvent(session.id, {
         type: "status",
         status: "completed",
         finalAnswer: "draft answer",
       })).rejects.toThrow("disk full");
 
+      expect(store.save).toHaveBeenCalledTimes(1);
       expect(supervisor.get(session.id)).toMatchObject({ status: "running", revision: session.revision });
       expect((await store.loadAll()).find((candidate) => candidate.id === session.id)).toMatchObject({ status: "running", revision: session.revision });
       expect(frames).toEqual([]);
-      expect(internals.messageBuilder.terminalSnapshot(session.id).journal).toMatchObject([{ kind: "agent_text", text: "draft answer" }]);
-      expect(internals.runtimeEventHandler.terminalSnapshot(session.id).assistantDraft).toBe("draft answer");
+      expect(notifications).toEqual([]);
+      expect(transientSnapshot(internals, session.id)).toEqual(transientsBefore);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the committed terminal projection when completion notification delivery fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "picky-terminal-notification-failure-"));
+    try {
+      const store = new SessionStore(root);
+      const notifications: string[] = [];
+      const supervisor = new SessionSupervisor(new ManualRuntime(), store, {
+        sessionIdFactory: () => "notification-failure-session",
+        forwardPickleCompletionToPrimary: async ({ sessionId }) => {
+          notifications.push(sessionId);
+          throw new Error("bridge unavailable");
+        },
+      });
+      await supervisor.load();
+      const session = await supervisor.create(context);
+      (supervisor as unknown as { pickleSessionIds: Set<string> }).pickleSessionIds.add(session.id);
+      const internals = supervisor as unknown as SupervisorInternals;
+
+      await internals.applyRuntimeEvent(session.id, { type: "assistant_delta", delta: "committed answer" });
+      await internals.applyRuntimeEvent(session.id, { type: "status", status: "completed", finalAnswer: "committed answer" });
+
+      expect(notifications).toEqual([session.id]);
+      expect(supervisor.get(session.id)).toMatchObject({ status: "completed", finalAnswer: "committed answer", revision: (session.revision ?? 0) + 1 });
+      expect((await store.loadAll()).find((candidate) => candidate.id === session.id)).toMatchObject({ status: "completed", finalAnswer: "committed answer" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("persists a successful terminal status exactly once with one revision increment", async () => {
+    const root = await mkdtemp(join(tmpdir(), "picky-terminal-save-once-"));
+    try {
+      const store = new SessionStore(root);
+      const supervisor = new SessionSupervisor(new ManualRuntime(), store, { sessionIdFactory: () => "save-once-session" });
+      await supervisor.load();
+      const session = await supervisor.create(context);
+      const internals = supervisor as unknown as SupervisorInternals;
+      const save = vi.spyOn(store, "save");
+
+      await internals.applyRuntimeEvent(session.id, { type: "assistant_delta", delta: "durable answer" });
+      await internals.applyRuntimeEvent(session.id, { type: "status", status: "completed", finalAnswer: "durable answer" });
+
+      expect(save).toHaveBeenCalledTimes(1);
+      expect(supervisor.get(session.id)).toMatchObject({ status: "completed", revision: (session.revision ?? 0) + 1 });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("queues a thinking journal operation behind a terminal save so it cannot restore a stale journal", async () => {
+    const root = await mkdtemp(join(tmpdir(), "picky-terminal-message-race-"));
+    try {
+      const store = new SessionStore(root);
+      const supervisor = new SessionSupervisor(new ManualRuntime(), store, { sessionIdFactory: () => "message-race-session" });
+      await supervisor.load();
+      const session = await supervisor.create(context);
+      const internals = supervisor as unknown as SupervisorInternals;
+      const saved: PickyAgentSession[] = [];
+      let releaseTerminalSave: (() => void) | undefined;
+      let holdFirstTerminalSave = true;
+      const terminalSaveStarted = new Promise<void>((resolve) => {
+        vi.spyOn(store, "save").mockImplementation(async (candidate) => {
+          saved.push(structuredClone(candidate));
+          if (candidate.status !== "completed" || !holdFirstTerminalSave) return;
+          holdFirstTerminalSave = false;
+          resolve();
+          await new Promise<void>((release) => { releaseTerminalSave = release; });
+        });
+      });
+
+      await internals.applyRuntimeEvent(session.id, { type: "assistant_delta", delta: "terminal answer" });
+      const terminal = internals.applyRuntimeEvent(session.id, { type: "status", status: "completed", finalAnswer: "terminal answer" });
+      await terminalSaveStarted;
+      const thinkingFlush = internals.messageBuilder.appendThinkingDelta(session.id, "late thinking");
+      releaseTerminalSave?.();
+      await Promise.all([terminal, thinkingFlush]);
+
+      expect(saved).toHaveLength(2);
+      expect(saved[0]?.messages).toMatchObject([{ kind: "agent_text", text: "terminal answer" }]);
+      expect(saved[1]?.messages).toMatchObject([
+        { kind: "agent_text", text: "terminal answer" },
+        { kind: "agent_thinking", text: "late thinking" },
+      ]);
+      expect(supervisor.get(session.id)?.messages).toMatchObject([
+        { kind: "agent_text", text: "terminal answer" },
+        { kind: "agent_thinking", text: "late thinking" },
+      ]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -94,6 +214,7 @@ describe("terminal durability characterization", () => {
       releaseTerminalSave?.();
       await Promise.all([terminal, followUp, archive, queue]);
 
+      expect(saved[0]?.revision).toBe((session.revision ?? 0) + 1);
       // The held terminal commit saw none of the concurrent command state. Each later write is
       // serialized on the supervisor chain and therefore cannot be absorbed into its snapshot.
       expect(saved[0]).toMatchObject({ status: "completed", finalAnswer: "terminal answer", queuedSteers: [] });
@@ -126,6 +247,35 @@ describe("terminal durability characterization", () => {
     }
   });
 });
+
+function transientSnapshot(internals: SupervisorInternals, sessionId: string): unknown {
+  return {
+    messageBuilder: {
+      state: internals.messageBuilder.terminalSnapshot(sessionId),
+      operationChainPending: internals.messageBuilder.operationChains.has(sessionId),
+    },
+    runtimeEventHandler: {
+      terminal: internals.runtimeEventHandler.terminalSnapshot(sessionId),
+      assistantDraft: internals.runtimeEventHandler.assistantDrafts.get(sessionId),
+      thinkingDraft: internals.runtimeEventHandler.thinkingDrafts.get(sessionId),
+      thinkingActive: internals.runtimeEventHandler.thinkingActive.get(sessionId),
+      pendingThinkingFlush: internals.runtimeEventHandler.pendingThinkingFlushes.get(sessionId),
+      activeThinkingFlushPending: internals.runtimeEventHandler.activeThinkingFlushes.has(sessionId),
+      processedTerminalRun: internals.runtimeEventHandler.processedTerminalRuns.has(sessionId),
+      seenToolCallIds: [...(internals.runtimeEventHandler.seenToolCallIds.get(sessionId) ?? [])],
+      manualTerminalCompactionStatus: internals.runtimeEventHandler.manualTerminalCompactionStatuses.get(sessionId),
+    },
+    supervisor: {
+      turnActivity: internals.turnActivity.get(sessionId),
+      patchChainPending: internals.patchChains.has(sessionId),
+      emitChainPending: internals.emitChains.has(sessionId),
+      sequence: internals.sessionSeq.get(sessionId),
+      completionNotified: internals.pickleCompletionNotified.has(sessionId),
+      completionInFlight: internals.pickleCompletionInFlight.has(sessionId),
+      pendingCompletions: [...internals.pendingPickleCompletions],
+    },
+  };
+}
 
 function makeSession(id: string, status: "running" | "completed"): PickyAgentSession {
   return {

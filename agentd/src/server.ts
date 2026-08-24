@@ -4,8 +4,8 @@ import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 import { isAuthorized } from "./auth.js";
 import { FOLLOWUP_PREFIX, HANDOFF_PREFIX, STEER_PREFIX } from "./domain/log-prefixes.js";
-import { sliceUtf16Safe } from "./domain/safe-truncate.js";
 import { PROTOCOL_VERSION, PickyAgentSessionMetaSchema, PickyAgentSessionSchema, parseCommand, type DockGroup, type EventEnvelope, type PickyAgentSession, type PickyAgentSessionMeta, type PickyAgentSessionParsed, type PickyContextPacket, type PickyPushToTalkControlAction } from "./protocol.js";
+import { APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT, boundedSessionForAppHydration, compactSessionForAppSnapshot, eventPayloadByteLength, minimalSessionForAppSnapshot, truncateText } from "./application/app-session-snapshot-policy.js";
 import type { SessionSupervisor } from "./session-supervisor.js";
 import { logAgentd } from "./local-log.js";
 import { EdgeTTSServiceError } from "./edge-tts-service.js";
@@ -1375,12 +1375,6 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
   }
 }
 
-const APP_EVENT_FRAME_BYTE_LIMIT = 8 * 1024 * 1024;
-const APP_EVENT_ENVELOPE_BYTE_RESERVE = 4 * 1024;
-const APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT = APP_EVENT_FRAME_BYTE_LIMIT - APP_EVENT_ENVELOPE_BYTE_RESERVE;
-const APP_SNAPSHOT_TITLE_CHAR_LIMIT = 500;
-const APP_SNAPSHOT_PATH_CHAR_LIMIT = 2_000;
-
 const SNAPSHOT_LOG_LIMIT = 16;
 const SNAPSHOT_IMPORTANT_LOG_LIMIT = 6;
 const SNAPSHOT_LOG_CHAR_LIMIT = 600;
@@ -1410,92 +1404,6 @@ export function compactSessionsForSnapshot(sessions: PickyAgentSession[]): Picky
     changedFiles: compactSnapshotChangedFiles(session.changedFiles),
     messages: compactSnapshotMessages(session.messages),
   }));
-}
-
-function compactSessionForAppSnapshot(session: PickyAgentSessionParsed): PickyAgentSessionParsed {
-  return protocolSession({
-    ...session,
-    logs: [],
-    tools: [],
-    subagentRuns: [],
-    messages: [],
-    messageJournalAvailable: false,
-  });
-}
-
-function minimalSessionForAppSnapshot(session: PickyAgentSessionParsed): PickyAgentSessionParsed {
-  return protocolSession({
-    id: session.id,
-    title: truncateText(session.title, APP_SNAPSHOT_TITLE_CHAR_LIMIT),
-    status: session.status,
-    cwd: session.cwd ? truncateText(session.cwd, APP_SNAPSHOT_PATH_CHAR_LIMIT) : session.cwd,
-    piSessionFilePath: session.piSessionFilePath ? truncateText(session.piSessionFilePath, APP_SNAPSHOT_PATH_CHAR_LIMIT) : session.piSessionFilePath,
-    createdAt: session.createdAt,
-    updatedAt: session.updatedAt,
-    lastSummary: session.lastSummary,
-    thinkingPreview: session.thinkingPreview,
-    finalAnswer: session.finalAnswer,
-    logs: [],
-    tools: [],
-    subagentRuns: [],
-    artifacts: [],
-    changedFiles: [],
-    messages: [],
-    messageJournalAvailable: false,
-    activitySummary: session.activitySummary,
-    contextUsage: session.contextUsage,
-    notifyMainOnCompletion: session.notifyMainOnCompletion,
-    archived: session.archived,
-    archivedAt: session.archivedAt,
-    pinned: session.pinned,
-  });
-}
-
-function boundedSessionForAppHydration(session: PickyAgentSessionParsed): {
-  session?: PickyAgentSessionParsed;
-  omittedFields: string[];
-} {
-  if (sessionUpdatedPayloadFitsAppFrame(session)) return { session, omittedFields: [] };
-
-  const withoutSubagentRuns = protocolSession({ ...session, subagentRuns: [] });
-  if (sessionUpdatedPayloadFitsAppFrame(withoutSubagentRuns)) {
-    return { session: withoutSubagentRuns, omittedFields: ["subagentRuns"] };
-  }
-
-  const withoutTools = protocolSession({ ...withoutSubagentRuns, tools: [] });
-  if (sessionUpdatedPayloadFitsAppFrame(withoutTools)) {
-    return { session: withoutTools, omittedFields: ["subagentRuns", "tools"] };
-  }
-
-  const withoutMessages = protocolSession({ ...withoutTools, messages: [], messageJournalAvailable: false });
-  if (sessionUpdatedPayloadFitsAppFrame(withoutMessages)) {
-    return { session: withoutMessages, omittedFields: ["subagentRuns", "tools", "messages"] };
-  }
-
-  const minimalSession = minimalSessionForAppSnapshot(session);
-  if (sessionUpdatedPayloadFitsAppFrame(minimalSession)) {
-    return {
-      session: minimalSession,
-      omittedFields: ["subagentRuns", "tools", "messages", "extendedMetadata"],
-    };
-  }
-  return {
-    omittedFields: ["entireSession"],
-  };
-}
-
-function sessionUpdatedPayloadFitsAppFrame(session: PickyAgentSessionParsed): boolean {
-  return eventPayloadByteLength({ type: "sessionUpdated", session }) <= APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT;
-}
-
-function eventPayloadByteLength(payload: EventPayload): number {
-  const event = {
-    id: "event-00000000-0000-0000-0000-000000000000",
-    protocolVersion: PROTOCOL_VERSION,
-    timestamp: "2026-01-01T00:00:00.000Z",
-    ...payload,
-  };
-  return Buffer.byteLength(JSON.stringify(event), "utf8");
 }
 
 // Snapshot mirrors the HUD's visible window so the initial snapshot and the next
@@ -1574,11 +1482,6 @@ function protocolSessionMeta(session: PickyAgentSession): PickyAgentSessionMeta 
 
 function truncateSnapshotLogLine(line: string): string {
   return truncateText(line, SNAPSHOT_LOG_CHAR_LIMIT);
-}
-
-function truncateText(text: string, limit: number): string {
-  if (text.length <= limit) return text;
-  return `${sliceUtf16Safe(text, limit)}…`;
 }
 
 type RemoveEnvelope<T> = T extends unknown ? Omit<T, "id" | "protocolVersion" | "timestamp"> : never;

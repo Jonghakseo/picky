@@ -63,6 +63,20 @@ interface PendingThinkingFlush {
   timer?: ReturnType<typeof setTimeout>;
 }
 
+/**
+ * Detached runtime-owned transient data required to stage a terminal transaction.
+ * It contains no mutable Map/Set references and observing it has no flush or persistence effect.
+ */
+export interface RuntimeTerminalSnapshot {
+  readonly assistantDraft: string;
+  readonly thinkingDraft: string;
+  readonly thinkingActive: boolean;
+  readonly pendingThinkingDelta: string;
+  readonly pendingThinkingPreview?: string;
+  readonly seenToolCallIds: readonly string[];
+  readonly processedTerminalRun: boolean;
+}
+
 export class RuntimeEventHandler {
   private readonly assistantDrafts = new Map<string, string>();
   private readonly thinkingDrafts = new Map<string, string>();
@@ -83,6 +97,23 @@ export class RuntimeEventHandler {
     this.thinkingActive.set(sessionId, false);
     this.clearPendingThinkingFlush(sessionId);
     this.seenToolCallIds.delete(sessionId);
+  }
+
+  /**
+   * Reads runtime transients for the dormant W5 terminal planner. This never drains a pending
+   * thinking flush, changes duplicate guards, persists a session, or emits a v1 projection.
+   */
+  terminalSnapshot(sessionId: string): RuntimeTerminalSnapshot {
+    const pending = this.pendingThinkingFlushes.get(sessionId);
+    return {
+      assistantDraft: this.assistantDrafts.get(sessionId) ?? "",
+      thinkingDraft: this.thinkingDrafts.get(sessionId) ?? "",
+      thinkingActive: this.thinkingActive.get(sessionId) ?? false,
+      pendingThinkingDelta: pending?.delta ?? "",
+      ...(pending?.preview ? { pendingThinkingPreview: pending.preview } : {}),
+      seenToolCallIds: [...(this.seenToolCallIds.get(sessionId) ?? [])],
+      processedTerminalRun: this.processedTerminalRuns.has(sessionId),
+    };
   }
 
   beginManualTerminalCompaction(sessionId: string, status: "cancelled" | "failed"): void {

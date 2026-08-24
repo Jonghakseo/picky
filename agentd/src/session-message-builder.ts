@@ -33,6 +33,20 @@ interface SessionState {
   activeThinkingId?: string;
 }
 
+/**
+ * Immutable view of the message-builder state a future terminal transaction needs.
+ * This deliberately exposes no operation-chain promise: W5.4 owns terminal serialization
+ * at SessionSupervisor.runSessionWrite rather than entering this builder's write queue.
+ */
+export interface SessionMessageTerminalSnapshot {
+  readonly journal: readonly PickySessionMessage[];
+  readonly removedIds: readonly string[];
+  readonly cancelledIds: readonly string[];
+  readonly assistantDraft: string;
+  readonly thinkingDraft: string;
+  readonly activeThinkingId?: string;
+}
+
 export class SessionMessageBuilder {
   private readonly states = new Map<string, SessionState>();
   private readonly operationChains = new Map<string, Promise<void>>();
@@ -305,6 +319,22 @@ export class SessionMessageBuilder {
   onSessionRemoved(sessionId: string): void {
     this.states.delete(sessionId);
     this.operationChains.delete(sessionId);
+  }
+
+  /**
+   * Returns a detached, read-only terminal snapshot without flushing, persisting, or emitting.
+   * The terminal transaction planner consumes this before W5.4 takes over the write boundary.
+   */
+  terminalSnapshot(sessionId: string): SessionMessageTerminalSnapshot {
+    const state = this.states.get(sessionId);
+    return {
+      journal: structuredClone(state?.journal.map((entry) => entry.message) ?? []),
+      removedIds: [...(state?.removedIds ?? [])],
+      cancelledIds: [...(state?.cancelledIds ?? [])],
+      assistantDraft: state?.assistantDraft ?? "",
+      thinkingDraft: state?.thinkingDraft ?? "",
+      ...(state?.activeThinkingId ? { activeThinkingId: state.activeThinkingId } : {}),
+    };
   }
 
   private async appendAssistantTextNow(sessionId: string, text: string, assistantRun?: PickyAssistantRunMetadata): Promise<void> {

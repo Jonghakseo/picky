@@ -260,4 +260,28 @@ describe("SessionMessageBuilder", () => {
     expect(messages[0].cancelledAt).toBe("2026-05-01T00:00:00.000Z");
     expect(events.map((event) => event.type)).toEqual(["appended", "replaced", "appended", "appended"]);
   });
+
+  it("returns an isolated terminal snapshot without entering an operation chain", async () => {
+    const { builder } = makeBuilder();
+    await builder.recordUserText("session-1", "before terminal", "user");
+    builder.appendAssistantDelta("session-1", "draft answer");
+    await builder.appendThinkingDelta("session-1", "draft thinking");
+    await builder.cancelExtensionQuestion("session-1", "pending-question");
+
+    const snapshot = builder.terminalSnapshot("session-1");
+    expect(snapshot).toMatchObject({
+      journal: [{ kind: "user_text", text: "before terminal" }, { kind: "agent_thinking", text: "draft thinking" }],
+      assistantDraft: "draft answer",
+      thinkingDraft: "draft thinking",
+      activeThinkingId: expect.any(String),
+      cancelledIds: ["pending-question"],
+    });
+
+    // Consumers may never mutate the builder through a snapshot reference.
+    (snapshot.journal as PickySessionMessage[])[0]!.text = "mutated externally";
+    (snapshot.cancelledIds as string[]).push("external-id");
+    const afterExternalMutation = builder.terminalSnapshot("session-1");
+    expect(afterExternalMutation.journal[0]).toMatchObject({ text: "before terminal" });
+    expect(afterExternalMutation.cancelledIds).toEqual(["pending-question"]);
+  });
 });

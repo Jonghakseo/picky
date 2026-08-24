@@ -343,6 +343,27 @@ describe("RuntimeEventHandler", () => {
     expect(harness.current().finalAnswer).toBeUndefined();
     expect(harness.onInputMessage).toHaveBeenCalledTimes(1);
   });
+
+  it("returns an isolated runtime terminal snapshot without flushing drafts", async () => {
+    const harness = inputHarness();
+    harness.handler.resetAssistantDraft("pickle-1");
+    await harness.handler.handle("pickle-1", { type: "assistant_delta", delta: "draft answer" });
+    await harness.handler.handle("pickle-1", { type: "thinking_delta", delta: "draft thinking" });
+
+    const snapshot = harness.handler.terminalSnapshot("pickle-1");
+    expect(snapshot).toMatchObject({
+      assistantDraft: "draft answer",
+      thinkingDraft: "draft thinking",
+      thinkingActive: true,
+      pendingThinkingDelta: "draft thinking",
+    });
+
+    // Snapshot mutation must not write back to the handler's transient maps.
+    (snapshot.seenToolCallIds as string[]).push("external-tool");
+    expect(harness.handler.terminalSnapshot("pickle-1").seenToolCallIds).toEqual([]);
+    expect(harness.messageBuilder.flushAssistantText).not.toHaveBeenCalled();
+    expect(harness.messageBuilder.flushThinking).not.toHaveBeenCalled();
+  });
 });
 
 function inputHarness(initial: Partial<PickyAgentSession> = {}) {
@@ -355,6 +376,20 @@ function inputHarness(initial: Partial<PickyAgentSession> = {}) {
   const materializeTerminalArtifacts = vi.fn(async () => {});
   const notifyPickleCompletion = vi.fn(async () => {});
   const emitArtifactUpdated = vi.fn();
+  const messageBuilder = {
+    recordExtensionQuestion: async () => {},
+    recordExtensionNotification: async () => {},
+    cancelExtensionQuestion: async () => {},
+    recordError: async () => {},
+    recordSystemMessage: async () => {},
+    recordUserText,
+    appendAssistantDelta: () => {},
+    flushAssistantText: vi.fn(async () => {}),
+    appendThinkingDelta: async () => {},
+    flushThinking: vi.fn(async () => {}),
+    clearAllThinking: async () => {},
+    recordActivitySnapshot: async () => {},
+  };
   const handler = new RuntimeEventHandler({
     getSession: () => current,
     patchSession,
@@ -370,20 +405,7 @@ function inputHarness(initial: Partial<PickyAgentSession> = {}) {
     isPickleSession: () => true,
     emitExtensionUiRequest: () => {},
     onInputMessage,
-    messageBuilder: {
-      recordExtensionQuestion: async () => {},
-      recordExtensionNotification: async () => {},
-      cancelExtensionQuestion: async () => {},
-      recordError: async () => {},
-      recordSystemMessage: async () => {},
-      recordUserText,
-      appendAssistantDelta: () => {},
-      flushAssistantText: async () => {},
-      appendThinkingDelta: async () => {},
-      flushThinking: async () => {},
-      clearAllThinking: async () => {},
-      recordActivitySnapshot: async () => {},
-    },
+    messageBuilder,
   });
   return {
     handler,
@@ -395,5 +417,6 @@ function inputHarness(initial: Partial<PickyAgentSession> = {}) {
     materializeTerminalArtifacts,
     notifyPickleCompletion,
     emitArtifactUpdated,
+    messageBuilder,
   };
 }

@@ -189,6 +189,9 @@ final class PickySessionListViewModel: ObservableObject {
     private let slashCommandSuggestionSlowLogThreshold: TimeInterval = 0.02
     private var lastIncrementalSeqBySessionID: [String: Int] = [:]
     private var hasExplicitSelection = false
+    private let sessionProjectionStorage: any PickySessionProjectionStorage
+    private let legacySessionProjectionStorage: (any PickyLegacySessionProjectionStorageRelaying)?
+    private var sessionProjectionStorageCancellable: AnyCancellable?
 
     init(
         client: any PickyAgentClient,
@@ -212,9 +215,12 @@ final class PickySessionListViewModel: ObservableObject {
         childSessionReleaser: (any PickyChildSessionReleasing)? = nil,
         archiveCommitDelayNanoseconds: UInt64 = PickyHUDArchiveUndoToastPolicy.durationNanoseconds,
         manualPickleSessionIdFactory: @escaping () -> String = { "session-\(UUID().uuidString)" },
-        shellTerminalSessionFactory: ((SessionCard) -> PickyShellTerminalSession)? = nil
+        shellTerminalSessionFactory: ((SessionCard) -> PickyShellTerminalSession)? = nil, sessionProjectionStorage: (any PickySessionProjectionStorage)? = nil
     ) {
         self.client = client
+        let resolvedSessionProjectionStorage = sessionProjectionStorage ?? PickyLegacySessionProjectionStorage()
+        self.sessionProjectionStorage = resolvedSessionProjectionStorage
+        self.legacySessionProjectionStorage = resolvedSessionProjectionStorage as? any PickyLegacySessionProjectionStorageRelaying
         self.notificationCenter = notificationCenter
         self.notificationPreferencesProvider = notificationPreferencesProvider
         self.selectionStore = selectionStore
@@ -281,6 +287,9 @@ final class PickySessionListViewModel: ObservableObject {
                       let text = notification.userInfo?[PickyComposerDraftAppendNotification.textKey] as? String else { return }
                 self?.appendComposerDraftText(text, sessionID: sessionID)
             }
+        self.sessionProjectionStorageCancellable = self.sessionProjectionStorage.changes.sink { [weak self] snapshot in
+            self?.relaySessionProjectionStorageChange(snapshot)
+        }
         syncDockStateNow()
     }
 
@@ -2452,79 +2461,63 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Legacy array storage funnels
+    // MARK: - Legacy storage boundary
 
-    // Semantic W4.3 storage boundary; legacy details preserve v1 assignment boundaries.
-    private func replaceAllSessions(active: [SessionCard], archived: [SessionCard]) { sessions = active; archivedSessions = archived }
-    private func removeSession(id: String) { removeSessionFromLegacyLists(id: id) }
+    private func relaySessionProjectionStorageChange(_ snapshot: PickySessionProjectionStorageSnapshot) {
+        guard let legacySessionProjectionStorage else {
+            sessions = snapshot.activeSessions
+            archivedSessions = snapshot.archivedSessions
+            return
+        }
+        for step in legacySessionProjectionStorage.legacyRelaySteps {
+            if step.changesActiveSessions { sessions = step.snapshot.activeSessions }
+            if step.changesArchivedSessions { archivedSessions = step.snapshot.archivedSessions }
+        }
+    }
 
-    @discardableResult
-    private func archiveSession(id: String) -> SessionCard? { guard let card = takeLegacyActiveSession(id: id) else { return nil }; if !archivedSessions.contains(where: { $0.id == id }) { appendLegacyArchivedSession(card) }; replaceLegacyArchivedSessions(archivedSessions.sortedForHUD()); return card }
-
-    @discardableResult
-    private func unarchiveSession(id: String) -> SessionCard? { guard let card = takeLegacyArchivedSession(id: id) else { return nil }; if !sessions.contains(where: { $0.id == id }) { appendLegacyActiveSession(card) }; return card }
+    private func replaceAllSessions(active: [SessionCard], archived: [SessionCard]) { sessionProjectionStorage.replaceAllSessions(active: active, archived: archived) }
+    private func removeSession(id: String) { sessionProjectionStorage.removeSession(id: id) }
+    @discardableResult private func archiveSession(id: String) -> SessionCard? { sessionProjectionStorage.archiveSession(id: id) }
+    @discardableResult private func unarchiveSession(id: String) -> SessionCard? { sessionProjectionStorage.unarchiveSession(id: id) }
 
     private func upsertSession(_ card: SessionCard, archived: Bool) {
-        PickyPerf.interval("vm_upsert_remove_from_lists") { removeSessionFromLegacyLists(id: card.id) }
-        PickyPerf.interval("vm_upsert_append_to_list") { if archived { appendLegacyArchivedSession(card) } else { appendLegacyActiveSession(card) } }
-        PickyPerf.interval("vm_upsert_sort_archived") { replaceLegacyArchivedSessions(archivedSessions.sortedForHUD()) }
+        sessionProjectionStorage.upsertSession(card, archived: archived)
     }
 
     private func mutateSession(sessionID: String, mutate: (inout SessionCard) -> Void) {
         PickyPerf.event("vm_update_called")
-        if let index = sessions.firstIndex(where: { $0.id == sessionID }) {
-            PickyPerf.interval("vm_update_active_session") {
-                var card = sessions[index]
-                PickyPerf.interval("vm_update_mutate_card") {
-                    mutate(&card)
-                }
-                PickyPerf.interval("vm_update_publish_sessions_subscript") {
-                    replaceLegacyActiveSession(at: index, with: card)
-                }
-                // Manual order is the source of truth for active session ordering;
-                // a per-card mutation does not change order, so no reapply needed.
-                PickyPerf.interval("vm_update_sync_selection_state") {
-                    syncSelectionAfterSessionListChange()
-                    syncVoiceFollowUpAfterSessionListChange()
-                    syncScreenContextTargetAfterSessionListChange()
-                    syncActiveVoiceFollowUpAfterSessionListChange()
-                }
-                deliverNotificationIfNeeded(for: card)
+        var didMutateActive = false
+        PickyPerf.interval("vm_update_active_session") {
+            guard let updatedCard = sessionProjectionStorage.mutateSession(sessionID: sessionID, mutate: { card in
+                PickyPerf.interval("vm_update_mutate_card") { mutate(&card) }
+            }) else { return }
+            // Manual order is the source of truth for active session ordering;
+            // a per-card mutation does not change order, so no reapply needed.
+            PickyPerf.interval("vm_update_sync_selection_state") {
+                syncSelectionAfterSessionListChange()
+                syncVoiceFollowUpAfterSessionListChange()
+                syncScreenContextTargetAfterSessionListChange()
+                syncActiveVoiceFollowUpAfterSessionListChange()
             }
-            return
+            deliverNotificationIfNeeded(for: updatedCard)
+            didMutateActive = true
         }
-        mutateArchivedSession(sessionID: sessionID, mutate: mutate)
+        if !didMutateActive { mutateArchivedSession(sessionID: sessionID, mutate: mutate) }
     }
 
     private func mutateArchivedSession(sessionID: String, mutate: (inout SessionCard) -> Void) {
-        guard let archivedIndex = archivedSessions.firstIndex(where: { $0.id == sessionID }) else { return }
         PickyPerf.interval("vm_update_archived_session") {
-            var archivedCard = archivedSessions[archivedIndex]
-            PickyPerf.interval("vm_update_mutate_card") {
-                mutate(&archivedCard)
-            }
-            PickyPerf.interval("vm_update_publish_archived_subscript") {
-                replaceLegacyArchivedSession(at: archivedIndex, with: archivedCard)
-            }
-            PickyPerf.interval("vm_update_sort_archived") {
-                replaceLegacyArchivedSessions(archivedSessions.sortedForHUD())
+            _ = sessionProjectionStorage.mutateArchivedSession(sessionID: sessionID) { card in
+                PickyPerf.interval("vm_update_mutate_card") {
+                    mutate(&card)
+                }
             }
         }
     }
 
-    private func applyManualOrder(_ order: [String]) { replaceLegacyActiveSessions(sessions.sortedByManualOrder(order)) }
-
-    // Legacy array implementation details.
-
-    private func removeSessionFromLegacyLists(id: String) { sessions.removeAll { $0.id == id }; archivedSessions.removeAll { $0.id == id } }
-    private func takeLegacyActiveSession(id: String) -> SessionCard? { guard let index = sessions.firstIndex(where: { $0.id == id }) else { return nil }; return sessions.remove(at: index) }
-    private func takeLegacyArchivedSession(id: String) -> SessionCard? { guard let index = archivedSessions.firstIndex(where: { $0.id == id }) else { return nil }; return archivedSessions.remove(at: index) }
-    private func appendLegacyActiveSession(_ session: SessionCard) { sessions.append(session) }
-    private func appendLegacyArchivedSession(_ session: SessionCard) { archivedSessions.append(session) }
-    private func replaceLegacyActiveSession(at index: Int, with session: SessionCard) { sessions[index] = session }
-    private func replaceLegacyArchivedSession(at index: Int, with session: SessionCard) { archivedSessions[index] = session }
-    private func replaceLegacyActiveSessions(_ replacement: [SessionCard]) { sessions = replacement }
-    private func replaceLegacyArchivedSessions(_ replacement: [SessionCard]) { archivedSessions = replacement }
+    private func applyManualOrder(_ order: [String]) {
+        sessionProjectionStorage.applyManualOrder(order)
+    }
 
     /// Reapply active ordering from manual order, or the historic creation-time
     /// order when no user reorder exists.
@@ -2536,7 +2529,7 @@ final class PickySessionListViewModel: ObservableObject {
         }
         guard !manualOrder.isEmpty else {
             PickyPerf.interval("vm_apply_manual_order_publish_sorted_default") {
-                replaceLegacyActiveSessions(sessions.sortedForHUD())
+                sessionProjectionStorage.applyManualOrder(sessions.sortedForHUD().map(\.id))
             }
             return
         }

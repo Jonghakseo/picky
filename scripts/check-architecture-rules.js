@@ -348,6 +348,72 @@ function lineCount(file) {
   return fs.readFileSync(file, "utf8").split("\n").length;
 }
 
+const HUD_SESSION_LIST_VIEW_MODEL_REFERENCE_BASELINE = 63;
+const observableSessionArrayPattern = /^\s*(?!private\b)(?:@[A-Za-z_][A-Za-z0-9_]*(?:\([^\n]*\))?\s*)*(?:var|let)\s+[A-Za-z_][A-Za-z0-9_]*\s*:\s*\[\s*(SessionCard|PickySessionMessage|PickyAgentSession)\s*\](?!\s*\{)/gm;
+
+function observableSessionArrayViolations(source) {
+  const stripped = stripSwiftCommentsAndStrings(source);
+  if (!/@Observable\b/.test(stripped)) return [];
+  return [...stripped.matchAll(observableSessionArrayPattern)].map((match) => match[1]);
+}
+
+function hudSessionListViewModelReferenceExceedsBaseline(referenceCount) {
+  return referenceCount > HUD_SESSION_LIST_VIEW_MODEL_REFERENCE_BASELINE;
+}
+
+function checkSessionProjectionRules() {
+  for (const file of walk("Picky", (candidate) => candidate.endsWith(".swift"))) {
+    const violations = observableSessionArrayViolations(fs.readFileSync(file, "utf8"));
+    if (violations.length > 0) {
+      addError(`${rel(file)} exposes non-private stored [${violations.join("], [")}] property from an @Observable store; project sessions through a private store boundary.`);
+    }
+  }
+
+  const referenceCount = walk("Picky/HUD", (candidate) => candidate.endsWith(".swift"))
+    .reduce((count, file) => count + (fs.readFileSync(file, "utf8").match(/\bPickySessionListViewModel\b/g)?.length ?? 0), 0);
+  if (hudSessionListViewModelReferenceExceedsBaseline(referenceCount)) {
+    addError(`Picky/HUD concrete PickySessionListViewModel references grew to ${referenceCount}, above recorded baseline ${HUD_SESSION_LIST_VIEW_MODEL_REFERENCE_BASELINE}.`);
+  }
+}
+
+function checkSessionProjectionGuardFixtures() {
+  const blockedStore = `
+    @Observable
+    final class SessionStore {
+      var cards: [SessionCard] = []
+      var messages: [PickySessionMessage] = []
+      var sessions: [PickyAgentSession] = []
+    }
+  `;
+  const allowedPrivateStore = `
+    @Observable
+    final class SessionStore {
+      private var cards: [SessionCard] = []
+    }
+  `;
+  const allowedNonObservableStore = `
+    final class SessionStore {
+      var cards: [SessionCard] = []
+    }
+  `;
+
+  if (observableSessionArrayViolations(blockedStore).length !== 3) {
+    addError("Session-projection guard self-test failed to block non-private Observable session arrays.");
+  }
+  if (observableSessionArrayViolations(allowedPrivateStore).length !== 0) {
+    addError("Session-projection guard self-test incorrectly blocked a private Observable session array.");
+  }
+  if (observableSessionArrayViolations(allowedNonObservableStore).length !== 0) {
+    addError("Session-projection guard self-test incorrectly blocked a non-Observable store.");
+  }
+  if (hudSessionListViewModelReferenceExceedsBaseline(HUD_SESSION_LIST_VIEW_MODEL_REFERENCE_BASELINE)) {
+    addError("Session-projection guard self-test incorrectly rejected the HUD reference baseline.");
+  }
+  if (!hudSessionListViewModelReferenceExceedsBaseline(HUD_SESSION_LIST_VIEW_MODEL_REFERENCE_BASELINE + 1)) {
+    addError("Session-projection guard self-test failed to reject HUD references above the baseline.");
+  }
+}
+
 function checkFileSizeRatchet() {
   // Hard ratchet: existing oversized files may only shrink. Growing past the
   // pinned ratchet, or adding a new file above the threshold, is an error.
@@ -385,7 +451,25 @@ function checkFileSizeRatchet() {
   }
 }
 
+function finish() {
+  for (const warning of warnings) console.warn(`warning: ${warning}`);
+  for (const error of errors) console.error(`error: ${error}`);
+
+  if (errors.length > 0 || (strict && warnings.length > 0)) {
+    console.error(`Architecture guard failed with ${errors.length} error(s), ${warnings.length} warning(s).`);
+    process.exit(1);
+  }
+
+  console.log(`Architecture guard passed with ${warnings.length} warning(s).`);
+}
+
 function main() {
+  if (process.argv.includes("--self-test=session-projection")) {
+    checkSessionProjectionGuardFixtures();
+    finish();
+    return;
+  }
+
   if (!exists("Picky/PickyAgentProtocol.swift") || !exists("agentd/src/protocol.ts")) {
     addError("Run this script from the repository root.");
   } else {
@@ -396,18 +480,11 @@ function main() {
     checkAgentdDomainImports();
     checkInteractionReducerMutationBoundary();
     checkSecretCodingKeys();
+    checkSessionProjectionRules();
     checkFileSizeRatchet();
   }
 
-  for (const warning of warnings) console.warn(`warning: ${warning}`);
-  for (const error of errors) console.error(`error: ${error}`);
-
-  if (errors.length > 0 || (strict && warnings.length > 0)) {
-    console.error(`Architecture guard failed with ${errors.length} error(s), ${warnings.length} warning(s).`);
-    process.exit(1);
-  }
-
-  console.log(`Architecture guard passed with ${warnings.length} warning(s).`);
+  finish();
 }
 
 main();

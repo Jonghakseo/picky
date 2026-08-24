@@ -47,7 +47,7 @@ import { buildMainAgentRolloverSummary, MAIN_AGENT_COMPACT_IDLE_MS, MAIN_AGENT_M
 import type { ToolCategory } from "./domain/tool-categorizer.js";
 import { logAgentd } from "./local-log.js";
 import { SessionMessageBuilder, type SessionMessageSyncPatch } from "./session-message-builder.js";
-
+type SessionCommit = { before?: PickyAgentSession; after: PickyAgentSession; changed: boolean };
 export class SessionSupervisor extends EventEmitter {
   private sessions = new Map<string, PickyAgentSession>();
   private runtimeHandles = new Map<string, RuntimeSessionHandle>();
@@ -297,9 +297,9 @@ export class SessionSupervisor extends EventEmitter {
       const session = isPickleSession && migratedSession.notifyMainOnCompletion === undefined
         ? { ...migratedSession, notifyMainOnCompletion: true }
         : migratedSession;
-      this.sessions.set(session.id, session);
+      if (session.piSessionFilePath !== persistedSession.piSessionFilePath || session.notifyMainOnCompletion !== persistedSession.notifyMainOnCompletion) await this.commitSession(session);
+      else this.sessions.set(session.id, session);
       this.messageBuilder.hydrateSession(session.id, session.messages);
-      if (session.piSessionFilePath !== persistedSession.piSessionFilePath || session.notifyMainOnCompletion !== persistedSession.notifyMainOnCompletion) await this.store.save(session);
       if (this.pickleSessionIds.has(session.id)) void this.pickleSessionTitleRefresher.refresh(session.id);
 
       if (session.logs.includes(ORPHANED_CHILD_SESSION_RECOVERY_LOG)) {
@@ -316,8 +316,7 @@ export class SessionSupervisor extends EventEmitter {
           ORPHANED_CHILD_SESSION_RECOVERY_LOG,
           ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY,
         );
-        this.sessions.set(restored.id, restored);
-        await this.store.save(restored);
+        await this.commitSession(session.id, () => restored);
         continue;
       }
 
@@ -330,8 +329,7 @@ export class SessionSupervisor extends EventEmitter {
             interrupted.patch,
             new Date().toISOString(),
           );
-          this.sessions.set(restored.id, restored);
-          await this.store.save(restored);
+          await this.commitSession(session.id, () => restored);
           continue;
         }
 
@@ -345,8 +343,7 @@ export class SessionSupervisor extends EventEmitter {
             new Date().toISOString(),
             "Runtime not attached after daemon restart; start a new task or resume support is required",
           );
-          this.sessions.set(restored.id, restored);
-          await this.store.save(restored);
+          await this.commitSession(session.id, () => restored);
         }
       } else if (shouldReattachBlockedSessionOnStartup(session, Boolean(piSessionFilePathForSession(session)))) {
         await this.tryResumeRuntimeHandle(session);
@@ -1057,6 +1054,7 @@ export class SessionSupervisor extends EventEmitter {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logAgentd("empty pickle session prewarm failed", { sessionId: id, error: message });
+      if (!this.sessions.has(id)) { pendingHandle.reject(error); throw error; }
       if (this.mustGet(id).status === "cancelled") {
         pendingHandle.reject(error);
         return this.mustGet(id);
@@ -1133,7 +1131,7 @@ export class SessionSupervisor extends EventEmitter {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logAgentd("pickle session duplicate failed", { sourceSessionId, newSessionId: id, error: message });
-      await this.patch(id, {
+      if (this.sessions.has(id)) await this.patch(id, {
         status: "failed",
         lastSummary: `Failed to duplicate session: ${message}`,
         logs: [...this.mustGet(id).logs, `Failed to duplicate session: ${message}`],
@@ -1217,6 +1215,7 @@ export class SessionSupervisor extends EventEmitter {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logAgentd("runtime start failed", { sessionId: id, error: message });
+      if (!this.sessions.has(id)) { pendingHandle.reject(error); throw error; }
       if (this.mustGet(id).status === "cancelled") {
         pendingHandle.reject(error);
         return this.mustGet(id);
@@ -2764,18 +2763,18 @@ export class SessionSupervisor extends EventEmitter {
     // dialog patches pendingExtensionUiRequest concurrently, so the clear below
     // must re-check inside the serialized session write or it would clobber the
     // new dialog and leave its question card permanently unanswerable.
-    await this.runSessionWrite(sessionId, async () => {
-      const current = this.mustGet(sessionId);
-      if (current.pendingExtensionUiRequest?.id !== requestId) return;
-      await this.upsert({
+    const commit = await this.commitSession(sessionId, (current) => {
+      if (current.pendingExtensionUiRequest?.id !== requestId) return current;
+      return {
         ...current,
         pendingExtensionUiRequest: undefined,
         status: "running",
         lastSummary: "Extension UI answered",
         thinkingPreview: undefined,
         updatedAt: new Date().toISOString(),
-      });
+      };
     });
+    if (commit.changed) this.emit("session", commit.after);
     return this.mustGet(sessionId);
   }
 
@@ -2914,9 +2913,7 @@ export class SessionSupervisor extends EventEmitter {
 
   private async appendLog(sessionId: string, line: string): Promise<void> {
     const piSessionFilePath = piSessionFilePathFromLogLine(line);
-    await this.runSessionWrite(sessionId, async () => {
-      await this.upsert(sessionWithAppendedLog(this.mustGet(sessionId), line), { emitSession: false });
-    });
+    await this.commitSession(sessionId, (current) => sessionWithAppendedLog(current, line));
     this.emit("log", sessionId, line);
     // STEER_PREFIX and FOLLOWUP_PREFIX user_text writes are intentionally NOT recorded here. The
     // supervisor decides per-call whether to recordUserText immediately (Pi will execute inline)
@@ -2940,15 +2937,15 @@ export class SessionSupervisor extends EventEmitter {
     for (const artifact of materialized.emittedArtifacts) this.emit("artifact", sessionId, artifact);
   }
   private async patch(sessionId: string, patch: Partial<PickyAgentSession>, options: { emitSession?: boolean; emitFullSession?: boolean } = {}): Promise<void> {
-    await this.runSessionWrite(sessionId, async () => {
-      const current = this.mustGet(sessionId);
-      if (isSemanticNoOpPatch(current, patch)) return;
-      const session = { ...current, ...patch, updatedAt: new Date().toISOString() };
-      await this.upsert(session, { emitSession: false });
-      if (options.emitSession ?? true) {
-        this.emit(options.emitFullSession ? "session" : "sessionMeta", session);
-      }
-    });
+    const commit = await this.commitSession(sessionId, (current) => (
+      isSemanticNoOpPatch(current, patch)
+        ? current
+        : { ...current, ...patch, updatedAt: new Date().toISOString() }
+    ));
+    if (!commit.changed) return;
+    if (options.emitSession ?? true) {
+      this.emit(options.emitFullSession ? "session" : "sessionMeta", commit.after);
+    }
   }
   private async updateTodoState(sessionId: string, todoState: PickyAgentSession["todoState"]): Promise<void> {
     const current = this.mustGet(sessionId).todoState;
@@ -2960,12 +2957,20 @@ export class SessionSupervisor extends EventEmitter {
     });
   }
   private async syncSessionMessages(sessionId: string, messages: readonly PickySessionMessage[], patch?: SessionMessageSyncPatch): Promise<void> {
+    await this.commitSession(sessionId, (current) => ({ ...current, ...patch, messages: [...messages], updatedAt: new Date().toISOString() }));
+  }
+  private async commitSession(session: PickyAgentSession): Promise<SessionCommit>;
+  private async commitSession(sessionId: string, build: (current: PickyAgentSession) => PickyAgentSession): Promise<SessionCommit>;
+  private async commitSession(sessionOrId: PickyAgentSession | string, build?: (current: PickyAgentSession) => PickyAgentSession): Promise<SessionCommit> {
+    const sessionId = typeof sessionOrId === "string" ? sessionOrId : sessionOrId.id; let result: SessionCommit | undefined;
     await this.runSessionWrite(sessionId, async () => {
-      // Read inside the write boundary so concurrent patches cannot be overwritten by a stale snapshot.
-      const session = { ...this.mustGet(sessionId), ...patch, messages: [...messages], updatedAt: new Date().toISOString() };
-      this.sessions.set(session.id, session);
-      await this.store.save(session);
+      const before = this.sessions.get(sessionId);
+      const after = typeof sessionOrId === "string" ? build!(this.mustGet(sessionId)) : sessionOrId;
+      const changed = after !== before;
+      if (changed) { await this.store.save(after); this.sessions.set(sessionId, after); }
+      result = { before, after, changed };
     });
+    return result!;
   }
   private async runSessionWrite(sessionId: string, work: () => Promise<void>): Promise<void> {
     const previous = this.patchChains.get(sessionId) ?? Promise.resolve();
@@ -2978,17 +2983,14 @@ export class SessionSupervisor extends EventEmitter {
       if (this.patchChains.get(sessionId) === tracked) this.patchChains.delete(sessionId);
     }
   }
-
   private nextSeq(sessionId: string): number {
     const next = (this.sessionSeq.get(sessionId) ?? 0) + 1;
     this.sessionSeq.set(sessionId, next);
     return next;
   }
-
   private async upsert(session: PickyAgentSession, options: { emitSession?: boolean } = {}): Promise<void> {
-    this.sessions.set(session.id, session);
-    await this.store.save(session);
-    if (options.emitSession ?? true) this.emit("session", session);
+    const commit = await this.commitSession(session);
+    if (options.emitSession ?? true) this.emit("session", commit.after);
   }
   private mustGet(sessionId: string): PickyAgentSession {
     const session = this.sessions.get(sessionId);

@@ -46,6 +46,30 @@ type CommittedVisualNarrationTestEvent = {
 };
 
 describe("SessionSupervisor", () => {
+  it("keeps the live session unchanged when a patch save fails and allows a retry", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-save-failure-"));
+    const store = new SessionStore(dir);
+    const supervisor = new SessionSupervisor(new MockRuntime(), store);
+    await supervisor.load();
+    const session = await supervisor.create(context("save failure"));
+    const internals = supervisor as unknown as {
+      patch(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void>;
+    };
+    const sessionMetaEvents: PickyAgentSession[] = [];
+    supervisor.on("sessionMeta", (emitted: PickyAgentSession) => sessionMetaEvents.push(emitted));
+    vi.spyOn(store, "save").mockRejectedValueOnce(new Error("disk full"));
+
+    await expect(internals.patch(session.id, { title: "Persisted title" })).rejects.toThrow("disk full");
+
+    expect(supervisor.get(session.id)?.title).toBe(session.title);
+    expect(sessionMetaEvents).toEqual([]);
+
+    await internals.patch(session.id, { title: "Persisted title" });
+
+    expect(supervisor.get(session.id)?.title).toBe("Persisted title");
+    expect(sessionMetaEvents).toHaveLength(1);
+  });
+
   it("semantic no-op patch preserves the timestamp without saving or emitting a session update", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-semantic-no-op-"));
     const store = new SessionStore(dir);
@@ -5557,6 +5581,51 @@ describe("SessionSupervisor", () => {
     expect(runtime.handle?.extensionUiAnswers).toEqual([{ requestId: "ui-form", value: { value: { "commit-confirm": "stop" } } }]);
     expect(updated.pendingExtensionUiRequest).toBeUndefined();
     expect(updated.logs.includes("extension ui answer: Stop and review")).toBe(true);
+  });
+
+  it("emits one full session event after answering an extension UI request", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-extension-answer-session-event-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    const session = await supervisor.create(context("answer session event"));
+
+    runtime.handle?.emit({
+      type: "extension_ui",
+      waitsForInput: true,
+      request: { id: "ui-session-event", sessionId: session.id, method: "input", prompt: "Need input", createdAt: "2026-05-01T00:00:00.000Z" },
+    });
+    await settle();
+
+    const emitted: PickyAgentSession[] = [];
+    supervisor.on("session", (updated: PickyAgentSession) => emitted.push(updated));
+
+    await supervisor.answerExtensionUi(session.id, "ui-session-event", "answer");
+
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]).toMatchObject({ id: session.id, status: "running" });
+    expect(emitted[0].pendingExtensionUiRequest).toBeUndefined();
+  });
+
+  it("does not emit a session event when an extension UI answer request id is stale", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-extension-answer-stale-event-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    const session = await supervisor.create(context("stale answer session event"));
+
+    runtime.handle?.emit({
+      type: "extension_ui",
+      waitsForInput: true,
+      request: { id: "ui-current", sessionId: session.id, method: "input", prompt: "Need input", createdAt: "2026-05-01T00:00:00.000Z" },
+    });
+    await settle();
+
+    const emitted: PickyAgentSession[] = [];
+    supervisor.on("session", (updated: PickyAgentSession) => emitted.push(updated));
+
+    await supervisor.answerExtensionUi(session.id, "ui-stale", "answer");
+
+    expect(emitted).toEqual([]);
+    expect(supervisor.get(session.id)?.pendingExtensionUiRequest?.id).toBe("ui-current");
   });
 
   it("keeps a follow-up extension UI dialog pending when it arrives while the previous answer is being recorded", async () => {

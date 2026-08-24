@@ -412,6 +412,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
         status: result.exitCode && result.exitCode !== 0 ? "failed" : "succeeded",
         preview: trimmedCommand,
         resultPreview: resultPreview.text,
+        ...(resultPreview.jsonText ? { resultJSONPreview: resultPreview.jsonText } : {}),
         ...(resultPreview.truncated ? { resultPreviewTruncated: true } : {}),
         ...(resultPreview.repaired ? { resultPreviewRepaired: true } : {}),
       });

@@ -56,14 +56,17 @@ describe("SessionStore (legacy / primary layout)", () => {
 
     const [loaded] = await store.loadAll();
     const tool = loaded?.tools[0];
+    expect(tool?.preview).toBe(legacyPreview);
+    expect(tool?.resultPreview).toBe(legacyPreview);
     expect(tool?.resultPreviewTruncated).toBe(true);
     expect(tool?.resultPreviewRepaired).toBe(true);
-    expect(tool!.resultPreview!.length).toBeLessThanOrEqual(500);
-    expect(() => JSON.parse(tool!.resultPreview!)).not.toThrow();
-    expect(tool?.preview).toBe(tool?.resultPreview);
+    expect(tool!.resultJSONPreview!.length).toBeLessThanOrEqual(500);
+    expect(() => JSON.parse(tool!.resultJSONPreview!)).not.toThrow();
 
     const stored = JSON.parse(readFileSync(join(root, "sessions", "legacy-json-preview.json"), "utf8")) as PickyAgentSession;
+    expect(stored.tools[0]?.preview).toBe(legacyPreview);
     expect(stored.tools[0]?.resultPreview).toBe(legacyPreview);
+    expect(stored.tools[0]?.resultJSONPreview).toBeUndefined();
     expect(stored.tools[0]?.resultPreviewTruncated).toBeUndefined();
     expect(stored.tools[0]?.resultPreviewRepaired).toBeUndefined();
   });

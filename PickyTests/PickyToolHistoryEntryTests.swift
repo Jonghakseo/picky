@@ -207,7 +207,8 @@ struct PickyToolHistoryEntryTests {
                 toolCallId: "json-result",
                 name: "mcp__example__search",
                 status: "succeeded",
-                resultPreview: #"{"items":[]}"#,
+                resultPreview: #"{"items":[..."#,
+                resultJSONPreview: #"{"items":[]}"#,
                 resultPreviewTruncated: true,
                 resultPreviewRepaired: true
             ),
@@ -215,7 +216,8 @@ struct PickyToolHistoryEntryTests {
         )
 
         #expect(entry.result == PickyToolHistoryResult(
-            text: #"{"items":[]}"#,
+            text: #"{"items":[..."#,
+            jsonText: #"{"items":[]}"#,
             isTruncated: true,
             isRepaired: true
         ))

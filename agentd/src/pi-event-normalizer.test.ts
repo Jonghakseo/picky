@@ -286,8 +286,11 @@ describe("normalizePiEvent", () => {
     if (end.kind !== "tool") return;
     expect(end.tool.resultPreviewTruncated).toBe(true);
     expect(end.tool.resultPreviewRepaired).toBe(true);
-    expect(end.tool.resultPreview!.length).toBeLessThanOrEqual(500);
-    expect(() => JSON.parse(end.tool.resultPreview!)).not.toThrow();
+    expect(end.tool.preview).toBe(end.tool.resultPreview);
+    expect(end.tool.resultPreview).toHaveLength(500);
+    expect(end.tool.resultPreview?.endsWith("...")).toBe(true);
+    expect(end.tool.resultJSONPreview!.length).toBeLessThanOrEqual(500);
+    expect(() => JSON.parse(end.tool.resultJSONPreview!)).not.toThrow();
   });
 
   it("marks dialog extension UI as waiting for input", async () => {

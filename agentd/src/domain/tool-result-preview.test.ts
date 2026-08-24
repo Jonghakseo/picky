@@ -19,8 +19,9 @@ describe("buildToolResultPreview", () => {
     const result = buildToolResultPreview(source);
 
     expect(result.repaired).toBe(true);
-    expect(result.text).toContain(visibleTail);
-    expect(() => JSON.parse(result.text!)).not.toThrow();
+    expect(result.text).toBe(source);
+    expect(result.jsonText).toContain(visibleTail);
+    expect(() => JSON.parse(result.jsonText!)).not.toThrow();
   });
 
   it("reduces the source prefix until deeply nested repaired JSON fits the budget", () => {
@@ -29,8 +30,10 @@ describe("buildToolResultPreview", () => {
 
     expect(result.truncated).toBe(true);
     expect(result.repaired).toBe(true);
-    expect(result.text!.length).toBeLessThanOrEqual(120);
-    expect(() => JSON.parse(result.text!)).not.toThrow();
+    expect(result.text).toHaveLength(120);
+    expect(result.text?.endsWith("...")).toBe(true);
+    expect(result.jsonText!.length).toBeLessThanOrEqual(120);
+    expect(() => JSON.parse(result.jsonText!)).not.toThrow();
   });
 
   it("repairs legacy fixed-budget JSON previews ending in three dots", () => {
@@ -42,14 +45,21 @@ describe("buildToolResultPreview", () => {
     expect(source).toHaveLength(maxChars);
     expect(result.truncated).toBe(true);
     expect(result.repaired).toBe(true);
-    expect(result.text!.length).toBeLessThanOrEqual(maxChars);
-    expect(() => JSON.parse(result.text!)).not.toThrow();
+    expect(result.text).toBe(source);
+    expect(result.text?.endsWith("...")).toBe(true);
+    expect(result.jsonText!.length).toBeLessThanOrEqual(maxChars);
+    expect(() => JSON.parse(result.jsonText!)).not.toThrow();
   });
 
   it("repairs malformed JSON below the budget without marking it partial", () => {
     const result = buildToolResultPreview("{name: 'Picky'}");
 
-    expect(result).toEqual({ text: '{"name": "Picky"}', truncated: false, repaired: true });
+    expect(result).toEqual({
+      text: "{name: 'Picky'}",
+      jsonText: '{"name": "Picky"}',
+      truncated: false,
+      repaired: true,
+    });
   });
 
   it("keeps non-JSON text unchanged and bounds long text with the existing ellipsis", () => {

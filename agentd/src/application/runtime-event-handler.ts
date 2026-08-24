@@ -520,6 +520,7 @@ export class RuntimeEventHandler {
       preview: event.preview,
       argsPreview: event.argsPreview ?? previous?.argsPreview,
       resultPreview: event.resultPreview ?? previous?.resultPreview,
+      resultJSONPreview: event.resultJSONPreview ?? previous?.resultJSONPreview,
       ...(event.resultPreviewTruncated || previous?.resultPreviewTruncated ? { resultPreviewTruncated: true } : {}),
       ...(event.resultPreviewRepaired || previous?.resultPreviewRepaired ? { resultPreviewRepaired: true } : {}),
       ...(subagentSummary ? { subagentSummary } : {}),

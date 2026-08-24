@@ -243,7 +243,8 @@ describe("RuntimeEventHandler", () => {
       toolCallId: "json-result",
       name: "mcp__example__search",
       status: "succeeded",
-      resultPreview: '{"items":[]}',
+      resultPreview: '{"items":[...',
+      resultJSONPreview: '{"items":[]}',
       resultPreviewTruncated: true,
       resultPreviewRepaired: true,
     });
@@ -257,7 +258,8 @@ describe("RuntimeEventHandler", () => {
 
     expect(harness.current().tools).toEqual([
       expect.objectContaining({
-        resultPreview: '{"items":[]}',
+        resultPreview: '{"items":[...',
+        resultJSONPreview: '{"items":[]}',
         resultPreviewTruncated: true,
         resultPreviewRepaired: true,
       }),

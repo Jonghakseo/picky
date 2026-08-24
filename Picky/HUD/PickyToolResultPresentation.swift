@@ -11,8 +11,16 @@ import Foundation
 
 struct PickyToolHistoryResult: Equatable {
     let text: String
+    let jsonText: String?
     let isTruncated: Bool
     let isRepaired: Bool
+
+    init(text: String, jsonText: String? = nil, isTruncated: Bool, isRepaired: Bool) {
+        self.text = text
+        self.jsonText = jsonText
+        self.isTruncated = isTruncated
+        self.isRepaired = isRepaired
+    }
 }
 
 enum PickyJSONResultState: Equatable {
@@ -81,8 +89,9 @@ enum PickyToolResultPresentation: Equatable {
     case text(String, isTruncated: Bool)
 
     static func make(from result: PickyToolHistoryResult) -> PickyToolResultPresentation {
-        guard looksLikeJSONObjectOrArray(result.text),
-              let data = result.text.data(using: .utf8),
+        let jsonText = result.jsonText ?? result.text
+        guard looksLikeJSONObjectOrArray(jsonText),
+              let data = jsonText.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]),
               let root = node(from: object, path: "$root")
         else {

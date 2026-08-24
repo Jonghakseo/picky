@@ -38,11 +38,15 @@ struct ProtocolContractTests {
             Issue.record("Expected tool activity update")
             return
         }
+        #expect(tool.preview == #"{"items":[..."#)
+        #expect(tool.resultPreview == #"{"items":[..."#)
+        #expect(tool.resultJSONPreview == #"{"items":[]}"#)
         #expect(tool.resultPreviewTruncated == true)
         #expect(tool.resultPreviewRepaired == true)
 
         let legacy = #"{"toolCallId":"legacy","name":"read","status":"succeeded","resultPreview":"plain"}"#
         let legacyTool = try decoder.decode(PickyToolActivity.self, from: Data(legacy.utf8))
+        #expect(legacyTool.resultJSONPreview == nil)
         #expect(legacyTool.resultPreviewTruncated == nil)
         #expect(legacyTool.resultPreviewRepaired == nil)
     }

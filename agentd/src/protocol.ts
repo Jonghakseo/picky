@@ -149,6 +149,7 @@ export const PickyToolActivitySchema = z.object({
   preview: z.string().optional(),
   argsPreview: z.string().optional(),
   resultPreview: z.string().optional(),
+  resultJSONPreview: z.string().optional(),
   resultPreviewTruncated: z.boolean().optional(),
   resultPreviewRepaired: z.boolean().optional(),
   subagentSummary: PickySubagentToolSummarySchema.optional(),

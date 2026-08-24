@@ -86,7 +86,7 @@ export function bashResultPreview(result: RuntimeBashExecutionResult): ToolResul
   if (!output) return { text: prefix, truncated: result.truncated, repaired: false };
 
   const outputPreview = buildToolResultPreview(output);
-  if (isJSONObjectOrArrayText(outputPreview.text)) {
+  if (isJSONObjectOrArrayText(outputPreview.jsonText ?? outputPreview.text)) {
     return {
       ...outputPreview,
       truncated: outputPreview.truncated || result.truncated,

@@ -53,12 +53,14 @@ struct PickyToolResultPresentationTests {
 
     @Test func partialStateTakesPrecedenceOverRepairState() {
         let partial = PickyToolResultPresentation.make(from: .init(
-            text: #"{"items":[]}"#,
+            text: #"{"items":[..."#,
+            jsonText: #"{"items":[]}"#,
             isTruncated: true,
             isRepaired: true
         ))
         let repaired = PickyToolResultPresentation.make(from: .init(
-            text: #"{"items":[]}"#,
+            text: #"{items: []}"#,
+            jsonText: #"{"items":[]}"#,
             isTruncated: false,
             isRepaired: true
         ))
@@ -85,6 +87,13 @@ struct PickyToolResultPresentationTests {
             isTruncated: true,
             isRepaired: false
         )) == .text(#"{"broken": "value""#, isTruncated: true))
+
+        #expect(PickyToolResultPresentation.make(from: .init(
+            text: #"{"original":..."#,
+            jsonText: #"{"stillBroken":..."#,
+            isTruncated: true,
+            isRepaired: true
+        )) == .text(#"{"original":..."#, isTruncated: true))
     }
 
     @Test func emptyCollectionsRemainStructuredWithZeroItems() {

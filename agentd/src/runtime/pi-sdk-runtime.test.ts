@@ -953,6 +953,26 @@ describe("PiSdkRuntime", () => {
     expect(terminal?.resultPreviewRepaired).toBeUndefined();
   });
 
+  it("keeps direct bash source preview while exposing repaired JSON separately", async () => {
+    const fakeSession = new FakeSession();
+    const output = JSON.stringify({ items: Array.from({ length: 50 }, (_, index) => ({ index, value: "result ".repeat(5) })) });
+    fakeSession.userBashResult = { output, exitCode: 0, cancelled: false, truncated: false };
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm!({ cwd: "/tmp/project", sessionId: "session-1" });
+    const events: RuntimeEvent[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    await handle.executeUserBash!("printf long-json");
+
+    const terminal = events.find((event): event is Extract<RuntimeEvent, { type: "tool" }> => event.type === "tool" && event.status === "succeeded");
+    expect(terminal?.resultPreview).toHaveLength(500);
+    expect(terminal?.resultPreview?.endsWith("...")).toBe(true);
+    expect(terminal?.resultJSONPreview).toBeTypeOf("string");
+    expect(() => JSON.parse(terminal!.resultJSONPreview!)).not.toThrow();
+    expect(terminal?.resultPreviewTruncated).toBe(true);
+    expect(terminal?.resultPreviewRepaired).toBe(true);
+  });
+
   it("records extension-provided user bash results without invoking local bash", async () => {
     const fakeSession = new FakeSession();
     fakeSession.userBashResult = { output: "remote\n", exitCode: 0, cancelled: false, truncated: false };

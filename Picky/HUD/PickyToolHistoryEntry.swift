@@ -121,6 +121,7 @@ enum PickyToolHistoryRenderer {
         let result = resultText.map {
             PickyToolHistoryResult(
                 text: $0,
+                jsonText: tool.resultJSONPreview,
                 isTruncated: tool.resultPreviewTruncated == true,
                 isRepaired: tool.resultPreviewRepaired == true
             )

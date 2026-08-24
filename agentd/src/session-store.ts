@@ -117,7 +117,7 @@ export class SessionStore {
       const migrated = migrateLegacySession(raw);
       const session = PickyAgentSessionSchema.parse(migrated.value);
       if (migrated.changed && persistMigration) await this.save(session);
-      return projectLegacyToolResultPreviews(session);
+      return projectLegacyToolResultJSONPreviews(session);
     } catch (error) {
       console.warn(`Skipping unreadable Picky session metadata ${filePath}: ${messageOf(error)}`);
       return undefined;
@@ -165,27 +165,26 @@ function migrateLegacySession(value: unknown): { value: unknown; changed: boolea
   return changed ? { value: { ...value, messages }, changed } : { value, changed: false };
 }
 
-function projectLegacyToolResultPreviews(session: PickyAgentSession): PickyAgentSession {
+function projectLegacyToolResultJSONPreviews(session: PickyAgentSession): PickyAgentSession {
   let changed = false;
   const tools = session.tools.map((tool) => {
-    const projected = projectLegacyToolResultPreview(tool);
+    const projected = projectLegacyToolResultJSONPreview(tool);
     if (projected !== tool) changed = true;
     return projected;
   });
   return changed ? { ...session, tools } : session;
 }
 
-function projectLegacyToolResultPreview(tool: PickyToolActivity): PickyToolActivity {
+function projectLegacyToolResultJSONPreview(tool: PickyToolActivity): PickyToolActivity {
   const original = tool.resultPreview;
-  if (!original || tool.resultPreviewRepaired === true) return tool;
+  if (!original || tool.resultJSONPreview) return tool;
 
   const result = buildToolResultPreview(original);
-  if (!result.text || !result.repaired) return tool;
+  if (!result.jsonText || !result.repaired) return tool;
 
   return {
     ...tool,
-    resultPreview: result.text,
-    ...(tool.preview === original ? { preview: result.text } : {}),
+    resultJSONPreview: result.jsonText,
     ...(result.truncated || tool.resultPreviewTruncated ? { resultPreviewTruncated: true } : {}),
     resultPreviewRepaired: true,
   };

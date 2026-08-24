@@ -2,7 +2,10 @@ import { jsonrepair } from "jsonrepair";
 import { sliceUtf16Safe } from "./safe-truncate.js";
 
 export interface ToolResultPreview {
+  /** Original bounded preview. This remains unchanged even when JSON repair succeeds. */
   text?: string;
+  /** Valid repaired object/array JSON used only by structured result presentation. */
+  jsonText?: string;
   truncated: boolean;
   repaired: boolean;
 }
@@ -19,9 +22,10 @@ export function buildToolResultPreview(value: unknown, maxChars = DEFAULT_MAX_CH
     return boundedPlainText(text, maxChars);
   }
 
+  const originalPreview = boundedPlainText(text, maxChars);
   const isCompleteJSON = isValidJSON(text);
   if (text.length <= maxChars && isCompleteJSON) {
-    return { text, truncated: false, repaired: false };
+    return originalPreview;
   }
 
   // Before structured preview metadata existed, result previews were cut to
@@ -34,13 +38,14 @@ export function buildToolResultPreview(value: unknown, maxChars = DEFAULT_MAX_CH
   const repaired = repairWithinBudget(repairSource, maxChars, sourceTruncated);
   if (repaired !== undefined) {
     return {
-      text: repaired.text,
+      text: originalPreview.text,
+      jsonText: repaired.text,
       truncated: sourceTruncated || repaired.sourceWasReduced,
       repaired: true,
     };
   }
 
-  return boundedPlainText(text, maxChars);
+  return originalPreview;
 }
 
 export function isJSONObjectOrArrayText(text: string | undefined): boolean {

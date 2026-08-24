@@ -1,0 +1,22 @@
+{
+  "withArtifacts": [
+    { "timestamp": "2026-08-24T13:06:19.700Z", "event": { "type": "thinking_delta", "delta": "Inspecting the completion path. " } },
+    { "timestamp": "2026-08-24T13:06:19.701Z", "event": { "type": "thinking_delta", "delta": "Preparing the final result." } },
+    { "timestamp": "2026-08-24T13:06:19.702Z", "event": { "type": "tool", "toolCallId": "tool-read", "name": "read", "status": "running", "preview": "Read the session state" } },
+    { "timestamp": "2026-08-24T13:06:19.703Z", "event": { "type": "tool", "toolCallId": "tool-read", "name": "read", "status": "succeeded", "preview": "Read the session state", "resultPreview": "state loaded" } },
+    { "timestamp": "2026-08-24T13:06:19.704Z", "event": { "type": "assistant_delta", "delta": "Completed the investigation. " } },
+    { "timestamp": "2026-08-24T13:06:19.705Z", "event": { "type": "assistant_delta", "delta": "Review https://github.com/creatrip/picky/pull/123 " } },
+    { "timestamp": "2026-08-24T13:06:19.706Z", "event": { "type": "assistant_delta", "delta": "for the implementation." } },
+    { "timestamp": "2026-08-24T13:06:19.707Z", "event": { "type": "status", "status": "completed", "summary": "Completed the investigation.", "finalAnswer": "Completed the investigation. Review https://github.com/creatrip/picky/pull/123 for the implementation." } }
+  ],
+  "withoutArtifacts": [
+    { "timestamp": "2026-08-24T13:06:20.700Z", "event": { "type": "thinking_delta", "delta": "Inspecting the completion path. " } },
+    { "timestamp": "2026-08-24T13:06:20.701Z", "event": { "type": "thinking_delta", "delta": "Preparing the final result." } },
+    { "timestamp": "2026-08-24T13:06:20.702Z", "event": { "type": "tool", "toolCallId": "tool-read", "name": "read", "status": "running", "preview": "Read the session state" } },
+    { "timestamp": "2026-08-24T13:06:20.703Z", "event": { "type": "tool", "toolCallId": "tool-read", "name": "read", "status": "succeeded", "preview": "Read the session state", "resultPreview": "state loaded" } },
+    { "timestamp": "2026-08-24T13:06:20.704Z", "event": { "type": "assistant_delta", "delta": "Completed the investigation. " } },
+    { "timestamp": "2026-08-24T13:06:20.705Z", "event": { "type": "assistant_delta", "delta": "The implementation is ready. " } },
+    { "timestamp": "2026-08-24T13:06:20.706Z", "event": { "type": "assistant_delta", "delta": "No external artifact was created." } },
+    { "timestamp": "2026-08-24T13:06:20.707Z", "event": { "type": "status", "status": "completed", "summary": "Completed the investigation.", "finalAnswer": "Completed the investigation. The implementation is ready. No external artifact was created." } }
+  ]
+}

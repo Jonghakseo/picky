@@ -5504,6 +5504,26 @@ struct PickySessionViewModelTests {
         #expect(viewModel.sessions.first?.activitySummary == PickyActivitySummary(edit: 2, bash: 3, thinking: 4, other: 5))
     }
 
+    @MainActor @Test func ignoresDormantProjectionEventsUntilProtocolCutover() {
+        let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "session-001",
+            title: "Current v1 projection",
+            status: "running"
+        ))))
+
+        for eventJSON in [
+            #"{"id":"projection-transaction","protocolVersion":"2026-08-23","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionTransaction","sessionId":"session-001","epoch":"epoch-001","baseRevision":4,"revision":5,"mutations":[{"type":"metaPatch","patch":{"status":"completed"}}]}"#,
+            #"{"id":"projection-snapshot","protocolVersion":"2026-08-23","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionSnapshot","sessionId":"session-001","epoch":"epoch-001","revision":5,"complete":false,"omittedFields":["messages"],"projection":{"id":"session-001","title":"Dormant v2 projection","status":"completed","createdAt":"2026-08-24T00:00:00.000Z","updatedAt":"2026-08-24T00:00:00.000Z"}}"#,
+        ] {
+            viewModel.apply(.protocolEvent(.fixture(eventJSON: eventJSON)))
+        }
+
+        #expect(viewModel.sessions.count == 1)
+        #expect(viewModel.sessions.first?.title == "Current v1 projection")
+        #expect(viewModel.sessions.first?.status == .running)
+    }
+
     @Test func clearQueueSendsClearQueueCommandEnvelope() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())

@@ -833,6 +833,21 @@ describe("protocol contract fixtures", () => {
     return persistedSessionFieldOwnership.flatMap(mutationNames);
   }
 
+  it("accepts the dormant session projection capability without changing legacy registrations", () => {
+    const base = {
+      id: "cmd-register-app-capabilities",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "registerAppCapabilities" as const,
+    };
+
+    expect(CommandEnvelopeSchema.parse({ ...base, capabilities: ["pickleHandoff"] })).toMatchObject({
+      capabilities: ["pickleHandoff"],
+    });
+    expect(CommandEnvelopeSchema.parse({ ...base, capabilities: ["sessionProjectionV2"] })).toMatchObject({
+      capabilities: ["sessionProjectionV2"],
+    });
+  });
+
   it("rejects invalid protocol versions", () => {
     expect(() => CommandEnvelopeSchema.parse({ id: "bad", protocolVersion: "old", type: "listSessions" })).toThrow(/Invalid literal value/);
   });

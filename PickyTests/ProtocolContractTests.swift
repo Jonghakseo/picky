@@ -883,6 +883,160 @@ struct ProtocolContractTests {
         #expect(decoded.sessionId == "session-001")
         #expect(decoded.kind == .all)
     }
+
+    @Test func decodesProjectionMetaPatchWithAbsentNullAndValueUpdates() throws {
+        let patch = try JSONDecoder.pickyAgentProtocolDecoder().decode(
+            PickySessionMetaPatch.self,
+            from: Data(#"{"title":"Renamed Pickle","cwd":null,"messageJournalAvailable":true}"#.utf8)
+        )
+
+        #expect(patch.id == .unchanged)
+        #expect(patch.title == .set("Renamed Pickle"))
+        #expect(patch.cwd == .clear)
+        #expect(patch.messageJournalAvailable == .set(true))
+        #expect(patch.archived == .unchanged)
+        #expect(throws: DecodingError.self) {
+            _ = try JSONDecoder.pickyAgentProtocolDecoder().decode(
+                PickySessionMetaPatch.self,
+                from: Data(#"{"id":null}"#.utf8)
+            )
+        }
+    }
+
+    @Test func decodesProjectionFixturesIntoNamedDormantEvents() throws {
+        let fixtures = try fixtureURLs(in: "contracts/protocol")
+        let transactionFixture = try #require(fixtures.first { $0.lastPathComponent == "session-projection-transaction.event.json" })
+        let snapshotFixture = try #require(fixtures.first { $0.lastPathComponent == "session-projection-snapshot.event.json" })
+        let decoder = JSONDecoder.pickyAgentProtocolDecoder()
+
+        let transaction = try decoder.decode(PickyEventEnvelope.self, from: Data(contentsOf: transactionFixture))
+        let snapshot = try decoder.decode(PickyEventEnvelope.self, from: Data(contentsOf: snapshotFixture))
+
+        guard case .sessionProjectionTransaction(let value) = transaction.event else {
+            Issue.record("Expected sessionProjectionTransaction")
+            return
+        }
+        #expect(value.sessionId == "session-001")
+        #expect(value.epoch == "epoch-001")
+        #expect(value.baseRevision == 4)
+        #expect(value.revision == 5)
+        #expect(value.mutations.map(\.type) == ["metaPatch", "finalAnswerSet"])
+
+        guard case .sessionProjectionSnapshot(let value) = snapshot.event else {
+            Issue.record("Expected sessionProjectionSnapshot")
+            return
+        }
+        #expect(value.requestId == "snapshot-001")
+        #expect(value.complete == false)
+        #expect(value.omittedFields == ["messages", "logs"])
+        #expect(value.projection.id == "session-001")
+    }
+
+    @Test func decodesEveryProjectionMutationVariant() throws {
+        let mutations = [
+            #"{"type":"metaPatch","patch":{"title":"Updated"}}"#,
+            #"{"type":"messageAppend","message":{"id":"message-001","kind":"agent_text","createdAt":"2026-08-24T00:00:00.000Z","text":"Answer"}}"#,
+            #"{"type":"messageReplace","messageId":"message-001","message":{"id":"message-001","kind":"agent_text","createdAt":"2026-08-24T00:00:00.000Z","text":"Updated answer"}}"#,
+            #"{"type":"messageRemove","messageId":"message-001"}"#,
+            #"{"type":"messagesImport","messages":[]}"#,
+            #"{"type":"logAppend","line":"completed"}"#,
+            #"{"type":"toolUpsert","tool":{"toolCallId":"tool-001","name":"read","status":"succeeded"}}"#,
+            #"{"type":"todoSet","todoState":null}"#,
+            #"{"type":"subagentRunsSet","runs":[]}"#,
+            #"{"type":"artifactUpsert","artifact":{"id":"artifact-001","kind":"report","title":"Report","updatedAt":"2026-08-24T00:00:00.000Z"}}"#,
+            #"{"type":"changedFilesSet","changedFiles":[]}"#,
+            #"{"type":"queueSet","queuedSteers":[],"queuedFollowUps":[],"steeringMode":"one-at-a-time","followUpMode":"one-at-a-time"}"#,
+            #"{"type":"activitySet","activitySummary":{"read":0,"bash":0,"edit":0,"write":0,"thinking":0,"other":0}}"#,
+            #"{"type":"finalAnswerSet","finalAnswer":null}"#,
+            #"{"type":"extensionUiRequestSet","request":null}"#,
+        ]
+
+        let decoded = try mutations.map {
+            try JSONDecoder.pickyAgentProtocolDecoder().decode(PickySessionProjectionMutation.self, from: Data($0.utf8))
+        }
+        #expect(decoded.map(\.type) == [
+            "metaPatch", "messageAppend", "messageReplace", "messageRemove", "messagesImport",
+            "logAppend", "toolUpsert", "todoSet", "subagentRunsSet", "artifactUpsert",
+            "changedFilesSet", "queueSet", "activitySet", "finalAnswerSet", "extensionUiRequestSet",
+        ])
+        #expect(throws: DecodingError.self) {
+            _ = try JSONDecoder.pickyAgentProtocolDecoder().decode(
+                PickySessionProjectionMutation.self,
+                from: Data(#"{"type":"messageReplace","messageId":"original","message":{"id":"replacement","kind":"agent_text","createdAt":"2026-08-24T00:00:00.000Z"}}"#.utf8)
+            )
+        }
+        #expect(throws: DecodingError.self) {
+            _ = try JSONDecoder.pickyAgentProtocolDecoder().decode(
+                PickySessionProjectionMutation.self,
+                from: Data(#"{"type":"finalAnswerSet"}"#.utf8)
+            )
+        }
+    }
+
+    @Test func rejectsInvalidProjectionEventsAsUnknown() throws {
+        let invalidTransactions = [
+            #"{"id":"invalid-revision","protocolVersion":"2026-08-23","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionTransaction","sessionId":"session-001","epoch":"epoch-001","baseRevision":5,"revision":5,"mutations":[{"type":"metaPatch","patch":{}}]}"#,
+            #"{"id":"invalid-mutation","protocolVersion":"2026-08-23","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionTransaction","sessionId":"session-001","epoch":"epoch-001","baseRevision":4,"revision":5,"mutations":[{"type":"unknown"}]}"#,
+            #"{"id":"invalid-meta-patch-key","protocolVersion":"2026-08-23","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionTransaction","sessionId":"session-001","epoch":"epoch-001","baseRevision":4,"revision":5,"mutations":[{"type":"metaPatch","patch":{"statuz":"completed"}}]}"#,
+            #"{"id":"invalid-extension-session","protocolVersion":"2026-08-23","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionTransaction","sessionId":"session-001","epoch":"epoch-001","baseRevision":4,"revision":5,"mutations":[{"type":"extensionUiRequestSet","request":{"id":"request-001","sessionId":"other-session","method":"confirm","createdAt":"2026-08-24T00:00:00.000Z"}}]}"#,
+        ]
+        let invalidSnapshots = [
+            #"{"id":"invalid-complete","protocolVersion":"2026-08-23","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionSnapshot","sessionId":"session-001","epoch":"epoch-001","revision":5,"complete":true,"omittedFields":["messages"],"projection":{"id":"session-001","title":"Projection","status":"running","createdAt":"2026-08-24T00:00:00.000Z","updatedAt":"2026-08-24T00:00:00.000Z"}}"#,
+            #"{"id":"invalid-field","protocolVersion":"2026-08-23","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionSnapshot","sessionId":"session-001","epoch":"epoch-001","revision":5,"complete":false,"omittedFields":["notAStoredSessionField"],"projection":{"id":"session-001","title":"Projection","status":"running","createdAt":"2026-08-24T00:00:00.000Z","updatedAt":"2026-08-24T00:00:00.000Z"}}"#,
+            #"{"id":"invalid-duplicate","protocolVersion":"2026-08-23","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionSnapshot","sessionId":"session-001","epoch":"epoch-001","revision":5,"complete":false,"omittedFields":["messages","messages"],"projection":{"id":"session-001","title":"Projection","status":"running","createdAt":"2026-08-24T00:00:00.000Z","updatedAt":"2026-08-24T00:00:00.000Z"}}"#,
+        ]
+        let decoder = JSONDecoder.pickyAgentProtocolDecoder()
+
+        for invalidTransaction in invalidTransactions {
+            #expect(try decoder.decode(PickyEventEnvelope.self, from: Data(invalidTransaction.utf8)).event == .unknown(type: "sessionProjectionTransaction"))
+        }
+        for invalidSnapshot in invalidSnapshots {
+            #expect(try decoder.decode(PickyEventEnvelope.self, from: Data(invalidSnapshot.utf8)).event == .unknown(type: "sessionProjectionSnapshot"))
+        }
+    }
+
+    @Test func keepsSwiftProjectionOwnershipInParityWithManifest() throws {
+        let manifestURL = try #require(try fixtureURLs(in: "contracts/projection").first {
+            $0.lastPathComponent == "session-field-ownership.json"
+        })
+        let ownership = try JSONDecoder().decode([PickySessionFieldOwnershipFixture].self, from: Data(contentsOf: manifestURL))
+
+        #expect(Set(ownership.map(\.swiftStore)) == [
+            "PickySessionActivityStore", "PickySessionArtifactStore", "PickySessionExtensionUiStore",
+            "PickySessionLogStore", "PickySessionMessageStore", "PickySessionMetaStore",
+            "PickySessionQueueStore", "PickySessionSubagentStore", "PickySessionTodoStore", "PickySessionToolStore",
+        ])
+        #expect(ownership.allSatisfy { ["replace", "merge", "clear-if-omitted-explicit"].contains($0.snapshotSemantics) })
+        #expect(Set(ownership.filter { $0.v2Mutation.contains("metaPatch") }.map(\.field)) == Set(PickySessionMetaPatch.CodingKeys.allCases.map(\.stringValue)))
+    }
+}
+
+private struct PickySessionFieldOwnershipFixture: Decodable {
+    let field: String
+    let swiftStore: String
+    let snapshotSemantics: String
+    let v2Mutation: PickySessionFieldOwnershipMutationFixture
+}
+
+private enum PickySessionFieldOwnershipMutationFixture: Decodable {
+    case single(String)
+    case multiple([String])
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let value = try? container.decode(String.self) {
+            self = .single(value)
+        } else {
+            self = .multiple(try container.decode([String].self))
+        }
+    }
+
+    func contains(_ value: String) -> Bool {
+        switch self {
+        case .single(let mutation): mutation == value
+        case .multiple(let mutations): mutations.contains(value)
+        }
+    }
 }
 
 private func pointerOverlayEventData(extraRequestField: String = "") -> Data {

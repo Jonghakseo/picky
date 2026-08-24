@@ -1855,7 +1855,7 @@ final class PickySessionListViewModel: ObservableObject {
             if let sessionID = accepted.sessionId, let groupName = accepted.group {
                 assignSessionToDockGroup(sessionID: sessionID, groupName: groupName)
             }
-        case .quickReply, .mainTurnSettled, .mainNarrationChunk,
+        case .sessionProjectionTransaction, .sessionProjectionSnapshot, .quickReply, .mainTurnSettled, .mainNarrationChunk,
              .mainVisualNarrationSegmentPrepared, .mainVisualNarrationSegmentSentence, .mainVisualNarrationSegmentCommitted,
              .mainMessagesSnapshot, .mainMessageAppended, .mainActivityUpdated, .mainExtensionUiRequested, .mainExtensionUiCancelled,
              .mainAgentSessionInfoUpdated, .mainAgentModelsSnapshot,

@@ -491,6 +491,17 @@ export const PickyPreparedVisualNarrationVisualSchema = z.discriminatedUnion("ki
 export type PickyPreparedVisualNarrationVisual = z.infer<typeof PickyPreparedVisualNarrationVisualSchema>;
 
 // App-owned Pickle dock group snapshot for CLI commands.
+export const PickyAppCapabilitySchema = z.enum([
+  "pickleHandoff",
+  "pickleBridge",
+  "externalEntry",
+  "pushToTalkControl",
+  "settingsControl",
+  // Accepted but not emitted by Picky until the atomic v2 protocol cutover.
+  "sessionProjectionV2",
+]);
+export type PickyAppCapability = z.infer<typeof PickyAppCapabilitySchema>;
+
 export const DockGroupSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -511,7 +522,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("createEmptyPickleSession"), context: PickyContextPacketSchema }),
   CommandBaseSchema.extend({ type: z.literal("createPickleFromHandoff"), context: PickyContextPacketSchema, title: z.string().min(1), instructions: z.string().min(1), cwd: z.string().min(1).optional() }),
   CommandBaseSchema.extend({ type: z.literal("completePickleHandoff"), requestId: z.string().min(1), sessionId: z.string().min(1).optional(), title: z.string().min(1).optional(), cwd: z.string().optional(), errorMessage: z.string().min(1).optional() }),
-  CommandBaseSchema.extend({ type: z.literal("registerAppCapabilities"), capabilities: z.array(z.enum(["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl", "settingsControl"])).min(1) }),
+  CommandBaseSchema.extend({ type: z.literal("registerAppCapabilities"), capabilities: z.array(PickyAppCapabilitySchema).min(1) }),
   CommandBaseSchema.extend({ type: z.literal("listPickySettings") }),
   CommandBaseSchema.extend({ type: z.literal("getPickySettings"), key: z.string().min(1) }),
   CommandBaseSchema.extend({

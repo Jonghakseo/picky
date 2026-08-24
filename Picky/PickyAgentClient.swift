@@ -460,6 +460,10 @@ private extension PickyEventEnvelope {
             return "type=mainAgentSessionInfoUpdated id=\(id) hasSessionFile=\(sessionFilePath != nil ? 1 : 0) hasCwd=\(cwd != nil ? 1 : 0)"
         case .sessionSnapshot(let snapshot):
             return "type=sessionSnapshot id=\(id) sessions=\(snapshot.sessions.count) complete=\(snapshot.isComplete) skipped=\(snapshot.skippedSessionCount)"
+        case .sessionProjectionTransaction(let transaction):
+            return "type=sessionProjectionTransaction id=\(id) session=\(transaction.sessionId) revision=\(transaction.revision) mutations=\(transaction.mutations.count) dormant=1"
+        case .sessionProjectionSnapshot(let snapshot):
+            return "type=sessionProjectionSnapshot id=\(id) session=\(snapshot.sessionId) revision=\(snapshot.revision) complete=\(snapshot.complete ? 1 : 0) dormant=1"
         case .sessionUpdated(let session):
             return "type=sessionUpdated id=\(id) session=\(session.id) status=\(session.status.rawValue)"
         case .sessionMetaUpdated(let session):

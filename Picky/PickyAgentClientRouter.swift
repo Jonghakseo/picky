@@ -771,6 +771,20 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     /// entirely inside `PickyRegistrySessionProjectionStorage`.
     func sessionProjectionStorageDidChange() {
         resumeSessionProjectionWaiters()
+        reconcileBootingChildSessions()
+    }
+
+    /// The v1 dialect cleared child boot state from `rememberSession`. A v2
+    /// socket never receives those events, so the registry publication is the
+    /// only signal that a freshly spawned Pickle is ready for its queued input.
+    private func reconcileBootingChildSessions() {
+        for sessionId in Set(pendingChildCommands.keys).union(bootingChildSessionIds) {
+            guard let session = pickleSessionSummary(id: sessionId) else { continue }
+            if session.status != .queued, isChildEndpointReadyOrNotBooting(sessionId: sessionId) {
+                bootingChildSessionIds.remove(sessionId)
+            }
+            scheduleDrainPendingChildCommandsIfReady(for: session)
+        }
     }
 
     private func resumeSessionProjectionWaiters() {

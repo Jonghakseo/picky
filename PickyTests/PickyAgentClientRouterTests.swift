@@ -714,6 +714,63 @@ struct PickyAgentClientRouterTests {
         #expect(await forwarded.value == .recoverableError("child forwarded"))
     }
 
+    /// Under the v2 dialect the router never sees v1 session events, so boot
+    /// state must clear from registry publications. Otherwise the first message
+    /// typed into a freshly created Pickle stays queued forever.
+    @Test func drainsQueuedChildCommandFromProjectionPublicationUnderV2() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let agentd = root.appendingPathComponent("agentd", isDirectory: true)
+        try makeStubAgentdPackage(at: agentd)
+        let primary = StubAgentClient(id: "primary")
+        let poolFactory = StubLauncherFactoryForRouter(agentdRoot: agentd)
+        let pool = PickyAgentDaemonPool(
+            configuration: PickyAgentDaemonPool.Configuration(
+                token: "tok",
+                appSupportRoot: root,
+                environment: ["PICKY_AGENTD_ROOT": agentd.path, "PATH": "/usr/bin"],
+                bundleResourceURL: nil
+            ),
+            factory: poolFactory
+        )
+        let clientFactory = StubClientFactory()
+        let router = PickyAgentClientRouter(
+            primaryClient: primary,
+            pool: pool,
+            clientFactory: clientFactory,
+            supportsSessionProjectionV2: true
+        )
+        var projectionSessions: [PickyAgentSession] = []
+        router.pickleSessionSummariesProvider = { projectionSessions }
+
+        async let spawned: PickyAgentClient = router.spawnChildClient(sessionId: "pickle-boot", cwd: "/tmp/ws")
+        _ = try await poolFactory.waitForRunner(sessionId: "pickle-boot")
+        poolFactory.emitReady(for: "pickle-boot")
+        let childClient = try await spawned as? StubAgentClient
+
+        // The empty Pickle is still booting, so the first message is queued.
+        try await router.send(PickyCommandEnvelope(id: "cmd-first", type: .steer, sessionId: "pickle-boot", text: "start please"))
+        #expect(childClient?.sentCommands.contains { $0.id == "cmd-first" } != true)
+
+        // The registry publishes the session as ready; only v2 frames exist.
+        projectionSessions = [PickyAgentSession(
+            id: "pickle-boot",
+            title: "Empty pickle",
+            status: .waiting_for_input,
+            cwd: "/tmp/ws",
+            createdAt: Date(),
+            updatedAt: Date(),
+            lastSummary: nil,
+            logs: [],
+            tools: [],
+            artifacts: [],
+            changedFiles: [],
+            messages: []
+        )]
+        router.sessionProjectionStorageDidChange()
+
+        try await waitUntil { childClient?.sentCommands.contains { $0.id == "cmd-first" } == true }
+    }
+
     @Test func sendReconnectsExistingChildEndpointWhenCachedClientWasDropped() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
         let agentd = root.appendingPathComponent("agentd", isDirectory: true)

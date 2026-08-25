@@ -16,9 +16,9 @@ import Foundation
 @MainActor
 final class PickyRegistrySessionProjectionStorage: PickySessionProjectionStorageV1Relaying {
     let registry: PickySessionRegistry
-    private let changesSubject = PassthroughSubject<PickySessionProjectionStorageSnapshot, Never>()
+    let changesSubject = PassthroughSubject<PickySessionProjectionStorageSnapshot, Never>()
 
-    private(set) var v1RelaySteps: [PickySessionProjectionStorageRelay] = []
+    var v1RelaySteps: [PickySessionProjectionStorageRelay] = []
     var activeSessions: [PickySessionListViewModel.SessionCard] { cards(for: registry.activeSessionIDs) }
     var archivedSessions: [PickySessionListViewModel.SessionCard] { cards(for: registry.archivedSessionIDs) }
     var changes: AnyPublisher<PickySessionProjectionStorageSnapshot, Never> { changesSubject.eraseToAnyPublisher() }
@@ -170,11 +170,11 @@ final class PickyRegistrySessionProjectionStorage: PickySessionProjectionStorage
         ids.compactMap { registry.existingSessionStore(sessionID: $0)?.materializedSessionCard() }
     }
 
-    private func snapshot() -> PickySessionProjectionStorageSnapshot {
+    func snapshot() -> PickySessionProjectionStorageSnapshot {
         PickySessionProjectionStorageSnapshot(activeSessions: activeSessions, archivedSessions: archivedSessions)
     }
 
-    private func relay(
+    func relay(
         active: [PickySessionListViewModel.SessionCard],
         archived: [PickySessionListViewModel.SessionCard],
         activeChanged: Bool,

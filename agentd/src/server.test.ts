@@ -18,6 +18,17 @@ import type { PiOAuthHandling } from "./application/pi-oauth-service.js";
 let server: AgentdServer;
 let port: number;
 let supervisor: SessionSupervisor;
+let runtime: TrackingRuntime;
+
+class TrackingRuntime extends MockRuntime {
+  handle?: MockRuntimeSession;
+
+  override async create(...args: Parameters<MockRuntime["create"]>): Promise<MockRuntimeSession> {
+    const handle = await super.create(...args) as MockRuntimeSession;
+    this.handle = handle;
+    return handle;
+  }
+}
 
 class TrackingMainRuntime extends MockRuntime {
   handle?: MockRuntimeSession;
@@ -31,7 +42,8 @@ class TrackingMainRuntime extends MockRuntime {
 
 beforeEach(async () => {
   const dir = await mkdtemp(join(tmpdir(), "picky-agentd-server-test-"));
-  supervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
+  runtime = new TrackingRuntime();
+  supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
   await supervisor.load();
   server = new AgentdServer({ port: 0, token: "test-token", supervisor });
   port = await server.start();
@@ -101,8 +113,9 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
-  it("keeps v2 sockets free of legacy projections and rejects a dialect change", async () => {
-    const session = await supervisor.create(context("v2 projection filtering"));
+  it("bootstraps v2 sockets before one revision transaction per changed commit without legacy frames", async () => {
+    const first = await supervisor.create(context("first v2 projection"));
+    const second = await supervisor.create(context("second v2 projection"));
     const { ws } = await connectWithHello();
     trackEvents(ws);
 
@@ -112,9 +125,35 @@ describe("AgentdServer", () => {
       type: "registerAppCapabilities",
       capabilities: ["sessionProjectionV2"],
     }));
+    await waitUntil(() => eventBuffers.get(ws)?.filter((event) => event.type === "sessionProjectionSnapshot").length === 2);
     await waitForEvent(ws, "ack");
-    ws.send(JSON.stringify({ id: "cmd-v2-direct-session", protocolVersion: PROTOCOL_VERSION, type: "getSession", sessionId: session.id }));
-    await waitForEvent(ws, "ack");
+
+    const snapshots = eventBuffers.get(ws)?.filter((event) => event.type === "sessionProjectionSnapshot") ?? [];
+    expect(snapshots).toHaveLength(2);
+    expect(snapshots.map((event) => event.sessionId).sort()).toEqual([first.id, second.id].sort());
+    expect(snapshots.every((event) => event.type === "sessionProjectionSnapshot" && event.requestId === undefined && event.revision >= 0)).toBe(true);
+    expect(new Set(snapshots.map((event) => event.epoch))).toHaveLength(1);
+
+    await (supervisor as unknown as {
+      patch(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void>;
+    }).patch(first.id, { status: "completed" });
+    const transaction = await waitForEvent(ws, "sessionProjectionTransaction");
+    expect(transaction).toMatchObject({
+      sessionId: first.id,
+      baseRevision: first.revision ?? 0,
+      revision: (first.revision ?? 0) + 1,
+      mutations: [{ type: "metaPatch", patch: { status: "completed" } }],
+    });
+    if (transaction.type === "sessionProjectionTransaction") {
+      expect(transaction.epoch).toBe(snapshots[0]?.epoch);
+    }
+    expect(eventBuffers.get(ws)?.filter((event) => event.type === "sessionUpdated" || event.type === "sessionMetaUpdated" || event.type === "sessionSnapshot")).toEqual([]);
+
+    await (supervisor as unknown as {
+      patch(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void>;
+    }).patch(first.id, { status: "completed" });
+    await expect(nextEventWithin(ws, 50)).resolves.toBeUndefined();
+
     ws.send(JSON.stringify({
       id: "cmd-reregister-v1-app",
       protocolVersion: PROTOCOL_VERSION,
@@ -125,14 +164,47 @@ describe("AgentdServer", () => {
       commandId: "cmd-reregister-v1-app",
       message: "Socket dialect is locked to v2; cannot change to v1",
     });
+    ws.close();
+  });
 
-    await (supervisor as unknown as {
-      patch(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void>;
-    }).patch(session.id, { status: "completed" });
-    ws.send(JSON.stringify({ id: "cmd-v2-control", protocolVersion: PROTOCOL_VERSION, type: "listMainMessages" }));
-    await waitForEvent(ws, "ack");
+  it("emits one terminal projection transaction to v2 while retaining v1-only legacy replay", async () => {
+    const session = await supervisor.create(context("terminal v2 projection"));
+    await waitUntil(() => supervisor.get(session.id)?.status === "running");
+    const { ws } = await connectWithHello();
+    trackEvents(ws);
+    await registerV2(ws, "cmd-register-v2-terminal");
+    await waitUntil(() => eventBuffers.get(ws)?.some((event) => event.type === "sessionProjectionSnapshot" && event.sessionId === session.id) === true);
+    eventBuffers.get(ws)?.splice(0);
 
-    expect(eventBuffers.get(ws)?.filter((event) => event.type === "sessionUpdated" || event.type === "sessionMetaUpdated" || event.type === "sessionSnapshot")).toEqual([]);
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed", finalAnswer: "Done" });
+    const transaction = await waitForEvent(ws, "sessionProjectionTransaction");
+    expect(transaction).toMatchObject({
+      sessionId: session.id,
+      revision: (supervisor.get(session.id)?.revision ?? 0),
+      mutations: expect.arrayContaining([{ type: "metaPatch", patch: expect.objectContaining({ status: "completed" }) }]),
+    });
+    await expect(nextEventWithin(ws, 50)).resolves.toBeUndefined();
+    expect(eventBuffers.get(ws)?.filter((event) => isLegacyProjection(event))).toEqual([]);
+    ws.close();
+  });
+
+  it("fails protocol mismatches before any projection is selected or emitted", async () => {
+    await supervisor.create(context("version mismatch"));
+    const { ws } = await connectWithHello();
+    trackEvents(ws);
+
+    ws.send(JSON.stringify({
+      id: "cmd-old-protocol",
+      protocolVersion: "2026-08-22",
+      type: "registerAppCapabilities",
+      capabilities: ["sessionProjectionV2"],
+    }));
+
+    await expect(waitForEvent(ws, "error")).resolves.toMatchObject({
+      commandId: "cmd-old-protocol",
+      message: "Protocol version mismatch: client=2026-08-22, server=" + PROTOCOL_VERSION,
+    });
+    expect(eventBuffers.get(ws)?.filter((event) => event.type === "sessionProjectionSnapshot" || event.type === "sessionProjectionTransaction")).toEqual([]);
     ws.close();
   });
 
@@ -167,7 +239,7 @@ describe("AgentdServer", () => {
     const message = {
       id: "message-hydration",
       kind: "agent_text" as const,
-      createdAt: "2026-08-23T00:00:00.000Z",
+      createdAt: "2026-08-25T00:00:00.000Z",
       text: "Retain this in the reconnect snapshot",
     };
     const largeLog = "x".repeat(1_000_000);
@@ -407,8 +479,8 @@ describe("AgentdServer", () => {
       id: "oversized-single-session",
       title: "Oversized single session",
       status: "completed",
-      createdAt: "2026-08-23T00:00:00.000Z",
-      updatedAt: "2026-08-23T00:00:01.000Z",
+      createdAt: "2026-08-25T00:00:00.000Z",
+      updatedAt: "2026-08-25T00:00:01.000Z",
       logs: [],
       tools: [],
       artifacts: [],
@@ -416,7 +488,7 @@ describe("AgentdServer", () => {
       messages: [{
         id: "oversized-single-message",
         kind: "agent_text",
-        createdAt: "2026-08-23T00:00:01.000Z",
+        createdAt: "2026-08-25T00:00:01.000Z",
         text: "m".repeat(9 * 1024 * 1024),
       }],
     };
@@ -544,7 +616,7 @@ describe("AgentdServer", () => {
       sessionId: session.id,
     }));
 
-    const recovery = await waitForEvent(requester.ws, "sessionProjectionSnapshot");
+    const recovery = await waitForMatchingEvent(requester.ws, (event) => event.type === "sessionProjectionSnapshot" && event.requestId === "recovery-001");
     await waitForEvent(requester.ws, "ack");
     expect(recovery).toMatchObject({
       requestId: "recovery-001",
@@ -595,7 +667,7 @@ describe("AgentdServer", () => {
       sessionId: session.id,
     }));
 
-    await waitForEvent(ws, "sessionProjectionSnapshot");
+    await waitForMatchingEvent(ws, (event) => event.type === "sessionProjectionSnapshot" && event.requestId === "recovery-barrier");
     expect(barrier).toHaveBeenCalledWith(session.id, expect.any(Function));
     ws.close();
   });
@@ -636,7 +708,7 @@ describe("AgentdServer", () => {
       message: `Projection recovery already pending for session: ${session.id}`,
     });
     release();
-    await expect(waitForEvent(ws, "sessionProjectionSnapshot")).resolves.toMatchObject({ requestId: "recovery-first" });
+    await expect(waitForMatchingEvent(ws, (event) => event.type === "sessionProjectionSnapshot" && event.requestId === "recovery-first")).resolves.toMatchObject({ requestId: "recovery-first" });
     ws.close();
   });
 
@@ -2741,7 +2813,7 @@ function makeLargeSessionSnapshotFixtures(): PickyAgentSession[] {
     messages: [{
       id: `large-message-${index}`,
       kind: "agent_text",
-      createdAt: "2026-08-23T00:00:01.000Z",
+      createdAt: "2026-08-25T00:00:01.000Z",
       text: largeMessageText,
     }],
   }));
@@ -2754,7 +2826,7 @@ function makeNormalSessionBootstrapFixtures(): PickyAgentSession[] {
     messages: [{
       id: `bootstrap-message-${index}`,
       kind: "agent_text",
-      createdAt: "2026-08-23T00:00:01.000Z",
+      createdAt: "2026-08-25T00:00:01.000Z",
       text: `Normal bootstrap message ${index}`,
     }],
   }));
@@ -2791,6 +2863,10 @@ function trackEvents(ws: WebSocket): void {
   ws.on("message", (data) => {
     try { buffer.push(JSON.parse(data.toString()) as EventEnvelope); } catch { /* ignore */ }
   });
+}
+
+function isLegacyProjection(event: EventEnvelope): boolean {
+  return ["sessionSnapshot", "sessionUpdated", "sessionMetaUpdated"].includes(event.type);
 }
 
 async function waitForEvent(ws: WebSocket, type: EventEnvelope["type"], timeoutMs = 2_000): Promise<EventEnvelope> {

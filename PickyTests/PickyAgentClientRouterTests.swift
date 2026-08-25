@@ -410,7 +410,12 @@ struct PickyAgentClientRouterTests {
         let pool = PickyAgentDaemonPool(
             configuration: PickyAgentDaemonPool.Configuration(token: "tok", appSupportRoot: root)
         )
-        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        let router = PickyAgentClientRouter(
+            primaryClient: primary,
+            pool: pool,
+            clientFactory: StubClientFactory(),
+            supportsSessionProjectionV2: true
+        )
 
         await router.connect()
         try await waitUntil { primary.sentCommands.contains { $0.type == .registerAppCapabilities } }
@@ -421,7 +426,28 @@ struct PickyAgentClientRouterTests {
 
         let registrations = primary.sentCommands.filter { $0.type == .registerAppCapabilities }
         #expect(registrations.count == registrationsBeforeReconnect + 1)
-        #expect(registrations.last?.capabilities == ["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl", "settingsControl"])
+        #expect(registrations.last?.capabilities == ["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl", "settingsControl", "sessionProjectionV2"])
+    }
+
+    @Test func keepsV1DialectWhenTheInjectedSessionProjectionConsumerDoesNotSupportV2() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(
+            configuration: PickyAgentDaemonPool.Configuration(token: "tok", appSupportRoot: root)
+        )
+        let router = PickyAgentClientRouter(
+            primaryClient: primary,
+            pool: pool,
+            clientFactory: StubClientFactory(),
+            supportsSessionProjectionV2: false
+        )
+
+        await router.connect()
+        try await waitUntil { primary.sentCommands.contains { $0.type == .registerAppCapabilities } }
+
+        let registration = try #require(primary.sentCommands.first { $0.type == .registerAppCapabilities })
+        #expect(registration.capabilities == ["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl", "settingsControl"])
+        #expect(!(registration.capabilities?.contains("sessionProjectionV2") ?? false))
     }
 
     @Test func sendsCompleteExternalEntryWithCapturedContextWhenProviderResolves() async throws {
@@ -564,7 +590,12 @@ struct PickyAgentClientRouterTests {
             factory: poolFactory
         )
         let clientFactory = StubClientFactory()
-        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: clientFactory)
+        let router = PickyAgentClientRouter(
+            primaryClient: primary,
+            pool: pool,
+            clientFactory: clientFactory,
+            supportsSessionProjectionV2: true
+        )
 
         async let spawned: PickyAgentClient = router.spawnChildClient(sessionId: "pickle-capability", cwd: "/tmp/ws")
         _ = try await poolFactory.waitForRunner(sessionId: "pickle-capability")
@@ -574,7 +605,7 @@ struct PickyAgentClientRouterTests {
         let child = try #require(clientFactory.madeClients.first?.client)
         try await waitUntil { child.sentCommands.contains { $0.type == .registerAppCapabilities } }
         let registration = try #require(child.sentCommands.first { $0.type == .registerAppCapabilities })
-        #expect(registration.capabilities == ["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl", "settingsControl"])
+        #expect(registration.capabilities == ["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl", "settingsControl", "sessionProjectionV2"])
         #expect(primary.sentCommands.filter { $0.type == .registerAppCapabilities }.isEmpty)
     }
 

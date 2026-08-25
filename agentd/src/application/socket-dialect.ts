@@ -22,8 +22,16 @@ export function isLegacySessionProjectionCommand(type: string): boolean {
   return LEGACY_SESSION_PROJECTION_COMMANDS.has(type);
 }
 
+const V2_SESSION_PROJECTION_EVENT_TYPES = new Set([
+  "sessionProjectionSnapshot", "sessionProjectionTransaction",
+]);
+
 export function isLegacySessionProjectionEventType(type: string): boolean {
   return LEGACY_SESSION_PROJECTION_EVENT_TYPES.has(type);
+}
+
+export function isV2SessionProjectionEventType(type: string): boolean {
+  return V2_SESSION_PROJECTION_EVENT_TYPES.has(type);
 }
 
 /**

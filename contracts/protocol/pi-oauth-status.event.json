@@ -1,6 +1,6 @@
 {
   "id": "event-oauth-status-001",
-  "protocolVersion": "2026-08-23",
+  "protocolVersion": "2026-08-25",
   "timestamp": "2026-07-23T00:00:00.000Z",
   "type": "piOAuthStatus",
   "requestId": "cmd-oauth-login-001",

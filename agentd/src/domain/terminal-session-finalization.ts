@@ -115,18 +115,31 @@ export function finalizeTerminalSession(input: TerminalSessionFinalizationInput)
 
   return {
     nextSession,
-    mutations: terminalMutations(currentSession, nextSession),
+    mutations: buildSessionProjectionMutations(currentSession, nextSession),
     transientResets: terminalResets,
   };
 }
 
-function terminalMutations(before: Readonly<PickyAgentSession>, after: PickyAgentSession): PickySessionProjectionMutation[] {
+/**
+ * Builds the ordered v2 mutation plan for any durable session commit. Terminal
+ * finalization and ordinary supervisor commits share this planner so their
+ * projections cannot drift into two ownership models.
+ */
+export function buildSessionProjectionMutations(before: Readonly<PickyAgentSession>, after: PickyAgentSession): PickySessionProjectionMutation[] {
   return [
     ...metaMutations(before, after),
+    ...logMutations(before, after),
     ...messageMutations(before, after),
     ...toolAndStateMutations(before, after),
     ...artifactAndPresentationMutations(before, after),
   ];
+}
+
+function logMutations(before: Readonly<PickyAgentSession>, after: PickyAgentSession): PickySessionProjectionMutation[] {
+  const previous = before.logs;
+  const next = after.logs;
+  if (next.length <= previous.length || !previous.every((line, index) => line === next[index])) return [];
+  return next.slice(previous.length).map((line) => ({ type: "logAppend" as const, line }));
 }
 
 function metaMutations(before: Readonly<PickyAgentSession>, after: PickyAgentSession): PickySessionProjectionMutation[] {

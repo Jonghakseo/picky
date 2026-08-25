@@ -7,7 +7,9 @@ import { FOLLOWUP_PREFIX, HANDOFF_PREFIX, STEER_PREFIX } from "./domain/log-pref
 import { PROTOCOL_VERSION, PickyAgentSessionMetaSchema, PickyAgentSessionSchema, parseCommand, type DockGroup, type EventEnvelope, type PickyAgentSession, type PickyAgentSessionMeta, type PickyAgentSessionParsed, type PickyContextPacket, type PickyPushToTalkControlAction } from "./protocol.js";
 import { APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT, boundedSessionForAppHydration, compactSessionForAppSnapshot, eventPayloadByteLength, minimalSessionForAppSnapshot, truncateText } from "./application/app-session-snapshot-policy.js";
 import { ProjectionRecoveryRequestGate } from "./application/session-projection-recovery.js";
-import { isLegacySessionProjectionEventType, SocketDialectRegistry } from "./application/socket-dialect.js";
+import { SessionProjectionV2Broadcaster } from "./application/session-projection-v2-broadcaster.js";
+import { assertProtocolVersion } from "./application/protocol-version-guard.js";
+import { isLegacySessionProjectionEventType, isV2SessionProjectionEventType, SocketDialectRegistry } from "./application/socket-dialect.js";
 import type { SessionSupervisor } from "./session-supervisor.js";
 import { logAgentd } from "./local-log.js";
 import { EdgeTTSServiceError } from "./edge-tts-service.js";
@@ -17,7 +19,6 @@ export { createDefaultPackageManager, type DefaultPackageManagerDependencies } f
 import type { PiOAuthHandling } from "./application/pi-oauth-service.js";
 import { SettingsControlBroker, SettingsControlError } from "./application/settings-control-broker.js";
 export { APP_SETTINGS_CONTROL_UNAVAILABLE } from "./application/settings-control-broker.js";
-
 export interface AgentdServerOptions {
   port: number;
   token: string;
@@ -35,12 +36,10 @@ export interface AgentdServerOptions {
   /** Primary-only provider authentication coordinator. */
   piOAuth?: PiOAuthHandling;
 }
-
 type ParsedCommand = ReturnType<typeof parseCommand>;
 type CommandHandlerMap = {
   [Type in ParsedCommand["type"]]: (command: Extract<ParsedCommand, { type: Type }>) => unknown;
 };
-
 export interface AppPickleHandoffRequest {
   context: PickyContextPacket;
   title: string;
@@ -81,7 +80,6 @@ const PUSH_TO_TALK_CONTROL_TIMEOUT_MS = 2_000;
 export const APP_DOCK_GROUPS_UNAVAILABLE = "Picky app dock groups unavailable";
 const APP_DOCK_GROUPS_TIMEOUT = "Picky app dock groups request timed out";
 const DOCK_GROUPS_TIMEOUT_MS = 4_000;
-
 export class AgentdServer {
   private httpServer?: HttpServer;
   private wsServer?: WebSocketServer;
@@ -89,6 +87,7 @@ export class AgentdServer {
   private appCapabilities = new WeakMap<WebSocket, Set<string>>();
   private readonly socketDialects = new SocketDialectRegistry();
   private readonly projectionRecoveryRequestGate = new ProjectionRecoveryRequestGate();
+  private readonly v2ProjectionBroadcaster = new SessionProjectionV2Broadcaster<WebSocket>({ sockets: () => this.clients, getDialect: (socket) => this.socketDialects.get(socket), send: (socket, payload) => { this.send(socket, payload); }, close: (socket) => socket.close(1011, "Session projection bootstrap failed") });
   private pendingPickleHandoffs = new Map<string, { resolve: (result: AppPickleHandoffResult) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
   private pendingPickleBridgeRequests = new Map<string, { resolve: (result: AppPickleBridgeResult) => void; reject: (error: Error) => void; timer: NodeJS.Timeout; app: WebSocket }>();
   private pendingExternalEntries = new Map<string, ExternalEntryPending>();
@@ -140,6 +139,7 @@ export class AgentdServer {
       this.wsServer?.handleUpgrade(request, socket, head, (ws) => this.accept(ws));
     });
 
+    this.v2ProjectionBroadcaster.bind(this.options.supervisor);
     this.options.supervisor.on("session", (session) => this.broadcast({ type: "sessionUpdated", session: protocolSession(session) }));
     this.options.supervisor.on("sessionMeta", (session) => this.broadcast({ type: "sessionMetaUpdated", session: protocolSessionMeta(session) }));
     this.options.supervisor.on("sessionArchivedAuthoritative", (sessionId: string, archived: boolean) => this.broadcast({ type: "sessionArchivedAuthoritative", sessionId, archived }));
@@ -302,7 +302,7 @@ export class AgentdServer {
     this.clients.add(ws);
     logAgentd("ws connected", { clients: this.clients.size });
     ws.on("close", () => {
-      this.clients.delete(ws);
+      this.v2ProjectionBroadcaster.unregister(ws); this.clients.delete(ws);
       const lostCapabilities = this.appCapabilities.get(ws);
       this.appCapabilities.delete(ws);
       // Pickle handoffs are intentionally NOT rejected on socket close: the app
@@ -365,6 +365,7 @@ export class AgentdServer {
     let parsed: unknown;
     try {
       parsed = JSON.parse(raw);
+      assertProtocolVersion(parsed, PROTOCOL_VERSION);
       const command = parseCommand(parsed);
       logAgentd("command received", commandLogFields(command));
       await this.dispatchCommand(ws, command);
@@ -666,10 +667,10 @@ export class AgentdServer {
     if (!this.options.piOAuth) throw new Error("Pi OAuth is available only on the primary daemon");
     return this.options.piOAuth;
   }
-  private registerAppCapabilities(ws: WebSocket, capabilities: string[]): void {
-    const dialect = this.socketDialects.lockFromCapabilities(ws, capabilities);
-    this.appCapabilities.set(ws, new Set(capabilities));
-    logAgentd("app capabilities registered", { capabilities: capabilities.join(","), dialect });
+  private async registerAppCapabilities(ws: WebSocket, capabilities: string[]): Promise<void> {
+    const previousDialect = this.socketDialects.get(ws); const dialect = this.socketDialects.lockFromCapabilities(ws, capabilities);
+    this.appCapabilities.set(ws, new Set(capabilities)); logAgentd("app capabilities registered", { capabilities: capabilities.join(","), dialect });
+    await this.v2ProjectionBroadcaster.register(ws, previousDialect, dialect, this.options.supervisor);
   }
   private sendSessionSnapshot(ws: WebSocket, sessions: PickyAgentSessionParsed[]): void {
     if (this.socketDialects.get(ws) !== "v1") return;
@@ -1022,7 +1023,7 @@ export class AgentdServer {
   }
 
   private send(ws: WebSocket, payload: EventPayload): { bytes: number; type: string } {
-    if (isLegacySessionProjectionEventType(payload.type) && this.socketDialects.get(ws) !== "v1") return { bytes: 0, type: payload.type };
+    if ((isLegacySessionProjectionEventType(payload.type) && this.socketDialects.get(ws) !== "v1") || (isV2SessionProjectionEventType(payload.type) && this.socketDialects.get(ws) !== "v2")) return { bytes: 0, type: payload.type };
     const event: EventEnvelope = sanitizeForJson({ id: `event-${randomUUID()}`, protocolVersion: PROTOCOL_VERSION, timestamp: new Date().toISOString(), ...payload } as EventEnvelope);
     const json = JSON.stringify(event);
     logAgentd("event sent", eventLogFields(event));

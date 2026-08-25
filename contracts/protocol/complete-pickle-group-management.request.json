@@ -1,6 +1,6 @@
 {
   "id": "cmd-complete-pickle-group-management-001",
-  "protocolVersion": "2026-08-23",
+  "protocolVersion": "2026-08-25",
   "type": "completePickleBridgeRequest",
   "requestId": "pickle-bridge-groups-001",
   "groups": [

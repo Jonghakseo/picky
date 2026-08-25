@@ -7,7 +7,7 @@
 
 import Foundation
 
-let pickyAgentProtocolVersion = "2026-08-23"
+let pickyAgentProtocolVersion = "2026-08-25"
 
 /// User-configurable Picky main-agent tools. Pickle delegation and management
 /// use the local `picky` CLI through bash and are always available, so only

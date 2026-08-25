@@ -1,6 +1,6 @@
 {
   "id": "event-session-diff-001",
-  "protocolVersion": "2026-08-23",
+  "protocolVersion": "2026-08-25",
   "timestamp": "2026-08-02T00:00:00.000Z",
   "type": "sessionDiffResult",
   "sessionId": "session-001",

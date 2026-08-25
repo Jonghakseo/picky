@@ -1,15 +1,15 @@
 {
   "id": "event-session-meta-001",
-  "protocolVersion": "2026-08-23",
-  "timestamp": "2026-08-23T00:00:01.000Z",
+  "protocolVersion": "2026-08-25",
+  "timestamp": "2026-08-25T00:00:01.000Z",
   "type": "sessionMetaUpdated",
   "session": {
     "id": "session-001",
     "title": "Investigate thin updates",
     "status": "running",
     "cwd": "/tmp/picky",
-    "createdAt": "2026-08-23T00:00:00.000Z",
-    "updatedAt": "2026-08-23T00:00:01.000Z",
+    "createdAt": "2026-08-25T00:00:00.000Z",
+    "updatedAt": "2026-08-25T00:00:01.000Z",
     "lastSummary": "Running bash: pnpm test",
     "artifacts": [],
     "changedFiles": []

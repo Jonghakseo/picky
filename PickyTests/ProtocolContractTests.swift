@@ -9,7 +9,7 @@ import Testing
 
 struct ProtocolContractTests {
     @Test func exposesCurrentProtocolVersion() {
-        #expect(pickyAgentProtocolVersion == "2026-08-23")
+        #expect(pickyAgentProtocolVersion == "2026-08-25")
     }
 
     @Test func decodesSessionMetaUpdateWithoutConversationMessages() throws {
@@ -993,15 +993,15 @@ struct ProtocolContractTests {
 
     @Test func rejectsInvalidProjectionEventsAsUnknown() throws {
         let invalidTransactions = [
-            #"{"id":"invalid-revision","protocolVersion":"2026-08-23","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionTransaction","sessionId":"session-001","epoch":"epoch-001","baseRevision":5,"revision":5,"mutations":[{"type":"metaPatch","patch":{}}]}"#,
-            #"{"id":"invalid-mutation","protocolVersion":"2026-08-23","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionTransaction","sessionId":"session-001","epoch":"epoch-001","baseRevision":4,"revision":5,"mutations":[{"type":"unknown"}]}"#,
-            #"{"id":"invalid-meta-patch-key","protocolVersion":"2026-08-23","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionTransaction","sessionId":"session-001","epoch":"epoch-001","baseRevision":4,"revision":5,"mutations":[{"type":"metaPatch","patch":{"statuz":"completed"}}]}"#,
-            #"{"id":"invalid-extension-session","protocolVersion":"2026-08-23","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionTransaction","sessionId":"session-001","epoch":"epoch-001","baseRevision":4,"revision":5,"mutations":[{"type":"extensionUiRequestSet","request":{"id":"request-001","sessionId":"other-session","method":"confirm","createdAt":"2026-08-24T00:00:00.000Z"}}]}"#,
+            #"{"id":"invalid-revision","protocolVersion":"2026-08-25","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionTransaction","sessionId":"session-001","epoch":"epoch-001","baseRevision":5,"revision":5,"mutations":[{"type":"metaPatch","patch":{}}]}"#,
+            #"{"id":"invalid-mutation","protocolVersion":"2026-08-25","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionTransaction","sessionId":"session-001","epoch":"epoch-001","baseRevision":4,"revision":5,"mutations":[{"type":"unknown"}]}"#,
+            #"{"id":"invalid-meta-patch-key","protocolVersion":"2026-08-25","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionTransaction","sessionId":"session-001","epoch":"epoch-001","baseRevision":4,"revision":5,"mutations":[{"type":"metaPatch","patch":{"statuz":"completed"}}]}"#,
+            #"{"id":"invalid-extension-session","protocolVersion":"2026-08-25","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionTransaction","sessionId":"session-001","epoch":"epoch-001","baseRevision":4,"revision":5,"mutations":[{"type":"extensionUiRequestSet","request":{"id":"request-001","sessionId":"other-session","method":"confirm","createdAt":"2026-08-24T00:00:00.000Z"}}]}"#,
         ]
         let invalidSnapshots = [
-            #"{"id":"invalid-complete","protocolVersion":"2026-08-23","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionSnapshot","sessionId":"session-001","epoch":"epoch-001","revision":5,"complete":true,"omittedFields":["messages"],"projection":{"id":"session-001","title":"Projection","status":"running","createdAt":"2026-08-24T00:00:00.000Z","updatedAt":"2026-08-24T00:00:00.000Z"}}"#,
-            #"{"id":"invalid-field","protocolVersion":"2026-08-23","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionSnapshot","sessionId":"session-001","epoch":"epoch-001","revision":5,"complete":false,"omittedFields":["notAStoredSessionField"],"projection":{"id":"session-001","title":"Projection","status":"running","createdAt":"2026-08-24T00:00:00.000Z","updatedAt":"2026-08-24T00:00:00.000Z"}}"#,
-            #"{"id":"invalid-duplicate","protocolVersion":"2026-08-23","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionSnapshot","sessionId":"session-001","epoch":"epoch-001","revision":5,"complete":false,"omittedFields":["messages","messages"],"projection":{"id":"session-001","title":"Projection","status":"running","createdAt":"2026-08-24T00:00:00.000Z","updatedAt":"2026-08-24T00:00:00.000Z"}}"#,
+            #"{"id":"invalid-complete","protocolVersion":"2026-08-25","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionSnapshot","sessionId":"session-001","epoch":"epoch-001","revision":5,"complete":true,"omittedFields":["messages"],"projection":{"id":"session-001","title":"Projection","status":"running","createdAt":"2026-08-24T00:00:00.000Z","updatedAt":"2026-08-24T00:00:00.000Z"}}"#,
+            #"{"id":"invalid-field","protocolVersion":"2026-08-25","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionSnapshot","sessionId":"session-001","epoch":"epoch-001","revision":5,"complete":false,"omittedFields":["notAStoredSessionField"],"projection":{"id":"session-001","title":"Projection","status":"running","createdAt":"2026-08-24T00:00:00.000Z","updatedAt":"2026-08-24T00:00:00.000Z"}}"#,
+            #"{"id":"invalid-duplicate","protocolVersion":"2026-08-25","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionSnapshot","sessionId":"session-001","epoch":"epoch-001","revision":5,"complete":false,"omittedFields":["messages","messages"],"projection":{"id":"session-001","title":"Projection","status":"running","createdAt":"2026-08-24T00:00:00.000Z","updatedAt":"2026-08-24T00:00:00.000Z"}}"#,
         ]
         let decoder = JSONDecoder.pickyAgentProtocolDecoder()
 

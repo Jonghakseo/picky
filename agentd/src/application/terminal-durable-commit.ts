@@ -1,5 +1,6 @@
 import type { PickyActivitySummary, PickyAgentSession, PickyArtifact, PickySessionMessage, PickySessionProjectionMutation } from "../protocol.js";
 import { finalizeTerminalSession, type TerminalRuntimeStatusEvent, type TerminalTransientReset } from "../domain/terminal-session-finalization.js";
+export { buildSessionProjectionMutations } from "../domain/terminal-session-finalization.js";
 import { cleanFinalAnswer } from "../domain/session-summary.js";
 import { hasActivity, zeroActivitySummary } from "../domain/activity-summary.js";
 import { nextRevision } from "../domain/session-revision-policy.js";

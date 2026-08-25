@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const PROTOCOL_VERSION = "2026-08-23";
+export const PROTOCOL_VERSION = "2026-08-25";
 
 const isoTimestamp = z.string().datetime({ offset: true });
 
@@ -634,8 +634,8 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("getSessionDiff"), sessionId: z.string(), view: PickySessionDiffViewSchema, requestId: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("rewindSession"), sessionId: z.string(), entryId: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("getSession"), sessionId: z.string() }),
-  // Dormant until W6.5: recovery snapshots are unicast only and do not select
-  // a v2 socket dialect or enable transaction broadcasts.
+  // Recovery snapshots are unicast only and require a socket already locked to
+  // the v2 projection dialect.
   CommandBaseSchema.extend({ type: z.literal("getSessionProjectionSnapshot"), requestId: z.string().min(1), sessionId: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("answerExtensionUi"), sessionId: z.string(), requestId: z.string(), value: z.unknown().optional() }),
   CommandBaseSchema.extend({ type: z.literal("answerMainExtensionUi"), requestId: z.string().min(1), value: z.unknown().optional() }),
@@ -658,8 +658,7 @@ const QuickReplyKindSchema = z.preprocess((value) => {
   return value;
 }, z.enum(["main", "pickleCompletion", "router", "handoffAck", "error", "unknown"]));
 
-// These schemas are intentionally dormant until the atomic v2 protocol cutover:
-// server.ts must not broadcast either projection event before that change.
+// Projection v2 frames are emitted only to sockets locked to the v2 dialect.
 export const PickySessionProjectionTransactionEventSchema = EventBaseSchema.extend({
   type: z.literal("sessionProjectionTransaction"),
   sessionId: z.string(),

@@ -1,7 +1,7 @@
 {
   "id": "event-pickle-group-management-001",
-  "protocolVersion": "2026-08-23",
-  "timestamp": "2026-08-23T04:00:00.000Z",
+  "protocolVersion": "2026-08-25",
+  "timestamp": "2026-08-25T04:00:00.000Z",
   "type": "pickleBridgeRequested",
   "requestId": "pickle-bridge-groups-001",
   "operation": "manageGroups",

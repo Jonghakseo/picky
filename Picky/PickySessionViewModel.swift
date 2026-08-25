@@ -75,7 +75,7 @@ final class PickySessionListViewModel: ObservableObject {
     /// Sessions that finished or are waiting for input but have not been opened
     /// by the user yet. Lives on the view model (single source of truth) so all
     /// dock instances render the indicator in sync.
-    @Published private(set) var unreadSessionIDs: Set<String> = [] {
+    @Published var unreadSessionIDs: Set<String> = [] {
         didSet { scheduleDockStateSync() }
     }
     @Published private(set) var recentPickleCwds: [String] {
@@ -84,7 +84,7 @@ final class PickySessionListViewModel: ObservableObject {
     @Published private(set) var pinnedPickleCwds: [String] {
         didSet { scheduleDockStateSync() }
     }
-    @Published private(set) var isLoadingInitialSessionSnapshot = true {
+    @Published var isLoadingInitialSessionSnapshot = true {
         didSet { scheduleDockStateSync() }
     }
     @Published private(set) var openSessionRequest: PickyHUDOpenSessionRequest? {
@@ -115,7 +115,7 @@ final class PickySessionListViewModel: ObservableObject {
     private let notificationCenter: PickyNotificationDelivering
     private let notificationPreferencesProvider: PickyNotificationPreferencesProviding
     private let selectionStore: PickySessionSelectionStoring
-    private let archiveStore: PickySessionArchiveStoring
+    let archiveStore: PickySessionArchiveStoring
     private let manualOrderStore: PickySessionManualOrderStoring
     /// User-controlled dock order. Stored in the same direction as `sessions`
     /// (newest at index 0 = visually-end slot after `sessions.reversed()`). IDs
@@ -155,7 +155,7 @@ final class PickySessionListViewModel: ObservableObject {
     private let childSessionReleaser: (any PickyChildSessionReleasing)?
     private let archiveCommitDelayNanoseconds: UInt64
     private var archiveCommitTasks: [String: Task<Void, Never>] = [:]
-    private var releasedArchivedChildSessionIDs = Set<String>()
+    var releasedArchivedChildSessionIDs = Set<String>()
     private let manualPickleSessionIdFactory: () -> String
     private var terminalSessionCommandChains: [String: Task<Void, Never>] = [:]
     private var terminalOverlayHandlesBySessionID: [String: PickyTerminalOverlayHandle] = [:]
@@ -189,11 +189,11 @@ final class PickySessionListViewModel: ObservableObject {
     private let slashCommandSuggestionSlowLogThreshold: TimeInterval = 0.02
     private var lastIncrementalSeqBySessionID: [String: Int] = [:]
     private var hasExplicitSelection = false
-    private let sessionProjectionStorage: any PickySessionProjectionStorage
+    let sessionProjectionStorage: any PickySessionProjectionStorage
     /// v1 presentation adapter only; storage ownership remains backend-neutral.
     private let v1SessionProjectionStorageRelay: (any PickySessionProjectionStorageV1Relaying)?
     private var sessionProjectionStorageCancellable: AnyCancellable?
-
+    private var sessionProjectionRecoveryCoordinator: PickySessionRecoveryCoordinator?
     init(
         client: any PickyAgentClient,
         notificationCenter: PickyNotificationDelivering = PickySystemNotificationCenter(),
@@ -293,6 +293,7 @@ final class PickySessionListViewModel: ObservableObject {
         self.sessionProjectionStorageCancellable = self.sessionProjectionStorage.changes.sink { [weak self] snapshot in
             self?.relaySessionProjectionStorageChange(snapshot)
         }
+        self.sessionProjectionRecoveryCoordinator = Self.makeSessionProjectionRecoveryCoordinator(for: self)
         syncDockStateNow()
     }
 
@@ -400,7 +401,7 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
-    private func disarmInitialSnapshotWatchdog() {
+    func disarmInitialSnapshotWatchdog() {
         initialSnapshotWatchdogTask?.cancel()
         initialSnapshotWatchdogTask = nil
     }
@@ -1621,7 +1622,7 @@ final class PickySessionListViewModel: ObservableObject {
         archiveCommitTasks[sessionID] = task
     }
 
-    private func releaseArchivedTerminalChildIfCommitted(_ session: SessionCard) {
+    func releaseArchivedTerminalChildIfCommitted(_ session: SessionCard) {
         guard session.status.isTerminal else { return }
         guard archiveCommitTasks[session.id] == nil else { return }
         guard !releasedArchivedChildSessionIDs.contains(session.id) else { return }
@@ -1804,6 +1805,10 @@ final class PickySessionListViewModel: ObservableObject {
         switch event {
         case .sessionSnapshot(let snapshot):
             applySessionSnapshot(snapshot)
+        case .sessionProjectionSnapshot(let snapshot):
+            sessionProjectionRecoveryCoordinator?.receive(snapshot: snapshot)
+        case .sessionProjectionTransaction(let transaction):
+            sessionProjectionRecoveryCoordinator?.receive(transaction: transaction)
         case .sessionUpdated(let session):
             applySessionUpdated(session)
         case .sessionMetaUpdated(let session):
@@ -1860,7 +1865,7 @@ final class PickySessionListViewModel: ObservableObject {
             if let sessionID = accepted.sessionId, let groupName = accepted.group {
                 assignSessionToDockGroup(sessionID: sessionID, groupName: groupName)
             }
-        case .sessionProjectionTransaction, .sessionProjectionSnapshot, .quickReply, .mainTurnSettled, .mainNarrationChunk,
+        case .quickReply, .mainTurnSettled, .mainNarrationChunk,
              .mainVisualNarrationSegmentPrepared, .mainVisualNarrationSegmentSentence, .mainVisualNarrationSegmentCommitted,
              .mainMessagesSnapshot, .mainMessageAppended, .mainActivityUpdated, .mainExtensionUiRequested, .mainExtensionUiCancelled,
              .mainAgentSessionInfoUpdated, .mainAgentModelsSnapshot,
@@ -1873,7 +1878,6 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     // MARK: - Protocol event handlers
-
     private func applySessionSnapshot(_ snapshot: PickySessionSnapshot) {
         PickyPerf.event("vm_event_session_snapshot")
         let elapsedSinceConnectedMs = lastConnectedAt.map { Int(Date().timeIntervalSince($0) * 1000) } ?? -1
@@ -2432,7 +2436,7 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
-    private func requestDoneFlashIfNeeded(previousStatus: PickySessionStatus?, incoming: SessionCard) {
+    func requestDoneFlashIfNeeded(previousStatus: PickySessionStatus?, incoming: SessionCard) {
         // Only celebrate live transitions into completed. nil previousStatus means a brand-new
         // session arriving already as .completed (e.g. snapshot replay routed through upsert);
         // the user did not watch it transition so we skip the flash. Snapshot hydration writes
@@ -2448,7 +2452,7 @@ final class PickySessionListViewModel: ObservableObject {
     /// the flag the moment the session leaves that bucket on its own — e.g. a
     /// follow-up turn drives it back into `.running` — so the dot does not
     /// linger past the user's attention.
-    private func updateUnreadStateIfNeeded(previousStatus: PickySessionStatus?, incoming: SessionCard) {
+    func updateUnreadStateIfNeeded(previousStatus: PickySessionStatus?, incoming: SessionCard) {
         let attentionStates: Set<PickySessionStatus> = [.completed, .failed, .waiting_for_input]
         let isAttentionNow = attentionStates.contains(incoming.status)
         let wasAttentionBefore = previousStatus.map(attentionStates.contains) ?? false
@@ -2765,7 +2769,7 @@ final class PickySessionListViewModel: ObservableObject {
         dockLayout = dockLayoutController.layout
     }
 
-    private func syncSelectionAfterSessionListChange() {
+    func syncSelectionAfterSessionListChange() {
         if hasExplicitSelection, let selectedSessionID, sessions.contains(where: { $0.id == selectedSessionID }) {
             selectionStore.selectedSessionID = selectedSessionID
         } else {
@@ -2775,7 +2779,7 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
-    private func syncVoiceFollowUpAfterSessionListChange() {
+    func syncVoiceFollowUpAfterSessionListChange() {
         if let hoveredVoiceFollowUpSessionID, sessions.contains(where: { $0.id == hoveredVoiceFollowUpSessionID }) {
             selectionStore.hoveredVoiceFollowUpSessionID = hoveredVoiceFollowUpSessionID
         } else {
@@ -2784,7 +2788,7 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
-    private func syncScreenContextTargetAfterSessionListChange() {
+    func syncScreenContextTargetAfterSessionListChange() {
         if let screenContextTargetSessionID,
            let session = sessions.first(where: { $0.id == screenContextTargetSessionID }) {
             if let labelStore = selectionStore as? PickyScreenContextTargetLabelStoring {
@@ -2807,7 +2811,7 @@ final class PickySessionListViewModel: ObservableObject {
         syncActiveVoiceFollowUpAfterSessionListChange()
     }
 
-    private func syncActiveVoiceFollowUpAfterSessionListChange() {
+    func syncActiveVoiceFollowUpAfterSessionListChange() {
         if let activeVoiceFollowUpSessionID, sessions.contains(where: { $0.id == activeVoiceFollowUpSessionID }) {
             return
         }
@@ -2823,7 +2827,7 @@ final class PickySessionListViewModel: ObservableObject {
         deliveredNotificationKeys.insert(notification.key)
     }
 
-    private func deliverNotificationIfNeeded(for session: SessionCard) {
+    func deliverNotificationIfNeeded(for session: SessionCard) {
         guard let notification = notification(for: session) else {
             resetTerminalNotificationKeysIfNeeded(for: session)
             return

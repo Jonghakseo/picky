@@ -50,6 +50,9 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     private let clientFactory: PickyAgentClientFactoryProtocol
     private let handoffPickleSessionIdFactory: () -> String
     private let permanentDeletionAcknowledgementTimeout: TimeInterval
+    /// The router may advertise the v2 socket dialect only when its consumer
+    /// is wired to the registry-backed projection storage.
+    private let supportsSessionProjectionV2: Bool
     private var childClients: [String: PickyAgentClient] = [:]
     private var eventTasks: [String: Task<Void, Never>] = [:]
     private var primaryConnectStarted = false
@@ -205,13 +208,15 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         pool: PickyAgentDaemonPool,
         clientFactory: PickyAgentClientFactoryProtocol = DefaultPickyAgentClientFactory(),
         handoffPickleSessionIdFactory: @escaping () -> String = { "session-\(UUID().uuidString)" },
-        permanentDeletionAcknowledgementTimeout: TimeInterval = 5
+        permanentDeletionAcknowledgementTimeout: TimeInterval = 5,
+        supportsSessionProjectionV2: Bool = false
     ) {
         self.primaryClient = primaryClient
         self.pool = pool
         self.clientFactory = clientFactory
         self.handoffPickleSessionIdFactory = handoffPickleSessionIdFactory
         self.permanentDeletionAcknowledgementTimeout = permanentDeletionAcknowledgementTimeout
+        self.supportsSessionProjectionV2 = supportsSessionProjectionV2
         // Drop the cached websocket client (and stop its reconnect loop) the moment the pool
         // notices the underlying child daemon has exited. Without this, the legacy receiveLoop
         // in WebSocketPickyAgentClient would keep reconnecting forever to a dead random port.
@@ -860,9 +865,13 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     }
 
     private func registerAppCapabilities(on client: PickyAgentClient) async {
+        var capabilities = ["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl", "settingsControl"]
+        if supportsSessionProjectionV2 {
+            capabilities.append("sessionProjectionV2")
+        }
         try? await client.send(PickyCommandEnvelope(
             type: .registerAppCapabilities,
-            capabilities: ["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl", "settingsControl"]
+            capabilities: capabilities
         ))
     }
 

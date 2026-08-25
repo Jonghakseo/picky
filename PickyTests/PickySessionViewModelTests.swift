@@ -5504,7 +5504,7 @@ struct PickySessionViewModelTests {
         #expect(viewModel.sessions.first?.activitySummary == PickyActivitySummary(edit: 2, bash: 3, thinking: 4, other: 5))
     }
 
-    @MainActor @Test func ignoresDormantProjectionEventsUntilProtocolCutover() {
+    @MainActor @Test func appliesProjectionBootstrapAfterProtocolCutover() {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
             id: "session-001",
@@ -5513,15 +5513,15 @@ struct PickySessionViewModelTests {
         ))))
 
         for eventJSON in [
-            #"{"id":"projection-transaction","protocolVersion":"2026-08-23","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionTransaction","sessionId":"session-001","epoch":"epoch-001","baseRevision":4,"revision":5,"mutations":[{"type":"metaPatch","patch":{"status":"completed"}}]}"#,
-            #"{"id":"projection-snapshot","protocolVersion":"2026-08-23","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionSnapshot","sessionId":"session-001","epoch":"epoch-001","revision":5,"complete":false,"omittedFields":["messages"],"projection":{"id":"session-001","title":"Dormant v2 projection","status":"completed","createdAt":"2026-08-24T00:00:00.000Z","updatedAt":"2026-08-24T00:00:00.000Z"}}"#,
+            #"{"id":"projection-transaction","protocolVersion":"2026-08-25","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionTransaction","sessionId":"session-001","epoch":"epoch-001","baseRevision":4,"revision":5,"mutations":[{"type":"metaPatch","patch":{"status":"completed"}}]}"#,
+            #"{"id":"projection-snapshot","protocolVersion":"2026-08-25","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionSnapshot","sessionId":"session-001","epoch":"epoch-001","revision":5,"complete":false,"omittedFields":["messages"],"projection":{"id":"session-001","title":"Dormant v2 projection","status":"completed","createdAt":"2026-08-24T00:00:00.000Z","updatedAt":"2026-08-24T00:00:00.000Z"}}"#,
         ] {
             viewModel.apply(.protocolEvent(.fixture(eventJSON: eventJSON)))
         }
 
         #expect(viewModel.sessions.count == 1)
-        #expect(viewModel.sessions.first?.title == "Current v1 projection")
-        #expect(viewModel.sessions.first?.status == .running)
+        #expect(viewModel.sessions.first?.title == "Dormant v2 projection")
+        #expect(viewModel.sessions.first?.status == .completed)
     }
 
     @Test func clearQueueSendsClearQueueCommandEnvelope() async throws {
@@ -5698,7 +5698,7 @@ private enum EventJSON {
     ) -> String {
         let encodedCwd = String(decoding: try! JSONEncoder().encode(cwd), as: UTF8.self)
         return """
-        {"id":"meta-\(id)-\(status)","protocolVersion":"2026-08-23","timestamp":"\(updatedAt)","type":"sessionMetaUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":\(encodedCwd),"createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","artifacts":[],"changedFiles":[]}}
+        {"id":"meta-\(id)-\(status)","protocolVersion":"2026-08-25","timestamp":"\(updatedAt)","type":"sessionMetaUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":\(encodedCwd),"createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","artifacts":[],"changedFiles":[]}}
         """
     }
 

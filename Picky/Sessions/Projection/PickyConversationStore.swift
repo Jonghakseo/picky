@@ -60,6 +60,19 @@ final class PickyConversationStore {
         valueRevision += 1
     }
 
+    func removeMessage(id: String) {
+        messagesByID[id]?.markUnavailable()
+        messagesByID.removeValue(forKey: id)
+        orderedMessageIDs.removeAll { $0 == id }
+        state = .loaded(orderedMessageIDs.compactMap { messagesByID[$0]?.messageState.loadedValue })
+        valueRevision += 1
+    }
+
+    func markMessageJournalAvailabilityUnavailable() {
+        messageJournalAvailability = .unavailable
+        valueRevision += 1
+    }
+
     func markMessagesUnavailable() {
         for store in messagesByID.values {
             store.markUnavailable()

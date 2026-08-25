@@ -1,6 +1,6 @@
 {
   "id": "cmd-control-pickle-001",
-  "protocolVersion": "2026-08-23",
+  "protocolVersion": "2026-08-25",
   "type": "controlPickle",
   "caller": "mainAgent",
   "pickleAction": "steer",

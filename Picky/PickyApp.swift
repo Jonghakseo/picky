@@ -142,7 +142,8 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     )
     private lazy var hudAgentClientRouter = PickyAgentClientRouter(
         primaryClient: hudPrimaryAgentClient,
-        pool: agentDaemonPool
+        pool: agentDaemonPool,
+        supportsSessionProjectionV2: true
     )
     /// Hoisted out of `hudOverlayManager` so the onboarding coordinator can
     /// also observe it (it needs to detect when the user long-presses the demo

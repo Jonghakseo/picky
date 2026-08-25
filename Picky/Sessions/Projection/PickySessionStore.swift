@@ -104,7 +104,7 @@ final class PickySessionStore {
             contextUsage: metadata.contextUsage,
             currentAssistantRun: metadata.currentAssistantRun,
             pendingExtensionUiRequest: request,
-            piSessionFilePath: metadata.piSessionFilePath,
+            piSessionFilePath: presentation.piSessionFilePath ?? metadata.piSessionFilePath,
             notifyMainOnCompletion: metadata.notifyMainOnCompletion,
             pinned: metadata.pinned ?? false,
             archived: metadata.archived ?? false,
@@ -182,20 +182,45 @@ final class PickySessionStore {
         }
         extensionUiStore.replace(request)
     }
+
+    func appendProjectionLog(_ line: String) {
+        if PickySessionListViewModel.SessionCard.isDisplayableLogPreview(line) {
+            presentation.logPreview = line
+        }
+        if PickySessionListViewModel.SessionCard.isMainAgentHandoffLogLine(line) {
+            presentation.isMainAgentHandoff = true
+        }
+        if let piSessionFilePath = PickySessionListViewModel.SessionCard.piSessionFilePath(fromLogLine: line) {
+            presentation.piSessionFilePath = piSessionFilePath
+        }
+        if let requestText = PickySessionListViewModel.SessionCard.requestText(fromLogLine: line) {
+            presentation.lastRequestText = requestText
+            presentation.lastRequestAt = Date()
+        }
+        if PickySessionListViewModel.SessionCard.isRuntimeDetachedFollowUpRejection(line) {
+            presentation.hasRuntimeDetachedFollowUpRejection = true
+        }
+    }
+
+    func applyProjectionTool(_ tool: PickyToolActivity) {
+        presentation.logPreview = [tool.name, tool.preview].compactMap { $0 }.joined(separator: ": ")
+    }
 }
 
 private struct PickySessionCardPresentation {
-    let logPreview: String
-    let lastRequestText: String?
-    let lastRequestAt: Date?
-    let lastTerminalSyncOutcome: PickyTerminalSessionSyncOutcome?
-    let hasRuntimeDetachedFollowUpRejection: Bool
-    let isMainAgentHandoff: Bool
+    var logPreview: String
+    var lastRequestText: String?
+    var lastRequestAt: Date?
+    var piSessionFilePath: String?
+    var lastTerminalSyncOutcome: PickyTerminalSessionSyncOutcome?
+    var hasRuntimeDetachedFollowUpRejection: Bool
+    var isMainAgentHandoff: Bool
 
     static let empty = Self(
         logPreview: "",
         lastRequestText: nil,
         lastRequestAt: nil,
+        piSessionFilePath: nil,
         lastTerminalSyncOutcome: nil,
         hasRuntimeDetachedFollowUpRejection: false,
         isMainAgentHandoff: false
@@ -205,6 +230,7 @@ private struct PickySessionCardPresentation {
         logPreview = card.logPreview
         lastRequestText = card.lastRequestText
         lastRequestAt = card.lastRequestAt
+        piSessionFilePath = card.piSessionFilePath
         lastTerminalSyncOutcome = card.lastTerminalSyncOutcome
         hasRuntimeDetachedFollowUpRejection = card.hasRuntimeDetachedFollowUpRejection
         isMainAgentHandoff = card.isMainAgentHandoff
@@ -214,6 +240,7 @@ private struct PickySessionCardPresentation {
         logPreview: String,
         lastRequestText: String?,
         lastRequestAt: Date?,
+        piSessionFilePath: String?,
         lastTerminalSyncOutcome: PickyTerminalSessionSyncOutcome?,
         hasRuntimeDetachedFollowUpRejection: Bool,
         isMainAgentHandoff: Bool
@@ -221,6 +248,7 @@ private struct PickySessionCardPresentation {
         self.logPreview = logPreview
         self.lastRequestText = lastRequestText
         self.lastRequestAt = lastRequestAt
+        self.piSessionFilePath = piSessionFilePath
         self.lastTerminalSyncOutcome = lastTerminalSyncOutcome
         self.hasRuntimeDetachedFollowUpRejection = hasRuntimeDetachedFollowUpRejection
         self.isMainAgentHandoff = isMainAgentHandoff

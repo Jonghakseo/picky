@@ -39,7 +39,7 @@ describe("SessionStore (legacy / primary layout)", () => {
     expect(all.map((session) => session.id).sort()).toEqual(["alpha", "beta"]);
   });
 
-  it("normalizes a legacy session without revision to zero and persists the migration", async () => {
+  it("compatibility matrix legacy persistence: normalizes a session without revision to zero", async () => {
     const root = tmpRoot();
     const store = new SessionStore(root);
     const { revision: _revision, ...legacy } = makeSession({ id: "legacy-revision" });
@@ -58,6 +58,31 @@ describe("SessionStore (legacy / primary layout)", () => {
     await store.save(makeSession({ id: "revision-round-trip", revision: 7 }));
 
     expect((await store.loadAll())[0]?.revision).toBe(7);
+  });
+
+  it("compatibility matrix rollback: ignores future revision metadata without corrupting legacy session fields", async () => {
+    const root = tmpRoot();
+    const sessionsDir = join(root, "sessions");
+    mkdirSync(sessionsDir, { recursive: true });
+    const futureSession = {
+      ...makeSession({ id: "future-revision", revision: 9, status: "completed", lastSummary: "Durable result" }),
+      projectionEpoch: "future-daemon-epoch",
+      revisionMetadata: { source: "projection-v2", cursor: 9 },
+    };
+    writeFileSync(join(sessionsDir, "future-revision.json"), JSON.stringify(futureSession));
+
+    const [loaded] = await new SessionStore(root).loadAll();
+
+    expect(loaded).toMatchObject({
+      id: "future-revision",
+      revision: 9,
+      status: "completed",
+      lastSummary: "Durable result",
+    });
+    expect(JSON.parse(readFileSync(join(sessionsDir, "future-revision.json"), "utf8"))).toMatchObject({
+      projectionEpoch: "future-daemon-epoch",
+      revisionMetadata: { source: "projection-v2", cursor: 9 },
+    });
   });
 
   it("projects legacy truncated JSON tool previews without rewriting session files", async () => {

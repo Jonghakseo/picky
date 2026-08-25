@@ -34,6 +34,8 @@ struct PickyConversationProjectionTests {
         #expect(PickyConversationJournalPresentation(state: store.messagesState) == .empty)
     }
 
+    /// Strict deterministic ownership gate. Unlike mounted-host body counts,
+    /// Observation invalidation is independent of AppKit layout re-evaluation.
     @Test func replacingOneMessagePreservesMembershipTurnIdentityAndLeavesUnrelatedMessageLeafUnobserved() {
         let conversation = PickyConversationStore()
         let first = conversation.messageStore(message: message(id: "first", kind: .userText, text: "Streaming"))
@@ -105,16 +107,16 @@ struct PickyConversationProjectionTests {
         #expect(contextInvalidations.count == 1)
     }
 
-    @Test func mountedConversationListReevaluatesOnlyTheRelatedStableMessageLeaf() {
+    /// Supplementary positive control only. AppKit layout may re-evaluate sibling
+    /// bodies independently of data ownership, so exact body counts are not a CI
+    /// contract. The deterministic sibling-isolation gate is the Observation test above.
+    @Test func mountedConversationListDeliversReplacementToRelatedStableMessageLeaf() {
         let first = message(id: "message-a", kind: .userText, text: "Streaming")
         let second = message(id: "message-b", text: "Stable sibling")
         let conversation = PickyConversationStore()
         conversation.replaceMessages([first, second])
-        let unrelated = PickyConversationStore()
-        unrelated.replaceMessages([message(id: "message-other", text: "Unrelated")])
         let listEvaluations = ConversationProjectionInvalidationCounter()
         let firstLeafEvaluations = ConversationProjectionInvalidationCounter()
-        let secondLeafEvaluations = ConversationProjectionInvalidationCounter()
         let card = sessionCard(messages: [first, second], id: "conversation-mounted-stable-leaf")
         let viewModel = PickyProjectionReplayFixtures.makeViewModel()
         let host = NSHostingView(rootView: AnyView(PickyConversationListView(
@@ -124,33 +126,22 @@ struct PickyConversationProjectionTests {
             onBodyEvaluation: { listEvaluations.increment() },
             onMessageLeafBodyEvaluation: { id, _, _ in
                 if id == first.id { firstLeafEvaluations.increment() }
-                if id == second.id { secondLeafEvaluations.increment() }
             }
         )))
         defer { dismantleMountedHost(host) }
         host.frame = NSRect(x: 0, y: 0, width: 420, height: 640)
         #expect(waitForMountedHost(host) {
-            listEvaluations.count > 0
-                && firstLeafEvaluations.count > 0
-                && secondLeafEvaluations.count > 0
+            listEvaluations.count > 0 && firstLeafEvaluations.count > 0
         })
 
         let initialListEvaluations = listEvaluations.count
         let initialFirstLeafEvaluations = firstLeafEvaluations.count
-        let initialSecondLeafEvaluations = secondLeafEvaluations.count
-
-        unrelated.messageStore(message: message(id: "message-other", text: "Changed elsewhere"))
-        host.layoutSubtreeIfNeeded()
-        #expect(listEvaluations.count == initialListEvaluations)
-        #expect(firstLeafEvaluations.count == initialFirstLeafEvaluations)
-        #expect(secondLeafEvaluations.count == initialSecondLeafEvaluations)
 
         conversation.messageStore(message: message(id: first.id, kind: .userText, text: "Completed"))
         #expect(waitForMountedHost(host) {
             listEvaluations.count > initialListEvaluations
                 && firstLeafEvaluations.count > initialFirstLeafEvaluations
         })
-        #expect(secondLeafEvaluations.count == initialSecondLeafEvaluations)
     }
 
     @Test func mountedConversationListRefreshesLatestResponseAndCommandHintWhenTheirInputsChange() {

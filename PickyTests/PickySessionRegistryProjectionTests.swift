@@ -13,6 +13,8 @@ import Testing
 
 @MainActor
 struct PickySessionRegistryProjectionTests {
+    /// Strict deterministic ownership gate. This observes store invalidation
+    /// directly, rather than AppKit-driven body evaluation.
     @Test func messageOnlyUpdateDoesNotInvalidateSiblingDockProjectionButStatusChangeDoes() {
         let registry = PickySessionRegistry()
         let first = registry.sessionStore(sessionID: "first")
@@ -102,7 +104,10 @@ struct PickySessionRegistryProjectionTests {
         #expect(nextBucket.gitRefreshBucket == beforeBoundary.gitRefreshBucket + 1)
     }
 
-    @Test func mountedDockIconsRefreshOnlyTheStatusTarget() {
+    /// Supplementary positive control only. AppKit layout can re-evaluate either
+    /// icon's body without a store mutation, so exact body counts are not a CI
+    /// contract. The deterministic sibling-isolation gate is the Observation test above.
+    @Test func mountedDockIconsDeliverStatusChangeToTheTarget() {
         let registry = PickySessionRegistry()
         let first = registry.sessionStore(sessionID: "first")
         let second = registry.sessionStore(sessionID: "second")
@@ -111,25 +116,17 @@ struct PickySessionRegistryProjectionTests {
         registry.replaceMembership(active: ["first", "second"], archived: [])
 
         let evaluations = DockIconEvaluationCounter()
-        let host = NSHostingView(rootView: HStack {
+        let host = NSHostingView(rootView: AnyView(HStack {
             dockIcon(session: PickyHUDDockSession(store: first)) { evaluations.record("first") }
             dockIcon(session: PickyHUDDockSession(store: second)) { evaluations.record("second") }
-        })
+        }))
+        defer { dismantleMountedHost(host) }
         host.frame = NSRect(x: 0, y: 0, width: 160, height: 80)
-        #expect(waitForMountedHost(host) {
-            evaluations.count(for: "first") > 0 && evaluations.count(for: "second") > 0
-        })
+        #expect(waitForMountedHost(host) { evaluations.count(for: "first") > 0 })
         let firstInitial = evaluations.count(for: "first")
-        let secondInitial = evaluations.count(for: "second")
-
-        first.conversationStore.messageStore(message: message(id: "first-message", text: "Streaming"))
-        host.layoutSubtreeIfNeeded()
-        #expect(evaluations.count(for: "first") == firstInitial)
-        #expect(evaluations.count(for: "second") == secondInitial)
 
         first.replace(card: card(id: "first", status: .completed))
         #expect(waitForMountedHost(host) { evaluations.count(for: "first") > firstInitial })
-        #expect(evaluations.count(for: "second") == secondInitial)
     }
 
     @Test func diffStoreInvalidatesOnlyItsOwnMountedUtilityPanel() {
@@ -250,6 +247,12 @@ struct PickySessionRegistryProjectionTests {
         } while Date() < deadline
         host.layoutSubtreeIfNeeded()
         return condition()
+    }
+
+    private func dismantleMountedHost(_ host: NSHostingView<AnyView>) {
+        host.rootView = AnyView(EmptyView())
+        host.frame = .zero
+        host.layoutSubtreeIfNeeded()
     }
 
     private func card(id: String, status: PickySessionStatus) -> PickySessionListViewModel.SessionCard {

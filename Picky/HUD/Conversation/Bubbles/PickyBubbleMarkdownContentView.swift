@@ -13,7 +13,6 @@ import SwiftUI
 
 final class PickyBubbleMarkdownContentView: NSView {
     private enum Metrics {
-        static let blockSpacing: CGFloat = 5
         static let blockPadding: CGFloat = 8
         static let codeCornerRadius: CGFloat = 7
         static let slowMeasureLogThreshold: TimeInterval = 0.05
@@ -23,6 +22,26 @@ final class PickyBubbleMarkdownContentView: NSView {
         case inline([PickyMarkdownInlineTextView.InlineBlock])
         case table(headers: [String], rows: [[String]])
         case codeBlock(String)
+
+        /// Spacing role of the block's first line, used for the gap above it.
+        var leadingSpacingKind: PickyMarkdownBlockSpacing.Kind {
+            switch self {
+            case .inline(let blocks):
+                blocks.first.map(PickyMarkdownInlineTextView.spacingKind) ?? .paragraph
+            case .table, .codeBlock:
+                .embedded
+            }
+        }
+
+        /// Spacing role of the block's last line, used for the gap below it.
+        var trailingSpacingKind: PickyMarkdownBlockSpacing.Kind {
+            switch self {
+            case .inline(let blocks):
+                blocks.last.map(PickyMarkdownInlineTextView.spacingKind) ?? .paragraph
+            case .table, .codeBlock:
+                .embedded
+            }
+        }
     }
 
     private let renderer = PickyReportMarkdownRenderer()
@@ -141,9 +160,10 @@ final class PickyBubbleMarkdownContentView: NSView {
             codeBlockMaxLines: cachedCodeBlockMaxLines
         )
         let startedAt = Date()
+        let gaps = blockGaps()
         let resolution = Self.sharedMeasurementCache.resolve(key: cacheKey) {
             PickyPerf.interval("bubble_measured_size") {
-                guard clamped > 0, !blockViews.isEmpty else {
+                guard clamped > 0, !blockViews.isEmpty, gaps.count == blockViews.count else {
                     return PickyBubbleMeasurement(contentSize: .zero, blockSizes: [])
                 }
 
@@ -157,7 +177,7 @@ final class PickyBubbleMarkdownContentView: NSView {
                     measuredWidth = max(measuredWidth, size.width)
                     measuredHeight += ceil(size.height)
                     if index < blockViews.count - 1 {
-                        measuredHeight += Metrics.blockSpacing
+                        measuredHeight += gaps[index + 1]
                     }
                 }
                 return PickyBubbleMeasurement(
@@ -214,6 +234,8 @@ final class PickyBubbleMarkdownContentView: NSView {
         super.layout()
         let measurement = measurement(forWidth: bounds.width)
         guard measurement.blockSizes.count == blockViews.count else { return }
+        let gaps = blockGaps()
+        guard gaps.count == blockViews.count else { return }
 
         var y: CGFloat = 0
         for (index, blockView) in blockViews.enumerated() {
@@ -221,9 +243,35 @@ final class PickyBubbleMarkdownContentView: NSView {
             blockView.frame = NSRect(x: 0, y: y, width: min(bounds.width, ceil(size.width)), height: ceil(size.height))
             y += ceil(size.height)
             if index < blockViews.count - 1 {
-                y += Metrics.blockSpacing
+                y += gaps[index + 1]
             }
         }
+    }
+
+    /// Gap above each block view, derived from the same per-pair policy the
+    /// inline text run uses internally. Without this, a heading that opens an
+    /// inline run right after a table would get the generic block gap instead
+    /// of the heading's detachment, and the rhythm would break exactly at the
+    /// boundaries where a reader most needs the section cue.
+    private func blockGaps() -> [CGFloat] {
+        // Uses the scale the block views were built at, not the live store
+        // value, so the gaps always match the `fontScale` recorded in the
+        // shared measurement cache key.
+        let scale = cachedFontScale
+        var gaps: [CGFloat] = []
+        gaps.reserveCapacity(cachedBlocks.count)
+        var previous: PickyMarkdownBlockSpacing.Kind?
+        for block in cachedBlocks {
+            gaps.append(
+                PickyMarkdownBlockSpacing.gap(
+                    from: previous,
+                    to: block.leadingSpacingKind,
+                    metrics: PickyMarkdownInlineTextView.spacingMetrics
+                ) * scale
+            )
+            previous = block.trailingSpacingKind
+        }
+        return gaps
     }
 
     private func renderBlocks(from markdown: String) -> [RenderBlock] {

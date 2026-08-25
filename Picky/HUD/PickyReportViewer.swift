@@ -414,9 +414,13 @@ struct PickyMarkdownReportView: View {
     private static let slowTableWidthLogThreshold: TimeInterval = 0.05
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ForEach(blocks) { presentation in
+        // Spacing is per-pair rather than a uniform stack gap, so a heading
+        // detaches from the section above it and binds to the prose below.
+        // See `PickyMarkdownBlockSpacing`.
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(blocks.enumerated()), id: \.element.id) { index, presentation in
                 reportBlockView(presentation)
+                    .padding(.top, scaled(topGap(at: index)))
             }
         }
         .frame(maxWidth: .infinity, alignment: .center)
@@ -428,6 +432,26 @@ struct PickyMarkdownReportView: View {
             }
         )
         .textSelection(.enabled)
+    }
+
+    private func topGap(at index: Int) -> CGFloat {
+        guard index > 0 else { return 0 }
+        return PickyMarkdownBlockSpacing.gap(
+            from: Self.spacingKind(for: blocks[index - 1].block),
+            to: Self.spacingKind(for: blocks[index].block),
+            metrics: PickyMarkdownBlockSpacing.report
+        )
+    }
+
+    private static func spacingKind(
+        for block: PickyReportMarkdownRenderer.Block
+    ) -> PickyMarkdownBlockSpacing.Kind {
+        switch block {
+        case .heading: .heading
+        case .paragraph: .paragraph
+        case .bullet: .bullet
+        case .table, .codeBlock: .embedded
+        }
     }
 
     private func reportBlockView(_ presentation: PickyReportBlockPresentation) -> some View {
@@ -470,17 +494,14 @@ struct PickyMarkdownReportView: View {
     private func blockView(_ block: PickyReportMarkdownRenderer.Block) -> some View {
         switch block {
         case .heading(let level, let text):
-            Text(renderer.inlineAttributedString(for: text))
+            Text(styledInline(text, baseColor: DS.Colors.textPrimary))
                 .font(font(forHeadingLevel: level))
                 .fontWeight(level == 1 ? .semibold : .medium)
-                .foregroundStyle(DS.Colors.textPrimary)
-                .padding(.top, level == 1 ? 2 : 8)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: scaled(Self.textColumnMaxWidth), alignment: .leading)
         case .paragraph(let text):
-            Text(renderer.inlineAttributedString(for: text))
+            Text(styledInline(text))
                 .font(.system(size: scaled(Self.bodyBaseSize), weight: .regular, design: .default))
-                .foregroundStyle(DS.Colors.textPrimary.opacity(0.92))
                 .lineSpacing(scaled(Self.bodyLineSpacing))
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: scaled(Self.textColumnMaxWidth), alignment: .leading)
@@ -489,9 +510,8 @@ struct PickyMarkdownReportView: View {
                 Text("•")
                     .font(.system(size: scaled(Self.bodyBaseSize), weight: .semibold))
                     .foregroundStyle(DS.Colors.textSecondary)
-                Text(renderer.inlineAttributedString(for: text))
+                Text(styledInline(text))
                     .font(.system(size: scaled(Self.bodyBaseSize), weight: .regular, design: .default))
-                    .foregroundStyle(DS.Colors.textPrimary.opacity(0.92))
                     .lineSpacing(scaled(Self.bodyLineSpacing))
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -538,9 +558,11 @@ struct PickyMarkdownReportView: View {
     private func tableRow(_ cells: [String], widths: [CGFloat], isHeader: Bool, isAlternate: Bool) -> some View {
         HStack(alignment: .top, spacing: 0) {
             ForEach(Array(cells.enumerated()), id: \.offset) { index, cell in
-                Text(renderer.inlineAttributedString(for: cell.isEmpty ? " " : cell))
+                Text(styledInline(
+                    cell.isEmpty ? " " : cell,
+                    baseColor: isHeader ? DS.Colors.textPrimary : DS.Colors.textBody
+                ))
                     .font(.system(size: scaled(Self.bodyBaseSize - 1), weight: isHeader ? .semibold : .regular, design: .default))
-                    .foregroundStyle(isHeader ? DS.Colors.textPrimary : DS.Colors.textPrimary.opacity(0.92))
                     .lineSpacing(scaled(Self.tableCellLineSpacing))
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 10)
@@ -639,6 +661,44 @@ struct PickyMarkdownReportView: View {
             offsets.append(runningWidth)
         }
         return offsets
+    }
+
+    /// Projects inline markdown intents onto concrete colors and fonts.
+    ///
+    /// Two things the plain parsed `AttributedString` did not carry: inline
+    /// `code` was indistinguishable from prose, and bold shared the body's
+    /// dimmed color so emphasis rested on weight alone. Assigning bold the
+    /// brighter `textPrimary` against a `textBody` baseline gives emphasis a
+    /// second axis, which matters because model replies lean on bold heavily.
+    private func styledInline(
+        _ text: String,
+        baseColor: Color = DS.Colors.textBody,
+        emphasisColor: Color = DS.Colors.textPrimary
+    ) -> AttributedString {
+        var attributed = renderer.inlineAttributedString(for: text)
+        // Ranges are collected up front because mutating the string while
+        // iterating its `runs` view is not allowed. Attribute-only merges keep
+        // the collected indices valid.
+        let runs = attributed.runs.map { ($0.range, $0.inlinePresentationIntent, $0.link != nil) }
+        for (range, intent, isLink) in runs {
+            var container = AttributeContainer()
+            if isLink {
+                container.foregroundColor = DS.Colors.accentText
+            } else if intent?.contains(.code) == true {
+                container.font = .system(
+                    size: scaled(Self.bodyBaseSize - 1),
+                    weight: .regular,
+                    design: .monospaced
+                )
+                container.foregroundColor = DS.Colors.codeText
+            } else if intent?.contains(.stronglyEmphasized) == true {
+                container.foregroundColor = emphasisColor
+            } else {
+                container.foregroundColor = baseColor
+            }
+            attributed[range].mergeAttributes(container)
+        }
+        return attributed
     }
 
     private func font(forHeadingLevel level: Int) -> Font {

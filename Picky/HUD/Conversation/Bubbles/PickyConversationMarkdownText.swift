@@ -110,7 +110,10 @@ struct PickyConversationMarkdownText: View {
     }
 
     private var content: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        // Only separates inline runs from table/code views; gaps between
+        // heading/paragraph/bullet live inside the inline run's paragraph
+        // styles. See `PickyMarkdownBlockSpacing`.
+        VStack(alignment: .leading, spacing: PickyMarkdownInlineTextView.embeddedBlockSpacing) {
             ForEach(Array(groupedBlocks().enumerated()), id: \.offset) { _, group in
                 groupView(group)
             }

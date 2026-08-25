@@ -59,11 +59,23 @@ struct PickyMarkdownInlineTextView: NSViewRepresentable {
     /// reflects the new scale.
     @Environment(\.pickyAppFontScale) private var appFontScale
 
-    /// Vertical gap appended after every block except the last. Matches the
-    /// `VStack(spacing: 5)` used by the previous SwiftUI composition so the
-    /// migration is pixel-stable. Multiplied by the live app font scale at
-    /// build time so the gap grows together with the body text.
-    static let blockSpacing: CGFloat = 5
+    /// Per-pair vertical rhythm. See `PickyMarkdownBlockSpacing` for why a
+    /// single constant does not work. Values are multiplied by the live app
+    /// font scale at build time so gaps grow together with the body text.
+    static let spacingMetrics = PickyMarkdownBlockSpacing.bubble
+
+    /// Gap between the inline text run and an adjacent table/code block view,
+    /// applied by `PickyBubbleMarkdownContentView` rather than by a paragraph
+    /// style. Exposed so both sides of that boundary agree.
+    static let embeddedBlockSpacing: CGFloat = PickyMarkdownBlockSpacing.bubble.embedded
+
+    static func spacingKind(for block: InlineBlock) -> PickyMarkdownBlockSpacing.Kind {
+        switch block {
+        case .heading: .heading
+        case .paragraph: .paragraph
+        case .bullet: .bullet
+        }
+    }
 
     /// Bullet body-column indent (matches the previous SwiftUI HStack with
     /// a 6pt spacer + the "•" glyph's natural width at body size). Scaled
@@ -205,6 +217,7 @@ extension PickyMarkdownInlineTextView {
     private static func computeAttributedString(from blocks: [InlineBlock]) -> NSAttributedString {
         let renderer = PickyReportMarkdownRenderer()
         let textPrimary = NSColor(DS.Colors.textPrimary)
+        let textBody = NSColor(DS.Colors.textBody)
         let textSecondary = NSColor(DS.Colors.textSecondary)
         let linkColor = NSColor(DS.Colors.accentText)
         let bodyFont = NSFont.systemFont(ofSize: PickyHUDTypography.Size.body, weight: .regular)
@@ -215,12 +228,21 @@ extension PickyMarkdownInlineTextView {
         // font's natural metrics; paragraph-level spacing has to be applied
         // explicitly here.
         let scale = PickyAppFontScaleStore.staticCGScale
-        let scaledBlockSpacing = blockSpacing * scale
         let scaledBulletLeader = bulletLeaderIndent * scale
 
         let result = NSMutableAttributedString()
+        var previousKind: PickyMarkdownBlockSpacing.Kind?
         for (index, block) in blocks.enumerated() {
-            let isLast = index == blocks.count - 1
+            let kind = spacingKind(for: block)
+            // Gaps live on the *following* block as `paragraphSpacingBefore`
+            // rather than as trailing `paragraphSpacing`, because a heading
+            // needs a large gap above and a small one below. Encoding both
+            // from the leading edge keeps that asymmetry in one place.
+            let spacingBefore = PickyMarkdownBlockSpacing.gap(
+                from: previousKind,
+                to: kind,
+                metrics: spacingMetrics
+            ) * scale
             let piece: NSAttributedString
             switch block {
             case .heading(let level, let text):
@@ -229,19 +251,19 @@ extension PickyMarkdownInlineTextView {
                     level: level,
                     renderer: renderer,
                     textColor: textPrimary,
+                    emphasisColor: textPrimary,
                     linkColor: linkColor,
-                    paragraphSpacing: scaledBlockSpacing,
-                    isLast: isLast
+                    spacingBefore: spacingBefore
                 )
             case .paragraph(let text):
                 piece = renderParagraph(
                     text: text,
                     renderer: renderer,
                     baseFont: bodyFont,
-                    textColor: textPrimary,
+                    textColor: textBody,
+                    emphasisColor: textPrimary,
                     linkColor: linkColor,
-                    paragraphSpacing: scaledBlockSpacing,
-                    isLast: isLast
+                    spacingBefore: spacingBefore
                 )
             case .bullet(let text):
                 piece = renderBullet(
@@ -250,19 +272,29 @@ extension PickyMarkdownInlineTextView {
                     leaderFont: bulletLeaderFont,
                     leaderColor: textSecondary,
                     bodyFont: bodyFont,
-                    textColor: textPrimary,
+                    textColor: textBody,
+                    emphasisColor: textPrimary,
                     linkColor: linkColor,
                     leaderIndent: scaledBulletLeader,
-                    paragraphSpacing: scaledBlockSpacing,
-                    isLast: isLast
+                    spacingBefore: spacingBefore
                 )
             }
-            result.append(piece)
-            if !isLast {
-                // Single newline between blocks; per-block paragraphSpacing
-                // adds the visual gap (matches VStack spacing: 5).
-                result.append(NSAttributedString(string: "\n"))
+            if index > 0, result.length > 0 {
+                // Single newline between blocks; the visual gap comes from the
+                // next block's paragraphSpacingBefore. The separator has to
+                // carry the *previous* paragraph's style because a newline
+                // terminates the paragraph it trails, and an unattributed one
+                // would drop that paragraph's indent/line-height. Inline-only
+                // decorations are stripped so the break is not swallowed into
+                // a trailing link or code run.
+                var trailing = result.attributes(at: result.length - 1, effectiveRange: nil)
+                trailing[.link] = nil
+                trailing[.backgroundColor] = nil
+                trailing[.strikethroughStyle] = nil
+                result.append(NSAttributedString(string: "\n", attributes: trailing))
             }
+            result.append(piece)
+            previousKind = kind
         }
         return result
     }
@@ -272,9 +304,9 @@ extension PickyMarkdownInlineTextView {
         level: Int,
         renderer: PickyReportMarkdownRenderer,
         textColor: NSColor,
+        emphasisColor: NSColor,
         linkColor: NSColor,
-        paragraphSpacing: CGFloat,
-        isLast: Bool
+        spacingBefore: CGFloat
     ) -> NSAttributedString {
         let size: CGFloat
         switch level {
@@ -283,8 +315,14 @@ extension PickyMarkdownInlineTextView {
         default: size = PickyHUDTypography.Size.heading3
         }
         let baseFont = NSFont.systemFont(ofSize: size, weight: .semibold)
-        let attr = renderInline(text, baseFont: baseFont, baseColor: textColor, linkColor: linkColor)
-        applyParagraphStyle(to: attr, headIndent: 0, paragraphSpacing: paragraphSpacing, isLast: isLast)
+        let attr = renderInline(
+            text,
+            baseFont: baseFont,
+            baseColor: textColor,
+            emphasisColor: emphasisColor,
+            linkColor: linkColor
+        )
+        applyParagraphStyle(to: attr, headIndent: 0, spacingBefore: spacingBefore)
         return attr
     }
 
@@ -293,12 +331,18 @@ extension PickyMarkdownInlineTextView {
         renderer: PickyReportMarkdownRenderer,
         baseFont: NSFont,
         textColor: NSColor,
+        emphasisColor: NSColor,
         linkColor: NSColor,
-        paragraphSpacing: CGFloat,
-        isLast: Bool
+        spacingBefore: CGFloat
     ) -> NSAttributedString {
-        let attr = renderInline(text, baseFont: baseFont, baseColor: textColor, linkColor: linkColor)
-        applyParagraphStyle(to: attr, headIndent: 0, paragraphSpacing: paragraphSpacing, isLast: isLast)
+        let attr = renderInline(
+            text,
+            baseFont: baseFont,
+            baseColor: textColor,
+            emphasisColor: emphasisColor,
+            linkColor: linkColor
+        )
+        applyParagraphStyle(to: attr, headIndent: 0, spacingBefore: spacingBefore)
         return attr
     }
 
@@ -309,10 +353,10 @@ extension PickyMarkdownInlineTextView {
         leaderColor: NSColor,
         bodyFont: NSFont,
         textColor: NSColor,
+        emphasisColor: NSColor,
         linkColor: NSColor,
         leaderIndent: CGFloat,
-        paragraphSpacing: CGFloat,
-        isLast: Bool
+        spacingBefore: CGFloat
     ) -> NSAttributedString {
         let leader = NSMutableAttributedString(
             string: "•\t",
@@ -321,11 +365,17 @@ extension PickyMarkdownInlineTextView {
                 .foregroundColor: leaderColor
             ]
         )
-        let body = renderInline(text, baseFont: bodyFont, baseColor: textColor, linkColor: linkColor)
+        let body = renderInline(
+            text,
+            baseFont: bodyFont,
+            baseColor: textColor,
+            emphasisColor: emphasisColor,
+            linkColor: linkColor
+        )
         leader.append(body)
 
         let style = NSMutableParagraphStyle()
-        style.paragraphSpacing = isLast ? 0 : paragraphSpacing
+        style.paragraphSpacingBefore = spacingBefore
         style.firstLineHeadIndent = 0
         style.headIndent = leaderIndent
         style.tabStops = [NSTextTab(textAlignment: .left, location: leaderIndent)]
@@ -354,6 +404,7 @@ extension PickyMarkdownInlineTextView {
         _ text: String,
         baseFont: NSFont,
         baseColor: NSColor,
+        emphasisColor: NSColor,
         linkColor: NSColor
     ) -> NSMutableAttributedString {
         let attributed: AttributedString
@@ -377,10 +428,29 @@ extension PickyMarkdownInlineTextView {
             let descriptor = baseFont.fontDescriptor.withSymbolicTraits(traits)
             let font = NSFont(descriptor: descriptor, size: baseFont.pointSize) ?? baseFont
 
+            let isEmphasized = run.inlinePresentationIntent?.contains(.stronglyEmphasized) == true
             var attrs: [NSAttributedString.Key: Any] = [
                 .font: font,
-                .foregroundColor: run.link != nil ? linkColor : baseColor
+                .foregroundColor: run.link != nil
+                    ? linkColor
+                    : (isEmphasized ? emphasisColor : baseColor)
             ]
+            // Inline `code` spans were parsed all along — the run walk simply
+            // never read the intent, so they rendered as ordinary prose and
+            // lost their value as scan anchors. Monospace plus the code tint
+            // separates identifiers from the sentence around them.
+            //
+            // Note: `.backgroundColor` paints the full line fragment, so a
+            // rounded chip is not reachable through attributes alone; that
+            // would need custom background drawing. The tint carries the
+            // signal on its own, so we stop short of a band here.
+            if run.inlinePresentationIntent?.contains(.code) == true, run.link == nil {
+                attrs[.font] = NSFont.monospacedSystemFont(
+                    ofSize: PickyHUDTypography.Size.supporting,
+                    weight: isEmphasized ? .semibold : .regular
+                )
+                attrs[.foregroundColor] = NSColor(DS.Colors.codeText)
+            }
             if run.inlinePresentationIntent?.contains(.strikethrough) == true {
                 attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
             }
@@ -395,11 +465,10 @@ extension PickyMarkdownInlineTextView {
     private static func applyParagraphStyle(
         to attr: NSMutableAttributedString,
         headIndent: CGFloat,
-        paragraphSpacing: CGFloat,
-        isLast: Bool
+        spacingBefore: CGFloat
     ) {
         let style = NSMutableParagraphStyle()
-        style.paragraphSpacing = isLast ? 0 : paragraphSpacing
+        style.paragraphSpacingBefore = spacingBefore
         style.firstLineHeadIndent = headIndent
         style.headIndent = headIndent
         style.lineHeightMultiple = bubbleLineHeightMultiple
@@ -411,10 +480,15 @@ extension PickyMarkdownInlineTextView {
     /// per-line leading from the font's natural metrics, but at SF Pro's
     /// tight default ratio (~1.18× font size) bubbles still read cramped
     /// once the user pumps the app font scale to the upper end of the 0.9...1.3
-    /// range. A flat 1.1× multiplier composes on top of that natural scaling
-    /// for an effective ~1.30× ratio, which matches the macOS Notes / Reader
-    /// line rhythm without compressing anything at smaller scales.
-    private static let bubbleLineHeightMultiple: CGFloat = 1.1
+    /// range. A flat 1.19x multiplier composes on top of that natural scaling
+    /// for an effective ~1.40x ratio.
+    ///
+    /// Raised from 1.1 (~1.30x) when the per-pair block spacing landed: once
+    /// the gaps between blocks grow, the unchanged intra-paragraph leading
+    /// reads as noticeably tighter by contrast, which is the classic trap of
+    /// fixing header spacing alone. Hangul aggravates it because its glyphs
+    /// fill more of the em than Latin lowercase at the same size.
+    private static let bubbleLineHeightMultiple: CGFloat = 1.19
 
     private static let attributedCache: NSCache<NSString, NSAttributedString> = {
         let cache = NSCache<NSString, NSAttributedString>()

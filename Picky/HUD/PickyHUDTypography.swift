@@ -23,9 +23,13 @@ enum PickyHUDTypography {
 
     enum Size {
         static var title: CGFloat { 14 * scale }
-        static var heading1: CGFloat { 15 * scale }
-        static var heading2: CGFloat { 14 * scale }
-        static var heading3: CGFloat { 13.5 * scale }
+        // Markdown heading ladder. Previously 15/14/13.5 against a 13pt body,
+        // which is a 1.08x step at h2 — too small to register as hierarchy, so
+        // headings had to rely entirely on weight. Widened to a ~1.15x step so
+        // a section break is legible while scrolling.
+        static var heading1: CGFloat { 17 * scale }
+        static var heading2: CGFloat { 15.5 * scale }
+        static var heading3: CGFloat { 14 * scale }
         static var body: CGFloat { 13 * scale }
         static var bodyCompact: CGFloat { 12.5 * scale }
         static var supporting: CGFloat { 12 * scale }

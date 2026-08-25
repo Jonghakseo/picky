@@ -56,6 +56,16 @@ enum DS {
         /// Primary text — main body text, titles, headings.
         static let textPrimary = Color(light: Color(hex: "#1A1C1B"), dark: Color(hex: "#ECEEED"))
 
+        /// Long-form body copy — markdown prose inside conversation bubbles and
+        /// reports. Deliberately one step below `textPrimary` so inline bold can
+        /// step *up* to `textPrimary` and read as emphasis through brightness as
+        /// well as weight. Without this middle stop, prose that leans on bold
+        /// (which LLM replies do heavily) loses all emphasis contrast, and pure
+        /// `textPrimary` prose glares on dark surfaces.
+        /// Dark #D4D8D6 keeps ~10.5:1 on the assistant bubble fill; light
+        /// #333836 keeps ~11:1 on white.
+        static let textBody = Color(light: Color(hex: "#333836"), dark: Color(hex: "#D4D8D6"))
+
         /// Secondary text — descriptions, hints, muted labels.
         static let textSecondary = Color(light: Color(hex: "#525956"), dark: Color(hex: "#ADB5B2"))
 

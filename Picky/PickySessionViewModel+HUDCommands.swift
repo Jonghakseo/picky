@@ -17,6 +17,15 @@ extension PickySessionListViewModel: PickyGitChipActionViewModelDispatch, PickyS
         return shellTerminalSession(for: session)
     }
 
+    /// CLI bridge summaries remain a registry read model, avoiding a second
+    /// v2 transaction reducer in `PickyAgentClientRouter`.
+    func pickleSessionSummariesForCLI() -> [PickyAgentSession] {
+        guard let storage = sessionProjectionStorage as? PickyRegistrySessionProjectionStorage else {
+            return []
+        }
+        return storage.sessionSummariesForCLI()
+    }
+
     /// Stable registry identity for scoped HUD subtrees. Consumers observe this
     /// store's child sections instead of the façade's global card arrays.
     func sessionStore(sessionID: String) -> PickySessionStore? {

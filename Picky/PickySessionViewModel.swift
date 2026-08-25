@@ -192,6 +192,10 @@ final class PickySessionListViewModel: ObservableObject {
     private var lastIncrementalSeqBySessionID: [String: Int] = [:]
     private var hasExplicitSelection = false
     let sessionProjectionStorage: any PickySessionProjectionStorage
+    /// App composition uses this narrow notification to wake bridge requests
+    /// waiting for a registry-backed v2 session. It carries no projection data,
+    /// so storage remains the sole state owner.
+    var onSessionProjectionStorageChanged: (() -> Void)?
     private var sessionProjectionStorageCancellable: AnyCancellable?
     private var sessionProjectionRecoveryCoordinator: PickySessionRecoveryCoordinator?
     init(
@@ -289,6 +293,7 @@ final class PickySessionListViewModel: ObservableObject {
             }
         self.sessionProjectionStorageCancellable = self.sessionProjectionStorage.changes.sink { [weak self] snapshot in
             self?.relaySessionProjectionStorageChange(snapshot)
+            self?.onSessionProjectionStorageChanged?()
         }
         self.sessionProjectionRecoveryCoordinator = Self.makeSessionProjectionRecoveryCoordinator(for: self)
         syncDockStateNow()

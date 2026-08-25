@@ -55,7 +55,7 @@ struct PickySessionMetadata: Equatable {
         currentAssistantRun = session.currentAssistantRun
         notifyMainOnCompletion = session.notifyMainOnCompletion
         archived = session.archived
-        self.archivedAt = archivedAt
+        self.archivedAt = session.archivedAt ?? archivedAt
         pinned = session.pinned
     }
 

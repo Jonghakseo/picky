@@ -133,6 +133,60 @@ final class PickySessionStore {
         )
     }
 
+    /// Rebuilds the CLI bridge summary from the registry-owned metadata and
+    /// child stores. Unlike `SessionCard`, this preserves terminal-only
+    /// metadata (`finalAnswer` and `archivedAt`) that the CLI needs for its
+    /// management loop. The bridge never owns or mutates this projection.
+    func materializedAgentSessionSummary() -> PickyAgentSession? {
+        guard case .loaded(let metadata) = metaStore.metadataState,
+              metadata.id == sessionID else {
+            return nil
+        }
+
+        let queue = queueStore.queueState.loadedValue
+        let queueModes = queueStore.queueModes
+        let todoState: PickyTodoState? = {
+            guard case .loaded(let value) = todoStore.todoState else { return nil }
+            return value
+        }()
+        let pendingExtensionUiRequest: PickyExtensionUiRequest? = {
+            guard case .loaded(let request) = extensionUiStore.requestState else { return nil }
+            return request
+        }()
+        return PickyAgentSession(
+            id: metadata.id,
+            title: metadata.title,
+            status: metadata.status,
+            cwd: metadata.cwd,
+            piSessionFilePath: metadata.piSessionFilePath,
+            createdAt: metadata.createdAt,
+            updatedAt: metadata.updatedAt,
+            lastSummary: metadata.lastSummary,
+            thinkingPreview: metadata.thinkingPreview,
+            finalAnswer: metadata.finalAnswer,
+            logs: logStore.logsState.loadedValue ?? [],
+            tools: toolStore.toolsState.loadedValue ?? [],
+            todoState: todoState,
+            subagentRuns: subagentStore.runsState.loadedValue ?? [],
+            artifacts: artifactStore.artifactsState.loadedValue ?? [],
+            changedFiles: artifactStore.changedFilesProjectionState.loadedValue ?? [],
+            messages: [],
+            messageJournalAvailable: false,
+            queuedSteers: queue?.steers ?? [],
+            queuedFollowUps: queue?.followUps ?? [],
+            steeringMode: queueModes.steeringMode,
+            followUpMode: queueModes.followUpMode,
+            activitySummary: activityStore.activityState.loadedValue ?? .zero,
+            contextUsage: metadata.contextUsage,
+            currentAssistantRun: metadata.currentAssistantRun,
+            pendingExtensionUiRequest: pendingExtensionUiRequest,
+            notifyMainOnCompletion: metadata.notifyMainOnCompletion,
+            archived: metadata.archived,
+            archivedAt: metadata.archivedAt,
+            pinned: metadata.pinned
+        )
+    }
+
     private func replaceLogs(for card: PickySessionListViewModel.SessionCard) {
         guard !card.logPreview.isEmpty else {
             logStore.markUnavailable()

@@ -236,6 +236,9 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
 
         PickyAnalytics.configure()
         PickyAnalytics.trackAppOpened()
+        // The router must have its registry-backed bridge source before the
+        // daemon can accept a v2 handoff or CLI request.
+        wireDockGroupsProvider(on: hudAgentClientRouter)
 
         if !Self.isRunningUnitTests {
             // Start the main-thread watchdog as early as possible so any
@@ -273,7 +276,6 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         wireExternalEntryProvider(on: hudAgentClientRouter)
         wirePushToTalkControlHandler(on: hudAgentClientRouter)
         wirePickySettingsControlHandler(on: hudAgentClientRouter)
-        wireDockGroupsProvider(on: hudAgentClientRouter)
         // Wire the appearance store and shared settings store into singletons that live
         // outside the SwiftUI tree (markdown report viewer / terminal overlay) so every
         // secondary NSPanel flips with the rest of the app and the user's per-panel zoom
@@ -414,6 +416,12 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func wireDockGroupsProvider(on router: PickyAgentClientRouter) {
+        router.pickleSessionSummariesProvider = { [weak self] in
+            self?.hudSessionViewModel.pickleSessionSummariesForCLI() ?? []
+        }
+        hudSessionViewModel.onSessionProjectionStorageChanged = { [weak router] in
+            router?.sessionProjectionStorageDidChange()
+        }
         router.dockGroupsProvider = { [weak self] in
             guard let self else { return [] }
             return self.hudSessionViewModel.dockGroupsSnapshotForCLI()

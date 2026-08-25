@@ -29,6 +29,19 @@ final class PickyRegistrySessionProjectionStorage: PickySessionProjectionStorage
         registry.existingSessionStore(sessionID: id)?.materializedSessionCard()
     }
 
+    /// CLI bridge read model assembled by the authoritative registry. This
+    /// deliberately bypasses `SessionCard`, whose presentation boundary omits
+    /// `finalAnswer` and `archivedAt`.
+    func sessionSummariesForCLI() -> [PickyAgentSession] {
+        (registry.activeSessionIDs + registry.archivedSessionIDs)
+            .compactMap { registry.existingSessionStore(sessionID: $0)?.materializedAgentSessionSummary() }
+            .sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    func sessionSummaryForCLI(id: String) -> PickyAgentSession? {
+        registry.existingSessionStore(sessionID: id)?.materializedAgentSessionSummary()
+    }
+
     func replaceAllSessions(active: [PickySessionListViewModel.SessionCard], archived: [PickySessionListViewModel.SessionCard]) {
         let before = snapshot()
         install(active: active, archived: archived)

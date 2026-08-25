@@ -9,7 +9,7 @@ import WebSocket from "ws";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installInternalPickyCli } from "../../application/internal-picky-cli.js";
 import { writeConnectionInfo } from "../../connection-info-store.js";
-import { PROTOCOL_VERSION, type EventEnvelope, type PickyAgentSession } from "../../protocol.js";
+import { PROTOCOL_VERSION, type EventEnvelope, type PickyAgentSession, type PickyContextPacket } from "../../protocol.js";
 import { MockRuntime } from "../../runtime/mock-runtime.js";
 import { AgentdServer } from "../../server.js";
 import { SessionStore } from "../../session-store.js";
@@ -76,7 +76,7 @@ async function runExecutable(executable: string, args: string[], env: NodeJS.Pro
 }
 
 async function connectApp(
-  capabilities: Array<"pickleBridge" | "externalEntry">,
+  capabilities: Array<"pickleBridge" | "externalEntry" | "sessionProjectionV2">,
   onEvent: (event: EventEnvelope, socket: WebSocket) => void,
 ): Promise<WebSocket> {
   const socket = new WebSocket(`ws://127.0.0.1:${port}?token=cli-e2e-token`);
@@ -110,25 +110,16 @@ async function waitUntil(predicate: () => boolean, timeoutMs = 2_000): Promise<v
   }
 }
 
-function bridgeSummary(overrides: Partial<PickyAgentSession> = {}): PickyAgentSession {
+function context(text: string): PickyContextPacket {
   return {
-    id: "bridge-pickle",
-    title: "Bridge summary",
-    status: "running",
-    createdAt: "2026-08-25T00:00:00.000Z",
-    updatedAt: "2026-08-25T00:00:00.000Z",
-    logs: [],
-    tools: [],
-    artifacts: [],
-    changedFiles: [],
-    messages: [],
-    messageJournalAvailable: false,
-    queuedSteers: [],
-    queuedFollowUps: [],
-    steeringMode: "one-at-a-time",
-    followUpMode: "one-at-a-time",
-    activitySummary: { read: 0, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 },
-    ...overrides,
+    id: `context-${text}`,
+    source: "text",
+    capturedAt: "2026-08-25T00:00:00.000Z",
+    transcript: text,
+    cwd: appSupportDir,
+    screenshots: [],
+    inkMarks: [],
+    warnings: [],
   };
 }
 
@@ -213,15 +204,25 @@ describe("picky CLI against a real agentd server", () => {
     expect(result.stderr).toContain("Pickle session not found: missing-pickle");
   });
 
-  it("prints bridge-owned list summaries without inventing a message journal", async () => {
-    // Regression: bridge list results must retain the explicit empty-journal marker
-    // so CLI consumers do not treat summary messages as an authoritative history.
-    await connectApp(["pickleBridge", "externalEntry"], (event, socket) => {
+  it("prints v2 projection-backed bridge summaries without inventing a message journal", async () => {
+    // Regression: an app registered for the v2 dialect receives bootstrap
+    // snapshots, not v1 sessionUpdated events. Keep this harness state fed by
+    // that actual frame before completing the same bridge request the CLI uses.
+    const created = await supervisor.create(context("v2 bridge summary"));
+    const projectionBackedSessions: PickyAgentSession[] = [];
+    await connectApp(["pickleBridge", "externalEntry", "sessionProjectionV2"], (event, socket) => {
+      if (event.type === "sessionProjectionSnapshot") {
+        projectionBackedSessions.push({
+          ...event.projection,
+          messages: [],
+          messageJournalAvailable: false,
+        });
+      }
       if (event.type === "pickleBridgeRequested") {
         sendAppCommand(socket, {
           type: "completePickleBridgeRequest",
           requestId: event.requestId,
-          sessions: [bridgeSummary()],
+          sessions: projectionBackedSessions,
         });
       }
       if (event.type === "dockGroupsRequested") {
@@ -232,13 +233,14 @@ describe("picky CLI against a real agentd server", () => {
         });
       }
     });
+    await waitUntil(() => projectionBackedSessions.some((session) => session.id === created.id));
 
     const result = await runCli(["pickle-list", "--json"]);
 
     expect(result.code).toBe(0);
     const snapshot = JSON.parse(result.stdout) as { sessions: Array<{ id: string; messages: unknown[]; messageJournalAvailable?: boolean }> };
     expect(snapshot.sessions).toEqual([expect.objectContaining({
-      id: "bridge-pickle",
+      id: created.id,
       messages: [],
       messageJournalAvailable: false,
     })]);

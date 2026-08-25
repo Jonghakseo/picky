@@ -1174,15 +1174,13 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
     var currentAssistantRun: PickyAssistantRunMetadata? = nil
     var pendingExtensionUiRequest: PickyExtensionUiRequest?
     var notifyMainOnCompletion: Bool? = nil
-    var archived: Bool? = nil
+    var archived: Bool? = nil, archivedAt: Date? = nil
     var pinned: Bool? = nil
-
     enum CodingKeys: String, CodingKey {
         case id, title, status, cwd, piSessionFilePath, createdAt, updatedAt, lastSummary, thinkingPreview, finalAnswer, logs, tools, todoState, subagentRuns, artifacts, changedFiles
         case messages, messageJournalAvailable, queuedSteers, queuedFollowUps, steeringMode, followUpMode, activitySummary, contextUsage, currentAssistantRun
-        case pendingExtensionUiRequest, notifyMainOnCompletion, archived, pinned
+        case pendingExtensionUiRequest, notifyMainOnCompletion, archived, archivedAt, pinned
     }
-
     init(
         id: String,
         title: String,
@@ -1211,7 +1209,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         currentAssistantRun: PickyAssistantRunMetadata? = nil,
         pendingExtensionUiRequest: PickyExtensionUiRequest? = nil,
         notifyMainOnCompletion: Bool? = nil,
-        archived: Bool? = nil,
+        archived: Bool? = nil, archivedAt: Date? = nil,
         pinned: Bool? = nil
     ) {
         self.id = id
@@ -1242,6 +1240,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         self.pendingExtensionUiRequest = pendingExtensionUiRequest
         self.notifyMainOnCompletion = notifyMainOnCompletion
         self.archived = archived
+        self.archivedAt = archivedAt
         self.pinned = pinned
     }
 
@@ -1275,6 +1274,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         pendingExtensionUiRequest = try container.decodeIfPresent(PickyExtensionUiRequest.self, forKey: .pendingExtensionUiRequest)
         notifyMainOnCompletion = try container.decodeIfPresent(Bool.self, forKey: .notifyMainOnCompletion)
         archived = try container.decodeIfPresent(Bool.self, forKey: .archived)
+        archivedAt = try container.decodeIfPresent(Date.self, forKey: .archivedAt)
         pinned = try container.decodeIfPresent(Bool.self, forKey: .pinned)
     }
 }

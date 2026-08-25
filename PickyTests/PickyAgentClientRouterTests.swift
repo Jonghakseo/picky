@@ -769,10 +769,16 @@ struct PickyAgentClientRouterTests {
             primaryClient: primary,
             pool: pool,
             clientFactory: clientFactory,
-            handoffPickleSessionIdFactory: { "pickle-handoff" }
+            handoffPickleSessionIdFactory: { "pickle-handoff" },
+            supportsSessionProjectionV2: true
         )
+        var projectionSessions: [PickyAgentSession] = []
+        router.pickleSessionSummariesProvider = { projectionSessions }
 
         await router.connect()
+        try await waitUntil {
+            primary.sentCommands.contains { $0.type == .registerAppCapabilities && $0.capabilities?.contains("sessionProjectionV2") == true }
+        }
         async let runner = poolFactory.waitForRunner(sessionId: "pickle-handoff")
         primary.emit(.protocolEvent(try makePickleHandoffRequestEvent()))
         _ = try await runner
@@ -787,7 +793,19 @@ struct PickyAgentClientRouterTests {
         #expect(childCommand.instructions == "Sentry 확인")
         #expect(childCommand.cwd == "/tmp/product/backend")
 
-        clientFactory.madeClients.first?.client.emit(.protocolEvent(makeSessionUpdatedEvent(id: "pickle-handoff", title: "조사 피클")))
+        projectionSessions = [PickyAgentSession(
+            id: "pickle-handoff",
+            title: "조사 피클",
+            status: .running,
+            cwd: "/tmp/product/backend",
+            createdAt: Date(),
+            updatedAt: Date(),
+            logs: [],
+            tools: [],
+            artifacts: [],
+            changedFiles: []
+        )]
+        router.sessionProjectionStorageDidChange()
         try await waitUntil { primary.sentCommands.contains(where: { $0.type == .completePickleHandoff }) }
         let completion = try #require(primary.sentCommands.first(where: { $0.type == .completePickleHandoff }))
         #expect(completion.requestId == "handoff-request-1")
@@ -1071,6 +1089,106 @@ struct PickyAgentClientRouterTests {
         #expect(summary.logs == ["persisted log"])
         #expect(summary.tools.map(\.toolCallId) == ["t-1"])
         #expect(summary.messageJournalAvailable == false)
+    }
+
+    @Test func pickleBridgeListReadsV2ProjectionStorageAfterBootstrap() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(
+            configuration: PickyAgentDaemonPool.Configuration(token: "tok", appSupportRoot: root)
+        )
+        let router = PickyAgentClientRouter(
+            primaryClient: primary,
+            pool: pool,
+            clientFactory: StubClientFactory(),
+            supportsSessionProjectionV2: true
+        )
+        let storage = PickyRegistrySessionProjectionStorage()
+        let viewModel = PickySessionListViewModel(client: router, sessionProjectionStorage: storage)
+        router.pickleSessionSummariesProvider = { storage.sessionSummariesForCLI() }
+        viewModel.onSessionProjectionStorageChanged = { router.sessionProjectionStorageDidChange() }
+        viewModel.start()
+        defer { viewModel.stop() }
+
+        try await waitUntil {
+            primary.sentCommands.contains { $0.type == .registerAppCapabilities && $0.capabilities?.contains("sessionProjectionV2") == true }
+        }
+        let snapshotJSON = """
+        {
+          "sessionId":"v2-bridge-pickle","epoch":"bridge-epoch","revision":1,"complete":true,"omittedFields":[],
+          "projection":{"id":"v2-bridge-pickle","title":"V2 Bridge","status":"running","cwd":"/tmp/v2","createdAt":"2026-08-25T00:00:00.000Z","updatedAt":"2026-08-25T00:00:01.000Z","finalAnswer":"Available to CLI","archived":true,"archivedAt":"2026-08-25T00:00:02.000Z"}
+        }
+        """
+        let snapshot = try JSONDecoder.pickyAgentProtocolDecoder().decode(
+            PickySessionProjectionSnapshot.self,
+            from: Data(snapshotJSON.utf8)
+        )
+        primary.emit(.protocolEvent(PickyEventEnvelope(
+            id: "v2-bridge-bootstrap",
+            protocolVersion: pickyAgentProtocolVersion,
+            timestamp: Date(),
+            event: .sessionProjectionSnapshot(snapshot)
+        )))
+        try await waitUntil { storage.session(id: "v2-bridge-pickle") != nil }
+
+        primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(operation: "listSessions")))
+        try await waitUntil {
+            primary.sentCommands.contains {
+                $0.type == .completePickleBridgeRequest
+                    && $0.sessions?.contains(where: { $0.id == "v2-bridge-pickle" }) == true
+            }
+        }
+        let session = try #require(primary.sentCommands.last { $0.type == .completePickleBridgeRequest }?.sessions?.first)
+        #expect(session.finalAnswer == "Available to CLI")
+        #expect(session.archived == true)
+        #expect(session.archivedAt != nil)
+    }
+
+    @Test func pickleBridgeRoutesV2ProjectionSessionsForAllSessionCommands() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(
+            configuration: PickyAgentDaemonPool.Configuration(token: "tok", appSupportRoot: root)
+        )
+        let session = PickyAgentSession(
+            id: "v2-command-pickle",
+            title: "V2 command",
+            status: .running,
+            cwd: "/tmp/v2",
+            createdAt: Date(),
+            updatedAt: Date(),
+            logs: [],
+            tools: [],
+            artifacts: [],
+            changedFiles: []
+        )
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        router.pickleSessionSummariesProvider = { [session] }
+        await router.connect()
+
+        for (operation, commandType) in [("steer", PickyCommandType.steer), ("followUp", .followUp), ("abort", .abort)] {
+            primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(
+                operation: operation,
+                sessionId: session.id,
+                text: commandType == .abort ? nil : "continue"
+            )))
+            try await waitUntil {
+                primary.sentCommands.contains { $0.type == commandType && $0.sessionId == session.id }
+                    && primary.sentCommands.contains { $0.type == .completePickleBridgeRequest && $0.session?.id == session.id }
+            }
+        }
+
+        for archived in [true, false] {
+            primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(
+                operation: "setArchived",
+                sessionId: session.id,
+                archived: archived
+            )))
+            try await waitUntil {
+                primary.sentCommands.contains { $0.type == .setSessionArchived && $0.sessionId == session.id && $0.archived == archived }
+                    && primary.sentCommands.contains { $0.type == .completePickleBridgeRequest && $0.delivered == true }
+            }
+        }
     }
 
     @Test func pickleBridgeListIncludesPrimarySnapshotSessions() async throws {

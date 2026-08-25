@@ -48,11 +48,16 @@ run_with_retry() {
   done
 }
 
+# Lower-only ratchet for SwiftLint error-severity violations. Existing debt may
+# only shrink; a new violation fails the push. Never raise this baseline.
+SWIFTLINT_ERROR_VIOLATION_BASELINE=6
+
 run_swiftlint_warning_first() {
   echo
   echo "▶ SwiftLint warning-first rules"
   local output
   local status
+  local errors
   set +e
   output="$(swiftlint lint --config .swiftlint.yml --quiet 2>&1)"
   status=$?
@@ -60,8 +65,15 @@ run_swiftlint_warning_first() {
   if [ -n "$output" ]; then
     printf '%s\n' "$output"
   fi
-  if printf '%s\n' "$output" | grep -Eq ':[0-9]+(:[0-9]+)?: error:'; then
-    return "$status"
+  # A here-string, not a pipe: with `set -o pipefail` an early-exiting `grep -q`
+  # makes the producer fail with SIGPIPE, which silently skipped this check.
+  errors="$(grep -Ec ':[0-9]+(:[0-9]+)?: error:' <<<"$output" || true)"
+  if [ "$errors" -gt "$SWIFTLINT_ERROR_VIOLATION_BASELINE" ]; then
+    echo "❌ pre-push: SwiftLint error-severity violations rose to ${errors}, above ratchet ${SWIFTLINT_ERROR_VIOLATION_BASELINE}. Fix the new violation; do not raise the ratchet." >&2
+    return 1
+  fi
+  if [ "$errors" -gt 0 ]; then
+    echo "SwiftLint reports ${errors} pre-existing error-severity violation(s) at ratchet ${SWIFTLINT_ERROR_VIOLATION_BASELINE}; shrink them when touching these files."
   fi
   if [ "$status" -ne 0 ]; then
     echo "SwiftLint returned $status with warnings only; continuing per warning-first policy."

@@ -354,7 +354,47 @@ function lineCount(file) {
 // The sole HUD reference constructs an isolated preview fixture; mounted HUD
 // production code receives only PickySessionCommands and registry child stores.
 const HUD_SESSION_LIST_VIEW_MODEL_REFERENCE_BASELINE = 1;
-const observableSessionArrayPattern = /^\s*(?:@[A-Za-z_][A-Za-z0-9_]*(?:\([^\n]*\))?\s*)*((?:(?:public|internal|package|fileprivate|private(?:\(set\))?|static|class|final|lazy|weak|unowned|nonisolated)\s+)*)(var|let)\s+[A-Za-z_][A-Za-z0-9_]*\s*:\s*\[\s*(SessionCard|PickySessionMessage|PickyAgentSession)\s*\](?!\s*\{)/gm;
+
+// Session-shaped value types that must never be exposed as a public observable
+// collection. Renaming one of these silently disarms the rule, so the self-test
+// asserts every entry still resolves to a declared Swift type.
+const SESSION_PROJECTION_VALUE_TYPES = [
+  "SessionCard",
+  "PickySessionCard",
+  "PickySessionMessage",
+  "PickyAgentSession",
+  "PickySessionMetadata",
+  "PickySessionDockProjection",
+];
+const sessionProjectionValueTypePattern = SESSION_PROJECTION_VALUE_TYPES.join("|");
+const observableSessionArrayPattern = new RegExp(
+  String.raw`^\s*(?:@[A-Za-z_][A-Za-z0-9_]*(?:\([^\n]*\))?\s*)*((?:(?:public|internal|package|fileprivate|private(?:\(set\))?|static|class|final|lazy|weak|unowned|nonisolated)\s+)*)(var|let)\s+[A-Za-z_][A-Za-z0-9_]*\s*:\s*\[\s*(${sessionProjectionValueTypePattern})\s*\](?!\s*\{)`,
+  "gm",
+);
+
+// Lower-only ratchet across the whole app: a view may not subscribe to the
+// global session façade. `Picky/HUD` has its own stricter reference ratchet;
+// this one closes the gap for views outside that directory.
+const FACADE_OBSERVATION_BASELINE = 1;
+const facadeObservationPattern = /@(?:ObservedObject|EnvironmentObject|StateObject)(?:\s*\([^\n]*\))?\s+(?:(?:public|internal|package|fileprivate|private(?:\(set\))?|var|let|weak|unowned)\s+)*[A-Za-z_][A-Za-z0-9_]*\s*:\s*PickySessionListViewModel\b/g;
+
+function facadeObservationViolations(source) {
+  return [...stripSwiftCommentsAndStrings(source).matchAll(facadeObservationPattern)].map((match) => match[0]);
+}
+
+function facadeObservationCount() {
+  return walk("Picky", (candidate) => candidate.endsWith(".swift"))
+    .reduce((count, file) => count + facadeObservationViolations(fs.readFileSync(file, "utf8")).length, 0);
+}
+
+// Lower-only ratchet: fixed microtask pumps make terminal/journal assertions
+// order-dependent. New waits must express their condition (`waitUntil`).
+const SETTLE_PUMP_BASELINE = 170;
+
+function settlePumpCount() {
+  return walk("agentd/src", (candidate) => candidate.endsWith(".test.ts"))
+    .reduce((count, file) => count + (fs.readFileSync(file, "utf8").match(/\bsettle\(\)/g)?.length ?? 0), 0);
+}
 
 function observableSessionArrayViolations(source) {
   const stripped = stripSwiftCommentsAndStrings(source);
@@ -385,9 +425,67 @@ function checkSessionProjectionRules() {
   if (hudSessionListViewModelReferenceExceedsBaseline(referenceCount)) {
     addError(`Picky/HUD concrete PickySessionListViewModel references grew to ${referenceCount}, above recorded baseline ${HUD_SESSION_LIST_VIEW_MODEL_REFERENCE_BASELINE}.`);
   }
+
+  const observationCount = facadeObservationCount();
+  if (observationCount > FACADE_OBSERVATION_BASELINE) {
+    addError(`Picky views observing the concrete PickySessionListViewModel grew to ${observationCount}, above recorded baseline ${FACADE_OBSERVATION_BASELINE}. Observe the exact projection store instead of the global façade.`);
+  }
+
+  const settleCount = settlePumpCount();
+  if (settleCount > SETTLE_PUMP_BASELINE) {
+    addError(`agentd tests use settle() ${settleCount} times, above recorded baseline ${SETTLE_PUMP_BASELINE}. Await an explicit condition (waitUntil) instead of a fixed microtask pump.`);
+  }
 }
 
 function checkSessionProjectionGuardFixtures() {
+  // A rename that orphans an entry disarms the rule silently, which is exactly
+  // how `SessionCard` -> `PickySessionCard` slipped past it once.
+  const declaredTypePattern = (type) => new RegExp(String.raw`\b(?:struct|final class|class|enum|typealias)\s+${type}\b`);
+  const swiftSources = walk("Picky", (candidate) => candidate.endsWith(".swift")).map((file) => fs.readFileSync(file, "utf8"));
+  for (const type of SESSION_PROJECTION_VALUE_TYPES) {
+    if (!swiftSources.some((source) => declaredTypePattern(type).test(source))) {
+      addError(`Session-projection guard lists '${type}', which no longer names a declared Swift type. Update SESSION_PROJECTION_VALUE_TYPES after the rename so the rule keeps matching.`);
+    }
+  }
+
+  for (const type of SESSION_PROJECTION_VALUE_TYPES) {
+    const canonicalStore = `
+    @Observable
+    final class SessionStore {
+      var values: [${type}] = []
+    }
+  `;
+    if (observableSessionArrayViolations(canonicalStore).length !== 1) {
+      addError(`Session-projection guard self-test failed to block a non-private Observable [${type}] array.`);
+    }
+  }
+
+  const blockedFacadeObservers = `
+    struct PanelView: View {
+      @ObservedObject var viewModel: PickySessionListViewModel
+      @EnvironmentObject private var injected: PickySessionListViewModel
+      @StateObject var owned: PickySessionListViewModel
+    }
+  `;
+  const allowedNarrowObserver = `
+    struct PanelView: View {
+      @ObservedObject var viewModel: PickySessionDockStore
+      let commands: PickySessionCommands
+    }
+  `;
+  if (facadeObservationViolations(blockedFacadeObservers).length !== 3) {
+    addError("Session-projection guard self-test failed to block views observing the concrete fa\u00e7ade.");
+  }
+  if (facadeObservationViolations(allowedNarrowObserver).length !== 0) {
+    addError("Session-projection guard self-test incorrectly blocked a narrow projection observer.");
+  }
+  if (facadeObservationCount() !== FACADE_OBSERVATION_BASELINE) {
+    addError(`Session-projection guard self-test fa\u00e7ade observation count drifted from its recorded baseline ${FACADE_OBSERVATION_BASELINE}.`);
+  }
+  if (settlePumpCount() !== SETTLE_PUMP_BASELINE) {
+    addError(`Session-projection guard self-test settle() count drifted from its recorded baseline ${SETTLE_PUMP_BASELINE}. Lower the pin when waits are converted; never raise it.`);
+  }
+
   const blockedStore = `
     @Observable
     final class SessionStore {

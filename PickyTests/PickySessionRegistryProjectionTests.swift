@@ -255,6 +255,83 @@ struct PickySessionRegistryProjectionTests {
         host.layoutSubtreeIfNeeded()
     }
 
+    /// Real persisted sessions repeat `runId` across subagent batches (each batch
+    /// restarts its counter), so a per-session index keyed on it must tolerate
+    /// duplicates instead of trapping while hydrating a bootstrap snapshot.
+    @Test func childStoresIndexDuplicateServerIDsWithoutTrapping() {
+        let subagents = PickySessionSubagentStore()
+        subagents.replace([run(runId: 1, agent: "worker"), run(runId: 2, agent: "verifier"), run(runId: 1, agent: "reviewer")])
+        #expect(subagents.runsState.loadedValue?.count == 3)
+        #expect(subagents.run(id: 1)?.agent == "reviewer")
+
+        let tools = PickySessionToolStore()
+        tools.replace([tool(id: "call-1", name: "read"), tool(id: "call-1", name: "write")])
+        #expect(tools.toolsState.loadedValue?.count == 2)
+        #expect(tools.tool(id: "call-1")?.name == "write")
+
+        let todo = PickySessionTodoStore()
+        todo.replace(PickyTodoState(
+            tasks: [todoTask(id: "t1", content: "first"), todoTask(id: "t1", content: "second")],
+            updatedAt: PickyProjectionReplayFixtures.terminalDate
+        ))
+        #expect(todo.task(id: "t1")?.content == "second")
+
+        let artifacts = PickySessionArtifactStore()
+        artifacts.replace(
+            artifacts: [artifact(id: "a1", title: "first"), artifact(id: "a1", title: "second")],
+            changedFiles: [changedFile(path: "/tmp/f"), changedFile(path: "/tmp/f")]
+        )
+        #expect(artifacts.artifactsState.loadedValue?.count == 2)
+        #expect(artifacts.artifact(id: "a1")?.title == "second")
+
+        let queue = PickySessionQueueStore()
+        queue.replace(
+            steers: [queueItem(id: "dup", text: "first"), queueItem(id: "dup", text: "second")],
+            followUps: [],
+            steeringMode: .oneAtATime,
+            followUpMode: .oneAtATime
+        )
+        #expect(queue.queueState.loadedValue?.steers.count == 2)
+    }
+
+    private func tool(id: String, name: String) -> PickyToolActivity {
+        PickyToolActivity(toolCallId: id, name: name, status: "succeeded")
+    }
+
+    private func todoTask(id: String, content: String) -> PickyTodoTask {
+        PickyTodoTask(id: id, content: content, status: .pending, activeForm: nil, notes: nil)
+    }
+
+    private func artifact(id: String, title: String) -> PickyArtifact {
+        PickyArtifact(id: id, kind: "github", title: title, path: nil, url: nil, updatedAt: PickyProjectionReplayFixtures.terminalDate)
+    }
+
+    private func changedFile(path: String) -> PickyChangedFile {
+        PickyChangedFile(path: path, status: "M", summary: nil)
+    }
+
+    private func queueItem(id: String, text: String) -> PickyQueueItem {
+        PickyQueueItem(text: text, enqueuedAt: PickyProjectionReplayFixtures.terminalDate, id: id)
+    }
+
+    private func run(runId: Int, agent: String) -> PickySubagentRun {
+        PickySubagentRun(
+            runId: runId,
+            agent: agent,
+            task: "task",
+            displayTask: nil,
+            status: .done,
+            errorClass: nil,
+            startedAt: PickyProjectionReplayFixtures.terminalDate,
+            elapsedMs: 1,
+            batchId: nil,
+            pipelineId: nil,
+            pipelineStepIndex: nil,
+            resultPreview: nil,
+            model: nil
+        )
+    }
+
     private func card(id: String, status: PickySessionStatus) -> PickySessionListViewModel.SessionCard {
         .fromAgentSession(PickyAgentSession(
             id: id,
@@ -315,4 +392,11 @@ private final class ProjectionInvalidationCounter: @unchecked Sendable {
 
     var count: Int { lock.withLock { value } }
     func increment() { lock.withLock { value += 1 } }
+}
+
+private extension PickyProjectionSectionState {
+    var loadedValue: Value? {
+        guard case .loaded(let value) = self else { return nil }
+        return value
+    }
 }

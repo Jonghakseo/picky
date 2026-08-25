@@ -387,6 +387,23 @@ function facadeObservationCount() {
     .reduce((count, file) => count + facadeObservationViolations(fs.readFileSync(file, "utf8")).length, 0);
 }
 
+// Projection indexes are built from server-provided identity, which is not
+// unique inside a session (real sessions repeat subagent `runId`). The trapping
+// initializer turns that data into a launch crash, so it is banned here.
+const trappingDictionaryPattern = /Dictionary\(\s*uniqueKeysWithValues:/g;
+
+function trappingDictionaryViolations(source) {
+  return [...stripSwiftCommentsAndStrings(source).matchAll(trappingDictionaryPattern)].map((match) => match[0]);
+}
+
+const PROJECTION_INDEX_DIRECTORY = "Picky/Sessions";
+
+function projectionTrappingDictionaryFiles() {
+  return walk(PROJECTION_INDEX_DIRECTORY, (candidate) => candidate.endsWith(".swift"))
+    .filter((file) => trappingDictionaryViolations(fs.readFileSync(file, "utf8")).length > 0)
+    .map((file) => rel(file));
+}
+
 // Lower-only ratchet: fixed microtask pumps make terminal/journal assertions
 // order-dependent. New waits must express their condition (`waitUntil`).
 const SETTLE_PUMP_BASELINE = 170;
@@ -429,6 +446,10 @@ function checkSessionProjectionRules() {
   const observationCount = facadeObservationCount();
   if (observationCount > FACADE_OBSERVATION_BASELINE) {
     addError(`Picky views observing the concrete PickySessionListViewModel grew to ${observationCount}, above recorded baseline ${FACADE_OBSERVATION_BASELINE}. Observe the exact projection store instead of the global façade.`);
+  }
+
+  for (const file of projectionTrappingDictionaryFiles()) {
+    addError(`${file} builds a projection index with Dictionary(uniqueKeysWithValues:). Server identity repeats inside a session, so use uniquingKeysWith (lastProjectionValueWins) instead of trapping at launch.`);
   }
 
   const settleCount = settlePumpCount();
@@ -482,6 +503,26 @@ function checkSessionProjectionGuardFixtures() {
   if (facadeObservationCount() !== FACADE_OBSERVATION_BASELINE) {
     addError(`Session-projection guard self-test fa\u00e7ade observation count drifted from its recorded baseline ${FACADE_OBSERVATION_BASELINE}.`);
   }
+  const blockedIndex = `
+    func replace(_ runs: [PickySubagentRun]) {
+      runsByID = Dictionary(uniqueKeysWithValues: runs.map { ($0.id, $0) })
+    }
+  `;
+  const allowedIndex = `
+    func replace(_ runs: [PickySubagentRun]) {
+      runsByID = Dictionary(runs.map { ($0.id, $0) }, uniquingKeysWith: lastProjectionValueWins)
+    }
+  `;
+  if (trappingDictionaryViolations(blockedIndex).length !== 1) {
+    addError("Session-projection guard self-test failed to block a trapping projection index.");
+  }
+  if (trappingDictionaryViolations(allowedIndex).length !== 0) {
+    addError("Session-projection guard self-test incorrectly blocked a duplicate-tolerant projection index.");
+  }
+  if (projectionTrappingDictionaryFiles().length !== 0) {
+    addError(`Session-projection guard self-test found trapping projection indexes still present: ${projectionTrappingDictionaryFiles().join(", ")}.`);
+  }
+
   if (settlePumpCount() !== SETTLE_PUMP_BASELINE) {
     addError(`Session-projection guard self-test settle() count drifted from its recorded baseline ${SETTLE_PUMP_BASELINE}. Lower the pin when waits are converted; never raise it.`);
   }

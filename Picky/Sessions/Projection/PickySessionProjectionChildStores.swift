@@ -6,6 +6,14 @@
 import Foundation
 import Observation
 
+/// Server-provided identity is not guaranteed unique inside one session: real
+/// sessions repeat `runId` across subagent batches, and a projection index must
+/// never trap on that. The ordered array stays the source of truth; the index
+/// resolves a repeated id to its most recent entry.
+func lastProjectionValueWins<Value>(_ existing: Value, _ latest: Value) -> Value {
+    latest
+}
+
 /// Scalar session fields owned by `PickySessionMetaStore`.
 ///
 /// This deliberately excludes every child-owned collection and
@@ -112,7 +120,7 @@ final class PickySessionLogStore {
 
     func replace(_ logs: [String]) {
         orderedLogIDs = logs.indices.map(String.init)
-        logsByID = Dictionary(uniqueKeysWithValues: zip(orderedLogIDs, logs))
+        logsByID = Dictionary(zip(orderedLogIDs, logs), uniquingKeysWith: lastProjectionValueWins)
         state = .loaded(logs)
         valueRevision += 1
     }
@@ -145,7 +153,7 @@ final class PickySessionToolStore {
 
     func replace(_ tools: [PickyToolActivity]) {
         orderedToolIDs = tools.map(\.id)
-        toolsByID = Dictionary(uniqueKeysWithValues: tools.map { ($0.id, $0) })
+        toolsByID = Dictionary(tools.map { ($0.id, $0) }, uniquingKeysWith: lastProjectionValueWins)
         state = .loaded(tools)
         valueRevision += 1
     }
@@ -178,7 +186,7 @@ final class PickySessionTodoStore {
 
     func replace(_ todoState: PickyTodoState?) {
         orderedTaskIDs = todoState?.tasks.map(\.id) ?? []
-        tasksByID = Dictionary(uniqueKeysWithValues: (todoState?.tasks ?? []).map { ($0.id, $0) })
+        tasksByID = Dictionary((todoState?.tasks ?? []).map { ($0.id, $0) }, uniquingKeysWith: lastProjectionValueWins)
         state = .loaded(todoState)
         valueRevision += 1
     }
@@ -211,7 +219,7 @@ final class PickySessionSubagentStore {
 
     func replace(_ runs: [PickySubagentRun]) {
         orderedRunIDs = runs.map(\.id)
-        runsByID = Dictionary(uniqueKeysWithValues: runs.map { ($0.id, $0) })
+        runsByID = Dictionary(runs.map { ($0.id, $0) }, uniquingKeysWith: lastProjectionValueWins)
         state = .loaded(runs)
         valueRevision += 1
     }
@@ -252,9 +260,9 @@ final class PickySessionArtifactStore {
 
     func replace(artifacts: [PickyArtifact], changedFiles: [PickyChangedFile]) {
         orderedArtifactIDs = artifacts.map(\.id)
-        artifactsByID = Dictionary(uniqueKeysWithValues: artifacts.map { ($0.id, $0) })
+        artifactsByID = Dictionary(artifacts.map { ($0.id, $0) }, uniquingKeysWith: lastProjectionValueWins)
         orderedChangedFileIDs = changedFiles.map(\.path)
-        changedFilesByID = Dictionary(uniqueKeysWithValues: changedFiles.map { ($0.path, $0) })
+        changedFilesByID = Dictionary(changedFiles.map { ($0.path, $0) }, uniquingKeysWith: lastProjectionValueWins)
         artifactState = .loaded(artifacts)
         changedFilesState = .loaded(changedFiles)
         valueRevision += 1
@@ -318,7 +326,7 @@ final class PickySessionQueueStore {
     func replace(steers: [PickyQueueItem], followUps: [PickyQueueItem], steeringMode: PickyQueueMode, followUpMode: PickyQueueMode) {
         orderedSteerIDs = stableIDs(for: steers, prefix: "steer")
         orderedFollowUpIDs = stableIDs(for: followUps, prefix: "follow-up")
-        itemsByID = Dictionary(uniqueKeysWithValues: zip(orderedSteerIDs + orderedFollowUpIDs, steers + followUps))
+        itemsByID = Dictionary(zip(orderedSteerIDs + orderedFollowUpIDs, steers + followUps), uniquingKeysWith: lastProjectionValueWins)
         state = .loaded(PickySessionQueueProjection(steers: steers, followUps: followUps))
         modes = PickySessionQueueModes(steeringMode: steeringMode, followUpMode: followUpMode)
         valueRevision += 1

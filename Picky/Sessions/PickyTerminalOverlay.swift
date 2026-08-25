@@ -1273,9 +1273,10 @@ struct PickyPiSessionFileSyncer: PickyTerminalSessionSyncing {
         guard var current = entries.last(where: { entry in
             entry.message?.role == "user" || entry.message?.role == "assistant"
         }) else { return [] }
-        let byId = Dictionary(uniqueKeysWithValues: entries.compactMap { entry in
-            entry.id.map { ($0, entry) }
-        })
+        let byId = Dictionary(
+            entries.compactMap { entry in entry.id.map { ($0, entry) } },
+            uniquingKeysWith: lastProjectionValueWins
+        )
         var path: [PiSessionMessageEntry] = []
         var seen = Set<String>()
         while true {

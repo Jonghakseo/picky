@@ -10,6 +10,10 @@ import Observation
 @Observable
 final class PickyConversationStore {
     @ObservationIgnored private var messagesByID: [String: PickyMessageStore] = [:]
+    /// O(1) membership for `orderedMessageIDs`. `messagesByID` cannot serve this
+    /// role: `messageStore(id:)` vends a leaf for a message that has not joined
+    /// the ordered journal yet.
+    @ObservationIgnored private var orderedMessageIDSet: Set<String> = []
     @ObservationIgnored private var state: PickyProjectionSectionState<[PickySessionMessage]> = .unavailable
     @ObservationIgnored private var messageJournalAvailability: PickyProjectionSectionState<Bool?> = .unavailable
     private(set) var orderedMessageIDs: [String] = []
@@ -27,14 +31,18 @@ final class PickyConversationStore {
 
     @discardableResult
     func messageStore(message: PickySessionMessage) -> PickyMessageStore {
-        let store = messageStore(id: message.id)
-        store.replace(message)
-        if !orderedMessageIDs.contains(message.id) {
-            orderedMessageIDs.append(message.id)
-        }
-        state = .loaded(orderedMessageIDs.compactMap { messagesByID[$0]?.messageState.loadedValue })
-        valueRevision += 1
+        let store = upsert(message)
+        republishMembership()
         return store
+    }
+
+    /// Batch equivalent of upserting each message in order. Membership is
+    /// republished once for the whole batch, so hydrating a long journal costs
+    /// one invalidation and one array build instead of one per message.
+    func importMessages(_ messages: [PickySessionMessage]) {
+        guard !messages.isEmpty else { return }
+        for message in messages { _ = upsert(message) }
+        republishMembership()
     }
 
     func messageStore(id: String) -> PickyMessageStore {
@@ -46,11 +54,11 @@ final class PickyConversationStore {
 
     func replaceMessages(_ messages: [PickySessionMessage]) {
         let incomingIDs = messages.map(\.id)
-        for message in messages {
-            _ = messageStore(message: message)
-        }
+        for message in messages { _ = upsert(message) }
+        let retainedIDs = Set(incomingIDs)
         orderedMessageIDs = incomingIDs
-        messagesByID = messagesByID.filter { incomingIDs.contains($0.key) }
+        orderedMessageIDSet = retainedIDs
+        messagesByID = messagesByID.filter { retainedIDs.contains($0.key) }
         state = .loaded(messages)
         valueRevision += 1
     }
@@ -64,8 +72,8 @@ final class PickyConversationStore {
         messagesByID[id]?.markUnavailable()
         messagesByID.removeValue(forKey: id)
         orderedMessageIDs.removeAll { $0 == id }
-        state = .loaded(orderedMessageIDs.compactMap { messagesByID[$0]?.messageState.loadedValue })
-        valueRevision += 1
+        orderedMessageIDSet.remove(id)
+        republishMembership()
     }
 
     func markMessageJournalAvailabilityUnavailable() {
@@ -78,9 +86,24 @@ final class PickyConversationStore {
             store.markUnavailable()
         }
         orderedMessageIDs = []
+        orderedMessageIDSet = []
         messagesByID = [:]
         state = .unavailable
         messageJournalAvailability = .unavailable
+        valueRevision += 1
+    }
+
+    private func upsert(_ message: PickySessionMessage) -> PickyMessageStore {
+        let store = messageStore(id: message.id)
+        store.replace(message)
+        if orderedMessageIDSet.insert(message.id).inserted {
+            orderedMessageIDs.append(message.id)
+        }
+        return store
+    }
+
+    private func republishMembership() {
+        state = .loaded(orderedMessageIDs.compactMap { messagesByID[$0]?.messageState.loadedValue })
         valueRevision += 1
     }
 }

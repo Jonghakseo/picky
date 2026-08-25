@@ -62,6 +62,69 @@ struct PickyConversationProjectionTests {
         #expect(secondInvalidations.count == 0)
     }
 
+    /// Batch hydration must cost one membership invalidation regardless of the
+    /// journal length. Counting invalidations is the deterministic proxy for the
+    /// per-message array rebuild that made long-session hydration quadratic.
+    @Test func batchHydrationInvalidatesMembershipOncePerBatch() {
+        for count in [1, 10, 200] {
+            let conversation = PickyConversationStore()
+            let invalidations = ConversationProjectionInvalidationCounter()
+            withObservationTracking { _ = conversation.messagesState } onChange: {
+                invalidations.increment()
+            }
+
+            conversation.replaceMessages((0..<count).map { message(id: "m\($0)", text: "line \($0)") })
+
+            #expect(invalidations.count == 1)
+            #expect(conversation.orderedMessageIDs.count == count)
+            #expect(conversation.messagesState.loadedMessages?.map(\.id) == (0..<count).map { "m\($0)" })
+        }
+    }
+
+    @Test func batchImportInvalidatesMembershipOncePerBatchAndKeepsExistingLeaves() {
+        let conversation = PickyConversationStore()
+        conversation.replaceMessages([message(id: "kept", text: "Kept")])
+        let keptLeaf = conversation.messageStore(id: "kept")
+        let keptInvalidations = ConversationProjectionInvalidationCounter()
+        let membershipInvalidations = ConversationProjectionInvalidationCounter()
+        withObservationTracking { _ = keptLeaf.messageState } onChange: {
+            keptInvalidations.increment()
+        }
+        withObservationTracking { _ = conversation.messagesState } onChange: {
+            membershipInvalidations.increment()
+        }
+
+        conversation.importMessages((0..<50).map { message(id: "imported-\($0)", text: "line \($0)") })
+
+        // One membership invalidation for the whole batch, and an untouched
+        // message leaf stays unobserved.
+        #expect(membershipInvalidations.count == 1)
+        #expect(keptInvalidations.count == 0)
+        #expect(conversation.messageStore(id: "kept") === keptLeaf)
+        #expect(conversation.orderedMessageIDs.first == "kept")
+        #expect(conversation.orderedMessageIDs.count == 51)
+    }
+
+    /// `importMessages` must stay equivalent to the per-message upsert loop it
+    /// replaces: existing ids update in place, new ids append in arrival order.
+    @Test func batchImportMatchesTheSequentialUpsertLoop() {
+        let incoming = [
+            message(id: "b", text: "B updated"),
+            message(id: "c", text: "C new"),
+            message(id: "a", text: "A updated"),
+        ]
+        let sequential = PickyConversationStore()
+        sequential.replaceMessages([message(id: "a", text: "A"), message(id: "b", text: "B")])
+        for message in incoming { sequential.messageStore(message: message) }
+
+        let batched = PickyConversationStore()
+        batched.replaceMessages([message(id: "a", text: "A"), message(id: "b", text: "B")])
+        batched.importMessages(incoming)
+
+        #expect(batched.orderedMessageIDs == sequential.orderedMessageIDs)
+        #expect(batched.messagesState.loadedMessages == sequential.messagesState.loadedMessages)
+    }
+
     @Test func childProjectionsObserveOnlyTheirDeclaredOwners() {
         let card = sessionCard(messages: [message(id: "message-a", text: "Streaming")])
         let metadata = PickySessionMetaStore()
@@ -341,6 +404,13 @@ private final class ConversationProjectionMessageEvaluationRecorder: @unchecked 
                     && $0.isLatestResponseShortcutHintVisible == isLatestResponseShortcutHintVisible
             }
         }
+    }
+}
+
+private extension PickyProjectionSectionState where Value == [PickySessionMessage] {
+    var loadedMessages: [PickySessionMessage]? {
+        guard case .loaded(let value) = self else { return nil }
+        return value
     }
 }
 

@@ -103,7 +103,7 @@ extension PickyRegistrySessionProjectionStorage {
         case .messageRemove(let messageID):
             store.conversationStore.removeMessage(id: messageID)
         case .messagesImport(let messages):
-            for message in messages { _ = store.conversationStore.messageStore(message: message) }
+            store.conversationStore.importMessages(messages)
         case .logAppend(let line):
             var logs = store.logStore.logsState.loadedValue ?? []
             logs.append(line)

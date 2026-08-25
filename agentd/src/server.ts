@@ -619,11 +619,10 @@ export class AgentdServer {
       pinPickleSession: (cmd) => this.options.supervisor.pinPickleSession(cmd.context, cmd.title),
       setNotifyMainOnCompletion: (cmd) => this.options.supervisor.setNotifyMainOnCompletion(cmd.sessionId, cmd.enabled),
       notifyMainOfPickleCompletion: (cmd) => this.options.supervisor.deliverMainAgentPickleCompletion(cmd.sessionId, cmd.prompt, cmd.cwd),
-      setSessionArchived: (cmd) => {
-        return this.options.supervisor.setSessionArchived(cmd.sessionId, cmd.archived);
-      },
+      setSessionArchived: (cmd) => this.options.supervisor.setSessionArchived(cmd.sessionId, cmd.archived),
       deleteSession: async (cmd) => {
         await this.options.supervisor.deleteSession(cmd.sessionId);
+        // V2 has no deletion mutation. Retain this v1 fallback until an external deletion producer exists.
         const sessions = compactSessionsForSnapshot(this.options.supervisor.list()).map(protocolSession);
         this.broadcastSessionSnapshot(sessions);
       },

@@ -2698,6 +2698,41 @@ struct PickyCompanionManagerTests {
         manager.stop()
     }
 
+    @Test func projectionTerminalTransactionReleasesCursorOnlyForItsFirstTerminalTransition() async throws {
+        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+        let cancelled = projectionTransaction(sessionID: "pickle-projection", status: .cancelled)
+        manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-projection")
+        manager.beginAwaitingAgentResponse(recognizedTranscript: "hello")
+        #expect(manager.voiceState == .processing)
+
+        manager.applyAgentEvent(.sessionProjectionTransaction(cancelled))
+
+        #expect(manager.voiceState == .idle)
+        #expect(manager.voiceFollowUpSessionIDForCurrentUtterance == nil)
+
+        manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-new")
+        manager.beginAwaitingAgentResponse(recognizedTranscript: "hello again")
+        #expect(manager.voiceState == .processing)
+        manager.applyAgentEvent(.sessionProjectionTransaction(cancelled))
+
+        #expect(manager.voiceState == .processing)
+        #expect(manager.voiceFollowUpSessionIDForCurrentUtterance == "pickle-new")
+        manager.stop()
+    }
+
+    @Test func projectionMetadataSummaryRefreshesPassiveCursorText() throws {
+        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+
+        manager.applyAgentEvent(.sessionProjectionTransaction(projectionTransaction(
+            sessionID: "pickle-summary",
+            status: .running,
+            lastSummary: "Projection summary"
+        )))
+
+        #expect(manager.latestAgentSessionSummary == "Projection summary")
+        manager.stop()
+    }
+
     @Test func sessionUpdatedToCancelledForUnrelatedSessionDoesNotReleaseCursor() async throws {
         // The cursor is waiting on pickle-A; an unrelated pickle-B getting cancelled
         // must not yank the cursor out of .processing. Without sessionID matching this
@@ -3173,6 +3208,18 @@ struct PickyCompanionManagerTests {
             artifacts: [],
             changedFiles: []
         )
+    }
+
+    private func projectionTransaction(
+        sessionID: String,
+        status: PickySessionStatus,
+        lastSummary: String? = nil
+    ) -> PickySessionProjectionTransaction {
+        let summary = lastSummary.map { ",\"lastSummary\":\"\($0)\"" } ?? ""
+        let json = """
+        {"sessionId":"\(sessionID)","epoch":"companion-test","baseRevision":1,"revision":2,"mutations":[{"type":"metaPatch","patch":{"status":"\(status.rawValue)"\(summary)}}]}
+        """
+        return try! JSONDecoder.pickyAgentProtocolDecoder().decode(PickySessionProjectionTransaction.self, from: Data(json.utf8))
     }
 
     /// Polls `predicate` up to two seconds so timing-sensitive expectations stay

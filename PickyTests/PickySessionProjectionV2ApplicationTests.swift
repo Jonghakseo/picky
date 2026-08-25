@@ -86,6 +86,60 @@ struct PickySessionProjectionV2ApplicationTests {
         #expect(metadata?.title == "Renamed")
     }
 
+    @Test func bootstrapSeedsTerminalNotificationDedupBeforeLaterProjectionTransactions() throws {
+        let notifications = PickyNoopNotificationCenter()
+        let viewModel = makeViewModel(
+            client: FakePickyAgentClient(),
+            storage: PickyRegistrySessionProjectionStorage(),
+            notificationCenter: notifications,
+            notificationPreferencesProvider: PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
+                notifyOnCompleted: true,
+                notifyOnFailed: true,
+                notifyOnWaitingForInput: true
+            ))
+        )
+
+        apply(snapshot(sessionID: "historical", title: "Historical", status: .completed, revision: 1), to: viewModel)
+        apply(transaction(sessionID: "historical", baseRevision: 1, revision: 2, mutations: #"[{"type":"metaPatch","patch":{"lastSummary":"Still historical"}}]"#), to: viewModel)
+
+        #expect(notifications.delivered.isEmpty)
+    }
+
+    @Test func visibleDiffRefreshesWhenProjectionTransactionLeavesRunning() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = makeViewModel(client: client, storage: PickyRegistrySessionProjectionStorage())
+        apply(snapshot(sessionID: "diff-session", title: "Diff", status: .running, revision: 1), to: viewModel)
+
+        viewModel.setSessionDiffVisible(true, sessionID: "diff-session")
+        await waitUntil { client.sentCommands.filter { $0.type == .getSessionDiff }.count == 1 }
+
+        apply(transaction(sessionID: "diff-session", baseRevision: 1, revision: 2, mutations: #"[{"type":"metaPatch","patch":{"status":"completed"}}]"#), to: viewModel)
+        await waitUntil { client.sentCommands.filter { $0.type == .getSessionDiff }.count == 2 }
+
+        #expect(client.sentCommands.filter { $0.type == .getSessionDiff }.count == 2)
+    }
+
+    @Test func projectionRuntimeReattachLogInvalidatesLoadedSlashCommands() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = makeViewModel(client: client, storage: PickyRegistrySessionProjectionStorage())
+        apply(snapshot(sessionID: "commands", title: "Commands", status: .running, revision: 1), to: viewModel)
+
+        viewModel.ensureSlashCommandsLoaded(sessionID: "commands")
+        await waitUntil { client.sentCommands.contains { $0.type == .listSlashCommands } }
+        let requestID = try #require(client.sentCommands.last { $0.type == .listSlashCommands }?.id)
+        viewModel.apply(.protocolEvent(PickyEventEnvelope(
+            id: "commands-loaded",
+            protocolVersion: pickyAgentProtocolVersion,
+            timestamp: PickyProjectionReplayFixtures.bootstrapDate,
+            event: .slashCommandsSnapshot(sessionId: "commands", requestId: requestID, commands: [PickySlashCommand(name: "help", description: nil, source: .builtin)])
+        )))
+        #expect(viewModel.hasLoadedSlashCommands(sessionID: "commands"))
+
+        apply(transaction(sessionID: "commands", baseRevision: 1, revision: 2, mutations: #"[{"type":"logAppend","line":"runtime reattached from pi session: /tmp/pi.jsonl"}]"#), to: viewModel)
+
+        #expect(!viewModel.hasLoadedSlashCommands(sessionID: "commands"))
+    }
+
     @Test func terminalTransactionPublishesPinnedV2BudgetAndPreservesAttentionEffects() throws {
         let storage = PickyRegistrySessionProjectionStorage()
         let viewModel = PickyProjectionReplayFixtures.makeViewModel(sessionProjectionStorage: storage)
@@ -110,10 +164,16 @@ struct PickySessionProjectionV2ApplicationTests {
         withExtendedLifetime(cancellable) {}
     }
 
-    private func makeViewModel(client: FakePickyAgentClient, storage: PickyRegistrySessionProjectionStorage) -> PickySessionListViewModel {
+    private func makeViewModel(
+        client: FakePickyAgentClient,
+        storage: PickyRegistrySessionProjectionStorage,
+        notificationCenter: PickyNotificationDelivering = PickyNoopNotificationCenter(),
+        notificationPreferencesProvider: PickyNotificationPreferencesProviding = PickyStubNotificationPreferences()
+    ) -> PickySessionListViewModel {
         PickySessionListViewModel(
             client: client,
-            notificationCenter: PickyNoopNotificationCenter(),
+            notificationCenter: notificationCenter,
+            notificationPreferencesProvider: notificationPreferencesProvider,
             selectionStore: V2SelectionStore(),
             archiveStore: V2ArchiveStore(),
             manualOrderStore: V2ManualOrderStore(),
@@ -148,6 +208,13 @@ struct PickySessionProjectionV2ApplicationTests {
         {"sessionId":"\(sessionID)","epoch":"epoch-1","baseRevision":\(baseRevision),"revision":\(revision),"mutations":\(mutations)}
         """
         return try! JSONDecoder.pickyAgentProtocolDecoder().decode(PickySessionProjectionTransaction.self, from: Data(json.utf8))
+    }
+
+    private func waitUntil(_ predicate: () -> Bool) async {
+        for _ in 0..<100 where !predicate() {
+            await Task.yield()
+        }
+        #expect(predicate())
     }
 }
 

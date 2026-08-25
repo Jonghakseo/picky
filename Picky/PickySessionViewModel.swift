@@ -2768,7 +2768,7 @@ final class PickySessionListViewModel: ObservableObject {
         sessions.sorted { lhs, rhs in lhs.updatedAt > rhs.updatedAt }.first?.id
     }
 
-    private func markNotificationDeliveredIfNeeded(for session: SessionCard) {
+    func markNotificationDeliveredIfNeeded(for session: SessionCard) {
         guard let notification = notification(for: session) else { return }
         deliveredNotificationKeys.insert(notification.key)
     }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SocketDialectRegistry } from "./socket-dialect.js";
+import { isLegacySessionProjectionEventType, SocketDialectRegistry } from "./socket-dialect.js";
 
 describe("SocketDialectRegistry", () => {
   it("starts negotiating, locks from capabilities, and never changes dialect", () => {
@@ -22,5 +22,9 @@ describe("SocketDialectRegistry", () => {
 
     expect(registry.lockLegacyProjection(socket)).toBe("v1");
     expect(registry.lockLegacyProjection(socket)).toBe("v1");
+  });
+
+  it("keeps rewind draft restoration available to v2 sockets", () => {
+    expect(isLegacySessionProjectionEventType("sessionRewound")).toBe(false);
   });
 });

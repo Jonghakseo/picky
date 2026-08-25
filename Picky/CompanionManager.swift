@@ -451,14 +451,9 @@ final class CompanionManager: ObservableObject {
     var activeMainTurnFollowUpSessionID: String? {
         didSet { updateMainCancelPillPresentation() }
     }
-    /// Tracks the last status we saw per session so `applyAgentEvent(.sessionUpdated)`
-    /// can detect the *transition* into a terminal status (cancelled/failed/completed)
-    /// rather than reacting on every snapshot. Used by the HUD-abort cursor-cleanup path:
-    /// when a session the cursor is waiting on becomes terminal without a `quickReply`,
-    /// CompanionManager releases the cursor processing state. Idempotent against
-    /// duplicate terminal updates (the second one observes status == prior == terminal
-    /// and short-circuits).
+    /// Tracks v1/v2 terminal status transitions so cursor cleanup executes exactly once.
     var lastObservedSessionStatuses: [String: PickySessionStatus] = [:]
+    var projectionSessionPresentations: [String: ProjectionSessionPresentation] = [:]
     /// Voice follow-up target captured at PTT press time and used by the response
     /// task to route the utterance. Exposed read-only at module scope so tests can
     /// guard the race-condition fix in `updateVoicePresentation` (see also the
@@ -2435,7 +2430,11 @@ final class CompanionManager: ObservableObject {
         case .sessionUpdated(let session), .sessionMetaUpdated(let session):
             handleSessionStatusTransition(session: session)
             updatePassiveAgentSummary(session.lastSummary ?? "\(session.title) · \(session.status.rawValue)")
-        case .sessionProjectionTransaction, .sessionProjectionSnapshot, .sessionResourcesReloaded, .sessionLogAppended, .toolActivityUpdated, .sessionTodoStateUpdated, .sessionSubagentRunsUpdated, .sessionArchivedAuthoritative, .pluginsReloaded,
+        case .sessionProjectionSnapshot(let snapshot):
+            applySessionProjectionSnapshotSideEffects(snapshot)
+        case .sessionProjectionTransaction(let transaction):
+            applySessionProjectionTransactionSideEffects(transaction)
+        case .sessionResourcesReloaded, .sessionLogAppended, .toolActivityUpdated, .sessionTodoStateUpdated, .sessionSubagentRunsUpdated, .sessionArchivedAuthoritative, .pluginsReloaded,
              .packageUpdatesAvailable, .packageOperationProgress, .packageOperationCompleted:
             // Progress events are already represented in the HUD. They should not
             // replace a cursor bubble that is currently speaking/showing a real
@@ -2632,7 +2631,7 @@ final class CompanionManager: ObservableObject {
         activeMainTurnFollowUpSessionID = nil
     }
 
-    private func updatePassiveAgentSummary(_ summary: String) {
+    func updatePassiveAgentSummary(_ summary: String) {
         guard voiceState != .responding else { return }
         latestAgentSessionSummary = summary
     }

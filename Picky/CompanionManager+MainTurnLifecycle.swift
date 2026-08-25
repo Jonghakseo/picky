@@ -253,11 +253,15 @@ extension CompanionManager {
     ///   - the interaction-coordinator dispatch is harmless when the reducer never
     ///     observed an `agentSubmissionAccepted` for this sessionID.
     func handleSessionStatusTransition(session: PickyAgentSession) {
-        let previous = lastObservedSessionStatuses[session.id]
-        lastObservedSessionStatuses[session.id] = session.status
-        guard session.status.isTerminal else { return }
+        handleSessionStatusTransition(sessionID: session.id, status: session.status)
+    }
+
+    func handleSessionStatusTransition(sessionID: String, status: PickySessionStatus) {
+        let previous = lastObservedSessionStatuses[sessionID]
+        lastObservedSessionStatuses[sessionID] = status
+        guard status.isTerminal else { return }
         if let previous, previous.isTerminal { return }
-        releaseCursorForTerminatedSession(sessionID: session.id, status: session.status)
+        releaseCursorForTerminatedSession(sessionID: sessionID, status: status)
     }
 
     private func releaseCursorForTerminatedSession(sessionID: String, status: PickySessionStatus) {

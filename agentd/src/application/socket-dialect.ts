@@ -14,7 +14,7 @@ const LEGACY_SESSION_PROJECTION_EVENT_TYPES = new Set([
   "sessionSnapshot", "sessionUpdated", "sessionMetaUpdated", "sessionArchivedAuthoritative", "sessionResourcesReloaded",
   "sessionLogAppended", "extensionUiRequest", "toolActivityUpdated", "sessionTodoStateUpdated",
   "sessionSubagentRunsUpdated", "sessionQueueUpdated", "sessionActivityUpdated", "sessionMessageAppended",
-  "sessionMessagesImported", "sessionMessageReplaced", "sessionMessageRemoved", "sessionRewound",
+  "sessionMessagesImported", "sessionMessageReplaced", "sessionMessageRemoved",
   "artifactUpdated", "terminalSessionSyncOutcome",
 ]);
 

@@ -32,14 +32,24 @@ extension PickySessionListViewModel {
             lastError = "Session projection v2 requires registry storage"
             return
         }
+        let previous = sessionProjectionStorage.session(id: snapshot.sessionId)
         if snapshot.projection.archived == true {
             archiveStore.manuallyArchivedSessionIDs.insert(snapshot.sessionId)
             archiveStore.archivedSessionIDs = archiveStore.manuallyArchivedSessionIDs
         }
         let shouldArchive = archiveStore.manuallyArchivedSessionIDs.contains(snapshot.sessionId)
-        guard storage.applyProjectionSnapshot(snapshot, archived: shouldArchive) != nil else {
+        guard let card = storage.applyProjectionSnapshot(snapshot, archived: shouldArchive) else {
             lastError = "Discarded invalid session projection snapshot"
             return
+        }
+        // Match v1 bootstrap/upsert behavior: start git metadata work before
+        // the card first renders, and seed notifications for cold snapshots.
+        PickyGitRepositoryStatus.prefetchIfNeeded(cwd: card.cwd)
+        PickyGitHubPullRequestStatus.prefetchIfNeeded(cwd: card.cwd)
+        if previous == nil {
+            markNotificationDeliveredIfNeeded(for: card)
+        } else {
+            deliverNotificationIfNeeded(for: card)
         }
         disarmInitialSnapshotWatchdog()
         if isLoadingInitialSessionSnapshot { isLoadingInitialSessionSnapshot = false }
@@ -68,6 +78,13 @@ extension PickySessionListViewModel {
             previousRuns: previous?.subagentRuns ?? [],
             currentRuns: card.subagentRuns
         )
+        // V2 no longer routes through `upsert`, so retain its cache warming
+        // side effect without making card materialization globally observable.
+        PickyGitRepositoryStatus.prefetchIfNeeded(cwd: card.cwd)
+        PickyGitHubPullRequestStatus.prefetchIfNeeded(cwd: card.cwd)
+        if transactionContainsRuntimeReattachLog(transaction) {
+            invalidateSlashCommandCache(sessionID: card.id)
+        }
         if shouldArchive {
             unreadSessionIDs.remove(card.id)
             releaseArchivedTerminalChildIfCommitted(card)
@@ -77,6 +94,17 @@ extension PickySessionListViewModel {
         requestDoneFlashIfNeeded(previousStatus: previous?.status, incoming: card)
         updateUnreadStateIfNeeded(previousStatus: previous?.status, incoming: card)
         deliverNotificationIfNeeded(for: card)
+        if visibleSessionDiffSessionIDs.contains(card.id),
+           PickySessionDiffPresentation.isSettledTransition(from: previous?.status, to: card.status) {
+            requestSessionDiff(sessionID: card.id)
+        }
+    }
+
+    private func transactionContainsRuntimeReattachLog(_ transaction: PickySessionProjectionTransaction) -> Bool {
+        transaction.mutations.contains { mutation in
+            guard case .logAppend(let line) = mutation else { return false }
+            return SessionCard.isRuntimeReattachLogLine(line)
+        }
     }
 
     private func synchronizeArchiveIntent(for transaction: PickySessionProjectionTransaction) {

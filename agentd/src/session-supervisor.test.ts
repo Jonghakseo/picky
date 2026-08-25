@@ -2206,23 +2206,27 @@ describe("SessionSupervisor", () => {
     runtime.handle!.onCompact = () => new Promise<void>((resolve) => { resolveCompact = resolve; });
 
     runtime.handle?.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "cancelled");
     const compact = supervisor.steer(pickle.id, "/compact");
     await waitUntil(() => runtime.handle!.compactCalls.length === 1);
 
     runtime.handle?.emit({ type: "status", status: "running", summary: "Compacting session…", compactionStarted: true, compactionReason: "manual" });
-    await settle();
-    expect(supervisor.get(pickle.id)?.status).toBe("running");
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "running");
 
-    runtime.handle?.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, compactionReason: "threshold" });
-    await settle();
+    // The automatic event is intentionally silent while manual compaction is
+    // active, so no state mutation can signal its completion. Await the same
+    // serialized runtime-event handler directly instead of guessing with a timer.
+    const internals = supervisor as unknown as {
+      applyRuntimeEvent(sessionId: string, event: RuntimeEvent): Promise<void>;
+    };
+    await internals.applyRuntimeEvent(pickle.id, { type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, compactionReason: "threshold" });
     expect(supervisor.get(pickle.id)?.status).toBe("running");
     expect((supervisor.get(pickle.id)?.messages ?? []).some((message) => message.kind === "system" && message.text === "Session compacted")).toBe(false);
 
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, compactionReason: "manual" });
     resolveCompact();
     await compact;
-    expect(supervisor.get(pickle.id)?.status).toBe("cancelled");
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "cancelled");
     expect((supervisor.get(pickle.id)?.messages ?? []).some((message) => message.kind === "system" && message.text === "Session compacted")).toBe(true);
   });
 
@@ -2464,7 +2468,12 @@ describe("SessionSupervisor", () => {
 
     runtime.handle?.emit({ type: "status", status: "running", summary: "Compacting after context overflow…" });
     runtime.handle?.emit({ type: "status", status: "running", summary: "Compaction completed; retrying…", compactionCompleted: true, compactionReason: "overflow" });
-    await settle();
+    await waitUntil(() => {
+      const updated = supervisor.get(pickle.id);
+      return updated?.status === "running"
+        && updated.lastSummary === "Compaction completed; retrying…"
+        && (updated.messages ?? []).some((message) => message.kind === "system" && message.text === "Session compacted after context overflow");
+    });
 
     const updated = supervisor.get(pickle.id)!;
     expect(updated.status).toBe("running");
@@ -2481,8 +2490,14 @@ describe("SessionSupervisor", () => {
 
     runtime.handle?.emit({ type: "status", status: "running", summary: "Compacting after context overflow…", compactionStarted: true, compactionReason: "overflow" });
     runtime.handle?.emit({ type: "status", status: "running", summary: "Compaction completed; retrying…", compactionCompleted: true, compactionReason: "overflow" });
-    runtime.handle?.emit({ type: "status", status: "failed", summary: "Agent is already processing. Wait for completion before continuing." });
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.lastSummary === "Compaction completed; retrying…");
+
+    // A transient-busy status is intentionally ignored, so await the real
+    // serialized handler instead of relying on a timer for a silent transition.
+    const internals = supervisor as unknown as {
+      applyRuntimeEvent(sessionId: string, event: RuntimeEvent): Promise<void>;
+    };
+    await internals.applyRuntimeEvent(pickle.id, { type: "status", status: "failed", summary: "Agent is already processing. Wait for completion before continuing." });
 
     expect(supervisor.get(pickle.id)?.status).toBe("running");
     expect(supervisor.get(pickle.id)?.messages?.some((message) => message.kind === "agent_error")).toBe(false);

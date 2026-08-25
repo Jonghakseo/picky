@@ -11,6 +11,7 @@ import Testing
 @testable import Picky
 
 @MainActor
+@Suite(.serialized)
 struct PickyConversationProjectionTests {
     @Test func cardRetainsTheRegistrySessionStoreIdentity() {
         let registry = PickySessionRegistry()
@@ -114,9 +115,9 @@ struct PickyConversationProjectionTests {
         let listEvaluations = ConversationProjectionInvalidationCounter()
         let firstLeafEvaluations = ConversationProjectionInvalidationCounter()
         let secondLeafEvaluations = ConversationProjectionInvalidationCounter()
-        let card = sessionCard(messages: [first, second])
+        let card = sessionCard(messages: [first, second], id: "conversation-mounted-stable-leaf")
         let viewModel = PickyProjectionReplayFixtures.makeViewModel()
-        let host = NSHostingView(rootView: PickyConversationListView(
+        let host = NSHostingView(rootView: AnyView(PickyConversationListView(
             session: card,
             viewModel: viewModel,
             conversationStore: conversation,
@@ -125,7 +126,8 @@ struct PickyConversationProjectionTests {
                 if id == first.id { firstLeafEvaluations.increment() }
                 if id == second.id { secondLeafEvaluations.increment() }
             }
-        ))
+        )))
+        defer { dismantleMountedHost(host) }
         host.frame = NSRect(x: 0, y: 0, width: 420, height: 640)
         #expect(waitForMountedHost(host) {
             listEvaluations.count > 0
@@ -156,13 +158,14 @@ struct PickyConversationProjectionTests {
         let conversation = PickyConversationStore()
         conversation.replaceMessages([first])
         let leafEvaluations = ConversationProjectionMessageEvaluationRecorder()
-        let state = ConversationProjectionMountedListState(session: sessionCard(messages: [first]))
-        let host = NSHostingView(rootView: MountedConversationProjectionList(
+        let state = ConversationProjectionMountedListState(session: sessionCard(messages: [first], id: "conversation-mounted-latest-response"))
+        let host = NSHostingView(rootView: AnyView(MountedConversationProjectionList(
             state: state,
             conversationStore: conversation,
             viewModel: PickyProjectionReplayFixtures.makeViewModel(),
             onMessageLeafBodyEvaluation: leafEvaluations.record
-        ))
+        )))
+        defer { dismantleMountedHost(host) }
         host.frame = NSRect(x: 0, y: 0, width: 420, height: 640)
         #expect(waitForMountedHost(host) {
             leafEvaluations.count(for: first.id) > 0
@@ -228,9 +231,18 @@ struct PickyConversationProjectionTests {
         return condition()
     }
 
-    private func sessionCard(messages: [PickySessionMessage]) -> PickySessionListViewModel.SessionCard {
+    private func dismantleMountedHost(_ host: NSHostingView<AnyView>) {
+        host.rootView = AnyView(EmptyView())
+        host.frame = .zero
+        host.layoutSubtreeIfNeeded()
+    }
+
+    private func sessionCard(
+        messages: [PickySessionMessage],
+        id: String = "conversation-mounted-host"
+    ) -> PickySessionListViewModel.SessionCard {
         PickySessionListViewModel.SessionCard.fromAgentSession(PickyAgentSession(
-            id: "conversation-mounted-host",
+            id: id,
             title: "Conversation projection",
             status: .running,
             cwd: "/tmp/picky",

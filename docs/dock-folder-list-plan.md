@@ -6,7 +6,9 @@ _Last updated: 2026-08-25_
 
 ## Summary
 
-The dock rail currently renders every member of an expanded group as its own 54pt tile, so rail length grows linearly with Pickle count. With 14 Pickles across three groups the rail measures about 1002pt, which overflows the screen budget on a laptop display.
+The dock rail currently renders every member of an expanded group as its own tile, so rail length grows linearly with Pickle count. With 14 Pickles across three groups the rail measures about 870pt at the Medium preset and 1002pt at Large, which overflows the screen budget on a laptop display.
+
+A note on presets, because an earlier draft of this document got it wrong: the base constants in `PickyHUDDockLayout` and `PickyHUDDockMetrics` are authored at `scale = 1.0`, which is the **Large** preset. `PickyHUDDockSizePreset.medium` is `0.86` and `.small` is `0.72` (`PickySettings.swift:328-334`). Every point value below is a base constant at scale 1.0 unless stated otherwise.
 
 This plan replaces in-rail group expansion with a two-layer model:
 
@@ -43,25 +45,27 @@ PickyHUDDockLayout.dockRailHeight(sessionCount: topLevelSlotCount, isAddSlotExpa
 
 `PickyHUDDockLayout.dockGroupHeaderExtraLength(groupHeaderCount:)` becomes dead once headers are removed and its call site in `PickyHUDDockRailPolicy.contentLength` drops to zero. The horizontal orientation uses `horizontalDockRailLength` with the same substitution, and `horizontalDockRailCrossSize(hasGroupHeaders:)` is always called with `false`.
 
-Full-rail comparison at the medium preset with a collapsed add slot:
+Full-rail comparison with a collapsed add slot. Group header chrome (`PickyHUDDockGroupHeaderHitAreaHeight` 24 + 2) is unscaled, so it is added as-is at both presets:
 
-| Scenario | Top-level slots today | Today | Top-level slots after | After |
+| Scenario | Today (Medium) | After (Medium) | Today (Large) | After (Large) |
 | --- | --- | --- | --- | --- |
-| 3 groups, 14 members, 0 ungrouped | 14 + 3 headers | 1002pt | 3 | 231pt |
-| 3 groups, 14 members, 2 ungrouped | 16 + 3 headers | 1128pt | 5 | 357pt |
+| 3 groups, 14 members, 0 ungrouped | 870pt | 198pt | 1002pt | 231pt |
+| 3 groups, 14 members, 2 ungrouped | 978pt | 306pt | 1128pt | 357pt |
 
-Both columns use the same formula, so the numbers are directly comparable. The earlier draft's 951pt figure counted only the sessions region and is superseded.
+All columns use the same formula, so the numbers are directly comparable. The earlier draft's 951pt figure counted only the sessions region and is superseded.
 
 `PickyHUDDockOverflowPolicy` stays as the safety net: a user with many ungrouped Pickles or many groups still hits the screen budget and still scrolls.
 
 ### List panel
 
-New constants, defined at the medium preset (`scale = 1.0`):
+New base constants at scale 1.0:
 
 | Constant | Value | Scaling |
 | --- | --- | --- |
 | `groupListPanelWidth` | 260 | Scales with preset geometry |
 | `groupListRowHeight` | 38 | Minimum height; grows with text, see below |
+| `groupListPanelPadding` | 8 | Scales |
+| `groupListHeaderHeight` | 22 | Scales |
 | `groupListMaxVisibleRows` | 8 | Fixed count, not scaled |
 
 Derived panel height:
@@ -70,7 +74,13 @@ Derived panel height:
 panelPadding(8) * 2 + header(22) + min(memberCount, 8) * rowHeight
 ```
 
-At the medium preset with default text size this saturates at 342pt regardless of member count.
+Saturated panel size per preset, measured from the hosting spike:
+
+| Preset | Saturated panel |
+| --- | --- |
+| Small (0.72) | 187 x 244 |
+| Medium (0.86) | 224 x 297 |
+| Large (1.0) | 260 x 342 |
 
 Panel chrome:
 
@@ -132,15 +142,26 @@ Clamp rules:
 
 The panel closes, rather than re-anchoring, on any event that invalidates the anchor: dock side change, dock size preset change, rail overflow scroll, rail reorder, display reconfiguration, HUD hide, and the owning group being deleted.
 
-## Hosting requirements
+## Hosting
 
-The hosting mechanism is deliberately left to implementation, but it must satisfy all of the following. These are acceptance criteria, not suggestions.
+_Resolved by the spike on branch `temp/dock-list-hosting-spike` (2026-08-25). Both options were built and toggled by `PICKY_DOCK_LIST_HOSTING=inpanel|child`._
 
-- The panel is never clipped by the HUD window frame. This is the constraint that rules out a naive same-window overlay: `NSPanel` size follows SwiftUI intrinsic size (`PickyHUDSizeReporting`, `PickyHUDOverlayManager`), and a `.top`/`.bottom` dock with no open card reserves only about 68pt (`PickyHUDView.horizontalPreviewReserveHeight`). Either the window frame grows to contain the panel, or the panel lives in its own window.
+**Decision: a separate child panel per display, modeled on the existing archive-undo toast.**
+
+The in-panel option fails the first acceptance criterion by construction. `PickyHUDOverlayManager.targetFrame` clamps the HUD panel height to `min(visibleHeightCap, dockAnchoredCap)` for vertical docks, where `visibleHeightCap = visibleFrame.height - 160` and `dockAnchoredCap` shrinks as the dock is dragged down the screen. On a 900pt visible frame, `dockAnchoredCap` is about 442pt at a 50% anchor and about 262pt at 70%. With the conversation card open at its 420pt default, adding even the Medium panel's 297pt of reserve exceeds the cap, so the reserve is silently clamped and the list is clipped. Raising the cap is not an acceptable workaround: it exists to keep the dock capsule anchored and to prevent 1pt jitter during streaming updates.
+
+The spike also confirmed the good news for the in-panel option, which is why the finding is worth recording rather than assuming: growth added below the dock capsule does keep the capsule anchored, because `dockTopAnchoredPointAlignedPanelY` derives the origin from the target height.
+
+The child panel avoids the cap entirely because it is sized independently of the HUD panel.
+
+The hosting implementation must satisfy all of the following. These are acceptance criteria, not suggestions.
+
+- The panel is never clipped. A same-window overlay cannot guarantee this because of the height cap described above, and because a `.top`/`.bottom` dock with no open card reserves only about 68pt (`PickyHUDView.horizontalPreviewReserveHeight`).
 - Opening or closing the panel never moves the rail or the conversation card by even one point.
 - The panel's visible rect is reported to ink pass-through (`PickyHUDInkPassThroughPolicy`) so clicks over the panel are not passed through to apps beneath. This follows the existing rule that pass-through is computed from visible chrome rects, not view frames.
 - Z-order is rail above panel above card. The panel may cover the card and must never cover the rail; the `panelGap` offset guarantees this geometrically rather than through hit-test exclusions.
-- If a separate window is used, it must not steal key window status from the conversation composer, must be suppressed on secure input surfaces exactly like the main HUD, and must be torn down with its owning display's panel.
+- The child panel subclasses `PickySecureSurfacePanel` and adopts `PickyScreenCaptureExcludedWindow`, overrides `canBecomeKey` and `canBecomeMain` to `false` so it never steals focus from the composer, uses the HUD panel's level 19 and collection behavior, and is torn down in `tearDownPanels()`, when its display disappears, and when its owning HUD panel hides. The spike verified each of these.
+- Z-order between the child panel and the rail is guaranteed geometrically by the `panelGap` offset, not by window level: at the same level the child orders above the HUD panel, so an overlapping anchor would cover the rail. Any future change to the anchor math must preserve the non-overlap invariant.
 
 ## Open state
 

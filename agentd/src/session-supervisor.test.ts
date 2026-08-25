@@ -3305,7 +3305,7 @@ describe("SessionSupervisor", () => {
     supervisor.on("quickReply", (contextId, text, metadata = {}) => quickReplies.push({ contextId, text, replyKind: metadata.replyKind, sessionId: metadata.sessionId }));
 
     await supervisor.deliverMainAgentPickleCompletion("child-session-id", "Pickle finished prompt body", "/tmp/project");
-    await settle();
+    await waitUntil(() => mainRuntime.prewarmCalls === 1 && mainRuntime.handle?.followUps.length === 1);
 
     expect(mainRuntime.prewarmCalls).toBe(1);
     expect(mainRuntime.handle?.followUps).toHaveLength(1);

@@ -16,14 +16,32 @@ struct PickySessionProjectionStorageSnapshot: Equatable {
     }
 }
 
+/// One assignment boundary retained by the façade mirror. This is a
+/// presentation concern, not a wire-protocol dialect: registry mutations and
+/// v2 transactions publish the same value.
+@MainActor
+struct PickySessionProjectionStoragePublicationStep: Equatable {
+    let snapshot: PickySessionProjectionStorageSnapshot
+    let changesActiveSessions: Bool
+    let changesArchivedSessions: Bool
+}
+
+/// A semantic storage mutation has one final snapshot and may preserve several
+/// façade assignment boundaries for the current ObservableObject bridge.
+/// Consumers that do not need that bridge use `finalSnapshot` directly.
+@MainActor
+struct PickySessionProjectionStoragePublication: Equatable {
+    let finalSnapshot: PickySessionProjectionStorageSnapshot
+    let steps: [PickySessionProjectionStoragePublicationStep]
+}
+
 /// Semantic ownership boundary for the façade's session-card projection.
-///
-/// A storage operation emits exactly one final snapshot through `changes`.
+/// Each operation emits one protocol-neutral publication with its final state.
 @MainActor
 protocol PickySessionProjectionStorage: AnyObject {
     var activeSessions: [PickySessionListViewModel.SessionCard] { get }
     var archivedSessions: [PickySessionListViewModel.SessionCard] { get }
-    var changes: AnyPublisher<PickySessionProjectionStorageSnapshot, Never> { get }
+    var changes: AnyPublisher<PickySessionProjectionStoragePublication, Never> { get }
 
     func session(id: String) -> PickySessionListViewModel.SessionCard?
     func replaceAllSessions(active: [PickySessionListViewModel.SessionCard], archived: [PickySessionListViewModel.SessionCard])

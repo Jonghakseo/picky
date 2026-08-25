@@ -161,16 +161,16 @@ struct PickyProjectionV2BudgetTests {
             try apply(snapshot(for: session, revision: 1), to: viewModel)
         }
 
-        var emittedSnapshots: [PickySessionProjectionStorageSnapshot] = []
-        let cancellable = storage.changes.sink { emittedSnapshots.append($0) }
+        var publications: [PickySessionProjectionStoragePublication] = []
+        let cancellable = storage.changes.sink { publications.append($0) }
         try apply(messageOnlyTransaction(sessionID: "eager-000"), to: viewModel)
 
         // `publishProjection` currently calls `snapshot()`, whose `cards(for:)`
         // eagerly materializes every active ID. The output cardinality is the
         // deterministic black-box proxy available without production counters.
-        #expect(emittedSnapshots.count == 1)
-        #expect(emittedSnapshots[0].activeSessions.count == Self.transactionMaterializedCardBudget)
-        #expect(emittedSnapshots[0].archivedSessions.isEmpty)
+        #expect(publications.count == 1)
+        #expect(publications[0].finalSnapshot.activeSessions.count == Self.transactionMaterializedCardBudget)
+        #expect(publications[0].finalSnapshot.archivedSessions.isEmpty)
         withExtendedLifetime(cancellable) {}
     }
 

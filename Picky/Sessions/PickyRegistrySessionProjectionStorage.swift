@@ -6,22 +6,20 @@
 import Combine
 import Foundation
 
-/// Registry-backed owner for the v1 SessionCard façade.
+/// Registry-backed owner for the SessionCard façade projection.
 ///
 /// Session membership is represented only by registry ID lists and each card is
-/// re-materialized from its stable child stores. The Combine stream emits one
-/// final snapshot per semantic operation. `v1RelaySteps` is a presentation
-/// adapter, isolated from the storage protocol, that retains the façade's
-/// historical per-assignment publication boundaries during the W4 cutover.
+/// re-materialized from stable child stores. A semantic operation emits one
+/// protocol-neutral publication; its steps preserve the current façade's
+/// historical per-assignment boundaries without coupling to a v1 dialect.
 @MainActor
-final class PickyRegistrySessionProjectionStorage: PickySessionProjectionStorageV1Relaying {
+final class PickyRegistrySessionProjectionStorage: PickySessionProjectionStorage {
     let registry: PickySessionRegistry
-    let changesSubject = PassthroughSubject<PickySessionProjectionStorageSnapshot, Never>()
+    let changesSubject = PassthroughSubject<PickySessionProjectionStoragePublication, Never>()
 
-    var v1RelaySteps: [PickySessionProjectionStorageRelay] = []
     var activeSessions: [PickySessionListViewModel.SessionCard] { cards(for: registry.activeSessionIDs) }
     var archivedSessions: [PickySessionListViewModel.SessionCard] { cards(for: registry.archivedSessionIDs) }
-    var changes: AnyPublisher<PickySessionProjectionStorageSnapshot, Never> { changesSubject.eraseToAnyPublisher() }
+    var changes: AnyPublisher<PickySessionProjectionStoragePublication, Never> { changesSubject.eraseToAnyPublisher() }
 
     init(registry: PickySessionRegistry? = nil) {
         self.registry = registry ?? PickySessionRegistry()
@@ -36,8 +34,8 @@ final class PickyRegistrySessionProjectionStorage: PickySessionProjectionStorage
         install(active: active, archived: archived)
         let final = snapshot()
         publish([
-            relay(active: final.activeSessions, archived: before.archivedSessions, activeChanged: true, archivedChanged: false),
-            relay(active: final.activeSessions, archived: final.archivedSessions, activeChanged: false, archivedChanged: true),
+            step(active: final.activeSessions, archived: before.archivedSessions, activeChanged: true, archivedChanged: false),
+            step(active: final.activeSessions, archived: final.archivedSessions, activeChanged: false, archivedChanged: true),
         ], final: final)
     }
 
@@ -48,8 +46,8 @@ final class PickyRegistrySessionProjectionStorage: PickySessionProjectionStorage
         install(active: active, archived: archived)
         let final = snapshot()
         publish([
-            relay(active: final.activeSessions, archived: before.archivedSessions, activeChanged: true, archivedChanged: false),
-            relay(active: final.activeSessions, archived: final.archivedSessions, activeChanged: false, archivedChanged: true),
+            step(active: final.activeSessions, archived: before.archivedSessions, activeChanged: true, archivedChanged: false),
+            step(active: final.activeSessions, archived: final.archivedSessions, activeChanged: false, archivedChanged: true),
         ], final: final)
     }
 
@@ -67,9 +65,9 @@ final class PickyRegistrySessionProjectionStorage: PickySessionProjectionStorage
         install(active: active, archived: archived)
         let final = snapshot()
         publish([
-            relay(active: active, archived: before.archivedSessions, activeChanged: true, archivedChanged: false),
-            relay(active: active, archived: appendedArchived, activeChanged: false, archivedChanged: true),
-            relay(active: final.activeSessions, archived: final.archivedSessions, activeChanged: false, archivedChanged: true),
+            step(active: active, archived: before.archivedSessions, activeChanged: true, archivedChanged: false),
+            step(active: active, archived: appendedArchived, activeChanged: false, archivedChanged: true),
+            step(active: final.activeSessions, archived: final.archivedSessions, activeChanged: false, archivedChanged: true),
         ], final: final)
         return card
     }
@@ -87,8 +85,8 @@ final class PickyRegistrySessionProjectionStorage: PickySessionProjectionStorage
         install(active: active, archived: archived)
         let final = snapshot()
         publish([
-            relay(active: before.activeSessions, archived: archived, activeChanged: false, archivedChanged: true),
-            relay(active: active, archived: archived, activeChanged: true, archivedChanged: false),
+            step(active: before.activeSessions, archived: archived, activeChanged: false, archivedChanged: true),
+            step(active: active, archived: archived, activeChanged: true, archivedChanged: false),
         ], final: final)
         return card
     }
@@ -103,10 +101,10 @@ final class PickyRegistrySessionProjectionStorage: PickySessionProjectionStorage
         install(active: appendedActive, archived: archived)
         let final = snapshot()
         publish([
-            relay(active: withoutActive, archived: before.archivedSessions, activeChanged: true, archivedChanged: false),
-            relay(active: withoutActive, archived: withoutArchived, activeChanged: false, archivedChanged: true),
-            relay(active: appendedActive, archived: appendedArchived, activeChanged: !shouldArchive, archivedChanged: shouldArchive),
-            relay(active: final.activeSessions, archived: final.archivedSessions, activeChanged: false, archivedChanged: true),
+            step(active: withoutActive, archived: before.archivedSessions, activeChanged: true, archivedChanged: false),
+            step(active: withoutActive, archived: withoutArchived, activeChanged: false, archivedChanged: true),
+            step(active: appendedActive, archived: appendedArchived, activeChanged: !shouldArchive, archivedChanged: shouldArchive),
+            step(active: final.activeSessions, archived: final.archivedSessions, activeChanged: false, archivedChanged: true),
         ], final: final)
     }
 
@@ -123,7 +121,7 @@ final class PickyRegistrySessionProjectionStorage: PickySessionProjectionStorage
         active[index] = card
         install(active: active, archived: before.archivedSessions)
         let final = snapshot()
-        publish([relay(active: final.activeSessions, archived: final.archivedSessions, activeChanged: true, archivedChanged: false)], final: final)
+        publish([step(active: final.activeSessions, archived: final.archivedSessions, activeChanged: true, archivedChanged: false)], final: final)
         return card
     }
 
@@ -142,8 +140,8 @@ final class PickyRegistrySessionProjectionStorage: PickySessionProjectionStorage
         install(active: before.activeSessions, archived: archived)
         let final = snapshot()
         publish([
-            relay(active: before.activeSessions, archived: updatedArchived, activeChanged: false, archivedChanged: true),
-            relay(active: final.activeSessions, archived: final.archivedSessions, activeChanged: false, archivedChanged: true),
+            step(active: before.activeSessions, archived: updatedArchived, activeChanged: false, archivedChanged: true),
+            step(active: final.activeSessions, archived: final.archivedSessions, activeChanged: false, archivedChanged: true),
         ], final: final)
         return card
     }
@@ -153,7 +151,7 @@ final class PickyRegistrySessionProjectionStorage: PickySessionProjectionStorage
         let active = before.activeSessions.sortedByManualOrder(order)
         install(active: active, archived: before.archivedSessions)
         let final = snapshot()
-        publish([relay(active: final.activeSessions, archived: final.archivedSessions, activeChanged: true, archivedChanged: false)], final: final)
+        publish([step(active: final.activeSessions, archived: final.archivedSessions, activeChanged: true, archivedChanged: false)], final: final)
     }
 
     private func install(
@@ -174,21 +172,20 @@ final class PickyRegistrySessionProjectionStorage: PickySessionProjectionStorage
         PickySessionProjectionStorageSnapshot(activeSessions: activeSessions, archivedSessions: archivedSessions)
     }
 
-    func relay(
+    func step(
         active: [PickySessionListViewModel.SessionCard],
         archived: [PickySessionListViewModel.SessionCard],
         activeChanged: Bool,
         archivedChanged: Bool
-    ) -> PickySessionProjectionStorageRelay {
-        PickySessionProjectionStorageRelay(
+    ) -> PickySessionProjectionStoragePublicationStep {
+        PickySessionProjectionStoragePublicationStep(
             snapshot: PickySessionProjectionStorageSnapshot(activeSessions: active, archivedSessions: archived),
             changesActiveSessions: activeChanged,
             changesArchivedSessions: archivedChanged
         )
     }
 
-    private func publish(_ steps: [PickySessionProjectionStorageRelay], final: PickySessionProjectionStorageSnapshot) {
-        v1RelaySteps = steps
-        changesSubject.send(final)
+    func publish(_ steps: [PickySessionProjectionStoragePublicationStep], final: PickySessionProjectionStorageSnapshot) {
+        changesSubject.send(PickySessionProjectionStoragePublication(finalSnapshot: final, steps: steps))
     }
 }

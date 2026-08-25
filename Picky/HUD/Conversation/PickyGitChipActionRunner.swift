@@ -45,7 +45,6 @@ protocol PickyGitChipActionViewModelDispatch: AnyObject {
     func steer(text: String, sessionID: String?) async throws
 }
 
-extension PickySessionListViewModel: PickyGitChipActionViewModelDispatch {}
 
 /// Side-effect surface for the shell branch and failure delivery, factored
 /// out so tests don't spawn real processes or post UNNotificationRequests.

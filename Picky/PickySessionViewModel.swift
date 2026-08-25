@@ -192,8 +192,6 @@ final class PickySessionListViewModel: ObservableObject {
     private var lastIncrementalSeqBySessionID: [String: Int] = [:]
     private var hasExplicitSelection = false
     let sessionProjectionStorage: any PickySessionProjectionStorage
-    /// v1 presentation adapter only; storage ownership remains backend-neutral.
-    private let v1SessionProjectionStorageRelay: (any PickySessionProjectionStorageV1Relaying)?
     private var sessionProjectionStorageCancellable: AnyCancellable?
     private var sessionProjectionRecoveryCoordinator: PickySessionRecoveryCoordinator?
     init(
@@ -221,11 +219,8 @@ final class PickySessionListViewModel: ObservableObject {
         shellTerminalSessionFactory: ((SessionCard) -> PickyShellTerminalSession)? = nil, sessionProjectionStorage: (any PickySessionProjectionStorage)? = nil
     ) {
         self.client = client
-        // A ViewModel owns exactly one backend for its lifetime. There is no
-        // live migration from the legacy arrays to the registry.
-        let resolvedSessionProjectionStorage = sessionProjectionStorage ?? PickyRegistrySessionProjectionStorage()
-        self.sessionProjectionStorage = resolvedSessionProjectionStorage
-        self.v1SessionProjectionStorageRelay = resolvedSessionProjectionStorage as? any PickySessionProjectionStorageV1Relaying
+        // A ViewModel owns exactly one registry backend for its lifetime.
+        self.sessionProjectionStorage = sessionProjectionStorage ?? PickyRegistrySessionProjectionStorage()
         self.notificationCenter = notificationCenter
         self.notificationPreferencesProvider = notificationPreferencesProvider
         self.selectionStore = selectionStore
@@ -2420,13 +2415,10 @@ final class PickySessionListViewModel: ObservableObject {
 
     // MARK: - Storage presentation boundary
 
-    private func relaySessionProjectionStorageChange(_ snapshot: PickySessionProjectionStorageSnapshot) {
-        guard let v1SessionProjectionStorageRelay else {
-            sessions = snapshot.activeSessions
-            archivedSessions = snapshot.archivedSessions
-            return
-        }
-        for step in v1SessionProjectionStorageRelay.v1RelaySteps {
+    private func relaySessionProjectionStorageChange(_ publication: PickySessionProjectionStoragePublication) {
+        // The façade keeps its established assignment boundaries while storage
+        // itself remains independent of a transport/protocol dialect.
+        for step in publication.steps {
             if step.changesActiveSessions { sessions = step.snapshot.activeSessions }
             if step.changesArchivedSessions { archivedSessions = step.snapshot.archivedSessions }
         }

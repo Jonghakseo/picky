@@ -9,54 +9,36 @@ import Testing
 
 @MainActor
 struct PickyRegistrySessionProjectionStorageTests {
-    @Test func registryBackendMatchesLegacyForBootstrapHydrationAndTerminalReplay() {
-        let legacy = PickyProjectionReplayFixtures.makeViewModel(
-            selectedSessionID: "bootstrap-001",
-            sessionProjectionStorage: PickyLegacySessionProjectionStorage()
-        )
-        let registry = PickyProjectionReplayFixtures.makeViewModel(
-            selectedSessionID: "bootstrap-001",
-            sessionProjectionStorage: PickyRegistrySessionProjectionStorage()
-        )
-
-        applyBootstrapHydration(to: legacy)
-        applyBootstrapHydration(to: registry)
-        let nonDefaultSession = nonDefaultSession()
-        let nonDefaultEnvelope = PickyProjectionReplayFixtures.bootstrapEnvelope(
-            id: "non-default-session",
-            event: .sessionUpdated(nonDefaultSession)
-        )
-        PickyProjectionReplayFixtures.apply(nonDefaultEnvelope, to: legacy)
-        PickyProjectionReplayFixtures.apply(nonDefaultEnvelope, to: registry)
-        for event in PickyProjectionReplayFixtures.terminalReplayEvents() {
-            PickyProjectionReplayFixtures.apply(PickyProjectionReplayFixtures.terminalEnvelope(event), to: legacy)
-            PickyProjectionReplayFixtures.apply(PickyProjectionReplayFixtures.terminalEnvelope(event), to: registry)
-        }
-
-        // SessionCard is Equatable, so this compares every HUD-facing field,
-        // including conversation, queue, artifact, and local presentation state.
-        #expect(registry.sessions == legacy.sessions)
-        #expect(registry.archivedSessions == legacy.archivedSessions)
-        #expect(registry.selectedSessionID == legacy.selectedSessionID)
-    }
-
-    @Test func everySemanticOperationRelaysOneFinalSnapshot() {
+    @Test func everySemanticOperationPublishesOneFinalSnapshotWithItsHistoricalPresentationSteps() {
         let storage = PickyRegistrySessionProjectionStorage()
         let first = card(id: "first", index: 1)
         let second = card(id: "second", index: 2)
-        var changes: [PickySessionProjectionStorageSnapshot] = []
-        let cancellable = storage.changes.sink { changes.append($0) }
+        var publications: [PickySessionProjectionStoragePublication] = []
+        let cancellable = storage.changes.sink { publications.append($0) }
 
         storage.replaceAllSessions(active: [first], archived: [])
-        storage.upsertSession(second, archived: false)
-        _ = storage.archiveSession(id: first.id)
-        _ = storage.unarchiveSession(id: first.id)
-        _ = storage.mutateSession(sessionID: second.id) { $0.title = "Updated" }
-        storage.applyManualOrder([first.id, second.id])
-        storage.removeSession(id: first.id)
+        assertLatestPublication(publications, steps: ["active", "archived"])
 
-        #expect(changes.count == 7)
-        #expect(changes.last?.activeSessions.map(\.id) == [second.id])
+        storage.upsertSession(second, archived: false)
+        assertLatestPublication(publications, steps: ["active", "archived", "active", "archived"])
+
+        _ = storage.archiveSession(id: first.id)
+        assertLatestPublication(publications, steps: ["active", "archived", "archived"])
+
+        _ = storage.unarchiveSession(id: first.id)
+        assertLatestPublication(publications, steps: ["archived", "active"])
+
+        _ = storage.mutateSession(sessionID: second.id) { $0.title = "Updated" }
+        assertLatestPublication(publications, steps: ["active"])
+
+        storage.applyManualOrder([first.id, second.id])
+        assertLatestPublication(publications, steps: ["active"])
+
+        storage.removeSession(id: first.id)
+        assertLatestPublication(publications, steps: ["active", "archived"])
+
+        #expect(publications.count == 7)
+        #expect(publications.last?.finalSnapshot.activeSessions.map(\.id) == [second.id])
         withExtendedLifetime(cancellable) {}
     }
 
@@ -112,14 +94,13 @@ struct PickyRegistrySessionProjectionStorageTests {
         #expect(storage.activeSessions.first?.messages.isEmpty == true)
     }
 
-    private func applyBootstrapHydration(to viewModel: PickySessionListViewModel) {
-        PickyProjectionReplayFixtures.apply(PickyProjectionReplayFixtures.bootstrapSnapshotEvent(), to: viewModel)
-        for session in PickyProjectionReplayFixtures.hydratedBootstrapSessions() {
-            PickyProjectionReplayFixtures.apply(
-                PickyProjectionReplayFixtures.bootstrapEnvelope(id: "hydration-\(session.id)", event: .sessionUpdated(session)),
-                to: viewModel
-            )
-        }
+    private func assertLatestPublication(
+        _ publications: [PickySessionProjectionStoragePublication],
+        steps: [String]
+    ) {
+        #expect(publications.last?.steps.map { step in
+            step.changesActiveSessions ? "active" : "archived"
+        } == steps)
     }
 
     private func card(id: String, index: Int) -> PickySessionListViewModel.SessionCard {
@@ -133,33 +114,6 @@ struct PickyRegistrySessionProjectionStorageTests {
         ))
     }
 
-    /// Deliberately exercises scalar fields that empty child collections cannot
-    /// stand in for. The full SessionCard Equatable comparison above verifies
-    /// this v1 update round-trips identically through both storage backends.
-    private func nonDefaultSession() -> PickyAgentSession {
-        var session = PickyProjectionReplayFixtures.bootstrapSession(
-            id: "non-default-session",
-            index: 95,
-            status: .running,
-            archived: false,
-            messages: [],
-            messageJournalAvailable: true
-        )
-        session.queuedSteers = []
-        session.queuedFollowUps = []
-        session.steeringMode = .all
-        session.followUpMode = .all
-        session.pinned = true
-        session.notifyMainOnCompletion = true
-        session.changedFiles = [PickyChangedFile(path: "Picky/Projection.swift", status: "modified", summary: "Preserve projection state")]
-        session.todoState = PickyTodoState(
-            tasks: [PickyTodoTask(id: "projection-task", content: "Preserve scalar fields", status: .inProgress)],
-            updatedAt: PickyProjectionReplayFixtures.terminalDate
-        )
-        session.contextUsage = PickyContextUsage(tokens: 42_000, contextWindow: 200_000, percent: 21)
-        session.currentAssistantRun = PickyAssistantRunMetadata(model: "anthropic/claude-opus-4-7", thinkingLevel: .high)
-        return session
-    }
 }
 
 private extension PickyProjectionSectionState {

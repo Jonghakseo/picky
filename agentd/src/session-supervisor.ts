@@ -7,7 +7,7 @@ import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { FollowUpLifecycleDiagnostics } from "./application/follow-up-lifecycle-diagnostics.js";
 import type { ReloadPluginsSummary, SessionSupervisorOptions } from "./application/session-supervisor-options.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
-import { buildSessionProjectionMutations, emitTerminalV1Compatibility, finalizeTerminalOperation } from "./application/terminal-durable-commit.js";
+import { buildSessionProjectionMutations, emitTerminalV1Compatibility, finalizeTerminalOperation, type TerminalDurableCommitDependencies } from "./application/terminal-durable-commit.js";
 import { SubagentRunUpdater } from "./application/subagent-run-updater.js";
 import { TerminalManualCompactionCoordinator } from "./application/terminal-manual-compaction.js";
 import { makeAnnotationOverlayRequestForContext, makePointerOverlayRequestForContext, type MainTurnOverlayContext } from "./application/overlay-context-resolver.js";
@@ -2930,27 +2930,26 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   private async materializeTerminalArtifacts(sessionId: string): Promise<void> { const materialized = await this.artifactMaterializer.materializeTerminalArtifacts(this.mustGet(sessionId)); if (!materialized) return; await this.patch(sessionId, { artifacts: materialized.artifacts }, { emitSession: false }); for (const artifact of materialized.emittedArtifacts) this.emit("artifact", sessionId, artifact); }
-
-  private async finalizeTerminal(sessionId: string, event: Extract<RuntimeEvent, { type: "status" }>): Promise<void> { await finalizeTerminalOperation({ runExclusiveMessageOperation: (id, work) => this.messageBuilder.runExclusiveTerminalOperation(id, work), runSessionWrite: (id, work) => this.runSessionWrite(id, work), getSession: (id) => this.mustGet(id), messageSnapshot: (id) => this.messageBuilder.terminalSnapshot(id), runtimeSnapshot: (id) => this.runtimeEventHandler.terminalSnapshot(id), turnActivity: (id) => this.turnActivity.get(id), materialize: (session) => this.artifactMaterializer.materializeTerminalArtifacts(session), save: (session) => this.store.save(session), setSession: (id, session) => this.sessions.set(id, session), rehydrateMessageSession: (id, messages) => this.messageBuilder.commitTerminalSession(id, messages), resetTerminalAssistantDraft: (id) => this.runtimeEventHandler.resetTerminalAssistantDraft(id), resetTerminalThinkingDraft: (id) => this.runtimeEventHandler.resetTerminalThinkingDraft(id), resetTerminalThinkingActive: (id) => this.runtimeEventHandler.resetTerminalThinkingActive(id), clearTerminalPendingThinkingFlush: (id) => this.runtimeEventHandler.clearTerminalPendingThinkingFlush(id), markTerminalRunProcessed: (id) => this.runtimeEventHandler.markTerminalRunProcessed(id), clearTurnActivity: (id) => this.turnActivity.delete(id), publish: async (id, publication, activity, artifacts) => { if (publication.mutations.length > 0) this.emit("sessionProjectionTransaction", id, publication.before, publication.after, publication.mutations, this.sessionProjectionEpoch); await emitTerminalV1Compatibility({ nextSeq: (session) => this.nextSeq(session), chainEmit: (session, work) => this.chainEmit(session, work), emitMessageAppended: (session, message, seq) => this.emit("messageAppended", session, message, seq), emitMessageRemoved: (session, messageId, seq) => this.emit("messageRemoved", session, messageId, seq), emitMessageReplaced: (session, messageId, message, seq) => this.emit("messageReplaced", session, messageId, message, seq), emitActivityUpdated: (session, value, seq) => this.emit("activityUpdated", session, value, seq), emitSessionMeta: (value) => this.emit("sessionMeta", value), emitArtifact: (session, artifact) => this.emit("artifact", session, artifact) }, id, publication.before, publication.after, activity, artifacts); }, isPickleSession: (id) => this.isPickleSession(id), notifyPickleCompletion: (id) => this.notifyPickyOfPickleCompletion(id), logNotificationFailure: (id, error) => logAgentd("Pickle completion notification failed after terminal commit", { sessionId: id, error: error instanceof Error ? error.message : String(error) }) }, sessionId, event); }
+  private terminalDurableCommitDependencies(): TerminalDurableCommitDependencies {
+    return {
+      runExclusiveMessageOperation: this.messageBuilder.runExclusiveTerminalOperation.bind(this.messageBuilder), runSessionWrite: this.runSessionWrite.bind(this), getSession: this.mustGet.bind(this),
+      messageSnapshot: this.messageBuilder.terminalSnapshot.bind(this.messageBuilder), runtimeSnapshot: this.runtimeEventHandler.terminalSnapshot.bind(this.runtimeEventHandler), turnActivity: this.turnActivity.get.bind(this.turnActivity),
+      materialize: this.artifactMaterializer.materializeTerminalArtifacts.bind(this.artifactMaterializer), save: this.store.save.bind(this.store), setSession: this.sessions.set.bind(this.sessions),
+      rehydrateMessageSession: this.messageBuilder.commitTerminalSession.bind(this.messageBuilder), resetTerminalAssistantDraft: this.runtimeEventHandler.resetTerminalAssistantDraft.bind(this.runtimeEventHandler), resetTerminalThinkingDraft: this.runtimeEventHandler.resetTerminalThinkingDraft.bind(this.runtimeEventHandler), resetTerminalThinkingActive: this.runtimeEventHandler.resetTerminalThinkingActive.bind(this.runtimeEventHandler), clearTerminalPendingThinkingFlush: this.runtimeEventHandler.clearTerminalPendingThinkingFlush.bind(this.runtimeEventHandler), markTerminalRunProcessed: this.runtimeEventHandler.markTerminalRunProcessed.bind(this.runtimeEventHandler), clearTurnActivity: this.turnActivity.delete.bind(this.turnActivity),
+      publish: async (id, publication, activity, artifacts) => { if (publication.mutations.length > 0) this.emit("sessionProjectionTransaction", id, publication.before, publication.after, publication.mutations, this.sessionProjectionEpoch); await emitTerminalV1Compatibility({ nextSeq: this.nextSeq.bind(this), chainEmit: this.chainEmit.bind(this), emitMessageAppended: (session, message, seq) => this.emit("messageAppended", session, message, seq), emitMessageRemoved: (session, messageId, seq) => this.emit("messageRemoved", session, messageId, seq), emitMessageReplaced: (session, messageId, message, seq) => this.emit("messageReplaced", session, messageId, message, seq), emitActivityUpdated: (session, value, seq) => this.emit("activityUpdated", session, value, seq), emitSessionMeta: (value) => this.emit("sessionMeta", value), emitArtifact: (session, artifact) => this.emit("artifact", session, artifact) }, id, publication.before, publication.after, activity, artifacts); },
+      isPickleSession: this.isPickleSession.bind(this), notifyPickleCompletion: this.notifyPickyOfPickleCompletion.bind(this),
+      logNotificationFailure: (id, error) => { logAgentd("Pickle completion notification failed after terminal commit", { sessionId: id, error: error instanceof Error ? error.message : String(error) }); },
+    };
+  }
+  private async finalizeTerminal(sessionId: string, event: Extract<RuntimeEvent, { type: "status" }>): Promise<void> { await finalizeTerminalOperation(this.terminalDurableCommitDependencies(), sessionId, event); }
   private async patch(sessionId: string, patch: Partial<PickyAgentSession>, options: { emitSession?: boolean; emitFullSession?: boolean } = {}): Promise<void> {
-    const commit = await this.commitSession(sessionId, (current) => (
-      isSemanticNoOpPatch(current, patch)
-        ? current
-        : { ...current, ...patch, updatedAt: new Date().toISOString() }
-    ));
-    if (!commit.changed) return;
-    if (options.emitSession ?? true) {
-      this.emit(options.emitFullSession ? "session" : "sessionMeta", commit.after);
-    }
+    const commit = await this.commitSession(sessionId, (current) => isSemanticNoOpPatch(current, patch) ? current : { ...current, ...patch, updatedAt: new Date().toISOString() });
+    if (commit.changed && (options.emitSession ?? true)) this.emit(options.emitFullSession ? "session" : "sessionMeta", commit.after);
   }
   private async updateTodoState(sessionId: string, todoState: PickyAgentSession["todoState"]): Promise<void> {
-    const current = this.mustGet(sessionId).todoState;
-    if (sameTodoState(current, todoState)) return;
+    if (sameTodoState(this.mustGet(sessionId).todoState, todoState)) return;
     await this.patch(sessionId, { todoState }, { emitSession: false });
-    const seq = this.nextSeq(sessionId);
-    await this.chainEmit(sessionId, async () => {
-      this.emit("todoStateUpdated", sessionId, todoState, seq);
-    });
+    const seq = this.nextSeq(sessionId); await this.chainEmit(sessionId, async () => { this.emit("todoStateUpdated", sessionId, todoState, seq); });
   }
   private async syncSessionMessages(sessionId: string, messages: readonly PickySessionMessage[], patch?: SessionMessageSyncPatch): Promise<void> {
     await this.commitSession(sessionId, (current) => ({ ...current, ...patch, messages: [...messages], updatedAt: new Date().toISOString() }));

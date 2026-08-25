@@ -8,190 +8,192 @@
 
 import Foundation
 
-extension PickySessionListViewModel {
-    struct SessionCard: Equatable, Identifiable {
-        let id: String
-        var title: String
-        var status: PickySessionStatus
-        var cwd: String?
-        var createdAt: Date
-        var updatedAt: Date
-        var lastSummary: String
-        var thinkingPreview: String?
-        var logPreview: String
-        var lastRequestText: String?
-        // When the latest REQUEST row content was observed/sent locally. Used to render the
-        // "X ago" stamp on that row independent of session.createdAt or session.updatedAt;
-        // updatedAt is bumped by every tool/log event so it cannot stand in.
-        var lastRequestAt: Date?
-        var tools: [PickyToolActivity]
-        var todoState: PickyTodoState? = nil
-        var subagentRuns: [PickySubagentRun] = []
-        var artifacts: [PickyArtifact]
-        var changedFiles: [PickyChangedFile]
-        var messages: [PickySessionMessage]
-        var queuedSteers: [PickyQueueItem]
-        var queuedFollowUps: [PickyQueueItem]
-        var steeringMode: PickyQueueMode
-        var followUpMode: PickyQueueMode
-        var activitySummary: PickyActivitySummary
-        var lastTerminalSyncOutcome: PickyTerminalSessionSyncOutcome? = nil
-        var contextUsage: PickyContextUsage? = nil
-        var currentAssistantRun: PickyAssistantRunMetadata? = nil
-        var pendingExtensionUiRequest: PickyExtensionUiRequest?
-        var piSessionFilePath: String?
-        var notifyMainOnCompletion: Bool?
-        var pinned: Bool
-        /// Daemon-side archive flag mirrored from `PickyAgentSession.archived`.
-        /// Snapshot hydration hoists this into the local `manuallyArchivedSessionIDs`
-        /// UserDefaults so a Picky restart with cleared local state still partitions
-        /// archived Pickles correctly. Live `sessionUpdated` events keep using the
-        /// local intent set to avoid mid-flight unarchive flicker.
-        var archived: Bool
-        var hasRuntimeDetachedFollowUpRejection: Bool
-        var isMainAgentHandoff: Bool
+struct PickySessionCard: Equatable, Identifiable {
+    let id: String
+    var title: String
+    var status: PickySessionStatus
+    var cwd: String?
+    var createdAt: Date
+    var updatedAt: Date
+    var lastSummary: String
+    var thinkingPreview: String?
+    var logPreview: String
+    var lastRequestText: String?
+    // When the latest REQUEST row content was observed/sent locally. Used to render the
+    // "X ago" stamp on that row independent of session.createdAt or session.updatedAt;
+    // updatedAt is bumped by every tool/log event so it cannot stand in.
+    var lastRequestAt: Date?
+    var tools: [PickyToolActivity]
+    var todoState: PickyTodoState? = nil
+    var subagentRuns: [PickySubagentRun] = []
+    var artifacts: [PickyArtifact]
+    var changedFiles: [PickyChangedFile]
+    var messages: [PickySessionMessage]
+    var queuedSteers: [PickyQueueItem]
+    var queuedFollowUps: [PickyQueueItem]
+    var steeringMode: PickyQueueMode
+    var followUpMode: PickyQueueMode
+    var activitySummary: PickyActivitySummary
+    var lastTerminalSyncOutcome: PickyTerminalSessionSyncOutcome? = nil
+    var contextUsage: PickyContextUsage? = nil
+    var currentAssistantRun: PickyAssistantRunMetadata? = nil
+    var pendingExtensionUiRequest: PickyExtensionUiRequest?
+    var piSessionFilePath: String?
+    var notifyMainOnCompletion: Bool?
+    var pinned: Bool
+    /// Daemon-side archive flag mirrored from `PickyAgentSession.archived`.
+    /// Snapshot hydration hoists this into the local `manuallyArchivedSessionIDs`
+    /// UserDefaults so a Picky restart with cleared local state still partitions
+    /// archived Pickles correctly. Live `sessionUpdated` events keep using the
+    /// local intent set to avoid mid-flight unarchive flicker.
+    var archived: Bool
+    var hasRuntimeDetachedFollowUpRejection: Bool
+    var isMainAgentHandoff: Bool
 
-        var activeTool: PickyToolActivity? {
-            tools.last { $0.isActive }
+    var activeTool: PickyToolActivity? {
+        tools.last { $0.isActive }
+    }
+
+    /// Active tool first, then the most recent tool started inside the given
+    /// turn time-range. Used by the live tool indicator so it does not
+    /// blink during the gap between successive tool calls (thinking /
+    /// streaming periods carry no `isActive` tool).
+    func mostRecentTool(after turnStart: Date) -> PickyToolActivity? {
+        if let active = activeTool { return active }
+        return tools.last { tool in
+            guard let started = tool.startedAt else { return false }
+            return started >= turnStart
         }
+    }
 
-        /// Active tool first, then the most recent tool started inside the given
-        /// turn time-range. Used by the live tool indicator so it does not
-        /// blink during the gap between successive tool calls (thinking /
-        /// streaming periods carry no `isActive` tool).
-        func mostRecentTool(after turnStart: Date) -> PickyToolActivity? {
-            if let active = activeTool { return active }
-            return tools.last { tool in
-                guard let started = tool.startedAt else { return false }
-                return started >= turnStart
+    var compactCwdDescription: String? {
+        Self.compactCwd(cwd)
+    }
+
+    var toolCount: Int { tools.count }
+
+    var isTerminal: Bool { status.isTerminal }
+
+    var linkBadgeArtifacts: [PickyArtifact] {
+        artifacts.filter(\.isHUDLinkBadge)
+    }
+
+    var prArtifacts: [PickyArtifact] {
+        linkBadgeArtifacts.filter { $0.linkBadgeKind == .github }
+    }
+
+    var latestAgentResponseReportMessageID: String? {
+        messages.last { message in
+            message.kind == .agentText && message.openAsReportMarkdown != nil
+        }?.id
+    }
+
+    var hasLatestAgentResponseReport: Bool {
+        latestAgentResponseReportMessageID != nil
+    }
+
+    /// Filtered link badges for the HUD: drop any GitHub artifact whose URL points to
+    /// the PR we already render as a dedicated PR badge, so the same pull request does
+    /// not show up twice in the row.
+    func linkBadgeArtifacts(suppressingPullRequest pullRequest: PickyGitHubPullRequestStatus?) -> [PickyArtifact] {
+        guard let pullRequest else { return linkBadgeArtifacts }
+        let prRepoPath = Self.githubRepositoryPath(of: pullRequest.url)
+        let prNumber = String(pullRequest.number)
+        return linkBadgeArtifacts.filter { artifact in
+            guard artifact.linkBadgeKind == .github,
+                  let url = artifact.url,
+                  // Only suppress PR-shaped URLs; an issue with the same number must stay visible.
+                  url.pathComponents.contains("pull"),
+                  Self.githubRepositoryPath(of: url) == prRepoPath,
+                  artifact.githubIssueOrPullRequestNumber == prNumber else {
+                return true
             }
+            return false
         }
+    }
 
-        var compactCwdDescription: String? {
-            Self.compactCwd(cwd)
-        }
+    static func githubRepositoryPath(of url: URL) -> String? {
+        guard url.host?.lowercased() == "github.com" else { return nil }
+        let components = url.pathComponents.filter { $0 != "/" }
+        guard components.count >= 2 else { return nil }
+        return "\(components[0])/\(components[1])".lowercased()
+    }
 
-        var toolCount: Int { tools.count }
-
-        var isTerminal: Bool { status.isTerminal }
-
-        var linkBadgeArtifacts: [PickyArtifact] {
-            artifacts.filter(\.isHUDLinkBadge)
-        }
-
-        var prArtifacts: [PickyArtifact] {
-            linkBadgeArtifacts.filter { $0.linkBadgeKind == .github }
-        }
-
-        var latestAgentResponseReportMessageID: String? {
-            messages.last { message in
-                message.kind == .agentText && message.openAsReportMarkdown != nil
-            }?.id
-        }
-
-        var hasLatestAgentResponseReport: Bool {
-            latestAgentResponseReportMessageID != nil
-        }
-
-        /// Filtered link badges for the HUD: drop any GitHub artifact whose URL points to
-        /// the PR we already render as a dedicated PR badge, so the same pull request does
-        /// not show up twice in the row.
-        func linkBadgeArtifacts(suppressingPullRequest pullRequest: PickyGitHubPullRequestStatus?) -> [PickyArtifact] {
-            guard let pullRequest else { return linkBadgeArtifacts }
-            let prRepoPath = Self.githubRepositoryPath(of: pullRequest.url)
-            let prNumber = String(pullRequest.number)
-            return linkBadgeArtifacts.filter { artifact in
-                guard artifact.linkBadgeKind == .github,
-                      let url = artifact.url,
-                      // Only suppress PR-shaped URLs; an issue with the same number must stay visible.
-                      url.pathComponents.contains("pull"),
-                      Self.githubRepositoryPath(of: url) == prRepoPath,
-                      artifact.githubIssueOrPullRequestNumber == prNumber else {
-                    return true
-                }
-                return false
+    func linkBadgeText(for artifact: PickyArtifact) -> String? {
+        guard let kind = artifact.linkBadgeKind else { return artifact.title }
+        switch kind {
+        case .github:
+            return artifact.githubIssueOrPullRequestNumber.map { "#\($0)" } ?? artifact.title
+        case .jira:
+            return artifact.jiraIssueKey ?? artifact.title
+        case .linear:
+            return artifact.linearIssueKey ?? artifact.title
+        case .slack, .notion, .sentry, .figma, .googleDocs, .googleSheets, .googleSlides, .googleDrive:
+            let sameKind = linkBadgeArtifacts.filter { $0.linkBadgeKind == kind }
+            guard sameKind.count > 1, let index = sameKind.firstIndex(where: { $0.id == artifact.id }) else { return nil }
+            return "#\(index + 1)"
+        case .generic:
+            guard let host = artifact.url?.host?.lowercased() else { return nil }
+            let sameHost = linkBadgeArtifacts.filter {
+                $0.linkBadgeKind == .generic && $0.url?.host?.lowercased() == host
             }
+            guard sameHost.count > 1, let index = sameHost.firstIndex(where: { $0.id == artifact.id }) else { return nil }
+            return "#\(index + 1)"
         }
+    }
 
-        static func githubRepositoryPath(of url: URL) -> String? {
-            guard url.host?.lowercased() == "github.com" else { return nil }
-            let components = url.pathComponents.filter { $0 != "/" }
-            guard components.count >= 2 else { return nil }
-            return "\(components[0])/\(components[1])".lowercased()
+    var isRuntimeDetached: Bool {
+        status == .blocked
+            && (lastSummary.localizedCaseInsensitiveContains("Runtime session is not attached after daemon restart")
+                || lastSummary.localizedCaseInsensitiveContains("Runtime not attached after daemon restart"))
+    }
+
+    var isCompacting: Bool {
+        status == .running && lastSummary.localizedCaseInsensitiveContains("compacting")
+    }
+
+    func elapsedDescription(now: Date = Date()) -> String {
+        Self.formatElapsed(seconds: max(0, Int(now.timeIntervalSince(createdAt))))
+    }
+
+    func elapsedSinceUpdate(now: Date = Date()) -> String {
+        Self.formatElapsed(seconds: max(0, Int(now.timeIntervalSince(updatedAt))))
+    }
+
+    func elapsedSinceLastRequest(now: Date = Date()) -> String {
+        // Fall back to updatedAt when we never observed an explicit request timestamp
+        // (resumed sessions reconstructed purely from logs); never to createdAt, which
+        // would mis-stamp follow-ups on long-running sessions as hours-old.
+        let reference = lastRequestAt ?? updatedAt
+        return Self.formatElapsed(seconds: max(0, Int(now.timeIntervalSince(reference))))
+    }
+
+    private static func formatElapsed(seconds: Int) -> String {
+        if seconds < 60 { return "<1m" }
+        let minutes = seconds / 60
+        if minutes < 60 { return "\(minutes)m" }
+        return "\(minutes / 60)h \(minutes % 60)m"
+    }
+
+    private static func compactCwd(_ cwd: String?) -> String? {
+        let trimmed = cwd?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return nil }
+
+        let homePath = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
+        let standardizedPath = NSString(string: trimmed).standardizingPath
+        if standardizedPath == homePath { return "~" }
+        if standardizedPath.hasPrefix(homePath + "/") {
+            return "~" + String(standardizedPath.dropFirst(homePath.count))
         }
-
-        func linkBadgeText(for artifact: PickyArtifact) -> String? {
-            guard let kind = artifact.linkBadgeKind else { return artifact.title }
-            switch kind {
-            case .github:
-                return artifact.githubIssueOrPullRequestNumber.map { "#\($0)" } ?? artifact.title
-            case .jira:
-                return artifact.jiraIssueKey ?? artifact.title
-            case .linear:
-                return artifact.linearIssueKey ?? artifact.title
-            case .slack, .notion, .sentry, .figma, .googleDocs, .googleSheets, .googleSlides, .googleDrive:
-                let sameKind = linkBadgeArtifacts.filter { $0.linkBadgeKind == kind }
-                guard sameKind.count > 1, let index = sameKind.firstIndex(where: { $0.id == artifact.id }) else { return nil }
-                return "#\(index + 1)"
-            case .generic:
-                guard let host = artifact.url?.host?.lowercased() else { return nil }
-                let sameHost = linkBadgeArtifacts.filter {
-                    $0.linkBadgeKind == .generic && $0.url?.host?.lowercased() == host
-                }
-                guard sameHost.count > 1, let index = sameHost.firstIndex(where: { $0.id == artifact.id }) else { return nil }
-                return "#\(index + 1)"
-            }
-        }
-
-        var isRuntimeDetached: Bool {
-            status == .blocked
-                && (lastSummary.localizedCaseInsensitiveContains("Runtime session is not attached after daemon restart")
-                    || lastSummary.localizedCaseInsensitiveContains("Runtime not attached after daemon restart"))
-        }
-
-        var isCompacting: Bool {
-            status == .running && lastSummary.localizedCaseInsensitiveContains("compacting")
-        }
-
-        func elapsedDescription(now: Date = Date()) -> String {
-            Self.formatElapsed(seconds: max(0, Int(now.timeIntervalSince(createdAt))))
-        }
-
-        func elapsedSinceUpdate(now: Date = Date()) -> String {
-            Self.formatElapsed(seconds: max(0, Int(now.timeIntervalSince(updatedAt))))
-        }
-
-        func elapsedSinceLastRequest(now: Date = Date()) -> String {
-            // Fall back to updatedAt when we never observed an explicit request timestamp
-            // (resumed sessions reconstructed purely from logs); never to createdAt, which
-            // would mis-stamp follow-ups on long-running sessions as hours-old.
-            let reference = lastRequestAt ?? updatedAt
-            return Self.formatElapsed(seconds: max(0, Int(now.timeIntervalSince(reference))))
-        }
-
-        private static func formatElapsed(seconds: Int) -> String {
-            if seconds < 60 { return "<1m" }
-            let minutes = seconds / 60
-            if minutes < 60 { return "\(minutes)m" }
-            return "\(minutes / 60)h \(minutes % 60)m"
-        }
-
-        private static func compactCwd(_ cwd: String?) -> String? {
-            let trimmed = cwd?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            guard !trimmed.isEmpty else { return nil }
-
-            let homePath = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
-            let standardizedPath = NSString(string: trimmed).standardizingPath
-            if standardizedPath == homePath { return "~" }
-            if standardizedPath.hasPrefix(homePath + "/") {
-                return "~" + String(standardizedPath.dropFirst(homePath.count))
-            }
-            return trimmed
-        }
+        return trimmed
     }
 }
 
-extension PickySessionListViewModel.SessionCard {
+extension PickySessionListViewModel {
+    typealias SessionCard = PickySessionCard
+}
+
+extension PickySessionCard {
     static func fromAgentSession(_ session: PickyAgentSession) -> Self {
         Self(session: session)
     }
@@ -370,7 +372,7 @@ extension PickySessionListViewModel.SessionCard {
     }
 }
 
-extension Array where Element == PickySessionListViewModel.SessionCard {
+extension Array where Element == PickySessionCard {
     /// Time-based fallback ordering: newest first, ties broken by id. Used for
     /// archived sessions (which do not participate in manual reorder) and as
     /// the fallback for any active session ID that is not yet present in

@@ -121,51 +121,19 @@ protocol PickyHUDSessionLifecycle: PickySessionCommands {
     func stop()
 }
 
-extension PickySessionListViewModel: PickySessionCommands, PickyHUDSessionLifecycle {
-    func sessionCard(sessionID: String) -> PickyConversationSessionCard? {
-        activeSessionCard(sessionID: sessionID)
-    }
-
-    func shellTerminalSession(sessionID: String) -> PickyShellTerminalSession {
-        guard let session = card(sessionID: sessionID) else {
-            preconditionFailure("Extended terminal requires an active session")
-        }
-        return shellTerminalSession(for: session)
-    }
-}
-
-extension PickySessionListViewModel {
-    /// Stable registry identity for scoped HUD subtrees. Consumers observe this
-    /// store's child sections instead of the façade's global card arrays.
-    func sessionStore(sessionID: String) -> PickySessionStore? {
-        (sessionProjectionStorage as? PickyRegistrySessionProjectionStorage)?
-            .registry.existingSessionStore(sessionID: sessionID)
-    }
-
-    /// Registry-owned archive membership for settings/onboarding consumers.
-    /// Production always uses the registry backend; legacy storage remains a
-    /// targeted test seam and never constructs these UI surfaces.
-    var sessionRegistry: PickySessionRegistry {
-        guard let registry = (sessionProjectionStorage as? PickyRegistrySessionProjectionStorage)?.registry else {
-            preconditionFailure("Archive membership requires registry projection storage")
-        }
-        return registry
-    }
-}
-
 /// Compatibility name used only at the Conversation boundary. The concrete
 /// legacy façade remains outside HUD view declarations.
-typealias PickyConversationSessionCard = PickySessionListViewModel.SessionCard
+typealias PickyConversationSessionCard = PickySessionCard
 
 @MainActor
 enum PickyConversationStoreResolver {
-    static func legacyStore(for card: PickySessionListViewModel.SessionCard) -> PickySessionStore {
+    static func legacyStore(for card: PickySessionCard) -> PickySessionStore {
         let store = PickySessionStore(sessionID: card.id)
         store.replace(card: card)
         return store
     }
 
-    static func card(from store: PickySessionStore) -> PickySessionListViewModel.SessionCard? {
+    static func card(from store: PickySessionStore) -> PickySessionCard? {
         store.materializedSessionCard()
     }
 }

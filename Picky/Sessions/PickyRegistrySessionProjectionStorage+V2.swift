@@ -189,13 +189,12 @@ extension PickyRegistrySessionProjectionStorage {
         }
         registry.replaceMembership(active: activeIDs, archived: archivedIDs)
         let final = snapshot()
-        v1RelaySteps = [relay(
+        publish([step(
             active: final.activeSessions,
             archived: final.archivedSessions,
             activeChanged: !shouldArchive,
             archivedChanged: shouldArchive
-        )]
-        changesSubject.send(final)
+        )], final: final)
     }
 }
 

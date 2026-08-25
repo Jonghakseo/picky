@@ -112,7 +112,7 @@ final class PickyHUDDockState: ObservableObject {
     }
 }
 
-extension PickySessionListViewModel.SessionCard {
+extension PickySessionCard {
     var canRequestDockCompaction: Bool {
         guard !isCompacting else { return false }
         switch status {

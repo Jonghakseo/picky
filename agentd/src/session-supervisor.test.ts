@@ -2154,11 +2154,11 @@ describe("SessionSupervisor", () => {
     const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
 
     runtime.handle?.emit({ type: "status", status: "running", summary: "Still working" });
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "running");
     runtime.handle!.isStreaming = true;
 
     await supervisor.steer(pickle.id, "/compact focus on current changes", context("screen context must not wrap the command"));
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "completed" && supervisor.get(pickle.id)?.lastSummary === "Session compacted");
 
     expect(runtime.handle!.aborts).toBe(1);
     expect(runtime.handle!.compactCalls).toEqual(["focus on current changes"]);
@@ -2182,11 +2182,11 @@ describe("SessionSupervisor", () => {
     });
 
     runtime.handle?.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "cancelled");
     expect(supervisor.get(pickle.id)?.status).toBe("cancelled");
 
     await supervisor.steer(pickle.id, "/compact focus on current changes");
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "cancelled" && supervisor.get(pickle.id)?.lastSummary === "Session compacted");
 
     const updated = supervisor.get(pickle.id)!;
     expect(runtime.handle!.compactCalls).toEqual(["focus on current changes"]);
@@ -2239,13 +2239,17 @@ describe("SessionSupervisor", () => {
     runtime.handle!.onCompact = () => {};
 
     runtime.handle?.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "cancelled");
     await supervisor.steer(pickle.id, "/compact");
     await supervisor.abort(pickle.id);
 
-    runtime.handle?.emit({ type: "status", status: "running", summary: "Compacting session…", compactionStarted: true, compactionReason: "manual" });
-    runtime.handle?.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, compactionReason: "manual" });
-    await settle();
+    // Both late events must finish their serialized handling before asserting
+    // that cancellation rejected them. They intentionally leave no state signal.
+    const internals = supervisor as unknown as {
+      applyRuntimeEvent(sessionId: string, event: RuntimeEvent): Promise<void>;
+    };
+    await internals.applyRuntimeEvent(pickle.id, { type: "status", status: "running", summary: "Compacting session…", compactionStarted: true, compactionReason: "manual" });
+    await internals.applyRuntimeEvent(pickle.id, { type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, compactionReason: "manual" });
 
     const updated = supervisor.get(pickle.id)!;
     expect(updated.status).toBe("cancelled");
@@ -2348,9 +2352,9 @@ describe("SessionSupervisor", () => {
     const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
 
     runtime.handle?.emit({ type: "status", status: "failed", summary: "Initial failure" });
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "failed");
     await supervisor.steer(pickle.id, "/compact");
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "failed" && supervisor.get(pickle.id)?.lastSummary === "Session compacted");
 
     const updated = supervisor.get(pickle.id)!;
     expect(updated.status).toBe("failed");
@@ -2411,7 +2415,7 @@ describe("SessionSupervisor", () => {
 
     runtime.handle?.emit({ type: "assistant_delta", delta: "조사 완료입니다." });
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "completed" && supervisor.get(pickle.id)?.finalAnswer === "조사 완료입니다.");
     expect(supervisor.get(pickle.id)?.status).toBe("completed");
 
     runtime.handle!.onFollowUp = (handle, prompt) => {
@@ -2424,7 +2428,7 @@ describe("SessionSupervisor", () => {
     supervisor.on("resourcesReloaded", (sessionId) => resourcesReloaded.push(sessionId));
 
     await supervisor.followUp(pickle.id, "/reload");
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "completed" && supervisor.get(pickle.id)?.lastSummary === "Pi resources reloaded" && resourcesReloaded.includes(pickle.id));
 
     const updated = supervisor.get(pickle.id)!;
     expect(updated.status).toBe("completed");
@@ -2442,7 +2446,7 @@ describe("SessionSupervisor", () => {
 
     runtime.handle?.emit({ type: "assistant_delta", delta: "조사 완료입니다." });
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "completed" && supervisor.get(pickle.id)?.lastSummary === "조사 완료입니다.");
     expect(supervisor.get(pickle.id)?.lastSummary).toBe("조사 완료입니다.");
 
     runtime.handle!.onFollowUp = (handle, prompt) => {
@@ -2452,7 +2456,7 @@ describe("SessionSupervisor", () => {
     };
 
     await supervisor.followUp(pickle.id, "/reload");
-    await settle();
+    await waitForRuntimeEvents(supervisor, pickle.id);
 
     const updated = supervisor.get(pickle.id)!;
     expect(updated.status).toBe("completed");
@@ -2522,13 +2526,13 @@ describe("SessionSupervisor", () => {
     runtime.handle?.emit({ type: "context_usage", usage: { tokens: 184_000, contextWindow: 200_000, percent: 92 } });
     runtime.handle?.emit({ type: "assistant_delta", delta: "완료 답변" });
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "completed" && supervisor.get(pickle.id)?.lastSummary === "완료 답변" && supervisor.get(pickle.id)?.contextUsage?.percent === 92);
     expect(supervisor.get(pickle.id)?.status).toBe("completed");
     expect(supervisor.get(pickle.id)?.lastSummary).toBe("완료 답변");
     expect(supervisor.get(pickle.id)?.contextUsage?.percent).toBe(92);
 
     runtime.handle?.emit({ type: "status", status: "running", summary: "Compacting session…", compactionStarted: true, compactionReason: "threshold" });
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "running" && supervisor.get(pickle.id)?.lastSummary === "Compacting session…");
     expect(supervisor.get(pickle.id)?.status).toBe("running");
     expect(supervisor.get(pickle.id)?.lastSummary).toBe("Compacting session…");
 
@@ -5614,7 +5618,7 @@ describe("SessionSupervisor", () => {
 
     runtime.handle?.emit({ type: "assistant_delta", delta: "Done. PR: https://github.com/acme/repo/pull/99" });
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    await settle();
+    await waitUntil(() => events.includes("sessionMeta:completed") && events.includes("artifact:github"));
 
     expect(events.indexOf("sessionMeta:completed")).toBeGreaterThanOrEqual(0);
     expect(events.indexOf("artifact:github")).toBeGreaterThan(events.indexOf("sessionMeta:completed"));
@@ -8050,8 +8054,7 @@ describe("SessionSupervisor deleteSession", () => {
       // post-event drain runs and discovers the cleared compacting flag.
       runtime.handle!.isCompacting = false;
       runtime.handle!.emit({ type: "log", line: "compact completed" });
-      await settle();
-      await settle();
+      await waitUntil(() => runtime.handle!.followUps.some((prompt) => prompt.text === "/reload"));
 
       expect(runtime.handle!.followUps.find((prompt) => prompt.text === "/reload")).toBeDefined();
     });
@@ -8073,14 +8076,12 @@ describe("SessionSupervisor deleteSession", () => {
       runtime.handle!.isCompacting = false;
       runtime.handle!.isStreaming = true;
       runtime.handle!.emit({ type: "log", line: "compact completed but turn started" });
-      await settle();
-      await settle();
+      await waitForRuntimeEvents(supervisor, pickle.id);
       expect(runtime.handle!.followUps.find((prompt) => prompt.text === "/reload")).toBeUndefined();
 
       runtime.handle!.isStreaming = false;
       runtime.handle!.emit({ type: "log", line: "turn completed" });
-      await settle();
-      await settle();
+      await waitUntil(() => runtime.handle!.followUps.some((prompt) => prompt.text === "/reload"));
       expect(runtime.handle!.followUps.find((prompt) => prompt.text === "/reload")).toBeDefined();
     });
 
@@ -8101,8 +8102,7 @@ describe("SessionSupervisor deleteSession", () => {
       await supervisor.abort(pickle.id);
       runtime.handle!.isCompacting = false;
       runtime.handle!.emit({ type: "log", line: "compact completed after abort" });
-      await settle();
-      await settle();
+      await waitForRuntimeEvents(supervisor, pickle.id);
 
       expect(runtime.handle!.followUps.find((prompt) => prompt.text === "/reload")).toBeUndefined();
     });
@@ -8662,6 +8662,16 @@ function commandReceipts(session: PickyAgentSession | undefined): Array<{ comman
 
 async function settle(): Promise<void> {
   await delay(10);
+}
+
+async function waitForRuntimeEvents(supervisor: SessionSupervisor, sessionId: string): Promise<void> {
+  // Runtime handles expose a fire-and-forget callback. For intentional no-op
+  // events, the supervisor's own serialized chain is the only exact completion
+  // signal, so do not replace this with a timing delay.
+  const internals = supervisor as unknown as {
+    waitForRuntimeEvents(sessionId: string): Promise<void>;
+  };
+  await internals.waitForRuntimeEvents(sessionId);
 }
 
 async function waitUntil(predicate: () => boolean): Promise<void> {

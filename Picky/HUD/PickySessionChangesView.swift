@@ -9,14 +9,22 @@ import SwiftUI
 
 struct PickySessionChangesView: View {
     let sessionID: String
-    @ObservedObject var viewModel: PickySessionListViewModel
+    /// Commands are deliberately unobserved; only this session's diff store
+    /// redraws when an on-demand diff response arrives.
+    let viewModel: any PickySessionCommands
+    @ObservedObject private var diffStore: PickySessionDiffStore
     let isVisible: Bool
 
     @State private var expandedFilePaths = Set<String>()
 
-    private var state: PickySessionDiffState {
-        viewModel.sessionDiffState(for: sessionID)
+    init(sessionID: String, viewModel: any PickySessionCommands, isVisible: Bool) {
+        self.sessionID = sessionID
+        self.viewModel = viewModel
+        _diffStore = ObservedObject(wrappedValue: viewModel.sessionDiffStore(for: sessionID))
+        self.isVisible = isVisible
     }
+
+    private var state: PickySessionDiffState { diffStore.state }
 
     var body: some View {
         VStack(spacing: 0) {

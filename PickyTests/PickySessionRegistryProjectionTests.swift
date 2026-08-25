@@ -4,6 +4,7 @@
 //
 
 import AppKit
+import Combine
 import Foundation
 import Observation
 import SwiftUI
@@ -38,6 +39,36 @@ struct PickySessionRegistryProjectionTests {
 
         #expect(firstInvalidations.count == 1)
         #expect(secondInvalidations.count == 0)
+    }
+
+    @Test func terminalAttachmentStoreInvalidatesMountedAttachmentWhenAnotherPanelTakesOwnership() {
+        let store = PickyTerminalAttachmentStore()
+        let invalidations = ProjectionInvalidationCounter()
+        func trackFirstPanelAttachment() {
+            withObservationTracking {
+                _ = store.isActive(sessionID: "first", attachmentID: "first-panel")
+            } onChange: {
+                invalidations.increment()
+            }
+        }
+
+        trackFirstPanelAttachment()
+        store.activate(
+            sessionID: "first",
+            attachmentID: "first-panel",
+            eligibleSessionIDs: ["first", "second"]
+        )
+        #expect(invalidations.count == 1)
+        #expect(store.isActive(sessionID: "first", attachmentID: "first-panel"))
+
+        trackFirstPanelAttachment()
+        store.activate(
+            sessionID: "second",
+            attachmentID: "second-panel",
+            eligibleSessionIDs: ["first", "second"]
+        )
+        #expect(invalidations.count == 2)
+        #expect(!store.isActive(sessionID: "first", attachmentID: "first-panel"))
     }
 
     @Test func dockCompactionMatchesLegacyTerminalStatusPolicy() {
@@ -99,6 +130,24 @@ struct PickySessionRegistryProjectionTests {
         first.replace(card: card(id: "first", status: .completed))
         #expect(waitForMountedHost(host) { evaluations.count(for: "first") > firstInitial })
         #expect(evaluations.count(for: "second") == secondInitial)
+    }
+
+    @Test func diffStoreInvalidatesOnlyItsOwnMountedUtilityPanel() {
+        let first = PickySessionDiffStore()
+        let second = PickySessionDiffStore()
+        let firstInvalidations = ProjectionInvalidationCounter()
+        let secondInvalidations = ProjectionInvalidationCounter()
+        let firstSubscription = first.objectWillChange.sink { _ in firstInvalidations.increment() }
+        let secondSubscription = second.objectWillChange.sink { _ in secondInvalidations.increment() }
+        defer {
+            firstSubscription.cancel()
+            secondSubscription.cancel()
+        }
+
+        first.replace(.requesting(view: .unstaged, requestID: "first-request"))
+
+        #expect(firstInvalidations.count == 1)
+        #expect(secondInvalidations.count == 0)
     }
 
     @Test func archiveMembershipInvalidatesOnlyWhenMembershipChanges() {

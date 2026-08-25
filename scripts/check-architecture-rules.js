@@ -351,7 +351,7 @@ function lineCount(file) {
 // Lower-only ratchet: count code references after stripping Swift comments and strings.
 // When a refactor lowers this count, re-run the count, pin the new lower value here, and
 // update the self-test. Never raise this baseline; new concrete HUD references must be removed.
-const HUD_SESSION_LIST_VIEW_MODEL_REFERENCE_BASELINE = 26;
+const HUD_SESSION_LIST_VIEW_MODEL_REFERENCE_BASELINE = 8;
 const observableSessionArrayPattern = /^\s*(?:@[A-Za-z_][A-Za-z0-9_]*(?:\([^\n]*\))?\s*)*((?:(?:public|internal|package|fileprivate|private(?:\(set\))?|static|class|final|lazy|weak|unowned|nonisolated)\s+)*)(var|let)\s+[A-Za-z_][A-Za-z0-9_]*\s*:\s*\[\s*(SessionCard|PickySessionMessage|PickyAgentSession)\s*\](?!\s*\{)/gm;
 
 function observableSessionArrayViolations(source) {

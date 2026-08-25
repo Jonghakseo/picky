@@ -139,7 +139,7 @@ final class PickyHUDPanel: PickySecureSurfacePanel, PickyScreenCaptureExcludedWi
 
 @MainActor
 final class PickyHUDOverlayManager {
-    private let viewModel: PickySessionListViewModel
+    private let viewModel: any PickyHUDSessionLifecycle
     private let appearanceStore: PickyAppearanceStore
     private let fontScaleStore: PickyAppFontScaleStore
     private let visibilityStore: PickyHUDVisibilityStore
@@ -193,7 +193,7 @@ final class PickyHUDOverlayManager {
     private var dockGroupCollapseByDisplayID: [String: [String: Bool]]
 
     init(
-        viewModel: PickySessionListViewModel,
+        viewModel: any PickyHUDSessionLifecycle,
         appearanceStore: PickyAppearanceStore,
         fontScaleStore: PickyAppFontScaleStore,
         visibilityStore: PickyHUDVisibilityStore,
@@ -285,8 +285,8 @@ final class PickyHUDOverlayManager {
     /// actual dock projection without a count cap.
     private func projectedDockSessionCount(for displayID: CGDirectDisplayID) -> Int {
         PickyDockProjector.project(
-            layout: viewModel.dockLayout,
-            visibleSessionIDs: Array(viewModel.sessions.reversed().map(\.id)),
+            layout: viewModel.dockState.snapshot.dockLayout,
+            visibleSessionIDs: Array(viewModel.dockState.snapshot.activeSessions.reversed().map(\.id)),
             collapsedOverrides: dockGroupCollapse(for: displayID)
         ).slots.count
     }

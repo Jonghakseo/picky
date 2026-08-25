@@ -24,7 +24,7 @@ struct PickyHUDDockSession: Equatable, Identifiable {
         fallbackProjection = nil
     }
 
-    init(session: PickySessionListViewModel.SessionCard) {
+    init(session: PickyConversationSessionCard) {
         id = session.id
         sessionStore = nil
         fallbackProjection = PickySessionDockProjection(

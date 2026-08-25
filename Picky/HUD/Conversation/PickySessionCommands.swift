@@ -8,6 +8,7 @@
 //
 
 import Combine
+import CoreGraphics
 import Foundation
 
 @MainActor
@@ -60,6 +61,7 @@ protocol PickySessionCommands: AnyObject, PickyGitChipActionViewModelDispatch {
     func answerExtensionUi(sessionID: String, requestID: String, value: JSONValue) async throws
     func cancelExtensionUi(sessionID: String, requestID: String) async throws
     func isInlineTerminalMode(sessionID: String) -> Bool
+    var inlineTerminalAttachmentStore: PickyTerminalAttachmentStore { get }
     func inlineTerminalSession(for session: PickyConversationSessionCard) -> PickyInlineTerminalSession?
     func disableInlineTerminalMode(sessionID: String)
     func isInlineTerminalAttachmentActive(sessionID: String, attachmentID: String) -> Bool
@@ -74,9 +76,63 @@ protocol PickySessionCommands: AnyObject, PickyGitChipActionViewModelDispatch {
     func duplicate(sessionID: String) async throws
     func requestCompaction(sessionID: String) async
     func archive(sessionID: String)
+
+    // HUD-only imperative bridge. These commands deliberately remain
+    // unobserved; mounted HUD subtrees read their exact registry stores.
+    func sessionCard(sessionID: String) -> PickyConversationSessionCard?
+    func markDoneFlashConsumed(sessionID: String)
+    func markSessionRead(sessionID: String)
+    func markSessionClosed(sessionID: String)
+    func sessionStore(sessionID: String) -> PickySessionStore?
+    func toggleStickyScreenContextTarget(sessionID: String)
+    func assignSessionToDockGroup(sessionID: String, groupID: String)
+    func removeRecentPickleFolder(_ cwd: String)
+    func pinPickleFolder(_ cwd: String)
+    func unpinPickleFolder(_ cwd: String)
+    func reorderPinnedPickleFolders(_ cwds: [String])
+    func createEmptyPickleSession(cwd: String) async throws -> String
+    func createDockGroup(name: String, withMemberIDs memberSessionIDs: [String]) -> String
+    func renameDockGroup(id: String, to name: String)
+    func setDockGroupColor(id: String, color: PickyDockGroupColor)
+    func removeDockGroup(id: String, keepMembers: Bool)
+    func moveSessionInDock(sessionID: String, to destination: PickyDockContainer)
+    func moveDockGroup(id: String, toTopLevelIndex target: Int)
+    func toggleThinkingBlocks(sessionID: String)
+    func openLatestAgentResponseReport(sessionID: String) async throws
+    func unarchive(sessionID: String)
+    func requestOpenSession(sessionID: String, targetDisplayID: CGDirectDisplayID?)
+    var shellTerminalAttachmentStore: PickyTerminalAttachmentStore { get }
+    func shellTerminalSession(sessionID: String) -> PickyShellTerminalSession
+    func isShellTerminalAttachmentActive(sessionID: String, attachmentID: String) -> Bool
+    func activateShellTerminalAttachment(sessionID: String, attachmentID: String)
+    func releaseShellTerminalAttachment(sessionID: String, attachmentID: String)
+    func sessionDiffStore(for sessionID: String) -> PickySessionDiffStore
+    func setSessionDiffVisible(_ isVisible: Bool, sessionID: String)
+    func selectSessionDiffView(_ view: PickySessionDiffView, sessionID: String)
 }
 
-extension PickySessionListViewModel: PickySessionCommands {}
+/// Lifecycle capability for AppKit's overlay manager. It is separate from the
+/// mounted HUD command boundary so only the manager can start/stop the session
+/// stream, while views never observe the global façade.
+@MainActor
+protocol PickyHUDSessionLifecycle: PickySessionCommands {
+    var dockState: PickyHUDDockState { get }
+    func start()
+    func stop()
+}
+
+extension PickySessionListViewModel: PickySessionCommands, PickyHUDSessionLifecycle {
+    func sessionCard(sessionID: String) -> PickyConversationSessionCard? {
+        activeSessionCard(sessionID: sessionID)
+    }
+
+    func shellTerminalSession(sessionID: String) -> PickyShellTerminalSession {
+        guard let session = card(sessionID: sessionID) else {
+            preconditionFailure("Extended terminal requires an active session")
+        }
+        return shellTerminalSession(for: session)
+    }
+}
 
 extension PickySessionListViewModel {
     /// Stable registry identity for scoped HUD subtrees. Consumers observe this

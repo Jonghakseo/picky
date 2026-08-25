@@ -89,6 +89,7 @@ struct PickyInlineTerminalCardView: View {
         if let terminalSession = commands.inlineTerminalSession(for: session) {
             PickyInlineTerminalSessionView(
                 commands: commands,
+                attachmentStore: commands.inlineTerminalAttachmentStore,
                 session: session,
                 terminalSession: terminalSession,
                 contentWidth: contentWidth,
@@ -122,6 +123,7 @@ struct PickyInlineTerminalCardView: View {
 @MainActor
 private struct PickyInlineTerminalSessionView: View {
     let commands: any PickySessionCommands
+    let attachmentStore: PickyTerminalAttachmentStore
     let session: PickyConversationSessionCard
     @ObservedObject var terminalSession: PickyInlineTerminalSession
     let contentWidth: CGFloat
@@ -131,7 +133,7 @@ private struct PickyInlineTerminalSessionView: View {
     @State private var attachmentID = UUID().uuidString
 
     private var isActiveAttachment: Bool {
-        commands.isInlineTerminalAttachmentActive(sessionID: session.id, attachmentID: attachmentID)
+        attachmentStore.isActive(sessionID: session.id, attachmentID: attachmentID)
     }
 
     var body: some View {

@@ -30,7 +30,9 @@ final class PickySessionListViewModel: ObservableObject {
     /// Every controller mutation path must call `syncSlashCommands()`.
     @Published private(set) var slashCommandsBySessionID: [String: [PickySlashCommand]] = [:]
     /// Per-session git-diff projections. Populated only while the Changes utility tab is visible.
-    @Published private(set) var sessionDiffStatesBySessionID: [String: PickySessionDiffState] = [:]
+    /// Stores preserve mounted utility-panel identity without publishing through
+    /// the global façade for another session's diff response.
+    var sessionDiffStoresBySessionID: [String: PickySessionDiffStore] = [:]
     var visibleSessionDiffSessionIDs = Set<String>()
     /// High-frequency autocomplete responses bypass `objectWillChange` so typing does not
     /// invalidate every conversation bubble observing this view model. The active composer
@@ -55,8 +57,8 @@ final class PickySessionListViewModel: ObservableObject {
     /// The one inline terminal attachment that is allowed to render its SwiftTerm NSView.
     /// Other visible inline terminal cards stay in TUI mode but show an explanatory
     /// placeholder so AppKit never has to attach one terminal view to multiple parents.
-    @Published private(set) var activeInlineTerminalAttachmentSessionID: String?
-    private var inlineTerminalAttachmentCoordinator = PickyTerminalAttachmentCoordinator()
+    let inlineTerminalAttachmentStore = PickyTerminalAttachmentStore()
+    var activeInlineTerminalAttachmentSessionID: String? { inlineTerminalAttachmentStore.activeSessionID }
     /// Long-lived inline terminal sessions keyed by Pickle session ID. The terminal
     /// NSView/process is retained here so collapsing/reopening the HUD card reuses
     /// the same TUI instead of launching a fresh `pi --session` process.
@@ -65,8 +67,8 @@ final class PickySessionListViewModel: ObservableObject {
     /// The one local shell terminal add-on attachment that may render its AppKit
     /// terminal view. Multiple HUD panels can exist, but a single NSView cannot be
     /// attached to multiple parents at the same time.
-    @Published private(set) var activeShellTerminalAttachmentSessionID: String?
-    private var shellTerminalAttachmentCoordinator = PickyTerminalAttachmentCoordinator()
+    let shellTerminalAttachmentStore = PickyTerminalAttachmentStore()
+    var activeShellTerminalAttachmentSessionID: String? { shellTerminalAttachmentStore.activeSessionID }
     /// Long-lived local shell terminals keyed by Pickle session ID. Hiding the
     /// add-on intentionally keeps the shell process alive so reopening resumes the
     /// same terminal session.
@@ -699,45 +701,6 @@ final class PickySessionListViewModel: ObservableObject {
         slashCommandController.hasLoaded(sessionID: sessionID)
     }
 
-    func sessionDiffState(for sessionID: String) -> PickySessionDiffState {
-        sessionDiffStatesBySessionID[sessionID] ?? PickySessionDiffState()
-    }
-
-    func setSessionDiffVisible(_ isVisible: Bool, sessionID: String) {
-        if isVisible {
-            guard visibleSessionDiffSessionIDs.insert(sessionID).inserted else { return }
-            requestSessionDiff(sessionID: sessionID)
-        } else {
-            visibleSessionDiffSessionIDs.remove(sessionID)
-        }
-    }
-
-    func selectSessionDiffView(_ view: PickySessionDiffView, sessionID: String) {
-        guard sessionDiffState(for: sessionID).view != view else { return }
-        requestSessionDiff(sessionID: sessionID, view: view)
-    }
-
-    func requestSessionDiff(sessionID: String, view requestedView: PickySessionDiffView? = nil) {
-        guard card(sessionID: sessionID) != nil else { return }
-        let view = requestedView ?? sessionDiffState(for: sessionID).view
-        let requestID = "session-diff-\(UUID().uuidString)"
-        let command = PickyCommandEnvelope(PickySessionDiffCommand(sessionId: sessionID, requestId: requestID, view: view))
-        sessionDiffStatesBySessionID[sessionID] = .requesting(view: view, requestID: requestID)
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                try await client.send(command)
-            } catch {
-                guard var state = sessionDiffStatesBySessionID[sessionID], state.requestID == requestID else { return }
-                state.isLoading = false
-                state.errorMessage = error.localizedDescription
-                state.requestID = nil
-                state.hasReceivedResult = true
-                sessionDiffStatesBySessionID[sessionID] = state
-            }
-        }
-    }
-
     @discardableResult
     func requestAutocompleteCapabilities(sessionID: String) -> String {
         sendAutocompleteCommand(PickyCommandEnvelope(type: .getAutocompleteCapabilities, sessionId: sessionID))
@@ -1150,7 +1113,7 @@ final class PickySessionListViewModel: ObservableObject {
         openToolHistory(sessionID: sessionID, scope: scope)
     }
 
-    private func card(sessionID: String) -> SessionCard? {
+    func card(sessionID: String) -> SessionCard? {
         (sessions + archivedSessions).first { $0.id == sessionID }
     }
 
@@ -1392,37 +1355,30 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     func isInlineTerminalAttachmentActive(sessionID: String, attachmentID: String) -> Bool {
-        inlineTerminalAttachmentCoordinator.isActive(sessionID: sessionID, attachmentID: attachmentID)
+        inlineTerminalAttachmentStore.isActive(sessionID: sessionID, attachmentID: attachmentID)
     }
 
     func activateInlineTerminalAttachment(sessionID: String, attachmentID: String) {
-        inlineTerminalAttachmentCoordinator.activate(
+        inlineTerminalAttachmentStore.activate(
             sessionID: sessionID,
             attachmentID: attachmentID,
             eligibleSessionIDs: inlineTerminalSessionIDs
         )
-        syncInlineTerminalAttachmentState()
     }
 
     func releaseInlineTerminalAttachment(sessionID: String, attachmentID: String) {
-        inlineTerminalAttachmentCoordinator.release(
+        inlineTerminalAttachmentStore.release(
             sessionID: sessionID,
             attachmentID: attachmentID,
             eligibleSessionIDs: inlineTerminalSessionIDs
         )
-        syncInlineTerminalAttachmentState()
     }
 
     private func removeVisibleInlineTerminalAttachments(sessionID: String) {
-        inlineTerminalAttachmentCoordinator.removeSession(
+        inlineTerminalAttachmentStore.removeSession(
             sessionID: sessionID,
             eligibleSessionIDs: inlineTerminalSessionIDs
         )
-        syncInlineTerminalAttachmentState()
-    }
-
-    private func syncInlineTerminalAttachmentState() {
-        activeInlineTerminalAttachmentSessionID = inlineTerminalAttachmentCoordinator.activeSessionID
     }
 
     private func closeInlineTerminalSession(sessionID: String) {
@@ -1446,41 +1402,34 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     func isShellTerminalAttachmentActive(sessionID: String, attachmentID: String) -> Bool {
-        shellTerminalAttachmentCoordinator.isActive(sessionID: sessionID, attachmentID: attachmentID)
+        shellTerminalAttachmentStore.isActive(sessionID: sessionID, attachmentID: attachmentID)
     }
 
     func activateShellTerminalAttachment(sessionID: String, attachmentID: String) {
-        shellTerminalAttachmentCoordinator.activate(
+        shellTerminalAttachmentStore.activate(
             sessionID: sessionID,
             attachmentID: attachmentID,
             eligibleSessionIDs: shellTerminalEligibleSessionIDs
         )
-        syncShellTerminalAttachmentState()
     }
 
     func releaseShellTerminalAttachment(sessionID: String, attachmentID: String) {
-        shellTerminalAttachmentCoordinator.release(
+        shellTerminalAttachmentStore.release(
             sessionID: sessionID,
             attachmentID: attachmentID,
             eligibleSessionIDs: shellTerminalEligibleSessionIDs
         )
-        syncShellTerminalAttachmentState()
     }
 
     private func removeVisibleShellTerminalAttachments(sessionID: String) {
-        shellTerminalAttachmentCoordinator.removeSession(
+        shellTerminalAttachmentStore.removeSession(
             sessionID: sessionID,
             eligibleSessionIDs: shellTerminalEligibleSessionIDs
         )
-        syncShellTerminalAttachmentState()
     }
 
     private var shellTerminalEligibleSessionIDs: Set<String> {
         Set((sessions + archivedSessions).map(\.id))
-    }
-
-    private func syncShellTerminalAttachmentState() {
-        activeShellTerminalAttachmentSessionID = shellTerminalAttachmentCoordinator.activeSessionID
     }
 
     private func closeShellTerminalSession(sessionID: String) {
@@ -2019,10 +1968,9 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     private func applySessionDiffResult(_ result: PickySessionDiffResult) {
-        let current = sessionDiffState(for: result.sessionId)
-        let next = PickySessionDiffState.reducing(current: current, result: result)
-        guard next != current else { return }
-        sessionDiffStatesBySessionID[result.sessionId] = next
+        guard let store = sessionDiffStoresBySessionID[result.sessionId] else { return }
+        let next = PickySessionDiffState.reducing(current: store.state, result: result)
+        store.replace(next)
     }
 
     private func applySessionArchivedAuthoritative(sessionID sessionId: String, archived: Bool) {
@@ -2363,6 +2311,7 @@ final class PickySessionListViewModel: ObservableObject {
         releasedArchivedChildSessionIDs = releasedArchivedChildSessionIDs.filter { knownSessionIDs.contains($0) }
         lastIncrementalSeqBySessionID = lastIncrementalSeqBySessionID.filter { knownSessionIDs.contains($0.key) }
         pendingTerminalMetaBySessionID = pendingTerminalMetaBySessionID.filter { knownSessionIDs.contains($0.key) }
+        sessionDiffStoresBySessionID = sessionDiffStoresBySessionID.filter { knownSessionIDs.contains($0.key) }
         let removedInlineTerminalIDs = inlineTerminalSessionIDs.subtracting(knownSessionIDs)
         inlineTerminalSessionIDs = inlineTerminalSessionIDs.filter { knownSessionIDs.contains($0) }
         for sessionID in removedInlineTerminalIDs {

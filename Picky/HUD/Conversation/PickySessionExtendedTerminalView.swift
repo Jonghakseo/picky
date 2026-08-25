@@ -218,17 +218,20 @@ enum PickySessionExtendedTerminalFocusPolicy {
 }
 
 struct PickySessionExtendedTerminalView: View {
-    let session: PickySessionListViewModel.SessionCard
-    @ObservedObject var viewModel: PickySessionListViewModel
+    /// This panel owns a stable session-store dependency and receives only
+    /// terminal commands; it must not observe the global session façade.
+    let sessionStore: PickySessionStore
+    let commands: any PickySessionCommands
     var height: CGFloat = PickyHUDUtilityPanelPolicy.defaultHeight
     var showsPanelChrome = true
     var isFocusEligible = true
 
     var body: some View {
         PickySessionExtendedTerminalContentView(
-            session: session,
-            viewModel: viewModel,
-            terminalSession: viewModel.shellTerminalSession(for: session),
+            sessionID: sessionStore.sessionID,
+            commands: commands,
+            attachmentStore: commands.shellTerminalAttachmentStore,
+            terminalSession: commands.shellTerminalSession(sessionID: sessionStore.sessionID),
             height: height,
             showsPanelChrome: showsPanelChrome,
             isFocusEligible: isFocusEligible
@@ -237,8 +240,9 @@ struct PickySessionExtendedTerminalView: View {
 }
 
 private struct PickySessionExtendedTerminalContentView: View {
-    let session: PickySessionListViewModel.SessionCard
-    @ObservedObject var viewModel: PickySessionListViewModel
+    let sessionID: String
+    let commands: any PickySessionCommands
+    let attachmentStore: PickyTerminalAttachmentStore
     @ObservedObject var terminalSession: PickyShellTerminalSession
     let height: CGFloat
     let showsPanelChrome: Bool
@@ -246,7 +250,7 @@ private struct PickySessionExtendedTerminalContentView: View {
     @State private var attachmentID = UUID().uuidString
 
     private var isActiveAttachment: Bool {
-        viewModel.isShellTerminalAttachmentActive(sessionID: session.id, attachmentID: attachmentID)
+        attachmentStore.isActive(sessionID: sessionID, attachmentID: attachmentID)
     }
 
     var body: some View {
@@ -312,7 +316,7 @@ private struct PickySessionExtendedTerminalContentView: View {
                 .foregroundColor(DS.Colors.textPrimary)
                 .multilineTextAlignment(.center)
             Button("Show This Terminal") {
-                viewModel.activateShellTerminalAttachment(sessionID: session.id, attachmentID: attachmentID)
+                commands.activateShellTerminalAttachment(sessionID: sessionID, attachmentID: attachmentID)
             }
             .pickyFont(size: 11, weight: .semibold)
             .buttonStyle(.borderless)
@@ -324,12 +328,12 @@ private struct PickySessionExtendedTerminalContentView: View {
     }
 
     private func handleAppear() {
-        viewModel.activateShellTerminalAttachment(sessionID: session.id, attachmentID: attachmentID)
-        viewModel.endHoveredVoiceFollowUp(sessionID: session.id)
+        commands.activateShellTerminalAttachment(sessionID: sessionID, attachmentID: attachmentID)
+        commands.endHoveredVoiceFollowUp(sessionID: sessionID)
     }
 
     private func handleDisappear() {
-        viewModel.releaseShellTerminalAttachment(sessionID: session.id, attachmentID: attachmentID)
+        commands.releaseShellTerminalAttachment(sessionID: sessionID, attachmentID: attachmentID)
     }
 
     private var addonBackground: some View {

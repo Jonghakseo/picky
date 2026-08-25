@@ -68,24 +68,31 @@ enum PickyHUDUtilityPanelPolicy {
 /// A compact two-tab shell. The terminal stays mounted behind the artifacts tab
 /// so its process and scroll state survive utility-panel navigation.
 struct PickySessionUtilityPanelView: View {
-    let session: PickySessionListViewModel.SessionCard
-    @ObservedObject var viewModel: PickySessionListViewModel
+    /// The mounted panel observes only this session's artifact store. Commands
+    /// are an unobserved capability for terminal attachment lifecycle.
+    let sessionStore: PickySessionStore
+    let commands: any PickySessionCommands
     @Binding var selectedTab: PickyHUDUtilityPanelTab
     let height: CGFloat
     let artifactsBadge: PickyHUDUtilityPanelTabBadge?
 
     init(
-        session: PickySessionListViewModel.SessionCard,
-        viewModel: PickySessionListViewModel,
+        sessionStore: PickySessionStore,
+        commands: any PickySessionCommands,
         selectedTab: Binding<PickyHUDUtilityPanelTab>,
         height: CGFloat,
         artifactsBadge: PickyHUDUtilityPanelTabBadge? = nil
     ) {
-        self.session = session
-        self.viewModel = viewModel
+        self.sessionStore = sessionStore
+        self.commands = commands
         self._selectedTab = selectedTab
         self.height = height
         self.artifactsBadge = artifactsBadge
+    }
+
+    private var artifacts: [PickyArtifact] {
+        guard case .loaded(let artifacts) = sessionStore.artifactStore.artifactsState else { return [] }
+        return artifacts
     }
 
     var body: some View {
@@ -96,8 +103,8 @@ struct PickySessionUtilityPanelView: View {
             GeometryReader { proxy in
                 ZStack {
                     PickySessionExtendedTerminalView(
-                        session: session,
-                        viewModel: viewModel,
+                        sessionStore: sessionStore,
+                        commands: commands,
                         height: proxy.size.height,
                         showsPanelChrome: false,
                         isFocusEligible: selectedTab == .terminal
@@ -106,7 +113,7 @@ struct PickySessionUtilityPanelView: View {
                     .allowsHitTesting(selectedTab == .terminal)
                     .accessibilityHidden(selectedTab != .terminal)
 
-                    PickySessionArtifactsView(artifacts: session.artifacts)
+                    PickySessionArtifactsView(artifacts: artifacts)
                         .opacity(selectedTab == .artifacts ? 1 : 0)
                         .allowsHitTesting(selectedTab == .artifacts)
                         .accessibilityHidden(selectedTab != .artifacts)

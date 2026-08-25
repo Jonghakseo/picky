@@ -1352,15 +1352,6 @@ final class CompanionManager: ObservableObject {
             : label ?? (targetChanged ? nil : screenContextTargetLabel)
         setLocalOverlayReason(.screenContextTarget, visible: normalized != nil)
     }
-
-    private func quickInputRecipientProjection() -> QuickInputRecipientProjection {
-        guard let sessionID = normalizedVoiceFollowUpSessionID(selectionStore.screenContextTargetSessionID) else {
-            return .main
-        }
-        let label = screenContextTargetLabel?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return .pickle(sessionID: sessionID, label: label?.isEmpty == false ? label! : "Pickle")
-    }
-
     private func handleQuickInputDoubleTap(_ event: QuickInputDoubleTapEvent) {
         // PTT-in-progress and the input panel are mutually exclusive: voice and
         // typed quick input share the same submission lane and we don't want a
@@ -1378,7 +1369,7 @@ final class CompanionManager: ObservableObject {
         quickInputPanelManager.updateRecentMessages(mainAgentMessages)
         quickInputPanelManager.presentPanel(
             near: event.mouseLocation,
-            recipient: quickInputRecipientProjection()
+            recipient: PickyQuickInputRecipientPolicy.resolve(screenContextTargetSessionID: selectionStore.screenContextTargetSessionID, targetLabel: screenContextTargetLabel)
         )
     }
 
@@ -1918,7 +1909,7 @@ final class CompanionManager: ObservableObject {
         } else {
             effectiveDisplaySelectionSnapshot = displaySelectionSnapshot
         }
-        let recipient = quickInputRecipient ?? quickInputRecipientProjection()
+        let recipient = quickInputRecipient ?? PickyQuickInputRecipientPolicy.resolve(screenContextTargetSessionID: selectionStore.screenContextTargetSessionID, targetLabel: screenContextTargetLabel)
         if source == .quickInput,
            case let .pickle(targetSessionID, _) = recipient {
             return await sendPickleMessageFromInput(

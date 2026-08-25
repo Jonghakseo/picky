@@ -11,8 +11,8 @@ import SwiftUI
 
 struct PickyHUDView: View {
     /// Imperative session actions and full-card resolvers use this plain
-    /// reference. The root observes only the VM-owned dock projection below.
-    let viewModel: PickySessionListViewModel
+    /// capability. The root observes only the dock projection below.
+    let viewModel: any PickySessionCommands
     @ObservedObject var dockState: PickyHUDDockState
     var panelIdentifier: NSUserInterfaceItemIdentifier?
     /// Display this panel renders on. Used to route notification-driven open
@@ -267,7 +267,7 @@ struct PickyHUDView: View {
             sizeReporter.handleMeasuredSize(
                 panelSize,
                 activeSessionID: activeID,
-                extensionUiRequestID: activeSessionID.flatMap { viewModel.activeSessionCard(sessionID: $0)?.pendingExtensionUiRequest?.id },
+                extensionUiRequestID: activeSessionID.flatMap { viewModel.sessionCard(sessionID: $0)?.pendingExtensionUiRequest?.id },
                 shouldHoldHeight: shouldHoldPanelHeightDuringActiveTurn,
                 onSizeChange: { size in onSizeChange(size, activeID) }
             )
@@ -383,7 +383,7 @@ struct PickyHUDView: View {
 
     @ViewBuilder
     private func conversationCard(
-        for activeSession: PickySessionListViewModel.SessionCard,
+        for activeSession: PickyConversationSessionCard,
         store: PickySessionStore
     ) -> some View {
             let utilityPanelIsOpen = isUtilityPanelOpen(sessionID: activeSession.id)
@@ -451,8 +451,8 @@ struct PickyHUDView: View {
                     )
                     .frame(width: placement.cardWidth)
                     PickySessionUtilityPanelView(
-                        session: activeSession,
-                        viewModel: viewModel,
+                        sessionStore: store,
+                        commands: viewModel,
                         selectedTab: utilityPanelTabBinding(for: activeSession.id),
                         height: utilityPanelHeight,
                         artifactsBadge: artifactBadge(for: activeSession)
@@ -551,14 +551,14 @@ struct PickyHUDView: View {
             get: { utilityPanelStateStore.selectedTab(for: sessionID) },
             set: { selectedTab in
                 utilityPanelStateStore.select(selectedTab, for: sessionID)
-                if let session = viewModel.activeSessionCard(sessionID: sessionID) {
+                if let session = viewModel.sessionCard(sessionID: sessionID) {
                     markArtifactsSeenIfNeeded(for: session)
                 }
             }
         )
     }
 
-    private func artifactBadge(for session: PickySessionListViewModel.SessionCard) -> PickyHUDUtilityPanelTabBadge? {
+    private func artifactBadge(for session: PickyConversationSessionCard) -> PickyHUDUtilityPanelTabBadge? {
         let count = PickySessionArtifactsPresentation.unseenCount(
             artifacts: session.artifacts,
             lastSeenArtifactsAt: utilityPanelStateStore.lastSeenArtifactsAt(for: session.id)
@@ -568,12 +568,12 @@ struct PickyHUDView: View {
 
     private func markActiveArtifactsSeenIfNeeded() {
         guard let activeSession,
-              let session = viewModel.activeSessionCard(sessionID: activeSession.id)
+              let session = viewModel.sessionCard(sessionID: activeSession.id)
         else { return }
         markArtifactsSeenIfNeeded(for: session)
     }
 
-    private func markArtifactsSeenIfNeeded(for session: PickySessionListViewModel.SessionCard) {
+    private func markArtifactsSeenIfNeeded(for session: PickyConversationSessionCard) {
         utilityPanelStateStore.markArtifactsSeen(
             for: session.id,
             at: PickySessionArtifactsPresentation.latestUpdatedAt(artifacts: session.artifacts),
@@ -889,7 +889,7 @@ struct PickyHUDView: View {
         )
         if nextHeldSession == nil {
             openPerformanceTracker?.cancel(sessionID: sessionID)
-        } else if let session = viewModel.activeSessionCard(sessionID: sessionID) {
+        } else if let session = viewModel.sessionCard(sessionID: sessionID) {
             PickyPerf.event("hud_open_click")
             openPerformanceTracker?.start(
                 sessionID: sessionID,
@@ -934,7 +934,7 @@ struct PickyHUDView: View {
     private func archiveSession(_ sessionID: String) {
         cancelPendingClose()
         let title = visibleSessions.first(where: { $0.id == sessionID })?.title
-            ?? viewModel.activeSessionCard(sessionID: sessionID)?.title
+            ?? viewModel.sessionCard(sessionID: sessionID)?.title
             ?? "Pickle"
         viewModel.archive(sessionID: sessionID)
         utilityPanelOpenSessionIDs.remove(sessionID)
@@ -1021,7 +1021,7 @@ struct PickyHUDView: View {
             }
         }
         let visibleIDs = visibleSessions.map(\.id)
-        let activeCard = activeSessionID.flatMap { viewModel.activeSessionCard(sessionID: $0) }
+        let activeCard = activeSessionID.flatMap { viewModel.sessionCard(sessionID: $0) }
 
         if PickyHUDKeyboardShortcutPolicy.isComposerFocusShortcut(keyCode: event.keyCode, modifiers: flags),
            keyWindow.isFirstResponderFallback,
@@ -1181,7 +1181,7 @@ struct PickyHUDView: View {
         }
     }
 
-    private func toggleNotifyOnCompletion(session: PickySessionListViewModel.SessionCard) {
+    private func toggleNotifyOnCompletion(session: PickyConversationSessionCard) {
         let enabled = !(session.notifyMainOnCompletion == true)
         Task { try? await viewModel.setNotifyMainOnCompletion(sessionID: session.id, enabled: enabled) }
     }
@@ -1267,9 +1267,9 @@ struct PickyHUDView: View {
 /// local SwiftUI state while dock icons continue to use lightweight snapshots.
 private struct PickyHUDConversationCardResolver<Content: View>: View {
     /// The HUD root intentionally keeps this as a plain command/resolver
-    /// reference. The mounted subtree observes the selected registry store,
+    /// capability. The mounted subtree observes the selected registry store,
     /// avoiding global façade-array fan-out for unrelated sessions.
-    let viewModel: PickySessionListViewModel
+    let viewModel: any PickySessionCommands
     let sessionID: String
     @ViewBuilder let content: (PickySessionStore, PickyConversationSessionCard) -> Content
 

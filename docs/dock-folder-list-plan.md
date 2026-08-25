@@ -160,10 +160,15 @@ Unread keeps its current two-level meaning and gains no new semantics:
 
 ## Drag and drop
 
+- Rows reorder by drag inside the panel. A drag resolves to `onMoveSessionInDock(sessionID, .group(id:memberIndex:))` with the destination row index, reusing the existing move API unchanged.
+- Row reorder hit-testing is always single-axis on Y, for every dock side. The rail's `dockSide.orientation` axis branch does not apply, because the list is vertical even when the dock is horizontal. Row centers publish through the same measured-center pattern as `PickyDockSlotCenterPreferenceKey`, in the panel's own coordinate space.
+- While a row is dragged, remaining rows shift to preview the insertion point, matching the rail's existing reorder preview behavior.
+- When the list scrolls (more than 8 members), dragging within 24pt of the panel's top or bottom edge auto-scrolls at a fixed rate so rows outside the viewport remain reachable.
 - Dragging a Pickle onto a folder tile and dwelling opens that group's list, allowing a drop into a specific row position.
 - Dropping onto a row inserts at that index; dropping onto the panel background appends.
-- Dragging a row out of the panel removes the Pickle from the group and drops it as an ungrouped rail slot.
+- Dragging a row out of the panel removes the Pickle from the group and drops it as an ungrouped rail slot. The pull-out threshold reuses the rail's dwell rule so a brief wobble never ungroups.
 - Group reordering moves to folder-tile drag, replacing the current group-header drag (`handleGroupHeaderDrag*`).
+- The panel stays open for the whole drag regardless of the pin toggle, and does not close on the drop that ends a reorder.
 
 ## Interaction with existing dock affordances
 
@@ -194,6 +199,8 @@ Pure policy tests come first, per `docs/refactoring-principles.md`:
 - Selecting a row switches the card and, with pin off, closes the panel; with pin on, keeps it.
 - `esc` closes the list first and the card second.
 - `⌘3` opens the third rail slot's list when no list is open, and the third row when one is.
+- Reordering rows within a list produces the same `memberSessionIDs` order as the equivalent pre-plan rail member drag, for both vertical and horizontal dock sides.
+- A row dragged out of the panel lands as an ungrouped top-level slot and is removed from `memberSessionIDs`.
 - Folder unread count equals the number of unread member Pickles and decrements by one when a member is opened.
 
 ## Open questions

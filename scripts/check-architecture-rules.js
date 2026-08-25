@@ -641,6 +641,10 @@ function main() {
     addError("Run this script from the repository root.");
   } else {
     checkGuardPatternFixtures();
+    // Self-verification runs with the normal gate too: the pre-push hook never
+    // passes `--self-test`, so rename detection and baseline drift would
+    // otherwise never be enforced automatically.
+    checkSessionProjectionGuardFixtures();
     checkPermissionPromptAPIUsage();
     checkProtocolParity();
     checkSwiftDomainImports();

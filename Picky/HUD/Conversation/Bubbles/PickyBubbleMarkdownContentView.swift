@@ -669,10 +669,9 @@ private final class PickyTableMarkdownBlockView: PickyMarkdownBlockNSView {
         let allRows = [headers] + rows
         for (rowIndex, cells) in allRows.enumerated() {
             for columnIndex in 0..<columnCount where columnIndex < cells.count {
-                let attr = GridDocumentView.attributedCellString(
+                let attr = PickyBubbleMarkdownTableCell.attributedString(
                     cells[columnIndex],
-                    isHeader: rowIndex == 0,
-                    columnIndex: columnIndex
+                    isHeader: rowIndex == 0
                 )
                 let rect = attr.boundingRect(
                     with: NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude),
@@ -705,13 +704,7 @@ private final class PickyTableMarkdownBlockView: PickyMarkdownBlockNSView {
             self.columnWidths = columnWidths
             let tableRows = [headers] + rows
             self.cellFields = tableRows.enumerated().map { rowIndex, cells in
-                cells.enumerated().map { columnIndex, cell in
-                    Self.makeCellField(
-                        text: cell,
-                        isHeader: rowIndex == 0,
-                        columnIndex: columnIndex
-                    )
-                }
+                cells.map { PickyBubbleMarkdownTableCell.makeField(text: $0, isHeader: rowIndex == 0) }
             }
             super.init(frame: .zero)
             cellFields.flatMap { $0 }.forEach { addSubview($0) }
@@ -784,39 +777,59 @@ private final class PickyTableMarkdownBlockView: PickyMarkdownBlockNSView {
             }
         }
 
-        private static func makeCellField(text: String, isHeader: Bool, columnIndex: Int) -> NSTextField {
-            let field = NSTextField(labelWithString: "")
-            field.attributedStringValue = attributedCellString(text, isHeader: isHeader, columnIndex: columnIndex)
-            field.backgroundColor = .clear
-            field.isBordered = false
-            field.isEditable = false
-            field.isSelectable = true
-            field.lineBreakMode = .byWordWrapping
-            field.maximumNumberOfLines = 0
-            return field
-        }
+    }
+}
 
-        static func attributedCellString(_ text: String, isHeader: Bool, columnIndex: Int) -> NSAttributedString {
-            let content = text.isEmpty ? " " : text
-            let attr = NSMutableAttributedString(
-                attributedString: PickyMarkdownInlineTextView.buildAttributedString(from: [.paragraph(content)])
+/// Builds the selectable label used for one markdown table cell inside a
+/// conversation bubble.
+enum PickyBubbleMarkdownTableCell {
+    static func makeField(text: String, isHeader: Bool) -> NSTextField {
+        let field = NSTextField(labelWithString: "")
+        field.attributedStringValue = attributedString(text, isHeader: isHeader)
+        field.backgroundColor = .clear
+        field.isBordered = false
+        field.isEditable = false
+        field.isSelectable = true
+        // Clicking a selectable field installs the shared field editor. With
+        // rich text disabled that editor runs in plain-text mode and repaints
+        // the whole string with the *cell's* font and alignment, which setting
+        // `attributedStringValue` never updates — so a cell holding monospaced
+        // or bold runs visibly resized the moment it was clicked.
+        field.allowsEditingTextAttributes = true
+        field.lineBreakMode = .byWordWrapping
+        field.maximumNumberOfLines = 0
+        return field
+    }
+
+    static func attributedString(_ text: String, isHeader: Bool) -> NSAttributedString {
+        let content = text.isEmpty ? " " : text
+        let attr = NSMutableAttributedString(
+            attributedString: PickyMarkdownInlineTextView.buildAttributedString(from: [.paragraph(content)])
+        )
+        // Data cells keep the inline renderer's own colors: body at textBody,
+        // bold at textPrimary, code and links at their semantic tints. A
+        // blanket foreground override used to flatten all four into one color.
+        guard isHeader else { return attr }
+
+        // Header cells read as a single label, so every run steps up to
+        // semibold and to the brighter primary color — except code and link
+        // runs, which keep their tint so the semantics survive in a header too.
+        let full = NSRange(location: 0, length: attr.length)
+        attr.enumerateAttributes(in: full) { attributes, range, _ in
+            let current = attributes[.font] as? NSFont
+                ?? NSFont.systemFont(ofSize: PickyHUDTypography.Size.body)
+            let isMonospaced = current.fontDescriptor.symbolicTraits.contains(.monoSpace)
+            attr.addAttribute(
+                .font,
+                value: isMonospaced
+                    ? NSFont.monospacedSystemFont(ofSize: current.pointSize, weight: .semibold)
+                    : NSFont.systemFont(ofSize: current.pointSize, weight: .semibold),
+                range: range
             )
-            let foreground = isHeader ? NSColor(DS.Colors.textPrimary) : NSColor(DS.Colors.textPrimary.opacity(0.92))
-            attr.addAttribute(.foregroundColor, value: foreground, range: NSRange(location: 0, length: attr.length))
-            if isHeader {
-                attr.enumerateAttribute(.font, in: NSRange(location: 0, length: attr.length)) { value, range, _ in
-                    let current = value as? NSFont ?? NSFont.systemFont(ofSize: PickyHUDTypography.Size.body)
-                    let replacement = NSFont.systemFont(ofSize: current.pointSize, weight: .semibold)
-                    attr.addAttribute(.font, value: replacement, range: range)
-                }
+            if attributes[.link] == nil, !isMonospaced {
+                attr.addAttribute(.foregroundColor, value: NSColor(DS.Colors.textPrimary), range: range)
             }
-            if columnIndex == 0 && !isHeader {
-                let style = NSMutableParagraphStyle()
-                style.alignment = .center
-                style.lineHeightMultiple = 1.1
-                attr.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: attr.length))
-            }
-            return attr
         }
+        return attr
     }
 }

@@ -41,8 +41,23 @@ final class PickySessionRegistry {
         for sessionID in normalizedActive + normalizedArchived where storesBySessionID[sessionID] == nil {
             _ = sessionStore(sessionID: sessionID)
         }
-        activeSessionIDs = normalizedActive
-        archivedSessionIDs = normalizedArchived
+        if activeSessionIDs != normalizedActive {
+            activeSessionIDs = normalizedActive
+        }
+        if archivedSessionIDs != normalizedArchived {
+            archivedSessionIDs = normalizedArchived
+        }
+    }
+
+    /// Narrow aggregate for consumers that only need to gate an action on live
+    /// Pickles. Reading dock projections makes this react to status changes,
+    /// without subscribing to message/tool/log child stores.
+    var runningSessionCount: Int {
+        activeSessionIDs.reduce(into: 0) { count, sessionID in
+            if storesBySessionID[sessionID]?.dockStore.projection?.status == .running {
+                count += 1
+            }
+        }
     }
 
     func removeSessionStore(sessionID: String) {

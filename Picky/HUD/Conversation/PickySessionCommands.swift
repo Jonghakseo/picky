@@ -85,6 +85,16 @@ extension PickySessionListViewModel {
         (sessionProjectionStorage as? PickyRegistrySessionProjectionStorage)?
             .registry.existingSessionStore(sessionID: sessionID)
     }
+
+    /// Registry-owned archive membership for settings/onboarding consumers.
+    /// Production always uses the registry backend; legacy storage remains a
+    /// targeted test seam and never constructs these UI surfaces.
+    var sessionRegistry: PickySessionRegistry {
+        guard let registry = (sessionProjectionStorage as? PickyRegistrySessionProjectionStorage)?.registry else {
+            preconditionFailure("Archive membership requires registry projection storage")
+        }
+        return registry
+    }
 }
 
 /// Compatibility name used only at the Conversation boundary. The concrete

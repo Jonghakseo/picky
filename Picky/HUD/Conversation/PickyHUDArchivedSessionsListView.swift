@@ -2,16 +2,16 @@
 //  PickyHUDArchivedSessionsListView.swift
 //  Picky
 //
-//  List of archived Pickles shown inside Settings → Pickle. Reaches the same
-//  code path as the in-toast Undo and the `picky_unarchive_pickle`
-//  tool (`PickySessionListViewModel.unarchive`) for restore, and the new
-//  `deleteArchivedSession` for permanent purge.
+//  List of archived Pickles shown inside Settings → Pickle. Membership is
+//  registry-owned; each row observes only its own stable session store.
 //
 
+import Foundation
 import SwiftUI
 
 struct PickyHUDArchivedSessionsListView: View {
-    @ObservedObject var viewModel: PickySessionListViewModel
+    let archiveMembership: any PickySessionArchiveMembership
+    let commands: any PickySessionArchiveCommands
     /// When `false`, the list's own "Archived sessions" header (title + count
     /// + delete-all) is suppressed so a parent disclosure row can own the
     /// labelling. Defaults to `true` to preserve the HUD-side rendering that
@@ -29,8 +29,8 @@ struct PickyHUDArchivedSessionsListView: View {
     /// can't be triggered hours later.
     private static let pendingDeleteWindow: Duration = .seconds(4)
 
-    private var archivedSessions: [PickySessionListViewModel.SessionCard] {
-        viewModel.archivedSessions
+    private var archivedSessionIDs: [String] {
+        archiveMembership.archivedSessionIDs
     }
 
     var body: some View {
@@ -39,14 +39,16 @@ struct PickyHUDArchivedSessionsListView: View {
                 header
                 Divider().opacity(0.5)
             }
-            if archivedSessions.isEmpty {
+            if archivedSessionIDs.isEmpty {
                 emptyState
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 4) {
-                        ForEach(archivedSessions) { session in
-                            row(for: session)
-                            if session.id != archivedSessions.last?.id {
+                        ForEach(archivedSessionIDs, id: \.self) { sessionID in
+                            if let store = archiveMembership.existingSessionStore(sessionID: sessionID) {
+                                row(for: store)
+                            }
+                            if sessionID != archivedSessionIDs.last {
                                 Divider().opacity(0.3)
                             }
                         }
@@ -67,12 +69,12 @@ struct PickyHUDArchivedSessionsListView: View {
             Button("hud.archivedList.confirmDeleteAllCancel", role: .cancel) {}
             Button("hud.archivedList.confirmDeleteAllConfirm", role: .destructive) {
                 resetPendingDelete()
-                viewModel.deleteAllArchivedSessions()
+                commands.deleteAllArchivedSessions()
             }
         } message: {
             Text("hud.archivedList.confirmDeleteAllMessage")
         }
-        .onChange(of: archivedSessions.map(\.id)) { _, ids in
+        .onChange(of: archivedSessionIDs) { _, ids in
             // If the row currently waiting on confirmation disappears (restored,
             // deleted from another surface, etc.) drop the pending state so a
             // future row at the same index doesn't appear pre-armed.
@@ -89,13 +91,13 @@ struct PickyHUDArchivedSessionsListView: View {
             Text("hud.archivedList.title")
                 .pickyFont(size: 12, weight: .semibold)
                 .foregroundColor(DS.Colors.textPrimary)
-            if !archivedSessions.isEmpty {
-                Text("\(archivedSessions.count)")
+            if !archivedSessionIDs.isEmpty {
+                Text("\(archivedSessionIDs.count)")
                     .pickyFont(size: 11, weight: .medium)
                     .foregroundColor(DS.Colors.textTertiary)
             }
             Spacer(minLength: 4)
-            if !archivedSessions.isEmpty {
+            if !archivedSessionIDs.isEmpty {
                 deleteAllButton
             }
         }
@@ -126,7 +128,7 @@ struct PickyHUDArchivedSessionsListView: View {
     /// initializers do).
     private var deleteAllConfirmationTitle: String {
         let format = L10n.t("hud.archivedList.confirmDeleteAllTitle")
-        return String.localizedStringWithFormat(format, archivedSessions.count)
+        return String.localizedStringWithFormat(format, archivedSessionIDs.count)
     }
 
     private var emptyState: some View {
@@ -138,80 +140,26 @@ struct PickyHUDArchivedSessionsListView: View {
     }
 
     @ViewBuilder
-    private func row(for session: PickySessionListViewModel.SessionCard) -> some View {
-        HStack(alignment: .center, spacing: 6) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(session.title)
-                    .pickyFont(size: 12, weight: .medium)
-                    .foregroundColor(DS.Colors.textPrimary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                if let cwd = session.compactCwdDescription {
-                    Text(cwd)
-                        .pickyFont(size: 10)
-                        .foregroundColor(DS.Colors.textTertiary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+    private func row(for store: PickySessionStore) -> some View {
+        PickyHUDArchivedSessionRow(
+            store: store,
+            isDeleteArmed: pendingDeleteSessionID == store.sessionID,
+            onRestore: {
+                resetPendingDelete()
+                commands.unarchive(sessionID: store.sessionID)
+            },
+            onDelete: {
+                if pendingDeleteSessionID == store.sessionID {
+                    pendingDeleteSessionID = nil
+                    pendingDeleteResetTask?.cancel()
+                    pendingDeleteResetTask = nil
+                    commands.deleteArchivedSession(sessionID: store.sessionID)
+                } else {
+                    armPendingDelete(for: store.sessionID)
                 }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            restoreButton(for: session)
-            deleteButton(for: session)
-        }
-        .padding(.vertical, 4)
-        .contentShape(Rectangle())
-        // Tapping anywhere outside the delete button on a row cancels the
-        // pending confirmation for any *other* row. The delete button itself
-        // owns its own arm/confirm transitions.
-        .onTapGesture { resetPendingDelete(except: session.id) }
-    }
-
-    private func restoreButton(for session: PickySessionListViewModel.SessionCard) -> some View {
-        Button {
-            resetPendingDelete()
-            viewModel.unarchive(sessionID: session.id)
-        } label: {
-            Text("hud.archivedList.restore")
-                .pickyFont(size: 11, weight: .semibold)
-                .foregroundColor(DS.Colors.accentText)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(
-                    RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
-                        .fill(DS.Colors.surface2)
-                )
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Restore Pickle")
-    }
-
-    @ViewBuilder
-    private func deleteButton(for session: PickySessionListViewModel.SessionCard) -> some View {
-        let isArmed = pendingDeleteSessionID == session.id
-        Button {
-            if isArmed {
-                pendingDeleteSessionID = nil
-                pendingDeleteResetTask?.cancel()
-                pendingDeleteResetTask = nil
-                viewModel.deleteArchivedSession(sessionID: session.id)
-            } else {
-                armPendingDelete(for: session.id)
-            }
-        } label: {
-            Text(isArmed ? "hud.archivedList.confirmDelete" : "hud.archivedList.delete")
-                .pickyFont(size: 11, weight: .semibold)
-                .foregroundColor(isArmed ? DS.Colors.destructiveText : DS.Colors.textTertiary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(
-                    RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
-                        .fill(isArmed ? DS.Colors.destructiveText.opacity(0.12) : DS.Colors.surface2.opacity(0.6))
-                )
-                .animation(.easeOut(duration: 0.12), value: isArmed)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(isArmed ? "Confirm delete Pickle" : "Delete Pickle")
+            },
+            onRowTap: { resetPendingDelete(except: store.sessionID) }
+        )
     }
 
     private func armPendingDelete(for sessionID: String) {
@@ -230,5 +178,79 @@ struct PickyHUDArchivedSessionsListView: View {
         pendingDeleteSessionID = nil
         pendingDeleteResetTask?.cancel()
         pendingDeleteResetTask = nil
+    }
+}
+
+/// A row observes exactly one archived session's metadata; sibling and active
+/// session mutations cannot invalidate it.
+private struct PickyHUDArchivedSessionRow: View {
+    let store: PickySessionStore
+    let isDeleteArmed: Bool
+    let onRestore: () -> Void
+    let onDelete: () -> Void
+    let onRowTap: () -> Void
+
+    var body: some View {
+        if case .loaded(let metadata) = store.metaStore.metadataState {
+            HStack(alignment: .center, spacing: 6) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(metadata.title)
+                        .pickyFont(size: 12, weight: .medium)
+                        .foregroundColor(DS.Colors.textPrimary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if let cwd = compactCwdDescription(metadata.cwd) {
+                        Text(cwd)
+                            .pickyFont(size: 10)
+                            .foregroundColor(DS.Colors.textTertiary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Button(action: onRestore) {
+                    Text("hud.archivedList.restore")
+                        .pickyFont(size: 11, weight: .semibold)
+                        .foregroundColor(DS.Colors.accentText)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
+                                .fill(DS.Colors.surface2)
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Restore Pickle")
+
+                Button(action: onDelete) {
+                    Text(isDeleteArmed ? "hud.archivedList.confirmDelete" : "hud.archivedList.delete")
+                        .pickyFont(size: 11, weight: .semibold)
+                        .foregroundColor(isDeleteArmed ? DS.Colors.destructiveText : DS.Colors.textTertiary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
+                                .fill(isDeleteArmed ? DS.Colors.destructiveText.opacity(0.12) : DS.Colors.surface2.opacity(0.6))
+                        )
+                        .animation(.easeOut(duration: 0.12), value: isDeleteArmed)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isDeleteArmed ? "Confirm delete Pickle" : "Delete Pickle")
+            }
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onRowTap)
+        }
+    }
+
+    private func compactCwdDescription(_ cwd: String?) -> String? {
+        let trimmed = cwd?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return nil }
+        let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
+        let standardized = NSString(string: trimmed).standardizingPath
+        if standardized == home { return "~" }
+        if standardized.hasPrefix(home + "/") { return "~" + String(standardized.dropFirst(home.count)) }
+        return trimmed
     }
 }

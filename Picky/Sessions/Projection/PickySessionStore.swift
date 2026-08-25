@@ -11,6 +11,9 @@ import Observation
 final class PickySessionStore {
     let sessionID: String
     let metaStore = PickySessionMetaStore()
+    /// Dock-only scalar projection. Its equality-guarded updates isolate tiles
+    /// from high-frequency conversation/tool/log mutations.
+    let dockStore = PickySessionDockStore()
     let logStore = PickySessionLogStore()
     let toolStore = PickySessionToolStore()
     let todoStore = PickySessionTodoStore()
@@ -49,6 +52,23 @@ final class PickySessionStore {
         replaceQueue(for: card)
         activityStore.replace(card.activitySummary)
         replaceExtensionUiRequest(for: card)
+        refreshDockProjection()
+    }
+
+    /// Refreshes the dock-only scalar projection after a v2 mutation has
+    /// updated independently owned children. The dock store itself suppresses
+    /// equivalent values, so a message-only transaction remains invisible to
+    /// dock tiles.
+    func refreshDockProjection() {
+        guard case .loaded(let metadata) = metaStore.metadataState else {
+            dockStore.markUnavailable()
+            return
+        }
+        let todoState: PickyTodoState? = {
+            guard case .loaded(let value) = todoStore.todoState else { return nil }
+            return value
+        }()
+        dockStore.replace(metadata: metadata, todoState: todoState)
     }
 
     /// Rebuilds the legacy card input from independently owned child snapshots.

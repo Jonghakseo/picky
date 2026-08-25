@@ -3,9 +3,6 @@ import SwiftUI
 
 struct PickyHUDDockIconView: View {
     let session: PickyHUDDockSession
-    /// Held as a plain reference. Only the mounted hover-preview resolver
-    /// observes it for high-frequency full-session detail changes.
-    let viewModel: PickySessionListViewModel
     let index: Int
     let isActive: Bool
     let isOpened: Bool
@@ -35,6 +32,8 @@ struct PickyHUDDockIconView: View {
     /// to its rail-level controller from here so it survives this icon's
     /// NSView being recreated mid-drag.
     var onReorderHandoff: (NSPoint) -> Void = { _ in }
+    /// Test-only body probe; production callers use the no-op default.
+    var onBodyEvaluation: () -> Void = {}
 
     @State private var completionFlashIntensity: Double = 0
     @State private var completionFlashTask: Task<Void, Never>?
@@ -50,6 +49,7 @@ struct PickyHUDDockIconView: View {
     }
 
     var body: some View {
+        let _ = onBodyEvaluation()
         let _ = PickyPerf.event("dock_icon_body")
         dockIconContent
             .frame(width: metrics.sessionTileWidth, height: metrics.sessionTileHeight)
@@ -101,8 +101,7 @@ struct PickyHUDDockIconView: View {
         .overlay(alignment: .center) {
             if isPreviewed {
                 PickyHUDMiniPreviewResolver(
-                    viewModel: viewModel,
-                    sessionID: session.id,
+                    session: session,
                     metrics: metrics
                 )
                     .offset(x: miniPreviewOffset.width, y: miniPreviewOffset.height)
@@ -1143,34 +1142,29 @@ final class PickyHUDDockAnchorHandleNSView: NSView {
     override var acceptsFirstResponder: Bool { false }
 }
 
-/// Deliberately the only dock subtree that observes full session cards. It is
-/// mounted only for a hovered preview, keeping tool/message/log publications
-/// out of every icon and rail.
+/// Mounted only for a hovered preview. Its session handle resolves from the
+/// same lightweight per-session dock store as the icon, keeping full detail
+/// publications out of every icon and rail.
 private struct PickyHUDMiniPreviewResolver: View {
-    @ObservedObject var viewModel: PickySessionListViewModel
-    let sessionID: String
+    let session: PickyHUDDockSession
     let metrics: PickyHUDDockMetrics
 
     var body: some View {
-        if let session = viewModel.activeSessionCard(sessionID: sessionID) {
-            PickyHUDMiniPreviewCardView(session: session, metrics: metrics)
-                .id("\(sessionID)|\(session.cwd ?? "")")
-        }
+        PickyHUDMiniPreviewCardView(session: session, metrics: metrics)
+            .id("\(session.id)|\(session.cwd ?? "")")
     }
 }
 
 private struct PickyHUDMiniPreviewCardView: View {
-    let session: PickySessionListViewModel.SessionCard
+    let session: PickyHUDDockSession
     let metrics: PickyHUDDockMetrics
     @State private var gitStatus: PickyGitRepositoryStatus?
 
-    init(session: PickySessionListViewModel.SessionCard, metrics: PickyHUDDockMetrics) {
+    init(session: PickyHUDDockSession, metrics: PickyHUDDockMetrics) {
         self.session = session
         self.metrics = metrics
         _gitStatus = State(initialValue: PickyGitRepositoryStatus.cached(cwd: session.cwd))
     }
-
-    private static let gitRefreshBucketSeconds: TimeInterval = 20
 
     private var scale: CGFloat { metrics.scale }
     private var cornerRadius: CGFloat { max(12, 16 * scale) }
@@ -1187,9 +1181,8 @@ private struct PickyHUDMiniPreviewCardView: View {
     private var verticalPadding: CGFloat { max(7, 9 * scale) }
 
     private var gitRefreshKey: String {
-        let updatedAtBucket = Int(session.updatedAt.timeIntervalSince1970 / Self.gitRefreshBucketSeconds)
         let todoKey = session.todoState.map { String($0.updatedAt.timeIntervalSince1970) } ?? "none"
-        return "\(session.cwd ?? "")|\(updatedAtBucket)|todo:\(todoKey)"
+        return "\(session.cwd ?? "")|\(session.gitRefreshBucket)|todo:\(todoKey)"
     }
 
     var body: some View {

@@ -105,7 +105,7 @@ struct CompanionPanelView: View {
                     ScrollView(.vertical, showsIndicators: false) {
                         CompanionPanelExtensionsView(
                             companionManager: companionManager,
-                            sessionListViewModel: sessionListViewModel
+                            sessionActivity: sessionListViewModel.sessionRegistry
                         )
                             .padding(.horizontal, 16)
                             .padding(.top, 14)
@@ -193,7 +193,8 @@ struct CompanionPanelView: View {
                     CompanionPanelSettingsView(
                         viewModel: settingsViewModel,
                         companionManager: companionManager,
-                        sessionListViewModel: sessionListViewModel,
+                        archiveMembership: sessionListViewModel.sessionRegistry,
+                        archiveCommands: sessionListViewModel,
                         route: settingsRouteBinding
                     )
                     .padding(.horizontal, 16)

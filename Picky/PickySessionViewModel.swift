@@ -350,7 +350,7 @@ final class PickySessionListViewModel: ObservableObject {
 
     private func syncDockStateNow() {
         dockState.publish(PickyHUDDockSnapshot(
-            activeSessions: sessions.map(PickyHUDDockSession.init(session:)),
+            activeSessions: sessions.map { sessionStore(sessionID: $0.id).map(PickyHUDDockSession.init(store:)) ?? PickyHUDDockSession(session: $0) },
             dockLayout: dockLayout,
             screenContextTargetSessionID: screenContextTargetSessionID,
             screenContextTargetSticky: screenContextTargetSticky,

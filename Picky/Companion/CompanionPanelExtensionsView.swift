@@ -252,7 +252,9 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
 
 struct CompanionPanelExtensionsView: View {
     @ObservedObject var companionManager: CompanionManager
-    @ObservedObject var sessionListViewModel: PickySessionListViewModel
+    /// Reload safety observes only the registry's running aggregate; streamed
+    /// messages and other non-status changes cannot redraw this surface.
+    let sessionActivity: any PickySessionRunningCountProviding
     @EnvironmentObject private var pluginReloadController: PickyPluginReloadController
     @StateObject private var curatedViewModel = PickyCuratedPluginsViewModel()
     @State private var curatedInfoPopoverPluginID: String?
@@ -410,7 +412,7 @@ struct CompanionPanelExtensionsView: View {
         // because compaction surfaces as a sub-state of `running` on the
         // Picky side. The agentd reloadPlugins method differentiates the two
         // and aborts streaming vs deferring compacting sessions.
-        let runningPickles = sessionListViewModel.sessions.filter { $0.status == .running }.count
+        let runningPickles = sessionActivity.runningSessionCount
         // Main is busy when the voice machine is past idle. .listening
         // and .processing both involve in-flight work that a session.update
         // would interrupt; .responding is the audible speech the user wants to

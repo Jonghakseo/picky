@@ -8,24 +8,50 @@
 import Combine
 import Foundation
 
-/// Immutable, dock-only projection of a live session. Keep high-frequency
-/// conversation details out of this value so tool, message, and log updates do
-/// not invalidate every dock on every display.
+/// Lightweight dock handle with stable session identity. Registry-backed
+/// handles resolve their values from the per-session dock store, so message,
+/// tool, log, and artifact mutations never invalidate tiles. The card
+/// initializer remains only as the v1 compatibility bridge until W9 cleanup.
+@MainActor
 struct PickyHUDDockSession: Equatable, Identifiable {
     let id: String
-    let title: String
-    let status: PickySessionStatus
-    let cwd: String?
-    let todoState: PickyTodoState?
-    let canRequestDockCompaction: Bool
+    private let sessionStore: PickySessionStore?
+    private let fallbackProjection: PickySessionDockProjection?
+
+    init(store: PickySessionStore) {
+        id = store.sessionID
+        sessionStore = store
+        fallbackProjection = nil
+    }
 
     init(session: PickySessionListViewModel.SessionCard) {
         id = session.id
-        title = session.title
-        status = session.status
-        cwd = session.cwd
-        todoState = session.todoState
-        canRequestDockCompaction = session.canRequestDockCompaction
+        sessionStore = nil
+        fallbackProjection = PickySessionDockProjection(
+            metadata: PickySessionMetadata(card: session),
+            todoState: session.todoState
+        )
+    }
+
+    private var projection: PickySessionDockProjection {
+        guard let projection = sessionStore?.dockStore.projection ?? fallbackProjection else {
+            preconditionFailure("Dock session requires a loaded projection")
+        }
+        return projection
+    }
+
+    var title: String { projection.title }
+    var status: PickySessionStatus { projection.status }
+    var cwd: String? { projection.cwd }
+    var todoState: PickyTodoState? { projection.todoState }
+    var gitRefreshBucket: Int { projection.gitRefreshBucket }
+    var canRequestDockCompaction: Bool { projection.canRequestDockCompaction }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        // Registry-backed values preserve list identity across scalar updates;
+        // individual icon views observe their own store for those updates.
+        if lhs.sessionStore != nil || rhs.sessionStore != nil { return lhs.id == rhs.id }
+        return lhs.id == rhs.id && lhs.fallbackProjection == rhs.fallbackProjection
     }
 
     var compactCwdDescription: String? {

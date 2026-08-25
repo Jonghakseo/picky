@@ -725,7 +725,10 @@ struct PickySessionViewModelTests {
         detailsChanged.tools = [PickyToolActivity(toolCallId: "tool-2", name: "bash", status: "running", preview: "building", startedAt: nil, endedAt: nil)]
         detailsChanged.logPreview = "building"
         detailsChanged.messages = [.fixture(id: "message-1", kind: .agentText, text: "details")]
-        detailsChanged.updatedAt = Date(timeIntervalSince1970: 1_800_000_500)
+        // The hover preview refreshes Git only on 20-second timestamp buckets;
+        // detail updates inside the same bucket remain dock-snapshot-neutral.
+        let bucketStart = (baselineCard.updatedAt.timeIntervalSince1970 / 20).rounded(.down) * 20
+        detailsChanged.updatedAt = Date(timeIntervalSince1970: bucketStart + 10)
         #expect(PickyHUDDockSession(session: detailsChanged) == baseline)
 
         var titleChanged = baselineCard

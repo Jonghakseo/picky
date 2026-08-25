@@ -16,7 +16,7 @@ struct PickyProjectionV2BudgetTests {
     private static let bootstrapPublishBudget = 96
     private static let messageOnlyV1PublishBudget = 3
     private static let messageOnlyV2PublishBudget = 3
-    private static let messageOnlyDockPublishBudget = 1
+    private static let messageOnlyDockPublishBudget = 0
     private static let terminalV2PublishBudget = 5
     private static let terminalDockPublishBudget = 1
     private static let metaPatchByteBudget = 4 * 1_024
@@ -74,8 +74,9 @@ struct PickyProjectionV2BudgetTests {
 
         #expect(unrelatedInvalidations.count == 0)
         #expect(v2PublishCount == Self.messageOnlyV2PublishBudget)
-        // A dock snapshot publish is an upper-bound proxy for dock rail
-        // recomputation; the current bridge still publishes one snapshot.
+        // Dock handles retain stable identity and each icon observes its own
+        // scalar store, so a message-only transaction no longer republishes
+        // the rail's global snapshot.
         #expect(dockPublishCount == Self.messageOnlyDockPublishBudget)
         withExtendedLifetime(v2Cancellable) {}
         withExtendedLifetime(dockCancellable) {}

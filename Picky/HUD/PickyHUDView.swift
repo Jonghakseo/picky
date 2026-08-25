@@ -612,7 +612,6 @@ struct PickyHUDView: View {
         if !dockSnapshot.isLoadingInitialSessionSnapshot {
             PickyHUDDockRailView(
                 sessions: visibleSessions,
-                viewModel: viewModel,
                 allSessions: dockSnapshot.activeSessions,
                 baseProjection: dockProjection,
                 layout: dockSnapshot.dockLayout,

@@ -21,6 +21,7 @@ extension PickyRegistrySessionProjectionStorage {
 
         store.metaStore.replace(PickySessionMetadata(session: projection, revision: snapshot.revision))
         replaceSnapshotChildren(of: store, projection: projection, omittedFields: Set(snapshot.omittedFields))
+        store.refreshDockProjection()
         guard let card = store.materializedSessionCard() else { return nil }
         publishProjection(card, archived: archived)
         return card
@@ -41,6 +42,7 @@ extension PickyRegistrySessionProjectionStorage {
         }
         metadata.revision = transaction.revision
         store.metaStore.replace(metadata)
+        store.refreshDockProjection()
         guard let card = store.materializedSessionCard() else { return nil }
         publishProjection(card, archived: archived)
         return card
@@ -176,10 +178,15 @@ extension PickyRegistrySessionProjectionStorage {
     }
 
     private func publishProjection(_ card: PickySessionListViewModel.SessionCard, archived shouldArchive: Bool) {
-        var activeIDs = registry.activeSessionIDs.filter { $0 != card.id }
-        var archivedIDs = registry.archivedSessionIDs.filter { $0 != card.id }
-        if shouldArchive { archivedIDs.append(card.id) }
-        else { activeIDs.append(card.id) }
+        var activeIDs = registry.activeSessionIDs
+        var archivedIDs = registry.archivedSessionIDs
+        if shouldArchive {
+            activeIDs.removeAll { $0 == card.id }
+            if !archivedIDs.contains(card.id) { archivedIDs.append(card.id) }
+        } else {
+            archivedIDs.removeAll { $0 == card.id }
+            if !activeIDs.contains(card.id) { activeIDs.append(card.id) }
+        }
         registry.replaceMembership(active: activeIDs, archived: archivedIDs)
         let final = snapshot()
         v1RelaySteps = [relay(

@@ -17,10 +17,10 @@ import SwiftUI
 struct CompanionPanelSettingsView: View {
     @ObservedObject var viewModel: PickySettingsViewModel
     @ObservedObject var companionManager: CompanionManager
-    /// Shared HUD session list. The Pickle settings section renders the
-    /// archived-Pickle list (restore + permanent delete) directly off this
-    /// view model so the menu bar panel and the HUD see the same data.
-    @ObservedObject var sessionListViewModel: PickySessionListViewModel
+    /// Archive membership and commands are deliberately narrow so Settings
+    /// observes the registry list rather than the global session façade.
+    let archiveMembership: any PickySessionArchiveMembership
+    let archiveCommands: any PickySessionArchiveCommands
     @State private var mainAgentCwdDraft: String = ""
     @State private var piBinaryPathDraft: String = ""
     @State private var piCodingAgentDirDraft: String = ""
@@ -62,12 +62,14 @@ struct CompanionPanelSettingsView: View {
     init(
         viewModel: PickySettingsViewModel,
         companionManager: CompanionManager,
-        sessionListViewModel: PickySessionListViewModel,
+        archiveMembership: any PickySessionArchiveMembership,
+        archiveCommands: any PickySessionArchiveCommands,
         route: Binding<CompanionPanelSettingsRoute>
     ) {
         self.viewModel = viewModel
         self.companionManager = companionManager
-        self.sessionListViewModel = sessionListViewModel
+        self.archiveMembership = archiveMembership
+        self.archiveCommands = archiveCommands
         _route = route
         _oauthLoginController = StateObject(
             wrappedValue: PickyPiOAuthLoginController(runner: companionManager.makePiOAuthLoginRunner())
@@ -330,7 +332,7 @@ struct CompanionPanelSettingsView: View {
 
                 gitChipActionsGroup
 
-                if !sessionListViewModel.archivedSessions.isEmpty {
+                if !archiveMembership.archivedSessionIDs.isEmpty {
                     Divider()
                         .background(DS.Colors.borderSubtle.opacity(0.3))
 
@@ -359,7 +361,7 @@ struct CompanionPanelSettingsView: View {
                     Text("settings.pickle.archive.toggle")
                         .font(PickyHUDTypography.labelSemibold)
                         .foregroundColor(DS.Colors.textPrimary)
-                    Text("\(sessionListViewModel.archivedSessions.count)")
+                    Text("\(archiveMembership.archivedSessionIDs.count)")
                         .font(PickyHUDTypography.metaMedium)
                         .foregroundColor(DS.Colors.textTertiary)
                     Spacer(minLength: 4)
@@ -372,7 +374,8 @@ struct CompanionPanelSettingsView: View {
 
             if isArchivedSessionsExpanded {
                 PickyHUDArchivedSessionsListView(
-                    viewModel: sessionListViewModel,
+                    archiveMembership: archiveMembership,
+                    commands: archiveCommands,
                     showsHeader: false
                 )
                 .padding(.top, 4)

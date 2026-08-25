@@ -78,17 +78,17 @@ final class PickyInlineTerminalSession: ObservableObject {
 
 @MainActor
 struct PickyInlineTerminalCardView: View {
-    @ObservedObject var viewModel: PickySessionListViewModel
-    let session: PickySessionListViewModel.SessionCard
+    let commands: any PickySessionCommands
+    let session: PickyConversationSessionCard
     let contentWidth: CGFloat
     var isCommandShortcutHintVisible = false
     var onArchiveSession: (String) -> Void = { _ in }
     var onRewindSession: (String) -> Void = { _ in }
 
     var body: some View {
-        if let terminalSession = viewModel.inlineTerminalSession(for: session) {
+        if let terminalSession = commands.inlineTerminalSession(for: session) {
             PickyInlineTerminalSessionView(
-                viewModel: viewModel,
+                commands: commands,
                 session: session,
                 terminalSession: terminalSession,
                 contentWidth: contentWidth,
@@ -110,7 +110,7 @@ struct PickyInlineTerminalCardView: View {
                 .pickyFont(size: 11)
                 .foregroundColor(DS.Colors.textSecondary)
             Button("Back to Chat") {
-                viewModel.disableInlineTerminalMode(sessionID: session.id)
+                commands.disableInlineTerminalMode(sessionID: session.id)
             }
             .buttonStyle(.borderless)
         }
@@ -121,8 +121,8 @@ struct PickyInlineTerminalCardView: View {
 
 @MainActor
 private struct PickyInlineTerminalSessionView: View {
-    @ObservedObject var viewModel: PickySessionListViewModel
-    let session: PickySessionListViewModel.SessionCard
+    let commands: any PickySessionCommands
+    let session: PickyConversationSessionCard
     @ObservedObject var terminalSession: PickyInlineTerminalSession
     let contentWidth: CGFloat
     let isCommandShortcutHintVisible: Bool
@@ -131,7 +131,7 @@ private struct PickyInlineTerminalSessionView: View {
     @State private var attachmentID = UUID().uuidString
 
     private var isActiveAttachment: Bool {
-        viewModel.isInlineTerminalAttachmentActive(sessionID: session.id, attachmentID: attachmentID)
+        commands.isInlineTerminalAttachmentActive(sessionID: session.id, attachmentID: attachmentID)
     }
 
     var body: some View {
@@ -171,7 +171,7 @@ private struct PickyInlineTerminalSessionView: View {
             }
             Spacer(minLength: 8)
             Button {
-                viewModel.disableInlineTerminalMode(sessionID: session.id)
+                commands.disableInlineTerminalMode(sessionID: session.id)
             } label: {
                 HStack(spacing: 5) {
                     Text("hud.inlineTerminal.tab.chat")
@@ -188,7 +188,7 @@ private struct PickyInlineTerminalSessionView: View {
             Menu {
                 PickyConversationMenu(
                     session: session,
-                    viewModel: viewModel,
+                    viewModel: commands,
                     onArchive: { onArchiveSession(session.id) },
                     onRewind: { onRewindSession(session.id) }
                 )
@@ -221,7 +221,7 @@ private struct PickyInlineTerminalSessionView: View {
                     .foregroundColor(DS.Colors.textSecondary)
                     .textSelection(.enabled)
                 Button("Back to Chat") {
-                    viewModel.disableInlineTerminalMode(sessionID: session.id)
+                    commands.disableInlineTerminalMode(sessionID: session.id)
                 }
                 .buttonStyle(.borderless)
             }
@@ -253,7 +253,7 @@ private struct PickyInlineTerminalSessionView: View {
                 .foregroundColor(DS.Colors.textSecondary)
                 .multilineTextAlignment(.center)
             Button("Show This TUI") {
-                viewModel.activateInlineTerminalAttachment(sessionID: session.id, attachmentID: attachmentID)
+                commands.activateInlineTerminalAttachment(sessionID: session.id, attachmentID: attachmentID)
             }
             .pickyFont(size: 11, weight: .semibold)
             .buttonStyle(.borderless)
@@ -266,12 +266,12 @@ private struct PickyInlineTerminalSessionView: View {
 
     private func handleAppear() {
         terminalSession.prepareIfNeeded()
-        viewModel.activateInlineTerminalAttachment(sessionID: session.id, attachmentID: attachmentID)
-        viewModel.endHoveredVoiceFollowUp(sessionID: session.id)
+        commands.activateInlineTerminalAttachment(sessionID: session.id, attachmentID: attachmentID)
+        commands.endHoveredVoiceFollowUp(sessionID: session.id)
     }
 
     private func handleDisappear() {
-        viewModel.releaseInlineTerminalAttachment(sessionID: session.id, attachmentID: attachmentID)
+        commands.releaseInlineTerminalAttachment(sessionID: session.id, attachmentID: attachmentID)
     }
 }
 

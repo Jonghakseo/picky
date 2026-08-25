@@ -303,6 +303,7 @@ final class PickySessionListViewModel: ObservableObject {
         sessions.first { $0.id == sessionID }
     }
 
+
     /// Test seam for the coalesced dock snapshot. Production mutations always
     /// settle on the next main-queue turn, so an upsert never exposes its
     /// remove/append intermediate state to dock observers.

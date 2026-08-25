@@ -49,33 +49,59 @@ enum PickyTitleFieldSelectionPolicy {
 }
 
 struct PickyConversationHeaderView: View {
-    @ObservedObject var viewModel: PickySessionListViewModel
+    let commands: any PickySessionCommands
+    /// Header presentation is owned exclusively by session metadata. The
+    /// transcript is intentionally not materialized or observed here.
+    let metaStore: PickySessionMetaStore
     /// Observed separately from `viewModel` so cursor enter/exit on the
     /// conversation card only invalidates this header (which reads the value
     /// for the pi-badge active-voice highlight) rather than every conversation
-    /// subview observing the viewModel. Defaults to the viewModel's own store
+    /// subview observing the commands. Defaults to the viewModel's own store
     /// via the explicit init below so existing call sites (and tests) keep
     /// working without passing the parameter explicitly.
     @ObservedObject var voiceFollowUpHoverState: PickyVoiceFollowUpHoverState
-    let session: PickySessionListViewModel.SessionCard
+    private var session: PickyConversationHeaderProjection {
+        PickyConversationHeaderProjection(metaStore: metaStore)
+    }
     var onArchiveSession: (String) -> Void = { _ in }
     var isCommandShortcutHintVisible = false
     var onRewind: (() -> Void)?
 
     init(
-        viewModel: PickySessionListViewModel,
-        session: PickySessionListViewModel.SessionCard,
+        viewModel: any PickySessionCommands,
+        metaStore: PickySessionMetaStore,
         onArchiveSession: @escaping (String) -> Void = { _ in },
         isCommandShortcutHintVisible: Bool = false,
         onRewind: (() -> Void)? = nil,
         voiceFollowUpHoverState: PickyVoiceFollowUpHoverState? = nil
     ) {
-        self.viewModel = viewModel
+        self.commands = viewModel
+        self.metaStore = metaStore
         self.voiceFollowUpHoverState = voiceFollowUpHoverState ?? viewModel.voiceFollowUpHoverState
-        self.session = session
         self.onArchiveSession = onArchiveSession
         self.isCommandShortcutHintVisible = isCommandShortcutHintVisible
         self.onRewind = onRewind
+    }
+
+    /// Compatibility entry point for existing policy tests and previews.
+    init(
+        viewModel: any PickySessionCommands,
+        session: PickyConversationSessionCard,
+        onArchiveSession: @escaping (String) -> Void = { _ in },
+        isCommandShortcutHintVisible: Bool = false,
+        onRewind: (() -> Void)? = nil,
+        voiceFollowUpHoverState: PickyVoiceFollowUpHoverState? = nil
+    ) {
+        let metaStore = PickySessionMetaStore()
+        metaStore.replace(PickySessionMetadata(card: session))
+        self.init(
+            viewModel: viewModel,
+            metaStore: metaStore,
+            onArchiveSession: onArchiveSession,
+            isCommandShortcutHintVisible: isCommandShortcutHintVisible,
+            onRewind: onRewind,
+            voiceFollowUpHoverState: voiceFollowUpHoverState
+        )
     }
 
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
@@ -90,18 +116,18 @@ struct PickyConversationHeaderView: View {
     @FocusState private var isTitleFieldFocused: Bool
 
     private var isVoiceFollowUpTarget: Bool {
-        if let activeVoiceFollowUpSessionID = viewModel.activeVoiceFollowUpSessionID {
+        if let activeVoiceFollowUpSessionID = commands.activeVoiceFollowUpSessionID {
             return activeVoiceFollowUpSessionID == session.id
         }
         return voiceFollowUpHoverState.sessionID == session.id
     }
 
     private var isScreenContextArmed: Bool {
-        viewModel.screenContextTargetSessionID == session.id
+        commands.screenContextTargetSessionID == session.id
     }
 
     private var isScreenContextStickyArmed: Bool {
-        isScreenContextArmed && viewModel.screenContextTargetSticky
+        isScreenContextArmed && commands.screenContextTargetSticky
     }
 
     var body: some View {
@@ -254,9 +280,9 @@ struct PickyConversationHeaderView: View {
     private func sendRenameCommand(_ text: String, sessionID: String, status: PickySessionStatus) async throws {
         switch status {
         case .running, .queued, .waiting_for_input, .cancelled, .failed:
-            try await viewModel.steer(text: text, sessionID: sessionID)
+            try await commands.steer(text: text, sessionID: sessionID)
         case .completed, .blocked:
-            try await viewModel.followUp(text: text, sessionID: sessionID)
+            try await commands.followUp(text: text, sessionID: sessionID)
         }
     }
 
@@ -279,7 +305,9 @@ struct PickyConversationHeaderView: View {
     }
 
     private var latestAssistantRun: PickyAssistantRunMetadata? {
-        session.currentAssistantRun ?? session.messages.reversed().compactMap(\.assistantRun).first
+        // `currentAssistantRun` is metadata-owned. Falling back through the
+        // transcript would make a journal update invalidate the header.
+        session.currentAssistantRun
     }
 
     var titleHelpText: String {
@@ -290,7 +318,7 @@ struct PickyConversationHeaderView: View {
         Menu {
             PickyConversationMenu(
                 session: session,
-                viewModel: viewModel,
+                viewModel: commands,
                 onArchive: { onArchiveSession(session.id) },
                 onRewind: onRewind
             )
@@ -347,7 +375,7 @@ struct PickyConversationHeaderView: View {
             .accessibilityLabel(piBadgeAccessibilityLabel)
             .accessibilityAction(named: Text("Toggle Pickle target")) { handleBadgeTap() }
             .accessibilityAction(named: Text("Lock Pickle as sticky target")) {
-                viewModel.armScreenContextTarget(sessionID: session.id, sticky: true)
+                commands.armScreenContextTarget(sessionID: session.id, sticky: true)
             }
             .hoverAffordance()
     }
@@ -396,7 +424,7 @@ struct PickyConversationHeaderView: View {
             didCompleteStickyHold = false
             return
         }
-        viewModel.toggleScreenContextTarget(sessionID: session.id)
+        commands.toggleScreenContextTarget(sessionID: session.id)
     }
 
     private func handleStickyHoldPressing(_ isPressing: Bool) {
@@ -441,7 +469,7 @@ struct PickyConversationHeaderView: View {
         didCompleteStickyHold = true
         stickyHoldProgress = 1
         isStickyHolding = false
-        viewModel.armScreenContextTarget(sessionID: session.id, sticky: true)
+        commands.armScreenContextTarget(sessionID: session.id, sticky: true)
         // Fade the ring out shortly after the lock badge appears so the badge
         // is the primary signal that the gesture succeeded.
         Task { @MainActor in
@@ -562,11 +590,11 @@ struct PickyConversationHeaderView: View {
     }
 
     private func cycleThinkingLevel() {
-        Task { try? await viewModel.cycleThinkingLevel(sessionID: session.id) }
+        Task { try? await commands.cycleThinkingLevel(sessionID: session.id) }
     }
 
     private func cycleModel() {
-        Task { try? await viewModel.cycleModel(sessionID: session.id) }
+        Task { try? await commands.cycleModel(sessionID: session.id, direction: .forward) }
     }
 }
 

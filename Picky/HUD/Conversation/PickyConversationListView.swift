@@ -8,9 +8,42 @@
 import SwiftUI
 
 struct PickyConversationListView: View {
-    let session: PickySessionListViewModel.SessionCard
-    @ObservedObject var viewModel: PickySessionListViewModel
+    let session: PickyConversationSessionCard
+    /// Runtime composition passes the registry-owned conversation store. The
+    /// legacy value fallback keeps existing focused policy tests independent of
+    /// registry setup while production message membership and leaf values retain
+    /// their stable store identities.
+    let conversationStore: PickyConversationStore?
+    let viewModel: any PickySessionCommands
     var isCommandShortcutHintVisible = false
+    /// Test-only observation hook with a no-op production default. It counts
+    /// actual SwiftUI body evaluations when the view is mounted in NSHostingView.
+    var onBodyEvaluation: () -> Void = { }
+    /// Test-only leaf hook. It verifies that a same-ID streaming replacement
+    /// wakes its own stable store and not a sibling bubble.
+    var onMessageLeafBodyEvaluation: (String, Bool, Bool) -> Void = { _, _, _ in }
+
+    init(
+        session: PickyConversationSessionCard,
+        viewModel: any PickySessionCommands,
+        conversationStore: PickyConversationStore? = nil,
+        isCommandShortcutHintVisible: Bool = false,
+        fillsAvailableHeight: Bool = false,
+        hasProgressOverlay: Bool = false,
+        onInitialBottomPinReady: @escaping () -> Void = { },
+        onBodyEvaluation: @escaping () -> Void = { },
+        onMessageLeafBodyEvaluation: @escaping (String, Bool, Bool) -> Void = { _, _, _ in }
+    ) {
+        self.session = session
+        self.viewModel = viewModel
+        self.conversationStore = conversationStore
+        self.isCommandShortcutHintVisible = isCommandShortcutHintVisible
+        self.fillsAvailableHeight = fillsAvailableHeight
+        self.hasProgressOverlay = hasProgressOverlay
+        self.onInitialBottomPinReady = onInitialBottomPinReady
+        self.onBodyEvaluation = onBodyEvaluation
+        self.onMessageLeafBodyEvaluation = onMessageLeafBodyEvaluation
+    }
     /// When the enclosing card has an explicit (user-resized) height, let the list
     /// grow to consume the leftover vertical space so the composer stays pinned to
     /// the card's bottom edge instead of floating below a hardcoded 640pt cap.
@@ -41,6 +74,7 @@ struct PickyConversationListView: View {
     @State private var historyScrollTargetID: String?
 
     var body: some View {
+        let _ = onBodyEvaluation()
         let _ = PickyPerf.event("conversation_list_body")
         // Compute the per-render slices once and thread them into helpers so a
         // single body evaluation doesn't fan back out into N+1 repeat calls of
@@ -50,7 +84,7 @@ struct PickyConversationListView: View {
         let messages = PickyPerf.interval("conversation_visible_messages") { visibleMessages }
         let groups = PickyPerf.interval("conversation_turn_groups") { turnGroups }
         let hiddenTurns = PickyConversationHistoryWindowPolicy.hiddenTurnCount(
-            messages: session.messages,
+            messages: orderedMessages,
             expandedAnchorID: expandedHistoryAnchorID
         )
         ScrollViewReader { proxy in
@@ -78,6 +112,11 @@ struct PickyConversationListView: View {
                             Color.clear
                                 .frame(height: 24)
                         } else {
+                            // Turn chrome is intentionally grouped rather than rendered as a
+                            // flat message list. Its identity is the leading message ID (or the
+                            // fixed pre-turn sentinel), so a same-ID streaming replacement keeps
+                            // the group and every bubble identity stable; leaf values are read
+                            // through the registry-owned PickyMessageStore below.
                             ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
                                 if shouldShowTurnSeparator(before: index, groups: groups) {
                                     PickyConversationTimeSeparatorView(text: turnSeparatorText(before: index, groups: groups))
@@ -201,7 +240,7 @@ struct PickyConversationListView: View {
 
     var bottomScrollTrigger: PickyConversationBottomScrollTrigger {
         PickyConversationBottomScrollTrigger(
-            latestMessageID: session.messages.last?.id,
+            latestMessageID: orderedMessages.last?.id,
             queuedSteers: session.queuedSteers,
             queuedFollowUps: session.queuedFollowUps,
             steeringMode: session.steeringMode,
@@ -279,7 +318,7 @@ struct PickyConversationListView: View {
     @ViewBuilder
     private func turnGroupView(_ group: PickyTurnGroup) -> some View {
         if let user = group.userMessage {
-            leadingMessageView(user)
+            messageLeafView(user, in: group)
                 .id(user.id)
             let liveTool = liveToolForCurrentTurn(group)
             if shouldRenderTurnCard(group) {
@@ -290,7 +329,7 @@ struct PickyConversationListView: View {
                         viewModel?.openToolHistoryForCurrentTurn(sessionID: session.id)
                     } : nil
                 ) { message in
-                    messageView(message, in: group)
+                    messageLeafView(message, in: group)
                         .id(message.id)
                 }
             }
@@ -298,35 +337,60 @@ struct PickyConversationListView: View {
             // outside the card so they stay visible whether the card is collapsed
             // or expanded — see `PickyTurnGrouper.groups`.
             ForEach(group.trailingMessages, id: \.id) { message in
-                messageView(message, in: group)
+                messageLeafView(message, in: group)
                     .id(message.id)
             }
         } else {
             // Pre-turn slice: messages that arrived before the first user_text
             // (e.g., session bootstrap notes). Render flat without card chrome.
             ForEach(group.bodyMessages, id: \.id) { message in
-                messageView(message, in: group)
+                messageLeafView(message, in: group)
                     .id(message.id)
             }
             ForEach(group.trailingMessages, id: \.id) { message in
-                messageView(message, in: group)
+                messageLeafView(message, in: group)
                     .id(message.id)
             }
         }
     }
 
     @ViewBuilder
-    private func leadingMessageView(_ message: PickySessionMessage) -> some View {
-        PickyUserBubbleView(
-            message: message,
-            onOpenAsReport: openMessageReportAction(for: message),
-            onCopyText: { viewModel.copyMessageText($0) },
-            onEditText: { viewModel.replaceComposerDraftText($0, sessionID: session.id) }
-        )
+    private func messageLeafView(_ message: PickySessionMessage, in group: PickyTurnGroup) -> some View {
+        let latestAgentResponse = isLatestAgentResponse(message)
+        let latestResponseShortcutHintVisible = shouldShowLatestResponseShortcutHint(for: message)
+        if let conversationStore {
+            PickyConversationMessageLeafView(
+                messageStore: conversationStore.messageStore(id: message.id),
+                isLatestAgentResponse: latestAgentResponse,
+                isLatestResponseShortcutHintVisible: latestResponseShortcutHintVisible,
+                onBodyEvaluation: {
+                    onMessageLeafBodyEvaluation(
+                        message.id,
+                        latestAgentResponse,
+                        latestResponseShortcutHintVisible
+                    )
+                }
+            ) { currentMessage, isLatestAgentResponse, isLatestResponseShortcutHintVisible in
+                messageView(
+                    currentMessage,
+                    in: group,
+                    latestAgentResponseOverride: isLatestAgentResponse,
+                    latestResponseShortcutHintVisibleOverride: isLatestResponseShortcutHintVisible
+                )
+            }
+            .equatable()
+        } else {
+            messageView(message, in: group)
+        }
     }
 
     @ViewBuilder
-    private func messageView(_ message: PickySessionMessage, in group: PickyTurnGroup) -> some View {
+    private func messageView(
+        _ message: PickySessionMessage,
+        in group: PickyTurnGroup,
+        latestAgentResponseOverride: Bool? = nil,
+        latestResponseShortcutHintVisibleOverride: Bool? = nil
+    ) -> some View {
         switch PickyConversationBubbleKind(message: message) {
         case .userText, .commandReceipt:
             PickyUserBubbleView(
@@ -340,8 +404,8 @@ struct PickyConversationListView: View {
                 message: message,
                 onOpenAsReport: openMessageReportAction(for: message),
                 onCopyText: { viewModel.copyMessageText($0) },
-                isLatestAgentResponse: isLatestAgentResponse(message),
-                isLatestResponseShortcutHintVisible: shouldShowLatestResponseShortcutHint(for: message)
+                isLatestAgentResponse: latestAgentResponseOverride ?? isLatestAgentResponse(message),
+                isLatestResponseShortcutHintVisible: latestResponseShortcutHintVisibleOverride ?? shouldShowLatestResponseShortcutHint(for: message)
             )
         case .typing:
             PickyTypingBubbleView(message: message, initiallyCollapsed: viewModel.thinkingBlocksHidden(sessionID: session.id))
@@ -378,7 +442,7 @@ struct PickyConversationListView: View {
                     request: request,
                     cancelledAt: message.cancelledAt,
                     isActiveRequest: session.pendingExtensionUiRequest?.id == request.id,
-                    viewModel: viewModel
+                    commands: viewModel
                 )
             }
         case .questionFallback:
@@ -446,7 +510,7 @@ struct PickyConversationListView: View {
     /// short localized prompt instead of duplicating the original request.
     private func retryAction(for message: PickySessionMessage) -> (() -> Void)? {
         guard session.status == .failed else { return nil }
-        guard message.id == session.messages.last(where: { $0.kind == .agentError })?.id else { return nil }
+        guard message.id == orderedMessages.last(where: { $0.kind == .agentError })?.id else { return nil }
 
         let sessionID = session.id
         if PickyErrorBubbleView.isRecoverableRuntimeRace(errorMessage: message.errorMessage) {
@@ -560,7 +624,7 @@ struct PickyConversationListView: View {
     private func recentUserTextMatchesQueuedItem(_ item: PickyQueueItem) -> Bool {
         let queuedText = PickyQueuedInputText.normalized(item.text)
         guard !queuedText.isEmpty else { return false }
-        return session.messages.contains { message in
+        return orderedMessages.contains { message in
             guard message.kind == .userText,
                   let text = message.text,
                   abs(message.createdAt.timeIntervalSince(item.enqueuedAt)) <= 300
@@ -574,7 +638,7 @@ struct PickyConversationListView: View {
     /// anchor는 절대 id라 새 턴이 스트리밍돼도 펼친 히스토리는 유지된다.
     /// 정책은 `PickyConversationHistoryWindowPolicy` 참조.
     var visibleMessages: [PickySessionMessage] {
-        let messages = session.messages
+        let messages = orderedMessages
         guard let start = PickyConversationHistoryWindowPolicy.visibleStartIndex(
             messages: messages,
             expandedAnchorID: expandedHistoryAnchorID
@@ -584,8 +648,21 @@ struct PickyConversationListView: View {
         return Array(messages[start...])
     }
 
+    /// The mounted list reads registry membership by `orderedMessageIDs`, then
+    /// resolves each stable leaf store. A streaming replacement therefore keeps
+    /// every row ID stable and only changes the replaced leaf's value revision.
+    private var orderedMessages: [PickySessionMessage] {
+        guard let conversationStore else { return session.messages }
+        return conversationStore.orderedMessageIDs.compactMap { messageID in
+            guard case .loaded(let message) = conversationStore.messageStore(id: messageID).messageState else {
+                return nil
+            }
+            return message
+        }
+    }
+
     var hiddenHistoryCount: Int {
-        max(0, session.messages.count - visibleMessages.count)
+        max(0, orderedMessages.count - visibleMessages.count)
     }
 
     /// Top-of-list marker, always rendered so its row height is reserved from the
@@ -631,7 +708,7 @@ struct PickyConversationListView: View {
             withTransaction(Transaction(animation: nil)) {
                 historyScrollTargetID = previousTopGroupID
                 expandedHistoryAnchorID = PickyConversationHistoryWindowPolicy.anchorIDAfterLoadingMore(
-                    messages: session.messages,
+                    messages: orderedMessages,
                     expandedAnchorID: expandedHistoryAnchorID
                 )
             }
@@ -950,6 +1027,36 @@ struct PickyConversationListRenderSnapshot: Equatable {
     var subagentInvocationBubbleCount = 0
     var turnCardCount = 0
     var showsActivitySummary = false
+}
+
+/// The only bubble value reader in the registry-backed render path. The
+/// enclosing turn's identity comes from its leading message ID, while this
+/// stable store observes the leaf value. Replacing a streamed message with the
+/// same ID therefore preserves both its group and sibling bubble identities.
+@MainActor
+private struct PickyConversationMessageLeafView<Content: View>: View, Equatable {
+    let messageStore: PickyMessageStore
+    /// These presentation inputs are computed by the parent from session-scoped
+    /// state. They must participate in equality: a new agent reply makes the
+    /// preceding reply compact, and holding Command toggles the latest reply's
+    /// shortcut badge even when neither stable message value changes.
+    let isLatestAgentResponse: Bool
+    let isLatestResponseShortcutHintVisible: Bool
+    let onBodyEvaluation: () -> Void
+    @ViewBuilder let content: (PickySessionMessage, Bool, Bool) -> Content
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.messageStore.messageID == rhs.messageStore.messageID
+            && lhs.isLatestAgentResponse == rhs.isLatestAgentResponse
+            && lhs.isLatestResponseShortcutHintVisible == rhs.isLatestResponseShortcutHintVisible
+    }
+
+    var body: some View {
+        let _ = onBodyEvaluation()
+        if case .loaded(let message) = messageStore.messageState {
+            content(message, isLatestAgentResponse, isLatestResponseShortcutHintVisible)
+        }
+    }
 }
 
 private struct PickyConversationTimeSeparatorView: View {

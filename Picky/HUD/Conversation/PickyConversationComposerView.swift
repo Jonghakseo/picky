@@ -95,8 +95,19 @@ private struct PickyComposerAutocompleteOverlayLayout: Layout {
 }
 
 struct PickyConversationComposerView: View {
-    let session: PickySessionListViewModel.SessionCard
-    @ObservedObject var viewModel: PickySessionListViewModel
+    /// Composer reads only metadata, message journal, and queue state needed
+    /// for its own controls; it never receives a materialized SessionCard.
+    let metaStore: PickySessionMetaStore
+    let conversationStore: PickyConversationStore
+    let queueStore: PickySessionQueueStore
+    let commands: any PickySessionCommands
+    private var session: PickyConversationComposerProjection {
+        PickyConversationComposerProjection(
+            metaStore: metaStore,
+            conversationStore: conversationStore,
+            queueStore: queueStore
+        )
+    }
     @Binding private var droppedFilePaths: [String]
     let isFileDropTargeted: Bool
     let focusRequestID: Int
@@ -125,8 +136,10 @@ struct PickyConversationComposerView: View {
     @State private var isFocused: Bool = false
 
     init(
-        session: PickySessionListViewModel.SessionCard,
-        viewModel: PickySessionListViewModel,
+        metaStore: PickySessionMetaStore,
+        conversationStore: PickyConversationStore,
+        queueStore: PickySessionQueueStore,
+        viewModel: any PickySessionCommands,
         droppedFilePaths: Binding<[String]> = .constant([]),
         isFileDropTargeted: Bool = false,
         focusRequestID: Int = 0,
@@ -135,8 +148,10 @@ struct PickyConversationComposerView: View {
         onToggleUtilityPanel: @escaping () -> Void = { },
         onRequestRewind: @escaping () -> Void = { }
     ) {
-        self.session = session
-        self.viewModel = viewModel
+        self.metaStore = metaStore
+        self.conversationStore = conversationStore
+        self.queueStore = queueStore
+        self.commands = viewModel
         self._droppedFilePaths = droppedFilePaths
         self.isFileDropTargeted = isFileDropTargeted
         self.focusRequestID = focusRequestID
@@ -144,6 +159,44 @@ struct PickyConversationComposerView: View {
         self.isCommandShortcutHintVisible = isCommandShortcutHintVisible
         self.onToggleUtilityPanel = onToggleUtilityPanel
         self.onRequestRewind = onRequestRewind
+    }
+
+    /// Compatibility entry point for focused policy tests and previews.
+    init(
+        session: PickyConversationSessionCard,
+        viewModel: any PickySessionCommands,
+        droppedFilePaths: Binding<[String]> = .constant([]),
+        isFileDropTargeted: Bool = false,
+        focusRequestID: Int = 0,
+        isUtilityPanelOpen: Bool = false,
+        isCommandShortcutHintVisible: Bool = false,
+        onToggleUtilityPanel: @escaping () -> Void = { },
+        onRequestRewind: @escaping () -> Void = { }
+    ) {
+        let metaStore = PickySessionMetaStore()
+        metaStore.replace(PickySessionMetadata(card: session))
+        let conversationStore = PickyConversationStore()
+        conversationStore.replaceMessages(session.messages)
+        let queueStore = PickySessionQueueStore()
+        queueStore.replace(
+            steers: session.queuedSteers,
+            followUps: session.queuedFollowUps,
+            steeringMode: session.steeringMode,
+            followUpMode: session.followUpMode
+        )
+        self.init(
+            metaStore: metaStore,
+            conversationStore: conversationStore,
+            queueStore: queueStore,
+            viewModel: viewModel,
+            droppedFilePaths: droppedFilePaths,
+            isFileDropTargeted: isFileDropTargeted,
+            focusRequestID: focusRequestID,
+            isUtilityPanelOpen: isUtilityPanelOpen,
+            isCommandShortcutHintVisible: isCommandShortcutHintVisible,
+            onToggleUtilityPanel: onToggleUtilityPanel,
+            onRequestRewind: onRequestRewind
+        )
     }
 
     var body: some View {
@@ -163,20 +216,20 @@ struct PickyConversationComposerView: View {
             .zIndex(1)
         }
         .onAppear {
-            viewModel.ensureSlashCommandsLoaded(sessionID: session.id)
+            commands.ensureSlashCommandsLoaded(sessionID: session.id)
             requestAutocompleteCapabilities()
             installKeyDownMonitorIfNeeded()
             restorePersistedDraftIfNeeded()
             restorePersistedAttachmentsIfNeeded()
-            applyComposerDraftRequestIfNeeded(viewModel.composerDraftRequest(for: session.id))
+            applyComposerDraftRequestIfNeeded(commands.composerDraftRequest(for: session.id))
             synchronizeAutocompleteInput(text: draft)
         }
         .onDisappear {
-            viewModel.updateComposerDraft(draft, sessionID: session.id)
+            commands.updateComposerDraft(draft, sessionID: session.id)
             persistAttachments()
             removeKeyDownMonitor()
         }
-        .onChange(of: viewModel.composerDraftRequest(for: session.id)) { _, request in
+        .onChange(of: commands.composerDraftRequest(for: session.id)) { _, request in
             applyComposerDraftRequestIfNeeded(request)
         }
         .onChange(of: focusRequestID) { _, _ in
@@ -190,7 +243,7 @@ struct PickyConversationComposerView: View {
             droppedFilePaths = []
         }
         .onChange(of: session.id) { _, _ in
-            attachments = viewModel.persistedComposerAttachmentPaths(for: session.id)
+            attachments = commands.persistedComposerAttachmentPaths(for: session.id)
                 .map { PickyComposerAttachment(path: $0) }
             resetAutocompleteState()
             synchronizeAutocompleteInput(text: draft)
@@ -199,7 +252,7 @@ struct PickyConversationComposerView: View {
         .onChange(of: attachments) { _, _ in
             persistAttachments()
         }
-        .onReceive(viewModel.autocompleteEvents) { event in
+        .onReceive(commands.autocompleteEvents) { event in
             applyAutocompleteEvent(event)
         }
         .task(id: AutocompleteQueryKey(
@@ -233,14 +286,15 @@ struct PickyConversationComposerView: View {
                   )
             else { return }
             PickyPerf.event("composer_autocomplete_query_sent")
-            autocompleteQueryRequestID = viewModel.queryAutocomplete(
+            autocompleteQueryRequestID = commands.queryAutocomplete(
                 sessionID: session.id,
                 generation: capabilities.generation,
                 lines: position.lines,
                 cursorLine: position.line,
                 cursorCol: position.column,
                 draftRevision: input.revision,
-                draftFingerprint: input.fingerprint
+                draftFingerprint: input.fingerprint,
+                force: false
             )
         }
     }
@@ -386,7 +440,7 @@ struct PickyConversationComposerView: View {
 
     private func toggleNotifyOnCompletion() {
         let enabled = !(session.notifyMainOnCompletion == true)
-        Task { try? await viewModel.setNotifyMainOnCompletion(sessionID: session.id, enabled: enabled) }
+        Task { try? await commands.setNotifyMainOnCompletion(sessionID: session.id, enabled: enabled) }
     }
 
     private var composerEditor: some View {
@@ -419,7 +473,7 @@ struct PickyConversationComposerView: View {
             )
             .frame(height: editorHeight)
             .onChange(of: draft) { _, newValue in
-                viewModel.updateComposerDraft(newValue, sessionID: session.id)
+                commands.updateComposerDraft(newValue, sessionID: session.id)
             }
         }
     }
@@ -435,7 +489,7 @@ struct PickyConversationComposerView: View {
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 Button {
-                    viewModel.clearScreenContextTarget(sessionID: session.id)
+                    commands.clearScreenContextTarget(sessionID: session.id)
                 } label: {
                     Image(systemName: "xmark")
                         .pickyFont(size: 8.5, weight: .bold)
@@ -454,7 +508,7 @@ struct PickyConversationComposerView: View {
     }
 
     private var isScreenContextArmed: Bool {
-        viewModel.screenContextTargetSessionID == session.id
+        commands.screenContextTargetSessionID == session.id
     }
 
     // MARK: - Autocomplete
@@ -560,8 +614,8 @@ struct PickyConversationComposerView: View {
 
     private func matchingSlashCommand(for item: PickyAutocompleteItem, prefix: String?) -> PickySlashCommand? {
         guard prefix?.hasPrefix("/") == true else { return nil }
-        return viewModel.slashCommandsIncludingRewindTreeCommand(
-            viewModel.slashCommandsBySessionID[session.id] ?? [],
+        return commands.slashCommandsIncludingRewindTreeCommand(
+            commands.slashCommandsBySessionID[session.id] ?? [],
             sessionID: session.id
         ).first { $0.name == item.value }
     }
@@ -623,7 +677,7 @@ struct PickyConversationComposerView: View {
                 utf16Offset: autocompleteInput.cursorLocation
               )
         else { return }
-        autocompleteApplyRequestID = viewModel.applyAutocomplete(
+        autocompleteApplyRequestID = commands.applyAutocomplete(
             sessionID: session.id,
             generation: snapshot.generation,
             lines: position.lines,
@@ -646,7 +700,7 @@ struct PickyConversationComposerView: View {
     }
 
     private func requestAutocompleteCapabilities() {
-        autocompleteCapabilitiesRequestID = viewModel.requestAutocompleteCapabilities(sessionID: session.id)
+        autocompleteCapabilitiesRequestID = commands.requestAutocompleteCapabilities(sessionID: session.id)
     }
 
     private func applyAutocompleteInput(_ input: PickyIMETextInput) {
@@ -797,7 +851,7 @@ struct PickyConversationComposerView: View {
               )
         else { return false }
         isAutocompleteDismissed = false
-        autocompleteQueryRequestID = viewModel.queryAutocomplete(
+        autocompleteQueryRequestID = commands.queryAutocomplete(
             sessionID: session.id,
             generation: capabilities.generation,
             lines: position.lines,
@@ -813,7 +867,7 @@ struct PickyConversationComposerView: View {
     private func handleComposerEscapeKey() -> Bool {
         if dismissAutocomplete() { return true }
         if isScreenContextArmed {
-            viewModel.clearScreenContextTarget(sessionID: session.id)
+            commands.clearScreenContextTarget(sessionID: session.id)
             return true
         }
         if draft.isEmpty {
@@ -1116,7 +1170,7 @@ struct PickyConversationComposerView: View {
 
     private func restorePersistedDraftIfNeeded() {
         guard draft.isEmpty else { return }
-        let persistedDraft = viewModel.persistedComposerDraft(for: session.id)
+        let persistedDraft = commands.persistedComposerDraft(for: session.id)
         guard !persistedDraft.isEmpty else { return }
         draft = persistedDraft
         synchronizeAutocompleteInput(text: persistedDraft)
@@ -1124,20 +1178,20 @@ struct PickyConversationComposerView: View {
 
     private func restorePersistedAttachmentsIfNeeded() {
         guard attachments.isEmpty else { return }
-        let persistedPaths = viewModel.persistedComposerAttachmentPaths(for: session.id)
+        let persistedPaths = commands.persistedComposerAttachmentPaths(for: session.id)
         guard !persistedPaths.isEmpty else { return }
         attachments = persistedPaths.map { PickyComposerAttachment(path: $0) }
     }
 
     private func persistAttachments() {
-        viewModel.updateComposerAttachmentPaths(attachments.map(\.path), sessionID: session.id)
+        commands.updateComposerAttachmentPaths(attachments.map(\.path), sessionID: session.id)
     }
 
     private func applyComposerDraftRequestIfNeeded(_ request: PickyComposerDraftRequest?) {
         guard let request, appliedComposerDraftRequestID != request.id else { return }
         draft = request.text
         synchronizeAutocompleteInput(text: request.text)
-        viewModel.updateComposerDraft(request.text, sessionID: session.id)
+        commands.updateComposerDraft(request.text, sessionID: session.id)
         selectedAutocompleteIndex = 0
         autocompleteSuggestions = nil
         autocompleteQueryRequestID = nil
@@ -1145,7 +1199,7 @@ struct PickyConversationComposerView: View {
         isAutocompleteDismissed = true
         appliedComposerDraftRequestID = request.id
         focusComposerIfPossible()
-        viewModel.consumeComposerDraftRequest(sessionID: session.id, requestID: request.id)
+        commands.consumeComposerDraftRequest(sessionID: session.id, requestID: request.id)
     }
 
     private func focusComposerIfPossible() {
@@ -1261,7 +1315,7 @@ struct PickyConversationComposerView: View {
             onRequestRewind()
             draft = ""
             synchronizeAutocompleteInput(text: "")
-            viewModel.clearComposerDraft(sessionID: submittedSessionID)
+            commands.clearComposerDraft(sessionID: submittedSessionID)
             return
         }
         guard !text.isEmpty, let kind else { return }
@@ -1270,9 +1324,9 @@ struct PickyConversationComposerView: View {
             do {
                 switch kind {
                 case .steer:
-                    try await viewModel.steer(text: text, sessionID: submittedSessionID)
+                    try await commands.steer(text: text, sessionID: submittedSessionID)
                 case .followUp:
-                    try await viewModel.followUp(text: text, sessionID: submittedSessionID)
+                    try await commands.followUp(text: text, sessionID: submittedSessionID)
                 }
                 let shouldClearSubmittedDraft = draft == originalDraft
                 if shouldClearSubmittedDraft {
@@ -1283,15 +1337,15 @@ struct PickyConversationComposerView: View {
                     submittedAttachmentIDs.contains(attachment.id)
                 }
                 if shouldClearSubmittedDraft && attachments.isEmpty {
-                    viewModel.clearComposerDraft(sessionID: submittedSessionID)
+                    commands.clearComposerDraft(sessionID: submittedSessionID)
                 } else {
                     if shouldClearSubmittedDraft {
-                        viewModel.updateComposerDraft("", sessionID: submittedSessionID)
+                        commands.updateComposerDraft("", sessionID: submittedSessionID)
                     }
-                    viewModel.updateComposerAttachmentPaths(attachments.map(\.path), sessionID: submittedSessionID)
+                    commands.updateComposerAttachmentPaths(attachments.map(\.path), sessionID: submittedSessionID)
                 }
             } catch {
-                // PickySessionListViewModel surfaces command failures through lastError.
+                // Command failures preserve the draft and attachments for retry.
             }
         }
     }
@@ -1320,7 +1374,7 @@ struct PickyConversationComposerView: View {
             queuedFollowUps: session.queuedFollowUps,
             kind: .all
         ) != nil else { return false }
-        Task { try? await viewModel.clearQueueRestoringQueuedInputs(sessionID: session.id, kind: .all) }
+        Task { try? await commands.clearQueueRestoringQueuedInputs(sessionID: session.id, kind: .all) }
         return true
     }
 
@@ -1338,11 +1392,11 @@ struct PickyConversationComposerView: View {
     }
 
     private func cycleThinkingLevel() {
-        Task { try? await viewModel.cycleThinkingLevel(sessionID: session.id) }
+        Task { try? await commands.cycleThinkingLevel(sessionID: session.id) }
     }
 
     private func cycleModel(direction: PickyModelCycleDirection) {
-        Task { try? await viewModel.cycleModel(sessionID: session.id, direction: direction) }
+        Task { try? await commands.cycleModel(sessionID: session.id, direction: direction) }
     }
 
     private func installKeyDownMonitorIfNeeded() {
@@ -1386,7 +1440,7 @@ struct PickyConversationComposerView: View {
 
     private func stopIfPossible() {
         guard [.running, .queued, .waiting_for_input].contains(session.status) else { return }
-        Task { try? await viewModel.abortRestoringQueuedInputs(sessionID: session.id) }
+        Task { try? await commands.abortRestoringQueuedInputs(sessionID: session.id) }
     }
 }
 

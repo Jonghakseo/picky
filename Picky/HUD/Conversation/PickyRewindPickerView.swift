@@ -8,8 +8,8 @@
 import SwiftUI
 
 struct PickyRewindPickerView: View {
-    let session: PickySessionListViewModel.SessionCard
-    @ObservedObject var viewModel: PickySessionListViewModel
+    let session: PickyConversationSessionCard
+    let commands: any PickySessionCommands
 
     @Environment(\.dismiss) private var dismiss
     @State private var targets: [PickyRewindTarget] = []
@@ -169,7 +169,7 @@ struct PickyRewindPickerView: View {
         errorMessage = nil
         selectedTargetID = nil
         do {
-            targets = try await viewModel.loadRewindTargets(sessionID: session.id)
+            targets = try await commands.loadRewindTargets(sessionID: session.id)
         } catch {
             targets = []
             errorMessage = error.localizedDescription
@@ -182,7 +182,7 @@ struct PickyRewindPickerView: View {
         let sessionID = session.id
         let entryID = selectedTarget.entryId
         dismiss()
-        Task { await viewModel.rewind(sessionID: sessionID, toEntry: entryID) }
+        Task { await commands.rewind(sessionID: sessionID, toEntry: entryID) }
     }
 
     private static func relativeTimestamp(for date: Date) -> String {

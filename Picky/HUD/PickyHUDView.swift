@@ -375,14 +375,17 @@ struct PickyHUDView: View {
     @ViewBuilder
     private var conversationCard: some View {
         if let activeSessionID {
-            PickyHUDConversationCardResolver(viewModel: viewModel, sessionID: activeSessionID) { session in
-                conversationCard(for: session)
+            PickyHUDConversationCardResolver(viewModel: viewModel, sessionID: activeSessionID) { store, session in
+                conversationCard(for: session, store: store)
             }
         }
     }
 
     @ViewBuilder
-    private func conversationCard(for activeSession: PickySessionListViewModel.SessionCard) -> some View {
+    private func conversationCard(
+        for activeSession: PickySessionListViewModel.SessionCard,
+        store: PickySessionStore
+    ) -> some View {
             let utilityPanelIsOpen = isUtilityPanelOpen(sessionID: activeSession.id)
                 && !viewModel.isInlineTerminalMode(sessionID: activeSession.id)
             let utilityPanelHeight = resolvedUtilityPanelHeight
@@ -390,7 +393,7 @@ struct PickyHUDView: View {
             VStack(alignment: .leading, spacing: 0) {
                 PickyConversationCardView(
                     viewModel: viewModel,
-                    session: activeSession,
+                    sessionStore: store,
                     onArchiveSession: archiveSession,
                     maxHeight: conversationCardMaxHeight(
                         isUtilityPanelOpen: utilityPanelIsOpen,
@@ -1264,13 +1267,17 @@ struct PickyHUDView: View {
 /// identity prevents a newly opened Pickle from retaining the previous card's
 /// local SwiftUI state while dock icons continue to use lightweight snapshots.
 private struct PickyHUDConversationCardResolver<Content: View>: View {
-    @ObservedObject var viewModel: PickySessionListViewModel
+    /// The HUD root intentionally keeps this as a plain command/resolver
+    /// reference. The mounted subtree observes the selected registry store,
+    /// avoiding global façade-array fan-out for unrelated sessions.
+    let viewModel: PickySessionListViewModel
     let sessionID: String
-    @ViewBuilder let content: (PickySessionListViewModel.SessionCard) -> Content
+    @ViewBuilder let content: (PickySessionStore, PickyConversationSessionCard) -> Content
 
     var body: some View {
-        if let session = viewModel.activeSessionCard(sessionID: sessionID) {
-            content(session)
+        if let store = viewModel.sessionStore(sessionID: sessionID),
+           let session = store.materializedSessionCard() {
+            content(store, session)
                 .id(sessionID)
         }
     }

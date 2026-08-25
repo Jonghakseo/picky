@@ -8,8 +8,8 @@
 import SwiftUI
 
 struct PickyConversationMenu: View {
-    let session: PickySessionListViewModel.SessionCard
-    @ObservedObject var viewModel: PickySessionListViewModel
+    let session: PickyConversationHeaderProjection
+    let viewModel: any PickySessionCommands
     var onArchive: (() -> Void)?
     var onRewind: (() -> Void)?
 
@@ -54,7 +54,7 @@ struct PickyConversationMenu: View {
             // the only way (short of opening the in-app terminal overlay) to reconcile the HUD
             // card with the latest on-disk transcript.
             Button("hud.menu.syncFromPi") {
-                viewModel.syncTerminalSessionOnce(sessionID: session.id)
+                viewModel.syncTerminalSessionOnce(sessionID: session.id, baselineSnapshot: nil)
             }
             .disabled(!canSyncFromPiSession)
         }
@@ -92,6 +92,34 @@ struct PickyConversationMenu: View {
                 }
             }
         }
+    }
+
+    init(
+        session: PickyConversationHeaderProjection,
+        viewModel: any PickySessionCommands,
+        onArchive: (() -> Void)? = nil,
+        onRewind: (() -> Void)? = nil
+    ) {
+        self.session = session
+        self.viewModel = viewModel
+        self.onArchive = onArchive
+        self.onRewind = onRewind
+    }
+
+    /// Compatibility entry point for terminal-mode callers that still carry
+    /// the legacy card projection until the W9 terminal slice.
+    init(
+        session: PickyConversationSessionCard,
+        viewModel: any PickySessionCommands,
+        onArchive: (() -> Void)? = nil,
+        onRewind: (() -> Void)? = nil
+    ) {
+        self.init(
+            session: PickyConversationHeaderProjection(card: session),
+            viewModel: viewModel,
+            onArchive: onArchive,
+            onRewind: onRewind
+        )
     }
 
     private var notifyMainOnCompletionBinding: Binding<Bool> {

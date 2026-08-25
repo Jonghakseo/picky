@@ -10,8 +10,17 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct PickyConversationCardView: View {
-    @ObservedObject var viewModel: PickySessionListViewModel
-    let session: PickySessionListViewModel.SessionCard
+    /// Imperative capability only; the resolver owns projection observation.
+    let viewModel: any PickySessionCommands
+    /// Stable registry identity for the mounted card. This is the only session
+    /// data input in production; legacy tests/previews use the adapter init.
+    let sessionStore: PickySessionStore
+    private var session: PickyConversationSessionCard {
+        guard let session = PickyConversationStoreResolver.card(from: sessionStore) else {
+            preconditionFailure("Conversation card requires loaded session metadata")
+        }
+        return session
+    }
     var onArchiveSession: (String) -> Void = { _ in }
     /// Max height the card may grow to before its inner ScrollView starts handling
     /// overflow. Driven by `PickyHUDPlacement.availableCardMaxHeight` so the card
@@ -31,6 +40,66 @@ struct PickyConversationCardView: View {
     @State private var isFileDropTargeted = false
     @State private var showingRewindPicker = false
 
+    init(
+        viewModel: any PickySessionCommands,
+        sessionStore: PickySessionStore,
+        onArchiveSession: @escaping (String) -> Void = { _ in },
+        maxHeight: CGFloat = PickyHUDPlacement.defaultAvailableCardMaxHeight,
+        width: CGFloat = PickyHUDDockLayout.detailWidth,
+        fixedHeight: CGFloat? = nil,
+        isPreviewMode: Bool = false,
+        focusRequestID: Int = 0,
+        isCommandShortcutHintVisible: Bool = false,
+        isUtilityPanelOpen: Bool = false,
+        onToggleUtilityPanel: @escaping () -> Void = { },
+        onInitialContentReady: @escaping () -> Void = { }
+    ) {
+        self.viewModel = viewModel
+        self.sessionStore = sessionStore
+        self.onArchiveSession = onArchiveSession
+        self.maxHeight = maxHeight
+        self.width = width
+        self.fixedHeight = fixedHeight
+        self.isPreviewMode = isPreviewMode
+        self.focusRequestID = focusRequestID
+        self.isCommandShortcutHintVisible = isCommandShortcutHintVisible
+        self.isUtilityPanelOpen = isUtilityPanelOpen
+        self.onToggleUtilityPanel = onToggleUtilityPanel
+        self.onInitialContentReady = onInitialContentReady
+    }
+
+    /// Compatibility entry point for existing unit tests and previews. Runtime
+    /// HUD composition always uses the stable registry-store initializer above.
+    init(
+        viewModel: any PickySessionCommands,
+        session: PickyConversationSessionCard,
+        onArchiveSession: @escaping (String) -> Void = { _ in },
+        maxHeight: CGFloat = PickyHUDPlacement.defaultAvailableCardMaxHeight,
+        width: CGFloat = PickyHUDDockLayout.detailWidth,
+        fixedHeight: CGFloat? = nil,
+        isPreviewMode: Bool = false,
+        focusRequestID: Int = 0,
+        isCommandShortcutHintVisible: Bool = false,
+        isUtilityPanelOpen: Bool = false,
+        onToggleUtilityPanel: @escaping () -> Void = { },
+        onInitialContentReady: @escaping () -> Void = { }
+    ) {
+        self.init(
+            viewModel: viewModel,
+            sessionStore: PickyConversationStoreResolver.legacyStore(for: session),
+            onArchiveSession: onArchiveSession,
+            maxHeight: maxHeight,
+            width: width,
+            fixedHeight: fixedHeight,
+            isPreviewMode: isPreviewMode,
+            focusRequestID: focusRequestID,
+            isCommandShortcutHintVisible: isCommandShortcutHintVisible,
+            isUtilityPanelOpen: isUtilityPanelOpen,
+            onToggleUtilityPanel: onToggleUtilityPanel,
+            onInitialContentReady: onInitialContentReady
+        )
+    }
+
     var body: some View {
         let _ = PickyPerf.event("conversation_card_body")
         let effectiveMaxHeight = max(Self.minimumHeight, maxHeight)
@@ -40,7 +109,7 @@ struct PickyConversationCardView: View {
         Group {
             if isInlineTerminalMode {
                 PickyInlineTerminalCardView(
-                    viewModel: viewModel,
+                    commands: viewModel,
                     session: session,
                     contentWidth: PickyHUDDockLayout.detailContentWidth(for: width),
                     isCommandShortcutHintVisible: isCommandShortcutHintVisible,
@@ -85,7 +154,7 @@ struct PickyConversationCardView: View {
         .onDrop(of: PickyConversationFileDrop.acceptedTypeIdentifiers, isTargeted: $isFileDropTargeted, perform: handleFileDrop)
         .onHover(perform: updateVoiceFollowUpHover)
         .sheet(isPresented: $showingRewindPicker) {
-            PickyRewindPickerView(session: session, viewModel: viewModel)
+            PickyRewindPickerView(session: session, commands: viewModel)
         }
     }
 
@@ -105,13 +174,20 @@ struct PickyConversationCardView: View {
             VStack(alignment: .leading, spacing: DS.Spacing.xs) {
                 PickyConversationHeaderView(
                     viewModel: viewModel,
-                    session: session,
+                    metaStore: sessionStore.metaStore,
                     onArchiveSession: onArchiveSession,
                     isCommandShortcutHintVisible: isCommandShortcutHintVisible,
                     onRewind: { showingRewindPicker = true }
                 )
-                if PickyConversationContextLineView.hasContent(for: session) {
-                    PickyConversationContextLineView(viewModel: viewModel, session: session)
+                if PickyConversationContextLineView.hasContent(for: PickyConversationContextProjection(
+                    metaStore: sessionStore.metaStore,
+                    artifactStore: sessionStore.artifactStore
+                )) {
+                    PickyConversationContextLineView(
+                        viewModel: viewModel,
+                        metaStore: sessionStore.metaStore,
+                        artifactStore: sessionStore.artifactStore
+                    )
                 }
             }
             // The 4pt header/context gap forms one chrome group. A 12pt break
@@ -123,6 +199,7 @@ struct PickyConversationCardView: View {
             PickyConversationListView(
                 session: session,
                 viewModel: viewModel,
+                conversationStore: sessionStore.conversationStore,
                 isCommandShortcutHintVisible: isCommandShortcutHintVisible,
                 fillsAvailableHeight: fillsAvailableHeight,
                 hasProgressOverlay: todoPresentation != nil,
@@ -145,7 +222,9 @@ struct PickyConversationCardView: View {
             .padding(.bottom, DS.Spacing.sm)
 
             PickyConversationComposerView(
-                session: session,
+                metaStore: sessionStore.metaStore,
+                conversationStore: sessionStore.conversationStore,
+                queueStore: sessionStore.queueStore,
                 viewModel: viewModel,
                 droppedFilePaths: $droppedFilePaths,
                 isFileDropTargeted: isFileDropTargeted,

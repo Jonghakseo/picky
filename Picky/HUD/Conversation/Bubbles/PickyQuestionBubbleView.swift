@@ -11,7 +11,7 @@ struct PickyQuestionBubbleView: View {
     let request: PickyExtensionUiRequest
     let cancelledAt: Date?
     let isActiveRequest: Bool
-    @ObservedObject var viewModel: PickySessionListViewModel
+    let commands: any PickySessionCommands
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
     @State private var textValue = ""
     @State private var formState = PickyAskUserQuestionFormState()
@@ -331,11 +331,11 @@ struct PickyQuestionBubbleView: View {
     }
 
     private func answer(_ value: JSONValue) {
-        Task { try? await viewModel.answerExtensionUi(sessionID: request.sessionId, requestID: request.id, value: value) }
+        Task { try? await commands.answerExtensionUi(sessionID: request.sessionId, requestID: request.id, value: value) }
     }
 
     private func cancel() {
-        Task { try? await viewModel.cancelExtensionUi(sessionID: request.sessionId, requestID: request.id) }
+        Task { try? await commands.cancelExtensionUi(sessionID: request.sessionId, requestID: request.id) }
     }
 }
 

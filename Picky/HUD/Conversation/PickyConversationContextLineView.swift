@@ -20,8 +20,14 @@ enum PickyGitContextRefreshPolicy {
 }
 
 struct PickyConversationContextLineView: View {
-    @ObservedObject var viewModel: PickySessionListViewModel
-    let session: PickySessionListViewModel.SessionCard
+    let commands: any PickySessionCommands
+    /// Context owns exactly metadata (cwd/status/timestamp) and artifacts;
+    /// transcript updates never enter this projection.
+    let metaStore: PickySessionMetaStore
+    let artifactStore: PickySessionArtifactStore
+    private var session: PickyConversationContextProjection {
+        PickyConversationContextProjection(metaStore: metaStore, artifactStore: artifactStore)
+    }
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var faviconStore = PickyFaviconStore.shared
     @State private var gitStatus: PickyGitRepositoryStatus?
@@ -29,16 +35,31 @@ struct PickyConversationContextLineView: View {
     @State private var inFlightGitAction: GitRemoteAction?
     @State private var manualRefreshTick: Int = 0
 
-    init(viewModel: PickySessionListViewModel, session: PickySessionListViewModel.SessionCard) {
-        self.viewModel = viewModel
-        self.session = session
+    init(
+        viewModel: any PickySessionCommands,
+        metaStore: PickySessionMetaStore,
+        artifactStore: PickySessionArtifactStore
+    ) {
+        self.commands = viewModel
+        self.metaStore = metaStore
+        self.artifactStore = artifactStore
+        let projection = PickyConversationContextProjection(metaStore: metaStore, artifactStore: artifactStore)
         // Seed @State synchronously from process-wide caches so the very first paint after a
         // session switch already has git/PR data — eliminates the staircase of layout shifts
         // that otherwise happens as each .task fires asynchronously.
-        let cachedGit = PickyGitRepositoryStatus.cached(cwd: session.cwd)
+        let cachedGit = PickyGitRepositoryStatus.cached(cwd: projection.cwd)
         _gitStatus = State(initialValue: cachedGit)
-        let cachedPR = PickyGitHubPullRequestStatus.cached(cwd: session.cwd, branch: cachedGit?.branchName)
+        let cachedPR = PickyGitHubPullRequestStatus.cached(cwd: projection.cwd, branch: cachedGit?.branchName)
         _pullRequestStatus = State(initialValue: cachedPR?.status ?? nil)
+    }
+
+    /// Compatibility entry point for existing tests and previews.
+    init(viewModel: any PickySessionCommands, session: PickyConversationSessionCard) {
+        let metaStore = PickySessionMetaStore()
+        metaStore.replace(PickySessionMetadata(card: session))
+        let artifactStore = PickySessionArtifactStore()
+        artifactStore.replace(artifacts: session.artifacts, changedFiles: session.changedFiles)
+        self.init(viewModel: viewModel, metaStore: metaStore, artifactStore: artifactStore)
     }
 
     private enum GitRemoteAction: Equatable {
@@ -142,8 +163,13 @@ struct PickyConversationContextLineView: View {
     /// folder or artifact metadata do not retain an empty layout slot. Git and pull
     /// request state require a working directory, which already supplies the
     /// primary context line.
-    static func hasContent(for session: PickySessionListViewModel.SessionCard) -> Bool {
-        session.compactCwdDescription != nil || !PickyArtifactTrayPresentation.trayArtifacts(from: session.artifacts).isEmpty
+    static func hasContent(for session: PickyConversationSessionCard) -> Bool {
+        let projection = PickyConversationContextProjection(card: session)
+        return hasContent(for: projection)
+    }
+
+    static func hasContent(for projection: PickyConversationContextProjection) -> Bool {
+        projection.compactCwdDescription != nil || !PickyArtifactTrayPresentation.trayArtifacts(from: projection.artifacts).isEmpty
     }
 
     private var trayArtifacts: [PickyArtifact] {
@@ -526,14 +552,13 @@ struct PickyConversationContextLineView: View {
         let sessionID = session.id
         let status = session.status
         let cwd = session.cwd
-        let viewModel = viewModel
         Task { @MainActor in
             await PickyGitChipActionRunner.run(
                 action: action,
                 sessionID: sessionID,
                 status: status,
                 cwd: cwd,
-                viewModel: viewModel
+                viewModel: commands
             )
         }
     }

@@ -48,9 +48,11 @@ run_with_retry() {
   done
 }
 
-# Lower-only ratchet for SwiftLint error-severity violations. Existing debt may
-# only shrink; a new violation fails the push. Never raise this baseline.
-SWIFTLINT_ERROR_VIOLATION_BASELINE=6
+# Lower-only ratchet for SwiftLint error-severity violations. The `.swiftlint.yml`
+# error thresholds are themselves pinned just above the current worst offenders,
+# so any violation here means a genuine regression. Never raise this baseline;
+# see docs/refactoring-principles.md section 3.1 before changing a threshold.
+SWIFTLINT_ERROR_VIOLATION_BASELINE=0
 
 run_swiftlint_warning_first() {
   echo

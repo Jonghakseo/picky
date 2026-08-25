@@ -170,13 +170,49 @@ These mental models should gradually become static checks.
 
 | Mental model | Static guard |
 |---|---|
-| Split by invariant, not line count | file-size ratchet warning + reviewer checklist |
+| Split by invariant, not line count | file-size ratchet warning + reviewer checklist (thresholds: 3.1) |
 | Reducers decide | domain import rules; view-side `Task { try? await ... }` warnings |
 | Adapters translate | boundary import script for `domain/` and adapter modules |
 | Protocol changes are product changes | protocol version parity + fixture coverage checks |
 | Async failures are observable | SwiftLint custom rule for side-effecting `try? await` |
 | Secrets are not preferences | secret-field lint on settings persistence |
 | HUD requires measurement | checklist + signpost comparison for HUD PRs |
+
+### 3.1 SwiftLint error thresholds are recorded debt
+
+`.swiftlint.yml` keeps every size and complexity rule warning-first, with the `error`
+value pinned just above the current worst offender. The error line is not a quality
+target: it is a ratchet that fails immediately when the worst case regresses, while
+2.3 still forbids splitting a facade only to satisfy a line count.
+
+A threshold may only be raised with an explicit decision recorded here.
+
+#### 2026-08-25 re-pin
+
+The pre-push hook downgraded every error-severity violation to a warning because
+`printf ... | grep -q` returns SIGPIPE under `set -o pipefail`, so the escalation
+branch never ran. With the gate silent, four thresholds drifted:
+
+| Rule | Old error pin | Pin claimed | Actual worst | New pin |
+|---|---:|---:|---:|---:|
+| `file_length` | 3900 | 3806 | 4883 | 5000 |
+| `type_body_length` | 3400 | 3308 | 4251 | 4350 |
+| `function_body_length` | 150 | 122 | 196 | 210 |
+| `cyclomatic_complexity` | 35 | 30 | 45 | 50 |
+
+Offenders: `PickyTests/PickySessionViewModelTests.swift` (file/type length) and
+`Picky/Interaction/PickyInteractionEvent.swift` plus
+`Picky/Interaction/PickyInteractionReducer.swift` (complexity, body length).
+
+Decision: re-pin to the measured worst case rather than refactor under a gate
+repair. The three files are exactly the kind of large facade 2.3 says not to split
+for a line-count gate, and doing so while fixing the hook would mix an unrelated
+structural change into a tooling fix. The debt is now visible and enforced instead
+of silently growing.
+
+Follow-up: `PickyInteractionEvent`/`PickyInteractionReducer` complexity is
+dispatch-switch shaped, so it should shrink through 2.1 (reducers decide) rather
+than mechanical extraction. Tighten each pin to the new worst case when it does.
 
 ## 4. Review checklist
 

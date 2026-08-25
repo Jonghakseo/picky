@@ -2769,12 +2769,13 @@ final class PickySessionListViewModel: ObservableObject {
         dockLayout = dockLayoutController.layout
     }
 
-    func syncSelectionAfterSessionListChange() {
+    func syncSelectionAfterSessionListChange(skippingRedundantPublishedAssignments: Bool = false) {
         if hasExplicitSelection, let selectedSessionID, sessions.contains(where: { $0.id == selectedSessionID }) {
             selectionStore.selectedSessionID = selectedSessionID
         } else {
             hasExplicitSelection = false
-            selectedSessionID = defaultSelectionID()
+            let defaultSessionID = defaultSelectionID()
+            if !skippingRedundantPublishedAssignments || selectedSessionID != defaultSessionID { selectedSessionID = defaultSessionID }
             selectionStore.selectedSessionID = nil
         }
     }
@@ -2811,11 +2812,9 @@ final class PickySessionListViewModel: ObservableObject {
         syncActiveVoiceFollowUpAfterSessionListChange()
     }
 
-    func syncActiveVoiceFollowUpAfterSessionListChange() {
-        if let activeVoiceFollowUpSessionID, sessions.contains(where: { $0.id == activeVoiceFollowUpSessionID }) {
-            return
-        }
-        activeVoiceFollowUpSessionID = nil
+    func syncActiveVoiceFollowUpAfterSessionListChange(skippingRedundantPublishedAssignments: Bool = false) {
+        if let activeVoiceFollowUpSessionID, sessions.contains(where: { $0.id == activeVoiceFollowUpSessionID }) { return }
+        if !skippingRedundantPublishedAssignments || activeVoiceFollowUpSessionID != nil { activeVoiceFollowUpSessionID = nil }
     }
 
     private func defaultSelectionID() -> String? {

@@ -42,11 +42,11 @@ extension PickySessionListViewModel {
             return
         }
         disarmInitialSnapshotWatchdog()
-        isLoadingInitialSessionSnapshot = false
-        syncSelectionAfterSessionListChange()
+        if isLoadingInitialSessionSnapshot { isLoadingInitialSessionSnapshot = false }
+        syncSelectionAfterSessionListChange(skippingRedundantPublishedAssignments: true)
         syncVoiceFollowUpAfterSessionListChange()
         syncScreenContextTargetAfterSessionListChange()
-        syncActiveVoiceFollowUpAfterSessionListChange()
+        syncActiveVoiceFollowUpAfterSessionListChange(skippingRedundantPublishedAssignments: true)
     }
 
     private func applySessionProjectionTransaction(_ transaction: PickySessionProjectionTransaction) {

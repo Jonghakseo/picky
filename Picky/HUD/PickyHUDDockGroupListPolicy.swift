@@ -6,20 +6,49 @@
 //  anchors against its folder tile, and how it stays on screen.
 //
 
-import CoreGraphics
+import AppKit
 
 enum PickyHUDDockGroupListPolicy {
     /// Panel size for a group, saturating at `groupListMaxVisibleRows` rows so
     /// a large group never produces a taller panel than a medium one.
-    static func panelSize(memberCount: Int, metrics: PickyHUDDockMetrics) -> CGSize {
+    static func panelSize(
+        memberCount: Int,
+        metrics: PickyHUDDockMetrics,
+        fontScale: CGFloat = 1
+    ) -> CGSize {
         let rows = min(max(memberCount, 0), PickyHUDDockLayout.groupListMaxVisibleRows)
         return CGSize(
             width: metrics.groupListPanelWidth,
-            height: (metrics.groupListPanelPadding * 2)
-                + metrics.groupListHeaderHeight
-                + metrics.groupListHeaderBottomSpacing
-                + (CGFloat(rows) * metrics.groupListRowHeight)
+            height: panelChromeHeight(metrics: metrics)
+                + (CGFloat(rows) * rowHeight(metrics: metrics, fontScale: fontScale))
         )
+    }
+
+    /// The content stack uses body and supporting type roles. At compact dock
+    /// presets, their measured line heights exceed the authored row minimum;
+    /// retain that intrinsic height so the child panel and its row centers stay
+    /// in sync at every global app font scale.
+    static func rowHeight(metrics: PickyHUDDockMetrics, fontScale: CGFloat) -> CGFloat {
+        max(metrics.groupListRowHeight, rowContentHeight(fontScale: fontScale))
+    }
+
+    static func rowContentHeight(fontScale: CGFloat) -> CGFloat {
+        let clampedScale = max(0, fontScale)
+        let titleFont = NSFont.systemFont(ofSize: 13 * clampedScale, weight: .regular)
+        let subtitleFont = NSFont.systemFont(ofSize: 12 * clampedScale, weight: .regular)
+        return lineHeight(for: titleFont)
+            + 4 // space.1 between the body and supporting text roles
+            + lineHeight(for: subtitleFont)
+    }
+
+    private static func lineHeight(for font: NSFont) -> CGFloat {
+        font.ascender - font.descender + font.leading
+    }
+
+    static func panelChromeHeight(metrics: PickyHUDDockMetrics) -> CGFloat {
+        (metrics.groupListPanelPadding * 2)
+            + metrics.groupListHeaderHeight
+            + metrics.groupListHeaderBottomSpacing
     }
 
     /// True when the group has more members than the panel can show at once.

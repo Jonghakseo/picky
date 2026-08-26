@@ -304,7 +304,11 @@ enum PickyHUDDockLayout {
         metrics: PickyHUDDockMetrics = .medium
     ) -> CGFloat {
         guard hasGroupHeaders else { return metrics.railWidth }
-        return metrics.railWidth + metrics.groupHeaderHitAreaHeight + metrics.groupHeaderContentSpacing
+        let folderCrossSize = max(
+            metrics.railWidth,
+            metrics.sessionTileHeight + (metrics.horizontalPadding * 2)
+        )
+        return folderCrossSize + metrics.groupHeaderHitAreaHeight + metrics.groupHeaderContentSpacing
     }
 
     static func dockGroupHeaderExtraLength(

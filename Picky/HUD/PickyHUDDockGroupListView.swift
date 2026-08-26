@@ -131,7 +131,16 @@ struct PickyHUDDockGroupListPanelRoot: View {
     let convertScreenPointToPanel: (CGPoint) -> CGPoint
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.pickyAppFontScale) private var fontScale
     @State private var isPresented = false
+
+    private var panelSize: CGSize {
+        PickyHUDDockGroupListPolicy.panelSize(
+            memberCount: max(1, rows.count),
+            metrics: metrics,
+            fontScale: fontScale
+        )
+    }
 
     var body: some View {
         PickyHUDDockGroupListView(
@@ -156,10 +165,7 @@ struct PickyHUDDockGroupListPanelRoot: View {
             onReorderSession: onReorderSession,
             convertScreenPointToPanel: convertScreenPointToPanel
         )
-        .frame(
-            width: PickyHUDDockGroupListPolicy.panelSize(memberCount: max(1, rows.count), metrics: metrics).width,
-            height: PickyHUDDockGroupListPolicy.panelSize(memberCount: max(1, rows.count), metrics: metrics).height
-        )
+        .frame(width: panelSize.width, height: panelSize.height)
         .opacity(isPresented ? 1 : 0)
         .scaleEffect(reduceMotion ? 1 : (isPresented ? 1 : 0.98), anchor: .topLeading)
         .animation(.easeOut(duration: 0.12), value: isPresented)
@@ -199,6 +205,21 @@ struct PickyHUDDockGroupListView: View {
     @State private var isLeavingGroup = false
     @State private var leftPanelAt: Date?
     @State private var dragMonitors: [Any] = []
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.pickyAppFontScale) private var fontScale
+
+    private var panelSize: CGSize {
+        PickyHUDDockGroupListPolicy.panelSize(
+            memberCount: max(1, rows.count),
+            metrics: metrics,
+            fontScale: fontScale
+        )
+    }
+
+    private var rowHeight: CGFloat {
+        PickyHUDDockGroupListPolicy.rowHeight(metrics: metrics, fontScale: fontScale)
+    }
 
     var body: some View {
         VStack(spacing: metrics.groupListHeaderBottomSpacing) {
@@ -276,8 +297,7 @@ struct PickyHUDDockGroupListView: View {
     }
 
     private var panelBounds: CGRect {
-        let size = PickyHUDDockGroupListPolicy.panelSize(memberCount: max(1, rows.count), metrics: metrics)
-        return CGRect(origin: .zero, size: size)
+        CGRect(origin: .zero, size: panelSize)
     }
 
     private func updateDragState(rowID: String, location: CGPoint) {
@@ -374,7 +394,7 @@ struct PickyHUDDockGroupListView: View {
                     isHighlighted: highlightedRowID == row.id,
                     shortcutNumber: PickyHUDDockGroupListKeyboardPolicy.shortcutNumber(forRowIndex: index),
                     isLeavingGroup: draggingRowID == row.id && isLeavingGroup,
-                    minimumHeight: metrics.groupListRowHeight,
+                    minimumHeight: rowHeight,
                     metrics: metrics,
                     relativeTime: Self.relativeDateFormatter.localizedString(for: row.updatedAt, relativeTo: Date()),
                     isScreenContextArmed: screenContextTargetSessionID == row.id,
@@ -400,7 +420,17 @@ struct PickyHUDDockGroupListView: View {
                 ScrollView(.vertical, showsIndicators: true) { content }
                     .onChange(of: highlightedRowID) { _, rowID in
                         guard let rowID else { return }
-                        withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(rowID, anchor: .center) }
+                        if reduceMotion {
+                            var transaction = Transaction(animation: nil)
+                            transaction.disablesAnimations = true
+                            withTransaction(transaction) {
+                                proxy.scrollTo(rowID, anchor: .center)
+                            }
+                        } else {
+                            withAnimation(.easeOut(duration: 0.12)) {
+                                proxy.scrollTo(rowID, anchor: .center)
+                            }
+                        }
                     }
             }
         } else {
@@ -429,9 +459,9 @@ struct PickyHUDDockGroupListView: View {
         let orderedIDs = rows.map(\.id)
         let centers = orderedIDs.compactMap { rowCenters[$0] }
         guard centers.count == orderedIDs.count else { return nil }
-        if index <= 0 { return centers[0] - (metrics.groupListRowHeight / 2) }
-        if index >= centers.count { return centers[centers.count - 1] + (metrics.groupListRowHeight / 2) }
-        return centers[index] - (metrics.groupListRowHeight / 2)
+        if index <= 0 { return centers[0] - (rowHeight / 2) }
+        if index >= centers.count { return centers[centers.count - 1] + (rowHeight / 2) }
+        return centers[index] - (rowHeight / 2)
     }
 
     private var emptyState: some View {
@@ -439,7 +469,7 @@ struct PickyHUDDockGroupListView: View {
             .buttonStyle(.plain)
             .font(PickyHUDTypography.supporting)
             .foregroundStyle(DS.Colors.accentText)
-            .frame(maxWidth: .infinity, minHeight: metrics.groupListRowHeight)
+            .frame(maxWidth: .infinity, minHeight: rowHeight)
             .background(DS.Colors.surface2, in: RoundedRectangle(cornerRadius: metrics.groupListRowCornerRadius, style: .continuous))
             .hoverAffordance()
             .accessibilityHint(L10n.t("group.list.newPickle.hint"))
@@ -556,7 +586,7 @@ private struct PickyHUDDockGroupListRow: View {
             if isLeavingGroup {
                 Text(L10n.t("group.list.drag.leaveGroup"))
                     .font(PickyHUDTypography.labelSemibold)
-                    .foregroundStyle(DS.Colors.warningText)
+                    .foregroundStyle(DS.Colors.accentText)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(DS.Colors.surface3, in: RoundedRectangle(cornerRadius: metrics.groupListRowCornerRadius, style: .continuous))

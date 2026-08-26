@@ -155,6 +155,7 @@ final class PickyHUDOverlayManager {
     private let voiceTargetHitTestRegistry: PickyVoiceTargetHitTestRegistry
     private var visibilityCancellable: AnyCancellable?
     private var dockStateCancellable: AnyCancellable?
+    private var fontScaleCancellable: AnyCancellable?
     private let collapsedHeight: CGFloat = 180
     private let minimumHeight: CGFloat = 48
 
@@ -239,6 +240,9 @@ final class PickyHUDOverlayManager {
         self.currentDockSizePreset = settings.hudDockSizePreset
         self.currentCardSizesByDisplayID = settings.hudCardSizes
         self.dockStateCancellable = viewModel.dockState.$snapshot
+            .sink { [weak self] _ in self?.syncDockGroupListChildrenWithSnapshot() }
+        self.fontScaleCancellable = fontScaleStore.$scale
+            .dropFirst()
             .sink { [weak self] _ in self?.syncDockGroupListChildrenWithSnapshot() }
     }
 
@@ -1195,7 +1199,11 @@ final class PickyHUDOverlayManager {
             .modifier(PickyPreferredColorSchemeModifier(store: self.appearanceStore))
         }
         let hostingView = NSHostingView(rootView: LocalizedHostingRoot { root })
-        let panelSize = PickyHUDDockGroupListPolicy.panelSize(memberCount: max(1, rows.count), metrics: metrics)
+        let panelSize = PickyHUDDockGroupListPolicy.panelSize(
+            memberCount: max(1, rows.count),
+            metrics: metrics,
+            fontScale: fontScaleStore.cgValue
+        )
         hostingView.frame = NSRect(origin: .zero, size: panelSize)
         hostingView.autoresizingMask = [.width, .height]
         return hostingView
@@ -1215,7 +1223,11 @@ final class PickyHUDOverlayManager {
             viewModel.dockState.snapshot.activeSessions.contains(where: { $0.id == sessionID })
         }.count)
         let metrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
-        let panelSize = PickyHUDDockGroupListPolicy.panelSize(memberCount: memberCount, metrics: metrics)
+        let panelSize = PickyHUDDockGroupListPolicy.panelSize(
+            memberCount: memberCount,
+            metrics: metrics,
+            fontScale: fontScaleStore.cgValue
+        )
         let side = position(for: displayID).side
         let anchoredOrigin = PickyHUDDockGroupListPolicy.anchoredOrigin(
             folderFrame: folderFrame,

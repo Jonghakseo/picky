@@ -84,6 +84,16 @@ enum PickyHUDDockRenderPolicy {
         }
     }
 
+    /// Frozen drag centers only describe the captured ordered top-level entries.
+    /// A daemon or CLI structural update invalidates that geometry, so callers
+    /// must cancel rather than resolving a current entry through stale centers.
+    static func shouldCancelDrag(
+        referenceTopEntryIDs: [String],
+        currentTopEntryIDs: [String]
+    ) -> Bool {
+        !referenceTopEntryIDs.isEmpty && referenceTopEntryIDs != currentTopEntryIDs
+    }
+
     /// Resolves a group drag from geometry captured before the preview starts.
     /// Keeping hit-testing separate from the live preview prevents a moved tile
     /// from changing the target under the pointer on the next event.

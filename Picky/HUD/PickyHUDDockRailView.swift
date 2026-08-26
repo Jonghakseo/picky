@@ -87,6 +87,10 @@ struct PickyHUDDockRailView: View {
     /// inserting the placeholder shifted measured centers and flipped the
     /// decision back and forth (the group-boundary oscillation/flicker).
     @State private var dragReferenceSlots: [PickyDockSlot] = []
+    /// Ordered top-level identities captured with the frozen centers. If this
+    /// changes from a daemon or CLI update, the geometry no longer maps to the
+    /// live projection and the drag must cancel.
+    @State private var dragReferenceTopEntryIDs: [String] = []
     @State private var dragReferenceCenters: [String: CGFloat] = [:]
     /// Folder candidates use top-entry centers, not per-session centers. Freeze
     /// them with the slot snapshot so a session preview cannot shift the group
@@ -133,6 +137,7 @@ struct PickyHUDDockRailView: View {
     /// Top-entry geometry captured before the group preview reflows. It keeps
     /// the target stable even when groups have non-uniform header chrome.
     @State private var groupDragReferenceTopEntryCenters: [String: CGFloat] = [:]
+    @State private var groupDragReferenceTopEntryIDs: [String] = []
 
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
 
@@ -215,6 +220,9 @@ struct PickyHUDDockRailView: View {
         }
         .onPreferenceChange(PickyDockTopEntryCenterPreferenceKey.self) { centers in
             topEntryCenters = centers
+        }
+        .onChange(of: PickyHUDDockRenderPolicy.visibleTopEntryIDs(in: baseProjection.items)) { _, entryIDs in
+            cancelDragsForStructuralProjectionChange(currentTopEntryIDs: entryIDs)
         }
         .onHover(perform: onDockHoverChanged)
         .onChange(of: isRecentPickleFolderPickerPresented) { _, isPresented in
@@ -647,6 +655,7 @@ struct PickyHUDDockRailView: View {
         // against this fixed snapshot, so the preview reflow is a pure visual
         // consequence and can never feed back into the decision.
         dragReferenceSlots = baseProjection.slots
+        dragReferenceTopEntryIDs = PickyHUDDockRenderPolicy.visibleTopEntryIDs(in: baseProjection.items)
         dragReferenceCenters = slotCenters
         dragReferenceTopEntryCenters = topEntryCenters
     }
@@ -740,6 +749,7 @@ struct PickyHUDDockRailView: View {
         pendingDropContainer = nil
         dragTranslation = .zero
         dragReferenceSlots = []
+        dragReferenceTopEntryIDs = []
         dragReferenceCenters = [:]
         dragReferenceTopEntryCenters = [:]
     }
@@ -753,6 +763,7 @@ struct PickyHUDDockRailView: View {
         pendingDropContainer = nil
         dragTranslation = .zero
         dragReferenceSlots = []
+        dragReferenceTopEntryIDs = []
         dragReferenceCenters = [:]
         dragReferenceTopEntryCenters = [:]
         activeReorderSessionID = nil
@@ -776,6 +787,7 @@ struct PickyHUDDockRailView: View {
         groupDragStartLayoutIndex = layoutIdx
         pendingGroupTopLevelIndex = layoutIdx
         groupDragReferenceTopEntryCenters = topEntryCenters
+        groupDragReferenceTopEntryIDs = PickyHUDDockRenderPolicy.visibleTopEntryIDs(in: baseProjection.items)
         groupDragOffset = .zero
         groupDragStartCenter = topEntryCenters["group:\(groupID)"] ?? 0
     }
@@ -837,6 +849,7 @@ struct PickyHUDDockRailView: View {
         let destination = pendingGroupTopLevelIndex
         pendingGroupTopLevelIndex = nil
         groupDragReferenceTopEntryCenters = [:]
+        groupDragReferenceTopEntryIDs = []
         if didRemove {
             // Released outside the dock: remove the group and archive its
             // members (same outcome as the context-menu delete). A group with
@@ -869,6 +882,22 @@ struct PickyHUDDockRailView: View {
         draggingGroupID = nil
         pendingGroupTopLevelIndex = nil
         groupDragReferenceTopEntryCenters = [:]
+        groupDragReferenceTopEntryIDs = []
+    }
+
+    private func cancelDragsForStructuralProjectionChange(currentTopEntryIDs: [String]) {
+        if PickyHUDDockRenderPolicy.shouldCancelDrag(
+            referenceTopEntryIDs: dragReferenceTopEntryIDs,
+            currentTopEntryIDs: currentTopEntryIDs
+        ) {
+            handleReorderCanceled()
+        }
+        if PickyHUDDockRenderPolicy.shouldCancelDrag(
+            referenceTopEntryIDs: groupDragReferenceTopEntryIDs,
+            currentTopEntryIDs: currentTopEntryIDs
+        ) {
+            handleGroupTileDragCanceled()
+        }
     }
 
     /// Drag handle that lives inside the dock capsule's top row. Backed by an

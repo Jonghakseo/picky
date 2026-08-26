@@ -26,6 +26,16 @@ struct PickyHUDDockRailPolicyTests {
                 dockSide: .bottom,
                 metrics: metrics
             )
+            let horizontalCrossSize = PickyHUDDockRailLayoutPolicy.horizontalCrossSize(
+                groupCount: groupCount,
+                metrics: metrics
+            )
+            let expectedCrossSize: CGFloat
+            switch preset {
+            case .small: expectedCrossSize = 68
+            case .medium: expectedCrossSize = 77
+            case .large: expectedCrossSize = 90
+            }
 
             #expect(vertical == PickyHUDDockLayout.dockRailHeight(
                 sessionCount: 4,
@@ -40,13 +50,11 @@ struct PickyHUDDockRailPolicyTests {
                 isAddSlotExpanded: false,
                 metrics: metrics
             ))
-            #expect(PickyHUDDockRailLayoutPolicy.horizontalCrossSize(
-                groupCount: groupCount,
-                metrics: metrics
-            ) == PickyHUDDockLayout.horizontalDockRailCrossSize(
-                hasGroupHeaders: true,
-                metrics: metrics
-            ))
+            // Independently calculated from the folder's actual cross-axis
+            // stack: tile plus both outer paddings, then its header chrome.
+            #expect(horizontalCrossSize == expectedCrossSize)
+            #expect(horizontalCrossSize >= metrics.sessionTileHeight + (metrics.horizontalPadding * 2)
+                + metrics.groupHeaderHitAreaHeight + metrics.groupHeaderContentSpacing)
         }
     }
 
@@ -75,6 +83,27 @@ struct PickyHUDDockRailPolicyTests {
         )
 
         #expect(destination == 2)
+    }
+
+    @Test func structuralTopEntryChangeCancelsFrozenDragGeometry() {
+        let reference = ["session:a", "group:group", "session:b"]
+
+        #expect(PickyHUDDockRenderPolicy.shouldCancelDrag(
+            referenceTopEntryIDs: reference,
+            currentTopEntryIDs: ["session:a", "session:new", "group:group", "session:b"]
+        ))
+        #expect(PickyHUDDockRenderPolicy.shouldCancelDrag(
+            referenceTopEntryIDs: reference,
+            currentTopEntryIDs: ["session:a", "session:b"]
+        ))
+        #expect(PickyHUDDockRenderPolicy.shouldCancelDrag(
+            referenceTopEntryIDs: reference,
+            currentTopEntryIDs: ["group:group", "session:a", "session:b"]
+        ))
+        #expect(PickyHUDDockRenderPolicy.shouldCancelDrag(
+            referenceTopEntryIDs: [],
+            currentTopEntryIDs: ["session:a"]
+        ) == false)
     }
 
     @Test func dragGeometryRespectsDockAxisAndOutwardDirection() {

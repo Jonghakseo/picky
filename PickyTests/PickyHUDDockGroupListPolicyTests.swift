@@ -33,6 +33,24 @@ struct PickyHUDDockGroupListPolicyTests {
         #expect(eight.width == expectedWidth)
     }
 
+    @Test func panelHeightContainsTokenizedRowContentAtEveryPresetAndAppFontScale() {
+        for preset in PickyHUDDockSizePreset.allCases {
+            let metrics = PickyHUDDockMetrics(preset: preset)
+            for fontScale: CGFloat in [1, 1.3] {
+                let panel = PickyHUDDockGroupListPolicy.panelSize(
+                    memberCount: PickyHUDDockLayout.groupListMaxVisibleRows,
+                    metrics: metrics,
+                    fontScale: fontScale
+                )
+                let minimumContentHeight = PickyHUDDockGroupListPolicy.panelChromeHeight(metrics: metrics)
+                    + (CGFloat(PickyHUDDockLayout.groupListMaxVisibleRows)
+                        * PickyHUDDockGroupListPolicy.rowContentHeight(fontScale: fontScale))
+
+                #expect(panel.height >= minimumContentHeight)
+            }
+        }
+    }
+
     @Test func panelSizeIsNeverNegativeForAnEmptyGroup() {
         let empty = PickyHUDDockGroupListPolicy.panelSize(memberCount: 0, metrics: metrics)
 
@@ -45,16 +63,16 @@ struct PickyHUDDockGroupListPolicyTests {
     }
 
     @Test func panelSizeScalesWithTheDockPreset() {
+        let mediumMetrics = PickyHUDDockMetrics(preset: .medium)
         let medium = PickyHUDDockGroupListPolicy.panelSize(
             memberCount: 8,
-            metrics: PickyHUDDockMetrics(preset: .medium)
+            metrics: mediumMetrics
         )
 
-        // Medium is 0.86 of the authored constants, not 1.0.
+        // Medium is 0.86 of the authored width constant, not 1.0.
         let expectedWidth: CGFloat = 258
-        let expectedHeight: CGFloat = 312
         #expect(medium.width == expectedWidth)
-        #expect(medium.height == expectedHeight)
+        #expect(medium.height > PickyHUDDockGroupListPolicy.panelChromeHeight(metrics: mediumMetrics))
     }
 
     @Test func verticalDocksAnchorTheFolderTopAndOpenTowardTheScreenInterior() {

@@ -277,11 +277,7 @@ struct PickyHUDDockGroupListView: View {
     var body: some View {
         VStack(spacing: metrics.groupListHeaderBottomSpacing) {
             header
-            if rows.isEmpty {
-                emptyState
-            } else {
-                memberRows
-            }
+            memberRows
         }
         .padding(metrics.groupListPanelPadding)
         .background(panelBackground)
@@ -474,7 +470,7 @@ struct PickyHUDDockGroupListView: View {
             }
             .buttonStyle(.plain)
             .hoverAffordance()
-            .help(L10n.t("group.list.newPickle"))
+            .help(L10n.t("group.list.newPickle.accessibilityLabel"))
             .accessibilityLabel(L10n.t("group.list.newPickle.accessibilityLabel"))
             .accessibilityHint(L10n.t("group.list.newPickle.hint"))
         }
@@ -564,16 +560,6 @@ struct PickyHUDDockGroupListView: View {
         return centers[index] - (rowHeight / 2)
     }
 
-    private var emptyState: some View {
-        Button(L10n.t("group.list.newPickle"), action: onCreatePickle)
-            .buttonStyle(.plain)
-            .font(PickyHUDTypography.supporting)
-            .foregroundStyle(DS.Colors.accentText)
-            .frame(maxWidth: .infinity, minHeight: rowHeight)
-            .background(DS.Colors.surface2, in: RoundedRectangle(cornerRadius: metrics.groupListRowCornerRadius, style: .continuous))
-            .hoverAffordance()
-            .accessibilityHint(L10n.t("group.list.newPickle.hint"))
-    }
 }
 
 private struct PickyHUDDockGroupListRow: View {

@@ -146,12 +146,24 @@ struct PickyHUDDockGroupListRowProjectionTests {
         #expect(memberSessionIDs.count == 3)
     }
 
-    @Test func archivingTheLastVisibleMemberYieldsTheEmptyState() {
+    @Test func archivingTheLastVisibleMemberTearsDownTheListBeforeAnEmptyModelUpdate() {
         let before = project(memberSessionIDs: ["only"], activeSessionIDs: ["only"])
         let after = project(memberSessionIDs: ["only"], activeSessionIDs: [])
 
         #expect(before.count == 1)
         #expect(after.isEmpty)
+        #expect(
+            PickyHUDDockGroupListOpenPolicy.reconciliation(
+                openGroupID: "group",
+                visibleRowIDs: before.map(\.id)
+            ) == .keepOpen(groupID: "group")
+        )
+        #expect(
+            PickyHUDDockGroupListOpenPolicy.reconciliation(
+                openGroupID: "group",
+                visibleRowIDs: after.map(\.id)
+            ) == .tearDown
+        )
     }
 
     @Test func missingTimestampsFallBackToDistantPastRatherThanDroppingTheRow() {

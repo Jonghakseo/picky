@@ -58,13 +58,7 @@ struct PickyHUDDockGroupListPolicyTests {
         }
     }
 
-    @Test func panelSizeIsNeverNegativeForAnEmptyGroup() {
-        let empty = PickyHUDDockGroupListPolicy.panelSize(memberCount: 0, metrics: metrics)
-
-        let chromeOnly: CGFloat = (metrics.groupListPanelPadding * 2)
-            + metrics.groupListHeaderHeight
-            + metrics.groupListHeaderBottomSpacing
-        #expect(empty.height == chromeOnly)
+    @Test func scrollingBeginsOnlyAfterTheVisibleRowCap() {
         #expect(PickyHUDDockGroupListPolicy.needsScroll(memberCount: 8) == false)
         #expect(PickyHUDDockGroupListPolicy.needsScroll(memberCount: 9))
     }

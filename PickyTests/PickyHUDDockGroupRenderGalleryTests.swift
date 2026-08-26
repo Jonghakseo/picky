@@ -134,28 +134,28 @@ struct PickyHUDDockGroupRenderGalleryTests {
         let originalChoice = localeManager.choice
         defer { localeManager.apply(originalChoice) }
         localeManager.apply(.korean)
-        #expect(L10n.t("group.list.newPickle") == "여기에 새 피클")
+        #expect(L10n.t("group.list.newPickle.accessibilityLabel") == "그룹에 피클 생성")
 
         try localeManager.withTemporaryChoiceForTesting(.english) {
-            #expect(L10n.t("group.list.newPickle") == "New Pickle here")
-            let emptyScene = try #require(makeScenes().first(where: { $0.name == "list-empty-medium-dark-100.png" }))
-            try verify(render(emptyScene), scene: emptyScene)
+            #expect(L10n.t("group.list.newPickle.accessibilityLabel") == "Create Pickle in group")
+            let oneMemberScene = try #require(makeScenes().first(where: { $0.name == "list-one-selected-medium-dark-100.png" }))
+            try verify(render(oneMemberScene), scene: oneMemberScene)
         }
 
         #expect(localeManager.choice == .korean)
         #expect(localeManager.effectiveLocale.identifier == "ko")
-        #expect(L10n.t("group.list.newPickle") == "여기에 새 피클")
+        #expect(L10n.t("group.list.newPickle.accessibilityLabel") == "그룹에 피클 생성")
     }
 
     @Test func panelGeometryIncludesProductionChromeRowsAndSpacing() {
         for preset in PickyHUDDockSizePreset.allCases {
             let metrics = PickyHUDDockMetrics(preset: preset)
             for fontScale: CGFloat in [1, 1.3] {
-                for count in [0, 2, 5] {
+                for count in [1, 2, 5] {
                     let panelSize = listSize(memberCount: count, metrics: metrics, fontScale: fontScale)
                     let expected = PickyHUDDockGroupListPolicy.panelChromeHeight(metrics: metrics)
                         + PickyHUDDockGroupListPolicy.rowStackHeight(
-                            rowCount: max(1, count),
+                            rowCount: count,
                             metrics: metrics,
                             fontScale: fontScale
                         )
@@ -215,7 +215,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
             listScene("list-five-selected-large-light-100.png", group: picky, rows: fiveRows, selectedID: fiveRows[0].id, metrics: large, fontScale: 1, appearance: .light),
             listScene("list-five-selected-small-dark-130.png", group: picky, rows: fiveRows, selectedID: fiveRows[0].id, metrics: small, fontScale: 1.3, appearance: .dark),
             listScene("list-two-selected-medium-dark-100.png", group: research, rows: twoRows, selectedID: twoRows[1].id, metrics: medium, fontScale: 1, appearance: .dark),
-            listScene("list-empty-medium-dark-100.png", group: empty, rows: [], selectedID: nil, metrics: medium, fontScale: 1, appearance: .dark),
+            listScene("list-one-selected-medium-dark-100.png", group: group(id: "group-one", name: "Solo", color: .blue, memberIDs: [fiveRows[0].id]), rows: [fiveRows[0]], selectedID: fiveRows[0].id, metrics: medium, fontScale: 1, appearance: .dark),
             combinedScene(group: picky, metrics: medium),
         ]
     }
@@ -517,7 +517,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
 
     private func listSize(memberCount: Int, metrics: PickyHUDDockMetrics, fontScale: CGFloat) -> CGSize {
         PickyHUDDockGroupListPolicy.panelSize(
-            memberCount: max(1, memberCount),
+            memberCount: memberCount,
             metrics: metrics,
             fontScale: fontScale
         )

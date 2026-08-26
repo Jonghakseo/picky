@@ -1078,6 +1078,14 @@ final class PickyHUDOverlayManager {
               let screen = screen(for: displayID),
               let hudEntry = panelsByDisplayID[displayID]
         else { return }
+        let rowIDs = dockGroupListRowIDs(group: group, snapshot: snapshot)
+        guard case .keepOpen = PickyHUDDockGroupListOpenPolicy.reconciliation(
+            openGroupID: groupID,
+            visibleRowIDs: rowIDs
+        ) else {
+            hideDockGroupListChild(displayID: displayID)
+            return
+        }
 
         var entry = dockGroupListChildrenByDisplayID[displayID]
             ?? DockGroupListChildEntry(panel: makeDockGroupListChildPanel())
@@ -1116,7 +1124,7 @@ final class PickyHUDOverlayManager {
         dockGroupListFocusStore.open(
             displayID: displayID,
             groupID: groupID,
-            rowIDs: dockGroupListRowIDs(group: group, snapshot: snapshot),
+            rowIDs: rowIDs,
             openedSessionID: entry.openedSessionID
         )
         _ = dockGroupListOverlayLifecycle?.synchronize(
@@ -1158,10 +1166,20 @@ final class PickyHUDOverlayManager {
         let fontScale = fontScale ?? fontScaleStore.cgValue
         guard var entry = dockGroupListChildrenByDisplayID[displayID] else { return }
         let existingGroupIDs = Set(snapshot.dockLayout.groups.map(\.id))
-        entry.pendingGroupID = PickyHUDDockGroupListOpenPolicy.reconciledPendingGroupID(
+        let activeSessionIDs = Set(snapshot.activeSessions.map(\.id))
+        let visibleMemberGroupIDs = Set(snapshot.dockLayout.groups.compactMap { group in
+            group.memberSessionIDs.contains { activeSessionIDs.contains($0) } ? group.id : nil
+        })
+        let reconciledPendingGroupID = PickyHUDDockGroupListOpenPolicy.reconciledPendingGroupID(
             entry.pendingGroupID,
-            existingGroupIDs: existingGroupIDs
+            existingGroupIDs: existingGroupIDs,
+            visibleMemberGroupIDs: visibleMemberGroupIDs
         )
+        if entry.pendingGroupID != nil, reconciledPendingGroupID == nil {
+            hideDockGroupListChild(displayID: displayID)
+            return
+        }
+        entry.pendingGroupID = reconciledPendingGroupID
         dockGroupListChildrenByDisplayID[displayID] = entry
         if let pendingGroupID = entry.pendingGroupID {
             showDockGroupListChild(
@@ -1187,6 +1205,14 @@ final class PickyHUDOverlayManager {
             if nextGroupID == nil { hideDockGroupListChild(displayID: displayID) }
             return
         }
+        let rowIDs = dockGroupListRowIDs(group: group, snapshot: snapshot)
+        guard case .keepOpen = PickyHUDDockGroupListOpenPolicy.reconciliation(
+            openGroupID: groupID,
+            visibleRowIDs: rowIDs
+        ) else {
+            hideDockGroupListChild(displayID: displayID)
+            return
+        }
         model.update(content: makeDockGroupListPanelContent(
             group: group,
             snapshot: snapshot,
@@ -1195,7 +1221,7 @@ final class PickyHUDOverlayManager {
         ))
         dockGroupListFocusStore.updateRows(
             displayID: displayID,
-            rowIDs: dockGroupListRowIDs(group: group, snapshot: snapshot)
+            rowIDs: rowIDs
         )
         positionDockGroupListChild(
             displayID: displayID,

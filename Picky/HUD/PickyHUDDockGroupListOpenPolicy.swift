@@ -7,6 +7,12 @@
 //  the conversation card currently shows.
 //
 
+enum PickyHUDDockGroupListOpenReconciliation: Equatable {
+    /// Tear down before the panel model can receive an empty row projection.
+    case tearDown
+    case keepOpen(groupID: String)
+}
+
 enum PickyHUDDockGroupListOpenPolicy {
     /// Tapping the owning folder closes the list; tapping another folder
     /// replaces it with no intermediate closed state.
@@ -47,10 +53,28 @@ enum PickyHUDDockGroupListOpenPolicy {
     static func pendingGroupID(afterRequestFor groupID: String) -> String { groupID }
 
     /// A pending request survives missing geometry, but is discarded as soon
-    /// as its group leaves the layout.
-    static func reconciledPendingGroupID(_ pendingGroupID: String?, existingGroupIDs: Set<String>) -> String? {
-        guard let pendingGroupID, existingGroupIDs.contains(pendingGroupID) else { return nil }
+    /// as its group leaves the layout or loses every visible Pickle. This keeps
+    /// an empty child panel from appearing when a stale anchor arrives.
+    static func reconciledPendingGroupID(
+        _ pendingGroupID: String?,
+        existingGroupIDs: Set<String>,
+        visibleMemberGroupIDs: Set<String>
+    ) -> String? {
+        guard let pendingGroupID,
+              existingGroupIDs.contains(pendingGroupID),
+              visibleMemberGroupIDs.contains(pendingGroupID)
+        else { return nil }
         return pendingGroupID
+    }
+
+    /// A group-list child only exists while its rendered row projection is
+    /// non-empty. Callers must perform `.tearDown` before updating the model.
+    static func reconciliation(
+        openGroupID: String?,
+        visibleRowIDs: [String]
+    ) -> PickyHUDDockGroupListOpenReconciliation {
+        guard let openGroupID, !visibleRowIDs.isEmpty else { return .tearDown }
+        return .keepOpen(groupID: openGroupID)
     }
 
     /// Geometry completes a pending open only when both the folder frame and

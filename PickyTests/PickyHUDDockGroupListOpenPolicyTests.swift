@@ -89,12 +89,63 @@ struct PickyHUDDockGroupListOpenPolicyTests {
         )
     }
 
-    @Test func deletingAPendingGroupClearsTheDeferredOpen() {
+    @Test func pendingOpenRequiresAnExistingGroupWithAVisibleMember() {
         #expect(
             PickyHUDDockGroupListOpenPolicy.reconciledPendingGroupID(
                 "a",
-                existingGroupIDs: ["b"]
+                existingGroupIDs: ["a", "b"],
+                visibleMemberGroupIDs: ["a"]
+            ) == "a"
+        )
+        #expect(
+            PickyHUDDockGroupListOpenPolicy.reconciledPendingGroupID(
+                "a",
+                existingGroupIDs: ["b"],
+                visibleMemberGroupIDs: ["a"]
             ) == nil
+        )
+        #expect(
+            PickyHUDDockGroupListOpenPolicy.reconciledPendingGroupID(
+                "a",
+                existingGroupIDs: ["a"],
+                visibleMemberGroupIDs: []
+            ) == nil
+        )
+    }
+
+    @Test func reconciliationKeepsAListOpenOnlyWhenItsRenderedRowsRemainNonEmpty() {
+        #expect(
+            PickyHUDDockGroupListOpenPolicy.reconciliation(
+                openGroupID: "group",
+                visibleRowIDs: ["only"]
+            ) == .keepOpen(groupID: "group")
+        )
+        #expect(
+            PickyHUDDockGroupListOpenPolicy.reconciliation(
+                openGroupID: "group",
+                visibleRowIDs: []
+            ) == .tearDown
+        )
+    }
+
+    @Test func reconciliationKeepsOneOfTwoRowsButTearsDownAfterTheFinalRowDisappears() {
+        #expect(
+            PickyHUDDockGroupListOpenPolicy.reconciliation(
+                openGroupID: "group",
+                visibleRowIDs: ["first", "second"]
+            ) == .keepOpen(groupID: "group")
+        )
+        #expect(
+            PickyHUDDockGroupListOpenPolicy.reconciliation(
+                openGroupID: "group",
+                visibleRowIDs: ["second"]
+            ) == .keepOpen(groupID: "group")
+        )
+        #expect(
+            PickyHUDDockGroupListOpenPolicy.reconciliation(
+                openGroupID: "group",
+                visibleRowIDs: []
+            ) == .tearDown
         )
     }
 }

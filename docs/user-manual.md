@@ -311,14 +311,14 @@ Group related Pickles into a single folder tile in the dock rail. Each folder ha
 Create a group:
 
 - Click the `+` slot → **New Group…**, give it a name, and optionally pick initial Pickles and an accent color.
-- An empty group still shows its folder tile. Click it to open the member list and choose **New Pickle here**; the folder tile also stays a drop target for dragging existing Pickles in.
+- An empty group still shows its folder tile. Click it to open the targeted recent-folder picker; the folder tile also stays a drop target for dragging existing Pickles in.
 
 Manage membership:
 
 - Ask the Picky main agent to organize existing Pickles. It uses the local `picky` CLI to list groups, create a named group, add/remove exact Pickle session IDs, or ungroup while keeping members. These operations update the same persisted dock layout used by the UI.
 - Drag a Pickle onto a group to move it in; drag it above the first slot or below the last slot to pull it back out to the top level. The dock previews where it will land and commits the move only when you release.
 - Drag a group’s folder tile to reorder the whole group within the dock. Hold it clearly **outside** the dock and a **Remove** label appears; release there to remove the group (macOS Dock style). A group that still contains Pickles asks for confirmation before archiving them; an empty group is removed immediately.
-- Click any folder tile to toggle its member list. Opening a folder never changes the open conversation card; selecting a member opens its card and closes the list.
+- Click a folder with visible Pickles to toggle its member list. An empty folder opens the targeted recent-folder picker instead. Opening a folder never changes the open conversation card; selecting a member opens its card and closes the list.
 
 The member list:
 
@@ -326,7 +326,7 @@ The member list:
 - Each row shows the Pickle's status glyph, its title, and a second line with the working folder and last activity. An unread Pickle shows a dot; the folder tile itself shows how many of its Pickles are unread.
 - Only one folder's list is open at a time, and each display keeps its own.
 - Lists longer than eight Pickles scroll inside the panel.
-- The list closes when you pick a row, press `Esc`, click elsewhere, or move the dock.
+- The list closes when you pick a row, press `Esc`, click elsewhere, move the dock, or its final visible Pickle is removed, moved, or archived.
 
 Row actions inside the list:
 

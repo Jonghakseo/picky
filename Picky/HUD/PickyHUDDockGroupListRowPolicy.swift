@@ -21,8 +21,8 @@ enum PickyHUDDockGroupListSnapshotPolicy {
 ///
 /// Membership outlives visibility: archived members stay in `memberSessionIDs`
 /// but are no longer active sessions, so they must not produce rows. Archiving
-/// the last visible member therefore yields an empty row list, which is what
-/// drives the panel's empty state instead of a stale or zero-height panel.
+/// the last visible member therefore yields an empty row list, which the
+/// overlay boundary reconciles by tearing down the child panel.
 enum PickyHUDDockGroupListRowProjection {
     static func rows<Session, Row>(
         memberSessionIDs: [String],

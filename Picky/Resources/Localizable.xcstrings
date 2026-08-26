@@ -2219,22 +2219,6 @@
         }
       }
     },
-    "group.list.newPickle": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "New Pickle here"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "여기에 새 피클"
-          }
-        }
-      }
-    },
     "group.list.newPickle.hint": {
       "localizations": {
         "en": {

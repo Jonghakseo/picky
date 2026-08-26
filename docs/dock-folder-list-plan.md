@@ -212,13 +212,13 @@ The list's visible rows are the group's active members: `memberSessionIDs` filte
 | A non-selected member is archived or removed | Its row disappears; list stays open; highlight index clamps into range |
 | The selected member is archived or removed | Row disappears; list stays open; the card follows its existing close/replace behavior; selection styling clears |
 | A member is added to this group | Row appears at its projected index; highlight and scroll offset are preserved |
-| The last active member disappears | List switches to the empty state rather than closing, so the folder does not vanish under the cursor |
+| The last active member disappears | List closes and tears down immediately; the folder tile remains in place and its normal empty-folder activation opens the targeted recent-folder picker |
 | The group itself is deleted or ungrouped | List closes immediately |
 | A member moves to another group | Row disappears from this list; no automatic switch to the other group |
 
 ### Empty and single-member groups
 
-- A group with zero active members still occupies one rail slot and still opens. The panel shows an empty state with a single "New Pickle here" action, which reuses the existing group-targeted create flow (`onCreatePickle(targetGroupID:)`).
+- A group with zero active members still occupies one rail slot, but never opens a member list. Activating its folder routes to the existing targeted recent-folder picker; a stale pending or open list tears down before an empty row model can render.
 - A group with one member still renders as a folder, not as a bare tile. Slot identity must not change with member count, or `⌘N` numbering would shift as Pickles complete.
 
 ## Folder tile

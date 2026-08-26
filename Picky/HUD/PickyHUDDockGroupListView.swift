@@ -630,33 +630,43 @@ private struct PickyHUDDockGroupListHeader: View {
     }
 
     private var colorMenu: some View {
-        Menu {
-            ForEach(PickyHUDDockGroupListHeaderEditPolicy.colorMenuItems(currentColor: group.color)) { item in
-                Button {
-                    onSetColor(group.id, item.color)
-                } label: {
-                    HStack {
-                        Image(nsImage: item.color.menuSwatchImage)
-                        Text(item.color.localizedName)
-                        if item.isSelected {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                }
-                .accessibilityAddTraits(item.isSelected ? .isSelected : [])
-            }
-        } label: {
+        ZStack {
             Circle()
                 .fill(group.color.accent)
                 .frame(width: metrics.groupListHeaderAccentSide, height: metrics.groupListHeaderAccentSide)
-                .frame(width: metrics.groupListHeaderHeight, height: metrics.groupListHeaderHeight)
-                .contentShape(Rectangle())
+
+            Menu {
+                ForEach(PickyHUDDockGroupListHeaderEditPolicy.colorMenuItems(currentColor: group.color)) { item in
+                    Button {
+                        onSetColor(group.id, item.color)
+                    } label: {
+                        HStack {
+                            Image(nsImage: item.color.menuSwatchImage)
+                            Text(item.color.localizedName)
+                            if item.isSelected {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                    .accessibilityAddTraits(item.isSelected ? .isSelected : [])
+                }
+            } label: {
+                Color.clear
+                    .frame(width: metrics.groupListHeaderHeight, height: metrics.groupListHeaderHeight)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .frame(width: metrics.groupListHeaderHeight, height: metrics.groupListHeaderHeight)
+            .fixedSize()
+            .help(PickyHUDDockGroupContextMenuPresentation.colorTitle)
+            .accessibilityLabel(PickyHUDDockGroupContextMenuPresentation.colorTitle)
+            .accessibilityValue(group.color.localizedName)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .help(PickyHUDDockGroupContextMenuPresentation.colorTitle)
-        .accessibilityLabel(PickyHUDDockGroupContextMenuPresentation.colorTitle)
-        .accessibilityValue(group.color.localizedName)
+        .frame(width: metrics.groupListHeaderHeight, height: metrics.groupListHeaderHeight)
+        .fixedSize()
+        .contentShape(Rectangle())
+        .hoverAffordance()
     }
 
     @ViewBuilder

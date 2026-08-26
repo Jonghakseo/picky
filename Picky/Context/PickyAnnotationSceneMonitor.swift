@@ -25,7 +25,9 @@ struct PickyAnnotationSceneBaseline: Equatable, Sendable {
             contextID: context.id,
             applicationPID: pid,
             applicationBundleID: context.activeApp?.bundleId,
-            window: pid.flatMap(PickyAnnotationSceneSemanticProvider.currentWindowSignature(for:))
+            window: PickyRuntimeEnvironment.allowsUserEnvironmentEffects
+                ? pid.flatMap(PickyAnnotationSceneSemanticProvider.currentWindowSignature(for:))
+                : nil
         )
     }
 }

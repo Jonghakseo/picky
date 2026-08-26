@@ -116,6 +116,7 @@ struct PickyGitHubPullRequestStatus: Equatable {
     }
 
     static func prefetchIfNeeded(cwd: String?, branch: String?) {
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }
         guard let key = cacheKey(cwd: cwd, branch: branch) else { return }
         guard claimPrefetchSlot(for: key) else { return }
 
@@ -130,6 +131,7 @@ struct PickyGitHubPullRequestStatus: Equatable {
     /// Used by the session list so that a never-visited session can paint the PR badge
     /// from cache on the very first HUD render after the session loads.
     static func prefetchIfNeeded(cwd: String?) {
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }
         let trimmedCwd = cwd?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !trimmedCwd.isEmpty else { return }
         let cwdKey = URL(fileURLWithPath: trimmedCwd).standardizedFileURL.path

@@ -45,6 +45,26 @@ EVENT_MONITOR_INSTALL_CALL = re.compile(
 )
 FUNCTION_DECLARATION = re.compile(r"\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(")
 
+REQUIRED_BOUNDARY_SNIPPETS = {
+    "Picky/PickyAdvancedContext.swift": {
+        "PickyRuntimeEnvironment.allowsUserEnvironmentEffects && AXIsProcessTrusted()": 1,
+        "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return false }": 1,
+        "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return nil }": 1,
+    },
+    "Picky/Context/AccessibilityBrowserContextProvider.swift": {
+        "PickyRuntimeEnvironment.allowsUserEnvironmentEffects && AXIsProcessTrusted()": 1,
+    },
+    "Picky/Context/PickyAnnotationSceneMonitor.swift": {
+        "window: PickyRuntimeEnvironment.allowsUserEnvironmentEffects": 1,
+    },
+    "Picky/Sessions/PickyGitRepositoryStatus.swift": {
+        "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }": 1,
+    },
+    "Picky/Sessions/PickyGitHubPullRequestStatus.swift": {
+        "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }": 2,
+    },
+}
+
 REQUIRED_GUARDS = {
     "Picky/Context/PickyAppSupport.swift": "unit-tests.\\(ProcessInfo.processInfo.processIdentifier)",
     "Picky/QuickInput/QuickInputPanelManager.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else {",
@@ -154,6 +174,15 @@ def validate_runtime_guards() -> None:
         source = (ROOT / relative).read_text()
         if required_snippet not in source:
             fail(f"{relative} lost required guard: {required_snippet}")
+
+    for relative, required_snippets in REQUIRED_BOUNDARY_SNIPPETS.items():
+        source = (ROOT / relative).read_text()
+        for required_snippet, minimum_count in required_snippets.items():
+            if source.count(required_snippet) < minimum_count:
+                fail(
+                    f"{relative} lost boundary guard: {required_snippet} "
+                    f"(expected at least {minimum_count})"
+                )
 
     buddy_source = (ROOT / "Picky/BuddyDictationManager.swift").read_text()
     for required_snippet in (

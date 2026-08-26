@@ -440,6 +440,7 @@ struct PickyGitRepositoryStatus: Equatable {
     /// Warm the cache for `cwd` so the HUD can render git context on the very first card paint.
     /// No-ops when the cache already has a value or an identical generation is in flight.
     static func prefetchIfNeeded(cwd: String?) {
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }
         refreshCache.prefetchIfNeeded(cwd: cwd)
     }
 

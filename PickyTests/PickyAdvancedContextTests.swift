@@ -256,6 +256,17 @@ struct PickyAdvancedContextTests {
         #expect(result.value?.text == "clipboard fallback text")
     }
 
+    @Test func unitTestsDoNotQueryTheWindowServerForActiveWindowContext() {
+        var frontmostApplicationQueryCount = 0
+        let provider = CGWindowPickyWindowContextProvider(frontmostApplicationProvider: {
+            frontmostApplicationQueryCount += 1
+            return NSWorkspace.shared.frontmostApplication
+        })
+
+        #expect(provider.activeWindowContext() == nil)
+        #expect(frontmostApplicationQueryCount == 0)
+    }
+
     @Test func regionMetadataValidatesBoundsAgainstScreen() {
         let screen = MultiDisplayScreenProvider().screenContexts()[1]
         let valid = PickyRegionScreenshotContext(label: "button", screenId: "screen2", bounds: PickyCGRect(x: 10, y: 10, width: 100, height: 80))

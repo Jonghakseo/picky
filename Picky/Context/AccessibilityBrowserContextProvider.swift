@@ -40,7 +40,9 @@ struct AccessibilityBrowserContextProvider: PickyAdvancedBrowserContextProviding
     ]
 
     var frontmostApplicationProvider: () -> NSRunningApplication? = { NSWorkspace.shared.frontmostApplication }
-    var axTrustChecker: () -> Bool = { AXIsProcessTrusted() }
+    var axTrustChecker: () -> Bool = {
+        PickyRuntimeEnvironment.allowsUserEnvironmentEffects && AXIsProcessTrusted()
+    }
     var supportedBundleIds: Set<String> = AccessibilityBrowserContextProvider.defaultSupportedBundleIds
     var titleExtractor: TitleExtractor = AccessibilityBrowserContextProvider.defaultTitleExtractor
     var urlExtractor: URLExtractor = AccessibilityBrowserContextProvider.defaultURLExtractor

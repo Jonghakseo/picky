@@ -210,8 +210,10 @@ struct PickyHUDDockGroupRenderGalleryTests {
             folderScene("folder-small-dark-100.png", group: picky, members: fiveSessions, metrics: small, fontScale: 1, appearance: .dark),
             folderScene("folder-medium-dark-100.png", group: picky, members: fiveSessions, metrics: medium, fontScale: 1, appearance: .dark),
             folderScene("folder-large-light-100.png", group: picky, members: fiveSessions, metrics: large, fontScale: 1, appearance: .light),
+            folderScene("folder-targeted-medium-dark-100.png", group: picky, members: fiveSessions, metrics: medium, fontScale: 1, appearance: .dark, isDropTargeted: true),
             folderScene("folder-small-dark-130-cjk.png", group: cjk, members: fiveSessions, metrics: small, fontScale: 1.3, appearance: .dark),
             folderScene("folder-empty-small-dark-100.png", group: empty, members: [], metrics: small, fontScale: 1, appearance: .dark),
+            folderScene("folder-empty-targeted-large-light-100.png", group: empty, members: [], metrics: large, fontScale: 1, appearance: .light, isDropTargeted: true),
             listScene("list-five-selected-small-dark-100.png", group: picky, rows: fiveRows, selectedID: fiveRows[0].id, metrics: small, fontScale: 1, appearance: .dark),
             listScene("list-five-selected-medium-dark-100.png", group: picky, rows: fiveRows, selectedID: fiveRows[0].id, metrics: medium, fontScale: 1, appearance: .dark),
             listScene("list-five-selected-large-light-100.png", group: picky, rows: fiveRows, selectedID: fiveRows[0].id, metrics: large, fontScale: 1, appearance: .light),
@@ -229,7 +231,8 @@ struct PickyHUDDockGroupRenderGalleryTests {
         members: [PickyHUDDockSession],
         metrics: PickyHUDDockMetrics,
         fontScale: CGFloat,
-        appearance: Appearance
+        appearance: Appearance,
+        isDropTargeted: Bool = false
     ) -> Scene {
         Scene(
             name: name,
@@ -242,7 +245,13 @@ struct PickyHUDDockGroupRenderGalleryTests {
             appearance: appearance,
             preset: metrics.preset,
             fontScale: fontScale,
-            content: AnyView(folder(group: group, members: members, metrics: metrics, fontScale: fontScale))
+            content: AnyView(folder(
+                group: group,
+                members: members,
+                metrics: metrics,
+                fontScale: fontScale,
+                isDropTargeted: isDropTargeted
+            ))
         )
     }
 
@@ -307,7 +316,8 @@ struct PickyHUDDockGroupRenderGalleryTests {
         group: PickyDockGroup,
         members: [PickyHUDDockSession],
         metrics: PickyHUDDockMetrics,
-        fontScale: CGFloat
+        fontScale: CGFloat,
+        isDropTargeted: Bool = false
     ) -> some View {
         PickyHUDDockGroupFolderTileView(
             group: group,
@@ -315,7 +325,12 @@ struct PickyHUDDockGroupRenderGalleryTests {
             fontScale: fontScale
         ) {
             if members.isEmpty {
-                PickyHUDDockGroupEmptySlot(color: group.color, metrics: metrics, onCreatePickle: {})
+                PickyHUDDockGroupEmptySlot(
+                    color: group.color,
+                    metrics: metrics,
+                    isDropTargeted: isDropTargeted,
+                    onCreatePickle: {}
+                )
             } else {
                 PickyHUDDockCollapsedGroupBadge(
                     members: members,
@@ -324,6 +339,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
                     metrics: metrics,
                     shortcutNumber: 1,
                     isCommandShortcutHintVisible: false,
+                    isDropTargeted: isDropTargeted,
                     onTap: {},
                     onReorderBegan: {},
                     onReorderChanged: { _ in },

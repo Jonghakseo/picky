@@ -18,8 +18,10 @@ EXPECTED=(
   folder-small-dark-100.png
   folder-medium-dark-100.png
   folder-large-light-100.png
+  folder-targeted-medium-dark-100.png
   folder-small-dark-130-cjk.png
   folder-empty-small-dark-100.png
+  folder-empty-targeted-large-light-100.png
   list-five-selected-small-dark-100.png
   list-five-selected-medium-dark-100.png
   list-five-selected-large-light-100.png

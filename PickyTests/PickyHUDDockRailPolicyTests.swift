@@ -206,6 +206,115 @@ struct PickyHUDDockRailPolicyTests {
         #expect(destination == 2)
     }
 
+    @Test func adjacentTopLevelEntriesExposeInsertionTargetsAtFrozenMidpoints() {
+        let layout = PickyDockLayout(entries: [
+            .session(id: "loose"),
+            .group(PickyDockGroup(id: "alpha")),
+            .group(PickyDockGroup(id: "beta")),
+        ])
+        let candidates = PickyHUDDockRenderPolicy.topLevelInsertionCandidates(
+            visibleTopEntryIDs: ["session:loose", "group:alpha", "group:beta"],
+            referenceCenters: [
+                "session:loose": 0,
+                "group:alpha": 100,
+                "group:beta": 200,
+            ],
+            draggedSessionID: "loose",
+            layout: layout
+        )
+
+        #expect(candidates == [
+            .init(topLevelIndex: 0, center: 50),
+            .init(topLevelIndex: 1, center: 150),
+        ])
+    }
+
+    @Test func adjacentUngroupedSessionsKeepExistingCenterBasedReorderPolicy() {
+        let layout = PickyDockLayout(entries: [
+            .session(id: "alpha"),
+            .session(id: "beta"),
+        ])
+
+        #expect(PickyHUDDockRenderPolicy.topLevelInsertionCandidates(
+            visibleTopEntryIDs: ["session:alpha", "session:beta"],
+            referenceCenters: ["session:alpha": 0, "session:beta": 100],
+            draggedSessionID: "alpha",
+            layout: layout
+        ).isEmpty)
+    }
+
+    @Test func adjacentFolderBoundaryResolvesToTopLevelInsertion() throws {
+        let layout = PickyDockLayout(entries: [
+            .session(id: "loose"),
+            .group(PickyDockGroup(id: "alpha")),
+            .group(PickyDockGroup(id: "beta")),
+        ])
+
+        let destination = try #require(PickyDockDropResolver.resolveDropContainer(
+            draggedSessionID: "loose",
+            cursorAxis: 150,
+            slotCandidates: [.init(container: .topLevel(index: 0), center: 0)],
+            topLevelInsertionCandidates: [.init(topLevelIndex: 1, center: 150)],
+            emptyGroupCandidates: [
+                .init(groupID: "alpha", center: 100, halfExtent: 27),
+                .init(groupID: "beta", center: 200, halfExtent: 27),
+            ],
+            layout: layout,
+            slotPitch: 100
+        ))
+
+        #expect(destination == .topLevel(index: 1))
+
+        let preview = PickyHUDDockRenderPolicy.sessionPreviewLayout(
+            layout: layout,
+            draggedSessionID: "loose",
+            destination: destination
+        )
+        #expect(preview.entries == [
+            .group(PickyDockGroup(id: "alpha")),
+            .session(id: "loose"),
+            .group(PickyDockGroup(id: "beta")),
+        ])
+    }
+
+    @Test func folderBoundsTakePriorityOverNearbyTopLevelInsertionTarget() {
+        let layout = PickyDockLayout(entries: [
+            .session(id: "loose"),
+            .group(PickyDockGroup(id: "alpha")),
+            .group(PickyDockGroup(id: "beta")),
+        ])
+
+        let destination = PickyDockDropResolver.resolveDropContainer(
+            draggedSessionID: "loose",
+            cursorAxis: 127,
+            slotCandidates: [.init(container: .topLevel(index: 0), center: 0)],
+            topLevelInsertionCandidates: [.init(topLevelIndex: 2, center: 150)],
+            emptyGroupCandidates: [
+                .init(groupID: "alpha", center: 100, halfExtent: 27),
+                .init(groupID: "beta", center: 200, halfExtent: 27),
+            ],
+            layout: layout,
+            slotPitch: 100
+        )
+
+        #expect(destination == .group(id: "alpha", memberIndex: 0))
+    }
+
+    @Test func dropFeedbackTargetsOnlyPendingGroupDuringSessionDrag() {
+        #expect(PickyHUDDockRenderPolicy.dropTargetedGroupID(
+            draggingSessionID: "loose",
+            destination: .group(id: "alpha", memberIndex: 0)
+        ) == "alpha")
+        #expect(PickyHUDDockRenderPolicy.dropTargetedGroupID(
+            draggingSessionID: "loose",
+            destination: .topLevel(index: 1)
+        ) == nil)
+        #expect(PickyHUDDockRenderPolicy.dropTargetedGroupID(
+            draggingSessionID: nil,
+            destination: .group(id: "alpha", memberIndex: 0)
+        ) == nil)
+    }
+
     @Test func structuralTopEntryChangeCancelsFrozenDragGeometry() {
         let reference = ["session:a", "group:group", "session:b"]
 

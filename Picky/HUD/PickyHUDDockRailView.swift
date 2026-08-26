@@ -205,6 +205,13 @@ struct PickyHUDDockRailView: View {
         return baseProjection
     }
 
+    private var dropTargetedGroupID: String? {
+        PickyHUDDockRenderPolicy.dropTargetedGroupID(
+            draggingSessionID: draggingSessionID,
+            destination: pendingDropContainer
+        )
+    }
+
     var body: some View {
         let _ = PickyPerf.event("dock_rail_body")
         let resolvedRailLength = overflowLayout.railLength
@@ -484,6 +491,7 @@ struct PickyHUDDockRailView: View {
             unreadSessionIDs.contains(card.id) ? count + 1 : count
         }
         let hasVisibleMembers = !memberCards.isEmpty
+        let isDropTargeted = dropTargetedGroupID == group.id
         PickyHUDDockGroupFolderTileView(
             group: group,
             metrics: metrics,
@@ -494,7 +502,8 @@ struct PickyHUDDockRailView: View {
                     for: group,
                     memberCards: memberCards,
                     unreadCount: unreadCount,
-                    slot: slot
+                    slot: slot,
+                    isDropTargeted: isDropTargeted
                 )
                 .publishDockGroupBadgeFrame(groupID: group.id)
                 .publishDockGroupDropFrame(groupID: group.id)
@@ -511,7 +520,8 @@ struct PickyHUDDockRailView: View {
                     for: group,
                     memberCards: memberCards,
                     unreadCount: unreadCount,
-                    slot: slot
+                    slot: slot,
+                    isDropTargeted: isDropTargeted
                 )
                 .publishDockGroupBadgeFrame(groupID: group.id)
                 .publishDockGroupDropFrame(groupID: group.id)
@@ -575,13 +585,15 @@ struct PickyHUDDockRailView: View {
         for group: PickyDockGroup,
         memberCards: [PickyHUDDockSession],
         unreadCount: Int,
-        slot: PickyDockSlot
+        slot: PickyDockSlot,
+        isDropTargeted: Bool
     ) -> some View {
         if memberCards.isEmpty {
             newPicklePicker(
                 anchoredTo: PickyHUDDockGroupEmptySlot(
                     color: group.color,
                     metrics: metrics,
+                    isDropTargeted: isDropTargeted,
                     onCreatePickle: { activateGroupTile(group.id) }
                 ),
                 anchorGroupID: group.id
@@ -595,6 +607,7 @@ struct PickyHUDDockRailView: View {
                     metrics: metrics,
                     shortcutNumber: PickyHUDDockLayout.numberShortcutForSessionIndex(slot.visibleIndex),
                     isCommandShortcutHintVisible: isCommandShortcutHintVisible,
+                    isDropTargeted: isDropTargeted,
                     onTap: { activateGroupTile(group.id) },
                     onReorderBegan: { handleGroupTileDragBegin(groupID: group.id) },
                     onReorderChanged: { translation in
@@ -843,6 +856,12 @@ struct PickyHUDDockRailView: View {
             else { return nil }
             return .init(container: container, center: center)
         }
+        let topLevelInsertionCandidates = PickyHUDDockRenderPolicy.topLevelInsertionCandidates(
+            visibleTopEntryIDs: dragReferenceTopEntryIDs,
+            referenceCenters: dragReferenceGroupTopEntryCenters,
+            draggedSessionID: sessionID,
+            layout: layout
+        )
         let activeSessionIDs = Set(allSessions.map(\.id))
         let emptyGroupCandidates = PickyHUDDockGroupDropCandidateBuilder.emptyCandidates(
             slots: dragReferenceSlots,
@@ -869,6 +888,7 @@ struct PickyHUDDockRailView: View {
             draggedSessionID: sessionID,
             cursorAxis: cursorAxis,
             slotCandidates: slotCandidates,
+            topLevelInsertionCandidates: topLevelInsertionCandidates,
             emptyGroupCandidates: emptyGroupCandidates,
             nonEmptyGroupCandidates: nonEmptyGroupCandidates,
             layout: layout,
@@ -876,8 +896,8 @@ struct PickyHUDDockRailView: View {
         )
 
         // Record where the icon *would* land. Top-level targets move the clear
-        // placeholder; folder targets leave it at the source and rely on the
-        // badge hover affordance. Nothing persists until release.
+        // placeholder; folder targets leave it at the source and project an
+        // explicit acceptance state onto the badge. Nothing persists until release.
         if let nearestDestination, pendingDropContainer != nearestDestination {
             pendingDropContainer = nearestDestination
         }

@@ -559,6 +559,14 @@ enum PickyDockDropResolver {
         let center: CGFloat
     }
 
+    /// A top-level insertion boundary between two adjacent rendered entries.
+    /// Folder-only rails need these explicit candidates because groups do not
+    /// expose session slot containers of their own.
+    struct TopLevelInsertionCandidate: Equatable {
+        let topLevelIndex: Int
+        let center: CGFloat
+    }
+
     /// A group folder tile and its center. Dropping here inserts into that
     /// group's members.
     struct EmptyGroupCandidate: Equatable {
@@ -596,6 +604,7 @@ enum PickyDockDropResolver {
         draggedSessionID: String,
         cursorAxis: CGFloat,
         slotCandidates: [SlotCandidate],
+        topLevelInsertionCandidates: [TopLevelInsertionCandidate] = [],
         emptyGroupCandidates: [EmptyGroupCandidate],
         nonEmptyGroupCandidates: [EmptyGroupCandidate] = [],
         layout: PickyDockLayout,
@@ -618,12 +627,31 @@ enum PickyDockDropResolver {
             }
         }
 
+        for candidate in topLevelInsertionCandidates {
+            let distance = abs(candidate.center - cursorAxis)
+            if distance < minDistance {
+                minDistance = distance
+                nearest = .topLevel(index: candidate.topLevelIndex)
+            }
+        }
+
+        // The visible folder badge is an explicit acceptance surface. Once the
+        // pointer is inside it, grouping wins over a nearby linear boundary so
+        // the target does not flip at the badge edge.
+        var containedGroup: (candidate: EmptyGroupCandidate, distance: CGFloat)?
         for candidate in groupCandidates {
             let distance = abs(candidate.center - cursorAxis)
-            if distance <= halfExtent(for: candidate), distance < minDistance {
-                minDistance = distance
-                nearest = .group(id: candidate.groupID, memberIndex: candidate.memberIndex)
+            guard distance <= halfExtent(for: candidate) else { continue }
+            if containedGroup == nil || distance < containedGroup!.distance {
+                containedGroup = (candidate, distance)
             }
+        }
+        if let containedGroup {
+            minDistance = containedGroup.distance
+            nearest = .group(
+                id: containedGroup.candidate.groupID,
+                memberIndex: containedGroup.candidate.memberIndex
+            )
         }
 
         // Retain the member-edge resolver for list-row reordering. Rail folder

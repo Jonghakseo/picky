@@ -137,6 +137,61 @@ enum PickyHUDDockRenderPolicy {
         }
     }
 
+    /// Builds one stable top-level insertion target for each adjacent pair
+    /// that includes a folder. Pickle-only pairs retain their existing
+    /// center-based reorder threshold. Candidate indices describe the final
+    /// post-move layout, so dropping at a boundary inserts before its right entry.
+    static func topLevelInsertionCandidates(
+        visibleTopEntryIDs: [String],
+        referenceCenters: [String: CGFloat],
+        draggedSessionID: String,
+        layout: PickyDockLayout
+    ) -> [PickyDockDropResolver.TopLevelInsertionCandidate] {
+        let draggedTopLevelIndex: Int? = {
+            guard case .topLevel(let index) = layout.container(forSessionID: draggedSessionID)
+            else { return nil }
+            return index
+        }()
+        return zip(visibleTopEntryIDs, visibleTopEntryIDs.dropFirst()).compactMap { pair in
+            let (leftID, rightID) = pair
+            guard let leftCenter = referenceCenters[leftID],
+                  let rightCenter = referenceCenters[rightID],
+                  leftCenter.isFinite,
+                  rightCenter.isFinite,
+                  let leftLayoutIndex = layoutEntryIndex(forVisibleTopEntryID: leftID, in: layout),
+                  let rightLayoutIndex = layoutEntryIndex(forVisibleTopEntryID: rightID, in: layout),
+                  isGroupEntry(at: leftLayoutIndex, in: layout)
+                    || isGroupEntry(at: rightLayoutIndex, in: layout)
+            else { return nil }
+            let sourcePrecedesBoundary = draggedTopLevelIndex.map { $0 < rightLayoutIndex } ?? false
+            let finalIndex = rightLayoutIndex - (sourcePrecedesBoundary ? 1 : 0)
+            return .init(
+                topLevelIndex: finalIndex,
+                center: (leftCenter + rightCenter) * 0.5
+            )
+        }
+    }
+
+    private static func isGroupEntry(at index: Int, in layout: PickyDockLayout) -> Bool {
+        guard layout.entries.indices.contains(index),
+              case .group = layout.entries[index]
+        else { return false }
+        return true
+    }
+
+    /// Projects the pending drag destination into the one folder that should
+    /// advertise acceptance. Ordinary hover remains independent from this
+    /// explicit drag state.
+    static func dropTargetedGroupID(
+        draggingSessionID: String?,
+        destination: PickyDockContainer?
+    ) -> String? {
+        guard draggingSessionID != nil,
+              case .group(let groupID, _) = destination
+        else { return nil }
+        return groupID
+    }
+
     /// Frozen drag centers only describe the captured ordered top-level entries.
     /// A daemon or CLI structural update invalidates that geometry, so callers
     /// must cancel rather than resolving a current entry through stale centers.

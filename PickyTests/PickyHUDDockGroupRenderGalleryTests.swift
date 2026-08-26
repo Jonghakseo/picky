@@ -185,6 +185,16 @@ struct PickyHUDDockGroupRenderGalleryTests {
         }
     }
 
+    @Test func combinedSceneKeepsThePanelAnchoredToTheBadgeBelowTheTitle() {
+        let metrics = PickyHUDDockMetrics(preset: .medium)
+        let folderFrame = folderSize(metrics: metrics, fontScale: 1)
+        let panelSize = listSize(memberCount: fiveRows.count, metrics: metrics, fontScale: 1)
+        let scene = combinedScene(group: group(id: "group", name: "Picky", color: .blue, memberIDs: fiveRows.map(\.id)), metrics: metrics)
+
+        #expect(scene.contentLogicalSize.width == folderFrame.width + PickyHUDDockLayout.panelGap + panelSize.width)
+        #expect(scene.contentLogicalSize.height == max(folderFrame.height, folderBadgeTopInset(metrics: metrics, fontScale: 1) + panelSize.height))
+    }
+
     private func makeScenes() -> [Scene] {
         let small = PickyHUDDockMetrics(preset: .small)
         let medium = PickyHUDDockMetrics(preset: .medium)
@@ -252,21 +262,35 @@ struct PickyHUDDockGroupRenderGalleryTests {
     private func combinedScene(group: PickyDockGroup, metrics: PickyHUDDockMetrics) -> Scene {
         let panelSize = listSize(memberCount: fiveRows.count, metrics: metrics, fontScale: 1)
         let folderFrame = folderSize(metrics: metrics, fontScale: 1)
+        let badgeTopInset = folderBadgeTopInset(metrics: metrics, fontScale: 1)
         return Scene(
             name: "combined-folder-panel-medium-dark-100.png",
             contentLogicalSize: CGSize(
                 width: folderFrame.width + PickyHUDDockLayout.panelGap + panelSize.width,
-                height: max(folderFrame.height, panelSize.height)
+                height: max(folderFrame.height, badgeTopInset + panelSize.height)
             ),
             canvasInsets: galleryCanvasInsets,
             appearance: .dark,
             preset: metrics.preset,
             fontScale: 1,
             content: AnyView(
-                HStack(alignment: .top, spacing: PickyHUDDockLayout.panelGap) {
+                ZStack(alignment: .topLeading) {
                     self.folder(group: group, members: fiveSessions, metrics: metrics, fontScale: 1)
-                        .frame(width: folderFrame.width, alignment: .center)
+                        .frame(
+                            width: folderFrame.width,
+                            height: folderFrame.height,
+                            alignment: .top
+                        )
                     list(group: group, rows: fiveRows, selectedID: fiveRows[0].id, metrics: metrics)
+                        .frame(
+                            width: panelSize.width,
+                            height: panelSize.height,
+                            alignment: .topLeading
+                        )
+                        .offset(
+                            x: folderFrame.width + PickyHUDDockLayout.panelGap,
+                            y: badgeTopInset
+                        )
                 }
             )
         )
@@ -484,6 +508,11 @@ struct PickyHUDDockGroupRenderGalleryTests {
                 + metrics.groupHeaderContentSpacing
                 + PickyHUDDockGroupHeaderPresentation.labelHeight(metrics: metrics, fontScale: fontScale)
         )
+    }
+
+    private func folderBadgeTopInset(metrics: PickyHUDDockMetrics, fontScale: CGFloat) -> CGFloat {
+        PickyHUDDockGroupHeaderPresentation.labelHeight(metrics: metrics, fontScale: fontScale)
+            + metrics.groupHeaderContentSpacing
     }
 
     private func listSize(memberCount: Int, metrics: PickyHUDDockMetrics, fontScale: CGFloat) -> CGSize {

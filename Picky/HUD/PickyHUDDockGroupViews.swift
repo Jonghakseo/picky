@@ -163,7 +163,7 @@ enum PickyHUDDockGroupHeaderPresentation {
     }
 }
 
-/// Quiet, centered identity label beneath a folder tile. The rail supplies
+/// Quiet, centered identity label above a folder tile. The rail supplies
 /// the tap and group-reorder gesture.
 struct PickyHUDDockGroupHeader: View {
     let group: PickyDockGroup

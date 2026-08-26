@@ -18,8 +18,8 @@ struct PickyHUDDockGroupFolderTileView<Tile: View, Header: View>: View {
 
     var body: some View {
         VStack(spacing: metrics.groupHeaderContentSpacing) {
-            tile()
             header(PickyHUDDockGroupHeader(group: group, metrics: metrics, fontScale: fontScale))
+            tile()
         }
         // The interaction frame follows the CJK-safe identity width, not just
         // the square tile, so the visible label is never outside its folder.

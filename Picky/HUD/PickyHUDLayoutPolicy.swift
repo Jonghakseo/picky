@@ -165,7 +165,7 @@ struct PickyHUDDockMetrics: Equatable {
     var archiveRingSide: CGFloat { max(36, scaled(42)) }
     var archiveBadgeSide: CGFloat { max(12, scaled(14)) }
     /// The folder identity label reserves its exact rendered line height plus
-    /// deliberate `space.1` vertical hit insets. The gap below the tile is also
+    /// deliberate `space.1` vertical hit insets. The label-to-tile gap is also
     /// `space.1`, so the full group block follows the 4pt spacing scale.
     var groupHeaderVerticalInset: CGFloat { scaled(4) } // space.1
     var groupHeaderContentSpacing: CGFloat { scaled(4) } // space.1

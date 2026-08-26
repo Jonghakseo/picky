@@ -191,8 +191,8 @@ enum PickyHUDDockDragGeometry {
         }
     }
 
-    /// Exact primary-axis half extent of a rendered folder entry. The label is
-    /// below the tile only in vertical rails; in horizontal rails it changes
+    /// Exact primary-axis half extent of a rendered folder entry. The label
+    /// adds vertical chrome in vertical rails; in horizontal rails it changes
     /// the cross axis and the folder's primary drop width stays tile-sized.
     static func groupDropHalfExtent(
         orientation: PickyHUDDockOrientation,

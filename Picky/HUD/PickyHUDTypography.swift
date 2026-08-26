@@ -26,6 +26,7 @@ enum PickyHUDTypography {
         static let body: CGFloat = 13
         static let label: CGFloat = 11.5
         static let meta: CGFloat = 10.5
+        static let minimum: CGFloat = 10
         static let badge: CGFloat = 8
     }
 
@@ -44,7 +45,7 @@ enum PickyHUDTypography {
         static var label: CGFloat { BaseSize.label * scale }
         static var status: CGFloat { 11 * scale }
         static var meta: CGFloat { BaseSize.meta * scale }
-        static var minimumText: CGFloat { 10 * scale }
+        static var minimumText: CGFloat { BaseSize.minimum * scale }
         static var badge: CGFloat { BaseSize.badge * scale }
         static var badgeIcon: CGFloat { 7 * scale }
     }
@@ -112,6 +113,12 @@ enum PickyHUDTypography {
     static var metaMonospacedSemibold: Font { .system(size: Size.meta, weight: .semibold, design: .monospaced) }
 
     static var minimum: Font { .system(size: Size.minimumText, weight: .regular) }
+
+    /// AppKit counterpart for measurements that use the minimum metadata role.
+    static func minimumNSFont(fontScale: CGFloat) -> NSFont {
+        .systemFont(ofSize: BaseSize.minimum * max(0, fontScale), weight: .regular)
+    }
+
     static var minimumMedium: Font { .system(size: Size.minimumText, weight: .medium) }
     static var minimumSemibold: Font { .system(size: Size.minimumText, weight: .semibold) }
     static var minimumBold: Font { .system(size: Size.minimumText, weight: .bold) }

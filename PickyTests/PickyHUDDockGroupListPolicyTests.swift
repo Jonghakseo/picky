@@ -27,11 +27,14 @@ struct PickyHUDDockGroupListPolicyTests {
         #expect(eight.height == nine.height)
         #expect(eight.height == forty.height)
         #expect(one.width == eight.width)
-        // 12 + 12 padding, 24 header, 8 header-to-rows spacing, 8 rows of 38 at scale 1.0.
-        let expectedHeight: CGFloat = 360
-        let expectedWidth: CGFloat = 300
+        let expectedHeight = PickyHUDDockGroupListPolicy.panelChromeHeight(metrics: metrics)
+            + PickyHUDDockGroupListPolicy.rowStackHeight(
+                rowCount: PickyHUDDockLayout.groupListMaxVisibleRows,
+                metrics: metrics,
+                fontScale: 1
+            )
         #expect(eight.height == expectedHeight)
-        #expect(eight.width == expectedWidth)
+        #expect(eight.width == metrics.groupListPanelWidth)
     }
 
     @Test func panelHeightContainsTokenizedRowContentAtEveryPresetAndAppFontScale() {
@@ -44,8 +47,11 @@ struct PickyHUDDockGroupListPolicyTests {
                     fontScale: fontScale
                 )
                 let minimumContentHeight = PickyHUDDockGroupListPolicy.panelChromeHeight(metrics: metrics)
-                    + (CGFloat(PickyHUDDockLayout.groupListMaxVisibleRows)
-                        * PickyHUDDockGroupListPolicy.rowContentHeight(fontScale: fontScale))
+                    + PickyHUDDockGroupListPolicy.rowStackHeight(
+                        rowCount: PickyHUDDockLayout.groupListMaxVisibleRows,
+                        metrics: metrics,
+                        fontScale: fontScale
+                    )
 
                 #expect(panel.height >= minimumContentHeight)
             }
@@ -67,13 +73,21 @@ struct PickyHUDDockGroupListPolicyTests {
         let fontScale: CGFloat = 1.3
         let titleFont = PickyHUDTypography.bodyNSFont(fontScale: fontScale)
         let subtitleFont = PickyHUDTypography.metaNSFont(fontScale: fontScale)
-        let expected = lineHeight(titleFont) + 4 + lineHeight(subtitleFont)
+        let expected = lineHeight(titleFont)
+            + metrics.groupListRowVerticalPadding
+            + lineHeight(subtitleFont)
+            + (metrics.groupListRowVerticalPadding * 2)
 
-        #expect(PickyHUDDockGroupListPolicy.rowContentHeight(fontScale: fontScale) == expected)
+        #expect(
+            PickyHUDDockGroupListPolicy.rowContentHeight(metrics: metrics, fontScale: fontScale) == expected
+        )
     }
 
-    @Test func largeRowsStayWithinThePreDensityMinimumAtDefaultFontScale() {
-        #expect(PickyHUDDockGroupListPolicy.rowHeight(metrics: metrics, fontScale: 1) <= metrics.groupListRowHeight)
+    @Test func rowsReserveSymmetricVerticalPaddingAtDefaultFontScale() {
+        #expect(
+            PickyHUDDockGroupListPolicy.rowHeight(metrics: metrics, fontScale: 1)
+                >= PickyHUDDockGroupListPolicy.rowContentHeight(metrics: metrics, fontScale: 1)
+        )
     }
 
     @Test func titleColumnUsesOnlyTheMeasuredShortcutWidthForReservedHintChrome() {
@@ -97,6 +111,16 @@ struct PickyHUDDockGroupListPolicyTests {
         #expect(withUnread > 0)
     }
 
+    @Test func panelHeightIncludesInterRowSpacingWithoutClippingTheLastRow() {
+        let rows = 3
+        let panel = PickyHUDDockGroupListPolicy.panelSize(memberCount: rows, metrics: metrics)
+        let expected = PickyHUDDockGroupListPolicy.panelChromeHeight(metrics: metrics)
+            + (CGFloat(rows) * PickyHUDDockGroupListPolicy.rowHeight(metrics: metrics, fontScale: 1))
+            + (CGFloat(rows - 1) * metrics.groupListRowSpacing)
+
+        #expect(panel.height == expected)
+    }
+
     @Test func panelSizeScalesWithTheDockPreset() {
         let mediumMetrics = PickyHUDDockMetrics(preset: .medium)
         let medium = PickyHUDDockGroupListPolicy.panelSize(
@@ -108,6 +132,27 @@ struct PickyHUDDockGroupListPolicyTests {
         let expectedWidth: CGFloat = 258
         #expect(medium.width == expectedWidth)
         #expect(medium.height > PickyHUDDockGroupListPolicy.panelChromeHeight(metrics: mediumMetrics))
+    }
+
+    @Test func mouseDownInsideTheOwningFolderIsNotAnOutsideDismissal() {
+        let panelFrame = CGRect(x: 100, y: 100, width: 300, height: 360)
+        let folderFrame = CGRect(x: 20, y: 180, width: 54, height: 54)
+
+        #expect(PickyHUDDockGroupListPolicy.shouldDismissForMouseDown(
+            at: CGPoint(x: 45, y: 205),
+            panelFrame: panelFrame,
+            owningFolderFrame: folderFrame
+        ) == false)
+        #expect(PickyHUDDockGroupListPolicy.shouldDismissForMouseDown(
+            at: CGPoint(x: 120, y: 120),
+            panelFrame: panelFrame,
+            owningFolderFrame: folderFrame
+        ) == false)
+        #expect(PickyHUDDockGroupListPolicy.shouldDismissForMouseDown(
+            at: CGPoint(x: 80, y: 80),
+            panelFrame: panelFrame,
+            owningFolderFrame: folderFrame
+        ))
     }
 
     @Test func verticalDocksAnchorTheFolderTopAndOpenTowardTheScreenInterior() {

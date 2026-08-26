@@ -164,11 +164,10 @@ struct PickyHUDDockMetrics: Equatable {
     var statusDotSide: CGFloat { max(6, scaled(8)) }
     var archiveRingSide: CGFloat { max(36, scaled(42)) }
     var archiveBadgeSide: CGFloat { max(12, scaled(14)) }
-    /// Header geometry is a dock-specific exception to the standard spacing
-    /// scale: it preserves a 24pt target above a group folder at Large and
-    /// scales proportionally with the dock preset.
-    var groupHeaderHitAreaHeight: CGFloat { scaled(24) }
-    var groupHeaderContentSpacing: CGFloat { scaled(4) }
+    /// The folder identity is a quiet metadata label beneath the tile. Its
+    /// height and gap follow the 4pt scale while scaling with dock presets.
+    var groupHeaderHitAreaHeight: CGFloat { scaled(12) } // space.3
+    var groupHeaderContentSpacing: CGFloat { scaled(4) } // space.1
     /// Width of the dock-icon hover preview card. Scales together with the dock
     /// rail itself so the preview never looks oversized next to a Small dock or
     /// undersized next to a Large dock. Lower bound keeps the title/status row
@@ -182,6 +181,8 @@ struct PickyHUDDockMetrics: Equatable {
     var groupListHeaderAccentSide: CGFloat { scaled(8) } // space.2
     var groupListHeaderBottomSpacing: CGFloat { scaled(8) } // space.2
     var groupListRowHeight: CGFloat { scaled(38) }
+    var groupListRowVerticalPadding: CGFloat { scaled(4) } // space.1
+    var groupListRowSpacing: CGFloat { scaled(4) } // space.1
     var groupListRowGlyphSide: CGFloat { scaled(20) } // space.5
     var groupListRowContentSpacing: CGFloat { scaled(8) } // space.2
     var groupListPanelCornerRadius: CGFloat { scaled(12) } // radius.surface

@@ -24,6 +24,30 @@ struct PickyHUDDockGroupListOpenPolicyTests {
         #expect(PickyHUDDockGroupListOpenPolicy.afterSelectingRow(openGroupID: "a") == nil)
     }
 
+    @Test func openingANonMemberClosesTheListAndOpeningAMemberKeepsItOpen() {
+        #expect(
+            PickyHUDDockGroupListOpenPolicy.afterOpeningSession(
+                openGroupID: "a",
+                openedSessionID: "member",
+                memberSessionIDs: ["member", "archived"]
+            ) == "a"
+        )
+        #expect(
+            PickyHUDDockGroupListOpenPolicy.afterOpeningSession(
+                openGroupID: "a",
+                openedSessionID: "other",
+                memberSessionIDs: ["member", "archived"]
+            ) == nil
+        )
+        #expect(
+            PickyHUDDockGroupListOpenPolicy.afterOpeningSession(
+                openGroupID: "a",
+                openedSessionID: nil,
+                memberSessionIDs: ["member"]
+            ) == "a"
+        )
+    }
+
     @Test func removingTheOwningGroupClosesTheListAndOtherRemovalsDoNot() {
         #expect(
             PickyHUDDockGroupListOpenPolicy.afterGroupRemoved(

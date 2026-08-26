@@ -417,9 +417,7 @@ struct PickyHUDDockRailView: View {
         let unreadCount = memberCards.reduce(0) { count, card in
             unreadSessionIDs.contains(card.id) ? count + 1 : count
         }
-        VStack(alignment: .leading, spacing: metrics.groupHeaderContentSpacing) {
-            PickyHUDDockGroupHeader(group: group, metrics: metrics)
-                .allowsHitTesting(false)
+        VStack(spacing: metrics.groupHeaderContentSpacing) {
             PickyHUDDockCollapsedGroupBadge(
                 members: memberCards,
                 unreadCount: unreadCount,
@@ -439,16 +437,11 @@ struct PickyHUDDockRailView: View {
                     onDeleteWithArchive: { onRemoveDockGroup(group.id, false) }
                 )
             }
-            .highPriorityGesture(
-                DragGesture(minimumDistance: 4, coordinateSpace: .global)
-                    .onChanged { value in
-                        if draggingGroupID != group.id { handleGroupTileDragBegin(groupID: group.id) }
-                        handleGroupTileDragChanged(groupID: group.id, translation: value.translation)
-                    }
-                    .onEnded { value in
-                        handleGroupTileDragEnded(groupID: group.id, translation: value.translation)
-                    }
-            )
+            .highPriorityGesture(groupReorderGesture(for: group.id))
+
+            PickyHUDDockGroupHeader(group: group, metrics: metrics)
+                .onTapGesture { onOpenDockGroupList(group.id) }
+                .highPriorityGesture(groupReorderGesture(for: group.id))
         }
         .id("group:\(group.id)")
         .opacity(draggingGroupID == group.id && groupPullOutArmed ? 0.5 : 1)
@@ -775,6 +768,19 @@ struct PickyHUDDockRailView: View {
     }
 
     // MARK: - Group folder tile drag (whole-group reorder)
+
+    /// The folder tile and its identity label use this single gesture path so
+    /// either pickup point produces identical reorder and pull-out behavior.
+    private func groupReorderGesture(for groupID: String) -> some Gesture {
+        DragGesture(minimumDistance: 4, coordinateSpace: .global)
+            .onChanged { value in
+                if draggingGroupID != groupID { handleGroupTileDragBegin(groupID: groupID) }
+                handleGroupTileDragChanged(groupID: groupID, translation: value.translation)
+            }
+            .onEnded { value in
+                handleGroupTileDragEnded(groupID: groupID, translation: value.translation)
+            }
+    }
 
     private func handleGroupTileDragBegin(groupID: String) {
         guard let layoutIdx = layout.entries.firstIndex(where: { entry in

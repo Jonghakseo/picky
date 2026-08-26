@@ -20,7 +20,7 @@ enum PickyHUDDockGroupListPolicy {
         return CGSize(
             width: metrics.groupListPanelWidth,
             height: panelChromeHeight(metrics: metrics)
-                + (CGFloat(rows) * rowHeight(metrics: metrics, fontScale: fontScale))
+                + rowStackHeight(rowCount: rows, metrics: metrics, fontScale: fontScale)
         )
     }
 
@@ -29,15 +29,28 @@ enum PickyHUDDockGroupListPolicy {
     /// retain that intrinsic height so the child panel and its row centers stay
     /// in sync at every global app font scale.
     static func rowHeight(metrics: PickyHUDDockMetrics, fontScale: CGFloat) -> CGFloat {
-        max(metrics.groupListRowHeight, rowContentHeight(fontScale: fontScale))
+        max(metrics.groupListRowHeight, rowContentHeight(metrics: metrics, fontScale: fontScale))
     }
 
-    static func rowContentHeight(fontScale: CGFloat) -> CGFloat {
+    /// The stack's total includes the deliberate `space.1` separation between
+    /// rows, so the final rendered member never clips at the panel edge.
+    static func rowStackHeight(
+        rowCount: Int,
+        metrics: PickyHUDDockMetrics,
+        fontScale: CGFloat
+    ) -> CGFloat {
+        guard rowCount > 0 else { return 0 }
+        return CGFloat(rowCount) * rowHeight(metrics: metrics, fontScale: fontScale)
+            + CGFloat(rowCount - 1) * metrics.groupListRowSpacing
+    }
+
+    static func rowContentHeight(metrics: PickyHUDDockMetrics, fontScale: CGFloat) -> CGFloat {
         let titleFont = PickyHUDTypography.bodyNSFont(fontScale: fontScale)
         let subtitleFont = PickyHUDTypography.metaNSFont(fontScale: fontScale)
         return lineHeight(for: titleFont)
-            + 4 // space.1 between the body and meta text roles
+            + metrics.groupListRowVerticalPadding // space.1 between text roles
             + lineHeight(for: subtitleFont)
+            + (metrics.groupListRowVerticalPadding * 2)
     }
 
     /// The shortcut column reserves no more than the widest supported list
@@ -48,9 +61,8 @@ enum PickyHUDDockGroupListPolicy {
         ]).width)
     }
 
-    /// Width available to the title after fixed row chrome. Rows use the
-    /// panel's outer padding as their sole horizontal inset, so the state
-    /// background and text column share the same content bounds.
+    /// Width available to the title after fixed row chrome. Rows and the
+    /// header share the panel's outer padding as symmetric horizontal insets.
     static func titleColumnWidth(
         metrics: PickyHUDDockMetrics,
         isUnread: Bool,
@@ -73,6 +85,18 @@ enum PickyHUDDockGroupListPolicy {
         (metrics.groupListPanelPadding * 2)
             + metrics.groupListHeaderHeight
             + metrics.groupListHeaderBottomSpacing
+    }
+
+    /// The panel and its owning folder both consume the same mouse down. The
+    /// folder is therefore explicitly inside the list interaction, preventing
+    /// the deferred outside-click monitor from racing the tile's toggle.
+    static func shouldDismissForMouseDown(
+        at screenPoint: CGPoint,
+        panelFrame: CGRect,
+        owningFolderFrame: CGRect?
+    ) -> Bool {
+        !panelFrame.contains(screenPoint)
+            && !(owningFolderFrame?.contains(screenPoint) ?? false)
     }
 
     /// True when the group has more members than the panel can show at once.

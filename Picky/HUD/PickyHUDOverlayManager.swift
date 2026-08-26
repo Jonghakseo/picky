@@ -988,6 +988,19 @@ final class PickyHUDOverlayManager {
         entry.railFrame = geometry.railFrame
         entry.openedSessionID = geometry.openedSessionID
         dockGroupListChildrenByDisplayID[displayID] = entry
+        if let openGroupID = entry.openGroupID,
+           let group = PickyHUDDockGroupListSnapshotPolicy.group(
+               groupID: openGroupID,
+               in: viewModel.dockState.snapshot
+           ),
+           PickyHUDDockGroupListOpenPolicy.afterOpeningSession(
+               openGroupID: openGroupID,
+               openedSessionID: geometry.openedSessionID,
+               memberSessionIDs: group.memberSessionIDs
+           ) == nil {
+            hideDockGroupListChild(displayID: displayID)
+            return
+        }
         if let pendingGroupID = PickyHUDDockGroupListOpenPolicy.pendingGroupIDReadyToOpen(
             entry.pendingGroupID,
             anchoredGroupIDs: Set(entry.badgeFrames.keys),
@@ -1399,15 +1412,23 @@ final class PickyHUDOverlayManager {
         } else {
             screenPoint = NSEvent.mouseLocation
         }
-        guard !entry.panel.frame.contains(screenPoint) else { return }
-        if let hudEntry = panelsByDisplayID[displayID] {
-            let railFrame = PickyHUDDockGroupListScreenLayout.screenFrame(
+        let owningFolderFrame: CGRect?
+        if let hudEntry = panelsByDisplayID[displayID],
+           let openGroupID = entry.openGroupID,
+           let folderFrame = entry.badgeFrames[openGroupID] {
+            owningFolderFrame = PickyHUDDockGroupListScreenLayout.screenFrame(
                 hudPanelFrame: hudEntry.panel.frame,
-                swiftUIOrigin: entry.railFrame.origin,
-                panelSize: entry.railFrame.size
+                swiftUIOrigin: folderFrame.origin,
+                panelSize: folderFrame.size
             )
-            guard !railFrame.contains(screenPoint) else { return }
+        } else {
+            owningFolderFrame = nil
         }
+        guard PickyHUDDockGroupListPolicy.shouldDismissForMouseDown(
+            at: screenPoint,
+            panelFrame: entry.panel.frame,
+            owningFolderFrame: owningFolderFrame
+        ) else { return }
         hideDockGroupListChild(displayID: displayID)
     }
 

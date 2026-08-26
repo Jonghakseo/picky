@@ -21,6 +21,18 @@ enum PickyHUDDockGroupListOpenPolicy {
         return nil
     }
 
+    /// An open card outside the folder makes the list stale. All card-opening
+    /// paths converge on the geometry update, so this rule remains independent
+    /// of the initiating shortcut, rail tile, or daemon request.
+    static func afterOpeningSession(
+        openGroupID: String?,
+        openedSessionID: String?,
+        memberSessionIDs: [String]
+    ) -> String? {
+        guard let openGroupID, let openedSessionID else { return openGroupID }
+        return memberSessionIDs.contains(openedSessionID) ? openGroupID : nil
+    }
+
     /// The list cannot outlive its group.
     static func afterGroupRemoved(openGroupID: String?, removedGroupID: String) -> String? {
         openGroupID == removedGroupID ? nil : openGroupID

@@ -111,23 +111,24 @@ struct PickyDockTopEntryCenterPreferenceKey: PreferenceKey {
     }
 }
 
-/// Shared header typography and width reservation. The AppKit font gives
-/// regression tests a measurement source identical to the SwiftUI label role.
+/// Quiet metadata typography and width reservation for a folder tile label.
+/// The AppKit font gives regression tests a measurement source identical to
+/// the SwiftUI role.
 enum PickyHUDDockGroupHeaderPresentation {
-    static var font: Font { PickyHUDTypography.labelSemibold }
+    static var font: Font { PickyHUDTypography.minimum }
 
     static func labelFont(fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale) -> NSFont {
-        PickyHUDTypography.labelSemiboldNSFont(fontScale: fontScale)
+        PickyHUDTypography.minimumNSFont(fontScale: fontScale)
     }
 
     static func labelWidth(metrics: PickyHUDDockMetrics) -> CGFloat {
-        metrics.railWidth
+        metrics.sessionTileWidth
     }
 }
 
-/// Quiet, label-scale identity chrome for a single folder tile. It stays
-/// non-interactive so the tile remains the sole owner of opening, dragging,
-/// and its context menu.
+/// Quiet, centered identity label beneath a folder tile. The rail supplies
+/// the tap and group-reorder gesture so this label follows the tile's exact
+/// interaction path without acquiring a separate context menu.
 struct PickyHUDDockGroupHeader: View {
     let group: PickyDockGroup
     let metrics: PickyHUDDockMetrics
@@ -138,13 +139,10 @@ struct PickyHUDDockGroupHeader: View {
             .foregroundStyle(DS.Colors.textSecondary)
             .lineLimit(1)
             .truncationMode(.tail)
-            // The folder already carries the group color. Reserve the entire
-            // rail width for its identity label instead of spending it on an
-            // accent dot beside a narrower tile-width text column.
             .frame(
                 width: PickyHUDDockGroupHeaderPresentation.labelWidth(metrics: metrics),
                 height: metrics.groupHeaderHitAreaHeight,
-                alignment: .leading
+                alignment: .center
             )
             .contentShape(Rectangle())
             .accessibilityHidden(true)

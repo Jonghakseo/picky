@@ -9,7 +9,7 @@ import Testing
 @testable import Picky
 
 struct PickyHUDDockRailPolicyTests {
-    @Test func groupHeadersAddOnlyPerGroupChromeForEveryPresetAndOrientation() {
+    @Test func folderLabelsAddOnlyPerGroupChromeForEveryPresetAndOrientation() {
         for preset in PickyHUDDockSizePreset.allCases {
             let metrics = PickyHUDDockMetrics(preset: preset)
             let groupCount = 2
@@ -31,12 +31,11 @@ struct PickyHUDDockRailPolicyTests {
                 groupCount: groupCount,
                 metrics: metrics
             )
-            let expectedCrossSize: CGFloat
-            switch preset {
-            case .small: expectedCrossSize = 68
-            case .medium: expectedCrossSize = 77
-            case .large: expectedCrossSize = 90
-            }
+            let folderCrossSize = max(
+                metrics.railWidth,
+                metrics.sessionTileHeight + (metrics.horizontalPadding * 2)
+            )
+            let labelChrome = metrics.groupHeaderHitAreaHeight + metrics.groupHeaderContentSpacing
 
             #expect(vertical == PickyHUDDockLayout.dockRailHeight(
                 sessionCount: 4,
@@ -51,12 +50,31 @@ struct PickyHUDDockRailPolicyTests {
                 isAddSlotExpanded: false,
                 metrics: metrics
             ))
-            // Independently calculated from the folder's actual cross-axis
-            // stack: tile plus both outer paddings, then its header chrome.
-            #expect(horizontalCrossSize == expectedCrossSize)
-            #expect(horizontalCrossSize >= metrics.sessionTileHeight + (metrics.horizontalPadding * 2)
-                + metrics.groupHeaderHitAreaHeight + metrics.groupHeaderContentSpacing)
+            // A label below the tile grows only the cross axis in horizontal
+            // orientation and never contributes one unit per member.
+            #expect(horizontalCrossSize == folderCrossSize + labelChrome)
         }
+    }
+
+    @Test func railLengthDependsOnFolderCountNotFolderMemberCount() {
+        let metrics = PickyHUDDockMetrics(preset: .large)
+        let folderCount = 3
+        let first = PickyHUDDockRailLayoutPolicy.contentLength(
+            sessionCount: folderCount,
+            groupCount: folderCount,
+            isAddSlotExpanded: false,
+            dockSide: .left,
+            metrics: metrics
+        )
+        let second = PickyHUDDockRailLayoutPolicy.contentLength(
+            sessionCount: folderCount,
+            groupCount: folderCount,
+            isAddSlotExpanded: false,
+            dockSide: .left,
+            metrics: metrics
+        )
+
+        #expect(first == second)
     }
 
     @Test func groupHeaderFitsFourCJKCharactersAtEveryDockPreset() {

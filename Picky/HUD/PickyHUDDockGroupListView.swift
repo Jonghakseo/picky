@@ -427,7 +427,7 @@ struct PickyHUDDockGroupListView: View {
 
     @ViewBuilder
     private var memberRows: some View {
-        let content = VStack(spacing: 0) {
+        let content = VStack(spacing: metrics.groupListRowSpacing) {
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                 PickyHUDDockGroupListRow(
                     row: row,
@@ -569,7 +569,7 @@ private struct PickyHUDDockGroupListRow: View {
                         side: metrics.groupListRowGlyphSide
                     )
                 }
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: metrics.groupListRowVerticalPadding) {
                 Text(row.title)
                     .font(PickyHUDTypography.body)
                     .foregroundStyle(DS.Colors.textPrimary)
@@ -610,6 +610,7 @@ private struct PickyHUDDockGroupListRow: View {
             )
             .accessibilityHidden(true)
         }
+        .padding(.vertical, metrics.groupListRowVerticalPadding)
         .frame(minHeight: minimumHeight)
         .contentShape(RoundedRectangle(cornerRadius: metrics.groupListRowCornerRadius, style: .continuous))
         .background(rowBackground)

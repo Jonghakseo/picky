@@ -179,6 +179,21 @@ enum PickyHUDDockRenderPolicy {
         return true
     }
 
+    /// Projects the opened Pickle into its owning folder so the collapsed
+    /// rail preserves selection context without expanding the member list.
+    static func selectedGroupID(
+        openedSessionID: String?,
+        draggingSessionID: String?,
+        layout: PickyDockLayout
+    ) -> String? {
+        guard draggingSessionID == nil, let openedSessionID else { return nil }
+        for entry in layout.entries {
+            guard case .group(let group) = entry else { continue }
+            if group.memberSessionIDs.contains(openedSessionID) { return group.id }
+        }
+        return nil
+    }
+
     /// Projects the pending drag destination into the one folder that should
     /// advertise acceptance. Ordinary hover remains independent from this
     /// explicit drag state.

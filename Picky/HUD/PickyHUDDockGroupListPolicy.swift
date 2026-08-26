@@ -87,16 +87,16 @@ enum PickyHUDDockGroupListPolicy {
             + metrics.groupListHeaderBottomSpacing
     }
 
-    /// The panel and its owning folder both consume the same mouse down. The
-    /// folder is therefore explicitly inside the list interaction, preventing
-    /// the deferred outside-click monitor from racing the tile's toggle.
+    /// The panel and its owning folder block (tile plus label) consume the
+    /// same mouse down. Keeping that interaction frame separate from the
+    /// tile-only panel anchor prevents the outside monitor racing its toggle.
     static func shouldDismissForMouseDown(
         at screenPoint: CGPoint,
         panelFrame: CGRect,
-        owningFolderFrame: CGRect?
+        owningInteractionFrame: CGRect?
     ) -> Bool {
         !panelFrame.contains(screenPoint)
-            && !(owningFolderFrame?.contains(screenPoint) ?? false)
+            && !(owningInteractionFrame?.contains(screenPoint) ?? false)
     }
 
     /// True when the group has more members than the panel can show at once.

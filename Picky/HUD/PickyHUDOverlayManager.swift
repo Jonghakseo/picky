@@ -182,7 +182,11 @@ final class PickyHUDOverlayManager {
     }
 
     private struct DockGroupListGeometry {
+        /// Tile-only frames anchor the child panel to its folder badge.
         var badgeFrames: [String: CGRect] = [:]
+        /// Tile plus label frames keep all owning interactions out of the
+        /// outside-dismiss path without changing panel anchoring.
+        var interactionFrames: [String: CGRect] = [:]
         var railFrame: CGRect = .zero
         var openedSessionID: String?
     }
@@ -196,6 +200,7 @@ final class PickyHUDOverlayManager {
         /// scroll, hover, and drag state across dock snapshot updates.
         var model: PickyHUDDockGroupListPanelModel?
         var badgeFrames: [String: CGRect] = [:]
+        var interactionFrames: [String: CGRect] = [:]
         var railFrame: CGRect = .zero
         var openedSessionID: String?
         var localMouseDownMonitor: Any?
@@ -588,10 +593,11 @@ final class PickyHUDOverlayManager {
                 self?.selectDockGroupListRow(displayID: displayID, sessionID: sessionID)
             },
             dockGroupListFocusStore: dockGroupListFocusStore,
-            onDockGroupListGeometryChange: { [weak self] badgeFrames, railFrame, isCommandHintVisible, openedSessionID in
+            onDockGroupListGeometryChange: { [weak self] badgeFrames, interactionFrames, railFrame, isCommandHintVisible, openedSessionID in
                 self?.handleDockGroupListGeometryChange(
                     displayID: displayID,
                     badgeFrames: badgeFrames,
+                    interactionFrames: interactionFrames,
                     railFrame: railFrame,
                     isCommandShortcutHintVisible: isCommandHintVisible,
                     openedSessionID: openedSessionID
@@ -970,21 +976,25 @@ final class PickyHUDOverlayManager {
     private func handleDockGroupListGeometryChange(
         displayID: CGDirectDisplayID,
         badgeFrames: [String: CGRect],
+        interactionFrames: [String: CGRect],
         railFrame: CGRect,
         isCommandShortcutHintVisible _: Bool,
         openedSessionID: String?
     ) {
         let geometry = DockGroupListGeometry(
             badgeFrames: badgeFrames,
+            interactionFrames: interactionFrames,
             railFrame: railFrame,
             openedSessionID: openedSessionID
         )
         dockGroupListGeometryByDisplayID[displayID] = geometry
         guard var entry = dockGroupListChildrenByDisplayID[displayID] else { return }
         let needsContentSync = entry.badgeFrames != geometry.badgeFrames
+            || entry.interactionFrames != geometry.interactionFrames
             || entry.railFrame != geometry.railFrame
             || entry.openedSessionID != geometry.openedSessionID
         entry.badgeFrames = geometry.badgeFrames
+        entry.interactionFrames = geometry.interactionFrames
         entry.railFrame = geometry.railFrame
         entry.openedSessionID = geometry.openedSessionID
         dockGroupListChildrenByDisplayID[displayID] = entry
@@ -1044,6 +1054,7 @@ final class PickyHUDOverlayManager {
             ?? DockGroupListChildEntry(panel: makeDockGroupListChildPanel())
         if let geometry = dockGroupListGeometryByDisplayID[displayID] {
             entry.badgeFrames = geometry.badgeFrames
+            entry.interactionFrames = geometry.interactionFrames
             entry.railFrame = geometry.railFrame
             entry.openedSessionID = geometry.openedSessionID
         }
@@ -1412,22 +1423,22 @@ final class PickyHUDOverlayManager {
         } else {
             screenPoint = NSEvent.mouseLocation
         }
-        let owningFolderFrame: CGRect?
+        let owningInteractionFrame: CGRect?
         if let hudEntry = panelsByDisplayID[displayID],
            let openGroupID = entry.openGroupID,
-           let folderFrame = entry.badgeFrames[openGroupID] {
-            owningFolderFrame = PickyHUDDockGroupListScreenLayout.screenFrame(
+           let interactionFrame = entry.interactionFrames[openGroupID] {
+            owningInteractionFrame = PickyHUDDockGroupListScreenLayout.screenFrame(
                 hudPanelFrame: hudEntry.panel.frame,
-                swiftUIOrigin: folderFrame.origin,
-                panelSize: folderFrame.size
+                swiftUIOrigin: interactionFrame.origin,
+                panelSize: interactionFrame.size
             )
         } else {
-            owningFolderFrame = nil
+            owningInteractionFrame = nil
         }
         guard PickyHUDDockGroupListPolicy.shouldDismissForMouseDown(
             at: screenPoint,
             panelFrame: entry.panel.frame,
-            owningFolderFrame: owningFolderFrame
+            owningInteractionFrame: owningInteractionFrame
         ) else { return }
         hideDockGroupListChild(displayID: displayID)
     }

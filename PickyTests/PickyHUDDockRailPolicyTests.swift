@@ -9,72 +9,104 @@ import Testing
 @testable import Picky
 
 struct PickyHUDDockRailPolicyTests {
-    @Test func folderLabelsAddOnlyPerGroupChromeForEveryPresetAndOrientation() {
+    @Test func folderLabelsUseTheRenderedIdentityFontForEveryPresetAndAppFontScale() {
         for preset in PickyHUDDockSizePreset.allCases {
             let metrics = PickyHUDDockMetrics(preset: preset)
             let groupCount = 2
-            let vertical = PickyHUDDockRailLayoutPolicy.contentLength(
-                sessionCount: 4,
-                groupCount: groupCount,
-                isAddSlotExpanded: false,
-                dockSide: .left,
-                metrics: metrics
-            )
-            let horizontal = PickyHUDDockRailLayoutPolicy.contentLength(
-                sessionCount: 4,
-                groupCount: groupCount,
-                isAddSlotExpanded: false,
-                dockSide: .bottom,
-                metrics: metrics
-            )
-            let horizontalCrossSize = PickyHUDDockRailLayoutPolicy.horizontalCrossSize(
-                groupCount: groupCount,
-                metrics: metrics
-            )
-            let folderCrossSize = max(
-                metrics.railWidth,
-                metrics.sessionTileHeight + (metrics.horizontalPadding * 2)
-            )
-            let labelChrome = metrics.groupHeaderHitAreaHeight + metrics.groupHeaderContentSpacing
+            for fontScale: CGFloat in [1, 1.3] {
+                let vertical = PickyHUDDockRailLayoutPolicy.contentLength(
+                    sessionCount: 4,
+                    groupCount: groupCount,
+                    isAddSlotExpanded: false,
+                    dockSide: .left,
+                    metrics: metrics,
+                    fontScale: fontScale
+                )
+                let horizontal = PickyHUDDockRailLayoutPolicy.contentLength(
+                    sessionCount: 4,
+                    groupCount: groupCount,
+                    isAddSlotExpanded: false,
+                    dockSide: .bottom,
+                    metrics: metrics,
+                    fontScale: fontScale
+                )
+                let horizontalCrossSize = PickyHUDDockRailLayoutPolicy.horizontalCrossSize(
+                    groupCount: groupCount,
+                    metrics: metrics,
+                    fontScale: fontScale
+                )
+                let folderCrossSize = max(
+                    metrics.railWidth,
+                    metrics.sessionTileHeight + (metrics.horizontalPadding * 2)
+                )
+                let renderedFont = PickyHUDDockGroupHeaderPresentation.labelFont(fontScale: fontScale)
+                let renderedLineHeight = renderedFont.ascender - renderedFont.descender + renderedFont.leading
+                let labelHeight = PickyHUDDockGroupHeaderPresentation.labelHeight(
+                    metrics: metrics,
+                    fontScale: fontScale
+                )
+                let labelChrome = labelHeight + metrics.groupHeaderContentSpacing
 
-            #expect(vertical == PickyHUDDockLayout.dockRailHeight(
-                sessionCount: 4,
-                isAddSlotExpanded: false,
-                metrics: metrics
-            ) + PickyHUDDockLayout.dockGroupHeaderExtraLength(
-                groupHeaderCount: groupCount,
-                metrics: metrics
-            ))
-            #expect(horizontal == PickyHUDDockLayout.horizontalDockRailLength(
-                sessionCount: 4,
-                isAddSlotExpanded: false,
-                metrics: metrics
-            ))
-            // A label below the tile grows only the cross axis in horizontal
-            // orientation and never contributes one unit per member.
-            #expect(horizontalCrossSize == folderCrossSize + labelChrome)
+                #expect(labelHeight >= renderedLineHeight)
+                #expect(vertical == PickyHUDDockLayout.dockRailHeight(
+                    sessionCount: 4,
+                    isAddSlotExpanded: false,
+                    metrics: metrics
+                ) + PickyHUDDockLayout.dockGroupHeaderExtraLength(
+                    groupHeaderCount: groupCount,
+                    metrics: metrics,
+                    fontScale: fontScale
+                ))
+                #expect(horizontal == PickyHUDDockLayout.horizontalDockRailLength(
+                    sessionCount: 4,
+                    isAddSlotExpanded: false,
+                    metrics: metrics
+                ))
+                // A label below the tile grows only the cross axis in horizontal
+                // orientation and never contributes one unit per member.
+                #expect(horizontalCrossSize == folderCrossSize + labelChrome)
+            }
         }
     }
 
-    @Test func railLengthDependsOnFolderCountNotFolderMemberCount() {
+    @Test func railLengthDependsOnProjectedTopLevelSlotsNotGroupMemberCount() {
+        let compactLayout = PickyDockLayout(entries: [
+            .group(PickyDockGroup(id: "alpha", memberSessionIDs: ["a"])),
+            .group(PickyDockGroup(id: "beta", memberSessionIDs: ["b"]))
+        ])
+        let expandedLayout = PickyDockLayout(entries: [
+            .group(PickyDockGroup(id: "alpha", memberSessionIDs: ["a", "c", "d", "e", "f"])),
+            .group(PickyDockGroup(id: "beta", memberSessionIDs: ["b", "g", "h", "i", "j"]))
+        ])
+        let compactProjection = PickyDockProjector.project(
+            layout: compactLayout,
+            visibleSessionIDs: ["a", "b"]
+        )
+        let expandedProjection = PickyDockProjector.project(
+            layout: expandedLayout,
+            visibleSessionIDs: ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]
+        )
         let metrics = PickyHUDDockMetrics(preset: .large)
-        let folderCount = 3
-        let first = PickyHUDDockRailLayoutPolicy.contentLength(
-            sessionCount: folderCount,
-            groupCount: folderCount,
-            isAddSlotExpanded: false,
-            dockSide: .left,
-            metrics: metrics
-        )
-        let second = PickyHUDDockRailLayoutPolicy.contentLength(
-            sessionCount: folderCount,
-            groupCount: folderCount,
-            isAddSlotExpanded: false,
-            dockSide: .left,
-            metrics: metrics
-        )
 
-        #expect(first == second)
+        #expect(compactProjection.items.count == 2)
+        #expect(compactProjection.slots.count == 2)
+        #expect(expandedProjection.items.count == 2)
+        #expect(expandedProjection.slots.count == 2)
+        #expect(PickyHUDDockRailLayoutPolicy.contentLength(
+            sessionCount: compactProjection.slots.count,
+            groupCount: compactProjection.items.count,
+            isAddSlotExpanded: false,
+            dockSide: .left,
+            metrics: metrics,
+            fontScale: 1
+        ) == PickyHUDDockRailLayoutPolicy.contentLength(
+            sessionCount: expandedProjection.slots.count,
+            groupCount: expandedProjection.items.count,
+            isAddSlotExpanded: false,
+            dockSide: .left,
+            metrics: metrics,
+            fontScale: 1
+        ))
     }
 
     @Test func groupHeaderFitsFourCJKCharactersAtEveryDockPreset() {

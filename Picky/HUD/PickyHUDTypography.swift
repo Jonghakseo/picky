@@ -86,6 +86,17 @@ enum PickyHUDTypography {
     static var labelSemibold: Font { .system(size: Size.label, weight: .semibold) }
     static var labelBold: Font { .system(size: Size.label, weight: .bold) }
 
+    /// Quiet identity for a dock folder. It deliberately shares the compact
+    /// control-label scale while keeping its semantic purpose distinct from
+    /// metadata and badges.
+    static var dockGroupIdentity: Font { labelSemibold }
+
+    /// AppKit counterpart for the dock-group identity role. Layout reserves
+    /// this exact font's line height before SwiftUI renders its label.
+    static func dockGroupIdentityNSFont(fontScale: CGFloat) -> NSFont {
+        labelSemiboldNSFont(fontScale: fontScale)
+    }
+
     /// AppKit counterpart for width checks that share the label role with a
     /// SwiftUI surface.
     static func labelSemiboldNSFont(fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale) -> NSFont {

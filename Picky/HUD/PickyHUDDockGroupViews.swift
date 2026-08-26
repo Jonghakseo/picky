@@ -25,6 +25,16 @@ struct PickyHUDDockGroupBadgeFramePreferenceKey: PreferenceKey {
     }
 }
 
+/// Publishes each folder tile plus its label as the owning interaction area.
+/// This intentionally differs from the badge-only frame used to anchor a child panel.
+struct PickyHUDDockGroupInteractionFramePreferenceKey: PreferenceKey {
+    static let defaultValue: [String: CGRect] = [:]
+
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue()) { _, new in new }
+    }
+}
+
 /// Publishes the rail frame in the same HUD-root coordinate space as folder badges.
 struct PickyHUDDockRailFramePreferenceKey: PreferenceKey {
     static let defaultValue: CGRect = .zero
@@ -35,13 +45,14 @@ struct PickyHUDDockRailFramePreferenceKey: PreferenceKey {
     }
 }
 
-private struct PickyHUDDockGroupBadgeFrameReporter: View {
+private struct PickyHUDDockGroupFrameReporter<Key: PreferenceKey>: View where Key.Value == [String: CGRect] {
     let groupID: String
+    let key: Key.Type
 
     var body: some View {
         GeometryReader { proxy in
             Color.clear.preference(
-                key: PickyHUDDockGroupBadgeFramePreferenceKey.self,
+                key: key,
                 value: [groupID: proxy.frame(in: .named(PickyHUDVisibleChromeCoordinateSpaceName))]
             )
         }
@@ -61,7 +72,17 @@ struct PickyHUDDockRailFrameReporter: View {
 
 extension View {
     func publishDockGroupBadgeFrame(groupID: String) -> some View {
-        background(PickyHUDDockGroupBadgeFrameReporter(groupID: groupID))
+        background(PickyHUDDockGroupFrameReporter(
+            groupID: groupID,
+            key: PickyHUDDockGroupBadgeFramePreferenceKey.self
+        ))
+    }
+
+    func publishDockGroupInteractionFrame(groupID: String) -> some View {
+        background(PickyHUDDockGroupFrameReporter(
+            groupID: groupID,
+            key: PickyHUDDockGroupInteractionFramePreferenceKey.self
+        ))
     }
 
     func publishDockSlotCenter(
@@ -111,18 +132,27 @@ struct PickyDockTopEntryCenterPreferenceKey: PreferenceKey {
     }
 }
 
-/// Quiet metadata typography and width reservation for a folder tile label.
-/// The AppKit font gives regression tests a measurement source identical to
-/// the SwiftUI role.
+/// Quiet identity typography and geometry for a folder tile label. The AppKit
+/// font gives layout and regression tests the same measurement source SwiftUI renders.
 enum PickyHUDDockGroupHeaderPresentation {
-    static var font: Font { PickyHUDTypography.minimum }
+    static var font: Font { PickyHUDTypography.dockGroupIdentity }
 
     static func labelFont(fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale) -> NSFont {
-        PickyHUDTypography.minimumNSFont(fontScale: fontScale)
+        PickyHUDTypography.dockGroupIdentityNSFont(fontScale: fontScale)
     }
 
     static func labelWidth(metrics: PickyHUDDockMetrics) -> CGFloat {
         metrics.sessionTileWidth
+    }
+
+    /// The accessible label hit area is the exact rendered line height plus a
+    /// `space.1` inset above and below. This same metric drives rail geometry.
+    static func labelHeight(metrics: PickyHUDDockMetrics, fontScale: CGFloat) -> CGFloat {
+        lineHeight(for: labelFont(fontScale: fontScale)) + (metrics.groupHeaderVerticalInset * 2)
+    }
+
+    private static func lineHeight(for font: NSFont) -> CGFloat {
+        font.ascender - font.descender + font.leading
     }
 }
 
@@ -132,6 +162,7 @@ enum PickyHUDDockGroupHeaderPresentation {
 struct PickyHUDDockGroupHeader: View {
     let group: PickyDockGroup
     let metrics: PickyHUDDockMetrics
+    let fontScale: CGFloat
 
     var body: some View {
         Text(group.displayName)
@@ -141,7 +172,10 @@ struct PickyHUDDockGroupHeader: View {
             .truncationMode(.tail)
             .frame(
                 width: PickyHUDDockGroupHeaderPresentation.labelWidth(metrics: metrics),
-                height: metrics.groupHeaderHitAreaHeight,
+                height: PickyHUDDockGroupHeaderPresentation.labelHeight(
+                    metrics: metrics,
+                    fontScale: fontScale
+                ),
                 alignment: .center
             )
             .contentShape(Rectangle())

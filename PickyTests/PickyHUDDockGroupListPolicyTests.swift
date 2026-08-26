@@ -134,25 +134,37 @@ struct PickyHUDDockGroupListPolicyTests {
         #expect(medium.height > PickyHUDDockGroupListPolicy.panelChromeHeight(metrics: mediumMetrics))
     }
 
-    @Test func mouseDownInsideTheOwningFolderIsNotAnOutsideDismissal() {
+    @Test func outsideDismissalExcludesTheOwningTileAndLabelButNotAdjacentGaps() {
         let panelFrame = CGRect(x: 100, y: 100, width: 300, height: 360)
-        let folderFrame = CGRect(x: 20, y: 180, width: 54, height: 54)
+        // The interaction frame includes the 54pt tile, its 4pt gap, and the
+        // label hit area below it. The panel's anchor remains tile-only.
+        let owningInteractionFrame = CGRect(x: 20, y: 180, width: 54, height: 82)
 
         #expect(PickyHUDDockGroupListPolicy.shouldDismissForMouseDown(
             at: CGPoint(x: 45, y: 205),
             panelFrame: panelFrame,
-            owningFolderFrame: folderFrame
+            owningInteractionFrame: owningInteractionFrame
         ) == false)
         #expect(PickyHUDDockGroupListPolicy.shouldDismissForMouseDown(
-            at: CGPoint(x: 120, y: 120),
+            at: CGPoint(x: 45, y: 250),
             panelFrame: panelFrame,
-            owningFolderFrame: folderFrame
+            owningInteractionFrame: owningInteractionFrame
         ) == false)
+        #expect(PickyHUDDockGroupListPolicy.shouldDismissForMouseDown(
+            at: CGPoint(x: 80, y: 205),
+            panelFrame: panelFrame,
+            owningInteractionFrame: owningInteractionFrame
+        ))
         #expect(PickyHUDDockGroupListPolicy.shouldDismissForMouseDown(
             at: CGPoint(x: 80, y: 80),
             panelFrame: panelFrame,
-            owningFolderFrame: folderFrame
+            owningInteractionFrame: owningInteractionFrame
         ))
+        #expect(PickyHUDDockGroupListPolicy.shouldDismissForMouseDown(
+            at: CGPoint(x: 120, y: 120),
+            panelFrame: panelFrame,
+            owningInteractionFrame: owningInteractionFrame
+        ) == false)
     }
 
     @Test func verticalDocksAnchorTheFolderTopAndOpenTowardTheScreenInterior() {

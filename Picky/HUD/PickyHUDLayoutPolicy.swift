@@ -164,9 +164,10 @@ struct PickyHUDDockMetrics: Equatable {
     var statusDotSide: CGFloat { max(6, scaled(8)) }
     var archiveRingSide: CGFloat { max(36, scaled(42)) }
     var archiveBadgeSide: CGFloat { max(12, scaled(14)) }
-    /// The folder identity is a quiet metadata label beneath the tile. Its
-    /// height and gap follow the 4pt scale while scaling with dock presets.
-    var groupHeaderHitAreaHeight: CGFloat { scaled(12) } // space.3
+    /// The folder identity label reserves its exact rendered line height plus
+    /// deliberate `space.1` vertical hit insets. The gap below the tile is also
+    /// `space.1`, so the full group block follows the 4pt spacing scale.
+    var groupHeaderVerticalInset: CGFloat { scaled(4) } // space.1
     var groupHeaderContentSpacing: CGFloat { scaled(4) } // space.1
     /// Width of the dock-icon hover preview card. Scales together with the dock
     /// rail itself so the preview never looks oversized next to a Small dock or
@@ -300,21 +301,28 @@ enum PickyHUDDockLayout {
     /// axis and any extra padding reads as wasted space.
     static func horizontalDockRailCrossSize(
         hasGroupHeaders: Bool,
-        metrics: PickyHUDDockMetrics = .medium
+        metrics: PickyHUDDockMetrics = .medium,
+        fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
     ) -> CGFloat {
         guard hasGroupHeaders else { return metrics.railWidth }
         let folderCrossSize = max(
             metrics.railWidth,
             metrics.sessionTileHeight + (metrics.horizontalPadding * 2)
         )
-        return folderCrossSize + metrics.groupHeaderHitAreaHeight + metrics.groupHeaderContentSpacing
+        return folderCrossSize
+            + PickyHUDDockGroupHeaderPresentation.labelHeight(metrics: metrics, fontScale: fontScale)
+            + metrics.groupHeaderContentSpacing
     }
 
     static func dockGroupHeaderExtraLength(
         groupHeaderCount: Int,
-        metrics: PickyHUDDockMetrics = .medium
+        metrics: PickyHUDDockMetrics = .medium,
+        fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
     ) -> CGFloat {
-        CGFloat(groupHeaderCount) * (metrics.groupHeaderHitAreaHeight + metrics.groupHeaderContentSpacing)
+        CGFloat(groupHeaderCount) * (
+            PickyHUDDockGroupHeaderPresentation.labelHeight(metrics: metrics, fontScale: fontScale)
+                + metrics.groupHeaderContentSpacing
+        )
     }
 
     static func horizontalDockRailLength(

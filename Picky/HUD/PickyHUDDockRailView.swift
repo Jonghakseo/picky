@@ -140,6 +140,7 @@ struct PickyHUDDockRailView: View {
     @State private var groupDragReferenceTopEntryIDs: [String] = []
 
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+    @Environment(\.pickyAppFontScale) private var fontScale
 
     /// macOS Dock-style pull-out. While dragging an icon or group clearly
     /// away from the dock on the cross axis, we arm a destructive release:
@@ -272,7 +273,8 @@ struct PickyHUDDockRailView: View {
     private var horizontalRailCrossSize: CGFloat {
         PickyHUDDockRailLayoutPolicy.horizontalCrossSize(
             groupCount: groupCount,
-            metrics: metrics
+            metrics: metrics,
+            fontScale: fontScale
         )
     }
 
@@ -283,7 +285,8 @@ struct PickyHUDDockRailView: View {
                 groupCount: groupCount,
                 isAddSlotExpanded: isAddSlotExpanded,
                 dockSide: dockSide,
-                metrics: metrics
+                metrics: metrics,
+                fontScale: fontScale
             ),
             availableLength: availableRailLength,
             fixedChromeLength: PickyHUDDockRailLayoutPolicy.fixedChromeLength(
@@ -439,10 +442,11 @@ struct PickyHUDDockRailView: View {
             }
             .highPriorityGesture(groupReorderGesture(for: group.id))
 
-            PickyHUDDockGroupHeader(group: group, metrics: metrics)
+            PickyHUDDockGroupHeader(group: group, metrics: metrics, fontScale: fontScale)
                 .onTapGesture { onOpenDockGroupList(group.id) }
                 .highPriorityGesture(groupReorderGesture(for: group.id))
         }
+        .publishDockGroupInteractionFrame(groupID: group.id)
         .id("group:\(group.id)")
         .opacity(draggingGroupID == group.id && groupPullOutArmed ? 0.5 : 1)
         .offset(draggingGroupID == group.id ? groupDragOffset : .zero)

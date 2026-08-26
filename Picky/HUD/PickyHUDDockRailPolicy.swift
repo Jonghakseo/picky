@@ -16,7 +16,8 @@ enum PickyHUDDockRailLayoutPolicy {
         groupCount: Int = 0,
         isAddSlotExpanded: Bool,
         dockSide: PickyHUDDockSide,
-        metrics: PickyHUDDockMetrics
+        metrics: PickyHUDDockMetrics,
+        fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
     ) -> CGFloat {
         if dockSide.orientation == .horizontal {
             return PickyHUDDockLayout.horizontalDockRailLength(
@@ -31,17 +32,20 @@ enum PickyHUDDockRailLayoutPolicy {
             metrics: metrics
         ) + PickyHUDDockLayout.dockGroupHeaderExtraLength(
             groupHeaderCount: groupCount,
-            metrics: metrics
+            metrics: metrics,
+            fontScale: fontScale
         )
     }
 
     static func horizontalCrossSize(
         groupCount: Int,
-        metrics: PickyHUDDockMetrics
+        metrics: PickyHUDDockMetrics,
+        fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
     ) -> CGFloat {
         PickyHUDDockLayout.horizontalDockRailCrossSize(
             hasGroupHeaders: groupCount > 0,
-            metrics: metrics
+            metrics: metrics,
+            fontScale: fontScale
         )
     }
 

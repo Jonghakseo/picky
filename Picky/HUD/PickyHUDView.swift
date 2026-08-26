@@ -54,8 +54,9 @@ struct PickyHUDView: View {
     /// reads it, so number keys and arrows resolve against whichever surface is
     /// frontmost without the two copies drifting.
     @ObservedObject var dockGroupListFocusStore = PickyHUDDockGroupListFocusStore()
-    var onDockGroupListGeometryChange: (_ badgeFrames: [String: CGRect], _ railFrame: CGRect, _ isCommandHintVisible: Bool, _ openedSessionID: String?) -> Void = { _, _, _, _ in }
+    var onDockGroupListGeometryChange: (_ badgeFrames: [String: CGRect], _ interactionFrames: [String: CGRect], _ railFrame: CGRect, _ isCommandHintVisible: Bool, _ openedSessionID: String?) -> Void = { _, _, _, _, _ in }
     @State private var dockGroupBadgeFrames: [String: CGRect] = [:]
+    @State private var dockGroupInteractionFrames: [String: CGRect] = [:]
     @State private var dockRailFrame: CGRect = .zero
     @State private var heldSession: PickyHUDDockHold?
     @State private var pendingManualAutoOpenSessionID: String?
@@ -181,6 +182,10 @@ struct PickyHUDView: View {
             }
             .onPreferenceChange(PickyHUDDockGroupBadgeFramePreferenceKey.self) { frames in
                 dockGroupBadgeFrames = frames
+                reportDockGroupListGeometry()
+            }
+            .onPreferenceChange(PickyHUDDockGroupInteractionFramePreferenceKey.self) { frames in
+                dockGroupInteractionFrames = frames
                 reportDockGroupListGeometry()
             }
             .onPreferenceChange(PickyHUDDockRailFramePreferenceKey.self) { frame in
@@ -698,7 +703,13 @@ struct PickyHUDView: View {
     }
 
     private func reportDockGroupListGeometry() {
-        onDockGroupListGeometryChange(dockGroupBadgeFrames, dockRailFrame, isCommandShortcutHintVisible, openedSessionID)
+        onDockGroupListGeometryChange(
+            dockGroupBadgeFrames,
+            dockGroupInteractionFrames,
+            dockRailFrame,
+            isCommandShortcutHintVisible,
+            openedSessionID
+        )
     }
 
     private var isPointerInsideHUDSurface: Bool {

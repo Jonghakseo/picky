@@ -105,6 +105,7 @@ Picky는 macOS HUD이므로 Apple 웹 레퍼런스의 17–56px 마케팅 스케
 | `type.body.compact` | 12.5pt | Regular | 밀도 높은 보조 본문 | `bodyCompact` |
 | `type.supporting` | 12pt | Regular | secondary content | `supporting` |
 | `type.label` | 11.5pt | Semibold | control label, badge | `label*` |
+| `type.dockGroupIdentity` | 11.5pt | Semibold | quiet interactive dock folder identity | `dockGroupIdentity` |
 | `type.status` | 11pt | Regular/Semibold | 상태와 progress | `status*` |
 | `type.meta` | 10.5pt | Regular | timestamp, counts | `meta*` |
 | `type.minimum` | 10pt | Regular/Semibold | 제한된 metadata 예외 | `minimum*` |
@@ -114,6 +115,7 @@ Picky는 macOS HUD이므로 Apple 웹 레퍼런스의 17–56px 마케팅 스케
 ### Typography rules
 
 - regular와 semibold를 기본 ladder로 사용한다.
+- 사용자 지정 Dock 그룹명은 `type.dockGroupIdentity`를 사용한다. 이는 `type.label` 기반의 semantic alias이며 metadata 전용 `type.minimum`을 사용하지 않는다.
 - medium은 dense monospace/status에서 semibold가 과도하게 보이는 경우에만 허용한다.
 - bold/heavy는 작은 숫자 badge나 강한 경고 등 제한된 경우에만 사용한다.
 - monospace는 명령, 경로, code, 시간, token count, 구조화 상태에 사용한다.

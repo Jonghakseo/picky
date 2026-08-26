@@ -3,6 +3,15 @@ import Combine
 import SwiftUI
 import UniformTypeIdentifiers
 
+enum PickyRecentPickleFolderPickerSelection {
+    /// Run the selection while the presenting rail still owns its routing state.
+    /// Dismissing first clears that state through the popover binding.
+    static func perform(action: () -> Void, dismiss: () -> Void) {
+        action()
+        dismiss()
+    }
+}
+
 struct PickyRecentPickleFolderPolicy {
     static func visibleCwds(_ cwds: [String], exists: (String) -> Bool) -> [String] {
         visibleRecentCwds(cwds, pinned: [], exists: exists)
@@ -115,8 +124,10 @@ struct PickyRecentPickleFolderPickerView: View {
             }
             Divider()
             Button {
-                isPresented = false
-                onChooseFolder()
+                PickyRecentPickleFolderPickerSelection.perform(
+                    action: onChooseFolder,
+                    dismiss: { isPresented = false }
+                )
             } label: {
                 Label(L10n.t("dock.recentFolders.chooseFolder"), systemImage: "folder.badge.plus")
                     .frame(maxWidth: .infinity, minHeight: 28)
@@ -165,8 +176,10 @@ struct PickyRecentPickleFolderPickerView: View {
                                 isReorderable: pinnedOrder.count > 1,
                                 isDragging: draggingPinnedCwd == cwd,
                                 onCreate: {
-                                    isPresented = false
-                                    onCreatePickleInRecentFolder(cwd)
+                                    PickyRecentPickleFolderPickerSelection.perform(
+                                        action: { onCreatePickleInRecentFolder(cwd) },
+                                        dismiss: { isPresented = false }
+                                    )
                                 },
                                 onPin: {},
                                 onUnpin: {
@@ -206,8 +219,10 @@ struct PickyRecentPickleFolderPickerView: View {
                                 cwd: cwd,
                                 isPinned: false,
                                 onCreate: {
-                                    isPresented = false
-                                    onCreatePickleInRecentFolder(cwd)
+                                    PickyRecentPickleFolderPickerSelection.perform(
+                                        action: { onCreatePickleInRecentFolder(cwd) },
+                                        dismiss: { isPresented = false }
+                                    )
                                 },
                                 onPin: {
                                     onPinPickleFolder(cwd)

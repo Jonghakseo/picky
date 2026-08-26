@@ -1309,9 +1309,6 @@ struct PickyHUDDockRailView: View {
         anchoredTo anchor: Anchor,
         anchorGroupID: String?
     ) -> some View {
-        let actionTarget = PickyHUDDockNewPickleActionTarget(
-            activeTargetGroupID: newPickleTargetGroupID
-        )
         let presentationRequestID = PickyHUDDockGroupPickerPresentationIdentity.requestID(
             forAnchorGroupID: anchorGroupID,
             activeAnchorGroupID: newPickleAnchorGroupID,
@@ -1327,10 +1324,10 @@ struct PickyHUDDockRailView: View {
             pinnedPickleCwds: pinnedPickleCwds,
             recentPickleCwds: recentPickleCwds,
             onCreatePickleInRecentFolder: { cwd in
-                createPickleInRecentFolder(cwd, targetGroupID: actionTarget.groupID)
+                createPickleInRecentFolder(cwd)
             },
             onChooseFolder: {
-                chooseFolderForNewPickle(targetGroupID: actionTarget.groupID)
+                chooseFolderForNewPickle()
             },
             onRemoveRecentPickleFolder: onRemoveRecentPickleFolder,
             onPinPickleFolder: onPinPickleFolder,
@@ -1346,7 +1343,8 @@ struct PickyHUDDockRailView: View {
         )
     }
 
-    private func createPickleInRecentFolder(_ cwd: String, targetGroupID: String?) {
+    private func createPickleInRecentFolder(_ cwd: String) {
+        let targetGroupID = newPickleTargetGroupID
         isRecentPickleFolderPickerPresented = false
         newPickleAnchorGroupID = nil
         newPickleTargetGroupID = nil
@@ -1354,7 +1352,8 @@ struct PickyHUDDockRailView: View {
         onCreatePickleInRecentFolder(cwd, targetGroupID)
     }
 
-    private func chooseFolderForNewPickle(targetGroupID: String?) {
+    private func chooseFolderForNewPickle() {
+        let targetGroupID = newPickleTargetGroupID
         isRecentPickleFolderPickerPresented = false
         newPickleAnchorGroupID = nil
         newPickleTargetGroupID = nil
@@ -1363,9 +1362,6 @@ struct PickyHUDDockRailView: View {
     }
 
     private var addAgentSlotButton: some View {
-        let actionTarget = PickyHUDDockNewPickleActionTarget(
-            activeTargetGroupID: newPickleTargetGroupID
-        )
         let presentationRequestID = PickyHUDDockGroupPickerPresentationIdentity.requestID(
             forAnchorGroupID: nil,
             activeAnchorGroupID: newPickleAnchorGroupID,
@@ -1404,10 +1400,10 @@ struct PickyHUDDockRailView: View {
             pinnedPickleCwds: pinnedPickleCwds,
             recentPickleCwds: recentPickleCwds,
             onCreatePickleInRecentFolder: { cwd in
-                createPickleInRecentFolder(cwd, targetGroupID: actionTarget.groupID)
+                createPickleInRecentFolder(cwd)
             },
             onChooseFolder: {
-                chooseFolderForNewPickle(targetGroupID: actionTarget.groupID)
+                chooseFolderForNewPickle()
             },
             onRemoveRecentPickleFolder: onRemoveRecentPickleFolder,
             onPinPickleFolder: onPinPickleFolder,
@@ -1434,9 +1430,6 @@ struct PickyHUDDockRailView: View {
     }
 
     private var collapsibleAddAgentSlot: some View {
-        let actionTarget = PickyHUDDockNewPickleActionTarget(
-            activeTargetGroupID: newPickleTargetGroupID
-        )
         let presentationRequestID = PickyHUDDockGroupPickerPresentationIdentity.requestID(
             forAnchorGroupID: nil,
             activeAnchorGroupID: newPickleAnchorGroupID,
@@ -1495,10 +1488,10 @@ struct PickyHUDDockRailView: View {
             pinnedPickleCwds: pinnedPickleCwds,
             recentPickleCwds: recentPickleCwds,
             onCreatePickleInRecentFolder: { cwd in
-                createPickleInRecentFolder(cwd, targetGroupID: actionTarget.groupID)
+                createPickleInRecentFolder(cwd)
             },
             onChooseFolder: {
-                chooseFolderForNewPickle(targetGroupID: actionTarget.groupID)
+                chooseFolderForNewPickle()
             },
             onRemoveRecentPickleFolder: onRemoveRecentPickleFolder,
             onPinPickleFolder: onPinPickleFolder,

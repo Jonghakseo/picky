@@ -10,16 +10,6 @@ enum PickyHUDDockGroupTileAction: Equatable {
     case toggleMemberList
 }
 
-/// Immutable routing intent captured while the popover is presented. Native
-/// popover dismissal may clear its binding before the selected action runs.
-struct PickyHUDDockNewPickleActionTarget: Equatable {
-    let groupID: String?
-
-    init(activeTargetGroupID: String?) {
-        self.groupID = activeTargetGroupID
-    }
-}
-
 enum PickyHUDDockNewPicklePopoverPolicy {
     /// A group without a visible member has no list to disclose. Its one rail
     /// slot is instead the targeted create affordance while remaining a drag

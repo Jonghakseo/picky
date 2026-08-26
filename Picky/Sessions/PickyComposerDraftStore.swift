@@ -20,7 +20,7 @@ final class PickyUserDefaultsComposerDraftStore: PickyComposerDraftStoring {
 
     private let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = PickyRuntimeEnvironment.userDefaults) {
         self.defaults = defaults
     }
 
@@ -76,7 +76,7 @@ final class PickyUserDefaultsComposerAttachmentDraftStore: PickyComposerAttachme
 
     private let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = PickyRuntimeEnvironment.userDefaults) {
         self.defaults = defaults
     }
 

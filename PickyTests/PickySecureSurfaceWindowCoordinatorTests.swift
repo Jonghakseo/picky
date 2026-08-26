@@ -104,7 +104,8 @@ struct PickySecureSurfaceWindowCoordinatorTests {
         #expect(panel.secureSurfaceVisibilityRevision == 1)
     }
 
-    @Test func secureSuppressionAndRestorationUpdateTheHUDActualVisibilityStore() {
+    @Test(.enabled(if: PickyRuntimeEnvironment.runsPrePushUIEffectTests))
+    func secureSuppressionAndRestorationUpdateTheHUDActualVisibilityStore() {
         let displayID: CGDirectDisplayID = 42
         let visibilityStore = PickyHUDActualPanelVisibilityStore()
         let hud = PickyHUDPanel(

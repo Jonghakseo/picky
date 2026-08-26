@@ -96,11 +96,18 @@ final class QuickInputPanelManager {
         recipient: QuickInputRecipientProjection = .main
     ) {
         guard !viewModel.isSending else { return }
+        viewModel.errorMessage = nil
+        lastCursorLocation = cursorLocation
+
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else {
+            viewModel.beginPresentation(recipient: recipient)
+            onVisibilityChange(true)
+            return
+        }
+
         if panel == nil {
             createPanel()
         }
-        viewModel.errorMessage = nil
-        lastCursorLocation = cursorLocation
         updateHistoryCardHeightLimit(near: cursorLocation)
         positionPanelNearCursor(cursorLocation)
         panel?.makeKeyAndOrderFront(nil)
@@ -125,6 +132,7 @@ final class QuickInputPanelManager {
     /// `scrollTo` never produces `NSEvent`s, which cleanly separates the
     /// initial anchor scroll from user intent.
     private func installScrollWheelMonitorIfNeeded() {
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }
         guard scrollWheelMonitor == nil else { return }
         scrollWheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             MainActor.assumeIsolated {

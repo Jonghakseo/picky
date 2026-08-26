@@ -13,11 +13,16 @@ final class LocaleManagerTests: XCTestCase {
     /// background contexts (e.g. OnboardingAgentClient's scenario builder).
     func testApplyKoreanUpdatesLocaleAndSnapshots() {
         let manager = LocaleManager.shared
+        let previousChoice = manager.choice
+        let previousAppleLanguages = UserDefaults.standard.array(forKey: "AppleLanguages") as? [String]
+        defer { manager.apply(previousChoice) }
+
         manager.apply(.korean)
         XCTAssertEqual(manager.effectiveLocale.identifier, "ko")
         XCTAssertEqual(LocaleManager.nonisolatedEffectiveLocale.identifier, "ko")
         // Bundle identity is reference-equal because Bundle(path:) caches.
         XCTAssertTrue(manager.stringsBundle === LocaleManager.nonisolatedStringsBundle)
+        XCTAssertEqual(UserDefaults.standard.array(forKey: "AppleLanguages") as? [String], previousAppleLanguages)
     }
 
     /// `.system` resolves the OS preference into one of Picky's supported codes
@@ -31,8 +36,13 @@ final class LocaleManagerTests: XCTestCase {
     /// catalog lookups for an English-only key still return a usable string.
     func testEnglishChoicePinsRegardlessOfOS() {
         let manager = LocaleManager.shared
+        let previousChoice = manager.choice
+        let previousAppleLanguages = UserDefaults.standard.array(forKey: "AppleLanguages") as? [String]
+        defer { manager.apply(previousChoice) }
+
         manager.apply(.english)
         XCTAssertEqual(manager.effectiveLocale.identifier, "en")
         XCTAssertEqual(LocaleManager.nonisolatedEffectiveLocale.identifier, "en")
+        XCTAssertEqual(UserDefaults.standard.array(forKey: "AppleLanguages") as? [String], previousAppleLanguages)
     }
 }

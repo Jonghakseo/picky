@@ -22,7 +22,7 @@ final class PickySessionUtilityUIStateStore: ObservableObject {
     private var records: [String: Record]
     @Published private(set) var revision = 0
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = PickyRuntimeEnvironment.userDefaults) {
         self.defaults = defaults
         records = Self.loadRecords(from: defaults)
     }

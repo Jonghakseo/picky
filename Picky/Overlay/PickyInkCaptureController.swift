@@ -177,6 +177,7 @@ final class PickyInkCaptureController {
     }
 
     private func startEventTapIfNeeded() -> Bool {
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return false }
         guard eventTap == nil else { return true }
         let eventTypes: [CGEventType] = [
             .mouseMoved,

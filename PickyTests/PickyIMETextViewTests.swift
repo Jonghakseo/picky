@@ -53,7 +53,8 @@ struct PickyIMETextViewTests {
         #expect(second.string == "second")
     }
 
-    @Test func responderActionsUndoAndRedoTheFocusedEditorsPrivateHistory() throws {
+    @Test(.enabled(if: PickyRuntimeEnvironment.runsPrePushUIEffectTests))
+    func responderActionsUndoAndRedoTheFocusedEditorsPrivateHistory() throws {
         let panel = PickyHUDPanel(
             contentRect: NSRect(x: 0, y: 0, width: 240, height: 120),
             styleMask: [.borderless, .nonactivatingPanel],

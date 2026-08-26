@@ -18,6 +18,7 @@ enum PickyApp {
 
     @MainActor
     static func main() {
+        PickyRuntimeEnvironment.resetUnitTestUserDefaults()
         let app = NSApplication.shared
         let delegate = CompanionAppDelegate()
         Self.delegate = delegate
@@ -214,7 +215,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             appBuild: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown"
         )
 
-        UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 0])
+        PickyRuntimeEnvironment.userDefaults.register(defaults: ["NSInitialToolTipDelay": 0])
         UNUserNotificationCenter.current().delegate = self
         PickyAppMenuInstaller.install(updaterController: updaterController.standardController)
         // Touch the lazy property so Sparkle starts checking on launch when
@@ -462,7 +463,10 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        guard !Self.isRunningUnitTests else { return }
+        if Self.isRunningUnitTests {
+            PickyRuntimeEnvironment.resetUnitTestUserDefaults()
+            return
+        }
         if let observer = settingsSaveObserver {
             NotificationCenter.default.removeObserver(observer)
             settingsSaveObserver = nil

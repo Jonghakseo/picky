@@ -225,7 +225,6 @@ final class PickyHUDOverlayManager {
     private var dragStartPositionsByDisplayID: [String: PickyHUDDockPosition]?
     private var resizeStartCardSizesByDisplayID: [String: PickyHUDCardSize]?
 
-
     init(
         viewModel: any PickyHUDSessionLifecycle,
         appearanceStore: PickyAppearanceStore,
@@ -1404,6 +1403,7 @@ final class PickyHUDOverlayManager {
     }
 
     private func installDockGroupListMouseMonitors(displayID: CGDirectDisplayID) {
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }
         guard var entry = dockGroupListChildrenByDisplayID[displayID], entry.localMouseDownMonitor == nil else { return }
         entry.localMouseDownMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
             Task { @MainActor in self?.dismissDockGroupListForOutsideMouseDown(displayID: displayID, event: event) }

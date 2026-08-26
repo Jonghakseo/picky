@@ -125,13 +125,15 @@ struct PickyVoiceInputTargetTests {
         #expect(store.screenContextTargetRevision > armedRevision)
     }
 
-    @Test func appKitRegionExcludesOrderedOutHiddenAndIneligibleCards() throws {
+    @Test(.enabled(if: PickyRuntimeEnvironment.runsPrePushUIEffectTests))
+    func appKitRegionExcludesOrderedOutHiddenAndIneligibleCards() throws {
         let window = NSWindow(
             contentRect: NSRect(x: -10_000, y: -10_000, width: 300, height: 200),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
+        defer { window.orderOut(nil) }
         let root = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 200))
         let region = PickyVoiceTargetHitRegionNSView(frame: NSRect(x: 20, y: 30, width: 120, height: 80))
         region.sessionID = "pickle-visible"

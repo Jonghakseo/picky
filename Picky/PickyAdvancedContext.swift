@@ -106,7 +106,9 @@ struct ChainedSelectedTextProvider: PickySelectedTextProviding {
 
 struct AccessibilitySelectedTextProvider: PickySelectedTextProviding {
     var frontmostApplicationProvider: () -> NSRunningApplication? = { NSWorkspace.shared.frontmostApplication }
-    var axTrustChecker: () -> Bool = { AXIsProcessTrusted() }
+    var axTrustChecker: () -> Bool = {
+        PickyRuntimeEnvironment.allowsUserEnvironmentEffects && AXIsProcessTrusted()
+    }
     var ignoredBundleIds: Set<String> = Set([Bundle.main.bundleIdentifier].compactMap { $0 })
     var candidateElementsProvider: (pid_t) -> [AXUIElement] = AccessibilitySelectedTextProvider.defaultCandidateElements
     var selectedTextFinder: ([AXUIElement], String?) -> String? = AccessibilitySelectedTextProvider.firstSelectedText
@@ -555,6 +557,7 @@ struct ClipboardSelectedTextProvider: PickySelectedTextProviding {
     }
 
     static func copySelectionWithKeyboardShortcut() -> Bool {
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return false }
         guard AXIsProcessTrusted() else { return false }
         let source = CGEventSource(stateID: .combinedSessionState)
         guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 8, keyDown: true),
@@ -571,6 +574,7 @@ struct CGWindowPickyWindowContextProvider: PickyWindowContextProviding {
     var frontmostApplicationProvider: () -> NSRunningApplication? = { NSWorkspace.shared.frontmostApplication }
 
     func activeWindowContext() -> PickyWindowContext? {
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return nil }
         guard let pid = frontmostApplicationProvider()?.processIdentifier,
               let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return nil }
         let window = windows.first { info in

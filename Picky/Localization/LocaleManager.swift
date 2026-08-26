@@ -81,14 +81,17 @@ final class LocaleManager: ObservableObject {
 
         // Mirror the choice into `AppleLanguages` so the system-owned menu
         // bar items and any framework-driven dialogs pick the same language
-        // on the next cold launch. `.system` clears the override.
-        switch newChoice {
-        case .system:
-            UserDefaults.standard.removeObject(forKey: "AppleLanguages")
-        case .english:
-            UserDefaults.standard.set(["en"], forKey: "AppleLanguages")
-        case .korean:
-            UserDefaults.standard.set(["ko"], forKey: "AppleLanguages")
+        // on the next cold launch. Unit tests keep this mutation in memory and
+        // must never write into the developer's real Picky preferences domain.
+        if PickyRuntimeEnvironment.allowsUserEnvironmentEffects {
+            switch newChoice {
+            case .system:
+                PickyRuntimeEnvironment.userDefaults.removeObject(forKey: "AppleLanguages")
+            case .english:
+                PickyRuntimeEnvironment.userDefaults.set(["en"], forKey: "AppleLanguages")
+            case .korean:
+                PickyRuntimeEnvironment.userDefaults.set(["ko"], forKey: "AppleLanguages")
+            }
         }
 
         NotificationCenter.default.post(name: LocaleManager.didChangeNotification, object: nil)

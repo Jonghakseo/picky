@@ -88,7 +88,7 @@ final class PickyUserDefaultsSessionSelectionStore: PickySessionSelectionStoring
     private var transientScreenContextTargetLabel: String?
     private var transientScreenContextTargetRevision: UInt64 = 0
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = PickyRuntimeEnvironment.userDefaults) {
         self.defaults = defaults
     }
 
@@ -176,7 +176,7 @@ final class PickyUserDefaultsSessionArchiveStore: PickySessionArchiveStoring {
 
     private let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = PickyRuntimeEnvironment.userDefaults) {
         self.defaults = defaults
     }
 
@@ -213,7 +213,7 @@ final class PickyUserDefaultsSessionManualOrderStore: PickySessionManualOrderSto
 
     private let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = PickyRuntimeEnvironment.userDefaults) {
         self.defaults = defaults
     }
 

@@ -21,10 +21,17 @@ enum AzureOpenAIKeychainStore {
 
     static func value(
         for key: String,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        allowsKeychainAccess: Bool = PickyRuntimeEnvironment.allowsUserEnvironmentEffects,
+        keychainValuesProvider: (() -> [String: String])? = nil
     ) -> String? {
-        environment[key]?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-            ?? keychainValues()[key]
+        if let environmentValue = environment[key]?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfEmpty {
+            return environmentValue
+        }
+        guard allowsKeychainAccess else { return nil }
+        return (keychainValuesProvider?() ?? keychainValues())[key]
     }
 
     private static func keychainValues() -> [String: String] {

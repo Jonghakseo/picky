@@ -642,6 +642,7 @@ final class OnboardingFlowController {
     }
 
     private func installEscKeyMonitor() {
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }
         // Watch BOTH keyDown and keyUp — a tap should never fire skip, only a
         // sustained hold. The global monitor covers the (common) case where
         // another app is frontmost during the demo; the local monitor covers

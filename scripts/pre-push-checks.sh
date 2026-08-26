@@ -89,6 +89,7 @@ require_command python3 "Install Python 3."
 # Fail fast on architectural regressions, including the file-size ratchet, before
 # invoking any slower dependency checks, builds, or test suites.
 run_step "architecture guard" node scripts/check-architecture-rules.js
+run_step "test environment isolation guard" python3 scripts/check-test-environment-isolation.py
 run_step "release helper tests" python3 -m unittest discover -s scripts/tests -p 'test_*.py'
 
 require_command pnpm "Install pnpm 10.15.1 or run Corepack setup."
@@ -115,7 +116,10 @@ run_step "Picky app build" xcodebuild -project Picky.xcodeproj -scheme Picky -de
 # runner and reporting every still-scheduled test in that shard as a failure (observed
 # ~20% of consecutive runs). Serializing the runners avoids the cross-process collision
 # and trades ~5-9s for deterministic results.
-run_step "Picky test suite" xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" -parallel-testing-enabled NO test
+# WindowServer-dependent tests are disabled in every ordinary test invocation.
+# The pre-push gate is their single opt-in execution and deliberately runs the
+# Swift suite once, without retries or test-plan repetitions.
+run_step "Picky test suite" env PICKY_PRE_PUSH_UI_EFFECT_TESTS=1 xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" -parallel-testing-enabled NO test
 
 echo
 echo "✅ pre-push: all local quality checks passed."

@@ -501,7 +501,7 @@ final class CompanionManager: ObservableObject {
     /// single source of truth.
     static func migrateLegacyCursorPreferenceIfNeeded(
         store: PickySettingsStore,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = PickyRuntimeEnvironment.userDefaults
     ) -> PickySettings {
         var settings = store.load()
         guard defaults.object(forKey: "isPickyCursorEnabled") != nil else {
@@ -549,7 +549,7 @@ final class CompanionManager: ObservableObject {
     }
 
     func start() {
-        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
+        if !PickyRuntimeEnvironment.isRunningUnitTests {
             bindAgentEvents()
             Task { await agentClient.connect() }
         }
@@ -558,9 +558,11 @@ final class CompanionManager: ObservableObject {
         wireMainCancelPill()
         applyShortcutSpecsFromSettings()
         bindShortcutCaptureLifecycle()
-        refreshAllPermissions()
-        print("🔑 Picky start — accessibility: \(hasAccessibilityPermission), screen: \(hasScreenRecordingPermission), mic: \(hasMicrophonePermission), screenContent: \(hasScreenContentPermission)")
-        startPermissionPolling()
+        if PickyRuntimeEnvironment.allowsUserEnvironmentEffects {
+            refreshAllPermissions()
+            print("🔑 Picky start — accessibility: \(hasAccessibilityPermission), screen: \(hasScreenRecordingPermission), mic: \(hasMicrophonePermission), screenContent: \(hasScreenContentPermission)")
+            startPermissionPolling()
+        }
         bindVoiceStateObservation()
         bindAudioPowerLevel()
         bindDictationErrors()
@@ -681,7 +683,7 @@ final class CompanionManager: ObservableObject {
         // Screen content permission is persisted — once the user has approved the
         // SCShareableContent picker, we don't need to re-check it.
         if !hasScreenContentPermission {
-            hasScreenContentPermission = UserDefaults.standard.bool(forKey: "hasScreenContentPermission")
+            hasScreenContentPermission = PickyRuntimeEnvironment.userDefaults.bool(forKey: "hasScreenContentPermission")
         }
 
         // UI-only simulation: flip every flag to false AFTER the real probe so
@@ -730,7 +732,7 @@ final class CompanionManager: ObservableObject {
                     isRequestingScreenContent = false
                     guard didCapture else { return }
                     hasScreenContentPermission = true
-                    UserDefaults.standard.set(true, forKey: "hasScreenContentPermission")
+                    PickyRuntimeEnvironment.userDefaults.set(true, forKey: "hasScreenContentPermission")
                     PickyAnalytics.trackPermissionGranted(permission: "screen_content")
 
                     if allPermissionsGranted && isCursorPreferenceEnabled {
@@ -809,7 +811,6 @@ final class CompanionManager: ObservableObject {
         setLocalOverlayReason(.activeInkCapture, visible: false)
     }
 
-
     private func setInteractionOverlayReasons(from phase: PickyOverlayPhase) {
         switch phase {
         case .hidden:
@@ -841,7 +842,7 @@ final class CompanionManager: ObservableObject {
         }
 
         guard !isOverlayVisible else { return }
-        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
+        if PickyRuntimeEnvironment.allowsUserEnvironmentEffects {
             overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
         }
         isOverlayVisible = true

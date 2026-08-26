@@ -7,11 +7,49 @@ import AppKit
 import Foundation
 
 enum PickyRuntimeEnvironment {
+    static let prePushUIEffectTestsEnvironmentKey = "PICKY_PRE_PUSH_UI_EFFECT_TESTS"
+    static let unitTestDefaultsSuiteName = "com.jonghakseo.picky.unit-tests.\(ProcessInfo.processInfo.processIdentifier)"
+    private static let unitTestDefaults = UserDefaults(suiteName: unitTestDefaultsSuiteName)!
+
     static var isRunningUnitTests: Bool {
-        let environment = ProcessInfo.processInfo.environment
-        return environment["XCTestConfigurationFilePath"] != nil
-            || environment["XCTestBundlePath"] != nil
-            || ProcessInfo.processInfo.arguments.contains { $0.contains(".xctest") || $0.contains("xctest") }
+        isUnitTestProcess(
+            environment: ProcessInfo.processInfo.environment,
+            arguments: ProcessInfo.processInfo.arguments
+        )
+    }
+
+    static func isUnitTestProcess(environment: [String: String], arguments: [String]) -> Bool {
+        if environment["XCTestConfigurationFilePath"] != nil || environment["XCTestBundlePath"] != nil {
+            return true
+        }
+        guard let executablePath = arguments.first else { return false }
+        let executableName = URL(fileURLWithPath: executablePath).lastPathComponent
+        return executableName == "xctest" || executableName.hasSuffix(".xctest")
+    }
+
+    /// Unit tests are fail-closed at desktop and credential boundaries. Tests
+    /// that intentionally exercise WindowServer behavior opt in separately at
+    /// the test declaration; production code never uses that opt-in to re-enable
+    /// panels, permission probes, event monitors, or Keychain access.
+    static var allowsUserEnvironmentEffects: Bool {
+        !isRunningUnitTests
+    }
+
+    static var userDefaults: UserDefaults {
+        isRunningUnitTests ? unitTestDefaults : .standard
+    }
+
+    static func resetUnitTestUserDefaults() {
+        guard isRunningUnitTests else { return }
+        unitTestDefaults.removePersistentDomain(forName: unitTestDefaultsSuiteName)
+    }
+
+    static var runsPrePushUIEffectTests: Bool {
+        isRunningUnitTests && shouldRunPrePushUIEffectTests(environment: ProcessInfo.processInfo.environment)
+    }
+
+    static func shouldRunPrePushUIEffectTests(environment: [String: String]) -> Bool {
+        environment[prePushUIEffectTestsEnvironmentKey] == "1"
     }
 }
 

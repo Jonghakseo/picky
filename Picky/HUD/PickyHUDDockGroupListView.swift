@@ -289,6 +289,7 @@ struct PickyHUDDockGroupListView: View {
     }
 
     private func installDragMonitors(rowID: String) {
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }
         removeDragMonitors()
         let handleMove: (NSEvent) -> Void = { _ in
             updateDragState(rowID: rowID, location: currentPanelPoint())

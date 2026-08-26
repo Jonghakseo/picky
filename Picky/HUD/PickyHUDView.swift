@@ -778,37 +778,9 @@ struct PickyHUDView: View {
 
     private func chooseFolderForEmptyPickle(targetGroupID: String?) {
         NSApp.activate(ignoringOtherApps: true)
-
-        let panel = NSOpenPanel()
-        panel.title = "Choose a working folder"
-        panel.prompt = "Start"
-        panel.message = "Choose the folder where the new Pickle should run."
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.canCreateDirectories = true
-        let response = Self.runWithHUDPanelsBelowSystemModal {
-            panel.runModal()
-        }
-        if response == .OK, let url = panel.url {
+        PickyHUDWorkingFolderPickerCoordinator.shared.beginSelection { url in
             startEmptyPickle(cwd: url.path, targetGroupID: targetGroupID)
         }
-    }
-
-    private static func runWithHUDPanelsBelowSystemModal<T>(_ operation: () throws -> T) rethrows -> T {
-        let hudPanels = NSApp.windows.compactMap { $0 as? PickyHUDPanel }
-        let originalLevels = hudPanels.map { panel in
-            (panel: panel, level: panel.level)
-        }
-        hudPanels.forEach { panel in
-            panel.level = .floating
-        }
-        defer {
-            originalLevels.forEach { entry in
-                entry.panel.level = entry.level
-            }
-        }
-        return try operation()
     }
 
     private func startEmptyPickle(cwd: String, targetGroupID: String?) {
@@ -816,7 +788,10 @@ struct PickyHUDView: View {
             do {
                 let sessionID = try await viewModel.createEmptyPickleSession(cwd: cwd)
                 await MainActor.run {
-                    if let targetGroupID {
+                    if let targetGroupID = PickyHUDWorkingFolderTargetPolicy.resolvedGroupID(
+                        targetGroupID,
+                        in: dockState.snapshot.dockLayout
+                    ) {
                         viewModel.assignSessionToDockGroup(
                             sessionID: sessionID,
                             groupID: targetGroupID

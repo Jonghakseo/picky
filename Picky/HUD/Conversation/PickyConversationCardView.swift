@@ -22,6 +22,7 @@ struct PickyConversationCardView: View {
         return session
     }
     var onArchiveSession: (String) -> Void = { _ in }
+    var onClose: () -> Void = { }
     /// Max height the card may grow to before its inner ScrollView starts handling
     /// overflow. Driven by `PickyHUDPlacement.availableCardMaxHeight` so the card
     /// adapts to whatever space remains below the dock's top edge on this monitor.
@@ -44,6 +45,7 @@ struct PickyConversationCardView: View {
         viewModel: any PickySessionCommands,
         sessionStore: PickySessionStore,
         onArchiveSession: @escaping (String) -> Void = { _ in },
+        onClose: @escaping () -> Void = { },
         maxHeight: CGFloat = PickyHUDPlacement.defaultAvailableCardMaxHeight,
         width: CGFloat = PickyHUDDockLayout.detailWidth,
         fixedHeight: CGFloat? = nil,
@@ -57,6 +59,7 @@ struct PickyConversationCardView: View {
         self.viewModel = viewModel
         self.sessionStore = sessionStore
         self.onArchiveSession = onArchiveSession
+        self.onClose = onClose
         self.maxHeight = maxHeight
         self.width = width
         self.fixedHeight = fixedHeight
@@ -74,6 +77,7 @@ struct PickyConversationCardView: View {
         viewModel: any PickySessionCommands,
         session: PickyConversationSessionCard,
         onArchiveSession: @escaping (String) -> Void = { _ in },
+        onClose: @escaping () -> Void = { },
         maxHeight: CGFloat = PickyHUDPlacement.defaultAvailableCardMaxHeight,
         width: CGFloat = PickyHUDDockLayout.detailWidth,
         fixedHeight: CGFloat? = nil,
@@ -88,6 +92,7 @@ struct PickyConversationCardView: View {
             viewModel: viewModel,
             sessionStore: PickyConversationStoreResolver.legacyStore(for: session),
             onArchiveSession: onArchiveSession,
+            onClose: onClose,
             maxHeight: maxHeight,
             width: width,
             fixedHeight: fixedHeight,
@@ -114,7 +119,8 @@ struct PickyConversationCardView: View {
                     contentWidth: PickyHUDDockLayout.detailContentWidth(for: width),
                     isCommandShortcutHintVisible: isCommandShortcutHintVisible,
                     onArchiveSession: onArchiveSession,
-                    onRewindSession: { _ in showingRewindPicker = true }
+                    onRewindSession: { _ in showingRewindPicker = true },
+                    onClose: onClose
                 )
             } else {
                 chatContent(fillsAvailableHeight: resolvedHeight != nil)
@@ -176,6 +182,7 @@ struct PickyConversationCardView: View {
                     viewModel: viewModel,
                     metaStore: sessionStore.metaStore,
                     onArchiveSession: onArchiveSession,
+                    onClose: onClose,
                     isCommandShortcutHintVisible: isCommandShortcutHintVisible,
                     onRewind: { showingRewindPicker = true }
                 )

@@ -64,6 +64,7 @@ struct PickyConversationHeaderView: View {
         PickyConversationHeaderProjection(metaStore: metaStore)
     }
     var onArchiveSession: (String) -> Void = { _ in }
+    var onClose: () -> Void = { }
     var isCommandShortcutHintVisible = false
     var onRewind: (() -> Void)?
 
@@ -71,6 +72,7 @@ struct PickyConversationHeaderView: View {
         viewModel: any PickySessionCommands,
         metaStore: PickySessionMetaStore,
         onArchiveSession: @escaping (String) -> Void = { _ in },
+        onClose: @escaping () -> Void = { },
         isCommandShortcutHintVisible: Bool = false,
         onRewind: (() -> Void)? = nil,
         voiceFollowUpHoverState: PickyVoiceFollowUpHoverState? = nil
@@ -79,6 +81,7 @@ struct PickyConversationHeaderView: View {
         self.metaStore = metaStore
         self.voiceFollowUpHoverState = voiceFollowUpHoverState ?? viewModel.voiceFollowUpHoverState
         self.onArchiveSession = onArchiveSession
+        self.onClose = onClose
         self.isCommandShortcutHintVisible = isCommandShortcutHintVisible
         self.onRewind = onRewind
     }
@@ -88,6 +91,7 @@ struct PickyConversationHeaderView: View {
         viewModel: any PickySessionCommands,
         session: PickyConversationSessionCard,
         onArchiveSession: @escaping (String) -> Void = { _ in },
+        onClose: @escaping () -> Void = { },
         isCommandShortcutHintVisible: Bool = false,
         onRewind: (() -> Void)? = nil,
         voiceFollowUpHoverState: PickyVoiceFollowUpHoverState? = nil
@@ -98,6 +102,7 @@ struct PickyConversationHeaderView: View {
             viewModel: viewModel,
             metaStore: metaStore,
             onArchiveSession: onArchiveSession,
+            onClose: onClose,
             isCommandShortcutHintVisible: isCommandShortcutHintVisible,
             onRewind: onRewind,
             voiceFollowUpHoverState: voiceFollowUpHoverState
@@ -149,6 +154,7 @@ struct PickyConversationHeaderView: View {
                     .fixedSize(horizontal: true, vertical: false)
             }
             conversationMenuButton
+            PickyConversationCloseButton(onClose: requestClose)
         }
     }
 
@@ -312,6 +318,14 @@ struct PickyConversationHeaderView: View {
 
     var titleHelpText: String {
         "Double-click to rename · or use /name <new title>"
+    }
+
+    var closeHelpText: String {
+        PickyConversationCloseButton.helpText
+    }
+
+    func requestClose() {
+        onClose()
     }
 
     private var conversationMenuButton: some View {
@@ -595,6 +609,50 @@ struct PickyConversationHeaderView: View {
 
     private func cycleModel() {
         Task { try? await commands.cycleModel(sessionID: session.id, direction: .forward) }
+    }
+}
+
+/// Quiet, neutral utility action shared by chat and inline-terminal headers.
+/// Closing the HUD never stops or archives the underlying Pickle.
+struct PickyConversationCloseButton: View {
+    static let helpText = "Close Pickle HUD (Esc or ⌘W)"
+
+    let onClose: () -> Void
+
+    var body: some View {
+        Button(action: onClose) {
+            Image(systemName: "xmark")
+                .pickyFont(size: 10.5, weight: .semibold)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PickyConversationCloseButtonStyle())
+        .help(Self.helpText)
+        .accessibilityLabel("Close Pickle HUD")
+        .accessibilityHint("Closes this card without stopping the Pickle")
+    }
+}
+
+private struct PickyConversationCloseButtonStyle: ButtonStyle {
+    @State private var isHovered = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(isHovered || configuration.isPressed ? DS.Colors.textSecondary : DS.Colors.textTertiary)
+            .background {
+                RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
+                    .fill(backgroundColor(isPressed: configuration.isPressed))
+            }
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.easeOut(duration: DS.Animation.fast), value: configuration.isPressed)
+            .animation(.easeOut(duration: DS.Animation.fast), value: isHovered)
+            .onHover { isHovered = $0 }
+    }
+
+    private func backgroundColor(isPressed: Bool) -> Color {
+        if isPressed { return DS.Colors.surface4 }
+        if isHovered { return DS.Colors.surface3 }
+        return .clear
     }
 }
 

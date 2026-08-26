@@ -708,6 +708,21 @@ struct PickyConversationCardViewTests {
         #expect(header.titleHelpText.contains("rename"))
     }
 
+    @Test func headerCloseActionClosesOnlyThePresentedCard() {
+        var closeCount = 0
+        let header = PickyConversationHeaderView(
+            viewModel: makeViewModel(),
+            session: makeConversationSession(status: .running),
+            onClose: { closeCount += 1 }
+        )
+
+        header.requestClose()
+
+        #expect(closeCount == 1)
+        #expect(header.closeHelpText.contains("Esc"))
+        #expect(header.closeHelpText.contains("⌘W"))
+    }
+
     @Test func headerStatusPresentationMapsEveryStateToLocalizedLabelKeyAndTone() {
         let expectations: [(PickySessionStatus, String, PickyConversationStatusTone)] = [
             (.running, "hud.conversation.status.running", .info),

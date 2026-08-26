@@ -36,6 +36,27 @@ struct PickyHUDKeyboardShortcutPolicyTests {
         #expect(!PickyHUDKeyboardShortcutPolicy.isPanelFirstResponderFallback(otherResponder, panel: panel))
     }
 
+    @MainActor @Test func readOnlySelectableBubbleTextDoesNotOwnInputShortcuts() {
+        let markdownText = SelfSizingMarkdownTextView()
+        markdownText.isEditable = false
+        markdownText.isSelectable = true
+        let tableCell = NSTextField(labelWithString: "Selectable result")
+        tableCell.isSelectable = true
+
+        #expect(!PickyHUDKeyboardShortcutPolicy.isEditableTextInputFocused(markdownText))
+        #expect(!PickyHUDKeyboardShortcutPolicy.isEditableTextInputFocused(tableCell))
+    }
+
+    @MainActor @Test func editableComposerAndTitleInputsKeepOwningEscape() {
+        let composer = NSTextView()
+        composer.isEditable = true
+        let titleField = NSTextField(string: "Pickle title")
+        titleField.isEditable = true
+
+        #expect(PickyHUDKeyboardShortcutPolicy.isEditableTextInputFocused(composer))
+        #expect(PickyHUDKeyboardShortcutPolicy.isEditableTextInputFocused(titleField))
+    }
+
     @Test func terminalFocusInterceptsHUDShellShortcutsButPassesInputShortcutsThrough() {
         #expect(PickyHUDKeyboardShortcutPolicy.shouldInterceptWhileTerminalFocused(keyCode: 17, charactersIgnoringModifiers: "t", modifiers: .command) == true)
         #expect(PickyHUDKeyboardShortcutPolicy.shouldInterceptWhileTerminalFocused(keyCode: 14, charactersIgnoringModifiers: "e", modifiers: .command) == true)

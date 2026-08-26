@@ -84,6 +84,7 @@ struct PickyInlineTerminalCardView: View {
     var isCommandShortcutHintVisible = false
     var onArchiveSession: (String) -> Void = { _ in }
     var onRewindSession: (String) -> Void = { _ in }
+    var onClose: () -> Void = { }
 
     var body: some View {
         if let terminalSession = commands.inlineTerminalSession(for: session) {
@@ -95,7 +96,8 @@ struct PickyInlineTerminalCardView: View {
                 contentWidth: contentWidth,
                 isCommandShortcutHintVisible: isCommandShortcutHintVisible,
                 onArchiveSession: onArchiveSession,
-                onRewindSession: onRewindSession
+                onRewindSession: onRewindSession,
+                onClose: onClose
             )
         } else {
             missingSessionView
@@ -130,6 +132,7 @@ private struct PickyInlineTerminalSessionView: View {
     let isCommandShortcutHintVisible: Bool
     var onArchiveSession: (String) -> Void = { _ in }
     var onRewindSession: (String) -> Void = { _ in }
+    var onClose: () -> Void = { }
     @State private var attachmentID = UUID().uuidString
 
     private var isActiveAttachment: Bool {
@@ -205,6 +208,8 @@ private struct PickyInlineTerminalSessionView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .accessibilityLabel("Terminal mode menu")
+
+            PickyConversationCloseButton(onClose: onClose)
         }
         .frame(minHeight: 26, alignment: .center)
     }

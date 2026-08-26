@@ -398,6 +398,7 @@ struct PickyHUDView: View {
                     viewModel: viewModel,
                     sessionStore: store,
                     onArchiveSession: archiveSession,
+                    onClose: { closeOpenedSession(activeSession.id) },
                     maxHeight: conversationCardMaxHeight(
                         isUtilityPanelOpen: utilityPanelIsOpen,
                         utilityPanelHeight: utilityPanelHeight
@@ -1005,7 +1006,7 @@ struct PickyHUDView: View {
            keyWindow.isFirstResponderFallback,
            let activeCard,
            !viewModel.isInlineTerminalMode(sessionID: activeCard.id),
-           !isTextInputFocused(in: keyWindow) {
+           !isEditableTextInputFocused(in: keyWindow) {
             focusActiveComposer()
             return true
         }
@@ -1032,14 +1033,14 @@ struct PickyHUDView: View {
         if flags.isEmpty,
            event.keyCode == Self.escKeyCode,
            heldSession != nil,
-           !isTextInputFocused(in: keyWindow) {
+           !isEditableTextInputFocused(in: keyWindow) {
             closeHeldSession()
             return true
         }
 
         if PickyHUDDockGroupListKeyboardPolicy.ownsListNavigationKeys(
             isListOpen: dockGroupListFocus.isOpen,
-            isTextInputFocused: isTextInputFocused(in: keyWindow)
+            isTextInputFocused: isEditableTextInputFocused(in: keyWindow)
         ), flags.isEmpty {
             switch event.keyCode {
             case Self.upArrowKeyCode:
@@ -1120,7 +1121,7 @@ struct PickyHUDView: View {
             charactersIgnoringModifiers: event.charactersIgnoringModifiers,
             modifiers: flags
         ), let activeCard,
-           !isTextInputFocused(in: keyWindow) {
+           !isEditableTextInputFocused(in: keyWindow) {
             toggleScreenContextTarget(activeCard.id)
             return true
         }
@@ -1206,9 +1207,8 @@ struct PickyHUDView: View {
         Task { try? await viewModel.openLatestAgentResponseReport(sessionID: sessionID) }
     }
 
-    private func isTextInputFocused(in window: NSWindow) -> Bool {
-        guard let firstResponder = window.firstResponder else { return false }
-        return firstResponder is NSTextView || firstResponder is NSTextField
+    private func isEditableTextInputFocused(in window: NSWindow) -> Bool {
+        PickyHUDKeyboardShortcutPolicy.isEditableTextInputFocused(window.firstResponder)
     }
 
     private func isTerminalInputFocused(in window: NSWindow) -> Bool {

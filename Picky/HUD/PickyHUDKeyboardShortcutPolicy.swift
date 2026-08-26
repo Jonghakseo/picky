@@ -35,6 +35,20 @@ enum PickyHUDKeyboardShortcutPolicy {
         firstResponder == nil || firstResponder === panel
     }
 
+    /// Only editable controls own text-input shortcuts. Conversation bubbles use
+    /// selectable, read-only NSTextView/NSTextField instances for copy support;
+    /// treating those as editors prevents shell-level Escape dismissal after a
+    /// user clicks or selects response text.
+    static func isEditableTextInputFocused(_ firstResponder: NSResponder?) -> Bool {
+        if let textView = firstResponder as? NSTextView {
+            return textView.isEditable
+        }
+        if let textField = firstResponder as? NSTextField {
+            return textField.isEditable
+        }
+        return false
+    }
+
     /// While a Pi TUI terminal is focused, the HUD forwards virtually every key to
     /// the terminal so cmd-based TUI shortcuts (⌘C, ⌘V, ⌘arrows, etc.) reach Pi.
     /// Cmd+T (toggle back to chat), Cmd+E (hide the local extended terminal),

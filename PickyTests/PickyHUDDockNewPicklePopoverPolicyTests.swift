@@ -41,6 +41,18 @@ struct PickyHUDDockNewPicklePopoverPolicyTests {
         ))
     }
 
+    @Test func creationTargetSurvivesPopoverDismissalClearingLiveState() {
+        var activeTargetGroupID: String? = "group-b"
+        let capturedTarget = PickyHUDDockNewPickleActionTarget(
+            activeTargetGroupID: activeTargetGroupID
+        )
+
+        activeTargetGroupID = nil
+
+        #expect(capturedTarget.groupID == "group-b")
+        #expect(activeTargetGroupID == nil)
+    }
+
     @Test func emptyGroupTileCreatesAPickleWhileMemberGroupTileTogglesItsList() {
         #expect(PickyHUDDockNewPicklePopoverPolicy.groupTileAction(hasVisibleMembers: false) == .showFolderPicker)
         #expect(PickyHUDDockNewPicklePopoverPolicy.groupTileAction(hasVisibleMembers: true) == .toggleMemberList)

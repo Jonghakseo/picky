@@ -205,6 +205,14 @@ struct PickyHUDDockRailView: View {
         return baseProjection
     }
 
+    private var selectedGroupID: String? {
+        PickyHUDDockRenderPolicy.selectedGroupID(
+            openedSessionID: openedSessionID,
+            draggingSessionID: draggingSessionID,
+            layout: layout
+        )
+    }
+
     private var dropTargetedGroupID: String? {
         PickyHUDDockRenderPolicy.dropTargetedGroupID(
             draggingSessionID: draggingSessionID,
@@ -491,6 +499,7 @@ struct PickyHUDDockRailView: View {
             unreadSessionIDs.contains(card.id) ? count + 1 : count
         }
         let hasVisibleMembers = !memberCards.isEmpty
+        let isSelected = selectedGroupID == group.id
         let isDropTargeted = dropTargetedGroupID == group.id
         PickyHUDDockGroupFolderTileView(
             group: group,
@@ -503,6 +512,7 @@ struct PickyHUDDockRailView: View {
                     memberCards: memberCards,
                     unreadCount: unreadCount,
                     slot: slot,
+                    isSelected: isSelected,
                     isDropTargeted: isDropTargeted
                 )
                 .publishDockGroupBadgeFrame(groupID: group.id)
@@ -521,6 +531,7 @@ struct PickyHUDDockRailView: View {
                     memberCards: memberCards,
                     unreadCount: unreadCount,
                     slot: slot,
+                    isSelected: isSelected,
                     isDropTargeted: isDropTargeted
                 )
                 .publishDockGroupBadgeFrame(groupID: group.id)
@@ -564,6 +575,7 @@ struct PickyHUDDockRailView: View {
         .zIndex(draggingGroupID == group.id ? 220 : 0)
         .accessibilityLabel(group.displayName)
         .accessibilityValue(L10n.t("group.folder.accessibility.value", memberCards.count, unreadCount))
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityAction(named: Text(
             hasVisibleMembers ? L10n.t("group.folder.action.open") : L10n.t("dock.startPickle")
         )) {
@@ -586,6 +598,7 @@ struct PickyHUDDockRailView: View {
         memberCards: [PickyHUDDockSession],
         unreadCount: Int,
         slot: PickyDockSlot,
+        isSelected: Bool,
         isDropTargeted: Bool
     ) -> some View {
         if memberCards.isEmpty {
@@ -607,6 +620,7 @@ struct PickyHUDDockRailView: View {
                     metrics: metrics,
                     shortcutNumber: PickyHUDDockLayout.numberShortcutForSessionIndex(slot.visibleIndex),
                     isCommandShortcutHintVisible: isCommandShortcutHintVisible,
+                    isSelected: isSelected,
                     isDropTargeted: isDropTargeted,
                     onTap: { activateGroupTile(group.id) },
                     onReorderBegan: { handleGroupTileDragBegin(groupID: group.id) },

@@ -318,39 +318,46 @@ enum PickyHUDDockFolderBadgePresentation {
     }
 }
 
-private struct PickyHUDDockGroupDropTargetModifier: ViewModifier {
-    let isTargeted: Bool
+private struct PickyHUDDockGroupEmphasisModifier: ViewModifier {
+    let isSelected: Bool
+    let isDropTargeted: Bool
     let cornerRadius: CGFloat
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        let isEmphasized = isSelected || isDropTargeted
         content
             .overlay {
                 shape
-                    .fill(isTargeted ? DS.Colors.accentSubtle : Color.clear)
+                    .fill(isEmphasized ? DS.Colors.accentSubtle : Color.clear)
                     .allowsHitTesting(false)
             }
             .overlay {
                 shape
                     .strokeBorder(
-                        isTargeted ? DS.Colors.accentText : Color.clear,
+                        isEmphasized ? DS.Colors.accentText : Color.clear,
                         lineWidth: 1.5
                     )
                     .allowsHitTesting(false)
             }
             .animation(
                 reduceMotion ? nil : .easeOut(duration: DS.Animation.fast),
-                value: isTargeted
+                value: isEmphasized
             )
     }
 }
 
 private extension View {
-    func pickyDockGroupDropTarget(isTargeted: Bool, cornerRadius: CGFloat) -> some View {
-        modifier(PickyHUDDockGroupDropTargetModifier(
-            isTargeted: isTargeted,
+    func pickyDockGroupEmphasis(
+        isSelected: Bool,
+        isDropTargeted: Bool,
+        cornerRadius: CGFloat
+    ) -> some View {
+        modifier(PickyHUDDockGroupEmphasisModifier(
+            isSelected: isSelected,
+            isDropTargeted: isDropTargeted,
             cornerRadius: cornerRadius
         ))
     }
@@ -372,6 +379,7 @@ struct PickyHUDDockCollapsedGroupBadge: View {
     /// so the badge advertises the top-level slot it owns.
     var shortcutNumber: Int? = nil
     var isCommandShortcutHintVisible: Bool = false
+    var isSelected: Bool = false
     var isDropTargeted: Bool = false
     var onTap: () -> Void = {}
     var onReorderBegan: () -> Void = {}
@@ -477,8 +485,9 @@ struct PickyHUDDockCollapsedGroupBadge: View {
             }
         }
         .brightness(isHovered ? 0.04 : 0)
-        .pickyDockGroupDropTarget(
-            isTargeted: isDropTargeted,
+        .pickyDockGroupEmphasis(
+            isSelected: isSelected,
+            isDropTargeted: isDropTargeted,
             cornerRadius: metrics.iconCornerRadius
         )
         .contentShape(RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous))
@@ -550,8 +559,9 @@ struct PickyHUDDockGroupEmptySlot: View {
                 .contentShape(RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous))
         }
         .buttonStyle(.plain)
-        .pickyDockGroupDropTarget(
-            isTargeted: isDropTargeted,
+        .pickyDockGroupEmphasis(
+            isSelected: false,
+            isDropTargeted: isDropTargeted,
             cornerRadius: metrics.iconCornerRadius
         )
         .accessibilityLabel(L10n.t("dock.startPickle"))

@@ -300,6 +300,30 @@ struct PickyHUDDockRailPolicyTests {
         #expect(destination == .group(id: "alpha", memberIndex: 0))
     }
 
+    @Test func openedGroupMemberSelectsItsOwningFolderExceptDuringDrag() {
+        let layout = PickyDockLayout(entries: [
+            .session(id: "loose"),
+            .group(PickyDockGroup(id: "alpha", memberSessionIDs: ["grouped"])),
+            .group(PickyDockGroup(id: "beta", memberSessionIDs: ["other"])),
+        ])
+
+        #expect(PickyHUDDockRenderPolicy.selectedGroupID(
+            openedSessionID: "grouped",
+            draggingSessionID: nil,
+            layout: layout
+        ) == "alpha")
+        #expect(PickyHUDDockRenderPolicy.selectedGroupID(
+            openedSessionID: "loose",
+            draggingSessionID: nil,
+            layout: layout
+        ) == nil)
+        #expect(PickyHUDDockRenderPolicy.selectedGroupID(
+            openedSessionID: "grouped",
+            draggingSessionID: "loose",
+            layout: layout
+        ) == nil)
+    }
+
     @Test func dropFeedbackTargetsOnlyPendingGroupDuringSessionDrag() {
         #expect(PickyHUDDockRenderPolicy.dropTargetedGroupID(
             draggingSessionID: "loose",

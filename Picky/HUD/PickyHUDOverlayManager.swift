@@ -154,6 +154,7 @@ final class PickyHUDOverlayManager {
     private let visibilityStore: PickyHUDVisibilityStore
     private let actualPanelVisibilityStore: PickyHUDActualPanelVisibilityStore
     private let dockGroupListFocusStore = PickyHUDDockGroupListFocusStore()
+    private let dockGroupListChildEffectExecutor = PickyHUDDockGroupListChildEffectExecutor()
     private let settingsStore: PickySettingsStore
     private let settingsPersistence: PickySettingsPersistenceCoordinator
     private let voiceTargetHitTestRegistry: PickyVoiceTargetHitTestRegistry
@@ -1079,82 +1080,109 @@ final class PickyHUDOverlayManager {
               let hudEntry = panelsByDisplayID[displayID]
         else { return }
         let rowIDs = dockGroupListRowIDs(group: group, snapshot: snapshot)
-        guard case .keepOpen = PickyHUDDockGroupListOpenPolicy.reconciliation(
-            openGroupID: groupID,
-            visibleRowIDs: rowIDs
-        ) else {
-            hideDockGroupListChild(displayID: displayID)
-            return
-        }
-
-        var entry = dockGroupListChildrenByDisplayID[displayID]
-            ?? DockGroupListChildEntry(panel: makeDockGroupListChildPanel())
-        if let geometry = dockGroupListGeometryByDisplayID[displayID] {
-            entry.badgeFrames = geometry.badgeFrames
-            entry.interactionFrames = geometry.interactionFrames
-            entry.railFrame = geometry.railFrame
-            entry.openedSessionID = geometry.openedSessionID
-        }
-        if let openGroupID = entry.openGroupID, openGroupID != groupID {
-            entry.panel.orderOut(nil)
-            entry.model = nil
-            dockGroupListOverlayLifecycle?.tearDown(displayID: displayID)
-        }
-        entry.pendingGroupID = PickyHUDDockGroupListOpenPolicy.pendingGroupID(afterRequestFor: groupID)
-        entry.openGroupID = nil
-        dockGroupListChildrenByDisplayID[displayID] = entry
-        guard let folderFrame = entry.badgeFrames[groupID],
-              entry.railFrame != .zero
-        else {
-            pickySessionLog("dock group list open deferred group=\(groupID) display=\(displayID) reason=missing-anchor-geometry")
-            return
-        }
-
-        entry.pendingGroupID = nil
-        entry.openGroupID = groupID
-        let content = makeDockGroupListPanelContent(
-            group: group,
-            snapshot: snapshot,
-            openedSessionID: entry.openedSessionID,
-            metrics: PickyHUDDockMetrics(preset: currentDockSizePreset)
-        )
-        let model = entry.model ?? PickyHUDDockGroupListPanelModel(content: content)
-        model.update(content: content)
-        entry.model = model
-        dockGroupListFocusStore.open(
-            displayID: displayID,
+        var didOpen = false
+        dockGroupListChildEffectExecutor.open(
             groupID: groupID,
-            rowIDs: rowIDs,
-            openedSessionID: entry.openedSessionID
+            visibleRowIDs: rowIDs,
+            effects: .init(
+                tearDown: { [weak self] in
+                    self?.hideDockGroupListChild(displayID: displayID)
+                },
+                updateModel: { [weak self] in
+                    guard let self else { return }
+                    var entry = self.dockGroupListChildrenByDisplayID[displayID]
+                        ?? DockGroupListChildEntry(panel: self.makeDockGroupListChildPanel())
+                    if let geometry = self.dockGroupListGeometryByDisplayID[displayID] {
+                        entry.badgeFrames = geometry.badgeFrames
+                        entry.interactionFrames = geometry.interactionFrames
+                        entry.railFrame = geometry.railFrame
+                        entry.openedSessionID = geometry.openedSessionID
+                    }
+                    if let openGroupID = entry.openGroupID, openGroupID != groupID {
+                        entry.panel.orderOut(nil)
+                        entry.model = nil
+                        self.dockGroupListOverlayLifecycle?.tearDown(displayID: displayID)
+                    }
+                    entry.pendingGroupID = PickyHUDDockGroupListOpenPolicy.pendingGroupID(afterRequestFor: groupID)
+                    entry.openGroupID = nil
+                    self.dockGroupListChildrenByDisplayID[displayID] = entry
+                    guard entry.badgeFrames[groupID] != nil, entry.railFrame != .zero else {
+                        pickySessionLog(
+                            "dock group list open deferred group=\(groupID) display=\(displayID) "
+                                + "reason=missing-anchor-geometry"
+                        )
+                        return
+                    }
+
+                    entry.pendingGroupID = nil
+                    entry.openGroupID = groupID
+                    let content = self.makeDockGroupListPanelContent(
+                        group: group,
+                        snapshot: snapshot,
+                        openedSessionID: entry.openedSessionID,
+                        metrics: PickyHUDDockMetrics(preset: self.currentDockSizePreset)
+                    )
+                    let model = entry.model ?? PickyHUDDockGroupListPanelModel(content: content)
+                    model.update(content: content)
+                    entry.model = model
+                    self.dockGroupListFocusStore.open(
+                        displayID: displayID,
+                        groupID: groupID,
+                        rowIDs: rowIDs,
+                        openedSessionID: entry.openedSessionID
+                    )
+                    self.dockGroupListChildrenByDisplayID[displayID] = entry
+                    didOpen = true
+                },
+                synchronizeHost: { [weak self] in
+                    guard let self,
+                          didOpen,
+                          let entry = self.dockGroupListChildrenByDisplayID[displayID],
+                          let model = entry.model
+                    else { return }
+                    _ = self.dockGroupListOverlayLifecycle?.synchronize(
+                        displayID: displayID,
+                        host: entry.panel,
+                        groupID: groupID,
+                        makeHosting: {
+                            self.makeDockGroupListChildHostingView(
+                                displayID: displayID,
+                                model: model,
+                                entry: entry
+                            )
+                        }
+                    )
+                },
+                position: { [weak self] in
+                    guard let self,
+                          didOpen,
+                          let entry = self.dockGroupListChildrenByDisplayID[displayID],
+                          let folderFrame = entry.badgeFrames[groupID]
+                    else { return }
+                    self.positionDockGroupListChild(
+                        displayID: displayID,
+                        screen: screen,
+                        hudPanelFrame: hudEntry.panel.frame,
+                        folderFrame: folderFrame,
+                        snapshot: snapshot,
+                        fontScale: fontScale
+                    )
+                },
+                present: { [weak self] in
+                    guard let self,
+                          didOpen,
+                          let panel = self.dockGroupListChildrenByDisplayID[displayID]?.panel
+                    else { return }
+                    panel.alphaValue = 0
+                    panel.orderFrontRegardless()
+                    NSAnimationContext.runAnimationGroup { context in
+                        context.duration = 0.12
+                        panel.animator().alphaValue = 1
+                    }
+                    self.installDockGroupListMouseMonitors(displayID: displayID)
+                }
+            )
         )
-        _ = dockGroupListOverlayLifecycle?.synchronize(
-            displayID: displayID,
-            host: entry.panel,
-            groupID: groupID,
-            makeHosting: {
-                makeDockGroupListChildHostingView(
-                    displayID: displayID,
-                    model: model,
-                    entry: entry
-                )
-            }
-        )
-        dockGroupListChildrenByDisplayID[displayID] = entry
-        positionDockGroupListChild(
-            displayID: displayID,
-            screen: screen,
-            hudPanelFrame: hudEntry.panel.frame,
-            folderFrame: folderFrame,
-            snapshot: snapshot,
-            fontScale: fontScale
-        )
-        entry.panel.alphaValue = 0
-        entry.panel.orderFrontRegardless()
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.12
-            entry.panel.animator().alphaValue = 1
-        }
-        installDockGroupListMouseMonitors(displayID: displayID)
     }
 
     private func syncDockGroupListChild(
@@ -1170,24 +1198,31 @@ final class PickyHUDOverlayManager {
         let visibleMemberGroupIDs = Set(snapshot.dockLayout.groups.compactMap { group in
             group.memberSessionIDs.contains { activeSessionIDs.contains($0) } ? group.id : nil
         })
-        let reconciledPendingGroupID = PickyHUDDockGroupListOpenPolicy.reconciledPendingGroupID(
-            entry.pendingGroupID,
+        if dockGroupListChildEffectExecutor.reconcilePending(
+            pendingGroupID: entry.pendingGroupID,
             existingGroupIDs: existingGroupIDs,
-            visibleMemberGroupIDs: visibleMemberGroupIDs
-        )
-        if entry.pendingGroupID != nil, reconciledPendingGroupID == nil {
-            hideDockGroupListChild(displayID: displayID)
-            return
-        }
-        entry.pendingGroupID = reconciledPendingGroupID
-        dockGroupListChildrenByDisplayID[displayID] = entry
-        if let pendingGroupID = entry.pendingGroupID {
-            showDockGroupListChild(
-                displayID: displayID,
-                groupID: pendingGroupID,
-                snapshot: snapshot,
-                fontScale: fontScale
+            visibleMemberGroupIDs: visibleMemberGroupIDs,
+            effects: .init(
+                tearDown: { [weak self] in
+                    self?.hideDockGroupListChild(displayID: displayID)
+                },
+                updatePendingGroupID: { [weak self] pendingGroupID in
+                    guard let self,
+                          var entry = self.dockGroupListChildrenByDisplayID[displayID]
+                    else { return }
+                    entry.pendingGroupID = pendingGroupID
+                    self.dockGroupListChildrenByDisplayID[displayID] = entry
+                },
+                open: { [weak self] pendingGroupID in
+                    self?.showDockGroupListChild(
+                        displayID: displayID,
+                        groupID: pendingGroupID,
+                        snapshot: snapshot,
+                        fontScale: fontScale
+                    )
+                }
             )
+        ) {
             return
         }
         guard let groupID = entry.openGroupID else { return }
@@ -1206,30 +1241,39 @@ final class PickyHUDOverlayManager {
             return
         }
         let rowIDs = dockGroupListRowIDs(group: group, snapshot: snapshot)
-        guard case .keepOpen = PickyHUDDockGroupListOpenPolicy.reconciliation(
-            openGroupID: groupID,
-            visibleRowIDs: rowIDs
-        ) else {
-            hideDockGroupListChild(displayID: displayID)
-            return
-        }
-        model.update(content: makeDockGroupListPanelContent(
-            group: group,
-            snapshot: snapshot,
-            openedSessionID: entry.openedSessionID,
-            metrics: PickyHUDDockMetrics(preset: currentDockSizePreset)
-        ))
-        dockGroupListFocusStore.updateRows(
-            displayID: displayID,
-            rowIDs: rowIDs
-        )
-        positionDockGroupListChild(
-            displayID: displayID,
-            screen: screen,
-            hudPanelFrame: hudEntry.panel.frame,
-            folderFrame: folderFrame,
-            snapshot: snapshot,
-            fontScale: fontScale
+        dockGroupListChildEffectExecutor.synchronize(
+            groupID: groupID,
+            visibleRowIDs: rowIDs,
+            effects: .init(
+                tearDown: { [weak self] in
+                    self?.hideDockGroupListChild(displayID: displayID)
+                },
+                updateModel: { [weak self] in
+                    guard let self else { return }
+                    model.update(content: self.makeDockGroupListPanelContent(
+                        group: group,
+                        snapshot: snapshot,
+                        openedSessionID: entry.openedSessionID,
+                        metrics: PickyHUDDockMetrics(preset: self.currentDockSizePreset)
+                    ))
+                },
+                updateFocus: { [weak self] in
+                    self?.dockGroupListFocusStore.updateRows(
+                        displayID: displayID,
+                        rowIDs: rowIDs
+                    )
+                },
+                position: { [weak self] in
+                    self?.positionDockGroupListChild(
+                        displayID: displayID,
+                        screen: screen,
+                        hudPanelFrame: hudEntry.panel.frame,
+                        folderFrame: folderFrame,
+                        snapshot: snapshot,
+                        fontScale: fontScale
+                    )
+                }
+            )
         )
     }
 

@@ -53,7 +53,7 @@ The gallery is not a substitute for live interaction checks when a change concer
 
 The command cleans and regenerates `build/render-gallery/dock-group/` with:
 
-- thirteen 2× PNG scenes covering Small/Medium/Large, light/dark, 100%/130% app font scale, empty/non-empty folders, one-, two-, and five-member selected lists, a four-member idle list with no selected or keyboard-highlighted row, a four-character Korean folder label, and the folder-to-panel gap relationship. Empty member lists are intentionally excluded because an open group list requires at least one visible Pickle;
+- seventeen 2× PNG scenes covering Small/Medium/Large, light/dark, 100%/130% app font scale, empty/non-empty folders, two selected folder scenes, two targeted folder scenes, one-, two-, and five-member selected lists, a four-member idle list with no selected or keyboard-highlighted row, a four-character Korean folder label, and the folder-to-panel gap relationship. Empty member lists are intentionally excluded because an open group list requires at least one visible Pickle;
 - `index.html` for direct artifact inspection;
 - `manifest.json` with separate content-logical and padded-canvas dimensions, pixel dimensions, appearance, preset, and font scale. The canvas keeps a `space.4` (16pt) review margin, exceeding the folder unread badge's documented 7pt visual top overflow (4pt offset + rounded 2.5pt shadow bleed), so intentional overlap is never mistaken for clipping.
 

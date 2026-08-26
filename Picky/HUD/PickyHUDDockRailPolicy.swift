@@ -75,6 +75,13 @@ enum PickyHUDDockRenderPolicy {
         }
     }
 
+    /// The drag-cancel subscription must observe persisted structure only.
+    /// `PickyHUDDockRailView.projection` may be a self-reflowing preview while
+    /// a drag is active, and observing it would cancel that very drag.
+    static func dragCancellationTopEntryIDs(in persistedProjection: PickyDockProjection) -> [String] {
+        visibleTopEntryIDs(in: persistedProjection.items)
+    }
+
     static func layoutEntryIndex(forVisibleTopEntryID entryID: String, in layout: PickyDockLayout) -> Int? {
         layout.entries.firstIndex { entry in
             switch entry {

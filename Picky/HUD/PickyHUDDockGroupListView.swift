@@ -6,6 +6,7 @@
 //  child NSPanel so it never changes the HUD panel's footprint.
 //
 
+import Combine
 import SwiftUI
 
 @MainActor
@@ -34,6 +35,34 @@ struct PickyHUDDockGroupListRowModel: Identifiable {
     func subtitle(relativeTime: String) -> String {
         guard let cwdLeaf else { return relativeTime }
         return "\(cwdLeaf) · \(relativeTime)"
+    }
+}
+
+/// Stable render data for one open child panel. The overlay manager updates
+/// this object in place so SwiftUI preserves scroll, hover, and drag state
+/// through unrelated dock snapshots.
+@MainActor
+struct PickyHUDDockGroupListPanelContent {
+    let group: PickyDockGroup
+    let rows: [PickyHUDDockGroupListRowModel]
+    let unreadSessionIDs: Set<String>
+    let openedSessionID: String?
+    let metrics: PickyHUDDockMetrics
+    let moveTargetGroups: [PickyDockGroup]
+    let screenContextTargetSessionID: String?
+    let screenContextTargetSticky: Bool
+}
+
+@MainActor
+final class PickyHUDDockGroupListPanelModel: ObservableObject {
+    @Published private(set) var content: PickyHUDDockGroupListPanelContent
+
+    init(content: PickyHUDDockGroupListPanelContent) {
+        self.content = content
+    }
+
+    func update(content: PickyHUDDockGroupListPanelContent) {
+        self.content = content
     }
 }
 
@@ -108,18 +137,11 @@ extension View {
 }
 
 struct PickyHUDDockGroupListPanelRoot: View {
-    let group: PickyDockGroup
-    let rows: [PickyHUDDockGroupListRowModel]
-    let unreadSessionIDs: Set<String>
-    let openedSessionID: String?
+    @ObservedObject var model: PickyHUDDockGroupListPanelModel
     let displayID: CGDirectDisplayID
     @ObservedObject var focusStore: PickyHUDDockGroupListFocusStore
-    let metrics: PickyHUDDockMetrics
     let onSelectSession: (String) -> Void
     let onCreatePickle: () -> Void
-    let moveTargetGroups: [PickyDockGroup]
-    let screenContextTargetSessionID: String?
-    let screenContextTargetSticky: Bool
     let onToggleScreenContextTarget: (String) -> Void
     let onToggleStickyScreenContextTarget: (String) -> Void
     let onCompactSession: (String) -> Void
@@ -136,25 +158,26 @@ struct PickyHUDDockGroupListPanelRoot: View {
 
     private var panelSize: CGSize {
         PickyHUDDockGroupListPolicy.panelSize(
-            memberCount: max(1, rows.count),
-            metrics: metrics,
+            memberCount: max(1, model.content.rows.count),
+            metrics: model.content.metrics,
             fontScale: fontScale
         )
     }
 
     var body: some View {
+        let content = model.content
         PickyHUDDockGroupListView(
-            group: group,
-            rows: rows,
-            unreadSessionIDs: unreadSessionIDs,
-            openedSessionID: openedSessionID,
+            group: content.group,
+            rows: content.rows,
+            unreadSessionIDs: content.unreadSessionIDs,
+            openedSessionID: content.openedSessionID,
             highlightedRowID: focusStore.focus(for: displayID).highlightedRowID,
-            metrics: metrics,
+            metrics: content.metrics,
             onSelectSession: onSelectSession,
             onCreatePickle: onCreatePickle,
-            moveTargetGroups: moveTargetGroups,
-            screenContextTargetSessionID: screenContextTargetSessionID,
-            screenContextTargetSticky: screenContextTargetSticky,
+            moveTargetGroups: content.moveTargetGroups,
+            screenContextTargetSessionID: content.screenContextTargetSessionID,
+            screenContextTargetSticky: content.screenContextTargetSticky,
             onToggleScreenContextTarget: onToggleScreenContextTarget,
             onToggleStickyScreenContextTarget: onToggleStickyScreenContextTarget,
             onCompactSession: onCompactSession,
@@ -367,20 +390,39 @@ struct PickyHUDDockGroupListView: View {
 
     private var header: some View {
         HStack(spacing: 4) {
-            Circle()
-                .fill(group.color.accent)
-                .frame(width: metrics.groupListHeaderAccentSide, height: metrics.groupListHeaderAccentSide)
-            Text(group.displayName)
-                .font(PickyHUDTypography.labelSemibold)
-                .foregroundStyle(DS.Colors.textPrimary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Text("\(rows.count)")
-                .font(PickyHUDTypography.meta)
-                .foregroundStyle(DS.Colors.textTertiary)
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(group.color.accent)
+                    .frame(width: metrics.groupListHeaderAccentSide, height: metrics.groupListHeaderAccentSide)
+                Text(group.displayName)
+                    .font(PickyHUDTypography.labelSemibold)
+                    .foregroundStyle(DS.Colors.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Text("\(rows.count)")
+                    .font(PickyHUDTypography.meta)
+                    .foregroundStyle(DS.Colors.textTertiary)
+            }
+            .accessibilityElement(children: .combine)
+
+            Spacer(minLength: 0)
+
+            Button(action: onCreatePickle) {
+                Image(systemName: "plus")
+                    .font(.system(size: max(10, metrics.groupListHeaderHeight * 0.42), weight: .semibold))
+                    .foregroundStyle(DS.Colors.textSecondary)
+                    .frame(width: metrics.groupListHeaderHeight, height: metrics.groupListHeaderHeight)
+                    .background(DS.Colors.surface2, in: Circle())
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .hoverAffordance()
+            .help(L10n.t("group.list.newPickle"))
+            .accessibilityLabel(L10n.t("group.list.newPickle.accessibilityLabel"))
+            .accessibilityHint(L10n.t("group.list.newPickle.hint"))
         }
         .frame(maxWidth: .infinity, minHeight: metrics.groupListHeaderHeight, alignment: .leading)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 
     @ViewBuilder
@@ -420,14 +462,15 @@ struct PickyHUDDockGroupListView: View {
                 ScrollView(.vertical, showsIndicators: true) { content }
                     .onChange(of: highlightedRowID) { _, rowID in
                         guard let rowID else { return }
-                        if reduceMotion {
+                        switch PickyHUDDockGroupListKeyboardPolicy.scrollMotion(reduceMotion: reduceMotion) {
+                        case .none:
                             var transaction = Transaction(animation: nil)
                             transaction.disablesAnimations = true
                             withTransaction(transaction) {
                                 proxy.scrollTo(rowID, anchor: .center)
                             }
-                        } else {
-                            withAnimation(.easeOut(duration: 0.12)) {
+                        case .fast:
+                            withAnimation(.easeOut(duration: DS.Animation.fast)) {
                                 proxy.scrollTo(rowID, anchor: .center)
                             }
                         }

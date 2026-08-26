@@ -192,6 +192,9 @@ final class PickyHUDOverlayManager {
         /// Folder tap retained until SwiftUI publishes a usable anchor frame.
         var pendingGroupID: String?
         var openGroupID: String?
+        /// Retained for the lifetime of one open group so SwiftUI keeps local
+        /// scroll, hover, and drag state across dock snapshot updates.
+        var model: PickyHUDDockGroupListPanelModel?
         var badgeFrames: [String: CGRect] = [:]
         var railFrame: CGRect = .zero
         var openedSessionID: String?
@@ -240,10 +243,22 @@ final class PickyHUDOverlayManager {
         self.currentDockSizePreset = settings.hudDockSizePreset
         self.currentCardSizesByDisplayID = settings.hudCardSizes
         self.dockStateCancellable = viewModel.dockState.$snapshot
-            .sink { [weak self] _ in self?.syncDockGroupListChildrenWithSnapshot() }
+            .sink { [weak self] snapshot in
+                guard let self else { return }
+                self.syncDockGroupListChildrenWithSnapshot(
+                    snapshot: snapshot,
+                    fontScale: self.fontScaleStore.cgValue
+                )
+            }
         self.fontScaleCancellable = fontScaleStore.$scale
             .dropFirst()
-            .sink { [weak self] _ in self?.syncDockGroupListChildrenWithSnapshot() }
+            .sink { [weak self] scale in
+                guard let self else { return }
+                self.syncDockGroupListChildrenWithSnapshot(
+                    snapshot: self.viewModel.dockState.snapshot,
+                    fontScale: CGFloat(scale)
+                )
+            }
     }
 
     /// Get the live position for a display. Returns defaults for unknown displays.
@@ -998,9 +1013,16 @@ final class PickyHUDOverlayManager {
         showDockGroupListChild(displayID: displayID, groupID: nextGroupID)
     }
 
-    private func showDockGroupListChild(displayID: CGDirectDisplayID, groupID: String) {
+    private func showDockGroupListChild(
+        displayID: CGDirectDisplayID,
+        groupID: String,
+        snapshot: PickyHUDDockSnapshot? = nil,
+        fontScale: CGFloat? = nil
+    ) {
+        let snapshot = snapshot ?? viewModel.dockState.snapshot
+        let fontScale = fontScale ?? fontScaleStore.cgValue
         guard visibilityStore.isVisible(for: displayID),
-              let group = viewModel.dockState.snapshot.dockLayout.group(withID: groupID),
+              let group = PickyHUDDockGroupListSnapshotPolicy.group(groupID: groupID, in: snapshot),
               let screen = screen(for: displayID),
               let hudEntry = panelsByDisplayID[displayID]
         else { return }
@@ -1012,9 +1034,10 @@ final class PickyHUDOverlayManager {
             entry.railFrame = geometry.railFrame
             entry.openedSessionID = geometry.openedSessionID
         }
-        if entry.openGroupID != nil {
+        if let openGroupID = entry.openGroupID, openGroupID != groupID {
             entry.panel.orderOut(nil)
             entry.panel.contentView = nil
+            entry.model = nil
         }
         entry.pendingGroupID = PickyHUDDockGroupListOpenPolicy.pendingGroupID(afterRequestFor: groupID)
         entry.openGroupID = nil
@@ -1028,23 +1051,36 @@ final class PickyHUDOverlayManager {
 
         entry.pendingGroupID = nil
         entry.openGroupID = groupID
+        let content = makeDockGroupListPanelContent(
+            group: group,
+            snapshot: snapshot,
+            openedSessionID: entry.openedSessionID,
+            metrics: PickyHUDDockMetrics(preset: currentDockSizePreset)
+        )
+        let model = entry.model ?? PickyHUDDockGroupListPanelModel(content: content)
+        model.update(content: content)
+        entry.model = model
         dockGroupListFocusStore.open(
             displayID: displayID,
             groupID: groupID,
-            rowIDs: dockGroupListRowIDs(group: group),
+            rowIDs: dockGroupListRowIDs(group: group, snapshot: snapshot),
             openedSessionID: entry.openedSessionID
         )
-        entry.panel.contentView = makeDockGroupListChildHostingView(
-            displayID: displayID,
-            group: group,
-            entry: entry
-        )
+        if entry.panel.contentView == nil {
+            entry.panel.contentView = makeDockGroupListChildHostingView(
+                displayID: displayID,
+                model: model,
+                entry: entry
+            )
+        }
         dockGroupListChildrenByDisplayID[displayID] = entry
         positionDockGroupListChild(
             displayID: displayID,
             screen: screen,
             hudPanelFrame: hudEntry.panel.frame,
-            folderFrame: folderFrame
+            folderFrame: folderFrame,
+            snapshot: snapshot,
+            fontScale: fontScale
         )
         entry.panel.alphaValue = 0
         entry.panel.orderFrontRegardless()
@@ -1055,24 +1091,36 @@ final class PickyHUDOverlayManager {
         installDockGroupListMouseMonitors(displayID: displayID)
     }
 
-    private func syncDockGroupListChild(displayID: CGDirectDisplayID) {
+    private func syncDockGroupListChild(
+        displayID: CGDirectDisplayID,
+        snapshot: PickyHUDDockSnapshot? = nil,
+        fontScale: CGFloat? = nil
+    ) {
+        let snapshot = snapshot ?? viewModel.dockState.snapshot
+        let fontScale = fontScale ?? fontScaleStore.cgValue
         guard var entry = dockGroupListChildrenByDisplayID[displayID] else { return }
-        let existingGroupIDs = Set(viewModel.dockState.snapshot.dockLayout.groups.map(\.id))
+        let existingGroupIDs = Set(snapshot.dockLayout.groups.map(\.id))
         entry.pendingGroupID = PickyHUDDockGroupListOpenPolicy.reconciledPendingGroupID(
             entry.pendingGroupID,
             existingGroupIDs: existingGroupIDs
         )
         dockGroupListChildrenByDisplayID[displayID] = entry
         if let pendingGroupID = entry.pendingGroupID {
-            showDockGroupListChild(displayID: displayID, groupID: pendingGroupID)
+            showDockGroupListChild(
+                displayID: displayID,
+                groupID: pendingGroupID,
+                snapshot: snapshot,
+                fontScale: fontScale
+            )
             return
         }
         guard let groupID = entry.openGroupID else { return }
-        guard let group = viewModel.dockState.snapshot.dockLayout.group(withID: groupID),
+        guard let group = PickyHUDDockGroupListSnapshotPolicy.group(groupID: groupID, in: snapshot),
               let folderFrame = entry.badgeFrames[groupID],
               entry.railFrame != .zero,
               let screen = screen(for: displayID),
-              let hudEntry = panelsByDisplayID[displayID]
+              let hudEntry = panelsByDisplayID[displayID],
+              let model = entry.model
         else {
             let nextGroupID = PickyHUDDockGroupListOpenPolicy.afterGroupRemoved(
                 openGroupID: groupID,
@@ -1081,25 +1129,58 @@ final class PickyHUDOverlayManager {
             if nextGroupID == nil { hideDockGroupListChild(displayID: displayID) }
             return
         }
-        dockGroupListFocusStore.updateRows(displayID: displayID, rowIDs: dockGroupListRowIDs(group: group))
-        entry.panel.contentView = makeDockGroupListChildHostingView(
-            displayID: displayID,
+        model.update(content: makeDockGroupListPanelContent(
             group: group,
-            entry: entry
+            snapshot: snapshot,
+            openedSessionID: entry.openedSessionID,
+            metrics: PickyHUDDockMetrics(preset: currentDockSizePreset)
+        ))
+        dockGroupListFocusStore.updateRows(
+            displayID: displayID,
+            rowIDs: dockGroupListRowIDs(group: group, snapshot: snapshot)
         )
         positionDockGroupListChild(
             displayID: displayID,
             screen: screen,
             hudPanelFrame: hudEntry.panel.frame,
-            folderFrame: folderFrame
+            folderFrame: folderFrame,
+            snapshot: snapshot,
+            fontScale: fontScale
         )
     }
 
     /// Visible rows only: archived members stay in the group but never render,
     /// so they must not be reachable by number or arrow keys either.
-    private func dockGroupListRowIDs(group: PickyDockGroup) -> [String] {
-        let activeIDs = Set(viewModel.dockState.snapshot.activeSessions.map(\.id))
+    private func dockGroupListRowIDs(group: PickyDockGroup, snapshot: PickyHUDDockSnapshot) -> [String] {
+        let activeIDs = Set(snapshot.activeSessions.map(\.id))
         return group.memberSessionIDs.filter { activeIDs.contains($0) }
+    }
+
+    private func makeDockGroupListPanelContent(
+        group: PickyDockGroup,
+        snapshot: PickyHUDDockSnapshot,
+        openedSessionID: String?,
+        metrics: PickyHUDDockMetrics
+    ) -> PickyHUDDockGroupListPanelContent {
+        let sessionsByID = Dictionary(snapshot.activeSessions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let rows = PickyHUDDockGroupListRowProjection.rows(
+            memberSessionIDs: group.memberSessionIDs,
+            activeSessionsByID: sessionsByID,
+            updatedAt: { [weak self] sessionID in self?.viewModel.sessionCard(sessionID: sessionID)?.updatedAt },
+            makeRow: { session, updatedAt in
+                PickyHUDDockGroupListRowModel(session: session, updatedAt: updatedAt)
+            }
+        )
+        return PickyHUDDockGroupListPanelContent(
+            group: group,
+            rows: rows,
+            unreadSessionIDs: snapshot.unreadSessionIDs,
+            openedSessionID: openedSessionID,
+            metrics: metrics,
+            moveTargetGroups: snapshot.dockLayout.groups.filter { $0.id != group.id },
+            screenContextTargetSessionID: snapshot.screenContextTargetSessionID,
+            screenContextTargetSticky: snapshot.screenContextTargetSticky
+        )
     }
 
     private func makeDockGroupListChildPanel() -> PickyHUDDockGroupListPanel {
@@ -1121,38 +1202,23 @@ final class PickyHUDOverlayManager {
 
     private func makeDockGroupListChildHostingView(
         displayID: CGDirectDisplayID,
-        group: PickyDockGroup,
+        model: PickyHUDDockGroupListPanelModel,
         entry: DockGroupListChildEntry
     ) -> NSView {
-        let snapshot = viewModel.dockState.snapshot
-        let sessionsByID = Dictionary(snapshot.activeSessions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let rows = PickyHUDDockGroupListRowProjection.rows(
-            memberSessionIDs: group.memberSessionIDs,
-            activeSessionsByID: sessionsByID,
-            updatedAt: { [weak self] sessionID in self?.viewModel.sessionCard(sessionID: sessionID)?.updatedAt },
-            makeRow: { session, updatedAt in
-                PickyHUDDockGroupListRowModel(session: session, updatedAt: updatedAt)
-            }
-        )
-        let metrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
         let root = PickyAppFontScaleRoot(store: self.fontScaleStore) { [self] in
             PickyHUDDockGroupListPanelRoot(
-                group: group,
-                rows: rows,
-                unreadSessionIDs: snapshot.unreadSessionIDs,
-                openedSessionID: entry.openedSessionID,
+                model: model,
                 displayID: displayID,
                 focusStore: dockGroupListFocusStore,
-                metrics: metrics,
                 onSelectSession: { [weak self] sessionID in
                     self?.selectDockGroupListRow(displayID: displayID, sessionID: sessionID)
                 },
                 onCreatePickle: { [weak self] in
-                    self?.requestDockGroupListPickleCreation(displayID: displayID, groupID: group.id)
+                    self?.requestDockGroupListPickleCreation(
+                        displayID: displayID,
+                        groupID: model.content.group.id
+                    )
                 },
-                moveTargetGroups: snapshot.dockLayout.groups.filter { $0.id != group.id },
-                screenContextTargetSessionID: snapshot.screenContextTargetSessionID,
-                screenContextTargetSticky: snapshot.screenContextTargetSticky,
                 onToggleScreenContextTarget: { [weak self] sessionID in
                     self?.viewModel.toggleScreenContextTarget(sessionID: sessionID)
                 },
@@ -1182,7 +1248,7 @@ final class PickyHUDOverlayManager {
                 },
                 onReorderSession: { [weak self] sessionID, visibleIndex in
                     self?.reorderDockGroupListSession(
-                        groupID: group.id,
+                        groupID: model.content.group.id,
                         sessionID: sessionID,
                         visibleIndex: visibleIndex
                     )
@@ -1200,8 +1266,8 @@ final class PickyHUDOverlayManager {
         }
         let hostingView = NSHostingView(rootView: LocalizedHostingRoot { root })
         let panelSize = PickyHUDDockGroupListPolicy.panelSize(
-            memberCount: max(1, rows.count),
-            metrics: metrics,
+            memberCount: max(1, model.content.rows.count),
+            metrics: model.content.metrics,
             fontScale: fontScaleStore.cgValue
         )
         hostingView.frame = NSRect(origin: .zero, size: panelSize)
@@ -1213,20 +1279,24 @@ final class PickyHUDOverlayManager {
         displayID: CGDirectDisplayID,
         screen: NSScreen,
         hudPanelFrame: CGRect,
-        folderFrame: CGRect
+        folderFrame: CGRect,
+        snapshot: PickyHUDDockSnapshot? = nil,
+        fontScale: CGFloat? = nil
     ) {
+        let snapshot = snapshot ?? viewModel.dockState.snapshot
+        let fontScale = fontScale ?? fontScaleStore.cgValue
         guard let entry = dockGroupListChildrenByDisplayID[displayID],
               let groupID = entry.openGroupID,
-              let group = viewModel.dockState.snapshot.dockLayout.group(withID: groupID)
+              let group = PickyHUDDockGroupListSnapshotPolicy.group(groupID: groupID, in: snapshot)
         else { return }
         let memberCount = max(1, group.memberSessionIDs.filter { sessionID in
-            viewModel.dockState.snapshot.activeSessions.contains(where: { $0.id == sessionID })
+            snapshot.activeSessions.contains(where: { $0.id == sessionID })
         }.count)
         let metrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
         let panelSize = PickyHUDDockGroupListPolicy.panelSize(
             memberCount: memberCount,
             metrics: metrics,
-            fontScale: fontScaleStore.cgValue
+            fontScale: fontScale
         )
         let side = position(for: displayID).side
         let anchoredOrigin = PickyHUDDockGroupListPolicy.anchoredOrigin(
@@ -1350,9 +1420,14 @@ final class PickyHUDOverlayManager {
         entry.panel.contentView = nil
     }
 
-    private func syncDockGroupListChildrenWithSnapshot() {
+    private func syncDockGroupListChildrenWithSnapshot(
+        snapshot: PickyHUDDockSnapshot? = nil,
+        fontScale: CGFloat? = nil
+    ) {
+        let snapshot = snapshot ?? viewModel.dockState.snapshot
+        let fontScale = fontScale ?? fontScaleStore.cgValue
         for displayID in dockGroupListChildrenByDisplayID.keys {
-            syncDockGroupListChild(displayID: displayID)
+            syncDockGroupListChild(displayID: displayID, snapshot: snapshot, fontScale: fontScale)
         }
     }
 

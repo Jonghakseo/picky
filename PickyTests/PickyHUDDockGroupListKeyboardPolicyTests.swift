@@ -92,6 +92,16 @@ struct PickyHUDDockGroupListKeyboardPolicyTests {
         #expect(PickyHUDDockGroupListKeyboardPolicy.reconciledHighlight(current: "gone", rowIDs: []) == nil)
     }
 
+    // MARK: - Scroll motion
+
+    @Test func keyboardScrollUsesTheFastMotionTokenWhenMotionIsAllowed() {
+        #expect(PickyHUDDockGroupListKeyboardPolicy.scrollMotion(reduceMotion: false) == .fast)
+    }
+
+    @Test func keyboardScrollDisablesAnimationWhenReduceMotionIsEnabled() {
+        #expect(PickyHUDDockGroupListKeyboardPolicy.scrollMotion(reduceMotion: true) == .none)
+    }
+
     // MARK: - Focus contract
 
     @Test func listOwnsArrowsOnlyWhileNoTextInputIsFocused() {

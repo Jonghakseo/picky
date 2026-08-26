@@ -26,6 +26,14 @@ enum PickyHUDDockGroupListArrowDirection: Equatable {
     case down
 }
 
+/// The view maps this semantic choice to the design system's fast animation.
+/// Keeping it value-based makes the Reduce Motion branch testable without a
+/// live scroll view.
+enum PickyHUDDockGroupListScrollMotion: Equatable {
+    case none
+    case fast
+}
+
 /// What `esc` should do, given what is currently open and focused.
 enum PickyHUDDockEscapeOutcome: Equatable {
     case closeGroupList
@@ -78,6 +86,10 @@ enum PickyHUDDockGroupListKeyboardPolicy {
     static func reconciledHighlight(current: String?, rowIDs: [String]) -> String? {
         guard let current else { return rowIDs.first }
         return rowIDs.contains(current) ? current : rowIDs.first
+    }
+
+    static func scrollMotion(reduceMotion: Bool) -> PickyHUDDockGroupListScrollMotion {
+        reduceMotion ? .none : .fast
     }
 
     /// The list only owns arrows and Return while no text input has focus, so

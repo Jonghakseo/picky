@@ -167,3 +167,59 @@ struct PickyHUDDockGroupListRowProjectionTests {
         #expect(rows[1].updatedAt == .distantPast)
     }
 }
+
+struct PickyHUDDockGroupListSnapshotPolicyTests {
+    private func snapshot(memberSessionIDs: [String]) -> PickyHUDDockSnapshot {
+        PickyHUDDockSnapshot(
+            activeSessions: [],
+            dockLayout: PickyDockLayout(entries: [
+                .group(PickyDockGroup(id: "group", memberSessionIDs: memberSessionIDs))
+            ]),
+            screenContextTargetSessionID: nil,
+            screenContextTargetSticky: false,
+            screenContextArmCollapseToken: UUID(),
+            pendingDoneFlashSessionIDs: [],
+            unreadSessionIDs: [],
+            pinnedPickleCwds: [],
+            recentPickleCwds: [],
+            isLoadingInitialSessionSnapshot: false,
+            openSessionRequest: nil
+        )
+    }
+
+    @Test func emittedSnapshotSuppliesMembershipWhileStoredSnapshotIsOneUpdateBehind() throws {
+        let storedSnapshot = snapshot(memberSessionIDs: ["old-member"])
+        let emittedSnapshot = snapshot(memberSessionIDs: ["new-member"])
+
+        let renderedGroup = try #require(
+            PickyHUDDockGroupListSnapshotPolicy.group(groupID: "group", in: emittedSnapshot)
+        )
+
+        #expect(renderedGroup.memberSessionIDs == ["new-member"])
+        #expect(renderedGroup.memberSessionIDs != PickyHUDDockGroupListSnapshotPolicy
+            .group(groupID: "group", in: storedSnapshot)?.memberSessionIDs)
+    }
+
+    @MainActor
+    @Test func panelModelUpdatesMembershipWithoutReplacingItsIdentity() {
+        func content(memberSessionIDs: [String]) -> PickyHUDDockGroupListPanelContent {
+            PickyHUDDockGroupListPanelContent(
+                group: PickyDockGroup(id: "group", memberSessionIDs: memberSessionIDs),
+                rows: [],
+                unreadSessionIDs: [],
+                openedSessionID: nil,
+                metrics: PickyHUDDockMetrics(preset: .medium),
+                moveTargetGroups: [],
+                screenContextTargetSessionID: nil,
+                screenContextTargetSticky: false
+            )
+        }
+
+        let model = PickyHUDDockGroupListPanelModel(content: content(memberSessionIDs: ["before"]))
+        let identity = ObjectIdentifier(model)
+        model.update(content: content(memberSessionIDs: ["after"]))
+
+        #expect(ObjectIdentifier(model) == identity)
+        #expect(model.content.group.memberSessionIDs == ["after"])
+    }
+}

@@ -8,6 +8,15 @@
 
 import Foundation
 
+/// Resolves panel data from the snapshot emitted by the dock publisher. The
+/// publisher fires before its stored property changes, so callers must not
+/// re-read the store while handling the event.
+enum PickyHUDDockGroupListSnapshotPolicy {
+    static func group(groupID: String, in snapshot: PickyHUDDockSnapshot) -> PickyDockGroup? {
+        snapshot.dockLayout.group(withID: groupID)
+    }
+}
+
 /// Projects a group's stored membership into the rows the panel renders.
 ///
 /// Membership outlives visibility: archived members stay in `memberSessionIDs`

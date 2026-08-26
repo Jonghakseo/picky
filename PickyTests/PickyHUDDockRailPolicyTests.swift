@@ -121,6 +121,40 @@ struct PickyHUDDockRailPolicyTests {
         ) == false)
     }
 
+    @Test func previewOnlyGroupReorderDoesNotCancelAFolderDrag() {
+        let persisted = PickyDockProjection(
+            items: [.session(id: "a"), .session(id: "b")],
+            slots: []
+        )
+        let preview = PickyDockProjection(
+            items: [.session(id: "b"), .session(id: "a")],
+            slots: []
+        )
+        let reference = PickyHUDDockRenderPolicy.dragCancellationTopEntryIDs(in: persisted)
+
+        #expect(PickyHUDDockRenderPolicy.shouldCancelDrag(
+            referenceTopEntryIDs: reference,
+            currentTopEntryIDs: PickyHUDDockRenderPolicy.dragCancellationTopEntryIDs(in: persisted)
+        ) == false)
+        #expect(PickyHUDDockRenderPolicy.visibleTopEntryIDs(in: preview.items) != reference)
+    }
+
+    @Test func persistedStructuralChangeCancelsAFolderDrag() {
+        let before = PickyDockProjection(
+            items: [.session(id: "a"), .session(id: "b")],
+            slots: []
+        )
+        let after = PickyDockProjection(
+            items: [.session(id: "a"), .session(id: "new"), .session(id: "b")],
+            slots: []
+        )
+
+        #expect(PickyHUDDockRenderPolicy.shouldCancelDrag(
+            referenceTopEntryIDs: PickyHUDDockRenderPolicy.dragCancellationTopEntryIDs(in: before),
+            currentTopEntryIDs: PickyHUDDockRenderPolicy.dragCancellationTopEntryIDs(in: after)
+        ))
+    }
+
     @Test func dragGeometryRespectsDockAxisAndOutwardDirection() {
         let translation = CGSize(width: 30, height: 45)
         let metrics = PickyHUDDockMetrics(preset: .medium)

@@ -2251,6 +2251,22 @@
         }
       }
     },
+    "group.list.newPickle.accessibilityLabel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create Pickle in group"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "그룹에 피클 생성"
+          }
+        }
+      }
+    },
     "group.list.status.blocked": {
       "localizations": {
         "en": {

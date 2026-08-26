@@ -221,7 +221,7 @@ struct PickyHUDDockRailView: View {
         .onPreferenceChange(PickyDockTopEntryCenterPreferenceKey.self) { centers in
             topEntryCenters = centers
         }
-        .onChange(of: PickyHUDDockRenderPolicy.visibleTopEntryIDs(in: baseProjection.items)) { _, entryIDs in
+        .onChange(of: PickyHUDDockRenderPolicy.dragCancellationTopEntryIDs(in: baseProjection)) { _, entryIDs in
             cancelDragsForStructuralProjectionChange(currentTopEntryIDs: entryIDs)
         }
         .onHover(perform: onDockHoverChanged)

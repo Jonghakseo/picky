@@ -194,14 +194,27 @@ struct PickyHUDDockGroupListDragPolicyTests {
 
 @MainActor
 extension PickyHUDDockGroupListDragPolicyTests {
-    @Test func synchronousMembershipValidationRejectsImmediateCommitAfterStructureChange() {
-        #expect(PickyHUDDockGroupListDragPolicy.isCurrent(
-            referenceRowIDs: ["alpha", "bravo"],
-            currentRowIDs: ["alpha", "bravo"]
-        ))
+    @Test func liveMembershipRejectsImmediateCommitAfterStructureChangeBeforeRender() {
+        let membership = PickyHUDDockGroupListLiveMembership(rowIDs: ["alpha", "bravo"])
+        let frozenIDs = membership.rowIDs
+
+        // This is the monitor's synchronous read, without a SwiftUI render
+        // callback between the snapshot mutation and mouse-up.
+        membership.update(rowIDs: ["bravo", "alpha"])
         #expect(!PickyHUDDockGroupListDragPolicy.isCurrent(
-            referenceRowIDs: ["alpha", "bravo"],
-            currentRowIDs: ["bravo", "alpha"]
+            referenceRowIDs: frozenIDs,
+            currentRowIDs: membership.rowIDs
+        ))
+    }
+
+    @Test func liveMembershipPermitsContentOnlyUpdatesWithTheSameIDs() {
+        let membership = PickyHUDDockGroupListLiveMembership(rowIDs: ["alpha", "bravo"])
+        let frozenIDs = membership.rowIDs
+
+        membership.update(rowIDs: ["alpha", "bravo"])
+        #expect(PickyHUDDockGroupListDragPolicy.isCurrent(
+            referenceRowIDs: frozenIDs,
+            currentRowIDs: membership.rowIDs
         ))
     }
 }

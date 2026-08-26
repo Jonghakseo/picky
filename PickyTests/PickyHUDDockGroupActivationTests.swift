@@ -51,6 +51,22 @@ struct PickyHUDDockGroupActivationTests {
         #expect(relay.request == nil)
     }
 
+    @Test func anchorCapturesTheExactPresentationIdentityBeforeARelayReplacement() {
+        let first = PickyHUDDockGroupPickerRequest(id: UUID(), groupID: "group")
+        let replacement = PickyHUDDockGroupPickerRequest(id: UUID(), groupID: "group")
+        let capturedID = PickyHUDDockGroupPickerPresentationIdentity.requestID(
+            forAnchorGroupID: "group",
+            activeRequest: first
+        )
+
+        #expect(capturedID == first.id)
+        #expect(capturedID != replacement.id)
+        #expect(PickyHUDDockGroupPickerPresentationIdentity.requestID(
+            forAnchorGroupID: "other",
+            activeRequest: replacement
+        ) == nil)
+    }
+
     @Test func deletedPickerTargetFallsBackWithoutSilentlyConsumingIntent() {
         let request = PickyHUDDockGroupPickerRequest(groupID: "deleted")
         #expect(PickyHUDDockGroupPickerRelayPolicy.presentation(

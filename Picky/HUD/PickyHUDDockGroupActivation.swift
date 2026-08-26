@@ -90,6 +90,18 @@ final class PickyHUDDockGroupPickerRelay: ObservableObject {
     }
 }
 
+enum PickyHUDDockGroupPickerPresentationIdentity {
+    /// The popover closure captures this identity while it is bound to one
+    /// anchor. A later relay request cannot be acknowledged by an old anchor.
+    static func requestID(
+        forAnchorGroupID anchorGroupID: String?,
+        activeRequest: PickyHUDDockGroupPickerRequest?
+    ) -> UUID? {
+        guard activeRequest?.groupID == anchorGroupID else { return nil }
+        return activeRequest?.id
+    }
+}
+
 enum PickyHUDDockGroupPickerRelayPresentation: Equatable {
     case targeted(groupID: String)
     case untargeted

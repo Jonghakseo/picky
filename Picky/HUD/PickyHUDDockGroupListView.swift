@@ -54,14 +54,32 @@ struct PickyHUDDockGroupListPanelContent {
 }
 
 @MainActor
+final class PickyHUDDockGroupListLiveMembership {
+    private(set) var rowIDs: [String]
+
+    init(rowIDs: [String]) {
+        self.rowIDs = rowIDs
+    }
+
+    func update(rowIDs: [String]) {
+        self.rowIDs = rowIDs
+    }
+}
+
+@MainActor
 final class PickyHUDDockGroupListPanelModel: ObservableObject {
     @Published private(set) var content: PickyHUDDockGroupListPanelContent
+    /// App-level drag monitors outlive an individual SwiftUI value. This
+    /// reference remains current even in the gap before the next render pass.
+    let liveMembership: PickyHUDDockGroupListLiveMembership
 
     init(content: PickyHUDDockGroupListPanelContent) {
         self.content = content
+        self.liveMembership = PickyHUDDockGroupListLiveMembership(rowIDs: content.rows.map(\.id))
     }
 
     func update(content: PickyHUDDockGroupListPanelContent) {
+        liveMembership.update(rowIDs: content.rows.map(\.id))
         self.content = content
     }
 }
@@ -186,6 +204,7 @@ struct PickyHUDDockGroupListPanelRoot: View {
             onMoveSessionToGroup: onMoveSessionToGroup,
             onUngroupSession: onUngroupSession,
             onReorderSession: onReorderSession,
+            liveRowIDs: { model.liveMembership.rowIDs },
             convertScreenPointToPanel: convertScreenPointToPanel
         )
         .frame(width: panelSize.width, height: panelSize.height)
@@ -218,6 +237,9 @@ struct PickyHUDDockGroupListView: View {
     let onMoveSessionToGroup: (String, String) -> Void
     let onUngroupSession: (String) -> Void
     let onReorderSession: (_ sessionID: String, _ visibleIndex: Int) -> Void
+    /// Reads identity from the stable panel model, not the SwiftUI value
+    /// captured by app-level drag monitors.
+    let liveRowIDs: () -> [String]
     /// Screen point to panel-local point. The overlay manager owns the child
     /// panel, so it is the only place that knows the live frame.
     let convertScreenPointToPanel: (CGPoint) -> CGPoint
@@ -341,7 +363,7 @@ struct PickyHUDDockGroupListView: View {
         // gap cannot commit against an obsolete membership order.
         guard PickyHUDDockGroupListDragPolicy.isCurrent(
             referenceRowIDs: dragReferenceRowIDs,
-            currentRowIDs: rows.map(\.id)
+            currentRowIDs: liveRowIDs()
         ) else {
             resetDrag()
             return
@@ -378,7 +400,7 @@ struct PickyHUDDockGroupListView: View {
     private func commitDrag(rowID: String, location: CGPoint) {
         guard PickyHUDDockGroupListDragPolicy.isCurrent(
             referenceRowIDs: dragReferenceRowIDs,
-            currentRowIDs: rows.map(\.id)
+            currentRowIDs: liveRowIDs()
         ) else {
             resetDrag()
             return
@@ -389,7 +411,7 @@ struct PickyHUDDockGroupListView: View {
             isInsidePanel: isInside,
             timeOutsidePanel: timeOutside,
             insertionIndex: insertionIndex(for: rowID, pointerY: location.y),
-            isDraggedRowStillPresent: rows.contains { $0.id == rowID }
+            isDraggedRowStillPresent: liveRowIDs().contains(rowID)
         )
         resetDrag()
         switch outcome {

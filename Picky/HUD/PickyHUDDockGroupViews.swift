@@ -294,6 +294,9 @@ struct PickyHUDDockCollapsedGroupBadge: View {
     var shortcutNumber: Int? = nil
     var isCommandShortcutHintVisible: Bool = false
     var onTap: () -> Void = {}
+    var onReorderBegan: () -> Void = {}
+    var onReorderChanged: (CGSize) -> Void = { _ in }
+    var onReorderEnded: (CGSize) -> Void = { _ in }
 
     @State private var isHovered = false
 
@@ -391,12 +394,16 @@ struct PickyHUDDockCollapsedGroupBadge: View {
             withAnimation(.easeOut(duration: 0.12)) { isHovered = hovering }
         }
         .overlay {
-            // Match normal dock tiles' native Button mouse-up delivery. The
-            // previous SwiftUI tap recognizer was the first divergent boundary
-            // from ungrouped tiles and could be preempted by the rail drag.
-            Button(action: onTap) { Color.clear }
-                .buttonStyle(.plain)
-                .contentShape(RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous))
+            // One AppKit owner arbitrates click versus reorder. Keeping this
+            // above the badge content avoids the old child Button competing
+            // with a parent high-priority SwiftUI drag recognizer.
+            PickyHUDDockGroupTileClickHost(
+                onHover: { isHovered = true },
+                onActivate: onTap,
+                onReorderBegan: onReorderBegan,
+                onReorderChanged: onReorderChanged,
+                onReorderEnded: onReorderEnded
+            )
         }
     }
 

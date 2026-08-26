@@ -299,9 +299,8 @@ struct PickyHUDDockGroupListView: View {
     @State private var isLeavingGroup = false
     @State private var leftPanelAt: Date?
     @State private var scrollController = PickyHUDDockGroupListScrollController()
+    @State private var dragAutoScrollTicker = PickyHUDDockGroupListDragAutoScrollTicker()
     @State private var dragMonitors: [Any] = []
-
-    private let autoScrollTimer = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.pickyAppFontScale) private var fontScale
@@ -348,7 +347,7 @@ struct PickyHUDDockGroupListView: View {
             }
         }
         .onDisappear { resetDrag() }
-        .onReceive(autoScrollTimer) { autoScroll(at: $0) }
+        .onReceive(dragAutoScrollTicker.ticks) { autoScroll(at: $0) }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L10n.t("group.list.accessibility.label", group.displayName, rows.count))
     }
@@ -365,6 +364,7 @@ struct PickyHUDDockGroupListView: View {
         isLeavingGroup = false
         leftPanelAt = nil
         scrollController.resetClock()
+        dragAutoScrollTicker.setDragging(true)
         installDragMonitors(rowID: rowID)
     }
 
@@ -453,9 +453,15 @@ struct PickyHUDDockGroupListView: View {
             return
         }
 
+        guard let viewportFrame = scrollController.viewportFrame(
+            convertScreenPointToPanel: convertScreenPointToPanel
+        ) else {
+            scrollController.resetClock()
+            return
+        }
         let velocity = PickyHUDDockGroupListDragPolicy.autoScrollVelocity(
             pointerY: location.y,
-            panelHeight: panelBounds.height
+            viewportFrame: viewportFrame
         )
         guard velocity != 0 else {
             scrollController.resetClock()
@@ -527,6 +533,7 @@ struct PickyHUDDockGroupListView: View {
         isLeavingGroup = false
         leftPanelAt = nil
         scrollController.resetClock()
+        dragAutoScrollTicker.setDragging(false)
     }
 
     private var panelBackground: some View {
@@ -814,6 +821,56 @@ private struct PickyHUDDockGroupListHeader: View {
     }
 }
 
+/// Owns the display-paced tick only while a row drag is active. The timer's
+/// callback captures this object weakly, while teardown always invalidates the
+/// timer, so an abandoned panel cannot keep either resource alive.
+@MainActor
+final class PickyHUDDockGroupListDragAutoScrollTicker {
+    typealias TimerFactory = (@escaping (Date) -> Void) -> () -> Void
+
+    let ticks = PassthroughSubject<Date, Never>()
+    private let makeTimer: TimerFactory
+    private var cancelTimer: (() -> Void)?
+
+    var isRunning: Bool { cancelTimer != nil }
+
+    init() {
+        makeTimer = Self.makeMainRunLoopTimer
+    }
+
+    init(makeTimer: @escaping TimerFactory) {
+        self.makeTimer = makeTimer
+    }
+
+    func setDragging(_ isDragging: Bool) {
+        guard isDragging else {
+            stop()
+            return
+        }
+        guard cancelTimer == nil else { return }
+        cancelTimer = makeTimer { [weak self] date in
+            self?.ticks.send(date)
+        }
+    }
+
+    func stop() {
+        cancelTimer?()
+        cancelTimer = nil
+    }
+
+    deinit {
+        cancelTimer?()
+    }
+
+    private static func makeMainRunLoopTimer(tick: @escaping (Date) -> Void) -> () -> Void {
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { timer in
+            tick(timer.fireDate)
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        return { timer.invalidate() }
+    }
+}
+
 /// Holds the native scroll view that SwiftUI creates for an overflowing member
 /// list. This keeps the drag path in the same AppKit coordinate space as the
 /// app-level mouse monitors and applies the policy velocity without rebuilding
@@ -834,6 +891,30 @@ private final class PickyHUDDockGroupListScrollController {
 
     func resetClock() {
         lastTick = nil
+    }
+
+    /// Converts the native clip view's live viewport into the panel's top-left
+    /// coordinate space, which is also used by the app-level pointer monitor.
+    func viewportFrame(convertScreenPointToPanel: (CGPoint) -> CGPoint) -> CGRect? {
+        guard let scrollView,
+              let window = scrollView.window
+        else { return nil }
+
+        let clipView = scrollView.contentView
+        let viewportInWindow = clipView.convert(clipView.bounds, to: nil)
+        let viewportOnScreen = window.convertToScreen(viewportInWindow)
+        let topLeading = convertScreenPointToPanel(
+            CGPoint(x: viewportOnScreen.minX, y: viewportOnScreen.maxY)
+        )
+        let bottomTrailing = convertScreenPointToPanel(
+            CGPoint(x: viewportOnScreen.maxX, y: viewportOnScreen.minY)
+        )
+        return CGRect(
+            x: topLeading.x,
+            y: topLeading.y,
+            width: bottomTrailing.x - topLeading.x,
+            height: bottomTrailing.y - topLeading.y
+        ).standardized
     }
 
     /// Do not catch up a paused main run loop with an unexpectedly large jump.

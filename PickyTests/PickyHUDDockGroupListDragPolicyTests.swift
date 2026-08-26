@@ -150,6 +150,29 @@ struct PickyHUDDockGroupListDragPolicyTests {
         #expect(PickyHUDDockGroupListDragPolicy.autoScrollVelocity(pointerY: 5, panelHeight: 40) == 0)
     }
 
+    @Test func visibleViewportEdgesScrollDespitePanelHeaderAndPadding() {
+        // The scroll viewport begins below the panel's header and padding. A
+        // pointer at its visible top edge must not be treated as panel middle.
+        let viewport = CGRect(x: 12, y: 64, width: 216, height: 180)
+
+        let top = PickyHUDDockGroupListDragPolicy.autoScrollVelocity(
+            pointerY: viewport.minY,
+            viewportFrame: viewport
+        )
+        let middle = PickyHUDDockGroupListDragPolicy.autoScrollVelocity(
+            pointerY: viewport.midY,
+            viewportFrame: viewport
+        )
+        let bottom = PickyHUDDockGroupListDragPolicy.autoScrollVelocity(
+            pointerY: viewport.maxY,
+            viewportFrame: viewport
+        )
+
+        #expect(top == -PickyHUDDockGroupListDragPolicy.autoScrollPointsPerSecond)
+        #expect(middle == 0)
+        #expect(bottom == PickyHUDDockGroupListDragPolicy.autoScrollPointsPerSecond)
+    }
+
     @Test func edgeHoldMovesScrollPositionAndInsertionDestination() {
         let pointerY: CGFloat = 296
         let panelHeight: CGFloat = 300
@@ -276,5 +299,39 @@ extension PickyHUDDockGroupListDragPolicyTests {
             referenceRowIDs: frozenIDs,
             currentRowIDs: membership.rowIDs
         ))
+    }
+
+    @Test func autoScrollTickerStartsOnlyForAnActiveDragAndStopsOnReset() {
+        var startCount = 0
+        var cancellationCount = 0
+        let ticker = PickyHUDDockGroupListDragAutoScrollTicker { _ in
+            startCount += 1
+            return { cancellationCount += 1 }
+        }
+
+        ticker.setDragging(false)
+        #expect(startCount == 0)
+        #expect(!ticker.isRunning)
+
+        ticker.setDragging(true)
+        ticker.setDragging(true)
+        #expect(startCount == 1)
+        #expect(ticker.isRunning)
+
+        ticker.setDragging(false)
+        #expect(cancellationCount == 1)
+        #expect(!ticker.isRunning)
+    }
+
+    @Test func autoScrollTickerCancelsItsActiveTimerDuringTeardown() {
+        var cancellationCount = 0
+        var ticker: PickyHUDDockGroupListDragAutoScrollTicker? = PickyHUDDockGroupListDragAutoScrollTicker { _ in
+            { cancellationCount += 1 }
+        }
+
+        ticker?.setDragging(true)
+        ticker = nil
+
+        #expect(cancellationCount == 1)
     }
 }

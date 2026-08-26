@@ -96,8 +96,19 @@ enum PickyHUDDockGroupListDragPolicy {
         min(max(currentOffset + (velocity * CGFloat(elapsed)), 0), max(0, maximumOffset))
     }
 
+    /// Resolves edge velocity against the actual visible viewport, not the
+    /// whole panel. The panel also contains header and padding chrome above the
+    /// scroll view, so this frame must share the pointer's panel-local space.
+    static func autoScrollVelocity(pointerY: CGFloat, viewportFrame: CGRect) -> CGFloat {
+        guard viewportFrame.height > 0 else { return 0 }
+        return autoScrollVelocity(
+            pointerY: pointerY - viewportFrame.minY,
+            panelHeight: viewportFrame.height
+        )
+    }
+
     /// Negative scrolls toward the top, positive toward the bottom, zero in the
-    /// middle of the panel. Only the edge bands scroll, and the ramp is linear
+    /// middle of the viewport. Only the edge bands scroll, and the ramp is linear
     /// so the speed is predictable near the boundary.
     static func autoScrollVelocity(pointerY: CGFloat, panelHeight: CGFloat) -> CGFloat {
         guard panelHeight > autoScrollEdgeInset * 2 else { return 0 }

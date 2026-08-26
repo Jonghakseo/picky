@@ -164,6 +164,12 @@ struct PickyHUDDockMetrics: Equatable {
     var statusDotSide: CGFloat { max(6, scaled(8)) }
     var archiveRingSide: CGFloat { max(36, scaled(42)) }
     var archiveBadgeSide: CGFloat { max(12, scaled(14)) }
+    /// Header geometry is a dock-specific exception to the standard spacing
+    /// scale: it preserves a 24pt target above a group folder at Large and
+    /// scales proportionally with the dock preset.
+    var groupHeaderHitAreaHeight: CGFloat { scaled(24) }
+    var groupHeaderContentSpacing: CGFloat { scaled(4) }
+    var groupHeaderAccentSide: CGFloat { scaled(4) }
     /// Width of the dock-icon hover preview card. Scales together with the dock
     /// rail itself so the preview never looks oversized next to a Small dock or
     /// undersized next to a Large dock. Lower bound keeps the title/status row
@@ -293,6 +299,21 @@ enum PickyHUDDockLayout {
     /// session and the collapsed `+` slot — horizontal needs less internal
     /// breathing room than vertical because the dock is short on the cross
     /// axis and any extra padding reads as wasted space.
+    static func horizontalDockRailCrossSize(
+        hasGroupHeaders: Bool,
+        metrics: PickyHUDDockMetrics = .medium
+    ) -> CGFloat {
+        guard hasGroupHeaders else { return metrics.railWidth }
+        return metrics.railWidth + metrics.groupHeaderHitAreaHeight + metrics.groupHeaderContentSpacing
+    }
+
+    static func dockGroupHeaderExtraLength(
+        groupHeaderCount: Int,
+        metrics: PickyHUDDockMetrics = .medium
+    ) -> CGFloat {
+        CGFloat(groupHeaderCount) * (metrics.groupHeaderHitAreaHeight + metrics.groupHeaderContentSpacing)
+    }
+
     static func horizontalDockRailLength(
         sessionCount: Int,
         isAddSlotExpanded: Bool,

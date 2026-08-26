@@ -111,6 +111,33 @@ struct PickyDockTopEntryCenterPreferenceKey: PreferenceKey {
     }
 }
 
+/// Quiet, label-scale identity chrome for a single folder tile. It stays
+/// non-interactive so the tile remains the sole owner of opening, dragging,
+/// and its context menu.
+struct PickyHUDDockGroupHeader: View {
+    let group: PickyDockGroup
+    let metrics: PickyHUDDockMetrics
+
+    var body: some View {
+        HStack(spacing: metrics.groupHeaderContentSpacing) {
+            Circle()
+                .fill(group.color.accent)
+                .frame(
+                    width: metrics.groupHeaderAccentSide,
+                    height: metrics.groupHeaderAccentSide
+                )
+            Text(group.displayName)
+                .font(PickyHUDTypography.labelSemibold)
+                .foregroundStyle(DS.Colors.textSecondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .frame(width: metrics.sessionTileWidth, height: metrics.groupHeaderHitAreaHeight, alignment: .leading)
+        .contentShape(Rectangle())
+        .accessibilityHidden(true)
+    }
+}
+
 /// Shared status -> dock visual mapping so the full dock icon and the
 /// collapsed-group folder mini glyph stay in sync.
 enum PickyDockPickleStatusVisual {

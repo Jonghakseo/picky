@@ -8,8 +8,12 @@
 import CoreGraphics
 
 enum PickyHUDDockRailLayoutPolicy {
+    /// The rail has one folder tile per group, plus one compact header for
+    /// that tile. Member count deliberately does not participate in this
+    /// calculation, so a growing group cannot stretch the rail.
     static func contentLength(
         sessionCount: Int,
+        groupCount: Int = 0,
         isAddSlotExpanded: Bool,
         dockSide: PickyHUDDockSide,
         metrics: PickyHUDDockMetrics
@@ -24,6 +28,19 @@ enum PickyHUDDockRailLayoutPolicy {
         return PickyHUDDockLayout.dockRailHeight(
             sessionCount: sessionCount,
             isAddSlotExpanded: isAddSlotExpanded,
+            metrics: metrics
+        ) + PickyHUDDockLayout.dockGroupHeaderExtraLength(
+            groupHeaderCount: groupCount,
+            metrics: metrics
+        )
+    }
+
+    static func horizontalCrossSize(
+        groupCount: Int,
+        metrics: PickyHUDDockMetrics
+    ) -> CGFloat {
+        PickyHUDDockLayout.horizontalDockRailCrossSize(
+            hasGroupHeaders: groupCount > 0,
             metrics: metrics
         )
     }
@@ -65,6 +82,29 @@ enum PickyHUDDockRenderPolicy {
             case .group(let group): "group:\(group.id)" == entryID
             }
         }
+    }
+
+    /// Resolves a group drag from geometry captured before the preview starts.
+    /// Keeping hit-testing separate from the live preview prevents a moved tile
+    /// from changing the target under the pointer on the next event.
+    static func nearestLayoutEntryIndex(
+        cursorAxis: CGFloat,
+        visibleTopEntryIDs: [String],
+        referenceCenters: [String: CGFloat],
+        layout: PickyDockLayout
+    ) -> Int? {
+        var nearestEntryID: String?
+        var minimumDistance = CGFloat.infinity
+        for entryID in visibleTopEntryIDs {
+            guard let center = referenceCenters[entryID] else { continue }
+            let distance = abs(center - cursorAxis)
+            if distance < minimumDistance {
+                minimumDistance = distance
+                nearestEntryID = entryID
+            }
+        }
+        guard let nearestEntryID else { return nil }
+        return layoutEntryIndex(forVisibleTopEntryID: nearestEntryID, in: layout)
     }
 }
 

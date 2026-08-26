@@ -306,7 +306,7 @@ When you start a Pickle this way, Picky creates an empty Pickle for that folder 
 
 ### 7.4 Pickle groups
 
-Group related Pickles into a single folder tile in the dock rail.
+Group related Pickles into a single folder tile in the dock rail. Each folder has a quiet color-marked group-name header, so its identity stays visible without expanding the rail by member count.
 
 Create a group:
 

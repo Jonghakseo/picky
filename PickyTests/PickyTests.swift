@@ -266,7 +266,7 @@ struct PickyTests {
         #expect(PickyHUDDockLayout.dockRailHeight(sessionCount: 3, isAddSlotExpanded: true, metrics: mediumMetrics) - railThree == mediumMetrics.addSlotCollapsedExpansionReserve)
         #expect(PickyHUDDockLayout.horizontalDockRailLength(sessionCount: 3, isAddSlotExpanded: true, metrics: mediumMetrics) - horizontalThree == mediumMetrics.addSlotCollapsedExpansionReserve)
 
-        // Folder tiles consume exactly one normal slot and add no header chrome.
+        // A rail with no groups has only its ordinary top-level slot chrome.
         #expect(PickyHUDDockRailLayoutPolicy.contentLength(
             sessionCount: 3,
             isAddSlotExpanded: false,

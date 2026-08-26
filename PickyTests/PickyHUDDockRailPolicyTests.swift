@@ -30,14 +30,23 @@ struct PickyHUDDockRailPolicyTests {
                     metrics: metrics,
                     fontScale: fontScale
                 )
+                let verticalCrossSize = PickyHUDDockRailLayoutPolicy.verticalCrossSize(
+                    groupCount: groupCount,
+                    metrics: metrics,
+                    fontScale: fontScale
+                )
                 let horizontalCrossSize = PickyHUDDockRailLayoutPolicy.horizontalCrossSize(
                     groupCount: groupCount,
                     metrics: metrics,
                     fontScale: fontScale
                 )
+                let labelWidth = PickyHUDDockGroupHeaderPresentation.labelWidth(
+                    metrics: metrics,
+                    fontScale: fontScale
+                )
                 let folderCrossSize = max(
                     metrics.railWidth,
-                    metrics.sessionTileHeight + (metrics.horizontalPadding * 2)
+                    labelWidth + (metrics.horizontalPadding * 2)
                 )
                 let renderedFont = PickyHUDDockGroupHeaderPresentation.labelFont(fontScale: fontScale)
                 let renderedLineHeight = renderedFont.ascender - renderedFont.descender + renderedFont.leading
@@ -62,8 +71,9 @@ struct PickyHUDDockRailPolicyTests {
                     isAddSlotExpanded: false,
                     metrics: metrics
                 ))
-                // A label below the tile grows only the cross axis in horizontal
-                // orientation and never contributes one unit per member.
+                // A CJK-safe label grows the rail's cross axis once per
+                // folder block, never once per member.
+                #expect(verticalCrossSize == folderCrossSize)
                 #expect(horizontalCrossSize == folderCrossSize + labelChrome)
             }
         }
@@ -109,17 +119,24 @@ struct PickyHUDDockRailPolicyTests {
         ))
     }
 
-    @Test func groupHeaderFitsFourCJKCharactersAtEveryDockPreset() {
-        let font = PickyHUDDockGroupHeaderPresentation.labelFont(fontScale: 1)
-        let fourCJKCharactersWidth = ("가나다라" as NSString).size(withAttributes: [.font: font]).width
-
+    @Test func groupHeaderFitsFourCJKCharactersAtEveryDockPresetAndFontScale() {
         for preset in PickyHUDDockSizePreset.allCases {
             let metrics = PickyHUDDockMetrics(preset: preset)
-            let availableLabelWidth = PickyHUDDockGroupHeaderPresentation.labelWidth(metrics: metrics)
+            for fontScale: CGFloat in [1, 1.3] {
+                let font = PickyHUDDockGroupHeaderPresentation.labelFont(fontScale: fontScale)
+                let fourCJKCharactersWidth = ("가나다라" as NSString).size(withAttributes: [.font: font]).width
+                let availableLabelWidth = PickyHUDDockGroupHeaderPresentation.labelWidth(
+                    metrics: metrics,
+                    fontScale: fontScale
+                )
 
-            // Measure the actual AppKit font paired with the SwiftUI label
-            // role, rather than relying on a brittle point-width constant.
-            #expect(availableLabelWidth >= fourCJKCharactersWidth, "\(preset) header truncates before four CJK characters")
+                // Measure the actual AppKit font paired with the SwiftUI label
+                // role, rather than relying on a brittle point-width constant.
+                #expect(
+                    availableLabelWidth >= fourCJKCharactersWidth + metrics.groupHeaderContentSpacing,
+                    "\(preset) at \(fontScale)x truncates before four CJK characters"
+                )
+            }
         }
     }
 

@@ -185,7 +185,10 @@ struct PickyHUDDockMetrics: Equatable {
     var groupListHeaderBottomSpacing: CGFloat { scaled(8) } // space.2
     var groupListRowHeight: CGFloat { scaled(38) }
     var groupListRowVerticalPadding: CGFloat { scaled(4) } // space.1
-    var groupListRowSpacing: CGFloat { scaled(4) } // space.1
+    /// Structural separation between list-row meaning units. Selected rows
+    /// need `space.2` clearance so their state surface never reads attached
+    /// to an adjacent row.
+    var groupListRowSpacing: CGFloat { scaled(8) } // space.2
     var groupListRowGlyphSide: CGFloat { scaled(20) } // space.5
     var groupListRowContentSpacing: CGFloat { scaled(8) } // space.2
     var groupListPanelCornerRadius: CGFloat { scaled(12) } // radius.surface
@@ -301,6 +304,19 @@ enum PickyHUDDockLayout {
     /// session and the collapsed `+` slot — horizontal needs less internal
     /// breathing room than vertical because the dock is short on the cross
     /// axis and any extra padding reads as wasted space.
+    static func verticalDockRailCrossSize(
+        hasGroupHeaders: Bool,
+        metrics: PickyHUDDockMetrics = .medium,
+        fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
+    ) -> CGFloat {
+        guard hasGroupHeaders else { return metrics.railWidth }
+        return max(
+            metrics.railWidth,
+            PickyHUDDockGroupHeaderPresentation.labelWidth(metrics: metrics, fontScale: fontScale)
+                + (metrics.horizontalPadding * 2)
+        )
+    }
+
     static func horizontalDockRailCrossSize(
         hasGroupHeaders: Bool,
         metrics: PickyHUDDockMetrics = .medium,
@@ -308,7 +324,11 @@ enum PickyHUDDockLayout {
     ) -> CGFloat {
         guard hasGroupHeaders else { return metrics.railWidth }
         let folderCrossSize = max(
-            metrics.railWidth,
+            verticalDockRailCrossSize(
+                hasGroupHeaders: hasGroupHeaders,
+                metrics: metrics,
+                fontScale: fontScale
+            ),
             metrics.sessionTileHeight + (metrics.horizontalPadding * 2)
         )
         return folderCrossSize
@@ -385,11 +405,15 @@ enum PickyHUDDockLayout {
         dockSide: PickyHUDDockSide,
         sessionCount: Int,
         isAddSlotExpanded: Bool,
-        metrics: PickyHUDDockMetrics = .medium
+        metrics: PickyHUDDockMetrics = .medium,
+        dockRailCrossSize: CGFloat? = nil
     ) -> CGFloat {
         switch dockSide.orientation {
         case .vertical:
-            return cardWidth + panelGap + metrics.railWidth + (PickyHUDExpansion.dockShadowHorizontalPadding * 2)
+            return cardWidth
+                + panelGap
+                + (dockRailCrossSize ?? metrics.railWidth)
+                + (PickyHUDExpansion.dockShadowHorizontalPadding * 2)
         case .horizontal:
             let railLength = horizontalDockRailLength(
                 sessionCount: sessionCount,

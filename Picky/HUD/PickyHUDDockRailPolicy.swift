@@ -37,6 +37,18 @@ enum PickyHUDDockRailLayoutPolicy {
         )
     }
 
+    static func verticalCrossSize(
+        groupCount: Int,
+        metrics: PickyHUDDockMetrics,
+        fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
+    ) -> CGFloat {
+        PickyHUDDockLayout.verticalDockRailCrossSize(
+            hasGroupHeaders: groupCount > 0,
+            metrics: metrics,
+            fontScale: fontScale
+        )
+    }
+
     static func horizontalCrossSize(
         groupCount: Int,
         metrics: PickyHUDDockMetrics,

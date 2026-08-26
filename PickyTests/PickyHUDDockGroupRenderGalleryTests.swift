@@ -45,11 +45,19 @@ struct PickyHUDDockGroupRenderGalleryTests {
 
     private struct Scene {
         let name: String
-        let logicalSize: CGSize
+        let contentLogicalSize: CGSize
+        let canvasInsets: EdgeInsets
         let appearance: Appearance
         let preset: PickyHUDDockSizePreset
         let fontScale: CGFloat
         let content: AnyView
+
+        var canvasLogicalSize: CGSize {
+            CGSize(
+                width: contentLogicalSize.width + canvasInsets.leading + canvasInsets.trailing,
+                height: contentLogicalSize.height + canvasInsets.top + canvasInsets.bottom
+            )
+        }
     }
 
     private struct Manifest: Encodable {
@@ -61,8 +69,10 @@ struct PickyHUDDockGroupRenderGalleryTests {
 
     private struct ManifestScene: Encodable {
         let file: String
-        let logicalWidth: Double
-        let logicalHeight: Double
+        let contentLogicalWidth: Double
+        let contentLogicalHeight: Double
+        let canvasLogicalWidth: Double
+        let canvasLogicalHeight: Double
         let pixelWidth: Int
         let pixelHeight: Int
         let appearance: String
@@ -88,8 +98,10 @@ struct PickyHUDDockGroupRenderGalleryTests {
             try verify(rendered, scene: scene)
             manifestScenes.append(ManifestScene(
                 file: scene.name,
-                logicalWidth: Double(scene.logicalSize.width),
-                logicalHeight: Double(scene.logicalSize.height),
+                contentLogicalWidth: Double(scene.contentLogicalSize.width),
+                contentLogicalHeight: Double(scene.contentLogicalSize.height),
+                canvasLogicalWidth: Double(scene.canvasLogicalSize.width),
+                canvasLogicalHeight: Double(scene.canvasLogicalSize.height),
                 pixelWidth: rendered.bitmap.pixelsWide,
                 pixelHeight: rendered.bitmap.pixelsHigh,
                 appearance: scene.appearance.rawValue,
@@ -99,7 +111,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
         }
 
         let manifest = Manifest(
-            schemaVersion: 1,
+            schemaVersion: 2,
             renderer: "offscreen NSHostingView bitmap cache",
             scale: Int(Self.renderScale),
             scenes: manifestScenes
@@ -142,7 +154,10 @@ struct PickyHUDDockGroupRenderGalleryTests {
                     metrics: metrics,
                     fontScale: fontScale
                 )
-                #expect(size.width == metrics.sessionTileWidth)
+                #expect(size.width == PickyHUDDockGroupHeaderPresentation.labelWidth(
+                    metrics: metrics,
+                    fontScale: fontScale
+                ))
                 #expect(size.height == metrics.sessionTileHeight + metrics.groupHeaderContentSpacing + headerHeight)
                 #expect(headerHeight > metrics.groupHeaderVerticalInset * 2)
             }
@@ -184,7 +199,8 @@ struct PickyHUDDockGroupRenderGalleryTests {
     ) -> Scene {
         Scene(
             name: name,
-            logicalSize: folderSize(metrics: metrics, fontScale: fontScale),
+            contentLogicalSize: folderSize(metrics: metrics, fontScale: fontScale),
+            canvasInsets: galleryCanvasInsets,
             appearance: appearance,
             preset: metrics.preset,
             fontScale: fontScale,
@@ -203,7 +219,8 @@ struct PickyHUDDockGroupRenderGalleryTests {
     ) -> Scene {
         Scene(
             name: name,
-            logicalSize: listSize(memberCount: rows.count, metrics: metrics, fontScale: fontScale),
+            contentLogicalSize: listSize(memberCount: rows.count, metrics: metrics, fontScale: fontScale),
+            canvasInsets: galleryCanvasInsets,
             appearance: appearance,
             preset: metrics.preset,
             fontScale: fontScale,
@@ -216,17 +233,18 @@ struct PickyHUDDockGroupRenderGalleryTests {
         let folderFrame = folderSize(metrics: metrics, fontScale: 1)
         return Scene(
             name: "combined-folder-panel-medium-dark-100.png",
-            logicalSize: CGSize(
-                width: metrics.railWidth + PickyHUDDockLayout.panelGap + panelSize.width,
+            contentLogicalSize: CGSize(
+                width: folderFrame.width + PickyHUDDockLayout.panelGap + panelSize.width,
                 height: max(folderFrame.height, panelSize.height)
             ),
+            canvasInsets: galleryCanvasInsets,
             appearance: .dark,
             preset: metrics.preset,
             fontScale: 1,
             content: AnyView(
                 HStack(alignment: .top, spacing: PickyHUDDockLayout.panelGap) {
                     self.folder(group: group, members: fiveSessions, metrics: metrics, fontScale: 1)
-                        .frame(width: metrics.railWidth, alignment: .center)
+                        .frame(width: folderFrame.width, alignment: .center)
                     list(group: group, rows: fiveRows, selectedID: fiveRows[0].id, metrics: metrics)
                 }
             )
@@ -298,8 +316,9 @@ struct PickyHUDDockGroupRenderGalleryTests {
     }
 
     private func render(_ scene: Scene) throws -> (png: Data, bitmap: NSBitmapImageRep) {
-        let pixelWidth = Int((scene.logicalSize.width * Self.renderScale).rounded(.up))
-        let pixelHeight = Int((scene.logicalSize.height * Self.renderScale).rounded(.up))
+        let canvasSize = scene.canvasLogicalSize
+        let pixelWidth = Int((canvasSize.width * Self.renderScale).rounded(.up))
+        let pixelHeight = Int((canvasSize.height * Self.renderScale).rounded(.up))
         let fontStore = PickyAppFontScaleStore()
         fontStore.setScale(Double(scene.fontScale))
         let root = AnyView(
@@ -307,7 +326,13 @@ struct PickyHUDDockGroupRenderGalleryTests {
                 scene.content
                     .environment(\.locale, Locale(identifier: "en_US"))
                     .preferredColorScheme(scene.appearance.colorScheme)
-                    .frame(width: scene.logicalSize.width, height: scene.logicalSize.height, alignment: .topLeading)
+                    .frame(
+                        width: scene.contentLogicalSize.width,
+                        height: scene.contentLogicalSize.height,
+                        alignment: .topLeading
+                    )
+                    .padding(scene.canvasInsets)
+                    .frame(width: canvasSize.width, height: canvasSize.height, alignment: .topLeading)
                     .scaleEffect(Self.renderScale, anchor: .topLeading)
                     .frame(width: CGFloat(pixelWidth), height: CGFloat(pixelHeight), alignment: .topLeading)
             }
@@ -340,8 +365,8 @@ struct PickyHUDDockGroupRenderGalleryTests {
     }
 
     private func verify(_ rendered: (png: Data, bitmap: NSBitmapImageRep), scene: Scene) throws {
-        let expectedWidth = Int((scene.logicalSize.width * Self.renderScale).rounded(.up))
-        let expectedHeight = Int((scene.logicalSize.height * Self.renderScale).rounded(.up))
+        let expectedWidth = Int((scene.canvasLogicalSize.width * Self.renderScale).rounded(.up))
+        let expectedHeight = Int((scene.canvasLogicalSize.height * Self.renderScale).rounded(.up))
         guard rendered.bitmap.pixelsWide == expectedWidth, rendered.bitmap.pixelsHigh == expectedHeight else {
             throw GalleryError.unexpectedDimensions(scene.name)
         }
@@ -350,6 +375,9 @@ struct PickyHUDDockGroupRenderGalleryTests {
         }
         guard rendered.bitmap.bitmapData != nil, hasVisibleContent(rendered.bitmap) else {
             throw GalleryError.emptyContent(scene.name)
+        }
+        guard !hasVisiblePixelTouchingCanvasEdge(rendered.bitmap) else {
+            throw GalleryError.contentTouchesCanvasEdge(scene.name)
         }
     }
 
@@ -365,12 +393,48 @@ struct PickyHUDDockGroupRenderGalleryTests {
         return false
     }
 
+    private func hasVisiblePixelTouchingCanvasEdge(_ bitmap: NSBitmapImageRep) -> Bool {
+        guard let bytes = bitmap.bitmapData else { return true }
+        let alphaOffset = bitmap.samplesPerPixel - 1
+        func alpha(atColumn column: Int, row: Int) -> UInt8 {
+            bytes[(row * bitmap.bytesPerRow) + (column * bitmap.samplesPerPixel) + alphaOffset]
+        }
+
+        for column in 0..<bitmap.pixelsWide {
+            if alpha(atColumn: column, row: 0) > 0
+                || alpha(atColumn: column, row: bitmap.pixelsHigh - 1) > 0 {
+                return true
+            }
+        }
+        for row in 0..<bitmap.pixelsHigh {
+            if alpha(atColumn: 0, row: row) > 0
+                || alpha(atColumn: bitmap.pixelsWide - 1, row: row) > 0 {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// The gallery canvas stays transparent around every scene. Its top inset
+    /// explicitly covers the production unread badge's 4pt upward offset plus
+    /// its 2.5pt shadow bleed, while the remaining sides use `screenMargin` as
+    /// neutral review framing. This never changes production tile geometry.
+    private var galleryCanvasInsets: EdgeInsets {
+        let edgeInset = PickyHUDDockLayout.screenMargin * 2 // space.4 review frame
+        return EdgeInsets(
+            top: max(edgeInset, PickyHUDDockFolderBadgePresentation.unreadBadgeTopOverflow),
+            leading: edgeInset,
+            bottom: edgeInset,
+            trailing: edgeInset
+        )
+    }
+
     private func makeIndex(for scenes: [ManifestScene]) -> String {
         let cards = scenes.map { scene in
             """
             <figure>
               <img src="\(scene.file)" alt="\(scene.file)">
-              <figcaption><code>\(scene.file)</code><br>\(scene.dockPreset.uppercased()) · \(scene.appearance) · \(scene.fontScale)x · \(scene.logicalWidth)×\(scene.logicalHeight)pt</figcaption>
+              <figcaption><code>\(scene.file)</code><br>\(scene.dockPreset.uppercased()) · \(scene.appearance) · \(scene.fontScale)x · content \(scene.contentLogicalWidth)×\(scene.contentLogicalHeight)pt, canvas \(scene.canvasLogicalWidth)×\(scene.canvasLogicalHeight)pt</figcaption>
             </figure>
             """
         }.joined(separator: "\n")
@@ -394,7 +458,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
 
     private func folderSize(metrics: PickyHUDDockMetrics, fontScale: CGFloat) -> CGSize {
         CGSize(
-            width: metrics.sessionTileWidth,
+            width: PickyHUDDockGroupHeaderPresentation.labelWidth(metrics: metrics, fontScale: fontScale),
             height: metrics.sessionTileHeight
                 + metrics.groupHeaderContentSpacing
                 + PickyHUDDockGroupHeaderPresentation.labelHeight(metrics: metrics, fontScale: fontScale)
@@ -459,6 +523,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
         case unexpectedDimensions(String)
         case decodeFailed(String)
         case emptyContent(String)
+        case contentTouchesCanvasEdge(String)
 
         var errorDescription: String? {
             switch self {
@@ -467,6 +532,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
             case .unexpectedDimensions(let name): "Unexpected render dimensions for \(name)"
             case .decodeFailed(let name): "PNG did not decode for \(name)"
             case .emptyContent(let name): "Rendered image had no visible content for \(name)"
+            case .contentTouchesCanvasEdge(let name): "Rendered content touched the canvas edge for \(name)"
             }
         }
     }

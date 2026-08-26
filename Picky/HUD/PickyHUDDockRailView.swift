@@ -224,7 +224,7 @@ struct PickyHUDDockRailView: View {
                 .padding(.horizontal, metrics.horizontalPadding)
                 .padding(.top, metrics.topPadding)
                 .padding(.bottom, metrics.bottomPadding)
-                .frame(width: metrics.railWidth, height: resolvedRailLength, alignment: .top)
+                .frame(width: verticalRailCrossSize, height: resolvedRailLength, alignment: .top)
             }
         }
         .background(dockGlassBackground)
@@ -296,6 +296,14 @@ struct PickyHUDDockRailView: View {
             renderedSlotCount: projection.slots.count,
             persistedSlotCount: baseProjection.slots.count,
             isSessionDragging: draggingSessionID != nil
+        )
+    }
+
+    private var verticalRailCrossSize: CGFloat {
+        PickyHUDDockRailLayoutPolicy.verticalCrossSize(
+            groupCount: groupCount,
+            metrics: metrics,
+            fontScale: fontScale
         )
     }
 

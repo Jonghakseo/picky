@@ -111,6 +111,13 @@ struct PickyHUDDockGroupListPolicyTests {
         #expect(withUnread > 0)
     }
 
+    @Test func rowSpacingUsesTheSharedSpaceTwoStructuralMetric() {
+        for preset in PickyHUDDockSizePreset.allCases {
+            let presetMetrics = PickyHUDDockMetrics(preset: preset)
+            #expect(presetMetrics.groupListRowSpacing == presetMetrics.groupListRowContentSpacing)
+        }
+    }
+
     @Test func panelHeightIncludesInterRowSpacingWithoutClippingTheLastRow() {
         let rows = 3
         let panel = PickyHUDDockGroupListPolicy.panelSize(memberCount: rows, metrics: metrics)

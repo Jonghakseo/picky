@@ -141,8 +141,15 @@ enum PickyHUDDockGroupHeaderPresentation {
         PickyHUDTypography.dockGroupIdentityNSFont(fontScale: fontScale)
     }
 
-    static func labelWidth(metrics: PickyHUDDockMetrics) -> CGFloat {
-        metrics.sessionTileWidth
+    /// Reserve four representative CJK glyphs using the exact AppKit font
+    /// paired with the SwiftUI identity role. A `space.1` optical margin keeps
+    /// the label clear of the folder edge without opting out of app font scale.
+    static func labelWidth(metrics: PickyHUDDockMetrics, fontScale: CGFloat) -> CGFloat {
+        let measuredFourCJKWidth = ("가나다라" as NSString).size(withAttributes: [
+            .font: labelFont(fontScale: fontScale),
+        ]).width
+        let opticalSafety = metrics.groupHeaderContentSpacing
+        return ceil(max(metrics.sessionTileWidth, measuredFourCJKWidth + opticalSafety))
     }
 
     /// The accessible label hit area is the exact rendered line height plus a
@@ -170,7 +177,10 @@ struct PickyHUDDockGroupHeader: View {
             .lineLimit(1)
             .truncationMode(.tail)
             .frame(
-                width: PickyHUDDockGroupHeaderPresentation.labelWidth(metrics: metrics),
+                width: PickyHUDDockGroupHeaderPresentation.labelWidth(
+                    metrics: metrics,
+                    fontScale: fontScale
+                ),
                 height: PickyHUDDockGroupHeaderPresentation.labelHeight(
                     metrics: metrics,
                     fontScale: fontScale
@@ -277,6 +287,17 @@ struct PickyHUDDockFolderBadgeViewModel {
     }
 }
 
+/// Shared geometry for the folder's intentionally overlapping unread badge.
+/// The render gallery reserves `unreadBadgeTopOverflow` without changing the
+/// production badge's offset, shadow, or tile frame.
+enum PickyHUDDockFolderBadgePresentation {
+    static let unreadBadgeOffset = CGSize(width: 4, height: -4)
+    static let unreadBadgeShadowRadius: CGFloat = 2.5
+    static var unreadBadgeTopOverflow: CGFloat {
+        ceil(abs(unreadBadgeOffset.height) + unreadBadgeShadowRadius)
+    }
+}
+
 /// App-drawer style badge that represents a group as a single dock
 /// slot. Member pickles are shown as mini glyphs inside a rounded folder
 /// container laid out as a 2x2 grid; the visible glyph count communicates
@@ -373,8 +394,16 @@ struct PickyHUDDockCollapsedGroupBadge: View {
                         Capsule(style: .continuous)
                             .stroke(DS.Colors.background, lineWidth: 0.8)
                     )
-                    .shadow(color: DS.Colors.notification.opacity(0.45), radius: 2.5, x: 0, y: 0)
-                    .offset(x: 4, y: -4)
+                    .shadow( // design-token-exception: preserves the legacy unread badge's status-specific glow while exposing its canvas overflow metric
+                        color: DS.Colors.notification.opacity(0.45),
+                        radius: PickyHUDDockFolderBadgePresentation.unreadBadgeShadowRadius,
+                        x: 0,
+                        y: 0
+                    )
+                    .offset(
+                        x: PickyHUDDockFolderBadgePresentation.unreadBadgeOffset.width,
+                        y: PickyHUDDockFolderBadgePresentation.unreadBadgeOffset.height
+                    )
                     .opacity(isCommandShortcutHintVisible ? 0 : 1)
                     .allowsHitTesting(false)
                     .accessibilityLabel("\(unreadCount) unread")

@@ -21,5 +21,13 @@ struct PickyHUDDockGroupFolderTileView<Tile: View, Header: View>: View {
             tile()
             header(PickyHUDDockGroupHeader(group: group, metrics: metrics, fontScale: fontScale))
         }
+        // The interaction frame follows the CJK-safe identity width, not just
+        // the square tile, so the visible label is never outside its folder.
+        .frame(
+            width: PickyHUDDockGroupHeaderPresentation.labelWidth(
+                metrics: metrics,
+                fontScale: fontScale
+            )
+        )
     }
 }

@@ -271,7 +271,7 @@ final class PickyHUDOverlayManager {
               let visibleHeight = screen(for: displayID)?.visibleFrame.height else {
             return position
         }
-        let keepVisible = PickyHUDDockMetrics(preset: currentDockSizePreset).railWidth
+        let keepVisible = dockRailCrossSize(for: position.side)
         let maxAnchorPercent = PickyHUDDockLayout.maxDockTopAnchorPercent(
             visibleHeight: visibleHeight,
             keepVisible: keepVisible
@@ -300,7 +300,8 @@ final class PickyHUDOverlayManager {
             dockSide: side,
             sessionCount: projectedDockSessionCount(for: displayID),
             isAddSlotExpanded: false,
-            metrics: PickyHUDDockMetrics(preset: currentDockSizePreset)
+            metrics: PickyHUDDockMetrics(preset: currentDockSizePreset),
+            dockRailCrossSize: dockRailCrossSize(for: side)
         )
         guard side.orientation == .horizontal,
               let screen = screen(for: displayID) else {
@@ -311,6 +312,35 @@ final class PickyHUDOverlayManager {
         // visible-frame margins used by the other horizontal placement math.
         let screenWidth = max(0, screen.visibleFrame.width - (PickyHUDDockLayout.screenMargin * 2))
         return min(intrinsicWidth, screenWidth)
+    }
+
+    /// Cross-axis thickness of the visible rail. Folder identity labels can
+    /// exceed the square tile at larger app font scales, so panel placement
+    /// must reserve the same width as the SwiftUI rail shell.
+    private func dockRailCrossSize(for dockSide: PickyHUDDockSide) -> CGFloat {
+        let snapshot = viewModel.dockState.snapshot
+        let projection = PickyDockProjector.project(
+            layout: snapshot.dockLayout,
+            visibleSessionIDs: Array(snapshot.activeSessions.reversed().map(\.id))
+        )
+        let groupCount = projection.items.reduce(into: 0) { count, item in
+            if case .group = item { count += 1 }
+        }
+        let metrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
+        switch dockSide.orientation {
+        case .vertical:
+            return PickyHUDDockRailLayoutPolicy.verticalCrossSize(
+                groupCount: groupCount,
+                metrics: metrics,
+                fontScale: fontScaleStore.cgValue
+            )
+        case .horizontal:
+            return PickyHUDDockRailLayoutPolicy.horizontalCrossSize(
+                groupCount: groupCount,
+                metrics: metrics,
+                fontScale: fontScaleStore.cgValue
+            )
+        }
     }
 
     /// Number of session tiles currently projected for this display's dock
@@ -736,8 +766,10 @@ final class PickyHUDOverlayManager {
             // rail's cross-axis thickness and the gap between the two so the
             // measured panel height never exceeds `visibleHeightCap` (which
             // `targetFrame` uses as the panel cap in horizontal mode).
-            let dockMetrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
-            panelCap = max(0, visibleHeightCap - dockMetrics.railWidth - PickyHUDDockLayout.panelGap)
+            panelCap = max(
+                0,
+                visibleHeightCap - dockRailCrossSize(for: dockSide) - PickyHUDDockLayout.panelGap
+            )
         case .vertical:
             let dockAnchoredCap = PickyHUDDockLayout.dockTopAnchoredPointAlignedMaxPanelHeight(
                 visibleFrame: visibleFrame,
@@ -876,7 +908,8 @@ final class PickyHUDOverlayManager {
         // but in `height` for capped HUDs; NSPanel then floors one and ceils the other,
         // making the dock jump by 1pt while hovering between sessions.
         let dockMetrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
-        let keepVisible = dockMetrics.railWidth
+        let dockRailCrossSize = dockRailCrossSize(for: pos.side)
+        let keepVisible = pos.side.orientation == .vertical ? dockRailCrossSize : dockMetrics.railWidth
         let panelWidth = panelWidth(for: displayID, dockSide: pos.side)
         let visibleHeightCap = (visibleFrame.height - 160).rounded(.down)
         let cap: CGFloat
@@ -915,7 +948,7 @@ final class PickyHUDOverlayManager {
                 visibleFrame: visibleFrame,
                 panelHeight: targetHeight,
                 dockSide: pos.side,
-                dockRailHeight: dockMetrics.railWidth
+                dockRailHeight: dockRailCrossSize
             )
             originX = PickyHUDDockLayout.horizontalPanelX(
                 visibleFrame: visibleFrame,
@@ -936,7 +969,7 @@ final class PickyHUDOverlayManager {
                 visibleFrame: visibleFrame,
                 panelWidth: panelWidth,
                 dockSide: pos.side,
-                dockRailWidth: dockMetrics.railWidth
+                dockRailWidth: dockRailCrossSize
             )
             safeYOffset = 0
             originX = PickyHUDDockLayout.panelX(
@@ -1589,7 +1622,8 @@ final class PickyHUDOverlayManager {
         )
 
         let dockMetrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
-        let keepVisible = dockMetrics.railWidth
+        let dockRailCrossSize = dockRailCrossSize(for: startPos.side)
+        let keepVisible = startPos.side.orientation == .vertical ? dockRailCrossSize : dockMetrics.railWidth
         let startPanelWidth = panelWidth(for: displayID, dockSide: startPos.side)
         if startPos.side.orientation == .horizontal {
             let horizontalDockLength = horizontalDockRailLength(
@@ -1610,7 +1644,7 @@ final class PickyHUDOverlayManager {
             // Panel height is unknown during the drag, but for snap purposes we
             // only care about the dock CENTER's screen Y. Approximate using the
             // rail thickness — that's what `horizontalPanelY` derives from too.
-            let railThickness = dockMetrics.railWidth
+            let railThickness = dockRailCrossSize
             let startDockCenterY: CGFloat = startPos.side == .top
                 ? visibleFrame.maxY - PickyHUDDockLayout.dockEdgeMargin - (railThickness / 2)
                 : visibleFrame.minY + PickyHUDDockLayout.dockEdgeMargin + (railThickness / 2)
@@ -1653,7 +1687,7 @@ final class PickyHUDOverlayManager {
                 panelWidth: startPanelWidth,
                 dockSide: startPos.side,
                 xOffset: startPos.xOffset,
-                dockRailWidth: dockMetrics.railWidth
+                dockRailWidth: dockRailCrossSize
             ) + delta.x
             pos.side = PickyHUDDockLayout.dockSide(
                 forDockRailCenterX: draggedDockCenterX,
@@ -1665,7 +1699,7 @@ final class PickyHUDOverlayManager {
                 visibleFrame: visibleFrame,
                 panelWidth: panelWidth(for: displayID, dockSide: pos.side),
                 dockSide: pos.side,
-                dockRailWidth: dockMetrics.railWidth
+                dockRailWidth: dockRailCrossSize
             )
         }
 
@@ -1739,11 +1773,13 @@ final class PickyHUDOverlayManager {
     private func computeAvailableCardMaxWidth(for screen: NSScreen, dockSide: PickyHUDDockSide) -> CGFloat {
         let visibleFrame = screen.visibleFrame
         guard visibleFrame.width > 0 else { return PickyHUDCardSize.widthRange.upperBound }
-        let dockMetrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
         let sideReserve: CGFloat
         switch dockSide.orientation {
         case .vertical:
-            sideReserve = dockMetrics.railWidth + PickyHUDDockLayout.panelGap + (PickyHUDExpansion.dockShadowHorizontalPadding * 2) + (PickyHUDDockLayout.screenMargin * 2)
+            sideReserve = dockRailCrossSize(for: dockSide)
+                + PickyHUDDockLayout.panelGap
+                + (PickyHUDExpansion.dockShadowHorizontalPadding * 2)
+                + (PickyHUDDockLayout.screenMargin * 2)
         case .horizontal:
             sideReserve = (PickyHUDExpansion.dockShadowHorizontalPadding * 2) + (PickyHUDDockLayout.screenMargin * 2)
         }

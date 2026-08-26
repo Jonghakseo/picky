@@ -100,6 +100,9 @@ struct PickyHUDDockRailView: View {
     /// live projection and the drag must cancel.
     @State private var dragReferenceTopEntryIDs: [String] = []
     @State private var dragReferenceCenters: [String: CGFloat] = [:]
+    /// Group top-entry centers backstop badge hit-testing if SwiftUI has not yet
+    /// published the more precise badge frame when pickup begins.
+    @State private var dragReferenceGroupTopEntryCenters: [String: CGFloat] = [:]
     /// Visible folder badge frames captured with the slot snapshot. Labels stay
     /// clickable but do not extend the grouping drop zone or delay edge escape.
     @State private var dragReferenceGroupDropFrames: [String: CGRect] = [:]
@@ -787,6 +790,7 @@ struct PickyHUDDockRailView: View {
         dragReferenceSlots = baseProjection.slots
         dragReferenceTopEntryIDs = PickyHUDDockRenderPolicy.visibleTopEntryIDs(in: baseProjection.items)
         dragReferenceCenters = slotCenters
+        dragReferenceGroupTopEntryCenters = topEntryCenters
         dragReferenceGroupDropFrames = groupDropFrames
     }
 
@@ -830,14 +834,20 @@ struct PickyHUDDockRailView: View {
             layout: layout,
             activeSessionIDs: activeSessionIDs,
             groupDropFrames: dragReferenceGroupDropFrames,
-            orientation: dockSide.orientation
+            topEntryCenters: dragReferenceGroupTopEntryCenters,
+            orientation: dockSide.orientation,
+            metrics: metrics,
+            fontScale: fontScale
         )
         let nonEmptyGroupCandidates = PickyHUDDockGroupDropCandidateBuilder.nonEmptyCandidates(
             slots: dragReferenceSlots,
             layout: layout,
             activeSessionIDs: activeSessionIDs,
             groupDropFrames: dragReferenceGroupDropFrames,
-            orientation: dockSide.orientation
+            topEntryCenters: dragReferenceGroupTopEntryCenters,
+            orientation: dockSide.orientation,
+            metrics: metrics,
+            fontScale: fontScale
         )
 
         let nearestDestination = PickyDockDropResolver.resolveDropContainer(
@@ -880,6 +890,7 @@ struct PickyHUDDockRailView: View {
         dragReferenceSlots = []
         dragReferenceTopEntryIDs = []
         dragReferenceCenters = [:]
+        dragReferenceGroupTopEntryCenters = [:]
         dragReferenceGroupDropFrames = [:]
     }
 
@@ -894,6 +905,7 @@ struct PickyHUDDockRailView: View {
         dragReferenceSlots = []
         dragReferenceTopEntryIDs = []
         dragReferenceCenters = [:]
+        dragReferenceGroupTopEntryCenters = [:]
         dragReferenceGroupDropFrames = [:]
         activeReorderSessionID = nil
         reorderController.reset()

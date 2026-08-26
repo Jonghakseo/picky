@@ -118,8 +118,7 @@ final class PickyHUDDockGroupTileClickNSView: NSView {
     }
 
     func dragInteraction(to point: NSPoint) {
-        guard let mouseDownPoint else { return }
-        let translation = CGSize(width: point.x - mouseDownPoint.x, height: point.y - mouseDownPoint.y)
+        guard let translation = swiftUITranslation(to: point) else { return }
         if !isReordering {
             let distance = hypot(translation.width, translation.height)
             guard distance > PickyHUDArchiveHoldPolicy.maximumDistance else { return }
@@ -130,8 +129,7 @@ final class PickyHUDDockGroupTileClickNSView: NSView {
     }
 
     func endInteraction(at point: NSPoint) {
-        guard let mouseDownPoint else { return }
-        let translation = CGSize(width: point.x - mouseDownPoint.x, height: point.y - mouseDownPoint.y)
+        guard let translation = swiftUITranslation(to: point) else { return }
         let wasReordering = isReordering
         cancelInteraction()
         if wasReordering {
@@ -139,6 +137,17 @@ final class PickyHUDDockGroupTileClickNSView: NSView {
         } else {
             coordinator?.onActivate?()
         }
+    }
+
+    /// `locationInWindow` uses AppKit's bottom-up window coordinates, while
+    /// SwiftUI drag translations use a top-down Y axis. Normalize the native
+    /// badge path so it matches the title's SwiftUI `DragGesture` contract.
+    private func swiftUITranslation(to point: NSPoint) -> CGSize? {
+        guard let mouseDownPoint else { return nil }
+        return CGSize(
+            width: point.x - mouseDownPoint.x,
+            height: mouseDownPoint.y - point.y
+        )
     }
 
     override func rightMouseDown(with event: NSEvent) {

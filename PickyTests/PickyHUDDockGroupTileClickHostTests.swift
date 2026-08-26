@@ -134,6 +134,27 @@ struct PickyHUDDockGroupTileClickHostTests {
         #expect(endings == [CGSize(width: 16, height: 0)])
     }
 
+    @Test func productionBadgeConvertsWindowYTranslationToSwiftUIDragDirection() {
+        var changes: [CGSize] = []
+        var endings: [CGSize] = []
+        let coordinator = PickyHUDDockGroupTileClickHost.Coordinator()
+        coordinator.onReorderChanged = { changes.append($0) }
+        coordinator.onReorderEnded = { endings.append($0) }
+        let host = PickyHUDDockGroupTileClickNSView()
+        host.coordinator = coordinator
+
+        host.beginInteraction(at: NSPoint(x: 100, y: 100))
+        host.dragInteraction(to: NSPoint(x: 112, y: 80))
+        host.dragInteraction(to: NSPoint(x: 108, y: 120))
+        host.endInteraction(at: NSPoint(x: 116, y: 70))
+
+        #expect(changes == [
+            CGSize(width: 12, height: 20),
+            CGSize(width: 8, height: -20),
+        ])
+        #expect(endings == [CGSize(width: 16, height: 30)])
+    }
+
     @Test func productionFolderSecondaryAndControlClicksForwardTheSharedMenuWithoutActivation() throws {
         var activations = 0
         let renderedFolder = try renderedProductionFolder(onTap: { activations += 1 })

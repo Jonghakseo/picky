@@ -2,55 +2,82 @@
 
 ## Decision
 
-Add a v2-only, unicast `sessionProjectionBootstrapComplete` frame containing the daemon epoch and the complete set of session IDs represented by a **successfully completed socket bootstrap**. Picky prunes only after this frame arrives, never while individual bootstrap snapshots stream.
+Add a v2-only, unicast `sessionProjectionBootstrapComplete` event. It marks the
+complete membership for one **successful bootstrap of one socket owner**, not
+for the app globally. It contains the daemon epoch, the registering
+`registerAppCapabilities` command ID as `bootstrapId`, and the complete
+membership set observed before live delivery begins.
 
-Do **not** add a deletion tombstone in this change. The currently evidenced stale-card path is daemon restart/reconnect: retention purge runs during `SessionSupervisor.load()` before a v2 socket registers, while normal HUD/CLI deletion already performs local cleanup. A tombstone is the right follow-up only if a supported producer can delete a session while a v2 client remains connected.
+Picky removes cards only after accepting that event at the router boundary. It
+prunes only records owned by the emitting connection. In particular, a child
+daemon completion must never remove a primary-owned card, and a primary
+completion must never remove a child-owned card.
 
-This is a high-blast-radius protocol/state change (estimated 9/10): shared wire contract and daemon broadcaster (fan-in 4/4), stateful Swift application/registry cleanup (fan-out 3/3), and substantial recent churn in each affected module (2/3). Require a protocol-focused review before implementation.
+Do **not** add a deletion tombstone in this change. The evidenced stale-card
+path is daemon restart/reconnect: `SessionSupervisor.load()` purges retained
+archived sessions before a v2 socket registers. Normal HUD/CLI deletion
+already performs local cleanup. A tombstone is a follow-up only if a supported
+producer can delete a session while a v2 client remains connected.
+
+This is a high-blast-radius protocol/state change: it changes a shared wire
+contract, the daemon bootstrap barrier, router ownership propagation, and
+registry-backed Swift cleanup. Require a protocol-focused review before
+implementation.
 
 ## 1. Problem and verified current behavior
 
-### Current behavior
-
-1. A v2 registration sends one `sessionProjectionSnapshot` per entry returned by `supervisor.list()`, under a per-session barrier. It buffers live frames, flushes them after the snapshot loop, then removes bootstrap state. There is no completion/index-membership frame (`agentd/src/application/session-projection-v2-broadcaster.ts:68-106`). The broadcaster explicitly skips an ID deleted between `list()` and its barrier (`:83-87`).
-2. The protocol contains projection transaction and snapshot event schemas only (`agentd/src/protocol.ts:661-680`) and the event union includes only those two v2 event types (`:767-769`). The projection mutation union has no deletion variant (`agentd/src/protocol.ts:390-407`).
-3. `deleteSession` in the server comments that v2 has no deletion mutation, then broadcasts a legacy `sessionSnapshot` (`agentd/src/server.ts:623-627`). `sendSessionSnapshot` returns immediately for any dialect other than v1 (`:674-680`), so v2 sockets receive no deletion signal.
-4. On connection, Swift leaves its session storage intact and sends `listSessions` (`Picky/PickySessionViewModel.swift:1726-1738`). `listSessions` calls `sendSessionSnapshot` on the daemon (`agentd/src/server.ts:389-392`), which is intentionally a no-op for v2 as above. Swift instead receives incremental projection snapshots through `PickySessionRecoveryCoordinator` (`Picky/PickySessionViewModel.swift:1756-1761` and `Picky/Sessions/PickySessionRecoveryCoordinator.swift:55-71`), which applies each snapshot independently. No existing event replaces the complete membership.
-5. The daemon purges retained archived sessions in `load()` after hydration (`agentd/src/session-supervisor.ts:356-359`), and `purgeStaleArchivedSessions` deletes them from the in-memory map and persisted store (`:361-385`). This is the concrete restart/reconnect stale-card path.
-6. Existing v1 complete snapshots perform exactly the required class of reconciliation: archive IDs are intersected with the complete snapshot universe (`Picky/PickySessionViewModel.swift:1861-1872`), and per-session caches are pruned from the same known-ID set (`:2301-2327`). V2 currently cannot establish that universe.
+1. A v2 registration sends one `sessionProjectionSnapshot` per entry returned
+   by `supervisor.list()` under a per-session barrier, buffers live frames,
+   flushes them, then removes bootstrap state. It has no index-complete event
+   (`agentd/src/application/session-projection-v2-broadcaster.ts:68-106`). A
+   session deleted between `list()` and its barrier is deliberately skipped
+   (`:83-87`).
+2. The projection protocol currently has only transaction and snapshot event
+   schemas (`agentd/src/protocol.ts:672-691`). Its mutation union has no
+   deletion variant (`:390-407`).
+3. `SessionSupervisor.load()` purges retained archived sessions after hydration
+   (`agentd/src/session-supervisor.ts:356-385`). This is the concrete
+   restart/reconnect stale-card path.
+4. A v2 socket intentionally does not receive legacy `sessionSnapshot`
+   deletion/update frames (`agentd/src/server.ts:669-680` and `:1024-1026`).
+   The app therefore has incremental projections but no complete membership
+   universe.
+5. Picky registers `sessionProjectionV2` on the primary connection and every
+   forwarded child connection. The router forwards their events through one
+   source-free public stream (`Picky/PickyAgentClientRouter.swift:851-947`),
+   while a child daemon is scoped to exactly one session
+   (`agentd/src/bootstrap.ts:119-128,176`). Therefore the original global
+   calculation `knownRegistryIDs - completion.sessionIds` is unsafe.
+6. The existing v1 router cache already scopes a complete `sessionSnapshot` by
+   `ownerKey`: it removes only entries whose stored owner equals the emitting
+   owner (`Picky/PickyAgentClientRouter.swift:1020-1043`). V2 membership must
+   mirror that boundary.
+7. The existing registry `replaceMembership` removes only stores outside the
+   supplied membership while retaining stores that survive
+   (`Picky/Sessions/Projection/PickySessionRegistry.swift:31-49`). In contrast,
+   `PickyRegistrySessionProjectionStorage.removeSession` calls `install`, which
+   re-replaces every remaining card through the façade
+   (`Picky/Sessions/PickyRegistrySessionProjectionStorage.swift:55-67,172-179`).
 
 ### User-visible failure
 
-1. Picky has session `A` and `A` is present in persisted `manuallyArchivedSessionIDs`.
-2. `picky-agentd` restarts. During `load()`, retention/daemon cleanup removes `A`.
-3. Picky reconnects. The v2 bootstrap has no snapshot for `A`, but does not say that the index is complete.
-4. Swift preserves `A`'s registry/card and persisted archive intent. The stale archived row, associated dock/layout references, and per-session cache state remain until a full app restart or some unrelated local cleanup.
+1. Picky has session `A`, including persisted `manuallyArchivedSessionIDs`.
+2. `picky-agentd` restarts and `load()` purges `A` by retention policy.
+3. Picky reconnects. V2 sends no snapshot for `A`, but has no way to declare
+   the index complete.
+4. Picky preserves `A`'s card, archive intent, dock/layout references, and
+   per-session state until an unrelated local cleanup or app restart.
 
-Normal Settings deletion is not this failure: `deleteArchivedSession` calls `finalizeDeletedArchivedSession` locally (`Picky/PickySessionViewModel.swift:1639-1660`). The current server-side purge is startup-only, not a repeating live timer (`agentd/src/session-supervisor.ts:356-385`).
+Normal Settings deletion is not this failure: it invokes
+`finalizeDeletedArchivedSession` locally. The automatic purge above is
+startup-only, not a repeating live deletion timer.
 
-## 2. Options
+## 2. Contract
 
-| Option | Reconnect correctness | Live-deletion latency | Compatibility and failed bootstrap | Implementation size |
-|---|---|---|---|---|
-| A. Bootstrap index-complete membership frame | Solves the evidenced restart/reconnect gap. The app prunes only after authoritative completion. | No new live deletion behavior. Existing HUD/CLI local cleanup remains responsible. | Additive v2 event. Old app decodes unknown events as `.unknown` and ignores them (`Picky/PickyAgentProtocol.swift:430-433`); new app connected to old daemon never receives completion and retains current conservative behavior. On bootstrap failure, daemon closes before completion, so Swift must not prune. | Small-medium: protocol/fixtures, broadcaster state/order, Swift event/application cleanup/tests. |
-| B. Per-session deletion tombstone only | Insufficient. A reconnect after the daemon already purged a session has no tombstone to replay, so stale local membership persists. Requires a deletion journal/replay or an authoritative bootstrap anyway. | Immediate for supported live deletion producers. | Additive event is safe to ignore, but ordering needs a global membership sequence or explicit incarnation/generation to prevent a delayed tombstone deleting a recreated ID. A failed bootstrap still has no authoritative absence proof. | Medium-large: supervisor deletion event, broadcaster, global ordering model, Swift deletion reducer, replay/reconnect semantics. |
-| C. Index-complete frame plus deletion tombstone | Correct for reconnect and provides immediate external/live deletion updates. | Immediate. | Same failed-bootstrap guard as A, plus B's ordering/incarnation requirements. | Largest. Useful only if a supported external live deleter is a product requirement. |
+### Event shape
 
-### Why Option A is sufficient now
-
-The scope is specifically server disappearance across daemon restart/reconnect. The only verified automatic deletion producer, retention purge, happens before clients register. The normal UI/CLI deletion path already invokes the app's local cleanup. Adding a durable tombstone/replay stream now would create a second membership ordering system without an evidenced producer that needs it.
-
-### Important bootstrap concurrency constraint
-
-A completion marker must not be emitted after only the initial `supervisor.list()` loop. The existing broadcaster queues live `sessionProjectionSnapshot` and transaction frames while registering (`agentd/src/application/session-projection-v2-broadcaster.ts:149-160`). A session created during registration may therefore be absent from the initial list but present in the queued frames. The completion marker must be emitted **after** all queued frames are flushed and must derive membership from the successfully sent bootstrap/queued snapshot IDs, filtered against `supervisor.get(id)` immediately before the marker. This keeps a deletion that happened during bootstrap out of membership and includes a creation observed during bootstrap.
-
-This is still not a general live-deletion protocol. A deletion after the marker has no v2 frame and is intentionally out of scope for Option A.
-
-## 3. Recommended contract and algorithm
-
-### Contract sketch
-
-Add an event, not a mutation. Membership is a collection-level fact, while `PickySessionProjectionMutation` is a mutation of an existing session's durable fields.
+Add an event, not a mutation. Membership is a collection fact, while
+`PickySessionProjectionMutation` modifies one session's durable fields.
 
 ```json
 {
@@ -59,137 +86,365 @@ Add an event, not a mutation. Membership is a collection-level fact, while `Pick
   "timestamp": "2026-08-25T00:00:00.000Z",
   "type": "sessionProjectionBootstrapComplete",
   "epoch": "epoch-001",
+  "bootstrapId": "register-capabilities-command-id",
   "sessionIds": ["session-001", "session-002"]
 }
 ```
 
-Schema shape in `agentd/src/protocol.ts`:
+In `agentd/src/protocol.ts`, add the event to `EventEnvelopeVariantSchema`:
 
 ```ts
 export const PickySessionProjectionBootstrapCompleteEventSchema = EventBaseSchema.extend({
   type: z.literal("sessionProjectionBootstrapComplete"),
   epoch: z.string().min(1),
+  bootstrapId: z.string().min(1),
   sessionIds: z.array(z.string().min(1)).superRefine(rejectDuplicates),
 });
 ```
 
-Add `contracts/protocol/session-projection-bootstrap-complete.event.json`, add the schema to `EventEnvelopeVariantSchema`, and add matching Swift decoding:
+`sessionIds` is an unordered membership set. It must contain unique nonempty
+IDs and does not prescribe HUD order.
 
-```swift
-case sessionProjectionBootstrapComplete(PickySessionProjectionBootstrapComplete)
+Swift adds a matching dormant v2 event case and strict decoder. Empty `epoch`,
+empty `bootstrapId`, an empty session ID, or duplicate IDs makes the payload
+invalid and therefore `.unknown`, matching the current
+`PickySessionProjectionProtocol` invalid-v2-payload convention
+(`Picky/PickySessionProjectionProtocol.swift:283-299`).
 
-struct PickySessionProjectionBootstrapComplete: Decodable, Equatable {
-    let epoch: String
-    let sessionIds: [String]
-}
+### Correlation and router delivery contract
+
+`bootstrapId` is exactly the `PickyCommandEnvelope.id` of the
+`registerAppCapabilities` command that caused this bootstrap. The router must
+construct that envelope before sending it and record its ID with the source
+connection. It must not synthesize a second correlation ID.
+
+The public router stream currently loses source identity. Before it broadcasts
+a v2 projection event, the router must carry internal routing metadata to the
+v2 application boundary:
+
+```text
+(ownerKey, connectionGeneration, event)
 ```
 
-`sessionIds` is an unordered membership set on the wire. It must contain unique nonempty IDs. It does not prescribe HUD ordering, which remains the app's manual-order/creation-time policy.
+This may be an internal routed-event wrapper or a dedicated router callback;
+it must not infer owner from `sessionId` in the ViewModel. The primary owner
+key is `primary`; a child owner key is `child:<sessionId>`, consistent with
+`childEventKey(_:)`. `connectionGeneration` changes on every raw socket
+connect for that owner. The primary needs an equivalent generation counter;
+children already have lifecycle generations, but the implementation must also
+advance the connection generation for a reconnect of the same child client.
 
-### Daemon emission and ordering
+On every raw connect, the router records the new generation and the newly sent
+registration command ID. On raw disconnect, it invalidates the expectation for
+that owner/generation. A completion is eligible only if all of the following
+hold:
 
-Affected daemon files: `agentd/src/protocol.ts`, `agentd/src/application/session-projection-v2-broadcaster.ts`, `agentd/src/server.ts` only insofar as the broadcaster payload type changes, and one contract fixture.
+1. its routed owner and connection generation are still current;
+2. its `bootstrapId` equals the registration ID recorded for that exact
+   owner/generation;
+3. its nonempty `epoch` equals every bootstrap snapshot epoch observed for that
+   owner/generation, or there were no snapshots; and
+4. `(ownerKey, connectionGeneration, bootstrapId, epoch)` has not already been
+   accepted.
 
-1. Extend the broadcaster payload union with the completion event. Keep it v2-only and unicast to the registering socket, never broadcast to already-live v2 sockets.
-2. Extend `V2BootstrapState` with `observedSessionIDs: Set<string>` and `epoch: string?`.
-3. Obtain the daemon's current projection epoch explicitly even for an empty bootstrap, for example by adding `projectionEpoch(): string` to `SessionProjectionV2Supervisor`. Do not infer it from the first snapshot because an empty index has none. The actual epoch is currently one immutable `randomUUID()` per `SessionSupervisor` process (`agentd/src/session-supervisor.ts:141-145`).
-4. During each successful initial barrier snapshot, require its epoch to equal the bootstrap epoch, send the snapshot, record its session ID/revision, and add the ID to `observedSessionIDs`. An epoch mismatch is a failed bootstrap: close the socket without a completion event.
-5. Flush queued frames in their existing order. Whenever a queued `sessionProjectionSnapshot` is sent, add its `sessionId` to `observedSessionIDs`; transactions do not create membership. Preserve the current discard rule for transactions already represented by a newer snapshot (`session-projection-v2-broadcaster.ts:92-97`).
-6. Immediately after the queue flush, synchronously form `sessionIds` from `observedSessionIDs.filter(id => supervisor.get(id) !== undefined)`, verify the epoch has not changed, and send `sessionProjectionBootstrapComplete`. Delete bootstrap state only after this send.
-7. If any snapshot/barrier/frame construction fails, preserve current behavior: close the socket and discard queued frames (`:99-105`). Never send the completion event for a partial bootstrap.
-8. After completion, future projection frames use the existing direct send path. Option A deliberately does not emit a frame for a subsequent deletion.
+The router logs and discards a mismatched, stale, disconnected, or duplicate
+completion. It marks a valid completion accepted before forwarding it for
+application, so re-entrancy cannot apply removal twice. Expectations and
+accepted keys are reset/invalidated on raw connect and disconnect, not merely
+at the ViewModel lifecycle boundary.
 
-Ordering invariant for a successful registration:
+## 3. Owner-scoped authority
+
+The completion's set is authoritative only for current membership mapped to
+its owner. The router maintains projection ownership while it routes bootstrap
+snapshots, analogous to its v1 `sessionOwnerKeys` cache. An accepted completion
+calculates:
+
+```text
+removedIDs = projectionOwnedRegistryIDs(ownerKey) - Set(completion.sessionIds)
+```
+
+It must never calculate against all registry IDs. Local-only onboarding/demo
+cards have no projection owner and are excluded.
+
+### Ownership lifecycle rules
+
+| Owner state | Membership authority and completion handling |
+|---|---|
+| Primary daemon | A current, correlated primary completion is authoritative for all and only registry IDs recorded as primary-owned. It can prune stale primary records, including an empty primary index. It immediately unblocks primary initial loading. |
+| Active child | Once the child has produced a projection snapshot for its configured session in its current generation, a current, correlated child completion is authoritative only for IDs recorded with that child owner. The child process is single-session scoped, so this normally means one ID. It can never remove a primary or another child's ID. |
+| Booting child | `spawnChildClient` marks the child booting before the child has produced a session (`Picky/PickyAgentClientRouter.swift:515-531`). A booting child's empty completion is consumed for correlation/duplicate protection but has **no destructive authority**. It does not remove an earlier card and does not unblock primary loading. The first routed projection snapshot for the configured child session marks that generation session-producing; subsequent bootstrap/reconnect completions use the active-child rule. This prevents the normal pre-creation empty child index from deleting unrelated or previous state. |
+| Retired/released child | `releaseChild` stops forwarding the child event key before disconnecting and terminates the daemon (`Picky/PickyAgentClientRouter.swift:601-614`). Its generation is invalid. No completion from it is forwarded or accepted, and it cannot prune. Existing card removal remains the explicit local archive/delete lifecycle decision. |
+| Primary epoch change | A daemon restart creates a new primary connection generation and normally a new immutable supervisor epoch. Old expectations/acceptances are invalidated on disconnect. Snapshots establish the new expected epoch; only the completion correlated to the new primary registration can reconcile prior primary-owned membership. A mismatched epoch is discarded, never used to prune. |
+
+A child may not claim or migrate primary ownership merely because it lists the
+same ID. The router assigns ownership only from frames carried by the current
+source connection. If a session is intentionally moved between daemon owners,
+that operation needs an explicit owner-transfer rule and is out of this
+change's scope.
+
+This resolves the first blocking question: ownership is per emitting daemon
+connection, never app-global, and lifecycle states determine whether a
+completion has destructive authority.
+
+## 4. Daemon bootstrap algorithm and bounded queue
+
+Affected daemon files are `agentd/src/protocol.ts`,
+`agentd/src/application/session-projection-v2-broadcaster.ts`,
+`agentd/src/session-supervisor.ts`, and `agentd/src/server.ts`.
+
+1. `registerAppCapabilities` passes `cmd.id` as `bootstrapId` to the v2
+   broadcaster. Only a transition from negotiating to v2 starts this process;
+   v1 behavior is unchanged.
+2. Expose `projectionEpoch(): string` on `SessionProjectionV2Supervisor` so an
+   empty bootstrap has a current epoch. Do not infer it from the first
+   snapshot. `SessionSupervisor` already owns one immutable random UUID epoch
+   per process.
+3. Create state with `bootstrapId`, `epoch = supervisor.projectionEpoch()`,
+   `observedSessionIDs`, `snapshotRevisions`, a queued payload list, queued
+   byte count, and an `active`/`failed` phase.
+4. For every successful initial barrier snapshot, require its epoch to equal
+   the state epoch, send it, record its revision, and add its ID to
+   `observedSessionIDs`. If the listed ID disappears before the barrier,
+   preserve the current skip behavior. Any other barrier, construction, or
+   epoch error fails the bootstrap, closes the socket, clears queued payloads,
+   and emits no completion.
+5. Flush queued frames in order. Add a queued snapshot's ID to
+   `observedSessionIDs`; transactions do not create membership. Preserve the
+   existing discard of transactions already represented by a newer snapshot.
+   Reject a queued projection whose epoch differs from bootstrap epoch.
+6. Immediately after that flush, synchronously compute
+   `sessionIds = observedSessionIDs.filter(id => supervisor.get(id) !==
+   undefined)`, recheck the epoch, and unicast exactly one completion with the
+   stored `bootstrapId`. Only after `send(completion)` succeeds may the state
+   become live/remove its active bootstrap entry.
+7. Never broadcast completion to already-live v2 sockets. A failed or partial
+   bootstrap, disconnect, or unregister emits no completion.
+
+The resulting successful ordering invariant, including an empty list, is:
 
 ```text
 all initial bootstrap snapshots
-  -> all queued frames accumulated while bootstrapping
-  -> sessionProjectionBootstrapComplete(epoch, sessionIds)
+  -> all queued live frames accumulated while bootstrapping
+  -> sessionProjectionBootstrapComplete(epoch, bootstrapId, sessionIds)
   -> subsequent direct live frames
 ```
 
-The implementation must maintain this invariant for an empty bootstrap too: it emits exactly one completion event with `sessionIds: []`. WebSocket ordering plus the broadcaster's synchronous send path makes the completion a safe cutover marker. The event must not be put before queued frames, otherwise Swift could permanently prune a session created while registration was in progress.
+This includes a session created during registration via its queued snapshot and
+excludes a session deleted before the final `supervisor.get` filter. It remains
+an index cutover, not a general live-deletion protocol.
 
-### Swift application algorithm
+### Queue bounds
 
-Affected Swift files: `Picky/PickyAgentProtocol.swift`, `Picky/PickySessionViewModel.swift`, `Picky/PickySessionViewModel+SessionProjectionV2.swift`, likely `Picky/Sessions/PickySessionRecoveryCoordinator.swift`, and protocol/application/storage tests.
+The current `queued.push(payload)` is unbounded
+(`session-projection-v2-broadcaster.ts:155-159`). Bound both dimensions:
 
-1. Add the event case and decoding. Route it from `PickySessionListViewModel.apply(_:)` to a v2-only `applySessionProjectionBootstrapComplete(_:)` method.
-2. Track a bootstrap-completion expectation per connection in a small coordinator/policy object. Reset it on `.connected`. Bootstrap snapshots seen before the completion establish the expected epoch. Accept completion only when:
-   - the connection is awaiting a completion frame,
-   - all observed bootstrap snapshots have the completion's epoch (or the index is empty), and
-   - the frame has not already completed that connection/epoch.
+- `MAX_BOOTSTRAP_QUEUE_FRAMES = 1_024`;
+- `MAX_BOOTSTRAP_QUEUE_BYTES = APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT` (the existing
+  8 MiB frame budget minus envelope reserve).
 
-   A completion that fails these checks is ignored and logged, not used to prune. This is defensive against future transport/router changes that could surface stale frames. The current transport's one socket message order is still the primary ordering guarantee.
-3. On accepted completion, calculate `removedIDs = knownRegistryIDs - Set(event.sessionIds)`. `knownRegistryIDs` must include both active and archived registry membership, not only current `sessions`; it must not include non-daemon onboarding/demo data unless that data is explicitly marked as projection-owned.
-4. Cancel pending archive commits for every removed ID, remove the ID from both archive-store sets, and cancel/clear the recovery coordinator state for that session. Clearing recovery state is necessary so a recreated ID cannot replay buffered transactions from its old incarnation.
-5. Remove each ID from projection storage/registry. The existing registry's `replaceMembership` removes child stores outside membership (`Picky/Sessions/Projection/PickySessionRegistry.swift:31-49`), and `PickyRegistrySessionProjectionStorage.removeSession` already publishes compatible façade steps (`Picky/Sessions/PickyRegistrySessionProjectionStorage.swift:55-67`). Prefer adding a batch `removeSessions(ids:)` storage operation so completion emits one coherent publication rather than N UI transitions.
-6. Prune all per-session state using the final known set. The existing v1 `pruneSlashCommandCache` is the baseline (`Picky/PickySessionViewModel.swift:2301-2327`), but the authoritative-v2 helper must also cover the deletion-only cleanup in `finalizeDeletedArchivedSession` (`:1646-1688`):
-   - `manuallyArchivedSessionIDs` and `archivedSessionIDs`
-   - `unreadSessionIDs`, `pendingDoneFlashSessionIDs`, `deliveredNotificationKeys`
-   - thinking/todo/subagent expansion maps
-   - slash-command cache and composer draft/attachment state
-   - incremental cursors, pending terminal metadata, released-child IDs, archive commit tasks
-   - diff stores and `visibleSessionDiffSessionIDs`
-   - inline/shell terminal sessions, command chains/handles, and visible terminal attachments
-   - pending dock-group assignments for absent IDs.
-7. Reconcile in this order after storage removal: prune caches -> `applyManualOrder()` (which invokes `reconcileDockLayout()` at `Picky/PickySessionViewModel.swift:2477-2487`) -> selection/voice-follow-up/screen-context synchronization. This makes dock groups lose absent members only after the registry/card set is final and prevents a selection or context target from pointing at a removed card.
-8. Mark the bootstrap complete and unblock the initial-snapshot watchdog/loading state even for `sessionIds: []`. Individual snapshots currently unblock it (`Picky/PickySessionViewModel+SessionProjectionV2.swift:59-64`), so the empty case otherwise remains indefinitely loading.
+For every queued frame, calculate its serialized event size with the existing
+`eventPayloadByteLength` helper from
+`app-session-snapshot-policy.ts:10-12,130-138`. Enqueue only if both the count
+and `queuedBytes + payloadBytes` remain within the limits. This accounts for
+serialized rather than object-memory size and keeps the aggregate under the
+same budget policy as an app event frame.
 
-### Failure and edge cases
+On overflow, atomically change the bootstrap state to `failed`, clear queued
+payloads and byte count, close the socket, and emit no completion. Retain that
+failed sentinel in the socket state map until `unregister(socket)`, rather than
+deleting it in a `finally` block. While the sentinel exists, broadcast paths
+must discard frames for that socket, not take the normal direct-send path
+before transport close is observed. The same no-direct-send rule applies after
+an epoch/bootstrap failure until closure is observed.
+
+## 5. Swift application and destructive cleanup
+
+### Accepted completion application
+
+The router, not the ViewModel, enforces source/correlation ownership. It passes
+only an accepted routed completion with its `ownerKey` to the application
+helper. The helper obtains `removedIDs` using the owner-scoped formula above;
+it does not reset or rehydrate surviving stores.
+
+Add `removeSessions(ids:)` to
+`PickyRegistrySessionProjectionStorage`. It must:
+
+1. read current active/archived membership;
+2. filter removed IDs from both arrays;
+3. call `registry.replaceMembership(active:archived:)` directly, without
+   `install` or replacing surviving cards; and
+4. materialize and publish one final active/archived projection.
+
+This preserves surviving child-store identity and produces one membership
+publication, suitable for one dock reconciliation rather than N lossy UI
+transitions.
+
+For every removed ID, the authoritative completion helper must clear all
+session-owned state before/with batch membership removal:
+
+- cancel archive commit tasks and call `clearPendingArchiveIntent(sessionID:)`,
+  which removes both pending archive correlation maps
+  (`Picky/PickySessionViewModel.swift:1572-1578`);
+- remove it from `archivedSessionIDs`, `manuallyArchivedSessionIDs`, released
+  child IDs, unread IDs, done-flash IDs, and delivered notification keys;
+- remove every recovery coordinator state/buffer/correlated request for that
+  ID through a dedicated per-session removal API. This prevents a recreated ID
+  from replaying old buffered transactions;
+- clear thinking, todo, and subagent expansion maps; slash-command cache;
+  incremental cursors; pending terminal metadata; diff stores and visible-diff
+  IDs; dock pending assignments; and all terminal command-chain/handle state;
+- clear composer text, attachments, and pending composer request **for each
+  removed ID**. The generic `composerDraftController.prune(knownSessionIDs:)`
+  intentionally preserves persisted drafts when the known set is empty
+  (`Picky/Sessions/PickySessionComposerDraftController.swift:142-149`), so the
+  completion path needs `clearDraft(sessionID:)` or a separate explicitly
+  authoritative prune API;
+- close inline and shell terminal sessions and attachments. Extend
+  `PickyTerminalOverlayPresenting` with an explicit close operation and close
+  each removed session's stored overlay handle, then remove the handle mapping;
+- set `openSessionRequest` to `nil` when it targets a removed ID, and clear
+  selected/hovered/active voice-follow-up and screen-context targets when they
+  target a removed ID.
+
+After all removals, use this order:
+
+```text
+batch registry membership removal
+  -> prune remaining caches from final known membership
+  -> applyManualOrder()
+  -> selection, voice-follow-up, active-voice, and screen-context synchronization
+```
+
+This ensures dock groups are reconciled after final membership and no target
+points at a removed card. The implementation should use the ViewModel's dock
+mutation batching so the operation is observable as one coherent transition.
+
+### Preserve independent reset semantics
+
+Completion is only an absence/removal operation. It must never reset a
+surviving store's logs, tools, artifacts, or presentation. Existing
+`logsSet`/`toolsSet`/`artifactsSet` transaction mutations already own reset
+semantics (`agentd/src/protocol.ts:397-403`). Pi-session-path snapshot/patch
+handling and terminal-sync banner clearing are also separate snapshot/reset
+semantics. Do not fold either behavior into membership reconciliation.
+
+### Loading watchdog
+
+An accepted **primary** completion disarms the initial-snapshot watchdog and
+sets `isLoadingInitialSessionSnapshot` false, including for `sessionIds: []`.
+A child completion never does this. No completion, including an old-daemon
+connection, retains current conservative behavior: the existing watchdog still
+unblocks loading after roughly four seconds
+(`Picky/PickySessionViewModel.swift:397-407`), rather than leaving it loading
+indefinitely or treating elapsed time as authority to prune.
+
+## 6. Failure and edge cases
 
 | Case | Required behavior |
 |---|---|
-| Bootstrap fails or socket disconnects midway | Daemon closes/disconnects without completion. Swift retains all local membership and cache state. Reconnect starts a fresh bootstrap. |
-| Empty daemon index | Daemon sends completion with the current epoch and `[]`. Swift accepts it and removes all projection-owned stale sessions, archive IDs, dock members, and state. |
-| Epoch mismatch during bootstrap | Daemon treats it as an incomplete index and closes without completion. Swift never prunes from a mismatched frame. Current epoch is process-wide immutable, but make the guard contractual. |
-| Duplicate/delayed completion | Swift accepts once per connection/epoch; later duplicates are no-ops. |
-| Session deleted between `list()` and its per-session barrier | Existing broadcaster skips its snapshot; it is absent from the final filtered ID set and is pruned at completion. |
-| Session created during bootstrap | Its queued snapshot is flushed before completion and recorded in the ID set. It survives completion. |
-| Session deleted after completion | Option A does not update it remotely. Existing local HUD/CLI cleanup applies; add Option C before supporting an external live deleter. |
-| ID deleted then recreated | Completion removes the old registry/cursor state first. A later creation snapshot materializes a fresh store. Do not reuse buffered recovery state for the ID. UUID-like session IDs make reuse unlikely, but this remains an explicit invariant. |
-| Recovery request for a deleted ID | The current server recovery barrier can fail because the session no longer exists. With Option A, a successful reconnect completion cleans it. This design does not change in-place recovery semantics. |
+| Bootstrap fails, queue overflows, or socket disconnects midway | Close/disconnect without completion. Retain local membership and cache state. The failed sentinel blocks direct-send leakage until unregister. |
+| Empty primary index | A valid primary completion with `[]` removes all primary-owned stale sessions and unblocks loading. |
+| Empty booting-child index | The completion is correlated/consumed but non-destructive. It does not remove a prior card or unblock primary loading. |
+| Empty active-child index | A valid active-child completion can remove only that child's owned IDs. |
+| Epoch/bootstrapId/generation mismatch | Router discards it, logs the reason, and never prunes. Daemon treats its own bootstrap epoch mismatch as failed and closes without completion. |
+| Duplicate/delayed completion | Router accepts once per `(ownerKey, connectionGeneration, bootstrapId, epoch)` and drops later copies. |
+| Child completion alongside primary cards | It cannot remove primary or sibling-child membership. The reciprocal rule also applies to primary completion. |
+| Session deleted between `list()` and barrier | It has no snapshot, is absent from final filtered membership, and is pruned only if it is owned by that completing owner. |
+| Session created during bootstrap | Its queued snapshot precedes completion, records ownership, and its ID is included in completion membership. |
+| Session deleted after completion | This option deliberately emits no v2 deletion frame. Existing local HUD/CLI cleanup applies. |
+| ID deleted then recreated | Per-session recovery/cursor/draft/terminal state is removed with the old membership. A later snapshot creates fresh state. |
 
-## 4. Test plan
+## 7. Test plan
 
-### Agentd contract and broadcaster tests
+### Agentd contract, broadcaster, and server
 
-1. **Schema/fixture**: `agentd/src/protocol.test.ts` parses the new event, rejects duplicate/empty IDs, and `contracts/protocol/session-projection-bootstrap-complete.event.json` is covered by the fixture protocol tests.
-2. **Successful nonempty bootstrap**: extend `agentd/src/application/session-projection-v2-broadcaster.test.ts` to assert snapshots, queued live frames, then exactly one completion with the correct epoch and IDs.
-3. **Empty bootstrap**: assert exactly one completion with `sessionIds: []` and a nonempty current epoch.
-4. **Deleted during bootstrap**: preserve the existing regression but now assert the deleted ID is absent from completion, the subsequent created snapshot is present, and completion is emitted before subsequent direct live frames.
-5. **Creation during bootstrap**: defer a barrier, emit a creation snapshot, release the barrier, and assert the completion includes both the original and created IDs after the queued snapshot.
-6. **Failure/disconnect**: extend existing partial-bootstrap and unregister tests to assert no completion frame escapes.
-7. **Server integration**: extend the v2 registration test in `agentd/src/server.test.ts` to check one unicast completion, correct ordering, no legacy `sessionSnapshot`, and that the current v1 delete bootstrap tests remain v1-only.
-8. **Runtime deletion path**: construct an expired archived session, `load()` a new `SessionSupervisor`, register v2, and assert the completion excludes the purged ID. This is the actual production path, not merely a mocked `deleteSession` test.
+1. Add `contracts/protocol/session-projection-bootstrap-complete.event.json`.
+   `agentd/src/protocol.test.ts` accepts a valid event and rejects empty epoch,
+   missing/empty `bootstrapId`, empty IDs, and duplicate IDs.
+2. In `session-projection-v2-broadcaster.test.ts`, assert successful nonempty
+   ordering: initial snapshots, queued frames, exactly one completion with the
+   current epoch, registration command ID, and final IDs, then direct frames.
+3. Assert an empty bootstrap still emits one completion with `[]` and a
+   nonempty epoch.
+4. Cover deletion between `list()` and barrier, creation during bootstrap,
+   final `supervisor.get` filtering, epoch mismatch, partial failure,
+   disconnect, and no completion after any failure.
+5. Cover both queue limits. Assert overflow clears queued payloads, closes,
+   produces no completion, and a later broadcast cannot direct-send before
+   `unregister` removes the failed sentinel.
+6. In `server.test.ts`, verify v2 registration passes the command ID and
+   receives one unicast completion in order with no legacy `sessionSnapshot`;
+   v1 receives neither v2 frames nor completion.
+7. Build an expired archived session, `load()` a new supervisor, register v2,
+   and assert the completion excludes the purged ID. This validates the real
+   stale-card producer.
 
-### Swift protocol/application tests
+### Swift protocol, router, storage, and application
 
-1. **Contract fixture**: `PickyTests/ProtocolContractTests.swift` decodes the new fixture into the named event case; malformed duplicate IDs become `.unknown`/fail the strict payload decoder according to existing convention.
-2. **Reconnect regression**: in `PickyTests/PickySessionProjectionV2ApplicationTests.swift`, seed active and archived cards plus stale `manuallyArchivedSessionIDs`, simulate reconnect snapshots excluding one stale ID, then completion. Assert active/archived façades, registry store existence, archive sets, dock layout, unread/done flash, and selection/context target are all pruned only after completion.
-3. **No premature prune**: assert a stale local card remains after the first of several bootstrap snapshots and disappears only at completion.
-4. **Empty index**: existing sessions and archive IDs are removed by an accepted empty completion; loading state becomes false.
-5. **Failed/no completion**: simulate snapshots then disconnect/no marker; assert local membership and local archive intent remain. This protects the current conservative failure behavior.
-6. **Created while bootstrapping**: apply a queued creation snapshot before completion and assert the marker includes/preserves it.
-7. **Epoch/stale-marker guard**: a marker whose epoch differs from the observed bootstrap epoch, and a duplicate accepted marker, must not incorrectly prune.
-8. **Recreated ID/recovery cleanup**: create buffered recovery state for `A`, prune `A` by completion, then deliver a new bootstrap snapshot for `A`; assert no old buffered transaction applies.
-9. **Storage batch behavior**: add focused `PickyRegistrySessionProjectionStorageTests` coverage that removing multiple IDs removes registry stores and emits a single final active/archived projection suitable for dock reconciliation.
+1. `ProtocolContractTests` decodes the fixture to the new event case. Invalid
+   strict payloads become `.unknown` according to the dormant-v2 convention.
+2. Router tests cover primary and child registration IDs, connection-generation
+   reset on raw connect/disconnect, epoch mismatch, bootstrapId mismatch,
+   duplicate completion, and stale delayed completion.
+3. Router/application tests assert a child completion never prunes primary or
+   sibling-child sessions, and a primary completion never prunes child sessions.
+   Cover booting-child empty completion as non-destructive, active child
+   reconciliation, and retired/released child event rejection.
+4. Reconnect regression: seed active and archived primary cards plus stale
+   `manuallyArchivedSessionIDs`; snapshots alone preserve them; accepted primary
+   completion removes only the stale primary IDs.
+5. Empty primary completion removes owned stale cards and archive IDs and
+   unblocks loading. Failed/no completion preserves all local intent; the
+   watchdog alone does not prune. Child completion never unblocks primary
+   loading.
+6. Cover created-during-bootstrap ownership, recreated-ID recovery isolation,
+   and that surviving stores retain identity through a batch prune.
+7. Add focused storage/registry coverage for multiple removed IDs: one final
+   publication, removed stores absent, surviving stores untouched.
+8. Add cleanup coverage for pending archive correlations, recovery state,
+   composer drafts/attachments including authoritative-empty removal,
+   terminal overlays/handles, and `openSessionRequest`.
+9. Regression-test that completion does not clear surviving logs/tools/artifacts
+   or alter independent Pi-path/banner reset behavior.
 
-## 5. Migration, rollout, and blast radius
+## 8. Migration, compatibility, and rollout
 
 ### Compatibility
 
-- **Old app + new daemon**: the old app may still advertise `sessionProjectionV2`, receive the additive unknown event, and ignore it. Its behavior remains unchanged, including the stale-card limitation. `PickyEvent` intentionally maps unrecognized event types to `.unknown` (`Picky/PickyAgentProtocol.swift:430-433`).
-- **New app + old daemon**: old daemon emits no completion. New app must retain existing local membership and never prune merely because a timeout elapsed. This is safe degradation, though it cannot repair stale cards until both sides are updated.
-- **v1 clients**: no behavior or event changes. `sessionProjectionBootstrapComplete` must be generated only for a v2 registration.
-- **Protocol version**: follow the repository's existing release policy for whether this additive same-version event is released under `2026-08-25` or triggers a coordinated version bump. The current version gate rejects unequal protocol versions (`agentd/src/application/protocol-version-guard.ts:1-7`), so a version bump is a distribution decision, not a transparent mixed-version migration. The event itself is backward-safe because Swift has an explicit unknown-event fallback.
+- **Old app + new daemon:** the event is additive under the existing
+  `2026-08-25` protocol version. An old app maps unrecognized event types to
+  `.unknown` (`Picky/PickyAgentProtocol.swift:382-388`) and retains its current
+  stale-card limitation.
+- **New app + old daemon:** the old daemon emits no completion. The new app
+  retains local membership and does not prune after timeout. This is safe
+  degradation, though it cannot repair stale cards until both sides update.
+- **v1 clients:** no behavior or event changes. Completion is generated only
+  for v2 registration.
+- **No protocol-version bump:** `assertProtocolVersion` rejects any unequal
+  client/server version (`agentd/src/application/protocol-version-guard.ts:1-6`).
+  A bump would break both mixed directions before unknown-event compatibility
+  could help, so this additive event stays at `2026-08-25`.
+
+This resolves the second blocking question: the feature is additive and must
+not bump the protocol version.
 
 ### Expected implementation blast radius
 
-- TypeScript: protocol schema/event union, fixture, broadcaster payload/bootstrap state, supervisor epoch accessor, broadcaster/server/protocol tests.
-- Swift: protocol event decoding, ViewModel routing and one authoritative reconciliation helper, recovery coordinator cleanup API, registry storage batch removal, protocol/application/registry tests.
-- No runtime, persistence-format, HUD rendering, signing, or app-launch changes are required.
+- TypeScript: schema/event union/fixture, supervisor epoch accessor,
+  broadcaster bootstrap state and bounds, server registration command ID, and
+  protocol/broadcaster/server tests.
+- Swift: event decoding, routed source metadata and completion guard, ownership
+  map, authoritative cleanup helper, recovery removal API, registry storage
+  batch operation, explicit terminal-overlay close API, and protocol/router/
+  application/storage tests.
+- No persistence-format, HUD rendering, signing, or app-launch change is
+  required.
 
 ### Follow-up trigger
 
-Implement Option C only if any of the following becomes supported: a server retention job that runs after connection, a remote/admin/second-client deletion producer, or a product requirement that a deletion initiated outside this ViewModel disappear immediately. That follow-up needs a distinct global membership ordering/incarnation design, not an unversioned per-session tombstone.
+Implement a tombstone/replay design only if a server retention job runs after
+connection, a remote/admin/second-client deletion producer is supported, or a
+product requirement demands immediate external live deletion. That follow-up
+needs explicit ordering and incarnation semantics, not an unversioned
+per-session tombstone.

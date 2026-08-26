@@ -45,6 +45,25 @@ type CommittedVisualNarrationTestEvent = {
   sentenceCount: number;
 };
 
+// Runtime subscriptions are intentionally fire-and-forget in production. Track
+// their promises in this test module so settle() can drain the real async work
+// instead of guessing how long filesystem-backed event handling will take.
+const pendingSupervisorOperations = new Set<Promise<unknown>>();
+type AsyncSupervisorMethod = (this: SessionSupervisor, ...args: unknown[]) => Promise<unknown>;
+const supervisorPrototype = SessionSupervisor.prototype as unknown as Record<string, AsyncSupervisorMethod>;
+for (const methodName of ["applyRuntimeEvent", "applyMainRuntimeEvent"]) {
+  const original = supervisorPrototype[methodName]!;
+  supervisorPrototype[methodName] = function (...args: unknown[]): Promise<unknown> {
+    const operation = original.apply(this, args);
+    pendingSupervisorOperations.add(operation);
+    void operation.then(
+      () => pendingSupervisorOperations.delete(operation),
+      () => pendingSupervisorOperations.delete(operation),
+    );
+    return operation;
+  };
+}
+
 describe("SessionSupervisor", () => {
   it("keeps the live session unchanged when a patch save fails and allows a retry", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-save-failure-"));
@@ -1725,7 +1744,7 @@ describe("SessionSupervisor", () => {
     const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
 
     const result = await supervisor.followUp(pickle.id, "추가로 원인도 정리해줘", context("follow-up"));
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.queuedFollowUps?.[0]?.text === "추가로 원인도 정리해줘");
 
     const updated = supervisor.get(pickle.id)!;
     expect(result.lastSummary).toBe("Follow-up queued");
@@ -1850,7 +1869,7 @@ describe("SessionSupervisor", () => {
     runtime.handle?.emit({ type: "assistant_delta", delta: "계속 조사 중입니다." });
     runtime.handle?.emit({ type: "assistant_delta", delta: "최종 답변입니다." });
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed", finalAnswer: "최종 답변입니다." });
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "completed" && supervisor.get(pickle.id)?.finalAnswer === "최종 답변입니다.");
 
     const completed = supervisor.get(pickle.id)!;
     expect(completed.status).toBe("completed");
@@ -1867,7 +1886,7 @@ describe("SessionSupervisor", () => {
 
     runtime.handle?.emit({ type: "assistant_delta", delta: "조사 완료입니다." });
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "completed" && supervisor.get(pickle.id)?.finalAnswer === "조사 완료입니다.");
 
     expect(supervisor.get(pickle.id)?.status).toBe("completed");
     expect(supervisor.get(pickle.id)?.finalAnswer).toBe("조사 완료입니다.");
@@ -1988,7 +2007,7 @@ describe("SessionSupervisor", () => {
     const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
 
     runtime.handle?.emit({ type: "status", status: "running", summary: "Still working" });
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "running" && supervisor.get(pickle.id)?.lastSummary === "Still working");
     expect(supervisor.get(pickle.id)?.status).toBe("running");
     expect(supervisor.get(pickle.id)?.lastSummary).toBe("Still working");
 
@@ -1999,7 +2018,7 @@ describe("SessionSupervisor", () => {
     };
 
     const updated = await supervisor.steerPickleSession(pickle.id, "/name 새 세션 이름");
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.title === "새 세션 이름" && supervisor.get(pickle.id)?.status === "running");
 
     expect(updated.status).toBe("running");
     expect(supervisor.get(pickle.id)?.status).toBe("running");
@@ -2061,7 +2080,7 @@ describe("SessionSupervisor", () => {
     };
 
     await supervisor.followUp(pickle.id, "/new");
-    await settle();
+    await waitForRuntimeEvents(supervisor, pickle.id);
 
     const updated = supervisor.get(pickle.id)!;
     expect(updated.id).toBe(pickle.id);
@@ -2155,7 +2174,7 @@ describe("SessionSupervisor", () => {
 
     runtime.handle?.emit({ type: "tool", toolCallId: "tool-read-race", name: "read", status: "running", preview: "old file" });
     await runtime.handle!.newSession();
-    await settle();
+    await waitForRuntimeEvents(supervisor, pickle.id);
 
     expect(supervisor.get(pickle.id)?.activitySummary).toEqual({ read: 0, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 });
     expect(supervisor.get(pickle.id)?.tools).toEqual([]);
@@ -2174,7 +2193,7 @@ describe("SessionSupervisor", () => {
     await supervisor.steerPickleSession(pickle.id, "/name 새 이름");
 
     await runtime.handle!.newSession();
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "waiting_for_input" && supervisor.get(pickle.id)?.messages?.length === 0);
 
     expect(supervisor.get(pickle.id)).toMatchObject({
       status: "waiting_for_input",
@@ -2309,12 +2328,11 @@ describe("SessionSupervisor", () => {
     runtime.handle!.onCompact = () => new Promise<void>((resolve) => { resolveCompact = resolve; });
 
     runtime.handle?.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "cancelled");
     const compact = supervisor.steer(pickle.id, "/compact");
     await waitUntil(() => runtime.handle!.compactCalls.length === 1);
     runtime.handle?.emit({ type: "status", status: "running", summary: "Compacting session…", compactionStarted: true, compactionReason: "manual" });
-    await settle();
-    expect(supervisor.get(pickle.id)?.status).toBe("running");
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "running");
 
     const abort = supervisor.abort(pickle.id);
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, compactionReason: "manual" });
@@ -2338,11 +2356,11 @@ describe("SessionSupervisor", () => {
     runtime.handle!.onCompact = () => new Promise<void>((resolve) => { resolveCompact = resolve; });
 
     runtime.handle?.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "cancelled");
     const first = supervisor.steer(pickle.id, "/compact");
     await waitUntil(() => runtime.handle!.compactCalls.length === 1);
     runtime.handle?.emit({ type: "status", status: "running", summary: "Compacting session…", compactionStarted: true, compactionReason: "manual" });
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "running");
     expect(supervisor.get(pickle.id)?.status).toBe("running");
 
     await expect(supervisor.steer(pickle.id, "/compact")).rejects.toThrow("Manual compaction is already in progress");
@@ -2362,21 +2380,21 @@ describe("SessionSupervisor", () => {
     runtime.handle!.onCompact = () => new Promise<void>((resolve) => { resolveCompact = resolve; });
 
     runtime.handle?.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "cancelled");
     const first = supervisor.steer(pickle.id, "/compact");
     await waitUntil(() => runtime.handle!.compactCalls.length === 1);
     await supervisor.abort(pickle.id);
 
     runtime.handle?.emit({ type: "status", status: "running", summary: "Compacting session…", compactionStarted: true, compactionReason: "manual" });
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, compactionReason: "manual" });
-    await settle();
+    await waitForRuntimeEvents(supervisor, pickle.id);
     await expect(supervisor.steer(pickle.id, "/compact")).rejects.toThrow("Manual compaction is already in progress");
 
     resolveCompact();
     await first;
     runtime.handle!.onCompact = undefined;
     await supervisor.steer(pickle.id, "/compact");
-    await settle();
+    await waitForRuntimeEvents(supervisor, pickle.id);
 
     expect(runtime.handle!.compactCalls).toHaveLength(2);
     expect(supervisor.get(pickle.id)?.status).toBe("cancelled");
@@ -2410,7 +2428,7 @@ describe("SessionSupervisor", () => {
     runtime.handle!.onCompact = () => new Promise<void>((resolve) => { resolveCompact = resolve; });
 
     runtime.handle?.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "cancelled");
     const outcomesPromise = Promise.allSettled([supervisor.steer(pickle.id, "/compact"), supervisor.steer(pickle.id, "/compact")]);
     await waitUntil(() => runtime.handle!.compactCalls.length === 1);
     resolveCompact();
@@ -2595,9 +2613,9 @@ describe("SessionSupervisor", () => {
     const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
 
     runtime.handle?.emit({ type: "context_usage", usage: { tokens: 258_568, contextWindow: 272_000, percent: 95.06176470588235 } });
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.contextUsage?.percent === 95.06176470588235);
     runtime.handle?.emit({ type: "status", status: "completed", summary: "작업 완료" });
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "completed");
     expect(supervisor.get(pickle.id)?.status).toBe("completed");
 
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Auto-compaction failed: Summarization failed: server overloaded", noTurnRan: true, compactionFailed: true, compactionReason: "threshold" });
@@ -2623,11 +2641,11 @@ describe("SessionSupervisor", () => {
     const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
 
     runtime.handle?.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "cancelled");
     expect(supervisor.get(pickle.id)?.status).toBe("cancelled");
 
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, compactionReason: "threshold" });
-    await settle();
+    await waitForRuntimeEvents(supervisor, pickle.id);
     const updated = supervisor.get(pickle.id)!;
     expect(updated.status).toBe("cancelled");
     expect((updated.messages ?? []).some((message) => message.kind === "system" && message.text === "Session compacted")).toBe(false);
@@ -2642,7 +2660,7 @@ describe("SessionSupervisor", () => {
 
     runtime.handle?.emit({ type: "assistant_delta", delta: "조사 완료입니다." });
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "completed" && supervisor.get(pickle.id)?.lastSummary === "조사 완료입니다.");
     expect(supervisor.get(pickle.id)?.lastSummary).toBe("조사 완료입니다.");
 
     runtime.handle!.onFollowUp = (handle, prompt) => {
@@ -2679,7 +2697,7 @@ describe("SessionSupervisor", () => {
 
     runtime.handle?.emit({ type: "assistant_delta", delta: "조사 완료입니다." });
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "completed" && supervisor.get(pickle.id)?.lastSummary === "조사 완료입니다.");
     expect(supervisor.get(pickle.id)?.status).toBe("completed");
     expect(supervisor.get(pickle.id)?.lastSummary).toBe("조사 완료입니다.");
 
@@ -2689,7 +2707,7 @@ describe("SessionSupervisor", () => {
     };
 
     await supervisor.followUp(pickle.id, "/name 완료 세션 이름");
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "completed" && supervisor.get(pickle.id)?.title === "완료 세션 이름");
 
     expect(supervisor.get(pickle.id)?.status).toBe("completed");
     expect(supervisor.get(pickle.id)?.title).toBe("완료 세션 이름");
@@ -2705,7 +2723,7 @@ describe("SessionSupervisor", () => {
     const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
 
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "completed");
     expect(supervisor.get(pickle.id)?.status).toBe("completed");
 
     runtime.handle!.onSteer = (handle) => {
@@ -2978,7 +2996,7 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(session.id)?.thinkingPreview).toBe("I need to inspect the HUD current work state.");
 
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    await settle();
+    await waitUntil(() => supervisor.get(session.id)?.thinkingPreview === undefined);
 
     expect(supervisor.get(session.id)?.thinkingPreview).toBeUndefined();
   });
@@ -3370,7 +3388,7 @@ describe("SessionSupervisor", () => {
 
     mainRuntime.handle?.emit({ type: "assistant_delta", delta: "피클이 끝났어요" });
     mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "done" });
-    await settle();
+    await waitUntil(() => quickReplies.length === 1);
 
     expect(quickReplies).toHaveLength(1);
     expect(quickReplies[0]).toMatchObject({ contextId: "child-session-id", replyKind: "pickleCompletion", sessionId: "child-session-id" });
@@ -3539,7 +3557,7 @@ describe("SessionSupervisor", () => {
     await secondSupervisor.load();
 
     const followedUp = await secondSupervisor.followUp(pinned.id, "continue after app restart");
-    await settle();
+    await waitUntil(() => userTexts(secondSupervisor.get(pinned.id)).includes("continue after app restart"));
 
     expect(runtime.resumeCalls).toEqual([{ sessionFilePath: "/tmp/source-pi-session.jsonl", cwd: "/tmp/project", sessionId: pinned.id }]);
     expect(runtime.handle?.followUps.map((prompt) => prompt.text)).toEqual(["continue after app restart"]);
@@ -3601,7 +3619,7 @@ describe("SessionSupervisor", () => {
     const pinned = await supervisor.pinPickleSession(contextWithPiSessionFile("pin then follow up", "/tmp/source-pi-session.jsonl"), "Pinned source");
 
     const followedUp = await supervisor.followUp(pinned.id, "continue this work");
-    await settle();
+    await waitUntil(() => userTexts(supervisor.get(pinned.id)).includes("continue this work"));
 
     expect(runtime.resumeCalls).toEqual([{ sessionFilePath: "/tmp/source-pi-session.jsonl", cwd: "/tmp/project", sessionId: pinned.id }]);
     expect(runtime.handle?.followUps.map((prompt) => prompt.text)).toEqual(["continue this work"]);
@@ -4459,7 +4477,7 @@ describe("SessionSupervisor", () => {
     mainRuntime.handle?.emit({ type: "assistant_delta", delta: "두 번째 답변" });
     mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    await settle();
+    await waitUntil(() => replies.filter((reply) => reply.text === "두 번째 답변").length === 1);
 
     expect(replies.filter((reply) => reply.text === "두 번째 답변")).toHaveLength(1);
     expect(broadcastedMainMessages.filter((message) => message.text === "두 번째 답변")).toEqual([
@@ -6191,7 +6209,7 @@ describe("SessionSupervisor", () => {
     };
 
     await supervisor.followUp(session.id, "idle text");
-    await settle();
+    await waitUntil(() => userTexts(supervisor.get(session.id)).length === 1);
 
     expect(userTexts(supervisor.get(session.id))).toEqual(["idle text"]);
   });
@@ -6394,7 +6412,7 @@ describe("SessionSupervisor", () => {
         { id: "s2", label: "Sec", path: "/tmp/b.png", screenId: "sec" },
       ],
     });
-    await settle();
+    await waitUntil(() => userTexts(supervisor.get(session.id)).length === 1);
 
     const userMessages = (supervisor.get(session.id)?.messages ?? []).filter(
       (message) => message.kind === "user_text",
@@ -6423,7 +6441,7 @@ describe("SessionSupervisor", () => {
         { id: "s1", label: "Main", path: "/tmp/a.png", screenId: "main", isCursorScreen: true },
       ],
     });
-    await settle();
+    await waitUntil(() => userTexts(supervisor.get(session.id)).length === 1);
 
     const userMessages = (supervisor.get(session.id)?.messages ?? []).filter(
       (message) => message.kind === "user_text",
@@ -6441,7 +6459,7 @@ describe("SessionSupervisor", () => {
     const session = await supervisor.create(context("plain pickle"));
 
     await supervisor.steer(session.id, "plain text steer");
-    await settle();
+    await waitUntil(() => userTexts(supervisor.get(session.id)).length === 1);
 
     const userMessages = (supervisor.get(session.id)?.messages ?? []).filter(
       (message) => message.kind === "user_text",
@@ -8699,7 +8717,11 @@ function commandReceipts(session: PickyAgentSession | undefined): Array<{ comman
 }
 
 async function settle(): Promise<void> {
-  await delay(10);
+  // Give setTimeout(0)-scheduled runtime diagnostics a chance to enqueue first.
+  await delay(0);
+  while (pendingSupervisorOperations.size > 0) {
+    await Promise.allSettled([...pendingSupervisorOperations]);
+  }
 }
 
 async function waitForRuntimeEvents(supervisor: SessionSupervisor, sessionId: string): Promise<void> {
@@ -8713,7 +8735,7 @@ async function waitForRuntimeEvents(supervisor: SessionSupervisor, sessionId: st
 }
 
 async function waitUntil(predicate: () => boolean): Promise<void> {
-  const deadline = Date.now() + 1_000;
+  const deadline = Date.now() + 5_000;
   while (!predicate()) {
     if (Date.now() > deadline) throw new Error("Timed out waiting for condition");
     await delay(10);
@@ -8721,7 +8743,7 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
 }
 
 async function waitUntilAsync(predicate: () => Promise<boolean>): Promise<void> {
-  const deadline = Date.now() + 1_000;
+  const deadline = Date.now() + 5_000;
   while (!(await predicate())) {
     if (Date.now() > deadline) throw new Error("Timed out waiting for async condition");
     await delay(10);

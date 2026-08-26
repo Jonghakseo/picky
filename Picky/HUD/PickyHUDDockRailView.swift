@@ -156,6 +156,10 @@ struct PickyHUDDockRailView: View {
     /// the target stable even when groups have non-uniform header chrome.
     @State private var groupDragReferenceTopEntryCenters: [String: CGFloat] = [:]
     @State private var groupDragReferenceTopEntryIDs: [String] = []
+    /// A persisted structure update can cancel SwiftUI's folder drag while
+    /// the pointer is still down. Hold that gesture terminal until its
+    /// matching end callback so a re-render cannot start it again mid-press.
+    @State private var groupDragGestureLifecycle = PickyDockGroupDragGestureLifecycle()
 
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @Environment(\.pickyAppFontScale) private var fontScale
@@ -967,10 +971,12 @@ struct PickyHUDDockRailView: View {
     private func groupReorderGesture(for groupID: String) -> some Gesture {
         DragGesture(minimumDistance: 4, coordinateSpace: .global)
             .onChanged { value in
+                guard groupDragGestureLifecycle.acceptChange(groupID: groupID) else { return }
                 if draggingGroupID != groupID { handleGroupTileDragBegin(groupID: groupID) }
                 handleGroupTileDragChanged(groupID: groupID, translation: value.translation)
             }
             .onEnded { value in
+                guard groupDragGestureLifecycle.finish(groupID: groupID) else { return }
                 handleGroupTileDragEnded(groupID: groupID, translation: value.translation)
             }
     }
@@ -1066,6 +1072,7 @@ struct PickyHUDDockRailView: View {
 
     private func handleGroupTileDragCanceled() {
         guard draggingGroupID != nil else { return }
+        groupDragGestureLifecycle.cancel()
         groupPullOutArmed = false
         groupDragTranslation = .zero
         draggingGroupID = nil

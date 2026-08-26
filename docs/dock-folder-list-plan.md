@@ -315,6 +315,13 @@ Accessibility:
 | Over another folder | Pointer over a folder tile for 400ms | That folder's list opens; the drag continues and can drop into it |
 | Over the rail's archive zone | Existing rail pull-out dwell satisfied | Archive |
 
+**Shipped so far:** in-panel reorder and pull-out-to-ungroup. Pull-out currently
+releases the Pickle directly after its former folder rather than at the rail
+position nearest the pointer, because rail slot centers are not published to the
+child panel. The folder-dwell and archive-zone phases are not implemented; both
+outcomes remain reachable from the row's context menu (Move to Group) and from
+press-and-hold or the menu's archive action, so no capability is lost.
+
 Ungroup and archive are separate outcomes with separate thresholds and must not be conflated. Today outward pull-out from the rail means archive-on-release (`PickyHUDDockRailView.swift:667-731`); pulling a row out of the list means ungroup, and only the rail's own archive zone archives.
 
 - A drag that ends outside every valid target, or is cancelled with Esc, restores the original order and leaves membership unchanged.

@@ -73,6 +73,30 @@ enum PickyHUDDockGroupListScreenLayout {
     }
 }
 
+let PickyHUDDockGroupListCoordinateSpace = "PickyHUDDockGroupList"
+
+struct PickyHUDDockGroupListRowCenterPreferenceKey: PreferenceKey {
+    static let defaultValue: [String: CGFloat] = [:]
+    static func reduce(value: inout [String: CGFloat], nextValue: () -> [String: CGFloat]) {
+        value.merge(nextValue()) { _, new in new }
+    }
+}
+
+extension View {
+    /// Rows always measure on Y: the list is vertical even when the dock is
+    /// horizontal, so the rail's orientation branch does not apply here.
+    func publishDockGroupListRowCenter(sessionID: String) -> some View {
+        background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: PickyHUDDockGroupListRowCenterPreferenceKey.self,
+                    value: [sessionID: proxy.frame(in: .named(PickyHUDDockGroupListCoordinateSpace)).midY]
+                )
+            }
+        }
+    }
+}
+
 struct PickyHUDDockGroupListPanelRoot: View {
     let group: PickyDockGroup
     let rows: [PickyHUDDockGroupListRowModel]
@@ -94,6 +118,8 @@ struct PickyHUDDockGroupListPanelRoot: View {
     let onStopSession: (String) -> Void
     let onMoveSessionToGroup: (String, String) -> Void
     let onUngroupSession: (String) -> Void
+    let onReorderSession: (_ sessionID: String, _ visibleIndex: Int) -> Void
+    let convertScreenPointToPanel: (CGPoint) -> CGPoint
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isPresented = false
@@ -118,7 +144,9 @@ struct PickyHUDDockGroupListPanelRoot: View {
             onArchiveSession: onArchiveSession,
             onStopSession: onStopSession,
             onMoveSessionToGroup: onMoveSessionToGroup,
-            onUngroupSession: onUngroupSession
+            onUngroupSession: onUngroupSession,
+            onReorderSession: onReorderSession,
+            convertScreenPointToPanel: convertScreenPointToPanel
         )
         .frame(
             width: PickyHUDDockGroupListPolicy.panelSize(memberCount: max(1, rows.count), metrics: metrics).width,
@@ -153,6 +181,24 @@ struct PickyHUDDockGroupListView: View {
     let onStopSession: (String) -> Void
     let onMoveSessionToGroup: (String, String) -> Void
     let onUngroupSession: (String) -> Void
+    let onReorderSession: (_ sessionID: String, _ visibleIndex: Int) -> Void
+    /// Screen point to panel-local point. The overlay manager owns the child
+    /// panel, so it is the only place that knows the live frame.
+    let convertScreenPointToPanel: (CGPoint) -> CGPoint
+
+    @State private var rowCenters: [String: CGFloat] = [:]
+    @State private var draggingRowID: String?
+    @State private var previewRowIDs: [String] = []
+    @State private var leftPanelAt: Date?
+    @State private var dragMonitors: [Any] = []
+
+    /// Rows in their drag-preview order while a drag is live, otherwise the
+    /// stored order.
+    private var displayedRows: [PickyHUDDockGroupListRowModel] {
+        guard draggingRowID != nil, !previewRowIDs.isEmpty else { return rows }
+        let rowsByID = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return previewRowIDs.compactMap { rowsByID[$0] }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -170,8 +216,118 @@ struct PickyHUDDockGroupListView: View {
             RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
                 .strokeBorder(DS.Colors.borderSubtle, lineWidth: 0.5)
         )
+        .coordinateSpace(name: PickyHUDDockGroupListCoordinateSpace)
+        .onPreferenceChange(PickyHUDDockGroupListRowCenterPreferenceKey.self) { centers in
+            rowCenters = centers
+        }
+        .onChange(of: rows.map(\.id)) { _, ids in
+            // A member that vanishes mid-drag cancels the drag instead of
+            // committing a move against a row that no longer exists.
+            if let draggingRowID, !ids.contains(draggingRowID) { resetDrag() }
+        }
+        .onDisappear { resetDrag() }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L10n.t("group.list.accessibility.label", group.displayName, rows.count))
+    }
+
+    /// The row's click host is an AppKit view that swallows mouse events, so a
+    /// SwiftUI drag gesture would never fire here. Rows hand the drag off the
+    /// same way rail tiles do, and this controller tracks it from app-level
+    /// monitors until mouse-up.
+    private func beginRowDrag(rowID: String) {
+        guard draggingRowID == nil else { return }
+        draggingRowID = rowID
+        previewRowIDs = rows.map(\.id)
+        leftPanelAt = nil
+        installDragMonitors(rowID: rowID)
+    }
+
+    private func installDragMonitors(rowID: String) {
+        removeDragMonitors()
+        let handleMove: (NSEvent) -> Void = { _ in
+            updateDragState(rowID: rowID, location: currentPanelPoint())
+        }
+        let handleUp: (NSEvent) -> Void = { _ in
+            commitDrag(rowID: rowID, location: currentPanelPoint())
+        }
+        dragMonitors = [
+            NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDragged]) { event in
+                handleMove(event)
+                return event
+            },
+            NSEvent.addLocalMonitorForEvents(matching: [.leftMouseUp]) { event in
+                handleUp(event)
+                return event
+            },
+            NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDragged], handler: handleMove),
+            NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseUp], handler: handleUp),
+        ].compactMap { $0 }
+    }
+
+    private func removeDragMonitors() {
+        for monitor in dragMonitors { NSEvent.removeMonitor(monitor) }
+        dragMonitors = []
+    }
+
+    private func currentPanelPoint() -> CGPoint {
+        convertScreenPointToPanel(NSEvent.mouseLocation)
+    }
+
+    private var panelBounds: CGRect {
+        let size = PickyHUDDockGroupListPolicy.panelSize(memberCount: max(1, rows.count), metrics: metrics)
+        return CGRect(origin: .zero, size: size)
+    }
+
+    private func updateDragState(rowID: String, location: CGPoint) {
+        let isInside = panelBounds.contains(location)
+        if isInside {
+            leftPanelAt = nil
+        } else if leftPanelAt == nil {
+            leftPanelAt = Date()
+        }
+        guard isInside else { return }
+        previewRowIDs = PickyHUDDockGroupListDragPolicy.previewOrder(
+            rowIDs: rows.map(\.id),
+            draggedRowID: rowID,
+            insertionIndex: insertionIndex(for: rowID, pointerY: location.y)
+        )
+    }
+
+    private func insertionIndex(for rowID: String, pointerY: CGFloat) -> Int {
+        let orderedIDs = rows.map(\.id)
+        let centers = orderedIDs.compactMap { rowCenters[$0] }
+        guard centers.count == orderedIDs.count, let draggedIndex = orderedIDs.firstIndex(of: rowID) else {
+            return orderedIDs.firstIndex(of: rowID) ?? 0
+        }
+        let raw = PickyHUDDockGroupListDragPolicy.insertionIndex(pointerY: pointerY, rowCenters: centers)
+        return PickyHUDDockGroupListDragPolicy.normalizedInsertionIndex(raw, draggedRowIndex: draggedIndex)
+    }
+
+    private func commitDrag(rowID: String, location: CGPoint) {
+        let isInside = panelBounds.contains(location)
+        let timeOutside = leftPanelAt.map { Date().timeIntervalSince($0) } ?? 0
+        let outcome = PickyHUDDockGroupListDragPolicy.outcome(
+            isInsidePanel: isInside,
+            timeOutsidePanel: timeOutside,
+            insertionIndex: insertionIndex(for: rowID, pointerY: location.y),
+            isDraggedRowStillPresent: rows.contains { $0.id == rowID }
+        )
+        resetDrag()
+        switch outcome {
+        case .reorder(let visibleIndex):
+            onReorderSession(rowID, visibleIndex)
+        case .ungroup:
+            onUngroupSession(rowID)
+        case .cancel:
+            break
+        }
+    }
+
+    private func resetDrag() {
+        removeDragMonitors()
+        draggingRowID = nil
+        previewRowIDs = []
+        leftPanelAt = nil
     }
 
     private var panelBackground: some View {
@@ -203,7 +359,7 @@ struct PickyHUDDockGroupListView: View {
     @ViewBuilder
     private var memberRows: some View {
         let content = VStack(spacing: 0) {
-            ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+            ForEach(Array(displayedRows.enumerated()), id: \.element.id) { index, row in
                 PickyHUDDockGroupListRow(
                     row: row,
                     isUnread: unreadSessionIDs.contains(row.id),
@@ -225,10 +381,15 @@ struct PickyHUDDockGroupListView: View {
                     onArchive: { onArchiveSession(row.id) },
                     onStop: { onStopSession(row.id) },
                     onMoveToGroup: { onMoveSessionToGroup(row.id, $0) },
-                    onUngroup: { onUngroupSession(row.id) }
+                    onUngroup: { onUngroupSession(row.id) },
+                    onReorderHandoff: { _ in beginRowDrag(rowID: row.id) }
                 )
+                .publishDockGroupListRowCenter(sessionID: row.id)
+                .opacity(draggingRowID == row.id ? 0.35 : 1)
+                .zIndex(draggingRowID == row.id ? 1 : 0)
             }
         }
+        .animation(.easeOut(duration: 0.12), value: previewRowIDs)
         if PickyHUDDockGroupListPolicy.needsScroll(memberCount: rows.count) {
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: true) { content }
@@ -274,6 +435,7 @@ private struct PickyHUDDockGroupListRow: View {
     let onStop: () -> Void
     let onMoveToGroup: (String) -> Void
     let onUngroup: () -> Void
+    let onReorderHandoff: (NSPoint) -> Void
 
     @StateObject private var archiveFeedback = PickyHUDArchiveHoldFeedback()
     @State private var isHovered = false
@@ -342,7 +504,8 @@ private struct PickyHUDDockGroupListRow: View {
                 onStop: onStop,
                 moveTargetGroups: moveTargetGroups,
                 onMoveToGroup: onMoveToGroup,
-                onUngroup: onUngroup
+                onUngroup: onUngroup,
+                onReorderHandoff: onReorderHandoff
             )
         }
         .overlay {

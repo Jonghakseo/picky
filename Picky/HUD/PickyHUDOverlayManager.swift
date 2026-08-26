@@ -1178,6 +1178,18 @@ final class PickyHUDOverlayManager {
                 },
                 onUngroupSession: { [weak self] sessionID in
                     self?.ungroupDockGroupListSession(sessionID: sessionID)
+                },
+                onReorderSession: { [weak self] sessionID, visibleIndex in
+                    self?.reorderDockGroupListSession(
+                        groupID: group.id,
+                        sessionID: sessionID,
+                        visibleIndex: visibleIndex
+                    )
+                },
+                convertScreenPointToPanel: { [weak panel = entry.panel] screenPoint in
+                    guard let panel else { return .zero }
+                    let frame = panel.frame
+                    return CGPoint(x: screenPoint.x - frame.minX, y: frame.maxY - screenPoint.y)
                 }
             )
             .environmentObject(self.appearanceStore)
@@ -1249,6 +1261,23 @@ final class PickyHUDOverlayManager {
             ?? L10n.t("group.list.fallbackTitle")
         viewModel.archive(sessionID: sessionID)
         showArchiveUndoToast(displayID: displayID, sessionID: sessionID, title: title)
+    }
+
+    /// A drop position among the rendered rows is not a stored member index:
+    /// archived members stay in `memberSessionIDs` without rendering, so the
+    /// visible index has to be translated before the move is emitted.
+    private func reorderDockGroupListSession(groupID: String, sessionID: String, visibleIndex: Int) {
+        let snapshot = viewModel.dockState.snapshot
+        guard let group = snapshot.dockLayout.group(withID: groupID) else { return }
+        let memberIndex = PickyDockGroupMemberIndexPolicy.fullMemberIndex(
+            forVisibleIndex: visibleIndex,
+            memberSessionIDs: group.memberSessionIDs,
+            activeSessionIDs: Set(snapshot.activeSessions.map(\.id))
+        )
+        viewModel.moveSessionInDock(
+            sessionID: sessionID,
+            to: .group(id: groupID, memberIndex: memberIndex)
+        )
     }
 
     private func ungroupDockGroupListSession(sessionID: String) {

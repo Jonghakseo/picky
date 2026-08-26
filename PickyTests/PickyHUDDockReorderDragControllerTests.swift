@@ -82,4 +82,42 @@ struct PickyHUDDockReorderDragControllerTests {
         #expect(acceptedNewDrag)
         #expect(committedNewDragEnd)
     }
+
+    @Test func railMouseUpResetsCancelledFolderGestureWhenItsSourceDisappears() throws {
+        let monitorToken = NSObject()
+        var installedHandlers: [(NSEvent) -> NSEvent?] = []
+        var removedMonitorCount = 0
+        var lifecycle = PickyDockGroupDragGestureLifecycle()
+        let releaseMonitor = PickyDockGroupDragReleaseMonitor(
+            allowsUserEnvironmentEffects: true,
+            installLocalMonitor: { _, handler in
+                installedHandlers.append(handler)
+                return monitorToken
+            },
+            removeLocalMonitor: { monitor in
+                #expect((monitor as AnyObject) === monitorToken)
+                removedMonitorCount += 1
+            }
+        )
+
+        let acceptedRemovedFolder = lifecycle.acceptChange(groupID: "removed-folder")
+        releaseMonitor.begin {
+            lifecycle.finishCancelledGestureOnPhysicalRelease()
+        }
+        lifecycle.cancel()
+
+        // The source tile has disappeared, so it cannot call `finish` on mouse-up.
+        let acceptedSamePressOtherFolder = lifecycle.acceptChange(groupID: "other-folder")
+        #expect(acceptedRemovedFolder)
+        #expect(!acceptedSamePressOtherFolder)
+        #expect(installedHandlers.count == 1)
+        _ = installedHandlers[0](try mouseEvent(.leftMouseUp))
+        #expect(removedMonitorCount == 1)
+
+        let acceptedLaterOtherFolder = lifecycle.acceptChange(groupID: "other-folder")
+        let committedLaterOtherFolder = lifecycle.finish(groupID: "other-folder")
+        #expect(acceptedLaterOtherFolder)
+        #expect(committedLaterOtherFolder)
+        #expect(removedMonitorCount == 1)
+    }
 }

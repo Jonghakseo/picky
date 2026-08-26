@@ -24,7 +24,8 @@ struct PickyDockGroupDragGestureLifecycle: Equatable {
 
     /// Returns whether a change belongs to an active gesture. The first change
     /// starts the gesture; later changes after cancellation are deliberately
-    /// ignored until `finish(groupID:)` observes the mouse release.
+    /// ignored until `finish(groupID:)` or the rail-level physical mouse-up
+    /// monitor observes the release.
     mutating func acceptChange(groupID: String) -> Bool {
         switch state {
         case .idle:
@@ -56,6 +57,67 @@ struct PickyDockGroupDragGestureLifecycle: Equatable {
         default:
             return false
         }
+    }
+
+    /// Restores idle only when a persisted update cancelled the active gesture.
+    /// This is driven by the rail, which survives when the original folder tile
+    /// disappears before SwiftUI can send its matching `onEnded` callback.
+    mutating func finishCancelledGestureOnPhysicalRelease() -> Bool {
+        guard case .cancelledAwaitingEnd = state else { return false }
+        state = .idle
+        return true
+    }
+}
+
+/// Retains a rail-level mouse-up source while a folder drag is active. Unlike
+/// the folder tile's SwiftUI gesture, the rail remains alive when a persisted
+/// structure update removes the dragged tile.
+@MainActor
+final class PickyDockGroupDragReleaseMonitor {
+    typealias LocalEventMonitorInstaller = (
+        _ mask: NSEvent.EventTypeMask,
+        _ handler: @escaping (NSEvent) -> NSEvent?
+    ) -> Any?
+    typealias LocalEventMonitorRemover = (_ monitor: Any) -> Void
+
+    private let allowsUserEnvironmentEffects: Bool
+    private let installLocalMonitor: LocalEventMonitorInstaller
+    private let removeLocalMonitor: LocalEventMonitorRemover
+    private var monitor: Any?
+    private var onCancelledRelease: (() -> Bool)?
+
+    init(
+        allowsUserEnvironmentEffects: Bool = PickyRuntimeEnvironment.allowsUserEnvironmentEffects,
+        installLocalMonitor: @escaping LocalEventMonitorInstaller = { mask, handler in
+            NSEvent.addLocalMonitorForEvents(matching: mask, handler: handler)
+        },
+        removeLocalMonitor: @escaping LocalEventMonitorRemover = { monitor in
+            NSEvent.removeMonitor(monitor)
+        }
+    ) {
+        self.allowsUserEnvironmentEffects = allowsUserEnvironmentEffects
+        self.installLocalMonitor = installLocalMonitor
+        self.removeLocalMonitor = removeLocalMonitor
+    }
+
+    func begin(onCancelledRelease: @escaping () -> Bool) {
+        guard allowsUserEnvironmentEffects, monitor == nil else { return }
+        self.onCancelledRelease = onCancelledRelease
+        monitor = installLocalMonitor(.leftMouseUp) { [weak self] event in
+            guard let self, self.onCancelledRelease?() == true else { return event }
+            self.stop()
+            return event
+        }
+    }
+
+    func stop() {
+        if let monitor { removeLocalMonitor(monitor) }
+        monitor = nil
+        onCancelledRelease = nil
+    }
+
+    deinit {
+        if let monitor { removeLocalMonitor(monitor) }
     }
 }
 

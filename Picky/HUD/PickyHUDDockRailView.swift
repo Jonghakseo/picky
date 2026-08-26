@@ -160,6 +160,9 @@ struct PickyHUDDockRailView: View {
     /// the pointer is still down. Hold that gesture terminal until its
     /// matching end callback so a re-render cannot start it again mid-press.
     @State private var groupDragGestureLifecycle = PickyDockGroupDragGestureLifecycle()
+    /// The rail survives if a structure update removes the dragged folder tile,
+    /// so it owns the physical mouse-up fallback for a cancelled tile gesture.
+    @State private var groupDragReleaseMonitor = PickyDockGroupDragReleaseMonitor()
 
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @Environment(\.pickyAppFontScale) private var fontScale
@@ -295,6 +298,9 @@ struct PickyHUDDockRailView: View {
         // view is recreated by a cross-group preview reparent.
         .onChange(of: reorderController.phase) { _, phase in
             handleReorderPhase(phase)
+        }
+        .onDisappear {
+            groupDragReleaseMonitor.stop()
         }
     }
 
@@ -972,11 +978,16 @@ struct PickyHUDDockRailView: View {
         DragGesture(minimumDistance: 4, coordinateSpace: .global)
             .onChanged { value in
                 guard groupDragGestureLifecycle.acceptChange(groupID: groupID) else { return }
+                groupDragReleaseMonitor.begin {
+                    groupDragGestureLifecycle.finishCancelledGestureOnPhysicalRelease()
+                }
                 if draggingGroupID != groupID { handleGroupTileDragBegin(groupID: groupID) }
                 handleGroupTileDragChanged(groupID: groupID, translation: value.translation)
             }
             .onEnded { value in
-                guard groupDragGestureLifecycle.finish(groupID: groupID) else { return }
+                let shouldHandleEnd = groupDragGestureLifecycle.finish(groupID: groupID)
+                groupDragReleaseMonitor.stop()
+                guard shouldHandleEnd else { return }
                 handleGroupTileDragEnded(groupID: groupID, translation: value.translation)
             }
     }

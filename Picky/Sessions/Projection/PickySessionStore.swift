@@ -279,6 +279,30 @@ final class PickySessionStore {
     func applyProjectionTool(_ tool: PickyToolActivity) {
         presentation.logPreview = [tool.name, tool.preview].compactMap { $0 }.joined(separator: ": ")
     }
+
+    /// Snapshot hydration replaces only values derived from daemon-owned
+    /// historical data. Locally-owned transient state (the terminal-sync
+    /// banner and optimistic request timestamp) has no projection owner and
+    /// must survive recovery and collection rehydration.
+    func replaceProjectionPresentation(with card: PickySessionListViewModel.SessionCard) {
+        precondition(card.id == sessionID)
+        presentation.logPreview = card.logPreview
+        presentation.lastRequestText = card.lastRequestText
+        presentation.piSessionFilePath = card.piSessionFilePath
+        presentation.hasRuntimeDetachedFollowUpRejection = card.hasRuntimeDetachedFollowUpRejection
+        presentation.isMainAgentHandoff = card.isMainAgentHandoff
+    }
+
+    func replaceTerminalSyncOutcome(_ outcome: PickyTerminalSessionSyncOutcome?) {
+        presentation.lastTerminalSyncOutcome = outcome
+    }
+
+    /// A `session_replaced` transaction is an explicit daemon reset, unlike a
+    /// recovery snapshot. Its fresh session must not retain local UI state.
+    func clearLocallyOwnedProjectionPresentation() {
+        presentation.lastRequestAt = nil
+        presentation.lastTerminalSyncOutcome = nil
+    }
 }
 
 private struct PickySessionCardPresentation {

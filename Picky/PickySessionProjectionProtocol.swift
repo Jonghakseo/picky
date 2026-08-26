@@ -100,10 +100,13 @@ enum PickySessionProjectionMutation: Decodable, Equatable {
     case messageRemove(messageId: String)
     case messagesImport([PickySessionMessage])
     case logAppend(line: String)
+    case logsSet([String])
     case toolUpsert(PickyToolActivity)
+    case toolsSet([PickyToolActivity])
     case todoSet(PickyTodoState?)
     case subagentRunsSet([PickySubagentRun])
     case artifactUpsert(PickyArtifact)
+    case artifactsSet([PickyArtifact])
     case changedFilesSet([PickyChangedFile])
     case queueSet(queuedSteers: [PickyQueueItem], queuedFollowUps: [PickyQueueItem], steeringMode: PickyQueueMode, followUpMode: PickyQueueMode)
     case activitySet(PickyActivitySummary)
@@ -118,10 +121,13 @@ enum PickySessionProjectionMutation: Decodable, Equatable {
         case .messageRemove: "messageRemove"
         case .messagesImport: "messagesImport"
         case .logAppend: "logAppend"
+        case .logsSet: "logsSet"
         case .toolUpsert: "toolUpsert"
+        case .toolsSet: "toolsSet"
         case .todoSet: "todoSet"
         case .subagentRunsSet: "subagentRunsSet"
         case .artifactUpsert: "artifactUpsert"
+        case .artifactsSet: "artifactsSet"
         case .changedFilesSet: "changedFilesSet"
         case .queueSet: "queueSet"
         case .activitySet: "activitySet"
@@ -131,7 +137,7 @@ enum PickySessionProjectionMutation: Decodable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case type, patch, message, messageId, messages, line, tool, todoState, runs, artifact
+        case type, patch, message, messageId, messages, line, logs, tool, tools, todoState, runs, artifact, artifacts
         case changedFiles, queuedSteers, queuedFollowUps, steeringMode, followUpMode, activitySummary
         case finalAnswer, request
     }
@@ -151,7 +157,9 @@ enum PickySessionProjectionMutation: Decodable, Equatable {
         case "messageRemove": self = .messageRemove(messageId: try container.decode(String.self, forKey: .messageId))
         case "messagesImport": self = .messagesImport(try container.decode([PickySessionMessage].self, forKey: .messages))
         case "logAppend": self = .logAppend(line: try container.decode(String.self, forKey: .line))
+        case "logsSet": self = .logsSet(try container.decode([String].self, forKey: .logs))
         case "toolUpsert": self = .toolUpsert(try container.decode(PickyToolActivity.self, forKey: .tool))
+        case "toolsSet": self = .toolsSet(try container.decode([PickyToolActivity].self, forKey: .tools))
         case "todoSet":
             if try container.decodeNil(forKey: .todoState) {
                 self = .todoSet(nil)
@@ -160,6 +168,7 @@ enum PickySessionProjectionMutation: Decodable, Equatable {
             }
         case "subagentRunsSet": self = .subagentRunsSet(try container.decode([PickySubagentRun].self, forKey: .runs))
         case "artifactUpsert": self = .artifactUpsert(try container.decode(PickyArtifact.self, forKey: .artifact))
+        case "artifactsSet": self = .artifactsSet(try container.decode([PickyArtifact].self, forKey: .artifacts))
         case "changedFilesSet": self = .changedFilesSet(try container.decode([PickyChangedFile].self, forKey: .changedFiles))
         case "queueSet":
             self = .queueSet(

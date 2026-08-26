@@ -160,9 +160,11 @@ final class PickyRegistrySessionProjectionStorage: PickySessionProjectionStorage
     }
 
     func applyManualOrder(_ order: [String]) {
-        let before = snapshot()
-        let active = before.activeSessions.sortedByManualOrder(order)
-        install(active: active, archived: before.archivedSessions)
+        // Ordering only changes active membership order. Reinstalling cards
+        // here would round-trip every v2 child store through the lossy façade
+        // immediately after a registry-safe archive or unarchive.
+        let activeIDs = activeSessions.sortedByManualOrder(order).map(\.id)
+        registry.replaceMembership(active: activeIDs, archived: registry.archivedSessionIDs)
         let final = snapshot()
         publish([step(active: final.activeSessions, archived: final.archivedSessions, activeChanged: true, archivedChanged: false)], final: final)
     }

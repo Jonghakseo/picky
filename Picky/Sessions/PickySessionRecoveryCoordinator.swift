@@ -12,17 +12,23 @@ import Foundation
 /// ordering decisions, preventing two owners from replaying the same frame.
 @MainActor
 final class PickySessionRecoveryCoordinator {
+    enum SnapshotOrigin: Equatable {
+        case bootstrap
+        case recovery
+    }
+
     typealias SnapshotRequest = (_ sessionID: String, _ requestID: String) -> Void
     /// The injected applier must mark every child section named in
     /// `omittedFields` as `.unavailable` (clearing stale values) before it
     /// exposes the bounded projection. Production wiring is intentionally
     /// deferred to W6.5.
-    typealias SnapshotApplier = (_ snapshot: PickySessionProjectionSnapshot, _ omittedFields: [String]) -> Void
+    typealias SnapshotApplier = (_ snapshot: PickySessionProjectionSnapshot, _ omittedFields: [String], _ origin: SnapshotOrigin) -> Void
     typealias TransactionApplier = (_ transaction: PickySessionProjectionTransaction) -> Void
 
     private struct SessionState {
         var cursor = PickySessionRevisionCursor()
         var inFlightRequestID: String?
+        var recoveryFailureCount = 0
         var bufferedTransactions: [PickySessionProjectionTransaction] = []
     }
 
@@ -81,9 +87,10 @@ final class PickySessionRecoveryCoordinator {
     private func receiveBootstrap(snapshot: PickySessionProjectionSnapshot) {
         var state = states[snapshot.sessionId] ?? SessionState()
         state.inFlightRequestID = nil
+        state.recoveryFailureCount = 0
         state.cursor = PickySessionRevisionCursor()
         guard case .apply = state.cursor.receive(snapshot: snapshot) else { return }
-        install(snapshot: snapshot, into: &state)
+        install(snapshot: snapshot, origin: .bootstrap, into: &state)
     }
 
     /// Accepts only the response correlated to the session's outstanding
@@ -94,9 +101,10 @@ final class PickySessionRecoveryCoordinator {
         }
 
         state.inFlightRequestID = nil
+        state.recoveryFailureCount = 0
         switch state.cursor.receive(snapshot: snapshot) {
         case .apply:
-            install(snapshot: snapshot, into: &state)
+            install(snapshot: snapshot, origin: .recovery, into: &state)
         case .dropStaleOrDuplicate, .requestRecovery, .buffer, .discard:
             // The server answered a request but the cursor could not install
             // it (for example, the daemon epoch changed during recovery).
@@ -106,7 +114,7 @@ final class PickySessionRecoveryCoordinator {
         }
     }
 
-    private func install(snapshot: PickySessionProjectionSnapshot, into state: inout SessionState) {
+    private func install(snapshot: PickySessionProjectionSnapshot, origin: SnapshotOrigin, into state: inout SessionState) {
         // The installed snapshot supersedes old revisions and other epochs;
         // only future frames from its epoch remain eligible for replay.
         state.bufferedTransactions.removeAll {
@@ -120,9 +128,35 @@ final class PickySessionRecoveryCoordinator {
         )
 
         states[snapshot.sessionId] = state
-        applySnapshot(snapshot, snapshot.omittedFields)
+        applySnapshot(snapshot, snapshot.omittedFields, origin)
         for transaction in transactionsToApply { applyTransaction(transaction) }
         if let nextRequestID { requestSnapshot(snapshot.sessionId, nextRequestID) }
+    }
+
+    /// Releases a recovery request rejected through the existing
+    /// command-correlated `error` event. The first rejection retries once;
+    /// another rejection drops buffered state and resets the cursor so a later
+    /// transaction can begin a fresh recovery instead of buffering forever.
+    func receiveRecoveryFailure(commandID: String?) {
+        guard let commandID,
+              let sessionID = states.first(where: { $0.value.inFlightRequestID == commandID })?.key,
+              var state = states[sessionID]
+        else { return }
+
+        state.inFlightRequestID = nil
+        state.recoveryFailureCount += 1
+        if state.recoveryFailureCount < 2 {
+            state.cursor.abandonRecoveryRequest()
+            let retryRequestID = beginRecoveryIfNeeded(in: &state)
+            states[sessionID] = state
+            if let retryRequestID { requestSnapshot(sessionID, retryRequestID) }
+            return
+        }
+
+        state.recoveryFailureCount = 0
+        state.cursor = PickySessionRevisionCursor()
+        state.bufferedTransactions.removeAll()
+        states[sessionID] = state
     }
 
     func inFlightRequestID(sessionID: String) -> String? {

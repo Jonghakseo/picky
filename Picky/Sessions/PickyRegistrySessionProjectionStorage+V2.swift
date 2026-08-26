@@ -19,8 +19,23 @@ extension PickyRegistrySessionProjectionStorage {
         let projection = snapshot.projection
         guard projection.id == snapshot.sessionId else { return nil }
 
+        // A correlated recovery can supersede a lost `/new` transaction. When
+        // its Pi session changes an already materialized card, this represents
+        // a replacement rather than ordinary hydration, so local transient UI
+        // state must not leak into the new Pi session.
+        let replacesExistingPiSession = store.materializedSessionCard().map {
+            $0.piSessionFilePath != projection.piSessionFilePath
+        } ?? false
+        let omittedFields = Set(snapshot.omittedFields)
         store.metaStore.replace(PickySessionMetadata(session: projection, revision: snapshot.revision))
-        replaceSnapshotChildren(of: store, projection: projection, omittedFields: Set(snapshot.omittedFields))
+        if replacesExistingPiSession {
+            store.clearLocallyOwnedProjectionPresentation()
+        }
+        replaceSnapshotChildren(of: store, projection: projection, omittedFields: omittedFields)
+        var presentationSession = projection
+        if omittedFields.contains("logs") { presentationSession.logs = [] }
+        if omittedFields.contains("tools") { presentationSession.tools = [] }
+        store.replaceProjectionPresentation(with: .fromAgentSession(presentationSession))
         store.refreshDockProjection()
         guard let card = store.materializedSessionCard() else { return nil }
         publishProjection(card, archived: archived)
@@ -42,9 +57,83 @@ extension PickyRegistrySessionProjectionStorage {
         }
         metadata.revision = transaction.revision
         store.metaStore.replace(metadata)
+        if transactionIsSessionReplacement(transaction) {
+            store.clearLocallyOwnedProjectionPresentation()
+        }
+        if transaction.mutations.contains(where: requiresPresentationRehydration) {
+            guard let session = store.materializedAgentSessionSummary() else { return nil }
+            store.replaceProjectionPresentation(with: .fromAgentSession(session))
+        }
         store.refreshDockProjection()
         guard let card = store.materializedSessionCard() else { return nil }
         publishProjection(card, archived: archived)
+        return card
+    }
+
+    /// Moves one existing session between active and archived registry
+    /// membership without round-tripping any stable child store through the
+    /// lossy v1 `SessionCard` installation boundary.
+    @discardableResult
+    func moveProjectionMembership(
+        sessionID: String,
+        archived: Bool
+    ) -> PickySessionListViewModel.SessionCard? {
+        guard let store = registry.existingSessionStore(sessionID: sessionID),
+              let card = store.materializedSessionCard()
+        else { return nil }
+
+        let wasActive = registry.activeSessionIDs.contains(sessionID)
+        let wasArchived = registry.archivedSessionIDs.contains(sessionID)
+        guard archived ? wasActive : wasArchived else { return nil }
+
+        var activeIDs = registry.activeSessionIDs
+        var archivedIDs = registry.archivedSessionIDs
+        if archived {
+            activeIDs.removeAll { $0 == sessionID }
+            archivedIDs.append(sessionID)
+            archivedIDs = archivedIDs.sorted { lhs, rhs in
+                guard let left = registry.existingSessionStore(sessionID: lhs)?.materializedSessionCard(),
+                      let right = registry.existingSessionStore(sessionID: rhs)?.materializedSessionCard()
+                else { return lhs < rhs }
+                if left.createdAt != right.createdAt { return left.createdAt > right.createdAt }
+                return left.id < right.id
+            }
+        } else {
+            archivedIDs.removeAll { $0 == sessionID }
+            activeIDs.append(sessionID)
+        }
+        registry.replaceMembership(active: activeIDs, archived: archivedIDs)
+
+        let final = snapshot()
+        publish([step(
+            active: final.activeSessions,
+            archived: final.archivedSessions,
+            activeChanged: wasActive != registry.activeSessionIDs.contains(sessionID),
+            archivedChanged: wasArchived != registry.archivedSessionIDs.contains(sessionID)
+        )], final: final)
+        return card
+    }
+
+    /// Applies a presentation-only v2 event without round-tripping every
+    /// registry store through the lossy v1 `SessionCard` installation path.
+    @discardableResult
+    func updateProjectionPresentation(
+        sessionID: String,
+        update: (PickySessionStore) -> Void
+    ) -> PickySessionListViewModel.SessionCard? {
+        guard let store = registry.existingSessionStore(sessionID: sessionID) else { return nil }
+        update(store)
+        guard let card = store.materializedSessionCard() else { return nil }
+        let final = snapshot()
+        let isActive = registry.activeSessionIDs.contains(sessionID)
+        let isArchived = registry.archivedSessionIDs.contains(sessionID)
+        guard isActive || isArchived else { return nil }
+        publish([step(
+            active: final.activeSessions,
+            archived: final.archivedSessions,
+            activeChanged: isActive,
+            archivedChanged: isArchived
+        )], final: final)
         return card
     }
 
@@ -109,12 +198,16 @@ extension PickyRegistrySessionProjectionStorage {
             logs.append(line)
             store.logStore.replace(logs)
             store.appendProjectionLog(line)
+        case .logsSet(let logs):
+            store.logStore.replace(logs)
         case .toolUpsert(let tool):
             var tools = store.toolStore.toolsState.loadedValue ?? []
             if let index = tools.firstIndex(where: { $0.toolCallId == tool.toolCallId }) { tools[index] = tool }
             else { tools.append(tool) }
             store.toolStore.replace(tools)
             store.applyProjectionTool(tool)
+        case .toolsSet(let tools):
+            store.toolStore.replace(tools)
         case .todoSet(let todoState):
             store.todoStore.replace(todoState)
         case .subagentRunsSet(let runs):
@@ -123,6 +216,8 @@ extension PickyRegistrySessionProjectionStorage {
             var artifacts = store.artifactStore.artifactsState.loadedValue ?? []
             if let index = artifacts.firstIndex(where: { $0.id == artifact.id }) { artifacts[index] = artifact }
             else { artifacts.append(artifact) }
+            store.artifactStore.replace(artifacts: artifacts, changedFiles: store.artifactStore.changedFilesProjectionState.loadedValue ?? [])
+        case .artifactsSet(let artifacts):
             store.artifactStore.replace(artifacts: artifacts, changedFiles: store.artifactStore.changedFilesProjectionState.loadedValue ?? [])
         case .changedFilesSet(let changedFiles):
             store.artifactStore.replace(artifacts: store.artifactStore.artifactsState.loadedValue ?? [], changedFiles: changedFiles)
@@ -135,6 +230,33 @@ extension PickyRegistrySessionProjectionStorage {
         case .extensionUiRequestSet(let request):
             store.extensionUiStore.replace(request)
         }
+    }
+
+    private func requiresPresentationRehydration(_ mutation: PickySessionProjectionMutation) -> Bool {
+        switch mutation {
+        case .logsSet, .toolsSet:
+            true
+        default:
+            false
+        }
+    }
+
+    /// `/new` is represented by authoritative empty replacements for all
+    /// resettable projection collections. Treat that combination as a fresh
+    /// session, clearing locally-owned presentation state before rehydration.
+    private func transactionIsSessionReplacement(_ transaction: PickySessionProjectionTransaction) -> Bool {
+        var clearsLogs = false
+        var clearsTools = false
+        var clearsArtifacts = false
+        for mutation in transaction.mutations {
+            switch mutation {
+            case .logsSet(let logs): clearsLogs = logs.isEmpty
+            case .toolsSet(let tools): clearsTools = tools.isEmpty
+            case .artifactsSet(let artifacts): clearsArtifacts = artifacts.isEmpty
+            default: break
+            }
+        }
+        return clearsLogs && clearsTools && clearsArtifacts
     }
 
     private func apply(

@@ -938,7 +938,7 @@ struct ProtocolContractTests {
         #expect(value.epoch == "epoch-001")
         #expect(value.baseRevision == 4)
         #expect(value.revision == 5)
-        #expect(value.mutations.map(\.type) == ["metaPatch", "finalAnswerSet"])
+        #expect(value.mutations.map(\.type) == ["metaPatch", "logsSet", "toolsSet", "artifactsSet", "finalAnswerSet"])
 
         guard case .sessionProjectionSnapshot(let value) = snapshot.event else {
             Issue.record("Expected sessionProjectionSnapshot")
@@ -958,10 +958,13 @@ struct ProtocolContractTests {
             #"{"type":"messageRemove","messageId":"message-001"}"#,
             #"{"type":"messagesImport","messages":[]}"#,
             #"{"type":"logAppend","line":"completed"}"#,
+            #"{"type":"logsSet","logs":[]}"#,
             #"{"type":"toolUpsert","tool":{"toolCallId":"tool-001","name":"read","status":"succeeded"}}"#,
+            #"{"type":"toolsSet","tools":[]}"#,
             #"{"type":"todoSet","todoState":null}"#,
             #"{"type":"subagentRunsSet","runs":[]}"#,
             #"{"type":"artifactUpsert","artifact":{"id":"artifact-001","kind":"report","title":"Report","updatedAt":"2026-08-24T00:00:00.000Z"}}"#,
+            #"{"type":"artifactsSet","artifacts":[]}"#,
             #"{"type":"changedFilesSet","changedFiles":[]}"#,
             #"{"type":"queueSet","queuedSteers":[],"queuedFollowUps":[],"steeringMode":"one-at-a-time","followUpMode":"one-at-a-time"}"#,
             #"{"type":"activitySet","activitySummary":{"read":0,"bash":0,"edit":0,"write":0,"thinking":0,"other":0}}"#,
@@ -974,8 +977,9 @@ struct ProtocolContractTests {
         }
         #expect(decoded.map(\.type) == [
             "metaPatch", "messageAppend", "messageReplace", "messageRemove", "messagesImport",
-            "logAppend", "toolUpsert", "todoSet", "subagentRunsSet", "artifactUpsert",
-            "changedFilesSet", "queueSet", "activitySet", "finalAnswerSet", "extensionUiRequestSet",
+            "logAppend", "logsSet", "toolUpsert", "toolsSet", "todoSet", "subagentRunsSet",
+            "artifactUpsert", "artifactsSet", "changedFilesSet", "queueSet", "activitySet",
+            "finalAnswerSet", "extensionUiRequestSet",
         ])
         #expect(throws: DecodingError.self) {
             _ = try JSONDecoder.pickyAgentProtocolDecoder().decode(

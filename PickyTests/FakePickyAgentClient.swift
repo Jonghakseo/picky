@@ -23,6 +23,7 @@ final class FakePickyAgentClient: PickyAgentClient {
     // sent so far.
     @MainActor private(set) var submitted: [PickyAgentSubmission] = []
     @MainActor private(set) var sentCommands: [PickyCommandEnvelope] = []
+    @MainActor var shouldThrowOnSend = false
     var beforeSend: ((PickyCommandEnvelope) async -> Void)?
 
     init() {
@@ -37,6 +38,9 @@ final class FakePickyAgentClient: PickyAgentClient {
         return PickyAgentSubmissionReceipt(sessionID: "session-1", message: "sent")
     }
     func send(_ command: PickyCommandEnvelope) async throws {
+        if await MainActor.run(body: { shouldThrowOnSend }) {
+            throw FakePickyAgentClientError.sendFailed
+        }
         if let beforeSend {
             await beforeSend(command)
         }
@@ -44,4 +48,8 @@ final class FakePickyAgentClient: PickyAgentClient {
     }
     func disconnect() { continuation.yield(.disconnected) }
     func emit(_ event: PickyClientEvent) { continuation.yield(event) }
+}
+
+private enum FakePickyAgentClientError: Error {
+    case sendFailed
 }

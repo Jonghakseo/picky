@@ -16,7 +16,7 @@ struct PickySessionRecoveryCoordinatorTests {
         var nextRequest = 0
         let coordinator = PickySessionRecoveryCoordinator(
             requestSnapshot: { sessionID, requestID in requests.append((sessionID, requestID)) },
-            applySnapshot: { snapshot, omittedFields in snapshots.append((snapshot.sessionId, omittedFields)) },
+            applySnapshot: { snapshot, omittedFields, _ in snapshots.append((snapshot.sessionId, omittedFields)) },
             applyTransaction: { transaction in applied.append(transaction.revision) },
             requestID: { nextRequest += 1; return "request-\(nextRequest)" }
         )
@@ -42,7 +42,7 @@ struct PickySessionRecoveryCoordinatorTests {
         var nextRequest = 0
         let coordinator = PickySessionRecoveryCoordinator(
             requestSnapshot: { sessionID, requestID in requests.append((sessionID, requestID)) },
-            applySnapshot: { _, _ in },
+            applySnapshot: { _, _, _ in },
             applyTransaction: { transaction in applied.append("\(transaction.sessionId):\(transaction.revision)") },
             requestID: { nextRequest += 1; return "request-\(nextRequest)" }
         )
@@ -63,7 +63,7 @@ struct PickySessionRecoveryCoordinatorTests {
         var applied: [Int] = []
         let coordinator = PickySessionRecoveryCoordinator(
             requestSnapshot: { sessionID, requestID in requests.append((sessionID, requestID)) },
-            applySnapshot: { snapshot, _ in snapshots.append("\(snapshot.epoch):\(snapshot.revision)") },
+            applySnapshot: { snapshot, _, _ in snapshots.append("\(snapshot.epoch):\(snapshot.revision)") },
             applyTransaction: { transaction in applied.append(transaction.revision) },
             requestID: { "unexpected-recovery" }
         )
@@ -84,7 +84,7 @@ struct PickySessionRecoveryCoordinatorTests {
         var nextRequest = 0
         let coordinator = PickySessionRecoveryCoordinator(
             requestSnapshot: { sessionID, requestID in requests.append((sessionID, requestID)) },
-            applySnapshot: { snapshot, _ in snapshots.append("\(snapshot.epoch):\(snapshot.revision)") },
+            applySnapshot: { snapshot, _, _ in snapshots.append("\(snapshot.epoch):\(snapshot.revision)") },
             applyTransaction: { transaction in applied.append(transaction.revision) },
             requestID: { nextRequest += 1; return "request-\(nextRequest)" }
         )
@@ -111,7 +111,7 @@ struct PickySessionRecoveryCoordinatorTests {
         var nextRequest = 0
         let coordinator = PickySessionRecoveryCoordinator(
             requestSnapshot: { sessionID, requestID in requests.append((sessionID, requestID)) },
-            applySnapshot: { snapshot, _ in snapshots.append(snapshot.requestId ?? "missing") },
+            applySnapshot: { snapshot, _, _ in snapshots.append(snapshot.requestId ?? "missing") },
             applyTransaction: { _ in },
             requestID: { nextRequest += 1; return "request-\(nextRequest)" }
         )
@@ -134,7 +134,7 @@ struct PickySessionRecoveryCoordinatorTests {
         var nextRequest = 0
         let coordinator = PickySessionRecoveryCoordinator(
             requestSnapshot: { sessionID, requestID in requests.append((sessionID, requestID)) },
-            applySnapshot: { _, _ in },
+            applySnapshot: { _, _, _ in },
             applyTransaction: { transaction in applied.append(transaction.revision) },
             requestID: { nextRequest += 1; return "request-\(nextRequest)" }
         )
@@ -148,6 +148,35 @@ struct PickySessionRecoveryCoordinatorTests {
         coordinator.receive(snapshot: try snapshot(requestID: "request-2", sessionID: "session-a", epoch: "epoch-2", revision: 4))
 
         #expect(applied == [5])
+    }
+
+    @Test func recoveryRejectionRetriesOnceThenResetsSoALaterGapCanRecover() throws {
+        var requests: [(sessionID: String, requestID: String)] = []
+        var nextRequest = 0
+        let coordinator = PickySessionRecoveryCoordinator(
+            requestSnapshot: { sessionID, requestID in requests.append((sessionID, requestID)) },
+            applySnapshot: { _, _, _ in },
+            applyTransaction: { _ in },
+            requestID: { nextRequest += 1; return "request-\(nextRequest)" }
+        )
+
+        coordinator.receive(transaction: try transaction(sessionID: "session-a", epoch: "epoch-1", baseRevision: 2, revision: 3))
+        coordinator.receiveRecoveryFailure(commandID: "request-1")
+
+        #expect(requests.map(\.requestID) == ["request-1", "request-2"])
+        #expect(coordinator.inFlightRequestID(sessionID: "session-a") == "request-2")
+        #expect(coordinator.bufferedTransactionCount(sessionID: "session-a") == 1)
+
+        coordinator.receiveRecoveryFailure(commandID: "request-2")
+
+        #expect(coordinator.inFlightRequestID(sessionID: "session-a") == nil)
+        #expect(coordinator.bufferedTransactionCount(sessionID: "session-a") == 0)
+
+        coordinator.receive(transaction: try transaction(sessionID: "session-a", epoch: "epoch-1", baseRevision: 4, revision: 5))
+
+        #expect(requests.map(\.requestID) == ["request-1", "request-2", "request-3"])
+        #expect(coordinator.inFlightRequestID(sessionID: "session-a") == "request-3")
+        #expect(coordinator.bufferedTransactionCount(sessionID: "session-a") == 1)
     }
 
     private func transaction(sessionID: String, epoch: String, baseRevision: Int, revision: Int) throws -> PickySessionProjectionTransaction {

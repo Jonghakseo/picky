@@ -157,6 +157,10 @@ final class PickySessionListViewModel: ObservableObject {
     private let childSessionReleaser: (any PickyChildSessionReleasing)?
     private let archiveCommitDelayNanoseconds: UInt64
     private var archiveCommitTasks: [String: Task<Void, Never>] = [:]
+    /// User archive actions are optimistic. Preserve their intent until a
+    /// matching v2 projection mutation or recovery snapshot confirms it.
+    var pendingArchiveIntentBySessionID: [String: Bool] = [:]
+    private var pendingArchiveIntentByCommandID: [String: (sessionID: String, archived: Bool)] = [:]
     var releasedArchivedChildSessionIDs = Set<String>()
     private let manualPickleSessionIdFactory: () -> String
     private var terminalSessionCommandChains: [String: Task<Void, Never>] = [:]
@@ -1524,11 +1528,11 @@ final class PickySessionListViewModel: ObservableObject {
         manuallyArchivedIDs.insert(sessionID)
         archiveStore.manuallyArchivedSessionIDs = manuallyArchivedIDs
 
-        Task { try? await client.send(PickyCommandEnvelope(type: .setSessionArchived, sessionId: sessionID, archived: true)) }
+        sendArchiveIntent(sessionID: sessionID, archived: true)
 
         scheduleArchiveCommit(sessionID: sessionID)
 
-        guard archiveSession(id: sessionID) != nil else { return }
+        guard moveSessionProjectionMembership(id: sessionID, archived: true) != nil else { return }
         // Keep manualOrder synced so the persisted array does not retain ids
         // outside both pools. Unarchive re-prepends the id to manualOrder, so
         // we intentionally drop the slot rather than try to remember it.
@@ -1548,6 +1552,60 @@ final class PickySessionListViewModel: ObservableObject {
         if screenContextTargetSessionID == sessionID {
             clearScreenContextTarget(sessionID: sessionID)
         }
+    }
+
+    private func sendArchiveIntent(sessionID: String, archived: Bool) {
+        let command = PickyCommandEnvelope(type: .setSessionArchived, sessionId: sessionID, archived: archived)
+        pendingArchiveIntentBySessionID[sessionID] = archived
+        pendingArchiveIntentByCommandID[command.id] = (sessionID, archived)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await client.send(command)
+            } catch {
+                handleArchiveIntentFailure(commandID: command.id)
+                pickySessionLog("set archive intent failed session=\(sessionID) archived=\(archived) error=\(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Removes all correlation state once the daemon confirms or rejects the
+    /// current archive intent. A stale command ID can then never undo a newer
+    /// user action for the same session.
+    func clearPendingArchiveIntent(sessionID: String) {
+        pendingArchiveIntentBySessionID.removeValue(forKey: sessionID)
+        pendingArchiveIntentByCommandID = pendingArchiveIntentByCommandID.filter { $0.value.sessionID != sessionID }
+    }
+
+    /// Reverses only the current optimistic action when its command was
+    /// rejected. This makes the generic command-correlated `error` frame a
+    /// liveness signal rather than leaving local archive intent permanent.
+    func handleArchiveIntentFailure(commandID: String?) {
+        guard let commandID,
+              let pending = pendingArchiveIntentByCommandID.removeValue(forKey: commandID),
+              pendingArchiveIntentBySessionID[pending.sessionID] == pending.archived
+        else { return }
+
+        beginDockStateMutation()
+        defer { endDockStateMutation() }
+        clearPendingArchiveIntent(sessionID: pending.sessionID)
+        if pending.archived {
+            archiveStore.archivedSessionIDs.remove(pending.sessionID)
+            archiveStore.manuallyArchivedSessionIDs.remove(pending.sessionID)
+            archiveCommitTasks.removeValue(forKey: pending.sessionID)?.cancel()
+            releasedArchivedChildSessionIDs.remove(pending.sessionID)
+            _ = moveSessionProjectionMembership(id: pending.sessionID, archived: false)
+        } else {
+            archiveStore.archivedSessionIDs.insert(pending.sessionID)
+            archiveStore.manuallyArchivedSessionIDs.insert(pending.sessionID)
+            _ = moveSessionProjectionMembership(id: pending.sessionID, archived: true)
+            scheduleArchiveCommit(sessionID: pending.sessionID)
+        }
+        applyManualOrder()
+        syncSelectionAfterSessionListChange()
+        syncVoiceFollowUpAfterSessionListChange()
+        syncScreenContextTargetAfterSessionListChange()
+        syncActiveVoiceFollowUpAfterSessionListChange()
     }
 
     /// Tear down the child daemon once the archive undo window expires. Called from
@@ -1596,9 +1654,9 @@ final class PickySessionListViewModel: ObservableObject {
         manuallyArchivedIDs.remove(sessionID)
         archiveStore.manuallyArchivedSessionIDs = manuallyArchivedIDs
 
-        Task { try? await client.send(PickyCommandEnvelope(type: .setSessionArchived, sessionId: sessionID, archived: false)) }
+        sendArchiveIntent(sessionID: sessionID, archived: false)
 
-        guard unarchiveSession(id: sessionID) != nil else { return }
+        guard moveSessionProjectionMembership(id: sessionID, archived: false) != nil else { return }
         // Only touch manualOrder if the user has already opted into manual
         // ordering by dragging at least once; otherwise let the historical
         // createdAt sort drive placement.
@@ -1747,6 +1805,12 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
+    /// Routes command-correlated recovery rejections to the per-session
+    /// coordinator. Other command errors are ignored by the coordinator.
+    func handleSessionProjectionRecoveryFailure(commandID: String?) {
+        sessionProjectionRecoveryCoordinator?.receiveRecoveryFailure(commandID: commandID)
+    }
+
     /// Inner reducer for fully-decoded protocol events. Stays private — reducer
     /// tests always go through the `PickyClientEvent.protocolEvent(...)` envelope
     /// (matching the production path), so this entry point has no external
@@ -1809,6 +1873,8 @@ final class PickySessionListViewModel: ObservableObject {
         case .error(let error):
             pickySessionLog("protocol error code=\(error.code) command=\(error.commandId ?? "none")")
             lastError = error.message
+            handleSessionProjectionRecoveryFailure(commandID: error.commandId)
+            handleArchiveIntentFailure(commandID: error.commandId)
         case .terminalSessionSyncOutcome(let outcome):
             applyTerminalSessionSyncOutcome(outcome)
         case .externalEntryAccepted(let accepted):
@@ -1984,6 +2050,9 @@ final class PickySessionListViewModel: ObservableObject {
         // plain sessionUpdated to avoid the long-standing
         // mid-flight unarchive flicker race.
         pickySessionLog("session archived authoritative session=\(sessionId) archived=\(archived)")
+        if pendingArchiveIntentBySessionID[sessionId] == archived {
+            clearPendingArchiveIntent(sessionID: sessionId)
+        }
         var archivedIDs = archiveStore.archivedSessionIDs
         var manuallyArchivedIDs = archiveStore.manuallyArchivedSessionIDs
         if archived {
@@ -2181,15 +2250,23 @@ final class PickySessionListViewModel: ObservableObject {
         // outcomes still surface so the user notices a silent skip or a
         // successful import.
         guard PickyTerminalSyncOutcomePolicy.shouldSurfaceBanner(for: outcome) else { return }
-        mutateSession(sessionID: outcome.sessionId) { card in
-            card.lastTerminalSyncOutcome = outcome
-            card.updatedAt = Date()
-        }
+        updateTerminalSessionSyncOutcome(sessionID: outcome.sessionId, outcome: outcome)
     }
 
     func dismissTerminalSyncOutcome(sessionID: String) {
-        mutateSession(sessionID: sessionID) { card in
-            card.lastTerminalSyncOutcome = nil
+        updateTerminalSessionSyncOutcome(sessionID: sessionID, outcome: nil)
+    }
+
+    private func updateTerminalSessionSyncOutcome(
+        sessionID: String,
+        outcome: PickyTerminalSessionSyncOutcome?
+    ) {
+        if let storage = sessionProjectionStorage as? PickyRegistrySessionProjectionStorage {
+            _ = storage.updateProjectionPresentation(sessionID: sessionID) {
+                $0.replaceTerminalSyncOutcome(outcome)
+            }
+        } else {
+            mutateSession(sessionID: sessionID) { $0.lastTerminalSyncOutcome = outcome }
         }
     }
 
@@ -2431,8 +2508,17 @@ final class PickySessionListViewModel: ObservableObject {
 
     private func replaceAllSessions(active: [SessionCard], archived: [SessionCard]) { sessionProjectionStorage.replaceAllSessions(active: active, archived: archived) }
     private func removeSession(id: String) { sessionProjectionStorage.removeSession(id: id) }
-    @discardableResult private func archiveSession(id: String) -> SessionCard? { sessionProjectionStorage.archiveSession(id: id) }
-    @discardableResult private func unarchiveSession(id: String) -> SessionCard? { sessionProjectionStorage.unarchiveSession(id: id) }
+    /// Local archive actions in v2 move registry membership only, preserving
+    /// all addressed and unrelated child stores. The legacy fallback retains
+    /// the façade storage behavior for non-registry implementations.
+    @discardableResult private func moveSessionProjectionMembership(id: String, archived: Bool) -> SessionCard? {
+        if let storage = sessionProjectionStorage as? PickyRegistrySessionProjectionStorage {
+            return storage.moveProjectionMembership(sessionID: id, archived: archived)
+        }
+        return archived
+            ? sessionProjectionStorage.archiveSession(id: id)
+            : sessionProjectionStorage.unarchiveSession(id: id)
+    }
 
     private func upsertSession(_ card: SessionCard, archived: Bool) {
         sessionProjectionStorage.upsertSession(card, archived: archived)

@@ -65,6 +65,13 @@ struct PickySessionRevisionCursor {
         return .apply
     }
 
+    /// Allows the recovery coordinator to issue a replacement request after a
+    /// correlated daemon rejection. The cursor still retains its known epoch
+    /// and revision, so the replacement snapshot remains authoritative.
+    mutating func abandonRecoveryRequest() {
+        recoveryRequested = false
+    }
+
     mutating func receive(snapshot: PickySessionProjectionSnapshot) -> PickySessionRevisionCursorDecision {
         if let awaitingSnapshotEpoch {
             guard snapshot.epoch == awaitingSnapshotEpoch else { return .discard }

@@ -3,6 +3,7 @@
 //  PickyTests
 //
 
+import CoreGraphics
 import Testing
 @testable import Picky
 
@@ -14,7 +15,7 @@ struct PickyHUDDockGroupDropCandidateBuilderTests {
             .group(PickyDockGroup(id: "filled", memberSessionIDs: ["member"])),
         ])
         let slots = PickyDockProjector.project(layout: layout, visibleSessionIDs: ["loose", "member"]).slots
-        let centers = ["group:empty": 100.0, "group:filled": 200.0]
+        let centers: [String: CGFloat] = ["group:empty": 100, "group:filled": 200]
 
         let empty = PickyHUDDockGroupDropCandidateBuilder.emptyCandidates(
             slots: slots,
@@ -29,7 +30,7 @@ struct PickyHUDDockGroupDropCandidateBuilderTests {
             topEntryCenters: centers
         )
 
-        #expect(empty.map(\.groupID) == ["empty"])
-        #expect(filled.map(\.groupID) == ["filled"])
+        #expect(empty.map { $0.groupID } == ["empty"])
+        #expect(filled.map { $0.groupID } == ["filled"])
     }
 }

@@ -50,7 +50,13 @@ enum PickyHUDDockGroupListDragPolicy {
     /// updates may continue, but any visible membership add, removal, or
     /// reorder invalidates the frozen row centers and insertion marker.
     static func shouldCancelDrag(referenceRowIDs: [String], currentRowIDs: [String]) -> Bool {
-        referenceRowIDs != currentRowIDs
+        !isCurrent(referenceRowIDs: referenceRowIDs, currentRowIDs: currentRowIDs)
+    }
+
+    /// Used by both the deferred SwiftUI observation and the synchronous
+    /// mouse-monitor update/commit paths.
+    static func isCurrent(referenceRowIDs: [String], currentRowIDs: [String]) -> Bool {
+        referenceRowIDs == currentRowIDs
     }
 
     /// Pull-out is deliberately slower than a flick: a pointer that merely

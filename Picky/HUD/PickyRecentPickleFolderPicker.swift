@@ -25,6 +25,7 @@ struct PickyRecentPickleFolderPolicy {
 extension View {
     func recentPickleFolderPicker(
         isPresented: Binding<Bool>,
+        onPresentationAcknowledged: @escaping () -> Void = {},
         arrowEdge: Edge,
         pinnedPickleCwds: [String],
         recentPickleCwds: [String],
@@ -53,6 +54,7 @@ extension View {
                 suggestedGroupColor: suggestedGroupColor,
                 onCreateGroup: onCreateGroup
             )
+            .onAppear(perform: onPresentationAcknowledged)
         }
     }
 }

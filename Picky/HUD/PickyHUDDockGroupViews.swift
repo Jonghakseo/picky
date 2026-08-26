@@ -157,8 +157,7 @@ enum PickyHUDDockGroupHeaderPresentation {
 }
 
 /// Quiet, centered identity label beneath a folder tile. The rail supplies
-/// the tap and group-reorder gesture so this label follows the tile's exact
-/// interaction path without acquiring a separate context menu.
+/// the tap and group-reorder gesture.
 struct PickyHUDDockGroupHeader: View {
     let group: PickyDockGroup
     let metrics: PickyHUDDockMetrics
@@ -391,7 +390,14 @@ struct PickyHUDDockCollapsedGroupBadge: View {
         .onHover { hovering in
             withAnimation(.easeOut(duration: 0.12)) { isHovered = hovering }
         }
-        .onTapGesture { onTap() }
+        .overlay {
+            // Match normal dock tiles' native Button mouse-up delivery. The
+            // previous SwiftUI tap recognizer was the first divergent boundary
+            // from ungrouped tiles and could be preempted by the rail drag.
+            Button(action: onTap) { Color.clear }
+                .buttonStyle(.plain)
+                .contentShape(RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous))
+        }
     }
 
     @ViewBuilder
@@ -450,7 +456,47 @@ struct PickyHUDDockGroupEmptySlot: View {
     }
 }
 
-/// Right-click context menu for a group folder tile.
+/// One menu modifier is applied to both the folder icon and its identity
+/// label, preventing the two right-click surfaces from drifting.
+private struct PickyHUDDockGroupContextMenuModifier: ViewModifier {
+    let group: PickyDockGroup
+    let onRename: () -> Void
+    let onSetColor: (PickyDockGroupColor) -> Void
+    let onUngroup: () -> Void
+    let onDeleteWithArchive: () -> Void
+
+    func body(content: Content) -> some View {
+        content.contextMenu {
+            PickyHUDDockGroupContextMenu(
+                group: group,
+                onRename: onRename,
+                onSetColor: onSetColor,
+                onUngroup: onUngroup,
+                onDeleteWithArchive: onDeleteWithArchive
+            )
+        }
+    }
+}
+
+extension View {
+    func pickyDockGroupContextMenu(
+        group: PickyDockGroup,
+        onRename: @escaping () -> Void,
+        onSetColor: @escaping (PickyDockGroupColor) -> Void,
+        onUngroup: @escaping () -> Void,
+        onDeleteWithArchive: @escaping () -> Void
+    ) -> some View {
+        modifier(PickyHUDDockGroupContextMenuModifier(
+            group: group,
+            onRename: onRename,
+            onSetColor: onSetColor,
+            onUngroup: onUngroup,
+            onDeleteWithArchive: onDeleteWithArchive
+        ))
+    }
+}
+
+/// Right-click context menu content for a group folder tile and label.
 struct PickyHUDDockGroupContextMenu: View {
     let group: PickyDockGroup
     let onRename: () -> Void

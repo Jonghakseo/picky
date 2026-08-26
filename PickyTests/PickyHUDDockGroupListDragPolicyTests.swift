@@ -190,3 +190,18 @@ struct PickyHUDDockGroupListDragPolicyTests {
         #expect(translated == 2)
     }
 }
+
+
+@MainActor
+extension PickyHUDDockGroupListDragPolicyTests {
+    @Test func synchronousMembershipValidationRejectsImmediateCommitAfterStructureChange() {
+        #expect(PickyHUDDockGroupListDragPolicy.isCurrent(
+            referenceRowIDs: ["alpha", "bravo"],
+            currentRowIDs: ["alpha", "bravo"]
+        ))
+        #expect(!PickyHUDDockGroupListDragPolicy.isCurrent(
+            referenceRowIDs: ["alpha", "bravo"],
+            currentRowIDs: ["bravo", "alpha"]
+        ))
+    }
+}

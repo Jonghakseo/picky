@@ -336,6 +336,16 @@ struct PickyHUDDockGroupListView: View {
     }
 
     private func updateDragState(rowID: String, location: CGPoint) {
+        // A dock snapshot can change between SwiftUI render passes. Validate
+        // synchronously before consuming frozen centers so a mouse-up in that
+        // gap cannot commit against an obsolete membership order.
+        guard PickyHUDDockGroupListDragPolicy.isCurrent(
+            referenceRowIDs: dragReferenceRowIDs,
+            currentRowIDs: rows.map(\.id)
+        ) else {
+            resetDrag()
+            return
+        }
         let isInside = panelBounds.contains(location)
         isLeavingGroup = !isInside
         if isInside {
@@ -366,6 +376,13 @@ struct PickyHUDDockGroupListView: View {
     }
 
     private func commitDrag(rowID: String, location: CGPoint) {
+        guard PickyHUDDockGroupListDragPolicy.isCurrent(
+            referenceRowIDs: dragReferenceRowIDs,
+            currentRowIDs: rows.map(\.id)
+        ) else {
+            resetDrag()
+            return
+        }
         let isInside = panelBounds.contains(location)
         let timeOutside = leftPanelAt.map { Date().timeIntervalSince($0) } ?? 0
         let outcome = PickyHUDDockGroupListDragPolicy.outcome(

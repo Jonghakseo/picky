@@ -137,9 +137,13 @@ final class PickyHUDPanel: PickySecureSurfacePanel, PickyScreenCaptureExcludedWi
     }
 }
 
-private final class PickyHUDDockGroupListPanel: PickySecureSurfacePanel, PickyScreenCaptureExcludedWindow {
+private final class PickyHUDDockGroupListPanel: PickySecureSurfacePanel, PickyScreenCaptureExcludedWindow, PickyHUDDockGroupListContentHost {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+
+    func setDockGroupListContentView(_ contentView: NSView?) {
+        self.contentView = contentView
+    }
 }
 
 @MainActor
@@ -154,8 +158,7 @@ final class PickyHUDOverlayManager {
     private let settingsPersistence: PickySettingsPersistenceCoordinator
     private let voiceTargetHitTestRegistry: PickyVoiceTargetHitTestRegistry
     private var visibilityCancellable: AnyCancellable?
-    private var dockStateCancellable: AnyCancellable?
-    private var fontScaleCancellable: AnyCancellable?
+    private var dockGroupListSubscriptionOrchestrator: PickyHUDDockGroupListSubscriptionOrchestrator?
     private let collapsedHeight: CGFloat = 180
     private let minimumHeight: CGFloat = 48
 
@@ -201,22 +204,24 @@ final class PickyHUDOverlayManager {
         var model: PickyHUDDockGroupListPanelModel?
         /// Reuses one hosting view for a group while its observable model
         /// changes, preserving SwiftUI local state through snapshot updates.
-        var hostingLifecycle = PickyHUDDockGroupListHostingLifecycle<NSView>()
+        var hostingLifecycle: PickyHUDDockGroupListHostingLifecycle
         var badgeFrames: [String: CGRect] = [:]
         var interactionFrames: [String: CGRect] = [:]
         var railFrame: CGRect = .zero
         var openedSessionID: String?
         var localMouseDownMonitor: Any?
         var globalMouseDownMonitor: Any?
+
+        @MainActor init(panel: PickyHUDDockGroupListPanel) {
+            self.panel = panel
+            self.hostingLifecycle = PickyHUDDockGroupListHostingLifecycle(host: panel)
+        }
     }
 
     private var panelsByDisplayID: [CGDirectDisplayID: PanelEntry] = [:]
     private var archiveUndoToastsByDisplayID: [CGDirectDisplayID: ArchiveUndoToastEntry] = [:]
     private var dockGroupListChildrenByDisplayID: [CGDirectDisplayID: DockGroupListChildEntry] = [:]
     private var dockGroupListGeometryByDisplayID: [CGDirectDisplayID: DockGroupListGeometry] = [:]
-    private lazy var dockGroupListSubscriptionOrchestrator = PickyHUDDockGroupListSubscriptionOrchestrator { [weak self] snapshot, fontScale in
-        self?.syncDockGroupListChildrenWithSnapshot(snapshot: snapshot, fontScale: fontScale)
-    }
     private var screenParametersObserver: NSObjectProtocol?
     private var settingsObserver: NSObjectProtocol?
     private var currentDockSizePreset: PickyHUDDockSizePreset
@@ -252,23 +257,14 @@ final class PickyHUDOverlayManager {
         self.currentPositionsByDisplayID = settings.hudDockPositions
         self.currentDockSizePreset = settings.hudDockSizePreset
         self.currentCardSizesByDisplayID = settings.hudCardSizes
-        self.dockStateCancellable = viewModel.dockState.$snapshot
-            .sink { [weak self] snapshot in
-                guard let self else { return }
-                self.dockGroupListSubscriptionOrchestrator.receiveSnapshot(
-                    snapshot,
-                    fontScale: self.fontScaleStore.cgValue
-                )
-            }
-        self.fontScaleCancellable = fontScaleStore.$scale
-            .dropFirst()
-            .sink { [weak self] scale in
-                guard let self else { return }
-                self.dockGroupListSubscriptionOrchestrator.receiveFontScale(
-                    CGFloat(scale),
-                    snapshot: self.viewModel.dockState.snapshot
-                )
-            }
+        self.dockGroupListSubscriptionOrchestrator = PickyHUDDockGroupListSubscriptionOrchestrator(
+            snapshotPublisher: viewModel.dockState.$snapshot.eraseToAnyPublisher(),
+            fontScalePublisher: fontScaleStore.$scale
+                .map { CGFloat($0) }
+                .eraseToAnyPublisher()
+        ) { [weak self] snapshot, fontScale in
+            self?.syncDockGroupListChildrenWithSnapshot(snapshot: snapshot, fontScale: fontScale)
+        }
     }
 
     /// Get the live position for a display. Returns defaults for unknown displays.
@@ -402,7 +398,7 @@ final class PickyHUDOverlayManager {
 
     func stop() {
         visibilityCancellable = nil
-        dockStateCancellable = nil
+        dockGroupListSubscriptionOrchestrator = nil
         stopScreenParametersObserver()
         stopSettingsObserver()
         viewModel.stop()
@@ -1065,7 +1061,6 @@ final class PickyHUDOverlayManager {
         }
         if let openGroupID = entry.openGroupID, openGroupID != groupID {
             entry.panel.orderOut(nil)
-            entry.panel.contentView = nil
             entry.model = nil
             entry.hostingLifecycle.tearDown()
         }
@@ -1096,18 +1091,13 @@ final class PickyHUDOverlayManager {
             rowIDs: dockGroupListRowIDs(group: group, snapshot: snapshot),
             openedSessionID: entry.openedSessionID
         )
-        switch entry.hostingLifecycle.synchronize(groupID: groupID, makeHosting: {
+        _ = entry.hostingLifecycle.synchronize(groupID: groupID, makeHosting: {
             makeDockGroupListChildHostingView(
                 displayID: displayID,
                 model: model,
                 entry: entry
             )
-        }) {
-        case .created(let hosting):
-            entry.panel.contentView = hosting
-        case .retained:
-            break
-        }
+        })
         dockGroupListChildrenByDisplayID[displayID] = entry
         positionDockGroupListChild(
             displayID: displayID,
@@ -1438,7 +1428,6 @@ final class PickyHUDOverlayManager {
         let owningInteractionFrame = panelsByDisplayID[displayID].flatMap { hudEntry in
             PickyHUDDockGroupListOutsideDismissFramePolicy.owningInteractionScreenFrame(
                 openGroupID: entry.openGroupID,
-                badgeFrames: entry.badgeFrames,
                 interactionFrames: entry.interactionFrames,
                 hudPanelFrame: hudEntry.panel.frame
             )
@@ -1457,7 +1446,6 @@ final class PickyHUDOverlayManager {
         if let localMouseDownMonitor = entry.localMouseDownMonitor { NSEvent.removeMonitor(localMouseDownMonitor) }
         if let globalMouseDownMonitor = entry.globalMouseDownMonitor { NSEvent.removeMonitor(globalMouseDownMonitor) }
         entry.panel.orderOut(nil)
-        entry.panel.contentView = nil
         entry.hostingLifecycle.tearDown()
     }
 

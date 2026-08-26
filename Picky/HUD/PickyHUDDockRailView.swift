@@ -60,6 +60,10 @@ struct PickyHUDDockRailView: View {
     let onMoveSessionInDock: (_ sessionID: String, _ destination: PickyDockContainer) -> Void
     /// Reorder a group as a whole within the top-level layout.
     let onMoveDockGroup: (_ groupID: String, _ toTopLevelIndex: Int) -> Void
+    /// One-shot request from the HUD root after a child list panel's header
+    /// action. The matching rail folder tile remains the popover anchor.
+    let requestedPickleFolderPickerGroupID: String?
+    let onPickleFolderPickerRequestConsumed: () -> Void
     let onDockHoverChanged: (Bool) -> Void
     let onAddSlotExpandedChanged: (Bool) -> Void
     let onDoneFlashConsumed: (String) -> Void
@@ -235,6 +239,11 @@ struct PickyHUDDockRailView: View {
             if !isPresented {
                 newPickleTargetGroupID = nil
             }
+        }
+        .onChange(of: requestedPickleFolderPickerGroupID) { _, groupID in
+            guard let groupID else { return }
+            showRecentPickleFolderPicker(targetGroupID: groupID)
+            onPickleFolderPickerRequestConsumed()
         }
         // Drive the reorder drag from the rail-level controller. Running the
         // handlers here (rather than from the per-icon NSView) means they keep
@@ -420,15 +429,13 @@ struct PickyHUDDockRailView: View {
         let unreadCount = memberCards.reduce(0) { count, card in
             unreadSessionIDs.contains(card.id) ? count + 1 : count
         }
+        let hasVisibleMembers = !memberCards.isEmpty
         VStack(spacing: metrics.groupHeaderContentSpacing) {
-            PickyHUDDockCollapsedGroupBadge(
-                members: memberCards,
+            groupTileButton(
+                for: group,
+                memberCards: memberCards,
                 unreadCount: unreadCount,
-                tint: group.color.accent,
-                metrics: metrics,
-                shortcutNumber: PickyHUDDockLayout.numberShortcutForSessionIndex(slot.visibleIndex),
-                isCommandShortcutHintVisible: isCommandShortcutHintVisible,
-                onTap: { onOpenDockGroupList(group.id) }
+                slot: slot
             )
             .publishDockGroupBadgeFrame(groupID: group.id)
             .contextMenu {
@@ -443,7 +450,7 @@ struct PickyHUDDockRailView: View {
             .highPriorityGesture(groupReorderGesture(for: group.id))
 
             PickyHUDDockGroupHeader(group: group, metrics: metrics, fontScale: fontScale)
-                .onTapGesture { onOpenDockGroupList(group.id) }
+                .onTapGesture { activateGroupTile(group.id, hasVisibleMembers: hasVisibleMembers) }
                 .highPriorityGesture(groupReorderGesture(for: group.id))
         }
         .publishDockGroupInteractionFrame(groupID: group.id)
@@ -453,8 +460,10 @@ struct PickyHUDDockRailView: View {
         .zIndex(draggingGroupID == group.id ? 220 : 0)
         .accessibilityLabel(group.displayName)
         .accessibilityValue(L10n.t("group.folder.accessibility.value", memberCards.count, unreadCount))
-        .accessibilityAction(named: Text(L10n.t("group.folder.action.open"))) {
-            onOpenDockGroupList(group.id)
+        .accessibilityAction(named: Text(
+            hasVisibleMembers ? L10n.t("group.folder.action.open") : L10n.t("dock.startPickle")
+        )) {
+            activateGroupTile(group.id, hasVisibleMembers: hasVisibleMembers)
         }
         .accessibilityAction(named: Text(L10n.t("group.folder.action.rename"))) {
             presentRenameDialog(for: group)
@@ -464,6 +473,47 @@ struct PickyHUDDockRailView: View {
                 groupName: group.displayName,
                 onConfirm: { onRemoveDockGroup(group.id, false) }
             )
+        }
+    }
+
+    @ViewBuilder
+    private func groupTileButton(
+        for group: PickyDockGroup,
+        memberCards: [PickyHUDDockSession],
+        unreadCount: Int,
+        slot: PickyDockSlot
+    ) -> some View {
+        if memberCards.isEmpty {
+            newPicklePicker(
+                anchoredTo: PickyHUDDockGroupEmptySlot(
+                    color: group.color,
+                    metrics: metrics,
+                    onCreatePickle: { showRecentPickleFolderPicker(targetGroupID: group.id) }
+                ),
+                targetGroupID: group.id
+            )
+        } else {
+            newPicklePicker(
+                anchoredTo: PickyHUDDockCollapsedGroupBadge(
+                    members: memberCards,
+                    unreadCount: unreadCount,
+                    tint: group.color.accent,
+                    metrics: metrics,
+                    shortcutNumber: PickyHUDDockLayout.numberShortcutForSessionIndex(slot.visibleIndex),
+                    isCommandShortcutHintVisible: isCommandShortcutHintVisible,
+                    onTap: { activateGroupTile(group.id, hasVisibleMembers: true) }
+                ),
+                targetGroupID: group.id
+            )
+        }
+    }
+
+    private func activateGroupTile(_ groupID: String, hasVisibleMembers: Bool) {
+        switch PickyHUDDockNewPicklePopoverPolicy.groupTileAction(hasVisibleMembers: hasVisibleMembers) {
+        case .showFolderPicker:
+            showRecentPickleFolderPicker(targetGroupID: groupID)
+        case .toggleMemberList:
+            onOpenDockGroupList(groupID)
         }
     }
 

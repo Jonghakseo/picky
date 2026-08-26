@@ -40,4 +40,32 @@ struct PickyHUDDockNewPicklePopoverPolicyTests {
             activeTargetGroupID: "group-b"
         ))
     }
+
+    @Test func emptyGroupTileCreatesAPickleWhileMemberGroupTileTogglesItsList() {
+        #expect(PickyHUDDockNewPicklePopoverPolicy.groupTileAction(hasVisibleMembers: false) == .showFolderPicker)
+        #expect(PickyHUDDockNewPicklePopoverPolicy.groupTileAction(hasVisibleMembers: true) == .toggleMemberList)
+    }
+
+    @Test func emptyGroupSlotRemainsADropDestination() {
+        let layout = PickyDockLayout(entries: [
+            .session(id: "loose"),
+            .group(PickyDockGroup(id: "empty", memberSessionIDs: []))
+        ])
+        let projection = PickyDockProjector.project(layout: layout, visibleSessionIDs: ["loose"])
+        let slots = projection.slots.compactMap { slot -> PickyDockDropResolver.SlotCandidate? in
+            guard let container = slot.container else { return nil }
+            return .init(container: container, center: 0)
+        }
+
+        let destination = PickyDockDropResolver.resolveDropContainer(
+            draggedSessionID: "loose",
+            cursorAxis: 100,
+            slotCandidates: slots,
+            emptyGroupCandidates: [.init(groupID: "empty", center: 100)],
+            layout: layout,
+            slotPitch: 100
+        )
+
+        #expect(destination == .group(id: "empty", memberIndex: 0))
+    }
 }

@@ -188,6 +188,8 @@ final class PickyHUDOverlayManager {
 
     private struct DockGroupListChildEntry {
         let panel: PickyHUDDockGroupListPanel
+        /// Folder tap retained until SwiftUI publishes a usable anchor frame.
+        var pendingGroupID: String?
         var openGroupID: String?
         var badgeFrames: [String: CGRect] = [:]
         var railFrame: CGRect = .zero
@@ -960,11 +962,20 @@ final class PickyHUDOverlayManager {
         entry.isCommandShortcutHintVisible = geometry.isCommandShortcutHintVisible
         entry.openedSessionID = geometry.openedSessionID
         dockGroupListChildrenByDisplayID[displayID] = entry
-        if entry.openGroupID != nil { syncDockGroupListChild(displayID: displayID) }
+        if let pendingGroupID = PickyHUDDockGroupListOpenPolicy.pendingGroupIDReadyToOpen(
+            entry.pendingGroupID,
+            anchoredGroupIDs: Set(entry.badgeFrames.keys),
+            hasRailFrame: entry.railFrame != .zero
+        ) {
+            showDockGroupListChild(displayID: displayID, groupID: pendingGroupID)
+        } else if entry.openGroupID != nil {
+            syncDockGroupListChild(displayID: displayID)
+        }
     }
 
     private func toggleDockGroupListChild(displayID: CGDirectDisplayID, groupID: String) {
-        let openGroupID = dockGroupListChildrenByDisplayID[displayID]?.openGroupID
+        let entry = dockGroupListChildrenByDisplayID[displayID]
+        let openGroupID = entry?.openGroupID ?? entry?.pendingGroupID
         let nextGroupID = PickyHUDDockGroupListOpenPolicy.toggled(
             openGroupID: openGroupID,
             tappedGroupID: groupID
@@ -991,13 +1002,21 @@ final class PickyHUDOverlayManager {
             entry.isCommandShortcutHintVisible = geometry.isCommandShortcutHintVisible
             entry.openedSessionID = geometry.openedSessionID
         }
+        if entry.openGroupID != nil {
+            entry.panel.orderOut(nil)
+            entry.panel.contentView = nil
+        }
+        entry.pendingGroupID = PickyHUDDockGroupListOpenPolicy.pendingGroupID(afterRequestFor: groupID)
+        entry.openGroupID = nil
+        dockGroupListChildrenByDisplayID[displayID] = entry
         guard let folderFrame = entry.badgeFrames[groupID],
               entry.railFrame != .zero
         else {
-            pickySessionLog("dock group list open refused group=\(groupID) display=\(displayID) reason=missing-anchor-geometry")
+            pickySessionLog("dock group list open deferred group=\(groupID) display=\(displayID) reason=missing-anchor-geometry")
             return
         }
 
+        entry.pendingGroupID = nil
         entry.openGroupID = groupID
         entry.panel.contentView = makeDockGroupListChildHostingView(
             displayID: displayID,
@@ -1021,8 +1040,18 @@ final class PickyHUDOverlayManager {
     }
 
     private func syncDockGroupListChild(displayID: CGDirectDisplayID) {
-        guard let entry = dockGroupListChildrenByDisplayID[displayID],
-              let groupID = entry.openGroupID else { return }
+        guard var entry = dockGroupListChildrenByDisplayID[displayID] else { return }
+        let existingGroupIDs = Set(viewModel.dockState.snapshot.dockLayout.groups.map(\.id))
+        entry.pendingGroupID = PickyHUDDockGroupListOpenPolicy.reconciledPendingGroupID(
+            entry.pendingGroupID,
+            existingGroupIDs: existingGroupIDs
+        )
+        dockGroupListChildrenByDisplayID[displayID] = entry
+        if let pendingGroupID = entry.pendingGroupID {
+            showDockGroupListChild(displayID: displayID, groupID: pendingGroupID)
+            return
+        }
+        guard let groupID = entry.openGroupID else { return }
         guard let group = viewModel.dockState.snapshot.dockLayout.group(withID: groupID),
               let folderFrame = entry.badgeFrames[groupID],
               entry.railFrame != .zero,

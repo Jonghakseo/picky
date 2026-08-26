@@ -107,13 +107,19 @@ struct PickyHUDView: View {
         viewModel.markSessionClosed(sessionID: sessionID)
     }
 
-    /// Session cards in their final top-to-bottom dock order. Replaces the
-    /// pre-grouping `sessions.reversed()` helper. When the layout is empty
-    /// (fresh install or no manual reorders), the projector falls back
-    /// to appending sessions in newest-last order so the visual ordering
-    /// matches the legacy behavior.
+    /// Full active session-card universe, including members represented by
+    /// folders in the rail. Its fallback order remains oldest-first.
     private var visibleSessions: [PickyHUDDockSession] {
         Array(dockSnapshot.activeSessions.reversed())
+    }
+
+    /// Cycle shortcuts follow persisted dock order, unlike the card universe
+    /// above which must retain every active group member.
+    private var cycleSessionIDs: [String] {
+        PickyDockProjector.cycleSessionIDs(
+            layout: dockSnapshot.dockLayout,
+            activeSessionIDs: visibleSessionUniverse
+        )
     }
 
     /// Active session ids remain the card universe, including members hidden
@@ -986,7 +992,7 @@ struct PickyHUDView: View {
                 return false
             }
         }
-        let visibleIDs = visibleSessions.map(\.id)
+        let visibleIDs = cycleSessionIDs
         let activeCard = activeSessionID.flatMap { viewModel.sessionCard(sessionID: $0) }
 
         if PickyHUDKeyboardShortcutPolicy.isComposerFocusShortcut(keyCode: event.keyCode, modifiers: flags),

@@ -215,15 +215,9 @@ extension PickyDockLayout {
     }
 
     /// Converts legacy expand/collapse persistence to the folder-only rail.
-    /// The policy identifies the sole legacy-open group deterministically
-    /// before every group is persisted in the always-hidden-members state.
+    /// List-open state is display-local and transient, so every loaded group
+    /// returns to the persisted resting state with members not displayed.
     func normalizedForFolderRail() -> PickyDockLayout {
-        let groupIDs = groups.map(\.id)
-        let expandedGroupIDs = Set(groups.filter { !$0.isCollapsed }.map(\.id))
-        _ = PickyHUDDockGroupListOpenPolicy.normalizedLegacyOpenState(
-            groupIDsInDockOrder: groupIDs,
-            expandedGroupIDs: expandedGroupIDs
-        )
         var normalized = self
         for index in normalized.entries.indices {
             guard case var .group(group) = normalized.entries[index] else { continue }
@@ -421,6 +415,15 @@ enum PickyDockContainer: Equatable {
 enum PickyDockRenderItem: Equatable {
     case session(id: String)
     case group(PickyDockGroup)
+
+    /// Stable SwiftUI identity. Top-level moves must not replace the view that
+    /// owns an in-flight drag, completion animation, or archive hold.
+    var stableID: String {
+        switch self {
+        case .session(let id): "session:\(id)"
+        case .group(let group): "group:\(group.id)"
+        }
+    }
 }
 
 /// A keyboard/drag target for a top-level rail slot. Unlike the old model, a
@@ -460,6 +463,19 @@ struct PickyDockProjection: Equatable {
     var slots: [PickyDockSlot]
 
     static let empty = PickyDockProjection(items: [], slots: [])
+
+    /// The top-level rail item that contains a session. Grouped sessions must
+    /// reveal their folder rather than attempting to scroll to a hidden row.
+    func scrollTargetID(forSessionID sessionID: String) -> String? {
+        if items.contains(.session(id: sessionID)) { return "session:\(sessionID)" }
+        for item in items {
+            guard case .group(let group) = item,
+                  group.memberSessionIDs.contains(sessionID)
+            else { continue }
+            return "group:\(group.id)"
+        }
+        return nil
+    }
 }
 
 enum PickyDockProjector {
@@ -507,6 +523,27 @@ enum PickyDockProjector {
 
         return PickyDockProjection(items: items, slots: slots)
     }
+
+    /// Active Pickles in persisted dock order for the cycle shortcut. Groups
+    /// contribute their stored member order, then active Pickles missing from
+    /// the layout are appended in the caller's fallback order.
+    static func cycleSessionIDs(layout: PickyDockLayout, activeSessionIDs: [String]) -> [String] {
+        let activeSet = Set(activeSessionIDs)
+        var result: [String] = []
+        var seen: Set<String> = []
+        func appendIfActive(_ id: String) {
+            guard activeSet.contains(id), seen.insert(id).inserted else { return }
+            result.append(id)
+        }
+        for entry in layout.entries {
+            switch entry {
+            case .session(let id): appendIfActive(id)
+            case .group(let group): group.memberSessionIDs.forEach(appendIfActive)
+            }
+        }
+        activeSessionIDs.forEach(appendIfActive)
+        return result
+    }
 }
 
 // MARK: - Drag drop resolution
@@ -526,7 +563,16 @@ enum PickyDockDropResolver {
     /// group's members.
     struct EmptyGroupCandidate: Equatable {
         let groupID: String
+        /// Full stored member index, translated from the folder's visible
+        /// insertion position so archived members keep their relative order.
+        let memberIndex: Int
         let center: CGFloat
+
+        init(groupID: String, memberIndex: Int = 0, center: CGFloat) {
+            self.groupID = groupID
+            self.memberIndex = memberIndex
+            self.center = center
+        }
     }
 
     /// Resolve the prospective drop container for a Pickle dragged to
@@ -562,7 +608,7 @@ enum PickyDockDropResolver {
             let distance = abs(candidate.center - cursorAxis)
             if distance < minDistance {
                 minDistance = distance
-                nearest = .group(id: candidate.groupID, memberIndex: 0)
+                nearest = .group(id: candidate.groupID, memberIndex: candidate.memberIndex)
             }
         }
 

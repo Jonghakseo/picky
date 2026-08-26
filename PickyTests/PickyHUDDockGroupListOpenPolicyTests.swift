@@ -43,23 +43,33 @@ struct PickyHUDDockGroupListOpenPolicyTests {
         #expect(PickyHUDDockGroupListOpenPolicy.afterAnchorInvalidated() == nil)
     }
 
-    @Test func legacyLayoutsWithSeveralExpandedGroupsKeepOnlyTheFirstInDockOrder() {
+    @Test func tapBeforeGeometryKeepsTheLatestFolderRequestPending() {
+        #expect(PickyHUDDockGroupListOpenPolicy.pendingGroupID(afterRequestFor: "a") == "a")
+        #expect(PickyHUDDockGroupListOpenPolicy.pendingGroupID(afterRequestFor: "b") == "b")
+    }
+
+    @Test func geometryArrivalOpensThePendingFolderOnlyWhenItsAnchorIsReady() {
         #expect(
-            PickyHUDDockGroupListOpenPolicy.normalizedLegacyOpenState(
-                groupIDsInDockOrder: ["a", "b", "c"],
-                expandedGroupIDs: ["c", "b"]
-            ) == "b"
+            PickyHUDDockGroupListOpenPolicy.pendingGroupIDReadyToOpen(
+                "a",
+                anchoredGroupIDs: ["a"],
+                hasRailFrame: true
+            ) == "a"
         )
         #expect(
-            PickyHUDDockGroupListOpenPolicy.normalizedLegacyOpenState(
-                groupIDsInDockOrder: ["a", "b"],
-                expandedGroupIDs: []
+            PickyHUDDockGroupListOpenPolicy.pendingGroupIDReadyToOpen(
+                "a",
+                anchoredGroupIDs: ["a"],
+                hasRailFrame: false
             ) == nil
         )
+    }
+
+    @Test func deletingAPendingGroupClearsTheDeferredOpen() {
         #expect(
-            PickyHUDDockGroupListOpenPolicy.normalizedLegacyOpenState(
-                groupIDsInDockOrder: ["a", "b"],
-                expandedGroupIDs: ["missing"]
+            PickyHUDDockGroupListOpenPolicy.reconciledPendingGroupID(
+                "a",
+                existingGroupIDs: ["b"]
             ) == nil
         )
     }

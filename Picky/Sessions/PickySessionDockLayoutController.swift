@@ -25,7 +25,16 @@ final class PickySessionDockLayoutController {
     ) {
         self.store = store
         self.onSaveError = onSaveError
-        self.layout = store.load().normalizedForFolderRail()
+        let loaded = store.load()
+        let normalized = loaded.normalizedForFolderRail()
+        self.layout = normalized
+        // Legacy expanded groups are no longer a durable UI state. Persist the
+        // all-closed migration during load so disk matches runtime immediately.
+        if normalized != loaded {
+            store.enqueueSave(normalized) { result in
+                if case .failure(let error) = result { onSaveError(error) }
+            }
+        }
     }
 
     /// Keep layout entries aligned with active session IDs. Active IDs are

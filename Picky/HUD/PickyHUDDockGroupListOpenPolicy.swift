@@ -30,12 +30,28 @@ enum PickyHUDDockGroupListOpenPolicy {
     /// re-anchoring, so the panel never appears to drift on its own.
     static func afterAnchorInvalidated() -> String? { nil }
 
-    /// A persisted layout can carry several expanded groups from the old
-    /// collapse model. Keep the first in dock order and close the rest.
-    static func normalizedLegacyOpenState(
-        groupIDsInDockOrder: [String],
-        expandedGroupIDs: Set<String>
+    /// A folder tap that arrives before SwiftUI publishes its anchor remains
+    /// pending. A newer tap simply replaces the prior pending request.
+    static func pendingGroupID(afterRequestFor groupID: String) -> String { groupID }
+
+    /// A pending request survives missing geometry, but is discarded as soon
+    /// as its group leaves the layout.
+    static func reconciledPendingGroupID(_ pendingGroupID: String?, existingGroupIDs: Set<String>) -> String? {
+        guard let pendingGroupID, existingGroupIDs.contains(pendingGroupID) else { return nil }
+        return pendingGroupID
+    }
+
+    /// Geometry completes a pending open only when both the folder frame and
+    /// the rail frame are available.
+    static func pendingGroupIDReadyToOpen(
+        _ pendingGroupID: String?,
+        anchoredGroupIDs: Set<String>,
+        hasRailFrame: Bool
     ) -> String? {
-        groupIDsInDockOrder.first { expandedGroupIDs.contains($0) }
+        guard hasRailFrame,
+              let pendingGroupID,
+              anchoredGroupIDs.contains(pendingGroupID)
+        else { return nil }
+        return pendingGroupID
     }
 }

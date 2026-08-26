@@ -327,10 +327,10 @@ Ungroup and archive are separate outcomes with separate thresholds and must not 
 
 `PickyDockGroup.isCollapsed` is **repurposed, not removed**. It is a wire field on the Picky CLI contract (`PickyDockGroupPayload.collapsed` in `PickyPickleCLIProtocol.swift:16`, filled by `PickyDockGroupCLIPolicy.snapshot`), so deleting it would break CLI consumers and older-build decoding.
 
-- New meaning: `isCollapsed == true` means the group's members are not currently displayed, which under this design is the folder-only resting state. `false` means the group's list panel is open.
-- The polarity is compatible with the legacy meaning, so a persisted layout decodes without migration.
-- On load, the accordion invariant is enforced by normalization: if more than one group has `isCollapsed == false`, the first in dock order stays open and the rest are set to `true`.
-- Because list-open state is display-local and transient, the persisted value is written as `true` for every group on save. The field survives for contract compatibility; it is not a durable user setting anymore.
+- New meaning: `isCollapsed == true` means the group's members are not currently displayed, which under this design is the folder-only resting state. `false` is retained only for legacy decoding and is never emitted by the folder rail.
+- The polarity is compatible with the legacy meaning, so a persisted layout decodes without a schema migration.
+- On load, every group is normalized to `isCollapsed == true` and that normalized layout is written through immediately. Upgrade never auto-opens a floating panel.
+- Because list-open state is display-local and transient, the persisted value remains `true` for every group. The field survives for contract compatibility; it is not a durable user setting anymore.
 - `docs/user-manual.md:324-326` documents per-display collapse as a user-facing feature and must be rewritten in the same change.
 - The per-display `collapsedOverrides` dictionary is repurposed the same way, becoming the display-local list-open state, or replaced by `openGroupListID` if a single optional id proves sufficient. Whichever is chosen, `PickyDockGrouping.swift:450,472`, `PickyHUDDockRailView.swift:162`, `PickyHUDView.swift:94`, and `PickyHUDOverlayManager.swift:290` all need updating.
 

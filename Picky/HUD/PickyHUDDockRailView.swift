@@ -331,18 +331,20 @@ struct PickyHUDDockRailView: View {
     }
 
     private func revealActiveSession(using proxy: ScrollViewProxy) {
-        guard let activeSessionID else { return }
+        guard let activeSessionID,
+              let targetID = projection.scrollTargetID(forSessionID: activeSessionID)
+        else { return }
         let reduceMotion = accessibilityReduceMotion
         DispatchQueue.main.async {
             if reduceMotion {
                 var transaction = Transaction(animation: nil)
                 transaction.disablesAnimations = true
                 withTransaction(transaction) {
-                    proxy.scrollTo(activeSessionID, anchor: .center)
+                    proxy.scrollTo(targetID, anchor: .center)
                 }
             } else {
                 withAnimation(.easeOut(duration: 0.18)) {
-                    proxy.scrollTo(activeSessionID, anchor: .center)
+                    proxy.scrollTo(targetID, anchor: .center)
                 }
             }
         }
@@ -351,7 +353,7 @@ struct PickyHUDDockRailView: View {
     /// Renders one rail tile for each top-level session or folder.
     @ViewBuilder
     private var dockBodyItems: some View {
-        ForEach(Array(projection.items.enumerated()), id: \.offset) { _, item in
+        ForEach(projection.items, id: \.stableID) { item in
             switch item {
             case .session(let id):
                 if let card = sessions.first(where: { $0.id == id }),
@@ -639,11 +641,21 @@ struct PickyHUDDockRailView: View {
             else { return nil }
             return .init(container: container, center: center)
         }
+        let activeSessionIDs = Set(allSessions.map(\.id))
         let emptyGroupCandidates: [PickyDockDropResolver.EmptyGroupCandidate] = dragReferenceSlots.compactMap { slot in
             guard let groupID = slot.groupID,
+                  let group = layout.group(withID: groupID),
                   let center = topEntryCenters["group:\(groupID)"]
             else { return nil }
-            return .init(groupID: groupID, center: center)
+            return .init(
+                groupID: groupID,
+                memberIndex: PickyDockGroupMemberIndexPolicy.fullMemberIndex(
+                    forVisibleIndex: 0,
+                    memberSessionIDs: group.memberSessionIDs,
+                    activeSessionIDs: activeSessionIDs
+                ),
+                center: center
+            )
         }
 
         let nearestDestination = PickyDockDropResolver.resolveDropContainer(

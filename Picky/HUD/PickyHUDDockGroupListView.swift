@@ -169,12 +169,13 @@ struct PickyHUDDockGroupListView: View {
     @ViewBuilder
     private var memberRows: some View {
         let content = VStack(spacing: 0) {
-            ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+            ForEach(rows) { row in
+                // List-relative Command-number routing arrives with keyboard navigation.
                 PickyHUDDockGroupListRow(
                     row: row,
                     isUnread: unreadSessionIDs.contains(row.id),
                     isSelected: openedSessionID == row.id,
-                    shortcutNumber: isCommandShortcutHintVisible && index < 9 ? index + 1 : nil,
+                    shortcutNumber: nil,
                     minimumHeight: metrics.groupListRowHeight,
                     relativeTime: Self.relativeDateFormatter.localizedString(for: row.updatedAt, relativeTo: Date()),
                     onSelect: { onSelectSession(row.id) }

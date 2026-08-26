@@ -214,9 +214,7 @@ final class PickyHUDOverlayManager {
     /// original anchor rather than the previous frame's clamped value.
     private var dragStartPositionsByDisplayID: [String: PickyHUDDockPosition]?
     private var resizeStartCardSizesByDisplayID: [String: PickyHUDCardSize]?
-    /// Per-display dock group collapse overrides keyed by display ID, then
-    /// group ID. Each monitor manages its collapsed groups independently.
-    private var dockGroupCollapseByDisplayID: [String: [String: Bool]]
+
 
     init(
         viewModel: any PickyHUDSessionLifecycle,
@@ -239,21 +237,8 @@ final class PickyHUDOverlayManager {
         self.currentPositionsByDisplayID = settings.hudDockPositions
         self.currentDockSizePreset = settings.hudDockSizePreset
         self.currentCardSizesByDisplayID = settings.hudCardSizes
-        self.dockGroupCollapseByDisplayID = settings.hudDockGroupCollapse
         self.dockStateCancellable = viewModel.dockState.$snapshot
             .sink { [weak self] _ in self?.syncDockGroupListChildrenWithSnapshot() }
-    }
-
-    private func dockGroupCollapse(for displayID: CGDirectDisplayID) -> [String: Bool] {
-        dockGroupCollapseByDisplayID[String(displayID)] ?? [:]
-    }
-
-    /// Store this display's collapse overrides and persist to Settings so the
-    /// per-monitor collapse state survives relaunch.
-    private func handleDockGroupCollapseChanged(displayID: CGDirectDisplayID, overrides: [String: Bool]) {
-        dockGroupCollapseByDisplayID[String(displayID)] = overrides
-        let collapseByDisplayID = dockGroupCollapseByDisplayID
-        settingsPersistence.enqueue { $0.hudDockGroupCollapse = collapseByDisplayID }
     }
 
     /// Get the live position for a display. Returns defaults for unknown displays.
@@ -314,8 +299,7 @@ final class PickyHUDOverlayManager {
     private func projectedDockSessionCount(for displayID: CGDirectDisplayID) -> Int {
         PickyDockProjector.project(
             layout: viewModel.dockState.snapshot.dockLayout,
-            visibleSessionIDs: Array(viewModel.dockState.snapshot.activeSessions.reversed().map(\.id)),
-            collapsedOverrides: dockGroupCollapse(for: displayID)
+            visibleSessionIDs: Array(viewModel.dockState.snapshot.activeSessions.reversed().map(\.id))
         ).slots.count
     }
 
@@ -512,8 +496,7 @@ final class PickyHUDOverlayManager {
                 displayID: displayID,
                 dockSide: initialPosition.side,
                 anchorPercent: initialPosition.anchorPercent
-            ),
-            collapsedGroupOverrides: dockGroupCollapse(for: displayID)
+            )
         )
         let openPerformanceTracker = PickyHUDOpenPerformanceTracker()
         let hudRoot = PickyHUDView(
@@ -574,9 +557,6 @@ final class PickyHUDOverlayManager {
             },
             onArchiveUndoRequested: { [weak self] sessionID, title in
                 self?.showArchiveUndoToast(displayID: displayID, sessionID: sessionID, title: title)
-            },
-            onDockGroupCollapseChanged: { [weak self] overrides in
-                self?.handleDockGroupCollapseChanged(displayID: displayID, overrides: overrides)
             },
             onDockGroupListToggle: { [weak self] groupID in
                 self?.toggleDockGroupListChild(displayID: displayID, groupID: groupID)

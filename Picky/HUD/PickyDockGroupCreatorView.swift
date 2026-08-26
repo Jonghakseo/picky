@@ -11,7 +11,7 @@ import SwiftUI
 
 struct PickyDockGroupCreatorView: View {
     /// All live Pickles in the dock universe, including members hidden by a
-    /// collapsed group. The creator lists them with checkboxes so the user can
+    /// folder tile. The creator lists them with checkboxes so the user can
     /// hand-pick which ones land in the new group.
     let availableSessions: [PickyHUDDockSession]
     /// Accent color the new group will adopt — surfaced as a small swatch

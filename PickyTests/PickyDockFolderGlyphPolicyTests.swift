@@ -45,6 +45,16 @@ struct PickyDockFolderGlyphPolicyTests {
         #expect(PickyDockFolderGlyphPolicy.glyphIndices(statuses: [], cellCount: 3).isEmpty)
     }
 
+    @Test func badgeViewModelPrefersBlockedAndRunningMembersOverCompletedMembers() {
+        let model = PickyHUDDockFolderBadgeViewModel(
+            memberIDs: ["completed-a", "running", "completed-b", "blocked"],
+            statuses: [.completed, .running, .completed, .blocked]
+        )
+
+        #expect(model.glyphMemberIDs == ["blocked", "running", "completed-a"])
+        #expect(model.overflowCount == 1)
+    }
+
     @Test func overflowCountsOnlyTheMembersBehindTheBadge() {
         #expect(PickyDockFolderGlyphPolicy.overflowCount(memberCount: 7, glyphCellCount: 3) == 4)
         #expect(PickyDockFolderGlyphPolicy.overflowCount(memberCount: 3, glyphCellCount: 3) == 0)

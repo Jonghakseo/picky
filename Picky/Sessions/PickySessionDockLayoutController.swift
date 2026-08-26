@@ -25,7 +25,7 @@ final class PickySessionDockLayoutController {
     ) {
         self.store = store
         self.onSaveError = onSaveError
-        self.layout = store.load()
+        self.layout = store.load().normalizedForFolderRail()
     }
 
     /// Keep layout entries aligned with active session IDs. Active IDs are
@@ -169,22 +169,26 @@ final class PickySessionDockLayoutController {
 
     @discardableResult
     private func apply(_ next: PickyDockLayout, changed: Bool) -> Bool {
-        guard changed else { return false }
+        let normalized = next.normalizedForFolderRail()
+        let didChange = changed || normalized != layout
+        guard didChange else { return false }
         layoutRevision &+= 1
-        layout = next
+        layout = normalized
         persist()
         return true
     }
 
     @discardableResult
     private func applyPersisting(_ next: PickyDockLayout, changed: Bool) async throws -> Bool {
-        guard changed else { return false }
+        let normalized = next.normalizedForFolderRail()
+        let didChange = changed || normalized != layout
+        guard didChange else { return false }
         layoutRevision &+= 1
         let admissionRevision = layoutRevision
         do {
-            try await store.saveDurably(next)
+            try await store.saveDurably(normalized)
             if layoutRevision == admissionRevision {
-                layout = next
+                layout = normalized
             }
             return true
         } catch {

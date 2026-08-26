@@ -10119,6 +10119,23 @@
           }
         }
       }
+    },
+    "group.folder.accessibility.value": {
+      "comment": "Format: folder tile member count and unread Pickle count.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d Pickles, %d unread"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "피클 %d개, 읽지 않음 %d개"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -277,22 +277,6 @@ enum PickyHUDDockLayout {
             + metrics.bottomPadding
     }
 
-    /// Cross-axis (Y) thickness of the dock rail in horizontal orientation.
-    /// Defaults to `metrics.railWidth` (matches `sessionTileHeight` + padding),
-    /// but grows by `PickyHUDDockGroupHeaderHitAreaHeight + 2` when any dock
-    /// group is rendered so the title's 24pt interaction row sits inside the
-    /// capsule above its members instead of overflowing above the dock background.
-    static func horizontalDockRailCrossSize(
-        hasGroupHeaders: Bool,
-        metrics: PickyHUDDockMetrics = .medium
-    ) -> CGFloat {
-        let base = metrics.railWidth
-        guard hasGroupHeaders else { return base }
-        // Matches the VStack spacing between the header and the drawer in
-        // `PickyHUDDockGroupContainer`.
-        return base + PickyHUDDockGroupHeaderHitAreaHeight + PickyHUDDockGroupContentSpacing
-    }
-
     /// Long-axis (X) length of the dock rail in horizontal orientation.
     /// Mirrors `dockRailHeight` but uses symmetric leading/trailing padding
     /// (small `topPadding` on both sides instead of vertical's larger
@@ -333,9 +317,7 @@ enum PickyHUDDockLayout {
         max(0, (metrics.previewCardWidth - metrics.sessionTileWidth) / 2)
     }
 
-    static func dockGroupHeaderExtraLength(groupHeaderCount: Int) -> CGFloat {
-        CGFloat(groupHeaderCount) * (PickyHUDDockGroupHeaderHitAreaHeight + PickyHUDDockGroupContentSpacing)
-    }
+
 
     static func contentSizeReservingAddSlotExpansion(
         measuredSize: CGSize,

@@ -121,7 +121,7 @@ struct PickyHUDDockRailPolicyTests {
         ) == false)
     }
 
-    @Test func previewOnlyGroupReorderDoesNotCancelAFolderDrag() {
+    @Test func persistedStructureIgnoresPreviewOnlyGroupReorder() {
         let persisted = PickyDockProjection(
             items: [.session(id: "a"), .session(id: "b")],
             slots: []
@@ -130,16 +130,16 @@ struct PickyHUDDockRailPolicyTests {
             items: [.session(id: "b"), .session(id: "a")],
             slots: []
         )
-        let reference = PickyHUDDockRenderPolicy.dragCancellationTopEntryIDs(in: persisted)
+        let persistedStructure = PickyHUDDockRenderPolicy.persistedStructure(in: persisted)
 
         #expect(PickyHUDDockRenderPolicy.shouldCancelDrag(
-            referenceTopEntryIDs: reference,
-            currentTopEntryIDs: PickyHUDDockRenderPolicy.dragCancellationTopEntryIDs(in: persisted)
+            referenceTopEntryIDs: persistedStructure.topEntryIDs,
+            currentTopEntryIDs: persistedStructure.topEntryIDs
         ) == false)
-        #expect(PickyHUDDockRenderPolicy.visibleTopEntryIDs(in: preview.items) != reference)
+        #expect(PickyHUDDockRenderPolicy.visibleTopEntryIDs(in: preview.items) != persistedStructure.topEntryIDs)
     }
 
-    @Test func persistedStructuralChangeCancelsAFolderDrag() {
+    @Test func persistedStructureCancelsAFolderDragAfterStructuralChange() {
         let before = PickyDockProjection(
             items: [.session(id: "a"), .session(id: "b")],
             slots: []
@@ -150,8 +150,8 @@ struct PickyHUDDockRailPolicyTests {
         )
 
         #expect(PickyHUDDockRenderPolicy.shouldCancelDrag(
-            referenceTopEntryIDs: PickyHUDDockRenderPolicy.dragCancellationTopEntryIDs(in: before),
-            currentTopEntryIDs: PickyHUDDockRenderPolicy.dragCancellationTopEntryIDs(in: after)
+            referenceTopEntryIDs: PickyHUDDockRenderPolicy.persistedStructure(in: before).topEntryIDs,
+            currentTopEntryIDs: PickyHUDDockRenderPolicy.persistedStructure(in: after).topEntryIDs
         ))
     }
 

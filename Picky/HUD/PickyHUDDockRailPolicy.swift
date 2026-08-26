@@ -65,6 +65,13 @@ enum PickyHUDDockRailLayoutPolicy {
     }
 }
 
+/// A nominal identity for the persisted dock structure. Drag cancellation
+/// deliberately accepts this type rather than a render projection, so a
+/// self-reflowing preview cannot accidentally become its observation source.
+struct PickyHUDDockPersistedStructure: Equatable {
+    let topEntryIDs: [String]
+}
+
 enum PickyHUDDockRenderPolicy {
     static func visibleTopEntryIDs(in items: [PickyDockRenderItem]) -> [String] {
         items.map { item in
@@ -75,11 +82,14 @@ enum PickyHUDDockRenderPolicy {
         }
     }
 
-    /// The drag-cancel subscription must observe persisted structure only.
+    /// Captures the persisted structure that drag cancellation observes.
     /// `PickyHUDDockRailView.projection` may be a self-reflowing preview while
-    /// a drag is active, and observing it would cancel that very drag.
-    static func dragCancellationTopEntryIDs(in persistedProjection: PickyDockProjection) -> [String] {
-        visibleTopEntryIDs(in: persistedProjection.items)
+    /// a drag is active, and is intentionally not interchangeable with this
+    /// nominal persisted identity.
+    static func persistedStructure(in persistedProjection: PickyDockProjection) -> PickyHUDDockPersistedStructure {
+        PickyHUDDockPersistedStructure(
+            topEntryIDs: visibleTopEntryIDs(in: persistedProjection.items)
+        )
     }
 
     static func layoutEntryIndex(forVisibleTopEntryID entryID: String, in layout: PickyDockLayout) -> Int? {

@@ -158,6 +158,10 @@ struct PickyHUDDockRailView: View {
     /// move. The actual commit happens on release. When not dragging (or the
     /// prospective drop equals the current home) it is the persisted
     /// projection unchanged.
+    private var persistedStructure: PickyHUDDockPersistedStructure {
+        PickyHUDDockRenderPolicy.persistedStructure(in: baseProjection)
+    }
+
     private var projection: PickyDockProjection {
         let visibleSessionIDs = baseProjection.slots.compactMap(\.sessionID)
         if let draggingSessionID,
@@ -221,8 +225,8 @@ struct PickyHUDDockRailView: View {
         .onPreferenceChange(PickyDockTopEntryCenterPreferenceKey.self) { centers in
             topEntryCenters = centers
         }
-        .onChange(of: PickyHUDDockRenderPolicy.dragCancellationTopEntryIDs(in: baseProjection)) { _, entryIDs in
-            cancelDragsForStructuralProjectionChange(currentTopEntryIDs: entryIDs)
+        .onChange(of: persistedStructure) { _, structure in
+            cancelDragsForPersistedStructureChange(structure)
         }
         .onHover(perform: onDockHoverChanged)
         .onChange(of: isRecentPickleFolderPickerPresented) { _, isPresented in
@@ -885,16 +889,16 @@ struct PickyHUDDockRailView: View {
         groupDragReferenceTopEntryIDs = []
     }
 
-    private func cancelDragsForStructuralProjectionChange(currentTopEntryIDs: [String]) {
+    private func cancelDragsForPersistedStructureChange(_ structure: PickyHUDDockPersistedStructure) {
         if PickyHUDDockRenderPolicy.shouldCancelDrag(
             referenceTopEntryIDs: dragReferenceTopEntryIDs,
-            currentTopEntryIDs: currentTopEntryIDs
+            currentTopEntryIDs: structure.topEntryIDs
         ) {
             handleReorderCanceled()
         }
         if PickyHUDDockRenderPolicy.shouldCancelDrag(
             referenceTopEntryIDs: groupDragReferenceTopEntryIDs,
-            currentTopEntryIDs: currentTopEntryIDs
+            currentTopEntryIDs: structure.topEntryIDs
         ) {
             handleGroupTileDragCanceled()
         }

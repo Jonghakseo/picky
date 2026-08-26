@@ -49,7 +49,8 @@ struct PickyHUDDockGroupListSubscriptionOrchestratorTests {
     }
 
     @Test func actualSubscriptionForwardsEmittedFontScaleInsteadOfStaleStorage() {
-        let snapshots = CurrentValueSubject<PickyHUDDockSnapshot, Never>(snapshot(groupID: "group"))
+        let initialSnapshot = snapshot(groupID: "group")
+        let snapshots = CurrentValueSubject<PickyHUDDockSnapshot, Never>(initialSnapshot)
         let fontScales = PassthroughSubject<CGFloat, Never>()
         var received: [(PickyHUDDockSnapshot, CGFloat)] = []
         let orchestrator = PickyHUDDockGroupListSubscriptionOrchestrator(
@@ -63,7 +64,7 @@ struct PickyHUDDockGroupListSubscriptionOrchestratorTests {
         fontScales.send(1.3)
 
         #expect(received.count == 1)
-        #expect(received[0].0 == snapshot(groupID: "group"))
+        #expect(received[0].0 == initialSnapshot)
         #expect(received[0].1 == 1.3)
     }
 }

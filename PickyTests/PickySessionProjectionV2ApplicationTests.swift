@@ -29,6 +29,54 @@ struct PickySessionProjectionV2ApplicationTests {
         #expect(viewModel.unreadSessionIDs.isEmpty)
     }
 
+    @Test func archiveTransactionRemovesSessionFromDockWithoutWaitingForAnotherActivePublication() throws {
+        let storage = PickyRegistrySessionProjectionStorage()
+        let viewModel = PickyProjectionReplayFixtures.makeViewModel(sessionProjectionStorage: storage)
+        apply(snapshot(sessionID: "session-a", title: "A", status: .completed, revision: 1), to: viewModel)
+        apply(snapshot(sessionID: "session-b", title: "B", status: .running, revision: 1), to: viewModel)
+        viewModel.flushDockStateForTesting()
+
+        apply(transaction(
+            sessionID: "session-a",
+            baseRevision: 1,
+            revision: 2,
+            mutations: #"[{"type":"metaPatch","patch":{"archived":true,"archivedAt":"2026-08-25T00:00:02.000Z"}}]"#
+        ), to: viewModel)
+        viewModel.flushDockStateForTesting()
+
+        #expect(storage.registry.activeSessionIDs == ["session-b"])
+        #expect(storage.registry.archivedSessionIDs == ["session-a"])
+        #expect(viewModel.sessions.map(\.id) == ["session-b"])
+        #expect(viewModel.archivedSessions.map(\.id) == ["session-a"])
+        #expect(viewModel.dockState.snapshot.activeSessions.map(\.id) == ["session-b"])
+    }
+
+    @Test func unarchiveTransactionUpdatesBothActiveAndArchivedFacades() throws {
+        let storage = PickyRegistrySessionProjectionStorage()
+        let viewModel = PickyProjectionReplayFixtures.makeViewModel(sessionProjectionStorage: storage)
+        apply(snapshot(sessionID: "session-a", title: "A", status: .completed, revision: 1), to: viewModel)
+        apply(transaction(
+            sessionID: "session-a",
+            baseRevision: 1,
+            revision: 2,
+            mutations: #"[{"type":"metaPatch","patch":{"archived":true,"archivedAt":"2026-08-25T00:00:02.000Z"}}]"#
+        ), to: viewModel)
+
+        apply(transaction(
+            sessionID: "session-a",
+            baseRevision: 2,
+            revision: 3,
+            mutations: #"[{"type":"metaPatch","patch":{"archived":false,"archivedAt":null}}]"#
+        ), to: viewModel)
+        viewModel.flushDockStateForTesting()
+
+        #expect(storage.registry.activeSessionIDs == ["session-a"])
+        #expect(storage.registry.archivedSessionIDs.isEmpty)
+        #expect(viewModel.sessions.map(\.id) == ["session-a"])
+        #expect(viewModel.archivedSessions.isEmpty)
+        #expect(viewModel.dockState.snapshot.activeSessions.map(\.id) == ["session-a"])
+    }
+
     @Test func transactionUpdatesOnlyItsSessionStoreAndPreservesMessageLeafIdentity() throws {
         let storage = PickyRegistrySessionProjectionStorage()
         let viewModel = PickyProjectionReplayFixtures.makeViewModel(sessionProjectionStorage: storage)

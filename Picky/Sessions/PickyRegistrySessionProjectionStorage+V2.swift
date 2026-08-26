@@ -180,6 +180,8 @@ extension PickyRegistrySessionProjectionStorage {
     private func publishProjection(_ card: PickySessionListViewModel.SessionCard, archived shouldArchive: Bool) {
         var activeIDs = registry.activeSessionIDs
         var archivedIDs = registry.archivedSessionIDs
+        let wasActive = activeIDs.contains(card.id)
+        let wasArchived = archivedIDs.contains(card.id)
         if shouldArchive {
             activeIDs.removeAll { $0 == card.id }
             if !archivedIDs.contains(card.id) { archivedIDs.append(card.id) }
@@ -192,8 +194,8 @@ extension PickyRegistrySessionProjectionStorage {
         publish([step(
             active: final.activeSessions,
             archived: final.archivedSessions,
-            activeChanged: !shouldArchive,
-            archivedChanged: shouldArchive
+            activeChanged: !shouldArchive || wasActive,
+            archivedChanged: shouldArchive || wasArchived
         )], final: final)
     }
 }

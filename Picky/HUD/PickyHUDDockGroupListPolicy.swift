@@ -17,6 +17,7 @@ enum PickyHUDDockGroupListPolicy {
             width: metrics.groupListPanelWidth,
             height: (metrics.groupListPanelPadding * 2)
                 + metrics.groupListHeaderHeight
+                + metrics.groupListHeaderBottomSpacing
                 + (CGFloat(rows) * metrics.groupListRowHeight)
         )
     }

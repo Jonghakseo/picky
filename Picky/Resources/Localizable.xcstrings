@@ -2154,6 +2154,23 @@
         }
       }
     },
+    "group.list.drag.leaveGroup": {
+      "comment": "In-panel feedback shown while dragging a Pickle clear of its group.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Release to remove from group"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "놓으면 그룹에서 제거"
+          }
+        }
+      }
+    },
     "group.list.fallbackTitle": {
       "localizations": {
         "en": {

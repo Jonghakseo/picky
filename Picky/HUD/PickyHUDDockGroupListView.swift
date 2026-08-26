@@ -71,6 +71,16 @@ enum PickyHUDDockGroupListScreenLayout {
             height: visibleFrame.height
         )
     }
+
+    /// The child hosting view fills its NSPanel at `(0, 0)`, and this panel
+    /// root owns `PickyHUDDockGroupListCoordinateSpace`. Its top-left local
+    /// coordinates therefore match this conversion exactly.
+    static func panelLocalPoint(screenPoint: CGPoint, panelFrame: CGRect) -> CGPoint {
+        CGPoint(
+            x: screenPoint.x - panelFrame.minX,
+            y: panelFrame.maxY - screenPoint.y
+        )
+    }
 }
 
 let PickyHUDDockGroupListCoordinateSpace = "PickyHUDDockGroupList"
@@ -102,7 +112,6 @@ struct PickyHUDDockGroupListPanelRoot: View {
     let rows: [PickyHUDDockGroupListRowModel]
     let unreadSessionIDs: Set<String>
     let openedSessionID: String?
-    let isCommandShortcutHintVisible: Bool
     let displayID: CGDirectDisplayID
     @ObservedObject var focusStore: PickyHUDDockGroupListFocusStore
     let metrics: PickyHUDDockMetrics
@@ -130,7 +139,6 @@ struct PickyHUDDockGroupListPanelRoot: View {
             rows: rows,
             unreadSessionIDs: unreadSessionIDs,
             openedSessionID: openedSessionID,
-            isCommandShortcutHintVisible: isCommandShortcutHintVisible,
             highlightedRowID: focusStore.focus(for: displayID).highlightedRowID,
             metrics: metrics,
             onSelectSession: onSelectSession,
@@ -166,7 +174,6 @@ struct PickyHUDDockGroupListView: View {
     let rows: [PickyHUDDockGroupListRowModel]
     let unreadSessionIDs: Set<String>
     let openedSessionID: String?
-    let isCommandShortcutHintVisible: Bool
     let highlightedRowID: String?
     let metrics: PickyHUDDockMetrics
     let onSelectSession: (String) -> Void
@@ -188,20 +195,13 @@ struct PickyHUDDockGroupListView: View {
 
     @State private var rowCenters: [String: CGFloat] = [:]
     @State private var draggingRowID: String?
-    @State private var previewRowIDs: [String] = []
+    @State private var dragInsertionMarkerIndex: Int?
+    @State private var isLeavingGroup = false
     @State private var leftPanelAt: Date?
     @State private var dragMonitors: [Any] = []
 
-    /// Rows in their drag-preview order while a drag is live, otherwise the
-    /// stored order.
-    private var displayedRows: [PickyHUDDockGroupListRowModel] {
-        guard draggingRowID != nil, !previewRowIDs.isEmpty else { return rows }
-        let rowsByID = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        return previewRowIDs.compactMap { rowsByID[$0] }
-    }
-
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: metrics.groupListHeaderBottomSpacing) {
             header
             if rows.isEmpty {
                 emptyState
@@ -211,11 +211,12 @@ struct PickyHUDDockGroupListView: View {
         }
         .padding(metrics.groupListPanelPadding)
         .background(panelBackground)
-        .clipShape(RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: metrics.groupListPanelCornerRadius, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
+            RoundedRectangle(cornerRadius: metrics.groupListPanelCornerRadius, style: .continuous)
                 .strokeBorder(DS.Colors.borderSubtle, lineWidth: 0.5)
         )
+        .overlay { insertionMarker }
         .coordinateSpace(name: PickyHUDDockGroupListCoordinateSpace)
         .onPreferenceChange(PickyHUDDockGroupListRowCenterPreferenceKey.self) { centers in
             rowCenters = centers
@@ -237,7 +238,8 @@ struct PickyHUDDockGroupListView: View {
     private func beginRowDrag(rowID: String) {
         guard draggingRowID == nil else { return }
         draggingRowID = rowID
-        previewRowIDs = rows.map(\.id)
+        dragInsertionMarkerIndex = rows.firstIndex(where: { $0.id == rowID })
+        isLeavingGroup = false
         leftPanelAt = nil
         installDragMonitors(rowID: rowID)
     }
@@ -280,27 +282,32 @@ struct PickyHUDDockGroupListView: View {
 
     private func updateDragState(rowID: String, location: CGPoint) {
         let isInside = panelBounds.contains(location)
+        isLeavingGroup = !isInside
         if isInside {
             leftPanelAt = nil
+            // Keep the live ForEach in stored order. Reordering those views on
+            // every pointer event made SwiftUI animate changing row frames;
+            // the marker communicates the same drop target without layout shift.
+            dragInsertionMarkerIndex = rawInsertionIndex(pointerY: location.y)
         } else if leftPanelAt == nil {
             leftPanelAt = Date()
         }
-        guard isInside else { return }
-        previewRowIDs = PickyHUDDockGroupListDragPolicy.previewOrder(
-            rowIDs: rows.map(\.id),
-            draggedRowID: rowID,
-            insertionIndex: insertionIndex(for: rowID, pointerY: location.y)
-        )
+    }
+
+    private func rawInsertionIndex(pointerY: CGFloat) -> Int {
+        let orderedIDs = rows.map(\.id)
+        let centers = orderedIDs.compactMap { rowCenters[$0] }
+        guard centers.count == orderedIDs.count else { return 0 }
+        return PickyHUDDockGroupListDragPolicy.insertionIndex(pointerY: pointerY, rowCenters: centers)
     }
 
     private func insertionIndex(for rowID: String, pointerY: CGFloat) -> Int {
         let orderedIDs = rows.map(\.id)
-        let centers = orderedIDs.compactMap { rowCenters[$0] }
-        guard centers.count == orderedIDs.count, let draggedIndex = orderedIDs.firstIndex(of: rowID) else {
-            return orderedIDs.firstIndex(of: rowID) ?? 0
-        }
-        let raw = PickyHUDDockGroupListDragPolicy.insertionIndex(pointerY: pointerY, rowCenters: centers)
-        return PickyHUDDockGroupListDragPolicy.normalizedInsertionIndex(raw, draggedRowIndex: draggedIndex)
+        guard let draggedIndex = orderedIDs.firstIndex(of: rowID) else { return 0 }
+        return PickyHUDDockGroupListDragPolicy.normalizedInsertionIndex(
+            rawInsertionIndex(pointerY: pointerY),
+            draggedRowIndex: draggedIndex
+        )
     }
 
     private func commitDrag(rowID: String, location: CGPoint) {
@@ -326,48 +333,47 @@ struct PickyHUDDockGroupListView: View {
     private func resetDrag() {
         removeDragMonitors()
         draggingRowID = nil
-        previewRowIDs = []
+        dragInsertionMarkerIndex = nil
+        isLeavingGroup = false
         leftPanelAt = nil
     }
 
     private var panelBackground: some View {
         PickyHUDMaterialFill(
-            shape: RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous),
-            fallback: DS.Colors.surface2
+            shape: RoundedRectangle(cornerRadius: metrics.groupListPanelCornerRadius, style: .continuous),
+            fallback: DS.Colors.surface1
         )
     }
 
     private var header: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 4) {
             Circle()
                 .fill(group.color.accent)
-                .frame(width: 8, height: 8)
+                .frame(width: metrics.groupListHeaderAccentSide, height: metrics.groupListHeaderAccentSide)
             Text(group.displayName)
-                .pickyFont(size: 12, weight: .medium)
+                .font(PickyHUDTypography.labelSemibold)
                 .foregroundStyle(DS.Colors.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.tail)
-            Spacer(minLength: 4)
             Text("\(rows.count)")
-                .pickyFont(size: 11, weight: .regular)
+                .font(PickyHUDTypography.meta)
                 .foregroundStyle(DS.Colors.textTertiary)
         }
-        .frame(height: metrics.groupListHeaderHeight)
+        .frame(maxWidth: .infinity, minHeight: metrics.groupListHeaderHeight, alignment: .leading)
         .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder
     private var memberRows: some View {
         let content = VStack(spacing: 0) {
-            ForEach(Array(displayedRows.enumerated()), id: \.element.id) { index, row in
+            ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                 PickyHUDDockGroupListRow(
                     row: row,
                     isUnread: unreadSessionIDs.contains(row.id),
                     isSelected: openedSessionID == row.id,
                     isHighlighted: highlightedRowID == row.id,
-                    shortcutNumber: isCommandShortcutHintVisible
-                        ? PickyHUDDockGroupListKeyboardPolicy.shortcutNumber(forRowIndex: index)
-                        : nil,
+                    shortcutNumber: PickyHUDDockGroupListKeyboardPolicy.shortcutNumber(forRowIndex: index),
+                    isLeavingGroup: draggingRowID == row.id && isLeavingGroup,
                     minimumHeight: metrics.groupListRowHeight,
                     metrics: metrics,
                     relativeTime: Self.relativeDateFormatter.localizedString(for: row.updatedAt, relativeTo: Date()),
@@ -385,11 +391,10 @@ struct PickyHUDDockGroupListView: View {
                     onReorderHandoff: { _ in beginRowDrag(rowID: row.id) }
                 )
                 .publishDockGroupListRowCenter(sessionID: row.id)
-                .opacity(draggingRowID == row.id ? 0.35 : 1)
+                .opacity(draggingRowID == row.id && !isLeavingGroup ? 0.35 : 1)
                 .zIndex(draggingRowID == row.id ? 1 : 0)
             }
         }
-        .animation(.easeOut(duration: 0.12), value: previewRowIDs)
         if PickyHUDDockGroupListPolicy.needsScroll(memberCount: rows.count) {
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: true) { content }
@@ -403,13 +408,39 @@ struct PickyHUDDockGroupListView: View {
         }
     }
 
+    private var insertionMarker: some View {
+        GeometryReader { proxy in
+            if let insertionMarkerY, draggingRowID != nil, !isLeavingGroup {
+                Capsule(style: .continuous)
+                    .fill(DS.Colors.accentText)
+                    .frame(
+                        width: max(0, proxy.size.width - (metrics.groupListPanelPadding * 2)),
+                        height: 2
+                    )
+                    .position(x: proxy.size.width / 2, y: insertionMarkerY)
+                    .accessibilityHidden(true)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private var insertionMarkerY: CGFloat? {
+        guard let index = dragInsertionMarkerIndex, !rows.isEmpty else { return nil }
+        let orderedIDs = rows.map(\.id)
+        let centers = orderedIDs.compactMap { rowCenters[$0] }
+        guard centers.count == orderedIDs.count else { return nil }
+        if index <= 0 { return centers[0] - (metrics.groupListRowHeight / 2) }
+        if index >= centers.count { return centers[centers.count - 1] + (metrics.groupListRowHeight / 2) }
+        return centers[index] - (metrics.groupListRowHeight / 2)
+    }
+
     private var emptyState: some View {
         Button(L10n.t("group.list.newPickle"), action: onCreatePickle)
             .buttonStyle(.plain)
-            .pickyFont(size: 12, weight: .medium)
+            .font(PickyHUDTypography.supporting)
             .foregroundStyle(DS.Colors.accentText)
             .frame(maxWidth: .infinity, minHeight: metrics.groupListRowHeight)
-            .background(DS.Colors.surface2.opacity(0.7), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .background(DS.Colors.surface2, in: RoundedRectangle(cornerRadius: metrics.groupListRowCornerRadius, style: .continuous))
             .hoverAffordance()
             .accessibilityHint(L10n.t("group.list.newPickle.hint"))
     }
@@ -421,6 +452,7 @@ private struct PickyHUDDockGroupListRow: View {
     let isSelected: Bool
     let isHighlighted: Bool
     let shortcutNumber: Int?
+    let isLeavingGroup: Bool
     let minimumHeight: CGFloat
     let metrics: PickyHUDDockMetrics
     let relativeTime: String
@@ -452,17 +484,24 @@ private struct PickyHUDDockGroupListRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: metrics.groupListRowContentSpacing) {
             statusGlyph
-                .frame(width: 20, height: 20)
-            VStack(alignment: .leading, spacing: 1) {
+                .frame(width: metrics.groupListRowGlyphSide, height: metrics.groupListRowGlyphSide)
+                .overlay {
+                    PickyHUDArchiveHoldProgressRing(
+                        isPressing: archiveFeedback.isPressing,
+                        progress: archiveFeedback.progress,
+                        side: metrics.groupListRowGlyphSide
+                    )
+                }
+            VStack(alignment: .leading, spacing: 4) {
                 Text(row.title)
-                    .pickyFont(size: 13, weight: .regular)
+                    .font(PickyHUDTypography.body)
                     .foregroundStyle(DS.Colors.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Text(row.subtitle(relativeTime: relativeTime))
-                    .pickyFont(size: 11, weight: .regular)
+                    .font(PickyHUDTypography.supporting)
                     .foregroundStyle(DS.Colors.textTertiary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -474,16 +513,21 @@ private struct PickyHUDDockGroupListRow: View {
                     .frame(width: 7, height: 7)
                     .accessibilityHidden(true)
             }
-            if let shortcutNumber {
-                Text("⌘\(shortcutNumber)")
-                    .pickyFont(size: 11, weight: .regular)
-                    .foregroundStyle(DS.Colors.textTertiary)
-                    .accessibilityHidden(true)
+            Group {
+                if let shortcutNumber {
+                    Text("⌘\(shortcutNumber)")
+                        .font(PickyHUDTypography.badgeSemibold)
+                        .foregroundStyle(DS.Colors.textTertiary)
+                } else {
+                    Color.clear
+                }
             }
+            .frame(width: metrics.groupListShortcutHintWidth, alignment: .trailing)
+            .accessibilityHidden(true)
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, metrics.groupListPanelPadding)
         .frame(minHeight: minimumHeight)
-        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: metrics.groupListRowCornerRadius, style: .continuous))
         .background(rowBackground)
         .overlay {
             PickyHUDDockIconClickHost(
@@ -508,12 +552,17 @@ private struct PickyHUDDockGroupListRow: View {
                 onReorderHandoff: onReorderHandoff
             )
         }
-        .overlay {
-            PickyHUDArchiveHoldProgressRing(
-                isPressing: archiveFeedback.isPressing,
-                progress: archiveFeedback.progress,
-                side: metrics.archiveRingSide
-            )
+        .overlay(alignment: .bottomTrailing) {
+            if isLeavingGroup {
+                Text(L10n.t("group.list.drag.leaveGroup"))
+                    .font(PickyHUDTypography.labelSemibold)
+                    .foregroundStyle(DS.Colors.warningText)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(DS.Colors.surface3, in: RoundedRectangle(cornerRadius: metrics.groupListRowCornerRadius, style: .continuous))
+                    .padding(4)
+                    .accessibilityHidden(true)
+            }
         }
         .onHover { isHovered = $0 }
         .onDisappear { archiveFeedback.cancel() }
@@ -545,15 +594,11 @@ private struct PickyHUDDockGroupListRow: View {
     }
 
     private var rowBackground: some View {
-        RoundedRectangle(cornerRadius: 7, style: .continuous)
-            .fill(isSelected ? DS.Colors.overlayCursorBlue.opacity(0.14) : (isHovered ? DS.Colors.surface3 : .clear))
-            .overlay {
-                // Keyboard highlight is drawn as a ring so it stays legible on
-                // top of the selected row's fill.
-                if isHighlighted {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .strokeBorder(DS.Colors.overlayCursorBlue.opacity(0.7), lineWidth: 1)
-                }
-            }
+        RoundedRectangle(cornerRadius: metrics.groupListRowCornerRadius, style: .continuous)
+            .fill(
+                isHighlighted
+                    ? DS.Colors.surface4
+                    : (isSelected ? DS.Colors.accentSubtle : (isHovered ? DS.Colors.surface3 : .clear))
+            )
     }
 }

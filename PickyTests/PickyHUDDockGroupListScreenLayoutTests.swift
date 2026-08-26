@@ -45,6 +45,17 @@ struct PickyHUDDockGroupListScreenLayoutTests {
         #expect(bounds.size == visibleFrame.size)
     }
 
+    @Test func convertsScreenPointToTheSameTopLeftPanelCoordinatesUsedByRowCenters() {
+        let panelFrame = CGRect(x: 400, y: 200, width: 300, height: 360)
+        let local = PickyHUDDockGroupListScreenLayout.panelLocalPoint(
+            screenPoint: CGPoint(x: 460, y: 500),
+            panelFrame: panelFrame
+        )
+
+        let expected = CGPoint(x: 60, y: 60)
+        #expect(local == expected)
+    }
+
     @Test func selectingARowNamesTheNewCardSessionAndClosesTheList() {
         let result = PickyHUDDockGroupListInteractionPolicy.selectionResult(
             sessionID: "pickle-2",

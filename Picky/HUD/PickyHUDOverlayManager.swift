@@ -183,7 +183,6 @@ final class PickyHUDOverlayManager {
     private struct DockGroupListGeometry {
         var badgeFrames: [String: CGRect] = [:]
         var railFrame: CGRect = .zero
-        var isCommandShortcutHintVisible = false
         var openedSessionID: String?
     }
 
@@ -194,7 +193,6 @@ final class PickyHUDOverlayManager {
         var openGroupID: String?
         var badgeFrames: [String: CGRect] = [:]
         var railFrame: CGRect = .zero
-        var isCommandShortcutHintVisible = false
         var openedSessionID: String?
         var localMouseDownMonitor: Any?
         var globalMouseDownMonitor: Any?
@@ -954,20 +952,21 @@ final class PickyHUDOverlayManager {
         displayID: CGDirectDisplayID,
         badgeFrames: [String: CGRect],
         railFrame: CGRect,
-        isCommandShortcutHintVisible: Bool,
+        isCommandShortcutHintVisible _: Bool,
         openedSessionID: String?
     ) {
         let geometry = DockGroupListGeometry(
             badgeFrames: badgeFrames,
             railFrame: railFrame,
-            isCommandShortcutHintVisible: isCommandShortcutHintVisible,
             openedSessionID: openedSessionID
         )
         dockGroupListGeometryByDisplayID[displayID] = geometry
         guard var entry = dockGroupListChildrenByDisplayID[displayID] else { return }
+        let needsContentSync = entry.badgeFrames != geometry.badgeFrames
+            || entry.railFrame != geometry.railFrame
+            || entry.openedSessionID != geometry.openedSessionID
         entry.badgeFrames = geometry.badgeFrames
         entry.railFrame = geometry.railFrame
-        entry.isCommandShortcutHintVisible = geometry.isCommandShortcutHintVisible
         entry.openedSessionID = geometry.openedSessionID
         dockGroupListChildrenByDisplayID[displayID] = entry
         if let pendingGroupID = PickyHUDDockGroupListOpenPolicy.pendingGroupIDReadyToOpen(
@@ -976,7 +975,7 @@ final class PickyHUDOverlayManager {
             hasRailFrame: entry.railFrame != .zero
         ) {
             showDockGroupListChild(displayID: displayID, groupID: pendingGroupID)
-        } else if entry.openGroupID != nil {
+        } else if entry.openGroupID != nil, needsContentSync {
             syncDockGroupListChild(displayID: displayID)
         }
     }
@@ -1007,7 +1006,6 @@ final class PickyHUDOverlayManager {
         if let geometry = dockGroupListGeometryByDisplayID[displayID] {
             entry.badgeFrames = geometry.badgeFrames
             entry.railFrame = geometry.railFrame
-            entry.isCommandShortcutHintVisible = geometry.isCommandShortcutHintVisible
             entry.openedSessionID = geometry.openedSessionID
         }
         if entry.openGroupID != nil {
@@ -1139,7 +1137,6 @@ final class PickyHUDOverlayManager {
                 rows: rows,
                 unreadSessionIDs: snapshot.unreadSessionIDs,
                 openedSessionID: entry.openedSessionID,
-                isCommandShortcutHintVisible: entry.isCommandShortcutHintVisible,
                 displayID: displayID,
                 focusStore: dockGroupListFocusStore,
                 metrics: metrics,
@@ -1188,8 +1185,10 @@ final class PickyHUDOverlayManager {
                 },
                 convertScreenPointToPanel: { [weak panel = entry.panel] screenPoint in
                     guard let panel else { return .zero }
-                    let frame = panel.frame
-                    return CGPoint(x: screenPoint.x - frame.minX, y: frame.maxY - screenPoint.y)
+                    return PickyHUDDockGroupListScreenLayout.panelLocalPoint(
+                        screenPoint: screenPoint,
+                        panelFrame: panel.frame
+                    )
                 }
             )
             .environmentObject(self.appearanceStore)

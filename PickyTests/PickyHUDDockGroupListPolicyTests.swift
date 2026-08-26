@@ -26,15 +26,19 @@ struct PickyHUDDockGroupListPolicyTests {
         #expect(eight.height == nine.height)
         #expect(eight.height == forty.height)
         #expect(one.width == eight.width)
-        // 8 + 8 padding, 22 header, 8 rows of 38 at scale 1.0.
-        #expect(eight.height == 342)
-        #expect(eight.width == 260)
+        // 12 + 12 padding, 24 header, 8 header-to-rows spacing, 8 rows of 38 at scale 1.0.
+        let expectedHeight: CGFloat = 360
+        let expectedWidth: CGFloat = 300
+        #expect(eight.height == expectedHeight)
+        #expect(eight.width == expectedWidth)
     }
 
     @Test func panelSizeIsNeverNegativeForAnEmptyGroup() {
         let empty = PickyHUDDockGroupListPolicy.panelSize(memberCount: 0, metrics: metrics)
 
-        let chromeOnly: CGFloat = (metrics.groupListPanelPadding * 2) + metrics.groupListHeaderHeight
+        let chromeOnly: CGFloat = (metrics.groupListPanelPadding * 2)
+            + metrics.groupListHeaderHeight
+            + metrics.groupListHeaderBottomSpacing
         #expect(empty.height == chromeOnly)
         #expect(PickyHUDDockGroupListPolicy.needsScroll(memberCount: 8) == false)
         #expect(PickyHUDDockGroupListPolicy.needsScroll(memberCount: 9))
@@ -47,8 +51,10 @@ struct PickyHUDDockGroupListPolicyTests {
         )
 
         // Medium is 0.86 of the authored constants, not 1.0.
-        #expect(medium.width == 224)
-        #expect(medium.height == 297)
+        let expectedWidth: CGFloat = 258
+        let expectedHeight: CGFloat = 312
+        #expect(medium.width == expectedWidth)
+        #expect(medium.height == expectedHeight)
     }
 
     @Test func verticalDocksAnchorTheFolderTopAndOpenTowardTheScreenInterior() {

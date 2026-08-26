@@ -169,10 +169,19 @@ struct PickyHUDDockMetrics: Equatable {
     /// undersized next to a Large dock. Lower bound keeps the title/status row
     /// readable when the preset is shrunk to Small.
     var previewCardWidth: CGFloat { max(200, scaled(238)) }
-    var groupListPanelWidth: CGFloat { scaled(260) }
-    var groupListPanelPadding: CGFloat { scaled(8) }
-    var groupListHeaderHeight: CGFloat { scaled(22) }
+    /// Dock-panel geometry scales with the dock preset. The large-preset baselines
+    /// map to the design system's 4pt spacing and shape tokens.
+    var groupListPanelWidth: CGFloat { scaled(300) }
+    var groupListPanelPadding: CGFloat { scaled(12) } // space.3
+    var groupListHeaderHeight: CGFloat { scaled(24) } // space.6
+    var groupListHeaderAccentSide: CGFloat { scaled(8) } // space.2
+    var groupListHeaderBottomSpacing: CGFloat { scaled(8) } // space.2
     var groupListRowHeight: CGFloat { scaled(38) }
+    var groupListRowGlyphSide: CGFloat { scaled(20) } // space.5
+    var groupListRowContentSpacing: CGFloat { scaled(8) } // space.2
+    var groupListShortcutHintWidth: CGFloat { scaled(20) } // space.5
+    var groupListPanelCornerRadius: CGFloat { scaled(12) } // radius.surface
+    var groupListRowCornerRadius: CGFloat { scaled(8) } // radius.control
 
     private func scaled(_ value: CGFloat) -> CGFloat {
         (value * scale).rounded(.toNearestOrAwayFromZero)

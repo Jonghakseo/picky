@@ -24,7 +24,7 @@ enum PickyHUDDockGroupListPolicy {
         )
     }
 
-    /// The content stack uses body and supporting type roles. At compact dock
+    /// The content stack uses body and meta type roles. At compact dock
     /// presets, their measured line heights exceed the authored row minimum;
     /// retain that intrinsic height so the child panel and its row centers stay
     /// in sync at every global app font scale.
@@ -33,12 +33,36 @@ enum PickyHUDDockGroupListPolicy {
     }
 
     static func rowContentHeight(fontScale: CGFloat) -> CGFloat {
-        let clampedScale = max(0, fontScale)
-        let titleFont = NSFont.systemFont(ofSize: 13 * clampedScale, weight: .regular)
-        let subtitleFont = NSFont.systemFont(ofSize: 12 * clampedScale, weight: .regular)
+        let titleFont = PickyHUDTypography.bodyNSFont(fontScale: fontScale)
+        let subtitleFont = PickyHUDTypography.metaNSFont(fontScale: fontScale)
         return lineHeight(for: titleFont)
-            + 4 // space.1 between the body and supporting text roles
+            + 4 // space.1 between the body and meta text roles
             + lineHeight(for: subtitleFont)
+    }
+
+    /// The shortcut column reserves no more than the widest supported list
+    /// shortcut (`⌘9`), measured with the same badge role as its SwiftUI text.
+    static func shortcutHintWidth(fontScale: CGFloat) -> CGFloat {
+        ceil(("⌘9" as NSString).size(withAttributes: [
+            .font: PickyHUDTypography.badgeSemiboldNSFont(fontScale: fontScale),
+        ]).width)
+    }
+
+    /// Width available to the title after fixed row chrome. Rows use the
+    /// panel's outer padding as their sole horizontal inset, so the state
+    /// background and text column share the same content bounds.
+    static func titleColumnWidth(
+        metrics: PickyHUDDockMetrics,
+        isUnread: Bool,
+        fontScale: CGFloat
+    ) -> CGFloat {
+        let contentWidth = metrics.groupListPanelWidth - (metrics.groupListPanelPadding * 2)
+        let fixedWidths = metrics.groupListRowGlyphSide
+            + shortcutHintWidth(fontScale: fontScale)
+            + (isUnread ? 7 : 0)
+        let elementCount = isUnread ? 4 : 3
+        let spacing = CGFloat(elementCount - 1) * metrics.groupListRowContentSpacing
+        return max(0, contentWidth - fixedWidths - spacing)
     }
 
     private static func lineHeight(for font: NSFont) -> CGFloat {

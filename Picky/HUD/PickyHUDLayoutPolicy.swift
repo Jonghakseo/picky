@@ -169,7 +169,6 @@ struct PickyHUDDockMetrics: Equatable {
     /// scales proportionally with the dock preset.
     var groupHeaderHitAreaHeight: CGFloat { scaled(24) }
     var groupHeaderContentSpacing: CGFloat { scaled(4) }
-    var groupHeaderAccentSide: CGFloat { scaled(4) }
     /// Width of the dock-icon hover preview card. Scales together with the dock
     /// rail itself so the preview never looks oversized next to a Small dock or
     /// undersized next to a Large dock. Lower bound keeps the title/status row
@@ -185,7 +184,6 @@ struct PickyHUDDockMetrics: Equatable {
     var groupListRowHeight: CGFloat { scaled(38) }
     var groupListRowGlyphSide: CGFloat { scaled(20) } // space.5
     var groupListRowContentSpacing: CGFloat { scaled(8) } // space.2
-    var groupListShortcutHintWidth: CGFloat { scaled(20) } // space.5
     var groupListPanelCornerRadius: CGFloat { scaled(12) } // radius.surface
     var groupListRowCornerRadius: CGFloat { scaled(8) } // radius.control
 

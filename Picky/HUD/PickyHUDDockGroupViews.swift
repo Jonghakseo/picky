@@ -111,6 +111,20 @@ struct PickyDockTopEntryCenterPreferenceKey: PreferenceKey {
     }
 }
 
+/// Shared header typography and width reservation. The AppKit font gives
+/// regression tests a measurement source identical to the SwiftUI label role.
+enum PickyHUDDockGroupHeaderPresentation {
+    static var font: Font { PickyHUDTypography.labelSemibold }
+
+    static func labelFont(fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale) -> NSFont {
+        PickyHUDTypography.labelSemiboldNSFont(fontScale: fontScale)
+    }
+
+    static func labelWidth(metrics: PickyHUDDockMetrics) -> CGFloat {
+        metrics.railWidth
+    }
+}
+
 /// Quiet, label-scale identity chrome for a single folder tile. It stays
 /// non-interactive so the tile remains the sole owner of opening, dragging,
 /// and its context menu.
@@ -119,22 +133,21 @@ struct PickyHUDDockGroupHeader: View {
     let metrics: PickyHUDDockMetrics
 
     var body: some View {
-        HStack(spacing: metrics.groupHeaderContentSpacing) {
-            Circle()
-                .fill(group.color.accent)
-                .frame(
-                    width: metrics.groupHeaderAccentSide,
-                    height: metrics.groupHeaderAccentSide
-                )
-            Text(group.displayName)
-                .font(PickyHUDTypography.labelSemibold)
-                .foregroundStyle(DS.Colors.textSecondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-        }
-        .frame(width: metrics.sessionTileWidth, height: metrics.groupHeaderHitAreaHeight, alignment: .leading)
-        .contentShape(Rectangle())
-        .accessibilityHidden(true)
+        Text(group.displayName)
+            .font(PickyHUDDockGroupHeaderPresentation.font)
+            .foregroundStyle(DS.Colors.textSecondary)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            // The folder already carries the group color. Reserve the entire
+            // rail width for its identity label instead of spending it on an
+            // accent dot beside a narrower tile-width text column.
+            .frame(
+                width: PickyHUDDockGroupHeaderPresentation.labelWidth(metrics: metrics),
+                height: metrics.groupHeaderHitAreaHeight,
+                alignment: .leading
+            )
+            .contentShape(Rectangle())
+            .accessibilityHidden(true)
     }
 }
 

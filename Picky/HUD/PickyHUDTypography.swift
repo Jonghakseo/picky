@@ -13,6 +13,7 @@
 //  read the latest cached value at body-evaluation time.
 //
 
+import AppKit
 import SwiftUI
 
 enum PickyHUDTypography {
@@ -20,6 +21,13 @@ enum PickyHUDTypography {
     /// so a SwiftUI view re-evaluating its `body` picks up the latest scale on the
     /// same render pass that the store published.
     private static var scale: CGFloat { PickyAppFontScaleStore.staticCGScale }
+
+    private enum BaseSize {
+        static let body: CGFloat = 13
+        static let label: CGFloat = 11.5
+        static let meta: CGFloat = 10.5
+        static let badge: CGFloat = 8
+    }
 
     enum Size {
         static var title: CGFloat { 14 * scale }
@@ -30,14 +38,14 @@ enum PickyHUDTypography {
         static var heading1: CGFloat { 17 * scale }
         static var heading2: CGFloat { 15.5 * scale }
         static var heading3: CGFloat { 14 * scale }
-        static var body: CGFloat { 13 * scale }
+        static var body: CGFloat { BaseSize.body * scale }
         static var bodyCompact: CGFloat { 12.5 * scale }
         static var supporting: CGFloat { 12 * scale }
-        static var label: CGFloat { 11.5 * scale }
+        static var label: CGFloat { BaseSize.label * scale }
         static var status: CGFloat { 11 * scale }
-        static var meta: CGFloat { 10.5 * scale }
+        static var meta: CGFloat { BaseSize.meta * scale }
         static var minimumText: CGFloat { 10 * scale }
-        static var badge: CGFloat { 8 * scale }
+        static var badge: CGFloat { BaseSize.badge * scale }
         static var badgeIcon: CGFloat { 7 * scale }
     }
 
@@ -55,6 +63,12 @@ enum PickyHUDTypography {
     static var bodyMedium: Font { .system(size: Size.body, weight: .medium) }
     static var bodySemibold: Font { .system(size: Size.body, weight: .semibold) }
 
+    /// AppKit counterpart for geometry that must reserve the body role's
+    /// measured line height before SwiftUI renders it.
+    static func bodyNSFont(fontScale: CGFloat) -> NSFont {
+        .systemFont(ofSize: BaseSize.body * max(0, fontScale), weight: .regular)
+    }
+
     static var bodyCompact: Font { .system(size: Size.bodyCompact, weight: .regular) }
     static var bodyCompactMedium: Font { .system(size: Size.bodyCompact, weight: .medium) }
     static var bodyCompactSemibold: Font { .system(size: Size.bodyCompact, weight: .semibold) }
@@ -70,6 +84,12 @@ enum PickyHUDTypography {
     static var labelMedium: Font { .system(size: Size.label, weight: .medium) }
     static var labelSemibold: Font { .system(size: Size.label, weight: .semibold) }
     static var labelBold: Font { .system(size: Size.label, weight: .bold) }
+
+    /// AppKit counterpart for width checks that share the label role with a
+    /// SwiftUI surface.
+    static func labelSemiboldNSFont(fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale) -> NSFont {
+        .systemFont(ofSize: BaseSize.label * max(0, fontScale), weight: .semibold)
+    }
     static var labelMonospacedMedium: Font { .system(size: Size.label, weight: .medium, design: .monospaced) }
     static var labelMonospacedSemibold: Font { .system(size: Size.label, weight: .semibold, design: .monospaced) }
 
@@ -80,6 +100,12 @@ enum PickyHUDTypography {
 
     static var meta: Font { .system(size: Size.meta, weight: .regular) }
     static var metaMedium: Font { .system(size: Size.meta, weight: .medium) }
+
+    /// AppKit counterpart for geometry that must reserve the meta role's
+    /// measured line height before SwiftUI renders it.
+    static func metaNSFont(fontScale: CGFloat) -> NSFont {
+        .systemFont(ofSize: BaseSize.meta * max(0, fontScale), weight: .regular)
+    }
     static var metaSemibold: Font { .system(size: Size.meta, weight: .semibold) }
     static var metaBold: Font { .system(size: Size.meta, weight: .bold) }
     static var metaMonospacedMedium: Font { .system(size: Size.meta, weight: .medium, design: .monospaced) }
@@ -95,6 +121,11 @@ enum PickyHUDTypography {
 
     static var badgeSemibold: Font { .system(size: Size.badge, weight: .semibold) }
     static var badgeBold: Font { .system(size: Size.badge, weight: .bold) }
+
+    /// AppKit counterpart for compact shortcut-hint column measurements.
+    static func badgeSemiboldNSFont(fontScale: CGFloat) -> NSFont {
+        .systemFont(ofSize: BaseSize.badge * max(0, fontScale), weight: .semibold)
+    }
     static var badgeBoldRounded: Font { .system(size: Size.badge, weight: .bold, design: .rounded) }
     static var badgeMonospacedBold: Font { .system(size: Size.badge, weight: .bold, design: .monospaced) }
     static var badgeIconBold: Font { .system(size: Size.badgeIcon, weight: .bold) }

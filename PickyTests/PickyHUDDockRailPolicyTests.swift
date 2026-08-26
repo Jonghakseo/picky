@@ -3,6 +3,7 @@
 //  PickyTests
 //
 
+import AppKit
 import Foundation
 import Testing
 @testable import Picky
@@ -55,6 +56,20 @@ struct PickyHUDDockRailPolicyTests {
             #expect(horizontalCrossSize == expectedCrossSize)
             #expect(horizontalCrossSize >= metrics.sessionTileHeight + (metrics.horizontalPadding * 2)
                 + metrics.groupHeaderHitAreaHeight + metrics.groupHeaderContentSpacing)
+        }
+    }
+
+    @Test func groupHeaderFitsFourCJKCharactersAtEveryDockPreset() {
+        let font = PickyHUDDockGroupHeaderPresentation.labelFont(fontScale: 1)
+        let fourCJKCharactersWidth = ("가나다라" as NSString).size(withAttributes: [.font: font]).width
+
+        for preset in PickyHUDDockSizePreset.allCases {
+            let metrics = PickyHUDDockMetrics(preset: preset)
+            let availableLabelWidth = PickyHUDDockGroupHeaderPresentation.labelWidth(metrics: metrics)
+
+            // Measure the actual AppKit font paired with the SwiftUI label
+            // role, rather than relying on a brittle point-width constant.
+            #expect(availableLabelWidth >= fourCJKCharactersWidth, "\(preset) header truncates before four CJK characters")
         }
     }
 

@@ -502,6 +502,8 @@ private struct PickyHUDDockGroupListRow: View {
     @StateObject private var archiveFeedback = PickyHUDArchiveHoldFeedback()
     @State private var isHovered = false
 
+    @Environment(\.pickyAppFontScale) private var fontScale
+
     private var presentation: PickyHUDDockGroupListRowPresentation {
         PickyHUDDockGroupListRowPresentation.resolve(
             title: row.title,
@@ -531,12 +533,19 @@ private struct PickyHUDDockGroupListRow: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Text(row.subtitle(relativeTime: relativeTime))
-                    .font(PickyHUDTypography.supporting)
+                    .font(PickyHUDTypography.meta)
                     .foregroundStyle(DS.Colors.textTertiary)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(
+                width: PickyHUDDockGroupListPolicy.titleColumnWidth(
+                    metrics: metrics,
+                    isUnread: isUnread,
+                    fontScale: fontScale
+                ),
+                alignment: .leading
+            )
             if isUnread {
                 Circle()
                     .fill(DS.Colors.notification)
@@ -552,10 +561,12 @@ private struct PickyHUDDockGroupListRow: View {
                     Color.clear
                 }
             }
-            .frame(width: metrics.groupListShortcutHintWidth, alignment: .trailing)
+            .frame(
+                width: PickyHUDDockGroupListPolicy.shortcutHintWidth(fontScale: fontScale),
+                alignment: .trailing
+            )
             .accessibilityHidden(true)
         }
-        .padding(.horizontal, metrics.groupListPanelPadding)
         .frame(minHeight: minimumHeight)
         .contentShape(RoundedRectangle(cornerRadius: metrics.groupListRowCornerRadius, style: .continuous))
         .background(rowBackground)

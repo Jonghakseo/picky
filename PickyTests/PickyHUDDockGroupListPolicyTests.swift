@@ -6,6 +6,7 @@
 //  against the folder tile, and on-screen clamping.
 //
 
+import AppKit
 import CoreGraphics
 import Foundation
 import Testing
@@ -60,6 +61,40 @@ struct PickyHUDDockGroupListPolicyTests {
         #expect(empty.height == chromeOnly)
         #expect(PickyHUDDockGroupListPolicy.needsScroll(memberCount: 8) == false)
         #expect(PickyHUDDockGroupListPolicy.needsScroll(memberCount: 9))
+    }
+
+    @Test func rowContentHeightUsesTheBodyAndMetaRoles() {
+        let fontScale: CGFloat = 1.3
+        let titleFont = PickyHUDTypography.bodyNSFont(fontScale: fontScale)
+        let subtitleFont = PickyHUDTypography.metaNSFont(fontScale: fontScale)
+        let expected = lineHeight(titleFont) + 4 + lineHeight(subtitleFont)
+
+        #expect(PickyHUDDockGroupListPolicy.rowContentHeight(fontScale: fontScale) == expected)
+    }
+
+    @Test func largeRowsStayWithinThePreDensityMinimumAtDefaultFontScale() {
+        #expect(PickyHUDDockGroupListPolicy.rowHeight(metrics: metrics, fontScale: 1) <= metrics.groupListRowHeight)
+    }
+
+    @Test func titleColumnUsesOnlyTheMeasuredShortcutWidthForReservedHintChrome() {
+        let fontScale: CGFloat = 1
+        let withoutUnread = PickyHUDDockGroupListPolicy.titleColumnWidth(
+            metrics: metrics,
+            isUnread: false,
+            fontScale: fontScale
+        )
+        let withUnread = PickyHUDDockGroupListPolicy.titleColumnWidth(
+            metrics: metrics,
+            isUnread: true,
+            fontScale: fontScale
+        )
+        let shortcutWidth = PickyHUDDockGroupListPolicy.shortcutHintWidth(fontScale: fontScale)
+
+        #expect(shortcutWidth == ceil(("⌘9" as NSString).size(withAttributes: [
+            .font: PickyHUDTypography.badgeSemiboldNSFont(fontScale: fontScale),
+        ]).width))
+        #expect(withoutUnread > withUnread)
+        #expect(withUnread > 0)
     }
 
     @Test func panelSizeScalesWithTheDockPreset() {
@@ -185,5 +220,9 @@ struct PickyHUDDockGroupListPolicyTests {
         )
 
         #expect(clamped.y == 8)
+    }
+
+    private func lineHeight(_ font: NSFont) -> CGFloat {
+        font.ascender - font.descender + font.leading
     }
 }

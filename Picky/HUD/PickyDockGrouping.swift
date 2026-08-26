@@ -579,12 +579,10 @@ enum PickyDockDropResolver {
     /// `cursorAxis` (primary-axis position). Returns nil only when there are
     /// no candidates at all.
     ///
-    /// The nearest candidate center wins. An escape hatch then lets the user
-    /// pull a Pickle out to the top level by dragging past the first/last real
-    /// slot — but only when that escape is unambiguous: if the edge entry is a
-    /// group and the dragged Pickle is NOT already a member of it, the region
-    /// past the edge belongs to that group's drop area (e.g. an empty bottom
-    /// group), so the escape is suppressed and the group target stands.
+    /// The nearest candidate center wins. Group candidates are bounded to the
+    /// rendered folder tile: crossing an edge folder's outer bound creates a
+    /// top-level insertion before/after it instead of extending the folder drop
+    /// zone infinitely beyond the dock.
     static func resolveDropContainer(
         draggedSessionID: String,
         cursorAxis: CGFloat,
@@ -592,10 +590,13 @@ enum PickyDockDropResolver {
         emptyGroupCandidates: [EmptyGroupCandidate],
         nonEmptyGroupCandidates: [EmptyGroupCandidate] = [],
         layout: PickyDockLayout,
-        slotPitch: CGFloat
+        slotPitch: CGFloat,
+        groupDropHalfExtent: CGFloat? = nil
     ) -> PickyDockContainer? {
         var nearest: PickyDockContainer?
         var minDistance = CGFloat.infinity
+        let groupCandidates = emptyGroupCandidates + nonEmptyGroupCandidates
+        let resolvedGroupDropHalfExtent = max(0, groupDropHalfExtent ?? slotPitch * 0.5)
 
         for candidate in slotCandidates {
             let distance = abs(candidate.center - cursorAxis)
@@ -605,9 +606,9 @@ enum PickyDockDropResolver {
             }
         }
 
-        for candidate in emptyGroupCandidates + nonEmptyGroupCandidates {
+        for candidate in groupCandidates {
             let distance = abs(candidate.center - cursorAxis)
-            if distance < minDistance {
+            if distance <= resolvedGroupDropHalfExtent, distance < minDistance {
                 minDistance = distance
                 nearest = .group(id: candidate.groupID, memberIndex: candidate.memberIndex)
             }
@@ -626,13 +627,44 @@ enum PickyDockDropResolver {
         }
 
         let realCenters = slotCandidates.map(\.center)
-        if let minCenter = realCenters.min(), let maxCenter = realCenters.max() {
-            let escapeMargin = slotPitch * 0.6
-            if cursorAxis < minCenter - escapeMargin,
+        let minCenter = realCenters.min()
+        let maxCenter = realCenters.max()
+        let escapeMargin = slotPitch * 0.6
+
+        switch layout.entries.first {
+        case .group(let group):
+            if let candidate = groupCandidates.first(where: { $0.groupID == group.id }),
+               cursorAxis < candidate.center - resolvedGroupDropHalfExtent {
+                nearest = .topLevel(index: 0)
+            } else if groupCandidates.first(where: { $0.groupID == group.id }) == nil,
+                      let minCenter,
+                      cursorAxis < minCenter - escapeMargin,
+                      canEscapePastEdge(layout.entries.first, draggedSessionID: draggedSessionID) {
+                nearest = .topLevel(index: 0)
+            }
+        case .session, nil:
+            if let minCenter,
+               cursorAxis < minCenter - escapeMargin,
                canEscapePastEdge(layout.entries.first, draggedSessionID: draggedSessionID) {
                 nearest = .topLevel(index: 0)
-            } else if cursorAxis > maxCenter + escapeMargin,
+            }
+        }
+
+        switch layout.entries.last {
+        case .group(let group):
+            if let candidate = groupCandidates.first(where: { $0.groupID == group.id }),
+               cursorAxis > candidate.center + resolvedGroupDropHalfExtent {
+                nearest = .topLevel(index: layout.entries.count)
+            } else if groupCandidates.first(where: { $0.groupID == group.id }) == nil,
+                      let maxCenter,
+                      cursorAxis > maxCenter + escapeMargin,
                       canEscapePastEdge(layout.entries.last, draggedSessionID: draggedSessionID) {
+                nearest = .topLevel(index: layout.entries.count)
+            }
+        case .session, nil:
+            if let maxCenter,
+               cursorAxis > maxCenter + escapeMargin,
+               canEscapePastEdge(layout.entries.last, draggedSessionID: draggedSessionID) {
                 nearest = .topLevel(index: layout.entries.count)
             }
         }

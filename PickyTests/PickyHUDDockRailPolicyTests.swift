@@ -205,6 +205,36 @@ struct PickyHUDDockRailPolicyTests {
         ))
     }
 
+    @Test func reorderAnimationTargetsEveryNonDraggedTopLevelSibling() {
+        let session = PickyDockRenderItem.session(id: "session")
+        let group = PickyDockRenderItem.group(PickyDockGroup(id: "group"))
+
+        #expect(PickyHUDDockReorderAnimationPolicy.shouldAnimate(
+            item: group,
+            draggingSessionID: "session",
+            draggingGroupID: nil,
+            reduceMotion: false
+        ))
+        #expect(PickyHUDDockReorderAnimationPolicy.shouldAnimate(
+            item: session,
+            draggingSessionID: nil,
+            draggingGroupID: "group",
+            reduceMotion: false
+        ))
+        #expect(!PickyHUDDockReorderAnimationPolicy.shouldAnimate(
+            item: group,
+            draggingSessionID: nil,
+            draggingGroupID: "group",
+            reduceMotion: false
+        ))
+        #expect(!PickyHUDDockReorderAnimationPolicy.shouldAnimate(
+            item: session,
+            draggingSessionID: "session",
+            draggingGroupID: nil,
+            reduceMotion: true
+        ))
+    }
+
     @Test func dragGeometryRespectsDockAxisAndOutwardDirection() {
         let translation = CGSize(width: 30, height: 45)
         let metrics = PickyHUDDockMetrics(preset: .medium)
@@ -216,5 +246,15 @@ struct PickyHUDDockRailPolicyTests {
         #expect(PickyHUDDockDragGeometry.pullOutDistance(translation, dockSide: .top) == 45)
         #expect(PickyHUDDockDragGeometry.pullOutDistance(translation, dockSide: .bottom) == -45)
         #expect(PickyHUDDockDragGeometry.pullOutThreshold(metrics: metrics) == metrics.railWidth * 0.5 + 40)
+        #expect(PickyHUDDockDragGeometry.groupDropHalfExtent(
+            orientation: .horizontal,
+            metrics: metrics,
+            fontScale: 1
+        ) == metrics.sessionTileWidth * 0.5)
+        #expect(PickyHUDDockDragGeometry.groupDropHalfExtent(
+            orientation: .vertical,
+            metrics: metrics,
+            fontScale: 1
+        ) > metrics.sessionTileHeight * 0.5)
     }
 }

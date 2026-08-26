@@ -139,11 +139,50 @@ enum PickyHUDDockRenderPolicy {
     }
 }
 
+enum PickyHUDDockReorderAnimationPolicy {
+    /// Every top-level sibling uses one movement policy regardless of whether
+    /// it renders as a Pickle or folder. The dragged item stays cursor-driven.
+    static func shouldAnimate(
+        item: PickyDockRenderItem,
+        draggingSessionID: String?,
+        draggingGroupID: String?,
+        reduceMotion: Bool
+    ) -> Bool {
+        guard !reduceMotion, draggingSessionID != nil || draggingGroupID != nil else { return false }
+        switch item {
+        case .session(let sessionID):
+            return sessionID != draggingSessionID
+        case .group(let group):
+            return group.id != draggingGroupID
+        }
+    }
+}
+
 enum PickyHUDDockDragGeometry {
     static func slotPitch(orientation: PickyHUDDockOrientation, metrics: PickyHUDDockMetrics) -> CGFloat {
         switch orientation {
         case .horizontal: metrics.sessionTileWidth + metrics.sessionSpacing
         case .vertical: metrics.sessionTileHeight + metrics.sessionSpacing
+        }
+    }
+
+    /// Exact primary-axis half extent of a rendered folder entry. The label is
+    /// below the tile only in vertical rails; in horizontal rails it changes
+    /// the cross axis and the folder's primary drop width stays tile-sized.
+    static func groupDropHalfExtent(
+        orientation: PickyHUDDockOrientation,
+        metrics: PickyHUDDockMetrics,
+        fontScale: CGFloat
+    ) -> CGFloat {
+        switch orientation {
+        case .horizontal:
+            metrics.sessionTileWidth * 0.5
+        case .vertical:
+            (
+                metrics.sessionTileHeight
+                    + metrics.groupHeaderContentSpacing
+                    + PickyHUDDockGroupHeaderPresentation.labelHeight(metrics: metrics, fontScale: fontScale)
+            ) * 0.5
         }
     }
 

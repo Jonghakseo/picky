@@ -416,11 +416,13 @@ struct PickyHUDDockRailView: View {
                    let slot = projection.slots.first(where: { $0.sessionID == id }) {
                     iconView(for: card, slot: slot)
                         .publishDockTopEntryCenter(entryID: "session:\(id)", dockSide: dockSide)
+                        .transaction { transaction in applySlotShiftAnimation(&transaction, to: item) }
                 }
             case .group(let group):
                 if let slot = projection.slots.first(where: { $0.groupID == group.id }) {
                     folderTile(for: group, slot: slot)
                         .publishDockTopEntryCenter(entryID: "group:\(group.id)", dockSide: dockSide)
+                        .transaction { transaction in applySlotShiftAnimation(&transaction, to: item) }
                 }
             }
         }
@@ -586,12 +588,6 @@ struct PickyHUDDockRailView: View {
             )
             .id(session.id)
             .publishDockSlotCenter(sessionID: session.id, dockSide: dockSide)
-            .transaction { transaction in
-                // While a drag is in progress, animate sibling slot moves so
-                // they slide to make room at the landing spot.
-                guard draggingSessionID != nil else { return }
-                transaction.animation = slotShiftAnimation
-            }
         }
     }
 
@@ -666,14 +662,21 @@ struct PickyHUDDockRailView: View {
         PickyHUDDockPullOutBadge(text: text)
     }
 
-    /// Animation applied to each non-dragged icon's slot transition. The
-    /// dragged icon must NOT be animated because its visual position is
-    /// already driven explicitly by `dragOffset`; spring-interpolating its
-    /// slot on top of the offset desyncs the icon from the cursor and causes
-    /// the visible lag/jitter. We attach the animation per-child via the
-    /// `transaction` modifier so siblings slide while the dragged one snaps.
+    /// Animation applied to every non-dragged top-level sibling, including
+    /// both Pickles and folders. The dragged item stays cursor-driven so its
+    /// explicit offset never competes with a layout spring.
     private var slotShiftAnimation: Animation {
         .spring(response: 0.38, dampingFraction: 0.78)
+    }
+
+    private func applySlotShiftAnimation(_ transaction: inout Transaction, to item: PickyDockRenderItem) {
+        guard PickyHUDDockReorderAnimationPolicy.shouldAnimate(
+            item: item,
+            draggingSessionID: draggingSessionID,
+            draggingGroupID: draggingGroupID,
+            reduceMotion: accessibilityReduceMotion
+        ) else { return }
+        transaction.animation = slotShiftAnimation
     }
 
     // MARK: - Reorder gestures
@@ -771,7 +774,12 @@ struct PickyHUDDockRailView: View {
             emptyGroupCandidates: emptyGroupCandidates,
             nonEmptyGroupCandidates: nonEmptyGroupCandidates,
             layout: layout,
-            slotPitch: PickyHUDDockDragGeometry.slotPitch(orientation: dockSide.orientation, metrics: metrics)
+            slotPitch: PickyHUDDockDragGeometry.slotPitch(orientation: dockSide.orientation, metrics: metrics),
+            groupDropHalfExtent: PickyHUDDockDragGeometry.groupDropHalfExtent(
+                orientation: dockSide.orientation,
+                metrics: metrics,
+                fontScale: fontScale
+            )
         )
 
         // Record where the icon *would* land. This drives the live preview

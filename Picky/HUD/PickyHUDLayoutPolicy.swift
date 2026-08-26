@@ -169,6 +169,10 @@ struct PickyHUDDockMetrics: Equatable {
     /// undersized next to a Large dock. Lower bound keeps the title/status row
     /// readable when the preset is shrunk to Small.
     var previewCardWidth: CGFloat { max(200, scaled(238)) }
+    var groupListPanelWidth: CGFloat { scaled(260) }
+    var groupListPanelPadding: CGFloat { scaled(8) }
+    var groupListHeaderHeight: CGFloat { scaled(22) }
+    var groupListRowHeight: CGFloat { scaled(38) }
 
     private func scaled(_ value: CGFloat) -> CGFloat {
         (value * scale).rounded(.toNearestOrAwayFromZero)
@@ -245,6 +249,7 @@ enum PickyHUDDockLayout {
     static let defaultGitSectionExpanded = true
     static let addSlotButtonSide: CGFloat = 36
     static let collapsedAddSlotVisualHeight: CGFloat = 14
+    static let groupListMaxVisibleRows = 8
 
     static var addSlotCollapsedExpansionReserve: CGFloat {
         PickyHUDDockMetrics.medium.addSlotCollapsedExpansionReserve

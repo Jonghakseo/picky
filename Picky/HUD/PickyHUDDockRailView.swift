@@ -133,7 +133,10 @@ struct PickyHUDDockRailView: View {
     /// Currently-dragged group id (folder tile drag). Mutually exclusive with
     /// `draggingSessionID`.
     @State private var draggingGroupID: String?
-    @State private var groupDragOffset: CGSize = .zero
+    /// Raw cursor translation from group pickup. The rendered offset is derived
+    /// synchronously from the group's current Stack-assigned frame so a preview
+    /// reorder cannot expose one frame of stale preference geometry.
+    @State private var groupDragTranslation: CGSize = .zero
     @State private var groupDragStartCenter: CGFloat = 0
     @State private var groupDragStartLayoutIndex: Int = 0
     /// The prospective final position of a folder tile. This is preview-only;
@@ -284,6 +287,14 @@ struct PickyHUDDockRailView: View {
         }
     }
 
+    private var sizingSlotCount: Int {
+        PickyHUDDockReorderAnimationPolicy.sizingSlotCount(
+            renderedSlotCount: projection.slots.count,
+            persistedSlotCount: baseProjection.slots.count,
+            isSessionDragging: draggingSessionID != nil
+        )
+    }
+
     private var horizontalRailCrossSize: CGFloat {
         PickyHUDDockRailLayoutPolicy.horizontalCrossSize(
             groupCount: groupCount,
@@ -295,7 +306,7 @@ struct PickyHUDDockRailView: View {
     private var overflowLayout: PickyHUDDockOverflowLayout {
         PickyHUDDockOverflowPolicy.layout(
             contentLength: PickyHUDDockRailLayoutPolicy.contentLength(
-                sessionCount: projection.slots.count,
+                sessionCount: sizingSlotCount,
                 groupCount: groupCount,
                 isAddSlotExpanded: isAddSlotExpanded,
                 dockSide: dockSide,
@@ -468,7 +479,19 @@ struct PickyHUDDockRailView: View {
         .publishDockGroupInteractionFrame(groupID: group.id)
         .id("group:\(group.id)")
         .opacity(draggingGroupID == group.id && groupPullOutArmed ? 0.5 : 1)
-        .offset(draggingGroupID == group.id ? groupDragOffset : .zero)
+        .visualEffect { content, geometry in
+            let frame = geometry.frame(in: .named(PickyHUDDockRailCoordinateSpace))
+            let currentHomeCenter = dockSide.orientation == .horizontal ? frame.midX : frame.midY
+            let offset = draggingGroupID == group.id
+                ? PickyHUDDockDragGeometry.cursorLockedOffset(
+                    translation: groupDragTranslation,
+                    dragStartCenter: groupDragStartCenter,
+                    currentHomeCenter: currentHomeCenter,
+                    orientation: dockSide.orientation
+                )
+                : .zero
+            return content.offset(x: offset.width, y: offset.height)
+        }
         .zIndex(draggingGroupID == group.id ? 220 : 0)
         .accessibilityLabel(group.displayName)
         .accessibilityValue(L10n.t("group.folder.accessibility.value", memberCards.count, unreadCount))
@@ -863,7 +886,7 @@ struct PickyHUDDockRailView: View {
         pendingGroupTopLevelIndex = layoutIdx
         groupDragReferenceTopEntryCenters = topEntryCenters
         groupDragReferenceTopEntryIDs = PickyHUDDockRenderPolicy.visibleTopEntryIDs(in: baseProjection.items)
-        groupDragOffset = .zero
+        groupDragTranslation = .zero
         groupDragStartCenter = topEntryCenters["group:\(groupID)"] ?? 0
     }
 
@@ -877,12 +900,13 @@ struct PickyHUDDockRailView: View {
             if !groupPullOutArmed {
                 withAnimation(.easeOut(duration: 0.16)) { groupPullOutArmed = true }
             }
-            groupDragOffset = translation
+            groupDragTranslation = translation
             return
         }
         if groupPullOutArmed {
             withAnimation(.easeOut(duration: 0.16)) { groupPullOutArmed = false }
         }
+        groupDragTranslation = translation
 
         let translationAxis = PickyHUDDockDragGeometry.axisDelta(translation, orientation: dockSide.orientation)
         let cursorAxis = groupDragStartCenter + translationAxis
@@ -900,26 +924,13 @@ struct PickyHUDDockRailView: View {
         if pendingGroupTopLevelIndex != nearestLayoutIdx {
             pendingGroupTopLevelIndex = nearestLayoutIdx
         }
-
-        // Keep the group block glued under the cursor.
-        let currentHomeCenter = topEntryCenters["group:\(groupID)"] ?? groupDragStartCenter
-        let shift = currentHomeCenter - groupDragStartCenter
-        let offsetAxis = translationAxis - shift
-        switch dockSide.orientation {
-        case .horizontal:
-            groupDragOffset = CGSize(width: offsetAxis, height: translation.height)
-        case .vertical:
-            groupDragOffset = CGSize(width: translation.width, height: offsetAxis)
-        }
     }
 
     private func handleGroupTileDragEnded(groupID: String, translation: CGSize) {
         guard draggingGroupID == groupID else { return }
         let didRemove = groupPullOutArmed
         groupPullOutArmed = false
-        withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) {
-            groupDragOffset = .zero
-        }
+        groupDragTranslation = .zero
         draggingGroupID = nil
         let destination = pendingGroupTopLevelIndex
         pendingGroupTopLevelIndex = nil
@@ -951,9 +962,7 @@ struct PickyHUDDockRailView: View {
     private func handleGroupTileDragCanceled() {
         guard draggingGroupID != nil else { return }
         groupPullOutArmed = false
-        withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) {
-            groupDragOffset = .zero
-        }
+        groupDragTranslation = .zero
         draggingGroupID = nil
         pendingGroupTopLevelIndex = nil
         groupDragReferenceTopEntryCenters = [:]

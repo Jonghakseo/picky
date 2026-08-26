@@ -235,6 +235,41 @@ struct PickyHUDDockRailPolicyTests {
         ))
     }
 
+    @Test func sessionDragNeverShrinksRailBelowPersistedSlotCount() {
+        #expect(PickyHUDDockReorderAnimationPolicy.sizingSlotCount(
+            renderedSlotCount: 3,
+            persistedSlotCount: 4,
+            isSessionDragging: true
+        ) == 4)
+        #expect(PickyHUDDockReorderAnimationPolicy.sizingSlotCount(
+            renderedSlotCount: 5,
+            persistedSlotCount: 4,
+            isSessionDragging: true
+        ) == 5)
+        #expect(PickyHUDDockReorderAnimationPolicy.sizingSlotCount(
+            renderedSlotCount: 3,
+            persistedSlotCount: 4,
+            isSessionDragging: false
+        ) == 3)
+    }
+
+    @Test func cursorLockedOffsetCompensatesForCurrentGroupHomeOnBothAxes() {
+        let translation = CGSize(width: 30, height: 45)
+
+        #expect(PickyHUDDockDragGeometry.cursorLockedOffset(
+            translation: translation,
+            dragStartCenter: 100,
+            currentHomeCenter: 140,
+            orientation: .horizontal
+        ) == CGSize(width: -10, height: 45))
+        #expect(PickyHUDDockDragGeometry.cursorLockedOffset(
+            translation: translation,
+            dragStartCenter: 100,
+            currentHomeCenter: 140,
+            orientation: .vertical
+        ) == CGSize(width: 30, height: 5))
+    }
+
     @Test func dragGeometryRespectsDockAxisAndOutwardDirection() {
         let translation = CGSize(width: 30, height: 45)
         let metrics = PickyHUDDockMetrics(preset: .medium)

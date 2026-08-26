@@ -156,6 +156,19 @@ enum PickyHUDDockReorderAnimationPolicy {
             return group.id != draggingGroupID
         }
     }
+
+    /// A grouping preview can temporarily remove a top-level Pickle from the
+    /// rendered projection. Keep the rail at least as large as its persisted
+    /// drag-start projection so the capsule and add slot do not collapse while
+    /// the pointer merely crosses a folder on the way to another top-level slot.
+    static func sizingSlotCount(
+        renderedSlotCount: Int,
+        persistedSlotCount: Int,
+        isSessionDragging: Bool
+    ) -> Int {
+        guard isSessionDragging else { return renderedSlotCount }
+        return max(renderedSlotCount, persistedSlotCount)
+    }
 }
 
 enum PickyHUDDockDragGeometry {
@@ -190,6 +203,25 @@ enum PickyHUDDockDragGeometry {
         switch orientation {
         case .horizontal: translation.width
         case .vertical: translation.height
+        }
+    }
+
+    /// Compensates for a reordered item's new Stack-assigned home in the same
+    /// layout pass, keeping its visual center under the cursor without waiting
+    /// for a geometry preference to publish on a later pass.
+    static func cursorLockedOffset(
+        translation: CGSize,
+        dragStartCenter: CGFloat,
+        currentHomeCenter: CGFloat,
+        orientation: PickyHUDDockOrientation
+    ) -> CGSize {
+        let primaryOffset = axisDelta(translation, orientation: orientation)
+            - (currentHomeCenter - dragStartCenter)
+        switch orientation {
+        case .horizontal:
+            return CGSize(width: primaryOffset, height: translation.height)
+        case .vertical:
+            return CGSize(width: translation.width, height: primaryOffset)
         }
     }
 

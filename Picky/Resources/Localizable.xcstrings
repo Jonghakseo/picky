@@ -2154,6 +2154,54 @@
         }
       }
     },
+    "group.list.fallbackTitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "피클"
+          }
+        }
+      }
+    },
+    "group.list.menu.move": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move to Group"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "그룹으로 이동"
+          }
+        }
+      }
+    },
+    "group.list.menu.ungroup": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove from Group"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "그룹에서 빼기"
+          }
+        }
+      }
+    },
     "group.list.newPickle": {
       "localizations": {
         "en": {

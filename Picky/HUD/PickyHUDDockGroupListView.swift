@@ -79,6 +79,8 @@ struct PickyHUDDockGroupListPanelRoot: View {
     let unreadSessionIDs: Set<String>
     let openedSessionID: String?
     let isCommandShortcutHintVisible: Bool
+    let displayID: CGDirectDisplayID
+    @ObservedObject var focusStore: PickyHUDDockGroupListFocusStore
     let metrics: PickyHUDDockMetrics
     let onSelectSession: (String) -> Void
     let onCreatePickle: () -> Void
@@ -103,6 +105,7 @@ struct PickyHUDDockGroupListPanelRoot: View {
             unreadSessionIDs: unreadSessionIDs,
             openedSessionID: openedSessionID,
             isCommandShortcutHintVisible: isCommandShortcutHintVisible,
+            highlightedRowID: focusStore.focus(for: displayID).highlightedRowID,
             metrics: metrics,
             onSelectSession: onSelectSession,
             onCreatePickle: onCreatePickle,
@@ -136,6 +139,7 @@ struct PickyHUDDockGroupListView: View {
     let unreadSessionIDs: Set<String>
     let openedSessionID: String?
     let isCommandShortcutHintVisible: Bool
+    let highlightedRowID: String?
     let metrics: PickyHUDDockMetrics
     let onSelectSession: (String) -> Void
     let onCreatePickle: () -> Void
@@ -199,13 +203,15 @@ struct PickyHUDDockGroupListView: View {
     @ViewBuilder
     private var memberRows: some View {
         let content = VStack(spacing: 0) {
-            ForEach(rows) { row in
-                // List-relative Command-number routing arrives with keyboard navigation.
+            ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                 PickyHUDDockGroupListRow(
                     row: row,
                     isUnread: unreadSessionIDs.contains(row.id),
                     isSelected: openedSessionID == row.id,
-                    shortcutNumber: nil,
+                    isHighlighted: highlightedRowID == row.id,
+                    shortcutNumber: isCommandShortcutHintVisible
+                        ? PickyHUDDockGroupListKeyboardPolicy.shortcutNumber(forRowIndex: index)
+                        : nil,
                     minimumHeight: metrics.groupListRowHeight,
                     metrics: metrics,
                     relativeTime: Self.relativeDateFormatter.localizedString(for: row.updatedAt, relativeTo: Date()),
@@ -224,7 +230,13 @@ struct PickyHUDDockGroupListView: View {
             }
         }
         if PickyHUDDockGroupListPolicy.needsScroll(memberCount: rows.count) {
-            ScrollView(.vertical, showsIndicators: true) { content }
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: true) { content }
+                    .onChange(of: highlightedRowID) { _, rowID in
+                        guard let rowID else { return }
+                        withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(rowID, anchor: .center) }
+                    }
+            }
         } else {
             content
         }
@@ -246,6 +258,7 @@ private struct PickyHUDDockGroupListRow: View {
     let row: PickyHUDDockGroupListRowModel
     let isUnread: Bool
     let isSelected: Bool
+    let isHighlighted: Bool
     let shortcutNumber: Int?
     let minimumHeight: CGFloat
     let metrics: PickyHUDDockMetrics
@@ -371,5 +384,13 @@ private struct PickyHUDDockGroupListRow: View {
     private var rowBackground: some View {
         RoundedRectangle(cornerRadius: 7, style: .continuous)
             .fill(isSelected ? DS.Colors.overlayCursorBlue.opacity(0.14) : (isHovered ? DS.Colors.surface3 : .clear))
+            .overlay {
+                // Keyboard highlight is drawn as a ring so it stays legible on
+                // top of the selected row's fill.
+                if isHighlighted {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(DS.Colors.overlayCursorBlue.opacity(0.7), lineWidth: 1)
+                }
+            }
     }
 }

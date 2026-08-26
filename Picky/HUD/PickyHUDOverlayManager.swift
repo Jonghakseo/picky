@@ -149,6 +149,7 @@ final class PickyHUDOverlayManager {
     private let fontScaleStore: PickyAppFontScaleStore
     private let visibilityStore: PickyHUDVisibilityStore
     private let actualPanelVisibilityStore: PickyHUDActualPanelVisibilityStore
+    private let dockGroupListFocusStore = PickyHUDDockGroupListFocusStore()
     private let settingsStore: PickySettingsStore
     private let settingsPersistence: PickySettingsPersistenceCoordinator
     private let voiceTargetHitTestRegistry: PickyVoiceTargetHitTestRegistry
@@ -563,6 +564,13 @@ final class PickyHUDOverlayManager {
             onDockGroupListToggle: { [weak self] groupID in
                 self?.toggleDockGroupListChild(displayID: displayID, groupID: groupID)
             },
+            onDockGroupListClose: { [weak self] in
+                self?.hideDockGroupListChild(displayID: displayID)
+            },
+            onDockGroupListRowSelected: { [weak self] sessionID in
+                self?.selectDockGroupListRow(displayID: displayID, sessionID: sessionID)
+            },
+            dockGroupListFocusStore: dockGroupListFocusStore,
             onDockGroupListGeometryChange: { [weak self] badgeFrames, railFrame, isCommandHintVisible, openedSessionID in
                 self?.handleDockGroupListGeometryChange(
                     displayID: displayID,
@@ -1018,6 +1026,12 @@ final class PickyHUDOverlayManager {
 
         entry.pendingGroupID = nil
         entry.openGroupID = groupID
+        dockGroupListFocusStore.open(
+            displayID: displayID,
+            groupID: groupID,
+            rowIDs: dockGroupListRowIDs(group: group),
+            openedSessionID: entry.openedSessionID
+        )
         entry.panel.contentView = makeDockGroupListChildHostingView(
             displayID: displayID,
             group: group,
@@ -1065,6 +1079,7 @@ final class PickyHUDOverlayManager {
             if nextGroupID == nil { hideDockGroupListChild(displayID: displayID) }
             return
         }
+        dockGroupListFocusStore.updateRows(displayID: displayID, rowIDs: dockGroupListRowIDs(group: group))
         entry.panel.contentView = makeDockGroupListChildHostingView(
             displayID: displayID,
             group: group,
@@ -1076,6 +1091,13 @@ final class PickyHUDOverlayManager {
             hudPanelFrame: hudEntry.panel.frame,
             folderFrame: folderFrame
         )
+    }
+
+    /// Visible rows only: archived members stay in the group but never render,
+    /// so they must not be reachable by number or arrow keys either.
+    private func dockGroupListRowIDs(group: PickyDockGroup) -> [String] {
+        let activeIDs = Set(viewModel.dockState.snapshot.activeSessions.map(\.id))
+        return group.memberSessionIDs.filter { activeIDs.contains($0) }
     }
 
     private func makeDockGroupListChildPanel() -> PickyHUDDockGroupListPanel {
@@ -1118,6 +1140,8 @@ final class PickyHUDOverlayManager {
                 unreadSessionIDs: snapshot.unreadSessionIDs,
                 openedSessionID: entry.openedSessionID,
                 isCommandShortcutHintVisible: entry.isCommandShortcutHintVisible,
+                displayID: displayID,
+                focusStore: dockGroupListFocusStore,
                 metrics: metrics,
                 onSelectSession: { [weak self] sessionID in
                     self?.selectDockGroupListRow(displayID: displayID, sessionID: sessionID)
@@ -1278,6 +1302,7 @@ final class PickyHUDOverlayManager {
     }
 
     private func hideDockGroupListChild(displayID: CGDirectDisplayID) {
+        dockGroupListFocusStore.close(displayID: displayID)
         guard let entry = dockGroupListChildrenByDisplayID.removeValue(forKey: displayID) else { return }
         if let localMouseDownMonitor = entry.localMouseDownMonitor { NSEvent.removeMonitor(localMouseDownMonitor) }
         if let globalMouseDownMonitor = entry.globalMouseDownMonitor { NSEvent.removeMonitor(globalMouseDownMonitor) }

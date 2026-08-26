@@ -48,6 +48,12 @@ struct PickyHUDView: View {
     /// The overlay manager owns the display-local child panel. Folder frames
     /// are measured in this root's coordinate space before it positions it.
     var onDockGroupListToggle: (_ groupID: String) -> Void = { _ in }
+    var onDockGroupListClose: () -> Void = { }
+    var onDockGroupListRowSelected: (_ sessionID: String) -> Void = { _ in }
+    /// Display-local list state, owned by the overlay manager. The HUD root only
+    /// reads it, so number keys and arrows resolve against whichever surface is
+    /// frontmost without the two copies drifting.
+    @ObservedObject var dockGroupListFocusStore = PickyHUDDockGroupListFocusStore()
     var onDockGroupListGeometryChange: (_ badgeFrames: [String: CGRect], _ railFrame: CGRect, _ isCommandHintVisible: Bool, _ openedSessionID: String?) -> Void = { _, _, _, _ in }
     @State private var dockGroupBadgeFrames: [String: CGRect] = [:]
     @State private var dockRailFrame: CGRect = .zero
@@ -618,7 +624,7 @@ struct PickyHUDView: View {
                 screenContextTargetSessionID: dockSnapshot.screenContextTargetSessionID,
                 screenContextTargetSticky: dockSnapshot.screenContextTargetSticky,
                 dockSide: placement.dockSide,
-                isCommandShortcutHintVisible: isCommandShortcutHintVisible,
+                isCommandShortcutHintVisible: isRailShortcutHintVisible,
                 pendingDoneFlashSessionIDs: dockSnapshot.pendingDoneFlashSessionIDs,
                 unreadSessionIDs: dockSnapshot.unreadSessionIDs,
                 metrics: dockMetrics,
@@ -1013,12 +1019,42 @@ struct PickyHUDView: View {
         // text input is focused. The composer's own .onKeyPress(.escape) handles
         // autocomplete dismissal and stop-if-possible while the input is focused;
         // intercepting here would steal that behavior.
+        // Esc closes an open group list first, even from the composer, so the
+        // floating panel can never outlive the key press that dismisses it.
+        if flags.isEmpty,
+           event.keyCode == Self.escKeyCode,
+           PickyHUDDockGroupListKeyboardPolicy.escapeOutcome(isListOpen: dockGroupListFocus.isOpen)
+           == .closeGroupList {
+            onDockGroupListClose()
+            return true
+        }
+
         if flags.isEmpty,
            event.keyCode == Self.escKeyCode,
            heldSession != nil,
            !isTextInputFocused(in: keyWindow) {
             closeHeldSession()
             return true
+        }
+
+        if PickyHUDDockGroupListKeyboardPolicy.ownsListNavigationKeys(
+            isListOpen: dockGroupListFocus.isOpen,
+            isTextInputFocused: isTextInputFocused(in: keyWindow)
+        ), flags.isEmpty {
+            switch event.keyCode {
+            case Self.upArrowKeyCode:
+                _ = dockGroupListFocusStore.moveHighlight(displayID: displayID, direction: .up)
+                return true
+            case Self.downArrowKeyCode:
+                _ = dockGroupListFocusStore.moveHighlight(displayID: displayID, direction: .down)
+                return true
+            case Self.returnKeyCode, Self.keypadEnterKeyCode:
+                guard let highlighted = dockGroupListFocus.highlightedRowID else { return false }
+                onDockGroupListRowSelected(highlighted)
+                return true
+            default:
+                break
+            }
         }
 
         if PickyHUDKeyboardShortcutPolicy.isLatestResponseReportShortcut(
@@ -1090,6 +1126,18 @@ struct PickyHUDView: View {
         }
 
         if flags == .command, let number = Self.numberShortcutValue(for: event) {
+            // An open list owns the number keys; the rail only gets them back
+            // once the list closes.
+            if case .groupList = PickyHUDDockGroupListKeyboardPolicy.shortcutContext(
+                openGroupID: dockGroupListFocus.openGroupID
+            ) {
+                guard let rowID = PickyHUDDockGroupListKeyboardPolicy.rowID(
+                    forShortcutNumber: number,
+                    rowIDs: dockGroupListFocus.rowIDs
+                ) else { return true }
+                onDockGroupListRowSelected(rowID)
+                return true
+            }
             let slots = dockProjection.slots
             guard number >= 1, number <= slots.count else { return false }
             switch slots[number - 1].target {
@@ -1227,6 +1275,20 @@ struct PickyHUDView: View {
 
     private static let wKeyCode: UInt16 = 13
     private static let escKeyCode: UInt16 = 53
+    private static let upArrowKeyCode: UInt16 = 126
+    private static let downArrowKeyCode: UInt16 = 125
+    private static let returnKeyCode: UInt16 = 36
+    private static let keypadEnterKeyCode: UInt16 = 76
+
+    private var dockGroupListFocus: PickyHUDDockGroupListFocus {
+        dockGroupListFocusStore.focus(for: displayID)
+    }
+
+    /// Rail hints go quiet while a list is open, because the numbers address the
+    /// list's rows instead of the rail's slots.
+    private var isRailShortcutHintVisible: Bool {
+        isCommandShortcutHintVisible && !dockGroupListFocus.isOpen
+    }
 }
 
 /// Full-card observation is isolated to this mounted subtree. Its explicit

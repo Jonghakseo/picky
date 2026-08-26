@@ -179,6 +179,8 @@ struct PickyHUDDockMetrics: Equatable {
     var groupListPanelWidth: CGFloat { scaled(300) }
     var groupListPanelPadding: CGFloat { scaled(12) } // space.3
     var groupListHeaderHeight: CGFloat { scaled(24) } // space.6
+    /// SF Symbol optical size, proportioned to its preset-scaled header.
+    var groupListHeaderAddSymbolSize: CGFloat { max(10, groupListHeaderHeight * 0.42) }
     var groupListHeaderAccentSide: CGFloat { scaled(8) } // space.2
     var groupListHeaderBottomSpacing: CGFloat { scaled(8) } // space.2
     var groupListRowHeight: CGFloat { scaled(38) }

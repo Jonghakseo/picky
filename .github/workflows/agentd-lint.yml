@@ -33,6 +33,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Reject new raw UI design values
+        run: python3 scripts/lint-ui-design-tokens.py
+
       - name: Reject unexpected ESLint suppressions
         run: pnpm run check:eslint-suppressions
 

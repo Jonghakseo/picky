@@ -7,7 +7,8 @@
     "check:architecture": "node scripts/check-architecture-rules.js",
     "check:eslint-suppressions": "node scripts/check-eslint-suppressions.js",
     "check:pre-commit": "scripts/pre-commit-checks.sh",
-    "check:pre-push": "scripts/pre-push-checks.sh"
+    "check:pre-push": "scripts/pre-push-checks.sh",
+    "lint:ui-design-tokens": "python3 scripts/lint-ui-design-tokens.py"
   },
   "devDependencies": {
     "@commitlint/cli": "^20.5.3",

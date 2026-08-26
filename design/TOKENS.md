@@ -114,6 +114,7 @@ Picky는 macOS HUD이므로 Apple 웹 레퍼런스의 17–56px 마케팅 스케
 
 ### Typography rules
 
+- HUD 구현은 raw `.system(size:)` 대신 `PickyHUDTypography` 역할을 사용한다. raw system font는 typography 정의와 문서화된 SF Symbol optical sizing component 예외에만 둔다.
 - regular와 semibold를 기본 ladder로 사용한다.
 - 사용자 지정 Dock 그룹명은 `type.dockGroupIdentity`를 사용한다. 이는 `type.label` 기반의 semantic alias이며 metadata 전용 `type.minimum`을 사용하지 않는다.
 - medium은 dense monospace/status에서 semibold가 과도하게 보이는 경우에만 허용한다.
@@ -196,10 +197,30 @@ Component 토큰:
 - 무한 반복 motion은 실제 progress를 나타내는 경우만 허용한다.
 - Reduce Motion에서는 opacity/tint 변화로 대체한다.
 
+## UI design-token guard
+
+새 UI 코드의 raw typography, spacing, radius, shadow는 빠른 정적 guard로 막는다. 기존 제품 코드를 일괄 마이그레이션하지 않기 위해 `ce27595f` 이전 발생은 `design/ui-design-token-baseline.json`에 stable fingerprint로 보존한다. fingerprint는 repository-relative path, 공백 정규화된 source expression, 같은 expression의 occurrence ordinal로 구성하며 line number를 사용하지 않는다. 따라서 legacy code는 이동하거나 사라져도 실패하지 않지만 새 raw occurrence와 값 변경은 실패한다.
+
+검사 roots는 `Picky/HUD`, `Picky/QuickInput`, `Picky/Companion`, `Picky/App/Settings`, `Picky/Overlay`, `Picky/PointerOverlay`다. primitive 정의가 필요한 `Picky/DesignSystem.swift`, `Picky/HUD/PickyHUDTypography.swift`, 그리고 문서화된 Dock component metric인 `Picky/HUD/PickyHUDLayoutPolicy.swift`만 제외한다. 디렉터리 전체나 일반 policy 파일은 제외하지 않는다.
+
+```bash
+pnpm run lint:ui-design-tokens
+python3 -m unittest scripts.tests.test_lint_ui_design_tokens
+```
+
+새 component-level raw value가 정말 필요하면 해당 expression의 같은 줄에 구체적 이유를 남긴다.
+
+```swift
+.padding(0.5) // design-token-exception: aligns the one-point AppKit hairline to the pixel grid
+```
+
+비어 있거나 `reason`, `todo`, `legacy`, `temporary` 같은 일반적인 이유는 허용하지 않는다. Guard는 pre-push와 CI에서 실행된다.
+
 ## Implementation migration
 
 1. 기존 `DS` API를 유지한 채 semantic alias를 먼저 정의한다.
-2. raw hex, raw font, raw radius, raw shadow를 새 코드에서 추가하지 않는다.
-3. 파일럿 영역에서 semantic token으로 교체한다.
-4. 시각 및 접근성 검증 후 기존 이름을 단계적으로 deprecated 처리한다.
-5. 구조 분리는 역할과 검증 기준이 명확해진 뒤 수행한다.
+2. 새 코드에서는 `DS.Spacing.space1...space8`, `DS.CornerRadius.compact/control/surface/panel`, `PickyHUDTypography`, `DS.Elevation` 또는 문서화된 component metric을 사용한다.
+3. raw hex, raw font, raw radius, raw shadow를 새 코드에서 추가하지 않는다.
+4. 파일럿 영역에서 semantic token으로 교체한다.
+5. 시각 및 접근성 검증 후 기존 이름을 단계적으로 deprecated 처리한다.
+6. 구조 분리는 역할과 검증 기준이 명확해진 뒤 수행한다.

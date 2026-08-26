@@ -315,7 +315,10 @@ struct PickyHUDDockIconView: View {
                 RoundedRectangle(cornerRadius: metrics.sessionTileCornerRadius, style: .continuous)
                     .strokeBorder(DS.Colors.success.opacity(0.85 * completionFlashIntensity), lineWidth: 1.4)
             )
-            .shadow(color: DS.Colors.warning.opacity(0.30 * archiveFeedback.progress), radius: 5, x: 0, y: 0)
+            .shadow(
+                color: DS.Colors.warning.opacity(DS.Elevation.dockArchiveFeedbackShadowOpacity * archiveFeedback.progress),
+                radius: DS.Elevation.dockArchiveFeedbackShadowRadius
+            )
             .shadow(color: DS.Colors.success.opacity(0.55 * completionFlashIntensity), radius: 6, x: 0, y: 0)
             .animation(.easeInOut(duration: 0.18), value: isSoftHighlighted)
     }

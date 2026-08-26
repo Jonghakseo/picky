@@ -251,31 +251,66 @@ enum DS {
         }
     }
 
-    // MARK: - Spacing (for reference, not enforced)
+    // MARK: - Spacing
 
     enum Spacing {
-        static let xs: CGFloat = 4
-        static let sm: CGFloat = 8
-        static let md: CGFloat = 12
-        static let lg: CGFloat = 16
-        static let xl: CGFloat = 20
-        static let xxl: CGFloat = 24
-        static let xxxl: CGFloat = 32
+        /// `space.1`: icon-label gaps and tight metadata.
+        static let space1: CGFloat = 4
+        /// `space.2`: adjacent controls and compact internal padding.
+        static let space2: CGFloat = 8
+        /// `space.3`: small groups and minimum card padding.
+        static let space3: CGFloat = 12
+        /// `space.4`: standard section and group spacing.
+        static let space4: CGFloat = 16
+        /// `space.5`: wide control and content padding.
+        static let space5: CGFloat = 20
+        /// `space.6`: panel sections.
+        static let space6: CGFloat = 24
+        /// `space.8`: major separation and large empty states.
+        static let space8: CGFloat = 32
+
+        // Compatibility aliases. New UI code should prefer the semantic
+        // `spaceN` names that map directly to design/TOKENS.md.
+        static let xs = space1
+        static let sm = space2
+        static let md = space3
+        static let lg = space4
+        static let xl = space5
+        static let xxl = space6
+        static let xxxl = space8
     }
 
     // MARK: - Corner Radii
 
     enum CornerRadius {
-        /// Small elements like tags, badges.
-        static let small: CGFloat = 6
-        /// Buttons, input fields, small cards.
-        static let medium: CGFloat = 8
-        /// Large panels, permission cards.
-        static let extraLarge: CGFloat = 12
-        /// Signature floating shells (Conversation Card, Dock shell).
+        /// `radius.compact`: tags, badges, and compact controls.
+        static let compact: CGFloat = 6
+        /// `radius.control`: buttons, input fields, and small cards.
+        static let control: CGFloat = 8
+        /// `radius.surface`: bubbles, content cards, and transient panels.
+        static let surface: CGFloat = 12
+        /// `radius.panel`: signature floating shells such as the Dock.
         static let panel: CGFloat = 14
-        /// Pill-shaped buttons (the continue button).
+        /// `radius.pill`: short actions, selection, and status chips.
         static let pill: CGFloat = .infinity
+        /// `radius.circle`: icon-only circular controls.
+        static let circle: CGFloat = .infinity
+
+        // Compatibility aliases. New UI code should prefer the semantic roles.
+        static let small = compact
+        static let medium = control
+        static let extraLarge = surface
+    }
+
+    // MARK: - Elevation
+
+    enum Elevation {
+        /// Component elevation for the hold-to-archive progress ring.
+        static let archiveHoldRingShadowOpacity: Double = 0.34
+        static let archiveHoldRingShadowRadius: CGFloat = 4
+        /// Component elevation for the archive-progress state on a Dock tile.
+        static let dockArchiveFeedbackShadowOpacity: Double = 0.30
+        static let dockArchiveFeedbackShadowRadius: CGFloat = 5
     }
 
     // MARK: - Animation Durations

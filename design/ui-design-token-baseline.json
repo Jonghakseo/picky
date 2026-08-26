@@ -1,0 +1,2819 @@
+{
+  "schemaVersion": 1,
+  "baselineCommit": "ce27595f",
+  "scanRoots": [
+    "Picky/HUD",
+    "Picky/QuickInput",
+    "Picky/Companion",
+    "Picky/App/Settings",
+    "Picky/Overlay",
+    "Picky/PointerOverlay"
+  ],
+  "excludedFiles": [
+    "Picky/DesignSystem.swift",
+    "Picky/HUD/PickyHUDLayoutPolicy.swift",
+    "Picky/HUD/PickyHUDTypography.swift"
+  ],
+  "entries": [
+    {
+      "fingerprint": "9ad1be4fa62f50395a4366b0d0998d0e9e8c4d6b6c5f9016d97a79a9f9704fa3",
+      "path": "Picky/Companion/CompanionPanelExtensionsSection.swift",
+      "category": "padding",
+      "expression": ".padding(12)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "5b7ddd049cfc4866a9eeedbd4c7db6a768e1401dfb8adab9e3355059ef5b9087",
+      "path": "Picky/Companion/CompanionPanelExtensionsSection.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 6)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "2ee3ba714e374b4250eecf243417a1f8f4ef132d00a5dd5a16d11b02f84905e9",
+      "path": "Picky/Companion/CompanionPanelExtensionsSection.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 1.5)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "9266a39222a580c5bbb5f658697c24a96d5c3cdb1db2932f55d0f23acc2e758e",
+      "path": "Picky/Companion/CompanionPanelExtensionsView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 14)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "ad2abf035778dbf262b837ca18b6a6105079b60ee848c2ba622e05d5b97dc530",
+      "path": "Picky/Companion/CompanionPanelExtensionsView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "59854c7f656a35de4a9c170553e074f0ffda6a56c7d2cf144bd32e8fab93252f",
+      "path": "Picky/Companion/CompanionPanelExtensionsView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 9)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "5de447a7f6a48cc5756ec3f97b17fb2e095f82552f9efaa27237ae86fa6bbf49",
+      "path": "Picky/Companion/CompanionPanelExtensionsView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "a8574c076ba3518e1d38d66cb3921ae0b4eb0afc7dc0cc585ca9ddc7593e3997",
+      "path": "Picky/Companion/CompanionPanelExtensionsView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "f483a08d7cdd81957b9479899577d721e28ad61d8cb2712d0db810355db8a8a6",
+      "path": "Picky/Companion/CompanionPanelExtensionsView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 5)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "24ea93aabb6d03d7ef8bf4cbce39d39df32c4df1039c78688d62e52ac78815d2",
+      "path": "Picky/Companion/CompanionPanelExtensionsView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 1.5)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "90848782e0b79703ca547999e18eb6a85ff4578f423fbd81d325cfb4590f7ecc",
+      "path": "Picky/Companion/CompanionPanelExtensionsView.swift",
+      "category": "padding",
+      "expression": ".padding(12)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "52e91c2c2246eeb562cd8ddb44e928fb82ae541cf1d26d700d1c24df5536b67d",
+      "path": "Picky/Companion/CompanionPanelExtensionsView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 6)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "063d3bb3e57d20e9ce2dcc9a28bfa691f24d7375c85742e4e5d2a9464b99fcdc",
+      "path": "Picky/Companion/CompanionPanelExtensionsView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 1.5)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "1c4ac67783f31ff2c0a0a183216208e5c187efd605fa5e245e7ba758f67168d3",
+      "path": "Picky/Companion/CompanionPanelHeaderView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 16)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "83aad89614f22e5b60fc1233063d8f9e09d5a3caee65310e595441d1897a7663",
+      "path": "Picky/Companion/CompanionPanelHeaderView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 12)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "24e11c9e46178d640b04a87931f29a034bea43a0615a3cba4f8d4e4443af1651",
+      "path": "Picky/Companion/CompanionPanelMessagesView.swift",
+      "category": "padding",
+      "expression": ".padding(.bottom, 2)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "0a0f1378798abbf40fc032aaa6f5994f05fe6c5d9b398541c12973b6f07a5c97",
+      "path": "Picky/Companion/CompanionPanelMessagesView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "b1b497c0ba52ab30fc6e40a395c344f2a16d78a4a6258d14eaaebf99060df3ff",
+      "path": "Picky/Companion/CompanionPanelMessagesView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 11)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "f40d642e74e60959ffbdaef97fb9536d4562b9a4e9b7e4ed4d0ec3c7822d7fee",
+      "path": "Picky/Companion/CompanionPanelMessagesView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 8)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "8962ef0b5ac4ce2b7d13d8f3d525ccaf640c24c910b0192c4fc69499106a5250",
+      "path": "Picky/Companion/CompanionPanelMessagesView.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 10, style: .continuous)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "4fb7629800cd2c29d3d7f82a7e0e669f4b894d601a97ed06c7064aa9f0bbd63b",
+      "path": "Picky/Companion/CompanionPanelPrerequisitesView.swift",
+      "category": "padding",
+      "expression": ".padding(.bottom, 6)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "ef4f0973975fe32b0e3b100a193d7e4548cbb6a6f1e179eba24abd3adfdba3f2",
+      "path": "Picky/Companion/CompanionPanelPrerequisitesView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "2294587cc8d4111b5ec3b7a8f515aab8d7fab3508ade0125056154100ebf7445",
+      "path": "Picky/Companion/CompanionPanelPrerequisitesView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "d3430db273cbb197a9c808d7b22ea2f0873e407ba96429deb64f2cb0398aefd0",
+      "path": "Picky/Companion/CompanionPanelPrerequisitesView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "dbeb56b7b070200295899c7a0a73166f16fa82ace315513b2628bfd53daa2566",
+      "path": "Picky/Companion/CompanionPanelPrerequisitesView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 4)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "bbf871220cc08edc0cb3deb1bf88a89762809dd15c1b4f15f0cf274c36365c7f",
+      "path": "Picky/Companion/CompanionPanelPrerequisitesView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 6)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "ea29b5fb98c56a1b9c2ed475c99a00a8a72cd9fee5428582191330889998c847",
+      "path": "Picky/Companion/CompanionPanelPrerequisitesView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 3
+    },
+    {
+      "fingerprint": "8888c71c9bf0d9a576b15d66f9ce81c242fe1917df2704cbe141761b80804e35",
+      "path": "Picky/Companion/CompanionPanelPrerequisitesView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 4)",
+      "ordinal": 3
+    },
+    {
+      "fingerprint": "ea11ea24e0419c9ce827f0c0954d357b5dd095e39c4832c5e5bf6408b01eb16b",
+      "path": "Picky/Companion/CompanionPanelPrerequisitesView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 6)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "f2817a047351f16c24bc4fe5127eb321f52c28718fbc0f45c7ebabb2494ae8f9",
+      "path": "Picky/Companion/CompanionPanelPrerequisitesView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 4
+    },
+    {
+      "fingerprint": "919139dfe8cf29a64eeaea9dd8e1683fcab8ca934dbe7a1d93eadf4a20c765cc",
+      "path": "Picky/Companion/CompanionPanelPrerequisitesView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 4)",
+      "ordinal": 4
+    },
+    {
+      "fingerprint": "7e31ba596f95deb9a2617f1c16ed3a36dbcf3bd58478d1d8ab5ccf2823046bb0",
+      "path": "Picky/Companion/CompanionPanelPrerequisitesView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 6)",
+      "ordinal": 3
+    },
+    {
+      "fingerprint": "4855859cebd798674faca46abb46a32ff1b0b3035e16092d67f65743f0b956a7",
+      "path": "Picky/Companion/CompanionPanelPrerequisitesView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 5
+    },
+    {
+      "fingerprint": "c575795b69d57d89dc85a9d84dd9444379aebe807ba2ab050598b66c7641ff38",
+      "path": "Picky/Companion/CompanionPanelPrerequisitesView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 4)",
+      "ordinal": 5
+    },
+    {
+      "fingerprint": "c21174d136a49ce0b16b76c4d977b4b35b74dfe99dff9682ab2a350770c5a0ec",
+      "path": "Picky/Companion/CompanionPanelPrerequisitesView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 6)",
+      "ordinal": 4
+    },
+    {
+      "fingerprint": "227f80d1b920f6db8168110ae144d4962df4699b41606d8903b57202f82daf67",
+      "path": "Picky/Companion/CompanionPanelPrerequisitesView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 6
+    },
+    {
+      "fingerprint": "3ccb83a8c9ac99314452fd6a5baff93fcd6c14974d3b143d897318a54cba9450",
+      "path": "Picky/Companion/CompanionPanelPrerequisitesView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 4)",
+      "ordinal": 6
+    },
+    {
+      "fingerprint": "9893b374bbc177acffcd758f73ff0f9dbdb627c0c074825c55aafafdeedc31d0",
+      "path": "Picky/Companion/CompanionPanelPrerequisitesView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 6)",
+      "ordinal": 5
+    },
+    {
+      "fingerprint": "933c9eaf3b0535b2c5f4690d0f982762c45de83d2fb3d84cb9ad482c94313106",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.top, 12)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "60e03ac82dd58e54b87e2cfa6abfbc40996bfa40a311b8db5e05e53129e98b3e",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.bottom, 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "37e62f5e0d991afe555ee5c048bd15348817c97043c865d14997200317139940",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.top, 12)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "11454c7d427a306760178bca014ce3a12b05bf17a422bde967dc4dfc3bb91164",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.bottom, 2)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "138ffd1e6753afb13b2f314cac8c873d9bb34db3118d4ed45d592e4a2b6c9473",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.leading, 2)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "a7a901c00fab52ea827d62d2b794ac1ccd49f37647609ac091db23845d0a06b2",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 9)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "07866edc75bc5fabc91ef9136eecf9d6b2401fece057f218efc397ba4d17f469",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 7)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "925bbdebb7e28c928180ace8a99db6fed98b1a353a6611afef8f6da030a8b1c3",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.top, 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "af8d9e2249cebd532f81c5506d710d98eb1dd735988330e2895a584fc2660255",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.top, 7)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "0350d965fa2c4637ab932e38936ca809045684361d3862186b165cd35d5230c5",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 12)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "f2738d76ba71908b4f71be8573638096c4ba2deecfa6efd3888d2115d1c81f7b",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 7)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "7ea179f45c9db53585f4f6f6472a18d5886cd088372bfb94f94d968c20787b9b",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "da90b6fec24380a7b1579a48c9ac1bd58a990512d34116a22d3b7aff111ee916",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 6)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "89dcaa9823cbf41153658e5d5d0f7e623465d1c7e9abd60e90a1a471ae624cc9",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "5c36976c4259367bb13770ddd4157e75b00fdb5f0bceff713281f53821673caa",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 6)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "e5caa0890095e7126739cc0dc7d91ec74790630da5a72f4084954b3ee0ef2302",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 3
+    },
+    {
+      "fingerprint": "5825b01018060f5b426e4f767ad81e70a5e0d2174a4c1d5f5e5777890a7ab4d0",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 6)",
+      "ordinal": 3
+    },
+    {
+      "fingerprint": "061dc042b302b07d1f71b641d55b5a14a2216ec76230b2cfdadbdd1a056e5f0e",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(10)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "49d3865c4fb17d71d09ff7d38cf4dfeba87ce2038ce6ba3bec6e4d8137bd497a",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 10, style: .continuous)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "34e682b6a38b8088959b154a3e60f7e1fae45ae2ea515b41e55611b798e2ac0d",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 10, style: .continuous)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "4130b8491c8d0b7c48ff774b2efe367dddd3c4e26ccc339e1a085dd0f9fa7f0f",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 7)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "a0e5148f0a61823b0e1c5cf3876fb788fc79ec28b69543b3a8c8f8fadc98080e",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "533866ec199b3f608f0790c20b75b4f9c9e6265b96f251bf1477403eccb35c46",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 12)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "4096edb74f0020a3907e96df86db27466f454ff643bcc17322830f66444b58b3",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 7)",
+      "ordinal": 3
+    },
+    {
+      "fingerprint": "cc7c3ba797afdf446055c86d972179a7cf9847f4b588be8e1592622cdd00d592",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "4479162b4eb019f77a925c7caec82d27c1869cf1b7ea26b55d7a73382ff35de7",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 12)",
+      "ordinal": 3
+    },
+    {
+      "fingerprint": "13f9959b53dc89549c434437c0af325641c03d3dc23a5b696175f2c78508e0b4",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 7)",
+      "ordinal": 4
+    },
+    {
+      "fingerprint": "65413b341f7cb8be53cb79e8ecc4c37273ccf0c0c21259781627583b00997342",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 9)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "0190af6bdc68fab86456e0c0b64d3b9a2eb6ae388f39c4cbfc0147711c1a95fc",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 4)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "ee3c19e20a2da1c0bd53aaf02f653c2eb090b95b2834a39b92cbf83d5892ba4d",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 9)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "c04e180c1c5637c55b57485f769d2aca99f1bb914bc9d2b3d2c13e9cad10cf64",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 7)",
+      "ordinal": 5
+    },
+    {
+      "fingerprint": "d48600e3d908dc30f1b41abe1a4b2a9945bf57cc134a0288d38f8b676b24ebcd",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 9)",
+      "ordinal": 3
+    },
+    {
+      "fingerprint": "15f300b2c4f85270e6d211b565119efb415c8d973ca0085b6cd0cb315b292d5d",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 7)",
+      "ordinal": 6
+    },
+    {
+      "fingerprint": "b12a1411b280b6fcd21e84462a29d96c669ec6b704949ee6d21fbb43cb603a58",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 2)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "048ba0c649d732b9ae056b4b2e8aa302ae01011f39c05a04dc90c46e401ca9c0",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 9)",
+      "ordinal": 4
+    },
+    {
+      "fingerprint": "8bcb58ec64abeaba55e2565cd6736af2a78589d0b18bc41e0a6d5647da0510bf",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 7)",
+      "ordinal": 7
+    },
+    {
+      "fingerprint": "5f73ddaea2849224470356c1760d2f22f653014bad3cbd632269a9981009e225",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 9)",
+      "ordinal": 5
+    },
+    {
+      "fingerprint": "ca9daa56e4d965df51c987f45de1b548bebb93c51963bccc58faf7d82cbac6c8",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 7)",
+      "ordinal": 8
+    },
+    {
+      "fingerprint": "78e910772fb87858f2ea9d04d0a5dacd986e09daf956f326eedc72d4d42a839d",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 7)",
+      "ordinal": 9
+    },
+    {
+      "fingerprint": "890ebdae72703d4010f9d1bf0af49f26f5b78d0d2637227538fe0769c88fc338",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 9)",
+      "ordinal": 6
+    },
+    {
+      "fingerprint": "5ced5e3781c4f55168ac87f60221aa83725bcc52e514711d5137229d4ac72941",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 7)",
+      "ordinal": 10
+    },
+    {
+      "fingerprint": "6a7ba027abb9428377748f47119286df6a572e9c3971b0b8b09c51dafbf9b593",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 4
+    },
+    {
+      "fingerprint": "6bfed62e4edfdb545c62e0c9be511d07dbf39c5ff21362b1f7ef9943f313c12c",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 5)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "44d9882f7ff7670597ede07f762b204d62e22ecbf583de72681b5ad0fd2aec7d",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 5
+    },
+    {
+      "fingerprint": "b335d91df23bc0693a21556732e77090fd22816b97f614cf4d28fe2cb663df96",
+      "path": "Picky/Companion/CompanionPanelSettingsView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 5)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "35a92a929f92f2e77d93aed312da5e12f59b45f464c7216af7358dc0938aed4e",
+      "path": "Picky/Companion/CompanionPanelStatusView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 14)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "7b176ed36dba773538e893f079e16b97fece7800d61b98d4b4c8ed9f7ca2a59a",
+      "path": "Picky/Companion/CompanionPanelStatusView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 14)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "7bbc91ab3230e7a2b819214ec4162481292bbd3ab52d903b0fa8eb6988104c03",
+      "path": "Picky/Companion/CompanionPanelStatusView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 14)",
+      "ordinal": 3
+    },
+    {
+      "fingerprint": "15bad0944a29ed4fb3d317fd70774393f1fd06cbdbc87a24ce59e6a81fa107e3",
+      "path": "Picky/Companion/CompanionPanelStatusView.swift",
+      "category": "padding",
+      "expression": ".padding(.bottom, 14)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "f8b73bd65706650bf9a2f889f39e21aac98b0a9857a38ec6b8dd3e7f754302da",
+      "path": "Picky/Companion/CompanionPanelStatusView.swift",
+      "category": "padding",
+      "expression": ".padding(.bottom, 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "4a6ff5e457478872fd3a9d9100819fa2d60a3971005186f5877d9b815a02c424",
+      "path": "Picky/Companion/CompanionPanelStatusView.swift",
+      "category": "padding",
+      "expression": ".padding(.bottom, 8)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "5c5a94076a02c89c799079b6ef9a25c09d7547fc0641159f6b173056c6e4f20a",
+      "path": "Picky/Companion/CompanionPanelStatusView.swift",
+      "category": "padding",
+      "expression": ".padding(.top, 1)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "8acf75849f1a0c38e59591bde97b386efb7999307c125574aa787e466d57ae9c",
+      "path": "Picky/Companion/CompanionPanelStatusView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 12)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "4f757ce6375eb48947037c85cf19c143b4ff1bf483c412878fbc23cd8edf83d3",
+      "path": "Picky/Companion/CompanionPanelStatusView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 10)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "2362ca4fcea4529acc1ed8b1309c4402869da72833d9808ad12ad301ddf50036",
+      "path": "Picky/Companion/CompanionPanelStatusView.swift",
+      "category": "padding",
+      "expression": ".padding(.bottom, 14)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "e831df8d5fef71ff69e264cc659df7cedf38f61a40f4c8061d67a94c4b81f55d",
+      "path": "Picky/Companion/CompanionPanelStatusView.swift",
+      "category": "padding",
+      "expression": ".padding(.top, 2)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "9c0306f134fbcf6b29eb9bbf4d78519643cd055e984f4e084de74fb26f502c58",
+      "path": "Picky/Companion/CompanionPanelStatusView.swift",
+      "category": "padding",
+      "expression": ".padding(.top, 2)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "439844648e2c988ff4d6c6192f9cccc0a8939b88bc815c9059341463a8a92b7c",
+      "path": "Picky/Companion/Onboarding/OnboardingHighlightViewerPanelController.swift",
+      "category": "padding",
+      "expression": ".padding(4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "cde1aeb3e804edab22c905197f10f8760fd04a792e61d1a1e9bdfa8913f169fe",
+      "path": "Picky/Companion/Onboarding/OnboardingHighlightViewerPanelController.swift",
+      "category": "padding",
+      "expression": ".padding(14)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "2b278e4bd61123ab934c4d035fc88ef39043cf652ece4c4f06ed906b8adedfad",
+      "path": "Picky/Companion/Onboarding/OnboardingHighlightViewerPanelController.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: Color.black.opacity(0.4), radius: 18, x: 0, y: 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "34e8240d10ff5fbb518e0d912af0d1d81754c5894ed03d332d14c9e0153997d1",
+      "path": "Picky/Companion/Onboarding/OnboardingSkipPanelController.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 5)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "1be37d9e1e9250ea612d1e1d0770e550347994d309a53260ff9b7dbe8c23ee1a",
+      "path": "Picky/Companion/Onboarding/OnboardingSkipPanelController.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 1.5)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "a225fdedddbab40780132d560f3162b39887c2ea078f52ccb333e549d9604cb4",
+      "path": "Picky/Companion/Onboarding/OnboardingSkipPanelController.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 14)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "8b6d1a4f76ead5d53e8106842019e10b72b990427ce7a60cf0a3f6f1ef4150e8",
+      "path": "Picky/Companion/Onboarding/OnboardingSkipPanelController.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 9)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "e8bbf58974b1e21b2bb3b6ee4c40eeaf9c80240069796cf992883fb20e3bc314",
+      "path": "Picky/Companion/Onboarding/OnboardingSkipPanelController.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: Color.black.opacity(0.35), radius: 10, x: 0, y: 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "fcf730cb1c0fc7e6694aad3be0396ff940f0ba35348bd95ad35b8a0ead6cf436",
+      "path": "Picky/Companion/Onboarding/OnboardingSkipPanelController.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 6)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "ab6abcb8ec21962f4cf06d8e585d6335f28920d6e7855fa1595fc82aadd6f6e0",
+      "path": "Picky/Companion/Onboarding/OnboardingSkipPanelController.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "59b773c9d22426c3dd2d71a36d6d3de9503a267c1ae8a2536a06cc339005ffee",
+      "path": "Picky/Companion/PickyMainAgentTranscriptRow.swift",
+      "category": "padding",
+      "expression": ".padding(8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "946938f8d69de8308defa7d626de8afe76dde3121da174535a26491ff2283f0b",
+      "path": "Picky/Companion/PickyMainAgentTranscriptRow.swift",
+      "category": "padding",
+      "expression": ".padding(8)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "a7067ac0d41ca43b3594bf837215cde54a07c718f924393030f1bfc3b56e665c",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyActivitySummaryView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "b42ebae0c92e5560cde53462d71ddf3b1814876ab88d4ff8576dbacca54574b6",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyActivitySummaryView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "21742cc961ebda9568f847d204ae93238db1c33c84afb67bd56aaaa12737b5f1",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyAgentBubbleView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 5)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "712472a95f1cd82afd81422a61d7227c83eea9e746a497460b2b63d1707839b8",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyAgentBubbleView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "2b9ac664432a662a098c5b9f7380cbc3e830cd5ca1749cf45b3c9d2f432bd262",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyAgentBubbleView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "ba3bc91831446f1c48301f8a8d631beadb3fcfb66778b5f2df6484417fa3f901",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyBatchGroupView.swift",
+      "category": "padding",
+      "expression": ".padding(8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "2f2c50258103eed68b3aede1c3583e79577d12362861a457816e67dac366f744",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyCompactStatusViews.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 13)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "5f82cbe2ddcb3db055140eaedf0dfb31d39fdb382874b8125392adb7fee02b8f",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyCompactStatusViews.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 9)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "68ecb5559caba695192f2465bf6a7db60bfe07397a4f5758ed83efa3ced76625",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyCompactStatusViews.swift",
+      "category": "padding",
+      "expression": ".padding(.top, 1)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "04496d0c1ef70dad37fd851c4739a5e4d5627db92918d263787cdd340c76858d",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyCompactStatusViews.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "b30e53760444f36243d1279a668388bc027873220b7a56e91d2be2842a20f89a",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyCompactStatusViews.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 9)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "373af61bc39265d5b77bd0c4fbb7db2d1054ab9ff98b3fb8a95873efcc5ff549",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyCompactStatusViews.swift",
+      "category": "padding",
+      "expression": ".padding(.top, 1)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "822012f5d91eff084cb189fcaf91982086d25400fc2a623628fe3b7d1ba553a1",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyCompactStatusViews.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "67005f60efe4b38f18ed37172878a2ddc78adedca8d3942d48df19d3d40a2b98",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyCompactStatusViews.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 9)",
+      "ordinal": 3
+    },
+    {
+      "fingerprint": "5016805ff8e3356a13304585dcd6a6bf523b9d641004160d4a46e303b610841c",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyConversationMarkdownText.swift",
+      "category": "padding",
+      "expression": ".padding(8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "d24921407d8d25f1abc7d98da09bfc95fd1eea501457afe4ebd0e1e6aa9feb11",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyConversationMarkdownText.swift",
+      "category": "padding",
+      "expression": ".padding(8)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "4d85bb5f1087cd89326a90bcd51aac9198930cdec08249e02c15fdb99a366d9d",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyConversationMarkdownText.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "d8194bf1932a8188844d2ea362c8bb158ce703727eaef9c65063fa469e3d999a",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyConversationMarkdownText.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "d6bbd91ff063be252eb13f4d8f4da73b1efadd21417d7c78d21ce72925a3518e",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyErrorBubbleView.swift",
+      "category": "padding",
+      "expression": ".padding(7)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "7c64e7ec9c97e0bafe23132ff9db0abbf86278425006869f79fd9b0669440db3",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyErrorBubbleView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "152040ef3c260daf832613f9d3d8bc67a99292d0abfc056da9df55aa7996e8ba",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyErrorBubbleView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 9)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "f9dc9868ab7fdbed91a93868792e2df5551504803e25c2128d578a57fe109afd",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyErrorBubbleView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 7)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "fc526a3ea55cc59ca02aa7dc74c9c89e52c89365ff863991846ffd981f6ac12e",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyErrorBubbleView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "c168ec531331e81ea794619b1574cfd339864e74ec024dcaf73c5466f75f0023",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyOpenAsReportHoverIcon.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 5, style: .continuous)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "1fa2d6ee7f34db08aebd233f468f3aca3452340171e9f9d2ff4b7307492fd844",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyOpenAsReportHoverIcon.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 5, style: .continuous)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "006acfede13ce6f406cc6c4ed65d63870fdd552389cce82d903754cfd8ecf91e",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyPendingBubbleView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "dcee247fa3da6196c37814dc714e2d0fc93286ba7632318c1a87af5b39471f35",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyPendingBubbleView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "dbbf2d83a4155e9980d9fc106d4dd8e8f698cc2e7429bc18b8e7c1d55364a163",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyQuestionBubbleView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "8563c37db56805845a638ccc0833f89f4a556cf10f72d4b7f23e4b7024d91957",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyQuestionBubbleView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 2)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "4467c60b2f52606b52dde280371f1cc41dc03f6d86090e46e3f9390d06fcc2d4",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyQuestionBubbleView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 7)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "cacd1d3529d27cc91c4a921e9d25c3c8eae4bee3cfe9190c438d57638c995626",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyQuestionBubbleView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 5)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "2fb34b68960d583dca65ecc961032934afb055cd085cf49484c0737ca9ea0279",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyTerminalSyncBanner.swift",
+      "category": "padding",
+      "expression": ".padding(.top, 1)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "2db9351b2a5618ccec414059a2af0d70045ab0ffde53474e06b54a9031461172",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyTerminalSyncBanner.swift",
+      "category": "padding",
+      "expression": ".padding(4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "13d000cf2e146c0bf5f5ba8a190eb520a20b3764ba86ad2b94aea1ddb95a3731",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyTerminalSyncBanner.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "8d1790d51af7e0fedf8b589cc65b3c0e49955cc9f78fea0ef07ce47b13e3855e",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyTerminalSyncBanner.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "fbefd3e8233028d67e58e2f3ff3972cd078b20c8b18127a00ce96ae6436a1c16",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyTerminalSyncBanner.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "a4714bde493dabe5170af8891c3243eb94103e47c070a7b829aa30b5449e1bb5",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyToolCallInlineRow.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "fd3d522c978fc4e965053b5e1d48fca10d247401c97e2e6cfbf85d9f767fbe43",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyToolCallInlineRow.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 1)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "9350898f28330f35df224830b6e7f214092a6f22d3294d1d7c0259203ac52379",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyTypingBubbleView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "8c3a06c9e7b1e733f260ed2cdd6a773e13b7774447ff064a2f40fe354a51d773",
+      "path": "Picky/HUD/Conversation/Bubbles/PickyTypingBubbleView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "693e7cea887c6d15a683f9e27bc3e98d14b3f3e5b5555defb8b31fe42c60c5bf",
+      "path": "Picky/HUD/Conversation/PickyArtifactTrayView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 5)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "91bf9df5f5c85975b366c62fc205b5cfbef2ef4abab2d0833ecba2c40e13e312",
+      "path": "Picky/HUD/Conversation/PickyArtifactTrayView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 2)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "2c19db2592577b24c3afbd5a6b48cb7042a81254662f68c114425b3e024732fc",
+      "path": "Picky/HUD/Conversation/PickyArtifactTrayView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 12)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "16d4337e93ab47ac5d951efd3eb53c55b8573de94974e13ee93da5de180b0064",
+      "path": "Picky/HUD/Conversation/PickyArtifactTrayView.swift",
+      "category": "padding",
+      "expression": ".padding(.top, 10)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "8783abe68c9307080c01116c7515ca921e3849eb12d6df063180e335256d5b48",
+      "path": "Picky/HUD/Conversation/PickyArtifactTrayView.swift",
+      "category": "padding",
+      "expression": ".padding(6)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "66f35fd55dc17ea8760d0d7b662ca0da7538c07e912e9a661fda951401c768cf",
+      "path": "Picky/HUD/Conversation/PickyArtifactTrayView.swift",
+      "category": "padding",
+      "expression": ".padding(.bottom, 6)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "32583f6b82a6eb10a90a27062bf786938e95474e6f74c304841a793f1f095069",
+      "path": "Picky/HUD/Conversation/PickyArtifactTrayView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "0fffa02dd77a7c710aebbec2dba6ecdb72973f7eee15ca138d7c2113fdbe2611",
+      "path": "Picky/HUD/Conversation/PickyArtifactTrayView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 6)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "be6ab149170329d5fe4dfcf234b7d0e89db4486e221fec760779a751b9aa5fc0",
+      "path": "Picky/HUD/Conversation/PickyComposerAttachmentChipView.swift",
+      "category": "padding",
+      "expression": ".padding(.leading, 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "dfb84293b894fd2fab9ebd0d90dabee0a79580461810e05bf2a3d1880a2971cb",
+      "path": "Picky/HUD/Conversation/PickyComposerAttachmentChipView.swift",
+      "category": "padding",
+      "expression": ".padding(.trailing, 2)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "5884e7a9bbb7043bcb12342790ebf41e5493d4bb3d201e4f3d34b9104336cd07",
+      "path": "Picky/HUD/Conversation/PickyComposerAttachmentChipView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 3)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "d5b8d3f89dce102a4abe035a1720e0ac7e92571f19ac50f61e258983227791f9",
+      "path": "Picky/HUD/Conversation/PickyComposerAttachmentChipView.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 3, style: .continuous)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "85d1742fef371c99d583fb8de9228d3f62492d7d0746d88c0b413f4f3b5a18dd",
+      "path": "Picky/HUD/Conversation/PickyConversationCardView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 12)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "0aee923028fa1a1eedb3c4d964472c6771f36fab0049f89a57722ac62ee2fc39",
+      "path": "Picky/HUD/Conversation/PickyConversationCardView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "fd480e591ef9d0d540bffdc6b6b35b4fac285678640e561d7c5297cda49fb912",
+      "path": "Picky/HUD/Conversation/PickyConversationComposerView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 9)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "f74ba1153d40204e92f7a304e8fb6b6913aa49a9393132f2b6484562a1874de7",
+      "path": "Picky/HUD/Conversation/PickyConversationComposerView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 7)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "e935d8c5a3a411c27a48458c4a4aaa45bd070a71afefdcddbde4b1f792788d5b",
+      "path": "Picky/HUD/Conversation/PickyConversationComposerView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "fdad1bc8d91bc44bcc798b511443480f830834fe4ca37f6c7aef91235a3abb0d",
+      "path": "Picky/HUD/Conversation/PickyConversationComposerView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 5)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "88385ae0b88f4ba74f77dcd560dfe5d4970e0e8fc8913d14612a1bfeca339a39",
+      "path": "Picky/HUD/Conversation/PickyConversationComposerView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "dea730b785707e7c7703cb77ead3832f742534bcfca3ebf5435f2060cadf2974",
+      "path": "Picky/HUD/Conversation/PickyConversationComposerView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 1)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "49c5503e94a897f476379c75928c56c7b9b74d8541fd8b035ff0466a204715b3",
+      "path": "Picky/HUD/Conversation/PickyConversationComposerView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 6)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "e00c53a9ff17057f210c779955c92f979e10310a6c5bb77e7e9147c2ad8f6a5b",
+      "path": "Picky/HUD/Conversation/PickyConversationComposerView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "276569a16f98f29a1f9a396811a12352a7aed827fa0904fdbf84426a60001744",
+      "path": "Picky/HUD/Conversation/PickyConversationComposerView.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "bc296397a1777d65173e852796fca2b7ea3f15cc30526bfa440d4c8b35766a70",
+      "path": "Picky/HUD/Conversation/PickyConversationComposerView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 2)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "43b7771006dc6c559df77f1fc0a24a4338f9998fee54813b0e9f419187d199de",
+      "path": "Picky/HUD/Conversation/PickyConversationContextLineView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 5)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "9ffae467c3413f415c15901f03d1186733ac73617b2f71a076b509b2bf9a09bc",
+      "path": "Picky/HUD/Conversation/PickyConversationContextLineView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 2)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "cd4ce1125368ea9d269071779235314e705399f60286fb05ef534c48c7fcb5be",
+      "path": "Picky/HUD/Conversation/PickyConversationContextLineView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 2)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "79abece0c00e31aaf593e5855f0d5d1063794bde639b97cd6976aecad691438b",
+      "path": "Picky/HUD/Conversation/PickyConversationContextLineView.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 3, style: .continuous)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "a43a28de5fff38d1758c47b714c9e391534ba4e7baf3715ce9c4feb04d3acb34",
+      "path": "Picky/HUD/Conversation/PickyConversationHeaderView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 5)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "1147ebd22cdb19d01aaea8d8138e131fc27aa09b265ce70f743374113c45aa57",
+      "path": "Picky/HUD/Conversation/PickyConversationHeaderView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 2)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "2117746e715072f190c925b23d5ecbe0aa47257dda25da3cb0920580d0a4e4c8",
+      "path": "Picky/HUD/Conversation/PickyConversationHeaderView.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: DS.Colors.accentText.opacity(0.34), radius: 4, x: 0, y: 0)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "59edc1942ec3d67f8e995e2aa49e391d7b41fb6b99bf2fb8c693bb59158743d6",
+      "path": "Picky/HUD/Conversation/PickyConversationListView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 2)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "1c8c65f1ec25c3875f795890af2993f9393eb003d010a8775dbc1b0d9bb0a91a",
+      "path": "Picky/HUD/Conversation/PickyConversationListView.swift",
+      "category": "padding",
+      "expression": ".padding(.trailing, 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "ba10332144dc444df0265935a926519e68125d632e50928cd3ff890dbc006fc0",
+      "path": "Picky/HUD/Conversation/PickyConversationListView.swift",
+      "category": "padding",
+      "expression": ".padding(.bottom, 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "f1f77834bdbe26ce69b3f972190c7dd1d584736dd59e7a0002fd9894de521132",
+      "path": "Picky/HUD/Conversation/PickyConversationListView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 7)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "11c8c68d719905d0c59f40c5037f799011f0e07179b547f7667aed06c20d7922",
+      "path": "Picky/HUD/Conversation/PickyConversationListView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 2)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "882b107e96b004c542834d34289f99008ee068c377b5a8abb9cd7163944bc3aa",
+      "path": "Picky/HUD/Conversation/PickyConversationListView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "23b0ce20e012da6ba8438731280a7b7260bc340b4f2070f98b3fedba3ada75d9",
+      "path": "Picky/HUD/Conversation/PickyConversationListView.swift",
+      "category": "padding",
+      "expression": ".padding(.top, 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "58f4bdd3960d99410b444c92499f336bf613f58c84ba1a423209f98ee66f49ef",
+      "path": "Picky/HUD/Conversation/PickyConversationListView.swift",
+      "category": "padding",
+      "expression": ".padding(.bottom, 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "0a1cb6aa7a39b48745996ac7a2e299e6bd4ceb252912152378cf9270095f3ae6",
+      "path": "Picky/HUD/Conversation/PickyConversationListView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 9)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "0b440306a815ac82ab6aa67bbec7f6dac57212e643e54a06d55a9b63dc62f79c",
+      "path": "Picky/HUD/Conversation/PickyConversationListView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "acfe7d82926cfcd502cfe60c4d5be797bab88b773801042b3729fd6027254c99",
+      "path": "Picky/HUD/Conversation/PickyConversationListView.swift",
+      "category": "padding",
+      "expression": ".padding(.bottom, 4)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "cb7dac7e01b7af055df2372fb8201a36e983d0f90fb383662f0cb6ab2fe9eea0",
+      "path": "Picky/HUD/Conversation/PickyConversationListView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 9)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "16e0f210264036216e31c6160713b862a8f2251c917c5b3440f557160dd895d3",
+      "path": "Picky/HUD/Conversation/PickyConversationListView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 5)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "f62f223234e6af4adca29e0f7265c9be0f17e3f943610ae0ebaefadae0d6f4f4",
+      "path": "Picky/HUD/Conversation/PickyConversationListView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 2)",
+      "ordinal": 3
+    },
+    {
+      "fingerprint": "3feed6b7a21c716e28f9fe6c7f76b105310f800d861caf5cffdc77b992ccbb66",
+      "path": "Picky/HUD/Conversation/PickyHUDArchivedSessionsListView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "51b1dc5b8859bc8667c18e2d4c84193adc17009612f08943cac25a656e72133b",
+      "path": "Picky/HUD/Conversation/PickyHUDArchivedSessionsListView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 3)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "d86cca7eb3e4424d80f4ac84f5d6a8347fe94da8b241bae3ffe87fb8234629ae",
+      "path": "Picky/HUD/Conversation/PickyHUDArchivedSessionsListView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 6)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "21b009e8da9bb84987a007e1adea4b0beac1ea1de3902382d2507cb707934fae",
+      "path": "Picky/HUD/Conversation/PickyHUDArchivedSessionsListView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 8)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "40aed9764637dcd8e2cdfa807e4b11063902f4340d31ea0fa726db34e1b869d0",
+      "path": "Picky/HUD/Conversation/PickyHUDArchivedSessionsListView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "632d1993ed532594698a5dfb816b1693603d539290feb04c2d6650f6500ad9fc",
+      "path": "Picky/HUD/Conversation/PickyHUDArchivedSessionsListView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 8)",
+      "ordinal": 3
+    },
+    {
+      "fingerprint": "b4af076d586d1cddd1b4b950465e536ea6774aa3da3e736f44e332187a9c9e73",
+      "path": "Picky/HUD/Conversation/PickyHUDArchivedSessionsListView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 4)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "93914b36d8a7618083e30c6dc60577e5cd1dc01032ee89ed108da39a4f9f7c7b",
+      "path": "Picky/HUD/Conversation/PickyHUDArchivedSessionsListView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 4)",
+      "ordinal": 3
+    },
+    {
+      "fingerprint": "41e9a01696970d5dbda3bb06923e9a540fff40f5a611f7f3411709fd94175cff",
+      "path": "Picky/HUD/Conversation/PickyInlineTerminalCardView.swift",
+      "category": "padding",
+      "expression": ".padding(14)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "39c91206afa7be0e277f26b356bc33b3660e4cd464f0b601a91a707789fbfe25",
+      "path": "Picky/HUD/Conversation/PickyInlineTerminalCardView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 5)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "36d026cc36f0e625d058c544f8f243b2607cffa8d263b97e2ce3946a3676558b",
+      "path": "Picky/HUD/Conversation/PickyInlineTerminalCardView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 1.5)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "c8351020864889bed5f728dff4705603f426cfb274cbb5e0386da634853f85c2",
+      "path": "Picky/HUD/Conversation/PickyInlineTerminalCardView.swift",
+      "category": "padding",
+      "expression": ".padding(14)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "c3ad2fbd732b973e78c11f87d2c99465a8d74aa2d402e9e4adebbd3c0717bc0a",
+      "path": "Picky/HUD/Conversation/PickyInlineTerminalCardView.swift",
+      "category": "padding",
+      "expression": ".padding(18)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "24b27c4365c34c80c5c395863796d293276afe93c4a042c580ada9e4e9874d9b",
+      "path": "Picky/HUD/Conversation/PickyRewindPickerView.swift",
+      "category": "padding",
+      "expression": ".padding(18)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "bc04262b696a3da44c230d444ac405342fb81a6daac2f467d4b398b59b4a0ff5",
+      "path": "Picky/HUD/Conversation/PickyRewindPickerView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 2)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "224e1c83cf35e1fa38e7586a59b0d134293c84d9cbb0fd7f0aefec7a02085de0",
+      "path": "Picky/HUD/Conversation/PickyRewindPickerView.swift",
+      "category": "font",
+      "expression": ".font(.system(size: 13, weight: .semibold))",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "14e782bad67890df73b85e177787ef070c3995bedb70ac1a168f85c645a08879",
+      "path": "Picky/HUD/Conversation/PickyRewindPickerView.swift",
+      "category": "padding",
+      "expression": ".padding(.top, 2)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "872f30c282a639075a8fedfc4df96a760e95d8778d4190123d1d6486b11ad7e3",
+      "path": "Picky/HUD/Conversation/PickyRewindPickerView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 6)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "432755f88e758eabee20ab573f521d99175162d087be7447f5e9ce185f164f90",
+      "path": "Picky/HUD/Conversation/PickyRewindPickerView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 2)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "95d72faddd943e7ed97b23d4990ad3b49e43b5f31cd83bf83397a2dbb80e927f",
+      "path": "Picky/HUD/Conversation/PickyRewindPickerView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "94fc587db9988f1a9f485deb8e90bcfd14d32eea05eaa1c49260e31f6b5389ff",
+      "path": "Picky/HUD/Conversation/PickyRewindPickerView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 9)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "4dcdf5b230930383e34bf2fe742d9c95e8f756ff107c71e2332eb8815acd29e9",
+      "path": "Picky/HUD/Conversation/PickyRewindPickerView.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 9, style: .continuous)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "2eca260129b4fdb59aa7fac534f61e7ab24aad83d4570d2caa6218bbe30cd08d",
+      "path": "Picky/HUD/Conversation/PickyRewindPickerView.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 9, style: .continuous)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "387e65564d29d7abcdb380c31ec9acb8805bfc6ff95eab93566da1dd0d949f7f",
+      "path": "Picky/HUD/Conversation/PickySessionExtendedTerminalView.swift",
+      "category": "padding",
+      "expression": ".padding(10)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "e20463e351c9dabb38f01a3d1a21fc19b09a56a7f8798310b38e530647136e4c",
+      "path": "Picky/HUD/Conversation/PickySessionExtendedTerminalView.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 9, style: .continuous)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "da029a92a94fca71b6f0455c178faa851691af82813af38aa5e1a3cbbd50e7a4",
+      "path": "Picky/HUD/Conversation/PickySessionExtendedTerminalView.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 9, style: .continuous)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "754198c009cdaeedf3d8c8c3fb6468d9b963f8aedd099e5dcfe026174a530913",
+      "path": "Picky/HUD/Conversation/PickySessionExtendedTerminalView.swift",
+      "category": "padding",
+      "expression": ".padding(18)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "c0c2f4fba781be92b594f09b9dbffc971647f4bab6ea59ee8b1f08f17cc70e32",
+      "path": "Picky/HUD/Conversation/PickySessionExtendedTerminalView.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 9, style: .continuous)",
+      "ordinal": 3
+    },
+    {
+      "fingerprint": "d0a300068eb3ae873505ed94bc5e53cc5c84c334f7a3d6194fca5375bac201e1",
+      "path": "Picky/HUD/Conversation/PickySessionExtendedTerminalView.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 9, style: .continuous)",
+      "ordinal": 4
+    },
+    {
+      "fingerprint": "18b6dd2016b002896df0bd27df1a50218c56ec347c7ea9ed5d134779ff01c42c",
+      "path": "Picky/HUD/Conversation/PickyTodoProgressOverlayView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "19a0bcdf372ed2670d447dc2cfc28a3cebfa6dc198e051d72e19a80a7c45e6f3",
+      "path": "Picky/HUD/Conversation/PickyTodoProgressOverlayView.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: .black.opacity(0.18), radius: 12, y: 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "efb7232e9c99d97cd284aef5043b1d364dee8d0589bbfe7fbeb55dfceaeb6eb4",
+      "path": "Picky/HUD/Conversation/PickyTodoProgressOverlayView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 12)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "a29cd81b23040099c5fc6455d57bf8743d73a0f45c80dd80c7dd997604a83a9e",
+      "path": "Picky/HUD/Conversation/PickyTodoProgressOverlayView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 10)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "a94d3deda83dd4788af7e8cbb118b06781a85afc9da0b41832ea40374759a766",
+      "path": "Picky/HUD/Conversation/PickyTodoProgressOverlayView.swift",
+      "category": "padding",
+      "expression": ".padding(.leading, 34)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "0c2fb16bdf489b6b6897a4093a4973752a8362f0082292cf265b7485c4df033e",
+      "path": "Picky/HUD/Conversation/PickyTodoProgressOverlayView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 12)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "ec78d5928f66b4f28fbc0ed12064ed2d4319798996e7b3bcdbbf9d2895f18ec1",
+      "path": "Picky/HUD/Conversation/PickyTodoProgressOverlayView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "7fb56339e59df870d0017240c6d2bac63576918f18080afe8c6cf59715538ede",
+      "path": "Picky/HUD/Conversation/PickyTurnCardView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "39bffafe20b8d6629ebde907edc55eb27423104dfbb2007ea49a4af38720ac67",
+      "path": "Picky/HUD/Conversation/PickyTurnCardView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 6)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "e1be1afb5c24c840f1169efcac666b3703f36b22ae1e444a1de7672d1cf1f42d",
+      "path": "Picky/HUD/Conversation/PickyTurnCardView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "6aef3c105c90655483fd81592d1d9daf560e46dbebf9441b65d0f84591d224ee",
+      "path": "Picky/HUD/Conversation/PickyTurnCardView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 2)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "9274395b37664a5455b85d364a9e70091fed6807a9dc763e5f284faee80a1392",
+      "path": "Picky/HUD/PickyDockGroupCreatorView.swift",
+      "category": "padding",
+      "expression": ".padding(14)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "71ee756a5aa36a31f7d4071af2f08fe7589848e6190514d81a1ae070489ddee9",
+      "path": "Picky/HUD/PickyDockGroupCreatorView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 6)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "45b5a1f20b96d33ec60b96064448ace9f8e249c7b313df8d0fe9c0d9fd597e68",
+      "path": "Picky/HUD/PickyDockGroupCreatorView.swift",
+      "category": "font",
+      "expression": ".font(.system(size: 13, weight: .medium))",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "31d61e4666d283298ef2dff1c6c91fc402a033f56940d5722c1be9157167377f",
+      "path": "Picky/HUD/PickyDockGroupCreatorView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 6)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "f05c67e3dae98dc5b575be500b61326ea877a698c6a02e4f0d96d9b7b006b852",
+      "path": "Picky/HUD/PickyDockGroupCreatorView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 5)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "7474dd194191a23e094d5041193f6b515b7e8a3109a0284dcf8119eb8121bc6c",
+      "path": "Picky/HUD/PickyDockGroupCreatorView.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 5, style: .continuous)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "b994cea8029698ffd86e94da137425272094cce82df351113227cfec8cbb2b83",
+      "path": "Picky/HUD/PickyHUDArchiveUndoToast.swift",
+      "category": "padding",
+      "expression": ".padding(16)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "d9306beb572320cc9856c7cea348d8c72565c6bdbb654f5d250f25252a4bd3b3",
+      "path": "Picky/HUD/PickyHUDArchiveUndoToast.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "c4179471a00f36953ecf6bf47e98ec749b7f03fd7bcfbe574a139142d3708c7b",
+      "path": "Picky/HUD/PickyHUDArchiveUndoToast.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "e61c9a62fe0148e0869899103f9ee6e2732313b5e6069b585cc0f6b14a83c260",
+      "path": "Picky/HUD/PickyHUDArchiveUndoToast.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "438ee69d84eb46f5236a4f92c97f5cf89de8b9c3ec62b24b3c189352fa960ab0",
+      "path": "Picky/HUD/PickyHUDArchiveUndoToast.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "4684743fea22adb858b3bedc7d89cad07b0571cae9b54ad534f6640601512af6",
+      "path": "Picky/HUD/PickyHUDArchiveUndoToast.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 15, style: .continuous)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "9a0f6844dac20b7f15dd66fadb7cc181c9fa14de31d754d605839680c77ffed1",
+      "path": "Picky/HUD/PickyHUDArchiveUndoToast.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 15, style: .continuous)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "178db9e56f79becc2e9f85b72dff6b5c958af3beca75819bf27dfcf293716916",
+      "path": "Picky/HUD/PickyHUDArchiveUndoToast.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 15, style: .continuous)",
+      "ordinal": 3
+    },
+    {
+      "fingerprint": "042299df18a6855448a92e743a5b024ec5d2d06cb21ddd0e097ed34a2e8ad7cc",
+      "path": "Picky/HUD/PickyHUDArchiveUndoToast.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: Color.black.opacity(0.18), radius: 12, x: 0, y: 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "3552d133d5fb04143ecd7ac0436db2cf40def995fc8273938fad0465f24bbfc6",
+      "path": "Picky/HUD/PickyHUDDockGroupViews.swift",
+      "category": "shadow",
+      "expression": ".shadow( color: Color.black.opacity(isHeaderDragging ? 0.28 : 0), radius: isHeaderDragging ? 12 : 0, x: 0, y: isHeaderDragging ? 4 : 0 )",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "bc5795d84d72b3cd47a4af0474159c1e91bd692aa207761c8cf7a840fafa1ec1",
+      "path": "Picky/HUD/PickyHUDDockGroupViews.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 3)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "e931f27c229446ad4cf2c2277429594650fccd7f54330a22184ab21f601f7214",
+      "path": "Picky/HUD/PickyHUDDockGroupViews.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 0.5)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "26109b1f788d2356bb51c82e38ad4d782647251c0516670dbfa7b52fe61220a4",
+      "path": "Picky/HUD/PickyHUDDockGroupViews.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: DS.Colors.notification.opacity(0.45), radius: 2.5, x: 0, y: 0)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "8c543cfb7329782572375554268dcfb00c458f681f8cc560fc1b2f567312abf7",
+      "path": "Picky/HUD/PickyHUDDockGroupViews.swift",
+      "category": "font",
+      "expression": ".font(.system(size: metrics.plusFontSize, weight: .medium))",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "26288378690819f9590cbfd496299c73aab1a297b76672223e9cf9283b5c1d67",
+      "path": "Picky/HUD/PickyHUDDockGroupViews.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "00cf530275c337e646df02ded1b16d17162c216881fc87046873eb06f3d0ff00",
+      "path": "Picky/HUD/PickyHUDDockGroupViews.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 3)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "4a058fd7d318e52c1ff8256e4d1656734ef61bc197b205fd6e4ec0593dad526e",
+      "path": "Picky/HUD/PickyHUDDockIconView.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: Color.black.opacity(isDragging ? 0.32 : 0), radius: isDragging ? 14 : 0, x: 0, y: isDragging ? 6 : 0)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "4c214f294cabf5d2fcb27fd61121912438653ae4e7c17b73b1d0e1894778b510",
+      "path": "Picky/HUD/PickyHUDDockIconView.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: DS.Colors.warning.opacity(0.34), radius: 4, x: 0, y: 0)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "1b827b3304be4dbd940a12617407c5b0301d9522fc9deccb4d17444c0bf3cbe8",
+      "path": "Picky/HUD/PickyHUDDockIconView.swift",
+      "category": "font",
+      "expression": ".font(.system(size: max(6.5, 7.5 * metrics.scale), weight: .bold))",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "f1362692bbf54968cb205a0c5e3197da10293dc8d43d83d96a748ce9335b43c6",
+      "path": "Picky/HUD/PickyHUDDockIconView.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: DS.Colors.notification.opacity(0.45), radius: 2.5, x: 0, y: 0)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "af83ac8bd42162b2f82e1b780971dd5d0d9ac60f954528607b3a35c2e21eb33a",
+      "path": "Picky/HUD/PickyHUDDockIconView.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: DS.Colors.accentText.opacity(isSelected ? 0.18 : 0.10), radius: 2.0, x: 0, y: 0.7)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "cdd66e8bd098d48eaad248f9fb50b26fa51f486a17eb2d428d5f96271f6eafbe",
+      "path": "Picky/HUD/PickyHUDDockIconView.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: DS.Colors.warning.opacity(0.30 * archiveProgress), radius: 5, x: 0, y: 0)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "19549725597af8ff4189beda1b43d57802e882655549a2b606f8aea7d6254599",
+      "path": "Picky/HUD/PickyHUDDockIconView.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: DS.Colors.success.opacity(0.55 * completionFlashIntensity), radius: 6, x: 0, y: 0)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "013e7026ce87ab798614d1ec90206d393f71ab39d16bdb349951891b0ec893c3",
+      "path": "Picky/HUD/PickyHUDDockIconView.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: statusColor.opacity(isSelected ? 0.20 : 0.10), radius: 2.2, x: 0, y: 0.8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "f57f95d6c209ad30b9ee5ceee23c4925eb3b63aa29d99efc4c6da3862e3e9d33",
+      "path": "Picky/HUD/PickyHUDDockIconView.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: statusColor.opacity(isSelected ? 0.20 : 0.10), radius: 2.2, x: 0, y: 0.8)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "8df2dc53dce5aa8c6e1344d91cdde385a02c1ac8544b0988c25e6fb0de11a886",
+      "path": "Picky/HUD/PickyHUDDockRailView.swift",
+      "category": "shadow",
+      "expression": ".shadow( color: Color.black.opacity(PickyHUDExpansion.dockShadowOpacity), radius: PickyHUDExpansion.dockShadowRadius, x: 0, y: PickyHUDExpansion.dockShadowYOffset )",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "5d8ad1e49cf73b59731e67a5f48a1d8d31f1b27f47d91865b1906042b5ff29ee",
+      "path": "Picky/HUD/PickyHUDDockRailView.swift",
+      "category": "shadow",
+      "expression": ".shadow( color: Color.black.opacity(PickyHUDExpansion.dockTightShadowOpacity), radius: PickyHUDExpansion.dockTightShadowRadius, x: 0, y: PickyHUDExpansion.dockTightShadowYOffset )",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "90dbf25805cb54b9144615b2a3f474142462907486cb5383978c0fdea9e67c0f",
+      "path": "Picky/HUD/PickyHUDDockRailView.swift",
+      "category": "font",
+      "expression": ".font(.system(size: metrics.plusFontSize, weight: .medium))",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "0983ad04ce7603855b2e03b18a24ca61909eb7ee39bb8f4021e6c2952a2a0c67",
+      "path": "Picky/HUD/PickyHUDDockRailView.swift",
+      "category": "font",
+      "expression": ".font(.system(size: metrics.plusFontSize, weight: .medium))",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "15e0ea661d02acabf7a81e1f4a9278cfe4cc91a40103af04c821750f9c769a15",
+      "path": "Picky/HUD/PickyHUDDockRailView.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: Color.black.opacity(0.12), radius: 1, y: 0.4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "0f34b04bc2608513652822f28c6aac9eefd973f04c10f0534d3c0ba507a63768",
+      "path": "Picky/HUD/PickyHUDView.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 7, style: .continuous)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "ff4b16e74fe5b9d3f1c91603b1e4617b80eb21b47fbc9c153409eaf526d0eea7",
+      "path": "Picky/HUD/PickyHUDView.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 7, style: .continuous)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "a983537e7a801842e78235677bc01373b8af672197b0342f8689d5945f93392b",
+      "path": "Picky/HUD/PickyRecentPickleFolderPicker.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 2)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "d56ed4ccf59cec18111ff478ba6909e470ce637c0f34355a330a71c1387950ae",
+      "path": "Picky/HUD/PickyRecentPickleFolderPicker.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 2)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "1430a1538f11d8a225588471c7dfb3a764e719045afef36169c8cec1a77100ac",
+      "path": "Picky/HUD/PickyRecentPickleFolderPicker.swift",
+      "category": "padding",
+      "expression": ".padding(14)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "b68d71f289ce271b8ec5ae94da7f5533821a8d20281e1bfd05fe56bbb0d4d8f7",
+      "path": "Picky/HUD/PickyRecentPickleFolderPicker.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 2)",
+      "ordinal": 3
+    },
+    {
+      "fingerprint": "d0e8ead73c2b1e5abd08b64871a59e04b0b81c96c133606debb10731846164f1",
+      "path": "Picky/HUD/PickyRecentPickleFolderPicker.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "88e9be120e9f89b64b921666c3568f8d366dd203fed62bda2acd202c2b05df7e",
+      "path": "Picky/HUD/PickyRecentPickleFolderPicker.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "3d68b02293dc4239ba231e865f9b8d702d9087e4f3706fa689efe0cdb0d31232",
+      "path": "Picky/HUD/PickyRecentPickleFolderPicker.swift",
+      "category": "padding",
+      "expression": ".padding(.leading, 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "e20fa713cfc8ba5ae6ce2821090349511462ffdd5ba9089afaa4fe664b46db4a",
+      "path": "Picky/HUD/PickyRecentPickleFolderPicker.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 7)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "98a5027ff7d66968d933fe70ef8f294ae04dd2f8bc16fec705a54d83ee0658c6",
+      "path": "Picky/HUD/PickyReportViewer.swift",
+      "category": "font",
+      "expression": ".font(.system(size: scaled(Self.bodyBaseSize), weight: .regular, design: .default))",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "0b2e31ea5398011d9023ba944e731e934841c6a4d558e0366539e6e981862652",
+      "path": "Picky/HUD/PickyReportViewer.swift",
+      "category": "font",
+      "expression": ".font(.system(size: scaled(Self.bodyBaseSize), weight: .semibold))",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "bc37bc9240701199546c1a4fbd3544ea5173b719b23fc23a635550cd3a4809a3",
+      "path": "Picky/HUD/PickyReportViewer.swift",
+      "category": "font",
+      "expression": ".font(.system(size: scaled(Self.bodyBaseSize), weight: .regular, design: .default))",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "31a21015d905cac6e9561d22f29d037e2583016b96539bb28a3845abee5a91e8",
+      "path": "Picky/HUD/PickyReportViewer.swift",
+      "category": "font",
+      "expression": ".font(.system(size: scaled(Self.codeBaseSize), weight: .regular, design: .monospaced))",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "1e1e48de018880d9eaba46d8633157000b49467865b2203214f0051f559bd29a",
+      "path": "Picky/HUD/PickyReportViewer.swift",
+      "category": "padding",
+      "expression": ".padding(12)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "be6f95b461b055d0f4faca3130723386e35b8bbcb91590634a7482b933c1a2fe",
+      "path": "Picky/HUD/PickyReportViewer.swift",
+      "category": "font",
+      "expression": ".font(.system(size: scaled(Self.bodyBaseSize - 1), weight: isHeader ? .semibold : .regular, design: .default))",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "3f8593ee9f5d61c1792b63faad17bd90f34e0674c2a02d2d5494eb07ff8be37e",
+      "path": "Picky/HUD/PickyReportViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "fa3f46100104a9e3cbe3695cc059b55f0faad37654192ff402da5755dcddaab1",
+      "path": "Picky/HUD/PickyReportViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "52df30f75232c74e9551e9d820c4c84d1902aab3e7f8826d425ce069719ba4f4",
+      "path": "Picky/HUD/PickyReportViewer.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "dd5affbc5c7f6705503d5fa0cc5f74e40e9d43a8acc93285c3ffb9844d6d751a",
+      "path": "Picky/HUD/PickyReportViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 18)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "cbc90743170550a4d11406c9a084a2e311a4417cb2f5f860d2934b6026c628b8",
+      "path": "Picky/HUD/PickyReportViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.top, 14)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "3a775a06c5fc1ad6b1d3d1f3e7fad068cdf50b1c5a95b90092299cd0817312b1",
+      "path": "Picky/HUD/PickyReportViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.bottom, 12)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "48e8e1c74212fb3af404392d95e3373059dbd0fcf4893ce6d462f9c20759ac95",
+      "path": "Picky/HUD/PickyReportViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 18)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "fd19bf503e7be37080100b29bca3f1d52c07aff2d7870007455fe4ea183c9367",
+      "path": "Picky/HUD/PickyReportViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 8)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "becd2fb5128741a4ad3d21add24048d1677e7ae219060f348da6bf66fda35b71",
+      "path": "Picky/HUD/PickyReportViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "221527c9327158d5ec330ce2fd69bcc874d40ad42874b68ac5c5c0811b2a5d0f",
+      "path": "Picky/HUD/PickyReportViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 6)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "7bd9f1f1e5758ab7d190ac94259a4fccf118918ae82931b6a56c211e7da04304",
+      "path": "Picky/HUD/PickyReportViewer.swift",
+      "category": "padding",
+      "expression": ".padding(8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "05265fd47155b4a76b604b558f194b416fc103c84346d0fc78ccbad685ec36f2",
+      "path": "Picky/HUD/PickySessionChangesView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 1)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "06166fa0fcdc48fbc0791f910212f201ebc78acd24eacd7ea04bd811e88984b4",
+      "path": "Picky/HUD/PickyShortcutKeyBadge.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 4.5)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "2fec472ce34d0d22d39ffa1917f9880eca82ed7649e03c3205bf6c9202c87991",
+      "path": "Picky/HUD/PickyShortcutKeyBadge.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: Color.black.opacity(0.18), radius: 4, x: 0, y: 1.5)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "5baad6ca9cce957678edc58fb4f7fc34fcee0a2e7fd54a2bc7d0d8857b4313e2",
+      "path": "Picky/HUD/PickyToolActivityRow.swift",
+      "category": "padding",
+      "expression": ".padding(7)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "03ab1af88d2e7efcd2d608cc982bb5f165349f16b3b1747fdf733a0705bb85f9",
+      "path": "Picky/HUD/PickyToolActivityRow.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "46c159d107ed28a7a100483f2088133e4c535eba643ff1c38dd57387e108f902",
+      "path": "Picky/HUD/PickyToolHistoryViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.top, 16)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "cc1278bed1b8d63e2f8dcb141e30d9362635666fcc1bf8cb473ecb7e66110409",
+      "path": "Picky/HUD/PickyToolHistoryViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.top, 12)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "b91e5b76973773a5b3ad4446897aca3c284b2b4394790fc2ead7d9a1f0095924",
+      "path": "Picky/HUD/PickyToolHistoryViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 18)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "3d054dc9eed79fab166cf495a74e454ae4f8c29a56eb80d1915d7839af87d103",
+      "path": "Picky/HUD/PickyToolHistoryViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 14)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "e3d975139597d59c3d3942ae6c370ec979da67f38df05cd5d238caf2cd6de021",
+      "path": "Picky/HUD/PickyToolHistoryViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "7cce70a811ce1c91aba6d6b335659ff906fe26e17a926a582d3d4d21b43b1a42",
+      "path": "Picky/HUD/PickyToolHistoryViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "ce1f212b59937e70c155ff7708ea147c922190ca3d049258cb636c0bf935bc98",
+      "path": "Picky/HUD/PickyToolHistoryViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 6)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "3b2bb6e4f0c3d17cdfd3246dce8460a4729575f72b493f6ec6f636058ff8fa4d",
+      "path": "Picky/HUD/PickyToolHistoryViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 2)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "b015441a9d27666d87f74e459608f081a3c83b5a1859546fee82e31e8aed90d1",
+      "path": "Picky/HUD/PickyToolHistoryViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 6)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "f6f09fe38706ee0c7168f9511e7630788db1bf18af003bb5a7d15e6adabaf762",
+      "path": "Picky/HUD/PickyToolHistoryViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 2)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "f6cab5cbef26c69016855989dfc7d781cc377505f3a2bf4cd7e1987cb0540b3f",
+      "path": "Picky/HUD/PickyToolHistoryViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 12)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "8805f6875a62b7b1cb63d2356134c6fd4fc7fb976e7527075653ff41da5067fd",
+      "path": "Picky/HUD/PickyToolHistoryViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 10)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "c0d9d88fe26bb70f710db490bcec2974deef579b494780df06c6e7a3ae612349",
+      "path": "Picky/HUD/PickyToolHistoryViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 12)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "73b2ed273fce55856e080c4bb77625c5e4dd6229dd111a5ef8bf7e02709e71fc",
+      "path": "Picky/HUD/PickyToolHistoryViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "636e26b4da06dc298190e6563bd83db705dd121259addcffe3a5e7a7e49411ba",
+      "path": "Picky/HUD/PickyToolHistoryViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 6)",
+      "ordinal": 3
+    },
+    {
+      "fingerprint": "1f77e72ddfa0edf707924455be6acec2d369eb379d5f08fbe95713da79863d9d",
+      "path": "Picky/HUD/PickyToolHistoryViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 2)",
+      "ordinal": 3
+    },
+    {
+      "fingerprint": "e357d55aace9366b7d261cc568b868b8dbc296ed86c58052e0feeae442277195",
+      "path": "Picky/HUD/PickyToolHistoryViewer.swift",
+      "category": "padding",
+      "expression": ".padding(8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "bf3b032a103a9f7e6301cac32caf8d825475c4af9fe71d33dba3ef95f64fca4f",
+      "path": "Picky/HUD/PickyToolHistoryViewer.swift",
+      "category": "padding",
+      "expression": ".padding(8)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "5dd865f4b4fe6d5df6fdfa908f7310b0884557c21083463c7db54908c2a5f100",
+      "path": "Picky/HUD/PickyToolHistoryViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "fc5a86c8d69fc93ea04f94ed7a097b271073811ca2264e6c36c6a98b618e41d6",
+      "path": "Picky/HUD/PickyToolHistoryViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 4)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "63c702f6543074751003a67428c25b64e3463b493024d7970e3575d7da4275f0",
+      "path": "Picky/HUD/PickyToolHistoryViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 6)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "6c6773756046d43da92cd20956e3037fe8c0afd36f52ae2c2d97c83be7619335",
+      "path": "Picky/HUD/PickyToolHistoryViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 6)",
+      "ordinal": 4
+    },
+    {
+      "fingerprint": "3408e75465f9f8dd7f19aa209744a94471bca297a27fbaf2d0ab58e07b3f9d03",
+      "path": "Picky/HUD/PickyToolHistoryViewer.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 2)",
+      "ordinal": 4
+    },
+    {
+      "fingerprint": "d411f7730942a1b01fc9bab47c3df8965796f26568ba4f4642992d0176c4dc93",
+      "path": "Picky/HUD/PickyToolJSONResultView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 2)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "d07c51a3c81554aa63813ede588a73d58baed0abcf97a4cb772f9a60483f630e",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: Color.black.opacity(0.22), radius: 1.6, x: 0, y: 0.8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "f1957f059ccd529486a28e68bd92d3798124516f45228a144724a900c9542aaa",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "font",
+      "expression": ".font(.system(size: 11, weight: .medium))",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "4d1ffcd4c9f28dc7a07df193c2f23fe25c272ef26f423705a2134406db5604f6",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "e4536629354a3c467dc1eae2ed17341ef78d7cefaebc4ee4939e27076f2f7fe2",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 7)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "175278078a6eafa9299e86774e7dd1f2196d994a0dc3675d27ded350171f275e",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 9, style: .continuous)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "63f5086291ffe14eceebf1a7cdd5eb87daadef4337b30625fee9cfb33b593e89",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: Color.black.opacity(0.32), radius: 12, x: 0, y: 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "233f9a91c52fb8824905f98ae21c88654e6d11308e49534cbb97f416db9dd663",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: DS.Colors.overlayCursorBlue.opacity(0.5), radius: 8, x: 0, y: 0)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "831805653fda094b0425038d7f4adcab566f2e92fb4e7665e9347b4ff3312887",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 9, style: .continuous)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "0b4994f332b33833c55a6566cf6b8a0f77da149637cbe4e4c13894cd4e82b09a",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "font",
+      "expression": ".font(.system(size: 11, weight: .medium))",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "a5e5be8bf8dd43767f49d5f84fd21787df0db272658e6af524961a826517344a",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "af5f35ef142bab65d8cf975965fab01f9376feb430c041ef00ec290788a33ea8",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "cb420fd1bbe4b5c782220046058d6ded7b4994f5daa8ca5c19e4a6522cc3266c",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 6, style: .continuous)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "bcf9b05152c31ac32c7698da20ac31edd88c4e90a4e16aee7832b758f459f6e8",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "shadow",
+      "expression": ".shadow( color: DS.Colors.overlayCursorBlue.opacity(0.5 + (1.0 - navigationBubbleScale) * 1.0), radius: 6 + (1.0 - navigationBubbleScale) * 16, x: 0, y: 0 )",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "9f671a68613f7474f56aa857e11d97a1c45780d33996d2d4cf9efaaa958e937a",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "shadow",
+      "expression": ".shadow( color: moodColor.opacity(companionManager.screenContextTargetSessionID == nil ? cursorStyleStore.style.outerShadowOpacity : 0), radius: companionManager.screenContextTargetSessionID == nil ? CGFloat(cursorStyleStore.style.outerShadowRadius) + (buddyFlightScale - 1.0) * CGFloat(cursorStyleStore.style.outerShadowFlightMultiplier) : 0, x: 0, y: 0 )",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "bb2a90ff98c093b923b92213e77002867e40d3bb84107aa222795d65f3163b42",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 8)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "d16fcdc317daa15bb7cd92f6a2ad8a830cd51a3c264ed916500d8eb02ac76c7d",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 5.5)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "0288e8f6f74ff346c61f589fc8d8445d25b5b912cb8cfdeb5bf50f47d89da100",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: Color.black.opacity(0.16), radius: 8, x: 0, y: 3)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "a2a8f0ed3d4f1aaf0aa091c6f8af9f3e031225c3acae226afdfb551543eb503f",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: DS.Colors.overlayCursorBlue.opacity(0.18), radius: 6, x: 0, y: 0)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "e6c98004c312e726a12d58b97fc524e522fdc92269b40f6e7f71c7c1628d98fd",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "font",
+      "expression": ".font(.system(size: 12, weight: .semibold))",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "65d885057ec8ee585faa70813240dd467b796e0e2d166b79642ac593dd881635",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "81557877bf110e484b71dbc3c440815e066def847530ff3c80c585a3bdf33e1d",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 6)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "8df127f4e787fb68822475f8064fd443dce216a3c87c69e5310b78c2eb074b80",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 8, style: .continuous)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "ddcdb6ddd7018dae278156ceb09efcc10df5f860bd922e4be4b7e8180c412ec5",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: Color.black.opacity(0.28), radius: 12, x: 0, y: 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "9e62c365cd42522c976c91b9d8e5e2e07318922538b6a211e38cab9de0c6a118",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: DS.Colors.overlayCursorBlue.opacity(0.48), radius: 8, x: 0, y: 0)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "9b82cbb6ab2fd68facb4596bf2fafe7c38bc3a5027db8457c005f4dc8a6cb242",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 8, style: .continuous)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "4d8263c967b556c5fa3bbae6752cee0cdb19e86f0586ed3b641747a15f536813",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "font",
+      "expression": ".font(.system(size: 11, weight: .semibold))",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "4895cb345f839e77bcfa3201ad693377e1f9aeb5ebfea46a1f246838b15dd7d7",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 10)",
+      "ordinal": 3
+    },
+    {
+      "fingerprint": "9757c25e1b07231488cb4d8a6330724ee59d75bc12bf5ae6f04506d13718db2b",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 7)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "1f6fc2388ef19a9981f5444ccc2daaf65c9b51499b090fb7b25a987896940960",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 8, style: .continuous)",
+      "ordinal": 3
+    },
+    {
+      "fingerprint": "de30cc53dd830cea9fe5ee4ac6487f50cf6d4526d9738b27404e4bff38e52ed3",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: Color.black.opacity(0.22), radius: 10, x: 0, y: 3)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "7f07ef4020232bd5c7259b9ed649ea157aac384224be64771be0a0c1177c54c3",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: DS.Colors.warning.opacity(0.5), radius: 8, x: 0, y: 0)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "d3b9246ea97b7f482aee75c6bf9f0f655bbf9c3d5c7cb3a8ed7af91af115a3e9",
+      "path": "Picky/Overlay/BlueCursorView.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 8, style: .continuous)",
+      "ordinal": 4
+    },
+    {
+      "fingerprint": "138a3a5c6890b49ab348644f3920e3e74ef6864bd6d03d24af5f585e9bbbe9a3",
+      "path": "Picky/Overlay/CompanionResponseOverlay.swift",
+      "category": "font",
+      "expression": ".font(.system(size: CompanionResponseOverlayMetrics.bubbleFontSize, weight: .regular))",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "9100afe079582916d5bac48e9490c4cf33bfe895dd442548d6f1fd42482bed51",
+      "path": "Picky/Overlay/CompanionResponseOverlay.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: Color.black.opacity(0.35), radius: 16, x: 0, y: 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "95020611b4755b07108c8e5ff340032dba20244b14493cdaad11b7e2318711dd",
+      "path": "Picky/Overlay/PickyAnnotationDismissPanelController.swift",
+      "category": "font",
+      "expression": ".font(.system(size: PickyHUDTypography.Size.status, weight: .semibold))",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "8fb4ec21754fc929370cbdeff6046904c5c51bfe022fce1bd4189f98954dc172",
+      "path": "Picky/Overlay/PickyAnnotationDismissPanelController.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: Color.black.opacity(0.18), radius: 12, x: 0, y: 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "bcb3de25818922409961953e2a18cd96fcf6614ff1eef71fae65998a3f4c52b5",
+      "path": "Picky/Overlay/PickyCaptureContextPanelController.swift",
+      "category": "padding",
+      "expression": ".padding(.leading, 11)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "473b9c4e3508b12e880e67c05964848b208fa9c38ac9a76401820470a584fbb4",
+      "path": "Picky/Overlay/PickyCaptureContextPanelController.swift",
+      "category": "padding",
+      "expression": ".padding(.trailing, 5)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "0ddbd05e774763c2e8f5d0456a48dbc42f77bb2ab7800e354b5c1a37d95e44ed",
+      "path": "Picky/Overlay/PickyCaptureContextPanelController.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 5)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "0af4427ee70078830760981858d6d34620aa911f8bb72aeabd2c3f9d7cd1f0fe",
+      "path": "Picky/Overlay/PickyCaptureContextPanelController.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "64150b3eee509cc0bf5d4ab7637025f81e220efe86dd60311a0bf45532b11d0b",
+      "path": "Picky/Overlay/PickyCaptureContextPanelController.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "acee43e9621fbb11b2ff405097ffbc6903b67d0350aad76db66ee0b74232569f",
+      "path": "Picky/Overlay/PickyCursorResponseBubbleView.swift",
+      "category": "font",
+      "expression": ".font(.system(size: PickyCursorResponseBubbleLayout.Metrics.fontSize, weight: .medium))",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "cd42093f3ca8cf89646aa9ee4098e89f76a11addbb2541667c12d7e123238771",
+      "path": "Picky/Overlay/PickyCursorResponseBubbleView.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: Color.black.opacity(0.28), radius: 12, x: 0, y: 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "2ad5c1baa494d041b4fbe6ddecd5b96736c8bdd6dbe37775fb13a7597b219fef",
+      "path": "Picky/Overlay/PickyCursorResponseBubbleView.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: DS.Colors.overlayCursorBlue.opacity(0.48), radius: 8, x: 0, y: 0)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "b36f9e77b1efb6bd9c0854290797dd4a8bf43709f339f9dc7d279e520e660942",
+      "path": "Picky/Overlay/PickyInkOverlayView.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: DS.Colors.overlayCursorBlue.opacity(0.18), radius: 4, x: 0, y: 0)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "96e358a8879d280ef85a23dd468d2164aee09c1c3cabc9bd21d99bc392ae3963",
+      "path": "Picky/Overlay/PickyMainActivityChipView.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 10, style: .continuous)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "595d308abfb0cdf5ad12969144dda6e636debdad36df2eca097dc7506c18c009",
+      "path": "Picky/Overlay/PickyMainActivityChipView.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 10, style: .continuous)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "7d44eb36cd914776a9bd76b91da6a2b3728a68b2c87f845cdf15e8e7f108be02",
+      "path": "Picky/Overlay/PickyMainActivityChipView.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 10, style: .continuous)",
+      "ordinal": 3
+    },
+    {
+      "fingerprint": "f445f67b41e5666c80691f5377316b57f934f90c437c95a89f5da0ec8112887a",
+      "path": "Picky/Overlay/PickyMainActivityChipView.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 10, style: .continuous)",
+      "ordinal": 4
+    },
+    {
+      "fingerprint": "a7927e2b31f8410fc546b980a8427f659fb9ebf90580b3566b6b63d7c96ff89f",
+      "path": "Picky/Overlay/PickyMainCancelPillView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 11)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "934abbe21871aa10d14485886866627feef4e3da15eb6f70c938642d44a55329",
+      "path": "Picky/Overlay/PickyMainCancelPillView.swift",
+      "category": "font",
+      "expression": ".font(.system(size: 11.5, weight: .medium))",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "1da0c9ae19e5d55eaf95420000e003f450cc8dd978d75f8332c35eb71a4d04c6",
+      "path": "Picky/Overlay/PickyMainCancelPillView.swift",
+      "category": "font",
+      "expression": ".font(.system(size: 11.5, weight: .medium))",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "0fbd34c62da78b107d34e7cd833ed222041ce2aca12753e064273bd7269cac0e",
+      "path": "Picky/Overlay/PickyMainCancelPillView.swift",
+      "category": "font",
+      "expression": ".font(.system(size: 11.5, weight: .medium))",
+      "ordinal": 3
+    },
+    {
+      "fingerprint": "440c17da754ddbf835cf2fe3f1c11ca97b11a19791b5bd21fee34d8b1da334bb",
+      "path": "Picky/Overlay/PickyMainCancelPillView.swift",
+      "category": "font",
+      "expression": ".font(.system(size: 11.5, weight: .medium))",
+      "ordinal": 4
+    },
+    {
+      "fingerprint": "58b4580d8d472c0b9c7ec003bf1dcd0f3555043d1c84e6992457587893298f23",
+      "path": "Picky/Overlay/PickyMainCancelPillView.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 2, style: .continuous)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "77ccc03aae449c622a4f60a933b990ae39fcdbb0edbfb85d7b474f089738a3c8",
+      "path": "Picky/Overlay/PickyMainCancelPillView.swift",
+      "category": "font",
+      "expression": ".font(.system(size: 10, weight: .regular))",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "9a523daf8ea0dc24df981b1c2640464e440fe1be68884faab829c6611b09c35b",
+      "path": "Picky/Overlay/PickyMainCancelPillView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 7)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "e3f782f1cc9c0e34e78468326b17c5f5dd7e9b5dcd4571aaba84ea088dbc5d68",
+      "path": "Picky/Overlay/PickyMainCancelPillView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 2)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "6604e0ea0da3638a961e6579fef823adc4aedf81f8659a0bc23755fe2faae5ad",
+      "path": "Picky/Overlay/PickyMainCancelPillView.swift",
+      "category": "font",
+      "expression": ".font(.system(size: 10, weight: .medium, design: .monospaced))",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "f83338600a4ea5889d7117079d497c23d78693b619ee6333dcc157db15641ded",
+      "path": "Picky/Overlay/PickyMainCancelPillView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 4)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "ad704d4576352e9b0720a8368d226fae60decd70a392776bae4beaf30313548d",
+      "path": "Picky/Overlay/PickyMainCancelPillView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 2)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "895995b1e17afe4678f9ab4a5b643ea07d5d9524c030f3d2fb3b56faba44e6bb",
+      "path": "Picky/Overlay/PickyMainCancelPillView.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 4, style: .continuous)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "76256161f3fa8f0c953bfa772ea469b4cebc6238feb6db1d1c8d363866d8755f",
+      "path": "Picky/Overlay/PickyMainCancelPillView.swift",
+      "category": "cornerRadius",
+      "expression": "RoundedRectangle(cornerRadius: 4, style: .continuous)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "85024c941a29caa2f098f026e78d7f52156cab4c1dab2de9fb4656ee15905627",
+      "path": "Picky/QuickInput/PickyMainQuestionPanelView.swift",
+      "category": "shadow",
+      "expression": ".shadow(color: Color.black.opacity(0.18), radius: 12, x: 0, y: 6)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "ca860be259a924cca7951db65baf844273e9bac4cf55471dbcaf9749d21319c4",
+      "path": "Picky/QuickInput/PickyMainQuestionPanelView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 7)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "4a9bf0290642c2fd15c9c55563d719b9893a511e9d89e8d58def2b8fc355ed3f",
+      "path": "Picky/QuickInput/PickyMainQuestionPanelView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 5)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "34fe52df7c4c8e3b3c3c362ca9d4dd3bd8d9d2ac48fc4eed464cee7088d0bcd4",
+      "path": "Picky/QuickInput/PickyMainQuestionPanelView.swift",
+      "category": "padding",
+      "expression": ".padding(.vertical, 6)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "5da9f53f055b206e84814d8cbfb12e9ce4e41814fadf9f31f9074bf08e92f60c",
+      "path": "Picky/QuickInput/QuickInputPanelView.swift",
+      "category": "padding",
+      "expression": ".padding(.leading, 16)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "e94288533453cafe64d930b623b41a423f9103efb89675a34d9779a46f0d255d",
+      "path": "Picky/QuickInput/QuickInputPanelView.swift",
+      "category": "padding",
+      "expression": ".padding(.trailing, 8)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "137eaf27c526cf3abf7b9840c36f9eb2b1ca75a5982c4e288ca94fd72b1c552d",
+      "path": "Picky/QuickInput/QuickInputPanelView.swift",
+      "category": "shadow",
+      "expression": ".shadow( color: Color.black.opacity(QuickInputPanelLayout.mainShadowOpacity), radius: QuickInputPanelLayout.mainShadowRadius, x: 0, y: QuickInputPanelLayout.mainShadowYOffset )",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "7c711ff9a3a2ecf6e80826394f929909f8f855199cc4c26346f56d9e0504d317",
+      "path": "Picky/QuickInput/QuickInputPanelView.swift",
+      "category": "shadow",
+      "expression": ".shadow( color: Color.black.opacity(QuickInputPanelLayout.tightShadowOpacity), radius: QuickInputPanelLayout.tightShadowRadius, x: 0, y: QuickInputPanelLayout.tightShadowYOffset )",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "654aa01f0a0eaed2c73c0258cbb2e8e427de2fa8ac89e9c3ccb209a0b92b1332",
+      "path": "Picky/QuickInput/QuickInputPanelView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 14)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "14faeb59e14eec0ef4156698ccf7f5dc41fcebcfe0a9c8f09fc22a9086a9cb62",
+      "path": "Picky/QuickInput/QuickInputPanelView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 9)",
+      "ordinal": 1
+    },
+    {
+      "fingerprint": "8a390491c91e9e32c30db4109c5041c685790899a6ac69a7aa336e477819c83f",
+      "path": "Picky/QuickInput/QuickInputPanelView.swift",
+      "category": "padding",
+      "expression": ".padding(.horizontal, 14)",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "f210e097138b5a9fb42ccb6f5e232ad385532ef883c52197605a3eb8f4da5ef2",
+      "path": "Picky/QuickInput/QuickInputPanelView.swift",
+      "category": "shadow",
+      "expression": ".shadow( color: Color.black.opacity(QuickInputPanelLayout.mainShadowOpacity), radius: QuickInputPanelLayout.mainShadowRadius, x: 0, y: QuickInputPanelLayout.mainShadowYOffset )",
+      "ordinal": 2
+    },
+    {
+      "fingerprint": "8e056f992810cb1361dcd9c0a15b5b8c91c5c8a3b4aac429e2eabfdd0e59f0fc",
+      "path": "Picky/QuickInput/QuickInputPanelView.swift",
+      "category": "shadow",
+      "expression": ".shadow( color: Color.black.opacity(QuickInputPanelLayout.tightShadowOpacity), radius: QuickInputPanelLayout.tightShadowRadius, x: 0, y: QuickInputPanelLayout.tightShadowYOffset )",
+      "ordinal": 2
+    }
+  ]
+}

@@ -461,7 +461,7 @@ struct PickyHUDDockGroupListView: View {
 
             Button(action: onCreatePickle) {
                 Image(systemName: "plus")
-                    .font(.system(size: max(10, metrics.groupListHeaderHeight * 0.42), weight: .semibold))
+                    .font(PickyHUDTypography.dockGroupListHeaderAddSymbol(size: metrics.groupListHeaderAddSymbolSize))
                     .foregroundStyle(DS.Colors.textSecondary)
                     .frame(width: metrics.groupListHeaderHeight, height: metrics.groupListHeaderHeight)
                     .background(DS.Colors.surface2, in: Circle())
@@ -694,10 +694,10 @@ private struct PickyHUDDockGroupListRow: View {
                 Text(L10n.t("group.list.drag.leaveGroup"))
                     .font(PickyHUDTypography.labelSemibold)
                     .foregroundStyle(DS.Colors.accentText)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, DS.Spacing.space2)
+                    .padding(.vertical, DS.Spacing.space1)
                     .background(DS.Colors.surface3, in: RoundedRectangle(cornerRadius: metrics.groupListRowCornerRadius, style: .continuous))
-                    .padding(4)
+                    .padding(DS.Spacing.space1)
                     .accessibilityHidden(true)
             }
         }

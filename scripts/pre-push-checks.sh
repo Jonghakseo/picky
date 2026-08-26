@@ -90,6 +90,7 @@ require_command python3 "Install Python 3."
 # invoking any slower dependency checks, builds, or test suites.
 run_step "architecture guard" node scripts/check-architecture-rules.js
 run_step "test environment isolation guard" python3 scripts/check-test-environment-isolation.py
+run_step "UI design token guard" python3 scripts/lint-ui-design-tokens.py
 run_step "release helper tests" python3 -m unittest discover -s scripts/tests -p 'test_*.py'
 
 require_command pnpm "Install pnpm 10.15.1 or run Corepack setup."

@@ -71,7 +71,10 @@ struct PickyHUDArchiveHoldProgressRing: View {
         }
         .frame(width: side, height: side)
         .opacity(isPressing || progress > 0 ? 1 : 0)
-        .shadow(color: DS.Colors.warning.opacity(0.34), radius: 4, x: 0, y: 0)
+        .shadow(
+            color: DS.Colors.warning.opacity(DS.Elevation.archiveHoldRingShadowOpacity),
+            radius: DS.Elevation.archiveHoldRingShadowRadius
+        )
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }

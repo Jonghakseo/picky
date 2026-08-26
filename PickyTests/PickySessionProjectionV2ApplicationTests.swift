@@ -29,6 +29,46 @@ struct PickySessionProjectionV2ApplicationTests {
         #expect(viewModel.unreadSessionIDs.isEmpty)
     }
 
+    @Test func pendingExactGroupAssignmentDrainsWhenV2BootstrapAdmitsSession() throws {
+        let dockLayoutStore = V2DockLayoutStore(layout: PickyDockLayout(entries: [
+            .group(PickyDockGroup(id: "target-group", name: "Target", color: .teal, memberSessionIDs: []))
+        ]))
+        let viewModel = makeViewModel(
+            client: FakePickyAgentClient(),
+            storage: PickyRegistrySessionProjectionStorage(),
+            dockLayoutStore: dockLayoutStore
+        )
+
+        viewModel.assignSessionToDockGroup(sessionID: "new-pickle", groupID: "target-group")
+        apply(snapshot(sessionID: "new-pickle", title: "New Pickle", status: .running, revision: 1), to: viewModel)
+
+        #expect(viewModel.dockLayout.group(withID: "target-group")?.memberSessionIDs == ["new-pickle"])
+        #expect(viewModel.dockLayout.container(forSessionID: "new-pickle") == .group(id: "target-group", memberIndex: 0))
+        #expect(dockLayoutStore.savedLayouts.last == viewModel.dockLayout)
+    }
+
+    @Test func v2BootstrapAdmitsSessionBeforeExactGroupAssignment() throws {
+        let dockLayoutStore = V2DockLayoutStore(layout: PickyDockLayout(entries: [
+            .group(PickyDockGroup(id: "target-group", name: "Target", color: .teal, memberSessionIDs: []))
+        ]))
+        let viewModel = makeViewModel(
+            client: FakePickyAgentClient(),
+            storage: PickyRegistrySessionProjectionStorage(),
+            dockLayoutStore: dockLayoutStore
+        )
+
+        apply(snapshot(sessionID: "new-pickle", title: "New Pickle", status: .running, revision: 1), to: viewModel)
+
+        #expect(viewModel.dockLayout.allKnownSessionIDs.contains("new-pickle"))
+        #expect(dockLayoutStore.savedLayouts.last == viewModel.dockLayout)
+
+        viewModel.assignSessionToDockGroup(sessionID: "new-pickle", groupID: "target-group")
+
+        #expect(viewModel.dockLayout.group(withID: "target-group")?.memberSessionIDs == ["new-pickle"])
+        #expect(viewModel.dockLayout.container(forSessionID: "new-pickle") == .group(id: "target-group", memberIndex: 0))
+        #expect(dockLayoutStore.savedLayouts.last == viewModel.dockLayout)
+    }
+
     @Test func archiveTransactionRemovesSessionFromDockWithoutWaitingForAnotherActivePublication() throws {
         let storage = PickyRegistrySessionProjectionStorage()
         let viewModel = PickyProjectionReplayFixtures.makeViewModel(sessionProjectionStorage: storage)
@@ -216,7 +256,8 @@ struct PickySessionProjectionV2ApplicationTests {
         client: FakePickyAgentClient,
         storage: PickyRegistrySessionProjectionStorage,
         notificationCenter: PickyNotificationDelivering = PickyNoopNotificationCenter(),
-        notificationPreferencesProvider: PickyNotificationPreferencesProviding = PickyStubNotificationPreferences()
+        notificationPreferencesProvider: PickyNotificationPreferencesProviding = PickyStubNotificationPreferences(),
+        dockLayoutStore: PickyDockLayoutStoring = PickyNoopDockLayoutStore()
     ) -> PickySessionListViewModel {
         PickySessionListViewModel(
             client: client,
@@ -227,6 +268,7 @@ struct PickySessionProjectionV2ApplicationTests {
             manualOrderStore: V2ManualOrderStore(),
             composerDraftStore: V2ComposerDraftStore(),
             composerAttachmentDraftStore: V2AttachmentDraftStore(),
+            dockLayoutStore: dockLayoutStore,
             sessionProjectionStorage: storage
         )
     }
@@ -284,6 +326,27 @@ private final class V2ArchiveStore: PickySessionArchiveStoring { var archivedSes
 private final class V2ManualOrderStore: PickySessionManualOrderStoring { var manualOrder: [String] = [] }
 private final class V2ComposerDraftStore: PickyComposerDraftStoring { func draft(for _: String) -> String? { nil }; func setDraft(_: String?, for _: String) {}; func prune(knownSessionIDs _: Set<String>) {} }
 private final class V2AttachmentDraftStore: PickyComposerAttachmentDraftStoring { func attachmentPaths(for _: String) -> [String] { [] }; func setAttachmentPaths(_: [String], for _: String) {}; func prune(knownSessionIDs _: Set<String>) {} }
+
+@MainActor
+private final class V2DockLayoutStore: PickyDockLayoutStoring {
+    private var layout: PickyDockLayout
+    private(set) var savedLayouts: [PickyDockLayout] = []
+
+    init(layout: PickyDockLayout = .empty) {
+        self.layout = layout
+    }
+
+    func load() -> PickyDockLayout { layout }
+
+    func enqueueSave(
+        _ layout: PickyDockLayout,
+        completion: @escaping @MainActor (Result<Void, Error>) -> Void
+    ) {
+        self.layout = layout
+        savedLayouts.append(layout)
+        completion(.success(()))
+    }
+}
 
 private extension PickyProjectionSectionState {
     var loadedValue: Value? { if case .loaded(let value) = self { value } else { nil } }

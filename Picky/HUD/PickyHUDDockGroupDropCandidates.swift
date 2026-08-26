@@ -11,13 +11,15 @@ enum PickyHUDDockGroupDropCandidateBuilder {
         slots: [PickyDockSlot],
         layout: PickyDockLayout,
         activeSessionIDs: Set<String>,
-        topEntryCenters: [String: CGFloat]
+        groupDropFrames: [String: CGRect],
+        orientation: PickyHUDDockOrientation
     ) -> [PickyDockDropResolver.EmptyGroupCandidate] {
         candidates(
             slots: slots,
             layout: layout,
             activeSessionIDs: activeSessionIDs,
-            topEntryCenters: topEntryCenters,
+            groupDropFrames: groupDropFrames,
+            orientation: orientation,
             wantsVisibleMembers: false
         )
     }
@@ -26,13 +28,15 @@ enum PickyHUDDockGroupDropCandidateBuilder {
         slots: [PickyDockSlot],
         layout: PickyDockLayout,
         activeSessionIDs: Set<String>,
-        topEntryCenters: [String: CGFloat]
+        groupDropFrames: [String: CGRect],
+        orientation: PickyHUDDockOrientation
     ) -> [PickyDockDropResolver.EmptyGroupCandidate] {
         candidates(
             slots: slots,
             layout: layout,
             activeSessionIDs: activeSessionIDs,
-            topEntryCenters: topEntryCenters,
+            groupDropFrames: groupDropFrames,
+            orientation: orientation,
             wantsVisibleMembers: true
         )
     }
@@ -41,15 +45,26 @@ enum PickyHUDDockGroupDropCandidateBuilder {
         slots: [PickyDockSlot],
         layout: PickyDockLayout,
         activeSessionIDs: Set<String>,
-        topEntryCenters: [String: CGFloat],
+        groupDropFrames: [String: CGRect],
+        orientation: PickyHUDDockOrientation,
         wantsVisibleMembers: Bool
     ) -> [PickyDockDropResolver.EmptyGroupCandidate] {
         slots.compactMap { slot in
             guard let groupID = slot.groupID,
                   let group = layout.group(withID: groupID),
                   group.memberSessionIDs.contains(where: activeSessionIDs.contains) == wantsVisibleMembers,
-                  let center = topEntryCenters["group:\(groupID)"]
+                  let frame = groupDropFrames[groupID]
             else { return nil }
+            let center: CGFloat
+            let halfExtent: CGFloat
+            switch orientation {
+            case .horizontal:
+                center = frame.midX
+                halfExtent = frame.width * 0.5
+            case .vertical:
+                center = frame.midY
+                halfExtent = frame.height * 0.5
+            }
             return .init(
                 groupID: groupID,
                 memberIndex: PickyDockGroupMemberIndexPolicy.fullMemberIndex(
@@ -57,7 +72,8 @@ enum PickyHUDDockGroupDropCandidateBuilder {
                     memberSessionIDs: group.memberSessionIDs,
                     activeSessionIDs: activeSessionIDs
                 ),
-                center: center
+                center: center,
+                halfExtent: halfExtent
             )
         }
     }

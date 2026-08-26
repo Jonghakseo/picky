@@ -108,6 +108,22 @@ enum PickyHUDDockRenderPolicy {
         )
     }
 
+    /// Folder acceptance does not create a new linear slot. Keep the persisted
+    /// source placeholder until release so the rail and add slot remain stable
+    /// while the pointer crosses a folder. Only top-level destinations reflow
+    /// the preview to show the prospective insertion position.
+    static func sessionPreviewLayout(
+        layout: PickyDockLayout,
+        draggedSessionID: String,
+        destination: PickyDockContainer
+    ) -> PickyDockLayout {
+        guard layout.container(forSessionID: draggedSessionID) != destination else { return layout }
+        guard case .topLevel = destination else { return layout }
+        var preview = layout
+        preview.move(session: draggedSessionID, to: destination)
+        return preview
+    }
+
     static func layoutEntryIndex(forVisibleTopEntryID entryID: String, in layout: PickyDockLayout) -> Int? {
         layout.entries.firstIndex { entry in
             switch entry {
@@ -188,26 +204,6 @@ enum PickyHUDDockDragGeometry {
         switch orientation {
         case .horizontal: metrics.sessionTileWidth + metrics.sessionSpacing
         case .vertical: metrics.sessionTileHeight + metrics.sessionSpacing
-        }
-    }
-
-    /// Exact primary-axis half extent of a rendered folder entry. The label
-    /// adds vertical chrome in vertical rails; in horizontal rails it changes
-    /// the cross axis and the folder's primary drop width stays tile-sized.
-    static func groupDropHalfExtent(
-        orientation: PickyHUDDockOrientation,
-        metrics: PickyHUDDockMetrics,
-        fontScale: CGFloat
-    ) -> CGFloat {
-        switch orientation {
-        case .horizontal:
-            metrics.sessionTileWidth * 0.5
-        case .vertical:
-            (
-                metrics.sessionTileHeight
-                    + metrics.groupHeaderContentSpacing
-                    + PickyHUDDockGroupHeaderPresentation.labelHeight(metrics: metrics, fontScale: fontScale)
-            ) * 0.5
         }
     }
 

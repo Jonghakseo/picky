@@ -567,11 +567,20 @@ enum PickyDockDropResolver {
         /// insertion position so archived members keep their relative order.
         let memberIndex: Int
         let center: CGFloat
+        /// Exact visible badge half extent on the rail's primary axis. `nil`
+        /// retains the resolver fallback for non-rail callers and older tests.
+        let halfExtent: CGFloat?
 
-        init(groupID: String, memberIndex: Int = 0, center: CGFloat) {
+        init(
+            groupID: String,
+            memberIndex: Int = 0,
+            center: CGFloat,
+            halfExtent: CGFloat? = nil
+        ) {
             self.groupID = groupID
             self.memberIndex = memberIndex
             self.center = center
+            self.halfExtent = halfExtent
         }
     }
 
@@ -597,6 +606,9 @@ enum PickyDockDropResolver {
         var minDistance = CGFloat.infinity
         let groupCandidates = emptyGroupCandidates + nonEmptyGroupCandidates
         let resolvedGroupDropHalfExtent = max(0, groupDropHalfExtent ?? slotPitch * 0.5)
+        func halfExtent(for candidate: EmptyGroupCandidate) -> CGFloat {
+            max(0, candidate.halfExtent ?? resolvedGroupDropHalfExtent)
+        }
 
         for candidate in slotCandidates {
             let distance = abs(candidate.center - cursorAxis)
@@ -608,7 +620,7 @@ enum PickyDockDropResolver {
 
         for candidate in groupCandidates {
             let distance = abs(candidate.center - cursorAxis)
-            if distance <= resolvedGroupDropHalfExtent, distance < minDistance {
+            if distance <= halfExtent(for: candidate), distance < minDistance {
                 minDistance = distance
                 nearest = .group(id: candidate.groupID, memberIndex: candidate.memberIndex)
             }
@@ -634,7 +646,7 @@ enum PickyDockDropResolver {
         switch layout.entries.first {
         case .group(let group):
             if let candidate = groupCandidates.first(where: { $0.groupID == group.id }),
-               cursorAxis < candidate.center - resolvedGroupDropHalfExtent {
+               cursorAxis < candidate.center - halfExtent(for: candidate) {
                 nearest = .topLevel(index: 0)
             } else if groupCandidates.first(where: { $0.groupID == group.id }) == nil,
                       let minCenter,
@@ -653,7 +665,7 @@ enum PickyDockDropResolver {
         switch layout.entries.last {
         case .group(let group):
             if let candidate = groupCandidates.first(where: { $0.groupID == group.id }),
-               cursorAxis > candidate.center + resolvedGroupDropHalfExtent {
+               cursorAxis > candidate.center + halfExtent(for: candidate) {
                 nearest = .topLevel(index: layout.entries.count)
             } else if groupCandidates.first(where: { $0.groupID == group.id }) == nil,
                       let maxCenter,

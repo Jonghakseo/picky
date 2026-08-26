@@ -252,6 +252,33 @@ struct PickyHUDDockRailPolicyTests {
         ))
     }
 
+    @Test func groupDestinationKeepsSourcePlaceholderUntilDropWhileTopLevelDestinationReflows() {
+        let layout = PickyDockLayout(entries: [
+            .session(id: "loose"),
+            .group(PickyDockGroup(id: "group", memberSessionIDs: ["member"])),
+        ])
+
+        let groupPreview = PickyHUDDockRenderPolicy.sessionPreviewLayout(
+            layout: layout,
+            draggedSessionID: "loose",
+            destination: .group(id: "group", memberIndex: 1)
+        )
+        let bottomPreview = PickyHUDDockRenderPolicy.sessionPreviewLayout(
+            layout: layout,
+            draggedSessionID: "loose",
+            destination: .topLevel(index: 2)
+        )
+
+        #expect(PickyDockProjector.project(
+            layout: groupPreview,
+            visibleSessionIDs: ["loose", "member"]
+        ).items.map(\.stableID) == ["session:loose", "group:group"])
+        #expect(PickyDockProjector.project(
+            layout: bottomPreview,
+            visibleSessionIDs: ["loose", "member"]
+        ).items.map(\.stableID) == ["group:group", "session:loose"])
+    }
+
     @Test func sessionDragNeverShrinksRailBelowPersistedSlotCount() {
         #expect(PickyHUDDockReorderAnimationPolicy.sizingSlotCount(
             renderedSlotCount: 3,
@@ -298,15 +325,5 @@ struct PickyHUDDockRailPolicyTests {
         #expect(PickyHUDDockDragGeometry.pullOutDistance(translation, dockSide: .top) == 45)
         #expect(PickyHUDDockDragGeometry.pullOutDistance(translation, dockSide: .bottom) == -45)
         #expect(PickyHUDDockDragGeometry.pullOutThreshold(metrics: metrics) == metrics.railWidth * 0.5 + 40)
-        #expect(PickyHUDDockDragGeometry.groupDropHalfExtent(
-            orientation: .horizontal,
-            metrics: metrics,
-            fontScale: 1
-        ) == metrics.sessionTileWidth * 0.5)
-        #expect(PickyHUDDockDragGeometry.groupDropHalfExtent(
-            orientation: .vertical,
-            metrics: metrics,
-            fontScale: 1
-        ) > metrics.sessionTileHeight * 0.5)
     }
 }

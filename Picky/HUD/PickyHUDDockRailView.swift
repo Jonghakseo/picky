@@ -100,15 +100,13 @@ struct PickyHUDDockRailView: View {
     /// live projection and the drag must cancel.
     @State private var dragReferenceTopEntryIDs: [String] = []
     @State private var dragReferenceCenters: [String: CGFloat] = [:]
-    /// Folder candidates use top-entry centers, not per-session centers. Freeze
-    /// them with the slot snapshot so a session preview cannot shift the group
-    /// target under the pointer.
-    @State private var dragReferenceTopEntryCenters: [String: CGFloat] = [:]
+    /// Visible folder badge frames captured with the slot snapshot. Labels stay
+    /// clickable but do not extend the grouping drop zone or delay edge escape.
+    @State private var dragReferenceGroupDropFrames: [String: CGRect] = [:]
     /// Destination the dragged icon would land in if released *right now*.
-    /// Drives the live preview projection so siblings animate to make room
-    /// at the landing spot, but the actual `onMoveSessionInDock` commit is
-    /// deferred to release — the Pickle's group assignment only changes once
-    /// the user lets go, never while the cursor merely crosses a boundary.
+    /// Top-level destinations move the placeholder so siblings make room.
+    /// Folder destinations keep the persisted source placeholder stable; the
+    /// actual grouping commit still occurs only when the user releases.
     @State private var pendingDropContainer: PickyDockContainer?
     /// Rail-level reorder drag tracker. Survives the dragged icon's NSView
     /// being recreated when the preview reparents it across a group boundary.
@@ -133,6 +131,9 @@ struct PickyHUDDockRailView: View {
     /// Per-top-entry primary-axis centers (one per ungrouped session and
     /// one per folder tile). Drives whole-group reorder hit-testing.
     @State private var topEntryCenters: [String: CGFloat] = [:]
+    /// Visible folder badge frames in rail coordinates. Session drags freeze
+    /// these at pickup so preview reflow cannot move a drop target.
+    @State private var groupDropFrames: [String: CGRect] = [:]
     /// Currently-dragged group id (folder tile drag). Mutually exclusive with
     /// `draggingSessionID`.
     @State private var draggingGroupID: String?
@@ -164,12 +165,10 @@ struct PickyHUDDockRailView: View {
     /// ends, so a stale timer can never arm after the fact.
     @State private var sessionPullOutDwellWork: DispatchWorkItem?
 
-    /// Live render/hit-test projection. While a Pickle is being dragged, this
-    /// reflects the *prospective* drop (`pendingDropContainer`) so siblings
-    /// animate to make room at the landing spot — without persisting the
-    /// move. The actual commit happens on release. When not dragging (or the
-    /// prospective drop equals the current home) it is the persisted
-    /// projection unchanged.
+    /// Live render projection. Top-level Pickle destinations reorder its clear
+    /// placeholder without persisting. Folder destinations deliberately keep
+    /// the persisted projection because a folder accepts the Pickle rather than
+    /// introducing a linear slot. The actual move always commits on release.
     private var persistedStructure: PickyHUDDockPersistedStructure {
         PickyHUDDockRenderPolicy.persistedStructure(in: baseProjection)
     }
@@ -177,11 +176,15 @@ struct PickyHUDDockRailView: View {
     private var projection: PickyDockProjection {
         let visibleSessionIDs = baseProjection.slots.compactMap(\.sessionID)
         if let draggingSessionID,
-           let pendingDropContainer,
-           layout.container(forSessionID: draggingSessionID) != pendingDropContainer {
-            var preview = layout
-            preview.move(session: draggingSessionID, to: pendingDropContainer)
-            return PickyDockProjector.project(layout: preview, visibleSessionIDs: visibleSessionIDs)
+           let pendingDropContainer {
+            let preview = PickyHUDDockRenderPolicy.sessionPreviewLayout(
+                layout: layout,
+                draggedSessionID: draggingSessionID,
+                destination: pendingDropContainer
+            )
+            if preview != layout {
+                return PickyDockProjector.project(layout: preview, visibleSessionIDs: visibleSessionIDs)
+            }
         }
         if let draggingGroupID,
            let pendingGroupTopLevelIndex,
@@ -236,6 +239,9 @@ struct PickyHUDDockRailView: View {
         }
         .onPreferenceChange(PickyDockTopEntryCenterPreferenceKey.self) { centers in
             topEntryCenters = centers
+        }
+        .onPreferenceChange(PickyDockGroupDropFramePreferenceKey.self) { frames in
+            groupDropFrames = frames
         }
         .onChange(of: persistedStructure) { _, structure in
             cancelDragsForPersistedStructureChange(structure)
@@ -473,6 +479,7 @@ struct PickyHUDDockRailView: View {
                     slot: slot
                 )
                 .publishDockGroupBadgeFrame(groupID: group.id)
+                .publishDockGroupDropFrame(groupID: group.id)
                 .pickyDockGroupContextMenu(
                     group: group,
                     onRename: { presentRenameDialog(for: group) },
@@ -489,6 +496,7 @@ struct PickyHUDDockRailView: View {
                     slot: slot
                 )
                 .publishDockGroupBadgeFrame(groupID: group.id)
+                .publishDockGroupDropFrame(groupID: group.id)
                 .pickyDockGroupContextMenu(
                     group: group,
                     onRename: { presentRenameDialog(for: group) },
@@ -779,7 +787,7 @@ struct PickyHUDDockRailView: View {
         dragReferenceSlots = baseProjection.slots
         dragReferenceTopEntryIDs = PickyHUDDockRenderPolicy.visibleTopEntryIDs(in: baseProjection.items)
         dragReferenceCenters = slotCenters
-        dragReferenceTopEntryCenters = topEntryCenters
+        dragReferenceGroupDropFrames = groupDropFrames
     }
 
     private func handleReorderChanged(sessionID: String, translation: CGSize) {
@@ -821,13 +829,15 @@ struct PickyHUDDockRailView: View {
             slots: dragReferenceSlots,
             layout: layout,
             activeSessionIDs: activeSessionIDs,
-            topEntryCenters: dragReferenceTopEntryCenters
+            groupDropFrames: dragReferenceGroupDropFrames,
+            orientation: dockSide.orientation
         )
         let nonEmptyGroupCandidates = PickyHUDDockGroupDropCandidateBuilder.nonEmptyCandidates(
             slots: dragReferenceSlots,
             layout: layout,
             activeSessionIDs: activeSessionIDs,
-            topEntryCenters: dragReferenceTopEntryCenters
+            groupDropFrames: dragReferenceGroupDropFrames,
+            orientation: dockSide.orientation
         )
 
         let nearestDestination = PickyDockDropResolver.resolveDropContainer(
@@ -837,18 +847,12 @@ struct PickyHUDDockRailView: View {
             emptyGroupCandidates: emptyGroupCandidates,
             nonEmptyGroupCandidates: nonEmptyGroupCandidates,
             layout: layout,
-            slotPitch: PickyHUDDockDragGeometry.slotPitch(orientation: dockSide.orientation, metrics: metrics),
-            groupDropHalfExtent: PickyHUDDockDragGeometry.groupDropHalfExtent(
-                orientation: dockSide.orientation,
-                metrics: metrics,
-                fontScale: fontScale
-            )
+            slotPitch: PickyHUDDockDragGeometry.slotPitch(orientation: dockSide.orientation, metrics: metrics)
         )
 
-        // Record where the icon *would* land. This drives the live preview
-        // projection (siblings make room at the landing spot) but is NOT
-        // committed: grouping/ungrouping only happens on release, so the
-        // assignment never flickers as the cursor crosses a boundary.
+        // Record where the icon *would* land. Top-level targets move the clear
+        // placeholder; folder targets leave it at the source and rely on the
+        // badge hover affordance. Nothing persists until release.
         if let nearestDestination, pendingDropContainer != nearestDestination {
             pendingDropContainer = nearestDestination
         }
@@ -876,7 +880,7 @@ struct PickyHUDDockRailView: View {
         dragReferenceSlots = []
         dragReferenceTopEntryIDs = []
         dragReferenceCenters = [:]
-        dragReferenceTopEntryCenters = [:]
+        dragReferenceGroupDropFrames = [:]
     }
 
     private func handleReorderCanceled() {
@@ -890,7 +894,7 @@ struct PickyHUDDockRailView: View {
         dragReferenceSlots = []
         dragReferenceTopEntryIDs = []
         dragReferenceCenters = [:]
-        dragReferenceTopEntryCenters = [:]
+        dragReferenceGroupDropFrames = [:]
         activeReorderSessionID = nil
         reorderController.reset()
     }

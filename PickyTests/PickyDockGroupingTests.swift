@@ -418,12 +418,11 @@ final class PickyDockGroupingTests: XCTestCase {
 
         let destination = PickyDockDropResolver.resolveDropContainer(
             draggedSessionID: "loose",
-            cursorAxis: 100,
+            cursorAxis: 127,
             slotCandidates: slotCandidates,
-            emptyGroupCandidates: [.init(groupID: "empty", center: 100)],
+            emptyGroupCandidates: [.init(groupID: "empty", center: 100, halfExtent: 27)],
             layout: layout,
-            slotPitch: 100,
-            groupDropHalfExtent: 35
+            slotPitch: 100
         )
 
         XCTAssertEqual(destination, .group(id: "empty", memberIndex: 0))
@@ -437,12 +436,11 @@ final class PickyDockGroupingTests: XCTestCase {
 
         let destination = PickyDockDropResolver.resolveDropContainer(
             draggedSessionID: "loose",
-            cursorAxis: 145,
+            cursorAxis: 128,
             slotCandidates: [.init(container: .topLevel(index: 0), center: 0)],
-            emptyGroupCandidates: [.init(groupID: "empty", center: 100)],
+            emptyGroupCandidates: [.init(groupID: "empty", center: 100, halfExtent: 27)],
             layout: layout,
-            slotPitch: 100,
-            groupDropHalfExtent: 35
+            slotPitch: 100
         )
 
         XCTAssertEqual(destination, .topLevel(index: 2))
@@ -478,10 +476,9 @@ final class PickyDockGroupingTests: XCTestCase {
             draggedSessionID: "b",
             cursorAxis: -45,
             slotCandidates: [.init(container: .topLevel(index: 1), center: 100)],
-            emptyGroupCandidates: [.init(groupID: "g", center: 0)],
+            emptyGroupCandidates: [.init(groupID: "g", center: 0, halfExtent: 27)],
             layout: layout,
-            slotPitch: 100,
-            groupDropHalfExtent: 35
+            slotPitch: 100
         )
         XCTAssertEqual(result, .topLevel(index: 0))
     }

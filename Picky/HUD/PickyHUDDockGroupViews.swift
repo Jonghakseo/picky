@@ -116,6 +116,19 @@ extension View {
             }
         }
     }
+
+    /// Publishes only the visible folder badge in rail coordinates. The label
+    /// remains part of the folder's click area, but not its grouping drop zone.
+    func publishDockGroupDropFrame(groupID: String) -> some View {
+        background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: PickyDockGroupDropFramePreferenceKey.self,
+                    value: [groupID: proxy.frame(in: .named(PickyHUDDockRailCoordinateSpace))]
+                )
+            }
+        }
+    }
 }
 
 struct PickyDockSlotCenterPreferenceKey: PreferenceKey {
@@ -128,6 +141,13 @@ struct PickyDockSlotCenterPreferenceKey: PreferenceKey {
 struct PickyDockTopEntryCenterPreferenceKey: PreferenceKey {
     static let defaultValue: [String: CGFloat] = [:]
     static func reduce(value: inout [String: CGFloat], nextValue: () -> [String: CGFloat]) {
+        value.merge(nextValue()) { _, new in new }
+    }
+}
+
+struct PickyDockGroupDropFramePreferenceKey: PreferenceKey {
+    static let defaultValue: [String: CGRect] = [:]
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
         value.merge(nextValue()) { _, new in new }
     }
 }

@@ -778,10 +778,13 @@ describe("protocol contract fixtures", () => {
       messageRemove: { type: "messageRemove", messageId: "message-001" },
       messagesImport: { type: "messagesImport", messages: [] },
       logAppend: { type: "logAppend", line: "completed" },
+      logsSet: { type: "logsSet", logs: [] },
       toolUpsert: { type: "toolUpsert", tool: { toolCallId: "tool-001", name: "read", status: "succeeded" } },
+      toolsSet: { type: "toolsSet", tools: [] },
       todoSet: { type: "todoSet", todoState: null },
       subagentRunsSet: { type: "subagentRunsSet", runs: [] },
       artifactUpsert: { type: "artifactUpsert", artifact: { id: "artifact-001", kind: "report", title: "Report", updatedAt: "2026-08-24T00:00:00.000Z" } },
+      artifactsSet: { type: "artifactsSet", artifacts: [] },
       changedFilesSet: { type: "changedFilesSet", changedFiles: [] },
       queueSet: { type: "queueSet", queuedSteers: [], queuedFollowUps: [], steeringMode: "one-at-a-time", followUpMode: "one-at-a-time" },
       activitySet: { type: "activitySet", activitySummary: { read: 0, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 } },
@@ -863,18 +866,27 @@ describe("protocol contract fixtures", () => {
     });
   });
 
-  it("decodes a projection snapshot recovery command without changing the protocol version", () => {
+  it("requires projection snapshot recovery command and request IDs to match", () => {
     expect(CommandEnvelopeSchema.parse({
-      id: "cmd-projection-recovery",
+      id: "recovery-001",
       protocolVersion: PROTOCOL_VERSION,
       type: "getSessionProjectionSnapshot",
       requestId: "recovery-001",
       sessionId: "session-001",
     })).toMatchObject({
+      id: "recovery-001",
       type: "getSessionProjectionSnapshot",
       requestId: "recovery-001",
       sessionId: "session-001",
     });
+
+    expect(() => CommandEnvelopeSchema.parse({
+      id: "cmd-projection-recovery",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "getSessionProjectionSnapshot",
+      requestId: "recovery-001",
+      sessionId: "session-001",
+    })).toThrow("getSessionProjectionSnapshot requestId must equal command id");
   });
 
   it("rejects invalid protocol versions", () => {

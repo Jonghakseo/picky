@@ -1,5 +1,5 @@
 {
-  "id": "cmd-projection-recovery-001",
+  "id": "recovery-001",
   "protocolVersion": "2026-08-25",
   "type": "getSessionProjectionSnapshot",
   "requestId": "recovery-001",

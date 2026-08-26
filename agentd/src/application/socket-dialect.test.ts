@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isLegacySessionProjectionEventType, SocketDialectRegistry } from "./socket-dialect.js";
+import { isLegacySessionProjectionEvent, isLegacySessionProjectionEventType, SocketDialectRegistry } from "./socket-dialect.js";
 
 describe("SocketDialectRegistry", () => {
   it("starts negotiating, locks from capabilities, and never changes dialect", () => {
@@ -24,7 +24,21 @@ describe("SocketDialectRegistry", () => {
     expect(registry.lockLegacyProjection(socket)).toBe("v1");
   });
 
-  it("keeps rewind draft restoration available to v2 sockets", () => {
+  it("keeps side-effect events available to both socket dialects", () => {
     expect(isLegacySessionProjectionEventType("sessionRewound")).toBe(false);
+    expect(isLegacySessionProjectionEventType("sessionResourcesReloaded")).toBe(false);
+    expect(isLegacySessionProjectionEventType("terminalSessionSyncOutcome")).toBe(false);
+  });
+
+  it("keeps only non-blocking editor text requests outside the legacy projection", () => {
+    expect(isLegacySessionProjectionEvent({
+      type: "extensionUiRequest",
+      request: { method: "set_editor_text" },
+    })).toBe(false);
+    expect(isLegacySessionProjectionEvent({
+      type: "extensionUiRequest",
+      request: { method: "askUserQuestion" },
+    })).toBe(true);
+    expect(isLegacySessionProjectionEvent({ type: "sessionUpdated" })).toBe(true);
   });
 });

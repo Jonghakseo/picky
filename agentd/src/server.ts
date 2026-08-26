@@ -9,7 +9,7 @@ import { APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT, boundedSessionForAppHydration, compa
 import { ProjectionRecoveryRequestGate } from "./application/session-projection-recovery.js";
 import { SessionProjectionV2Broadcaster } from "./application/session-projection-v2-broadcaster.js";
 import { assertProtocolVersion } from "./application/protocol-version-guard.js";
-import { isLegacySessionProjectionEventType, isV2SessionProjectionEventType, SocketDialectRegistry } from "./application/socket-dialect.js";
+import { isLegacySessionProjectionEvent, isV2SessionProjectionEventType, SocketDialectRegistry } from "./application/socket-dialect.js";
 import type { SessionSupervisor } from "./session-supervisor.js";
 import { logAgentd } from "./local-log.js";
 import { EdgeTTSServiceError } from "./edge-tts-service.js";
@@ -998,7 +998,7 @@ export class AgentdServer {
     let type: string | undefined;
     let clients = 0;
     for (const client of this.clients) {
-      if (isLegacySessionProjectionEventType(event.type) && this.socketDialects.get(client) !== "v1") continue;
+      if (isLegacySessionProjectionEvent(event) && this.socketDialects.get(client) !== "v1") continue;
       const sent = this.send(client, event);
       bytes = sent.bytes;
       type = sent.type;
@@ -1022,7 +1022,7 @@ export class AgentdServer {
   }
 
   private send(ws: WebSocket, payload: EventPayload): { bytes: number; type: string } {
-    if ((isLegacySessionProjectionEventType(payload.type) && this.socketDialects.get(ws) !== "v1") || (isV2SessionProjectionEventType(payload.type) && this.socketDialects.get(ws) !== "v2")) return { bytes: 0, type: payload.type };
+    if ((isLegacySessionProjectionEvent(payload) && this.socketDialects.get(ws) !== "v1") || (isV2SessionProjectionEventType(payload.type) && this.socketDialects.get(ws) !== "v2")) return { bytes: 0, type: payload.type };
     const event: EventEnvelope = sanitizeForJson({ id: `event-${randomUUID()}`, protocolVersion: PROTOCOL_VERSION, timestamp: new Date().toISOString(), ...payload } as EventEnvelope);
     const json = JSON.stringify(event);
     logAgentd("event sent", eventLogFields(event));

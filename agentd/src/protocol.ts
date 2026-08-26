@@ -394,10 +394,13 @@ export const PickySessionProjectionMutationVariantSchema = z.discriminatedUnion(
   z.object({ type: z.literal("messageRemove"), messageId: z.string() }),
   z.object({ type: z.literal("messagesImport"), messages: z.array(PickySessionMessageSchema) }),
   z.object({ type: z.literal("logAppend"), line: z.string() }),
+  z.object({ type: z.literal("logsSet"), logs: z.array(z.string()) }),
   z.object({ type: z.literal("toolUpsert"), tool: PickyToolActivitySchema }),
+  z.object({ type: z.literal("toolsSet"), tools: z.array(PickyToolActivitySchema) }),
   z.object({ type: z.literal("todoSet"), todoState: PickyTodoStateSchema.nullable() }),
   z.object({ type: z.literal("subagentRunsSet"), runs: z.array(PickySubagentRunSchema) }),
   z.object({ type: z.literal("artifactUpsert"), artifact: PickyArtifactSchema }),
+  z.object({ type: z.literal("artifactsSet"), artifacts: z.array(PickyArtifactSchema) }),
   z.object({ type: z.literal("changedFilesSet"), changedFiles: z.array(PickyChangedFileSchema) }),
   z.object({ type: z.literal("queueSet"), queuedSteers: z.array(PickyQueueItemSchema), queuedFollowUps: z.array(PickyQueueItemSchema), steeringMode: PickyQueueModeSchema, followUpMode: PickyQueueModeSchema }),
   z.object({ type: z.literal("activitySet"), activitySummary: PickyActivitySummarySchema }),
@@ -644,7 +647,15 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("checkPackageUpdates") }),
   CommandBaseSchema.extend({ type: z.literal("updatePackage"), source: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("reloadPlugins") }),
-]);
+]).superRefine((command, context) => {
+  if (command.type === "getSessionProjectionSnapshot" && command.id !== command.requestId) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["requestId"],
+      message: "getSessionProjectionSnapshot requestId must equal command id",
+    });
+  }
+});
 
 type CommandEnvelope = z.infer<typeof CommandEnvelopeSchema>;
 

@@ -11,11 +11,11 @@ const LEGACY_SESSION_PROJECTION_COMMANDS = new Set([
 // V2 sockets must never receive legacy sequence-based session state. Non-session
 // controls remain available during negotiation and are intentionally excluded.
 const LEGACY_SESSION_PROJECTION_EVENT_TYPES = new Set([
-  "sessionSnapshot", "sessionUpdated", "sessionMetaUpdated", "sessionArchivedAuthoritative", "sessionResourcesReloaded",
+  "sessionSnapshot", "sessionUpdated", "sessionMetaUpdated", "sessionArchivedAuthoritative",
   "sessionLogAppended", "extensionUiRequest", "toolActivityUpdated", "sessionTodoStateUpdated",
   "sessionSubagentRunsUpdated", "sessionQueueUpdated", "sessionActivityUpdated", "sessionMessageAppended",
   "sessionMessagesImported", "sessionMessageReplaced", "sessionMessageRemoved",
-  "artifactUpdated", "terminalSessionSyncOutcome",
+  "artifactUpdated",
 ]);
 
 export function isLegacySessionProjectionCommand(type: string): boolean {
@@ -28,6 +28,23 @@ const V2_SESSION_PROJECTION_EVENT_TYPES = new Set([
 
 export function isLegacySessionProjectionEventType(type: string): boolean {
   return LEGACY_SESSION_PROJECTION_EVENT_TYPES.has(type);
+}
+
+/**
+ * `set_editor_text` is a fire-and-forget composer control, not persisted
+ * session state. It remains available to v2 sockets while interactive
+ * extension UI continues to arrive through projection mutations.
+ */
+export function isLegacySessionProjectionEvent(event: { type: string; request?: unknown }): boolean {
+  return isLegacySessionProjectionEventType(event.type)
+    && !(event.type === "extensionUiRequest" && isSetEditorTextRequest(event.request));
+}
+
+function isSetEditorTextRequest(request: unknown): boolean {
+  return typeof request === "object"
+    && request !== null
+    && "method" in request
+    && request.method === "set_editor_text";
 }
 
 export function isV2SessionProjectionEventType(type: string): boolean {

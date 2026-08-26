@@ -16,6 +16,18 @@
       }
     },
     {
+      "type": "logsSet",
+      "logs": []
+    },
+    {
+      "type": "toolsSet",
+      "tools": []
+    },
+    {
+      "type": "artifactsSet",
+      "artifacts": []
+    },
+    {
       "type": "finalAnswerSet",
       "finalAnswer": "Completed successfully."
     }

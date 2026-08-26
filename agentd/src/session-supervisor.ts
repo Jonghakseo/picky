@@ -2899,7 +2899,7 @@ export class SessionSupervisor extends EventEmitter {
         ? titleForEmptyPickleSession({ ...(nextContext ?? {}), cwd } as PickyContextPacket)
         : current.title,
       sessionFilePath: event.sessionFilePath,
-    }), { emitFullSession: true });
+    }), { emitFullSession: true, forceCollectionReplacements: true });
     logAgentd("runtime session replaced", { sessionId, reason: event.reason, cwd, sessionFilePath: event.sessionFilePath });
   }
 
@@ -2942,8 +2942,8 @@ export class SessionSupervisor extends EventEmitter {
     };
   }
   private async finalizeTerminal(sessionId: string, event: Extract<RuntimeEvent, { type: "status" }>): Promise<void> { await finalizeTerminalOperation(this.terminalDurableCommitDependencies(), sessionId, event); }
-  private async patch(sessionId: string, patch: Partial<PickyAgentSession>, options: { emitSession?: boolean; emitFullSession?: boolean } = {}): Promise<void> {
-    const commit = await this.commitSession(sessionId, (current) => isSemanticNoOpPatch(current, patch) ? current : { ...current, ...patch, updatedAt: new Date().toISOString() });
+  private async patch(sessionId: string, patch: Partial<PickyAgentSession>, options: { emitSession?: boolean; emitFullSession?: boolean; forceCollectionReplacements?: boolean } = {}): Promise<void> {
+    const commit = await this.commitSession(sessionId, (current) => isSemanticNoOpPatch(current, patch) ? current : { ...current, ...patch, updatedAt: new Date().toISOString() }, options);
     if (commit.changed && (options.emitSession ?? true)) this.emit(options.emitFullSession ? "session" : "sessionMeta", commit.after);
   }
   private async updateTodoState(sessionId: string, todoState: PickyAgentSession["todoState"]): Promise<void> {
@@ -2955,15 +2955,15 @@ export class SessionSupervisor extends EventEmitter {
     await this.commitSession(sessionId, (current) => ({ ...current, ...patch, messages: [...messages], updatedAt: new Date().toISOString() }));
   }
   private async commitSession(session: PickyAgentSession): Promise<SessionCommit>;
-  private async commitSession(sessionId: string, build: (current: PickyAgentSession) => PickyAgentSession): Promise<SessionCommit>;
-  private async commitSession(sessionOrId: PickyAgentSession | string, build?: (current: PickyAgentSession) => PickyAgentSession): Promise<SessionCommit> {
+  private async commitSession(sessionId: string, build: (current: PickyAgentSession) => PickyAgentSession, options?: { forceCollectionReplacements?: boolean }): Promise<SessionCommit>;
+  private async commitSession(sessionOrId: PickyAgentSession | string, build?: (current: PickyAgentSession) => PickyAgentSession, options: { forceCollectionReplacements?: boolean } = {}): Promise<SessionCommit> {
     const sessionId = typeof sessionOrId === "string" ? sessionOrId : sessionOrId.id; let result: SessionCommit | undefined;
     await this.runSessionWrite(sessionId, async () => {
       const before = this.sessions.get(sessionId); const proposed = typeof sessionOrId === "string" ? build!(this.mustGet(sessionId)) : sessionOrId;
       const changed = proposed !== before; const after = changed && before ? { ...proposed, revision: nextRevision(before.revision ?? 0, true) } : proposed;
       if (changed) {
         await this.store.save(after); this.sessions.set(sessionId, after);
-        if (before) { const mutations = buildSessionProjectionMutations(before, after); if (mutations.length > 0) this.emit("sessionProjectionTransaction", sessionId, before, after, mutations, this.sessionProjectionEpoch); }
+        if (before) { const mutations = buildSessionProjectionMutations(before, after, options); if (mutations.length > 0) this.emit("sessionProjectionTransaction", sessionId, before, after, mutations, this.sessionProjectionEpoch); }
         else this.emit("sessionProjectionSnapshot", after, this.sessionProjectionEpoch);
       }
       result = { before, after, changed };

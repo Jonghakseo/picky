@@ -188,6 +188,128 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
+  it("delivers empty /new collection replacements to v2 sockets without legacy session frames", async () => {
+    const session = await supervisor.create(context("session replacement v2 projection"));
+
+    const { ws } = await connectWithHello();
+    trackEvents(ws);
+    await registerV2(ws, "cmd-register-v2-session-replacement");
+    await waitUntil(() => eventBuffers.get(ws)?.some((event) => event.type === "sessionProjectionSnapshot" && event.sessionId === session.id) === true);
+    eventBuffers.get(ws)?.splice(0);
+
+    await (supervisor as unknown as {
+      applyRuntimeEvent(sessionId: string, event: { type: "session_replaced"; reason: "new"; cwd: string; sessionFilePath: string }): Promise<void>;
+    }).applyRuntimeEvent(session.id, {
+      type: "session_replaced",
+      reason: "new",
+      cwd: "/tmp/new-project",
+      sessionFilePath: "/tmp/new-session.jsonl",
+    });
+
+    const transaction = await waitForEvent(ws, "sessionProjectionTransaction");
+    expect(transaction).toMatchObject({
+      sessionId: session.id,
+      mutations: expect.arrayContaining([
+        { type: "logsSet", logs: [] },
+        { type: "toolsSet", tools: [] },
+        { type: "artifactsSet", artifacts: [] },
+      ]),
+    });
+    expect(eventBuffers.get(ws)?.filter((event) => isLegacyProjection(event))).toEqual([]);
+    ws.close();
+  });
+
+  it("delivers sessionResourcesReloaded to both v1 and v2 sockets", async () => {
+    const v1 = await connectWithHello();
+    v1.ws.send(JSON.stringify({ id: "cmd-lock-resources-v1", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
+    await waitForEvent(v1.ws, "sessionSnapshot");
+    await waitForEvent(v1.ws, "ack");
+
+    const v2 = await connectWithHello();
+    await registerV2(v2.ws, "cmd-register-resources-v2");
+
+    const v1Reloaded = waitForEvent(v1.ws, "sessionResourcesReloaded");
+    const v2Reloaded = waitForEvent(v2.ws, "sessionResourcesReloaded");
+    supervisor.emit("resourcesReloaded", "session-resources");
+
+    await expect(v1Reloaded).resolves.toMatchObject({ type: "sessionResourcesReloaded", sessionId: "session-resources" });
+    await expect(v2Reloaded).resolves.toMatchObject({ type: "sessionResourcesReloaded", sessionId: "session-resources" });
+    v1.ws.close();
+    v2.ws.close();
+  });
+
+  it("delivers terminalSessionSyncOutcome to both v1 and v2 sockets", async () => {
+    const v1 = await connectWithHello();
+    v1.ws.send(JSON.stringify({ id: "cmd-lock-terminal-outcome-v1", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
+    await waitForEvent(v1.ws, "sessionSnapshot");
+    await waitForEvent(v1.ws, "ack");
+
+    const v2 = await connectWithHello();
+    await registerV2(v2.ws, "cmd-register-terminal-outcome-v2");
+
+    const v1Outcome = waitForEvent(v1.ws, "terminalSessionSyncOutcome");
+    const v2Outcome = waitForEvent(v2.ws, "terminalSessionSyncOutcome");
+    supervisor.emit("terminalSessionSyncOutcome", "session-terminal", {
+      baselineFound: true,
+      importedMessageCount: 3,
+      activeLastMessageId: "message-active",
+      baselinePiMessageId: "message-baseline",
+    });
+
+    const expectedOutcome = {
+      type: "terminalSessionSyncOutcome",
+      sessionId: "session-terminal",
+      baselineFound: true,
+      importedMessageCount: 3,
+      activeLastMessageId: "message-active",
+      baselinePiMessageId: "message-baseline",
+    };
+    await expect(v1Outcome).resolves.toMatchObject(expectedOutcome);
+    await expect(v2Outcome).resolves.toMatchObject(expectedOutcome);
+    v1.ws.close();
+    v2.ws.close();
+  });
+
+  it("delivers non-blocking editor text requests to v2 without replaying interactive UI", async () => {
+    const v1 = await connectWithHello();
+    v1.ws.send(JSON.stringify({ id: "cmd-lock-editor-text-v1", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
+    await waitForEvent(v1.ws, "sessionSnapshot");
+    await waitForEvent(v1.ws, "ack");
+
+    const v2 = await connectWithHello();
+    await registerV2(v2.ws, "cmd-register-editor-text-v2");
+
+    const editorTextRequest = {
+      id: "editor-text-1",
+      sessionId: "session-editor",
+      method: "set_editor_text",
+      text: "Review these changes",
+      createdAt: "2026-08-26T00:00:00.000Z",
+    } satisfies PickyExtensionUiRequest;
+    const v1EditorText = waitForEvent(v1.ws, "extensionUiRequest");
+    const v2EditorText = waitForEvent(v2.ws, "extensionUiRequest");
+    supervisor.emit("extensionUiRequest", editorTextRequest);
+
+    await expect(v1EditorText).resolves.toMatchObject({ type: "extensionUiRequest", request: editorTextRequest });
+    await expect(v2EditorText).resolves.toMatchObject({ type: "extensionUiRequest", request: editorTextRequest });
+
+    const interactiveRequest = {
+      id: "interactive-ui-1",
+      sessionId: "session-editor",
+      method: "askUserQuestion",
+      title: "Continue?",
+      createdAt: "2026-08-26T00:00:01.000Z",
+    } satisfies PickyExtensionUiRequest;
+    const v1Interactive = waitForEvent(v1.ws, "extensionUiRequest");
+    const unexpectedV2Interactive = nextEventWithin(v2.ws, 50);
+    supervisor.emit("extensionUiRequest", interactiveRequest);
+
+    await expect(v1Interactive).resolves.toMatchObject({ type: "extensionUiRequest", request: interactiveRequest });
+    await expect(unexpectedV2Interactive).resolves.toBeUndefined();
+    v1.ws.close();
+    v2.ws.close();
+  });
+
   it("fails protocol mismatches before any projection is selected or emitted", async () => {
     await supervisor.create(context("version mismatch"));
     const { ws } = await connectWithHello();
@@ -216,14 +338,14 @@ describe("AgentdServer", () => {
     await waitForEvent(ws, "ack");
 
     ws.send(JSON.stringify({
-      id: "cmd-v1-projection-recovery",
+      id: "recovery-v1",
       protocolVersion: PROTOCOL_VERSION,
       type: "getSessionProjectionSnapshot",
       requestId: "recovery-v1",
       sessionId: session.id,
     }));
     await expect(waitForEvent(ws, "error")).resolves.toMatchObject({
-      commandId: "cmd-v1-projection-recovery",
+      commandId: "recovery-v1",
       message: "Session projection recovery requires v2 socket dialect",
     });
     ws.close();
@@ -609,7 +731,7 @@ describe("AgentdServer", () => {
     const observerFrames: string[] = [];
     observer.ws.on("message", (data) => observerFrames.push(data.toString()));
     requester.ws.send(JSON.stringify({
-      id: "cmd-projection-recovery",
+      id: "recovery-001",
       protocolVersion: PROTOCOL_VERSION,
       type: "getSessionProjectionSnapshot",
       requestId: "recovery-001",
@@ -639,7 +761,7 @@ describe("AgentdServer", () => {
     const { ws } = await connectWithHello();
     await registerV2(ws, "cmd-register-missing-recovery");
     ws.send(JSON.stringify({
-      id: "cmd-missing-projection-recovery",
+      id: "recovery-missing",
       protocolVersion: PROTOCOL_VERSION,
       type: "getSessionProjectionSnapshot",
       requestId: "recovery-missing",
@@ -647,8 +769,45 @@ describe("AgentdServer", () => {
     }));
 
     await expect(waitForEvent(ws, "error")).resolves.toMatchObject({
-      commandId: "cmd-missing-projection-recovery",
+      commandId: "recovery-missing",
       message: "Unknown session: missing-session",
+    });
+    ws.close();
+  });
+
+  it("releases an oversized recovery gate so the same session can retry", async () => {
+    const { ws } = await connectWithHello();
+    await registerV2(ws, "cmd-register-retry-recovery");
+    const session = await supervisor.create(context("retry projection recovery"));
+    vi.spyOn(supervisor, "withSessionProjectionBarrier").mockImplementationOnce(async (_, work) => {
+      await work({
+        session: { ...session, id: "s".repeat(9 * 1024 * 1024) },
+        epoch: "test-epoch",
+      });
+    });
+
+    ws.send(JSON.stringify({
+      id: "recovery-failed",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "getSessionProjectionSnapshot",
+      requestId: "recovery-failed",
+      sessionId: session.id,
+    }));
+    await expect(waitForEvent(ws, "error")).resolves.toMatchObject({
+      commandId: "recovery-failed",
+      message: `Projection recovery snapshot exceeds the app frame budget: ${session.id}`,
+    });
+
+    ws.send(JSON.stringify({
+      id: "recovery-retry",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "getSessionProjectionSnapshot",
+      requestId: "recovery-retry",
+      sessionId: session.id,
+    }));
+    await expect(waitForMatchingEvent(ws, (event) => event.type === "sessionProjectionSnapshot" && event.requestId === "recovery-retry")).resolves.toMatchObject({
+      sessionId: session.id,
+      requestId: "recovery-retry",
     });
     ws.close();
   });
@@ -660,7 +819,7 @@ describe("AgentdServer", () => {
     const barrier = vi.spyOn(supervisor, "withSessionProjectionBarrier");
 
     ws.send(JSON.stringify({
-      id: "cmd-projection-barrier",
+      id: "recovery-barrier",
       protocolVersion: PROTOCOL_VERSION,
       type: "getSessionProjectionSnapshot",
       requestId: "recovery-barrier",
@@ -688,7 +847,7 @@ describe("AgentdServer", () => {
     });
 
     ws.send(JSON.stringify({
-      id: "cmd-projection-first",
+      id: "recovery-first",
       protocolVersion: PROTOCOL_VERSION,
       type: "getSessionProjectionSnapshot",
       requestId: "recovery-first",
@@ -696,7 +855,7 @@ describe("AgentdServer", () => {
     }));
     await enteredBarrier;
     ws.send(JSON.stringify({
-      id: "cmd-projection-duplicate",
+      id: "recovery-duplicate",
       protocolVersion: PROTOCOL_VERSION,
       type: "getSessionProjectionSnapshot",
       requestId: "recovery-duplicate",
@@ -704,7 +863,7 @@ describe("AgentdServer", () => {
     }));
 
     await expect(waitForEvent(ws, "error")).resolves.toMatchObject({
-      commandId: "cmd-projection-duplicate",
+      commandId: "recovery-duplicate",
       message: `Projection recovery already pending for session: ${session.id}`,
     });
     release();

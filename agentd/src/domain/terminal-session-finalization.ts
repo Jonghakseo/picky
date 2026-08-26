@@ -125,21 +125,29 @@ export function finalizeTerminalSession(input: TerminalSessionFinalizationInput)
  * finalization and ordinary supervisor commits share this planner so their
  * projections cannot drift into two ownership models.
  */
-export function buildSessionProjectionMutations(before: Readonly<PickyAgentSession>, after: PickyAgentSession): PickySessionProjectionMutation[] {
+export function buildSessionProjectionMutations(
+  before: Readonly<PickyAgentSession>,
+  after: PickyAgentSession,
+  options: { forceCollectionReplacements?: boolean } = {},
+): PickySessionProjectionMutation[] {
   return [
     ...metaMutations(before, after),
-    ...logMutations(before, after),
+    ...logMutations(before, after, options.forceCollectionReplacements),
     ...messageMutations(before, after),
-    ...toolAndStateMutations(before, after),
-    ...artifactAndPresentationMutations(before, after),
+    ...toolAndStateMutations(before, after, options.forceCollectionReplacements),
+    ...artifactAndPresentationMutations(before, after, options.forceCollectionReplacements),
   ];
 }
 
-function logMutations(before: Readonly<PickyAgentSession>, after: PickyAgentSession): PickySessionProjectionMutation[] {
+function logMutations(before: Readonly<PickyAgentSession>, after: PickyAgentSession, forceReplacement = false): PickySessionProjectionMutation[] {
   const previous = before.logs;
   const next = after.logs;
-  if (next.length <= previous.length || !previous.every((line, index) => line === next[index])) return [];
-  return next.slice(previous.length).map((line) => ({ type: "logAppend" as const, line }));
+  if (forceReplacement) return [{ type: "logsSet", logs: next }];
+  if (same(previous, next)) return [];
+  if (next.length > previous.length && previous.every((line, index) => line === next[index])) {
+    return next.slice(previous.length).map((line) => ({ type: "logAppend" as const, line }));
+  }
+  return [{ type: "logsSet", logs: next }];
 }
 
 function metaMutations(before: Readonly<PickyAgentSession>, after: PickyAgentSession): PickySessionProjectionMutation[] {
@@ -163,22 +171,30 @@ function messageMutations(before: Readonly<PickyAgentSession>, after: PickyAgent
   return mutations;
 }
 
-function toolAndStateMutations(before: Readonly<PickyAgentSession>, after: PickyAgentSession): PickySessionProjectionMutation[] {
+function toolAndStateMutations(before: Readonly<PickyAgentSession>, after: PickyAgentSession, forceReplacement = false): PickySessionProjectionMutation[] {
   const mutations: PickySessionProjectionMutation[] = [];
   const beforeTools = new Map(before.tools.map((tool) => [tool.toolCallId, tool]));
-  for (const tool of after.tools) {
-    if (!same(beforeTools.get(tool.toolCallId), tool)) mutations.push({ type: "toolUpsert", tool });
+  if (forceReplacement || before.tools.some((tool) => !after.tools.some((candidate) => candidate.toolCallId === tool.toolCallId))) {
+    mutations.push({ type: "toolsSet", tools: after.tools });
+  } else {
+    for (const tool of after.tools) {
+      if (!same(beforeTools.get(tool.toolCallId), tool)) mutations.push({ type: "toolUpsert", tool });
+    }
   }
   if (!same(before.todoState, after.todoState)) mutations.push({ type: "todoSet", todoState: after.todoState ?? null });
   if (!same(before.subagentRuns ?? [], after.subagentRuns ?? [])) mutations.push({ type: "subagentRunsSet", runs: after.subagentRuns ?? [] });
   return mutations;
 }
 
-function artifactAndPresentationMutations(before: Readonly<PickyAgentSession>, after: PickyAgentSession): PickySessionProjectionMutation[] {
+function artifactAndPresentationMutations(before: Readonly<PickyAgentSession>, after: PickyAgentSession, forceReplacement = false): PickySessionProjectionMutation[] {
   const mutations: PickySessionProjectionMutation[] = [];
   const beforeArtifacts = new Map(before.artifacts.map((artifact) => [artifact.id, artifact]));
-  for (const artifact of after.artifacts) {
-    if (!same(beforeArtifacts.get(artifact.id), artifact)) mutations.push({ type: "artifactUpsert", artifact });
+  if (forceReplacement || before.artifacts.some((artifact) => !after.artifacts.some((candidate) => candidate.id === artifact.id))) {
+    mutations.push({ type: "artifactsSet", artifacts: after.artifacts });
+  } else {
+    for (const artifact of after.artifacts) {
+      if (!same(beforeArtifacts.get(artifact.id), artifact)) mutations.push({ type: "artifactUpsert", artifact });
+    }
   }
   if (!same(before.changedFiles, after.changedFiles)) mutations.push({ type: "changedFilesSet", changedFiles: after.changedFiles });
   if (!sameQueue(before, after)) {

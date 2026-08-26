@@ -2,7 +2,7 @@ import { appendFile, mkdir, mkdtemp, readFile, truncate, writeFile } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import type { ModelCycleDirection, PickyAgentSession, PickyContextPacket, PickyMainAgentState, PickyPreparedVisualNarrationVisual, PickySessionMessage, PickyVisualNarrationSegmentIdentity } from "./protocol.js";
+import type { ModelCycleDirection, PickyAgentSession, PickyContextPacket, PickyMainAgentState, PickyPreparedVisualNarrationVisual, PickySessionMessage, PickySessionProjectionMutation, PickyVisualNarrationSegmentIdentity } from "./protocol.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import type { BuiltPrompt } from "./prompt-builder.js";
 import type { AgentRuntime, AnswerExtensionUiOptions, RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeTodoStateResolution, ThinkingLevel } from "./runtime/types.js";
@@ -2033,9 +2033,14 @@ describe("SessionSupervisor", () => {
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
     const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "기존 작업", instructions: "Investigate the request" });
+    const projectionMutations: PickySessionProjectionMutation[][] = [];
+    supervisor.on("sessionProjectionTransaction", (_sessionId, _before, _after, mutations: readonly PickySessionProjectionMutation[]) => {
+      projectionMutations.push([...mutations]);
+    });
 
     runtime.handle?.emit({ type: "assistant_delta", delta: "기존 답변" });
     runtime.handle?.emit({ type: "tool", toolCallId: "tool-1", name: "bash", status: "running", preview: "old tool" });
+    runtime.handle?.emit({ type: "tool", toolCallId: "tool-write", name: "write", status: "succeeded", filePath: "/tmp/old-report.md", fileExistedBefore: false });
     runtime.handle?.emit({
       type: "todo_state",
       todoState: {
@@ -2045,6 +2050,7 @@ describe("SessionSupervisor", () => {
     });
     await waitUntil(() => (supervisor.get(pickle.id)?.messages?.length ?? 0) > 0);
     await waitUntil(() => (supervisor.get(pickle.id)?.tools.length ?? 0) > 0);
+    await waitUntil(() => supervisor.get(pickle.id)?.artifacts.length === 1);
     await waitUntil(() => supervisor.get(pickle.id)?.todoState?.tasks[0]?.id === "old-todo");
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     expect(supervisor.get(pickle.id)?.messages?.length).toBeGreaterThan(0);
@@ -2070,6 +2076,38 @@ describe("SessionSupervisor", () => {
     expect(updated.todoState).toBeUndefined();
     expect(updated.activitySummary).toEqual({ read: 0, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 });
     expect(updated.piSessionFilePath).toBe("/tmp/manual-new-session-1.jsonl");
+
+    const resetMutations = projectionMutations.find((mutations) => mutations.some((mutation) => mutation.type === "logsSet"));
+    expect(resetMutations).toEqual(expect.arrayContaining([
+      { type: "logsSet", logs: [] },
+      { type: "toolsSet", tools: [] },
+      { type: "artifactsSet", artifacts: [] },
+    ]));
+  });
+
+  it("emits empty collection replacements when /new replaces an already-empty session", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-replaced-empty-collections-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("empty session replacement"));
+    const projectionMutations: PickySessionProjectionMutation[][] = [];
+    supervisor.on("sessionProjectionTransaction", (_sessionId, _before, _after, mutations: readonly PickySessionProjectionMutation[]) => {
+      projectionMutations.push([...mutations]);
+    });
+
+    await runtime.handle!.newSession();
+    await waitUntil(() => projectionMutations.some((mutations) => mutations.some((mutation) => mutation.type === "logsSet")));
+
+    const resetMutations = projectionMutations.find((mutations) => mutations.some((mutation) => mutation.type === "logsSet"));
+    expect(resetMutations).toEqual(expect.arrayContaining([
+      { type: "logsSet", logs: [] },
+      { type: "toolsSet", tools: [] },
+      { type: "artifactsSet", artifacts: [] },
+    ]));
+    expect(supervisor.get(session.id)?.logs).toEqual([]);
+    expect(supervisor.get(session.id)?.tools).toEqual([]);
+    expect(supervisor.get(session.id)?.artifacts).toEqual([]);
   });
 
   it("clears subagent runs when /new replaces the underlying Pi session", async () => {

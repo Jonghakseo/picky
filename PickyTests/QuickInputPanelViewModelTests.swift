@@ -112,6 +112,7 @@ struct QuickInputPanelViewModelTests {
 
         manager.panelDidFinishSending(success: false, errorMessage: nil)
 
+        #expect(!manager.isPanelVisible)
         #expect(viewModel.recipient == recipient)
         #expect(viewModel.recipient.prompt == "Message Investigate logs…")
         #expect(!viewModel.recipient.showsMainAgentHistory)
@@ -119,6 +120,7 @@ struct QuickInputPanelViewModelTests {
         manager.dismiss()
         manager.presentPanel(near: .zero, recipient: .main)
 
+        #expect(!manager.isPanelVisible)
         #expect(viewModel.recipient == .main)
 
         manager.dismiss()

@@ -1400,6 +1400,7 @@ struct PickyConversationComposerView: View {
     }
 
     private func installKeyDownMonitorIfNeeded() {
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }
         guard keyDownMonitor == nil else { return }
         keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             guard isFocused, !isComposerInputDisabled else { return event }

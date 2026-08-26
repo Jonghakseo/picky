@@ -33,7 +33,8 @@ class WindowPositionManager {
 
     /// Returns true if the app has Accessibility permission.
     static func hasAccessibilityPermission() -> Bool {
-        AXIsProcessTrusted()
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return false }
+        return AXIsProcessTrusted()
     }
 
     /// Presents exactly one permission path per tap: the system prompt on the first
@@ -84,9 +85,10 @@ class WindowPositionManager {
 
     /// Returns true if Screen Recording permission is granted.
     static func hasScreenRecordingPermission() -> Bool {
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return false }
         let hasScreenRecordingPermissionNow = CGPreflightScreenCaptureAccess()
         if hasScreenRecordingPermissionNow {
-            UserDefaults.standard.set(true, forKey: hasPreviouslyConfirmedScreenRecordingPermissionUserDefaultsKey)
+            PickyRuntimeEnvironment.userDefaults.set(true, forKey: hasPreviouslyConfirmedScreenRecordingPermissionUserDefaultsKey)
         }
         return hasScreenRecordingPermissionNow
     }
@@ -98,7 +100,7 @@ class WindowPositionManager {
     static func shouldTreatScreenRecordingPermissionAsGrantedForSessionLaunch() -> Bool {
         shouldTreatScreenRecordingPermissionAsGrantedForSessionLaunch(
             hasScreenRecordingPermissionNow: hasScreenRecordingPermission(),
-            hasPreviouslyConfirmedScreenRecordingPermission: UserDefaults.standard.bool(forKey: hasPreviouslyConfirmedScreenRecordingPermissionUserDefaultsKey)
+            hasPreviouslyConfirmedScreenRecordingPermission: PickyRuntimeEnvironment.userDefaults.bool(forKey: hasPreviouslyConfirmedScreenRecordingPermissionUserDefaultsKey)
         )
     }
 
@@ -110,7 +112,7 @@ class WindowPositionManager {
     }
 
     static func clearPreviouslyConfirmedScreenRecordingPermission() {
-        UserDefaults.standard.removeObject(forKey: hasPreviouslyConfirmedScreenRecordingPermissionUserDefaultsKey)
+        PickyRuntimeEnvironment.userDefaults.removeObject(forKey: hasPreviouslyConfirmedScreenRecordingPermissionUserDefaultsKey)
     }
 
     /// Prompts the system dialog for Screen Recording permission.

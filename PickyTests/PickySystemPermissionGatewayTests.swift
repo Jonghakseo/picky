@@ -3,6 +3,7 @@
 //  PickyTests
 //
 
+import Speech
 import Testing
 @testable import Picky
 
@@ -20,6 +21,38 @@ struct PickySystemPermissionGatewayTests {
 
         await #expect(throws: PickySystemPermissionAccessError.self) {
             _ = try await gateway.screenShareableContent()
+        }
+        #expect(invocationCount == 0)
+    }
+
+    @Test func unitTestsBlockMicrophoneRequestBeforeTheSystemProviderIsInvoked() async {
+        var invocationCount = 0
+        let gateway = PickySystemPermissionGateway(
+            isRunningUnitTests: { true },
+            microphoneAccessRequester: {
+                invocationCount += 1
+                return true
+            }
+        )
+
+        await #expect(throws: PickySystemPermissionAccessError.self) {
+            _ = try await gateway.requestMicrophoneAccess()
+        }
+        #expect(invocationCount == 0)
+    }
+
+    @Test func unitTestsBlockSpeechRequestBeforeTheSystemProviderIsInvoked() async {
+        var invocationCount = 0
+        let gateway = PickySystemPermissionGateway(
+            isRunningUnitTests: { true },
+            speechAuthorizationRequester: {
+                invocationCount += 1
+                return .authorized
+            }
+        )
+
+        await #expect(throws: PickySystemPermissionAccessError.self) {
+            _ = try await gateway.requestSpeechRecognitionAuthorization()
         }
         #expect(invocationCount == 0)
     }

@@ -23,6 +23,7 @@ final class PickyDockReorderDragController: ObservableObject {
     private var sessionID: String?
 
     func begin(sessionID: String, anchorScreenPoint: NSPoint) {
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }
         if self.sessionID != nil { cancelMonitor() }
         self.sessionID = sessionID
         self.anchorScreenPoint = anchorScreenPoint

@@ -301,6 +301,7 @@ final class MenuBarPanelManager: NSObject {
     /// Uses a short delay so that system permission dialogs (triggered by Grant
     /// buttons in the panel) don't immediately dismiss the panel when they appear.
     private func installClickOutsideMonitor() {
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }
         removeClickOutsideMonitor()
 
         clickOutsideMonitor = NSEvent.addGlobalMonitorForEvents(

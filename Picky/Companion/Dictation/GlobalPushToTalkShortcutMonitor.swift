@@ -49,6 +49,7 @@ final class GlobalPushToTalkShortcutMonitor: ObservableObject {
     }
 
     func start() {
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }
         // If the event tap is already running, don't restart it.
         // Restarting resets isShortcutCurrentlyPressed, which would kill
         // the waveform overlay mid-press when the permission poller calls

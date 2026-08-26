@@ -83,17 +83,19 @@ struct PickyUserBubblePixelWidthTests {
                 notifyMainOnCompletion: nil
             )
         )
-        let viewModel = PickySessionListViewModel(
-            client: BubbleStubClient(),
-            notificationCenter: PickyNoopNotificationCenter()
-        )
+        let viewModel = PickyProjectionReplayFixtures.makeViewModel()
         let card = PickyConversationCardView(
             viewModel: viewModel,
             session: session,
             width: cardWidth
         )
 
-        let host = NSHostingView(rootView: card)
+        let host = NSHostingView(rootView: AnyView(card))
+        defer {
+            host.rootView = AnyView(EmptyView())
+            host.frame = .zero
+            host.layoutSubtreeIfNeeded()
+        }
         host.frame = NSRect(x: 0, y: 0, width: cardWidth, height: 800)
         host.layoutSubtreeIfNeeded()
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
@@ -176,17 +178,19 @@ struct PickyUserBubblePixelWidthTests {
                 notifyMainOnCompletion: nil
             )
         )
-        let viewModel = PickySessionListViewModel(
-            client: BubbleStubClient(),
-            notificationCenter: PickyNoopNotificationCenter()
-        )
+        let viewModel = PickyProjectionReplayFixtures.makeViewModel()
         let card = PickyConversationCardView(
             viewModel: viewModel,
             session: session,
             width: cardWidth
         )
 
-        let host = NSHostingView(rootView: card)
+        let host = NSHostingView(rootView: AnyView(card))
+        defer {
+            host.rootView = AnyView(EmptyView())
+            host.frame = .zero
+            host.layoutSubtreeIfNeeded()
+        }
         host.frame = NSRect(x: 0, y: 0, width: cardWidth, height: 800)
         host.layoutSubtreeIfNeeded()
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
@@ -334,25 +338,4 @@ private func collectSubviewTypeNames(_ root: NSView) -> Set<String> {
         names.formUnion(collectSubviewTypeNames(subview))
     }
     return names
-}
-
-/// Minimal `PickyAgentClient` stand-in used only so `PickySessionListViewModel`
-/// can be constructed inside these layout-only tests. The card never
-/// dispatches a command in this path.
-private final class BubbleStubClient: PickyAgentClient {
-    let events: AsyncStream<PickyClientEvent>
-    private let continuation: AsyncStream<PickyClientEvent>.Continuation
-
-    init() {
-        var sink: AsyncStream<PickyClientEvent>.Continuation!
-        events = AsyncStream { sink = $0 }
-        continuation = sink
-    }
-
-    func connect() async { continuation.yield(.connected) }
-    func submit(_ submission: PickyAgentSubmission) async throws -> PickyAgentSubmissionReceipt {
-        PickyAgentSubmissionReceipt(sessionID: "bubble", message: "")
-    }
-    func send(_ command: PickyCommandEnvelope) async throws {}
-    func disconnect() { continuation.yield(.disconnected) }
 }

@@ -73,7 +73,10 @@ struct PickyHUDView: View {
     @StateObject private var utilityPanelStateStore = PickySessionUtilityUIStateStore.shared
     @State private var utilityPanelResizeStartHeight: CGFloat?
     @State private var utilityPanelHeightOverride: CGFloat?
-    @AppStorage(PickyHUDUtilityPanelPolicy.heightStorageKey) private var storedUtilityPanelHeight = PickyHUDUtilityPanelPolicy.defaultHeight
+    @AppStorage(
+        PickyHUDUtilityPanelPolicy.heightStorageKey,
+        store: PickyRuntimeEnvironment.userDefaults
+    ) private var storedUtilityPanelHeight = PickyHUDUtilityPanelPolicy.defaultHeight
     @State private var isDockAddSlotExpanded = false
     @State private var cardResizeInteraction = PickyHUDCardResizeInteractionState()
     @State private var sizeReporter = PickyHUDSizeReporter()
@@ -963,6 +966,7 @@ struct PickyHUDView: View {
     }
 
     private func installCloseShortcutMonitor() {
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }
         if keyDownMonitor == nil {
             keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 guard handleKeyboardShortcut(event) else { return event }

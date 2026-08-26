@@ -82,6 +82,8 @@ final class BuddyDictationManager: NSObject, ObservableObject {
     }
 
     var needsInitialPermissionPrompt: Bool {
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return false }
+
         if transcriptionProvider.requiresSpeechRecognitionPermission {
             return AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined
                 || SFSpeechRecognizer.authorizationStatus() == .notDetermined
@@ -91,7 +93,7 @@ final class BuddyDictationManager: NSObject, ObservableObject {
     }
 
     private var transcriptionProvider: any BuddyTranscriptionProvider
-    private let audioEngine = AVAudioEngine()
+    private lazy var audioEngine = AVAudioEngine()
     /// NotificationCenter token for the AVAudioEngine configuration-change
     /// observer. AVFAudio fires this when CoreAudio swaps the input device
     /// or sample rate out from under us (e.g. AirPods A2DP -> HFP). The
@@ -139,7 +141,9 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         self.isTranscriptionProviderConfigured = resolvedTranscriptionProvider.isConfigured
         self.startPreparation = startPreparation
         super.init()
-        observeAudioEngineConfigurationChanges()
+        if PickyRuntimeEnvironment.allowsUserEnvironmentEffects {
+            observeAudioEngineConfigurationChanges()
+        }
     }
 
     deinit {
@@ -222,8 +226,7 @@ final class BuddyDictationManager: NSObject, ObservableObject {
             draftCallbacks?.updateDraftText(currentDraftText)
         }
 
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
+        stopAudioEngineAndRemoveInputTap()
         activeTranscriptionSession?.cancel()
 
         resetSessionState()
@@ -418,8 +421,7 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         let finalTranscriptFallbackDelaySeconds = activeTranscriptionSession?.finalTranscriptFallbackDelaySeconds
             ?? Self.defaultFinalTranscriptFallbackDelaySeconds
 
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
+        stopAudioEngineAndRemoveInputTap()
         activeTranscriptionSession?.requestFinalTranscript()
 
         finalizeFallbackWorkItem?.cancel()
@@ -448,8 +450,7 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         print("🎙️ BuddyDictationManager: ignoring short voice input (\(String(format: "%.2f", duration))s)")
         finalizeFallbackWorkItem?.cancel()
         finalizeFallbackWorkItem = nil
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
+        stopAudioEngineAndRemoveInputTap()
         activeTranscriptionSession?.cancel()
         lastErrorMessage = nil
         resetSessionState()
@@ -526,6 +527,12 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         print("🎙️ BuddyDictationManager: provider ready, starting audio engine")
 
         try installInputTapAndStartAudioEngine()
+    }
+
+    private func stopAudioEngineAndRemoveInputTap() {
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }
+        audioEngine.stop()
+        audioEngine.inputNode.removeTap(onBus: 0)
     }
 
     /// Installs the input tap and starts the audio engine.
@@ -648,8 +655,7 @@ final class BuddyDictationManager: NSObject, ObservableObject {
             currentDraftCallbacks?.updateDraftText(finalDraftText)
         }
 
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
+        stopAudioEngineAndRemoveInputTap()
         activeTranscriptionSession?.cancel()
 
         resetSessionState()
@@ -704,8 +710,7 @@ final class BuddyDictationManager: NSObject, ObservableObject {
 
     private func tearDownRecognitionSession(ifOwnedBy identifier: UUID) {
         guard ownsStartRequest(identifier) else { return }
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
+        stopAudioEngineAndRemoveInputTap()
         activeTranscriptionSession?.cancel()
         resetSessionState()
     }

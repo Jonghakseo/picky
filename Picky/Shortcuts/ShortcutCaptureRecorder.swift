@@ -155,6 +155,7 @@ final class ShortcutCaptureRecorder: ObservableObject {
     }
 
     private func installLocalMonitorIfNeeded() {
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }
         guard localMonitor == nil else { return }
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
             guard let self,

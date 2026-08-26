@@ -784,6 +784,7 @@ final class PickyAnnotationSceneMonitor {
         for baseline: PickyAnnotationSceneBaseline,
         identity: PickyAnnotationSceneIdentity
     ) {
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }
         workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil,

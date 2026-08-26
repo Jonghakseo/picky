@@ -27,6 +27,7 @@ struct PickyBubbleTableCellTests {
             backing: .buffered,
             defer: false
         )
+        defer { window.close() }
         field.frame = NSRect(x: 10, y: 10, width: 380, height: 40)
         window.contentView?.addSubview(field)
         window.makeKeyAndOrderFront(nil)
@@ -75,7 +76,8 @@ struct PickyBubbleTableCellTests {
         #expect(foundBoundingRectMismatch)
     }
 
-    @Test func clickingACodeCellKeepsItsMonospacedRun() {
+    @Test(.enabled(if: PickyRuntimeEnvironment.runsPrePushUIEffectTests))
+    func clickingACodeCellKeepsItsMonospacedRun() {
         let field = PickyBubbleMarkdownTableCell.makeField(
             text: "`reservation-cancel.service.ts:349`",
             isHeader: false
@@ -90,7 +92,8 @@ struct PickyBubbleTableCellTests {
         #expect(editor.font?.pointSize == rendered?.pointSize)
     }
 
-    @Test func clickingABoldCellKeepsItsWeight() {
+    @Test(.enabled(if: PickyRuntimeEnvironment.runsPrePushUIEffectTests))
+    func clickingABoldCellKeepsItsWeight() {
         let field = PickyBubbleMarkdownTableCell.makeField(text: "**58/58**", isHeader: false)
         let editor = fieldEditorAttributes(for: field)
         #expect(editor.font?.fontDescriptor.symbolicTraits.contains(.bold) == true)

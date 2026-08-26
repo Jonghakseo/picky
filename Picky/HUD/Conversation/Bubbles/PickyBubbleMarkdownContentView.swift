@@ -718,11 +718,11 @@ private final class PickyTableMarkdownBlockView: PickyMarkdownBlockNSView {
                 let maxCellHeight = row.enumerated().map { columnIndex, field in
                     let columnWidth = columnWidths.indices.contains(columnIndex) ? columnWidths[columnIndex] : columnWidths.last ?? 160
                     let textWidth = max(1, columnWidth - 2 * Self.horizontalPadding)
-                    let rect = field.attributedStringValue.boundingRect(
-                        with: NSSize(width: textWidth, height: .greatestFiniteMagnitude),
-                        options: [.usesLineFragmentOrigin, .usesFontLeading]
+                    let contentHeight = PickyBubbleMarkdownTableCell.measuredContentHeight(
+                        for: field,
+                        width: textWidth
                     )
-                    return ceil(rect.height) + 2 * Metrics.verticalPadding
+                    return ceil(contentHeight) + 2 * Metrics.verticalPadding
                 }.max() ?? 0
                 return max(Metrics.minRowHeight, maxCellHeight)
             }
@@ -799,6 +799,21 @@ enum PickyBubbleMarkdownTableCell {
         field.lineBreakMode = .byWordWrapping
         field.maximumNumberOfLines = 0
         return field
+    }
+
+    /// Measure with the same cell that paints the unfocused field. A raw
+    /// attributed-string bounding rect can disagree with the cell's wrapping
+    /// and clip the final line until AppKit installs the field editor.
+    static func measuredContentHeight(for field: NSTextField, width: CGFloat) -> CGFloat {
+        guard let cell = field.cell else { return 0 }
+        return cell.cellSize(
+            forBounds: NSRect(
+                x: 0,
+                y: 0,
+                width: max(1, width),
+                height: CGFloat.greatestFiniteMagnitude
+            )
+        ).height
     }
 
     static func attributedString(_ text: String, isHeader: Bool) -> NSAttributedString {

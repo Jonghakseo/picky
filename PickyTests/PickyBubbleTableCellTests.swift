@@ -41,6 +41,40 @@ struct PickyBubbleTableCellTests {
         return (font, style?.alignment)
     }
 
+    @Test func cellMeasurementCoversTheHeightUsedByWrappedRendering() throws {
+        let field = PickyBubbleMarkdownTableCell.makeField(
+            text: "`tz: ''`를 Bull은 no-tz로, 헬퍼는 빈 문자열로 해석하여 같은 repeat key를 stale로 삭제할 수 있음",
+            isHeader: false
+        )
+        let cell = try #require(field.cell)
+        var foundBoundingRectMismatch = false
+
+        for widthValue in 120...460 {
+            let width = CGFloat(widthValue)
+            let renderedHeight = ceil(cell.cellSize(
+                forBounds: NSRect(
+                    x: 0,
+                    y: 0,
+                    width: width,
+                    height: CGFloat.greatestFiniteMagnitude
+                )
+            ).height)
+            let measuredHeight = ceil(PickyBubbleMarkdownTableCell.measuredContentHeight(
+                for: field,
+                width: width
+            ))
+            let boundingHeight = ceil(field.attributedStringValue.boundingRect(
+                with: NSSize(width: width, height: CGFloat.greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading]
+            ).height)
+
+            #expect(measuredHeight >= renderedHeight)
+            foundBoundingRectMismatch = foundBoundingRectMismatch || renderedHeight > boundingHeight
+        }
+
+        #expect(foundBoundingRectMismatch)
+    }
+
     @Test func clickingACodeCellKeepsItsMonospacedRun() {
         let field = PickyBubbleMarkdownTableCell.makeField(
             text: "`reservation-cancel.service.ts:349`",

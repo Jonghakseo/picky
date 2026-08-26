@@ -688,6 +688,24 @@ export const PickySessionProjectionSnapshotEventSchema = EventBaseSchema.extend(
   omittedFields: z.array(z.string()),
   projection: PickyAgentSessionSchema,
 });
+export const PickySessionProjectionBootstrapCompleteEventSchema = EventBaseSchema.extend({
+  type: z.literal("sessionProjectionBootstrapComplete"),
+  epoch: z.string().min(1),
+  bootstrapId: z.string().min(1),
+  sessionIds: z.array(z.string().min(1)).superRefine((sessionIds, context) => {
+    const seen = new Set<string>();
+    sessionIds.forEach((sessionId, index) => {
+      if (seen.has(sessionId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "sessionIds must not contain duplicates",
+          path: [index],
+        });
+      }
+      seen.add(sessionId);
+    });
+  }),
+});
 
 export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
   EventBaseSchema.extend({ type: z.literal("hello"), serverName: z.literal("picky-agentd"), supportedProtocolVersions: z.array(z.string()) }),
@@ -778,6 +796,7 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
   EventBaseSchema.extend({ type: z.literal("sessionSnapshot"), sessions: z.array(PickyAgentSessionSchema) }),
   PickySessionProjectionTransactionEventSchema,
   PickySessionProjectionSnapshotEventSchema,
+  PickySessionProjectionBootstrapCompleteEventSchema,
   EventBaseSchema.extend({ type: z.literal("sessionUpdated"), session: PickyAgentSessionSchema }),
   EventBaseSchema.extend({ type: z.literal("sessionMetaUpdated"), session: PickyAgentSessionMetaSchema }),
   // Explicit signal that a session's `archived` flag was just (un)set on the

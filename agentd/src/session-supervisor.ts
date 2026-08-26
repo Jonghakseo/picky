@@ -398,6 +398,9 @@ export class SessionSupervisor extends EventEmitter {
   get(id: string): PickyAgentSession | undefined {
     return this.sessions.get(id);
   }
+  projectionEpoch(): string {
+    return this.sessionProjectionEpoch;
+  }
   async withSessionProjectionBarrier(sessionId: string, work: (snapshot: { session: PickyAgentSession; epoch: string }) => Promise<void>): Promise<void> { await this.runSessionWrite(sessionId, async () => { await this.chainEmit(sessionId, async () => { await work({ session: this.mustGet(sessionId), epoch: this.sessionProjectionEpoch }); }); }); }
   currentMainContext(): PickyContextPacket | undefined {
     return this.mainContext;

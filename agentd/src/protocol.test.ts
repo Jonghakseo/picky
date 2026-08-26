@@ -842,7 +842,25 @@ describe("protocol contract fixtures", () => {
     expect(() => EventEnvelopeSchema.parse({ ...snapshot, omittedFields: ["messages", "messages"] })).toThrow();
   });
 
-  it("keeps v2 projection events dormant in the server", () => {
+  it("validates session projection bootstrap membership completion", () => {
+    const completion = {
+      id: "event-projection-bootstrap-complete",
+      protocolVersion: PROTOCOL_VERSION,
+      timestamp: "2026-08-25T00:00:00.000Z",
+      type: "sessionProjectionBootstrapComplete" as const,
+      epoch: "epoch-001",
+      bootstrapId: "register-capabilities-command-001",
+      sessionIds: ["session-001", "session-002"],
+    };
+
+    expect(EventEnvelopeSchema.parse(completion)).toMatchObject(completion);
+    expect(() => EventEnvelopeSchema.parse({ ...completion, epoch: "" })).toThrow();
+    expect(() => EventEnvelopeSchema.parse({ ...completion, bootstrapId: "" })).toThrow();
+    expect(() => EventEnvelopeSchema.parse({ ...completion, sessionIds: ["session-001", ""] })).toThrow();
+    expect(() => EventEnvelopeSchema.parse({ ...completion, sessionIds: ["session-001", "session-001"] })).toThrow("sessionIds must not contain duplicates");
+  });
+
+  it("keeps v2 projection events server-owned", () => {
     const serverSource = readFileSync(new URL("./server.ts", import.meta.url), "utf8");
     expect(serverSource).not.toMatch(/(?:broadcast|send)\(\{[\s\S]{0,300}type:\s*["']sessionProjection(?:Transaction|Snapshot)["']/);
   });

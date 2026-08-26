@@ -1,0 +1,9 @@
+{
+  "id": "event-projection-bootstrap-complete-001",
+  "protocolVersion": "2026-08-25",
+  "timestamp": "2026-08-25T00:00:00.000Z",
+  "type": "sessionProjectionBootstrapComplete",
+  "epoch": "epoch-001",
+  "bootstrapId": "register-capabilities-command-001",
+  "sessionIds": ["session-001", "session-002"]
+}

@@ -106,6 +106,7 @@ describe("AgentdServer", () => {
       capabilities: ["pickleBridge"],
     }));
     await waitForEvent(ws, "ack");
+    expect(eventBuffers.get(ws)?.some((event) => event.type === "sessionProjectionBootstrapComplete")).toBe(false);
     ws.send(JSON.stringify({ id: "cmd-legacy-app-list", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
     await expect(waitForEvent(ws, "sessionSnapshot")).resolves.toMatchObject({ sessions: [{ id: session.id, messages: [] }] });
     await expect(waitForEvent(ws, "sessionUpdated")).resolves.toMatchObject({ session: { id: session.id } });
@@ -129,10 +130,20 @@ describe("AgentdServer", () => {
     await waitForEvent(ws, "ack");
 
     const snapshots = eventBuffers.get(ws)?.filter((event) => event.type === "sessionProjectionSnapshot") ?? [];
+    const completion = await waitForEvent(ws, "sessionProjectionBootstrapComplete");
     expect(snapshots).toHaveLength(2);
     expect(snapshots.map((event) => event.sessionId).sort()).toEqual([first.id, second.id].sort());
     expect(snapshots.every((event) => event.type === "sessionProjectionSnapshot" && event.requestId === undefined && event.revision >= 0)).toBe(true);
     expect(new Set(snapshots.map((event) => event.epoch))).toHaveLength(1);
+    expect(completion).toMatchObject({
+      type: "sessionProjectionBootstrapComplete",
+      bootstrapId: "cmd-register-v2-app",
+      sessionIds: expect.arrayContaining([first.id, second.id]),
+    });
+    if (completion.type === "sessionProjectionBootstrapComplete") {
+      expect(completion.sessionIds).toHaveLength(2);
+      expect(completion.epoch).toBe(snapshots[0]?.epoch);
+    }
 
     await (supervisor as unknown as {
       patch(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void>;

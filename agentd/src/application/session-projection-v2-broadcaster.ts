@@ -1,6 +1,9 @@
 import { PickyAgentSessionSchema, type PickyAgentSession, type PickyAgentSessionParsed, type PickySessionProjectionMutation } from "../protocol.js";
-import { boundedSessionForProjectionSnapshot } from "./app-session-snapshot-policy.js";
+import { APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT, boundedSessionForProjectionSnapshot, eventPayloadByteLength } from "./app-session-snapshot-policy.js";
 import type { SocketDialect } from "./socket-dialect.js";
+
+export const MAX_BOOTSTRAP_QUEUE_FRAMES = 1_024;
+export const MAX_BOOTSTRAP_QUEUE_BYTES = APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT;
 
 export type V2ProjectionTransactionPayload = {
   type: "sessionProjectionTransaction";
@@ -21,15 +24,28 @@ export type V2ProjectionSnapshotPayload = {
   projection: PickyAgentSessionParsed;
 };
 
+export type V2ProjectionBootstrapCompletePayload = {
+  type: "sessionProjectionBootstrapComplete";
+  epoch: string;
+  bootstrapId: string;
+  sessionIds: string[];
+};
+
 type V2ProjectionPayload = V2ProjectionTransactionPayload | V2ProjectionSnapshotPayload;
 type V2BootstrapState = {
+  phase: "active" | "failed";
+  bootstrapId: string;
+  epoch: string;
+  observedSessionIDs: Set<string>;
   queued: V2ProjectionPayload[];
+  queuedBytes: number;
   snapshotRevisions: Map<string, number>;
 };
 
 export interface SessionProjectionV2Supervisor {
   list(): PickyAgentSession[];
   get(sessionId: string): PickyAgentSession | undefined;
+  projectionEpoch(): string;
   withSessionProjectionBarrier(
     sessionId: string,
     work: (snapshot: { session: PickyAgentSession; epoch: string }) => Promise<void>,
@@ -41,7 +57,7 @@ export interface SessionProjectionV2Supervisor {
 export interface SessionProjectionV2SocketDependencies<Socket extends object> {
   sockets(): Iterable<Socket>;
   getDialect(socket: Socket): SocketDialect;
-  send(socket: Socket, payload: V2ProjectionPayload): void;
+  send(socket: Socket, payload: V2ProjectionPayload | V2ProjectionBootstrapCompletePayload): void;
   close(socket: Socket): void;
 }
 
@@ -65,49 +81,76 @@ export class SessionProjectionV2Broadcaster<Socket extends object> {
     });
   }
 
-  async register(socket: Socket, previousDialect: SocketDialect, dialect: SocketDialect, supervisor: SessionProjectionV2Supervisor): Promise<void> {
+  async register(socket: Socket, previousDialect: SocketDialect, dialect: SocketDialect, supervisor: SessionProjectionV2Supervisor, bootstrapId: string): Promise<void> {
     if (previousDialect !== "negotiating" || dialect !== "v2") return;
-    const state: V2BootstrapState = { queued: [], snapshotRevisions: new Map() };
+    const state: V2BootstrapState = {
+      phase: "active",
+      bootstrapId,
+      epoch: supervisor.projectionEpoch(),
+      observedSessionIDs: new Set(),
+      queued: [],
+      queuedBytes: 0,
+      snapshotRevisions: new Map(),
+    };
     this.bootstrapStates.set(socket, state);
 
     try {
       for (const listed of supervisor.list()) {
-        if (!this.isBootstrapping(socket, state)) return;
+        if (!this.isActive(socket, state)) return;
+        let receivedBarrierSnapshot = false;
         try {
           await supervisor.withSessionProjectionBarrier(listed.id, async ({ session, epoch }) => {
-            if (!this.isBootstrapping(socket, state)) return;
+            receivedBarrierSnapshot = true;
+            if (!this.isActive(socket, state)) return;
+            this.assertEpoch(state, epoch);
             const payload = this.snapshot(session, epoch);
             state.snapshotRevisions.set(session.id, payload.revision);
+            state.observedSessionIDs.add(session.id);
             this.sockets.send(socket, payload);
           });
         } catch (error) {
-          // A listed session may be permanently deleted between `list()` and
-          // its per-session barrier. It has no bootstrap projection to send.
-          if (supervisor.get(listed.id) === undefined) continue;
+          // A listed session may be permanently deleted before its per-session
+          // barrier begins. Any error after a barrier snapshot has started,
+          // including an epoch mismatch, fails the entire bootstrap.
+          if (!receivedBarrierSnapshot && supervisor.get(listed.id) === undefined) continue;
           throw error;
         }
       }
 
-      if (!this.isBootstrapping(socket, state)) return;
+      if (!this.isActive(socket, state)) return;
       for (const payload of state.queued) {
+        if (!this.isActive(socket, state)) return;
+        this.assertEpoch(state, payload.epoch);
         if (payload.type === "sessionProjectionTransaction") {
           const snapshotRevision = state.snapshotRevisions.get(payload.sessionId);
           if (snapshotRevision !== undefined && payload.revision <= snapshotRevision) continue;
+        } else {
+          state.observedSessionIDs.add(payload.sessionId);
         }
         this.sockets.send(socket, payload);
       }
+
+      if (!this.isActive(socket, state)) return;
+      if (supervisor.projectionEpoch() !== state.epoch) {
+        throw new Error("Session projection epoch changed during bootstrap");
+      }
+      const sessionIds = [...state.observedSessionIDs].filter((sessionId) => supervisor.get(sessionId) !== undefined);
+      this.sockets.send(socket, {
+        type: "sessionProjectionBootstrapComplete",
+        epoch: state.epoch,
+        bootstrapId: state.bootstrapId,
+        sessionIds,
+      });
+      this.bootstrapStates.delete(socket);
     } catch (error) {
       // A partial index cannot safely become live: force a clean connection
       // and negotiation rather than flushing an incomplete bootstrap queue.
-      if (this.isBootstrapping(socket, state)) this.sockets.close(socket);
+      this.failBootstrap(socket, state);
       throw error;
-    } finally {
-      if (this.isBootstrapping(socket, state)) this.bootstrapStates.delete(socket);
     }
   }
 
-  /// Called by the transport close path so a stalled registration cannot keep
-  /// queueing projections for a disconnected socket.
+  /** Called by the transport close path so a stalled registration cannot keep queueing projections for a disconnected socket. */
   unregister(socket: Socket): void {
     this.bootstrapStates.delete(socket);
   }
@@ -115,7 +158,7 @@ export class SessionProjectionV2Broadcaster<Socket extends object> {
   broadcastSnapshot(
     sockets: Iterable<Socket>,
     getDialect: (socket: Socket) => SocketDialect,
-    send: (socket: Socket, payload: V2ProjectionPayload) => void,
+    send: (socket: Socket, payload: V2ProjectionPayload | V2ProjectionBootstrapCompletePayload) => void,
     session: PickyAgentSession,
     epoch: string,
   ): void {
@@ -125,7 +168,7 @@ export class SessionProjectionV2Broadcaster<Socket extends object> {
   broadcastTransaction(
     sockets: Iterable<Socket>,
     getDialect: (socket: Socket) => SocketDialect,
-    send: (socket: Socket, payload: V2ProjectionPayload) => void,
+    send: (socket: Socket, payload: V2ProjectionPayload | V2ProjectionBootstrapCompletePayload) => void,
     sessionId: string,
     before: PickyAgentSession,
     after: PickyAgentSession,
@@ -142,21 +185,43 @@ export class SessionProjectionV2Broadcaster<Socket extends object> {
     });
   }
 
-  private isBootstrapping(socket: Socket, state: V2BootstrapState): boolean {
-    return this.bootstrapStates.get(socket) === state;
+  private isActive(socket: Socket, state: V2BootstrapState): boolean {
+    return this.bootstrapStates.get(socket) === state && state.phase === "active";
+  }
+
+  private assertEpoch(state: V2BootstrapState, epoch: string): void {
+    if (epoch !== state.epoch) throw new Error("Session projection epoch changed during bootstrap");
+  }
+
+  private failBootstrap(socket: Socket, state: V2BootstrapState): void {
+    if (this.bootstrapStates.get(socket) !== state || state.phase === "failed") return;
+    state.phase = "failed";
+    state.queued = [];
+    state.queuedBytes = 0;
+    this.sockets.close(socket);
   }
 
   private broadcast(
     sockets: Iterable<Socket>,
     getDialect: (socket: Socket) => SocketDialect,
-    send: (socket: Socket, payload: V2ProjectionPayload) => void,
+    send: (socket: Socket, payload: V2ProjectionPayload | V2ProjectionBootstrapCompletePayload) => void,
     payload: V2ProjectionPayload,
   ): void {
     for (const socket of sockets) {
       if (getDialect(socket) !== "v2") continue;
       const bootstrap = this.bootstrapStates.get(socket);
-      if (bootstrap) bootstrap.queued.push(payload);
-      else send(socket, payload);
+      if (bootstrap?.phase === "failed") continue;
+      if (bootstrap) {
+        const payloadBytes = eventPayloadByteLength(payload);
+        if (bootstrap.queued.length >= MAX_BOOTSTRAP_QUEUE_FRAMES || bootstrap.queuedBytes + payloadBytes > MAX_BOOTSTRAP_QUEUE_BYTES) {
+          this.failBootstrap(socket, bootstrap);
+          continue;
+        }
+        bootstrap.queued.push(payload);
+        bootstrap.queuedBytes += payloadBytes;
+      } else {
+        send(socket, payload);
+      }
     }
   }
 

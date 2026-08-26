@@ -23,7 +23,7 @@ export function isLegacySessionProjectionCommand(type: string): boolean {
 }
 
 const V2_SESSION_PROJECTION_EVENT_TYPES = new Set([
-  "sessionProjectionSnapshot", "sessionProjectionTransaction",
+  "sessionProjectionSnapshot", "sessionProjectionTransaction", "sessionProjectionBootstrapComplete",
 ]);
 
 export function isLegacySessionProjectionEventType(type: string): boolean {

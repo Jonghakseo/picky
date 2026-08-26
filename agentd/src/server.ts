@@ -541,7 +541,7 @@ export class AgentdServer {
       createEmptyPickleSession: (cmd) => this.options.supervisor.createEmptyPickleSession(cmd.context),
       createPickleFromHandoff: (cmd) => this.options.supervisor.createPickleFromHandoff(cmd.context, { title: cmd.title, instructions: cmd.instructions, cwd: cmd.cwd }),
       completePickleHandoff: (cmd) => this.completePendingPickleHandoff(cmd),
-      registerAppCapabilities: (cmd) => this.registerAppCapabilities(ws, cmd.capabilities),
+      registerAppCapabilities: (cmd) => this.registerAppCapabilities(ws, cmd.capabilities, cmd.id),
       listPickySettings: async (cmd) => {
         const result = await this.settingsControl.request({ action: "list", caller: cmd.caller });
         this.send(ws, { type: "pickySettingsAck", commandId: cmd.id, result });
@@ -666,10 +666,10 @@ export class AgentdServer {
     if (!this.options.piOAuth) throw new Error("Pi OAuth is available only on the primary daemon");
     return this.options.piOAuth;
   }
-  private async registerAppCapabilities(ws: WebSocket, capabilities: string[]): Promise<void> {
+  private async registerAppCapabilities(ws: WebSocket, capabilities: string[], bootstrapId: string): Promise<void> {
     const previousDialect = this.socketDialects.get(ws); const dialect = this.socketDialects.lockFromCapabilities(ws, capabilities);
     this.appCapabilities.set(ws, new Set(capabilities)); logAgentd("app capabilities registered", { capabilities: capabilities.join(","), dialect });
-    await this.v2ProjectionBroadcaster.register(ws, previousDialect, dialect, this.options.supervisor);
+    await this.v2ProjectionBroadcaster.register(ws, previousDialect, dialect, this.options.supervisor, bootstrapId);
   }
   private sendSessionSnapshot(ws: WebSocket, sessions: PickyAgentSessionParsed[]): void {
     if (this.socketDialects.get(ws) !== "v1") return;
@@ -1299,11 +1299,11 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, requestId: event.requestId, reloadedHandles: event.reloadedHandleCount };
     case "mainAgentSessionInfoUpdated":
       return { eventId: event.id, type: event.type, hasSessionFile: event.sessionFilePath ? 1 : 0, hasCwd: event.cwd ? 1 : 0 };
-    case "sessionSnapshot":
-      return { eventId: event.id, type: event.type, sessions: event.sessions.length };
+    case "sessionSnapshot": return { eventId: event.id, type: event.type, sessions: event.sessions.length };
     case "sessionProjectionTransaction":
     case "sessionProjectionSnapshot":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, revision: event.revision };
+    case "sessionProjectionBootstrapComplete": return { eventId: event.id, type: event.type, epoch: event.epoch, bootstrapId: event.bootstrapId, sessionCount: event.sessionIds.length };
     case "sessionUpdated":
     case "sessionMetaUpdated":
       return { eventId: event.id, type: event.type, sessionId: event.session.id, status: event.session.status };

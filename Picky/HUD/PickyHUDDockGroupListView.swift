@@ -653,6 +653,7 @@ private struct PickyHUDDockGroupListRow: View {
             )
             .accessibilityHidden(true)
         }
+        .padding(.horizontal, metrics.groupListRowHorizontalPadding)
         .padding(.vertical, metrics.groupListRowVerticalPadding)
         .frame(minHeight: minimumHeight)
         .contentShape(RoundedRectangle(cornerRadius: metrics.groupListRowCornerRadius, style: .continuous))

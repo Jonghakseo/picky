@@ -201,6 +201,8 @@ struct PickyHUDDockGroupRenderGalleryTests {
         let large = PickyHUDDockMetrics(preset: .large)
         let picky = group(id: "group-picky", name: "Picky", color: .blue, memberIDs: fiveRows.map(\.id))
         let research = group(id: "group-research", name: "Research", color: .teal, memberIDs: twoRows.map(\.id))
+        let idleRows = Array(fiveRows.prefix(4))
+        let idle = group(id: "group-idle", name: "Idle", color: .gray, memberIDs: idleRows.map(\.id))
         let cjk = group(id: "group-cjk", name: "한글그룹", color: .purple, memberIDs: fiveRows.map(\.id))
         let empty = group(id: "group-empty", name: "Empty", color: .gray, memberIDs: [])
 
@@ -214,6 +216,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
             listScene("list-five-selected-medium-dark-100.png", group: picky, rows: fiveRows, selectedID: fiveRows[0].id, metrics: medium, fontScale: 1, appearance: .dark),
             listScene("list-five-selected-large-light-100.png", group: picky, rows: fiveRows, selectedID: fiveRows[0].id, metrics: large, fontScale: 1, appearance: .light),
             listScene("list-five-selected-small-dark-130.png", group: picky, rows: fiveRows, selectedID: fiveRows[0].id, metrics: small, fontScale: 1.3, appearance: .dark),
+            listScene("list-four-idle-medium-dark-100.png", group: idle, rows: idleRows, selectedID: nil, metrics: medium, fontScale: 1, appearance: .dark),
             listScene("list-two-selected-medium-dark-100.png", group: research, rows: twoRows, selectedID: twoRows[1].id, metrics: medium, fontScale: 1, appearance: .dark),
             listScene("list-one-selected-medium-dark-100.png", group: group(id: "group-one", name: "Solo", color: .blue, memberIDs: [fiveRows[0].id]), rows: [fiveRows[0]], selectedID: fiveRows[0].id, metrics: medium, fontScale: 1, appearance: .dark),
             combinedScene(group: picky, metrics: medium),

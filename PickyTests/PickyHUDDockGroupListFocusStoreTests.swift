@@ -23,20 +23,20 @@ struct PickyHUDDockGroupListFocusStoreTests {
         #expect(store.focus(for: displayA).rowIDs.isEmpty)
     }
 
-    @Test func openingHighlightsTheAlreadyOpenMember() {
+    @Test func openingAListStartsWithoutKeyboardHighlight() {
         let store = PickyHUDDockGroupListFocusStore()
 
-        store.open(displayID: displayA, groupID: "g1", rowIDs: ["a", "b"], openedSessionID: "b")
+        store.open(displayID: displayA, groupID: "g1", rowIDs: ["a", "b"])
 
         #expect(store.focus(for: displayA).openGroupID == "g1")
-        #expect(store.focus(for: displayA).highlightedRowID == "b")
+        #expect(store.focus(for: displayA).highlightedRowID == nil)
     }
 
     @Test func eachDisplayKeepsItsOwnOpenList() {
         let store = PickyHUDDockGroupListFocusStore()
 
-        store.open(displayID: displayA, groupID: "g1", rowIDs: ["a"], openedSessionID: nil)
-        store.open(displayID: displayB, groupID: "g2", rowIDs: ["x", "y"], openedSessionID: nil)
+        store.open(displayID: displayA, groupID: "g1", rowIDs: ["a"])
+        store.open(displayID: displayB, groupID: "g2", rowIDs: ["x", "y"])
 
         #expect(store.focus(for: displayA).openGroupID == "g1")
         #expect(store.focus(for: displayB).openGroupID == "g2")
@@ -47,14 +47,18 @@ struct PickyHUDDockGroupListFocusStoreTests {
         #expect(store.focus(for: displayB).openGroupID == "g2")
     }
 
-    @Test func arrowsMoveTheHighlightAndClampAtTheEnd() {
+    @Test func arrowsActivateAnEndRowThenMoveAndClampTheHighlight() {
         let store = PickyHUDDockGroupListFocusStore()
-        store.open(displayID: displayA, groupID: "g1", rowIDs: ["a", "b"], openedSessionID: "a")
+        store.open(displayID: displayA, groupID: "g1", rowIDs: ["a", "b"])
 
+        #expect(store.moveHighlight(displayID: displayA, direction: .down) == "a")
         #expect(store.moveHighlight(displayID: displayA, direction: .down) == "b")
         #expect(store.moveHighlight(displayID: displayA, direction: .down) == "b")
         #expect(store.moveHighlight(displayID: displayA, direction: .up) == "a")
-        #expect(store.focus(for: displayA).highlightedRowID == "a")
+
+        store.open(displayID: displayA, groupID: "g1", rowIDs: ["a", "b"])
+        #expect(store.moveHighlight(displayID: displayA, direction: .up) == "b")
+        #expect(store.focus(for: displayA).highlightedRowID == "b")
     }
 
     @Test func arrowsDoNothingWhileNoListIsOpen() {
@@ -64,21 +68,33 @@ struct PickyHUDDockGroupListFocusStoreTests {
         #expect(store.moveHighlight(displayID: nil, direction: .down) == nil)
     }
 
+    @Test func passiveMembershipChangesPreserveNoKeyboardHighlight() {
+        let store = PickyHUDDockGroupListFocusStore()
+        store.open(displayID: displayA, groupID: "g1", rowIDs: ["a", "b", "c"])
+
+        store.updateRows(displayID: displayA, rowIDs: ["a", "c", "d"])
+
+        #expect(store.focus(for: displayA).rowIDs == ["a", "c", "d"])
+        #expect(store.focus(for: displayA).highlightedRowID == nil)
+    }
+
     /// Archiving the highlighted Pickle must not leave the highlight pointing at
     /// a row that no longer exists.
-    @Test func membershipChangesRecoverTheHighlight() {
+    @Test func membershipChangesRecoverAnActiveHighlight() {
         let store = PickyHUDDockGroupListFocusStore()
-        store.open(displayID: displayA, groupID: "g1", rowIDs: ["a", "b", "c"], openedSessionID: "b")
+        store.open(displayID: displayA, groupID: "g1", rowIDs: ["a", "b", "c"])
+        _ = store.moveHighlight(displayID: displayA, direction: .down)
+        _ = store.moveHighlight(displayID: displayA, direction: .down)
 
         store.updateRows(displayID: displayA, rowIDs: ["a", "c"])
 
-        #expect(store.focus(for: displayA).rowIDs == ["a", "c"])
         #expect(store.focus(for: displayA).highlightedRowID == "a")
     }
 
-    @Test func membershipChangesKeepASurvivingHighlight() {
+    @Test func membershipChangesKeepASurvivingActiveHighlight() {
         let store = PickyHUDDockGroupListFocusStore()
-        store.open(displayID: displayA, groupID: "g1", rowIDs: ["a", "b", "c"], openedSessionID: "c")
+        store.open(displayID: displayA, groupID: "g1", rowIDs: ["a", "b", "c"])
+        _ = store.moveHighlight(displayID: displayA, direction: .up)
 
         store.updateRows(displayID: displayA, rowIDs: ["b", "c"])
 
@@ -95,8 +111,8 @@ struct PickyHUDDockGroupListFocusStoreTests {
 
     @Test func closeAllClearsEveryDisplay() {
         let store = PickyHUDDockGroupListFocusStore()
-        store.open(displayID: displayA, groupID: "g1", rowIDs: ["a"], openedSessionID: nil)
-        store.open(displayID: displayB, groupID: "g2", rowIDs: ["b"], openedSessionID: nil)
+        store.open(displayID: displayA, groupID: "g1", rowIDs: ["a"])
+        store.open(displayID: displayB, groupID: "g2", rowIDs: ["b"])
 
         store.closeAll()
 

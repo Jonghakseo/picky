@@ -60,13 +60,6 @@ enum PickyHUDDockGroupListKeyboardPolicy {
         return rowIDs[number - 1]
     }
 
-    /// Opening a list highlights the Pickle already on screen when it belongs to
-    /// this group, otherwise the first row.
-    static func initialHighlight(rowIDs: [String], openedSessionID: String?) -> String? {
-        if let openedSessionID, rowIDs.contains(openedSessionID) { return openedSessionID }
-        return rowIDs.first
-    }
-
     /// Arrow navigation clamps at both ends rather than wrapping.
     static func highlight(
         after direction: PickyHUDDockGroupListArrowDirection,
@@ -82,9 +75,11 @@ enum PickyHUDDockGroupListKeyboardPolicy {
         return rowIDs[next]
     }
 
-    /// Membership changes must not strand the highlight on a row that is gone.
+    /// Passive membership changes preserve an inactive keyboard highlight.
+    /// Once keyboard navigation is active, a removed row falls back to the
+    /// first remaining row rather than leaving focus on an invisible target.
     static func reconciledHighlight(current: String?, rowIDs: [String]) -> String? {
-        guard let current else { return rowIDs.first }
+        guard let current else { return nil }
         return rowIDs.contains(current) ? current : rowIDs.first
     }
 

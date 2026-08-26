@@ -69,7 +69,8 @@ enum PickyHUDDockGroupListPolicy {
         fontScale: CGFloat
     ) -> CGFloat {
         let contentWidth = metrics.groupListPanelWidth - (metrics.groupListPanelPadding * 2)
-        let fixedWidths = metrics.groupListRowGlyphSide
+        let fixedWidths = (metrics.groupListRowHorizontalPadding * 2)
+            + metrics.groupListRowGlyphSide
             + shortcutHintWidth(fontScale: fontScale)
             + (isUnread ? 7 : 0)
         let elementCount = isUnread ? 4 : 3

@@ -112,6 +112,52 @@ struct PickyHUDDockGroupListPolicyTests {
         }
     }
 
+    @Test func rowsUseSymmetricSpaceTwoInsetsWithoutChangingPanelDimensions() {
+        for preset in PickyHUDDockSizePreset.allCases {
+            let metrics = PickyHUDDockMetrics(preset: preset)
+            #expect(metrics.groupListRowHorizontalPadding == metrics.groupListRowContentSpacing)
+
+            for fontScale: CGFloat in [1, 1.3] {
+                let panel = PickyHUDDockGroupListPolicy.panelSize(
+                    memberCount: 4,
+                    metrics: metrics,
+                    fontScale: fontScale
+                )
+                let panelInnerWidth = panel.width - (metrics.groupListPanelPadding * 2)
+
+                for isUnread in [false, true] {
+                    let titleWidth = PickyHUDDockGroupListPolicy.titleColumnWidth(
+                        metrics: metrics,
+                        isUnread: isUnread,
+                        fontScale: fontScale
+                    )
+                    let fixedWidths = metrics.groupListRowGlyphSide
+                        + PickyHUDDockGroupListPolicy.shortcutHintWidth(fontScale: fontScale)
+                        + (isUnread ? 7 : 0)
+                    let elementCount = isUnread ? 4 : 3
+                    let spacing = CGFloat(elementCount - 1) * metrics.groupListRowContentSpacing
+                    let renderedRowWidth = (metrics.groupListRowHorizontalPadding * 2)
+                        + fixedWidths
+                        + spacing
+                        + titleWidth
+
+                    #expect(titleWidth >= 0)
+                    #expect(renderedRowWidth == panelInnerWidth)
+                }
+
+                #expect(panel.width == metrics.groupListPanelWidth)
+                #expect(
+                    panel.height == PickyHUDDockGroupListPolicy.panelChromeHeight(metrics: metrics)
+                        + PickyHUDDockGroupListPolicy.rowStackHeight(
+                            rowCount: 4,
+                            metrics: metrics,
+                            fontScale: fontScale
+                        )
+                )
+            }
+        }
+    }
+
     @Test func panelHeightIncludesInterRowSpacingWithoutClippingTheLastRow() {
         let rows = 3
         let panel = PickyHUDDockGroupListPolicy.panelSize(memberCount: rows, metrics: metrics)

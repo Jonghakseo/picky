@@ -29,19 +29,17 @@ final class PickyHUDDockGroupListFocusStore: ObservableObject {
         return focusByDisplayID[displayID] ?? PickyHUDDockGroupListFocus()
     }
 
-    func open(displayID: CGDirectDisplayID, groupID: String, rowIDs: [String], openedSessionID: String?) {
+    func open(displayID: CGDirectDisplayID, groupID: String, rowIDs: [String]) {
         focusByDisplayID[displayID] = PickyHUDDockGroupListFocus(
             openGroupID: groupID,
             rowIDs: rowIDs,
-            highlightedRowID: PickyHUDDockGroupListKeyboardPolicy.initialHighlight(
-                rowIDs: rowIDs,
-                openedSessionID: openedSessionID
-            )
+            highlightedRowID: nil
         )
     }
 
-    /// Membership changes while the list stays open: keep the highlight when its
-    /// row survived, otherwise fall back to the first row.
+    /// Membership changes while the list stays open preserve inactive keyboard
+    /// navigation. An active highlight stays put when possible, otherwise it
+    /// falls back to the first visible row.
     func updateRows(displayID: CGDirectDisplayID, rowIDs: [String]) {
         guard var focus = focusByDisplayID[displayID], focus.isOpen else { return }
         focus.rowIDs = rowIDs

@@ -44,20 +44,6 @@ struct PickyHUDDockGroupListKeyboardPolicyTests {
 
     // MARK: - Highlight
 
-    @Test func openingHighlightsTheAlreadyOpenPickleWhenItBelongsToTheGroup() {
-        #expect(
-            PickyHUDDockGroupListKeyboardPolicy.initialHighlight(rowIDs: rows, openedSessionID: "bravo") == "bravo"
-        )
-    }
-
-    @Test func openingFallsBackToTheFirstRowForAnUnrelatedOpenPickle() {
-        #expect(
-            PickyHUDDockGroupListKeyboardPolicy.initialHighlight(rowIDs: rows, openedSessionID: "elsewhere") == "alpha"
-        )
-        #expect(PickyHUDDockGroupListKeyboardPolicy.initialHighlight(rowIDs: rows, openedSessionID: nil) == "alpha")
-        #expect(PickyHUDDockGroupListKeyboardPolicy.initialHighlight(rowIDs: [], openedSessionID: nil) == nil)
-    }
-
     @Test func arrowsMoveOneRowAtATime() {
         #expect(
             PickyHUDDockGroupListKeyboardPolicy.highlight(after: .down, current: "alpha", rowIDs: rows) == "bravo"
@@ -82,9 +68,10 @@ struct PickyHUDDockGroupListKeyboardPolicyTests {
         #expect(PickyHUDDockGroupListKeyboardPolicy.highlight(after: .down, current: nil, rowIDs: []) == nil)
     }
 
-    /// Archiving or moving the highlighted Pickle must not leave the highlight
-    /// pointing at a row that no longer renders.
-    @Test func highlightRecoversWhenItsRowDisappears() {
+    /// Passive updates must not invent keyboard focus merely because a list is
+    /// open, while a removed active row still needs a visible fallback.
+    @Test func reconciliationPreservesInactiveFocusAndRecoversRemovedActiveRows() {
+        #expect(PickyHUDDockGroupListKeyboardPolicy.reconciledHighlight(current: nil, rowIDs: rows) == nil)
         #expect(PickyHUDDockGroupListKeyboardPolicy.reconciledHighlight(current: "bravo", rowIDs: rows) == "bravo")
         #expect(
             PickyHUDDockGroupListKeyboardPolicy.reconciledHighlight(current: "gone", rowIDs: rows) == "alpha"

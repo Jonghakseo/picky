@@ -1128,8 +1128,7 @@ final class PickyHUDOverlayManager {
                     self.dockGroupListFocusStore.open(
                         displayID: displayID,
                         groupID: groupID,
-                        rowIDs: rowIDs,
-                        openedSessionID: entry.openedSessionID
+                        rowIDs: rowIDs
                     )
                     self.dockGroupListChildrenByDisplayID[displayID] = entry
                     didOpen = true

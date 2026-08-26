@@ -185,6 +185,7 @@ struct PickyHUDDockMetrics: Equatable {
     var groupListHeaderBottomSpacing: CGFloat { scaled(8) } // space.2
     var groupListRowHeight: CGFloat { scaled(38) }
     var groupListRowVerticalPadding: CGFloat { scaled(4) } // space.1
+    var groupListRowHorizontalPadding: CGFloat { scaled(8) } // space.2
     /// Structural separation between list-row meaning units. Selected rows
     /// need `space.2` clearance so their state surface never reads attached
     /// to an adjacent row.

@@ -49,6 +49,12 @@ struct PickyHUDView: View {
     /// overlay manager to store the map keyed by display ID so collapse state
     /// is independent per monitor and survives relaunch.
     var onDockGroupCollapseChanged: (_ overrides: [String: Bool]) -> Void = { _ in }
+    /// The overlay manager owns the display-local child panel. Folder frames
+    /// are measured in this root's coordinate space before it positions it.
+    var onDockGroupListToggle: (_ groupID: String) -> Void = { _ in }
+    var onDockGroupListGeometryChange: (_ badgeFrames: [String: CGRect], _ railFrame: CGRect, _ isCommandHintVisible: Bool, _ openedSessionID: String?) -> Void = { _, _, _, _ in }
+    @State private var dockGroupBadgeFrames: [String: CGRect] = [:]
+    @State private var dockRailFrame: CGRect = .zero
     @State private var heldSession: PickyHUDDockHold?
     @State private var pendingManualAutoOpenSessionID: String?
     @State private var pendingRequestedOpenSessionID: String?
@@ -166,8 +172,6 @@ struct PickyHUDView: View {
         return visibleSessions.first { $0.id == activeSessionID }
     }
 
-    static let visibleChromeCoordinateSpaceName = "PickyHUDVisibleChrome"
-
     var body: some View {
         let _ = PickyPerf.event("hud_root_body")
         // Read the published revision so persisted utility tab changes redraw this HUD.
@@ -189,11 +193,30 @@ struct PickyHUDView: View {
             // ScrollView/TextEditor subtrees that perform one-frame measurement and
             // bottom-pinning on appear; animating that first layout exposes transient
             // pre-scroll positions as rows/composer floating outside the card.
-            .coordinateSpace(name: Self.visibleChromeCoordinateSpaceName)
+            .coordinateSpace(name: PickyHUDVisibleChromeCoordinateSpaceName)
             .onPreferenceChange(PickyHUDSizePreferenceKey.self, perform: handleHUDSizeChange)
             .onPreferenceChange(PickyHUDCardSizePreferenceKey.self, perform: handleCardMeasuredSize)
             .onPreferenceChange(PickyHUDVisibleChromeFramePreferenceKey.self) {
                 onVisibleChromeFramesChange($0)
+            }
+            .onPreferenceChange(PickyHUDDockGroupBadgeFramePreferenceKey.self) { frames in
+                dockGroupBadgeFrames = frames
+                reportDockGroupListGeometry()
+            }
+            .onPreferenceChange(PickyHUDDockRailFramePreferenceKey.self) { frame in
+                dockRailFrame = frame
+                reportDockGroupListGeometry()
+            }
+            .onChange(of: isCommandShortcutHintVisible) { _, _ in
+                reportDockGroupListGeometry()
+            }
+            .onChange(of: openedSessionID) { _, _ in
+                reportDockGroupListGeometry()
+            }
+            .onChange(of: placement.dockGroupListCreateRequestGroupID) { _, groupID in
+                guard let groupID else { return }
+                placement.dockGroupListCreateRequestGroupID = nil
+                chooseFolderForEmptyPickle(targetGroupID: groupID)
             }
             .onAppear {
                 installCloseShortcutMonitor()
@@ -652,6 +675,7 @@ struct PickyHUDView: View {
                 onRenameDockGroup: { id, name in viewModel.renameDockGroup(id: id, to: name) },
                 onSetDockGroupColor: { id, color in viewModel.setDockGroupColor(id: id, color: color) },
                 onToggleDockGroupCollapsed: { id in toggleDockGroupCollapsedForThisDisplay(id) },
+                onOpenDockGroupList: onDockGroupListToggle,
                 onRemoveDockGroup: { id, keepMembers in viewModel.removeDockGroup(id: id, keepMembers: keepMembers) },
                 onMoveSessionInDock: { sessionID, container in viewModel.moveSessionInDock(sessionID: sessionID, to: container) },
                 onMoveDockGroup: { id, target in viewModel.moveDockGroup(id: id, toTopLevelIndex: target) },
@@ -692,6 +716,10 @@ struct PickyHUDView: View {
     private var miniPreviewHorizontalReserve: CGFloat {
         guard placement.dockSide.orientation == .horizontal else { return 0 }
         return PickyHUDDockLayout.miniPreviewHorizontalReserve(metrics: dockMetrics)
+    }
+
+    private func reportDockGroupListGeometry() {
+        onDockGroupListGeometryChange(dockGroupBadgeFrames, dockRailFrame, isCommandShortcutHintVisible, openedSessionID)
     }
 
     private var isPointerInsideHUDSurface: Bool {
@@ -1297,7 +1325,7 @@ private struct PickyHUDVisibleChromeFrameReporter: View {
         GeometryReader { proxy in
             Color.clear.preference(
                 key: PickyHUDVisibleChromeFramePreferenceKey.self,
-                value: [proxy.frame(in: .named(PickyHUDView.visibleChromeCoordinateSpaceName))]
+                value: [proxy.frame(in: .named(PickyHUDVisibleChromeCoordinateSpaceName))]
             )
         }
     }

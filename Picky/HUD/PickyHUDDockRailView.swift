@@ -58,6 +58,9 @@ struct PickyHUDDockRailView: View {
     let onRenameDockGroup: (_ id: String, _ name: String) -> Void
     let onSetDockGroupColor: (_ id: String, _ color: PickyDockGroupColor) -> Void
     let onToggleDockGroupCollapsed: (_ id: String) -> Void
+    /// Opens a transient member list for a collapsed group. This is separate
+    /// from the legacy header collapse action until the rail projection moves.
+    let onOpenDockGroupList: (_ id: String) -> Void
     let onRemoveDockGroup: (_ id: String, _ keepMembers: Bool) -> Void
     /// Persist a session move into a specific dock container/position.
     let onMoveSessionInDock: (_ sessionID: String, _ destination: PickyDockContainer) -> Void
@@ -196,6 +199,7 @@ struct PickyHUDDockRailView: View {
         }
         .background(dockGlassBackground)
         .coordinateSpace(name: PickyHUDDockRailCoordinateSpace)
+        .background(PickyHUDDockRailFrameReporter())
         .overlay { draggedFloatingIconOverlay }
         .onPreferenceChange(PickyDockSlotCenterPreferenceKey.self) { centers in
             slotCenters = centers
@@ -431,10 +435,11 @@ struct PickyHUDDockRailView: View {
                                 .first(where: { $0.sessionID == topID })
                                 .flatMap { PickyHUDDockLayout.numberShortcutForSessionIndex($0.visibleIndex) },
                             isCommandShortcutHintVisible: isCommandShortcutHintVisible,
-                            onTap: { onToggleDockGroupCollapsed(group.id) }
+                            onTap: { onOpenDockGroupList(group.id) }
                         )
                         .id(topID)
                         .publishDockSlotCenter(sessionID: topID, dockSide: dockSide)
+                        .publishDockGroupBadgeFrame(groupID: group.id)
                     } else {
                         // Group has no visible members — render a small
                         // empty drop target so the user can still drag

@@ -23,6 +23,57 @@ let PickyHUDDockGroupContentSpacing: CGFloat = 2
 /// Named SwiftUI coordinate space the rail establishes so child icons and
 /// group headers can publish their layout centers in a single shared frame.
 let PickyHUDDockRailCoordinateSpace = "PickyHUDDockRail"
+/// Root coordinate space shared with the overlay manager's child-panel geometry.
+let PickyHUDVisibleChromeCoordinateSpaceName = "PickyHUDVisibleChrome"
+
+/// Publishes every collapsed folder badge in HUD-root coordinates.
+struct PickyHUDDockGroupBadgeFramePreferenceKey: PreferenceKey {
+    static let defaultValue: [String: CGRect] = [:]
+
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue()) { _, new in new }
+    }
+}
+
+/// Publishes the rail frame in the same HUD-root coordinate space as folder badges.
+struct PickyHUDDockRailFramePreferenceKey: PreferenceKey {
+    static let defaultValue: CGRect = .zero
+
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if next != .zero { value = next }
+    }
+}
+
+private struct PickyHUDDockGroupBadgeFrameReporter: View {
+    let groupID: String
+
+    var body: some View {
+        GeometryReader { proxy in
+            Color.clear.preference(
+                key: PickyHUDDockGroupBadgeFramePreferenceKey.self,
+                value: [groupID: proxy.frame(in: .named(PickyHUDVisibleChromeCoordinateSpaceName))]
+            )
+        }
+    }
+}
+
+struct PickyHUDDockRailFrameReporter: View {
+    var body: some View {
+        GeometryReader { proxy in
+            Color.clear.preference(
+                key: PickyHUDDockRailFramePreferenceKey.self,
+                value: proxy.frame(in: .named(PickyHUDVisibleChromeCoordinateSpaceName))
+            )
+        }
+    }
+}
+
+extension View {
+    func publishDockGroupBadgeFrame(groupID: String) -> some View {
+        background(PickyHUDDockGroupBadgeFrameReporter(groupID: groupID))
+    }
+}
 
 /// Maps a session id to the primary-axis center (Y for vertical docks, X for
 /// horizontal) of its rendered slot in the rail coordinate space. Drives

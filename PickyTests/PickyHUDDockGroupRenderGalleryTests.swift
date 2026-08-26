@@ -13,6 +13,7 @@ import Testing
 @testable import Picky
 
 @MainActor
+@Suite(.serialized)
 struct PickyHUDDockGroupRenderGalleryTests {
     /// xcodebuild does not forward arbitrary shell environment variables to
     /// the XCTest host. The gallery script therefore passes its absolute
@@ -88,42 +89,62 @@ struct PickyHUDDockGroupRenderGalleryTests {
 
         let output = URL(fileURLWithPath: rawOutput, isDirectory: true)
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
-        let scenes = makeScenes()
-        var manifestScenes: [ManifestScene] = []
+        try LocaleManager.shared.withTemporaryChoiceForTesting(.english) {
+            let scenes = makeScenes()
+            var manifestScenes: [ManifestScene] = []
 
-        for scene in scenes {
-            let rendered = try render(scene)
-            let file = output.appendingPathComponent(scene.name)
-            try rendered.png.write(to: file, options: .atomic)
-            try verify(rendered, scene: scene)
-            manifestScenes.append(ManifestScene(
-                file: scene.name,
-                contentLogicalWidth: Double(scene.contentLogicalSize.width),
-                contentLogicalHeight: Double(scene.contentLogicalSize.height),
-                canvasLogicalWidth: Double(scene.canvasLogicalSize.width),
-                canvasLogicalHeight: Double(scene.canvasLogicalSize.height),
-                pixelWidth: rendered.bitmap.pixelsWide,
-                pixelHeight: rendered.bitmap.pixelsHigh,
-                appearance: scene.appearance.rawValue,
-                dockPreset: scene.preset.rawValue,
-                fontScale: Double(scene.fontScale)
-            ))
+            for scene in scenes {
+                let rendered = try render(scene)
+                let file = output.appendingPathComponent(scene.name)
+                try rendered.png.write(to: file, options: .atomic)
+                try verify(rendered, scene: scene)
+                manifestScenes.append(ManifestScene(
+                    file: scene.name,
+                    contentLogicalWidth: Double(scene.contentLogicalSize.width),
+                    contentLogicalHeight: Double(scene.contentLogicalSize.height),
+                    canvasLogicalWidth: Double(scene.canvasLogicalSize.width),
+                    canvasLogicalHeight: Double(scene.canvasLogicalSize.height),
+                    pixelWidth: rendered.bitmap.pixelsWide,
+                    pixelHeight: rendered.bitmap.pixelsHigh,
+                    appearance: scene.appearance.rawValue,
+                    dockPreset: scene.preset.rawValue,
+                    fontScale: Double(scene.fontScale)
+                ))
+            }
+
+            let manifest = Manifest(
+                schemaVersion: 2,
+                renderer: "offscreen NSHostingView bitmap cache",
+                scale: Int(Self.renderScale),
+                scenes: manifestScenes
+            )
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try encoder.encode(manifest).write(to: output.appendingPathComponent("manifest.json"), options: .atomic)
+            try makeIndex(for: manifestScenes).write(
+                to: output.appendingPathComponent("index.html"),
+                atomically: true,
+                encoding: .utf8
+            )
+        }
+    }
+
+    @Test func galleryEnglishLocalizationOverridesAndRestoresKoreanLocaleState() throws {
+        let localeManager = LocaleManager.shared
+        let originalChoice = localeManager.choice
+        defer { localeManager.apply(originalChoice) }
+        localeManager.apply(.korean)
+        #expect(L10n.t("group.list.newPickle") == "여기에 새 피클")
+
+        try localeManager.withTemporaryChoiceForTesting(.english) {
+            #expect(L10n.t("group.list.newPickle") == "New Pickle here")
+            let emptyScene = try #require(makeScenes().first(where: { $0.name == "list-empty-medium-dark-100.png" }))
+            try verify(render(emptyScene), scene: emptyScene)
         }
 
-        let manifest = Manifest(
-            schemaVersion: 2,
-            renderer: "offscreen NSHostingView bitmap cache",
-            scale: Int(Self.renderScale),
-            scenes: manifestScenes
-        )
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(manifest).write(to: output.appendingPathComponent("manifest.json"), options: .atomic)
-        try makeIndex(for: manifestScenes).write(
-            to: output.appendingPathComponent("index.html"),
-            atomically: true,
-            encoding: .utf8
-        )
+        #expect(localeManager.choice == .korean)
+        #expect(localeManager.effectiveLocale.identifier == "ko")
+        #expect(L10n.t("group.list.newPickle") == "여기에 새 피클")
     }
 
     @Test func panelGeometryIncludesProductionChromeRowsAndSpacing() {

@@ -36,6 +36,9 @@ jobs:
       - name: Reject new raw UI design values
         run: python3 scripts/lint-ui-design-tokens.py
 
+      - name: Verify UI design token baseline provenance
+        run: python3 scripts/lint-ui-design-tokens.py --verify-baseline
+
       - name: Reject unexpected ESLint suppressions
         run: pnpm run check:eslint-suppressions
 

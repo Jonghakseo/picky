@@ -90,7 +90,11 @@ final class PickyHUDDockGroupTileClickNSView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        guard !event.modifierFlags.contains(.control), event.clickCount == 1 else {
+        if event.modifierFlags.contains(.control) {
+            forwardContextMenu(with: event)
+            return
+        }
+        guard event.clickCount == 1 else {
             super.mouseDown(with: event)
             return
         }
@@ -139,9 +143,28 @@ final class PickyHUDDockGroupTileClickNSView: NSView {
 
     override func rightMouseDown(with event: NSEvent) {
         cancelInteraction()
-        // Preserve the single SwiftUI context-menu modifier attached to the
-        // badge's parent instead of constructing a second AppKit menu here.
-        super.rightMouseDown(with: event)
+        forwardContextMenu(with: event)
+    }
+
+    /// The badge is the hit-test owner, while the production menu modifier is
+    /// attached to a SwiftUI ancestor. Forward secondary and Control-clicks to
+    /// that ancestor's native menu owner instead of duplicating the menu in
+    /// AppKit or treating the click as activation.
+    func forwardContextMenu(with event: NSEvent) {
+        guard let target = contextMenuForwardingTarget() else {
+            super.rightMouseDown(with: event)
+            return
+        }
+        target.rightMouseDown(with: event)
+    }
+
+    func contextMenuForwardingTarget() -> NSView? {
+        var candidate = superview
+        while let view = candidate {
+            if view.menu != nil { return view }
+            candidate = view.superview
+        }
+        return superview
     }
 
     func cancelInteraction() {

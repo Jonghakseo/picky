@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -23,9 +24,33 @@ class UIDesignTokenLintTests(unittest.TestCase):
         shutil.copyfile(FIXTURE_ROOT / fixture_name, target)
         return target
 
+    def commit_current_tree(self, root: Path) -> str:
+        def git(*arguments: str) -> str:
+            result = subprocess.run(
+                ["git", "-C", str(root), *arguments],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            return result.stdout.strip()
+
+        git("init", "--quiet")
+        git("config", "user.email", "picky-tests@example.invalid")
+        git("config", "user.name", "Picky Tests")
+        git("add", ".")
+        git("commit", "--quiet", "--allow-empty", "-m", "baseline fixture")
+        return git("rev-parse", "HEAD")
+
     def baseline_for(self, root: Path) -> Path:
         baseline = root / "baseline.json"
-        lint_ui_design_tokens.write_baseline(root, baseline, "fixture", scan_roots=("Picky/HUD",))
+        baseline_commit = self.commit_current_tree(root)
+        lint_ui_design_tokens.write_baseline(root, baseline, baseline_commit, scan_roots=("Picky/HUD",))
+        return baseline
+
+    def empty_baseline_for(self, root: Path) -> Path:
+        baseline = root / "baseline.json"
+        baseline_commit = self.commit_current_tree(root)
+        lint_ui_design_tokens.write_baseline(root, baseline, baseline_commit, scan_roots=())
         return baseline
 
     def test_legacy_entry_passes(self):
@@ -99,8 +124,7 @@ class UIDesignTokenLintTests(unittest.TestCase):
             with self.subTest(fixture_name=fixture_name), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 self.copy_fixture(fixture_name, root)
-                baseline = root / "baseline.json"
-                lint_ui_design_tokens.write_baseline(root, baseline, "fixture", scan_roots=())
+                baseline = self.empty_baseline_for(root)
 
                 failures = lint_ui_design_tokens.lint(root, baseline, scan_roots=("Picky/HUD",))
 
@@ -111,10 +135,45 @@ class UIDesignTokenLintTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             self.copy_fixture("semantic.swift", root)
-            baseline = root / "baseline.json"
-            lint_ui_design_tokens.write_baseline(root, baseline, "fixture", scan_roots=())
+            baseline = self.empty_baseline_for(root)
 
             self.assertEqual(lint_ui_design_tokens.lint(root, baseline, scan_roots=("Picky/HUD",)), [])
+
+    def test_write_baseline_reads_declared_commit_not_current_raw_values(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.copy_fixture("legacy.swift", root)
+            baseline = self.baseline_for(root)
+            original_document = json.loads(baseline.read_text(encoding="utf-8"))
+            baseline_commit = original_document["baselineCommit"]
+            self.copy_fixture("new-raw.swift", root)
+
+            lint_ui_design_tokens.write_baseline(root, baseline, baseline_commit, scan_roots=("Picky/HUD",))
+
+            document = json.loads(baseline.read_text(encoding="utf-8"))
+            self.assertEqual(document["entries"], original_document["entries"])
+            self.assertEqual(len(lint_ui_design_tokens.lint(root, baseline, scan_roots=("Picky/HUD",))), 1)
+
+    def test_verify_baseline_rejects_modified_document(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.copy_fixture("legacy.swift", root)
+            baseline = self.baseline_for(root)
+            document = json.loads(baseline.read_text(encoding="utf-8"))
+            document["entries"] = []
+            baseline.write_text(json.dumps(document), encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "Baseline provenance mismatch"):
+                lint_ui_design_tokens.verify_baseline(root, baseline, document["baselineCommit"])
+
+    def test_write_baseline_rejects_missing_declared_commit(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.copy_fixture("legacy.swift", root)
+            self.commit_current_tree(root)
+
+            with self.assertRaisesRegex(ValueError, "Unable to resolve baseline commit"):
+                lint_ui_design_tokens.write_baseline(root, root / "baseline.json", "does-not-exist", scan_roots=("Picky/HUD",))
 
 
 if __name__ == "__main__":

@@ -10,13 +10,18 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import re
+import subprocess
 import sys
+import tarfile
+import tempfile
 from collections import Counter
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Iterator
 
 SCAN_ROOTS = (
     "Picky/HUD",
@@ -242,9 +247,58 @@ def baseline_document(root: Path, baseline_commit: str, scan_roots: Iterable[str
     }
 
 
+@contextmanager
+def committed_tree(root: Path, baseline_commit: str) -> Iterator[Path]:
+    """Materialize exactly one committed Git tree, never the working tree."""
+    resolved = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "--verify", f"{baseline_commit}^{{commit}}"],
+        capture_output=True,
+        text=True,
+    )
+    if resolved.returncode != 0:
+        detail = resolved.stderr.strip() or resolved.stdout.strip() or "unknown Git error"
+        raise ValueError(f"Unable to resolve baseline commit {baseline_commit!r}: {detail}")
+
+    archived = subprocess.run(
+        ["git", "-C", str(root), "archive", "--format=tar", baseline_commit],
+        capture_output=True,
+    )
+    if archived.returncode != 0:
+        detail = archived.stderr.decode().strip() or "unknown Git error"
+        raise ValueError(f"Unable to read baseline commit {baseline_commit!r}: {detail}")
+
+    with tempfile.TemporaryDirectory(prefix="picky-ui-token-baseline-") as temporary:
+        tree = Path(temporary)
+        with tarfile.open(fileobj=io.BytesIO(archived.stdout), mode="r:") as archive:
+            archive.extractall(tree, filter="data")
+        yield tree
+
+
+def baseline_document_for_commit(root: Path, baseline_commit: str, scan_roots: Iterable[str] = SCAN_ROOTS) -> dict:
+    with committed_tree(root, baseline_commit) as tree:
+        return baseline_document(tree, baseline_commit, scan_roots)
+
+
 def write_baseline(root: Path, output: Path, baseline_commit: str, scan_roots: Iterable[str] = SCAN_ROOTS) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(baseline_document(root, baseline_commit, scan_roots), indent=2) + "\n", encoding="utf-8")
+    document = baseline_document_for_commit(root, baseline_commit, scan_roots)
+    output.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+
+
+def verify_baseline(root: Path, baseline_path: Path, baseline_commit: str) -> None:
+    actual = json.loads(baseline_path.read_text(encoding="utf-8"))
+    declared_commit = actual.get("baselineCommit")
+    if declared_commit != baseline_commit:
+        raise ValueError(
+            f"Baseline declares {declared_commit!r}, but verification requested {baseline_commit!r}."
+        )
+    scan_roots = tuple(actual.get("scanRoots", ()))
+    expected = baseline_document_for_commit(root, baseline_commit, scan_roots)
+    if actual != expected:
+        raise ValueError(
+            f"Baseline provenance mismatch: {baseline_path} does not match committed tree {baseline_commit}. "
+            "Regenerate it with --write-baseline."
+        )
 
 
 def load_baseline(path: Path) -> set[str]:
@@ -289,14 +343,26 @@ def main() -> int:
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--baseline", type=Path)
     parser.add_argument("--write-baseline", action="store_true")
+    parser.add_argument("--verify-baseline", action="store_true")
     parser.add_argument("--baseline-commit", default="ce27595f")
     args = parser.parse_args()
 
     root = args.root.resolve()
     baseline = (args.baseline or root / BASELINE_PATH).resolve()
-    if args.write_baseline:
-        write_baseline(root, baseline, args.baseline_commit)
-        return 0
+    if args.write_baseline and args.verify_baseline:
+        parser.error("--write-baseline and --verify-baseline are mutually exclusive")
+
+    try:
+        if args.write_baseline:
+            write_baseline(root, baseline, args.baseline_commit)
+            return 0
+        if args.verify_baseline:
+            verify_baseline(root, baseline, args.baseline_commit)
+            print("UI design-token baseline provenance verified.")
+            return 0
+    except (OSError, ValueError, subprocess.SubprocessError, tarfile.TarError) as error:
+        print(f"UI design-token baseline error: {error}", file=sys.stderr)
+        return 1
 
     failures = lint(root, baseline)
     if failures:

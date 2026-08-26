@@ -532,6 +532,18 @@ extension View {
     }
 }
 
+/// Action labels shared by the tile and identity-label context-menu paths.
+enum PickyHUDDockGroupContextMenuPresentation {
+    static var renameTitle: String { L10n.t("group.menu.rename") }
+    static var colorTitle: String { L10n.t("group.menu.color") }
+    static var ungroupTitle: String { L10n.t("group.menu.ungroup") }
+    static var deleteTitle: String { L10n.t("group.menu.delete") }
+
+    static var actionTitles: [String] {
+        [renameTitle, colorTitle, ungroupTitle, deleteTitle]
+    }
+}
+
 /// Right-click context menu content for a group folder tile and label.
 struct PickyHUDDockGroupContextMenu: View {
     let group: PickyDockGroup
@@ -543,8 +555,8 @@ struct PickyHUDDockGroupContextMenu: View {
     @State private var isConfirmingDelete = false
 
     var body: some View {
-        Button(L10n.t("group.menu.rename"), action: onRename)
-        Menu(L10n.t("group.menu.color")) {
+        Button(PickyHUDDockGroupContextMenuPresentation.renameTitle, action: onRename)
+        Menu(PickyHUDDockGroupContextMenuPresentation.colorTitle) {
             ForEach(PickyDockGroupColor.palette) { color in
                 Button {
                     onSetColor(color)
@@ -559,8 +571,8 @@ struct PickyHUDDockGroupContextMenu: View {
             }
         }
         Divider()
-        Button(L10n.t("group.menu.ungroup"), action: onUngroup)
-        Button(L10n.t("group.menu.delete"), role: .destructive) {
+        Button(PickyHUDDockGroupContextMenuPresentation.ungroupTitle, action: onUngroup)
+        Button(PickyHUDDockGroupContextMenuPresentation.deleteTitle, role: .destructive) {
             // Empty group: nothing to archive, so delete without confirmation.
             guard !group.memberSessionIDs.isEmpty else {
                 onDeleteWithArchive()

@@ -73,11 +73,7 @@ final class LocaleManager: ObservableObject {
         let choiceChanged = newChoice != choice
         guard choiceChanged || identifierChanged else { return }
 
-        choice = newChoice
-        effectiveLocale = nextLocale
-        let bundle = LocaleManager.bundle(for: nextLocale.identifier)
-        stringsBundle = bundle
-        LocaleManager.updateSnapshot(bundle: bundle, locale: nextLocale)
+        setLocaleState(choice: newChoice, locale: nextLocale)
 
         // Mirror the choice into `AppleLanguages` so the system-owned menu
         // bar items and any framework-driven dialogs pick the same language
@@ -95,6 +91,35 @@ final class LocaleManager: ObservableObject {
         }
 
         NotificationCenter.default.post(name: LocaleManager.didChangeNotification, object: nil)
+    }
+
+    /// Temporarily changes only this process's localization snapshots for an
+    /// offscreen test/render scope. It intentionally avoids UserDefaults and
+    /// notifications, then restores the exact prior state in `defer`.
+    func withTemporaryChoiceForTesting<Result>(
+        _ temporaryChoice: PickyLanguage,
+        perform operation: () throws -> Result
+    ) rethrows -> Result {
+        let previousChoice = choice
+        let previousLocale = effectiveLocale
+        let previousBundle = stringsBundle
+        let temporaryLocale = temporaryChoice.resolvedLocale
+        setLocaleState(choice: temporaryChoice, locale: temporaryLocale)
+        defer {
+            choice = previousChoice
+            effectiveLocale = previousLocale
+            stringsBundle = previousBundle
+            LocaleManager.updateSnapshot(bundle: previousBundle, locale: previousLocale)
+        }
+        return try operation()
+    }
+
+    private func setLocaleState(choice: PickyLanguage, locale: Locale) {
+        self.choice = choice
+        effectiveLocale = locale
+        let bundle = LocaleManager.bundle(for: locale.identifier)
+        stringsBundle = bundle
+        LocaleManager.updateSnapshot(bundle: bundle, locale: locale)
     }
 
     private static func updateSnapshot(bundle: Bundle, locale: Locale) {

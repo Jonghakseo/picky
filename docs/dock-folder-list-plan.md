@@ -154,6 +154,21 @@ The spike also confirmed the good news for the in-panel option, which is why the
 
 The child panel avoids the cap entirely because it is sized independently of the HUD panel.
 
+Runtime verification of the child option, measured on a 1728 x 1117 display at the Medium preset with the dock on the right edge:
+
+| Check | Result |
+| --- | --- |
+| Panel renders at full size | `224 x 297`, exactly the computed Medium saturation |
+| Anchored open, folder near rail top | Panel top aligned to the folder top, no clamp |
+| Anchored open, folder near screen bottom | Clamped to `y = 812`, bottom edge `1109` against the 8pt margin, not cut |
+| Opens toward screen interior | Panel at `x = 1426`, inward from the right-edge rail |
+| Rail and card do not move | HUD panel frame identical with the list open and closed |
+| Clicks are consumed, not passed through | Click inside the panel was handled by the panel; frontmost app unchanged |
+
+Not exercised at runtime: ink-capture routing during an active ink gesture, and composer first-responder retention. Both are still required by the criteria below.
+
+One spike defect is worth carrying into the implementation: the child panel's show path guards on measured rail and folder geometry and returns silently when either is missing, so a missing geometry publisher looked exactly like a dead click. The real implementation should either make the geometry non-optional at the call site or log the refusal.
+
 The hosting implementation must satisfy all of the following. These are acceptance criteria, not suggestions.
 
 - The panel is never clipped. A same-window overlay cannot guarantee this because of the height cap described above, and because a `.top`/`.bottom` dock with no open card reserves only about 68pt (`PickyHUDView.horizontalPreviewReserveHeight`).

@@ -77,6 +77,25 @@ enum PickyHUDDockGroupListDragPolicy {
     static let autoScrollEdgeInset: CGFloat = 24
     static let autoScrollPointsPerSecond: CGFloat = 240
 
+    /// A vertical list treats leaving on its horizontal cross-axis as an
+    /// intentional pull-out. Moving past its top or bottom edge stays in the
+    /// reorder lane so edge scrolling cannot accidentally ungroup a Pickle.
+    static func isWithinReorderLane(pointerX: CGFloat, panelWidth: CGFloat) -> Bool {
+        pointerX >= 0 && pointerX <= panelWidth
+    }
+
+    /// Advances a visual scroll offset by the edge velocity while respecting
+    /// the document's reachable range. The AppKit bridge maps this visual
+    /// offset to its flipped or unflipped document coordinates.
+    static func autoScrollPosition(
+        currentOffset: CGFloat,
+        velocity: CGFloat,
+        elapsed: TimeInterval,
+        maximumOffset: CGFloat
+    ) -> CGFloat {
+        min(max(currentOffset + (velocity * CGFloat(elapsed)), 0), max(0, maximumOffset))
+    }
+
     /// Negative scrolls toward the top, positive toward the bottom, zero in the
     /// middle of the panel. Only the edge bands scroll, and the ramp is linear
     /// so the speed is predictable near the boundary.

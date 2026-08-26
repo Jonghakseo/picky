@@ -150,6 +150,66 @@ struct PickyHUDDockGroupListDragPolicyTests {
         #expect(PickyHUDDockGroupListDragPolicy.autoScrollVelocity(pointerY: 5, panelHeight: 40) == 0)
     }
 
+    @Test func edgeHoldMovesScrollPositionAndInsertionDestination() {
+        let pointerY: CGFloat = 296
+        let panelHeight: CGFloat = 300
+        let velocity = PickyHUDDockGroupListDragPolicy.autoScrollVelocity(
+            pointerY: pointerY,
+            panelHeight: panelHeight
+        )
+        let position = PickyHUDDockGroupListDragPolicy.autoScrollPosition(
+            currentOffset: 0,
+            velocity: velocity,
+            elapsed: 0.25,
+            maximumOffset: 152
+        )
+        let centersBeforeScroll = (0..<12).map { CGFloat(60 + ($0 * 38)) }
+        let centersAfterScroll = centersBeforeScroll.map { $0 - position }
+
+        #expect(position == 50)
+        #expect(PickyHUDDockGroupListDragPolicy.insertionIndex(
+            pointerY: pointerY,
+            rowCenters: centersBeforeScroll
+        ) == 7)
+        #expect(PickyHUDDockGroupListDragPolicy.insertionIndex(
+            pointerY: pointerY,
+            rowCenters: centersAfterScroll
+        ) == 8)
+    }
+
+    @Test func primaryAxisEdgeHoldStaysInTheReorderLane() {
+        let panelWidth: CGFloat = 240
+        let isWithinReorderLane = PickyHUDDockGroupListDragPolicy.isWithinReorderLane(
+            pointerX: panelWidth / 2,
+            panelWidth: panelWidth
+        )
+        let outcome = PickyHUDDockGroupListDragPolicy.outcome(
+            isInsidePanel: isWithinReorderLane,
+            timeOutsidePanel: 1,
+            insertionIndex: 4,
+            isDraggedRowStillPresent: true
+        )
+
+        #expect(PickyHUDDockGroupListDragPolicy.autoScrollVelocity(pointerY: 320, panelHeight: 300) > 0)
+        #expect(outcome == .reorder(visibleIndex: 4))
+    }
+
+    @Test func crossAxisExitStillAllowsDeliberatePullOut() {
+        let isWithinReorderLane = PickyHUDDockGroupListDragPolicy.isWithinReorderLane(
+            pointerX: 241,
+            panelWidth: 240
+        )
+        let outcome = PickyHUDDockGroupListDragPolicy.outcome(
+            isInsidePanel: isWithinReorderLane,
+            timeOutsidePanel: PickyHUDDockGroupListDragPolicy.pullOutDwell,
+            insertionIndex: 0,
+            isDraggedRowStillPresent: true
+        )
+
+        #expect(!isWithinReorderLane)
+        #expect(outcome == .ungroup)
+    }
+
     // MARK: - Stored index translation
 
     /// The archived-member invariant, exercised end to end from a drop position:

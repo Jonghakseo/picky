@@ -102,7 +102,7 @@ struct PickyHUDDockRailView: View {
     /// changes from a daemon or CLI update, the geometry no longer maps to the
     /// live projection and the drag must cancel.
     @State private var dragReferenceTopEntryIDs: [String] = []
-    @State private var dragReferenceCenters: [String: CGFloat] = [:]
+    @State private var dragReferenceCenters: [String: CGPoint] = [:]
     /// Group top-entry centers backstop badge hit-testing if SwiftUI has not yet
     /// published the more precise badge frame when pickup begins.
     @State private var dragReferenceGroupTopEntryCenters: [String: CGFloat] = [:]
@@ -125,15 +125,20 @@ struct PickyHUDDockRailView: View {
     /// `translation` it gives the current cursor axis position without
     /// needing per-frame global coordinate math.
     @State private var dragStartCenter: CGFloat = 0
+    /// Full source center frozen at pickup. In a horizontal dock, folder label
+    /// chrome bottom-aligns loose Pickles below the rail center, so the drag
+    /// preview must not reconstruct this cross-axis coordinate from its host.
+    @State private var dragStartSourceCenter: CGPoint?
     /// Group id whose inline rename input should grab keyboard focus on next
     /// appearance. Set right after `onCreateDockGroup()` so the user can type
     /// a name immediately; cleared on commit/cancel.
     @State private var pendingRenameGroupID: String?
-    /// Per-session primary-axis centers measured via `GeometryReader` in the
+    /// Per-session full centers measured via `GeometryReader` in the
     /// `PickyHUDDockRailCoordinateSpace`. Updated on every layout pass via
-    /// `PickyDockSlotCenterPreferenceKey`. Drives precise drop hit-testing
-    /// for icon drags so reorders survive non-uniform group-header chrome.
-    @State private var slotCenters: [String: CGFloat] = [:]
+    /// `PickyDockSlotCenterPreferenceKey`. Pickup freezes this full geometry
+    /// for the floating icon while the primary axis continues to drive the
+    /// frozen reorder hit-test.
+    @State private var slotCenters: [String: CGPoint] = [:]
     /// Per-top-entry primary-axis centers (one per ungrouped session and
     /// one per folder tile). Drives whole-group reorder hit-testing.
     @State private var topEntryCenters: [String: CGFloat] = [:]
@@ -682,7 +687,7 @@ struct PickyHUDDockRailView: View {
             Color.clear
                 .frame(width: metrics.sessionTileWidth, height: metrics.sessionTileHeight)
                 .id(session.id)
-                .publishDockSlotCenter(sessionID: session.id, dockSide: dockSide)
+                .publishDockSlotCenter(sessionID: session.id)
         } else {
             PickyHUDDockIconView(
                 session: session,
@@ -713,7 +718,7 @@ struct PickyHUDDockRailView: View {
                 }
             )
             .id(session.id)
-            .publishDockSlotCenter(sessionID: session.id, dockSide: dockSide)
+            .publishDockSlotCenter(sessionID: session.id)
         }
     }
 
@@ -756,30 +761,30 @@ struct PickyHUDDockRailView: View {
                 // the macOS Dock; reorder hit-testing still uses only the
                 // primary-axis delta, so cross-axis follow is purely visual.
                 .opacity(sessionPullOutArmed ? 0.5 : 1)
-                .position(
-                    x: dockSide.orientation == .vertical
-                        ? geo.size.width / 2 + dragTranslation.width
-                        : dragStartCenter + dragTranslation.width,
-                    y: dockSide.orientation == .vertical
-                        ? dragStartCenter + dragTranslation.height
-                        : geo.size.height / 2 + dragTranslation.height
-                )
+                .position(floatingIconCenter(in: geo.size))
 
                 if sessionPullOutArmed {
                     pullOutBadge(L10n.t("dock.drag.archive.label"))
                         .position(
-                            x: dockSide.orientation == .vertical
-                                ? geo.size.width / 2 + dragTranslation.width
-                                : dragStartCenter + dragTranslation.width,
-                            y: (dockSide.orientation == .vertical
-                                ? dragStartCenter + dragTranslation.height
-                                : geo.size.height / 2 + dragTranslation.height)
+                            x: floatingIconCenter(in: geo.size).x,
+                            y: floatingIconCenter(in: geo.size).y
                                 - (metrics.sessionTileHeight / 2 + 16)
                         )
                 }
             }
             .allowsHitTesting(false)
         }
+    }
+
+    private func floatingIconCenter(in overlaySize: CGSize) -> CGPoint {
+        let fallback = CGPoint(
+            x: dockSide.orientation == .vertical ? overlaySize.width / 2 : dragStartCenter,
+            y: dockSide.orientation == .vertical ? dragStartCenter : overlaySize.height / 2
+        )
+        return PickyHUDDockDragGeometry.floatingIconCenter(
+            dragStartCenter: dragStartSourceCenter ?? fallback,
+            translation: dragTranslation
+        )
     }
 
     /// Small capsule label floated over a dragged Pickle once archive-on-
@@ -834,7 +839,11 @@ struct PickyHUDDockRailView: View {
         // Anchor the floating overlay on the measured slot center captured the
         // moment the user picked up the icon. Falling back to 0 keeps the
         // first frame safe when the GeometryReader publish hasn't landed yet.
-        dragStartCenter = slotCenters[sessionID] ?? 0
+        let sourceCenter = slotCenters[sessionID]
+        dragStartCenter = sourceCenter.map { center in
+            dockSide.orientation == .vertical ? center.y : center.x
+        } ?? 0
+        dragStartSourceCenter = sourceCenter
         // Freeze the hit-test geometry now, while the rail still shows the
         // base (un-previewed) layout. Every subsequent drop decision is made
         // against this fixed snapshot, so the preview reflow is a pure visual
@@ -878,7 +887,10 @@ struct PickyHUDDockRailView: View {
                   let container = slot.container,
                   let center = dragReferenceCenters[sessionID]
             else { return nil }
-            return .init(container: container, center: center)
+            return .init(
+                container: container,
+                center: dockSide.orientation == .vertical ? center.y : center.x
+            )
         }
         let topLevelInsertionCandidates = PickyHUDDockRenderPolicy.topLevelInsertionCandidates(
             visibleTopEntryIDs: dragReferenceTopEntryIDs,
@@ -949,6 +961,7 @@ struct PickyHUDDockRailView: View {
         dragReferenceSlots = []
         dragReferenceTopEntryIDs = []
         dragReferenceCenters = [:]
+        dragStartSourceCenter = nil
         dragReferenceGroupTopEntryCenters = [:]
         dragReferenceGroupDropFrames = [:]
     }
@@ -964,6 +977,7 @@ struct PickyHUDDockRailView: View {
         dragReferenceSlots = []
         dragReferenceTopEntryIDs = []
         dragReferenceCenters = [:]
+        dragStartSourceCenter = nil
         dragReferenceGroupTopEntryCenters = [:]
         dragReferenceGroupDropFrames = [:]
         activeReorderSessionID = nil

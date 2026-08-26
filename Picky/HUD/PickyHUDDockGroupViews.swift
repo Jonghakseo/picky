@@ -85,17 +85,13 @@ extension View {
         ))
     }
 
-    func publishDockSlotCenter(
-        sessionID: String,
-        dockSide: PickyHUDDockSide
-    ) -> some View {
+    func publishDockSlotCenter(sessionID: String) -> some View {
         background {
             GeometryReader { proxy in
                 let frame = proxy.frame(in: .named(PickyHUDDockRailCoordinateSpace))
-                let axis = dockSide.orientation == .vertical ? frame.midY : frame.midX
                 Color.clear.preference(
                     key: PickyDockSlotCenterPreferenceKey.self,
-                    value: [sessionID: axis]
+                    value: [sessionID: CGPoint(x: frame.midX, y: frame.midY)]
                 )
             }
         }
@@ -132,8 +128,8 @@ extension View {
 }
 
 struct PickyDockSlotCenterPreferenceKey: PreferenceKey {
-    static let defaultValue: [String: CGFloat] = [:]
-    static func reduce(value: inout [String: CGFloat], nextValue: () -> [String: CGFloat]) {
+    static let defaultValue: [String: CGPoint] = [:]
+    static func reduce(value: inout [String: CGPoint], nextValue: () -> [String: CGPoint]) {
         value.merge(nextValue()) { _, new in new }
     }
 }

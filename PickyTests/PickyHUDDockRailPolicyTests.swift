@@ -469,6 +469,62 @@ struct PickyHUDDockRailPolicyTests {
         ) == 3)
     }
 
+    @Test func floatingIconKeepsTheCapturedSourceCenterAcrossDockSidesAndFolderChrome() {
+        let translation = CGSize(width: 17, height: -13)
+
+        for preset in PickyHUDDockSizePreset.allCases {
+            let metrics = PickyHUDDockMetrics(preset: preset)
+            for fontScale: CGFloat in [1, 1.3] {
+                let labelChrome = PickyHUDDockGroupHeaderPresentation.labelHeight(
+                    metrics: metrics,
+                    fontScale: fontScale
+                ) + metrics.groupHeaderContentSpacing
+
+                for dockSide in PickyHUDDockSide.allCases {
+                    let railCrossSize = dockSide.orientation == .horizontal
+                        ? PickyHUDDockRailLayoutPolicy.horizontalCrossSize(
+                            groupCount: 1,
+                            metrics: metrics,
+                            fontScale: fontScale
+                        )
+                        : PickyHUDDockRailLayoutPolicy.verticalCrossSize(
+                            groupCount: 1,
+                            metrics: metrics,
+                            fontScale: fontScale
+                        )
+                    let sourceCenter: CGPoint
+                    if dockSide.orientation == .horizontal {
+                        // `horizontalSessionsAndAddSlot` bottom-aligns a loose
+                        // Pickle with folder tiles, placing it below the rail
+                        // center by the folder identity chrome.
+                        sourceCenter = CGPoint(
+                            x: 120,
+                            y: railCrossSize - metrics.horizontalPadding - (metrics.sessionTileHeight / 2)
+                        )
+                        #expect(sourceCenter.y > railCrossSize / 2)
+                        #expect(railCrossSize >= metrics.sessionTileHeight
+                            + (metrics.horizontalPadding * 2)
+                            + labelChrome)
+                    } else {
+                        sourceCenter = CGPoint(x: railCrossSize / 2, y: 120)
+                    }
+
+                    #expect(PickyHUDDockDragGeometry.floatingIconCenter(
+                        dragStartCenter: sourceCenter,
+                        translation: .zero
+                    ) == sourceCenter)
+                    #expect(PickyHUDDockDragGeometry.floatingIconCenter(
+                        dragStartCenter: sourceCenter,
+                        translation: translation
+                    ) == CGPoint(
+                        x: sourceCenter.x + translation.width,
+                        y: sourceCenter.y + translation.height
+                    ))
+                }
+            }
+        }
+    }
+
     @Test func cursorLockedOffsetCompensatesForCurrentGroupHomeOnBothAxes() {
         let translation = CGSize(width: 30, height: 45)
 

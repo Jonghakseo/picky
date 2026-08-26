@@ -288,6 +288,20 @@ enum PickyHUDDockDragGeometry {
         }
     }
 
+    /// The floating Pickle starts at the full source center captured at pickup,
+    /// then follows the cursor translation on both axes. Keeping this separate
+    /// from the primary-axis reorder center preserves frozen hit-test geometry
+    /// while folder label chrome can offset a horizontal source vertically.
+    static func floatingIconCenter(
+        dragStartCenter: CGPoint,
+        translation: CGSize
+    ) -> CGPoint {
+        CGPoint(
+            x: dragStartCenter.x + translation.width,
+            y: dragStartCenter.y + translation.height
+        )
+    }
+
     /// Compensates for a reordered item's new Stack-assigned home in the same
     /// layout pass, keeping its visual center under the cursor without waiting
     /// for a geometry preference to publish on a later pass.

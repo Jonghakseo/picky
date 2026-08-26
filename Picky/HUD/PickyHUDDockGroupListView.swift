@@ -137,7 +137,7 @@ struct PickyHUDDockGroupListView: View {
                 .strokeBorder(DS.Colors.borderSubtle, lineWidth: 0.5)
         )
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(group.displayName), \(rows.count) Pickles")
+        .accessibilityLabel(L10n.t("group.list.accessibility.label", group.displayName, rows.count))
     }
 
     private var panelBackground: some View {
@@ -189,14 +189,14 @@ struct PickyHUDDockGroupListView: View {
     }
 
     private var emptyState: some View {
-        Button("New Pickle here", action: onCreatePickle)
+        Button(L10n.t("group.list.newPickle"), action: onCreatePickle)
             .buttonStyle(.plain)
             .pickyFont(size: 12, weight: .medium)
             .foregroundStyle(DS.Colors.accentText)
             .frame(maxWidth: .infinity, minHeight: metrics.groupListRowHeight)
             .background(DS.Colors.surface2.opacity(0.7), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .hoverAffordance()
-            .accessibilityHint("Create a Pickle in this group")
+            .accessibilityHint(L10n.t("group.list.newPickle.hint"))
     }
 }
 

@@ -772,8 +772,13 @@ final class PickyHUDOverlayManager {
                 return true
             }
         }
-        // Toast panels are tightly sized around their visible capsule, so the
-        // window frame is already an accurate visible-content bound.
+        // Toast and group-list panels are tightly sized around their visible
+        // chrome, so the window frame is already an accurate content bound.
+        if dockGroupListChildrenByDisplayID.values.contains(where: {
+            $0.panel.isVisible && $0.panel.frame.contains(screenPoint)
+        }) {
+            return true
+        }
         return archiveUndoToastsByDisplayID.values.contains {
             $0.panel.isVisible && $0.panel.frame.contains(screenPoint)
         }

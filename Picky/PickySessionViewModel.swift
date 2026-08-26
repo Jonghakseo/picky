@@ -2602,6 +2602,15 @@ final class PickySessionListViewModel: ObservableObject {
         drainPendingDockGroupAssignments()
     }
 
+    /// V2 bootstrap is incremental, so admit only the session proven active by
+    /// this snapshot. Full reconciliation would prune persisted group members
+    /// whose own bootstrap snapshots have not arrived yet.
+    internal func admitActiveSessionToDockLayout(_ sessionID: String) {
+        let changed = dockLayoutController.admitActiveSessionIfMissing(sessionID)
+        if changed { dockLayout = dockLayoutController.layout }
+        drainPendingDockGroupAssignments()
+    }
+
     func assignSessionToDockGroup(sessionID: String, groupName: String) {
         if !applyDockGroupAssignment(sessionID: sessionID, groupName: groupName) {
             pendingDockGroupAssignments[sessionID] = .groupName(groupName)

@@ -73,6 +73,16 @@ final class PickySessionDockLayoutController {
         return apply(next, changed: changed)
     }
 
+    /// Admit one active session without pruning other persisted IDs. V2
+    /// bootstrap snapshots arrive one session at a time, so IDs absent from
+    /// the registry at this moment are not evidence that they are stale.
+    @discardableResult
+    func admitActiveSessionIfMissing(_ sessionID: String) -> Bool {
+        var next = layout
+        let changed = next.appendNewSessionIfMissing(sessionID)
+        return apply(next, changed: changed)
+    }
+
     @discardableResult
     func createGroup(name: String = "", withMemberIDs memberSessionIDs: [String] = []) -> String {
         let mutation = groupCreation(name: name, memberSessionIDs: memberSessionIDs)

@@ -34,7 +34,6 @@ extension PickySessionListViewModel {
         }
         let previous = sessionProjectionStorage.session(id: snapshot.sessionId)
         let wasActive = storage.registry.activeSessionIDs.contains(snapshot.sessionId)
-        let wasArchived = storage.registry.archivedSessionIDs.contains(snapshot.sessionId)
         if snapshot.projection.archived == true {
             archiveStore.manuallyArchivedSessionIDs.insert(snapshot.sessionId)
             archiveStore.archivedSessionIDs = archiveStore.manuallyArchivedSessionIDs
@@ -45,12 +44,8 @@ extension PickySessionListViewModel {
             return
         }
         let isActive = storage.registry.activeSessionIDs.contains(snapshot.sessionId)
-        let isArchived = storage.registry.archivedSessionIDs.contains(snapshot.sessionId)
-        if wasActive != isActive || wasArchived != isArchived {
-            // V2 snapshots publish registry membership directly instead of
-            // routing through v1's `applyManualOrder`, so restore the shared
-            // dock-layout invariant only when membership actually changes.
-            reconcileDockLayout()
+        if !wasActive && isActive {
+            admitActiveSessionToDockLayout(snapshot.sessionId)
         }
         // Match v1 bootstrap/upsert behavior: start git metadata work before
         // the card first renders, and seed notifications for cold snapshots.

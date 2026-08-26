@@ -31,6 +31,18 @@ final class PickySessionDockLayoutControllerTests: XCTestCase {
         XCTAssertEqual(store.savedLayouts.map(\.sessionIDs), [["old", "new"]])
     }
 
+    func testAdmitActiveSessionAppendsWithoutPruningPersistedGroupMembers() {
+        let store = FakeDockLayoutStore(layout: PickyDockLayout(entries: [
+            .group(PickyDockGroup(id: "g", name: "G", color: .teal, memberSessionIDs: ["a", "b"]))
+        ]))
+        let controller = PickySessionDockLayoutController(store: store)
+
+        XCTAssertTrue(controller.admitActiveSessionIfMissing("new"))
+
+        XCTAssertEqual(controller.layout.entryDescriptions, ["group:g[a,b]", "session:new"])
+        XCTAssertEqual(store.savedLayouts.map(\.entryDescriptions), [["group:g[a,b]", "session:new"]])
+    }
+
     func testReconcilePrunesUnknownSessionsAndGroupMembers() {
         let store = FakeDockLayoutStore(layout: PickyDockLayout(entries: [
             .session(id: "a"),

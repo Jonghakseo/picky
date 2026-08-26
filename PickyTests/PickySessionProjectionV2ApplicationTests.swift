@@ -29,6 +29,29 @@ struct PickySessionProjectionV2ApplicationTests {
         #expect(viewModel.unreadSessionIDs.isEmpty)
     }
 
+    @Test func sequentialV2BootstrapPreservesPersistedGroupMembersNotYetProjected() throws {
+        let dockLayoutStore = V2DockLayoutStore(layout: PickyDockLayout(entries: [
+            .group(PickyDockGroup(
+                id: "existing-group",
+                name: "Existing",
+                color: .blue,
+                memberSessionIDs: ["session-a", "session-b"]
+            ))
+        ]))
+        let viewModel = makeViewModel(
+            client: FakePickyAgentClient(),
+            storage: PickyRegistrySessionProjectionStorage(),
+            dockLayoutStore: dockLayoutStore
+        )
+
+        apply(snapshot(sessionID: "session-a", title: "A", status: .running, revision: 1), to: viewModel)
+        apply(snapshot(sessionID: "session-b", title: "B", status: .running, revision: 1), to: viewModel)
+
+        #expect(viewModel.dockLayout.group(withID: "existing-group")?.memberSessionIDs == ["session-a", "session-b"])
+        #expect(viewModel.dockLayout.container(forSessionID: "session-a") == .group(id: "existing-group", memberIndex: 0))
+        #expect(viewModel.dockLayout.container(forSessionID: "session-b") == .group(id: "existing-group", memberIndex: 1))
+    }
+
     @Test func pendingExactGroupAssignmentDrainsWhenV2BootstrapAdmitsSession() throws {
         let dockLayoutStore = V2DockLayoutStore(layout: PickyDockLayout(entries: [
             .group(PickyDockGroup(id: "target-group", name: "Target", color: .teal, memberSessionIDs: []))

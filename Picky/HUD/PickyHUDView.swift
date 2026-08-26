@@ -45,10 +45,18 @@ struct PickyHUDView: View {
     var onCardResizeDragEnded: () -> Void = { }
     var onCardResizeReset: () -> Void = { }
     var onArchiveUndoRequested: (_ sessionID: String, _ title: String) -> Void = { _, _ in }
-    /// Persist this display's dock group collapse overrides. Wired by the
-    /// overlay manager to store the map keyed by display ID so collapse state
-    /// is independent per monitor and survives relaunch.
-    var onDockGroupCollapseChanged: (_ overrides: [String: Bool]) -> Void = { _ in }
+    /// The overlay manager owns the display-local child panel. Folder frames
+    /// are measured in this root's coordinate space before it positions it.
+    var onDockGroupListToggle: (_ groupID: String) -> Void = { _ in }
+    var onDockGroupListClose: () -> Void = { }
+    var onDockGroupListRowSelected: (_ sessionID: String) -> Void = { _ in }
+    /// Display-local list state, owned by the overlay manager. The HUD root only
+    /// reads it, so number keys and arrows resolve against whichever surface is
+    /// frontmost without the two copies drifting.
+    @ObservedObject var dockGroupListFocusStore = PickyHUDDockGroupListFocusStore()
+    var onDockGroupListGeometryChange: (_ badgeFrames: [String: CGRect], _ railFrame: CGRect, _ isCommandHintVisible: Bool, _ openedSessionID: String?) -> Void = { _, _, _, _ in }
+    @State private var dockGroupBadgeFrames: [String: CGRect] = [:]
+    @State private var dockRailFrame: CGRect = .zero
     @State private var heldSession: PickyHUDDockHold?
     @State private var pendingManualAutoOpenSessionID: String?
     @State private var pendingRequestedOpenSessionID: String?
@@ -90,31 +98,8 @@ struct PickyHUDView: View {
     private var dockProjection: PickyDockProjection {
         PickyDockProjector.project(
             layout: dockSnapshot.dockLayout,
-            visibleSessionIDs: visibleSessionUniverse,
-            collapsedOverrides: placement.collapsedGroupOverrides
+            visibleSessionIDs: visibleSessionUniverse
         )
-    }
-
-    /// Toggle a group's collapse state for this panel's display only. Updates
-    /// the per-panel placement override (so the projection recomputes for
-    /// this monitor) and hands the new override map to the overlay manager
-    /// for per-display persistence.
-    private func toggleDockGroupCollapsedForThisDisplay(_ groupID: String) {
-        let result = PickyHUDDockGroupCollapsePolicy.toggleResult(
-            groupID: groupID,
-            groups: dockSnapshot.dockLayout.groups,
-            overrides: placement.collapsedGroupOverrides,
-            openedSessionID: openedSessionID
-        )
-        placement.collapsedGroupOverrides = result.overrides
-        onDockGroupCollapseChanged(result.overrides)
-
-        // Collapsing hides the group's member icons behind the folder badge.
-        // If the open HUD card belongs to a member of this group, close it so
-        // it isn't left floating with no icon to anchor to.
-        if let sessionIDToClose = result.sessionIDToClose {
-            closeOpenedSession(sessionIDToClose)
-        }
     }
 
     /// Close the expanded HUD card for `sessionID`, mirroring the manual
@@ -128,24 +113,25 @@ struct PickyHUDView: View {
         viewModel.markSessionClosed(sessionID: sessionID)
     }
 
-    /// Session cards in their final top-to-bottom dock order. Replaces the
-    /// pre-grouping `sessions.reversed()` helper. When the layout is empty
-    /// (fresh install or no manual reorders), the projector falls back
-    /// to appending sessions in newest-last order so the visual ordering
-    /// matches the legacy behavior.
+    /// Full active session-card universe, including members represented by
+    /// folders in the rail. Its fallback order remains oldest-first.
     private var visibleSessions: [PickyHUDDockSession] {
-        let sessionByID = Dictionary(
-            dockSnapshot.activeSessions.map { ($0.id, $0) },
-            uniquingKeysWith: { lhs, _ in lhs }
-        )
-        return dockProjection.slots.compactMap { sessionByID[$0.sessionID] }
+        Array(dockSnapshot.activeSessions.reversed())
     }
 
-    /// Session ids in dock render order. Used for ⌘N shortcut resolution
-    /// (each slot's `visibleIndex` matches its position here) and for
-    /// `heldSession` lookups.
+    /// Cycle shortcuts follow persisted dock order, unlike the card universe
+    /// above which must retain every active group member.
+    private var cycleSessionIDs: [String] {
+        PickyDockProjector.cycleSessionIDs(
+            layout: dockSnapshot.dockLayout,
+            activeSessionIDs: visibleSessionUniverse
+        )
+    }
+
+    /// Active session ids remain the card universe, including members hidden
+    /// behind folders. Shortcut routing intentionally uses `dockProjection`.
     private var visibleSessionIDs: [String] {
-        dockProjection.slots.map(\.sessionID)
+        visibleSessionUniverse
     }
 
     private var activeSessionID: String? {
@@ -165,8 +151,6 @@ struct PickyHUDView: View {
         guard let activeSessionID else { return nil }
         return visibleSessions.first { $0.id == activeSessionID }
     }
-
-    static let visibleChromeCoordinateSpaceName = "PickyHUDVisibleChrome"
 
     var body: some View {
         let _ = PickyPerf.event("hud_root_body")
@@ -189,11 +173,30 @@ struct PickyHUDView: View {
             // ScrollView/TextEditor subtrees that perform one-frame measurement and
             // bottom-pinning on appear; animating that first layout exposes transient
             // pre-scroll positions as rows/composer floating outside the card.
-            .coordinateSpace(name: Self.visibleChromeCoordinateSpaceName)
+            .coordinateSpace(name: PickyHUDVisibleChromeCoordinateSpaceName)
             .onPreferenceChange(PickyHUDSizePreferenceKey.self, perform: handleHUDSizeChange)
             .onPreferenceChange(PickyHUDCardSizePreferenceKey.self, perform: handleCardMeasuredSize)
             .onPreferenceChange(PickyHUDVisibleChromeFramePreferenceKey.self) {
                 onVisibleChromeFramesChange($0)
+            }
+            .onPreferenceChange(PickyHUDDockGroupBadgeFramePreferenceKey.self) { frames in
+                dockGroupBadgeFrames = frames
+                reportDockGroupListGeometry()
+            }
+            .onPreferenceChange(PickyHUDDockRailFramePreferenceKey.self) { frame in
+                dockRailFrame = frame
+                reportDockGroupListGeometry()
+            }
+            .onChange(of: isCommandShortcutHintVisible) { _, _ in
+                reportDockGroupListGeometry()
+            }
+            .onChange(of: openedSessionID) { _, _ in
+                reportDockGroupListGeometry()
+            }
+            .onChange(of: placement.dockGroupListCreateRequestGroupID) { _, groupID in
+                guard let groupID else { return }
+                placement.dockGroupListCreateRequestGroupID = nil
+                chooseFolderForEmptyPickle(targetGroupID: groupID)
             }
             .onAppear {
                 installCloseShortcutMonitor()
@@ -615,14 +618,13 @@ struct PickyHUDView: View {
                 allSessions: dockSnapshot.activeSessions,
                 baseProjection: dockProjection,
                 layout: dockSnapshot.dockLayout,
-                collapsedGroupOverrides: placement.collapsedGroupOverrides,
                 activeSessionID: activeSession?.id,
                 openedSessionID: openedSessionID,
                 previewSessionID: hoverPreviewSessionID,
                 screenContextTargetSessionID: dockSnapshot.screenContextTargetSessionID,
                 screenContextTargetSticky: dockSnapshot.screenContextTargetSticky,
                 dockSide: placement.dockSide,
-                isCommandShortcutHintVisible: isCommandShortcutHintVisible,
+                isCommandShortcutHintVisible: isRailShortcutHintVisible,
                 pendingDoneFlashSessionIDs: dockSnapshot.pendingDoneFlashSessionIDs,
                 unreadSessionIDs: dockSnapshot.unreadSessionIDs,
                 metrics: dockMetrics,
@@ -651,7 +653,7 @@ struct PickyHUDView: View {
                 },
                 onRenameDockGroup: { id, name in viewModel.renameDockGroup(id: id, to: name) },
                 onSetDockGroupColor: { id, color in viewModel.setDockGroupColor(id: id, color: color) },
-                onToggleDockGroupCollapsed: { id in toggleDockGroupCollapsedForThisDisplay(id) },
+                onOpenDockGroupList: onDockGroupListToggle,
                 onRemoveDockGroup: { id, keepMembers in viewModel.removeDockGroup(id: id, keepMembers: keepMembers) },
                 onMoveSessionInDock: { sessionID, container in viewModel.moveSessionInDock(sessionID: sessionID, to: container) },
                 onMoveDockGroup: { id, target in viewModel.moveDockGroup(id: id, toTopLevelIndex: target) },
@@ -692,6 +694,10 @@ struct PickyHUDView: View {
     private var miniPreviewHorizontalReserve: CGFloat {
         guard placement.dockSide.orientation == .horizontal else { return 0 }
         return PickyHUDDockLayout.miniPreviewHorizontalReserve(metrics: dockMetrics)
+    }
+
+    private func reportDockGroupListGeometry() {
+        onDockGroupListGeometryChange(dockGroupBadgeFrames, dockRailFrame, isCommandShortcutHintVisible, openedSessionID)
     }
 
     private var isPointerInsideHUDSurface: Bool {
@@ -825,35 +831,7 @@ struct PickyHUDView: View {
         // card on the screen the user clicked. `nil` target opens everywhere.
         if let target = request.targetDisplayID, target != displayID { return }
         pendingRequestedOpenSessionID = request.sessionID
-        // Opening a member of a collapsed group must reveal it first, otherwise
-        // the session never enters this display's visible slot set and the
-        // resolution below can't open it.
-        expandGroupForOpeningIfNeeded(request.sessionID)
         openPendingRequestedSessionIfVisible()
-    }
-
-    /// If `sessionID` belongs to a collapsed group on this display, expand the
-    /// group so the session becomes visible and openable. Persists the change
-    /// like a manual expand so it stays consistent per monitor.
-    private func expandGroupForOpeningIfNeeded(_ sessionID: String) {
-        let result = PickyHUDDockGroupCollapsePolicy.expandResultForOpening(
-            sessionID: sessionID,
-            groups: dockSnapshot.dockLayout.groups,
-            overrides: placement.collapsedGroupOverrides
-        )
-        guard result.didExpand else { return }
-        placement.collapsedGroupOverrides = result.overrides
-        onDockGroupCollapseChanged(result.overrides)
-    }
-
-    /// Effective collapse state for `groupID` on this panel's display: the
-    /// per-display override if present, otherwise the layout default.
-    private func isGroupCollapsedOnThisDisplay(_ groupID: String) -> Bool {
-        PickyHUDDockGroupCollapsePolicy.isCollapsed(
-            groupID: groupID,
-            groups: dockSnapshot.dockLayout.groups,
-            overrides: placement.collapsedGroupOverrides
-        )
     }
 
     private func openPendingRequestedSessionIfVisible() {
@@ -1020,7 +998,7 @@ struct PickyHUDView: View {
                 return false
             }
         }
-        let visibleIDs = visibleSessions.map(\.id)
+        let visibleIDs = cycleSessionIDs
         let activeCard = activeSessionID.flatMap { viewModel.sessionCard(sessionID: $0) }
 
         if PickyHUDKeyboardShortcutPolicy.isComposerFocusShortcut(keyCode: event.keyCode, modifiers: flags),
@@ -1041,12 +1019,42 @@ struct PickyHUDView: View {
         // text input is focused. The composer's own .onKeyPress(.escape) handles
         // autocomplete dismissal and stop-if-possible while the input is focused;
         // intercepting here would steal that behavior.
+        // Esc closes an open group list first, even from the composer, so the
+        // floating panel can never outlive the key press that dismisses it.
+        if flags.isEmpty,
+           event.keyCode == Self.escKeyCode,
+           PickyHUDDockGroupListKeyboardPolicy.escapeOutcome(isListOpen: dockGroupListFocus.isOpen)
+           == .closeGroupList {
+            onDockGroupListClose()
+            return true
+        }
+
         if flags.isEmpty,
            event.keyCode == Self.escKeyCode,
            heldSession != nil,
            !isTextInputFocused(in: keyWindow) {
             closeHeldSession()
             return true
+        }
+
+        if PickyHUDDockGroupListKeyboardPolicy.ownsListNavigationKeys(
+            isListOpen: dockGroupListFocus.isOpen,
+            isTextInputFocused: isTextInputFocused(in: keyWindow)
+        ), flags.isEmpty {
+            switch event.keyCode {
+            case Self.upArrowKeyCode:
+                _ = dockGroupListFocusStore.moveHighlight(displayID: displayID, direction: .up)
+                return true
+            case Self.downArrowKeyCode:
+                _ = dockGroupListFocusStore.moveHighlight(displayID: displayID, direction: .down)
+                return true
+            case Self.returnKeyCode, Self.keypadEnterKeyCode:
+                guard let highlighted = dockGroupListFocus.highlightedRowID else { return false }
+                onDockGroupListRowSelected(highlighted)
+                return true
+            default:
+                break
+            }
         }
 
         if PickyHUDKeyboardShortcutPolicy.isLatestResponseReportShortcut(
@@ -1118,26 +1126,33 @@ struct PickyHUDView: View {
         }
 
         if flags == .command, let number = Self.numberShortcutValue(for: event) {
-            let slots = dockProjection.slots
-            guard number >= 1, number <= slots.count else { return false }
-            // A collapsed group occupies one ⌘N slot. Pressing it expands the
-            // group instead of opening its top member; expanding reassigns a
-            // number to every member, so a second ⌘N reaches the individual
-            // Pickle. This makes every Pickle ⌘N-reachable in two presses.
-            if case let .group(groupID, _) = slots[number - 1].container,
-               isGroupCollapsedOnThisDisplay(groupID) {
-                toggleDockGroupCollapsedForThisDisplay(groupID)
+            // An open list owns the number keys; the rail only gets them back
+            // once the list closes.
+            if case .groupList = PickyHUDDockGroupListKeyboardPolicy.shortcutContext(
+                openGroupID: dockGroupListFocus.openGroupID
+            ) {
+                guard let rowID = PickyHUDDockGroupListKeyboardPolicy.rowID(
+                    forShortcutNumber: number,
+                    rowIDs: dockGroupListFocus.rowIDs
+                ) else { return true }
+                onDockGroupListRowSelected(rowID)
                 return true
             }
-            let next = PickyHUDDockLayout.heldSessionAfterNumberShortcut(
-                current: heldSession,
-                visibleIDs: visibleIDs,
-                number: number
-            )
-            if let next {
-                openHeldSession(next)
-            } else {
-                closeHeldSession()
+            let slots = dockProjection.slots
+            guard number >= 1, number <= slots.count else { return false }
+            switch slots[number - 1].target {
+            case .group(let groupID):
+                onDockGroupListToggle(groupID)
+            case .session(let sessionID, _):
+                let next = PickyHUDDockLayout.heldSessionAfterClick(
+                    current: heldSession,
+                    clicked: sessionID
+                )
+                if let next {
+                    openHeldSession(next)
+                } else {
+                    closeHeldSession()
+                }
             }
             return true
         }
@@ -1260,6 +1275,20 @@ struct PickyHUDView: View {
 
     private static let wKeyCode: UInt16 = 13
     private static let escKeyCode: UInt16 = 53
+    private static let upArrowKeyCode: UInt16 = 126
+    private static let downArrowKeyCode: UInt16 = 125
+    private static let returnKeyCode: UInt16 = 36
+    private static let keypadEnterKeyCode: UInt16 = 76
+
+    private var dockGroupListFocus: PickyHUDDockGroupListFocus {
+        dockGroupListFocusStore.focus(for: displayID)
+    }
+
+    /// Rail hints go quiet while a list is open, because the numbers address the
+    /// list's rows instead of the rail's slots.
+    private var isRailShortcutHintVisible: Bool {
+        isCommandShortcutHintVisible && !dockGroupListFocus.isOpen
+    }
 }
 
 /// Full-card observation is isolated to this mounted subtree. Its explicit
@@ -1297,7 +1326,7 @@ private struct PickyHUDVisibleChromeFrameReporter: View {
         GeometryReader { proxy in
             Color.clear.preference(
                 key: PickyHUDVisibleChromeFramePreferenceKey.self,
-                value: [proxy.frame(in: .named(PickyHUDView.visibleChromeCoordinateSpaceName))]
+                value: [proxy.frame(in: .named(PickyHUDVisibleChromeCoordinateSpaceName))]
             )
         }
     }

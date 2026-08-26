@@ -184,136 +184,122 @@ final class PickyDockGroupingTests: XCTestCase {
 
     // MARK: - Projection
 
-    func testProjectorEmitsHeadersAndMembersInOrder() {
+    func testProjectorEmitsOneTopLevelSlotPerGroupInDockOrder() {
         let layout = PickyDockLayout(entries: [
             .session(id: "s1"),
-            .group(PickyDockGroup(
-                id: "g1", name: "Web", color: .teal,
-                memberSessionIDs: ["s2", "s3"]
-            )),
+            .group(PickyDockGroup(id: "g1", name: "Web", color: .teal, memberSessionIDs: ["s2", "s3"])),
             .session(id: "s4")
         ])
         let projection = PickyDockProjector.project(
             layout: layout,
             visibleSessionIDs: ["s1", "s2", "s3", "s4"]
         )
-        XCTAssertEqual(projection.items.count, 5) // session + header + 2 members + session
-        XCTAssertEqual(projection.slots.map(\.sessionID), ["s1", "s2", "s3", "s4"])
-        XCTAssertEqual(projection.slots.map(\.visibleIndex), [0, 1, 2, 3])
-    }
-
-    func testProjectorCollapsedGroupEmitsSingleSlot() {
-        let layout = PickyDockLayout(entries: [
-            .group(PickyDockGroup(
-                id: "g1", name: "Web", color: .teal,
-                memberSessionIDs: ["s1", "s2", "s3"], isCollapsed: true
-            )),
-            .session(id: "s4")
-        ])
-        let projection = PickyDockProjector.project(
-            layout: layout,
-            visibleSessionIDs: ["s1", "s2", "s3", "s4"]
-        )
-        // Collapsed group emits one render item + ungrouped session = 2 items.
-        XCTAssertEqual(projection.items.count, 2)
-        // Slot 0 represents the collapsed group's top member; slot 1 = s4.
-        XCTAssertEqual(projection.slots.map(\.sessionID), ["s1", "s4"])
-        XCTAssertEqual(projection.slots.map(\.visibleIndex), [0, 1])
-    }
-
-    func testProjectorAppendsBrandNewSessionsAtBottom() {
-        let layout = PickyDockLayout(entries: [
-            .session(id: "s1")
-        ])
-        // s2 unknown to the layout — should appear last (bottom of dock).
-        let projection = PickyDockProjector.project(
-            layout: layout,
-            visibleSessionIDs: ["s1", "s2"]
-        )
-        XCTAssertEqual(projection.slots.map(\.sessionID), ["s1", "s2"])
-    }
-
-    func testProjectorSkipsSessionsNotInVisibleUniverse() {
-        let layout = PickyDockLayout(entries: [
-            .session(id: "s1"),
-            .group(PickyDockGroup(id: "g1", name: "G", color: .teal, memberSessionIDs: ["s2", "s3"])),
-            .session(id: "s4")
-        ])
-        // Pretend the caller's visible universe excludes s3.
-        let projection = PickyDockProjector.project(
-            layout: layout,
-            visibleSessionIDs: ["s1", "s2", "s4"]
-        )
-        XCTAssertEqual(projection.slots.map(\.sessionID), ["s1", "s2", "s4"])
+        XCTAssertEqual(projection.items.count, 3)
         XCTAssertEqual(projection.slots.map(\.visibleIndex), [0, 1, 2])
-    }
-
-    func testProjectorSlotMemberIndexAddressesFullMemberListWithHiddenMembers() {
-        // Archived-but-retained members stay in `memberSessionIDs` while
-        // hidden from the dock. Slot containers must use full-list indices
-        // so drops commit at the visually expected position.
-        let layout = PickyDockLayout(entries: [
-            .group(PickyDockGroup(
-                id: "g1", name: "G", color: .teal,
-                memberSessionIDs: ["hidden1", "hidden2", "m1", "hidden3", "m2", "m3"]
-            )),
-            .session(id: "loose")
-        ])
-        let projection = PickyDockProjector.project(
-            layout: layout,
-            visibleSessionIDs: ["m1", "m2", "m3", "loose"]
-        )
-        XCTAssertEqual(projection.slots.map(\.sessionID), ["m1", "m2", "m3", "loose"])
         XCTAssertEqual(
-            projection.slots.map(\.container),
+            projection.slots.map(\.target),
             [
-                .group(id: "g1", memberIndex: 2),
-                .group(id: "g1", memberIndex: 4),
-                .group(id: "g1", memberIndex: 5),
-                .topLevel(index: 1)
+                .session(id: "s1", container: .topLevel(index: 0)),
+                .group(id: "g1"),
+                .session(id: "s4", container: .topLevel(index: 2)),
             ]
         )
     }
 
-    func testMoveUngroupedSessionToVisibleBottomOfGroupWithHiddenMembers() {
-        // Regression: dropping the bottom ungrouped Pickle at the group's
-        // visible bottom (last visible slot's memberIndex + 1) must land
-        // right after the last visible member, not among hidden members
-        // near the head of the list.
-        var layout = PickyDockLayout(entries: [
-            .group(PickyDockGroup(
-                id: "g1", name: "G", color: .teal,
-                memberSessionIDs: ["hidden1", "hidden2", "m1", "m2", "m3"]
-            )),
-            .session(id: "loose")
+    func testProjectorIgnoresLegacyCollapseStateForFolderRendering() {
+        let layout = PickyDockLayout(entries: [
+            .group(PickyDockGroup(id: "g1", name: "Web", color: .teal, memberSessionIDs: ["s1", "s2"], isCollapsed: false)),
+            .session(id: "s3")
         ])
-        let projection = PickyDockProjector.project(
-            layout: layout,
-            visibleSessionIDs: ["m1", "m2", "m3", "loose"]
-        )
-        guard case .group(_, let lastVisibleIdx) = projection.slots[2].container else {
-            return XCTFail("expected group slot")
-        }
-        layout.move(session: "loose", to: .group(id: "g1", memberIndex: lastVisibleIdx + 1))
-        XCTAssertEqual(
-            layout.group(withID: "g1")?.memberSessionIDs,
-            ["hidden1", "hidden2", "m1", "m2", "m3", "loose"]
-        )
+        let projection = PickyDockProjector.project(layout: layout, visibleSessionIDs: ["s1", "s2", "s3"])
+        XCTAssertEqual(projection.items.count, 2)
+        XCTAssertEqual(projection.slots.map(\.visibleIndex), [0, 1])
+        XCTAssertEqual(projection.slots.first?.target, .group(id: "g1"))
     }
 
-    func testProjectorCollapsedGroupSlotUsesTopVisibleMemberFullIndex() {
+    func testProjectorAppendsBrandNewSessionsAtBottom() {
+        let layout = PickyDockLayout(entries: [.session(id: "s1")])
+        let projection = PickyDockProjector.project(layout: layout, visibleSessionIDs: ["s1", "s2"])
+        XCTAssertEqual(projection.slots.compactMap(\.sessionID), ["s1", "s2"])
+    }
+
+    func testProjectorKeepsAGroupSlotWhenItsMembersAreNotVisible() {
         let layout = PickyDockLayout(entries: [
-            .group(PickyDockGroup(
-                id: "g1", name: "G", color: .teal,
-                memberSessionIDs: ["hidden1", "m1", "m2"], isCollapsed: true
-            ))
+            .session(id: "s1"),
+            .group(PickyDockGroup(id: "g1", name: "G", color: .teal, memberSessionIDs: ["archived"])),
+            .session(id: "s2")
         ])
-        let projection = PickyDockProjector.project(
-            layout: layout,
-            visibleSessionIDs: ["m1", "m2"]
+        let projection = PickyDockProjector.project(layout: layout, visibleSessionIDs: ["s1", "s2"])
+        XCTAssertEqual(projection.slots.count, 3)
+        XCTAssertEqual(projection.slots[1].target, .group(id: "g1"))
+        XCTAssertEqual(projection.slots[1].visibleIndex, 1)
+    }
+
+    func testThirdTopLevelShortcutResolvesToFolderTarget() {
+        let layout = PickyDockLayout(entries: [
+            .session(id: "s1"),
+            .session(id: "s2"),
+            .group(PickyDockGroup(id: "g3", memberSessionIDs: []))
+        ])
+        let projection = PickyDockProjector.project(layout: layout, visibleSessionIDs: ["s1", "s2"])
+        XCTAssertEqual(projection.slots[2].visibleIndex, 2)
+        XCTAssertEqual(projection.slots[2].target, .group(id: "g3"))
+    }
+
+    func testRenderItemsHaveStableIdentityAcrossTopLevelReorder() {
+        var layout = PickyDockLayout(entries: [
+            .session(id: "s1"),
+            .group(PickyDockGroup(id: "g1", memberSessionIDs: ["s2"]))
+        ])
+        let before = PickyDockProjector.project(layout: layout, visibleSessionIDs: ["s1", "s2"])
+        layout.moveGroup(id: "g1", toTopLevelIndex: 0)
+        let after = PickyDockProjector.project(layout: layout, visibleSessionIDs: ["s1", "s2"])
+
+        XCTAssertEqual(before.items.map(\.stableID), ["session:s1", "group:g1"])
+        XCTAssertEqual(after.items.map(\.stableID), ["group:g1", "session:s1"])
+        XCTAssertEqual(PickyDockRenderItem.group(PickyDockGroup(id: "g1")).stableID, "group:g1")
+    }
+
+    func testCycleOrderChangesWhenTopLevelDockOrderIsReordered() {
+        var layout = PickyDockLayout(entries: [
+            .group(PickyDockGroup(id: "g", memberSessionIDs: ["b", "a"])),
+            .session(id: "c")
+        ])
+        let activeSessionIDs = ["a", "b", "c", "new"]
+        let before = PickyDockProjector.cycleSessionIDs(layout: layout, activeSessionIDs: activeSessionIDs)
+        layout.moveGroup(id: "g", toTopLevelIndex: 1)
+        let after = PickyDockProjector.cycleSessionIDs(layout: layout, activeSessionIDs: activeSessionIDs)
+
+        XCTAssertEqual(before, ["b", "a", "c", "new"])
+        XCTAssertEqual(after, ["c", "b", "a", "new"])
+    }
+
+    func testScrollTargetUsesOwningFolderForGroupedActiveSession() {
+        let layout = PickyDockLayout(entries: [
+            .session(id: "s1"),
+            .group(PickyDockGroup(id: "g1", memberSessionIDs: ["s2"]))
+        ])
+        let projection = PickyDockProjector.project(layout: layout, visibleSessionIDs: ["s1", "s2"])
+
+        XCTAssertEqual(projection.scrollTargetID(forSessionID: "s1"), "session:s1")
+        XCTAssertEqual(projection.scrollTargetID(forSessionID: "s2"), "group:g1")
+    }
+
+    func testHiddenArchivedMemberOrderingUsesFullMemberIndexPolicy() {
+        let memberIDs = ["hidden1", "hidden2", "m1", "m2", "m3"]
+        let activeIDs: Set<String> = ["m1", "m2", "m3"]
+        let insertionIndex = PickyDockGroupMemberIndexPolicy.fullMemberIndex(
+            forVisibleIndex: 3,
+            memberSessionIDs: memberIDs,
+            activeSessionIDs: activeIDs
         )
-        XCTAssertEqual(projection.slots.map(\.sessionID), ["m1"])
-        XCTAssertEqual(projection.slots.first?.container, .group(id: "g1", memberIndex: 1))
+        XCTAssertEqual(insertionIndex, memberIDs.count)
+        var layout = PickyDockLayout(entries: [
+            .group(PickyDockGroup(id: "g1", memberSessionIDs: memberIDs)),
+            .session(id: "loose")
+        ])
+        layout.move(session: "loose", to: .group(id: "g1", memberIndex: insertionIndex))
+        XCTAssertEqual(layout.group(withID: "g1")?.memberSessionIDs, memberIDs + ["loose"])
     }
 
     // MARK: - Create with members
@@ -381,114 +367,65 @@ final class PickyDockGroupingTests: XCTestCase {
 
     // MARK: - Drag drop resolution (PickyDockDropResolver)
 
-    /// Regression: a Pickle dragged toward an EMPTY group at the bottom of the
-    /// dock must land inside the group, not escape to the top level. Before the
-    /// fix the bottom escape hatch overrode the empty-group drop target because
-    /// the tile sits below the last real slot center.
-    func testDropIntoEmptyBottomGroupDoesNotEscapeToTopLevel() {
-        let layout = PickyDockLayout(entries: [
-            .session(id: "a"),
-            .group(PickyDockGroup(id: "g", memberSessionIDs: []))
+    func testFolderDropUsesFullMemberIndexWhenArchivedMembersPrecedeVisibleRows() {
+        var layout = PickyDockLayout(entries: [
+            .session(id: "loose"),
+            .group(PickyDockGroup(id: "g", memberSessionIDs: ["archived", "active"]))
         ])
-        let result = PickyDockDropResolver.resolveDropContainer(
-            draggedSessionID: "a",
+        let projection = PickyDockProjector.project(
+            layout: layout,
+            visibleSessionIDs: ["loose", "active"]
+        )
+        let slotCandidates = projection.slots.compactMap { slot -> PickyDockDropResolver.SlotCandidate? in
+            guard let container = slot.container else { return nil }
+            return .init(container: container, center: 0)
+        }
+        let group = try! XCTUnwrap(layout.group(withID: "g"))
+        let groupCandidate = PickyDockDropResolver.EmptyGroupCandidate(
+            groupID: group.id,
+            memberIndex: PickyDockGroupMemberIndexPolicy.fullMemberIndex(
+                forVisibleIndex: 0,
+                memberSessionIDs: group.memberSessionIDs,
+                activeSessionIDs: ["loose", "active"]
+            ),
+            center: 100
+        )
+
+        let destination = PickyDockDropResolver.resolveDropContainer(
+            draggedSessionID: "loose",
             cursorAxis: 100,
-            slotCandidates: [.init(container: .topLevel(index: 0), center: 0)],
-            emptyGroupCandidates: [.init(groupID: "g", center: 100)],
+            slotCandidates: slotCandidates,
+            emptyGroupCandidates: [groupCandidate],
             layout: layout,
             slotPitch: 100
         )
-        XCTAssertEqual(result, .group(id: "g", memberIndex: 0))
+
+        XCTAssertEqual(destination, .group(id: "g", memberIndex: 1))
+        layout.move(session: "loose", to: try! XCTUnwrap(destination))
+        XCTAssertEqual(layout.group(withID: "g")?.memberSessionIDs, ["archived", "loose", "active"])
     }
 
-    /// A Pickle dragged onto a NON-empty bottom group lands at the visual
-    /// bottom of that group even when the cursor overshoots past the last
-    /// member's center (which would have tripped the old unconditional bottom
-    /// escape, then later resolved to the final member and inserted above it).
-    func testDropIntoNonEmptyBottomGroupSurvivesOvershoot() {
+    func testDropIntoEmptyFolderUsesTheFolderCandidateInsteadOfEscaping() {
         let layout = PickyDockLayout(entries: [
-            .session(id: "a"),
-            .group(PickyDockGroup(id: "g", memberSessionIDs: ["b"]))
+            .session(id: "loose"),
+            .group(PickyDockGroup(id: "empty", memberSessionIDs: []))
         ])
-        let result = PickyDockDropResolver.resolveDropContainer(
-            draggedSessionID: "a",
-            cursorAxis: 180,
-            slotCandidates: [
-                .init(container: .topLevel(index: 0), center: 0),
-                .init(container: .group(id: "g", memberIndex: 0), center: 100)
-            ],
-            emptyGroupCandidates: [],
-            layout: layout,
-            slotPitch: 100
-        )
-        XCTAssertEqual(result, .group(id: "g", memberIndex: 1))
-    }
+        let projection = PickyDockProjector.project(layout: layout, visibleSessionIDs: ["loose"])
+        let slotCandidates = projection.slots.compactMap { slot -> PickyDockDropResolver.SlotCandidate? in
+            guard let container = slot.container else { return nil }
+            return .init(container: container, center: 0)
+        }
 
-    /// Regression for feedback: when a non-empty group is followed by another
-    /// top-level entry, the 0.4-slot edge zone below the group's last member
-    /// should append to the group instead of resolving to the following slot.
-    func testDropBelowNonEmptyGroupAppendsBeforeFollowingTopLevelEntry() {
-        let layout = PickyDockLayout(entries: [
-            .session(id: "a"),
-            .group(PickyDockGroup(id: "g", memberSessionIDs: ["b"])),
-            .session(id: "c")
-        ])
-        let result = PickyDockDropResolver.resolveDropContainer(
-            draggedSessionID: "a",
-            cursorAxis: 140,
-            slotCandidates: [
-                .init(container: .topLevel(index: 0), center: 0),
-                .init(container: .group(id: "g", memberIndex: 0), center: 100),
-                .init(container: .topLevel(index: 2), center: 200)
-            ],
-            emptyGroupCandidates: [],
+        let destination = PickyDockDropResolver.resolveDropContainer(
+            draggedSessionID: "loose",
+            cursorAxis: 100,
+            slotCandidates: slotCandidates,
+            emptyGroupCandidates: [.init(groupID: "empty", center: 100)],
             layout: layout,
             slotPitch: 100
         )
-        XCTAssertEqual(result, .group(id: "g", memberIndex: 1))
-    }
 
-    /// The same edge affordance exists at the top of an expanded group: the
-    /// area just above the first member inserts at the group's first position.
-    func testDropAboveNonEmptyGroupPrependsAfterPrecedingTopLevelEntry() {
-        let layout = PickyDockLayout(entries: [
-            .session(id: "a"),
-            .group(PickyDockGroup(id: "g", memberSessionIDs: ["b"])),
-            .session(id: "c")
-        ])
-        let result = PickyDockDropResolver.resolveDropContainer(
-            draggedSessionID: "c",
-            cursorAxis: 60,
-            slotCandidates: [
-                .init(container: .topLevel(index: 0), center: 0),
-                .init(container: .group(id: "g", memberIndex: 0), center: 100),
-                .init(container: .topLevel(index: 2), center: 200)
-            ],
-            emptyGroupCandidates: [],
-            layout: layout,
-            slotPitch: 100
-        )
-        XCTAssertEqual(result, .group(id: "g", memberIndex: 0))
-    }
-
-    /// Extraction is preserved: a MEMBER of the bottom group dragged past the
-    /// last slot still escapes to the top level so the user can ungroup it.
-    func testMemberDraggedPastBottomGroupEscapesToTopLevel() {
-        let layout = PickyDockLayout(entries: [
-            .group(PickyDockGroup(id: "g", memberSessionIDs: ["a", "b"]))
-        ])
-        let result = PickyDockDropResolver.resolveDropContainer(
-            draggedSessionID: "a",
-            cursorAxis: 180,
-            slotCandidates: [
-                .init(container: .group(id: "g", memberIndex: 0), center: 0),
-                .init(container: .group(id: "g", memberIndex: 1), center: 100)
-            ],
-            emptyGroupCandidates: [],
-            layout: layout,
-            slotPitch: 100
-        )
-        XCTAssertEqual(result, .topLevel(index: 1))
+        XCTAssertEqual(destination, .group(id: "empty", memberIndex: 0))
     }
 
     /// When the last entry is an ungrouped session, dragging past it appends at

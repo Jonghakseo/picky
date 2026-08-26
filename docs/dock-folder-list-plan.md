@@ -116,7 +116,7 @@ The rail tile's direct gestures are preserved on the row, and everything else mo
 | --- | --- |
 | Click | Open the Pickle in the conversation card |
 | Drag | Reorder within the list, or pull out to ungroup |
-| Press and hold | Archive, reusing the existing 1.5s hold and its progress ring |
+| Press and hold | Archive, reusing the existing hold threshold (`PickyHUDArchiveHoldPolicy.duration`) and its progress ring |
 | Right-click | Context menu |
 
 The context menu carries every remaining per-Pickle action that lives on the dock tile today: stop, compact, screen-context arm, sticky screen-context arm, move to another group, and ungroup. The folder tile's own context menu carries rename, color, ungroup all, and delete.
@@ -315,6 +315,13 @@ Accessibility:
 | Over another folder | Pointer over a folder tile for 400ms | That folder's list opens; the drag continues and can drop into it |
 | Over the rail's archive zone | Existing rail pull-out dwell satisfied | Archive |
 
+**Shipped so far:** in-panel reorder and pull-out-to-ungroup. Pull-out currently
+releases the Pickle directly after its former folder rather than at the rail
+position nearest the pointer, because rail slot centers are not published to the
+child panel. The folder-dwell and archive-zone phases are not implemented; both
+outcomes remain reachable from the row's context menu (Move to Group) and from
+press-and-hold or the menu's archive action, so no capability is lost.
+
 Ungroup and archive are separate outcomes with separate thresholds and must not be conflated. Today outward pull-out from the rail means archive-on-release (`PickyHUDDockRailView.swift:667-731`); pulling a row out of the list means ungroup, and only the rail's own archive zone archives.
 
 - A drag that ends outside every valid target, or is cancelled with Esc, restores the original order and leaves membership unchanged.
@@ -327,10 +334,10 @@ Ungroup and archive are separate outcomes with separate thresholds and must not 
 
 `PickyDockGroup.isCollapsed` is **repurposed, not removed**. It is a wire field on the Picky CLI contract (`PickyDockGroupPayload.collapsed` in `PickyPickleCLIProtocol.swift:16`, filled by `PickyDockGroupCLIPolicy.snapshot`), so deleting it would break CLI consumers and older-build decoding.
 
-- New meaning: `isCollapsed == true` means the group's members are not currently displayed, which under this design is the folder-only resting state. `false` means the group's list panel is open.
-- The polarity is compatible with the legacy meaning, so a persisted layout decodes without migration.
-- On load, the accordion invariant is enforced by normalization: if more than one group has `isCollapsed == false`, the first in dock order stays open and the rest are set to `true`.
-- Because list-open state is display-local and transient, the persisted value is written as `true` for every group on save. The field survives for contract compatibility; it is not a durable user setting anymore.
+- New meaning: `isCollapsed == true` means the group's members are not currently displayed, which under this design is the folder-only resting state. `false` is retained only for legacy decoding and is never emitted by the folder rail.
+- The polarity is compatible with the legacy meaning, so a persisted layout decodes without a schema migration.
+- On load, every group is normalized to `isCollapsed == true` and that normalized layout is written through immediately. Upgrade never auto-opens a floating panel.
+- Because list-open state is display-local and transient, the persisted value remains `true` for every group. The field survives for contract compatibility; it is not a durable user setting anymore.
 - `docs/user-manual.md:324-326` documents per-display collapse as a user-facing feature and must be rewritten in the same change.
 - The per-display `collapsedOverrides` dictionary is repurposed the same way, becoming the display-local list-open state, or replaced by `openGroupListID` if a single optional id proves sufficient. Whichever is chosen, `PickyDockGrouping.swift:450,472`, `PickyHUDDockRailView.swift:162`, `PickyHUDView.swift:94`, and `PickyHUDOverlayManager.swift:290` all need updating.
 

@@ -266,12 +266,19 @@ struct PickyTests {
         #expect(PickyHUDDockLayout.dockRailHeight(sessionCount: 3, isAddSlotExpanded: true, metrics: mediumMetrics) - railThree == mediumMetrics.addSlotCollapsedExpansionReserve)
         #expect(PickyHUDDockLayout.horizontalDockRailLength(sessionCount: 3, isAddSlotExpanded: true, metrics: mediumMetrics) - horizontalThree == mediumMetrics.addSlotCollapsedExpansionReserve)
 
-        // Group headers add a fixed per-header length, and the horizontal cross
-        // size grows by exactly that one-header extra when headers are present.
-        #expect(PickyHUDDockLayout.dockGroupHeaderExtraLength(groupHeaderCount: 0) == 0)
-        #expect(PickyHUDDockLayout.dockGroupHeaderExtraLength(groupHeaderCount: 3) == 3 * PickyHUDDockLayout.dockGroupHeaderExtraLength(groupHeaderCount: 1))
-        #expect(PickyHUDDockLayout.horizontalDockRailCrossSize(hasGroupHeaders: false, metrics: mediumMetrics) == mediumMetrics.railWidth)
-        #expect(PickyHUDDockLayout.horizontalDockRailCrossSize(hasGroupHeaders: true, metrics: mediumMetrics) - PickyHUDDockLayout.horizontalDockRailCrossSize(hasGroupHeaders: false, metrics: mediumMetrics) == PickyHUDDockLayout.dockGroupHeaderExtraLength(groupHeaderCount: 1))
+        // Folder tiles consume exactly one normal slot and add no header chrome.
+        #expect(PickyHUDDockRailLayoutPolicy.contentLength(
+            sessionCount: 3,
+            isAddSlotExpanded: false,
+            dockSide: .right,
+            metrics: mediumMetrics
+        ) == railThree)
+        #expect(PickyHUDDockRailLayoutPolicy.contentLength(
+            sessionCount: 3,
+            isAddSlotExpanded: false,
+            dockSide: .bottom,
+            metrics: mediumMetrics
+        ) == horizontalThree)
 
         #expect(PickyHUDDockLayout.contentSizeReservingAddSlotExpansion(
             measuredSize: CGSize(width: 50, height: 120),

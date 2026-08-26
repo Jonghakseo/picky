@@ -137,6 +137,11 @@ final class PickyHUDPanel: PickySecureSurfacePanel, PickyScreenCaptureExcludedWi
     }
 }
 
+private final class PickyHUDDockGroupListPanel: PickySecureSurfacePanel, PickyScreenCaptureExcludedWindow {
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+}
+
 @MainActor
 final class PickyHUDOverlayManager {
     private let viewModel: any PickyHUDSessionLifecycle
@@ -144,10 +149,12 @@ final class PickyHUDOverlayManager {
     private let fontScaleStore: PickyAppFontScaleStore
     private let visibilityStore: PickyHUDVisibilityStore
     private let actualPanelVisibilityStore: PickyHUDActualPanelVisibilityStore
+    private let dockGroupListFocusStore = PickyHUDDockGroupListFocusStore()
     private let settingsStore: PickySettingsStore
     private let settingsPersistence: PickySettingsPersistenceCoordinator
     private let voiceTargetHitTestRegistry: PickyVoiceTargetHitTestRegistry
     private var visibilityCancellable: AnyCancellable?
+    private var dockStateCancellable: AnyCancellable?
     private let collapsedHeight: CGFloat = 180
     private let minimumHeight: CGFloat = 48
 
@@ -173,8 +180,30 @@ final class PickyHUDOverlayManager {
         var toast: PickyHUDArchiveUndoToast?
     }
 
+    private struct DockGroupListGeometry {
+        var badgeFrames: [String: CGRect] = [:]
+        var railFrame: CGRect = .zero
+        var isCommandShortcutHintVisible = false
+        var openedSessionID: String?
+    }
+
+    private struct DockGroupListChildEntry {
+        let panel: PickyHUDDockGroupListPanel
+        /// Folder tap retained until SwiftUI publishes a usable anchor frame.
+        var pendingGroupID: String?
+        var openGroupID: String?
+        var badgeFrames: [String: CGRect] = [:]
+        var railFrame: CGRect = .zero
+        var isCommandShortcutHintVisible = false
+        var openedSessionID: String?
+        var localMouseDownMonitor: Any?
+        var globalMouseDownMonitor: Any?
+    }
+
     private var panelsByDisplayID: [CGDirectDisplayID: PanelEntry] = [:]
     private var archiveUndoToastsByDisplayID: [CGDirectDisplayID: ArchiveUndoToastEntry] = [:]
+    private var dockGroupListChildrenByDisplayID: [CGDirectDisplayID: DockGroupListChildEntry] = [:]
+    private var dockGroupListGeometryByDisplayID: [CGDirectDisplayID: DockGroupListGeometry] = [:]
     private var screenParametersObserver: NSObjectProtocol?
     private var settingsObserver: NSObjectProtocol?
     private var currentDockSizePreset: PickyHUDDockSizePreset
@@ -188,9 +217,7 @@ final class PickyHUDOverlayManager {
     /// original anchor rather than the previous frame's clamped value.
     private var dragStartPositionsByDisplayID: [String: PickyHUDDockPosition]?
     private var resizeStartCardSizesByDisplayID: [String: PickyHUDCardSize]?
-    /// Per-display dock group collapse overrides keyed by display ID, then
-    /// group ID. Each monitor manages its collapsed groups independently.
-    private var dockGroupCollapseByDisplayID: [String: [String: Bool]]
+
 
     init(
         viewModel: any PickyHUDSessionLifecycle,
@@ -213,19 +240,8 @@ final class PickyHUDOverlayManager {
         self.currentPositionsByDisplayID = settings.hudDockPositions
         self.currentDockSizePreset = settings.hudDockSizePreset
         self.currentCardSizesByDisplayID = settings.hudCardSizes
-        self.dockGroupCollapseByDisplayID = settings.hudDockGroupCollapse
-    }
-
-    private func dockGroupCollapse(for displayID: CGDirectDisplayID) -> [String: Bool] {
-        dockGroupCollapseByDisplayID[String(displayID)] ?? [:]
-    }
-
-    /// Store this display's collapse overrides and persist to Settings so the
-    /// per-monitor collapse state survives relaunch.
-    private func handleDockGroupCollapseChanged(displayID: CGDirectDisplayID, overrides: [String: Bool]) {
-        dockGroupCollapseByDisplayID[String(displayID)] = overrides
-        let collapseByDisplayID = dockGroupCollapseByDisplayID
-        settingsPersistence.enqueue { $0.hudDockGroupCollapse = collapseByDisplayID }
+        self.dockStateCancellable = viewModel.dockState.$snapshot
+            .sink { [weak self] _ in self?.syncDockGroupListChildrenWithSnapshot() }
     }
 
     /// Get the live position for a display. Returns defaults for unknown displays.
@@ -286,8 +302,7 @@ final class PickyHUDOverlayManager {
     private func projectedDockSessionCount(for displayID: CGDirectDisplayID) -> Int {
         PickyDockProjector.project(
             layout: viewModel.dockState.snapshot.dockLayout,
-            visibleSessionIDs: Array(viewModel.dockState.snapshot.activeSessions.reversed().map(\.id)),
-            collapsedOverrides: dockGroupCollapse(for: displayID)
+            visibleSessionIDs: Array(viewModel.dockState.snapshot.activeSessions.reversed().map(\.id))
         ).slots.count
     }
 
@@ -360,6 +375,7 @@ final class PickyHUDOverlayManager {
 
     func stop() {
         visibilityCancellable = nil
+        dockStateCancellable = nil
         stopScreenParametersObserver()
         stopSettingsObserver()
         viewModel.stop()
@@ -389,9 +405,14 @@ final class PickyHUDOverlayManager {
             entry.panel.orderOut(nil)
             entry.panel.contentView = nil
         }
+        for displayID in dockGroupListChildrenByDisplayID.keys {
+            hideDockGroupListChild(displayID: displayID)
+        }
         panelsByDisplayID.removeAll()
         actualPanelVisibilityStore.removeAllPanels()
         archiveUndoToastsByDisplayID.removeAll()
+        dockGroupListChildrenByDisplayID.removeAll()
+        dockGroupListGeometryByDisplayID.removeAll()
     }
 
     // MARK: - Panel sync
@@ -418,6 +439,9 @@ final class PickyHUDOverlayManager {
                 entry.panel.orderOut(nil)
             }
         }
+        for displayID in dockGroupListChildrenByDisplayID.keys where !liveDisplayIDs.contains(displayID) {
+            hideDockGroupListChild(displayID: displayID)
+        }
 
         // Create or reposition for every connected display, then independently
         // order each panel in or out according to that display's visibility.
@@ -431,6 +455,7 @@ final class PickyHUDOverlayManager {
                 panelsByDisplayID[displayID]?.panel.orderFrontRegardless()
             } else {
                 panelsByDisplayID[displayID]?.panel.orderOut(nil)
+                hideDockGroupListChild(displayID: displayID)
             }
         }
         for displayID in archiveUndoToastsByDisplayID.keys {
@@ -459,6 +484,10 @@ final class PickyHUDOverlayManager {
         let panelIdentifier = NSUserInterfaceItemIdentifier("picky-hud-\(displayID)")
         hudPanel.identifier = panelIdentifier
         actualPanelVisibilityStore.track(hudPanel, for: displayID)
+        hudPanel.onActualVisibilityChanged = { [weak self] isVisible in
+            guard !isVisible else { return }
+            Task { @MainActor in self?.hideDockGroupListChild(displayID: displayID) }
+        }
 
         let initialPosition = position(for: displayID)
         let placement = PickyHUDPlacement(
@@ -470,8 +499,7 @@ final class PickyHUDOverlayManager {
                 displayID: displayID,
                 dockSide: initialPosition.side,
                 anchorPercent: initialPosition.anchorPercent
-            ),
-            collapsedGroupOverrides: dockGroupCollapse(for: displayID)
+            )
         )
         let openPerformanceTracker = PickyHUDOpenPerformanceTracker()
         let hudRoot = PickyHUDView(
@@ -533,8 +561,24 @@ final class PickyHUDOverlayManager {
             onArchiveUndoRequested: { [weak self] sessionID, title in
                 self?.showArchiveUndoToast(displayID: displayID, sessionID: sessionID, title: title)
             },
-            onDockGroupCollapseChanged: { [weak self] overrides in
-                self?.handleDockGroupCollapseChanged(displayID: displayID, overrides: overrides)
+            onDockGroupListToggle: { [weak self] groupID in
+                self?.toggleDockGroupListChild(displayID: displayID, groupID: groupID)
+            },
+            onDockGroupListClose: { [weak self] in
+                self?.hideDockGroupListChild(displayID: displayID)
+            },
+            onDockGroupListRowSelected: { [weak self] sessionID in
+                self?.selectDockGroupListRow(displayID: displayID, sessionID: sessionID)
+            },
+            dockGroupListFocusStore: dockGroupListFocusStore,
+            onDockGroupListGeometryChange: { [weak self] badgeFrames, railFrame, isCommandHintVisible, openedSessionID in
+                self?.handleDockGroupListGeometryChange(
+                    displayID: displayID,
+                    badgeFrames: badgeFrames,
+                    railFrame: railFrame,
+                    isCommandShortcutHintVisible: isCommandHintVisible,
+                    openedSessionID: openedSessionID
+                )
             }
         )
             .environmentObject(appearanceStore)
@@ -581,6 +625,9 @@ final class PickyHUDOverlayManager {
         }
         if entry.placement.dockSide != pos.side {
             PickyPerf.event("placement_publish_dock_side")
+            if PickyHUDDockGroupListInteractionPolicy.openGroupIDAfterDockSideChanged() == nil {
+                hideDockGroupListChild(displayID: displayID)
+            }
             entry.placement.dockSide = pos.side
         }
         let nextDockRailLength = computeAvailableDockRailLength(
@@ -715,8 +762,13 @@ final class PickyHUDOverlayManager {
                 return true
             }
         }
-        // Toast panels are tightly sized around their visible capsule, so the
-        // window frame is already an accurate visible-content bound.
+        // Toast and group-list panels are tightly sized around their visible
+        // chrome, so the window frame is already an accurate content bound.
+        if dockGroupListChildrenByDisplayID.values.contains(where: {
+            $0.panel.isVisible && $0.panel.frame.contains(screenPoint)
+        }) {
+            return true
+        }
         return archiveUndoToastsByDisplayID.values.contains {
             $0.panel.isVisible && $0.panel.frame.contains(screenPoint)
         }
@@ -894,6 +946,403 @@ final class PickyHUDOverlayManager {
             width: panelWidth,
             height: targetHeight
         )
+    }
+
+    // MARK: - Dock group list child panel
+
+    private func handleDockGroupListGeometryChange(
+        displayID: CGDirectDisplayID,
+        badgeFrames: [String: CGRect],
+        railFrame: CGRect,
+        isCommandShortcutHintVisible: Bool,
+        openedSessionID: String?
+    ) {
+        let geometry = DockGroupListGeometry(
+            badgeFrames: badgeFrames,
+            railFrame: railFrame,
+            isCommandShortcutHintVisible: isCommandShortcutHintVisible,
+            openedSessionID: openedSessionID
+        )
+        dockGroupListGeometryByDisplayID[displayID] = geometry
+        guard var entry = dockGroupListChildrenByDisplayID[displayID] else { return }
+        entry.badgeFrames = geometry.badgeFrames
+        entry.railFrame = geometry.railFrame
+        entry.isCommandShortcutHintVisible = geometry.isCommandShortcutHintVisible
+        entry.openedSessionID = geometry.openedSessionID
+        dockGroupListChildrenByDisplayID[displayID] = entry
+        if let pendingGroupID = PickyHUDDockGroupListOpenPolicy.pendingGroupIDReadyToOpen(
+            entry.pendingGroupID,
+            anchoredGroupIDs: Set(entry.badgeFrames.keys),
+            hasRailFrame: entry.railFrame != .zero
+        ) {
+            showDockGroupListChild(displayID: displayID, groupID: pendingGroupID)
+        } else if entry.openGroupID != nil {
+            syncDockGroupListChild(displayID: displayID)
+        }
+    }
+
+    private func toggleDockGroupListChild(displayID: CGDirectDisplayID, groupID: String) {
+        let entry = dockGroupListChildrenByDisplayID[displayID]
+        let openGroupID = entry?.openGroupID ?? entry?.pendingGroupID
+        let nextGroupID = PickyHUDDockGroupListOpenPolicy.toggled(
+            openGroupID: openGroupID,
+            tappedGroupID: groupID
+        )
+        guard let nextGroupID else {
+            hideDockGroupListChild(displayID: displayID)
+            return
+        }
+        showDockGroupListChild(displayID: displayID, groupID: nextGroupID)
+    }
+
+    private func showDockGroupListChild(displayID: CGDirectDisplayID, groupID: String) {
+        guard visibilityStore.isVisible(for: displayID),
+              let group = viewModel.dockState.snapshot.dockLayout.group(withID: groupID),
+              let screen = screen(for: displayID),
+              let hudEntry = panelsByDisplayID[displayID]
+        else { return }
+
+        var entry = dockGroupListChildrenByDisplayID[displayID]
+            ?? DockGroupListChildEntry(panel: makeDockGroupListChildPanel())
+        if let geometry = dockGroupListGeometryByDisplayID[displayID] {
+            entry.badgeFrames = geometry.badgeFrames
+            entry.railFrame = geometry.railFrame
+            entry.isCommandShortcutHintVisible = geometry.isCommandShortcutHintVisible
+            entry.openedSessionID = geometry.openedSessionID
+        }
+        if entry.openGroupID != nil {
+            entry.panel.orderOut(nil)
+            entry.panel.contentView = nil
+        }
+        entry.pendingGroupID = PickyHUDDockGroupListOpenPolicy.pendingGroupID(afterRequestFor: groupID)
+        entry.openGroupID = nil
+        dockGroupListChildrenByDisplayID[displayID] = entry
+        guard let folderFrame = entry.badgeFrames[groupID],
+              entry.railFrame != .zero
+        else {
+            pickySessionLog("dock group list open deferred group=\(groupID) display=\(displayID) reason=missing-anchor-geometry")
+            return
+        }
+
+        entry.pendingGroupID = nil
+        entry.openGroupID = groupID
+        dockGroupListFocusStore.open(
+            displayID: displayID,
+            groupID: groupID,
+            rowIDs: dockGroupListRowIDs(group: group),
+            openedSessionID: entry.openedSessionID
+        )
+        entry.panel.contentView = makeDockGroupListChildHostingView(
+            displayID: displayID,
+            group: group,
+            entry: entry
+        )
+        dockGroupListChildrenByDisplayID[displayID] = entry
+        positionDockGroupListChild(
+            displayID: displayID,
+            screen: screen,
+            hudPanelFrame: hudEntry.panel.frame,
+            folderFrame: folderFrame
+        )
+        entry.panel.alphaValue = 0
+        entry.panel.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.12
+            entry.panel.animator().alphaValue = 1
+        }
+        installDockGroupListMouseMonitors(displayID: displayID)
+    }
+
+    private func syncDockGroupListChild(displayID: CGDirectDisplayID) {
+        guard var entry = dockGroupListChildrenByDisplayID[displayID] else { return }
+        let existingGroupIDs = Set(viewModel.dockState.snapshot.dockLayout.groups.map(\.id))
+        entry.pendingGroupID = PickyHUDDockGroupListOpenPolicy.reconciledPendingGroupID(
+            entry.pendingGroupID,
+            existingGroupIDs: existingGroupIDs
+        )
+        dockGroupListChildrenByDisplayID[displayID] = entry
+        if let pendingGroupID = entry.pendingGroupID {
+            showDockGroupListChild(displayID: displayID, groupID: pendingGroupID)
+            return
+        }
+        guard let groupID = entry.openGroupID else { return }
+        guard let group = viewModel.dockState.snapshot.dockLayout.group(withID: groupID),
+              let folderFrame = entry.badgeFrames[groupID],
+              entry.railFrame != .zero,
+              let screen = screen(for: displayID),
+              let hudEntry = panelsByDisplayID[displayID]
+        else {
+            let nextGroupID = PickyHUDDockGroupListOpenPolicy.afterGroupRemoved(
+                openGroupID: groupID,
+                removedGroupID: groupID
+            )
+            if nextGroupID == nil { hideDockGroupListChild(displayID: displayID) }
+            return
+        }
+        dockGroupListFocusStore.updateRows(displayID: displayID, rowIDs: dockGroupListRowIDs(group: group))
+        entry.panel.contentView = makeDockGroupListChildHostingView(
+            displayID: displayID,
+            group: group,
+            entry: entry
+        )
+        positionDockGroupListChild(
+            displayID: displayID,
+            screen: screen,
+            hudPanelFrame: hudEntry.panel.frame,
+            folderFrame: folderFrame
+        )
+    }
+
+    /// Visible rows only: archived members stay in the group but never render,
+    /// so they must not be reachable by number or arrow keys either.
+    private func dockGroupListRowIDs(group: PickyDockGroup) -> [String] {
+        let activeIDs = Set(viewModel.dockState.snapshot.activeSessions.map(\.id))
+        return group.memberSessionIDs.filter { activeIDs.contains($0) }
+    }
+
+    private func makeDockGroupListChildPanel() -> PickyHUDDockGroupListPanel {
+        let panel = PickyHUDDockGroupListPanel(
+            contentRect: .zero,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.level = NSWindow.Level(rawValue: 19)
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.hidesOnDeactivate = false
+        panel.isExcludedFromWindowsMenu = true
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        return panel
+    }
+
+    private func makeDockGroupListChildHostingView(
+        displayID: CGDirectDisplayID,
+        group: PickyDockGroup,
+        entry: DockGroupListChildEntry
+    ) -> NSView {
+        let snapshot = viewModel.dockState.snapshot
+        let sessionsByID = Dictionary(snapshot.activeSessions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let rows = PickyHUDDockGroupListRowProjection.rows(
+            memberSessionIDs: group.memberSessionIDs,
+            activeSessionsByID: sessionsByID,
+            updatedAt: { [weak self] sessionID in self?.viewModel.sessionCard(sessionID: sessionID)?.updatedAt },
+            makeRow: { session, updatedAt in
+                PickyHUDDockGroupListRowModel(session: session, updatedAt: updatedAt)
+            }
+        )
+        let metrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
+        let root = PickyAppFontScaleRoot(store: self.fontScaleStore) { [self] in
+            PickyHUDDockGroupListPanelRoot(
+                group: group,
+                rows: rows,
+                unreadSessionIDs: snapshot.unreadSessionIDs,
+                openedSessionID: entry.openedSessionID,
+                isCommandShortcutHintVisible: entry.isCommandShortcutHintVisible,
+                displayID: displayID,
+                focusStore: dockGroupListFocusStore,
+                metrics: metrics,
+                onSelectSession: { [weak self] sessionID in
+                    self?.selectDockGroupListRow(displayID: displayID, sessionID: sessionID)
+                },
+                onCreatePickle: { [weak self] in
+                    self?.requestDockGroupListPickleCreation(displayID: displayID, groupID: group.id)
+                },
+                moveTargetGroups: snapshot.dockLayout.groups.filter { $0.id != group.id },
+                screenContextTargetSessionID: snapshot.screenContextTargetSessionID,
+                screenContextTargetSticky: snapshot.screenContextTargetSticky,
+                onToggleScreenContextTarget: { [weak self] sessionID in
+                    self?.viewModel.toggleScreenContextTarget(sessionID: sessionID)
+                },
+                onToggleStickyScreenContextTarget: { [weak self] sessionID in
+                    self?.viewModel.toggleStickyScreenContextTarget(sessionID: sessionID)
+                },
+                onCompactSession: { [weak self] sessionID in
+                    Task { await self?.viewModel.requestCompaction(sessionID: sessionID) }
+                },
+                onArchiveSession: { [weak self] sessionID in
+                    self?.archiveDockGroupListSession(displayID: displayID, sessionID: sessionID)
+                },
+                onStopSession: { [weak self] sessionID in
+                    Task { try? await self?.viewModel.abortRestoringQueuedInputs(sessionID: sessionID) }
+                },
+                onMoveSessionToGroup: { [weak self] sessionID, groupID in
+                    guard let self,
+                          let target = self.viewModel.dockState.snapshot.dockLayout.group(withID: groupID)
+                    else { return }
+                    self.viewModel.moveSessionInDock(
+                        sessionID: sessionID,
+                        to: .group(id: groupID, memberIndex: target.memberSessionIDs.count)
+                    )
+                },
+                onUngroupSession: { [weak self] sessionID in
+                    self?.ungroupDockGroupListSession(sessionID: sessionID)
+                },
+                onReorderSession: { [weak self] sessionID, visibleIndex in
+                    self?.reorderDockGroupListSession(
+                        groupID: group.id,
+                        sessionID: sessionID,
+                        visibleIndex: visibleIndex
+                    )
+                },
+                convertScreenPointToPanel: { [weak panel = entry.panel] screenPoint in
+                    guard let panel else { return .zero }
+                    let frame = panel.frame
+                    return CGPoint(x: screenPoint.x - frame.minX, y: frame.maxY - screenPoint.y)
+                }
+            )
+            .environmentObject(self.appearanceStore)
+            .modifier(PickyPreferredColorSchemeModifier(store: self.appearanceStore))
+        }
+        let hostingView = NSHostingView(rootView: LocalizedHostingRoot { root })
+        let panelSize = PickyHUDDockGroupListPolicy.panelSize(memberCount: max(1, rows.count), metrics: metrics)
+        hostingView.frame = NSRect(origin: .zero, size: panelSize)
+        hostingView.autoresizingMask = [.width, .height]
+        return hostingView
+    }
+
+    private func positionDockGroupListChild(
+        displayID: CGDirectDisplayID,
+        screen: NSScreen,
+        hudPanelFrame: CGRect,
+        folderFrame: CGRect
+    ) {
+        guard let entry = dockGroupListChildrenByDisplayID[displayID],
+              let groupID = entry.openGroupID,
+              let group = viewModel.dockState.snapshot.dockLayout.group(withID: groupID)
+        else { return }
+        let memberCount = max(1, group.memberSessionIDs.filter { sessionID in
+            viewModel.dockState.snapshot.activeSessions.contains(where: { $0.id == sessionID })
+        }.count)
+        let metrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
+        let panelSize = PickyHUDDockGroupListPolicy.panelSize(memberCount: memberCount, metrics: metrics)
+        let side = position(for: displayID).side
+        let anchoredOrigin = PickyHUDDockGroupListPolicy.anchoredOrigin(
+            folderFrame: folderFrame,
+            railFrame: entry.railFrame,
+            panelSize: panelSize,
+            dockSide: side,
+            panelGap: PickyHUDDockLayout.panelGap
+        )
+        let origin = PickyHUDDockGroupListPolicy.clampedOrigin(
+            anchoredOrigin,
+            panelSize: panelSize,
+            bounds: PickyHUDDockGroupListScreenLayout.hudRootBounds(
+                visibleFrame: screen.visibleFrame,
+                hudPanelFrame: hudPanelFrame
+            ),
+            dockSide: side,
+            margin: PickyHUDDockLayout.screenMargin
+        )
+        let frame = PickyHUDDockGroupListScreenLayout.screenFrame(
+            hudPanelFrame: hudPanelFrame,
+            swiftUIOrigin: origin,
+            panelSize: panelSize
+        )
+        if entry.panel.frame.integral != frame.integral {
+            entry.panel.setFrame(frame, display: true)
+        }
+    }
+
+    private func selectDockGroupListRow(displayID: CGDirectDisplayID, sessionID: String) {
+        let result = PickyHUDDockGroupListInteractionPolicy.selectionResult(
+            sessionID: sessionID,
+            openGroupID: dockGroupListChildrenByDisplayID[displayID]?.openGroupID
+        )
+        viewModel.requestOpenSession(sessionID: result.openedSessionID, targetDisplayID: displayID)
+        hideDockGroupListChild(displayID: displayID)
+    }
+
+    private func archiveDockGroupListSession(displayID: CGDirectDisplayID, sessionID: String) {
+        let snapshot = viewModel.dockState.snapshot
+        let title = snapshot.activeSessions.first(where: { $0.id == sessionID })?.title
+            ?? viewModel.sessionCard(sessionID: sessionID)?.title
+            ?? L10n.t("group.list.fallbackTitle")
+        viewModel.archive(sessionID: sessionID)
+        showArchiveUndoToast(displayID: displayID, sessionID: sessionID, title: title)
+    }
+
+    /// A drop position among the rendered rows is not a stored member index:
+    /// archived members stay in `memberSessionIDs` without rendering, so the
+    /// visible index has to be translated before the move is emitted.
+    private func reorderDockGroupListSession(groupID: String, sessionID: String, visibleIndex: Int) {
+        let snapshot = viewModel.dockState.snapshot
+        guard let group = snapshot.dockLayout.group(withID: groupID) else { return }
+        let memberIndex = PickyDockGroupMemberIndexPolicy.fullMemberIndex(
+            forVisibleIndex: visibleIndex,
+            memberSessionIDs: group.memberSessionIDs,
+            activeSessionIDs: Set(snapshot.activeSessions.map(\.id))
+        )
+        viewModel.moveSessionInDock(
+            sessionID: sessionID,
+            to: .group(id: groupID, memberIndex: memberIndex)
+        )
+    }
+
+    private func ungroupDockGroupListSession(sessionID: String) {
+        let layout = viewModel.dockState.snapshot.dockLayout
+        guard let source = layout.container(forSessionID: sessionID),
+              case .group(let groupID, _) = source,
+              let groupIndex = layout.entries.firstIndex(where: { entry in
+                  if case .group(let group) = entry { return group.id == groupID }
+                  return false
+              })
+        else { return }
+        viewModel.moveSessionInDock(sessionID: sessionID, to: .topLevel(index: groupIndex + 1))
+    }
+
+    private func requestDockGroupListPickleCreation(displayID: CGDirectDisplayID, groupID: String) {
+        guard let entry = panelsByDisplayID[displayID] else { return }
+        hideDockGroupListChild(displayID: displayID)
+        entry.placement.dockGroupListCreateRequestGroupID = groupID
+    }
+
+    private func installDockGroupListMouseMonitors(displayID: CGDirectDisplayID) {
+        guard var entry = dockGroupListChildrenByDisplayID[displayID], entry.localMouseDownMonitor == nil else { return }
+        entry.localMouseDownMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            Task { @MainActor in self?.dismissDockGroupListForOutsideMouseDown(displayID: displayID, event: event) }
+            return event
+        }
+        entry.globalMouseDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            Task { @MainActor in self?.dismissDockGroupListForOutsideMouseDown(displayID: displayID, event: event) }
+        }
+        dockGroupListChildrenByDisplayID[displayID] = entry
+    }
+
+    private func dismissDockGroupListForOutsideMouseDown(displayID: CGDirectDisplayID, event: NSEvent) {
+        guard let entry = dockGroupListChildrenByDisplayID[displayID], entry.openGroupID != nil else { return }
+        let screenPoint: CGPoint
+        if let window = event.window {
+            screenPoint = window.convertToScreen(NSRect(origin: event.locationInWindow, size: .zero)).origin
+        } else {
+            screenPoint = NSEvent.mouseLocation
+        }
+        guard !entry.panel.frame.contains(screenPoint) else { return }
+        if let hudEntry = panelsByDisplayID[displayID] {
+            let railFrame = PickyHUDDockGroupListScreenLayout.screenFrame(
+                hudPanelFrame: hudEntry.panel.frame,
+                swiftUIOrigin: entry.railFrame.origin,
+                panelSize: entry.railFrame.size
+            )
+            guard !railFrame.contains(screenPoint) else { return }
+        }
+        hideDockGroupListChild(displayID: displayID)
+    }
+
+    private func hideDockGroupListChild(displayID: CGDirectDisplayID) {
+        dockGroupListFocusStore.close(displayID: displayID)
+        guard let entry = dockGroupListChildrenByDisplayID.removeValue(forKey: displayID) else { return }
+        if let localMouseDownMonitor = entry.localMouseDownMonitor { NSEvent.removeMonitor(localMouseDownMonitor) }
+        if let globalMouseDownMonitor = entry.globalMouseDownMonitor { NSEvent.removeMonitor(globalMouseDownMonitor) }
+        entry.panel.orderOut(nil)
+        entry.panel.contentView = nil
+    }
+
+    private func syncDockGroupListChildrenWithSnapshot() {
+        for displayID in dockGroupListChildrenByDisplayID.keys {
+            syncDockGroupListChild(displayID: displayID)
+        }
     }
 
     // MARK: - Archive undo toast
@@ -1195,6 +1644,9 @@ final class PickyHUDOverlayManager {
         for displayID in archiveUndoToastsByDisplayID.keys {
             positionArchiveUndoToast(displayID: displayID)
         }
+        for displayID in dockGroupListChildrenByDisplayID.keys {
+            syncDockGroupListChild(displayID: displayID)
+        }
     }
 
     private func screen(for displayID: CGDirectDisplayID) -> NSScreen? {
@@ -1245,6 +1697,9 @@ final class PickyHUDOverlayManager {
     private func applyDockSizePreset(_ preset: PickyHUDDockSizePreset) {
         guard preset != currentDockSizePreset else { return }
         currentDockSizePreset = preset
+        for displayID in dockGroupListChildrenByDisplayID.keys {
+            hideDockGroupListChild(displayID: displayID)
+        }
         for displayID in panelsByDisplayID.keys {
             panelsByDisplayID[displayID]?.placement.dockSizePreset = preset
             panelsByDisplayID[displayID]?.placement.panelWidth = panelWidth(for: displayID)

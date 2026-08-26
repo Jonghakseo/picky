@@ -41,7 +41,7 @@ enum PickyDockGroupColor: Int, Codable, CaseIterable, Identifiable {
         [.gray, .amber, .teal, .blue, .purple, .pink, .red]
     }
 
-    /// Solid accent color used for the 2px bar and group header text.
+    /// Solid accent color used for the folder tile.
     var accent: Color {
         switch self {
         case .teal:   DS.GroupAccent.teal
@@ -104,7 +104,7 @@ struct PickyDockGroup: Codable, Equatable, Identifiable {
         name: String = "",
         color: PickyDockGroupColor = .defaultColor,
         memberSessionIDs: [String] = [],
-        isCollapsed: Bool = false
+        isCollapsed: Bool = true
     ) {
         self.id = id
         self.name = name
@@ -212,6 +212,19 @@ extension PickyDockLayout {
             if case .group(let g) = entry, g.id == id { return g }
         }
         return nil
+    }
+
+    /// Converts legacy expand/collapse persistence to the folder-only rail.
+    /// List-open state is display-local and transient, so every loaded group
+    /// returns to the persisted resting state with members not displayed.
+    func normalizedForFolderRail() -> PickyDockLayout {
+        var normalized = self
+        for index in normalized.entries.indices {
+            guard case var .group(group) = normalized.entries[index] else { continue }
+            group.isCollapsed = true
+            normalized.entries[index] = .group(group)
+        }
+        return normalized
     }
 
     /// Drop any session id no longer present in `universe` from both
@@ -397,57 +410,80 @@ enum PickyDockContainer: Equatable {
 
 // MARK: - Render projection
 
-/// One row rendered in the dock rail. Group headers carry no session id —
-/// they render a chip above the group's children. Collapsed groups render
-/// as a single stacked badge slot.
+/// One top-level entry rendered in the dock rail. Groups always render as a
+/// single folder tile, regardless of their stored legacy `isCollapsed` value.
 enum PickyDockRenderItem: Equatable {
-    /// Ungrouped Pickle icon.
     case session(id: String)
-    /// Group's header chip (name + count + chevron). Visible only when the
-    /// group is expanded.
-    case groupHeader(group: PickyDockGroup)
-    /// One Pickle icon nested inside an expanded group.
-    case groupMember(groupID: String, sessionID: String, color: PickyDockGroupColor)
-    /// Collapsed group rendered as a stacked badge.
-    case collapsedGroup(group: PickyDockGroup, topMemberSessionID: String?)
+    case group(PickyDockGroup)
+
+    /// Stable SwiftUI identity. Top-level moves must not replace the view that
+    /// owns an in-flight drag, completion animation, or archive hold.
+    var stableID: String {
+        switch self {
+        case .session(let id): "session:\(id)"
+        case .group(let group): "group:\(group.id)"
+        }
+    }
 }
 
-/// Per-icon position record for shortcut numbering and drag hit-testing.
+/// A keyboard/drag target for a top-level rail slot. Unlike the old model, a
+/// folder never borrows one of its members' identity or shortcut number.
+enum PickyDockSlotTarget: Equatable {
+    case session(id: String, container: PickyDockContainer)
+    case group(id: String)
+}
+
+/// Per-top-level position record for shortcut numbering and drag hit-testing.
 struct PickyDockSlot: Equatable {
-    let sessionID: String
-    let container: PickyDockContainer
-    /// 0-based axis position counting only draggable icon slots
-    /// (group headers excluded). This is the index `⌘N` maps to.
+    let target: PickyDockSlotTarget
+    /// 0-based axis position. This is the index `⌘N` maps to.
     let visibleIndex: Int
+
+    var sessionID: String? {
+        guard case let .session(id, _) = target else { return nil }
+        return id
+    }
+
+    var groupID: String? {
+        guard case let .group(id) = target else { return nil }
+        return id
+    }
+
+    var container: PickyDockContainer? {
+        guard case let .session(_, container) = target else { return nil }
+        return container
+    }
 }
 
 /// Result of projecting the persisted layout against the currently-visible
-/// session universe. Render items drive SwiftUI; slots drive both shortcut
-/// resolution and drag-target hit-testing.
+/// session universe. Every top-level entry, including an empty group, owns one
+/// render item and one slot.
 struct PickyDockProjection: Equatable {
     var items: [PickyDockRenderItem]
     var slots: [PickyDockSlot]
 
     static let empty = PickyDockProjection(items: [], slots: [])
+
+    /// The top-level rail item that contains a session. Grouped sessions must
+    /// reveal their folder rather than attempting to scroll to a hidden row.
+    func scrollTargetID(forSessionID sessionID: String) -> String? {
+        if items.contains(.session(id: sessionID)) { return "session:\(sessionID)" }
+        for item in items {
+            guard case .group(let group) = item,
+                  group.memberSessionIDs.contains(sessionID)
+            else { continue }
+            return "group:\(group.id)"
+        }
+        return nil
+    }
 }
 
 enum PickyDockProjector {
-    /// Build the render plan from `layout` + the visible session ids list.
-    /// `visibleSessionIDs` is the ordered list the HUD already renders today
-    /// (top-to-bottom in a vertical dock). Any session present in that list
-    /// but missing from the layout is appended as a top-level ungrouped slot
-    /// at the *end* of the projection so brand-new Pickles flow into the
-    /// bottom-end slot the user expects.
-    /// `collapsedOverrides` carries per-display collapse state keyed by group
-    /// ID. When an entry exists for a group it wins over the layout's stored
-    /// `isCollapsed`, letting each monitor's dock collapse/expand groups
-    /// independently. The effective flag is baked into the emitted group copy
-    /// so every downstream consumer (render branch, header chevron, badge)
-    /// observes the same per-display state.
+    /// Build the folder-only rail plan. `isCollapsed` remains persisted for CLI
+    /// compatibility, but is intentionally ignored while rendering.
     static func project(
         layout: PickyDockLayout,
-        visibleSessionIDs: [String],
-        collapsedOverrides: [String: Bool] = [:]
+        visibleSessionIDs: [String]
     ) -> PickyDockProjection {
         let visibleSet = Set(visibleSessionIDs)
         var items: [PickyDockRenderItem] = []
@@ -455,83 +491,58 @@ enum PickyDockProjector {
         var seen: Set<String> = []
         var slotIndex = 0
 
-        for entry in layout.entries {
+        for (layoutIndex, entry) in layout.entries.enumerated() {
             switch entry {
             case .session(let id):
                 guard visibleSet.contains(id) else { continue }
                 items.append(.session(id: id))
                 slots.append(PickyDockSlot(
-                    sessionID: id,
-                    container: layout.container(forSessionID: id) ?? .topLevel(index: 0),
+                    target: .session(id: id, container: .topLevel(index: layoutIndex)),
                     visibleIndex: slotIndex
                 ))
                 seen.insert(id)
                 slotIndex += 1
-            case .group(let storedGroup):
-                var group = storedGroup
-                group.isCollapsed = collapsedOverrides[storedGroup.id] ?? storedGroup.isCollapsed
-                let visibleMembers = group.memberSessionIDs.filter { visibleSet.contains($0) }
-                if group.isCollapsed {
-                    items.append(.collapsedGroup(group: group, topMemberSessionID: visibleMembers.first))
-                    // A collapsed group still occupies one shortcut slot so
-                    // ⌘N hits its top member (the visible card-stack icon).
-                    if let topID = visibleMembers.first {
-                        items.append(contentsOf: [])
-                        slots.append(PickyDockSlot(
-                            sessionID: topID,
-                            container: .group(
-                                id: group.id,
-                                memberIndex: group.memberSessionIDs.firstIndex(of: topID) ?? 0
-                            ),
-                            visibleIndex: slotIndex
-                        ))
-                        slotIndex += 1
-                    }
-                    seen.formUnion(visibleMembers)
-                } else {
-                    items.append(.groupHeader(group: group))
-                    for sid in visibleMembers {
-                        items.append(.groupMember(
-                            groupID: group.id,
-                            sessionID: sid,
-                            color: group.color
-                        ))
-                        // Slot containers must address the FULL member list
-                        // (including archived-but-retained members hidden
-                        // from the dock): `move`/`insertSession` interpret
-                        // `memberIndex` against `memberSessionIDs`. Using the
-                        // visible enumeration index here made drops land
-                        // before hidden members near the head of the list,
-                        // so the bottom visible positions were unreachable.
-                        slots.append(PickyDockSlot(
-                            sessionID: sid,
-                            container: .group(
-                                id: group.id,
-                                memberIndex: group.memberSessionIDs.firstIndex(of: sid) ?? 0
-                            ),
-                            visibleIndex: slotIndex
-                        ))
-                        slotIndex += 1
-                    }
-                    seen.formUnion(visibleMembers)
-                }
+            case .group(let group):
+                items.append(.group(group))
+                slots.append(PickyDockSlot(target: .group(id: group.id), visibleIndex: slotIndex))
+                seen.formUnion(group.memberSessionIDs.filter { visibleSet.contains($0) })
+                slotIndex += 1
             }
         }
 
         // Brand-new sessions not yet reconciled into the layout land at the
-        // bottom-end so the visual ordering matches the user expectation
-        // ("new Pickles appear next to +"). They render as ungrouped.
+        // bottom-end so the visual ordering matches the user expectation.
         for id in visibleSessionIDs where !seen.contains(id) {
             items.append(.session(id: id))
             slots.append(PickyDockSlot(
-                sessionID: id,
-                container: .topLevel(index: layout.entries.count),
+                target: .session(id: id, container: .topLevel(index: layout.entries.count)),
                 visibleIndex: slotIndex
             ))
             slotIndex += 1
         }
 
         return PickyDockProjection(items: items, slots: slots)
+    }
+
+    /// Active Pickles in persisted dock order for the cycle shortcut. Groups
+    /// contribute their stored member order, then active Pickles missing from
+    /// the layout are appended in the caller's fallback order.
+    static func cycleSessionIDs(layout: PickyDockLayout, activeSessionIDs: [String]) -> [String] {
+        let activeSet = Set(activeSessionIDs)
+        var result: [String] = []
+        var seen: Set<String> = []
+        func appendIfActive(_ id: String) {
+            guard activeSet.contains(id), seen.insert(id).inserted else { return }
+            result.append(id)
+        }
+        for entry in layout.entries {
+            switch entry {
+            case .session(let id): appendIfActive(id)
+            case .group(let group): group.memberSessionIDs.forEach(appendIfActive)
+            }
+        }
+        activeSessionIDs.forEach(appendIfActive)
+        return result
     }
 }
 
@@ -548,11 +559,20 @@ enum PickyDockDropResolver {
         let center: CGFloat
     }
 
-    /// An expanded-but-empty (or collapsed-with-no-visible-member) group's
-    /// drop tile and its center. Dropping here inserts at member index 0.
+    /// A group folder tile and its center. Dropping here inserts into that
+    /// group's members.
     struct EmptyGroupCandidate: Equatable {
         let groupID: String
+        /// Full stored member index, translated from the folder's visible
+        /// insertion position so archived members keep their relative order.
+        let memberIndex: Int
         let center: CGFloat
+
+        init(groupID: String, memberIndex: Int = 0, center: CGFloat) {
+            self.groupID = groupID
+            self.memberIndex = memberIndex
+            self.center = center
+        }
     }
 
     /// Resolve the prospective drop container for a Pickle dragged to
@@ -588,15 +608,12 @@ enum PickyDockDropResolver {
             let distance = abs(candidate.center - cursorAxis)
             if distance < minDistance {
                 minDistance = distance
-                nearest = .group(id: candidate.groupID, memberIndex: 0)
+                nearest = .group(id: candidate.groupID, memberIndex: candidate.memberIndex)
             }
         }
 
-        // Give expanded groups forgiving edge zones before their first member
-        // and after their last member. Without these virtual targets, dropping
-        // just below a group's final Pickle can still resolve to the final
-        // member's center, which inserts above it instead of appending at the
-        // visual bottom of the group.
+        // Retain the member-edge resolver for list-row reordering. Rail folder
+        // tiles themselves are represented by `EmptyGroupCandidate` above.
         if let edgeInsertion = resolveGroupEdgeInsertion(
             draggedSessionID: draggedSessionID,
             cursorAxis: cursorAxis,
@@ -652,7 +669,7 @@ enum PickyDockDropResolver {
         }
 
         for (groupID, slots) in slotsByGroupID {
-            guard let group = layout.group(withID: groupID), !group.isCollapsed else { continue }
+            guard let group = layout.group(withID: groupID) else { continue }
             let sorted = slots.sorted { $0.center < $1.center }
             guard let first = sorted.first, let last = sorted.last else { continue }
             let isDraggedMember = group.memberSessionIDs.contains(draggedSessionID)

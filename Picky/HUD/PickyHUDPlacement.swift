@@ -37,11 +37,9 @@ final class PickyHUDPlacement: ObservableObject {
     /// margins, HUD shadow bleed, and the current dock anchor are accounted
     /// for. Vertical rails consume this as height; horizontal rails as width.
     @Published var availableDockRailLength: CGFloat
-    /// Per-display dock group collapse/expand overrides keyed by group ID.
-    /// A missing entry means the group uses the layout's stored default, so
-    /// each monitor's dock manages its collapsed groups independently. The
-    /// overlay manager seeds this from Settings and persists changes.
-    @Published var collapsedGroupOverrides: [String: Bool]
+    /// One-shot request from a display's child list panel to the HUD root,
+    /// which owns the existing group-targeted folder creation flow.
+    @Published var dockGroupListCreateRequestGroupID: String?
 
     var cardWidth: CGFloat { cardSize?.width ?? PickyHUDCardSize.defaultWidth }
     var fixedCardHeight: CGFloat? { cardSize?.height }
@@ -59,7 +57,7 @@ final class PickyHUDPlacement: ObservableObject {
         cardSize: PickyHUDCardSize? = nil,
         panelWidth: CGFloat = PickyHUDDockLayout.panelWidth,
         availableDockRailLength: CGFloat = PickyHUDPlacement.defaultAvailableCardMaxHeight,
-        collapsedGroupOverrides: [String: Bool] = [:]
+        dockGroupListCreateRequestGroupID: String? = nil
     ) {
         self.availableCardMaxHeight = availableCardMaxHeight
         self.dockSide = dockSide
@@ -67,6 +65,6 @@ final class PickyHUDPlacement: ObservableObject {
         self.cardSize = cardSize
         self.panelWidth = panelWidth
         self.availableDockRailLength = availableDockRailLength
-        self.collapsedGroupOverrides = collapsedGroupOverrides
+        self.dockGroupListCreateRequestGroupID = dockGroupListCreateRequestGroupID
     }
 }

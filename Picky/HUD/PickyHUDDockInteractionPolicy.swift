@@ -22,6 +22,21 @@ enum PickyHUDArchiveHoldPolicy {
     }
 }
 
+/// Shared enablement projection for every per-Pickle Dock menu. Keeping the
+/// tile and group-list row on this policy prevents their context menus from
+/// drifting when a session status changes.
+struct PickyHUDDockSessionActionAvailability: Equatable {
+    let canCompact: Bool
+    let canStop: Bool
+
+    static func resolve(status: PickySessionStatus, canRequestCompaction: Bool) -> Self {
+        Self(
+            canCompact: canRequestCompaction,
+            canStop: !status.isTerminal
+        )
+    }
+}
+
 enum PickyHUDDockInteractionPolicy {
     static func activeSessionID(visibleIDs: [String], held: PickyHUDDockHold?, previewID: String?) -> String? {
         if let held, visibleIDs.contains(held.sessionID) { return held.sessionID }

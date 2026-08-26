@@ -320,6 +320,25 @@ Manage membership:
 - Drag a group’s folder tile to reorder the whole group within the dock. Hold it clearly **outside** the dock and a **Remove** label appears; release there to remove the group (macOS Dock style). A group that still contains Pickles asks for confirmation before archiving them; an empty group is removed immediately.
 - Click any folder tile to toggle its member list. Opening a folder never changes the open conversation card; selecting a member opens its card and closes the list.
 
+The member list:
+
+- Opens as a small panel next to the folder tile. It never changes the dock's own size, and it stays on screen if the folder sits near a screen edge.
+- Each row shows the Pickle's status glyph, its title, and a second line with the working folder and last activity. An unread Pickle shows a dot; the folder tile itself shows how many of its Pickles are unread.
+- Only one folder's list is open at a time, and each display keeps its own.
+- Lists longer than eight Pickles scroll inside the panel.
+- The list closes when you pick a row, press `Esc`, click elsewhere, or move the dock.
+
+Row actions inside the list:
+
+| Action | Behavior |
+| --- | --- |
+| Click | Opens that Pickle and closes the list. |
+| Drag | Reorders within the group. Drag the row clear of the panel to pull the Pickle out of the group. |
+| Press and hold | Archives, with the same hold and progress ring as a dock tile. |
+| Right-click | Stop, compact, screen-context arm, move to another group, and remove from group. |
+
+While a member list is open it owns the number keys: `Cmd + 1`…`9` select its rows instead of dock slots, and the dock's own badges hide until the list closes. With no text field focused, `Up`/`Down` move the highlight and `Return` opens the highlighted Pickle.
+
 Right-click a group’s folder tile for more actions:
 
 | Action | Behavior |
@@ -620,9 +639,10 @@ These work when a Pickle card/HUD panel is active.
 | Shortcut | Action |
 | --- | --- |
 | Cmd + W | Close the open Pickle card. |
-| Escape | Close the card when no text input is focused. |
-| Return | Focus the active composer when no text input is focused. |
-| Cmd + 1…9 | Open/close the Pickle in that top-level dock slot, or open a folder’s member list. |
+| Escape | Close an open folder member list first, otherwise close the card when no text input is focused. |
+| Return | Open the highlighted row while a folder member list is open, otherwise focus the active composer when no text input is focused. |
+| Up / Down | Move the highlight in an open folder member list, when no text input is focused. |
+| Cmd + 1…9 | Open/close the Pickle in that top-level dock slot, or open a folder’s member list. While a member list is open, these select its rows instead. |
 | Cmd + Shift + `[` | Cycle to previous Pickle. |
 | Cmd + Shift + `]` | Cycle to next Pickle. |
 | Cmd + R | Open latest agent response as a report. |

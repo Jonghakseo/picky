@@ -179,6 +179,25 @@ struct PickySessionRecoveryCoordinatorTests {
         #expect(coordinator.bufferedTransactionCount(sessionID: "session-a") == 1)
     }
 
+    @Test func removingSessionDiscardsItsRecoveryCursorAndBufferedTransactions() throws {
+        var requested: [(String, String)] = []
+        let coordinator = PickySessionRecoveryCoordinator(
+            requestSnapshot: { requested.append(($0, $1)) },
+            applySnapshot: { _, _, _ in },
+            applyTransaction: { _ in },
+            requestID: { "recovery-1" }
+        )
+        coordinator.receive(transaction: try transaction(sessionID: "removed", epoch: "epoch-1", baseRevision: 3, revision: 4))
+        #expect(coordinator.inFlightRequestID(sessionID: "removed") == "recovery-1")
+        #expect(coordinator.bufferedTransactionCount(sessionID: "removed") == 1)
+
+        coordinator.remove(sessionID: "removed")
+
+        #expect(coordinator.inFlightRequestID(sessionID: "removed") == nil)
+        #expect(coordinator.bufferedTransactionCount(sessionID: "removed") == 0)
+        #expect(requested.count == 1)
+    }
+
     private func transaction(sessionID: String, epoch: String, baseRevision: Int, revision: Int) throws -> PickySessionProjectionTransaction {
         let json = """
         {"sessionId":"\(sessionID)","epoch":"\(epoch)","baseRevision":\(baseRevision),"revision":\(revision),"mutations":[{"type":"metaPatch","patch":{"title":"Updated"}}]}

@@ -30,6 +30,7 @@ protocol PickyTerminalOverlayPresenting: AnyObject {
         cwd: String?,
         onClose: @escaping @MainActor (PickyTerminalOverlayHandle) -> Void
     ) throws -> PickyTerminalOverlayHandle
+    func closeTerminal(handle: PickyTerminalOverlayHandle)
 }
 
 enum PickyTerminalOverlayError: LocalizedError, Equatable {
@@ -134,6 +135,10 @@ final class PickyTerminalOverlayRecordStore<Record> {
 
     func activeRecord(sessionID: String) -> Record? {
         activeRecordsBySessionID[sessionID]?.record
+    }
+
+    func activeRecords() -> [Record] {
+        activeRecordsBySessionID.values.map(\.record)
     }
 
     func insert(_ record: Record, sessionID: String, recordID: ObjectIdentifier) {
@@ -308,6 +313,11 @@ final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
         panel.orderFrontRegardless()
         panel.makeKey()
         return handle
+    }
+
+    func closeTerminal(handle: PickyTerminalOverlayHandle) {
+        guard let record = recordStore.activeRecords().first(where: { $0.handle == handle }) else { return }
+        record.panel.close()
     }
 
     private func makeFontScalePersister() -> PickyTerminalFontScalePersister {

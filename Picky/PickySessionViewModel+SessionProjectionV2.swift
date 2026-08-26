@@ -72,12 +72,20 @@ extension PickySessionListViewModel {
         } else {
             deliverNotificationIfNeeded(for: card)
         }
-        disarmInitialSnapshotWatchdog()
-        if isLoadingInitialSessionSnapshot { isLoadingInitialSessionSnapshot = false }
         syncSelectionAfterSessionListChange(skippingRedundantPublishedAssignments: true)
         syncVoiceFollowUpAfterSessionListChange()
         syncScreenContextTargetAfterSessionListChange()
         syncActiveVoiceFollowUpAfterSessionListChange(skippingRedundantPublishedAssignments: true)
+    }
+
+    /// Source identity is retained only at the router boundary. This hook is
+    /// deliberately invoked from its primary-only callback rather than from
+    /// source-free projection application, so child snapshots cannot mask a
+    /// stalled primary bootstrap.
+    func handleSessionProjectionSnapshotReceived(isPrimary: Bool) {
+        guard isPrimary else { return }
+        disarmInitialSnapshotWatchdog()
+        isLoadingInitialSessionSnapshot = false
     }
 
     private func applySessionProjectionTransaction(_ transaction: PickySessionProjectionTransaction) {

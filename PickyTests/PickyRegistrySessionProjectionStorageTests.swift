@@ -42,6 +42,26 @@ struct PickyRegistrySessionProjectionStorageTests {
         withExtendedLifetime(cancellable) {}
     }
 
+    @Test func batchRemovalPublishesOnceAndPreservesSurvivingStoreIdentity() {
+        let storage = PickyRegistrySessionProjectionStorage()
+        let first = card(id: "first", index: 1)
+        let survivor = card(id: "survivor", index: 2)
+        let archived = card(id: "archived", index: 3)
+        var publications: [PickySessionProjectionStoragePublication] = []
+        let cancellable = storage.changes.sink { publications.append($0) }
+
+        storage.replaceAllSessions(active: [first, survivor], archived: [archived])
+        let survivorStore = storage.registry.sessionStore(sessionID: survivor.id)
+        storage.removeSessions(ids: [first.id, archived.id])
+
+        #expect(storage.registry.activeSessionIDs == [survivor.id])
+        #expect(storage.registry.archivedSessionIDs.isEmpty)
+        #expect(storage.registry.sessionStore(sessionID: survivor.id) === survivorStore)
+        #expect(publications.count == 2)
+        #expect(publications.last?.steps.count == 1)
+        withExtendedLifetime(cancellable) {}
+    }
+
     @Test func registryOwnsEffectiveArchiveMembership() {
         let storage = PickyRegistrySessionProjectionStorage()
         let card = card(id: "archive-me", index: 1)

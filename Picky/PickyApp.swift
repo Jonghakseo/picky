@@ -423,6 +423,9 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         hudSessionViewModel.onSessionProjectionStorageChanged = { [weak router] in
             router?.sessionProjectionStorageDidChange()
         }
+        router.onSessionProjectionSnapshotReceived = { [weak self] isPrimary in
+            self?.hudSessionViewModel.handleSessionProjectionSnapshotReceived(isPrimary: isPrimary)
+        }
         router.dockGroupsProvider = { [weak self] in
             guard let self else { return [] }
             return self.hudSessionViewModel.dockGroupsSnapshotForCLI()

@@ -29,6 +29,43 @@ struct PickySessionProjectionV2ApplicationTests {
         #expect(viewModel.unreadSessionIDs.isEmpty)
     }
 
+    @Test func acceptedPrimaryBootstrapCompletionPrunesOnlyExplicitlyRemovedMembershipAndUnblocksLoading() throws {
+        let storage = PickyRegistrySessionProjectionStorage()
+        let archiveStore = V2ArchiveStore()
+        let viewModel = makeViewModel(client: FakePickyAgentClient(), storage: storage, archiveStore: archiveStore)
+        apply(snapshot(sessionID: "keep", title: "Keep", status: .running, revision: 1), to: viewModel)
+        apply(snapshot(sessionID: "stale", title: "Stale", status: .completed, revision: 1), to: viewModel)
+        viewModel.archive(sessionID: "stale")
+        #expect(storage.session(id: "stale") != nil)
+
+        viewModel.applySessionProjectionBootstrapCompletion(removedSessionIDs: ["stale"], isPrimary: true)
+
+        #expect(storage.session(id: "keep") != nil)
+        #expect(storage.session(id: "stale") == nil)
+        #expect(!archiveStore.manuallyArchivedSessionIDs.contains("stale"))
+        #expect(!viewModel.isLoadingInitialSessionSnapshot)
+    }
+
+    @Test func childBootstrapCompletionDoesNotUnblockPrimaryLoading() {
+        let viewModel = makeViewModel(client: FakePickyAgentClient(), storage: PickyRegistrySessionProjectionStorage())
+        viewModel.isLoadingInitialSessionSnapshot = true
+
+        viewModel.applySessionProjectionBootstrapCompletion(removedSessionIDs: [], isPrimary: false)
+
+        #expect(viewModel.isLoadingInitialSessionSnapshot)
+    }
+
+    @Test func onlyPrimaryProjectionSnapshotUnblocksInitialLoading() {
+        let viewModel = makeViewModel(client: FakePickyAgentClient(), storage: PickyRegistrySessionProjectionStorage())
+        viewModel.isLoadingInitialSessionSnapshot = true
+
+        viewModel.handleSessionProjectionSnapshotReceived(isPrimary: false)
+        #expect(viewModel.isLoadingInitialSessionSnapshot)
+
+        viewModel.handleSessionProjectionSnapshotReceived(isPrimary: true)
+        #expect(!viewModel.isLoadingInitialSessionSnapshot)
+    }
+
     @Test func sequentialV2BootstrapPreservesPersistedGroupMembersNotYetProjected() throws {
         let dockLayoutStore = V2DockLayoutStore(layout: PickyDockLayout(entries: [
             .group(PickyDockGroup(

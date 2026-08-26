@@ -167,6 +167,13 @@ final class PickySessionRecoveryCoordinator {
         states[sessionID]?.bufferedTransactions.count ?? 0
     }
 
+    /// Authoritative membership removal must also discard any cursor, buffered
+    /// transactions, and correlated recovery request so a recreated ID starts
+    /// from a clean projection incarnation.
+    func remove(sessionID: String) {
+        states.removeValue(forKey: sessionID)
+    }
+
     private func beginRecoveryIfNeeded(in state: inout SessionState) -> String? {
         guard state.inFlightRequestID == nil else { return nil }
         let requestID = makeRequestID()

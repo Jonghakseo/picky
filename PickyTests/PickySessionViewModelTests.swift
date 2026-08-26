@@ -284,6 +284,12 @@ private final class FakeTerminalOverlayPresenter: PickyTerminalOverlayPresenting
         activeCloseHandlerIndexBySessionID.removeValue(forKey: sessionID)
     }
 
+    func closeTerminal(handle: PickyTerminalOverlayHandle) {
+        guard let closeHandlerIndex = closeHandlers.firstIndex(where: { $0.handle == handle }) else { return }
+        activeCloseHandlerIndexBySessionID.removeValue(forKey: closeHandlers[closeHandlerIndex].sessionID)
+        closeCall(at: closeHandlerIndex)
+    }
+
     func close(sessionID: String) {
         guard let closeHandlerIndex = beginClose(sessionID: sessionID) else { return }
         closeCall(at: closeHandlerIndex)
@@ -3599,6 +3605,72 @@ struct PickySessionViewModelTests {
         #expect(command.type == .syncTerminalSession)
         #expect(command.sessionId == "pickle-1")
         #expect(command.baselinePiMessageId == "a1")
+    }
+
+    @Test func authoritativeMembershipRemovalClosesInlineTerminalWithoutSyncingRecreatedID() async throws {
+        let client = FakePickyAgentClient()
+        let syncer = FakeTerminalSessionSyncer()
+        let presenter = FakeTerminalOverlayPresenter()
+        let draftStore = FakeComposerDraftStore()
+        let attachmentStore = FakeComposerAttachmentDraftStore()
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            composerDraftStore: draftStore,
+            composerAttachmentDraftStore: attachmentStore,
+            terminalPresenter: presenter,
+            terminalSessionSyncer: syncer
+        )
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "recreated", title: "Old", status: "completed", logs: ["pi session: /tmp/recreated.jsonl"]
+        ))))
+        viewModel.updateComposerDraft("discard me", sessionID: "recreated")
+        viewModel.updateComposerAttachmentPaths(["/tmp/attachment.png"], sessionID: "recreated")
+        viewModel.requestOpenSession(sessionID: "recreated")
+        viewModel.enableInlineTerminalMode(sessionID: "recreated")
+        let oldSession = try #require(viewModel.sessions.first)
+        _ = try #require(viewModel.inlineTerminalSession(for: oldSession))
+        viewModel.openTerminalOverlay(sessionID: "recreated")
+
+        viewModel.applySessionProjectionBootstrapCompletion(removedSessionIDs: ["recreated"], isPrimary: true)
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "recreated", title: "New", status: "running", logs: ["pi session: /tmp/recreated.jsonl"]
+        ))))
+        for _ in 0..<8 { await Task.yield() }
+
+        #expect(viewModel.sessions.first?.title == "New")
+        #expect(viewModel.persistedComposerDraft(for: "recreated").isEmpty)
+        #expect(viewModel.persistedComposerAttachmentPaths(for: "recreated").isEmpty)
+        #expect(viewModel.openSessionRequest == nil)
+        #expect(!client.sentCommands.contains { $0.type == .syncTerminalSession })
+    }
+
+    @Test func authoritativeMembershipRemovalRevokesAlreadyClosingInlineTerminalSync() async throws {
+        let client = FakePickyAgentClient()
+        let syncer = FakeTerminalSessionSyncer()
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            terminalSessionSyncer: syncer
+        )
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "recreated", title: "Old", status: "completed", logs: ["pi session: /tmp/recreated.jsonl"]
+        ))))
+        viewModel.enableInlineTerminalMode(sessionID: "recreated")
+        let oldSession = try #require(viewModel.sessions.first)
+        _ = try #require(viewModel.inlineTerminalSession(for: oldSession))
+
+        // Begin a normal close first. Its callback is allowed to sync until
+        // authoritative membership removal revokes that pending permission.
+        viewModel.disableInlineTerminalMode(sessionID: "recreated")
+        viewModel.applySessionProjectionBootstrapCompletion(removedSessionIDs: ["recreated"], isPrimary: true)
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "recreated", title: "New", status: "running", logs: ["pi session: /tmp/recreated.jsonl"]
+        ))))
+        for _ in 0..<8 { await Task.yield() }
+
+        #expect(viewModel.sessions.first?.title == "New")
+        #expect(!client.sentCommands.contains { $0.type == .syncTerminalSession })
     }
 
     @MainActor @Test func inlineTerminalAttachmentAllowsOnlyOneVisibleTerminalAndRestoresPrevious() {

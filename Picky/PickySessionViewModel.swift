@@ -63,7 +63,12 @@ final class PickySessionListViewModel: ObservableObject {
     /// NSView/process is retained here so collapsing/reopening the HUD card reuses
     /// the same TUI instead of launching a fresh `pi --session` process.
     private var inlineTerminalSessionsBySessionID: [String: PickyInlineTerminalSession] = [:]
-    private var closingInlineTerminalSessionsByCloseID: [UUID: PickyInlineTerminalSession] = [:]
+    private struct ClosingInlineTerminalSession {
+        let session: PickyInlineTerminalSession
+        let sessionID: String
+        var syncAllowed: Bool
+    }
+    private var closingInlineTerminalSessionsByCloseID: [UUID: ClosingInlineTerminalSession] = [:]
     /// The one local shell terminal add-on attachment that may render its AppKit
     /// terminal view. Multiple HUD panels can exist, but a single NSView cannot be
     /// attached to multiple parents at the same time.
@@ -1385,14 +1390,31 @@ final class PickySessionListViewModel: ObservableObject {
         )
     }
 
-    private func closeInlineTerminalSession(sessionID: String) {
+    private func closeInlineTerminalSession(sessionID: String, schedulesSync: Bool = true) {
         guard let inlineSession = inlineTerminalSessionsBySessionID.removeValue(forKey: sessionID) else { return }
         let closeID = UUID()
-        closingInlineTerminalSessionsByCloseID[closeID] = inlineSession
+        closingInlineTerminalSessionsByCloseID[closeID] = ClosingInlineTerminalSession(
+            session: inlineSession,
+            sessionID: sessionID,
+            syncAllowed: schedulesSync
+        )
         inlineSession.closeAndScheduleSync { [weak self] baselineSnapshot in
-            guard let self else { return }
-            syncTerminalSessionOnce(sessionID: sessionID, baselineSnapshot: baselineSnapshot)
-            closingInlineTerminalSessionsByCloseID[closeID] = nil
+            guard let self,
+                  let closing = self.closingInlineTerminalSessionsByCloseID.removeValue(forKey: closeID)
+            else { return }
+            if closing.syncAllowed {
+                self.syncTerminalSessionOnce(sessionID: closing.sessionID, baselineSnapshot: baselineSnapshot)
+            }
+        }
+    }
+
+    /// A membership completion makes an old session incarnation permanently
+    /// invalid. Revoke both a new close and a close already waiting on process
+    /// exit, so its callback cannot sync into a recreated same-ID session.
+    private func invalidatePendingInlineTerminalSync(sessionID: String) {
+        for closeID in Array(closingInlineTerminalSessionsByCloseID.keys) {
+            guard closingInlineTerminalSessionsByCloseID[closeID]?.sessionID == sessionID else { continue }
+            closingInlineTerminalSessionsByCloseID[closeID]?.syncAllowed = false
         }
     }
 
@@ -1750,6 +1772,68 @@ final class PickySessionListViewModel: ObservableObject {
         applyManualOrder()
     }
 
+    /// Applies a router-validated v2 membership cutover. This is intentionally
+    /// not fed through the source-free client event reducer: the router owns
+    /// source, generation, epoch, and bootstrap-ID validation.
+    func applySessionProjectionBootstrapCompletion(removedSessionIDs: Set<String>, isPrimary: Bool) {
+        beginDockStateMutation()
+        defer { endDockStateMutation() }
+
+        for sessionID in removedSessionIDs {
+            clearAuthoritativelyRemovedSessionState(sessionID: sessionID)
+        }
+        if let storage = sessionProjectionStorage as? PickyRegistrySessionProjectionStorage {
+            storage.removeSessions(ids: removedSessionIDs)
+        } else {
+            for sessionID in removedSessionIDs { sessionProjectionStorage.removeSession(id: sessionID) }
+        }
+
+        let knownSessionIDs = Set(sessions.map(\.id)).union(archivedSessions.map(\.id))
+        pruneSlashCommandCache(knownSessionIDs: knownSessionIDs)
+        applyManualOrder()
+        syncSelectionAfterSessionListChange()
+        syncVoiceFollowUpAfterSessionListChange()
+        syncScreenContextTargetAfterSessionListChange()
+        syncActiveVoiceFollowUpAfterSessionListChange()
+        if isPrimary {
+            disarmInitialSnapshotWatchdog()
+            isLoadingInitialSessionSnapshot = false
+        }
+    }
+
+    private func clearAuthoritativelyRemovedSessionState(sessionID: String) {
+        archiveCommitTasks.removeValue(forKey: sessionID)?.cancel()
+        clearPendingArchiveIntent(sessionID: sessionID)
+        sessionProjectionRecoveryCoordinator?.remove(sessionID: sessionID)
+        archiveStore.archivedSessionIDs.remove(sessionID)
+        archiveStore.manuallyArchivedSessionIDs.remove(sessionID)
+        releasedArchivedChildSessionIDs.remove(sessionID)
+        unreadSessionIDs.remove(sessionID)
+        pendingDoneFlashSessionIDs.remove(sessionID)
+        deliveredNotificationKeys = deliveredNotificationKeys.filter { !$0.hasPrefix("\(sessionID):") }
+        thinkingBlocksHiddenBySessionID.removeValue(forKey: sessionID)
+        todoProgressExpandedBySessionID.removeValue(forKey: sessionID)
+        subagentInvocationExpandedBySessionID.removeValue(forKey: sessionID)
+        slashCommandController.clear(sessionID: sessionID)
+        composerDraftController.clearDraft(sessionID: sessionID)
+        lastIncrementalSeqBySessionID.removeValue(forKey: sessionID)
+        pendingTerminalMetaBySessionID.removeValue(forKey: sessionID)
+        pendingDockGroupAssignments.removeValue(forKey: sessionID)
+        sessionDiffStoresBySessionID.removeValue(forKey: sessionID)
+        visibleSessionDiffSessionIDs.remove(sessionID)
+        terminalSessionCommandChains.removeValue(forKey: sessionID)?.cancel()
+        terminalSessionCommandChainIDs.removeValue(forKey: sessionID)
+        if let handle = terminalOverlayHandlesBySessionID.removeValue(forKey: sessionID) {
+            terminalPresenter.closeTerminal(handle: handle)
+        }
+        removeVisibleInlineTerminalAttachments(sessionID: sessionID)
+        invalidatePendingInlineTerminalSync(sessionID: sessionID)
+        closeInlineTerminalSession(sessionID: sessionID, schedulesSync: false)
+        inlineTerminalSessionIDs.remove(sessionID)
+        closeShellTerminalSession(sessionID: sessionID)
+        if openSessionRequest?.sessionID == sessionID { openSessionRequest = nil }
+    }
+
     func searchSessions(query: String) -> [SessionCard] {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let all = sessions + archivedSessions
@@ -1802,6 +1886,11 @@ final class PickySessionListViewModel: ObservableObject {
             lastError = message
         case .protocolEvent(let envelope):
             apply(envelope.event)
+        case .sessionProjectionBootstrapCompletion(let removedSessionIDs, let isPrimary):
+            applySessionProjectionBootstrapCompletion(
+                removedSessionIDs: removedSessionIDs,
+                isPrimary: isPrimary
+            )
         }
     }
 
@@ -1823,6 +1912,9 @@ final class PickySessionListViewModel: ObservableObject {
             sessionProjectionRecoveryCoordinator?.receive(snapshot: snapshot)
         case .sessionProjectionTransaction(let transaction):
             sessionProjectionRecoveryCoordinator?.receive(transaction: transaction)
+        // Completion is consumed at the router boundary with source metadata.
+        case .sessionProjectionBootstrapComplete:
+            break
         case .sessionUpdated(let session):
             applySessionUpdated(session)
         case .sessionMetaUpdated(let session):

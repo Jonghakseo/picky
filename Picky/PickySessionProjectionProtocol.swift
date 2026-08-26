@@ -237,6 +237,28 @@ struct PickySessionProjectionTransaction: Decodable, Equatable {
     }
 }
 
+struct PickySessionProjectionBootstrapComplete: Decodable, Equatable {
+    let epoch: String
+    let bootstrapId: String
+    let sessionIds: [String]
+
+    private enum CodingKeys: String, CodingKey { case epoch, bootstrapId, sessionIds }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        epoch = try container.decode(String.self, forKey: .epoch)
+        bootstrapId = try container.decode(String.self, forKey: .bootstrapId)
+        sessionIds = try container.decode([String].self, forKey: .sessionIds)
+        guard !epoch.isEmpty,
+              !bootstrapId.isEmpty,
+              sessionIds.allSatisfy({ !$0.isEmpty }),
+              Set(sessionIds).count == sessionIds.count
+        else {
+            throw DecodingError.dataCorruptedError(forKey: .sessionIds, in: container, debugDescription: "Bootstrap completion requires non-empty correlation fields and unique non-empty session IDs")
+        }
+    }
+}
+
 struct PickySessionProjectionSnapshot: Decodable, Equatable {
     let requestId: String?
     let sessionId: String
@@ -290,6 +312,8 @@ extension PickyEvent {
                 return .sessionProjectionTransaction(try PickySessionProjectionTransaction(from: decoder))
             case "sessionProjectionSnapshot":
                 return .sessionProjectionSnapshot(try PickySessionProjectionSnapshot(from: decoder))
+            case "sessionProjectionBootstrapComplete":
+                return .sessionProjectionBootstrapComplete(try PickySessionProjectionBootstrapComplete(from: decoder))
             default:
                 return .unknown(type: type)
             }

@@ -925,10 +925,12 @@ struct ProtocolContractTests {
         let fixtures = try fixtureURLs(in: "contracts/protocol")
         let transactionFixture = try #require(fixtures.first { $0.lastPathComponent == "session-projection-transaction.event.json" })
         let snapshotFixture = try #require(fixtures.first { $0.lastPathComponent == "session-projection-snapshot.event.json" })
+        let completionFixture = try #require(fixtures.first { $0.lastPathComponent == "session-projection-bootstrap-complete.event.json" })
         let decoder = JSONDecoder.pickyAgentProtocolDecoder()
 
         let transaction = try decoder.decode(PickyEventEnvelope.self, from: Data(contentsOf: transactionFixture))
         let snapshot = try decoder.decode(PickyEventEnvelope.self, from: Data(contentsOf: snapshotFixture))
+        let completion = try decoder.decode(PickyEventEnvelope.self, from: Data(contentsOf: completionFixture))
 
         guard case .sessionProjectionTransaction(let value) = transaction.event else {
             Issue.record("Expected sessionProjectionTransaction")
@@ -948,6 +950,27 @@ struct ProtocolContractTests {
         #expect(value.complete == false)
         #expect(value.omittedFields == ["messages", "logs"])
         #expect(value.projection.id == "session-001")
+
+        guard case .sessionProjectionBootstrapComplete(let value) = completion.event else {
+            Issue.record("Expected sessionProjectionBootstrapComplete")
+            return
+        }
+        #expect(value.epoch == "epoch-001")
+        #expect(value.bootstrapId == "register-capabilities-command-001")
+        #expect(value.sessionIds == ["session-001", "session-002"])
+    }
+
+    @Test func rejectsInvalidProjectionBootstrapCompletionAsUnknown() throws {
+        let invalidPayloads = [
+            #"{"id":"invalid-completion","protocolVersion":"2026-08-25","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionBootstrapComplete","epoch":"","bootstrapId":"register-1","sessionIds":[]}"#,
+            #"{"id":"invalid-completion","protocolVersion":"2026-08-25","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionBootstrapComplete","epoch":"epoch-1","bootstrapId":"","sessionIds":[]}"#,
+            #"{"id":"invalid-completion","protocolVersion":"2026-08-25","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionBootstrapComplete","epoch":"epoch-1","bootstrapId":"register-1","sessionIds":[""]}"#,
+            #"{"id":"invalid-completion","protocolVersion":"2026-08-25","timestamp":"2026-08-24T00:00:00.000Z","type":"sessionProjectionBootstrapComplete","epoch":"epoch-1","bootstrapId":"register-1","sessionIds":["duplicate","duplicate"]}"#,
+        ]
+        let decoder = JSONDecoder.pickyAgentProtocolDecoder()
+        for payload in invalidPayloads {
+            #expect(try decoder.decode(PickyEventEnvelope.self, from: Data(payload.utf8)).event == .unknown(type: "sessionProjectionBootstrapComplete"))
+        }
     }
 
     @Test func decodesEveryProjectionMutationVariant() throws {

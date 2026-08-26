@@ -324,6 +324,7 @@ enum PickyEvent: Equatable {
     case piAuthenticationReloaded(PickyPiAuthenticationReloadedEvent)
     case sessionSnapshot(PickySessionSnapshot)
     case sessionProjectionTransaction(PickySessionProjectionTransaction), sessionProjectionSnapshot(PickySessionProjectionSnapshot)
+    case sessionProjectionBootstrapComplete(PickySessionProjectionBootstrapComplete)
     /// Full lifecycle snapshot used to hydrate the conversation journal.
     case sessionUpdated(PickyAgentSession)
     /// Patch-driven session state that deliberately omits `messages`; clients
@@ -436,7 +437,7 @@ enum PickyEvent: Equatable {
     /// Pickle session lifecycle, journal, queue, and artifact events.
     private static func decodeSessionEvent(type: String, decoder: Decoder) throws -> PickyEvent? {
         switch type {
-        case "sessionSnapshot", "sessionProjectionTransaction", "sessionProjectionSnapshot":
+        case "sessionSnapshot", "sessionProjectionTransaction", "sessionProjectionSnapshot", "sessionProjectionBootstrapComplete":
             return type == "sessionSnapshot" ? .sessionSnapshot(try PickySessionSnapshotPayload(from: decoder).snapshot) : Self.decodeDormantSessionProjectionEvent(type: type, decoder: decoder)
         case "sessionUpdated":
             let payload = try PickySessionUpdatedPayload(from: decoder)

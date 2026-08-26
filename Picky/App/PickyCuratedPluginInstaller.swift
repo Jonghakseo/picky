@@ -127,7 +127,7 @@ enum PickyCuratedPluginInstaller {
                             return Set(result.sources)
                         case .disconnected:
                             throw CommandError.disconnected
-                        case .connected, .recoverableError:
+                        case .connected, .sessionProjectionBootstrapCompletion, .recoverableError:
                             continue
                         }
                     }
@@ -187,7 +187,7 @@ enum PickyCuratedPluginInstaller {
                             return
                         case .disconnected:
                             throw CommandError.disconnected
-                        case .connected, .recoverableError:
+                        case .connected, .sessionProjectionBootstrapCompletion, .recoverableError:
                             continue
                         }
                     }

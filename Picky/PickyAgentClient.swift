@@ -126,6 +126,10 @@ enum PickyClientEvent: Equatable {
     case connected
     case disconnected
     case protocolEvent(PickyEventEnvelope)
+    /// Router-validated v2 membership cutover. This is an app-internal event,
+    /// deliberately distinct from the daemon protocol event whose source and
+    /// bootstrap correlation have already been consumed by the router.
+    case sessionProjectionBootstrapCompletion(removedSessionIDs: Set<String>, isPrimary: Bool)
     case recoverableError(String)
 }
 
@@ -464,6 +468,8 @@ private extension PickyEventEnvelope {
             return "type=sessionProjectionTransaction id=\(id) session=\(transaction.sessionId) revision=\(transaction.revision) mutations=\(transaction.mutations.count) dormant=1"
         case .sessionProjectionSnapshot(let snapshot):
             return "type=sessionProjectionSnapshot id=\(id) session=\(snapshot.sessionId) revision=\(snapshot.revision) complete=\(snapshot.complete ? 1 : 0) dormant=1"
+        case .sessionProjectionBootstrapComplete(let completion):
+            return "type=sessionProjectionBootstrapComplete id=\(id) epoch=\(completion.epoch) bootstrap=\(completion.bootstrapId) sessions=\(completion.sessionIds.count) dormant=1"
         case .sessionUpdated(let session):
             return "type=sessionUpdated id=\(id) session=\(session.id) status=\(session.status.rawValue)"
         case .sessionMetaUpdated(let session):

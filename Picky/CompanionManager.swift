@@ -2411,6 +2411,8 @@ final class CompanionManager: ObservableObject {
                     }
                     try? await self.agentClient.send(PickyCommandEnvelope(type: .listMainMessages))
                     try? await self.agentClient.send(PickyCommandEnvelope(type: .listMainAgentModels))
+                case .sessionProjectionBootstrapCompletion:
+                    continue
                 }
             }
         }
@@ -2435,6 +2437,8 @@ final class CompanionManager: ObservableObject {
             applySessionProjectionSnapshotSideEffects(snapshot)
         case .sessionProjectionTransaction(let transaction):
             applySessionProjectionTransactionSideEffects(transaction)
+        case .sessionProjectionBootstrapComplete:
+            break
         case .sessionResourcesReloaded, .sessionLogAppended, .toolActivityUpdated, .sessionTodoStateUpdated, .sessionSubagentRunsUpdated, .sessionArchivedAuthoritative, .pluginsReloaded,
              .packageUpdatesAvailable, .packageOperationProgress, .packageOperationCompleted:
             // Progress events are already represented in the HUD. They should not

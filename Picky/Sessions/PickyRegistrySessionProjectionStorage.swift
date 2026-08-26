@@ -64,6 +64,19 @@ final class PickyRegistrySessionProjectionStorage: PickySessionProjectionStorage
         ], final: final)
     }
 
+    /// Removes authoritative membership without round-tripping surviving child
+    /// stores through `SessionCard`. A completion reconciliation is one logical
+    /// dock transition, so it publishes exactly one final projection.
+    func removeSessions(ids: Set<String>) {
+        guard !ids.isEmpty else { return }
+        let active = registry.activeSessionIDs.filter { !ids.contains($0) }
+        let archived = registry.archivedSessionIDs.filter { !ids.contains($0) }
+        guard active.count != registry.activeSessionIDs.count || archived.count != registry.archivedSessionIDs.count else { return }
+        registry.replaceMembership(active: active, archived: archived)
+        let final = snapshot()
+        publish([step(active: final.activeSessions, archived: final.archivedSessions, activeChanged: true, archivedChanged: true)], final: final)
+    }
+
     @discardableResult
     func archiveSession(id: String) -> PickySessionListViewModel.SessionCard? {
         let before = snapshot()

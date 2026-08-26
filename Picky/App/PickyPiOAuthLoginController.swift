@@ -230,7 +230,7 @@ final class PickyPiOAuthLoginAgentRunner: PickyPiOAuthLoginRunning {
         let responseTask = Task { @MainActor [client, openURL] in
             for await clientEvent in stream {
                 switch clientEvent {
-                case .connected:
+                case .connected, .sessionProjectionBootstrapCompletion:
                     continue
                 case .disconnected:
                     throw PickyPiOAuthLoginError.disconnected
@@ -338,7 +338,7 @@ final class PickyPiOAuthLoginAgentRunner: PickyPiOAuthLoginRunning {
                         throw PickyPiOAuthLoginError.disconnected
                     case .recoverableError(let message):
                         throw PickyPiOAuthLoginError.daemon(message)
-                    case .connected:
+                    case .connected, .sessionProjectionBootstrapCompletion:
                         continue
                     }
                 }

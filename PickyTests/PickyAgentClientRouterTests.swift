@@ -172,6 +172,17 @@ private func makeStubAgentdPackage(at url: URL) throws {
     try "console.log('stub');\n".write(to: dist.appendingPathComponent("index.js"), atomically: true, encoding: .utf8)
 }
 
+private func projectionSnapshotEvent(sessionID: String, epoch: String) -> PickyClientEvent {
+    let json = #"{"id":"projection-\#(sessionID)","protocolVersion":"2026-08-25","timestamp":"2026-08-25T00:00:00.000Z","type":"sessionProjectionSnapshot","sessionId":"\#(sessionID)","epoch":"\#(epoch)","revision":1,"complete":true,"omittedFields":[],"projection":{"id":"\#(sessionID)","title":"Projection","status":"running","cwd":"/tmp/ws","createdAt":"2026-08-25T00:00:00.000Z","updatedAt":"2026-08-25T00:00:00.000Z"}}"#
+    return .protocolEvent(try! JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: Data(json.utf8)))
+}
+
+private func projectionCompletionEvent(epoch: String, bootstrapID: String, sessionIDs: [String]) -> PickyClientEvent {
+    let ids = String(data: try! JSONEncoder().encode(sessionIDs), encoding: .utf8)!
+    let json = #"{"id":"projection-complete-\#(bootstrapID)","protocolVersion":"2026-08-25","timestamp":"2026-08-25T00:00:00.000Z","type":"sessionProjectionBootstrapComplete","epoch":"\#(epoch)","bootstrapId":"\#(bootstrapID)","sessionIds":\#(ids)}"#
+    return .protocolEvent(try! JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: Data(json.utf8)))
+}
+
 private func makeSessionUpdatedEvent(id: String, title: String = "Pickle", status: PickySessionStatus = .running, finalAnswer: String? = nil) -> PickyEventEnvelope {
     PickyEventEnvelope(
         id: "event-session-\(id)",
@@ -427,6 +438,238 @@ struct PickyAgentClientRouterTests {
         let registrations = primary.sentCommands.filter { $0.type == .registerAppCapabilities }
         #expect(registrations.count == registrationsBeforeReconnect + 1)
         #expect(registrations.last?.capabilities == ["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl", "settingsControl", "sessionProjectionV2"])
+    }
+
+    @Test func acceptsOnlyCurrentCorrelatedPrimaryBootstrapCompletionOnce() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(configuration: .init(token: "tok", appSupportRoot: root))
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory(), supportsSessionProjectionV2: true)
+        var completions: [Set<String>] = []
+        router.onSessionProjectionBootstrapCompletion = { removed, _, _ in completions.append(removed) }
+
+        await router.connect()
+        try await waitUntil { primary.sentCommands.contains { $0.type == .registerAppCapabilities } }
+        let registration = try #require(primary.sentCommands.last { $0.type == .registerAppCapabilities })
+        primary.emit(projectionSnapshotEvent(sessionID: "keep", epoch: "epoch-1"))
+        primary.emit(projectionSnapshotEvent(sessionID: "stale", epoch: "epoch-1"))
+        primary.emit(projectionCompletionEvent(epoch: "epoch-1", bootstrapID: registration.id, sessionIDs: ["keep"]))
+        try await waitUntil { completions.count == 1 }
+        #expect(completions == [["stale"]])
+
+        primary.emit(projectionCompletionEvent(epoch: "epoch-1", bootstrapID: registration.id, sessionIDs: ["keep"]))
+        primary.emit(projectionCompletionEvent(epoch: "other", bootstrapID: registration.id, sessionIDs: ["keep"]))
+        primary.emit(projectionCompletionEvent(epoch: "epoch-1", bootstrapID: "wrong", sessionIDs: ["keep"]))
+        try await Task.sleep(nanoseconds: 20_000_000)
+        #expect(completions.count == 1)
+    }
+
+    @Test func orderedCompletionAppliesAfterEarlierSnapshotWithoutResurrectingRemovedSession() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(configuration: .init(token: "tok", appSupportRoot: root))
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory(), supportsSessionProjectionV2: true)
+        let storage = PickyRegistrySessionProjectionStorage()
+        let viewModel = PickySessionListViewModel(
+            client: router,
+            notificationCenter: PickyNoopNotificationCenter(),
+            sessionProjectionStorage: storage
+        )
+        let stream = router.events
+        let applicationTask = Task { @MainActor in
+            for await event in stream {
+                viewModel.apply(event)
+                if case .sessionProjectionBootstrapCompletion = event { return }
+            }
+        }
+        defer { router.disconnect(); applicationTask.cancel() }
+
+        await router.connect()
+        try await waitUntil { primary.sentCommands.contains { $0.type == .registerAppCapabilities } }
+        let registration = try #require(primary.sentCommands.last { $0.type == .registerAppCapabilities })
+        primary.emit(projectionSnapshotEvent(sessionID: "removed", epoch: "epoch-1"))
+        primary.emit(projectionCompletionEvent(epoch: "epoch-1", bootstrapID: registration.id, sessionIDs: []))
+        await applicationTask.value
+
+        #expect(storage.session(id: "removed") == nil)
+    }
+
+    @Test func activeChildCompletionCannotPrunePrimaryOwnedMembership() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let agentd = root.appendingPathComponent("agentd", isDirectory: true)
+        try makeStubAgentdPackage(at: agentd)
+        let primary = StubAgentClient(id: "primary")
+        let poolFactory = StubLauncherFactoryForRouter(agentdRoot: agentd)
+        let pool = PickyAgentDaemonPool(configuration: .init(token: "tok", appSupportRoot: root, environment: ["PICKY_AGENTD_ROOT": agentd.path, "PATH": "/usr/bin"], bundleResourceURL: nil), factory: poolFactory)
+        let factory = StubClientFactory()
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: factory, supportsSessionProjectionV2: true)
+        var completions: [(Set<String>, String)] = []
+        router.onSessionProjectionBootstrapCompletion = { removed, owner, _ in completions.append((removed, owner)) }
+
+        await router.connect()
+        try await waitUntil { primary.sentCommands.contains { $0.type == .registerAppCapabilities } }
+        let primaryRegistration = try #require(primary.sentCommands.last { $0.type == .registerAppCapabilities })
+        primary.emit(projectionSnapshotEvent(sessionID: "primary-owned", epoch: "primary-epoch"))
+
+        async let spawned: PickyAgentClient = router.spawnChildClient(sessionId: "child-owned", cwd: "/tmp/ws")
+        _ = try await poolFactory.waitForRunner(sessionId: "child-owned")
+        poolFactory.emitReady(for: "child-owned")
+        _ = try await spawned
+        let child = try #require(factory.madeClients.last?.client)
+        try await waitUntil { child.sentCommands.contains { $0.type == .registerAppCapabilities } }
+        let childRegistration = try #require(child.sentCommands.last { $0.type == .registerAppCapabilities })
+        child.emit(projectionSnapshotEvent(sessionID: "child-owned", epoch: "child-epoch"))
+        child.emit(projectionCompletionEvent(epoch: "child-epoch", bootstrapID: childRegistration.id, sessionIDs: []))
+        try await waitUntil { completions.count == 1 }
+        #expect(completions[0].1 == "child:child-owned")
+        #expect(completions[0].0 == ["child-owned"])
+
+        primary.emit(projectionCompletionEvent(epoch: "primary-epoch", bootstrapID: primaryRegistration.id, sessionIDs: ["primary-owned"]))
+        try await waitUntil { completions.count == 2 }
+        #expect(completions[1].0.isEmpty)
+    }
+
+    @Test func bootingChildCompletionRequiresCurrentGenerationSnapshotBeforePruning() async throws {
+        let setup = try await setUpRouterWithChildren(sessionIds: ["child-a"], supportsSessionProjectionV2: true)
+        let child = try #require(setup.children.first)
+        var projectedSessions = [PickyAgentSession(
+            id: "child-a", title: "Retained", status: .completed, cwd: "/tmp/ws",
+            createdAt: Date(), updatedAt: Date(), logs: [], tools: [], artifacts: [], changedFiles: []
+        )]
+        setup.router.pickleSessionSummariesProvider = { projectedSessions }
+        var completions: [Set<String>] = []
+        setup.router.onSessionProjectionBootstrapCompletion = { removed, _, _ in completions.append(removed) }
+        try await waitUntil { child.sentCommands.contains { $0.type == .registerAppCapabilities } }
+        let firstRegistration = try #require(child.sentCommands.last { $0.type == .registerAppCapabilities })
+
+        // An unrelated registry publication makes the child command-ready but
+        // must not make it membership-authoritative.
+        setup.router.sessionProjectionStorageDidChange()
+        child.emit(projectionCompletionEvent(epoch: "epoch-1", bootstrapID: firstRegistration.id, sessionIDs: []))
+        try await Task.sleep(nanoseconds: 20_000_000)
+        #expect(completions.isEmpty)
+
+        child.emit(projectionSnapshotEvent(sessionID: "child-a", epoch: "epoch-2"))
+        child.emit(.connected)
+        try await waitUntil { child.sentCommands.filter { $0.type == .registerAppCapabilities }.count == 2 }
+        let secondRegistration = try #require(child.sentCommands.last { $0.type == .registerAppCapabilities })
+        child.emit(projectionSnapshotEvent(sessionID: "child-a", epoch: "epoch-2"))
+        child.emit(projectionCompletionEvent(epoch: "epoch-2", bootstrapID: secondRegistration.id, sessionIDs: []))
+        try await waitUntil { completions.count == 1 }
+        #expect(completions == [["child-a"]])
+        _ = projectedSessions
+    }
+
+    @Test func mixedEpochSnapshotsPoisonBootstrapUntilReconnect() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(configuration: .init(token: "tok", appSupportRoot: root))
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory(), supportsSessionProjectionV2: true)
+        var completions: [Set<String>] = []
+        router.onSessionProjectionBootstrapCompletion = { removed, _, _ in completions.append(removed) }
+
+        await router.connect()
+        try await waitUntil { primary.sentCommands.contains { $0.type == .registerAppCapabilities } }
+        let firstRegistration = try #require(primary.sentCommands.last { $0.type == .registerAppCapabilities })
+        primary.emit(projectionSnapshotEvent(sessionID: "stale", epoch: "epoch-1"))
+        primary.emit(projectionSnapshotEvent(sessionID: "stale", epoch: "epoch-2"))
+        primary.emit(projectionCompletionEvent(epoch: "epoch-1", bootstrapID: firstRegistration.id, sessionIDs: []))
+        try await Task.sleep(nanoseconds: 20_000_000)
+        #expect(completions.isEmpty)
+
+        primary.emit(.connected)
+        try await waitUntil { primary.sentCommands.filter { $0.type == .registerAppCapabilities }.count == 2 }
+        let secondRegistration = try #require(primary.sentCommands.last { $0.type == .registerAppCapabilities })
+        primary.emit(projectionSnapshotEvent(sessionID: "stale", epoch: "epoch-3"))
+        primary.emit(projectionCompletionEvent(epoch: "epoch-3", bootstrapID: secondRegistration.id, sessionIDs: []))
+        try await waitUntil { completions.count == 1 }
+        #expect(completions == [["stale"]])
+    }
+
+    @Test func releasedChildOwnershipTransfersToPrimaryMembershipReconciliation() async throws {
+        let setup = try await setUpRouterWithChildren(sessionIds: ["child-a"], supportsSessionProjectionV2: true)
+        let child = try #require(setup.children.first)
+        var completions: [(Set<String>, String)] = []
+        setup.router.onSessionProjectionBootstrapCompletion = { removed, owner, _ in completions.append((removed, owner)) }
+        try await waitUntil { child.sentCommands.contains { $0.type == .registerAppCapabilities } }
+        try await waitUntil { setup.primary.sentCommands.contains { $0.type == .registerAppCapabilities } }
+        let childRegistration = try #require(child.sentCommands.last { $0.type == .registerAppCapabilities })
+        setup.primary.emit(projectionSnapshotEvent(sessionID: "primary-owned", epoch: "primary-epoch"))
+        child.emit(projectionSnapshotEvent(sessionID: "child-a", epoch: "child-epoch"))
+        child.emit(projectionCompletionEvent(epoch: "child-epoch", bootstrapID: childRegistration.id, sessionIDs: ["child-a"]))
+        try await waitUntil { completions.count == 1 }
+
+        setup.router.releaseChild(sessionId: "child-a")
+        let primaryRegistration = try #require(setup.primary.sentCommands.last { $0.type == .registerAppCapabilities })
+        setup.primary.emit(projectionCompletionEvent(epoch: "primary-epoch", bootstrapID: primaryRegistration.id, sessionIDs: ["primary-owned"]))
+        try await waitUntil { completions.count == 2 }
+        #expect(completions[1].1 == "primary")
+        #expect(completions[1].0.isEmpty)
+
+        setup.primary.emit(.connected)
+        try await waitUntil { setup.primary.sentCommands.filter { $0.type == .registerAppCapabilities }.count == 2 }
+        let reconnectRegistration = try #require(setup.primary.sentCommands.last { $0.type == .registerAppCapabilities })
+        setup.primary.emit(projectionSnapshotEvent(sessionID: "child-a", epoch: "primary-epoch-2"))
+        setup.primary.emit(projectionCompletionEvent(epoch: "primary-epoch-2", bootstrapID: reconnectRegistration.id, sessionIDs: ["primary-owned"]))
+        try await waitUntil { completions.count == 3 }
+        #expect(completions[2].1 == "primary")
+        #expect(completions[2].0 == ["child-a"])
+    }
+
+    @Test func respawnedChildReclaimsOwnershipAfterCurrentGenerationSnapshot() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let agentd = root.appendingPathComponent("agentd", isDirectory: true)
+        try makeStubAgentdPackage(at: agentd)
+        let primary = StubAgentClient(id: "primary")
+        let poolFactory = StubLauncherFactoryForRouter(agentdRoot: agentd)
+        let pool = PickyAgentDaemonPool(
+            configuration: .init(token: "tok", appSupportRoot: root, environment: ["PICKY_AGENTD_ROOT": agentd.path, "PATH": "/usr/bin"], bundleResourceURL: nil),
+            factory: poolFactory
+        )
+        let factory = StubClientFactory()
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: factory, supportsSessionProjectionV2: true)
+        var completions: [(Set<String>, String)] = []
+        router.onSessionProjectionBootstrapCompletion = { removed, owner, _ in completions.append((removed, owner)) }
+        await router.connect()
+        try await waitUntil { primary.sentCommands.contains { $0.type == .registerAppCapabilities } }
+        let primaryRegistration = try #require(primary.sentCommands.last { $0.type == .registerAppCapabilities })
+        primary.emit(projectionSnapshotEvent(sessionID: "primary", epoch: "primary-epoch"))
+
+        async let firstSpawn: PickyAgentClient = router.spawnChildClient(sessionId: "respawn", cwd: "/tmp/ws")
+        let firstRunner = try await poolFactory.waitForRunner(sessionId: "respawn")
+        poolFactory.emitReady(for: "respawn")
+        _ = try await firstSpawn
+        let firstChild = try #require(factory.madeClients.last?.client)
+        try await waitUntil { firstChild.sentCommands.contains { $0.type == .registerAppCapabilities } }
+        let firstRegistration = try #require(firstChild.sentCommands.last { $0.type == .registerAppCapabilities })
+        firstChild.emit(projectionSnapshotEvent(sessionID: "respawn", epoch: "child-epoch-1"))
+        firstChild.emit(projectionCompletionEvent(epoch: "child-epoch-1", bootstrapID: firstRegistration.id, sessionIDs: ["respawn"]))
+        try await waitUntil { completions.count == 1 }
+
+        router.releaseChild(sessionId: "respawn")
+        async let secondSpawn: PickyAgentClient = router.spawnChildClient(sessionId: "respawn", cwd: "/tmp/ws")
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline {
+            if let runner = poolFactory.runners["respawn"], runner !== firstRunner, runner.launchCount > 0 {
+                poolFactory.emitReady(for: "respawn")
+                break
+            }
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        _ = try await secondSpawn
+        let secondChild = try #require(factory.madeClients.last?.client)
+        #expect(secondChild !== firstChild)
+        try await waitUntil { secondChild.sentCommands.contains { $0.type == .registerAppCapabilities } }
+        let secondRegistration = try #require(secondChild.sentCommands.last { $0.type == .registerAppCapabilities })
+        secondChild.emit(projectionSnapshotEvent(sessionID: "respawn", epoch: "child-epoch-2"))
+        secondChild.emit(projectionCompletionEvent(epoch: "child-epoch-2", bootstrapID: secondRegistration.id, sessionIDs: []))
+        try await waitUntil { completions.count == 2 }
+        #expect(completions[1].0 == ["respawn"])
+        #expect(completions[1].1 == "child:respawn")
+
+        primary.emit(projectionCompletionEvent(epoch: "primary-epoch", bootstrapID: primaryRegistration.id, sessionIDs: ["primary"]))
+        try await waitUntil { completions.count == 3 }
+        #expect(completions[2].0.isEmpty)
     }
 
     @Test func keepsV1DialectWhenTheInjectedSessionProjectionConsumerDoesNotSupportV2() async throws {
@@ -2162,7 +2405,8 @@ private struct RouterBroadcastSetup {
 @MainActor
 private func setUpRouterWithChildren(
     sessionIds: [String],
-    permanentDeletionAcknowledgementTimeout: TimeInterval = 5
+    permanentDeletionAcknowledgementTimeout: TimeInterval = 5,
+    supportsSessionProjectionV2: Bool = false
 ) async throws -> RouterBroadcastSetup {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
     let agentd = root.appendingPathComponent("agentd", isDirectory: true)
@@ -2183,7 +2427,8 @@ private func setUpRouterWithChildren(
         primaryClient: primary,
         pool: pool,
         clientFactory: clientFactory,
-        permanentDeletionAcknowledgementTimeout: permanentDeletionAcknowledgementTimeout
+        permanentDeletionAcknowledgementTimeout: permanentDeletionAcknowledgementTimeout,
+        supportsSessionProjectionV2: supportsSessionProjectionV2
     )
     await router.connect()
 

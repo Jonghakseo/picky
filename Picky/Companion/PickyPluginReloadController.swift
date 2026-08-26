@@ -215,7 +215,7 @@ final class PickyPluginReloadController: ObservableObject {
             isReloading = false
             inFlightCommandId = nil
             lastError = message
-        case .connected:
+        case .connected, .sessionProjectionBootstrapCompletion:
             break
         }
     }

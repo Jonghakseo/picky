@@ -90,6 +90,14 @@
 - `Picky/HUD/PickyHUDDockIconView.swift`
 - `Picky/HUD/PickyHUDLayoutPolicy.swift`
 
+Dock group folder/list의 시각 변경은 앱을 실행하지 않는 render gallery로도 확인한다.
+
+```bash
+./scripts/render-ui-gallery.sh dock-group
+```
+
+생성 이미지, 구조 검증 범위, offscreen 한계는 [`docs/render-gallery.md`](../docs/render-gallery.md)를 따른다.
+
 역할:
 
 - 여러 Pickle의 존재와 상태를 ambient하게 보여준다.

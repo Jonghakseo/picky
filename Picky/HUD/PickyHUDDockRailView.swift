@@ -452,7 +452,11 @@ struct PickyHUDDockRailView: View {
             unreadSessionIDs.contains(card.id) ? count + 1 : count
         }
         let hasVisibleMembers = !memberCards.isEmpty
-        VStack(spacing: metrics.groupHeaderContentSpacing) {
+        PickyHUDDockGroupFolderTileView(
+            group: group,
+            metrics: metrics,
+            fontScale: fontScale
+        ) {
             if memberCards.isEmpty {
                 groupTileButton(
                     for: group,
@@ -485,8 +489,8 @@ struct PickyHUDDockRailView: View {
                     onDeleteWithArchive: { onRemoveDockGroup(group.id, false) }
                 )
             }
-
-            PickyHUDDockGroupHeader(group: group, metrics: metrics, fontScale: fontScale)
+        } header: { header in
+            header
                 .onTapGesture { activateGroupTile(group.id) }
                 .pickyDockGroupContextMenu(
                     group: group,

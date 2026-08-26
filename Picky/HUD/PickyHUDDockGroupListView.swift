@@ -237,6 +237,11 @@ struct PickyHUDDockGroupListView: View {
     let onMoveSessionToGroup: (String, String) -> Void
     let onUngroupSession: (String) -> Void
     let onReorderSession: (_ sessionID: String, _ visibleIndex: Int) -> Void
+    /// Production uses the current time. Offscreen render fixtures inject a
+    /// fixed reference so their row metadata remains deterministic.
+    var relativeTime: (Date) -> String = {
+        Self.relativeDateFormatter.localizedString(for: $0, relativeTo: Date())
+    }
     /// Reads identity from the stable panel model, not the SwiftUI value
     /// captured by app-level drag monitors.
     let liveRowIDs: () -> [String]
@@ -490,7 +495,7 @@ struct PickyHUDDockGroupListView: View {
                     isLeavingGroup: draggingRowID == row.id && isLeavingGroup,
                     minimumHeight: rowHeight,
                     metrics: metrics,
-                    relativeTime: Self.relativeDateFormatter.localizedString(for: row.updatedAt, relativeTo: Date()),
+                    relativeTime: relativeTime(row.updatedAt),
                     isScreenContextArmed: screenContextTargetSessionID == row.id,
                     isScreenContextSticky: screenContextTargetSessionID == row.id && screenContextTargetSticky,
                     moveTargetGroups: moveTargetGroups,

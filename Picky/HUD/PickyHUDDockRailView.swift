@@ -304,6 +304,16 @@ struct PickyHUDDockRailView: View {
         }
     }
 
+    private var emptyGroupCount: Int {
+        let activeSessionIDs = Set(allSessions.map(\.id))
+        return projection.items.reduce(into: 0) { count, item in
+            guard case .group(let group) = item,
+                  !group.memberSessionIDs.contains(where: activeSessionIDs.contains)
+            else { return }
+            count += 1
+        }
+    }
+
     private var sizingSlotCount: Int {
         PickyHUDDockReorderAnimationPolicy.sizingSlotCount(
             renderedSlotCount: projection.slots.count,
@@ -333,6 +343,7 @@ struct PickyHUDDockRailView: View {
             contentLength: PickyHUDDockRailLayoutPolicy.contentLength(
                 sessionCount: sizingSlotCount,
                 groupCount: groupCount,
+                emptyGroupCount: emptyGroupCount,
                 isAddSlotExpanded: isAddSlotExpanded,
                 dockSide: dockSide,
                 metrics: metrics,

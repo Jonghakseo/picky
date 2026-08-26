@@ -14,6 +14,7 @@ enum PickyHUDDockRailLayoutPolicy {
     static func contentLength(
         sessionCount: Int,
         groupCount: Int = 0,
+        emptyGroupCount: Int = 0,
         isAddSlotExpanded: Bool,
         dockSide: PickyHUDDockSide,
         metrics: PickyHUDDockMetrics,
@@ -26,11 +27,14 @@ enum PickyHUDDockRailLayoutPolicy {
                 metrics: metrics
             )
         }
+        let measuredEmptyGroupCount = max(0, min(emptyGroupCount, sessionCount))
+        let emptyGroupHeightReduction = CGFloat(measuredEmptyGroupCount)
+            * (metrics.sessionTileHeight - metrics.emptyGroupSlotHeight)
         return PickyHUDDockLayout.dockRailHeight(
             sessionCount: sessionCount,
             isAddSlotExpanded: isAddSlotExpanded,
             metrics: metrics
-        ) + PickyHUDDockLayout.dockGroupHeaderExtraLength(
+        ) - emptyGroupHeightReduction + PickyHUDDockLayout.dockGroupHeaderExtraLength(
             groupHeaderCount: groupCount,
             metrics: metrics,
             fontScale: fontScale

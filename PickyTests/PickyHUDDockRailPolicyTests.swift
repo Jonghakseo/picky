@@ -79,6 +79,45 @@ struct PickyHUDDockRailPolicyTests {
         }
     }
 
+    @Test func verticalRailLengthUsesHalfHeightForEmptyGroupSlotsOnly() {
+        let metrics = PickyHUDDockMetrics(preset: .medium)
+        let fullVerticalLength = PickyHUDDockRailLayoutPolicy.contentLength(
+            sessionCount: 2,
+            groupCount: 1,
+            emptyGroupCount: 0,
+            isAddSlotExpanded: false,
+            dockSide: .left,
+            metrics: metrics
+        )
+        let emptyVerticalLength = PickyHUDDockRailLayoutPolicy.contentLength(
+            sessionCount: 2,
+            groupCount: 1,
+            emptyGroupCount: 1,
+            isAddSlotExpanded: false,
+            dockSide: .left,
+            metrics: metrics
+        )
+        let fullHorizontalLength = PickyHUDDockRailLayoutPolicy.contentLength(
+            sessionCount: 2,
+            groupCount: 1,
+            emptyGroupCount: 0,
+            isAddSlotExpanded: false,
+            dockSide: .bottom,
+            metrics: metrics
+        )
+        let emptyHorizontalLength = PickyHUDDockRailLayoutPolicy.contentLength(
+            sessionCount: 2,
+            groupCount: 1,
+            emptyGroupCount: 1,
+            isAddSlotExpanded: false,
+            dockSide: .bottom,
+            metrics: metrics
+        )
+
+        #expect(fullVerticalLength - emptyVerticalLength == metrics.sessionTileHeight - metrics.emptyGroupSlotHeight)
+        #expect(fullHorizontalLength == emptyHorizontalLength)
+    }
+
     @Test func railLengthDependsOnProjectedTopLevelSlotsNotGroupMemberCount() {
         let compactLayout = PickyDockLayout(entries: [
             .group(PickyDockGroup(id: "alpha", memberSessionIDs: ["a"])),

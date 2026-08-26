@@ -497,7 +497,7 @@ struct PickyHUDDockGroupEmptySlot: View {
                     RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
                         .fill(color.accent.opacity(0.06))
                 )
-                .frame(width: metrics.sessionTileWidth, height: metrics.sessionTileHeight)
+                .frame(width: metrics.sessionTileWidth, height: metrics.emptyGroupSlotHeight)
                 .overlay(
                     Image(systemName: "plus")
                         .font(.system(size: metrics.plusFontSize, weight: .medium))

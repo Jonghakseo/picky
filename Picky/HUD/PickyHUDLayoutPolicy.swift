@@ -143,6 +143,9 @@ struct PickyHUDDockMetrics: Equatable {
     var outerCornerRadius: CGFloat { scaled(14) }
     var sessionTileWidth: CGFloat { max(40, scaled(54)) }
     var sessionTileHeight: CGFloat { max(42, scaled(54)) }
+    /// Empty groups keep the full folder width but use a quieter half-height
+    /// create affordance. Groups with members continue using sessionTileHeight.
+    var emptyGroupSlotHeight: CGFloat { sessionTileHeight * 0.5 }
     var sessionTileCornerRadius: CGFloat { scaled(9) }
     var sessionLogoSide: CGFloat { max(17, scaled(24)) }
     var sessionLabelFontSize: CGFloat { max(10.5, scaled(15)) }

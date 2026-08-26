@@ -233,7 +233,11 @@ struct PickyHUDDockGroupRenderGalleryTests {
     ) -> Scene {
         Scene(
             name: name,
-            contentLogicalSize: folderSize(metrics: metrics, fontScale: fontScale),
+            contentLogicalSize: folderSize(
+                metrics: metrics,
+                fontScale: fontScale,
+                tileHeight: members.isEmpty ? metrics.emptyGroupSlotHeight : metrics.sessionTileHeight
+            ),
             canvasInsets: galleryCanvasInsets,
             appearance: appearance,
             preset: metrics.preset,
@@ -504,10 +508,14 @@ struct PickyHUDDockGroupRenderGalleryTests {
         """
     }
 
-    private func folderSize(metrics: PickyHUDDockMetrics, fontScale: CGFloat) -> CGSize {
+    private func folderSize(
+        metrics: PickyHUDDockMetrics,
+        fontScale: CGFloat,
+        tileHeight: CGFloat? = nil
+    ) -> CGSize {
         CGSize(
             width: PickyHUDDockGroupHeaderPresentation.labelWidth(metrics: metrics, fontScale: fontScale),
-            height: metrics.sessionTileHeight
+            height: (tileHeight ?? metrics.sessionTileHeight)
                 + metrics.groupHeaderContentSpacing
                 + PickyHUDDockGroupHeaderPresentation.labelHeight(metrics: metrics, fontScale: fontScale)
         )

@@ -2,6 +2,49 @@
 
 The render gallery produces reviewable PNG artifacts from production SwiftUI views without launching Picky.app, opening an `NSWindow`/`NSPanel`, taking a desktop screenshot, or using WindowServer automation.
 
+## When to use
+
+Use the render gallery whenever a change can alter the dock-group folder or list visually, including:
+
+- layout, spacing, padding, alignment, sizing, corner radius, material, color, shadow, typography, truncation, badges, or state backgrounds;
+- selected, idle, unread, empty-folder, and combined folder-to-panel presentation;
+- dock size presets, light/dark appearance, app font scale, or CJK text behavior;
+- refactors that should preserve the current appearance of a production component.
+
+Run it before requesting visual review and before considering the UI task complete. Compare the exact scenes affected by the change, not only whether the command passed. If the existing matrix does not represent the changed state, add a deterministic scene backed by the production component rather than a gallery-only imitation.
+
+The gallery is not a substitute for live interaction checks when a change concerns hover/press transitions, drag behavior, menus, popovers, accessibility focus, material/vibrancy, or child-panel anchoring. Use the gallery for the static appearance, then validate those behaviors separately without assuming a good PNG proves them.
+
+## How to use
+
+1. For a before/after review, render the unchanged baseline first and preserve the generated directory outside `build/render-gallery/dock-group/`, because the next run cleans that directory:
+
+   ```bash
+   ./scripts/render-ui-gallery.sh dock-group
+   rm -rf build/render-gallery/dock-group-before
+   cp -R build/render-gallery/dock-group build/render-gallery/dock-group-before
+   ```
+
+2. Make the UI change in the production SwiftUI component. Do not reproduce the component with gallery-only shapes, text, or screenshots.
+
+3. Regenerate the gallery:
+
+   ```bash
+   ./scripts/render-ui-gallery.sh dock-group
+   ```
+
+4. Inspect the artifacts in `build/render-gallery/dock-group/`:
+
+   - `index.html`: all scenes and their preset, appearance, font scale, and logical dimensions;
+   - `manifest.json`: exact scene names and canvas/content geometry;
+   - individual PNG files: direct visual inspection at 2× scale. A coding agent should read the relevant PNG files directly rather than launching Picky.app.
+
+5. Compare the affected before/after scenes. Check content insets, alignment, clipping, truncation, state distinction, light/dark contrast, Small/Medium/Large density, 100%/130% font scale, and CJK text where applicable. Confirm unrelated scenes did not change unexpectedly.
+
+6. If coverage is missing, add a stable scene in `PickyTests/PickyHUDDockGroupRenderGalleryTests.swift`, add its filename to `scripts/render-ui-gallery.sh`, regenerate the gallery, and update this document's scene count or coverage description. Keep fixture IDs, text, timestamps, locale, state, and geometry deterministic.
+
+7. Treat a successful command as structural validation only. The task is visually verified only after the relevant PNGs have been inspected and any interaction-specific checks from the previous section have been completed.
+
 ## Dock-group gallery
 
 ```bash

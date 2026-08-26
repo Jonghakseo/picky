@@ -116,7 +116,7 @@ The rail tile's direct gestures are preserved on the row, and everything else mo
 | --- | --- |
 | Click | Open the Pickle in the conversation card |
 | Drag | Reorder within the list, or pull out to ungroup |
-| Press and hold | Archive, reusing the existing 1.5s hold and its progress ring |
+| Press and hold | Archive, reusing the existing hold threshold (`PickyHUDArchiveHoldPolicy.duration`) and its progress ring |
 | Right-click | Context menu |
 
 The context menu carries every remaining per-Pickle action that lives on the dock tile today: stop, compact, screen-context arm, sticky screen-context arm, move to another group, and ungroup. The folder tile's own context menu carries rename, color, ungroup all, and delete.

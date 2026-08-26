@@ -1102,13 +1102,14 @@ final class PickyHUDOverlayManager {
     ) -> NSView {
         let snapshot = viewModel.dockState.snapshot
         let sessionsByID = Dictionary(snapshot.activeSessions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let rows = group.memberSessionIDs.compactMap { sessionID -> PickyHUDDockGroupListRowModel? in
-            guard let session = sessionsByID[sessionID] else { return nil }
-            return PickyHUDDockGroupListRowModel(
-                session: session,
-                updatedAt: viewModel.sessionCard(sessionID: sessionID)?.updatedAt ?? .distantPast
-            )
-        }
+        let rows = PickyHUDDockGroupListRowProjection.rows(
+            memberSessionIDs: group.memberSessionIDs,
+            activeSessionsByID: sessionsByID,
+            updatedAt: { [weak self] sessionID in self?.viewModel.sessionCard(sessionID: sessionID)?.updatedAt },
+            makeRow: { session, updatedAt in
+                PickyHUDDockGroupListRowModel(session: session, updatedAt: updatedAt)
+            }
+        )
         let metrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
         let root = PickyAppFontScaleRoot(store: self.fontScaleStore) { [self] in
             PickyHUDDockGroupListPanelRoot(
@@ -1123,6 +1124,36 @@ final class PickyHUDOverlayManager {
                 },
                 onCreatePickle: { [weak self] in
                     self?.requestDockGroupListPickleCreation(displayID: displayID, groupID: group.id)
+                },
+                moveTargetGroups: snapshot.dockLayout.groups.filter { $0.id != group.id },
+                screenContextTargetSessionID: snapshot.screenContextTargetSessionID,
+                screenContextTargetSticky: snapshot.screenContextTargetSticky,
+                onToggleScreenContextTarget: { [weak self] sessionID in
+                    self?.viewModel.toggleScreenContextTarget(sessionID: sessionID)
+                },
+                onToggleStickyScreenContextTarget: { [weak self] sessionID in
+                    self?.viewModel.toggleStickyScreenContextTarget(sessionID: sessionID)
+                },
+                onCompactSession: { [weak self] sessionID in
+                    Task { await self?.viewModel.requestCompaction(sessionID: sessionID) }
+                },
+                onArchiveSession: { [weak self] sessionID in
+                    self?.archiveDockGroupListSession(displayID: displayID, sessionID: sessionID)
+                },
+                onStopSession: { [weak self] sessionID in
+                    Task { try? await self?.viewModel.abortRestoringQueuedInputs(sessionID: sessionID) }
+                },
+                onMoveSessionToGroup: { [weak self] sessionID, groupID in
+                    guard let self,
+                          let target = self.viewModel.dockState.snapshot.dockLayout.group(withID: groupID)
+                    else { return }
+                    self.viewModel.moveSessionInDock(
+                        sessionID: sessionID,
+                        to: .group(id: groupID, memberIndex: target.memberSessionIDs.count)
+                    )
+                },
+                onUngroupSession: { [weak self] sessionID in
+                    self?.ungroupDockGroupListSession(sessionID: sessionID)
                 }
             )
             .environmentObject(self.appearanceStore)
@@ -1185,6 +1216,27 @@ final class PickyHUDOverlayManager {
         )
         viewModel.requestOpenSession(sessionID: result.openedSessionID, targetDisplayID: displayID)
         hideDockGroupListChild(displayID: displayID)
+    }
+
+    private func archiveDockGroupListSession(displayID: CGDirectDisplayID, sessionID: String) {
+        let snapshot = viewModel.dockState.snapshot
+        let title = snapshot.activeSessions.first(where: { $0.id == sessionID })?.title
+            ?? viewModel.sessionCard(sessionID: sessionID)?.title
+            ?? L10n.t("group.list.fallbackTitle")
+        viewModel.archive(sessionID: sessionID)
+        showArchiveUndoToast(displayID: displayID, sessionID: sessionID, title: title)
+    }
+
+    private func ungroupDockGroupListSession(sessionID: String) {
+        let layout = viewModel.dockState.snapshot.dockLayout
+        guard let source = layout.container(forSessionID: sessionID),
+              case .group(let groupID, _) = source,
+              let groupIndex = layout.entries.firstIndex(where: { entry in
+                  if case .group(let group) = entry { return group.id == groupID }
+                  return false
+              })
+        else { return }
+        viewModel.moveSessionInDock(sessionID: sessionID, to: .topLevel(index: groupIndex + 1))
     }
 
     private func requestDockGroupListPickleCreation(displayID: CGDirectDisplayID, groupID: String) {

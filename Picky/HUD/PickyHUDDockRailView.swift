@@ -413,6 +413,18 @@ struct PickyHUDDockRailView: View {
         .zIndex(draggingGroupID == group.id ? 220 : 0)
         .accessibilityLabel(group.displayName)
         .accessibilityValue(L10n.t("group.folder.accessibility.value", memberCards.count, unreadCount))
+        .accessibilityAction(named: Text(L10n.t("group.folder.action.open"))) {
+            onOpenDockGroupList(group.id)
+        }
+        .accessibilityAction(named: Text(L10n.t("group.folder.action.rename"))) {
+            presentRenameDialog(for: group)
+        }
+        .accessibilityAction(named: Text(L10n.t("group.folder.action.delete"))) {
+            PickyHUDDockGroupDeletePrompt.confirmDeleteWithArchive(
+                groupName: group.displayName,
+                onConfirm: { onRemoveDockGroup(group.id, false) }
+            )
+        }
     }
 
     @MainActor

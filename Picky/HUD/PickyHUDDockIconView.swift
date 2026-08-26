@@ -37,10 +37,7 @@ struct PickyHUDDockIconView: View {
 
     @State private var completionFlashIntensity: Double = 0
     @State private var completionFlashTask: Task<Void, Never>?
-    @State private var archiveFeedbackStartTask: Task<Void, Never>?
-    @State private var isArchivePressing = false
-    @State private var archiveProgress: Double = 0
-    @State private var didCompleteArchiveHold = false
+    @StateObject private var archiveFeedback = PickyHUDArchiveHoldFeedback()
     @State private var isHovered = false
 
     private enum DockPickleAsset: String {
@@ -67,7 +64,7 @@ struct PickyHUDDockIconView: View {
             // make the Pickle rail appear to shift vertically. Keep animations scoped
             // to drawing-only subviews such as `dockIconBackground` and badges.
             .overlay(alignment: .topLeading) {
-                if isArchivePressing {
+                if archiveFeedback.isPressing {
                     archiveBadge
                         .offset(x: -5, y: -5)
                         .transition(.scale.combined(with: .opacity))
@@ -96,7 +93,11 @@ struct PickyHUDDockIconView: View {
                     .allowsHitTesting(false)
             }
         .overlay(alignment: .center) {
-            archiveProgressRing
+            PickyHUDArchiveHoldProgressRing(
+                isPressing: archiveFeedback.isPressing,
+                progress: archiveFeedback.progress,
+                side: metrics.archiveRingSide
+            )
         }
         .overlay(alignment: .center) {
             if isPreviewed {
@@ -117,8 +118,8 @@ struct PickyHUDDockIconView: View {
                 onOpen: onOpen,
                 isScreenContextArmed: isScreenContextArmed,
                 isScreenContextSticky: isScreenContextSticky,
-                canCompact: session.canRequestDockCompaction,
-                canStop: !session.status.isTerminal,
+                canCompact: actionAvailability.canCompact,
+                canStop: actionAvailability.canStop,
                 onToggleScreenContextTarget: onToggleScreenContextTarget,
                 onToggleStickyScreenContextTarget: onToggleStickyScreenContextTarget,
                 onCompact: onCompact,
@@ -137,18 +138,24 @@ struct PickyHUDDockIconView: View {
         .onDisappear {
             completionFlashTask?.cancel()
             completionFlashTask = nil
-            cancelArchiveHoldFeedback()
-            didCompleteArchiveHold = false
+            archiveFeedback.cancel()
             // Do NOT cancel an in-flight reorder here. The drag is owned by the
             // rail-level controller; this icon disappears precisely because the
             // live preview reparented it across a group boundary, and the drag
             // must keep going until the user releases.
         }
-        .animation(.spring(response: 0.2, dampingFraction: 0.78), value: isArchivePressing)
+        .animation(.spring(response: 0.2, dampingFraction: 0.78), value: archiveFeedback.isPressing)
         .accessibilityLabel("Preview \(session.title)")
         .accessibilityValue(accessibilityStatusLabel)
         .accessibilityHint("Click to open or close. Press and hold for 1.5 seconds to archive this Pickle.")
         .accessibilityAddTraits(.isButton)
+    }
+
+    private var actionAvailability: PickyHUDDockSessionActionAvailability {
+        PickyHUDDockSessionActionAvailability.resolve(
+            status: session.status,
+            canRequestCompaction: session.canRequestDockCompaction
+        )
     }
 
     private var accessibilityStatusLabel: String {
@@ -161,32 +168,6 @@ struct PickyHUDDockIconView: View {
         case .failed: "Failed"
         case .cancelled: "Cancelled"
         }
-    }
-
-    private var archiveProgressRing: some View {
-        ZStack {
-            archiveRingArc(progress: 1)
-                .opacity(0.18)
-            archiveRingArc(progress: archiveProgress)
-        }
-        .frame(width: metrics.archiveRingSide, height: metrics.archiveRingSide)
-        .opacity(isArchivePressing || archiveProgress > 0 ? 1 : 0)
-        .shadow(color: DS.Colors.warning.opacity(0.34), radius: 4, x: 0, y: 0)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-
-    private func archiveRingArc(progress: Double) -> some View {
-        Circle()
-            .trim(
-                from: PickyHUDArchiveHoldPolicy.ringGapStartFraction,
-                to: PickyHUDArchiveHoldPolicy.ringGapStartFraction + (max(0, min(progress, 1)) * PickyHUDArchiveHoldPolicy.ringUsableFraction)
-            )
-            .stroke(
-                DS.Colors.warning,
-                style: StrokeStyle(lineWidth: 2.6, lineCap: .round, lineJoin: .round)
-            )
-            .rotationEffect(.degrees(-90))
     }
 
     private var archiveBadge: some View {
@@ -267,7 +248,7 @@ struct PickyHUDDockIconView: View {
                 .minimumScaleFactor(0.82)
                 .frame(width: metrics.sessionTileWidth - 4, alignment: .center)
         }
-        .opacity(isArchivePressing ? 0.64 : 1)
+        .opacity(archiveFeedback.isPressing ? 0.64 : 1)
     }
 
     private func runningDockGlyph() -> some View {
@@ -316,7 +297,7 @@ struct PickyHUDDockIconView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: metrics.sessionTileCornerRadius, style: .continuous)
-                    .fill(DS.Colors.warning.opacity(0.20 * archiveProgress))
+                    .fill(DS.Colors.warning.opacity(0.20 * archiveFeedback.progress))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: metrics.sessionTileCornerRadius, style: .continuous)
@@ -328,58 +309,23 @@ struct PickyHUDDockIconView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: metrics.sessionTileCornerRadius, style: .continuous)
-                    .strokeBorder(DS.Colors.warning.opacity(0.76 * archiveProgress), lineWidth: 1.35)
+                    .strokeBorder(DS.Colors.warning.opacity(0.76 * archiveFeedback.progress), lineWidth: 1.35)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: metrics.sessionTileCornerRadius, style: .continuous)
                     .strokeBorder(DS.Colors.success.opacity(0.85 * completionFlashIntensity), lineWidth: 1.4)
             )
-            .shadow(color: DS.Colors.warning.opacity(0.30 * archiveProgress), radius: 5, x: 0, y: 0)
+            .shadow(color: DS.Colors.warning.opacity(0.30 * archiveFeedback.progress), radius: 5, x: 0, y: 0)
             .shadow(color: DS.Colors.success.opacity(0.55 * completionFlashIntensity), radius: 6, x: 0, y: 0)
             .animation(.easeInOut(duration: 0.18), value: isSoftHighlighted)
     }
 
     private func handleArchivePressing(_ isPressing: Bool) {
-        if isPressing {
-            scheduleArchiveHoldFeedbackStart()
-        } else if !didCompleteArchiveHold {
-            cancelArchiveHoldFeedback()
-        }
-    }
-
-    private func scheduleArchiveHoldFeedbackStart() {
-        archiveFeedbackStartTask?.cancel()
-        didCompleteArchiveHold = false
-        archiveProgress = 0
-        archiveFeedbackStartTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: PickyHUDArchiveHoldPolicy.feedbackStartDelayNanoseconds)
-            guard !Task.isCancelled else { return }
-            archiveFeedbackStartTask = nil
-            beginArchiveHoldFeedback()
-        }
-    }
-
-    private func beginArchiveHoldFeedback() {
-        isArchivePressing = true
-        withAnimation(.linear(duration: PickyHUDArchiveHoldPolicy.feedbackAnimationDuration)) {
-            archiveProgress = 1
-        }
-    }
-
-    private func cancelArchiveHoldFeedback() {
-        archiveFeedbackStartTask?.cancel()
-        archiveFeedbackStartTask = nil
-        isArchivePressing = false
-        withAnimation(.easeOut(duration: 0.18)) {
-            archiveProgress = 0
-        }
+        archiveFeedback.setPressing(isPressing)
     }
 
     private func completeArchiveHold() {
-        archiveFeedbackStartTask?.cancel()
-        archiveFeedbackStartTask = nil
-        didCompleteArchiveHold = true
-        archiveProgress = 1
+        archiveFeedback.complete()
         onArchive()
     }
 
@@ -474,7 +420,7 @@ struct PickyHUDDockIconView: View {
     }
 
     private var tileScale: CGFloat {
-        if isArchivePressing { return 0.92 }
+        if archiveFeedback.isPressing { return 0.92 }
         return 1.0
     }
 
@@ -542,6 +488,10 @@ struct PickyHUDDockIconClickHost: NSViewRepresentable {
     var onArchivePressing: (Bool) -> Void
     var onArchive: () -> Void
     var onStop: () -> Void
+    /// Optional group-list actions appended to the shared Dock Pickle menu.
+    var moveTargetGroups: [PickyDockGroup] = []
+    var onMoveToGroup: (String) -> Void = { _ in }
+    var onUngroup: (() -> Void)?
     /// Fired once when the cursor leaves the archive hold's stationary
     /// tolerance, signalling "this drag is now a reorder, not a long-press
     /// archive". Argument is the mouse-down point in screen coordinates,
@@ -564,6 +514,9 @@ struct PickyHUDDockIconClickHost: NSViewRepresentable {
         var onArchivePressing: ((Bool) -> Void)?
         var onArchive: (() -> Void)?
         var onStop: (() -> Void)?
+        var moveTargetGroups: [PickyDockGroup] = []
+        var onMoveToGroup: ((String) -> Void)?
+        var onUngroup: (() -> Void)?
         var onReorderHandoff: ((NSPoint) -> Void)?
 
         func clearCallbacks() {
@@ -575,6 +528,9 @@ struct PickyHUDDockIconClickHost: NSViewRepresentable {
             onArchivePressing = nil
             onArchive = nil
             onStop = nil
+            moveTargetGroups = []
+            onMoveToGroup = nil
+            onUngroup = nil
             onReorderHandoff = nil
         }
 
@@ -598,6 +554,15 @@ struct PickyHUDDockIconClickHost: NSViewRepresentable {
         @objc func stop(_ sender: NSMenuItem) {
             guard canStop else { return }
             onStop?()
+        }
+
+        @objc func moveToGroup(_ sender: NSMenuItem) {
+            guard let groupID = sender.representedObject as? String else { return }
+            onMoveToGroup?(groupID)
+        }
+
+        @objc func ungroup(_ sender: NSMenuItem) {
+            onUngroup?()
         }
     }
 
@@ -627,6 +592,9 @@ struct PickyHUDDockIconClickHost: NSViewRepresentable {
         coordinator.onArchivePressing = onArchivePressing
         coordinator.onArchive = onArchive
         coordinator.onStop = onStop
+        coordinator.moveTargetGroups = moveTargetGroups
+        coordinator.onMoveToGroup = onMoveToGroup
+        coordinator.onUngroup = onUngroup
         coordinator.onReorderHandoff = onReorderHandoff
     }
 
@@ -747,6 +715,31 @@ final class PickyHUDDockIconClickNSView: NSView {
             target: coordinator,
             isEnabled: coordinator.canCompact
         ))
+        if !coordinator.moveTargetGroups.isEmpty || coordinator.onUngroup != nil {
+            menu.addItem(.separator())
+            if !coordinator.moveTargetGroups.isEmpty {
+                let moveItem = NSMenuItem(title: L10n.t("group.list.menu.move"), action: nil, keyEquivalent: "")
+                let moveMenu = NSMenu(title: L10n.t("group.list.menu.move"))
+                for group in coordinator.moveTargetGroups {
+                    let item = menuItem(
+                        title: group.displayName,
+                        action: #selector(PickyHUDDockIconClickHost.Coordinator.moveToGroup(_:)),
+                        target: coordinator
+                    )
+                    item.representedObject = group.id
+                    moveMenu.addItem(item)
+                }
+                moveItem.submenu = moveMenu
+                menu.addItem(moveItem)
+            }
+            if coordinator.onUngroup != nil {
+                menu.addItem(menuItem(
+                    title: L10n.t("group.list.menu.ungroup"),
+                    action: #selector(PickyHUDDockIconClickHost.Coordinator.ungroup(_:)),
+                    target: coordinator
+                ))
+            }
+        }
         menu.addItem(.separator())
         menu.addItem(menuItem(
             title: L10n.t("dock.contextMenu.archive"),

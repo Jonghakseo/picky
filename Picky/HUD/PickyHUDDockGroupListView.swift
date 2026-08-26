@@ -82,6 +82,16 @@ struct PickyHUDDockGroupListPanelRoot: View {
     let metrics: PickyHUDDockMetrics
     let onSelectSession: (String) -> Void
     let onCreatePickle: () -> Void
+    let moveTargetGroups: [PickyDockGroup]
+    let screenContextTargetSessionID: String?
+    let screenContextTargetSticky: Bool
+    let onToggleScreenContextTarget: (String) -> Void
+    let onToggleStickyScreenContextTarget: (String) -> Void
+    let onCompactSession: (String) -> Void
+    let onArchiveSession: (String) -> Void
+    let onStopSession: (String) -> Void
+    let onMoveSessionToGroup: (String, String) -> Void
+    let onUngroupSession: (String) -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isPresented = false
@@ -95,7 +105,17 @@ struct PickyHUDDockGroupListPanelRoot: View {
             isCommandShortcutHintVisible: isCommandShortcutHintVisible,
             metrics: metrics,
             onSelectSession: onSelectSession,
-            onCreatePickle: onCreatePickle
+            onCreatePickle: onCreatePickle,
+            moveTargetGroups: moveTargetGroups,
+            screenContextTargetSessionID: screenContextTargetSessionID,
+            screenContextTargetSticky: screenContextTargetSticky,
+            onToggleScreenContextTarget: onToggleScreenContextTarget,
+            onToggleStickyScreenContextTarget: onToggleStickyScreenContextTarget,
+            onCompactSession: onCompactSession,
+            onArchiveSession: onArchiveSession,
+            onStopSession: onStopSession,
+            onMoveSessionToGroup: onMoveSessionToGroup,
+            onUngroupSession: onUngroupSession
         )
         .frame(
             width: PickyHUDDockGroupListPolicy.panelSize(memberCount: max(1, rows.count), metrics: metrics).width,
@@ -119,6 +139,16 @@ struct PickyHUDDockGroupListView: View {
     let metrics: PickyHUDDockMetrics
     let onSelectSession: (String) -> Void
     let onCreatePickle: () -> Void
+    let moveTargetGroups: [PickyDockGroup]
+    let screenContextTargetSessionID: String?
+    let screenContextTargetSticky: Bool
+    let onToggleScreenContextTarget: (String) -> Void
+    let onToggleStickyScreenContextTarget: (String) -> Void
+    let onCompactSession: (String) -> Void
+    let onArchiveSession: (String) -> Void
+    let onStopSession: (String) -> Void
+    let onMoveSessionToGroup: (String, String) -> Void
+    let onUngroupSession: (String) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -177,8 +207,19 @@ struct PickyHUDDockGroupListView: View {
                     isSelected: openedSessionID == row.id,
                     shortcutNumber: nil,
                     minimumHeight: metrics.groupListRowHeight,
+                    metrics: metrics,
                     relativeTime: Self.relativeDateFormatter.localizedString(for: row.updatedAt, relativeTo: Date()),
-                    onSelect: { onSelectSession(row.id) }
+                    isScreenContextArmed: screenContextTargetSessionID == row.id,
+                    isScreenContextSticky: screenContextTargetSessionID == row.id && screenContextTargetSticky,
+                    moveTargetGroups: moveTargetGroups,
+                    onSelect: { onSelectSession(row.id) },
+                    onToggleScreenContextTarget: { onToggleScreenContextTarget(row.id) },
+                    onToggleStickyScreenContextTarget: { onToggleStickyScreenContextTarget(row.id) },
+                    onCompact: { onCompactSession(row.id) },
+                    onArchive: { onArchiveSession(row.id) },
+                    onStop: { onStopSession(row.id) },
+                    onMoveToGroup: { onMoveSessionToGroup(row.id, $0) },
+                    onUngroup: { onUngroupSession(row.id) }
                 )
             }
         }
@@ -207,52 +248,109 @@ private struct PickyHUDDockGroupListRow: View {
     let isSelected: Bool
     let shortcutNumber: Int?
     let minimumHeight: CGFloat
+    let metrics: PickyHUDDockMetrics
     let relativeTime: String
+    let isScreenContextArmed: Bool
+    let isScreenContextSticky: Bool
+    let moveTargetGroups: [PickyDockGroup]
     let onSelect: () -> Void
+    let onToggleScreenContextTarget: () -> Void
+    let onToggleStickyScreenContextTarget: () -> Void
+    let onCompact: () -> Void
+    let onArchive: () -> Void
+    let onStop: () -> Void
+    let onMoveToGroup: (String) -> Void
+    let onUngroup: () -> Void
 
+    @StateObject private var archiveFeedback = PickyHUDArchiveHoldFeedback()
     @State private var isHovered = false
 
+    private var presentation: PickyHUDDockGroupListRowPresentation {
+        PickyHUDDockGroupListRowPresentation.resolve(
+            title: row.title,
+            statusText: L10n.t("group.list.status.\(row.session.status.rawValue)"),
+            cwdLeaf: row.cwdLeaf,
+            relativeTime: relativeTime,
+            status: row.session.status,
+            canRequestCompaction: row.session.canRequestDockCompaction
+        )
+    }
+
     var body: some View {
-        Button(action: onSelect) {
-            HStack(spacing: 8) {
-                statusGlyph
-                    .frame(width: 20, height: 20)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(row.title)
-                        .pickyFont(size: 13, weight: .regular)
-                        .foregroundStyle(DS.Colors.textPrimary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    Text(row.subtitle(relativeTime: relativeTime))
-                        .pickyFont(size: 11, weight: .regular)
-                        .foregroundStyle(DS.Colors.textTertiary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                if isUnread {
-                    Circle()
-                        .fill(DS.Colors.notification)
-                        .frame(width: 7, height: 7)
-                        .accessibilityLabel("Unread")
-                }
-                if let shortcutNumber {
-                    Text("⌘\(shortcutNumber)")
-                        .pickyFont(size: 11, weight: .regular)
-                        .foregroundStyle(DS.Colors.textTertiary)
-                        .accessibilityHidden(true)
-                }
+        HStack(spacing: 8) {
+            statusGlyph
+                .frame(width: 20, height: 20)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(row.title)
+                    .pickyFont(size: 13, weight: .regular)
+                    .foregroundStyle(DS.Colors.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Text(row.subtitle(relativeTime: relativeTime))
+                    .pickyFont(size: 11, weight: .regular)
+                    .foregroundStyle(DS.Colors.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
-            .padding(.horizontal, 10)
-            .frame(minHeight: minimumHeight)
-            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if isUnread {
+                Circle()
+                    .fill(DS.Colors.notification)
+                    .frame(width: 7, height: 7)
+                    .accessibilityHidden(true)
+            }
+            if let shortcutNumber {
+                Text("⌘\(shortcutNumber)")
+                    .pickyFont(size: 11, weight: .regular)
+                    .foregroundStyle(DS.Colors.textTertiary)
+                    .accessibilityHidden(true)
+            }
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 10)
+        .frame(minHeight: minimumHeight)
+        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .background(rowBackground)
+        .overlay {
+            PickyHUDDockIconClickHost(
+                onHover: { isHovered = true },
+                onOpen: onSelect,
+                isScreenContextArmed: isScreenContextArmed,
+                isScreenContextSticky: isScreenContextSticky,
+                canCompact: presentation.actionAvailability.canCompact,
+                canStop: presentation.actionAvailability.canStop,
+                onToggleScreenContextTarget: onToggleScreenContextTarget,
+                onToggleStickyScreenContextTarget: onToggleStickyScreenContextTarget,
+                onCompact: onCompact,
+                onArchivePressing: archiveFeedback.setPressing,
+                onArchive: {
+                    archiveFeedback.complete()
+                    onArchive()
+                },
+                onStop: onStop,
+                moveTargetGroups: moveTargetGroups,
+                onMoveToGroup: onMoveToGroup,
+                onUngroup: onUngroup
+            )
+        }
+        .overlay {
+            PickyHUDArchiveHoldProgressRing(
+                isPressing: archiveFeedback.isPressing,
+                progress: archiveFeedback.progress,
+                side: metrics.archiveRingSide
+            )
+        }
         .onHover { isHovered = $0 }
-        .accessibilityLabel(row.title)
-        .accessibilityValue("\(row.session.status.rawValue), \(row.subtitle(relativeTime: relativeTime))")
+        .onDisappear { archiveFeedback.cancel() }
+        .help(row.title)
+        .accessibilityLabel(presentation.accessibilityLabel)
+        .accessibilityValue(presentation.accessibilityValue)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityAction(named: Text(L10n.t("group.list.action.open")), onSelect)
+        .accessibilityAction(named: Text(L10n.t("group.list.action.archive")), onArchive)
+        .accessibilityAction(named: Text(L10n.t("group.list.action.stop"))) {
+            guard presentation.actionAvailability.canStop else { return }
+            onStop()
+        }
     }
 
     @ViewBuilder

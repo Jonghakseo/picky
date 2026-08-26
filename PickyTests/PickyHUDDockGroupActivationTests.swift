@@ -56,6 +56,7 @@ struct PickyHUDDockGroupActivationTests {
         let replacement = PickyHUDDockGroupPickerRequest(id: UUID(), groupID: "group")
         let capturedID = PickyHUDDockGroupPickerPresentationIdentity.requestID(
             forAnchorGroupID: "group",
+            activeAnchorGroupID: "group",
             activeRequest: first
         )
 
@@ -63,17 +64,24 @@ struct PickyHUDDockGroupActivationTests {
         #expect(capturedID != replacement.id)
         #expect(PickyHUDDockGroupPickerPresentationIdentity.requestID(
             forAnchorGroupID: "other",
+            activeAnchorGroupID: "group",
             activeRequest: replacement
         ) == nil)
     }
 
-    @Test func deletedPickerTargetFallsBackWithoutSilentlyConsumingIntent() {
-        let request = PickyHUDDockGroupPickerRequest(groupID: "deleted")
+    @Test func dockAnchorFallbackCapturesRequestIdentityAndPreservesCreationTarget() {
+        let request = PickyHUDDockGroupPickerRequest(groupID: "offscreen")
+
         #expect(PickyHUDDockGroupPickerRelayPolicy.presentation(
             request: request,
             renderedGroupIDs: [],
             hasUntargetedAddAnchor: true
-        ) == .untargeted)
+        ) == .untargeted(targetGroupID: "offscreen"))
+        #expect(PickyHUDDockGroupPickerPresentationIdentity.requestID(
+            forAnchorGroupID: nil,
+            activeAnchorGroupID: nil,
+            activeRequest: request
+        ) == request.id)
         #expect(PickyHUDDockGroupPickerRelayPolicy.presentation(
             request: request,
             renderedGroupIDs: [],

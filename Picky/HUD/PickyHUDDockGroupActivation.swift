@@ -91,20 +91,24 @@ final class PickyHUDDockGroupPickerRelay: ObservableObject {
 }
 
 enum PickyHUDDockGroupPickerPresentationIdentity {
-    /// The popover closure captures this identity while it is bound to one
-    /// anchor. A later relay request cannot be acknowledged by an old anchor.
+    /// The popover closure captures this identity while it is bound to the
+    /// active anchor. A later relay request cannot be acknowledged by an old
+    /// anchor, including when an offscreen group uses the dock add fallback.
     static func requestID(
         forAnchorGroupID anchorGroupID: String?,
+        activeAnchorGroupID: String?,
         activeRequest: PickyHUDDockGroupPickerRequest?
     ) -> UUID? {
-        guard activeRequest?.groupID == anchorGroupID else { return nil }
+        guard activeAnchorGroupID == anchorGroupID else { return nil }
         return activeRequest?.id
     }
 }
 
 enum PickyHUDDockGroupPickerRelayPresentation: Equatable {
     case targeted(groupID: String)
-    case untargeted
+    /// The dock add button hosts the popover, but creation still targets the
+    /// group from the original request.
+    case untargeted(targetGroupID: String)
     case deferred
 }
 
@@ -116,6 +120,6 @@ enum PickyHUDDockGroupPickerRelayPolicy {
     ) -> PickyHUDDockGroupPickerRelayPresentation {
         guard let request else { return .deferred }
         if renderedGroupIDs.contains(request.groupID) { return .targeted(groupID: request.groupID) }
-        return hasUntargetedAddAnchor ? .untargeted : .deferred
+        return hasUntargetedAddAnchor ? .untargeted(targetGroupID: request.groupID) : .deferred
     }
 }

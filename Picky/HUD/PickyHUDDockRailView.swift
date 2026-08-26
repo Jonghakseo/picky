@@ -74,8 +74,11 @@ struct PickyHUDDockRailView: View {
 
     @State private var isAddSlotExpanded = false
     @State private var isRecentPickleFolderPickerPresented = false
-    /// Exact group targeted by the button that opened the shared new-Pickle
-    /// picker. `nil` means the regular dock-bottom `+` initiated the flow.
+    /// Group whose tile anchors the shared new-Pickle picker. This can be nil
+    /// while `newPickleTargetGroupID` remains non-nil when an offscreen group
+    /// request falls back to the regular dock-bottom `+` anchor.
+    @State private var newPickleAnchorGroupID: String?
+    /// Exact group that should receive the newly-created Pickle.
     @State private var newPickleTargetGroupID: String?
     /// Identity is captured by the anchor that begins a popover presentation.
     /// A delayed older popover may therefore never acknowledge a replacement.
@@ -253,6 +256,7 @@ struct PickyHUDDockRailView: View {
         .onChange(of: isRecentPickleFolderPickerPresented) { _, isPresented in
             updateDockAddSlotExpansion(pickerIsPresented: isPresented)
             if !isPresented {
+                newPickleAnchorGroupID = nil
                 newPickleTargetGroupID = nil
                 pickleFolderPickerPresentationRequest = nil
             }
@@ -569,7 +573,7 @@ struct PickyHUDDockRailView: View {
                     metrics: metrics,
                     onCreatePickle: { activateGroupTile(group.id) }
                 ),
-                targetGroupID: group.id
+                anchorGroupID: group.id
             )
         } else {
             newPicklePicker(
@@ -589,7 +593,7 @@ struct PickyHUDDockRailView: View {
                         handleGroupTileDragEnded(groupID: group.id, translation: translation)
                     }
                 ),
-                targetGroupID: group.id
+                anchorGroupID: group.id
             )
         }
     }
@@ -1147,9 +1151,17 @@ struct PickyHUDDockRailView: View {
             hasUntargetedAddAnchor: true
         ) {
         case .targeted(let groupID):
-            showRecentPickleFolderPicker(targetGroupID: groupID, request: request)
-        case .untargeted:
-            showRecentPickleFolderPicker(targetGroupID: nil, request: request)
+            showRecentPickleFolderPicker(
+                anchorGroupID: groupID,
+                targetGroupID: groupID,
+                request: request
+            )
+        case .untargeted(let targetGroupID):
+            showRecentPickleFolderPicker(
+                anchorGroupID: nil,
+                targetGroupID: targetGroupID,
+                request: request
+            )
         case .deferred:
             break
         }
@@ -1160,9 +1172,11 @@ struct PickyHUDDockRailView: View {
     }
 
     private func showRecentPickleFolderPicker(
+        anchorGroupID: String?,
         targetGroupID: String?,
         request: PickyHUDDockGroupPickerRequest? = nil
     ) {
+        newPickleAnchorGroupID = anchorGroupID
         newPickleTargetGroupID = targetGroupID
         pickleFolderPickerPresentationRequest = request
         updateDockAddSlotExpansion(pickerIsPresented: true)
@@ -1172,7 +1186,7 @@ struct PickyHUDDockRailView: View {
     private func updateDockAddSlotExpansion(pickerIsPresented: Bool) {
         let expanded = PickyHUDDockNewPicklePopoverPolicy.shouldExpandDockAddSlot(
             pickerIsPresented: pickerIsPresented,
-            activeTargetGroupID: newPickleTargetGroupID
+            activeAnchorGroupID: newPickleAnchorGroupID
         )
         withAnimation(PickyHUDExpansion.animation) {
             isAddSlotExpanded = expanded
@@ -1180,20 +1194,25 @@ struct PickyHUDDockRailView: View {
         onAddSlotExpandedChanged(expanded)
     }
 
-    private func newPicklePickerBinding(targetGroupID: String?) -> Binding<Bool> {
+    private func newPicklePickerBinding(anchorGroupID: String?) -> Binding<Bool> {
         Binding(
             get: {
                 PickyHUDDockNewPicklePopoverPolicy.isPresented(
                     pickerIsPresented: isRecentPickleFolderPickerPresented,
-                    activeTargetGroupID: newPickleTargetGroupID,
-                    anchorGroupID: targetGroupID
+                    activeAnchorGroupID: newPickleAnchorGroupID,
+                    anchorGroupID: anchorGroupID
                 )
             },
             set: { isPresented in
                 if isPresented {
-                    showRecentPickleFolderPicker(targetGroupID: targetGroupID)
-                } else if newPickleTargetGroupID == targetGroupID {
+                    showRecentPickleFolderPicker(
+                        anchorGroupID: anchorGroupID,
+                        targetGroupID: anchorGroupID
+                    )
+                } else if newPickleAnchorGroupID == anchorGroupID {
                     isRecentPickleFolderPickerPresented = false
+                    newPickleAnchorGroupID = nil
+                    newPickleTargetGroupID = nil
                     pickleFolderPickerPresentationRequest = nil
                 }
             }
@@ -1203,14 +1222,15 @@ struct PickyHUDDockRailView: View {
 
     private func newPicklePicker<Anchor: View>(
         anchoredTo anchor: Anchor,
-        targetGroupID: String?
+        anchorGroupID: String?
     ) -> some View {
         let presentationRequestID = PickyHUDDockGroupPickerPresentationIdentity.requestID(
-            forAnchorGroupID: targetGroupID,
+            forAnchorGroupID: anchorGroupID,
+            activeAnchorGroupID: newPickleAnchorGroupID,
             activeRequest: pickleFolderPickerPresentationRequest
         )
         return anchor.recentPickleFolderPicker(
-            isPresented: newPicklePickerBinding(targetGroupID: targetGroupID),
+            isPresented: newPicklePickerBinding(anchorGroupID: anchorGroupID),
             onPresentationAcknowledged: {
                 guard let presentationRequestID else { return }
                 acknowledgePickleFolderPickerPresentation(requestID: presentationRequestID)
@@ -1219,10 +1239,10 @@ struct PickyHUDDockRailView: View {
             pinnedPickleCwds: pinnedPickleCwds,
             recentPickleCwds: recentPickleCwds,
             onCreatePickleInRecentFolder: { cwd in
-                createPickleInRecentFolder(cwd, targetGroupID: targetGroupID)
+                createPickleInRecentFolder(cwd)
             },
             onChooseFolder: {
-                chooseFolderForNewPickle(targetGroupID: targetGroupID)
+                chooseFolderForNewPickle()
             },
             onRemoveRecentPickleFolder: onRemoveRecentPickleFolder,
             onPinPickleFolder: onPinPickleFolder,
@@ -1238,23 +1258,32 @@ struct PickyHUDDockRailView: View {
         )
     }
 
-    private func createPickleInRecentFolder(_ cwd: String, targetGroupID: String?) {
+    private func createPickleInRecentFolder(_ cwd: String) {
+        let targetGroupID = newPickleTargetGroupID
         isRecentPickleFolderPickerPresented = false
+        newPickleAnchorGroupID = nil
         newPickleTargetGroupID = nil
         pickleFolderPickerPresentationRequest = nil
         onCreatePickleInRecentFolder(cwd, targetGroupID)
     }
 
-    private func chooseFolderForNewPickle(targetGroupID: String?) {
+    private func chooseFolderForNewPickle() {
+        let targetGroupID = newPickleTargetGroupID
         isRecentPickleFolderPickerPresented = false
+        newPickleAnchorGroupID = nil
         newPickleTargetGroupID = nil
         pickleFolderPickerPresentationRequest = nil
         onCreatePickle(targetGroupID)
     }
 
     private var addAgentSlotButton: some View {
-        Button {
-            showRecentPickleFolderPicker(targetGroupID: nil)
+        let presentationRequestID = PickyHUDDockGroupPickerPresentationIdentity.requestID(
+            forAnchorGroupID: nil,
+            activeAnchorGroupID: newPickleAnchorGroupID,
+            activeRequest: pickleFolderPickerPresentationRequest
+        )
+        return Button {
+            showRecentPickleFolderPicker(anchorGroupID: nil, targetGroupID: nil)
         } label: {
             ZStack {
                 PickyHUDMaterialFill(
@@ -1277,16 +1306,19 @@ struct PickyHUDDockRailView: View {
         }
         .buttonStyle(.plain)
         .recentPickleFolderPicker(
-            isPresented: newPicklePickerBinding(targetGroupID: nil),
-            onPresentationAcknowledged: {},
+            isPresented: newPicklePickerBinding(anchorGroupID: nil),
+            onPresentationAcknowledged: {
+                guard let presentationRequestID else { return }
+                acknowledgePickleFolderPickerPresentation(requestID: presentationRequestID)
+            },
             arrowEdge: recentPickleFolderPickerArrowEdge,
             pinnedPickleCwds: pinnedPickleCwds,
             recentPickleCwds: recentPickleCwds,
             onCreatePickleInRecentFolder: { cwd in
-                createPickleInRecentFolder(cwd, targetGroupID: nil)
+                createPickleInRecentFolder(cwd)
             },
             onChooseFolder: {
-                chooseFolderForNewPickle(targetGroupID: nil)
+                chooseFolderForNewPickle()
             },
             onRemoveRecentPickleFolder: onRemoveRecentPickleFolder,
             onPinPickleFolder: onPinPickleFolder,
@@ -1313,8 +1345,13 @@ struct PickyHUDDockRailView: View {
     }
 
     private var collapsibleAddAgentSlot: some View {
-        Button {
-            showRecentPickleFolderPicker(targetGroupID: nil)
+        let presentationRequestID = PickyHUDDockGroupPickerPresentationIdentity.requestID(
+            forAnchorGroupID: nil,
+            activeAnchorGroupID: newPickleAnchorGroupID,
+            activeRequest: pickleFolderPickerPresentationRequest
+        )
+        return Button {
+            showRecentPickleFolderPicker(anchorGroupID: nil, targetGroupID: nil)
         } label: {
             ZStack {
                 ZStack {
@@ -1357,16 +1394,19 @@ struct PickyHUDDockRailView: View {
         }
         .buttonStyle(.plain)
         .recentPickleFolderPicker(
-            isPresented: newPicklePickerBinding(targetGroupID: nil),
-            onPresentationAcknowledged: {},
+            isPresented: newPicklePickerBinding(anchorGroupID: nil),
+            onPresentationAcknowledged: {
+                guard let presentationRequestID else { return }
+                acknowledgePickleFolderPickerPresentation(requestID: presentationRequestID)
+            },
             arrowEdge: recentPickleFolderPickerArrowEdge,
             pinnedPickleCwds: pinnedPickleCwds,
             recentPickleCwds: recentPickleCwds,
             onCreatePickleInRecentFolder: { cwd in
-                createPickleInRecentFolder(cwd, targetGroupID: nil)
+                createPickleInRecentFolder(cwd)
             },
             onChooseFolder: {
-                chooseFolderForNewPickle(targetGroupID: nil)
+                chooseFolderForNewPickle()
             },
             onRemoveRecentPickleFolder: onRemoveRecentPickleFolder,
             onPinPickleFolder: onPinPickleFolder,
@@ -1383,7 +1423,7 @@ struct PickyHUDDockRailView: View {
         .onHover { hovering in
             let pickerKeepsExpanded = PickyHUDDockNewPicklePopoverPolicy.shouldExpandDockAddSlot(
                 pickerIsPresented: isRecentPickleFolderPickerPresented,
-                activeTargetGroupID: newPickleTargetGroupID
+                activeAnchorGroupID: newPickleAnchorGroupID
             )
             let expanded = hovering || pickerKeepsExpanded
             onAddSlotExpandedChanged(expanded)

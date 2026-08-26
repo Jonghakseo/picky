@@ -20,19 +20,19 @@ enum PickyHUDDockNewPicklePopoverPolicy {
 
     static func isPresented(
         pickerIsPresented: Bool,
-        activeTargetGroupID: String?,
+        activeAnchorGroupID: String?,
         anchorGroupID: String?
     ) -> Bool {
-        pickerIsPresented && activeTargetGroupID == anchorGroupID
+        pickerIsPresented && activeAnchorGroupID == anchorGroupID
     }
 
     static func shouldExpandDockAddSlot(
         pickerIsPresented: Bool,
-        activeTargetGroupID: String?
+        activeAnchorGroupID: String?
     ) -> Bool {
         isPresented(
             pickerIsPresented: pickerIsPresented,
-            activeTargetGroupID: activeTargetGroupID,
+            activeAnchorGroupID: activeAnchorGroupID,
             anchorGroupID: nil
         )
     }

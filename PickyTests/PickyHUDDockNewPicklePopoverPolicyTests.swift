@@ -10,17 +10,17 @@ struct PickyHUDDockNewPicklePopoverPolicyTests {
     @Test func groupTargetPresentsOnlyFromMatchingGroupAnchor() {
         #expect(PickyHUDDockNewPicklePopoverPolicy.isPresented(
             pickerIsPresented: true,
-            activeTargetGroupID: "group-b",
+            activeAnchorGroupID: "group-b",
             anchorGroupID: "group-b"
         ))
         #expect(!PickyHUDDockNewPicklePopoverPolicy.isPresented(
             pickerIsPresented: true,
-            activeTargetGroupID: "group-b",
+            activeAnchorGroupID: "group-b",
             anchorGroupID: "group-a"
         ))
         #expect(!PickyHUDDockNewPicklePopoverPolicy.isPresented(
             pickerIsPresented: true,
-            activeTargetGroupID: "group-b",
+            activeAnchorGroupID: "group-b",
             anchorGroupID: nil
         ))
     }
@@ -28,16 +28,16 @@ struct PickyHUDDockNewPicklePopoverPolicyTests {
     @Test func dockTargetPresentsFromBottomAnchorAndExpandsAddSlot() {
         #expect(PickyHUDDockNewPicklePopoverPolicy.isPresented(
             pickerIsPresented: true,
-            activeTargetGroupID: nil,
+            activeAnchorGroupID: nil,
             anchorGroupID: nil
         ))
         #expect(PickyHUDDockNewPicklePopoverPolicy.shouldExpandDockAddSlot(
             pickerIsPresented: true,
-            activeTargetGroupID: nil
+            activeAnchorGroupID: nil
         ))
         #expect(!PickyHUDDockNewPicklePopoverPolicy.shouldExpandDockAddSlot(
             pickerIsPresented: true,
-            activeTargetGroupID: "group-b"
+            activeAnchorGroupID: "group-b"
         ))
     }
 

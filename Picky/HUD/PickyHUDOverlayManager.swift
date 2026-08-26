@@ -137,9 +137,28 @@ final class PickyHUDPanel: PickySecureSurfacePanel, PickyScreenCaptureExcludedWi
     }
 }
 
-private final class PickyHUDDockGroupListPanel: PickySecureSurfacePanel, PickyScreenCaptureExcludedWindow, PickyHUDDockGroupListContentHost {
-    override var canBecomeKey: Bool { false }
+/// The child list temporarily owns key input only while its inline name field
+/// is active. Keeping this decision value-based makes restoration safe to test
+/// without relying on WindowServer ordering.
+enum PickyHUDDockGroupListPanelKeyPolicy {
+    static func shouldRestoreOwningHUDKey(isEditing: Bool, isChildPanelKeyWindow: Bool) -> Bool {
+        !isEditing && isChildPanelKeyWindow
+    }
+}
+
+final class PickyHUDDockGroupListPanel: PickySecureSurfacePanel, PickyScreenCaptureExcludedWindow, PickyHUDDockGroupListContentHost {
+    override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    override init(
+        contentRect: NSRect,
+        styleMask: NSWindow.StyleMask,
+        backing bufferingType: NSWindow.BackingStoreType,
+        defer flag: Bool
+    ) {
+        super.init(contentRect: contentRect, styleMask: styleMask, backing: bufferingType, defer: flag)
+        becomesKeyOnlyIfNeeded = true
+    }
 
     func setDockGroupListContentView(_ contentView: NSView?) {
         self.contentView = contentView
@@ -1380,6 +1399,18 @@ final class PickyHUDOverlayManager {
                         visibleIndex: visibleIndex
                     )
                 },
+                onBeginGroupNameEditing: { [weak self, weak panel = entry.panel] in
+                    self?.beginDockGroupListNameEditing(displayID: displayID, childPanel: panel)
+                },
+                onEndGroupNameEditing: { [weak self, weak panel = entry.panel] in
+                    self?.restoreHUDKeyAfterDockGroupListNameEditing(displayID: displayID, childPanel: panel)
+                },
+                onRenameGroup: { [weak self] groupID, name in
+                    self?.viewModel.renameDockGroup(id: groupID, to: name)
+                },
+                onSetGroupColor: { [weak self] groupID, color in
+                    self?.viewModel.setDockGroupColor(id: groupID, color: color)
+                },
                 convertScreenPointToPanel: { [weak panel = entry.panel] screenPoint in
                     guard let panel else { return .zero }
                     return PickyHUDDockGroupListScreenLayout.panelLocalPoint(
@@ -1400,6 +1431,39 @@ final class PickyHUDOverlayManager {
         hostingView.frame = NSRect(origin: .zero, size: panelSize)
         hostingView.autoresizingMask = [.width, .height]
         return hostingView
+    }
+
+    private func beginDockGroupListNameEditing(
+        displayID: CGDirectDisplayID,
+        childPanel: PickyHUDDockGroupListPanel?
+    ) {
+        guard let panel = childPanel,
+              dockGroupListChildrenByDisplayID[displayID]?.panel === panel,
+              panel.isVisible
+        else { return }
+        // The nonactivating panel becomes key only for this native text input;
+        // delayed SwiftUI focus follows after this synchronous handoff.
+        panel.makeKey()
+    }
+
+    private func restoreHUDKeyAfterDockGroupListNameEditing(
+        displayID: CGDirectDisplayID,
+        childPanel: PickyHUDDockGroupListPanel?
+    ) {
+        // Let TextField submit/blur finish its native control action before the
+        // parent resumes its local keyboard monitor. A different key window
+        // (including another app) is always user intent and remains untouched.
+        DispatchQueue.main.async { [weak self, weak childPanel] in
+            guard let self,
+                  let childPanel,
+                  let hudPanel = self.panelsByDisplayID[displayID]?.panel,
+                  PickyHUDDockGroupListPanelKeyPolicy.shouldRestoreOwningHUDKey(
+                      isEditing: false,
+                      isChildPanelKeyWindow: NSApp.keyWindow === childPanel
+                  )
+            else { return }
+            hudPanel.makeKey()
+        }
     }
 
     private func positionDockGroupListChild(

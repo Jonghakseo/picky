@@ -94,6 +94,33 @@ enum PickyHUDDockGroupListInteractionPolicy {
     }
 }
 
+/// Pure header-edit decisions stay independent of SwiftUI focus timing and the
+/// dock-layout persistence controller. An empty committed name is intentional:
+/// `PickyDockGroup.displayName` supplies the localized Untitled fallback.
+enum PickyHUDDockGroupListHeaderEditPolicy {
+    static func committedName(
+        draft: String,
+        currentStoredName: String,
+        shouldCommit: Bool
+    ) -> String? {
+        guard shouldCommit else { return nil }
+        let trimmedDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedCurrent = currentStoredName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedDraft == trimmedCurrent ? nil : trimmedDraft
+    }
+
+    static func colorMenuItems(currentColor: PickyDockGroupColor) -> [ColorMenuItem] {
+        PickyDockGroupColor.palette.map { ColorMenuItem(color: $0, isSelected: $0 == currentColor) }
+    }
+
+    struct ColorMenuItem: Equatable, Identifiable {
+        let color: PickyDockGroupColor
+        let isSelected: Bool
+
+        var id: PickyDockGroupColor { color }
+    }
+}
+
 /// Converts a panel origin expressed in the HUD root's top-left coordinate
 /// system into AppKit's screen-space, bottom-left frame.
 enum PickyHUDDockGroupListScreenLayout {
@@ -168,6 +195,10 @@ struct PickyHUDDockGroupListPanelRoot: View {
     let onMoveSessionToGroup: (String, String) -> Void
     let onUngroupSession: (String) -> Void
     let onReorderSession: (_ sessionID: String, _ visibleIndex: Int) -> Void
+    let onBeginGroupNameEditing: () -> Void
+    let onEndGroupNameEditing: () -> Void
+    let onRenameGroup: (String, String) -> Void
+    let onSetGroupColor: (String, PickyDockGroupColor) -> Void
     let convertScreenPointToPanel: (CGPoint) -> CGPoint
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -204,6 +235,10 @@ struct PickyHUDDockGroupListPanelRoot: View {
             onMoveSessionToGroup: onMoveSessionToGroup,
             onUngroupSession: onUngroupSession,
             onReorderSession: onReorderSession,
+            onBeginGroupNameEditing: onBeginGroupNameEditing,
+            onEndGroupNameEditing: onEndGroupNameEditing,
+            onRenameGroup: onRenameGroup,
+            onSetGroupColor: onSetGroupColor,
             liveRowIDs: { model.liveMembership.rowIDs },
             convertScreenPointToPanel: convertScreenPointToPanel
         )
@@ -237,6 +272,12 @@ struct PickyHUDDockGroupListView: View {
     let onMoveSessionToGroup: (String, String) -> Void
     let onUngroupSession: (String) -> Void
     let onReorderSession: (_ sessionID: String, _ visibleIndex: Int) -> Void
+    /// These default callbacks keep offscreen production-component galleries
+    /// independent of the overlay manager's persistence wiring.
+    var onBeginGroupNameEditing: () -> Void = { }
+    var onEndGroupNameEditing: () -> Void = { }
+    var onRenameGroup: (String, String) -> Void = { _, _ in }
+    var onSetGroupColor: (String, PickyDockGroupColor) -> Void = { _, _ in }
     /// Production uses the current time. Offscreen render fixtures inject a
     /// fixed reference so their row metadata remains deterministic.
     var relativeTime: (Date) -> String = {
@@ -442,21 +483,16 @@ struct PickyHUDDockGroupListView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 4) {
-            HStack(spacing: 4) {
-                Circle()
-                    .fill(group.color.accent)
-                    .frame(width: metrics.groupListHeaderAccentSide, height: metrics.groupListHeaderAccentSide)
-                Text(group.displayName)
-                    .font(PickyHUDTypography.labelSemibold)
-                    .foregroundStyle(DS.Colors.textPrimary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Text("\(rows.count)")
-                    .font(PickyHUDTypography.meta)
-                    .foregroundStyle(DS.Colors.textTertiary)
-            }
-            .accessibilityElement(children: .combine)
+        HStack(spacing: DS.Spacing.space1) {
+            PickyHUDDockGroupListHeader(
+                group: group,
+                memberCount: rows.count,
+                metrics: metrics,
+                onBeginEditing: onBeginGroupNameEditing,
+                onEndEditing: onEndGroupNameEditing,
+                onRename: onRenameGroup,
+                onSetColor: onSetGroupColor
+            )
 
             Spacer(minLength: 0)
 
@@ -560,6 +596,157 @@ struct PickyHUDDockGroupListView: View {
         return centers[index] - (rowHeight / 2)
     }
 
+}
+
+private struct PickyHUDDockGroupListHeader: View {
+    let group: PickyDockGroup
+    let memberCount: Int
+    let metrics: PickyHUDDockMetrics
+    let onBeginEditing: () -> Void
+    let onEndEditing: () -> Void
+    let onRename: (String, String) -> Void
+    let onSetColor: (String, PickyDockGroupColor) -> Void
+
+    @State private var isEditingName = false
+    @State private var nameDraft = ""
+    @State private var nameSelectionRequestID: UUID?
+    @State private var isNameHovered = false
+    @FocusState private var isNameFieldFocused: Bool
+
+    var body: some View {
+        HStack(spacing: DS.Spacing.space1) {
+            colorMenu
+            nameControl
+            Text("\(memberCount)")
+                .font(PickyHUDTypography.meta)
+                .foregroundStyle(DS.Colors.textTertiary)
+                // The containing group-list element already announces the
+                // group name and count, so this visual count stays singular.
+                .accessibilityHidden(true)
+        }
+        .frame(minHeight: metrics.groupListHeaderHeight, alignment: .leading)
+        .accessibilityElement(children: .contain)
+        .onDisappear { finishNameEditing(commit: true) }
+    }
+
+    private var colorMenu: some View {
+        Menu {
+            ForEach(PickyHUDDockGroupListHeaderEditPolicy.colorMenuItems(currentColor: group.color)) { item in
+                Button {
+                    onSetColor(group.id, item.color)
+                } label: {
+                    HStack {
+                        Image(nsImage: item.color.menuSwatchImage)
+                        Text(item.color.localizedName)
+                        if item.isSelected {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+                .accessibilityAddTraits(item.isSelected ? .isSelected : [])
+            }
+        } label: {
+            Circle()
+                .fill(group.color.accent)
+                .frame(width: metrics.groupListHeaderAccentSide, height: metrics.groupListHeaderAccentSide)
+                .frame(width: metrics.groupListHeaderHeight, height: metrics.groupListHeaderHeight)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .help(PickyHUDDockGroupContextMenuPresentation.colorTitle)
+        .accessibilityLabel(PickyHUDDockGroupContextMenuPresentation.colorTitle)
+        .accessibilityValue(group.color.localizedName)
+    }
+
+    @ViewBuilder
+    private var nameControl: some View {
+        if isEditingName {
+            TextField("", text: $nameDraft)
+                .textFieldStyle(.plain)
+                .font(PickyHUDTypography.labelSemibold)
+                .foregroundStyle(DS.Colors.textPrimary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .padding(.horizontal, DS.Spacing.space1)
+                .padding(.vertical, DS.Spacing.space1)
+                .background(DS.Colors.surface3, in: RoundedRectangle(cornerRadius: DS.CornerRadius.compact, style: .continuous))
+                .focused($isNameFieldFocused)
+                .onAppear { focusAndSelectNameField() }
+                .onDisappear { nameSelectionRequestID = nil }
+                .onSubmit { finishNameEditing(commit: true) }
+                .onExitCommand { finishNameEditing(commit: false) }
+                .onChange(of: isNameFieldFocused) { _, focused in
+                    if !focused && isEditingName { finishNameEditing(commit: true) }
+                }
+                .accessibilityLabel(PickyHUDDockGroupContextMenuPresentation.renameTitle)
+                .accessibilityValue(nameDraft)
+        } else {
+            Button(action: beginNameEditing) {
+                Text(group.displayName)
+                    .font(PickyHUDTypography.labelSemibold)
+                    .foregroundStyle(DS.Colors.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .padding(.horizontal, DS.Spacing.space1)
+                    .padding(.vertical, DS.Spacing.space1)
+                    .background(
+                        isNameHovered ? DS.Colors.surface3 : .clear,
+                        in: RoundedRectangle(cornerRadius: DS.CornerRadius.compact, style: .continuous)
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: DS.CornerRadius.compact, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .onHover { isNameHovered = $0 }
+            .help(PickyHUDDockGroupContextMenuPresentation.renameTitle)
+            .accessibilityLabel(PickyHUDDockGroupContextMenuPresentation.renameTitle)
+            .accessibilityValue(group.displayName)
+        }
+    }
+
+    private func beginNameEditing() {
+        onBeginEditing()
+        nameDraft = group.name
+        isEditingName = true
+    }
+
+    private func focusAndSelectNameField() {
+        let expectedWindow = NSApp.keyWindow
+        let requestID = UUID()
+        nameSelectionRequestID = requestID
+        DispatchQueue.main.async {
+            guard isEditingName, nameSelectionRequestID == requestID else { return }
+            isNameFieldFocused = true
+            DispatchQueue.main.async {
+                let editor = PickyTitleFieldSelectionPolicy.eligibleEditor(
+                    expectedWindow: expectedWindow,
+                    currentKeyWindow: NSApp.keyWindow,
+                    firstResponder: expectedWindow?.firstResponder,
+                    isEditing: isEditingName,
+                    isFocused: isNameFieldFocused,
+                    isCurrentRequest: nameSelectionRequestID == requestID
+                )
+                editor?.selectAll(nil)
+            }
+        }
+    }
+
+    private func finishNameEditing(commit: Bool) {
+        guard isEditingName else { return }
+        let committedName = PickyHUDDockGroupListHeaderEditPolicy.committedName(
+            draft: nameDraft,
+            currentStoredName: group.name,
+            shouldCommit: commit
+        )
+        isEditingName = false
+        isNameFieldFocused = false
+        nameSelectionRequestID = nil
+        nameDraft = ""
+        onEndEditing()
+        if let committedName {
+            onRename(group.id, committedName)
+        }
+    }
 }
 
 private struct PickyHUDDockGroupListRow: View {

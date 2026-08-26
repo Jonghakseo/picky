@@ -316,7 +316,14 @@ struct PickyHUDDockRailView: View {
         case .dragging(let sessionID, let translation):
             if activeReorderSessionID != sessionID {
                 activeReorderSessionID = sessionID
-                handleReorderBegin(sessionID: sessionID)
+                guard handleReorderBegin(sessionID: sessionID) else {
+                    // Geometry preferences can arrive after the native handoff.
+                    // Reject this pickup completely so no floating state or AppKit
+                    // monitor persists, then allow a later pickup to retry.
+                    activeReorderSessionID = nil
+                    reorderController.reset()
+                    return
+                }
             }
             handleReorderChanged(sessionID: sessionID, translation: translation)
         case .ended(let sessionID, let translation):
@@ -831,18 +838,18 @@ struct PickyHUDDockRailView: View {
         sessionPullOutDwellWork = nil
     }
 
-    private func handleReorderBegin(sessionID: String) {
-        guard projection.slots.contains(where: { $0.sessionID == sessionID }) else { return }
+    @discardableResult
+    private func handleReorderBegin(sessionID: String) -> Bool {
+        guard projection.slots.contains(where: { $0.sessionID == sessionID }),
+              let sourceCenter = PickyHUDDockDragGeometry.validSourceCenter(slotCenters[sessionID])
+        else { return false }
         draggingSessionID = sessionID
         pendingDropContainer = layout.container(forSessionID: sessionID)
         dragTranslation = .zero
-        // Anchor the floating overlay on the measured slot center captured the
-        // moment the user picked up the icon. Falling back to 0 keeps the
-        // first frame safe when the GeometryReader publish hasn't landed yet.
-        let sourceCenter = slotCenters[sessionID]
-        dragStartCenter = sourceCenter.map { center in
-            dockSide.orientation == .vertical ? center.y : center.x
-        } ?? 0
+        // A native handoff can precede the first GeometryReader preference
+        // update. Do not start the reorder until the full source center exists,
+        // otherwise the floating preview would jump to a rail fallback.
+        dragStartCenter = dockSide.orientation == .vertical ? sourceCenter.y : sourceCenter.x
         dragStartSourceCenter = sourceCenter
         // Freeze the hit-test geometry now, while the rail still shows the
         // base (un-previewed) layout. Every subsequent drop decision is made
@@ -853,6 +860,7 @@ struct PickyHUDDockRailView: View {
         dragReferenceCenters = slotCenters
         dragReferenceGroupTopEntryCenters = topEntryCenters
         dragReferenceGroupDropFrames = groupDropFrames
+        return true
     }
 
     private func handleReorderChanged(sessionID: String, translation: CGSize) {

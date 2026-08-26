@@ -288,6 +288,14 @@ enum PickyHUDDockDragGeometry {
         }
     }
 
+    /// A floating reorder can only begin from measured geometry. Starting
+    /// without a finite source center would position the preview at the rail
+    /// fallback rather than beneath the picked-up Pickle.
+    static func validSourceCenter(_ center: CGPoint?) -> CGPoint? {
+        guard let center, center.x.isFinite, center.y.isFinite else { return nil }
+        return center
+    }
+
     /// The floating Pickle starts at the full source center captured at pickup,
     /// then follows the cursor translation on both axes. Keeping this separate
     /// from the primary-axis reorder center preserves frozen hit-test geometry

@@ -469,6 +469,16 @@ struct PickyHUDDockRailPolicyTests {
         ) == 3)
     }
 
+    @Test func reorderRequiresAFiniteMeasuredSourceCenter() {
+        #expect(PickyHUDDockDragGeometry.validSourceCenter(nil) == nil)
+        #expect(PickyHUDDockDragGeometry.validSourceCenter(CGPoint(x: CGFloat.nan, y: 80)) == nil)
+        #expect(PickyHUDDockDragGeometry.validSourceCenter(CGPoint(x: 40, y: CGFloat.infinity)) == nil)
+        #expect(PickyHUDDockDragGeometry.validSourceCenter(CGPoint(x: -CGFloat.infinity, y: 80)) == nil)
+
+        let sourceCenter = CGPoint(x: 120, y: 80)
+        #expect(PickyHUDDockDragGeometry.validSourceCenter(sourceCenter) == sourceCenter)
+    }
+
     @Test func floatingIconKeepsTheCapturedSourceCenterAcrossDockSidesAndFolderChrome() {
         let translation = CGSize(width: 17, height: -13)
 

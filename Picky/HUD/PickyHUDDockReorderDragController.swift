@@ -163,7 +163,6 @@ final class PickyDockReorderDragController: ObservableObject {
         reset()
         self.sessionID = sessionID
         self.anchorScreenPoint = anchorScreenPoint
-        phase = .dragging(sessionID: sessionID, translation: currentTranslation())
         monitor = installLocalMonitor([.leftMouseDragged, .leftMouseUp]) { [weak self] event in
             guard let self, let sessionID = self.sessionID else { return event }
             let translation = self.currentTranslation()
@@ -177,6 +176,10 @@ final class PickyDockReorderDragController: ObservableObject {
                 return nil
             }
         }
+        // Install the monitor before publishing the pickup. A geometry-rejected
+        // pickup can synchronously reset this controller, which must remove the
+        // monitor rather than leaving it alive after the failed handoff.
+        phase = .dragging(sessionID: sessionID, translation: currentTranslation())
     }
 
     /// Cancels the active reorder without emitting an end phase. Clearing the

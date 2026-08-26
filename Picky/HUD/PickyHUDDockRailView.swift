@@ -241,9 +241,28 @@ struct PickyHUDDockRailView: View {
             }
         }
         .onChange(of: requestedPickleFolderPickerGroupID) { _, groupID in
-            guard let groupID else { return }
-            showRecentPickleFolderPicker(targetGroupID: groupID)
-            onPickleFolderPickerRequestConsumed()
+            let renderedGroupIDs = Set(projection.items.compactMap { item -> String? in
+                guard case .group(let group) = item else { return nil }
+                return group.id
+            })
+            switch PickyHUDDockGroupPickerRelayPolicy.presentation(
+                requestedGroupID: groupID,
+                renderedGroupIDs: renderedGroupIDs,
+                // Every rendered rail includes the ordinary add slot, which is
+                // the explicit fallback anchor if a relay target was deleted.
+                hasUntargetedAddAnchor: true
+            ) {
+            case .targeted(let groupID):
+                showRecentPickleFolderPicker(targetGroupID: groupID)
+                onPickleFolderPickerRequestConsumed()
+            case .untargeted:
+                showRecentPickleFolderPicker(targetGroupID: nil)
+                onPickleFolderPickerRequestConsumed()
+            case .deferred:
+                // No request, or no renderable fallback anchor. Retain an
+                // actionable request rather than falsely reporting success.
+                break
+            }
         }
         // Drive the reorder drag from the rail-level controller. Running the
         // handlers here (rather than from the per-icon NSView) means they keep
@@ -509,12 +528,12 @@ struct PickyHUDDockRailView: View {
     }
 
     private func activateGroupTile(_ groupID: String, hasVisibleMembers: Bool) {
-        switch PickyHUDDockNewPicklePopoverPolicy.groupTileAction(hasVisibleMembers: hasVisibleMembers) {
-        case .showFolderPicker:
-            showRecentPickleFolderPicker(targetGroupID: groupID)
-        case .toggleMemberList:
-            onOpenDockGroupList(groupID)
-        }
+        PickyHUDDockGroupActivationRouter.perform(
+            groupID: groupID,
+            hasVisibleMembers: hasVisibleMembers,
+            showFolderPicker: showRecentPickleFolderPicker,
+            toggleMemberList: onOpenDockGroupList
+        )
     }
 
     @MainActor
@@ -746,27 +765,25 @@ struct PickyHUDDockRailView: View {
             return .init(container: container, center: center)
         }
         let activeSessionIDs = Set(allSessions.map(\.id))
-        let emptyGroupCandidates: [PickyDockDropResolver.EmptyGroupCandidate] = dragReferenceSlots.compactMap { slot in
-            guard let groupID = slot.groupID,
-                  let group = layout.group(withID: groupID),
-                  let center = dragReferenceTopEntryCenters["group:\(groupID)"]
-            else { return nil }
-            return .init(
-                groupID: groupID,
-                memberIndex: PickyDockGroupMemberIndexPolicy.fullMemberIndex(
-                    forVisibleIndex: 0,
-                    memberSessionIDs: group.memberSessionIDs,
-                    activeSessionIDs: activeSessionIDs
-                ),
-                center: center
-            )
-        }
+        let emptyGroupCandidates = PickyHUDDockEmptyGroupDropCandidatePolicy.candidates(
+            slots: dragReferenceSlots,
+            layout: layout,
+            activeSessionIDs: activeSessionIDs,
+            topEntryCenters: dragReferenceTopEntryCenters
+        )
+        let nonEmptyGroupCandidates = PickyHUDDockNonEmptyGroupDropCandidatePolicy.candidates(
+            slots: dragReferenceSlots,
+            layout: layout,
+            activeSessionIDs: activeSessionIDs,
+            topEntryCenters: dragReferenceTopEntryCenters
+        )
 
         let nearestDestination = PickyDockDropResolver.resolveDropContainer(
             draggedSessionID: sessionID,
             cursorAxis: cursorAxis,
             slotCandidates: slotCandidates,
             emptyGroupCandidates: emptyGroupCandidates,
+            nonEmptyGroupCandidates: nonEmptyGroupCandidates,
             layout: layout,
             slotPitch: PickyHUDDockDragGeometry.slotPitch(orientation: dockSide.orientation, metrics: metrics)
         )

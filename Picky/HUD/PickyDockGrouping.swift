@@ -590,6 +590,7 @@ enum PickyDockDropResolver {
         cursorAxis: CGFloat,
         slotCandidates: [SlotCandidate],
         emptyGroupCandidates: [EmptyGroupCandidate],
+        nonEmptyGroupCandidates: [EmptyGroupCandidate] = [],
         layout: PickyDockLayout,
         slotPitch: CGFloat
     ) -> PickyDockContainer? {
@@ -604,7 +605,7 @@ enum PickyDockDropResolver {
             }
         }
 
-        for candidate in emptyGroupCandidates {
+        for candidate in emptyGroupCandidates + nonEmptyGroupCandidates {
             let distance = abs(candidate.center - cursorAxis)
             if distance < minDistance {
                 minDistance = distance

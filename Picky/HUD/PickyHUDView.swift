@@ -81,7 +81,7 @@ struct PickyHUDView: View {
     @State private var isDockAddSlotExpanded = false
     /// One-shot relay from a child group-list panel to the matching rail tile,
     /// which owns the shared recent-folders popover anchor.
-    @State private var dockGroupPickerRequestGroupID: String?
+    @StateObject private var dockGroupPickerRelay = PickyHUDDockGroupPickerRelay()
     @State private var cardResizeInteraction = PickyHUDCardResizeInteractionState()
     @State private var sizeReporter = PickyHUDSizeReporter()
 
@@ -207,7 +207,7 @@ struct PickyHUDView: View {
             .onChange(of: placement.dockGroupListCreateRequestGroupID) { _, groupID in
                 guard let groupID else { return }
                 placement.dockGroupListCreateRequestGroupID = nil
-                dockGroupPickerRequestGroupID = groupID
+                dockGroupPickerRelay.request(groupID: groupID)
             }
             .onAppear {
                 installCloseShortcutMonitor()
@@ -669,8 +669,8 @@ struct PickyHUDView: View {
                 onRemoveDockGroup: { id, keepMembers in viewModel.removeDockGroup(id: id, keepMembers: keepMembers) },
                 onMoveSessionInDock: { sessionID, container in viewModel.moveSessionInDock(sessionID: sessionID, to: container) },
                 onMoveDockGroup: { id, target in viewModel.moveDockGroup(id: id, toTopLevelIndex: target) },
-                requestedPickleFolderPickerGroupID: dockGroupPickerRequestGroupID,
-                onPickleFolderPickerRequestConsumed: { dockGroupPickerRequestGroupID = nil },
+                requestedPickleFolderPickerGroupID: dockGroupPickerRelay.requestedGroupID,
+                onPickleFolderPickerRequestConsumed: { dockGroupPickerRelay.consume() },
                 onDockHoverChanged: handleDockHover,
                 onAddSlotExpandedChanged: { isDockAddSlotExpanded = $0 },
                 onDoneFlashConsumed: viewModel.markDoneFlashConsumed(sessionID:),
@@ -1191,12 +1191,12 @@ struct PickyHUDView: View {
         let activeSessionIDs = Set(dockSnapshot.activeSessions.map(\.id))
         let hasVisibleMembers = dockSnapshot.dockLayout.group(withID: groupID)?.memberSessionIDs
             .contains(where: activeSessionIDs.contains) == true
-        switch PickyHUDDockNewPicklePopoverPolicy.groupTileAction(hasVisibleMembers: hasVisibleMembers) {
-        case .showFolderPicker:
-            dockGroupPickerRequestGroupID = groupID
-        case .toggleMemberList:
-            onDockGroupListToggle(groupID)
-        }
+        PickyHUDDockGroupActivationRouter.perform(
+            groupID: groupID,
+            hasVisibleMembers: hasVisibleMembers,
+            showFolderPicker: { dockGroupPickerRelay.request(groupID: $0) },
+            toggleMemberList: onDockGroupListToggle
+        )
     }
 
     private func openHeldSession(_ next: PickyHUDDockHold) {

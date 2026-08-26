@@ -46,6 +46,13 @@ enum PickyHUDDockGroupListDragPolicy {
         return reordered
     }
 
+    /// Membership geometry is captured when a row drag begins. Content-only
+    /// updates may continue, but any visible membership add, removal, or
+    /// reorder invalidates the frozen row centers and insertion marker.
+    static func shouldCancelDrag(referenceRowIDs: [String], currentRowIDs: [String]) -> Bool {
+        referenceRowIDs != currentRowIDs
+    }
+
     /// Pull-out is deliberately slower than a flick: a pointer that merely
     /// clips the panel edge mid-reorder must not silently ungroup the Pickle.
     static let pullOutDwell: TimeInterval = 0.25

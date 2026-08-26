@@ -224,6 +224,9 @@ struct PickyHUDDockGroupListView: View {
 
     @State private var rowCenters: [String: CGFloat] = [:]
     @State private var draggingRowID: String?
+    /// Ordered visible membership frozen at pickup. Row centers and insertion
+    /// markers are meaningful only for this exact identity/order structure.
+    @State private var dragReferenceRowIDs: [String] = []
     @State private var dragInsertionMarkerIndex: Int?
     @State private var isLeavingGroup = false
     @State private var leftPanelAt: Date?
@@ -266,9 +269,16 @@ struct PickyHUDDockGroupListView: View {
             rowCenters = centers
         }
         .onChange(of: rows.map(\.id)) { _, ids in
-            // A member that vanishes mid-drag cancels the drag instead of
-            // committing a move against a row that no longer exists.
-            if let draggingRowID, !ids.contains(draggingRowID) { resetDrag() }
+            // A status/title/unread update leaves the identity structure alone,
+            // but any member add, removal, or reorder invalidates frozen drag
+            // geometry before mouse-up can commit against stale row centers.
+            if draggingRowID != nil,
+               PickyHUDDockGroupListDragPolicy.shouldCancelDrag(
+                   referenceRowIDs: dragReferenceRowIDs,
+                   currentRowIDs: ids
+               ) {
+                resetDrag()
+            }
         }
         .onDisappear { resetDrag() }
         .accessibilityElement(children: .contain)
@@ -282,6 +292,7 @@ struct PickyHUDDockGroupListView: View {
     private func beginRowDrag(rowID: String) {
         guard draggingRowID == nil else { return }
         draggingRowID = rowID
+        dragReferenceRowIDs = rows.map(\.id)
         dragInsertionMarkerIndex = rows.firstIndex(where: { $0.id == rowID })
         isLeavingGroup = false
         leftPanelAt = nil
@@ -377,6 +388,7 @@ struct PickyHUDDockGroupListView: View {
     private func resetDrag() {
         removeDragMonitors()
         draggingRowID = nil
+        dragReferenceRowIDs = []
         dragInsertionMarkerIndex = nil
         isLeavingGroup = false
         leftPanelAt = nil

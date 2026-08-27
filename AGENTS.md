@@ -133,6 +133,12 @@ xcodebuild -project Picky.xcodeproj -scheme Picky -destination "platform=macOS,a
 
 WindowServer-dependent tests are disabled during ordinary Xcode test runs. They may run exactly once through `scripts/pre-push-checks.sh`, which owns the `PICKY_PRE_PUSH_UI_EFFECT_TESTS=1` opt-in. Do not set that variable for ad-hoc or repeated test commands.
 
+Parallel or subagent-driven `xcodebuild test` runs must use a unique `-derivedDataPath` (for example `/tmp/Picky<purpose>DD`); the shared default DerivedData causes build-DB lock collisions (exit 65) when another build is running concurrently.
+
+When the full agentd vitest suite fails intermittently, classify before touching code: (1) rerun the failing file alone, (2) rerun the suite with `--no-file-parallelism`, (3) reproduce on a clean HEAD temp worktree (`git worktree add /tmp/picky-verify-<n> HEAD`) three times. Only a failure that survives all three steps implicates the changeset. Remove temp worktrees afterwards.
+
+Daemon protocol changes (event ordering, bootstrap sequences) can be smoke-tested without touching the running Picky.app: launch a throwaway agentd on a non-default port with `PICKY_AGENTD_PORT=<port> PICKY_AGENTD_RUNTIME=mock PICKY_APP_SUPPORT_DIR=<tmp-dir>`, connect a scripted WebSocket client (register capabilities, assert frame order), then tear it down. Never attach to or restart the user's live daemon for this.
+
 Runtime smoke for packaged app:
 
 ```bash

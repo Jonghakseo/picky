@@ -209,7 +209,8 @@ final class CompanionManager: ObservableObject {
     /// and headless harnesses that pass their own fake client take the
     /// default (`true`) so the existing teardown behavior is preserved.
     private let ownsAgentClientLifecycle: Bool
-    private let selectionStore: PickySessionSelectionStoring
+    // Shared with the agent-event lifecycle extension for authoritative target cleanup.
+    let selectionStore: PickySessionSelectionStoring
     private let voiceTargetResolver: any PickyVoiceTargetResolving
     private let pointerLocationProvider: @MainActor () -> CGPoint
     private let transcriptionProviderFactory: (PickySettings) -> any BuddyTranscriptionProvider
@@ -317,7 +318,8 @@ final class CompanionManager: ObservableObject {
     /// The currently running AI response task, if any. Cancelled when the user
     /// speaks again so a new response can begin immediately.
     var currentResponseTask: Task<Void, Never>?
-    private var agentEventTask: Task<Void, Never>?
+    // Owned by CompanionManager; installed and cancelled by its agent-event lifecycle extension.
+    var agentEventTask: Task<Void, Never>?
     private var directMessageContinuations: [UUID: CheckedContinuation<Bool, Never>] = [:]
     let inkCaptureCoordinator: any PickyInkCaptureCoordinating
     let pendingInkCaptures = PickyPendingInkCaptureStore()
@@ -986,7 +988,7 @@ final class CompanionManager: ObservableObject {
         print("🎛️ Voice settings applied — STT: \(settings.sttProvider.rawValue), TTS: \(settings.ttsEnabled ? settings.ttsProvider.rawValue : "off"), Azure STT language: \(settings.azureSTTPreferredLanguage.isEmpty ? "auto" : settings.azureSTTPreferredLanguage)")
     }
 
-    private func syncDaemonSettings(_ settings: PickySettings = PickySettingsStore().load()) {
+    func syncDaemonSettings(_ settings: PickySettings = PickySettingsStore().load()) {
         Task {
             do {
                 try await agentClient.send(PickyCommandEnvelope(
@@ -1340,7 +1342,7 @@ final class CompanionManager: ObservableObject {
             }
     }
 
-    private func applyScreenContextTarget(_ sessionID: String?, label: String? = nil) {
+    func applyScreenContextTarget(_ sessionID: String?, label: String? = nil) {
         let normalized = normalizedVoiceFollowUpSessionID(sessionID)
         let targetChanged = screenContextTargetSessionID != normalized
         screenContextTargetSessionID = normalized
@@ -2399,77 +2401,6 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    func bindAgentEvents() {
-        agentEventTask?.cancel()
-        agentEventTask = Task { [weak self] in
-            guard let self else { return }
-            for await event in agentClient.events {
-                switch event {
-                case .protocolEvent(let envelope):
-                    await MainActor.run { self.applyAgentEvent(envelope.event) }
-                case .recoverableError(let message):
-                    await MainActor.run { self.finishAwaitingAgentResponse(visibleText: "Agent event error: \(message)", spokenText: nil) }
-                case .disconnected:
-                    await MainActor.run { self.handleAgentClientDisconnected() }
-                case .connected:
-                    await MainActor.run {
-                        self.latestAgentSessionSummary = "picky-agentd connected"
-                        self.syncDaemonSettings()
-                    }
-                    try? await self.agentClient.send(PickyCommandEnvelope(type: .listMainMessages))
-                    try? await self.agentClient.send(PickyCommandEnvelope(type: .listMainAgentModels))
-                case .sessionProjectionBootstrapCompletion:
-                    await MainActor.run { self.applyAgentClientEvent(event) }
-                }
-            }
-        }
-    }
-
-    /// Consumes router-validated client events owned by CompanionManager.
-    /// The router has already correlated the v2 bootstrap completion, so the
-    /// removed IDs are authoritative and safe to use for voice invalidation.
-    func applyAgentClientEvent(_ event: PickyClientEvent) {
-        guard case .sessionProjectionBootstrapCompletion(let removedSessionIDs, _) = event else { return }
-        invalidateVoiceTargets(removedSessionIDs: removedSessionIDs)
-    }
-
-    private func invalidateVoiceTargets(removedSessionIDs: Set<String>) {
-        guard !removedSessionIDs.isEmpty else { return }
-        let invalidatedInputIDs = voiceInputTargetSnapshotsByInputID.compactMap { inputID, snapshot in
-            removedSessionIDs.contains(snapshot.sessionID ?? "") ? inputID : nil
-        }
-        guard !invalidatedInputIDs.isEmpty else {
-            clearRemovedVoiceTarget(removedSessionIDs)
-            return
-        }
-
-        for inputID in invalidatedInputIDs {
-            voiceInputTargetSnapshotsByInputID.removeValue(forKey: inputID)
-            invalidatedVoiceInputIDs.insert(inputID)
-            voiceContextCapturePipeline.cancel(inputID: inputID)
-            interactionCoordinator.accept(
-                .transcriptFailed(message: L10n.t("error.voice.targetRemoved"), inputID: inputID),
-                correlation: PickyInteractionCorrelation(inputID: inputID, source: .agent)
-            )
-        }
-
-        clearRemovedVoiceTarget(removedSessionIDs)
-        if let interactionVoiceInputID, invalidatedVoiceInputIDs.contains(interactionVoiceInputID) {
-            currentResponseTask?.cancel()
-            finishAwaitingAgentResponse(visibleText: L10n.t("error.voice.targetRemoved"), spokenText: nil)
-        }
-    }
-
-    private func clearRemovedVoiceTarget(_ removedSessionIDs: Set<String>) {
-        if let targetSessionID = voiceFollowUpSessionIDForCurrentUtterance,
-           removedSessionIDs.contains(targetSessionID) {
-            setVoiceFollowUpSessionIDForCurrentUtterance(nil, caller: "projection-removal")
-        }
-        if let targetSessionID = selectionStore.screenContextTargetSessionID,
-           removedSessionIDs.contains(targetSessionID) {
-            applyScreenContextTarget(nil)
-        }
-    }
     /// Preserves the retryable cancellation projection while a cancellation
     /// command is awaiting its transport result. Once it resolves, its defer
     /// re-runs the current pill presentation and ordinary disconnect cleanup

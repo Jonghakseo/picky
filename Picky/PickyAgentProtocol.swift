@@ -1284,24 +1284,6 @@ enum PickySessionStatus: String, Codable, Equatable {
     case queued, running, waiting_for_input, blocked, completed, failed, cancelled
 }
 
-struct PickyContextUsage: Codable, Equatable {
-    var tokens: Int?
-    var contextWindow: Int
-    var percent: Double?
-
-    // The agentd Zod schema requires `tokens` and `percent` to be present as
-    // number|null. Swift's synthesized encoder omits nil keys, which would
-    // make app-daemon session payload validation fail, so emit explicit nulls here.
-    private enum CodingKeys: String, CodingKey { case tokens, contextWindow, percent }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(tokens, forKey: .tokens)
-        try container.encode(contextWindow, forKey: .contextWindow)
-        try container.encode(percent, forKey: .percent)
-    }
-}
-
 enum PickyMainActivityKind: String, Codable, Equatable {
     case thinking
     case tool

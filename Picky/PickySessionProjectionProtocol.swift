@@ -7,6 +7,24 @@
 
 import Foundation
 
+struct PickyContextUsage: Codable, Equatable {
+    var tokens: Int?
+    var contextWindow: Int
+    var percent: Double?
+
+    // The agentd Zod schema requires `tokens` and `percent` to be present as
+    // number|null. Swift's synthesized encoder omits nil keys, which would
+    // make app-daemon session payload validation fail, so emit explicit nulls here.
+    private enum CodingKeys: String, CodingKey { case tokens, contextWindow, percent }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(tokens, forKey: .tokens)
+        try container.encode(contextWindow, forKey: .contextWindow)
+        try container.encode(percent, forKey: .percent)
+    }
+}
+
 /// A field-level projection patch update. Absent keys leave existing state
 /// unchanged; an explicit JSON null clears nullable fields; values replace it.
 enum FieldUpdate<Value: Equatable>: Equatable {

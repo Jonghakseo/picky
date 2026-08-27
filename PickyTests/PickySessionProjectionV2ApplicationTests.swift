@@ -601,7 +601,17 @@ struct PickySessionProjectionV2ApplicationTests {
             title: "Before reset",
             status: .completed,
             revision: 1,
-            extraProjectionFields: #","piSessionFilePath":"/tmp/old.jsonl","lastSummary":"Completed","finalAnswer":"Old answer","logs":["followup: Old request","pi session: /tmp/old.jsonl"],"tools":[{"toolCallId":"tool-old","name":"bash","status":"succeeded"}],"todoState":{"tasks":[{"id":"todo-old","content":"Old task","status":"pending"}],"updatedAt":"2026-08-25T00:00:00.000Z"},"subagentRuns":[{"runId":1,"agent":"worker","task":"Old task","status":"done"}],"artifacts":[{"id":"artifact-old","kind":"report","title":"Old report","updatedAt":"2026-08-25T00:00:00.000Z"}],"changedFiles":[{"path":"old.swift","status":"modified"}],"messages":[{"id":"message-old","kind":"user_text","createdAt":"2026-08-25T00:00:00.000Z","text":"Old request"}],"queuedSteers":[{"id":"steer-old","text":"Old steer","enqueuedAt":"2026-08-25T00:00:00.000Z"}],"queuedFollowUps":[{"id":"followup-old","text":"Old follow-up","enqueuedAt":"2026-08-25T00:00:00.000Z"}],"activitySummary":{"read":1,"bash":1,"edit":0,"write":0,"thinking":0,"other":0}"#
+            extraProjectionFields: #","piSessionFilePath":"/tmp/old.jsonl","lastSummary":"Completed","finalAnswer":"Old answer""# +
+                #","logs":["followup: Old request","pi session: /tmp/old.jsonl"]"# +
+                #","tools":[{"toolCallId":"tool-old","name":"bash","status":"succeeded"}]"# +
+                #","todoState":{"tasks":[{"id":"todo-old","content":"Old task","status":"pending"}],"updatedAt":"2026-08-25T00:00:00.000Z"}"# +
+                #","subagentRuns":[{"runId":1,"agent":"worker","task":"Old task","status":"done"}]"# +
+                #","artifacts":[{"id":"artifact-old","kind":"report","title":"Old report","updatedAt":"2026-08-25T00:00:00.000Z"}]"# +
+                #","changedFiles":[{"path":"old.swift","status":"modified"}]"# +
+                #","messages":[{"id":"message-old","kind":"user_text","createdAt":"2026-08-25T00:00:00.000Z","text":"Old request"}]"# +
+                #","queuedSteers":[{"id":"steer-old","text":"Old steer","enqueuedAt":"2026-08-25T00:00:00.000Z"}]"# +
+                #","queuedFollowUps":[{"id":"followup-old","text":"Old follow-up","enqueuedAt":"2026-08-25T00:00:00.000Z"}]"# +
+                #","activitySummary":{"read":1,"bash":1,"edit":0,"write":0,"thinking":0,"other":0}"#
         ), to: viewModel)
 
         apply(transaction(

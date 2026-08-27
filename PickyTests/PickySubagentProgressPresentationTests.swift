@@ -35,7 +35,7 @@ struct PickySubagentProgressPresentationTests {
             createdAt: Date(timeIntervalSince1970: 1_700_000_000)
         ))
 
-        #expect(current.statusText == "1 failed · 1/2")
+        #expect(current.statusText == L10n.t("hud.subagent.pill.failed", Int64(1), Int64(1), Int64(2)))
         #expect(current.isComplete)
         #expect(PickySubagentInvocationExpansionPolicy.shouldCollapse(previousIsComplete: previous.isComplete, currentIsComplete: current.isComplete))
         #expect(!PickySubagentInvocationExpansionPolicy.isExpanded(savedValue: nil, isComplete: current.isComplete))
@@ -167,9 +167,9 @@ struct PickySubagentProgressPresentationTests {
 
         #expect(succeeded.tone == .running)
         #expect(succeeded.collapsedTone == .success)
-        #expect(succeeded.collapsedText == "1 agent done")
+        #expect(succeeded.collapsedText == L10n.t("hud.subagent.pill.done.one"))
         #expect(failed.collapsedTone == .error)
-        #expect(failed.collapsedText == "1 failed · 1/2")
+        #expect(failed.collapsedText == L10n.t("hud.subagent.pill.failed", Int64(1), Int64(1), Int64(2)))
     }
 
     @Test func decodesUnknownSubagentInvocationActionsAsRun() throws {

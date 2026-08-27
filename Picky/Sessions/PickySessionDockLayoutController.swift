@@ -91,8 +91,8 @@ final class PickySessionDockLayoutController {
     }
 
     /// Main-agent group mutations must not report success until the durable
-    /// dock layout write succeeds. Unlike the UI path above, a save error
-    /// leaves the published controller layout unchanged and propagates.
+    /// dock layout write succeeds. Their layout is reserved synchronously so
+    /// later UI mutations derive from it; a save error still propagates.
     func createGroupPersisting(name: String, withMemberIDs memberSessionIDs: [String]) async throws -> String {
         let mutation = groupCreation(name: name, memberSessionIDs: memberSessionIDs)
         _ = try await applyPersisting(mutation.layout, changed: mutation.layout != layout)
@@ -202,15 +202,26 @@ final class PickySessionDockLayoutController {
         let normalized = next.normalizedForFolderRail()
         let didChange = changed || normalized != layout
         guard didChange else { return false }
+
+        // `saveDurably` enters the same FIFO as UI persistence, but awaiting
+        // it yields the main actor. Publish before that yield so every later
+        // mutation starts from this accepted layout rather than a stale one.
+        let previousLayout = layout
         layoutRevision &+= 1
         let admissionRevision = layoutRevision
+        layout = normalized
+
         do {
             try await store.saveDurably(normalized)
-            if layoutRevision == admissionRevision {
-                layout = normalized
-            }
             return true
         } catch {
+            // A later accepted mutation was derived from `normalized` and has
+            // already captured the composite layout for the FIFO. Reverting it
+            // here would discard that later mutation. Only roll back when this
+            // failed admission is still the current revision.
+            if layoutRevision == admissionRevision {
+                layout = previousLayout
+            }
             onSaveError(error)
             throw error
         }

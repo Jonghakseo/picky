@@ -32,7 +32,8 @@ struct PickyHUDDockGroupListSubscriptionOrchestratorTests {
             pinnedPickleCwds: [],
             recentPickleCwds: [],
             isLoadingInitialSessionSnapshot: false,
-            openSessionRequest: nil
+            openSessionRequest: nil,
+            authoritativeRemovalEvent: nil
         )
     }
 

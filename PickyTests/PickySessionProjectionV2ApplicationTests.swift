@@ -46,6 +46,24 @@ struct PickySessionProjectionV2ApplicationTests {
         #expect(!viewModel.isLoadingInitialSessionSnapshot)
     }
 
+    @Test func authoritativeBootstrapRemovalPublishesMonotonicHUDRemovalEvent() throws {
+        let storage = PickyRegistrySessionProjectionStorage()
+        let viewModel = makeViewModel(client: FakePickyAgentClient(), storage: storage)
+        apply(snapshot(sessionID: "removed", title: "Removed", status: .running, revision: 1), to: viewModel)
+        apply(snapshot(sessionID: "next", title: "Next", status: .running, revision: 1), to: viewModel)
+
+        viewModel.applySessionProjectionBootstrapCompletion(removedSessionIDs: ["removed"], isPrimary: true)
+        viewModel.flushDockStateForTesting()
+        let first = try #require(viewModel.dockState.snapshot.authoritativeRemovalEvent)
+        #expect(first.sessionIDs == ["removed"])
+
+        viewModel.applySessionProjectionBootstrapCompletion(removedSessionIDs: ["next"], isPrimary: true)
+        viewModel.flushDockStateForTesting()
+        let second = try #require(viewModel.dockState.snapshot.authoritativeRemovalEvent)
+        #expect(second.revision > first.revision)
+        #expect(second.sessionIDs == ["next"])
+    }
+
     @Test func childBootstrapCompletionDoesNotUnblockPrimaryLoading() {
         let viewModel = makeViewModel(client: FakePickyAgentClient(), storage: PickyRegistrySessionProjectionStorage())
         viewModel.isLoadingInitialSessionSnapshot = true

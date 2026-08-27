@@ -45,6 +45,26 @@ struct PickyHUDDockRailFramePreferenceKey: PreferenceKey {
     }
 }
 
+/// Folder badge frames in the rail coordinate space. Unlike the HUD-root
+/// frames used by the detached child panel, these compare directly with a
+/// scroll viewport before choosing a popover anchor.
+struct PickyHUDPickerBadgeFrameKey: PreferenceKey {
+    static let defaultValue: [String: CGRect] = [:]
+
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue()) { _, new in new }
+    }
+}
+
+struct PickyHUDRailViewportFrameKey: PreferenceKey {
+    static let defaultValue: CGRect = .zero
+
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if next != .zero { value = next }
+    }
+}
+
 private struct PickyHUDDockGroupFrameReporter<Key: PreferenceKey>: View where Key.Value == [String: CGRect] {
     let groupID: String
     let key: Key.Type
@@ -70,6 +90,17 @@ struct PickyHUDDockRailFrameReporter: View {
     }
 }
 
+struct PickyHUDDockRailViewportFrameReporter: View {
+    var body: some View {
+        GeometryReader { proxy in
+            Color.clear.preference(
+                key: PickyHUDRailViewportFrameKey.self,
+                value: proxy.frame(in: .named(PickyHUDDockRailCoordinateSpace))
+            )
+        }
+    }
+}
+
 extension View {
     func publishDockGroupBadgeFrame(groupID: String) -> some View {
         background(PickyHUDDockGroupFrameReporter(
@@ -83,6 +114,17 @@ extension View {
             groupID: groupID,
             key: PickyHUDDockGroupInteractionFramePreferenceKey.self
         ))
+    }
+
+    func publishDockGroupPickerBadgeFrame(groupID: String) -> some View {
+        background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: PickyHUDPickerBadgeFrameKey.self,
+                    value: [groupID: proxy.frame(in: .named(PickyHUDDockRailCoordinateSpace))]
+                )
+            }
+        }
     }
 
     func publishDockSlotCenter(sessionID: String) -> some View {

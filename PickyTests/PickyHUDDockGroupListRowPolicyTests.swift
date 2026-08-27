@@ -202,7 +202,8 @@ struct PickyHUDDockGroupListSnapshotPolicyTests {
             pinnedPickleCwds: [],
             recentPickleCwds: [],
             isLoadingInitialSessionSnapshot: false,
-            openSessionRequest: nil
+            openSessionRequest: nil,
+            authoritativeRemovalEvent: nil
         )
     }
 

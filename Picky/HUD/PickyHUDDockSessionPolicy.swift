@@ -67,6 +67,13 @@ struct PickyHUDDockSession: Equatable, Identifiable {
     }
 }
 
+/// One replay-safe authoritative-membership removal. HUD owners consume the
+/// revision once, so later snapshots cannot apply the same removal again.
+struct PickyHUDDockRemovalEvent: Equatable {
+    let revision: UInt64
+    let sessionIDs: Set<String>
+}
+
 /// Every reactive value consumed by the HUD root and dock rail. The view model
 /// owns one stable `PickyHUDDockState` instance and replaces this value only
 /// after a logically complete mutation has settled.
@@ -82,6 +89,8 @@ struct PickyHUDDockSnapshot: Equatable {
     let recentPickleCwds: [String]
     let isLoadingInitialSessionSnapshot: Bool
     let openSessionRequest: PickyHUDOpenSessionRequest?
+    /// Router-validated authoritative removals for HUD-local owners.
+    let authoritativeRemovalEvent: PickyHUDDockRemovalEvent?
 
     static let empty = Self(
         activeSessions: [],
@@ -94,7 +103,8 @@ struct PickyHUDDockSnapshot: Equatable {
         pinnedPickleCwds: [],
         recentPickleCwds: [],
         isLoadingInitialSessionSnapshot: true,
-        openSessionRequest: nil
+        openSessionRequest: nil,
+        authoritativeRemovalEvent: nil
     )
 }
 

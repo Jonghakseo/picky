@@ -63,6 +63,7 @@ struct PickyHUDView: View {
     @State private var pendingRequestedOpenSessionID: String?
     @State private var hoverPreviewSessionID: String?
     @State private var suppressedHoverSessionID: String?
+    @State private var lastHandledAuthoritativeRemovalRevision: UInt64 = 0
     @State private var isHUDHovered = false
     @State private var isDockHovered = false
     @State private var closeExpansionTask: Task<Void, Never>?
@@ -211,6 +212,7 @@ struct PickyHUDView: View {
             }
             .onAppear {
                 installCloseShortcutMonitor()
+                consumeAuthoritativeRemovalEvent(dockSnapshot.authoritativeRemovalEvent)
                 handleOpenSessionRequest(dockSnapshot.openSessionRequest)
                 markFocusedActiveSessionReadIfNeeded()
             }
@@ -237,6 +239,9 @@ struct PickyHUDView: View {
             }
             .onChange(of: dockSnapshot.activeSessions.map(\.id)) { _, currentSessionIDs in
                 utilityPanelStateStore.removeAll(except: Set(currentSessionIDs))
+            }
+            .onChange(of: dockSnapshot.authoritativeRemovalEvent) { _, event in
+                consumeAuthoritativeRemovalEvent(event)
             }
             .onChange(of: visibilityStore.snapshot) { _, _ in
                 markActiveArtifactsSeenIfNeeded()
@@ -708,6 +713,32 @@ struct PickyHUDView: View {
     private var miniPreviewHorizontalReserve: CGFloat {
         guard placement.dockSide.orientation == .horizontal else { return 0 }
         return PickyHUDDockLayout.miniPreviewHorizontalReserve(metrics: dockMetrics)
+    }
+
+    private func consumeAuthoritativeRemovalEvent(_ event: PickyHUDDockRemovalEvent?) {
+        let state = PickyHUDSessionRemovalState(
+            heldSession: heldSession,
+            pendingManualAutoOpenSessionID: pendingManualAutoOpenSessionID,
+            pendingRequestedOpenSessionID: pendingRequestedOpenSessionID,
+            hoverPreviewSessionID: hoverPreviewSessionID,
+            suppressedHoverSessionID: suppressedHoverSessionID,
+            utilityPanelOpenSessionIDs: utilityPanelOpenSessionIDs
+        )
+        guard let result = PickyHUDSessionRemovalPolicy.applying(
+            event,
+            after: lastHandledAuthoritativeRemovalRevision,
+            to: state
+        ) else { return }
+        heldSession = result.state.heldSession
+        pendingManualAutoOpenSessionID = result.state.pendingManualAutoOpenSessionID
+        pendingRequestedOpenSessionID = result.state.pendingRequestedOpenSessionID
+        hoverPreviewSessionID = result.state.hoverPreviewSessionID
+        suppressedHoverSessionID = result.state.suppressedHoverSessionID
+        utilityPanelOpenSessionIDs = result.state.utilityPanelOpenSessionIDs
+        for sessionID in event?.sessionIDs ?? [] {
+            utilityPanelStateStore.remove(sessionID: sessionID)
+        }
+        lastHandledAuthoritativeRemovalRevision = result.handledRevision
     }
 
     private func reportDockGroupListGeometry() {

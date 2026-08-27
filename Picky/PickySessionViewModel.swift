@@ -138,6 +138,10 @@ final class PickySessionListViewModel: ObservableObject {
     }
     /// Stable, dock-only observation boundary. Its identity never changes.
     let dockState = PickyHUDDockState()
+    /// Last router-validated membership removal published to HUD-local owners.
+    /// The event revision is monotonic so each surface can consume it once.
+    private var authoritativeDockRemovalEvent: PickyHUDDockRemovalEvent?
+    private var nextAuthoritativeDockRemovalRevision: UInt64 = 0
     private var isDockStateSyncScheduled = false
     private var dockStateMutationDepth = 0
     private var needsImmediateDockStateSyncAfterMutation = false
@@ -371,7 +375,8 @@ final class PickySessionListViewModel: ObservableObject {
             pinnedPickleCwds: pinnedPickleCwds,
             recentPickleCwds: recentPickleCwds,
             isLoadingInitialSessionSnapshot: isLoadingInitialSessionSnapshot,
-            openSessionRequest: openSessionRequest
+            openSessionRequest: openSessionRequest,
+            authoritativeRemovalEvent: authoritativeDockRemovalEvent
         ))
     }
 
@@ -1781,6 +1786,13 @@ final class PickySessionListViewModel: ObservableObject {
 
         for sessionID in removedSessionIDs {
             clearAuthoritativelyRemovedSessionState(sessionID: sessionID)
+        }
+        if !removedSessionIDs.isEmpty {
+            nextAuthoritativeDockRemovalRevision &+= 1
+            authoritativeDockRemovalEvent = PickyHUDDockRemovalEvent(
+                revision: nextAuthoritativeDockRemovalRevision,
+                sessionIDs: removedSessionIDs
+            )
         }
         if let storage = sessionProjectionStorage as? PickyRegistrySessionProjectionStorage {
             storage.removeSessions(ids: removedSessionIDs)

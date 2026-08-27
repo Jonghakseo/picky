@@ -174,10 +174,13 @@ final class PickyHUDOverlayManager {
     private let actualPanelVisibilityStore: PickyHUDActualPanelVisibilityStore
     private let dockGroupListFocusStore = PickyHUDDockGroupListFocusStore()
     private let dockGroupListChildEffectExecutor = PickyHUDDockGroupListChildEffectExecutor()
+    private let screenReconfigurationEffectExecutor = PickyHUDScreenReconfigExecutor()
     private let settingsStore: PickySettingsStore
     private let settingsPersistence: PickySettingsPersistenceCoordinator
     private let voiceTargetHitTestRegistry: PickyVoiceTargetHitTestRegistry
     private var visibilityCancellable: AnyCancellable?
+    private var dockSnapshotCancellable: AnyCancellable?
+    private var lastHandledAuthoritativeRemovalRevision: UInt64 = 0
     /// Owns both the actual Combine subscription and child-panel content hosts.
     private var dockGroupListOverlayLifecycle: PickyHUDDockGroupListOverlayLifecycle?
     private let collapsedHeight: CGFloat = 180
@@ -278,6 +281,9 @@ final class PickyHUDOverlayManager {
                 .eraseToAnyPublisher()
         ) { [weak self] snapshot, fontScale in
             self?.syncDockGroupListChildrenWithSnapshot(snapshot: snapshot, fontScale: fontScale)
+        }
+        self.dockSnapshotCancellable = viewModel.dockState.$snapshot.sink { [weak self] snapshot in
+            self?.consumeAuthoritativeRemovalEvent(snapshot.authoritativeRemovalEvent)
         }
     }
 
@@ -442,6 +448,7 @@ final class PickyHUDOverlayManager {
 
     func stop() {
         visibilityCancellable = nil
+        dockSnapshotCancellable = nil
         dockGroupListOverlayLifecycle?.tearDownAll()
         dockGroupListOverlayLifecycle = nil
         stopScreenParametersObserver()
@@ -490,45 +497,53 @@ final class PickyHUDOverlayManager {
     /// settled state.
     private func syncPanelsForCurrentScreens(visibility: PickyHUDDockVisibilitySnapshot? = nil) {
         let visibility = visibility ?? visibilityStore.snapshot
-        let screens = NSScreen.screens
-        let liveDisplayIDs = Set(screens.compactMap(\.pickyDisplayID))
-
-        // Tear down panels for displays that disappeared.
-        for displayID in panelsByDisplayID.keys where !liveDisplayIDs.contains(displayID) {
-            if let entry = panelsByDisplayID.removeValue(forKey: displayID) {
-                entry.pendingShrinkTask?.cancel()
-                entry.panel.orderOut(nil)
-                actualPanelVisibilityStore.removePanel(for: displayID)
+        let screensByDisplayID = Dictionary(
+            uniqueKeysWithValues: NSScreen.screens.compactMap { screen in
+                screen.pickyDisplayID.map { ($0, screen) }
             }
-        }
-        for displayID in archiveUndoToastsByDisplayID.keys where !liveDisplayIDs.contains(displayID) {
-            if let entry = archiveUndoToastsByDisplayID.removeValue(forKey: displayID) {
-                entry.dismissTask?.cancel()
-                entry.panel.orderOut(nil)
-            }
-        }
-        for displayID in dockGroupListChildrenByDisplayID.keys where !liveDisplayIDs.contains(displayID) {
-            hideDockGroupListChild(displayID: displayID)
-        }
-
-        // Create or reposition for every connected display, then independently
-        // order each panel in or out according to that display's visibility.
-        for screen in screens {
-            guard let displayID = screen.pickyDisplayID else { continue }
-            if panelsByDisplayID[displayID] == nil {
-                panelsByDisplayID[displayID] = makePanelEntry(displayID: displayID)
-            }
-            positionPanel(on: screen, displayID: displayID)
-            if visibility.isVisible(for: displayID) {
-                panelsByDisplayID[displayID]?.panel.orderFrontRegardless()
-            } else {
-                panelsByDisplayID[displayID]?.panel.orderOut(nil)
-                hideDockGroupListChild(displayID: displayID)
-            }
-        }
-        for displayID in archiveUndoToastsByDisplayID.keys {
-            positionArchiveUndoToast(displayID: displayID)
-        }
+        )
+        let liveDisplayIDs = Set(screensByDisplayID.keys)
+        screenReconfigurationEffectExecutor.synchronize(
+            liveDisplayIDs: liveDisplayIDs,
+            parentDisplayIDs: Set(panelsByDisplayID.keys),
+            toastDisplayIDs: Set(archiveUndoToastsByDisplayID.keys),
+            childDisplayIDs: Set(dockGroupListChildrenByDisplayID.keys),
+            effects: .init(
+                removeParent: { [weak self] displayID in
+                    guard let entry = self?.panelsByDisplayID.removeValue(forKey: displayID) else { return }
+                    entry.pendingShrinkTask?.cancel()
+                    entry.panel.orderOut(nil)
+                    self?.actualPanelVisibilityStore.removePanel(for: displayID)
+                },
+                removeToast: { [weak self] displayID in
+                    guard let entry = self?.archiveUndoToastsByDisplayID.removeValue(forKey: displayID) else { return }
+                    entry.dismissTask?.cancel()
+                    entry.panel.orderOut(nil)
+                },
+                removeChild: { [weak self] displayID in
+                    self?.hideDockGroupListChild(displayID: displayID)
+                },
+                synchronizeParent: { [weak self] displayID in
+                    guard let self, let screen = screensByDisplayID[displayID] else { return }
+                    if self.panelsByDisplayID[displayID] == nil {
+                        self.panelsByDisplayID[displayID] = self.makePanelEntry(displayID: displayID)
+                    }
+                    self.positionPanel(on: screen, displayID: displayID)
+                    if visibility.isVisible(for: displayID) {
+                        self.panelsByDisplayID[displayID]?.panel.orderFrontRegardless()
+                    } else {
+                        self.panelsByDisplayID[displayID]?.panel.orderOut(nil)
+                        self.hideDockGroupListChild(displayID: displayID)
+                    }
+                },
+                synchronizeChild: { [weak self] displayID in
+                    self?.syncDockGroupListChild(displayID: displayID)
+                },
+                synchronizeToast: { [weak self] displayID in
+                    self?.positionArchiveUndoToast(displayID: displayID)
+                }
+            )
+        )
     }
 
     private func makePanelEntry(displayID: CGDirectDisplayID) -> PanelEntry {
@@ -1627,6 +1642,29 @@ final class PickyHUDOverlayManager {
     }
 
     // MARK: - Archive undo toast
+
+    private func consumeAuthoritativeRemovalEvent(_ event: PickyHUDDockRemovalEvent?) {
+        guard let event, event.revision > lastHandledAuthoritativeRemovalRevision else { return }
+        for displayID in Array(archiveUndoToastsByDisplayID.keys) {
+            guard var entry = archiveUndoToastsByDisplayID[displayID],
+                  let toast = entry.toast,
+                  PickyHUDArchiveUndoToastRemovalPolicy.shouldInvalidate(
+                    toastSessionID: toast.sessionID,
+                    removedSessionIDs: event.sessionIDs
+                  )
+            else { continue }
+            // Clear the identity synchronously before hiding. A queued button
+            // action then fails its toast-ID guard and cannot unarchive a
+            // session the router has authoritatively removed.
+            entry.dismissTask?.cancel()
+            entry.dismissTask = nil
+            entry.toast = nil
+            archiveUndoToastsByDisplayID[displayID] = entry
+            entry.panel.orderOut(nil)
+            archiveUndoToastsByDisplayID.removeValue(forKey: displayID)
+        }
+        lastHandledAuthoritativeRemovalRevision = event.revision
+    }
 
     private func showArchiveUndoToast(displayID: CGDirectDisplayID, sessionID: String, title: String) {
         guard visibilityStore.isVisible(for: displayID), screen(for: displayID) != nil else { return }

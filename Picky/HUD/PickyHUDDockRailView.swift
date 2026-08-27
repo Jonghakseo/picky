@@ -145,6 +145,10 @@ struct PickyHUDDockRailView: View {
     /// Visible folder badge frames in rail coordinates. Session drags freeze
     /// these at pickup so preview reflow cannot move a drop target.
     @State private var groupDropFrames: [String: CGRect] = [:]
+    /// Folder badge geometry in the rail coordinate space, used only to decide
+    /// whether a scrolling rail can safely host a picker popover.
+    @State private var groupPickerBadgeFrames: [String: CGRect] = [:]
+    @State private var sessionsViewportFrame: CGRect = .zero
     /// Currently-dragged group id (folder tile drag). Mutually exclusive with
     /// `draggingSessionID`.
     @State private var draggingGroupID: String?
@@ -276,6 +280,12 @@ struct PickyHUDDockRailView: View {
         .onPreferenceChange(PickyDockGroupDropFramePreferenceKey.self) { frames in
             groupDropFrames = frames
         }
+        .onPreferenceChange(PickyHUDPickerBadgeFrameKey.self) { frames in
+            groupPickerBadgeFrames = frames
+        }
+        .onPreferenceChange(PickyHUDRailViewportFrameKey.self) { frame in
+            sessionsViewportFrame = frame
+        }
         .onChange(of: persistedStructure) { _, structure in
             cancelDragsForPersistedStructureChange(structure)
         }
@@ -295,6 +305,12 @@ struct PickyHUDDockRailView: View {
             // Revalidate a request after any projection change. A disappearing
             // target reanchors to the ordinary dock add slot without consuming
             // intent before a popover actually appears.
+            presentPendingPickleFolderPickerIfPossible()
+        }
+        .onChange(of: groupPickerBadgeFrames) { _, _ in
+            presentPendingPickleFolderPickerIfPossible()
+        }
+        .onChange(of: sessionsViewportFrame) { _, _ in
             presentPendingPickleFolderPickerIfPossible()
         }
         // Drive the reorder drag from the rail-level controller. Running the
@@ -446,6 +462,7 @@ struct PickyHUDDockRailView: View {
                     }
                 }
                 .frame(width: overflowLayout.sessionsViewportLength)
+                .background(PickyHUDDockRailViewportFrameReporter())
                 .onAppear { revealActiveSession(using: proxy) }
                 .onChange(of: activeSessionID) { _, _ in revealActiveSession(using: proxy) }
             }
@@ -463,6 +480,7 @@ struct PickyHUDDockRailView: View {
                 }
             }
             .frame(height: overflowLayout.sessionsViewportLength)
+            .background(PickyHUDDockRailViewportFrameReporter())
             .onAppear { revealActiveSession(using: proxy) }
             .onChange(of: activeSessionID) { _, _ in revealActiveSession(using: proxy) }
         }
@@ -538,6 +556,7 @@ struct PickyHUDDockRailView: View {
                     isDropTargeted: isDropTargeted
                 )
                 .publishDockGroupBadgeFrame(groupID: group.id)
+                .publishDockGroupPickerBadgeFrame(groupID: group.id)
                 .publishDockGroupDropFrame(groupID: group.id)
                 .pickyDockGroupContextMenu(
                     group: group,
@@ -557,6 +576,7 @@ struct PickyHUDDockRailView: View {
                     isDropTargeted: isDropTargeted
                 )
                 .publishDockGroupBadgeFrame(groupID: group.id)
+                .publishDockGroupPickerBadgeFrame(groupID: group.id)
                 .publishDockGroupDropFrame(groupID: group.id)
                 .pickyDockGroupContextMenu(
                     group: group,
@@ -1228,11 +1248,20 @@ struct PickyHUDDockRailView: View {
         })
     }
 
+    private var pickerAnchorGroupIDs: Set<String> {
+        PickyHUDPickerAnchorVisibilityPolicy.visibleAnchorGroupIDs(
+            renderedGroupIDs: renderedGroupIDs,
+            badgeFrames: groupPickerBadgeFrames,
+            viewportFrame: sessionsViewportFrame,
+            needsScroll: overflowLayout.needsScroll
+        )
+    }
+
     private func presentPendingPickleFolderPickerIfPossible() {
         guard let request = pendingPickleFolderPickerRequest else { return }
         switch PickyHUDDockGroupPickerRelayPolicy.presentation(
             request: request,
-            renderedGroupIDs: renderedGroupIDs,
+            renderedGroupIDs: pickerAnchorGroupIDs,
             hasUntargetedAddAnchor: true
         ) {
         case .targeted(let groupID):

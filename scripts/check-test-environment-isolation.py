@@ -76,7 +76,7 @@ REQUIRED_GUARDS = {
     "Picky/Shortcuts/ShortcutCaptureRecorder.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }",
     "Picky/HUD/Conversation/PickyConversationComposerView.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }",
     "Picky/HUD/PickyHUDDockGroupListView.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }",
-    "Picky/HUD/PickyHUDOverlayManager.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }",
+    "Picky/HUD/PickyHUDOverlayManager+DockGroupList.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }",
     "Picky/HUD/PickyHUDView.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }",
     "Picky/Overlay/PickyInkCaptureController.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return false }",
     "Picky/Context/PickyAnnotationSceneMonitor.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }",

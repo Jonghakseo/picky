@@ -7,7 +7,7 @@ import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { FollowUpLifecycleDiagnostics } from "./application/follow-up-lifecycle-diagnostics.js";
 import type { ReloadPluginsSummary, SessionSupervisorOptions } from "./application/session-supervisor-options.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
-import { buildSessionProjectionMutations, emitTerminalV1Compatibility, finalizeTerminalOperation, type TerminalDurableCommitDependencies } from "./application/terminal-durable-commit.js";
+import { emitTerminalV1Compatibility, finalizeTerminalOperation, publishSessionProjectionCommit, type SessionCommit, type TerminalDurableCommitDependencies } from "./application/terminal-durable-commit.js";
 import { SubagentRunUpdater } from "./application/subagent-run-updater.js";
 import { TerminalManualCompactionCoordinator } from "./application/terminal-manual-compaction.js";
 import { makeAnnotationOverlayRequestForContext, makePointerOverlayRequestForContext, type MainTurnOverlayContext } from "./application/overlay-context-resolver.js";
@@ -49,7 +49,6 @@ import { buildMainAgentRolloverSummary, MAIN_AGENT_COMPACT_IDLE_MS, MAIN_AGENT_M
 import type { ToolCategory } from "./domain/tool-categorizer.js";
 import { logAgentd } from "./local-log.js";
 import { SessionMessageBuilder, type SessionMessageSyncPatch } from "./session-message-builder.js";
-type SessionCommit = { before?: PickyAgentSession; after: PickyAgentSession; changed: boolean };
 export class SessionSupervisor extends EventEmitter {
   private sessions = new Map<string, PickyAgentSession>();
   private runtimeHandles = new Map<string, RuntimeSessionHandle>();
@@ -2965,7 +2964,8 @@ export class SessionSupervisor extends EventEmitter {
       const before = this.sessions.get(sessionId); const proposed = typeof sessionOrId === "string" ? build!(this.mustGet(sessionId)) : sessionOrId;
       const changed = proposed !== before; const after = changed && before ? { ...proposed, revision: nextRevision(before.revision ?? 0, true) } : proposed;
       if (changed) {
-        await this.store.save(after); this.sessions.set(sessionId, after); if (before) { const mutations = buildSessionProjectionMutations(before, after, options); if (mutations.length > 0) this.emit("sessionProjectionTransaction", sessionId, before, after, mutations, this.sessionProjectionEpoch); } else this.emit("sessionProjectionSnapshot", after, this.sessionProjectionEpoch);
+        await this.store.save(after); this.sessions.set(sessionId, after);
+        publishSessionProjectionCommit(this, before, after, options, this.sessionProjectionEpoch);
       }
       result = { before, after, changed };
     });

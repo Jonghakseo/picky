@@ -13,7 +13,7 @@ import Testing
 struct PickyProjectionV2BudgetTests {
     // Deterministic W7 pins. v1 characterization remains in the dedicated
     // W0 suites (bootstrap: 1,054; terminal burst: 62).
-    private static let bootstrapPublishBudget = 96
+    private static let bootstrapPublishBudget = 95
     private static let messageOnlyV1PublishBudget = 3
     private static let messageOnlyV2PublishBudget = 3
     private static let messageOnlyDockPublishBudget = 0
@@ -37,12 +37,27 @@ struct PickyProjectionV2BudgetTests {
         }
 
         // v1 snapshot + hydration is 1,054 publications for the same 94-session
-        // corpus. V2 emits one registry façade publish per snapshot plus the
-        // initial loader and default-selection transitions, satisfying the
-        // ≤1+ε target.
+        // corpus. V2 emits one registry façade publish per snapshot plus one
+        // default-selection transition, satisfying the ≤1+ε target.
         #expect(publishCount == Self.bootstrapPublishBudget)
         #expect(viewModel.sessions.count + viewModel.archivedSessions.count == 94)
         withExtendedLifetime(cancellable) {}
+    }
+
+    @Test func dockLayoutMutationsPublishOnlyThroughTheDedicatedDockBoundary() {
+        let viewModel = PickyProjectionReplayFixtures.makeViewModel()
+        var facadePublishCount = 0
+        let facadeCancellable = viewModel.objectWillChange.sink { facadePublishCount += 1 }
+        var dockPublishCount = 0
+        let dockCancellable = viewModel.dockState.$snapshot.dropFirst().sink { _ in dockPublishCount += 1 }
+
+        _ = viewModel.createDockGroup(name: "Release")
+
+        #expect(facadePublishCount == 0)
+        #expect(dockPublishCount == 1)
+        #expect(viewModel.dockState.snapshot.dockLayout.groups.map(\.name) == ["Release"])
+        withExtendedLifetime(facadeCancellable) {}
+        withExtendedLifetime(dockCancellable) {}
     }
 
     @Test func messageOnlyTransactionKeepsUnrelatedChildIsolatedAndPinsDockProjectionWork() throws {

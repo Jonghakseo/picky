@@ -135,7 +135,7 @@ final class PickySessionListViewModel: ObservableObject {
     /// Persisted dock layout (groups + ordered top-level entries). Source of
     /// truth for the dock rail's visual ordering once any group has been
     /// created. Empty layout falls back to the legacy `manualOrder` flow.
-    @Published internal(set) var dockLayout: PickyDockLayout = .empty {
+    internal(set) var dockLayout: PickyDockLayout = .empty {
         didSet { publishDockStateImmediately() }
     }
     /// Stable, dock-only observation boundary. Its identity never changes.

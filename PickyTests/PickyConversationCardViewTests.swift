@@ -758,10 +758,165 @@ struct PickyConversationCardViewTests {
         #expect(presentation.helpText.contains("xhigh"))
     }
 
-    @Test func headerLayoutPolicyTruncatesModelBeforeRemovingItAtNarrowWidths() {
-        #expect(PickyConversationHeaderLayoutPolicy.maximumModelLabelLength(forContentWidth: 422) == 22)
-        #expect(PickyConversationHeaderLayoutPolicy.maximumModelLabelLength(forContentWidth: 390) == 12)
-        #expect(PickyConversationHeaderLayoutPolicy.maximumModelLabelLength(forContentWidth: 389) == nil)
+    @Test func focusStackHeaderShowsOnlyContextUsageInIdentityRow() {
+        let runtimeOnly = PickyConversationHeaderMetaPresentation(
+            assistantRun: PickyAssistantRunMetadata(model: "openai-codex/gpt-5.5", thinkingLevel: .high),
+            contextUsage: nil
+        )
+        let withContext = PickyConversationHeaderMetaPresentation(
+            assistantRun: PickyAssistantRunMetadata(model: "openai-codex/gpt-5.5", thinkingLevel: .high),
+            contextUsage: PickyContextUsage(tokens: 420, contextWindow: 1_000, percent: 42)
+        )
+
+        #expect(runtimeOnly.hasContent)
+        #expect(!runtimeOnly.hasVisibleHeaderContent)
+        #expect(withContext.hasVisibleHeaderContent)
+        #expect(withContext.helpText.contains("openai-codex/gpt-5.5"))
+        #expect(withContext.helpText.contains("high"))
+    }
+
+    @Test func focusStackWidthPolicyProjectsCompactDefaultAndExpandedCards() {
+        #expect(PickyConversationFocusStackWidthTier(cardWidth: 360) == .compact)
+        #expect(PickyConversationFocusStackWidthTier(cardWidth: 446) == .standard)
+        #expect(PickyConversationFocusStackWidthTier(cardWidth: 560) == .expanded)
+    }
+
+    @Test func liveStepProjectionUsesOnlyNarrowCurrentWorkStores() throws {
+        var session = makeConversationSession(
+            status: .running,
+            messages: [message("old-message", kind: .agentText, text: "before")],
+            tools: [toolActivity("running-tool", name: "bash", secondsOffset: 1, status: "running")]
+        )
+        session.todoState = PickyTodoState(
+            tasks: [PickyTodoTask(id: "todo-1", content: "Implement HUD", status: .inProgress)],
+            updatedAt: baseDate
+        )
+        let store = PickyConversationStoreResolver.legacyStore(for: session)
+
+        let initial = PickyConversationLiveStepProjection(
+            metaStore: store.metaStore,
+            todoStore: store.todoStore,
+            toolStore: store.toolStore,
+            activityStore: store.activityStore,
+            extensionUiStore: store.extensionUiStore
+        )
+        store.conversationStore.replaceMessages([message("new-message", kind: .agentText, text: "streamed")])
+        let afterJournalUpdate = PickyConversationLiveStepProjection(
+            metaStore: store.metaStore,
+            todoStore: store.todoStore,
+            toolStore: store.toolStore,
+            activityStore: store.activityStore,
+            extensionUiStore: store.extensionUiStore
+        )
+
+        #expect(initial == afterJournalUpdate)
+        #expect(initial.todoPresentation?.countText == "1/1")
+        #expect(initial.activeTool?.toolCallId == "running-tool")
+        #expect(initial.elapsedText(at: baseDate.addingTimeInterval(4)) == "3s")
+        #expect(PickyConversationLiveStepPresentation(projection: initial) == .running(
+            stepText: "1/1",
+            detail: "Implement HUD",
+            toolName: "bash"
+        ))
+    }
+
+    @Test func liveStepProjectionDoesNotShowSettledPreviousToolAsCurrent() {
+        let store = PickyConversationStoreResolver.legacyStore(for: makeConversationSession(
+            status: .running,
+            messages: [message("new-turn", kind: .userText, text: "Start the next task")],
+            tools: [toolActivity("previous-tool", name: "read", secondsOffset: -30, status: "succeeded")]
+        ))
+        let projection = PickyConversationLiveStepProjection(
+            metaStore: store.metaStore,
+            todoStore: store.todoStore,
+            toolStore: store.toolStore,
+            activityStore: store.activityStore,
+            extensionUiStore: store.extensionUiStore
+        )
+
+        #expect(projection.activeTool == nil)
+        #expect(PickyConversationLiveStepPresentation(projection: projection) == .running(
+            stepText: nil,
+            detail: "Working",
+            toolName: nil
+        ))
+    }
+
+    @Test func liveStepVisibilityKeepsWaitingAmberAndHidesSettledSessions() {
+        let waitingStore = PickyConversationStoreResolver.legacyStore(for: makeConversationSession(
+            status: .waiting_for_input,
+            pendingExtensionUiRequest: extensionUiRequest()
+        ))
+        let waiting = PickyConversationLiveStepProjection(
+            metaStore: waitingStore.metaStore,
+            todoStore: waitingStore.todoStore,
+            toolStore: waitingStore.toolStore,
+            activityStore: waitingStore.activityStore,
+            extensionUiStore: waitingStore.extensionUiStore
+        )
+        let completedStore = PickyConversationStoreResolver.legacyStore(for: makeConversationSession(status: .completed))
+        let completed = PickyConversationLiveStepProjection(
+            metaStore: completedStore.metaStore,
+            todoStore: completedStore.todoStore,
+            toolStore: completedStore.toolStore,
+            activityStore: completedStore.activityStore,
+            extensionUiStore: completedStore.extensionUiStore
+        )
+
+        #expect(PickyConversationLiveStepPresentation(projection: waiting) == .waitingForInput(requestID: "request-1"))
+        #expect(PickyConversationLiveStepPresentation(projection: waiting)?.tone == .warning)
+        #expect(PickyConversationLiveStepPresentation(projection: completed) == nil)
+    }
+
+    @Test func liveStepDoesNotInventInputNeededWithoutPendingRequest() {
+        let store = PickyConversationStoreResolver.legacyStore(for: makeConversationSession(status: .waiting_for_input))
+        let projection = PickyConversationLiveStepProjection(
+            metaStore: store.metaStore,
+            todoStore: store.todoStore,
+            toolStore: store.toolStore,
+            activityStore: store.activityStore,
+            extensionUiStore: store.extensionUiStore
+        )
+
+        #expect(projection.pendingQuestionRequestID == nil)
+        #expect(PickyConversationLiveStepPresentation(projection: projection) == nil)
+    }
+
+    @Test func focusStackNavigationUsesTheCanonicalQuestionAndOneExternalLatestAction() {
+        let request = extensionUiRequest()
+        let messages = [
+            message("old-question", kind: .agentQuestion, question: extensionUiRequest()),
+            message("pending-question", kind: .agentQuestion, question: request),
+        ]
+        let unpinned = PickyConversationViewportState(isPinnedToBottom: false, hasUnreadContent: false)
+
+        #expect(PickyConversationLiveStepNavigationPolicy.questionMessageID(messages: messages, requestID: request.id) == "pending-question")
+        #expect(PickyConversationLiveStepNavigationPolicy.showsExternalLatest(status: .running, viewport: unpinned))
+        #expect(!PickyConversationLiveStepNavigationPolicy.showsExternalLatest(status: .waiting_for_input, viewport: unpinned))
+        #expect(!PickyConversationLiveStepNavigationPolicy.showsExternalLatest(status: .running, viewport: .pinned))
+
+        var navigation = PickyConversationNavigationRequest()
+        navigation.request(.question(requestID: request.id))
+        #expect(navigation.token == 1)
+        #expect(navigation.target == .question(requestID: request.id))
+        let staleQuestionToken = navigation.token
+        navigation.request(.latest)
+        #expect(navigation.token == 2)
+        #expect(navigation.target == .latest)
+        #expect(!PickyConversationLiveStepNavigationPolicy.isCurrent(
+            requestToken: staleQuestionToken,
+            activeToken: navigation.token
+        ))
+        #expect(PickyConversationLiveStepNavigationPolicy.isCurrent(
+            requestToken: navigation.token,
+            activeToken: navigation.token
+        ))
+    }
+
+    @Test func focusStackHeightTierCompactsOnlyConstrainedCards() {
+        #expect(PickyConversationFocusStackHeightTier(availableHeight: 320) == .constrained)
+        #expect(PickyConversationFocusStackHeightTier(availableHeight: 360) == .constrained)
+        #expect(PickyConversationFocusStackHeightTier(availableHeight: 361) == .regular)
     }
 
     @Test func headerRenameCommandBuilderTrimsAndDedupsAndRejectsEmpty() {
@@ -869,8 +1024,12 @@ struct PickyConversationCardViewTests {
             message("m-user", kind: .userText, text: "last request")
         ]
 
-        #expect(PickyConversationComposerView.previousUserMessageText(in: messages) == "last request")
-        #expect(PickyConversationComposerView.previousUserMessageText(in: [message("m-agent", kind: .agentText, text: "assistant")]) == nil)
+        #expect(PickyConversationComposerView.previousUserMessageText(
+            in: PickyComposerMessageContext(messages: messages)
+        ) == "last request")
+        #expect(PickyConversationComposerView.previousUserMessageText(
+            in: PickyComposerMessageContext(messages: [message("m-agent", kind: .agentText, text: "assistant")])
+        ) == nil)
     }
 
     @Test func composerEditorHeightStartsRoomyAndCapsMeasuredGrowth() {
@@ -1957,6 +2116,20 @@ struct PickyConversationCardViewTests {
         let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
 
         #expect(snapshot.turnCardCount == 0)
+    }
+
+    @Test func focusStackRendersAChapterForAUserTurnWithoutBodyMessages() {
+        let session = makeConversationSession(
+            status: .completed,
+            messages: [message("u1", kind: .userText, text: "Keep this request")]
+        )
+
+        let snapshot = PickyConversationListView(session: session, viewModel: makeViewModel()).renderSnapshot
+
+        // A collapsed Focus Stack chapter retains this request even when its
+        // response has not arrived, instead of dropping back to an ungrouped
+        // user bubble.
+        #expect(snapshot.turnCardCount == 1)
     }
 
     @Test func completedSessionMarksAllTurnsAsNonCurrent() {

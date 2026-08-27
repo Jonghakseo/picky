@@ -125,6 +125,33 @@ struct PickyConversationProjectionTests {
         #expect(batched.messagesState.loadedMessages == sequential.messagesState.loadedMessages)
     }
 
+    @Test func planProjectionObservesOnlyMetadataAndTodo() {
+        let card = sessionCard(messages: [])
+        let metadata = PickySessionMetaStore()
+        metadata.replace(PickySessionMetadata(card: card))
+        let todo = PickySessionTodoStore()
+        todo.replace(PickyTodoState(
+            tasks: [PickyTodoTask(id: "todo", content: "Run tests", status: .inProgress)],
+            updatedAt: PickyProjectionReplayFixtures.terminalDate
+        ))
+        let tools = PickySessionToolStore()
+        tools.replace([])
+        let invalidations = ConversationProjectionInvalidationCounter()
+        withObservationTracking {
+            _ = PickyConversationPlanProjection(metaStore: metadata, todoStore: todo)
+        } onChange: {
+            invalidations.increment()
+        }
+
+        tools.replace([PickyToolActivity(toolCallId: "tool", name: "bash", status: "running", preview: nil, startedAt: nil, endedAt: nil)])
+        #expect(invalidations.count == 0)
+        todo.replace(PickyTodoState(
+            tasks: [PickyTodoTask(id: "todo", content: "Run tests", status: .completed)],
+            updatedAt: PickyProjectionReplayFixtures.terminalDate
+        ))
+        #expect(invalidations.count == 1)
+    }
+
     @Test func childProjectionsObserveOnlyTheirDeclaredOwners() {
         let card = sessionCard(messages: [message(id: "message-a", text: "Streaming")])
         let metadata = PickySessionMetaStore()
@@ -157,8 +184,29 @@ struct PickyConversationProjectionTests {
         }
         artifacts.markUnavailable()
         #expect(composerInvalidations.count == 0)
+        // Negative control: replacing a streamed agent leaf must stay local to
+        // the Journal and leave Composer's narrow message context untouched.
         conversation.messageStore(message: message(id: "message-a", text: "Final"))
+        #expect(composerInvalidations.count == 0)
+
+        let userMessage = message(id: "message-user", kind: .userText, text: "Original request")
+        conversation.messageStore(message: userMessage)
         #expect(composerInvalidations.count == 1)
+
+        let userInvalidations = ConversationProjectionInvalidationCounter()
+        withObservationTracking {
+            _ = PickyConversationComposerProjection(
+                metaStore: metadata,
+                conversationStore: conversation,
+                queueStore: queue
+            )
+        } onChange: {
+            userInvalidations.increment()
+        }
+        // Positive control: a relevant user-text replacement changes recall
+        // and queue deduplication inputs, so Composer must observe it.
+        conversation.messageStore(message: message(id: userMessage.id, kind: .userText, text: "Edited request"))
+        #expect(userInvalidations.count == 1)
 
         let contextInvalidations = ConversationProjectionInvalidationCounter()
         withObservationTracking { _ = PickyConversationContextProjection(metaStore: metadata, artifactStore: artifacts) } onChange: {

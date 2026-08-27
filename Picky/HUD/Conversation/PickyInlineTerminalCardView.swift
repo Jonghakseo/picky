@@ -173,6 +173,9 @@ private struct PickyInlineTerminalSessionView: View {
                     model: terminalSession.model,
                     prepareError: terminalSession.prepareError
                 )
+                PickyInlineTerminalContinuitySummary(
+                    presentation: PickyInlineTerminalContinuityPresentation(session: session)
+                )
             }
             Spacer(minLength: 8)
             Button {
@@ -292,6 +295,20 @@ private struct PickyInlineTerminalStatusLine: View {
             .foregroundColor(prepareError == nil ? DS.Colors.textSecondary : DS.Colors.destructiveText)
             .lineLimit(1)
             .truncationMode(.middle)
+    }
+}
+
+private struct PickyInlineTerminalContinuitySummary: View {
+    let presentation: PickyInlineTerminalContinuityPresentation
+
+    var body: some View {
+        Text(presentation.accessibilityValue)
+            .font(PickyHUDTypography.metaMonospacedMedium)
+            .foregroundColor(DS.Colors.textTertiary)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .accessibilityLabel("Session continuity")
+            .accessibilityValue(presentation.accessibilityValue)
     }
 }
 

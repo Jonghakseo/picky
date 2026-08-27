@@ -166,6 +166,55 @@ struct PickyTurnSummary: Equatable {
     }
 }
 
+
+/// Pure, flat-summary projection for a collapsed Focus Stack chapter. It owns
+/// no message state and deliberately keeps the original message leaves out of
+/// the collapsed tree. Expanding the chapter renders those original leaves once
+/// through `PickyTurnCardView.messageContent`.
+struct PickyFocusStackPriorChapterPresentation: Equatable {
+    enum ResponseKind: Equatable {
+        case response
+        case error
+        case unavailable
+    }
+
+    let requestText: String
+    let responseText: String?
+    let responseKind: ResponseKind
+    let summary: PickyTurnSummary
+
+    init(group: PickyTurnGroup) {
+        requestText = Self.oneLineText(
+            group.userMessage?.text ?? group.userMessage?.commandReceipt?.command
+        ) ?? "Request"
+        summary = group.summary
+
+        guard let representative = group.collapsedRepresentativeMessage else {
+            responseText = nil
+            responseKind = .unavailable
+            return
+        }
+
+        if representative.kind == .agentError {
+            responseText = Self.oneLineText(
+                representative.errorMessage ?? representative.text ?? representative.errorContext
+            ) ?? "Error"
+            responseKind = .error
+        } else {
+            responseText = Self.oneLineText(representative.text)
+            responseKind = responseText == nil ? .unavailable : .response
+        }
+    }
+
+    private static func oneLineText(_ text: String?) -> String? {
+        guard let text else { return nil }
+        let normalized = text
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+        return normalized.isEmpty ? nil : normalized
+    }
+}
+
 /// Builds turn groups from a flat slice of `visibleMessages`. Marks the last
 /// group as `isCurrent` when the session is still in an active state.
 enum PickyTurnGrouper {
@@ -405,9 +454,23 @@ struct PickyTurnExpansionPolicy: Equatable {
     }
 }
 
-/// Collapsible turn container. The card chrome is intentionally subtle —
-/// just an outline + summary header — so existing bubble views keep their
-/// own visual identity inside.
+enum PickyFocusStackChapterAccessibilityPresentation {
+    static func label(isCurrent: Bool) -> String {
+        isCurrent ? "Current turn" : "Previous turn"
+    }
+
+    static func value(isExpanded: Bool, detail: String) -> String {
+        "\(isExpanded ? "Expanded" : "Collapsed"). \(detail)"
+    }
+
+    static func visualState(isCurrent: Bool) -> String? {
+        isCurrent ? "Current" : nil
+    }
+}
+
+/// Collapsible Focus Stack chapter. Prior turns collapse into a flat summary;
+/// expanded chapters render each original message exactly once through the
+/// caller's stable leaf closure. The current turn stays expanded by default.
 struct PickyTurnCardView<MessageContent: View>: View {
     let group: PickyTurnGroup
     /// The tool currently running in this turn, used to render a live
@@ -425,38 +488,29 @@ struct PickyTurnCardView<MessageContent: View>: View {
     /// user toggles override. The `hasBeenSeenComplete` latch inside
     /// `PickyTurnExpansionPolicy` keeps a previously-completed turn collapsed
     /// during the brief window where agentd emits `status:running` before the
-    /// follow-up's user_text journal entry — without the latch, the prior turn
-    /// momentarily becomes the "last/active" group and auto-expands for a frame.
+    /// follow-up's user_text journal entry.
     var isExpanded: Bool {
         expansion.isExpanded(isCurrent: group.isCurrent)
     }
 
+    private var priorChapterPresentation: PickyFocusStackPriorChapterPresentation {
+        PickyFocusStackPriorChapterPresentation(group: group)
+    }
+
     var body: some View {
         let _ = PickyPerf.event("turn_card_body")
-        VStack(alignment: .leading, spacing: 6) {
-            header
+        Group {
             if isExpanded {
-                expandedBody
+                expandedChapter
                     .transition(.opacity)
             } else {
-                collapsedBody
+                collapsedPriorChapter
                     .transition(.opacity)
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(turnCardBackground)
-        // Clip the body so the fade-out of children during collapse/expand is
-        // bounded by the card's shrinking frame. Without this, the default
-        // opacity transition leaves ghost rows drawn at their original Y while
-        // the sibling user bubble of the next turn slides up through them —
-        // see the implicit-animation-scope memo in project memory.
-        .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous))
-        // Scope the toggle animation to this card only. Previously a
-        // `withAnimation` block in the header tap captured every downstream
-        // layout change (next turn's user bubble, the following card,
-        // composer) into one transaction, which is what caused the visual
-        // overlap during collapse.
+        // Scope the toggle animation to this chapter. The parent list and
+        // composer remain outside the transaction, preventing downstream rows
+        // from sliding through a fading collapsed chapter.
         .animation(.easeOut(duration: 0.18), value: isExpanded)
         .onAppear { expansion.observe(isCurrent: group.isCurrent) }
         .onChange(of: group.isCurrent) { _, isCurrent in
@@ -464,30 +518,61 @@ struct PickyTurnCardView<MessageContent: View>: View {
         }
     }
 
-    @ViewBuilder
-    private var header: some View {
-        if group.isCurrent {
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                let _ = PickyPerf.event("turn_card_header_timeline_tick")
-                headerButton(summary: group.summary(now: context.date))
+    private var expandedChapter: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+            expandedHeader
+            if let userMessage = group.userMessage {
+                messageContent(userMessage)
             }
-        } else {
-            headerButton(summary: group.summary)
+            // Render the active tool row even when there are no body messages so a
+            // tool-only running turn (no thinking, no agent_text, no committed
+            // agent_activity yet) still shows live progress below the user bubble.
+            if !group.bodyMessages.isEmpty || activeTool != nil {
+                VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+                    ForEach(group.bodyMessages, id: \.id) { message in
+                        messageContent(message)
+                    }
+                    if let activeTool {
+                        PickyToolCallInlineRow(tool: activeTool, onTap: onOpenActiveToolHistory ?? {})
+                    }
+                }
+            }
+        }
+        .padding(.leading, group.isCurrent ? DS.Spacing.space2 : 0)
+        .overlay(alignment: .leading) {
+            if group.isCurrent {
+                Rectangle()
+                    .fill(DS.Colors.info.opacity(0.45))
+                    .frame(width: DS.Spacing.space1)
+                    .accessibilityHidden(true)
+            }
         }
     }
 
-    private func headerButton(summary: PickyTurnSummary) -> some View {
+    @ViewBuilder
+    private var expandedHeader: some View {
+        if group.isCurrent {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let _ = PickyPerf.event("turn_card_header_timeline_tick")
+                chapterHeader(summary: group.summary(now: context.date))
+            }
+        } else {
+            chapterHeader(summary: group.summary)
+        }
+    }
+
+    private func chapterHeader(summary: PickyTurnSummary) -> some View {
         Button {
-            expansion.setManualExpansion(!isExpanded)
+            expansion.setManualExpansion(false)
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+            HStack(spacing: DS.Spacing.space1) {
+                Image(systemName: "chevron.down")
                     .pickyFont(size: 9, weight: .bold)
                     .foregroundColor(headerForegroundColor)
                 if group.isCurrent {
                     Circle()
                         .fill(DS.Colors.info)
-                        .frame(width: 5, height: 5)
+                        .frame(width: DS.Spacing.space1, height: DS.Spacing.space1)
                 }
                 Text(summary.displayText)
                     .font(PickyHUDTypography.metaSemibold)
@@ -495,53 +580,86 @@ struct PickyTurnCardView<MessageContent: View>: View {
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 4)
-            .padding(.vertical, 2)
+            .padding(.horizontal, DS.Spacing.space1)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Turn summary")
-        .accessibilityValue(summary.displayText)
-        .accessibilityHint(isExpanded ? "Tap to collapse" : "Tap to expand")
+        .accessibilityLabel(PickyFocusStackChapterAccessibilityPresentation.label(isCurrent: group.isCurrent))
+        .accessibilityValue(PickyFocusStackChapterAccessibilityPresentation.value(
+            isExpanded: true,
+            detail: summary.displayText
+        ))
+        .accessibilityHint("Collapse chapter")
         .hoverAffordance()
+    }
+
+    private var collapsedPriorChapter: some View {
+        let presentation = priorChapterPresentation
+        return Button {
+            expansion.setManualExpansion(true)
+        } label: {
+            VStack(alignment: .leading, spacing: DS.Spacing.space1) {
+                HStack(spacing: DS.Spacing.space1) {
+                    if let visualState = PickyFocusStackChapterAccessibilityPresentation.visualState(isCurrent: group.isCurrent) {
+                        Text(visualState)
+                            .font(PickyHUDTypography.metaSemibold)
+                            .foregroundColor(headerForegroundColor)
+                    }
+                    Image(systemName: "chevron.right")
+                        .pickyFont(size: 9, weight: .bold)
+                        .foregroundColor(headerForegroundColor)
+                    Text(presentation.requestText)
+                        .font(PickyHUDTypography.bodyCompactMedium)
+                        .foregroundColor(DS.Colors.textPrimary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 0)
+                }
+                HStack(spacing: DS.Spacing.space2) {
+                    if let responseText = presentation.responseText {
+                        Text(responseText)
+                            .font(PickyHUDTypography.supporting)
+                            .foregroundColor(
+                                presentation.responseKind == .error
+                                    ? DS.Colors.destructiveText
+                                    : DS.Colors.textSecondary
+                            )
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                    Spacer(minLength: 0)
+                    Text(presentation.summary.displayText)
+                        .font(PickyHUDTypography.metaMonospacedMedium)
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+            }
+            .padding(.vertical, DS.Spacing.space1)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(PickyFocusStackChapterAccessibilityPresentation.label(isCurrent: group.isCurrent))
+        .accessibilityValue(PickyFocusStackChapterAccessibilityPresentation.value(
+            isExpanded: false,
+            detail: collapsedAccessibilityValue(for: presentation)
+        ))
+        .accessibilityHint("Expand chapter")
+        .hoverAffordance()
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(DS.Colors.borderSubtle.opacity(0.65))
+                .frame(height: 0.5) // design-token-exception: one-point separator needs a half-point hairline for pixel alignment
+                .accessibilityHidden(true)
+        }
     }
 
     private var headerForegroundColor: Color {
         group.isCurrent ? DS.Colors.info : DS.Colors.textTertiary
     }
 
-    @ViewBuilder
-    private var expandedBody: some View {
-        // Render the active tool row even when there are no body messages so a
-        // tool-only running turn (no thinking, no agent_text, no committed
-        // agent_activity yet) still shows live progress below the user bubble.
-        if !group.bodyMessages.isEmpty || activeTool != nil {
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(group.bodyMessages, id: \.id) { message in
-                    messageContent(message)
-                }
-                if let activeTool {
-                    PickyToolCallInlineRow(tool: activeTool, onTap: onOpenActiveToolHistory ?? {})
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var collapsedBody: some View {
-        if let representative = group.collapsedRepresentativeMessage {
-            messageContent(representative)
-        }
-    }
-
-    private var turnCardBackground: some View {
-        RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous)
-            .fill(group.isCurrent ? Color.clear : DS.Colors.surface2.opacity(0.18))
-            .overlay(
-                // `strokeBorder` draws inside the path so the outline is not
-                // cropped by the body's `.clipShape` with the same shape.
-                RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous)
-                    .strokeBorder(DS.Colors.borderSubtle.opacity(0.4), lineWidth: 0.5)
-            )
+    private func collapsedAccessibilityValue(for presentation: PickyFocusStackPriorChapterPresentation) -> String {
+        [presentation.requestText, presentation.responseText, presentation.summary.displayText]
+            .compactMap { $0 }
+            .joined(separator: ". ")
     }
 }

@@ -149,7 +149,7 @@ struct PickyConversationHeaderView: View {
         HStack(alignment: .center, spacing: DS.Spacing.sm) {
             headerLeadingContent(prefersMiddleTruncation: false)
             Spacer(minLength: DS.Spacing.sm)
-            if headerMetaPresentation.hasContent {
+            if headerMetaPresentation.hasVisibleHeaderContent {
                 sessionMetaControls()
                     .fixedSize(horizontal: true, vertical: false)
             }
@@ -170,14 +170,7 @@ struct PickyConversationHeaderView: View {
     }
 
     private func sessionMetaControls() -> some View {
-        PickyHeaderSessionMetaPill(
-            presentation: headerMetaPresentation,
-            maximumModelLabelLength: PickyConversationHeaderLayoutPolicy.maximumModelLabelLength(
-                forContentWidth: PickyHUDDockLayout.detailContentWidth(for: pickyHUDDetailWidth)
-            ),
-            onCycleModel: { cycleModel() },
-            onCycleThinkingLevel: { cycleThinkingLevel() }
-        )
+        PickyHeaderSessionMetaPill(presentation: headerMetaPresentation)
     }
 
     @ViewBuilder
@@ -317,7 +310,11 @@ struct PickyConversationHeaderView: View {
     }
 
     var titleHelpText: String {
-        "Double-click to rename · or use /name <new title>"
+        let renameHelp = "Double-click to rename · or use /name <new title>"
+        guard headerMetaPresentation.hasContent else { return renameHelp }
+        // Runtime controls belong beside the composer, but their full values
+        // remain discoverable from the stable header title tooltip.
+        return "\(renameHelp)\n\(headerMetaPresentation.helpText)"
     }
 
     var closeHelpText: String {
@@ -603,13 +600,6 @@ struct PickyConversationHeaderView: View {
         statusTone.color
     }
 
-    private func cycleThinkingLevel() {
-        Task { try? await commands.cycleThinkingLevel(sessionID: session.id) }
-    }
-
-    private func cycleModel() {
-        Task { try? await commands.cycleModel(sessionID: session.id, direction: .forward) }
-    }
 }
 
 /// Quiet, neutral utility action shared by chat and inline-terminal headers.
@@ -827,23 +817,6 @@ struct PickleLogoGlyph: Shape {
     }
 }
 
-/// Determines the one-row header's only lossy metadata behavior. Session
-/// identity, status, context usage, thinking level, and the menu remain visible;
-/// the optional model identifier contracts first and is removed only at the
-/// narrowest tier.
-enum PickyConversationHeaderLayoutPolicy {
-    static func maximumModelLabelLength(forContentWidth contentWidth: CGFloat) -> Int? {
-        switch contentWidth {
-        case 422...:
-            return 22
-        case 390...:
-            return 12
-        default:
-            return nil
-        }
-    }
-}
-
 /// Shared session metadata projection for the conversation header. Keeping the
 /// strings here aligns visible controls, tooltips, and accessibility text when
 /// a session's model, thinking level, or context usage changes.
@@ -860,6 +833,13 @@ struct PickyConversationHeaderMetaPresentation {
 
     var hasContent: Bool {
         contextDisplay != nil || modelText != nil || thinkingLevelText != nil
+    }
+
+    /// Focus Stack reserves the identity row for status and context usage.
+    /// Model and thinking remain in this projection for existing tooltips and
+    /// the later composer runtime-control slice, but are not header controls.
+    var hasVisibleHeaderContent: Bool {
+        contextDisplay != nil
     }
 
     var helpText: String {
@@ -879,38 +859,18 @@ struct PickyConversationHeaderMetaPresentation {
 
 private struct PickyHeaderSessionMetaPill: View {
     let presentation: PickyConversationHeaderMetaPresentation
-    let maximumModelLabelLength: Int?
-    let onCycleModel: () -> Void
-    let onCycleThinkingLevel: () -> Void
-
-    private var displayedModelText: String? {
-        guard let modelText = presentation.modelText,
-              let maximumModelLabelLength
-        else { return nil }
-        return Self.displayModelLabel(modelText, maxLength: maximumModelLabelLength)
-    }
 
     var body: some View {
-        HStack(spacing: DS.Spacing.xs) {
+        Group {
             if let contextDisplay = presentation.contextDisplay {
                 contextControl(contextDisplay)
-                if displayedModelText != nil || presentation.thinkingLevelText != nil {
-                    separator
-                }
-            }
-            if let displayedModelText, let modelText = presentation.modelText {
-                modelControl(displayedModelText, fullModelText: modelText)
-            }
-            if displayedModelText != nil, presentation.thinkingLevelText != nil {
-                separator
-            }
-            if let thinkingLevelText = presentation.thinkingLevelText {
-                thinkingControl(thinkingLevelText)
             }
         }
         .font(PickyHUDTypography.metaMonospacedMedium)
         .foregroundColor(textColor.opacity(0.88))
         .lineLimit(1)
+        // Keep full runtime metadata inspectable without restoring its former
+        // model/thinking controls to the constrained identity row.
         .help(presentation.helpText)
     }
 
@@ -924,51 +884,6 @@ private struct PickyHeaderSessionMetaPill: View {
         .fixedSize(horizontal: true, vertical: false)
     }
 
-    private func modelControl(_ displayedModelText: String, fullModelText: String) -> some View {
-        Button(action: onCycleModel) {
-            Text(displayedModelText)
-                .foregroundColor(textColor.opacity(0.92))
-                .lineLimit(1)
-                .truncationMode(.tail)
-        }
-        .buttonStyle(.plain)
-        .fixedSize(horizontal: true, vertical: false)
-        .nativeTooltip("\(fullModelText)\nCycle scoped model (⌃P)")
-        .accessibilityLabel("Model \(fullModelText)")
-        .accessibilityHint("Cycle scoped model with Control-P")
-        .hoverAffordance()
-    }
-
-    /// Deterministically shorten the model identifier for the fixed-width header
-    /// so a long id truncates predictably instead of overflowing the row. The
-    /// full value stays in the tooltip and accessibility text.
-    static func displayModelLabel(_ model: String, maxLength: Int = 22) -> String {
-        let leaf = model.split(separator: "/").last.map(String.init) ?? model
-        guard leaf.count > maxLength else { return leaf }
-        return String(leaf.prefix(maxLength - 1)) + "…"
-    }
-
-    private func thinkingControl(_ thinkingLevelText: String) -> some View {
-        Button(action: onCycleThinkingLevel) {
-            Text(thinkingLevelText)
-                .foregroundColor(textColor.opacity(0.92))
-                .lineLimit(1)
-        }
-        .buttonStyle(.plain)
-        .fixedSize(horizontal: true, vertical: false)
-        .help("Cycle thinking level (⇧Tab)")
-        .hoverAffordance()
-    }
-
-    private var separator: some View {
-        Circle()
-            .fill(barColor.opacity(0.55))
-            .frame(width: 3, height: 3)
-    }
-
-    private var barColor: Color {
-        presentation.contextDisplay?.barColor ?? DS.Colors.textTertiary
-    }
 
     private var textColor: Color {
         presentation.contextDisplay?.textColor ?? DS.Colors.textTertiary

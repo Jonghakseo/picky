@@ -12,21 +12,21 @@ struct PickyBatchGroupView: View {
     let kind: PickyPendingQueueKind
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(kind.batchLabel)
+        VStack(alignment: .leading, spacing: DS.Spacing.sm) {
+            Label(kind.batchLabel, systemImage: kind.iconName)
                 .font(PickyHUDTypography.metaBold)
-                .foregroundColor(kind.color)
+                .foregroundColor(DS.Colors.textSecondary)
                 .lineLimit(1)
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 PickyPendingBubbleView(queueItem: item, kind: kind)
             }
         }
-        .padding(8)
+        .padding(DS.Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous).fill(kind.color.opacity(0.05)))
+        .background(RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous).fill(DS.Colors.surface2))
         .overlay(
             RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous)
-                .stroke(kind.color.opacity(0.42), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+                .stroke(DS.Colors.borderSubtle, style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
         )
     }
 }

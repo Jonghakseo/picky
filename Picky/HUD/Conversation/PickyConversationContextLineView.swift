@@ -9,6 +9,18 @@ import AppKit
 import SwiftUI
 import UserNotifications
 
+enum PickyConversationContextLinkCountPolicy {
+    static func count(visibleLinkArtifacts: [PickyArtifact], pullRequest: PickyGitHubPullRequestStatus?) -> Int {
+        let linkKeys = Set(visibleLinkArtifacts.map { artifact in
+            artifact.url?.absoluteString.lowercased() ?? "artifact:\(artifact.id)"
+        })
+        guard let pullRequest else { return linkKeys.count }
+        // `visibleLinkArtifacts` normally removes this already, but count the
+        // dedicated PR only when it is not a remaining visible link as well.
+        return linkKeys.count + (linkKeys.contains(pullRequest.url.absoluteString.lowercased()) ? 0 : 1)
+    }
+}
+
 enum PickyGitContextRefreshPolicy {
     static let completedSessionRefreshIntervalNanoseconds: UInt64 = 60_000_000_000
     static let updatedAtRefreshBucketSeconds: TimeInterval = 5
@@ -33,6 +45,7 @@ struct PickyConversationContextLineView: View {
     @State private var gitStatus: PickyGitRepositoryStatus?
     @State private var pullRequestStatus: PickyGitHubPullRequestStatus?
     @State private var inFlightGitAction: GitRemoteAction?
+    @State private var isDetailsPresented = false
     @State private var manualRefreshTick: Int = 0
 
     init(
@@ -94,22 +107,15 @@ struct PickyConversationContextLineView: View {
 
     var body: some View {
         let _ = PickyPerf.event("context_line_body")
-        VStack(alignment: .leading, spacing: 4) {
-            if hasPrimaryContext {
-                primaryContextLine
-            }
-
-            if let gitStatus {
-                gitContextLine(status: gitStatus)
-            }
-
-            if hasLinkContext {
-                linkContextLine
-            }
-        }
+        contextSummaryLine
         .pickyFont(size: 10.5, weight: .medium)
         .foregroundColor(DS.Colors.textTertiary)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .popover(isPresented: $isDetailsPresented, arrowEdge: .bottom) {
+            contextDetails
+        }
+        // These refresh tasks stay on the always-mounted summary root. Opening
+        // Details only reveals existing state, so it cannot restart cache/SWR.
         .task(id: contextRefreshKey) {
             PickyPerf.event("context_line_refresh_task_start")
             // SWR step 1: hydrate from cache in case cwd became valid after init seeding.
@@ -157,6 +163,77 @@ struct PickyConversationContextLineView: View {
         .task(id: faviconPageURLs) {
             await faviconStore.load(pageURLs: faviconPageURLs)
         }
+    }
+
+    private var contextSummaryLine: some View {
+        HStack(spacing: DS.Spacing.xs) {
+            if let compactCwd = session.compactCwdDescription {
+                cwdButton(compactCwd)
+            }
+            if let gitStatus {
+                Text("\(gitStatus.repositoryDisplayName) · \(gitStatus.branchDisplayName)")
+                    .font(PickyHUDTypography.metaMedium)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                HStack(spacing: DS.Spacing.xs) {
+                    gitChangeMetrics(status: gitStatus)
+                }
+                .fixedSize(horizontal: true, vertical: false)
+                .layoutPriority(2)
+            }
+            if contextLinkCount > 0 {
+                Text("Links \(contextLinkCount)")
+                    .font(PickyHUDTypography.metaMonospacedMedium)
+                    .foregroundColor(DS.Colors.textSecondary)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            Spacer(minLength: 0)
+            Button("Details") { isDetailsPresented = true }
+                .buttonStyle(.plain)
+                .font(PickyHUDTypography.metaSemibold)
+                .foregroundColor(DS.Colors.accentText)
+                .fixedSize(horizontal: true, vertical: false)
+                .help("Show workspace, Git, and links")
+                .accessibilityLabel("Context details")
+                .accessibilityHint("Shows workspace, Git, and links")
+                .hoverAffordance()
+        }
+    }
+
+    private var contextDetails: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.xs) {
+            if hasPrimaryContext {
+                contextDetailsHeading("Workspace")
+                primaryContextLine
+            }
+            if let gitStatus {
+                contextDetailsHeading("Git")
+                gitContextLine(status: gitStatus)
+            }
+            if hasLinkContext {
+                contextDetailsHeading("Links")
+                linkContextLine
+            }
+        }
+        .pickyFont(size: 10.5, weight: .medium)
+        .foregroundColor(DS.Colors.textTertiary)
+        .padding(DS.Spacing.md)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Context details")
+    }
+
+    private func contextDetailsHeading(_ title: String) -> some View {
+        Text(title)
+            .font(PickyHUDTypography.metaSemibold)
+            .foregroundColor(DS.Colors.textSecondary)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private var contextLinkCount: Int {
+        PickyConversationContextLinkCountPolicy.count(
+            visibleLinkArtifacts: visibleLinkArtifacts,
+            pullRequest: pullRequestStatus
+        )
     }
 
     /// The card uses this before constructing the context row so sessions with no
@@ -334,24 +411,7 @@ struct PickyConversationContextLineView: View {
 
     @ViewBuilder
     private func gitMetrics(status: PickyGitRepositoryStatus) -> some View {
-        if status.insertions > 0 {
-            Button(action: { runDiffChipAction() }) {
-                gitMetricPill("+\(status.insertions)", color: DS.Colors.successText)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(diffChipHelp(lines: status.insertions + status.deletions))
-            .hoverAffordance()
-        }
-        if status.deletions > 0 {
-            Button(action: { runDiffChipAction() }) {
-                gitMetricPill("-\(status.deletions)", color: DS.Colors.destructiveText)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(diffChipHelp(lines: status.insertions + status.deletions))
-            .hoverAffordance()
-        }
+        gitChangeMetrics(status: status)
         if status.aheadCount > 0 {
             Button(action: { runRemoteAction(.push) }) {
                 gitMetricPill("↑\(status.aheadCount)", color: DS.Colors.accentText)
@@ -370,6 +430,28 @@ struct PickyConversationContextLineView: View {
             .disabled(inFlightGitAction != nil)
             .opacity(inFlightGitAction == .pull ? 0.45 : 1)
             .help(inFlightGitAction == .pull ? "Pulling…" : "git pull (\(status.behindCount) behind upstream)")
+            .hoverAffordance()
+        }
+    }
+
+    @ViewBuilder
+    private func gitChangeMetrics(status: PickyGitRepositoryStatus) -> some View {
+        if status.insertions > 0 {
+            Button(action: { runDiffChipAction() }) {
+                gitMetricPill("+\(status.insertions)", color: DS.Colors.successText)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(diffChipHelp(lines: status.insertions + status.deletions))
+            .hoverAffordance()
+        }
+        if status.deletions > 0 {
+            Button(action: { runDiffChipAction() }) {
+                gitMetricPill("-\(status.deletions)", color: DS.Colors.destructiveText)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(diffChipHelp(lines: status.insertions + status.deletions))
             .hoverAffordance()
         }
     }

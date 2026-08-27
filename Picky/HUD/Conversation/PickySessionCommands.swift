@@ -40,6 +40,7 @@ protocol PickySessionCommands: AnyObject, PickyGitChipActionViewModelDispatch {
     func updateComposerAttachmentPaths(_ paths: [String], sessionID: String)
     func replaceComposerDraftText(_ text: String, sessionID: String)
     func clearQueueRestoringQueuedInputs(sessionID: String, kind: PickyQueueClearKind) async throws
+    func clearQueue(sessionID: String, kind: PickyQueueClearKind) async throws
     func abortRestoringQueuedInputs(sessionID: String) async throws
     func steer(text: String, sessionID: String?) async throws
     func followUp(text: String, sessionID: String?) async throws
@@ -208,9 +209,12 @@ struct PickyConversationComposerProjection {
     let status: PickySessionStatus
     let lastSummary: String
     let notifyMainOnCompletion: Bool?
-    let messages: [PickySessionMessage]
+    let currentAssistantRun: PickyAssistantRunMetadata?
+    let messageContext: PickyComposerMessageContext
     let queuedSteers: [PickyQueueItem]
     let queuedFollowUps: [PickyQueueItem]
+    let steeringMode: PickyQueueMode
+    let followUpMode: PickyQueueMode
 
     init(
         metaStore: PickySessionMetaStore,
@@ -224,10 +228,14 @@ struct PickyConversationComposerProjection {
         status = metadata.status
         lastSummary = metadata.lastSummary ?? ""
         notifyMainOnCompletion = metadata.notifyMainOnCompletion
-        messages = conversationStore.messagesState.loadedValue ?? []
+        currentAssistantRun = metadata.currentAssistantRun
+        messageContext = conversationStore.composerMessageContext
         let queue = queueStore.queueState.loadedValue
         queuedSteers = queue?.steers ?? []
         queuedFollowUps = queue?.followUps ?? []
+        let modes = queueStore.queueModes
+        steeringMode = modes.steeringMode
+        followUpMode = modes.followUpMode
     }
 
     init(card: PickyConversationSessionCard) {
@@ -235,9 +243,20 @@ struct PickyConversationComposerProjection {
         status = card.status
         lastSummary = card.lastSummary
         notifyMainOnCompletion = card.notifyMainOnCompletion
-        messages = card.messages
+        currentAssistantRun = card.currentAssistantRun
+        messageContext = PickyComposerMessageContext(messages: card.messages)
         queuedSteers = card.queuedSteers
         queuedFollowUps = card.queuedFollowUps
+        steeringMode = card.steeringMode
+        followUpMode = card.followUpMode
+    }
+
+    var visibleQueue: PickyVisibleQueue {
+        PickyVisibleQueue(
+            queuedSteers: queuedSteers,
+            queuedFollowUps: queuedFollowUps,
+            committedUserMessages: messageContext.submittedUserMessages
+        )
     }
 
     var isCompacting: Bool {

@@ -110,7 +110,9 @@ struct PickyConversationComposerView: View {
     }
     @Binding private var droppedFilePaths: [String]
     let isFileDropTargeted: Bool
+    @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
     let focusRequestID: Int
+    let focusStackHeightTier: PickyConversationFocusStackHeightTier
     let isUtilityPanelOpen: Bool
     let isCommandShortcutHintVisible: Bool
     var onToggleUtilityPanel: () -> Void
@@ -134,6 +136,9 @@ struct PickyConversationComposerView: View {
     @State private var keyDownMonitor: Any?
     @State private var measuredEditorContentHeight: CGFloat = Self.minimumEditorHeight
     @State private var isFocused: Bool = false
+    @State private var queueActionInFlight: PickyQueueDockAction?
+    @State private var queueActionError: String?
+    @State private var runtimeActionError: String?
 
     init(
         metaStore: PickySessionMetaStore,
@@ -143,6 +148,7 @@ struct PickyConversationComposerView: View {
         droppedFilePaths: Binding<[String]> = .constant([]),
         isFileDropTargeted: Bool = false,
         focusRequestID: Int = 0,
+        focusStackHeightTier: PickyConversationFocusStackHeightTier = .regular,
         isUtilityPanelOpen: Bool = false,
         isCommandShortcutHintVisible: Bool = false,
         onToggleUtilityPanel: @escaping () -> Void = { },
@@ -155,6 +161,7 @@ struct PickyConversationComposerView: View {
         self._droppedFilePaths = droppedFilePaths
         self.isFileDropTargeted = isFileDropTargeted
         self.focusRequestID = focusRequestID
+        self.focusStackHeightTier = focusStackHeightTier
         self.isUtilityPanelOpen = isUtilityPanelOpen
         self.isCommandShortcutHintVisible = isCommandShortcutHintVisible
         self.onToggleUtilityPanel = onToggleUtilityPanel
@@ -168,6 +175,7 @@ struct PickyConversationComposerView: View {
         droppedFilePaths: Binding<[String]> = .constant([]),
         isFileDropTargeted: Bool = false,
         focusRequestID: Int = 0,
+        focusStackHeightTier: PickyConversationFocusStackHeightTier = .regular,
         isUtilityPanelOpen: Bool = false,
         isCommandShortcutHintVisible: Bool = false,
         onToggleUtilityPanel: @escaping () -> Void = { },
@@ -192,6 +200,7 @@ struct PickyConversationComposerView: View {
             droppedFilePaths: droppedFilePaths,
             isFileDropTargeted: isFileDropTargeted,
             focusRequestID: focusRequestID,
+            focusStackHeightTier: focusStackHeightTier,
             isUtilityPanelOpen: isUtilityPanelOpen,
             isCommandShortcutHintVisible: isCommandShortcutHintVisible,
             onToggleUtilityPanel: onToggleUtilityPanel,
@@ -201,7 +210,8 @@ struct PickyConversationComposerView: View {
 
     var body: some View {
         let _ = PickyPerf.event("composer_body")
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: DS.Spacing.xs) {
+            queueDock
             screenContextAttachmentChip
             attachmentChipsRow
             // The custom layout reports only the composer's size, so opening
@@ -214,6 +224,7 @@ struct PickyConversationComposerView: View {
                 }
             }
             .zIndex(1)
+            runtimeFooter
         }
         .onAppear {
             commands.ensureSlashCommandsLoaded(sessionID: session.id)
@@ -305,6 +316,174 @@ struct PickyConversationComposerView: View {
         let generation: Int?
         let triggerCharacters: [String]
         let isDismissed: Bool
+    }
+
+    @ViewBuilder
+    private var queueDock: some View {
+        let presentation = PickyQueueDockPresentation(
+            visibleQueue: session.visibleQueue,
+            steeringMode: session.steeringMode,
+            followUpMode: session.followUpMode
+        )
+        let layout = PickyQueueDockLayout(
+            cardWidth: pickyHUDDetailWidth,
+            heightTier: focusStackHeightTier
+        )
+        if presentation.isVisible {
+            VStack(alignment: .leading, spacing: DS.Spacing.xs) {
+                if layout == .inline {
+                    queueDockInlineHeader
+                    queueDockKinds(presentation.kinds, layout: layout)
+                } else {
+                    if layout == .stacked {
+                        queueDockTitle
+                    }
+                    // Compact geometry always presents counts before mutation.
+                    queueDockKinds(presentation.kinds, layout: layout)
+                    queueDockActions
+                }
+                if let queueActionError {
+                    Text(queueActionError)
+                        .font(PickyHUDTypography.status)
+                        .foregroundColor(DS.Colors.destructiveText)
+                        .accessibilityLabel("Queue action failed: \(queueActionError)")
+                }
+            }
+            .padding(DS.Spacing.sm)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
+                    .fill(DS.Colors.surface2)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
+                    .stroke(DS.Colors.borderSubtle, lineWidth: 0.5)
+            )
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Pending work")
+            .accessibilityValue(presentation.accessibilityValue)
+        }
+    }
+
+    private var queueDockInlineHeader: some View {
+        HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.xs) {
+            queueDockTitle
+            Spacer(minLength: 0)
+            queueDockActions
+        }
+    }
+
+    @ViewBuilder
+    private func queueDockKinds(
+        _ kinds: [PickyQueueDockKindPresentation],
+        layout: PickyQueueDockLayout
+    ) -> some View {
+        if layout == .stacked {
+            VStack(alignment: .leading, spacing: DS.Spacing.xs) {
+                queueDockKindLabels(kinds)
+            }
+        } else {
+            HStack(spacing: DS.Spacing.sm) {
+                queueDockKindLabels(kinds)
+            }
+        }
+    }
+
+    private var queueDockTitle: some View {
+        Label("Pending work", systemImage: "tray.full")
+            .font(PickyHUDTypography.statusSemibold)
+            .foregroundColor(DS.Colors.textSecondary)
+    }
+
+    @ViewBuilder
+    private func queueDockKindLabels(_ kinds: [PickyQueueDockKindPresentation]) -> some View {
+        ForEach(kinds) { item in
+            Text("\(item.kind.label) \(item.count) · \(item.modeLabel)")
+                .font(PickyHUDTypography.metaMonospacedMedium)
+                .foregroundColor(DS.Colors.textTertiary)
+                .lineLimit(1)
+        }
+    }
+
+    private var queueDockActions: some View {
+        HStack(spacing: DS.Spacing.sm) {
+            queueDockActionButton(.restore, title: "Restore", color: DS.Colors.accentText)
+            queueDockActionButton(.clear, title: "Clear", color: DS.Colors.textSecondary)
+        }
+    }
+
+    private func queueDockActionButton(
+        _ action: PickyQueueDockAction,
+        title: String,
+        color: Color
+    ) -> some View {
+        Button(queueActionInFlight == action ? action.inFlightLabel : title) {
+            performQueueAction(action)
+        }
+        .buttonStyle(.plain)
+        .font(PickyHUDTypography.statusSemibold)
+        .foregroundColor(color)
+        .disabled(queueActionInFlight != nil)
+        .help(action == .restore
+            ? "Restore queued messages to the composer and clear pending work"
+            : "Clear pending work without restoring it to the composer")
+        .accessibilityLabel(action == .restore ? "Restore queued messages" : "Clear pending work")
+        .hoverAffordance()
+    }
+
+    private var runtimeFooter: some View {
+        let presentation = PickyComposerRuntimePresentation(assistantRun: session.currentAssistantRun)
+        return Group {
+            if presentation.hasControls {
+                HStack(spacing: DS.Spacing.sm) {
+                    if let modelLabel = presentation.modelLabel {
+                        Button(action: { cycleModel(direction: .forward) }) {
+                            runtimeFooterLabel(icon: "cpu", text: modelLabel)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Cycle scoped model (⌃P)")
+                        .accessibilityLabel(modelLabel)
+                        .accessibilityHint("Cycle scoped model with Control-P")
+                        .hoverAffordance()
+                    }
+                    if let thinkingLabel = presentation.thinkingLabel {
+                        Button(action: cycleThinkingLevel) {
+                            runtimeFooterLabel(icon: "brain", text: thinkingLabel)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Cycle thinking level (⇧Tab)")
+                        .accessibilityLabel(thinkingLabel)
+                        .accessibilityHint("Cycle thinking level with Shift-Tab")
+                        .hoverAffordance()
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, DS.Spacing.xs)
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Composer runtime controls")
+                if let runtimeActionError {
+                    Text(runtimeActionError)
+                        .font(PickyHUDTypography.status)
+                        .foregroundColor(DS.Colors.destructiveText)
+                        .padding(.horizontal, DS.Spacing.xs)
+                        .accessibilityLabel("Runtime control failed: \(runtimeActionError)")
+                }
+            }
+        }
+    }
+
+    private func runtimeFooterLabel(icon: String, text: String) -> some View {
+        HStack(spacing: DS.Spacing.xs) {
+            Image(systemName: icon)
+                .font(PickyHUDTypography.statusSemibold)
+            if focusStackHeightTier == .regular {
+                Text(text)
+                    .font(PickyHUDTypography.metaMedium)
+                    .lineLimit(1)
+            }
+        }
+        .foregroundColor(DS.Colors.accentText)
+        .contentShape(Rectangle())
     }
 
     private var composerRow: some View {
@@ -915,27 +1094,34 @@ struct PickyConversationComposerView: View {
     private static let editorTextInsetHeight: CGFloat = 2
 
     private var trailingActions: some View {
-        VStack(spacing: 4) {
+        VStack(alignment: .trailing, spacing: 4) {
             sendButton
             if isStopButtonVisible {
                 stopButton
             }
         }
-        .frame(width: 24)
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private var sendButton: some View {
-        Button(action: submitDefault) {
-            Image(systemName: sendButtonIconName)
-                .pickyFont(size: 11, weight: .semibold)
-                .foregroundColor(isSendDisabled ? DS.Colors.textTertiary : sendColor)
-                .frame(width: 22, height: 22)
-                .contentShape(Rectangle())
+        let presentation = submitPresentation
+        return Button(action: submitDefault) {
+            HStack(spacing: DS.Spacing.xs) {
+                Image(systemName: presentation.iconName)
+                    .pickyFont(size: 11, weight: .semibold)
+                Text(presentation.label)
+                    .font(PickyHUDTypography.statusSemibold)
+                    .lineLimit(1)
+            }
+            .foregroundColor(isSendDisabled ? DS.Colors.textTertiary : sendColor)
+            .frame(minHeight: 22)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(isSendDisabled)
         .help(sendHelpText)
-        .accessibilityLabel(sendHelpText)
+        .accessibilityLabel(presentation.accessibilityLabel)
+        .accessibilityHint(sendHelpText)
         .hoverAffordance()
     }
 
@@ -960,14 +1146,14 @@ struct PickyConversationComposerView: View {
         case .waiting_for_input:
             // A fresh manual Pickle parks on `waiting_for_input` with no
             // messages yet; there is nothing to stop until the user submits.
-            return !session.messages.isEmpty
+            return session.messageContext.hasAnyMessage
         default:
             return false
         }
     }
 
-    private var sendButtonIconName: String {
-        effectiveBashMode != .none ? "play.fill" : "paperplane.fill"
+    private var submitPresentation: PickyComposerSubmitPresentation {
+        PickyComposerSubmitPresentation(kind: defaultSubmitKind, bashMode: effectiveBashMode)
     }
 
     var isComposerInputDisabled: Bool {
@@ -1353,29 +1539,44 @@ struct PickyConversationComposerView: View {
     @discardableResult
     private func recallPreviousSubmittedMessage() -> Bool {
         guard draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
-        guard let previousText = Self.previousUserMessageText(in: session.messages) else { return false }
+        guard let previousText = Self.previousUserMessageText(in: session.messageContext) else { return false }
         draft = previousText
         synchronizeAutocompleteInput(text: previousText)
         isFocused = true
         return true
     }
 
-    static func previousUserMessageText(in messages: [PickySessionMessage]) -> String? {
-        messages.reversed().first { message in
-            guard message.kind == .userText else { return false }
-            return !(message.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }?.text
+    static func previousUserMessageText(in context: PickyComposerMessageContext) -> String? {
+        context.submittedUserMessages.last?.text
     }
 
     @discardableResult
     private func clearQueuedMessages() -> Bool {
         guard PickyQueuedInputDraftPolicy.queuedInputText(
-            queuedSteers: session.queuedSteers,
-            queuedFollowUps: session.queuedFollowUps,
+            visibleQueue: session.visibleQueue,
             kind: .all
         ) != nil else { return false }
-        Task { try? await commands.clearQueueRestoringQueuedInputs(sessionID: session.id, kind: .all) }
+        performQueueAction(.restore)
         return true
+    }
+
+    private func performQueueAction(_ action: PickyQueueDockAction) {
+        guard queueActionInFlight == nil else { return }
+        queueActionInFlight = action
+        queueActionError = nil
+        Task {
+            do {
+                switch action.command {
+                case .restoreThenClear(let kind):
+                    try await commands.clearQueueRestoringQueuedInputs(sessionID: session.id, kind: kind)
+                case .clearOnly(let kind):
+                    try await commands.clearQueue(sessionID: session.id, kind: kind)
+                }
+            } catch {
+                queueActionError = error.localizedDescription
+            }
+            queueActionInFlight = nil
+        }
     }
 
     static func draftRestoringQueuedMessages(
@@ -1385,18 +1586,35 @@ struct PickyConversationComposerView: View {
     ) -> String? {
         PickyQueuedInputDraftPolicy.draftRestoringQueuedInputs(
             draft: draft,
-            queuedSteers: queuedSteers,
-            queuedFollowUps: queuedFollowUps,
+            visibleQueue: PickyVisibleQueue(
+                queuedSteers: queuedSteers,
+                queuedFollowUps: queuedFollowUps,
+                committedUserMessages: []
+            ),
             kind: .all
         )
     }
 
     private func cycleThinkingLevel() {
-        Task { try? await commands.cycleThinkingLevel(sessionID: session.id) }
+        Task {
+            do {
+                try await commands.cycleThinkingLevel(sessionID: session.id)
+                runtimeActionError = nil
+            } catch {
+                runtimeActionError = error.localizedDescription
+            }
+        }
     }
 
     private func cycleModel(direction: PickyModelCycleDirection) {
-        Task { try? await commands.cycleModel(sessionID: session.id, direction: direction) }
+        Task {
+            do {
+                try await commands.cycleModel(sessionID: session.id, direction: direction)
+                runtimeActionError = nil
+            } catch {
+                runtimeActionError = error.localizedDescription
+            }
+        }
     }
 
     private func installKeyDownMonitorIfNeeded() {

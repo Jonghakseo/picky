@@ -40,6 +40,14 @@ struct PickyConversationCardView: View {
     @State private var droppedFilePaths: [String] = []
     @State private var isFileDropTargeted = false
     @State private var showingRewindPicker = false
+    /// One mutable Plan owner for both Live Step and the Journal-bound drawer.
+    @State private var isTodoExpanded = false
+    @State private var planExpansionSessionID: String?
+    @State private var todoOpenerFocusRequestID = 0
+    @State private var todoDrawerFocusRequestID = 0
+    @State private var composerFocusRequestID = 0
+    @State private var navigationRequest = PickyConversationNavigationRequest()
+    @State private var viewportState = PickyConversationViewportState.pinned
 
     init(
         viewModel: any PickySessionCommands,
@@ -110,6 +118,9 @@ struct PickyConversationCardView: View {
         let effectiveMaxHeight = max(Self.minimumHeight, maxHeight)
         let resolvedHeight = fixedHeight.map { min(max($0, Self.minimumHeight), effectiveMaxHeight) }
         let resolvedTerminalHeight = terminalModeHeight(resolvedHeight: resolvedHeight, maxHeight: effectiveMaxHeight)
+        let focusStackHeightTier = PickyConversationFocusStackHeightTier(
+            availableHeight: resolvedHeight ?? effectiveMaxHeight
+        )
 
         Group {
             if isInlineTerminalMode {
@@ -123,7 +134,10 @@ struct PickyConversationCardView: View {
                     onClose: onClose
                 )
             } else {
-                chatContent(fillsAvailableHeight: resolvedHeight != nil)
+                chatContent(
+                    fillsAvailableHeight: resolvedHeight != nil,
+                    heightTier: focusStackHeightTier
+                )
             }
         }
         .frame(width: PickyHUDDockLayout.detailContentWidth(for: width), alignment: .topLeading)
@@ -171,11 +185,14 @@ struct PickyConversationCardView: View {
         session.piSessionFilePath != nil && viewModel.isInlineTerminalMode(sessionID: session.id)
     }
 
-    private func chatContent(fillsAvailableHeight: Bool) -> some View {
-        let todoPresentation = PickyTodoProgressPresentation(state: session.todoState)
-        let isTodoExpanded = todoPresentation.map {
-            viewModel.isTodoProgressExpanded(sessionID: session.id, isComplete: $0.isComplete)
-        } ?? false
+    private func chatContent(
+        fillsAvailableHeight: Bool,
+        heightTier: PickyConversationFocusStackHeightTier
+    ) -> some View {
+        let plan = PickyConversationPlanProjection(
+            metaStore: sessionStore.metaStore,
+            todoStore: sessionStore.todoStore
+        )
         return VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: DS.Spacing.xs) {
                 PickyConversationHeaderView(
@@ -196,6 +213,21 @@ struct PickyConversationCardView: View {
                         artifactStore: sessionStore.artifactStore
                     )
                 }
+                PickyConversationLiveStepZone(
+                    metaStore: sessionStore.metaStore,
+                    todoStore: sessionStore.todoStore,
+                    toolStore: sessionStore.toolStore,
+                    activityStore: sessionStore.activityStore,
+                    extensionUiStore: sessionStore.extensionUiStore,
+                    isTodoExpanded: $isTodoExpanded,
+                    todoOpenerFocusRequestID: todoOpenerFocusRequestID,
+                    viewport: viewportState,
+                    heightTier: heightTier,
+                    onToggleTodo: { toggleTodo(plan) },
+                    onOpenToolHistory: { viewModel.openToolHistoryForCurrentTurn(sessionID: plan.sessionID) },
+                    onGoToQuestion: { requestNavigation(.question(requestID: $0)) },
+                    onGoToLatest: { requestNavigation(.latest) }
+                )
             }
             // The 4pt header/context gap forms one chrome group. A 12pt break
             // separates that group from the transcript, while 8pt keeps the
@@ -209,23 +241,31 @@ struct PickyConversationCardView: View {
                 conversationStore: sessionStore.conversationStore,
                 isCommandShortcutHintVisible: isCommandShortcutHintVisible,
                 fillsAvailableHeight: fillsAvailableHeight,
-                hasProgressOverlay: todoPresentation != nil,
+                hasProgressOverlay: false,
+                navigationRequest: navigationRequest,
+                suppressesInternalLatestAction: PickyConversationLiveStepNavigationPolicy.showsExternalLatest(
+                    status: plan.status,
+                    viewport: viewportState
+                ),
+                onViewportStateChanged: { viewportState = $0 },
                 onInitialBottomPinReady: onInitialContentReady
             )
-            .overlay(alignment: .top) {
-                VStack(alignment: .trailing, spacing: DS.Spacing.sm) {
-                    if let todoPresentation {
-                        PickyTodoProgressOverlayView(
-                            presentation: todoPresentation,
-                            isSessionRunning: session.status == .running,
-                            isExpanded: todoExpansionBinding(for: todoPresentation)
-                        )
-                    }
-                }
-                .padding(.horizontal, 4)
-                .padding(.top, DS.Spacing.sm)
-                .frame(maxWidth: .infinity, alignment: .trailing)
+            // The Plan drawer intentionally overlays only the Journal top. This
+            // preserves the mounted Journal and Composer geometry while keeping
+            // the disclosure physically anchored to Live Step above it.
+            .overlay(alignment: .topLeading) {
+                PickyConversationLiveStepTodoDrawer(
+                    plan: plan,
+                    isExpanded: $isTodoExpanded,
+                    focusRequestID: todoDrawerFocusRequestID,
+                    onClose: { closeTodo(plan) }
+                )
+                .padding(.top, DS.Spacing.xs)
             }
+            // The drawer is an overlay of Journal, never Composer. Clipping at
+            // this boundary also prevents its hit-testing area crossing into the
+            // composer on a constrained 320pt card.
+            .clipped()
             .padding(.bottom, DS.Spacing.sm)
 
             PickyConversationComposerView(
@@ -235,22 +275,59 @@ struct PickyConversationCardView: View {
                 viewModel: viewModel,
                 droppedFilePaths: $droppedFilePaths,
                 isFileDropTargeted: isFileDropTargeted,
-                focusRequestID: focusRequestID,
+                focusRequestID: focusRequestID &+ composerFocusRequestID,
+                focusStackHeightTier: heightTier,
                 isUtilityPanelOpen: isUtilityPanelOpen,
                 isCommandShortcutHintVisible: isCommandShortcutHintVisible,
                 onToggleUtilityPanel: onToggleUtilityPanel,
                 onRequestRewind: { showingRewindPicker = true }
             )
         }
+        .onAppear { synchronizePlanExpansion(plan) }
+        .onChange(of: plan) { _, nextPlan in synchronizePlanExpansion(nextPlan) }
+        .onChange(of: plan.sessionID) { _, _ in viewportState = .pinned }
     }
 
-    private func todoExpansionBinding(for presentation: PickyTodoProgressPresentation) -> Binding<Bool> {
-        Binding(
-            get: {
-                viewModel.isTodoProgressExpanded(sessionID: session.id, isComplete: presentation.isComplete)
-            },
-            set: { viewModel.setTodoProgressExpanded($0, sessionID: session.id) }
-        )
+    private func synchronizePlanExpansion(_ plan: PickyConversationPlanProjection) {
+        if planExpansionSessionID != plan.sessionID {
+            planExpansionSessionID = plan.sessionID
+            isTodoExpanded = plan.todoPresentation.map {
+                viewModel.isTodoProgressExpanded(sessionID: plan.sessionID, isComplete: $0.isComplete)
+            } ?? false
+        }
+        guard PickyConversationPlanDrawerPolicy.shouldCollapse(plan) else { return }
+        let wasExpanded = isTodoExpanded
+        isTodoExpanded = false
+        viewModel.setTodoProgressExpanded(false, sessionID: plan.sessionID)
+        guard wasExpanded else { return }
+        // Auto-collapse means the Plan opener is no longer actionable (Todo
+        // completed or the session settled), so move focus to the stable editor.
+        composerFocusRequestID &+= 1
+    }
+
+    private func toggleTodo(_ plan: PickyConversationPlanProjection) {
+        if isTodoExpanded {
+            closeTodo(plan)
+        } else {
+            openTodo(plan)
+        }
+    }
+
+    private func openTodo(_ plan: PickyConversationPlanProjection) {
+        guard !PickyConversationPlanDrawerPolicy.shouldCollapse(plan) else { return }
+        isTodoExpanded = true
+        viewModel.setTodoProgressExpanded(true, sessionID: plan.sessionID)
+        todoDrawerFocusRequestID &+= 1
+    }
+
+    private func closeTodo(_ plan: PickyConversationPlanProjection) {
+        isTodoExpanded = false
+        viewModel.setTodoProgressExpanded(false, sessionID: plan.sessionID)
+        todoOpenerFocusRequestID &+= 1
+    }
+
+    private func requestNavigation(_ target: PickyConversationNavigationTarget) {
+        navigationRequest.request(target)
     }
 
     private func terminalModeHeight(resolvedHeight: CGFloat?, maxHeight: CGFloat) -> CGFloat? {

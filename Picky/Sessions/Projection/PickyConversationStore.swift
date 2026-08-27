@@ -17,6 +17,9 @@ final class PickyConversationStore {
     @ObservationIgnored private var state: PickyProjectionSectionState<[PickySessionMessage]> = .unavailable
     @ObservationIgnored private var messageJournalAvailability: PickyProjectionSectionState<Bool?> = .unavailable
     private(set) var orderedMessageIDs: [String] = []
+    /// Composer-specific journal projection. This is assigned only when its
+    /// small Equatable value changes, so agent streaming stays local to leaves.
+    private(set) var composerMessageContext = PickyComposerMessageContext.empty
     private(set) var valueRevision = 0
 
     var messagesState: PickyProjectionSectionState<[PickySessionMessage]> {
@@ -60,6 +63,7 @@ final class PickyConversationStore {
         orderedMessageIDSet = retainedIDs
         messagesByID = messagesByID.filter { retainedIDs.contains($0.key) }
         state = .loaded(messages)
+        updateComposerMessageContext(messages)
         valueRevision += 1
     }
 
@@ -90,6 +94,7 @@ final class PickyConversationStore {
         messagesByID = [:]
         state = .unavailable
         messageJournalAvailability = .unavailable
+        updateComposerMessageContext([])
         valueRevision += 1
     }
 
@@ -103,8 +108,16 @@ final class PickyConversationStore {
     }
 
     private func republishMembership() {
-        state = .loaded(orderedMessageIDs.compactMap { messagesByID[$0]?.messageState.loadedValue })
+        let messages = orderedMessageIDs.compactMap { messagesByID[$0]?.messageState.loadedValue }
+        state = .loaded(messages)
+        updateComposerMessageContext(messages)
         valueRevision += 1
+    }
+
+    private func updateComposerMessageContext(_ messages: [PickySessionMessage]) {
+        let nextContext = PickyComposerMessageContext(messages: messages)
+        guard composerMessageContext != nextContext else { return }
+        composerMessageContext = nextContext
     }
 }
 

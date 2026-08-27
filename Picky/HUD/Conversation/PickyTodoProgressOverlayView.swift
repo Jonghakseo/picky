@@ -118,38 +118,6 @@ enum PickyTodoProgressAdaptiveWidthPolicy {
     }
 }
 
-struct PickyTodoProgressRestoreButton: View {
-    let presentation: PickyTodoProgressPresentation
-    let onRestore: () -> Void
-
-    var body: some View {
-        Button(action: onRestore) {
-            Label(presentation.stepText, systemImage: "checklist")
-                .font(PickyHUDTypography.statusMonospacedMedium)
-                .foregroundColor(presentation.isComplete ? DS.Colors.successText : DS.Colors.info)
-                .padding(.horizontal, 10)
-                .frame(height: 30)
-                .contentShape(Capsule(style: .continuous))
-        }
-        .buttonStyle(PickyTodoProgressButtonStyle())
-        // The base surface sits behind the style's state layer so hover/press
-        // feedback remains visible instead of being covered by an opaque label.
-        .background(
-            Capsule(style: .continuous)
-                .fill(DS.Colors.surface1.opacity(0.97))
-                .overlay(
-                    Capsule(style: .continuous)
-                        .stroke((presentation.isComplete ? DS.Colors.success : DS.Colors.info).opacity(0.5), lineWidth: 0.8)
-                )
-        )
-        .clipShape(Capsule(style: .continuous))
-        .help(L10n.t("hud.todo.show"))
-        .accessibilityLabel(L10n.t("hud.todo.show"))
-        .accessibilityValue(presentation.stepText)
-        .accessibilityHint(L10n.t("hud.todo.expand"))
-    }
-}
-
 struct PickyTodoProgressOverlayView: View {
     static let minimumCardWidth: CGFloat = 280
     static let maximumCardWidth: CGFloat = 700
@@ -157,24 +125,20 @@ struct PickyTodoProgressOverlayView: View {
     let presentation: PickyTodoProgressPresentation
     let isSessionRunning: Bool
     @Binding var isExpanded: Bool
+    let focusRequestID: Int
+    let onClose: () -> Void
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+    @FocusState private var isCollapseHeaderFocused: Bool
 
     var body: some View {
-        Group {
-            if isExpanded {
-                expandedCard
-                    .transition(expandedTransition)
-            } else {
-                PickyTodoProgressRestoreButton(
-                    presentation: presentation,
-                    onRestore: { isExpanded = true }
+        if isExpanded {
+            expandedCard
+                .transition(expandedTransition)
+                .animation(
+                    accessibilityReduceMotion ? nil : .easeOut(duration: DS.Animation.normal),
+                    value: isExpanded
                 )
-            }
         }
-        .animation(
-            accessibilityReduceMotion ? nil : .easeOut(duration: DS.Animation.normal),
-            value: isExpanded
-        )
     }
 
     private var expandedCard: some View {
@@ -183,10 +147,14 @@ struct PickyTodoProgressOverlayView: View {
             maximumWidth: Self.maximumCardWidth
         ) {
             VStack(alignment: .leading, spacing: 0) {
-                Button(action: { isExpanded = false }) {
+                Button(action: onClose) {
                     expandedHeader
                 }
                 .buttonStyle(PickyTodoProgressButtonStyle())
+                .focusable()
+                .focused($isCollapseHeaderFocused)
+                .onAppear { requestCollapseHeaderFocus() }
+                .onChange(of: focusRequestID) { _, _ in requestCollapseHeaderFocus() }
                 .help(L10n.t("hud.todo.collapse"))
                 .accessibilityLabel("\(presentation.stepText), \(L10n.t("hud.todo.collapse"))")
                 .accessibilityValue(L10n.t("hud.todo.state.expanded"))
@@ -199,7 +167,7 @@ struct PickyTodoProgressOverlayView: View {
                     ScrollView(.vertical, showsIndicators: true) {
                         expandedTaskRows
                     }
-                    .frame(maxHeight: 224)
+                    .frame(height: PickyFocusStackTodoDrawerLayoutPolicy.viewportHeight)
                 } else {
                     expandedTaskRows
                 }
@@ -266,8 +234,9 @@ struct PickyTodoProgressOverlayView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, DS.Spacing.md)
+        .padding(.vertical, DS.Spacing.sm)
+        .frame(minHeight: PickyFocusStackTodoDrawerLayoutPolicy.taskRowMinimumHeight)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(task.displayText)
         .accessibilityValue(accessibilityStatus(task.status))
@@ -321,6 +290,10 @@ struct PickyTodoProgressOverlayView: View {
         case .inProgress: return L10n.t("hud.todo.status.inProgress")
         case .completed: return L10n.t("hud.todo.status.completed")
         }
+    }
+
+    private func requestCollapseHeaderFocus() {
+        DispatchQueue.main.async { isCollapseHeaderFocused = true }
     }
 
     private var expandedTransition: AnyTransition {

@@ -30,6 +30,9 @@ struct PickyConversationListView: View {
         isCommandShortcutHintVisible: Bool = false,
         fillsAvailableHeight: Bool = false,
         hasProgressOverlay: Bool = false,
+        navigationRequest: PickyConversationNavigationRequest = .init(),
+        suppressesInternalLatestAction: Bool = false,
+        onViewportStateChanged: @escaping (PickyConversationViewportState) -> Void = { _ in },
         onInitialBottomPinReady: @escaping () -> Void = { },
         onBodyEvaluation: @escaping () -> Void = { },
         onMessageLeafBodyEvaluation: @escaping (String, Bool, Bool) -> Void = { _, _, _ in }
@@ -40,6 +43,9 @@ struct PickyConversationListView: View {
         self.isCommandShortcutHintVisible = isCommandShortcutHintVisible
         self.fillsAvailableHeight = fillsAvailableHeight
         self.hasProgressOverlay = hasProgressOverlay
+        self.navigationRequest = navigationRequest
+        self.suppressesInternalLatestAction = suppressesInternalLatestAction
+        self.onViewportStateChanged = onViewportStateChanged
         self.onInitialBottomPinReady = onInitialBottomPinReady
         self.onBodyEvaluation = onBodyEvaluation
         self.onMessageLeafBodyEvaluation = onMessageLeafBodyEvaluation
@@ -50,6 +56,11 @@ struct PickyConversationListView: View {
     var fillsAvailableHeight = false
     /// Whether the card reserves a top overlay control above transcript rows.
     var hasProgressOverlay = false
+    /// Card-owned request token. List resolves it against the canonical Journal
+    /// message and owns only the actual scroll/focus effect.
+    var navigationRequest = PickyConversationNavigationRequest()
+    var suppressesInternalLatestAction = false
+    var onViewportStateChanged: (PickyConversationViewportState) -> Void = { _ in }
     /// Fires once the initial bottom anchor is confirmed inside the viewport.
     /// This is a geometry-ready milestone, not a generic next-runloop guess.
     var onInitialBottomPinReady: () -> Void = { }
@@ -72,6 +83,10 @@ struct PickyConversationListView: View {
     /// (flicker-free, unlike a deferred `proxy.scrollTo`). Cleared right after
     /// the commit so it never fights the bottom-pin machinery.
     @State private var historyScrollTargetID: String?
+    @State private var focusedQuestionMessageID: String?
+    @State private var questionFocusRequestID = 0
+    @State private var pendingNavigationRequest: PickyConversationNavigationRequest?
+    @State private var activeNavigationRequestToken = 0
 
     var body: some View {
         let _ = onBodyEvaluation()
@@ -168,7 +183,8 @@ struct PickyConversationListView: View {
                 }
             }
             .overlay(alignment: .bottomTrailing) {
-                if PickyConversationScrollPolicy.shouldShowJumpToLatest(
+                if !suppressesInternalLatestAction,
+                   PickyConversationScrollPolicy.shouldShowJumpToLatest(
                     isPinnedToBottom: isPinnedToBottom,
                     hasUnreadContent: hasUnreadContentSinceUnpinning
                 ) {
@@ -188,6 +204,9 @@ struct PickyConversationListView: View {
             }
             .task(id: session.id) {
                 expandedHistoryAnchorID = nil
+                focusedQuestionMessageID = nil
+                pendingNavigationRequest = nil
+                activeNavigationRequestToken = 0
                 historyScrollTargetID = nil
                 hasReportedInitialBottomPinReady = false
                 // Session changes always start at the most recent content. VStack is
@@ -203,6 +222,12 @@ struct PickyConversationListView: View {
                 }
                 hasAppeared = true
             }
+            .onChange(of: navigationRequest) { _, request in
+                handleNavigationRequest(request, proxy: proxy)
+            }
+            .onChange(of: isPinnedToBottom) { _, _ in reportViewportState() }
+            .onChange(of: hasUnreadContentSinceUnpinning) { _, _ in reportViewportState() }
+            .onAppear { reportViewportState() }
             .onChange(of: bottomScrollTrigger) { oldValue, newValue in
                 PickyPerf.event("conversation_bottom_scroll_trigger_changed")
                 let shouldAutoScroll = PickyConversationScrollPolicy.shouldAutoScroll(
@@ -228,6 +253,10 @@ struct PickyConversationListView: View {
                     isPinnedToBottom: isPinnedToBottom
                 ) {
                     hasUnreadContentSinceUnpinning = true
+                }
+
+                if let pendingNavigationRequest {
+                    handleNavigationRequest(pendingNavigationRequest, proxy: proxy)
                 }
             }
             .onDisappear {
@@ -317,24 +346,23 @@ struct PickyConversationListView: View {
 
     @ViewBuilder
     private func turnGroupView(_ group: PickyTurnGroup) -> some View {
-        if let user = group.userMessage {
-            messageLeafView(user, in: group)
-                .id(user.id)
-            let liveTool = liveToolForCurrentTurn(group)
-            if shouldRenderTurnCard(group) {
-                PickyTurnCardView(
-                    group: group,
-                    activeTool: liveTool,
-                    onOpenActiveToolHistory: group.isCurrent ? { [weak viewModel] in
-                        viewModel?.openToolHistoryForCurrentTurn(sessionID: session.id)
-                    } : nil
-                ) { message in
-                    messageLeafView(message, in: group)
-                        .id(message.id)
-                }
+        if group.hasUserMessage {
+            // The chapter owns both collapsed summary and expanded original
+            // message leaves. The closure still creates the registry-backed leaf
+            // with its message ID, so flattening chapter chrome cannot churn
+            // sibling identities during a same-ID streaming replacement.
+            PickyTurnCardView(
+                group: group,
+                activeTool: liveToolForCurrentTurn(group),
+                onOpenActiveToolHistory: group.isCurrent ? { [weak viewModel] in
+                    viewModel?.openToolHistoryForCurrentTurn(sessionID: session.id)
+                } : nil
+            ) { message in
+                messageLeafView(message, in: group)
+                    .id(message.id)
             }
             // Auto-compaction bubbles and the pending extension-ui question live
-            // outside the card so they stay visible whether the card is collapsed
+            // outside the chapter so they stay visible whether it is collapsed
             // or expanded — see `PickyTurnGrouper.groups`.
             ForEach(group.trailingMessages, id: \.id) { message in
                 messageLeafView(message, in: group)
@@ -342,7 +370,7 @@ struct PickyConversationListView: View {
             }
         } else {
             // Pre-turn slice: messages that arrived before the first user_text
-            // (e.g., session bootstrap notes). Render flat without card chrome.
+            // (e.g., session bootstrap notes). Render flat without chapter chrome.
             ForEach(group.bodyMessages, id: \.id) { message in
                 messageLeafView(message, in: group)
                     .id(message.id)
@@ -438,11 +466,16 @@ struct PickyConversationListView: View {
             }
         case .question:
             if let request = message.question {
+                let focusRequestID = focusedQuestionMessageID == message.id ? questionFocusRequestID : 0
                 PickyQuestionBubbleView(
                     request: request,
                     cancelledAt: message.cancelledAt,
                     isActiveRequest: session.pendingExtensionUiRequest?.id == request.id,
-                    commands: viewModel
+                    commands: viewModel,
+                    focusRequestID: focusRequestID,
+                    onFocusConsumed: {
+                        consumeQuestionFocus(messageID: message.id, focusRequestID: focusRequestID)
+                    }
                 )
             }
         case .questionFallback:
@@ -525,14 +558,12 @@ struct PickyConversationListView: View {
         }
     }
 
-    /// Render the turn card whenever there are body messages, or when the
-    /// current turn has an active/recent tool to surface — without this,
-    /// tool-only turns (no thinking, no agent_text, agent_activity not
-    /// committed yet) leave the user bubble dangling with nothing below it.
+    /// Every group with a leading user/command message is a Focus Stack
+    /// chapter. Even an empty completed turn retains its request summary and
+    /// can expand into the original user bubble without inventing a duplicate.
     /// Shared by `turnGroupView` and `renderSnapshot.turnCardCount`.
     private func shouldRenderTurnCard(_ group: PickyTurnGroup) -> Bool {
-        guard group.hasUserMessage else { return false }
-        return !group.bodyMessages.isEmpty || liveToolForCurrentTurn(group) != nil
+        group.hasUserMessage
     }
 
     /// Resolves the tool to surface in the active turn's live indicator.
@@ -566,71 +597,43 @@ struct PickyConversationListView: View {
     }
 
     private func queueGroupHeader(items: [PickyQueueItem], kind: PickyPendingQueueKind) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: DS.Spacing.space1) {
+            Image(systemName: kind.iconName)
+                .font(PickyHUDTypography.statusSemibold)
+                .foregroundColor(DS.Colors.textSecondary)
+                .accessibilityHidden(true)
             Text(kind.label)
                 .font(PickyHUDTypography.statusSemibold)
-                .foregroundColor(kind.color)
+                .foregroundColor(DS.Colors.textSecondary)
             Text("\(items.count)")
                 .font(PickyHUDTypography.statusMonospacedMedium)
                 .foregroundColor(DS.Colors.textTertiary)
-            Spacer(minLength: 8)
-            Button(action: {
-                Task { try? await viewModel.clearQueueRestoringQueuedInputs(sessionID: session.id, kind: .all) }
-            }) {
-                Text("hud.conversation.clearAll")
-                    .font(PickyHUDTypography.metaSemibold)
-                    .foregroundColor(DS.Colors.textSecondary)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 2)
-                    .background(
-                        Capsule().fill(DS.Colors.surface2.opacity(0.6))
-                    )
-                    .overlay(
-                        Capsule().stroke(DS.Colors.borderSubtle.opacity(0.5), lineWidth: 0.5)
-                    )
-            }
-            .buttonStyle(.plain)
-            .help("Clear all queued messages")
         }
-        .padding(.horizontal, 4)
-        .padding(.top, 4)
+        .padding(.horizontal, DS.Spacing.space1)
+        .padding(.top, DS.Spacing.space1)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Queued \(kind.label)")
+        .accessibilityValue("\(items.count) pending")
     }
 
     private var hasQueueOrActivity: Bool {
         !visibleQueuedSteers.isEmpty || !visibleQueuedFollowUps.isEmpty
     }
 
+    private var visibleQueue: PickyVisibleQueue {
+        PickyVisibleQueue(
+            queuedSteers: session.queuedSteers,
+            queuedFollowUps: session.queuedFollowUps,
+            committedUserMessages: PickyComposerMessageContext(messages: orderedMessages).submittedUserMessages
+        )
+    }
+
     private var visibleQueuedFollowUps: [PickyQueueItem] {
-        visibleQueueItems(session.queuedFollowUps)
+        visibleQueue.followUps
     }
 
     private var visibleQueuedSteers: [PickyQueueItem] {
-        visibleQueueItems(session.queuedSteers)
-    }
-
-    /// Hide pending steer/follow-up bubbles once the matching `user_text` journal
-    /// entry has been rendered. The supervisor records a `user_text` for every
-    /// queued prompt as soon as Pi accepts it (often before Pi actually dequeues),
-    /// so without this filter the card briefly — and for active turns, durably —
-    /// shows the same instruction twice (once as the user bubble, once as the
-    /// pending bubble). `PickyQueuedInputText.normalized` strips the agentd
-    /// prompt envelope so wrapped queue snapshots still match the raw user text.
-    private func visibleQueueItems(_ items: [PickyQueueItem]) -> [PickyQueueItem] {
-        items.filter { item in
-            !recentUserTextMatchesQueuedItem(item)
-        }
-    }
-
-    private func recentUserTextMatchesQueuedItem(_ item: PickyQueueItem) -> Bool {
-        let queuedText = PickyQueuedInputText.normalized(item.text)
-        guard !queuedText.isEmpty else { return false }
-        return orderedMessages.contains { message in
-            guard message.kind == .userText,
-                  let text = message.text,
-                  abs(message.createdAt.timeIntervalSince(item.enqueuedAt)) <= 300
-            else { return false }
-            return PickyQueuedInputText.normalized(text) == queuedText
-        }
+        visibleQueue.steers
     }
 
     /// 카드 안에는 기본적으로 마지막 10개 user turn부터 끝까지 노출.
@@ -805,6 +808,78 @@ struct PickyConversationListView: View {
         } else if !isAwaitingProgrammaticBottomPin {
             isPinnedToBottom = false
         }
+    }
+
+    private func handleNavigationRequest(_ request: PickyConversationNavigationRequest, proxy: ScrollViewProxy) {
+        guard request.target != .none else { return }
+        activeNavigationRequestToken = request.token
+
+        switch request.target {
+        case .none:
+            return
+        case .latest:
+            pendingNavigationRequest = nil
+            focusedQuestionMessageID = nil
+            isPinnedToBottom = true
+            hasUnreadContentSinceUnpinning = false
+            scrollToBottom(proxy: proxy, animated: PickyConversationScrollPolicy.shouldAnimateScroll(hasAppeared: hasAppeared))
+        case let .question(requestID):
+            guard let messageID = PickyConversationLiveStepNavigationPolicy.questionMessageID(
+                messages: orderedMessages,
+                requestID: requestID
+            ) else {
+                // Runtime publishes waiting/request metadata before its canonical
+                // journal message. Retain the token and retry when membership changes.
+                pendingNavigationRequest = request
+                return
+            }
+            pendingNavigationRequest = nil
+            if !visibleMessages.contains(where: { $0.id == messageID }) {
+                expandedHistoryAnchorID = questionTurnAnchorID(for: messageID)
+            }
+            focusedQuestionMessageID = messageID
+            questionFocusRequestID &+= 1
+            let requestToken = request.token
+            // If navigation revealed an older turn, let the history anchor commit
+            // before scrolling. Each hop revalidates the token so a newer Latest
+            // or question request cannot be overwritten by this delayed effect.
+            DispatchQueue.main.async {
+                guard PickyConversationLiveStepNavigationPolicy.isCurrent(
+                    requestToken: requestToken,
+                    activeToken: activeNavigationRequestToken
+                ) else { return }
+                DispatchQueue.main.async {
+                    guard PickyConversationLiveStepNavigationPolicy.isCurrent(
+                        requestToken: requestToken,
+                        activeToken: activeNavigationRequestToken
+                    ) else { return }
+                    withAnimation(PickyConversationScrollPolicy.liveUpdateAnimation) {
+                        proxy.scrollTo(messageID, anchor: .center)
+                    }
+                }
+            }
+        }
+    }
+
+    private func consumeQuestionFocus(messageID: String, focusRequestID: Int) {
+        guard focusedQuestionMessageID == messageID,
+              questionFocusRequestID == focusRequestID
+        else { return }
+        focusedQuestionMessageID = nil
+    }
+
+    private func questionTurnAnchorID(for messageID: String) -> String? {
+        guard let messageIndex = orderedMessages.firstIndex(where: { $0.id == messageID }) else { return nil }
+        return orderedMessages[..<messageIndex].last(where: {
+            $0.kind == .userText || $0.kind == .commandReceipt
+        })?.id
+    }
+
+    private func reportViewportState() {
+        onViewportStateChanged(PickyConversationViewportState(
+            isPinnedToBottom: isPinnedToBottom,
+            hasUnreadContent: hasUnreadContentSinceUnpinning
+        ))
     }
 
     private func scrollToBottom(proxy: ScrollViewProxy, animated: Bool) {

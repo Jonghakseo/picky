@@ -12,12 +12,18 @@ struct PickyQuestionBubbleView: View {
     let cancelledAt: Date?
     let isActiveRequest: Bool
     let commands: any PickySessionCommands
+    /// List changes this only for the canonical question message selected by a
+    /// Live Step navigation request.
+    var focusRequestID = 0
+    var onFocusConsumed: () -> Void = { }
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
     @State private var textValue = ""
     @State private var formState = PickyAskUserQuestionFormState()
     @State private var seededFormRequestID: String?
     @State private var isCollapsed: Bool = false
     @State private var didInitCollapse: Bool = false
+    @FocusState private var isQuestionFocused: Bool
+    @AccessibilityFocusState private var isQuestionAccessibilityFocused: Bool
 
     private var isCancelled: Bool { cancelledAt != nil }
     private var isClosed: Bool { isCancelled || !isActiveRequest }
@@ -78,7 +84,14 @@ struct PickyQuestionBubbleView: View {
             Spacer(minLength: 36)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .focusable()
+        .focused($isQuestionFocused)
+        .accessibilityFocused($isQuestionAccessibilityFocused)
+        .onChange(of: focusRequestID) { _, _ in
+            requestQuestionFocusIfNeeded()
+        }
         .onAppear {
+            requestQuestionFocusIfNeeded()
             seedFormDefaultsIfNeeded()
             if !didInitCollapse {
                 isCollapsed = isClosed
@@ -135,6 +148,15 @@ struct PickyQuestionBubbleView: View {
     private func autoCollapseIfClosed() {
         guard isClosed, !isCollapsed else { return }
         withAnimation(.easeInOut(duration: 0.18)) { isCollapsed = true }
+    }
+
+    private func requestQuestionFocusIfNeeded() {
+        guard focusRequestID != 0 else { return }
+        DispatchQueue.main.async {
+            isQuestionFocused = true
+            isQuestionAccessibilityFocused = true
+            onFocusConsumed()
+        }
     }
 
     @ViewBuilder

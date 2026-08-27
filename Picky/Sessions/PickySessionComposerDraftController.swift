@@ -16,22 +16,12 @@ struct PickyComposerDraftRequest: Equatable, Identifiable {
 
 enum PickyQueuedInputDraftPolicy {
     static func queuedInputText(
-        queuedSteers: [PickyQueueItem],
-        queuedFollowUps: [PickyQueueItem],
+        visibleQueue: PickyVisibleQueue,
         kind: PickyQueueClearKind = .all
     ) -> String? {
-        let selected: [PickyQueueItem]
-        switch kind {
-        case .steering:
-            selected = queuedSteers
-        case .followUp:
-            selected = queuedFollowUps
-        case .all:
-            selected = queuedSteers + queuedFollowUps
-        }
-        let merged = selected
-            .sorted { $0.enqueuedAt < $1.enqueuedAt }
-            .map(\.text)
+        let merged = visibleQueue.items(for: kind)
+            .map { PickyQueuedInputText.displayText(from: $0.text) }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
             .joined(separator: "\n\n")
         return merged.isEmpty ? nil : merged
@@ -39,15 +29,10 @@ enum PickyQueuedInputDraftPolicy {
 
     static func draftRestoringQueuedInputs(
         draft: String,
-        queuedSteers: [PickyQueueItem],
-        queuedFollowUps: [PickyQueueItem],
+        visibleQueue: PickyVisibleQueue,
         kind: PickyQueueClearKind = .all
     ) -> String? {
-        guard let queuedText = queuedInputText(
-            queuedSteers: queuedSteers,
-            queuedFollowUps: queuedFollowUps,
-            kind: kind
-        ) else { return nil }
+        guard let queuedText = queuedInputText(visibleQueue: visibleQueue, kind: kind) else { return nil }
         return draft.isEmpty ? queuedText : "\(draft)\n\n\(queuedText)"
     }
 }

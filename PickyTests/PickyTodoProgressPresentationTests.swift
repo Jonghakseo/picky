@@ -89,11 +89,32 @@ struct PickyTodoProgressPresentationTests {
         #expect(presentation.stepText == L10n.t("hud.todo.completedCount", Int64(0), Int64(2)))
     }
 
-    @Test func expansionDefaultsToCurrentWorkExpandedAndCompletedWorkCollapsed() {
-        #expect(PickyTodoProgressExpansionPolicy.isExpanded(savedValue: nil, isComplete: false))
+    @Test func expansionDefaultsToCollapsedWhileRespectingExplicitSavedValues() {
+        #expect(!PickyTodoProgressExpansionPolicy.isExpanded(savedValue: nil, isComplete: false))
         #expect(!PickyTodoProgressExpansionPolicy.isExpanded(savedValue: nil, isComplete: true))
-        #expect(PickyTodoProgressExpansionPolicy.isExpanded(savedValue: true, isComplete: true))
+        #expect(PickyTodoProgressExpansionPolicy.isExpanded(savedValue: true, isComplete: false))
         #expect(!PickyTodoProgressExpansionPolicy.isExpanded(savedValue: false, isComplete: false))
+    }
+
+    @Test func planDrawerRequiresRunningIncompleteTodoAndTheSharedExpandedState() throws {
+        let incomplete = try #require(PickyTodoProgressPresentation(state: PickyTodoState(
+            tasks: [PickyTodoTask(id: "todo", content: "Implement", status: .inProgress)],
+            updatedAt: Date(timeIntervalSince1970: 1_800_000_000)
+        )))
+        let complete = try #require(PickyTodoProgressPresentation(state: PickyTodoState(
+            tasks: [PickyTodoTask(id: "todo", content: "Implement", status: .completed)],
+            updatedAt: Date(timeIntervalSince1970: 1_800_000_001)
+        )))
+
+        #expect(PickyConversationPlanDrawerPolicy.canOpen(status: .running, todo: incomplete))
+        #expect(!PickyConversationPlanDrawerPolicy.canOpen(status: .running, todo: complete))
+        #expect(!PickyConversationPlanDrawerPolicy.canOpen(status: .completed, todo: incomplete))
+        #expect(PickyConversationPlanDrawerPolicy.shouldRenderDrawer(status: .running, todo: incomplete, isExpanded: true))
+        #expect(!PickyConversationPlanDrawerPolicy.shouldRenderDrawer(status: .running, todo: incomplete, isExpanded: false))
+        #expect(!PickyConversationPlanDrawerPolicy.shouldRenderDrawer(status: .waiting_for_input, todo: incomplete, isExpanded: true))
+        #expect(!PickyConversationPlanDrawerPolicy.shouldRenderDrawer(status: .running, todo: complete, isExpanded: true))
+        #expect(PickyConversationPlanDrawerPolicy.shouldCollapse(status: .completed, todo: incomplete))
+        #expect(PickyConversationPlanDrawerPolicy.shouldCollapse(status: .running, todo: complete))
     }
 
     @Test func completionCollapsesOnlyOnTheTransitionIntoDone() {
@@ -158,18 +179,19 @@ struct PickyTodoProgressPresentationTests {
         #expect(resolved == 250)
     }
 
-    @Test func expandedListScrollsWhenTaskCountExceedsFive() throws {
-        let fiveTasks = PickyTodoState(
-            tasks: (1...5).map { PickyTodoTask(id: "todo-\($0)", content: "Task \($0)", status: .pending) },
+    @Test func focusStackDrawerScrollsAfterThreeFullTaskRows() throws {
+        let threeTasks = PickyTodoState(
+            tasks: (1...3).map { PickyTodoTask(id: "todo-\($0)", content: "Task \($0)", status: .pending) },
             updatedAt: Date(timeIntervalSince1970: 1_800_000_003)
         )
-        let sixTasks = PickyTodoState(
-            tasks: (1...6).map { PickyTodoTask(id: "todo-\($0)", content: "Task \($0)", status: .pending) },
+        let fourTasks = PickyTodoState(
+            tasks: (1...4).map { PickyTodoTask(id: "todo-\($0)", content: "Task \($0)", status: .pending) },
             updatedAt: Date(timeIntervalSince1970: 1_800_000_004)
         )
 
-        #expect(try #require(PickyTodoProgressPresentation(state: fiveTasks)).usesScrollableExpandedList == false)
-        #expect(try #require(PickyTodoProgressPresentation(state: sixTasks)).usesScrollableExpandedList)
+        #expect(try #require(PickyTodoProgressPresentation(state: threeTasks)).usesScrollableExpandedList == false)
+        #expect(try #require(PickyTodoProgressPresentation(state: fourTasks)).usesScrollableExpandedList)
+        #expect(PickyFocusStackTodoDrawerLayoutPolicy.viewportHeight == PickyFocusStackTodoDrawerLayoutPolicy.taskRowMinimumHeight * 3.5)
     }
 
     @Test func inProgressTodoMarkerAnimatesOnlyWhenSessionIsRunning() {

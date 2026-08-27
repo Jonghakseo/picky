@@ -9,8 +9,10 @@
 import Foundation
 
 enum PickyTodoProgressExpansionPolicy {
+    /// New incomplete Plans start closed. A previously persisted explicit value
+    /// remains authoritative until completion/status reconciliation closes it.
     static func isExpanded(savedValue: Bool?, isComplete: Bool) -> Bool {
-        savedValue ?? !isComplete
+        savedValue ?? false
     }
 
     static func shouldCollapse(previousIsComplete: Bool?, currentIsComplete: Bool) -> Bool {
@@ -69,7 +71,7 @@ struct PickyTodoProgressPresentation: Equatable {
     }
 
     var usesScrollableExpandedList: Bool {
-        tasks.count > 5
+        PickyFocusStackTodoDrawerLayoutPolicy.usesScrollableViewport(taskCount: tasks.count)
     }
 }
 

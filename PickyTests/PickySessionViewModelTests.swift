@@ -599,7 +599,7 @@ struct PickySessionViewModelTests {
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running"))))
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionTodoStateUpdated(seq: 1))))
 
-        #expect(viewModel.isTodoProgressExpanded(sessionID: "session-1", isComplete: false))
+        #expect(!viewModel.isTodoProgressExpanded(sessionID: "session-1", isComplete: false))
         viewModel.setTodoProgressExpanded(false, sessionID: "session-1")
         #expect(!viewModel.isTodoProgressExpanded(sessionID: "session-1", isComplete: false))
         viewModel.setTodoProgressExpanded(true, sessionID: "session-1")
@@ -612,19 +612,19 @@ struct PickySessionViewModelTests {
         #expect(viewModel.isTodoProgressExpanded(sessionID: "session-1", isComplete: true))
     }
 
-    @MainActor @Test func todoExpansionAutoExpandsWhenTodoRestartsAfterCompletion() {
+    @MainActor @Test func todoExpansionRemainsCollapsedWhenTodoRestartsAfterCompletion() {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running"))))
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionTodoStateUpdated(seq: 1))))
 
-        #expect(viewModel.isTodoProgressExpanded(sessionID: "session-1", isComplete: false))
+        #expect(!viewModel.isTodoProgressExpanded(sessionID: "session-1", isComplete: false))
         viewModel.setTodoProgressExpanded(false, sessionID: "session-1")
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionTodoStateUpdated(seq: 2, taskStatus: "completed"))))
 
         #expect(!viewModel.isTodoProgressExpanded(sessionID: "session-1", isComplete: true))
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionTodoStateUpdated(seq: 3, taskStatus: "in_progress"))))
 
-        #expect(viewModel.isTodoProgressExpanded(sessionID: "session-1", isComplete: false))
+        #expect(!viewModel.isTodoProgressExpanded(sessionID: "session-1", isComplete: false))
     }
 
     @MainActor @Test func todoExpansionDefaultsCompletedWorkToCollapsedAndClearsWithTodoState() {
@@ -2486,6 +2486,36 @@ struct PickySessionViewModelTests {
             activeTool: nil,
             thinkingPreview: nil
         ) == nil)
+    }
+
+    @Test func contextLinksCountDeduplicatesVisibleLinksAndAddsOnlyTheDedicatedPR() {
+        let sharedURL = URL(string: "https://example.com/work")!
+        let otherURL = URL(string: "https://example.com/other")!
+        let visible = [
+            PickyArtifact(id: "one", kind: "link", title: "Work", path: nil, url: sharedURL, updatedAt: Date()),
+            PickyArtifact(id: "duplicate", kind: "link", title: "Work again", path: nil, url: sharedURL, updatedAt: Date()),
+            PickyArtifact(id: "two", kind: "link", title: "Other", path: nil, url: otherURL, updatedAt: Date()),
+        ]
+        let pullRequest = PickyGitHubPullRequestStatus(
+            number: 42,
+            title: "Fix",
+            url: URL(string: "https://github.com/acme/repo/pull/42")!,
+            state: .open
+        )
+
+        #expect(PickyConversationContextLinkCountPolicy.count(visibleLinkArtifacts: visible, pullRequest: nil) == 2)
+        #expect(PickyConversationContextLinkCountPolicy.count(visibleLinkArtifacts: visible, pullRequest: pullRequest) == 3)
+        #expect(PickyConversationContextLinkCountPolicy.count(
+            visibleLinkArtifacts: visible + [PickyArtifact(
+                id: "duplicate-pr",
+                kind: "pr",
+                title: "Fix",
+                path: nil,
+                url: pullRequest.url,
+                updatedAt: Date()
+            )],
+            pullRequest: pullRequest
+        ) == 3)
     }
 
     @Test func linkBadgeArtifactsClassifyKnownWorkURLs() throws {

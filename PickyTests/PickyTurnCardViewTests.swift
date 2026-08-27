@@ -111,6 +111,13 @@ struct PickyTurnCardViewTests {
         #expect(pastCard.isExpanded == false)
     }
 
+    @Test func collapsedCurrentTurnRetainsCurrentVisualAndAccessibilityState() {
+        #expect(PickyFocusStackChapterAccessibilityPresentation.visualState(isCurrent: true) == "Current")
+        #expect(PickyFocusStackChapterAccessibilityPresentation.label(isCurrent: true) == "Current turn")
+        #expect(PickyFocusStackChapterAccessibilityPresentation.value(isExpanded: false, detail: "0 steps · 2s") == "Collapsed. 0 steps · 2s")
+        #expect(PickyFocusStackChapterAccessibilityPresentation.label(isCurrent: false) == "Previous turn")
+    }
+
     // MARK: - Expansion policy (race-window latch)
 
     @Test func expansionPolicyDefaultsToIsCurrentBeforeAnyObservation() {
@@ -205,6 +212,86 @@ struct PickyTurnCardViewTests {
         )
 
         #expect(group.collapsedRepresentativeMessage == nil)
+    }
+
+    // MARK: - Focus Stack prior chapter presentation
+
+    @Test func priorChapterPresentationNormalizesRequestAndUsesRepresentativeResponse() {
+        let group = PickyTurnGroup(
+            id: "u1",
+            userMessage: msg("u1", kind: .userText, secondsOffset: 0, text: "  Review\n this   change  "),
+            bodyMessages: [
+                msg("a-act", kind: .agentActivity, secondsOffset: 1, activitySnapshot: PickyActivitySummary(bash: 2)),
+                msg("a1", kind: .agentText, secondsOffset: 3, text: "  Updated\n the summary.  ")
+            ],
+            isCurrent: false
+        )
+
+        let presentation = PickyFocusStackPriorChapterPresentation(group: group)
+
+        #expect(presentation.requestText == "Review this change")
+        #expect(presentation.responseText == "Updated the summary.")
+        #expect(presentation.responseKind == .response)
+        #expect(presentation.summary == group.summary)
+        #expect(presentation.summary.displayText == "2 tools · 3s")
+    }
+
+    @Test func priorChapterPresentationUsesCommandReceiptWhenRequestTextIsAbsent() {
+        let receipt = PickyCommandReceipt(command: "/compact", status: .submitted, detail: nil)
+        let group = PickyTurnGroup(
+            id: "command",
+            userMessage: PickySessionMessage(
+                id: "command",
+                kind: .commandReceipt,
+                createdAt: originDate,
+                originatedBy: nil,
+                text: nil,
+                question: nil,
+                cancelledAt: nil,
+                activitySnapshot: nil,
+                assistantRun: nil,
+                errorContext: nil,
+                errorMessage: nil,
+                commandReceipt: receipt
+            ),
+            bodyMessages: [],
+            isCurrent: false
+        )
+
+        #expect(PickyFocusStackPriorChapterPresentation(group: group).requestText == "/compact")
+    }
+
+    @Test func priorChapterPresentationUsesErrorMessageWhenNoAgentResponseExists() {
+        let group = PickyTurnGroup(
+            id: "u1",
+            userMessage: msg("u1", kind: .userText, secondsOffset: 0, text: "Run tests"),
+            bodyMessages: [
+                msg("a-error", kind: .agentError, secondsOffset: 2, text: "Build failed", errorMessage: " exit code 65\n")
+            ],
+            isCurrent: false
+        )
+
+        let presentation = PickyFocusStackPriorChapterPresentation(group: group)
+
+        #expect(presentation.responseText == "exit code 65")
+        #expect(presentation.responseKind == .error)
+    }
+
+    @Test func priorChapterPresentationLeavesResponseUnavailableWithoutTextOrError() {
+        let group = PickyTurnGroup(
+            id: "u1",
+            userMessage: msg("u1", kind: .userText, secondsOffset: 0, text: "Check status"),
+            bodyMessages: [
+                msg("a-act", kind: .agentActivity, secondsOffset: 1, activitySnapshot: PickyActivitySummary(read: 1))
+            ],
+            isCurrent: false
+        )
+
+        let presentation = PickyFocusStackPriorChapterPresentation(group: group)
+
+        #expect(presentation.responseText == nil)
+        #expect(presentation.responseKind == .unavailable)
+        #expect(presentation.summary.displayText == "1 tool · 1s")
     }
 
     @Test func grouperPullsCompactSystemMessagesOutOfBodyIntoTrailing() {

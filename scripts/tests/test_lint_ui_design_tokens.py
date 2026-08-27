@@ -7,7 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-SCRIPT_PATH = Path(__file__).resolve().parents[1] / "lint-ui-design-tokens.py"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT_PATH = REPO_ROOT / "scripts" / "lint-ui-design-tokens.py"
 spec = importlib.util.spec_from_file_location("lint_ui_design_tokens", SCRIPT_PATH)
 lint_ui_design_tokens = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
@@ -174,6 +175,12 @@ class UIDesignTokenLintTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "Unable to resolve baseline commit"):
                 lint_ui_design_tokens.write_baseline(root, root / "baseline.json", "does-not-exist", scan_roots=("Picky/HUD",))
+
+    def test_agentd_lint_checkout_keeps_history_for_baseline_provenance(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "agentd-lint.yml").read_text(encoding="utf-8")
+        checkout_step = workflow.split("- name: Check out source", maxsplit=1)[1].split("- name:", maxsplit=1)[0]
+
+        self.assertIn("fetch-depth: 0", checkout_step)
 
 
 if __name__ == "__main__":

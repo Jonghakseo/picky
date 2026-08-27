@@ -323,7 +323,7 @@ Manage membership:
 The member list:
 
 - Opens as a small panel next to the folder tile. It never changes the dock's own size, and it stays on screen if the folder sits near a screen edge.
-- Each row shows the Pickle's status glyph, its title, and a second line with the working folder and last activity. An unread Pickle shows a dot; the folder tile itself shows how many of its Pickles are unread.
+- Each row shows the Pickle's status glyph, its title, and a second line with the last activity followed by the working folder. An unread Pickle shows a dot; the folder tile itself shows how many of its Pickles are unread.
 - Only one folder's list is open at a time, and each display keeps its own.
 - Lists longer than eight Pickles scroll inside the panel.
 - The list closes when you pick a row, press `Esc`, click elsewhere, move the dock, or its final visible Pickle is removed, moved, or archived.
@@ -333,6 +333,7 @@ Row actions inside the list:
 | Action | Behavior |
 | --- | --- |
 | Click | Opens that Pickle and closes the list. |
+| Hover or keyboard highlight | Replaces the number shortcut with quick buttons to remove the Pickle from the group or archive it. |
 | Drag | Reorders within the group. Drag the row clear of the panel to pull the Pickle out of the group. |
 | Press and hold | Archives, with the same hold and progress ring as a dock tile. |
 | Right-click | Stop, compact, screen-context arm, move to another group, and remove from group. |

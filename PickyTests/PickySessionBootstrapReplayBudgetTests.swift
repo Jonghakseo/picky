@@ -11,8 +11,8 @@ import Testing
 struct PickySessionBootstrapReplayBudgetTests {
     // v1 baselines retained for W7 comparison. Pin exact ObservableObject
     // publications rather than a range so fan-out regressions are visible.
-    private static let snapshotOnlyPublishBaseline = 202
-    private static let snapshotAndHydrationPublishBaseline = 1_054
+    private static let snapshotOnlyPublishBaseline = 201
+    private static let snapshotAndHydrationPublishBaseline = 1_053
 
     @Test func lightweightSnapshotPublishesThePinnedV1Baseline() {
         let viewModel = PickyProjectionReplayFixtures.makeViewModel(selectedSessionID: "bootstrap-001")

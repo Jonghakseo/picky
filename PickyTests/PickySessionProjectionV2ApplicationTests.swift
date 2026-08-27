@@ -769,6 +769,47 @@ struct PickySessionProjectionV2ApplicationTests {
         #expect(!bootstrapViewModel.unreadSessionIDs.contains("bootstrap"))
     }
 
+    @Test func recoveryTerminalSnapshotNotifiesActiveSessionButNotArchivedSession() async throws {
+        let preferences = PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
+            notifyOnCompleted: true,
+            notifyOnFailed: true,
+            notifyOnWaitingForInput: true
+        ))
+
+        let archivedClient = FakePickyAgentClient()
+        let archivedNotifications = PickyNoopNotificationCenter()
+        let archivedViewModel = makeViewModel(
+            client: archivedClient,
+            storage: PickyRegistrySessionProjectionStorage(),
+            notificationCenter: archivedNotifications,
+            notificationPreferencesProvider: preferences
+        )
+        apply(snapshot(sessionID: "archived", title: "Archived", status: .running, revision: 1, archived: true), to: archivedViewModel)
+        apply(transaction(sessionID: "archived", baseRevision: 2, revision: 3, mutations: #"[{"type":"metaPatch","patch":{"title":"Gap"}}]"#), to: archivedViewModel)
+        await waitUntil { archivedClient.sentCommands.contains { $0.type == .getSessionProjectionSnapshot } }
+        let archivedRecovery = try #require(archivedClient.sentCommands.first { $0.type == .getSessionProjectionSnapshot })
+        apply(snapshot(sessionID: "archived", title: "Archived", status: .completed, revision: 2, requestID: archivedRecovery.requestId, archived: true), to: archivedViewModel)
+
+        #expect(archivedViewModel.archivedSessions.first?.status == .completed)
+        #expect(archivedNotifications.delivered.isEmpty)
+
+        let activeClient = FakePickyAgentClient()
+        let activeNotifications = PickyNoopNotificationCenter()
+        let activeViewModel = makeViewModel(
+            client: activeClient,
+            storage: PickyRegistrySessionProjectionStorage(),
+            notificationCenter: activeNotifications,
+            notificationPreferencesProvider: preferences
+        )
+        apply(snapshot(sessionID: "active", title: "Active", status: .running, revision: 1), to: activeViewModel)
+        apply(transaction(sessionID: "active", baseRevision: 2, revision: 3, mutations: #"[{"type":"metaPatch","patch":{"title":"Gap"}}]"#), to: activeViewModel)
+        await waitUntil { activeClient.sentCommands.contains { $0.type == .getSessionProjectionSnapshot } }
+        let activeRecovery = try #require(activeClient.sentCommands.first { $0.type == .getSessionProjectionSnapshot })
+        apply(snapshot(sessionID: "active", title: "Active", status: .completed, revision: 2, requestID: activeRecovery.requestId), to: activeViewModel)
+
+        #expect(activeNotifications.delivered.map(\.identifier) == ["active:completed"])
+    }
+
     @Test func terminalTransactionPublishesPinnedV2BudgetAndPreservesAttentionEffects() throws {
         let storage = PickyRegistrySessionProjectionStorage()
         let viewModel = PickyProjectionReplayFixtures.makeViewModel(sessionProjectionStorage: storage)

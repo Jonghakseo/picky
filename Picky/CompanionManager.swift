@@ -322,6 +322,7 @@ final class CompanionManager: ObservableObject {
     let inkCaptureCoordinator: any PickyInkCaptureCoordinating
     let pendingInkCaptures = PickyPendingInkCaptureStore()
     var voiceInputTargetSnapshotsByInputID: [UUID: PickyVoiceInputTargetSnapshot] = [:]
+    var invalidatedVoiceInputIDs = Set<UUID>()
     var screenContextDisplayOverridesByTextInputID: [UUID: PickyScreenContextDisplayOverrides] = [:]
     var screenContextDisplaySelectionSnapshotsByTextInputID: [UUID: PickyScreenContextDisplaySelectionSnapshot] = [:]
     private var failedQuickInputInkCapture: PickyInkCapture?
@@ -1615,6 +1616,10 @@ final class CompanionManager: ObservableObject {
     // without depending on microphone transcription.
     func submitTranscriptToPickyAgent(transcript: String) {
         currentResponseTask?.cancel()
+        if let inputID = interactionVoiceInputID, invalidatedVoiceInputIDs.contains(inputID) {
+            completeVoiceInteractionIfCurrent(inputID: inputID)
+            return
+        }
         beginAwaitingAgentResponse(recognizedTranscript: transcript)
 
         let voiceFollowUpSessionID = voiceFollowUpSessionIDForCurrentUtterance
@@ -2116,7 +2121,7 @@ final class CompanionManager: ObservableObject {
             do {
                 let receipt = try await submitOrIntercept(PickyAgentSubmission(transcript: transcript, context: context))
                 guard !Task.isCancelled else {
-                    voiceInputTargetSnapshotsByInputID.removeValue(forKey: inputID)
+                    finishCancelledVoiceEffect(inputID: inputID)
                     return
                 }
                 PickyAnalytics.trackUserMessageSent(transcript: transcript)
@@ -2138,6 +2143,7 @@ final class CompanionManager: ObservableObject {
     private func runFollowUpPickleEffect(inputID: UUID, sessionID: String, transcript: String, context: PickyContextPacket) {
         currentResponseTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            guard !invalidatedVoiceInputIDs.contains(inputID) else { finishCancelledVoiceEffect(inputID: inputID); return }
             let targetSnapshot = voiceInputTargetSnapshotsByInputID[inputID]
             if case .pickle(let snapshotSessionID, .armed(let dispatchMode, _, _)) = targetSnapshot?.target,
                snapshotSessionID == sessionID {
@@ -2182,7 +2188,7 @@ final class CompanionManager: ObservableObject {
                 do {
                     try await agentClient.send(command)
                     guard !Task.isCancelled else {
-                        voiceInputTargetSnapshotsByInputID.removeValue(forKey: inputID)
+                        finishCancelledVoiceEffect(inputID: inputID)
                         return
                     }
                     let receipt = PickyAgentSubmissionReceipt(sessionID: sessionID, message: "")
@@ -2193,7 +2199,7 @@ final class CompanionManager: ObservableObject {
                     handleAgentSubmissionAccepted(receipt: receipt, source: source, contextID: context.id)
                     finishVoiceSubmissionIfIdle(inputID: inputID)
                 } catch is CancellationError {
-                    voiceInputTargetSnapshotsByInputID.removeValue(forKey: inputID)
+                    finishCancelledVoiceEffect(inputID: inputID)
                     // User spoke again — response was interrupted.
                 } catch {
                     handleVoiceSubmissionFailure(error, inputID: inputID, contextID: context.id)
@@ -2209,7 +2215,7 @@ final class CompanionManager: ObservableObject {
                 )
                 try await agentClient.send(PickyCommandEnvelope(type: .followUp, context: followUpContext, sessionId: sessionID, text: transcript))
                 guard !Task.isCancelled else {
-                    voiceInputTargetSnapshotsByInputID.removeValue(forKey: inputID)
+                    finishCancelledVoiceEffect(inputID: inputID)
                     return
                 }
                 let receipt = PickyAgentSubmissionReceipt(sessionID: sessionID, message: "")
@@ -2220,7 +2226,7 @@ final class CompanionManager: ObservableObject {
                 handleAgentSubmissionAccepted(receipt: receipt, source: "voice-follow-up", contextID: context.id)
                 finishVoiceSubmissionIfIdle(inputID: inputID)
             } catch is CancellationError {
-                voiceInputTargetSnapshotsByInputID.removeValue(forKey: inputID)
+                finishCancelledVoiceEffect(inputID: inputID)
                 // User spoke again — response was interrupted.
             } catch {
                 handleVoiceSubmissionFailure(error, inputID: inputID, contextID: context.id)
@@ -2267,6 +2273,7 @@ final class CompanionManager: ObservableObject {
     @discardableResult
     func completeVoiceInteractionIfCurrent(inputID: UUID) -> Bool {
         voiceInputTargetSnapshotsByInputID.removeValue(forKey: inputID)
+        invalidatedVoiceInputIDs.remove(inputID)
         guard interactionVoiceInputID == inputID else { return false }
         interactionVoiceInputID = nil
         return true
@@ -2412,12 +2419,57 @@ final class CompanionManager: ObservableObject {
                     try? await self.agentClient.send(PickyCommandEnvelope(type: .listMainMessages))
                     try? await self.agentClient.send(PickyCommandEnvelope(type: .listMainAgentModels))
                 case .sessionProjectionBootstrapCompletion:
-                    continue
+                    await MainActor.run { self.applyAgentClientEvent(event) }
                 }
             }
         }
     }
 
+    /// Consumes router-validated client events owned by CompanionManager.
+    /// The router has already correlated the v2 bootstrap completion, so the
+    /// removed IDs are authoritative and safe to use for voice invalidation.
+    func applyAgentClientEvent(_ event: PickyClientEvent) {
+        guard case .sessionProjectionBootstrapCompletion(let removedSessionIDs, _) = event else { return }
+        invalidateVoiceTargets(removedSessionIDs: removedSessionIDs)
+    }
+
+    private func invalidateVoiceTargets(removedSessionIDs: Set<String>) {
+        guard !removedSessionIDs.isEmpty else { return }
+        let invalidatedInputIDs = voiceInputTargetSnapshotsByInputID.compactMap { inputID, snapshot in
+            removedSessionIDs.contains(snapshot.sessionID ?? "") ? inputID : nil
+        }
+        guard !invalidatedInputIDs.isEmpty else {
+            clearRemovedVoiceTarget(removedSessionIDs)
+            return
+        }
+
+        for inputID in invalidatedInputIDs {
+            voiceInputTargetSnapshotsByInputID.removeValue(forKey: inputID)
+            invalidatedVoiceInputIDs.insert(inputID)
+            voiceContextCapturePipeline.cancel(inputID: inputID)
+            interactionCoordinator.accept(
+                .transcriptFailed(message: L10n.t("error.voice.targetRemoved"), inputID: inputID),
+                correlation: PickyInteractionCorrelation(inputID: inputID, source: .agent)
+            )
+        }
+
+        clearRemovedVoiceTarget(removedSessionIDs)
+        if let interactionVoiceInputID, invalidatedVoiceInputIDs.contains(interactionVoiceInputID) {
+            currentResponseTask?.cancel()
+            finishAwaitingAgentResponse(visibleText: L10n.t("error.voice.targetRemoved"), spokenText: nil)
+        }
+    }
+
+    private func clearRemovedVoiceTarget(_ removedSessionIDs: Set<String>) {
+        if let targetSessionID = voiceFollowUpSessionIDForCurrentUtterance,
+           removedSessionIDs.contains(targetSessionID) {
+            setVoiceFollowUpSessionIDForCurrentUtterance(nil, caller: "projection-removal")
+        }
+        if let targetSessionID = selectionStore.screenContextTargetSessionID,
+           removedSessionIDs.contains(targetSessionID) {
+            applyScreenContextTarget(nil)
+        }
+    }
     /// Preserves the retryable cancellation projection while a cancellation
     /// command is awaiting its transport result. Once it resolves, its defer
     /// re-runs the current pill presentation and ordinary disconnect cleanup

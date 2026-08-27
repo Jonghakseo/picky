@@ -549,6 +549,94 @@ struct PickyCompanionManagerTests {
         manager.stop()
     }
 
+    @Test func projectionRemovalInvalidatesCapturedPTTTargetWithoutRoutingTranscriptToMain() async throws {
+        let client = FakeVoiceClient()
+        let selection = FakeVoiceSelectionStore()
+        selection.screenContextTargetSessionID = "removed-pickle"
+        let manager = CompanionManager(
+            agentClient: client,
+            selectionStore: selection,
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(),
+            armedPickleDispatchMode: .steer
+        )
+
+        manager.handleShortcutTransition(.pressed, pressedScreenPoint: .zero)
+        let inputID = try #require(manager.interactionVoiceInputID)
+        manager.applyAgentClientEvent(.sessionProjectionBootstrapCompletion(
+            removedSessionIDs: ["removed-pickle"],
+            isPrimary: true
+        ))
+        manager.submitTranscriptToPickyAgent(transcript: "이 대상은 이미 삭제됨")
+
+        try await settle()
+        #expect(!client.commands.contains { $0.sessionId == "removed-pickle" && ($0.type == .steer || $0.type == .followUp) })
+        #expect(client.submissions.isEmpty)
+        #expect(manager.voiceInputTargetSnapshotsByInputID[inputID] == nil)
+        #expect(manager.voiceFollowUpSessionIDForCurrentUtterance == nil)
+        #expect(manager.latestAgentSessionSummary == L10n.t("error.voice.targetRemoved"))
+        manager.stop()
+    }
+
+    @Test func projectionRemovalClearsTombstoneAfterLateContextCaptureSettles() async throws {
+        let client = FakeVoiceClient()
+        let selection = FakeVoiceSelectionStore()
+        selection.screenContextTargetSessionID = "removed-pickle"
+        let captureGate = FakeCaptureGate()
+        let manager = CompanionManager(
+            agentClient: client,
+            selectionStore: selection,
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(captureGate: captureGate),
+            armedPickleDispatchMode: .followUp
+        )
+
+        manager.handleShortcutTransition(.pressed, pressedScreenPoint: .zero)
+        let inputID = try #require(manager.interactionVoiceInputID)
+        manager.submitTranscriptToPickyAgent(transcript: "늦은 캡처")
+        await captureGate.waitUntilEntered()
+        manager.applyAgentClientEvent(.sessionProjectionBootstrapCompletion(
+            removedSessionIDs: ["removed-pickle"],
+            isPrimary: true
+        ))
+        await captureGate.release()
+
+        try await waitUntil { manager.interactionVoiceInputID == nil }
+        #expect(!manager.invalidatedVoiceInputIDs.contains(inputID))
+        #expect(!client.commands.contains { $0.sessionId == "removed-pickle" })
+        #expect(client.submissions.isEmpty)
+        #expect(manager.latestAgentSessionSummary == L10n.t("error.voice.targetRemoved"))
+        manager.stop()
+    }
+
+    @Test func unrelatedAndDuplicateProjectionRemovalPreserveCapturedPTTTarget() async throws {
+        let client = FakeVoiceClient()
+        let selection = FakeVoiceSelectionStore()
+        selection.screenContextTargetSessionID = "kept-pickle"
+        let manager = CompanionManager(
+            agentClient: client,
+            selectionStore: selection,
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(),
+            armedPickleDispatchMode: .followUp
+        )
+
+        manager.handleShortcutTransition(.pressed, pressedScreenPoint: .zero)
+        let inputID = try #require(manager.interactionVoiceInputID)
+        manager.applyAgentClientEvent(.sessionProjectionBootstrapCompletion(
+            removedSessionIDs: ["unrelated-pickle"],
+            isPrimary: true
+        ))
+        manager.applyAgentClientEvent(.sessionProjectionBootstrapCompletion(
+            removedSessionIDs: ["unrelated-pickle"],
+            isPrimary: true
+        ))
+        manager.submitTranscriptToPickyAgent(transcript: "계속 진행해줘")
+
+        try await waitUntil { client.commands.contains { $0.sessionId == "kept-pickle" } }
+        let command = try #require(client.commands.first { $0.sessionId == "kept-pickle" })
+        #expect(command.type == .followUp)
+        #expect(manager.voiceInputTargetSnapshotsByInputID[inputID] == nil)
+        manager.stop()
+    }
+
     @Test func newerPTTPressKeepsOlderSnapshotUntilItsEffectSettles() throws {
         let manager = CompanionManager(
             agentClient: FakeVoiceClient(),

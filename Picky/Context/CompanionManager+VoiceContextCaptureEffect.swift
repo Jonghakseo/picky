@@ -22,7 +22,7 @@ extension CompanionManager {
                 )
                 guard let captureResult else {
                     guard !Task.isCancelled else {
-                        voiceInputTargetSnapshotsByInputID.removeValue(forKey: inputID)
+                        finishCancelledVoiceEffect(inputID: inputID)
                         return
                     }
                     let targetSnapshot = voiceInputTargetSnapshotsByInputID[inputID]
@@ -36,8 +36,8 @@ extension CompanionManager {
                     }
                     return
                 }
-                guard !Task.isCancelled else {
-                    voiceInputTargetSnapshotsByInputID.removeValue(forKey: inputID)
+                guard !Task.isCancelled, !invalidatedVoiceInputIDs.contains(inputID) else {
+                    finishCancelledVoiceEffect(inputID: inputID)
                     return
                 }
                 interactionCoordinator.effectCompleted(
@@ -50,7 +50,7 @@ extension CompanionManager {
                     correlation: PickyInteractionCorrelation(inputID: inputID, contextID: captureResult.contextPacket.id, source: .voice)
                 )
             } catch is CancellationError {
-                voiceInputTargetSnapshotsByInputID.removeValue(forKey: inputID)
+                finishCancelledVoiceEffect(inputID: inputID)
                 // User spoke again — response was interrupted.
             } catch {
                 let targetSnapshot = voiceInputTargetSnapshotsByInputID[inputID]
@@ -72,4 +72,14 @@ extension CompanionManager {
             }
         }
     }
+
+    /// Releases the snapshot for a cancelled effect. Removal tombstones stay
+    /// alive until that effect settles, then are consumed exactly once here.
+    func finishCancelledVoiceEffect(inputID: UUID) {
+        voiceInputTargetSnapshotsByInputID.removeValue(forKey: inputID)
+        guard invalidatedVoiceInputIDs.contains(inputID) else { return }
+        _ = completeVoiceInteractionIfCurrent(inputID: inputID)
+    }
+
+
 }

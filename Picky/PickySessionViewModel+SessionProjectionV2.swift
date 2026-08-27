@@ -68,8 +68,9 @@ extension PickySessionListViewModel {
         PickyGitRepositoryStatus.prefetchIfNeeded(cwd: card.cwd)
         PickyGitHubPullRequestStatus.prefetchIfNeeded(cwd: card.cwd)
         if previous == nil {
+            // Cold snapshots seed terminal dedupe even when the card is archived.
             markNotificationDeliveredIfNeeded(for: card)
-        } else {
+        } else if !shouldArchive {
             deliverNotificationIfNeeded(for: card)
         }
         syncSelectionAfterSessionListChange(skippingRedundantPublishedAssignments: true)

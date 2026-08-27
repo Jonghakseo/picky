@@ -1096,6 +1096,22 @@
         }
       }
     },
+    "error.voice.targetRemoved": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This Pickle is no longer available."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Pickle은 더 이상 사용할 수 없어요."
+          }
+        }
+      }
+    },
     "extensions.curated.askUserQuestion.description": {
       "localizations": {
         "en": {

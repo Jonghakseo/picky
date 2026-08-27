@@ -349,9 +349,11 @@ def validate_runtime_guards() -> None:
 def validate_pre_push_gate() -> None:
     pre_push_path = ROOT / "scripts/pre-push-checks.sh"
     pre_push = pre_push_path.read_text()
-    assignment = "PICKY_PRE_PUSH_UI_EFFECT_TESTS=1"
+    assignment = "TEST_RUNNER_PICKY_PRE_PUSH_UI_EFFECT_TESTS=1"
     if pre_push.count(assignment) != 1:
         fail(f"pre-push must opt into UI-effect tests exactly once with {assignment}")
+    if "env PICKY_PRE_PUSH_UI_EFFECT_TESTS=1" in pre_push:
+        fail("pre-push must pass UI-effect opt-in through Xcode's TEST_RUNNER_ environment bridge")
 
     swift_test_commands = [
         line for line in pre_push.splitlines()

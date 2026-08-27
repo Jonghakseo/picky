@@ -121,7 +121,7 @@ run_step "Picky app build" xcodebuild -project Picky.xcodeproj -scheme Picky -de
 # WindowServer-dependent tests are disabled in every ordinary test invocation.
 # The pre-push gate is their single opt-in execution and deliberately runs the
 # Swift suite once, without retries or test-plan repetitions.
-run_step "Picky test suite" env PICKY_PRE_PUSH_UI_EFFECT_TESTS=1 xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" -parallel-testing-enabled NO test
+run_step "Picky test suite" env TEST_RUNNER_PICKY_PRE_PUSH_UI_EFFECT_TESTS=1 xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" -parallel-testing-enabled NO test
 
 echo
 echo "✅ pre-push: all local quality checks passed."

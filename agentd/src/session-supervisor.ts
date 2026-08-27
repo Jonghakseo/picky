@@ -2965,9 +2965,7 @@ export class SessionSupervisor extends EventEmitter {
       const before = this.sessions.get(sessionId); const proposed = typeof sessionOrId === "string" ? build!(this.mustGet(sessionId)) : sessionOrId;
       const changed = proposed !== before; const after = changed && before ? { ...proposed, revision: nextRevision(before.revision ?? 0, true) } : proposed;
       if (changed) {
-        await this.store.save(after); this.sessions.set(sessionId, after);
-        if (before) { const mutations = buildSessionProjectionMutations(before, after, options); if (mutations.length > 0) this.emit("sessionProjectionTransaction", sessionId, before, after, mutations, this.sessionProjectionEpoch); }
-        else this.emit("sessionProjectionSnapshot", after, this.sessionProjectionEpoch);
+        await this.store.save(after); this.sessions.set(sessionId, after); if (before) { const mutations = buildSessionProjectionMutations(before, after, options); if (mutations.length > 0) this.emit("sessionProjectionTransaction", sessionId, before, after, mutations, this.sessionProjectionEpoch); } else this.emit("sessionProjectionSnapshot", after, this.sessionProjectionEpoch);
       }
       result = { before, after, changed };
     });

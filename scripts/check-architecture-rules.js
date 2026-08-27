@@ -406,7 +406,14 @@ function projectionTrappingDictionaryFiles() {
 
 // Lower-only ratchet: fixed microtask pumps make terminal/journal assertions
 // order-dependent. New waits must express their condition (`waitUntil`).
-const SETTLE_PUMP_BASELINE = 170;
+// 138 is the independently recounted post-waitUntil ceiling. The baseline may
+// shrink with future conversions, but must never rise above this proven count.
+const SETTLE_PUMP_HARD_CEILING = 138;
+const SETTLE_PUMP_BASELINE = 138;
+
+function settlePumpBaselineExceedsCeiling(baseline) {
+  return baseline > SETTLE_PUMP_HARD_CEILING;
+}
 
 function settlePumpCount() {
   return walk("agentd/src", (candidate) => candidate.endsWith(".test.ts"))
@@ -523,6 +530,12 @@ function checkSessionProjectionGuardFixtures() {
     addError(`Session-projection guard self-test found trapping projection indexes still present: ${projectionTrappingDictionaryFiles().join(", ")}.`);
   }
 
+  if (settlePumpBaselineExceedsCeiling(SETTLE_PUMP_BASELINE)) {
+    addError(`Session-projection guard self-test settle() baseline ${SETTLE_PUMP_BASELINE} exceeds the hard lower-only ceiling ${SETTLE_PUMP_HARD_CEILING}.`);
+  }
+  if (!settlePumpBaselineExceedsCeiling(SETTLE_PUMP_HARD_CEILING + 1)) {
+    addError("Session-projection guard self-test failed to reject a raised settle() baseline.");
+  }
   if (settlePumpCount() !== SETTLE_PUMP_BASELINE) {
     addError(`Session-projection guard self-test settle() count drifted from its recorded baseline ${SETTLE_PUMP_BASELINE}. Lower the pin when waits are converted; never raise it.`);
   }

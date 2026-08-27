@@ -76,7 +76,6 @@ REQUIRED_GUARDS = {
     "Picky/Shortcuts/ShortcutCaptureRecorder.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }",
     "Picky/HUD/Conversation/PickyConversationComposerView.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }",
     "Picky/HUD/PickyHUDDockGroupListView.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }",
-    "Picky/HUD/PickyHUDDockReorderDragController.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }",
     "Picky/HUD/PickyHUDOverlayManager.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }",
     "Picky/HUD/PickyHUDView.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }",
     "Picky/Overlay/PickyInkCaptureController.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return false }",
@@ -92,6 +91,124 @@ REQUIRED_GUARDS = {
 def fail(message: str) -> None:
     print(f"❌ test environment isolation: {message}", file=sys.stderr)
     raise SystemExit(1)
+
+
+INJECTED_LOCAL_MONITOR_CONTROLLERS = (
+    "PickyDockGroupDragReleaseMonitor",
+    "PickyDockReorderDragController",
+)
+INJECTED_LOCAL_MONITOR_FILE = "Picky/HUD/PickyHUDDockReorderDragController.swift"
+INJECTED_LOCAL_MONITOR_DEFAULT = re.compile(
+    r"installLocalMonitor:\s*@escaping\s+LocalEventMonitorInstaller\s*=\s*"
+    r"\{\s*mask,\s*handler\s+in\s*"
+    r"NSEvent\.addLocalMonitorForEvents\(matching:\s*mask,\s*handler:\s*handler\)\s*\}",
+    re.DOTALL,
+)
+INJECTED_LOCAL_MONITOR_CALL = re.compile(
+    r"\b(?:CGEvent\.tapCreate|NSEvent\.add(?:Local|Global)MonitorForEvents)\s*\("
+)
+
+
+def swift_braced_block(source: str, declaration: re.Pattern[str]) -> str | None:
+    match = declaration.search(source)
+    if match is None:
+        return None
+    opening = source.find("{", match.end())
+    if opening < 0:
+        return None
+    depth = 0
+    for index in range(opening, len(source)):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[opening + 1:index]
+    return None
+
+
+def injected_local_monitor_controller_is_valid(source: str, controller: str) -> bool:
+    controller_body = swift_braced_block(
+        source,
+        re.compile(rf"\bfinal\s+class\s+{re.escape(controller)}\b"),
+    )
+    if controller_body is None:
+        return False
+    if not re.search(r"\bprivate\s+let\s+allowsUserEnvironmentEffects\s*:\s*Bool\b", controller_body):
+        return False
+    if "allowsUserEnvironmentEffects: Bool = PickyRuntimeEnvironment.allowsUserEnvironmentEffects" not in controller_body:
+        return False
+    if "self.allowsUserEnvironmentEffects = allowsUserEnvironmentEffects" not in controller_body:
+        return False
+    if len(INJECTED_LOCAL_MONITOR_CALL.findall(controller_body)) != 1:
+        return False
+    if len(INJECTED_LOCAL_MONITOR_DEFAULT.findall(controller_body)) != 1:
+        return False
+    if len(re.findall(r"\bfunc\s+begin\s*\(", controller_body)) != 1:
+        return False
+    if controller_body.count("installLocalMonitor(") != 1:
+        return False
+
+    begin_body = swift_braced_block(controller_body, re.compile(r"\bfunc\s+begin\s*\("))
+    if begin_body is None:
+        return False
+    install_at = begin_body.find("installLocalMonitor(")
+    if install_at < 0:
+        return False
+    guard_match = re.search(
+        r"\bguard\s+allowsUserEnvironmentEffects(?:\s*,[^\n{]+)?\s+else\s*\{\s*return\s*\}",
+        begin_body[:install_at],
+    )
+    return guard_match is not None
+
+
+def injected_local_monitor_file_is_valid(source: str, controllers: tuple[str, ...]) -> bool:
+    return (
+        len(INJECTED_LOCAL_MONITOR_CALL.findall(source)) == len(controllers)
+        and all(injected_local_monitor_controller_is_valid(source, controller) for controller in controllers)
+    )
+
+
+def validate_injected_local_monitor_guards() -> None:
+    source = (ROOT / INJECTED_LOCAL_MONITOR_FILE).read_text()
+    if not injected_local_monitor_file_is_valid(source, INJECTED_LOCAL_MONITOR_CONTROLLERS):
+        fail(
+            f"{INJECTED_LOCAL_MONITOR_FILE} must default each injected allowsUserEnvironmentEffects "
+            "property to PickyRuntimeEnvironment.allowsUserEnvironmentEffects and guard it before installing a monitor"
+        )
+
+
+def validate_injected_local_monitor_guard_fixtures() -> None:
+    valid = """
+    final class Fixture {
+        private let allowsUserEnvironmentEffects: Bool
+        init(allowsUserEnvironmentEffects: Bool = PickyRuntimeEnvironment.allowsUserEnvironmentEffects,
+             installLocalMonitor: @escaping LocalEventMonitorInstaller = { mask, handler in
+                 NSEvent.addLocalMonitorForEvents(matching: mask, handler: handler)
+             }) {
+            self.allowsUserEnvironmentEffects = allowsUserEnvironmentEffects
+        }
+        func begin() {
+            guard allowsUserEnvironmentEffects else { return }
+            installLocalMonitor(.leftMouseUp) { event in event }
+        }
+    }
+    """
+    if not injected_local_monitor_file_is_valid(valid, ("Fixture",)):
+        fail("injected monitor guard fixture rejected the protected controller")
+    for mutation in (
+        ("Bool = PickyRuntimeEnvironment.allowsUserEnvironmentEffects", "Bool = true"),
+        ("guard allowsUserEnvironmentEffects else { return }", "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }"),
+        ("guard allowsUserEnvironmentEffects else { return }\n            installLocalMonitor", "installLocalMonitor"),
+    ):
+        broken = valid.replace(*mutation)
+        if injected_local_monitor_file_is_valid(broken, ("Fixture",)):
+            fail("injected monitor guard fixture accepted an unprotected controller")
+    if injected_local_monitor_file_is_valid(
+        valid + "\nNSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp, handler: { _ in })",
+        ("Fixture",),
+    ):
+        fail("injected monitor guard fixture accepted an unverified monitor installer")
 
 
 def test_functions(source: str) -> dict[str, bool]:
@@ -170,6 +287,7 @@ def validate_test_boundary_calls() -> None:
 
 
 def validate_runtime_guards() -> None:
+    validate_injected_local_monitor_guards()
     for relative, required_snippet in REQUIRED_GUARDS.items():
         source = (ROOT / relative).read_text()
         if required_snippet not in source:
@@ -206,6 +324,8 @@ def validate_runtime_guards() -> None:
                     standard_defaults_callers.append(f"{relative}:{line_number} (@AppStorage without isolated store)")
 
         for index, line in enumerate(lines):
+            if relative == INJECTED_LOCAL_MONITOR_FILE:
+                continue
             if line.lstrip().startswith("//") or not EVENT_MONITOR_INSTALL_CALL.search(line):
                 continue
             function_start = next(
@@ -253,6 +373,7 @@ def validate_pre_push_gate() -> None:
 
 
 def main() -> None:
+    validate_injected_local_monitor_guard_fixtures()
     validate_ui_effect_tests()
     validate_test_boundary_calls()
     validate_runtime_guards()

@@ -2399,7 +2399,7 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    private func bindAgentEvents() {
+    func bindAgentEvents() {
         agentEventTask?.cancel()
         agentEventTask = Task { [weak self] in
             guard let self else { return }

@@ -123,6 +123,10 @@ private final class FakeVoiceClient: PickyAgentClient, @unchecked Sendable {
         lock.withLock { _disconnectCalls += 1 }
         continuation.yield(.disconnected)
     }
+
+    func emit(_ event: PickyClientEvent) {
+        continuation.yield(event)
+    }
 }
 
 @MainActor
@@ -549,7 +553,7 @@ struct PickyCompanionManagerTests {
         manager.stop()
     }
 
-    @Test func projectionRemovalInvalidatesCapturedPTTTargetWithoutRoutingTranscriptToMain() async throws {
+    @Test func projectionBootstrapEventInvalidatesCapturedPTTTargetWithoutRoutingTranscriptToMain() async throws {
         let client = FakeVoiceClient()
         let selection = FakeVoiceSelectionStore()
         selection.screenContextTargetSessionID = "removed-pickle"
@@ -559,13 +563,15 @@ struct PickyCompanionManagerTests {
             voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(),
             armedPickleDispatchMode: .steer
         )
+        manager.bindAgentEvents()
 
         manager.handleShortcutTransition(.pressed, pressedScreenPoint: .zero)
         let inputID = try #require(manager.interactionVoiceInputID)
-        manager.applyAgentClientEvent(.sessionProjectionBootstrapCompletion(
+        client.emit(.sessionProjectionBootstrapCompletion(
             removedSessionIDs: ["removed-pickle"],
             isPrimary: true
         ))
+        try await waitUntil { manager.invalidatedVoiceInputIDs.contains(inputID) }
         manager.submitTranscriptToPickyAgent(transcript: "이 대상은 이미 삭제됨")
 
         try await settle()

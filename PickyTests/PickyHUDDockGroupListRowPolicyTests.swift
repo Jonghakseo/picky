@@ -40,15 +40,57 @@ struct PickyHUDDockGroupListRowPolicyTests {
         #expect(resolved.accessibilityLabel == longTitle)
     }
 
-    @Test func accessibilityValueReadsStatusThenLocationThenTime() {
+    @Test func subtitleAndAccessibilityValueReadTimeBeforeLocation() {
         let resolved = presentation()
 
-        #expect(resolved.accessibilityValue == "Running, picky, 2 minutes ago")
+        #expect(resolved.subtitle == "2 minutes ago · picky")
+        #expect(resolved.accessibilityValue == "Running, 2 minutes ago, picky")
     }
 
-    @Test func accessibilityValueOmitsMissingOrBlankLocation() {
+    @Test func subtitleAndAccessibilityValueOmitMissingOrBlankLocation() {
+        #expect(presentation(cwdLeaf: nil).subtitle == "2 minutes ago")
         #expect(presentation(cwdLeaf: nil).accessibilityValue == "Running, 2 minutes ago")
+        #expect(presentation(cwdLeaf: "   ").subtitle == "2 minutes ago")
         #expect(presentation(cwdLeaf: "   ").accessibilityValue == "Running, 2 minutes ago")
+    }
+
+    // MARK: - Trailing content projection
+
+    @Test func shortcutRemainsVisibleAtRestWhenAvailable() {
+        #expect(
+            PickyHUDDockGroupListRowTrailingContent.resolve(
+                isHovered: false,
+                isHighlighted: false,
+                shortcutNumber: 3
+            ) == .shortcut(3)
+        )
+    }
+
+    @Test func hoverOrKeyboardHighlightReplacesShortcutWithQuickActions() {
+        #expect(
+            PickyHUDDockGroupListRowTrailingContent.resolve(
+                isHovered: true,
+                isHighlighted: false,
+                shortcutNumber: 3
+            ) == .quickActions
+        )
+        #expect(
+            PickyHUDDockGroupListRowTrailingContent.resolve(
+                isHovered: false,
+                isHighlighted: true,
+                shortcutNumber: 3
+            ) == .quickActions
+        )
+    }
+
+    @Test func restWithoutShortcutKeepsTheFixedRailEmpty() {
+        #expect(
+            PickyHUDDockGroupListRowTrailingContent.resolve(
+                isHovered: false,
+                isHighlighted: false,
+                shortcutNumber: nil
+            ) == .empty
+        )
     }
 
     // MARK: - Shared action enablement
@@ -105,11 +147,11 @@ struct PickyHUDDockGroupListRowPolicyTests {
         }
     }
 
-    @Test func accessibilityActionSetOffersStopOnlyWhenTheRowCanStop() {
-        #expect(presentation(status: .running).accessibilityActions == [.open, .archive, .stop])
-        #expect(presentation(status: .completed).accessibilityActions == [.open, .archive])
-        #expect(presentation(status: .failed).accessibilityActions == [.open, .archive])
-        #expect(presentation(status: .cancelled).accessibilityActions == [.open, .archive])
+    @Test func accessibilityActionsAlwaysOfferUngroupAndArchiveAndOfferStopOnlyWhenAvailable() {
+        #expect(presentation(status: .running).accessibilityActions == [.open, .ungroup, .archive, .stop])
+        #expect(presentation(status: .completed).accessibilityActions == [.open, .ungroup, .archive])
+        #expect(presentation(status: .failed).accessibilityActions == [.open, .ungroup, .archive])
+        #expect(presentation(status: .cancelled).accessibilityActions == [.open, .ungroup, .archive])
     }
 }
 

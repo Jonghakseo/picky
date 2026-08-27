@@ -29,6 +29,7 @@ EXPECTED=(
   list-five-selected-large-light-100.png
   list-five-selected-small-dark-130.png
   list-four-idle-medium-dark-100.png
+  list-five-highlighted-small-dark-130.png
   list-two-selected-medium-dark-100.png
   list-one-selected-medium-dark-100.png
   combined-folder-panel-medium-dark-100.png

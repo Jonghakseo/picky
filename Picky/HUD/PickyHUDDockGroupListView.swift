@@ -32,10 +32,6 @@ struct PickyHUDDockGroupListRowModel: Identifiable {
         return leaf.isEmpty || leaf == "/" ? nil : leaf
     }
 
-    func subtitle(relativeTime: String) -> String {
-        guard let cwdLeaf else { return relativeTime }
-        return "\(cwdLeaf) · \(relativeTime)"
-    }
 }
 
 /// Stable render data for one open child panel. The overlay manager updates
@@ -1029,6 +1025,29 @@ private struct PickyHUDGroupListStopAXModifier: ViewModifier {
     }
 }
 
+private struct PickyHUDDockGroupListQuickActionButtonStyle: ButtonStyle {
+    let side: CGFloat
+    let cornerRadius: CGFloat
+
+    @State private var isHovered = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(
+                configuration.isPressed || isHovered ? DS.Colors.textPrimary : DS.Colors.textSecondary
+            )
+            .frame(width: side, height: side)
+            .background(
+                configuration.isPressed ? DS.Colors.surface4 : (isHovered ? DS.Colors.surface3 : .clear),
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .animation(.easeOut(duration: DS.Animation.fast), value: configuration.isPressed)
+            .animation(.easeOut(duration: DS.Animation.fast), value: isHovered)
+            .onHover { isHovered = $0 }
+    }
+}
+
 private struct PickyHUDDockGroupListRow: View {
     let row: PickyHUDDockGroupListRowModel
     let isUnread: Bool
@@ -1068,6 +1087,38 @@ private struct PickyHUDDockGroupListRow: View {
         )
     }
 
+    private var trailingContent: PickyHUDDockGroupListRowTrailingContent {
+        PickyHUDDockGroupListRowTrailingContent.resolve(
+            isHovered: isHovered,
+            isHighlighted: isHighlighted,
+            shortcutNumber: shortcutNumber
+        )
+    }
+
+    private var rowInteractionHost: some View {
+        PickyHUDDockIconClickHost(
+            onHover: { isHovered = true },
+            onOpen: onSelect,
+            isScreenContextArmed: isScreenContextArmed,
+            isScreenContextSticky: isScreenContextSticky,
+            canCompact: presentation.actionAvailability.canCompact,
+            canStop: presentation.actionAvailability.canStop,
+            onToggleScreenContextTarget: onToggleScreenContextTarget,
+            onToggleStickyScreenContextTarget: onToggleStickyScreenContextTarget,
+            onCompact: onCompact,
+            onArchivePressing: archiveFeedback.setPressing,
+            onArchive: {
+                archiveFeedback.complete()
+                onArchive()
+            },
+            onStop: onStop,
+            moveTargetGroups: moveTargetGroups,
+            onMoveToGroup: onMoveToGroup,
+            onUngroup: onUngroup,
+            onReorderHandoff: onReorderHandoff
+        )
+    }
+
     var body: some View {
         HStack(spacing: metrics.groupListRowContentSpacing) {
             statusGlyph
@@ -1085,7 +1136,7 @@ private struct PickyHUDDockGroupListRow: View {
                     .foregroundStyle(DS.Colors.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Text(row.subtitle(relativeTime: relativeTime))
+                Text(presentation.subtitle)
                     .font(PickyHUDTypography.meta)
                     .foregroundStyle(DS.Colors.textTertiary)
                     .lineLimit(1)
@@ -1105,20 +1156,11 @@ private struct PickyHUDDockGroupListRow: View {
                     .frame(width: 7, height: 7)
                     .accessibilityHidden(true)
             }
-            Group {
-                if let shortcutNumber {
-                    Text("⌘\(shortcutNumber)")
-                        .font(PickyHUDTypography.badgeSemibold)
-                        .foregroundStyle(DS.Colors.textTertiary)
-                } else {
-                    Color.clear
-                }
-            }
-            .frame(
-                width: PickyHUDDockGroupListPolicy.shortcutHintWidth(fontScale: fontScale),
-                alignment: .trailing
-            )
-            .accessibilityHidden(true)
+            trailingRail
+                .frame(
+                    width: PickyHUDDockGroupListPolicy.trailingRailWidth(metrics: metrics),
+                    alignment: .trailing
+                )
         }
         .padding(.horizontal, metrics.groupListRowHorizontalPadding)
         .padding(.vertical, metrics.groupListRowVerticalPadding)
@@ -1126,27 +1168,26 @@ private struct PickyHUDDockGroupListRow: View {
         .contentShape(RoundedRectangle(cornerRadius: metrics.groupListRowCornerRadius, style: .continuous))
         .background(rowBackground)
         .overlay {
-            PickyHUDDockIconClickHost(
-                onHover: { isHovered = true },
-                onOpen: onSelect,
-                isScreenContextArmed: isScreenContextArmed,
-                isScreenContextSticky: isScreenContextSticky,
-                canCompact: presentation.actionAvailability.canCompact,
-                canStop: presentation.actionAvailability.canStop,
-                onToggleScreenContextTarget: onToggleScreenContextTarget,
-                onToggleStickyScreenContextTarget: onToggleStickyScreenContextTarget,
-                onCompact: onCompact,
-                onArchivePressing: archiveFeedback.setPressing,
-                onArchive: {
-                    archiveFeedback.complete()
-                    onArchive()
-                },
-                onStop: onStop,
-                moveTargetGroups: moveTargetGroups,
-                onMoveToGroup: onMoveToGroup,
-                onUngroup: onUngroup,
-                onReorderHandoff: onReorderHandoff
-            )
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    rowInteractionHost
+                        .frame(
+                            width: PickyHUDDockGroupListPolicy.clickHostWidth(
+                                metrics: metrics,
+                                isUnread: isUnread,
+                                fontScale: fontScale
+                            ),
+                            height: proxy.size.height,
+                            alignment: .leading
+                        )
+                    rowInteractionHost
+                        .frame(
+                            width: PickyHUDDockGroupListPolicy.trailingPaddingClickHostWidth(metrics: metrics),
+                            height: proxy.size.height
+                        )
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+            }
         }
         .overlay(alignment: .bottomTrailing) {
             if isLeavingGroup {
@@ -1167,6 +1208,7 @@ private struct PickyHUDDockGroupListRow: View {
         .accessibilityValue(presentation.accessibilityValue)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityAction(named: Text(L10n.t("group.list.action.open")), onSelect)
+        .accessibilityAction(named: Text(L10n.t("group.list.menu.ungroup")), onUngroup)
         .accessibilityAction(named: Text(L10n.t("group.list.action.archive")), onArchive)
         .modifier(
             PickyHUDGroupListStopAXModifier(
@@ -1174,6 +1216,53 @@ private struct PickyHUDDockGroupListRow: View {
                 action: onStop
             )
         )
+    }
+
+    @ViewBuilder
+    private var trailingRail: some View {
+        switch trailingContent {
+        case .shortcut(let number):
+            Text("⌘\(number)")
+                .font(PickyHUDTypography.badgeSemibold)
+                .foregroundStyle(DS.Colors.textTertiary)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .accessibilityHidden(true)
+        case .quickActions:
+            HStack(spacing: metrics.groupListRowQuickActionSpacing) {
+                quickAction(
+                    symbol: "rectangle.portrait.and.arrow.forward",
+                    label: L10n.t("group.list.menu.ungroup"),
+                    action: onUngroup
+                )
+                quickAction(
+                    symbol: "archivebox",
+                    label: L10n.t("group.list.action.archive"),
+                    action: onArchive
+                )
+            }
+        case .empty:
+            Color.clear
+        }
+    }
+
+    private func quickAction(symbol: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(
+                    PickyHUDTypography.dockGroupListQuickActionSymbol(
+                        size: metrics.groupListRowQuickActionSymbolSize
+                    )
+                )
+        }
+        .buttonStyle(
+            PickyHUDDockGroupListQuickActionButtonStyle(
+                side: metrics.groupListRowQuickActionSide,
+                cornerRadius: metrics.groupListRowCornerRadius
+            )
+        )
+        .focusable(false)
+        .help(label)
+        .accessibilityLabel(label)
     }
 
     @ViewBuilder

@@ -61,6 +61,12 @@ enum PickyHUDDockGroupListPolicy {
         ]).width)
     }
 
+    /// Width of the row's fixed trailing rail. At rest this rail shows a
+    /// shortcut hint; hover and keyboard highlight replace it with two actions.
+    static func trailingRailWidth(metrics: PickyHUDDockMetrics) -> CGFloat {
+        (metrics.groupListRowQuickActionSide * 2) + metrics.groupListRowQuickActionSpacing
+    }
+
     /// Width available to the title after fixed row chrome. Rows and the
     /// header share the panel's outer padding as symmetric horizontal insets.
     static func titleColumnWidth(
@@ -71,11 +77,32 @@ enum PickyHUDDockGroupListPolicy {
         let contentWidth = metrics.groupListPanelWidth - (metrics.groupListPanelPadding * 2)
         let fixedWidths = (metrics.groupListRowHorizontalPadding * 2)
             + metrics.groupListRowGlyphSide
-            + shortcutHintWidth(fontScale: fontScale)
+            + trailingRailWidth(metrics: metrics)
             + (isUnread ? 7 : 0)
         let elementCount = isUnread ? 4 : 3
         let spacing = CGFloat(elementCount - 1) * metrics.groupListRowContentSpacing
         return max(0, contentWidth - fixedWidths - spacing)
+    }
+
+    /// The shared AppKit click host owns opening, long-press archiving, and
+    /// reorder handoff before the row's SwiftUI action rail. The separate
+    /// trailing-padding host below preserves those gestures everywhere outside
+    /// the two quick-action hit regions without covering either button.
+    static func clickHostWidth(
+        metrics: PickyHUDDockMetrics,
+        isUnread: Bool,
+        fontScale: CGFloat
+    ) -> CGFloat {
+        let elementCount = isUnread ? 4 : 3
+        return metrics.groupListRowHorizontalPadding
+            + metrics.groupListRowGlyphSide
+            + titleColumnWidth(metrics: metrics, isUnread: isUnread, fontScale: fontScale)
+            + (isUnread ? 7 : 0)
+            + (CGFloat(elementCount - 1) * metrics.groupListRowContentSpacing)
+    }
+
+    static func trailingPaddingClickHostWidth(metrics: PickyHUDDockMetrics) -> CGFloat {
+        metrics.groupListRowHorizontalPadding
     }
 
     private static func lineHeight(for font: NSFont) -> CGFloat {

@@ -39,13 +39,35 @@ enum PickyHUDDockGroupListRowProjection {
 
 enum PickyHUDGroupListRowAXAction: Equatable {
     case open
+    case ungroup
     case archive
     case stop
+}
+
+enum PickyHUDDockGroupListRowTrailingContent: Equatable {
+    case shortcut(Int)
+    case quickActions
+    case empty
+
+    static func resolve(
+        isHovered: Bool,
+        isHighlighted: Bool,
+        shortcutNumber: Int?
+    ) -> Self {
+        if isHovered || isHighlighted {
+            return .quickActions
+        }
+        if let shortcutNumber {
+            return .shortcut(shortcutNumber)
+        }
+        return .empty
+    }
 }
 
 struct PickyHUDDockGroupListRowPresentation: Equatable {
     let accessibilityLabel: String
     let accessibilityValue: String
+    let subtitle: String
     let actionAvailability: PickyHUDDockSessionActionAvailability
     let accessibilityActions: [PickyHUDGroupListRowAXAction]
 
@@ -57,9 +79,13 @@ struct PickyHUDDockGroupListRowPresentation: Equatable {
         status: PickySessionStatus,
         canRequestCompaction: Bool
     ) -> Self {
-        let metadata = [cwdLeaf, relativeTime]
-            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+        let normalizedCwdLeaf = cwdLeaf?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let location = (normalizedCwdLeaf?.isEmpty == false) ? normalizedCwdLeaf : nil
+        let subtitle = [relativeTime, location]
+            .compactMap { $0 }
+            .joined(separator: " · ")
+        let metadata = [relativeTime, location]
+            .compactMap { $0 }
             .joined(separator: ", ")
         let value = [statusText, metadata]
             .filter { !$0.isEmpty }
@@ -71,8 +97,11 @@ struct PickyHUDDockGroupListRowPresentation: Equatable {
         return Self(
             accessibilityLabel: title,
             accessibilityValue: value,
+            subtitle: subtitle,
             actionAvailability: actionAvailability,
-            accessibilityActions: actionAvailability.canStop ? [.open, .archive, .stop] : [.open, .archive]
+            accessibilityActions: actionAvailability.canStop
+                ? [.open, .ungroup, .archive, .stop]
+                : [.open, .ungroup, .archive]
         )
     }
 }

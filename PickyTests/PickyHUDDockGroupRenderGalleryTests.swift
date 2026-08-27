@@ -221,6 +221,16 @@ struct PickyHUDDockGroupRenderGalleryTests {
             listScene("list-five-selected-large-light-100.png", group: picky, rows: fiveRows, selectedID: fiveRows[0].id, metrics: large, fontScale: 1, appearance: .light),
             listScene("list-five-selected-small-dark-130.png", group: picky, rows: fiveRows, selectedID: fiveRows[0].id, metrics: small, fontScale: 1.3, appearance: .dark),
             listScene("list-four-idle-medium-dark-100.png", group: idle, rows: idleRows, selectedID: nil, metrics: medium, fontScale: 1, appearance: .dark),
+            listScene(
+                "list-five-highlighted-small-dark-130.png",
+                group: picky,
+                rows: fiveRows,
+                selectedID: nil,
+                highlightedID: fiveRows[0].id,
+                metrics: small,
+                fontScale: 1.3,
+                appearance: .dark
+            ),
             listScene("list-two-selected-medium-dark-100.png", group: research, rows: twoRows, selectedID: twoRows[1].id, metrics: medium, fontScale: 1, appearance: .dark),
             listScene("list-one-selected-medium-dark-100.png", group: group(id: "group-one", name: "Solo", color: .blue, memberIDs: [fiveRows[0].id]), rows: [fiveRows[0]], selectedID: fiveRows[0].id, metrics: medium, fontScale: 1, appearance: .dark),
             combinedScene(group: picky, metrics: medium),
@@ -264,6 +274,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
         group: PickyDockGroup,
         rows: [PickyHUDDockGroupListRowModel],
         selectedID: String?,
+        highlightedID: String? = nil,
         metrics: PickyHUDDockMetrics,
         fontScale: CGFloat,
         appearance: Appearance
@@ -275,7 +286,15 @@ struct PickyHUDDockGroupRenderGalleryTests {
             appearance: appearance,
             preset: metrics.preset,
             fontScale: fontScale,
-            content: AnyView(list(group: group, rows: rows, selectedID: selectedID, metrics: metrics))
+            content: AnyView(
+                list(
+                    group: group,
+                    rows: rows,
+                    selectedID: selectedID,
+                    highlightedID: highlightedID,
+                    metrics: metrics
+                )
+            )
         )
     }
 
@@ -367,6 +386,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
         group: PickyDockGroup,
         rows: [PickyHUDDockGroupListRowModel],
         selectedID: String?,
+        highlightedID: String? = nil,
         metrics: PickyHUDDockMetrics
     ) -> some View {
         PickyHUDDockGroupListView(
@@ -374,7 +394,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
             rows: rows,
             unreadSessionIDs: Set(rows.prefix(1).map(\.id)),
             openedSessionID: selectedID,
-            highlightedRowID: nil,
+            highlightedRowID: highlightedID,
             metrics: metrics,
             onSelectSession: { _ in },
             onCreatePickle: {},

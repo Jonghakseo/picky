@@ -194,6 +194,14 @@ struct PickyHUDDockMetrics: Equatable {
     /// to an adjacent row.
     var groupListRowSpacing: CGFloat { scaled(8) } // space.2
     var groupListRowGlyphSide: CGFloat { scaled(20) } // space.5
+    /// Fixed group-list action rail. It replaces the shortcut hint on hover
+    /// and keyboard highlight without changing row or panel geometry. Its
+    /// 20pt minimum preserves a usable compact macOS hit target at Small.
+    var groupListRowQuickActionSide: CGFloat { max(20, scaled(20)) } // space.5 compact control
+    /// SF Symbol optical size derives from its compact action target, not the
+    /// user's readable-text scale, so it remains inside every preset's button.
+    var groupListRowQuickActionSymbolSize: CGFloat { groupListRowQuickActionSide * 0.5 }
+    var groupListRowQuickActionSpacing: CGFloat { scaled(4) } // space.1
     var groupListRowContentSpacing: CGFloat { scaled(8) } // space.2
     var groupListPanelCornerRadius: CGFloat { scaled(12) } // radius.surface
     var groupListRowCornerRadius: CGFloat { scaled(8) } // radius.control

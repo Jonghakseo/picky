@@ -84,25 +84,33 @@ struct PickyHUDDockGroupListPolicyTests {
         )
     }
 
-    @Test func titleColumnUsesOnlyTheMeasuredShortcutWidthForReservedHintChrome() {
+    @Test func fixedTrailingRailContainsBothQuickActionsAndTheRestShortcut() {
         let fontScale: CGFloat = 1
-        let withoutUnread = PickyHUDDockGroupListPolicy.titleColumnWidth(
-            metrics: metrics,
-            isUnread: false,
-            fontScale: fontScale
-        )
-        let withUnread = PickyHUDDockGroupListPolicy.titleColumnWidth(
-            metrics: metrics,
-            isUnread: true,
-            fontScale: fontScale
-        )
         let shortcutWidth = PickyHUDDockGroupListPolicy.shortcutHintWidth(fontScale: fontScale)
+        let railWidth = PickyHUDDockGroupListPolicy.trailingRailWidth(metrics: metrics)
 
         #expect(shortcutWidth == ceil(("⌘9" as NSString).size(withAttributes: [
             .font: PickyHUDTypography.badgeSemiboldNSFont(fontScale: fontScale),
         ]).width))
-        #expect(withoutUnread > withUnread)
-        #expect(withUnread > 0)
+        #expect(railWidth >= shortcutWidth)
+        #expect(railWidth == (metrics.groupListRowQuickActionSide * 2) + metrics.groupListRowQuickActionSpacing)
+    }
+
+    @Test func quickActionsKeepMinimumTargetsAndSymbolInsetsAtEveryPresetAndFontScale() {
+        for preset in PickyHUDDockSizePreset.allCases {
+            let metrics = PickyHUDDockMetrics(preset: preset)
+            for fontScale: CGFloat in [1, 1.3] {
+                let side = metrics.groupListRowQuickActionSide
+                let symbolSize = metrics.groupListRowQuickActionSymbolSize
+
+                #expect(side >= 20, "\(preset) at \(fontScale)x must keep a 20pt action target")
+                #expect(symbolSize > 0)
+                #expect(
+                    symbolSize <= side * 0.5,
+                    "\(preset) at \(fontScale)x must retain half the target for symbol insets"
+                )
+            }
+        }
     }
 
     @Test func rowSpacingUsesTheSharedSpaceTwoStructuralMetric() {
@@ -132,7 +140,7 @@ struct PickyHUDDockGroupListPolicyTests {
                         fontScale: fontScale
                     )
                     let fixedWidths = metrics.groupListRowGlyphSide
-                        + PickyHUDDockGroupListPolicy.shortcutHintWidth(fontScale: fontScale)
+                        + PickyHUDDockGroupListPolicy.trailingRailWidth(metrics: metrics)
                         + (isUnread ? 7 : 0)
                     let elementCount = isUnread ? 4 : 3
                     let spacing = CGFloat(elementCount - 1) * metrics.groupListRowContentSpacing
@@ -154,6 +162,44 @@ struct PickyHUDDockGroupListPolicyTests {
                             fontScale: fontScale
                         )
                 )
+            }
+        }
+    }
+
+    @Test func clickHostsCoverTheRowOutsideTheFixedTrailingRailAtEveryPresetAndFontScale() {
+        for preset in PickyHUDDockSizePreset.allCases {
+            let metrics = PickyHUDDockMetrics(preset: preset)
+            for fontScale: CGFloat in [1, 1.3] {
+                for isUnread in [false, true] {
+                    let leadingHostWidth = PickyHUDDockGroupListPolicy.clickHostWidth(
+                        metrics: metrics,
+                        isUnread: isUnread,
+                        fontScale: fontScale
+                    )
+                    let trailingHostWidth = PickyHUDDockGroupListPolicy.trailingPaddingClickHostWidth(
+                        metrics: metrics
+                    )
+                    let titleWidth = PickyHUDDockGroupListPolicy.titleColumnWidth(
+                        metrics: metrics,
+                        isUnread: isUnread,
+                        fontScale: fontScale
+                    )
+                    let elementCount = isUnread ? 4 : 3
+                    let expectedLeadingHostWidth = metrics.groupListRowHorizontalPadding
+                        + metrics.groupListRowGlyphSide
+                        + titleWidth
+                        + (isUnread ? 7 : 0)
+                        + CGFloat(elementCount - 1) * metrics.groupListRowContentSpacing
+
+                    #expect(leadingHostWidth == expectedLeadingHostWidth)
+                    #expect(trailingHostWidth == metrics.groupListRowHorizontalPadding)
+                    #expect(
+                        leadingHostWidth
+                            + PickyHUDDockGroupListPolicy.trailingRailWidth(metrics: metrics)
+                            + trailingHostWidth
+                            == metrics.groupListPanelWidth - (metrics.groupListPanelPadding * 2)
+                    )
+                }
             }
         }
     }

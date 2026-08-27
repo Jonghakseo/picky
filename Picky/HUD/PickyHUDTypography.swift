@@ -153,4 +153,11 @@ enum PickyHUDTypography {
     static func dockGroupListHeaderAddSymbol(size: CGFloat) -> Font {
         .system(size: size, weight: .semibold)
     }
+
+    /// SF Symbol optical sizing for the Dock group-list quick-action rail.
+    /// Its component metric derives from the compact action target rather than
+    /// readable text, which can grow with the global app font scale.
+    static func dockGroupListQuickActionSymbol(size: CGFloat) -> Font {
+        .system(size: size, weight: .semibold)
+    }
 }

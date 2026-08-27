@@ -40,6 +40,25 @@ enum PickyHUDDockEscapeOutcome: Equatable {
     case passThrough
 }
 
+/// The inputs that decide who owns a plain Return press.
+struct PickyHUDDockGroupListReturnContext {
+    let isPlainReturn: Bool
+    let isListOpen: Bool
+    let highlightedRowID: String?
+    let isTextInputFocused: Bool
+    let isHUDFallbackResponder: Bool
+    let hasActiveCard: Bool
+    let isInlineTerminalMode: Bool
+}
+
+/// The first owner of plain Return. A highlighted group-list row wins before
+/// the HUD's fallback responder moves focus into the composer.
+enum PickyHUDDockGroupListReturnOutcome: Equatable {
+    case selectHighlightedRow(String)
+    case focusComposer
+    case passThrough
+}
+
 enum PickyHUDDockGroupListKeyboardPolicy {
     /// The list wins the number keys whenever it is open, so a folder's own
     /// number cannot both open the list and address a row in the same context.
@@ -91,6 +110,21 @@ enum PickyHUDDockGroupListKeyboardPolicy {
     /// the composer keeps its own editing keys.
     static func ownsListNavigationKeys(isListOpen: Bool, isTextInputFocused: Bool) -> Bool {
         isListOpen && !isTextInputFocused
+    }
+
+    /// Resolves the competing plain-Return paths in their user-visible order.
+    /// A mounted editable control always keeps Return. Otherwise, a highlighted
+    /// row is selected before the panel fallback can focus the active composer.
+    static func returnOutcome(for context: PickyHUDDockGroupListReturnContext) -> PickyHUDDockGroupListReturnOutcome {
+        guard context.isPlainReturn else { return .passThrough }
+        guard !context.isTextInputFocused else { return .passThrough }
+        if context.isListOpen, let highlightedRowID = context.highlightedRowID {
+            return .selectHighlightedRow(highlightedRowID)
+        }
+        if context.isHUDFallbackResponder, context.hasActiveCard, !context.isInlineTerminalMode {
+            return .focusComposer
+        }
+        return .passThrough
     }
 
     /// Esc closes the list first, even while a text input is focused, and only

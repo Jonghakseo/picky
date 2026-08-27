@@ -37,10 +37,17 @@ enum PickyHUDDockGroupListRowProjection {
     }
 }
 
+enum PickyHUDGroupListRowAXAction: Equatable {
+    case open
+    case archive
+    case stop
+}
+
 struct PickyHUDDockGroupListRowPresentation: Equatable {
     let accessibilityLabel: String
     let accessibilityValue: String
     let actionAvailability: PickyHUDDockSessionActionAvailability
+    let accessibilityActions: [PickyHUDGroupListRowAXAction]
 
     static func resolve(
         title: String,
@@ -57,13 +64,15 @@ struct PickyHUDDockGroupListRowPresentation: Equatable {
         let value = [statusText, metadata]
             .filter { !$0.isEmpty }
             .joined(separator: ", ")
+        let actionAvailability = PickyHUDDockSessionActionAvailability.resolve(
+            status: status,
+            canRequestCompaction: canRequestCompaction
+        )
         return Self(
             accessibilityLabel: title,
             accessibilityValue: value,
-            actionAvailability: PickyHUDDockSessionActionAvailability.resolve(
-                status: status,
-                canRequestCompaction: canRequestCompaction
-            )
+            actionAvailability: actionAvailability,
+            accessibilityActions: actionAvailability.canStop ? [.open, .archive, .stop] : [.open, .archive]
         )
     }
 }

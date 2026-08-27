@@ -996,14 +996,30 @@ struct PickyHUDView: View {
         }
         let visibleIDs = cycleSessionIDs
         let activeCard = activeSessionID.flatMap { viewModel.sessionCard(sessionID: $0) }
-
-        if PickyHUDKeyboardShortcutPolicy.isComposerFocusShortcut(keyCode: event.keyCode, modifiers: flags),
-           keyWindow.isFirstResponderFallback,
-           let activeCard,
-           !viewModel.isInlineTerminalMode(sessionID: activeCard.id),
-           !isEditableTextInputFocused(in: keyWindow) {
+        let isTextInputFocused = isEditableTextInputFocused(in: keyWindow)
+        let returnOutcome = PickyHUDDockGroupListKeyboardPolicy.returnOutcome(
+            for: PickyHUDDockGroupListReturnContext(
+                isPlainReturn: PickyHUDKeyboardShortcutPolicy.isComposerFocusShortcut(
+                    keyCode: event.keyCode,
+                    modifiers: flags
+                ),
+                isListOpen: dockGroupListFocus.isOpen,
+                highlightedRowID: dockGroupListFocus.highlightedRowID,
+                isTextInputFocused: isTextInputFocused,
+                isHUDFallbackResponder: keyWindow.isFirstResponderFallback,
+                hasActiveCard: activeCard != nil,
+                isInlineTerminalMode: activeCard.map { viewModel.isInlineTerminalMode(sessionID: $0.id) } ?? false
+            )
+        )
+        switch returnOutcome {
+        case .selectHighlightedRow(let rowID):
+            onDockGroupListRowSelected(rowID)
+            return true
+        case .focusComposer:
             focusActiveComposer()
             return true
+        case .passThrough:
+            break
         }
 
         if flags == .command, event.keyCode == Self.wKeyCode, heldSession != nil {
@@ -1035,7 +1051,7 @@ struct PickyHUDView: View {
 
         if PickyHUDDockGroupListKeyboardPolicy.ownsListNavigationKeys(
             isListOpen: dockGroupListFocus.isOpen,
-            isTextInputFocused: isEditableTextInputFocused(in: keyWindow)
+            isTextInputFocused: isTextInputFocused
         ), flags.isEmpty {
             switch event.keyCode {
             case Self.upArrowKeyCode:

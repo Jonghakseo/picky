@@ -111,4 +111,52 @@ struct PickyHUDDockGroupListKeyboardPolicyTests {
         #expect(PickyHUDDockGroupListKeyboardPolicy.escapeOutcome(isListOpen: true) == .closeGroupList)
         #expect(PickyHUDDockGroupListKeyboardPolicy.escapeOutcome(isListOpen: false) == .passThrough)
     }
+
+    @Test func highlightedListRowOwnsPlainReturnBeforeFallbackCanFocusComposer() {
+        let outcome = PickyHUDDockGroupListKeyboardPolicy.returnOutcome(
+            for: PickyHUDDockGroupListReturnContext(
+                isPlainReturn: true,
+                isListOpen: true,
+                highlightedRowID: "bravo",
+                isTextInputFocused: false,
+                isHUDFallbackResponder: true,
+                hasActiveCard: true,
+                isInlineTerminalMode: false
+            )
+        )
+
+        #expect(outcome == .selectHighlightedRow("bravo"))
+    }
+
+    @Test func editableTextInputKeepsReturnAndPreventsUnexpectedComposerFocus() {
+        let outcome = PickyHUDDockGroupListKeyboardPolicy.returnOutcome(
+            for: PickyHUDDockGroupListReturnContext(
+                isPlainReturn: true,
+                isListOpen: true,
+                highlightedRowID: "bravo",
+                isTextInputFocused: true,
+                isHUDFallbackResponder: true,
+                hasActiveCard: true,
+                isInlineTerminalMode: false
+            )
+        )
+
+        #expect(outcome == .passThrough)
+    }
+
+    @Test func fallbackFocusesComposerOnlyWhenNoListRowOwnsReturn() {
+        let outcome = PickyHUDDockGroupListKeyboardPolicy.returnOutcome(
+            for: PickyHUDDockGroupListReturnContext(
+                isPlainReturn: true,
+                isListOpen: true,
+                highlightedRowID: nil,
+                isTextInputFocused: false,
+                isHUDFallbackResponder: true,
+                hasActiveCard: true,
+                isInlineTerminalMode: false
+            )
+        )
+
+        #expect(outcome == .focusComposer)
+    }
 }

@@ -104,6 +104,13 @@ struct PickyHUDDockGroupListRowPolicyTests {
             #expect(availability.canStop == !status.isTerminal)
         }
     }
+
+    @Test func accessibilityActionSetOffersStopOnlyWhenTheRowCanStop() {
+        #expect(presentation(status: .running).accessibilityActions == [.open, .archive, .stop])
+        #expect(presentation(status: .completed).accessibilityActions == [.open, .archive])
+        #expect(presentation(status: .failed).accessibilityActions == [.open, .archive])
+        #expect(presentation(status: .cancelled).accessibilityActions == [.open, .archive])
+    }
 }
 
 struct PickyHUDDockGroupListRowProjectionTests {

@@ -470,12 +470,16 @@ struct PickyHUDDockGroupListView: View {
         guard let elapsed = scrollController.elapsed(since: date) else { return }
 
         guard elapsed > 0,
-              scrollController.scroll(by: velocity, elapsed: elapsed)
+              let scrollResult = scrollController.scroll(by: velocity, elapsed: elapsed)
         else { return }
 
-        // Scrolling changes the row centers reported by the preference. Ask
-        // for the current marker immediately, then the next preference update
-        // refines it against the shifted geometry.
+        // SwiftUI preferences arrive after the native clip view moves. Keep
+        // the cached centers in the same visual coordinate space until that
+        // next preference update replaces them.
+        rowCenters = PickyHUDDockGroupListDragPolicy.rowCenters(
+            afterVisualOffsetDelta: scrollResult.visualOffsetDelta,
+            from: rowCenters
+        )
         updateDragState(rowID: rowID, location: location)
     }
 
@@ -871,12 +875,18 @@ final class PickyHUDDockGroupListDragAutoScrollTicker {
     }
 }
 
+/// The exact visual row displacement caused by one native clip-view move.
+/// Positive values move a row down in the group's top-left coordinate space.
+struct PickyHUDDockGroupListScrollResult: Equatable {
+    let visualOffsetDelta: CGFloat
+}
+
 /// Holds the native scroll view that SwiftUI creates for an overflowing member
 /// list. This keeps the drag path in the same AppKit coordinate space as the
 /// app-level mouse monitors and applies the policy velocity without rebuilding
 /// or reordering the row views.
 @MainActor
-private final class PickyHUDDockGroupListScrollController {
+final class PickyHUDDockGroupListScrollController {
     private weak var scrollView: NSScrollView?
     private var lastTick: Date?
 
@@ -926,10 +936,10 @@ private final class PickyHUDDockGroupListScrollController {
     }
 
     @discardableResult
-    func scroll(by velocity: CGFloat, elapsed: TimeInterval) -> Bool {
+    func scroll(by velocity: CGFloat, elapsed: TimeInterval) -> PickyHUDDockGroupListScrollResult? {
         guard let scrollView,
               let documentView = scrollView.documentView
-        else { return false }
+        else { return nil }
 
         let clipView = scrollView.contentView
         let documentBounds = documentView.bounds
@@ -937,7 +947,7 @@ private final class PickyHUDDockGroupListScrollController {
         let minimumOriginY = documentBounds.minY
         let maximumOriginY = max(minimumOriginY, documentBounds.maxY - visibleBounds.height)
         let maximumOffset = maximumOriginY - minimumOriginY
-        guard maximumOffset > 0 else { return false }
+        guard maximumOffset > 0 else { return nil }
 
         let currentOffset = documentView.isFlipped
             ? visibleBounds.minY - minimumOriginY
@@ -948,14 +958,21 @@ private final class PickyHUDDockGroupListScrollController {
             elapsed: elapsed,
             maximumOffset: maximumOffset
         )
-        guard nextOffset != currentOffset else { return false }
+        guard nextOffset != currentOffset else { return nil }
 
         let nextOriginY = documentView.isFlipped
             ? minimumOriginY + nextOffset
             : maximumOriginY - nextOffset
         clipView.scroll(to: CGPoint(x: visibleBounds.minX, y: nextOriginY))
         scrollView.reflectScrolledClipView(clipView)
-        return true
+
+        let actualVisibleBounds = clipView.bounds
+        let actualOffset = documentView.isFlipped
+            ? actualVisibleBounds.minY - minimumOriginY
+            : maximumOriginY - actualVisibleBounds.minY
+        return PickyHUDDockGroupListScrollResult(
+            visualOffsetDelta: -(actualOffset - currentOffset)
+        )
     }
 }
 
@@ -995,6 +1012,20 @@ private final class PickyHUDDockGroupListScrollHostView: NSView {
 
     func attachController() {
         controller?.attach(to: enclosingScrollView)
+    }
+}
+
+private struct PickyHUDGroupListStopAXModifier: ViewModifier {
+    let isAvailable: Bool
+    let action: () -> Void
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isAvailable {
+            content.accessibilityAction(named: Text(L10n.t("group.list.action.stop")), action)
+        } else {
+            content
+        }
     }
 }
 
@@ -1137,10 +1168,12 @@ private struct PickyHUDDockGroupListRow: View {
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityAction(named: Text(L10n.t("group.list.action.open")), onSelect)
         .accessibilityAction(named: Text(L10n.t("group.list.action.archive")), onArchive)
-        .accessibilityAction(named: Text(L10n.t("group.list.action.stop"))) {
-            guard presentation.actionAvailability.canStop else { return }
-            onStop()
-        }
+        .modifier(
+            PickyHUDGroupListStopAXModifier(
+                isAvailable: presentation.accessibilityActions.contains(.stop),
+                action: onStop
+            )
+        )
     }
 
     @ViewBuilder

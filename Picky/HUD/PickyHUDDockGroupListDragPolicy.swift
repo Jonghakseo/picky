@@ -96,6 +96,16 @@ enum PickyHUDDockGroupListDragPolicy {
         min(max(currentOffset + (velocity * CGFloat(elapsed)), 0), max(0, maximumOffset))
     }
 
+    /// Native scrolling moves the row visuals before SwiftUI publishes fresh
+    /// preferences. Apply this exact visual-coordinate delta immediately so a
+    /// mouse-up in that gap resolves against the visible rows.
+    static func rowCenters(
+        afterVisualOffsetDelta visualOffsetDelta: CGFloat,
+        from rowCenters: [String: CGFloat]
+    ) -> [String: CGFloat] {
+        rowCenters.mapValues { $0 + visualOffsetDelta }
+    }
+
     /// Resolves edge velocity against the actual visible viewport, not the
     /// whole panel. The panel also contains header and padding chrome above the
     /// scroll view, so this frame must share the pointer's panel-local space.

@@ -7,10 +7,15 @@
 //  above the first one, and leaving the group by dragging clear of the panel.
 //
 
+import AppKit
 import CoreGraphics
 import Foundation
 import Testing
 @testable import Picky
+
+private final class PickyHUDDockGroupListFlippedDocumentView: NSView {
+    override var isFlipped: Bool { true }
+}
 
 struct PickyHUDDockGroupListDragPolicyTests {
     /// Three 38pt rows starting under a 22pt header.
@@ -299,6 +304,69 @@ extension PickyHUDDockGroupListDragPolicyTests {
             referenceRowIDs: frozenIDs,
             currentRowIDs: membership.rowIDs
         ))
+    }
+
+    @Test func nativeScrollUpdatesImmediateDropGeometryAndCommitsOnce() throws {
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 200, height: 100))
+        let documentView = PickyHUDDockGroupListFlippedDocumentView(
+            frame: NSRect(x: 0, y: 0, width: 200, height: 600)
+        )
+        scrollView.documentView = documentView
+        let controller = PickyHUDDockGroupListScrollController()
+        controller.attach(to: scrollView)
+
+        let result = try #require(controller.scroll(by: 240, elapsed: 0.25))
+        let rowCenters = PickyHUDDockGroupListDragPolicy.rowCenters(
+            afterVisualOffsetDelta: result.visualOffsetDelta,
+            from: ["alpha": 50, "bravo": 90, "charlie": 130, "delta": 170]
+        )
+        let rawIndex = PickyHUDDockGroupListDragPolicy.insertionIndex(
+            pointerY: 95,
+            rowCenters: [rowCenters["alpha"], rowCenters["bravo"], rowCenters["charlie"], rowCenters["delta"]]
+                .compactMap { $0 }
+        )
+        let outcome = PickyHUDDockGroupListDragPolicy.outcome(
+            isInsidePanel: true,
+            timeOutsidePanel: 0,
+            insertionIndex: PickyHUDDockGroupListDragPolicy.normalizedInsertionIndex(rawIndex, draggedRowIndex: 0),
+            isDraggedRowStillPresent: true
+        )
+        var committedIndexes: [Int] = []
+        if case .reorder(let index) = outcome {
+            committedIndexes.append(index)
+        }
+
+        #expect(result.visualOffsetDelta == -60)
+        #expect(rawIndex == 3)
+        #expect(committedIndexes == [2])
+    }
+
+    @Test func nativeScrollAtTheClampDoesNotMoveOrAlterDropGeometry() {
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 200, height: 100))
+        let documentView = PickyHUDDockGroupListFlippedDocumentView(
+            frame: NSRect(x: 0, y: 0, width: 200, height: 600)
+        )
+        scrollView.documentView = documentView
+        let controller = PickyHUDDockGroupListScrollController()
+        controller.attach(to: scrollView)
+
+        #expect(controller.scroll(by: -240, elapsed: 0.25) == nil)
+        #expect(PickyHUDDockGroupListDragPolicy.rowCenters(
+            afterVisualOffsetDelta: 0,
+            from: ["alpha": 50]
+        ) == ["alpha": 50])
+    }
+
+    @Test func nativeUnflippedScrollReportsTheOppositeVisualCoordinateDelta() throws {
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 200, height: 100))
+        let documentView = NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 600))
+        scrollView.documentView = documentView
+        let controller = PickyHUDDockGroupListScrollController()
+        controller.attach(to: scrollView)
+
+        let result = try #require(controller.scroll(by: -240, elapsed: 0.25))
+
+        #expect(result.visualOffsetDelta == 60)
     }
 
     @Test func autoScrollTickerStartsOnlyForAnActiveDragAndStopsOnReset() {

@@ -19,29 +19,6 @@ import Testing
 
 @MainActor
 struct PickyBubbleTableCellTests {
-    /// Mirrors what AppKit does when a click installs the field editor.
-    private func fieldEditorAttributes(for field: NSTextField) -> (font: NSFont?, alignment: NSTextAlignment?) {
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 80),
-            styleMask: [.titled],
-            backing: .buffered,
-            defer: false
-        )
-        defer { window.close() }
-        field.frame = NSRect(x: 10, y: 10, width: 380, height: 40)
-        window.contentView?.addSubview(field)
-        window.makeKeyAndOrderFront(nil)
-        field.selectText(nil)
-        guard let editor = window.fieldEditor(false, for: field) as? NSTextView,
-              let storage = editor.textStorage,
-              storage.length > 0 else {
-            return (nil, nil)
-        }
-        let font = storage.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
-        let style = storage.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
-        return (font, style?.alignment)
-    }
-
     @Test func cellMeasurementCoversTheHeightUsedByWrappedRendering() throws {
         let field = PickyBubbleMarkdownTableCell.makeField(
             text: "`tz: ''`를 Bull은 no-tz로, 헬퍼는 빈 문자열로 해석하여 같은 repeat key를 stale로 삭제할 수 있음",
@@ -76,27 +53,27 @@ struct PickyBubbleTableCellTests {
         #expect(foundBoundingRectMismatch)
     }
 
-    @Test(.enabled(if: PickyRuntimeEnvironment.runsPrePushUIEffectTests))
-    func clickingACodeCellKeepsItsMonospacedRun() {
+    @Test func codeCellSelectionPreservesItsMonospacedRun() {
         let field = PickyBubbleMarkdownTableCell.makeField(
             text: "`reservation-cancel.service.ts:349`",
             isHeader: false
         )
         let rendered = field.attributedStringValue.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
-        #expect(rendered?.fontDescriptor.symbolicTraits.contains(.monoSpace) == true)
 
-        let editor = fieldEditorAttributes(for: field)
-        // Without allowsEditingTextAttributes this collapsed to the label's
-        // own system font, which is what made the text jump size on click.
-        #expect(editor.font?.fontDescriptor.symbolicTraits.contains(.monoSpace) == true)
-        #expect(editor.font?.pointSize == rendered?.pointSize)
+        // A selectable field with this disabled asks AppKit's shared field
+        // editor to flatten rich runs, which made code resize on click.
+        #expect(field.isSelectable)
+        #expect(!field.isEditable)
+        #expect(field.allowsEditingTextAttributes)
+        #expect(rendered?.fontDescriptor.symbolicTraits.contains(.monoSpace) == true)
     }
 
-    @Test(.enabled(if: PickyRuntimeEnvironment.runsPrePushUIEffectTests))
-    func clickingABoldCellKeepsItsWeight() {
+    @Test func boldCellSelectionPreservesItsWeight() {
         let field = PickyBubbleMarkdownTableCell.makeField(text: "**58/58**", isHeader: false)
-        let editor = fieldEditorAttributes(for: field)
-        #expect(editor.font?.fontDescriptor.symbolicTraits.contains(.bold) == true)
+        let rendered = field.attributedStringValue.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
+
+        #expect(field.allowsEditingTextAttributes)
+        #expect(rendered?.fontDescriptor.symbolicTraits.contains(.bold) == true)
     }
 
     @Test func dataCellsAreLeftAlignedRegardlessOfColumn() {

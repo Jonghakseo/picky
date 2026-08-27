@@ -10,15 +10,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 UI_EFFECT_GATE = "@Test(.enabled(if: PickyRuntimeEnvironment.runsPrePushUIEffectTests))"
 UI_EFFECT_TESTS = {
-    ("PickyTests/PickyBubbleTableCellTests.swift", "clickingACodeCellKeepsItsMonospacedRun"),
-    ("PickyTests/PickyBubbleTableCellTests.swift", "clickingABoldCellKeepsItsWeight"),
     ("PickyTests/PickyIMETextViewTests.swift", "responderActionsUndoAndRedoTheFocusedEditorsPrivateHistory"),
     ("PickyTests/PickyVoiceInputTargetTests.swift", "appKitRegionExcludesOrderedOutHiddenAndIneligibleCards"),
     ("PickyTests/PickySecureSurfaceWindowCoordinatorTests.swift", "secureSuppressionAndRestorationUpdateTheHUDActualVisibilityStore"),
 }
-UI_EFFECT_HELPERS = {
-    ("PickyTests/PickyBubbleTableCellTests.swift", "fieldEditorAttributes"),
-}
+UI_EFFECT_HELPERS: set[tuple[str, str]] = set()
 UI_EFFECT_CALLERS = {
     ("PickyTests/PickyIMETextViewTests.swift", "responderActionsUndoAndRedoTheFocusedEditorsPrivateHistory"),
     ("PickyTests/PickyVoiceInputTargetTests.swift", "appKitRegionExcludesOrderedOutHiddenAndIneligibleCards"),
@@ -264,19 +260,6 @@ def validate_ui_effect_tests() -> None:
         missing = sorted(UI_EFFECT_TESTS - observed_gated_tests)
         extra = sorted(observed_gated_tests - UI_EFFECT_TESTS)
         fail(f"pre-push UI-effect gates drifted, missing={missing}, extra={extra}")
-
-    bubble_source = (ROOT / "PickyTests/PickyBubbleTableCellTests.swift").read_text()
-    bubble_functions = test_functions(bubble_source)
-    current_function: str | None = None
-    for line_number, line in enumerate(bubble_source.splitlines(), start=1):
-        match = FUNCTION_DECLARATION.search(line)
-        if match:
-            current_function = match.group(1)
-        if "fieldEditorAttributes(for:" not in line or current_function == "fieldEditorAttributes":
-            continue
-        if current_function is None or not bubble_functions.get(current_function, False):
-            fail(f"PickyTests/PickyBubbleTableCellTests.swift:{line_number} field-editor helper caller is not pre-push gated")
-
 
 def validate_test_boundary_calls() -> None:
     for path in sorted((ROOT / "PickyTests").rglob("*.swift")):

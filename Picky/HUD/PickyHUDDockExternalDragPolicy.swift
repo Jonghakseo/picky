@@ -31,10 +31,10 @@ struct PickyHUDDockExternalDragGeometrySnapshot: Equatable {
     }
 
     func axis(for screenPoint: CGPoint) -> CGFloat {
-        switch dockSide.orientation {
-        case .horizontal: screenPoint.x
-        case .vertical: screenPoint.y
-        }
+        PickyHUDDockExternalDragAxisPolicy.normalizedAxis(
+            forScreenPoint: screenPoint,
+            dockSide: dockSide
+        )
     }
 }
 
@@ -65,12 +65,17 @@ struct PickyHUDDockExternalDragRailGeometryInput {
         hudRailFrame: CGRect,
         hudPanelFrame: CGRect
     ) -> PickyHUDDockExternalDragGeometrySnapshot? {
+        let renderedGroupIDs = Set(slots.compactMap(\.groupID))
         guard hudRailFrame.isFinite, hudRailFrame.width > 0, hudRailFrame.height > 0,
               topEntryIDs.allSatisfy({ topEntryAxisCenters[$0]?.isFinite == true }),
               slots.allSatisfy({ slot in
                   guard let sessionID = slot.sessionID else { return true }
                   guard let center = slotCenters[sessionID] else { return false }
                   return center.x.isFinite && center.y.isFinite
+              }),
+              renderedGroupIDs.allSatisfy({ groupID in
+                  guard let frame = folderDropFrames[groupID] else { return false }
+                  return frame.isFinite && frame.width > 0 && frame.height > 0
               })
         else { return nil }
         let fingerprint = PickyHUDDockLayoutFingerprint(
@@ -95,26 +100,34 @@ struct PickyHUDDockExternalDragRailGeometryInput {
                 hudPanelFrame: hudPanelFrame
             )
         }
-        let topEntryCenters = topEntryAxisCenters.reduce(into: [String: CGFloat]()) { result, item in
+        let screenTopEntryCenters = topEntryAxisCenters.reduce(into: [String: CGFloat]()) { result, item in
             result[item.key] = PickyHUDDockExternalDragScreenLayout.screenAxis(
                 hudAxis: item.value + (dockSide.orientation == .horizontal ? hudRailFrame.minX : hudRailFrame.minY),
                 dockSide: dockSide,
                 hudPanelFrame: hudPanelFrame
             )
         }
+        let topEntryCenters = screenTopEntryCenters.mapValues {
+            PickyHUDDockExternalDragAxisPolicy.normalize(screenAxis: $0, dockSide: dockSide)
+        }
         let screenSlots = slots.compactMap { slot -> PickyDockDropResolver.SlotCandidate? in
             guard let sessionID = slot.sessionID,
                   let container = slot.container,
                   let center = screenSlotCenters[sessionID]
             else { return nil }
-            return .init(container: container, center: dockSide.orientation == .horizontal ? center.x : center.y)
+            return .init(
+                container: container,
+                center: PickyHUDDockExternalDragAxisPolicy.normalizedAxis(
+                    forScreenPoint: center,
+                    dockSide: dockSide
+                )
+            )
         }
         let topLevelInsertionCandidates = PickyHUDDockExternalDragGeometryPolicy.topLevelInsertionCandidates(
             visibleTopEntryIDs: topEntryIDs,
             referenceCenters: topEntryCenters,
             draggedSessionID: draggedSessionID,
             layout: layout,
-            dockSide: dockSide,
             slotPitch: PickyHUDDockDragGeometry.slotPitch(
                 orientation: dockSide.orientation,
                 metrics: metrics
@@ -125,7 +138,7 @@ struct PickyHUDDockExternalDragRailGeometryInput {
             layout: layout,
             activeSessionIDs: activeSessionIDs,
             groupDropFrames: folderFrames,
-            topEntryCenters: topEntryCenters,
+            topEntryCenters: screenTopEntryCenters,
             orientation: dockSide.orientation,
             metrics: metrics,
             fontScale: fontScale
@@ -134,7 +147,7 @@ struct PickyHUDDockExternalDragRailGeometryInput {
             layout: layout,
             activeSessionIDs: activeSessionIDs,
             groupDropFrames: folderFrames,
-            topEntryCenters: topEntryCenters,
+            topEntryCenters: screenTopEntryCenters,
             orientation: dockSide.orientation,
             metrics: metrics,
             fontScale: fontScale
@@ -156,6 +169,22 @@ struct PickyHUDDockExternalDragRailGeometryInput {
                 metrics: metrics
             )
         )
+    }
+}
+
+/// Converts physical screen coordinates to an axis that grows in persisted
+/// Dock order. AppKit screen Y grows upward, opposite to vertical Dock order.
+enum PickyHUDDockExternalDragAxisPolicy {
+    static func normalizedAxis(forScreenPoint point: CGPoint, dockSide: PickyHUDDockSide) -> CGFloat {
+        let screenAxis = dockSide.orientation == .horizontal ? point.x : point.y
+        return normalize(screenAxis: screenAxis, dockSide: dockSide)
+    }
+
+    static func normalize(screenAxis: CGFloat, dockSide: PickyHUDDockSide) -> CGFloat {
+        switch dockSide.orientation {
+        case .horizontal: screenAxis
+        case .vertical: -screenAxis
+        }
     }
 }
 
@@ -227,7 +256,6 @@ enum PickyHUDDockExternalDragGeometryPolicy {
         referenceCenters: [String: CGFloat],
         draggedSessionID: String,
         layout: PickyDockLayout,
-        dockSide: PickyHUDDockSide,
         slotPitch: CGFloat
     ) -> [PickyDockDropResolver.TopLevelInsertionCandidate] {
         let interior = PickyHUDDockRenderPolicy.topLevelInsertionCandidates(
@@ -251,22 +279,10 @@ enum PickyHUDDockExternalDragGeometryPolicy {
               )
         else { return interior }
 
-        let beforeFirstCenter: CGFloat
-        let afterLastCenter: CGFloat
-        switch dockSide.orientation {
-        case .horizontal:
-            beforeFirstCenter = firstCenter - slotPitch
-            afterLastCenter = lastCenter + slotPitch
-        case .vertical:
-            // SwiftUI list order runs down, while AppKit screen Y runs up.
-            beforeFirstCenter = firstCenter + slotPitch
-            afterLastCenter = lastCenter - slotPitch
-        }
-
         return [
-            .init(topLevelIndex: firstIndex, center: beforeFirstCenter),
+            .init(topLevelIndex: firstIndex, center: firstCenter - slotPitch),
         ] + interior + [
-            .init(topLevelIndex: lastIndex + 1, center: afterLastCenter),
+            .init(topLevelIndex: lastIndex + 1, center: lastCenter + slotPitch),
         ]
     }
 }

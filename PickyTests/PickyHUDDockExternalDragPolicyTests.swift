@@ -46,7 +46,11 @@ struct PickyHUDDockExternalDragPolicyTests {
 
     @Test func screenGeometryBuilderConvertsTopLeftHUDCoordinatesAcrossANegativeOriginDisplay() throws {
         let input = PickyHUDDockExternalDragRailGeometryInput(
-            slots: [.init(target: .session(id: "loose", container: .topLevel(index: 0)), visibleIndex: 0)],
+            slots: [
+                .init(target: .session(id: "loose", container: .topLevel(index: 0)), visibleIndex: 0),
+                .init(target: .group(id: "source"), visibleIndex: 1),
+                .init(target: .group(id: "target"), visibleIndex: 2),
+            ],
             slotCenters: ["loose": CGPoint(x: 32, y: 18)],
             topEntryIDs: ["session:loose", "group:source", "group:target"],
             topEntryAxisCenters: ["session:loose": 32, "group:source": 70, "group:target": 100],
@@ -105,7 +109,7 @@ struct PickyHUDDockExternalDragPolicyTests {
             .group(PickyDockGroup(id: "source", memberSessionIDs: ["dragged"])),
         ])
         let input = PickyHUDDockExternalDragRailGeometryInput(
-            slots: [],
+            slots: [.init(target: .group(id: "source"), visibleIndex: 0)],
             slotCenters: [:],
             topEntryIDs: ["group:source"],
             topEntryAxisCenters: ["group:source": 100],
@@ -148,7 +152,7 @@ struct PickyHUDDockExternalDragPolicyTests {
             .group(PickyDockGroup(id: "source", memberSessionIDs: ["dragged"])),
         ])
         let input = PickyHUDDockExternalDragRailGeometryInput(
-            slots: [],
+            slots: [.init(target: .group(id: "source"), visibleIndex: 0)],
             slotCenters: [:],
             topEntryIDs: ["group:source"],
             topEntryAxisCenters: ["group:source": 100],
@@ -167,8 +171,8 @@ struct PickyHUDDockExternalDragPolicyTests {
         ))
 
         #expect(snapshot.topLevelInsertionCandidates == [
-            .init(topLevelIndex: 0, center: 524),
-            .init(topLevelIndex: 1, center: 416),
+            .init(topLevelIndex: 0, center: -524),
+            .init(topLevelIndex: 1, center: -416),
         ])
         #expect(PickyHUDDockExternalDragDestinationResolver.resolve(
             draggedSessionID: "dragged",
@@ -184,6 +188,96 @@ struct PickyHUDDockExternalDragPolicyTests {
             geometry: snapshot,
             layout: sourceOnly
         ) == .topLevel(index: 1))
+    }
+
+    @Test func verticalExternalAxisKeepsFirstAndLastWhitespaceInPersistedOrderOnBothSides() throws {
+        let mixedLayout = PickyDockLayout(entries: [
+            .session(id: "loose"),
+            .group(PickyDockGroup(id: "source", memberSessionIDs: ["dragged"])),
+        ])
+
+        for side in [PickyHUDDockSide.left, .right] {
+            let input = PickyHUDDockExternalDragRailGeometryInput(
+                slots: [
+                    .init(target: .session(id: "loose", container: .topLevel(index: 0)), visibleIndex: 0),
+                    .init(target: .group(id: "source"), visibleIndex: 1),
+                ],
+                slotCenters: ["loose": CGPoint(x: 30, y: 70)],
+                topEntryIDs: ["session:loose", "group:source"],
+                topEntryAxisCenters: ["session:loose": 70, "group:source": 170],
+                folderDropFrames: ["source": CGRect(x: 10, y: 130, width: 40, height: 40)],
+                layout: mixedLayout,
+                activeSessionIDs: ["dragged", "loose"],
+                dockSide: side,
+                geometryRevision: 1,
+                metrics: PickyHUDDockMetrics(preset: .medium),
+                fontScale: 1
+            )
+            let snapshot = try #require(input.screenSnapshot(
+                draggedSessionID: "dragged",
+                hudRailFrame: CGRect(x: 20, y: 20, width: 60, height: 300),
+                hudPanelFrame: CGRect(x: -900, y: 200, width: 300, height: 500)
+            ))
+
+            #expect(snapshot.slotCandidates == [.init(container: .topLevel(index: 0), center: -610)])
+            #expect(snapshot.topLevelInsertionCandidates == [
+                .init(topLevelIndex: 0, center: -664),
+                .init(topLevelIndex: 1, center: -560),
+                .init(topLevelIndex: 2, center: -456),
+            ])
+            #expect(PickyHUDDockExternalDragDestinationResolver.resolve(
+                draggedSessionID: "dragged",
+                sourceGroupID: "source",
+                screenPoint: CGPoint(x: -850, y: 456),
+                geometry: snapshot,
+                layout: mixedLayout
+            ) == .topLevel(index: 2))
+            #expect(PickyHUDDockExternalDragDestinationResolver.resolve(
+                draggedSessionID: "dragged",
+                sourceGroupID: "source",
+                screenPoint: CGPoint(x: -850, y: 664),
+                geometry: snapshot,
+                layout: mixedLayout
+            ) == .topLevel(index: 0))
+        }
+    }
+
+    @Test func screenSnapshotRequiresFinitePositiveFramesForEveryRenderedFolder() {
+        let slots = [
+            PickyDockSlot(target: .session(id: "loose", container: .topLevel(index: 0)), visibleIndex: 0),
+            PickyDockSlot(target: .group(id: "source"), visibleIndex: 1),
+            PickyDockSlot(target: .group(id: "target"), visibleIndex: 2),
+        ]
+        func snapshot(folderDropFrames: [String: CGRect]) -> PickyHUDDockExternalDragGeometrySnapshot? {
+            PickyHUDDockExternalDragRailGeometryInput(
+                slots: slots,
+                slotCenters: ["loose": CGPoint(x: 32, y: 18)],
+                topEntryIDs: ["session:loose", "group:source", "group:target"],
+                topEntryAxisCenters: ["session:loose": 32, "group:source": 70, "group:target": 100],
+                folderDropFrames: folderDropFrames,
+                layout: layout,
+                activeSessionIDs: ["dragged", "loose", "member"],
+                dockSide: .bottom,
+                geometryRevision: 11,
+                metrics: PickyHUDDockMetrics(preset: .medium),
+                fontScale: 1
+            ).screenSnapshot(
+                draggedSessionID: "dragged",
+                hudRailFrame: CGRect(x: 20, y: 30, width: 180, height: 60),
+                hudPanelFrame: CGRect(x: -900, y: 200, width: 300, height: 400)
+            )
+        }
+
+        #expect(snapshot(folderDropFrames: [
+            "target": CGRect(x: 80, y: 4, width: 40, height: 40),
+        ]) == nil)
+        #expect(snapshot(folderDropFrames: [
+            "source": CGRect(x: 50, y: 4, width: 40, height: 40),
+        ]) == nil)
+        #expect(snapshot(folderDropFrames: [
+            "source": CGRect(x: 50, y: 4, width: 40, height: 40),
+            "target": CGRect(x: 80, y: 4, width: 0, height: 40),
+        ]) == nil)
     }
 
     @Test func layoutFingerprintIncludesEveryOrderedMemberActiveIDSideAndGeometryRevision() {

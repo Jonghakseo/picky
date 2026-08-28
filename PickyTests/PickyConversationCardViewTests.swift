@@ -162,7 +162,12 @@ struct PickyConversationCardViewTests {
         #expect(PickyConversationContextLineView.hasContent(for: makeConversationSession(status: .completed)))
     }
 
-    @Test func contextSummaryCombinesFinalFolderAndBranchWithSingleValueFallbacks() {
+    @Test func contextSummaryPrefersRepositoryNameAndFallsBackToFinalFolder() {
+        #expect(PickyConversationContextSummaryPolicy.label(
+            repositoryDisplayName: "product",
+            branchDisplayName: "feature/focus-stack*",
+            cwd: "/Users/me/worktrees/product/temp-123"
+        ) == "product - feature/focus-stack*")
         #expect(PickyConversationContextSummaryPolicy.label(
             branchDisplayName: "feature/focus-stack*",
             cwd: "/Users/me/worktrees/product/temp-123"

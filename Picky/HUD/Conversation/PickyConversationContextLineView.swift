@@ -22,13 +22,13 @@ enum PickyConversationContextLinkCountPolicy {
 }
 
 struct PickyConversationContextSummaryPresentation: Equatable {
-    let folderName: String?
+    let workspaceName: String?
     let branchDisplayName: String?
 
     var label: String? {
-        switch (folderName, branchDisplayName) {
-        case let (folder?, branch?): return "\(folder) - \(branch)"
-        case let (folder?, nil): return folder
+        switch (workspaceName, branchDisplayName) {
+        case let (workspace?, branch?): return "\(workspace) - \(branch)"
+        case let (workspace?, nil): return workspace
         case let (nil, branch?): return branch
         case (nil, nil): return nil
         }
@@ -37,23 +37,34 @@ struct PickyConversationContextSummaryPresentation: Equatable {
 
 enum PickyConversationContextSummaryPolicy {
     static func presentation(
+        repositoryDisplayName: String? = nil,
         branchDisplayName: String?,
         cwd: String?
     ) -> PickyConversationContextSummaryPresentation {
+        let repository = repositoryDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let branch = branchDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let path = cwd?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let folder = path.isEmpty
             ? ""
             : URL(fileURLWithPath: path).lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackFolder = folder.isEmpty || folder == "/" ? nil : folder
 
         return PickyConversationContextSummaryPresentation(
-            folderName: folder.isEmpty || folder == "/" ? nil : folder,
+            workspaceName: repository.isEmpty ? fallbackFolder : repository,
             branchDisplayName: branch.isEmpty ? nil : branch
         )
     }
 
-    static func label(branchDisplayName: String?, cwd: String?) -> String? {
-        presentation(branchDisplayName: branchDisplayName, cwd: cwd).label
+    static func label(
+        repositoryDisplayName: String? = nil,
+        branchDisplayName: String?,
+        cwd: String?
+    ) -> String? {
+        presentation(
+            repositoryDisplayName: repositoryDisplayName,
+            branchDisplayName: branchDisplayName,
+            cwd: cwd
+        ).label
     }
 }
 
@@ -373,6 +384,7 @@ struct PickyConversationContextLineView: View {
 
     private var contextSummaryPresentation: PickyConversationContextSummaryPresentation {
         PickyConversationContextSummaryPolicy.presentation(
+            repositoryDisplayName: gitStatus?.repositoryDisplayName,
             branchDisplayName: gitStatus?.branchDisplayName,
             cwd: session.cwd
         )
@@ -384,10 +396,10 @@ struct PickyConversationContextLineView: View {
 
     @ViewBuilder
     private var contextSummaryText: some View {
-        if let folderName = contextSummaryPresentation.folderName,
+        if let workspaceName = contextSummaryPresentation.workspaceName,
            let branchDisplayName = contextSummaryPresentation.branchDisplayName {
             PickyConversationContextSummaryLayout(spacing: DS.Spacing.space1) {
-                Text(folderName)
+                Text(workspaceName)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text("-")

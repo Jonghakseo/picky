@@ -1132,7 +1132,7 @@ private struct PickyHUDDockGroupListRow: View {
                 }
             VStack(alignment: .leading, spacing: metrics.groupListRowVerticalPadding) {
                 Text(row.title)
-                    .font(PickyHUDTypography.body)
+                    .font(PickyHUDTypography.bodyCompact)
                     .foregroundStyle(DS.Colors.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.tail)

@@ -44,56 +44,6 @@ enum PickyComposerBorderState: Equatable {
     case rest
 }
 
-enum PickyComposerAutocompletePlacementPolicy {
-    static func popupOrigin(
-        composerBounds: CGRect,
-        popupSize: CGSize,
-        spacing: CGFloat = DS.Spacing.xs
-    ) -> CGPoint {
-        CGPoint(
-            x: composerBounds.minX,
-            y: composerBounds.minY - popupSize.height - spacing
-        )
-    }
-}
-
-/// Places the autocomplete popup outside the composer's measured bounds. This
-/// keeps the composer/card height stable while avoiding SwiftUI alignment-guide
-/// behavior that can place conditional overlay content below the editor.
-private struct PickyComposerAutocompleteOverlayLayout: Layout {
-    func sizeThatFits(
-        proposal: ProposedViewSize,
-        subviews: Subviews,
-        cache: inout Void
-    ) -> CGSize {
-        subviews.first?.sizeThatFits(proposal) ?? .zero
-    }
-
-    func placeSubviews(
-        in bounds: CGRect,
-        proposal: ProposedViewSize,
-        subviews: Subviews,
-        cache: inout Void
-    ) {
-        guard let composer = subviews.first else { return }
-        composer.place(
-            at: bounds.origin,
-            anchor: .topLeading,
-            proposal: ProposedViewSize(width: bounds.width, height: bounds.height)
-        )
-
-        guard subviews.count > 1 else { return }
-        let popup = subviews[1]
-        let popupProposal = ProposedViewSize(width: bounds.width, height: nil)
-        let popupSize = popup.sizeThatFits(popupProposal)
-        let origin = PickyComposerAutocompletePlacementPolicy.popupOrigin(
-            composerBounds: bounds,
-            popupSize: popupSize
-        )
-        popup.place(at: origin, anchor: .topLeading, proposal: popupProposal)
-    }
-}
-
 struct PickyConversationComposerView: View {
     /// Composer reads only metadata, message journal, and queue state needed
     /// for its own controls; it never receives a materialized SessionCard.
@@ -333,173 +283,31 @@ struct PickyConversationComposerView: View {
         let isDismissed: Bool
     }
 
-    @ViewBuilder
     private var queueDock: some View {
-        let presentation = PickyQueueDockPresentation(
-            visibleQueue: session.visibleQueue,
-            steeringMode: session.steeringMode,
-            followUpMode: session.followUpMode
+        PickyConversationQueueDockView(
+            presentation: PickyQueueDockPresentation(
+                visibleQueue: session.visibleQueue,
+                steeringMode: session.steeringMode,
+                followUpMode: session.followUpMode
+            ),
+            layout: PickyQueueDockLayout(
+                cardWidth: pickyHUDDetailWidth,
+                heightTier: focusStackHeightTier
+            ),
+            actionInFlight: queueActionInFlight,
+            actionError: queueActionError,
+            onAction: performQueueAction
         )
-        let layout = PickyQueueDockLayout(
-            cardWidth: pickyHUDDetailWidth,
-            heightTier: focusStackHeightTier
-        )
-        if presentation.isVisible {
-            VStack(alignment: .leading, spacing: DS.Spacing.xs) {
-                if layout == .inline {
-                    queueDockInlineHeader
-                    queueDockKinds(presentation.kinds, layout: layout)
-                } else {
-                    if layout == .stacked {
-                        queueDockTitle
-                    }
-                    // Compact geometry always presents counts before mutation.
-                    queueDockKinds(presentation.kinds, layout: layout)
-                    queueDockActions
-                }
-                if let queueActionError {
-                    Text(queueActionError)
-                        .font(PickyHUDTypography.status)
-                        .foregroundColor(DS.Colors.destructiveText)
-                        .accessibilityLabel(L10n.t("hud.queue.actionFailed", queueActionError))
-                }
-            }
-            .padding(DS.Spacing.sm)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
-                    .fill(DS.Colors.surface2)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
-                    .stroke(DS.Colors.borderSubtle, lineWidth: 0.5)
-            )
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel(L10n.t("hud.queue.title"))
-            .accessibilityValue(presentation.accessibilityValue)
-        }
-    }
-
-    private var queueDockInlineHeader: some View {
-        HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.xs) {
-            queueDockTitle
-            Spacer(minLength: 0)
-            queueDockActions
-        }
-    }
-
-    @ViewBuilder
-    private func queueDockKinds(
-        _ kinds: [PickyQueueDockKindPresentation],
-        layout: PickyQueueDockLayout
-    ) -> some View {
-        if layout == .stacked {
-            VStack(alignment: .leading, spacing: DS.Spacing.xs) {
-                queueDockKindLabels(kinds)
-            }
-        } else {
-            HStack(spacing: DS.Spacing.sm) {
-                queueDockKindLabels(kinds)
-            }
-        }
-    }
-
-    private var queueDockTitle: some View {
-        Label(L10n.t("hud.queue.title"), systemImage: "tray.full")
-            .font(PickyHUDTypography.statusSemibold)
-            .foregroundColor(DS.Colors.textSecondary)
-    }
-
-    @ViewBuilder
-    private func queueDockKindLabels(_ kinds: [PickyQueueDockKindPresentation]) -> some View {
-        ForEach(kinds) { item in
-            Text(L10n.t("hud.queue.kindSummary", item.kind.label, Int64(item.count), item.modeLabel))
-                .font(PickyHUDTypography.metaMonospacedMedium)
-                .foregroundColor(DS.Colors.textTertiary)
-                .lineLimit(1)
-        }
-    }
-
-    private var queueDockActions: some View {
-        HStack(spacing: DS.Spacing.sm) {
-            queueDockActionButton(.restore, title: L10n.t("hud.queue.restore"), color: DS.Colors.accentText)
-            queueDockActionButton(.clear, title: L10n.t("hud.queue.clear"), color: DS.Colors.textSecondary)
-        }
-    }
-
-    private func queueDockActionButton(
-        _ action: PickyQueueDockAction,
-        title: String,
-        color: Color
-    ) -> some View {
-        Button(queueActionInFlight == action ? action.inFlightLabel : title) {
-            performQueueAction(action)
-        }
-        .buttonStyle(.plain)
-        .font(PickyHUDTypography.statusSemibold)
-        .foregroundColor(color)
-        .disabled(queueActionInFlight != nil)
-        .help(L10n.t(action == .restore ? "hud.queue.restore.help" : "hud.queue.clear.help"))
-        .accessibilityLabel(L10n.t(
-            action == .restore ? "hud.queue.restore.accessibilityLabel" : "hud.queue.clear.accessibilityLabel"
-        ))
-        .hoverAffordance()
     }
 
     private var runtimeControls: some View {
-        let presentation = PickyComposerRuntimePresentation(assistantRun: session.currentAssistantRun)
-        return Group {
-            if presentation.hasControls {
-                HStack(spacing: DS.Spacing.xs) {
-                    if let modelText = presentation.modelText {
-                        Button(action: { cycleModel(direction: .forward) }) {
-                            runtimeControlLabel(icon: "cpu", text: modelText)
-                        }
-                        .buttonStyle(.plain)
-                        .help(L10n.t("hud.composer.runtime.model.help"))
-                        .accessibilityLabel(presentation.modelLabel ?? modelText)
-                        .accessibilityHint(L10n.t("hud.composer.runtime.model.accessibilityHint"))
-                        .hoverAffordance()
-                    }
-                    if let thinkingText = presentation.thinkingText {
-                        Button(action: cycleThinkingLevel) {
-                            runtimeControlLabel(icon: "brain", text: thinkingText)
-                        }
-                        .buttonStyle(.plain)
-                        .help(L10n.t("hud.composer.runtime.thinking.help"))
-                        .accessibilityLabel(presentation.thinkingLabel ?? thinkingText)
-                        .accessibilityHint(L10n.t("hud.composer.runtime.thinking.accessibilityHint"))
-                        .hoverAffordance()
-                    }
-                }
-                .fixedSize(horizontal: true, vertical: false)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.horizontal, DS.Spacing.xs)
-                .accessibilityElement(children: .contain)
-                .accessibilityLabel(L10n.t("hud.composer.runtime.accessibilityLabel"))
-                if let runtimeActionError {
-                    Text(runtimeActionError)
-                        .font(PickyHUDTypography.status)
-                        .foregroundColor(DS.Colors.destructiveText)
-                        .padding(.horizontal, DS.Spacing.xs)
-                        .accessibilityLabel(L10n.t("hud.composer.runtime.failed", runtimeActionError))
-                }
-            }
-        }
-    }
-
-    private func runtimeControlLabel(icon: String, text: String) -> some View {
-        HStack(spacing: DS.Spacing.xs) {
-            Image(systemName: icon)
-                .font(PickyHUDTypography.statusSemibold)
-            if focusStackHeightTier == .regular {
-                Text(text)
-                    .font(PickyHUDTypography.metaMedium)
-                    .lineLimit(1)
-            }
-        }
-        .foregroundColor(DS.Colors.textSecondary)
-        .contentShape(Rectangle())
+        PickyConversationRuntimeControlsView(
+            presentation: PickyComposerRuntimePresentation(assistantRun: session.currentAssistantRun),
+            heightTier: focusStackHeightTier,
+            actionError: runtimeActionError,
+            onCycleModel: { cycleModel(direction: .forward) },
+            onCycleThinkingLevel: cycleThinkingLevel
+        )
     }
 
     private var composerRow: some View {

@@ -600,15 +600,6 @@ struct PickyTurnCardView<MessageContent: View>: View {
                 }
             }
         }
-        .padding(.leading, group.isCurrent ? DS.Spacing.space2 : 0)
-        .overlay(alignment: .leading) {
-            if group.isCurrent {
-                Rectangle()
-                    .fill(DS.Colors.info.opacity(0.45))
-                    .frame(width: DS.Spacing.space1)
-                    .accessibilityHidden(true)
-            }
-        }
     }
 
     @ViewBuilder

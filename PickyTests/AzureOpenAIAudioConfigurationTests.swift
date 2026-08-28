@@ -76,7 +76,7 @@ struct AzureOpenAIAudioConfigurationTests {
     }
 
     @Test func azureSTTFactoryUsesSettingsEndpointAndAPIKey() throws {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory, seedDefaultWorkspace: false)
         settings.sttProvider = .azure
         settings.azureOpenAIEndpoint = "https://picky-resource.openai.azure.com/openai/deployments/whisper-stt/audio/transcriptions?api-version=2024-02-01"
         settings.azureOpenAIAPIKey = "test-key"
@@ -96,7 +96,7 @@ struct AzureOpenAIAudioConfigurationTests {
     }
 
     @Test func azureTTSVoiceUsesSettingsBeforeEnvironmentAndDefault() throws {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory, seedDefaultWorkspace: false)
         settings.azureOpenAITTSVoice = " shimmer "
 
         #expect(PickySpeechPlaybackProviderFactory.azureOpenAITTSVoice(
@@ -112,7 +112,7 @@ struct AzureOpenAIAudioConfigurationTests {
     }
 
     @Test func azureTTSConfigurationUsesDedicatedSettingsEndpointAndFallsBackToSTTAPIKey() throws {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory, seedDefaultWorkspace: false)
         settings.ttsProvider = .azure
         settings.azureOpenAIEndpoint = "https://picky-resource.openai.azure.com/openai/deployments/whisper-stt/audio/transcriptions?api-version=2024-02-01"
         settings.azureOpenAIAPIKey = "shared-key"
@@ -137,7 +137,7 @@ struct AzureOpenAIAudioConfigurationTests {
         // The test name pins the contract: even with Azure ENV vars set, the
         // default .local sttProvider must NOT be overridden by environment
         // sniffing.
-        let settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        let settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory, seedDefaultWorkspace: false)
 
         let provider = BuddyTranscriptionProviderFactory.makeDefaultProvider(
             settings: settings,

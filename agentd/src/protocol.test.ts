@@ -9,6 +9,18 @@ const contractsRoot = join(process.cwd(), "..", "contracts", "protocol");
 
 type Fixture = Record<string, unknown>;
 
+function commandVariantSchema(fixture: Fixture) {
+  const commandVariants = unwrapSchema(CommandEnvelopeSchema);
+  if (!(commandVariants instanceof z.ZodDiscriminatedUnion)) {
+    throw new Error("Command envelope must remain a discriminated union");
+  }
+  const schema = commandVariants.options.find((option: z.ZodDiscriminatedUnionOption<"type">) => (
+    option.shape.type instanceof z.ZodLiteral && option.shape.type.value === fixture.type
+  ));
+  if (!schema) throw new Error(`No command schema for fixture type ${String(fixture.type)}`);
+  return schema;
+}
+
 function eventVariantSchema(fixture: Fixture) {
   const schema = EventEnvelopeVariantSchema.options.find((option) => option.shape.type.value === fixture.type);
   if (!schema) throw new Error(`No event schema for fixture type ${String(fixture.type)}`);
@@ -155,6 +167,13 @@ describe("protocol contract fixtures", () => {
     };
 
     expect(unknownFixtureKeys(eventVariantSchema(fixture), fixture)).toContain("request.screenBounds.staleNestedKey");
+  });
+
+  it("matches every command fixture exactly to its schema", () => {
+    for (const name of readdirSync(contractsRoot).filter((file) => file.endsWith(".request.json"))) {
+      const fixture = JSON.parse(readFileSync(join(contractsRoot, name), "utf8"));
+      expect(unknownFixtureKeys(commandVariantSchema(fixture), fixture)).toEqual([]);
+    }
   });
 
   it("matches every event fixture exactly to its schema", () => {

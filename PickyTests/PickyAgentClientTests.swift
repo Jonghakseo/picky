@@ -7,19 +7,48 @@ import Foundation
 import Testing
 @testable import Picky
 
-private final class FakeWebSocketTask: PickyWebSocketTask {
-    var sentMessages: [URLSessionWebSocketTask.Message] = []
-    var receiveResults: [Result<URLSessionWebSocketTask.Message, Error>] = []
-    var didResume = false
-    var didCancel = false
+private final class FakeWebSocketTask: PickyWebSocketTask, @unchecked Sendable {
+    private let lock = NSLock()
+    private let incomingContinuation: AsyncStream<Result<URLSessionWebSocketTask.Message, Error>>.Continuation
+    private var incomingIterator: AsyncStream<Result<URLSessionWebSocketTask.Message, Error>>.Iterator
+    private var _sentMessages: [URLSessionWebSocketTask.Message] = []
+    private var _didResume = false
+    private var _didCancel = false
 
-    func resume() { didResume = true }
-    func send(_ message: URLSessionWebSocketTask.Message) async throws { sentMessages.append(message) }
-    func receive() async throws -> URLSessionWebSocketTask.Message {
-        while receiveResults.isEmpty { try await Task.sleep(nanoseconds: 10_000_000) }
-        return try receiveResults.removeFirst().get()
+    var sentMessages: [URLSessionWebSocketTask.Message] { lock.withLock { _sentMessages } }
+    var didResume: Bool { lock.withLock { _didResume } }
+    var didCancel: Bool { lock.withLock { _didCancel } }
+
+    init() {
+        var continuation: AsyncStream<Result<URLSessionWebSocketTask.Message, Error>>.Continuation!
+        let incoming = AsyncStream<Result<URLSessionWebSocketTask.Message, Error>> { continuation = $0 }
+        incomingContinuation = continuation
+        incomingIterator = incoming.makeAsyncIterator()
     }
-    func cancel(with closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) { didCancel = true }
+
+    func enqueue(_ result: Result<URLSessionWebSocketTask.Message, Error>) {
+        incomingContinuation.yield(result)
+    }
+
+    func enqueue(contentsOf results: [Result<URLSessionWebSocketTask.Message, Error>]) {
+        results.forEach(enqueue)
+    }
+
+    func resume() { lock.withLock { _didResume = true } }
+
+    func send(_ message: URLSessionWebSocketTask.Message) async throws {
+        lock.withLock { _sentMessages.append(message) }
+    }
+
+    func receive() async throws -> URLSessionWebSocketTask.Message {
+        guard let result = await incomingIterator.next() else { throw CancellationError() }
+        return try result.get()
+    }
+
+    func cancel(with closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
+        lock.withLock { _didCancel = true }
+        incomingContinuation.finish()
+    }
 }
 
 private final class FakeWebSocketFactory: PickyWebSocketTaskMaking {
@@ -44,19 +73,26 @@ private enum EventJSON {
     }
 }
 
+private func nextPickyAgentClientEvent(
+    from stream: AsyncStream<PickyClientEvent>
+) async throws -> PickyClientEvent? {
+    try await withPickyTestTimeout("picky-agent client event") {
+        var iterator = stream.makeAsyncIterator()
+        return await iterator.next()
+    }
+}
+
 struct PickyAgentClientTests {
     @Test func connectsToLocalhostWithTokenAndSendsListSessions() async throws {
         let task = FakeWebSocketTask()
-        task.receiveResults = [.success(.string(EventJSON.hello()))]
+        task.enqueue(.success(.string(EventJSON.hello())))
         let factory = FakeWebSocketFactory(task: task)
         let client = WebSocketPickyAgentClient(
             configuration: .init(port: 19001, token: "secret", reconnectDelay: 0.01),
             factory: factory
         )
-        var iterator = client.events.makeAsyncIterator()
-
         await client.connect()
-        if case .connected? = await iterator.next() {} else { Issue.record("Expected connected after hello") }
+        if case .connected? = try await nextPickyAgentClientEvent(from: client.events) {} else { Issue.record("Expected connected after hello") }
         try await client.send(PickyCommandEnvelope(id: "cmd-list-001", type: .listSessions))
 
         #expect(task.didResume)
@@ -84,8 +120,10 @@ struct PickyAgentClientTests {
         try await Task.sleep(nanoseconds: 50_000_000)
         #expect(task.sentMessages.isEmpty)
 
-        task.receiveResults.append(.success(.string(EventJSON.hello())))
-        try await sendTask.value
+        task.enqueue(.success(.string(EventJSON.hello())))
+        try await withPickyTestTimeout("command send after hello") {
+            try await sendTask.value
+        }
 
         #expect(task.sentMessages.count == 1)
     }
@@ -176,11 +214,10 @@ struct PickyAgentClientTests {
 
     @Test func submitRoutesTaskForQuickReplyOrHandOff() async throws {
         let task = FakeWebSocketTask()
-        task.receiveResults = [.success(.string(EventJSON.hello()))]
+        task.enqueue(.success(.string(EventJSON.hello())))
         let client = WebSocketPickyAgentClient(configuration: .init(port: 19001, token: "secret", reconnectDelay: 0.01), factory: FakeWebSocketFactory(task: task))
-        var iterator = client.events.makeAsyncIterator()
         await client.connect()
-        if case .connected? = await iterator.next() {} else { Issue.record("Expected connected after hello") }
+        if case .connected? = try await nextPickyAgentClientEvent(from: client.events) {} else { Issue.record("Expected connected after hello") }
         let context = PickyContextPacket(
             id: "context-route",
             source: "voice",
@@ -207,20 +244,18 @@ struct PickyAgentClientTests {
 
     @Test func receivesHelloAndSessionUpdatedEvents() async throws {
         let task = FakeWebSocketTask()
-        task.receiveResults = [
+        task.enqueue(contentsOf: [
             .success(.string(EventJSON.hello())),
             .success(.string("""
             {"id":"event-session","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:01.000Z","type":"sessionUpdated","session":{"id":"session-1","title":"Work","status":"running","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:01.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}}
             """))
-        ]
+        ])
         let client = WebSocketPickyAgentClient(configuration: .init(port: 19001, token: "secret", reconnectDelay: 0.01), factory: FakeWebSocketFactory(task: task))
-        let stream = client.events.makeAsyncIterator()
         await client.connect()
 
-        var iterator = stream
-        _ = await iterator.next() // connected
-        let hello = await iterator.next()
-        let session = await iterator.next()
+        _ = try await nextPickyAgentClientEvent(from: client.events) // connected
+        let hello = try await nextPickyAgentClientEvent(from: client.events)
+        let session = try await nextPickyAgentClientEvent(from: client.events)
 
         if case .protocolEvent(let event)? = hello {
             #expect(event.event == .hello(PickyHelloEvent(serverName: "picky-agentd", supportedProtocolVersions: [pickyAgentProtocolVersion])))
@@ -352,13 +387,12 @@ struct PickyAgentClientTests {
 
     @Test func malformedEventIsRecoverable() async throws {
         let task = FakeWebSocketTask()
-        task.receiveResults = [.success(.string(EventJSON.hello())), .success(.string("not-json"))]
+        task.enqueue(contentsOf: [.success(.string(EventJSON.hello())), .success(.string("not-json"))])
         let client = WebSocketPickyAgentClient(configuration: .init(port: 19001, token: "secret", reconnectDelay: 0.01), factory: FakeWebSocketFactory(task: task))
-        var iterator = client.events.makeAsyncIterator()
         await client.connect()
-        _ = await iterator.next()
-        _ = await iterator.next()
-        let event = await iterator.next()
+        _ = try await nextPickyAgentClientEvent(from: client.events)
+        _ = try await nextPickyAgentClientEvent(from: client.events)
+        let event = try await nextPickyAgentClientEvent(from: client.events)
 
         if case .recoverableError(let message)? = event {
             #expect(!message.isEmpty)

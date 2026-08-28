@@ -29,25 +29,6 @@ run_step() {
   "$@"
 }
 
-run_with_retry() {
-  local attempts="$1"
-  local label="$2"
-  shift 2
-  local attempt=1
-  while true; do
-    echo
-    echo "▶ ${label} (attempt ${attempt}/${attempts})"
-    if "$@"; then
-      return 0
-    fi
-    if [ "$attempt" -ge "$attempts" ]; then
-      return 1
-    fi
-    attempt=$((attempt + 1))
-    echo "↻ ${label} failed; retrying once for known async test flakiness."
-  done
-}
-
 # Lower-only ratchet for SwiftLint error-severity violations. The `.swiftlint.yml`
 # error thresholds are themselves pinned just above the current worst offenders,
 # so any violation here means a genuine regression. Never raise this baseline;
@@ -107,7 +88,10 @@ fi
 run_step "agentd: typecheck" pnpm --dir agentd run typecheck
 run_step "agentd: lint (zero warnings)" pnpm --dir agentd run lint
 run_step "ESLint suppression guard" pnpm run check:eslint-suppressions
-run_with_retry 5 "agentd: tests (serial)" pnpm --dir agentd run test:serial
+# Most files run in Vitest's parallel pool. The WebSocket-heavy server and
+# session-supervisor suites have load-sensitive delivery deadlines, so test:ci
+# runs those two files in a second, serial phase.
+run_step "agentd: tests (parallel + isolated server)" pnpm --dir agentd run test:ci
 run_swiftlint_warning_first
 run_step "Picky app build" xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" build
 

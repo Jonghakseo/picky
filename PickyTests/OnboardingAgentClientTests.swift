@@ -90,6 +90,7 @@ struct OnboardingAgentClientTests {
         // `await beatSleeper(...)` yet, and `disconnect()` then cancels at the
         // pre-sleep `Task.isCancelled` check before the sleeper ever runs.
         let sleeperEntered = AsyncStream<Void>.makeStream()
+        defer { sleeperEntered.continuation.finish() }
         let client = OnboardingAgentClient(
             scenarioFactory: { scenario },
             beatSleeper: { nanoseconds in
@@ -107,14 +108,21 @@ struct OnboardingAgentClientTests {
         // First beat (no sleep) must land before disconnect runs.
         _ = try await collectEvents(from: client, count: 1)
 
-        var sleeperIterator = sleeperEntered.stream.makeAsyncIterator()
-        _ = await sleeperIterator.next()
+        try await withPickyTestTimeout("onboarding playback sleeper") {
+            var sleeperIterator = sleeperEntered.stream.makeAsyncIterator()
+            guard await sleeperIterator.next() != nil else {
+                throw OnboardingAgentClientTestError.sleeperStreamEnded
+            }
+        }
 
         client.disconnect()
         // Drain whatever the stream emits before closing. We expect at most a
         // .disconnected event \u2014 the second beat must not have made it through.
-        var trailing: [PickyClientEvent] = []
-        for await event in client.events { trailing.append(event) }
+        let trailing = try await withPickyTestTimeout("onboarding disconnect") {
+            var trailing: [PickyClientEvent] = []
+            for await event in client.events { trailing.append(event) }
+            return trailing
+        }
 
         let logEvents = trailing.compactMap { event -> String? in
             guard case let .protocolEvent(envelope) = event, case let .sessionLogAppended(_, line) = envelope.event else { return nil }
@@ -126,13 +134,20 @@ struct OnboardingAgentClientTests {
     // MARK: - Helpers
 
     private func collectEvents(from client: OnboardingAgentClient, count: Int) async throws -> [PickyClientEvent] {
-        var collected: [PickyClientEvent] = []
-        for await event in client.events {
-            collected.append(event)
-            if collected.count == count { break }
+        try await withPickyTestTimeout("\(count) onboarding events") {
+            var collected: [PickyClientEvent] = []
+            for await event in client.events {
+                collected.append(event)
+                if collected.count == count { return collected }
+            }
+            throw OnboardingAgentClientTestError.eventStreamEnded
         }
-        return collected
     }
+}
+
+private enum OnboardingAgentClientTestError: Error {
+    case eventStreamEnded
+    case sleeperStreamEnded
 }
 
 private extension PickyContextPacket {

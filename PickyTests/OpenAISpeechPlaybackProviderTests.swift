@@ -113,7 +113,7 @@ struct OpenAISpeechPlaybackProviderTests {
     // 11) Factory: settings.ttsProvider == .openai 이고 OpenAI 키 있으면 OpenAI fallback wrapper로 라우팅
     @MainActor
     @Test func factoryRoutesToOpenAIWhenSelected() throws {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory, seedDefaultWorkspace: false)
         settings.ttsProvider = .openai
         settings.openAITTSAPIKey = "sk-test"
 
@@ -129,7 +129,7 @@ struct OpenAISpeechPlaybackProviderTests {
     // 12) Factory: ENV provider routing no longer overrides the local default
     @MainActor
     @Test func envPickyTTSProviderNoLongerRoutesAutomatically() {
-        let settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        let settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory, seedDefaultWorkspace: false)
 
         let provider = PickySpeechPlaybackProviderFactory.makeDefaultProvider(
             settings: settings,
@@ -144,7 +144,7 @@ struct OpenAISpeechPlaybackProviderTests {
     // 13) Factory: TTS 비활성화 시 muted
     @MainActor
     @Test func disabledTTSStillUsesMutedProviderEvenIfOpenAISelected() {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory, seedDefaultWorkspace: false)
         settings.ttsEnabled = false
         settings.ttsProvider = .openai
         settings.openAITTSAPIKey = "sk-test"
@@ -159,7 +159,7 @@ struct OpenAISpeechPlaybackProviderTests {
     // 14) UI placeholder 약속: openAITTSAPIKey 비어있으면 openAISTTAPIKey로 폴백
     @MainActor
     @Test func ttsFactoryFallsBackToSTTKeyWhenTTSKeyEmpty() {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory, seedDefaultWorkspace: false)
         settings.ttsProvider = .openai
         settings.openAITTSAPIKey = ""
         settings.openAISTTAPIKey = "sk-stt-shared"
@@ -174,7 +174,7 @@ struct OpenAISpeechPlaybackProviderTests {
     // 15) TTS key가 채워져 있으면 STT key 안 봄 (priority 검증)
     @MainActor
     @Test func ttsFactoryPrefersTTSKeyOverSTTKey() {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory, seedDefaultWorkspace: false)
         settings.ttsProvider = .openai
         settings.openAITTSAPIKey = "sk-tts-explicit"
         settings.openAISTTAPIKey = "sk-stt-shared"

@@ -23,11 +23,11 @@ describe("activity summary", () => {
   });
 
   it("sums all activity buckets", () => {
-    expect(activityTotal({ read: 1, bash: 2, edit: 3, write: 4, thinking: 5, other: 6 })).toBe(21);
+    expect(activityTotal({ read: 1, bash: 2, edit: 3, write: 4, todo: 5, subagent: 6, thinking: 7, other: 8 })).toBe(36);
   });
 
-  it("reports whether any activity bucket is non-zero", () => {
+  it.each(["read", "bash", "edit", "write", "todo", "subagent", "thinking", "other"] as const)("reports %s activity independently", (bucket) => {
     expect(hasActivity(zeroActivitySummary())).toBe(false);
-    expect(hasActivity({ ...zeroActivitySummary(), other: 1 })).toBe(true);
+    expect(hasActivity({ ...zeroActivitySummary(), [bucket]: 1 })).toBe(true);
   });
 });

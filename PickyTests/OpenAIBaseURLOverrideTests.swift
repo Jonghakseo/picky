@@ -51,7 +51,10 @@ struct OpenAIBaseURLOverrideTests {
 
     // 6) PickySettings round-trip
     @Test func settingsBaseURLFieldsRoundTrip() throws {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        var settings = PickySettings.defaults(
+            appSupportRoot: FileManager.default.temporaryDirectory,
+            seedDefaultWorkspace: false
+        )
         settings.openAITTSBaseURL = "http://localhost:5050"
         settings.openAISTTBaseURL = "http://localhost:8000"
 
@@ -83,7 +86,10 @@ struct OpenAIBaseURLOverrideTests {
 
     // 8) normalizedPaths trims new base URL fields
     @Test func normalizedPathsTrimsNewBaseURLFields() {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        var settings = PickySettings.defaults(
+            appSupportRoot: FileManager.default.temporaryDirectory,
+            seedDefaultWorkspace: false
+        )
         settings.openAITTSBaseURL = "  http://localhost:5050  "
         settings.openAISTTBaseURL = "\thttp://localhost:8000\n"
         let normalized = settings.normalizedPaths()
@@ -94,7 +100,10 @@ struct OpenAIBaseURLOverrideTests {
     // 9) TTS factory uses settings override
     @MainActor
     @Test func ttsFactoryUsesSettingsBaseURLOverride() {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        var settings = PickySettings.defaults(
+            appSupportRoot: FileManager.default.temporaryDirectory,
+            seedDefaultWorkspace: false
+        )
         settings.ttsProvider = .openai
         settings.openAITTSAPIKey = "sk"
         settings.openAITTSBaseURL = "http://localhost:5050"
@@ -109,7 +118,10 @@ struct OpenAIBaseURLOverrideTests {
     // 10) TTS factory falls back to ENV (OPENAI_TTS_BASE_URL > OPENAI_BASE_URL > default)
     @MainActor
     @Test func ttsFactoryFallsBackToEnvBaseURL() {
-        let settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        let settings = PickySettings.defaults(
+            appSupportRoot: FileManager.default.temporaryDirectory,
+            seedDefaultWorkspace: false
+        )
 
         let withSpecific = PickySpeechPlaybackProviderFactory.makeOpenAITTSConfiguration(
             settings: settings,
@@ -130,26 +142,32 @@ struct OpenAIBaseURLOverrideTests {
         #expect(withNothing.baseURL == OpenAIAudioConfiguration.defaultBaseURL)
     }
 
-    // 11) STT factory uses settings override (factory provider creation)
+    // 11) STT factory resolves the settings override into the provider configuration.
     @Test func sttFactoryUsesSettingsBaseURLOverride() {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        var settings = PickySettings.defaults(
+            appSupportRoot: FileManager.default.temporaryDirectory,
+            seedDefaultWorkspace: false
+        )
         settings.sttProvider = .openai
         settings.openAISTTAPIKey = "sk"
         settings.openAISTTBaseURL = "http://localhost:8000"
 
-        let provider = BuddyTranscriptionProviderFactory.makeDefaultProvider(
+        let configuration = BuddyTranscriptionProviderFactory.makeOpenAISTTConfiguration(
             settings: settings,
             environment: [:]
         )
-        #expect(provider.displayName == "OpenAI Speech to Text")
-        #expect(provider.isConfigured == true)
-        // base URL은 provider 내부 private이라 직접 검증 어려움 — displayName/isConfigured까지만
+
+        #expect(configuration.apiKey == "sk")
+        #expect(configuration.baseURL.absoluteString == "http://localhost:8000")
     }
 
     // 12) Invalid base URL falls back to default (TTS factory)
     @MainActor
     @Test func invalidSettingsBaseURLFallsBackToDefault() {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        var settings = PickySettings.defaults(
+            appSupportRoot: FileManager.default.temporaryDirectory,
+            seedDefaultWorkspace: false
+        )
         settings.ttsProvider = .openai
         settings.openAITTSAPIKey = "sk"
         settings.openAITTSBaseURL = "not a url"

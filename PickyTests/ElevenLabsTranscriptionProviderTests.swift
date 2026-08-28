@@ -107,7 +107,7 @@ struct ElevenLabsTranscriptionProviderTests {
 
     // 12) Factory: settings.sttProvider == .elevenLabs 이고 key 있으면 ElevenLabs 라우팅
     @Test func factoryRoutesToElevenLabsWhenSelected() {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory, seedDefaultWorkspace: false)
         settings.sttProvider = .elevenLabs
         settings.elevenLabsSTTAPIKey = "el-key"
 
@@ -123,7 +123,7 @@ struct ElevenLabsTranscriptionProviderTests {
         // The factory must not infer a provider from ENV alone — the user's
         // settings.sttProvider is the source of truth. PickySettings.defaults()
         // baselines to .local (Apple Speech).
-        let settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        let settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory, seedDefaultWorkspace: false)
 
         let provider = BuddyTranscriptionProviderFactory.makeDefaultProvider(
             settings: settings,
@@ -137,7 +137,7 @@ struct ElevenLabsTranscriptionProviderTests {
 
     // 14) Factory: 키 없어도 ElevenLabs provider 만들고 unavailableExplanation 노출
     @Test func factoryStillRoutesToElevenLabsEvenWithoutKey() {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory, seedDefaultWorkspace: false)
         settings.sttProvider = .elevenLabs
 
         let provider = BuddyTranscriptionProviderFactory.makeDefaultProvider(
@@ -151,7 +151,7 @@ struct ElevenLabsTranscriptionProviderTests {
 
     // 15) Factory: OpenAI/Azure 회귀 보호
     @Test func factoryOpenAIPathStillRoutesToOpenAI() {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory, seedDefaultWorkspace: false)
         settings.sttProvider = .openai
         settings.openAISTTAPIKey = "sk-test"
 

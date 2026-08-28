@@ -89,7 +89,7 @@ struct PickyTTSSettingsTests {
     }
 
     @Test func ttsEnabledRoundTripsThroughJSON() throws {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory, seedDefaultWorkspace: false)
         settings.ttsEnabled = false
 
         let data = try JSONEncoder().encode(settings)
@@ -100,7 +100,7 @@ struct PickyTTSSettingsTests {
 
     @MainActor
     @Test func disabledTTSUsesMutedSpeechProvider() async throws {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory, seedDefaultWorkspace: false)
         settings.ttsEnabled = false
         settings.ttsProvider = .azure
 

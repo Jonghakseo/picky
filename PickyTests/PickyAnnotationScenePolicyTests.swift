@@ -1347,6 +1347,35 @@ struct PickyAnnotationScenePolicyTests {
         monitor.stop()
     }
 
+    @Test func staleDisplayCallbackDoesNotResetAReplacementSession() throws {
+        let referenceFingerprint = try #require(fingerprint(width: 10, height: 10))
+        let capturer = SuspendingAnnotationSceneCapturer(fingerprint: referenceFingerprint)
+        let monitor = PickyAnnotationSceneMonitor(
+            capturer: capturer,
+            automaticallySchedulesSamples: false
+        )
+        let firstIdentity = PickyAnnotationSceneIdentity(
+            contextID: "first",
+            generation: 1,
+            token: UUID(uuidString: "A0000000-0000-0000-0000-000000000024")!
+        )
+        let secondIdentity = PickyAnnotationSceneIdentity(
+            contextID: "second",
+            generation: 2,
+            token: UUID(uuidString: "A0000000-0000-0000-0000-000000000025")!
+        )
+        monitor.start(identity: firstIdentity, baseline: sceneBaseline(contextID: "first"))
+        monitor.start(identity: secondIdentity, baseline: sceneBaseline(contextID: "second"))
+        let resetCountAfterReplacement = capturer.resetCount
+
+        monitor.handleDisplayChange(identity: firstIdentity)
+        #expect(capturer.resetCount == resetCountAfterReplacement)
+
+        monitor.handleDisplayChange(identity: secondIdentity)
+        #expect(capturer.resetCount == resetCountAfterReplacement + 1)
+        monitor.stop()
+    }
+
     @Test func displayInvalidationRejectsAnInFlightFrameAndCanResume() async throws {
         let referenceFingerprint = try #require(fingerprint(width: 10, height: 10))
         let capturer = SuspendingAnnotationSceneCapturer(fingerprint: referenceFingerprint)
@@ -1374,37 +1403,6 @@ struct PickyAnnotationScenePolicyTests {
         await monitor.sampleNow()
         await monitor.sampleNow()
         #expect(outputs == [.mismatched(identity, .display), .matched(identity)])
-        monitor.stop()
-    }
-
-    @Test func staleDisplayObserverTaskCannotSuspendAReplacementSession() async throws {
-        let referenceFingerprint = try #require(fingerprint(width: 10, height: 10))
-        let monitor = PickyAnnotationSceneMonitor(
-            capturer: FakeAnnotationSceneCapturer(baseline: referenceFingerprint, current: []),
-            automaticallySchedulesSamples: true
-        )
-        let firstIdentity = PickyAnnotationSceneIdentity(
-            contextID: "first",
-            generation: 1,
-            token: UUID(uuidString: "A0000000-0000-0000-0000-000000000024")!
-        )
-        let secondIdentity = PickyAnnotationSceneIdentity(
-            contextID: "second",
-            generation: 2,
-            token: UUID(uuidString: "A0000000-0000-0000-0000-000000000025")!
-        )
-        var outputs: [PickyAnnotationSceneMonitorOutput] = []
-        monitor.onOutput = { outputs.append($0) }
-        monitor.start(identity: firstIdentity, baseline: sceneBaseline(contextID: "first"))
-
-        NotificationCenter.default.post(
-            name: NSApplication.didChangeScreenParametersNotification,
-            object: nil
-        )
-        monitor.start(identity: secondIdentity, baseline: sceneBaseline(contextID: "second"))
-        for _ in 0..<5 { await Task.yield() }
-
-        #expect(outputs.isEmpty)
         monitor.stop()
     }
 

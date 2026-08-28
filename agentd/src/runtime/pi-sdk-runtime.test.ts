@@ -2563,8 +2563,7 @@ describe("PiSdkRuntime", () => {
     }
   });
 
-  it("gates real Pi integration behind PICKY_RUN_PI_INTEGRATION", async () => {
-    if (process.env.PICKY_RUN_PI_INTEGRATION !== "1") return;
+  it.skipIf(process.env.PICKY_RUN_PI_INTEGRATION !== "1")("runs real Pi integration when PICKY_RUN_PI_INTEGRATION=1", async () => {
     const runtime = new PiSdkRuntime();
     const handle = await runtime.create({ text: "Say hello and stop.", imagePaths: [] }, { cwd: process.cwd(), sessionId: "integration" });
     expect(handle.id).toBe("integration");

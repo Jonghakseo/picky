@@ -69,7 +69,7 @@ struct OpenAITranscriptionProviderTests {
 
     // 7) Factory: settings.sttProvider == .openai 이고 key 있으면 OpenAI provider 라우팅
     @Test func factoryRoutesToOpenAIWhenSelected() {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory, seedDefaultWorkspace: false)
         settings.sttProvider = .openai
         settings.openAISTTAPIKey = "sk-test"
 
@@ -84,7 +84,7 @@ struct OpenAITranscriptionProviderTests {
     @Test func envPickySTTProviderNoLongerRoutesAutomatically() {
         // PickySettings.defaults() now baselines to .local (Apple Speech).
         // The contract under test is that ENV alone never overrides settings.
-        let settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        let settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory, seedDefaultWorkspace: false)
 
         let provider = BuddyTranscriptionProviderFactory.makeDefaultProvider(
             settings: settings,
@@ -99,7 +99,7 @@ struct OpenAITranscriptionProviderTests {
     // 9) Factory: .openai 선택했지만 키가 없으면 그대로 OpenAI provider를 만들고 unavailableExplanation으로 알림
     //    (UI/CompanionManager가 필요 시 사용자에게 표시)
     @Test func factoryStillRoutesToOpenAIEvenWithoutKeySoUnavailableExplanationCanSurface() {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory, seedDefaultWorkspace: false)
         settings.sttProvider = .openai
 
         let provider = BuddyTranscriptionProviderFactory.makeDefaultProvider(
@@ -113,7 +113,7 @@ struct OpenAITranscriptionProviderTests {
 
     // 10) Factory: Azure 분기는 그대로 작동 (회귀)
     @Test func factoryAzurePathStillRoutesToAzure() {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory, seedDefaultWorkspace: false)
         settings.sttProvider = .azure
         settings.azureOpenAIEndpoint = "https://test.openai.azure.com/openai/deployments/whisper/audio/transcriptions?api-version=2024-02-01"
         settings.azureOpenAIAPIKey = "azure-key"
@@ -127,7 +127,7 @@ struct OpenAITranscriptionProviderTests {
 
     // 11) Factory: .local 명시 시 Apple Speech
     @Test func factoryLocalPathRoutesToAppleSpeech() {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory, seedDefaultWorkspace: false)
         settings.sttProvider = .local
 
         let provider = BuddyTranscriptionProviderFactory.makeDefaultProvider(

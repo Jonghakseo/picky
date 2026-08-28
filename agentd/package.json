@@ -15,6 +15,7 @@
     "lint": "eslint src --max-warnings 0",
     "lint:fix": "eslint src --fix --max-warnings 0",
     "test": "vitest run",
+    "test:ci": "vitest run --exclude src/server.test.ts --exclude src/session-supervisor.test.ts && vitest run src/session-supervisor.test.ts src/server.test.ts --no-file-parallelism",
     "test:serial": "vitest run --no-file-parallelism",
     "test:contracts": "vitest run src/protocol.test.ts src/prompt-builder.test.ts src/pi-event-normalizer.test.ts"
   },

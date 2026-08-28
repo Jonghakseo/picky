@@ -162,7 +162,10 @@ pnpm --dir agentd exec vitest run src/path/to/file.test.ts
 # agentd protocol contracts
 pnpm --dir agentd run test:contracts
 
-# agentd 전체 suite
+# agentd 전체 suite: 병렬 안전 파일 + isolated server
+pnpm --dir agentd run test:ci
+
+# flaky 분류용 완전 serial 재현
 pnpm --dir agentd run test:serial
 ```
 

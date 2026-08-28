@@ -392,7 +392,7 @@ struct EdgeTTSSpeechPlaybackProviderTests {
 
     @MainActor
     @Test func factoryRoutesExplicitEdgeSelectionThroughMacOSFallback() throws {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory, seedDefaultWorkspace: false)
         settings.ttsProvider = .edge
         settings.edgeTTSVoice = "en-US-AriaNeural"
 

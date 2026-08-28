@@ -826,8 +826,7 @@ final class PickyAnnotationSceneMonitor {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self, self.session?.identity == identity else { return }
-                self.refreshCaptureGeometryAfterDisplayChange()
+                self?.handleDisplayChange(identity: identity)
             }
         }
         globalScrollMonitor = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) { [weak self] _ in
@@ -838,6 +837,11 @@ final class PickyAnnotationSceneMonitor {
             return event
         }
         installAccessibilityObserver(pid: baseline.applicationPID, identity: identity)
+    }
+
+    func handleDisplayChange(identity: PickyAnnotationSceneIdentity) {
+        guard session?.identity == identity else { return }
+        refreshCaptureGeometryAfterDisplayChange()
     }
 
     func handleActivatedApplication(

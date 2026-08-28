@@ -42,18 +42,8 @@ enum BuddyTranscriptionProviderFactory {
             let modelName = settings.openAISTTModel.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
                 ?? AzureOpenAIKeychainStore.value(for: "OPENAI_STT_MODEL", environment: environment)
                 ?? OpenAITranscriptionProvider.defaultModelName
-            let apiKey = settings.openAISTTAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-                ?? AzureOpenAIKeychainStore.value(for: "OPENAI_API_KEY", environment: environment)
-            let baseURL = OpenAIAudioConfiguration.parseBaseURLOverride(settings.openAISTTBaseURL)
-                ?? OpenAIAudioConfiguration.parseBaseURLOverride(
-                    AzureOpenAIKeychainStore.value(for: "OPENAI_STT_BASE_URL", environment: environment)
-                )
-                ?? OpenAIAudioConfiguration.parseBaseURLOverride(
-                    AzureOpenAIKeychainStore.value(for: "OPENAI_BASE_URL", environment: environment)
-                )
-                ?? OpenAIAudioConfiguration.defaultBaseURL
             let provider = OpenAITranscriptionProvider(
-                configuration: OpenAIAudioConfiguration(apiKey: apiKey, baseURL: baseURL),
+                configuration: makeOpenAISTTConfiguration(settings: settings, environment: environment),
                 preferredLanguage: language,
                 modelName: modelName
             )
@@ -94,6 +84,25 @@ enum BuddyTranscriptionProviderFactory {
         let provider = AppleSpeechTranscriptionProvider()
         print("🎙️ Transcription: using local provider \(provider.displayName)")
         return provider
+    }
+
+    /// Resolves the direct OpenAI STT settings without constructing a provider,
+    /// keeping the precedence contract observable without HTTP or audio setup.
+    static func makeOpenAISTTConfiguration(
+        settings: PickySettings,
+        environment: [String: String]
+    ) -> OpenAIAudioConfiguration {
+        let apiKey = settings.openAISTTAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            ?? AzureOpenAIKeychainStore.value(for: "OPENAI_API_KEY", environment: environment)
+        let baseURL = OpenAIAudioConfiguration.parseBaseURLOverride(settings.openAISTTBaseURL)
+            ?? OpenAIAudioConfiguration.parseBaseURLOverride(
+                AzureOpenAIKeychainStore.value(for: "OPENAI_STT_BASE_URL", environment: environment)
+            )
+            ?? OpenAIAudioConfiguration.parseBaseURLOverride(
+                AzureOpenAIKeychainStore.value(for: "OPENAI_BASE_URL", environment: environment)
+            )
+            ?? OpenAIAudioConfiguration.defaultBaseURL
+        return OpenAIAudioConfiguration(apiKey: apiKey, baseURL: baseURL)
     }
 
     private static func providerName(from selection: PickyVoiceProviderSelection) -> String? {

@@ -18,7 +18,7 @@ struct ElevenLabsSpeechPlaybackProviderTests {
     }
 
     @Test func factoryUsesPersistedTTSSettings() {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory, seedDefaultWorkspace: false)
         settings.elevenLabsTTSAPIKey = " el-tts-key "
         settings.elevenLabsTTSVoiceID = " voice-123 "
         settings.elevenLabsTTSModel = " eleven_flash_v2_5 "
@@ -38,7 +38,7 @@ struct ElevenLabsSpeechPlaybackProviderTests {
     }
 
     @Test func factoryFallsBackToSTTKeyWhenTTSKeyEmpty() {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory, seedDefaultWorkspace: false)
         settings.elevenLabsTTSAPIKey = ""
         settings.elevenLabsSTTAPIKey = " el-shared-key "
         settings.elevenLabsTTSVoiceID = "voice-123"
@@ -54,7 +54,7 @@ struct ElevenLabsSpeechPlaybackProviderTests {
 
     @MainActor
     @Test func factoryRoutesToElevenLabsWhenSelected() throws {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory, seedDefaultWorkspace: false)
         settings.ttsProvider = .elevenLabs
         settings.elevenLabsTTSAPIKey = "el-tts-key"
         settings.elevenLabsTTSVoiceID = "voice-123"

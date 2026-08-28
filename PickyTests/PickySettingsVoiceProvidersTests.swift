@@ -30,14 +30,14 @@ struct PickySettingsVoiceProvidersTests {
     }
 
     @Test func freshInstallDefaultsToAppleSpeechTranscriptionAndPlayback() {
-        let settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        let settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory, seedDefaultWorkspace: false)
         #expect(settings.sttProvider == .local)
         #expect(settings.ttsProvider == .local)
         #expect(settings.edgeTTSVoice == "ko-KR-SunHiNeural")
     }
 
     @Test func newOpenAIAndElevenLabsFieldsDefaultToEmpty() {
-        let settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        let settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory, seedDefaultWorkspace: false)
         #expect(settings.openAITTSAPIKey == "")
         #expect(settings.openAITTSVoice == "")
         #expect(settings.openAITTSModel == "")
@@ -55,7 +55,7 @@ struct PickySettingsVoiceProvidersTests {
     }
 
     @Test func openAIAndElevenLabsFieldsRoundTripThroughJSON() throws {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory, seedDefaultWorkspace: false)
         settings.openAITTSAPIKey = "sk-tts-key"
         settings.openAITTSVoice = "alloy"
         settings.openAITTSModel = "gpt-4o-mini-tts"
@@ -132,7 +132,7 @@ struct PickySettingsVoiceProvidersTests {
     }
 
     @Test func normalizedPathsTrimsNewVoiceFields() {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory, seedDefaultWorkspace: false)
         settings.openAITTSAPIKey = "  sk-key  "
         settings.openAITTSVoice = " alloy \n"
         settings.openAITTSModel = "\t gpt-4o-mini-tts "

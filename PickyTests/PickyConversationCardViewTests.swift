@@ -836,28 +836,6 @@ struct PickyConversationCardViewTests {
         ))
     }
 
-    @Test func liveStepHidesWhenOnlyBashIsRunning() {
-        let tool = PickyToolActivity(
-            toolCallId: "running-bash",
-            name: "bash",
-            status: "running",
-            preview: #"{"content":[{"type":"text","text":"partial output"}]}"#,
-            argsPreview: #"{"command":"pnpm test","title":"에이전트 테스트 실행"}"#,
-            startedAt: baseDate
-        )
-        let store = PickyConversationStoreResolver.legacyStore(for: makeConversationSession(
-            status: .running,
-            tools: [tool]
-        ))
-        let projection = PickyConversationLiveStepProjection(
-            metaStore: store.metaStore,
-            todoStore: store.todoStore,
-            extensionUiStore: store.extensionUiStore
-        )
-
-        #expect(PickyConversationLiveStepPresentation(projection: projection) == nil)
-    }
-
     @Test func liveStepHidesWhenThereIsNoCurrentTodoOrActiveTool() {
         let store = PickyConversationStoreResolver.legacyStore(for: makeConversationSession(
             status: .running,
@@ -874,10 +852,11 @@ struct PickyConversationCardViewTests {
         #expect(PickyConversationLiveStepPresentation(projection: projection) == nil)
     }
 
-    @Test func liveStepHidesWhenOnlyReadIsRunning() {
+    @Test(arguments: ["bash", "read"])
+    func liveStepHidesWhenOnlyToolIsRunning(toolName: String) {
         let store = PickyConversationStoreResolver.legacyStore(for: makeConversationSession(
             status: .running,
-            tools: [toolActivity("active-tool", name: "read", secondsOffset: 0, status: "running")]
+            tools: [toolActivity("active-\(toolName)", name: toolName, secondsOffset: 0, status: "running")]
         ))
         let projection = PickyConversationLiveStepProjection(
             metaStore: store.metaStore,

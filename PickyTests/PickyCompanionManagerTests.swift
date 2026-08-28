@@ -16,11 +16,20 @@ private actor FakeAbortGate {
 
     func wait() async {
         guard !didRelease else { return }
-        await withCheckedContinuation { continuation = $0 }
+        await withTaskCancellationHandler(operation: {
+            await withCheckedContinuation { continuation = $0 }
+        }, onCancel: {
+            Task { await self.cancelWait() }
+        })
     }
 
     func release() {
         didRelease = true
+        continuation?.resume()
+        continuation = nil
+    }
+
+    private func cancelWait() {
         continuation?.resume()
         continuation = nil
     }
@@ -37,16 +46,46 @@ private actor FakeCaptureGate {
         enteredContinuation?.resume()
         enteredContinuation = nil
         guard !didRelease else { return }
-        await withCheckedContinuation { releaseContinuation = $0 }
+        await withTaskCancellationHandler(operation: {
+            await withCheckedContinuation { releaseContinuation = $0 }
+        }, onCancel: {
+            Task { await self.cancelReleaseWait() }
+        })
     }
 
-    func waitUntilEntered() async {
-        guard !didEnter else { return }
-        await withCheckedContinuation { enteredContinuation = $0 }
+    func waitUntilEntered() async throws {
+        try await withPickyTestTimeout("voice context capture entry") {
+            await self.waitForEntry()
+        }
     }
 
     func release() {
         didRelease = true
+        releaseContinuation?.resume()
+        releaseContinuation = nil
+    }
+
+    private func waitForEntry() async {
+        guard !didEnter else { return }
+        await withTaskCancellationHandler(operation: {
+            await withCheckedContinuation { continuation in
+                if didEnter {
+                    continuation.resume()
+                } else {
+                    enteredContinuation = continuation
+                }
+            }
+        }, onCancel: {
+            Task { await self.cancelEntryWait() }
+        })
+    }
+
+    private func cancelEntryWait() {
+        enteredContinuation?.resume()
+        enteredContinuation = nil
+    }
+
+    private func cancelReleaseWait() {
         releaseContinuation?.resume()
         releaseContinuation = nil
     }
@@ -359,7 +398,7 @@ struct PickyCompanionManagerTests {
     }
 
     @Test func resetScreenContextDisplayOverridesRestoresAutomaticPolicy() {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory, seedDefaultWorkspace: false)
         settings.attachScreenshotsOnlyWhenInked = true
         let manager = CompanionManager(
             agentClient: FakeVoiceClient(),
@@ -598,7 +637,7 @@ struct PickyCompanionManagerTests {
         manager.handleShortcutTransition(.pressed, pressedScreenPoint: .zero)
         let inputID = try #require(manager.interactionVoiceInputID)
         manager.submitTranscriptToPickyAgent(transcript: "늦은 캡처")
-        await captureGate.waitUntilEntered()
+        try await captureGate.waitUntilEntered()
         manager.applyAgentClientEvent(.sessionProjectionBootstrapCompletion(
             removedSessionIDs: ["removed-pickle"],
             isPrimary: true
@@ -770,7 +809,7 @@ struct PickyCompanionManagerTests {
 
         manager.handleShortcutTransition(.pressed, pressedScreenPoint: .zero)
         manager.submitTranscriptToPickyAgent(transcript: "이전 입력")
-        await captureGate.waitUntilEntered()
+        try await captureGate.waitUntilEntered()
 
         selection.setScreenContextTarget(sessionID: nil, sticky: false)
         selection.setScreenContextTarget(sessionID: "pickle-target", sticky: false)
@@ -1614,7 +1653,7 @@ struct PickyCompanionManagerTests {
         )
 
         let dispatch = Task { await manager.sendDirectMessage("cancel while capturing", source: .quickInput) }
-        await captureGate.waitUntilEntered()
+        try await captureGate.waitUntilEntered()
 
         #expect(await manager.cancelMainTurn())
         await captureGate.release()
@@ -1636,7 +1675,7 @@ struct PickyCompanionManagerTests {
         )
 
         let dispatch = Task { await manager.sendDirectMessage("new armed turn", source: .quickInput) }
-        await captureGate.waitUntilEntered()
+        try await captureGate.waitUntilEntered()
         manager.applyAgentEvent(.mainTurnSettled(contextId: "older-main-context"))
 
         #expect(await manager.cancelMainTurn())
@@ -1715,7 +1754,7 @@ struct PickyCompanionManagerTests {
                 quickInputRecipient: .pickle(sessionID: "pickle-a", label: "Investigate logs")
             )
         }
-        await captureGate.waitUntilEntered()
+        try await captureGate.waitUntilEntered()
         selection.setScreenContextTarget(sessionID: "pickle-b", sticky: false)
         await captureGate.release()
 

@@ -51,12 +51,4 @@ struct PickyCursorMascotGlowLayerTests {
         #expect(layer(glowBlur: 0.3) != layer(glowBlur: 0.6))
     }
 
-    @Test func perFrameBreathingScaleIsNotAnInputSoFramesStayEqual() {
-        // The breathing `scale` animates the OUTER `.scaleEffect`, never the glow
-        // layer's inputs. Two frames with different breathing scales must still
-        // produce equal glow layers, which is what lets SwiftUI skip the blur.
-        let frameA = layer()
-        let frameB = layer()
-        #expect(frameA == frameB)
-    }
 }

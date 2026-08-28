@@ -96,18 +96,18 @@ struct PickySettingsPersistenceCoordinatorTests {
         let allFlush = CallbackLatch()
 
         persistence.enqueue { $0.appearance = .light }
-        await gate.waitUntilStarted(1)
+        try await gate.waitUntilStarted(1)
         persistence.flush { firstFlush.signal() }
         persistence.enqueue { $0.appearance = .dark }
 
         gate.releaseOne()
-        await firstFlush.wait()
+        try await firstFlush.wait()
         #expect(try store.loadStrict().appearance == .light)
 
-        await gate.waitUntilStarted(2)
+        try await gate.waitUntilStarted(2)
         persistence.flush { allFlush.signal() }
         gate.releaseOne()
-        await allFlush.wait()
+        try await allFlush.wait()
         #expect(try store.loadStrict().appearance == .dark)
     }
 
@@ -122,7 +122,7 @@ struct PickySettingsPersistenceCoordinatorTests {
         var drainSucceeded: Bool?
 
         persistence.enqueue { $0.appearance = .light }
-        await gate.waitUntilStarted(1)
+        try await gate.waitUntilStarted(1)
         persistence.drain { result in
             drainSucceeded = (try? result.get()) != nil
             drainLatch.signal()
@@ -130,12 +130,12 @@ struct PickySettingsPersistenceCoordinatorTests {
         persistence.enqueue { $0.cursor.showPiCursor = false }
 
         gate.releaseOne()
-        await gate.waitUntilStarted(2)
+        try await gate.waitUntilStarted(2)
         await Task.yield()
         #expect(!drainLatch.isSignaled)
 
         gate.releaseOne()
-        await drainLatch.wait()
+        try await drainLatch.wait()
         #expect(drainSucceeded == true)
         #expect(!(try store.loadStrict().cursor.showPiCursor))
     }
@@ -156,7 +156,7 @@ struct PickySettingsPersistenceCoordinatorTests {
             drainSucceeded = (try? result.get()) != nil
             drainLatch.signal()
         }
-        await drainLatch.wait()
+        try await drainLatch.wait()
 
         #expect(drainSucceeded == false)
         #expect(try Data(contentsOf: store.url) == Data("not json".utf8))
@@ -210,7 +210,7 @@ struct PickySettingsPersistenceCoordinatorTests {
         let allFlush = CallbackLatch()
         viewModel.settings.notifications.notifyOnCompleted = true
         viewModel.save()
-        await gate.waitUntilStarted(1)
+        try await gate.waitUntilStarted(1)
         persistence.flush { firstFlush.signal() }
 
         viewModel.settings.cursor.showPiCursor = false
@@ -218,16 +218,16 @@ struct PickySettingsPersistenceCoordinatorTests {
         #expect(viewModel.isSaving)
 
         gate.releaseOne()
-        await firstFlush.wait()
+        try await firstFlush.wait()
         #expect(viewModel.isSaving)
         #expect(viewModel.settings.notifications.notifyOnCompleted)
         #expect(!viewModel.settings.cursor.showPiCursor)
         #expect(try store.loadStrict().cursor.showPiCursor)
 
-        await gate.waitUntilStarted(2)
+        try await gate.waitUntilStarted(2)
         persistence.flush { allFlush.signal() }
         gate.releaseOne()
-        await allFlush.wait()
+        try await allFlush.wait()
         #expect(!viewModel.isSaving)
         #expect(!(try store.loadStrict().cursor.showPiCursor))
     }
@@ -245,16 +245,16 @@ struct PickySettingsPersistenceCoordinatorTests {
         #expect(viewModel.settings.cursor.showPiCursor)
         viewModel.settings.cursor.showPiCursor = false
         viewModel.save()
-        await gate.waitUntilStarted(1)
+        try await gate.waitUntilStarted(1)
 
         viewModel.settings.cursor.showPiCursor = true
         viewModel.save()
         persistence.flush { allFlush.signal() }
 
         gate.releaseOne()
-        await gate.waitUntilStarted(2)
+        try await gate.waitUntilStarted(2)
         gate.releaseOne()
-        await allFlush.wait()
+        try await allFlush.wait()
 
         #expect(try store.loadStrict().cursor.showPiCursor)
     }
@@ -271,7 +271,7 @@ struct PickySettingsPersistenceCoordinatorTests {
 
         viewModel.settings.cursor.showPiCursor = false
         viewModel.save()
-        await gate.waitUntilStarted(1)
+        try await gate.waitUntilStarted(1)
 
         persistence.enqueue { $0.cursor.showPiCursor = true }
         viewModel.settings.appearance = .light
@@ -279,11 +279,11 @@ struct PickySettingsPersistenceCoordinatorTests {
         persistence.flush { allFlush.signal() }
 
         gate.releaseOne()
-        await gate.waitUntilStarted(2)
+        try await gate.waitUntilStarted(2)
         gate.releaseOne()
-        await gate.waitUntilStarted(3)
+        try await gate.waitUntilStarted(3)
         gate.releaseOne()
-        await allFlush.wait()
+        try await allFlush.wait()
 
         let committed = try store.loadStrict()
         #expect(committed.cursor.showPiCursor)
@@ -305,7 +305,7 @@ private final class TransactionGate: @unchecked Sendable {
     private let lock = NSLock()
     private let permits = DispatchSemaphore(value: 0)
     private var startedCount = 0
-    private var waiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private var waiters: [(id: UUID, count: Int, continuation: CheckedContinuation<Void, Never>)] = []
 
     func observe() {
         lock.lock()
@@ -317,17 +317,38 @@ private final class TransactionGate: @unchecked Sendable {
         permits.wait()
     }
 
-    func waitUntilStarted(_ count: Int) async {
-        await withCheckedContinuation { continuation in
-            lock.lock()
-            if startedCount >= count {
-                lock.unlock()
-                continuation.resume()
-            } else {
-                waiters.append((count, continuation))
-                lock.unlock()
-            }
+    func waitUntilStarted(_ count: Int) async throws {
+        let waiterID = UUID()
+        try await withPickyTestTimeout("settings persistence transaction \(count)") {
+            await self.waitForStart(count, waiterID: waiterID)
         }
+    }
+
+    private func waitForStart(_ count: Int, waiterID: UUID) async {
+        await withTaskCancellationHandler(operation: {
+            await withCheckedContinuation { continuation in
+                let shouldResume = lock.withLock {
+                    if startedCount >= count {
+                        return true
+                    }
+                    waiters.append((waiterID, count, continuation))
+                    return false
+                }
+                if shouldResume {
+                    continuation.resume()
+                }
+            }
+        }, onCancel: {
+            cancelWaiter(waiterID)
+        })
+    }
+
+    private func cancelWaiter(_ waiterID: UUID) {
+        let waiter = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+            guard let index = waiters.firstIndex(where: { $0.id == waiterID }) else { return nil }
+            return waiters.remove(at: index).continuation
+        }
+        waiter?.resume()
     }
 
     func releaseOne() {
@@ -347,14 +368,29 @@ private final class CallbackLatch {
         continuation = nil
     }
 
-    func wait() async {
-        guard !isSignaled else { return }
-        await withCheckedContinuation { continuation in
-            if isSignaled {
-                continuation.resume()
-            } else {
-                self.continuation = continuation
-            }
+    func wait() async throws {
+        try await withPickyTestTimeout("settings persistence callback") {
+            await self.waitForSignal()
         }
+    }
+
+    private func waitForSignal() async {
+        guard !isSignaled else { return }
+        await withTaskCancellationHandler(operation: {
+            await withCheckedContinuation { continuation in
+                if isSignaled {
+                    continuation.resume()
+                } else {
+                    self.continuation = continuation
+                }
+            }
+        }, onCancel: {
+            Task { @MainActor in self.cancelWait() }
+        })
+    }
+
+    private func cancelWait() {
+        continuation?.resume()
+        continuation = nil
     }
 }

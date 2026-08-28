@@ -42,23 +42,6 @@ struct PickyQuickReplyOriginSourceTests {
         #expect(decoded == .cli)
     }
 
-    @Test func cliOriginMapsToCursorContextOwner() {
-        // The reducer's ownerFromMetadata is private, so emulate it here. Documents that
-        // .cli must map to .cli (cursor-presentation owner). If this assertion ever
-        // fails, the cursor speech bubble + TTS path for CLI submissions is broken.
-        let owner: PickyContextOwner
-        switch PickyQuickReplyOriginSource.cli {
-        case .voice, .voiceFollowUp: owner = .metadataVoice
-        case .text: owner = .metadataText
-        case .textFollowUp: owner = .metadataQuickInput
-        case .cli: owner = .cli
-        case .system: owner = .system
-        case .unknown: owner = .unknown
-        }
-        #expect(owner == .cli)
-        #expect(owner.usesCursorResponsePresentation == true)
-    }
-
     @Test func textFollowUpMetadataUsesQuickInputPresentation() {
         let owner = PickyContextOwner.metadataQuickInput
         #expect(owner.isTextOwned)

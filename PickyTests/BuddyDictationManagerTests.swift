@@ -20,12 +20,42 @@ private actor FirstStartPreparationGate {
         firstEntered = true
         firstEnteredContinuation?.resume()
         firstEnteredContinuation = nil
-        await withCheckedContinuation { firstReleaseContinuation = $0 }
+        await withTaskCancellationHandler(operation: {
+            await withCheckedContinuation { firstReleaseContinuation = $0 }
+        }, onCancel: {
+            Task { await self.cancelFirstReleaseWait() }
+        })
     }
 
-    func waitUntilFirstEntered() async {
+    func waitUntilFirstEntered() async throws {
+        try await withPickyTestTimeout("first dictation preparation") {
+            await self.waitForFirstEntry()
+        }
+    }
+
+    private func waitForFirstEntry() async {
         guard !firstEntered else { return }
-        await withCheckedContinuation { firstEnteredContinuation = $0 }
+        await withTaskCancellationHandler(operation: {
+            await withCheckedContinuation { continuation in
+                if firstEntered {
+                    continuation.resume()
+                } else {
+                    firstEnteredContinuation = continuation
+                }
+            }
+        }, onCancel: {
+            Task { await self.cancelFirstEntryWait() }
+        })
+    }
+
+    private func cancelFirstEntryWait() {
+        firstEnteredContinuation?.resume()
+        firstEnteredContinuation = nil
+    }
+
+    private func cancelFirstReleaseWait() {
+        firstReleaseContinuation?.resume()
+        firstReleaseContinuation = nil
     }
 
     func releaseFirst() {
@@ -78,7 +108,7 @@ struct BuddyDictationManagerTests {
     }
 
     @MainActor
-    @Test func staleCancelledStartupCannotResetNewerSession() async {
+    @Test func staleCancelledStartupCannotResetNewerSession() async throws {
         let gate = FirstStartPreparationGate()
         let manager = BuddyDictationManager(
             transcriptionProvider: BuddyDictationTestProvider(),
@@ -97,7 +127,7 @@ struct BuddyDictationManagerTests {
                 submitDraftText: { _ in }
             )
         }
-        await gate.waitUntilFirstEntered()
+        try await gate.waitUntilFirstEntered()
         manager.stopPushToTalkFromKeyboardShortcut()
 
         await manager.startPushToTalkFromKeyboardShortcut(
@@ -109,7 +139,9 @@ struct BuddyDictationManagerTests {
         #expect(manager.isRecordingFromKeyboardShortcut)
 
         await gate.releaseFirst()
-        await startA.value
+        try await withPickyTestTimeout("cancelled dictation startup") {
+            await startA.value
+        }
 
         #expect(manager.isRecordingFromKeyboardShortcut)
         #expect(events.contains(.discarded(inputID: inputA)))

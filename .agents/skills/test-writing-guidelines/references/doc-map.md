@@ -83,7 +83,8 @@ pnpm --dir agentd exec vitest run src/path/to/file.test.ts
 
 ```bash
 pnpm --dir agentd run test:contracts
-pnpm --dir agentd run test:serial
+pnpm --dir agentd run test:ci
+pnpm --dir agentd run test:serial  # flaky 분류용 완전 serial 재현
 pnpm --dir agentd run typecheck
 ```
 

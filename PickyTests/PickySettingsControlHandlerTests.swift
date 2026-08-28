@@ -18,14 +18,44 @@ private final class DelayedMainAgentSettingApplier {
         if commandCount == 1 {
             firstCommandWaiter?.resume()
             firstCommandWaiter = nil
-            await withCheckedContinuation { firstCommandCompletion = $0 }
+            await withTaskCancellationHandler(operation: {
+                await withCheckedContinuation { firstCommandCompletion = $0 }
+            }, onCancel: {
+                Task { @MainActor in self.cancelFirstCommandCompletion() }
+            })
         }
         return nil
     }
 
-    func waitUntilFirstCommandStarts() async {
+    func waitUntilFirstCommandStarts() async throws {
+        try await withPickyTestTimeout("first main-agent settings command") {
+            await self.waitForFirstCommand()
+        }
+    }
+
+    private func waitForFirstCommand() async {
         guard commandCount == 0 else { return }
-        await withCheckedContinuation { firstCommandWaiter = $0 }
+        await withTaskCancellationHandler(operation: {
+            await withCheckedContinuation { continuation in
+                if commandCount > 0 {
+                    continuation.resume()
+                } else {
+                    firstCommandWaiter = continuation
+                }
+            }
+        }, onCancel: {
+            Task { @MainActor in self.cancelFirstCommandWait() }
+        })
+    }
+
+    private func cancelFirstCommandWait() {
+        firstCommandWaiter?.resume()
+        firstCommandWaiter = nil
+    }
+
+    private func cancelFirstCommandCompletion() {
+        firstCommandCompletion?.resume()
+        firstCommandCompletion = nil
     }
 
     func completeFirstCommand() {
@@ -43,7 +73,7 @@ struct PickySettingsControlHandlerTests {
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
 
         let settingsStore = PickySettingsStore(appSupportRoot: root)
-        var initialSettings = PickySettings.defaults(appSupportRoot: root)
+        var initialSettings = PickySettings.defaults(appSupportRoot: root, seedDefaultWorkspace: false)
         initialSettings.defaultCwd = project.path
         initialSettings.mainAgentCwd = project.path
         initialSettings.worktreeParent = project.path
@@ -76,7 +106,7 @@ struct PickySettingsControlHandlerTests {
         )
 
         let firstResultTask = Task { @MainActor in try await handler.handle(requestA) }
-        await applier.waitUntilFirstCommandStarts()
+        try await applier.waitUntilFirstCommandStarts()
         let secondResultTask = Task { @MainActor in try await handler.handle(requestB) }
         await Task.yield()
 
@@ -84,8 +114,12 @@ struct PickySettingsControlHandlerTests {
         #expect(settingsStore.load().mainAgentModelPattern == "model/a")
 
         applier.completeFirstCommand()
-        let firstResult = try await firstResultTask.value
-        let secondResult = try await secondResultTask.value
+        let firstResult = try await withPickyTestTimeout("first main-agent settings result") {
+            try await firstResultTask.value
+        }
+        let secondResult = try await withPickyTestTimeout("second main-agent settings result") {
+            try await secondResultTask.value
+        }
 
         let first = try #require(firstResult.objectValue)
         let second = try #require(secondResult.objectValue)
@@ -104,7 +138,7 @@ struct PickySettingsControlHandlerTests {
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
 
         let settingsStore = PickySettingsStore(appSupportRoot: root)
-        var initialSettings = PickySettings.defaults(appSupportRoot: root)
+        var initialSettings = PickySettings.defaults(appSupportRoot: root, seedDefaultWorkspace: false)
         initialSettings.defaultCwd = project.path
         initialSettings.mainAgentCwd = project.path
         initialSettings.worktreeParent = project.path

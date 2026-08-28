@@ -83,7 +83,15 @@ struct PickyDiagnosticsBundleTests {
         defer { try? FileManager.default.removeItem(at: bundle.zipURL.deletingLastPathComponent()) }
 
         let names = try inspectZipEntryNames(at: bundle.zipURL)
+        let sanitizedSettings = try extractZipEntryText(named: "settings.sanitized.json", from: bundle.zipURL)
+
         #expect(names.contains("settings.sanitized.json"))
+        #expect(!sanitizedSettings.contains("super-secret-key"))
+        #expect(!sanitizedSettings.contains("another-secret"))
+        let settings = try #require(JSONSerialization.jsonObject(with: Data(sanitizedSettings.utf8)) as? [String: Any])
+        let voiceProvider = try #require(settings["voiceProvider"] as? [String: Any])
+        #expect(settings["defaultCwd"] as? String == "/tmp/work")
+        #expect(voiceProvider["voice"] as? String == "marin")
     }
 
     @Test func filenameIncludesScopeAndGeneratedAtTimestamp() throws {

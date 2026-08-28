@@ -120,7 +120,7 @@ When the user asks about a feature, start here before broad searching:
 xcodebuild -project Picky.xcodeproj -scheme Picky -destination "platform=macOS,arch=$(uname -m)" build
 xcodebuild -project Picky.xcodeproj -scheme Picky -destination "platform=macOS,arch=$(uname -m)" test
 cd agentd && pnpm install
-cd agentd && pnpm test
+cd agentd && pnpm run test:ci
 cd agentd && pnpm run build
 ./scripts/package-signed-app.sh
 ```

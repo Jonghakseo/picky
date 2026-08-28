@@ -214,6 +214,7 @@ struct PickyConversationComposerView: View {
             queueDock
             screenContextAttachmentChip
             attachmentChipsRow
+            runtimeControls
             // The custom layout reports only the composer's size, so opening
             // suggestions never reflows the card. It measures the popup itself
             // and places its bottom edge 4pt above the composer's top edge.
@@ -224,7 +225,6 @@ struct PickyConversationComposerView: View {
                 }
             }
             .zIndex(1)
-            runtimeFooter
         }
         .onAppear {
             commands.ensureSlashCommandsLoaded(sessionID: session.id)
@@ -431,14 +431,14 @@ struct PickyConversationComposerView: View {
         .hoverAffordance()
     }
 
-    private var runtimeFooter: some View {
+    private var runtimeControls: some View {
         let presentation = PickyComposerRuntimePresentation(assistantRun: session.currentAssistantRun)
         return Group {
             if presentation.hasControls {
                 HStack(spacing: DS.Spacing.sm) {
                     if let modelLabel = presentation.modelLabel {
                         Button(action: { cycleModel(direction: .forward) }) {
-                            runtimeFooterLabel(icon: "cpu", text: modelLabel)
+                            runtimeControlLabel(icon: "cpu", text: modelLabel)
                         }
                         .buttonStyle(.plain)
                         .help(L10n.t("hud.composer.runtime.model.help"))
@@ -448,7 +448,7 @@ struct PickyConversationComposerView: View {
                     }
                     if let thinkingLabel = presentation.thinkingLabel {
                         Button(action: cycleThinkingLevel) {
-                            runtimeFooterLabel(icon: "brain", text: thinkingLabel)
+                            runtimeControlLabel(icon: "brain", text: thinkingLabel)
                         }
                         .buttonStyle(.plain)
                         .help(L10n.t("hud.composer.runtime.thinking.help"))
@@ -472,7 +472,7 @@ struct PickyConversationComposerView: View {
         }
     }
 
-    private func runtimeFooterLabel(icon: String, text: String) -> some View {
+    private func runtimeControlLabel(icon: String, text: String) -> some View {
         HStack(spacing: DS.Spacing.xs) {
             Image(systemName: icon)
                 .font(PickyHUDTypography.statusSemibold)

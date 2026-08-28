@@ -214,12 +214,27 @@ struct PickyConversationComposerView: View {
             queueDock
             screenContextAttachmentChip
             attachmentChipsRow
-            runtimeControls
             // The custom layout reports only the composer's size, so opening
             // suggestions never reflows the card. It measures the popup itself
             // and places its bottom edge 4pt above the composer's top edge.
             PickyComposerAutocompleteOverlayLayout {
                 composerRow
+                    .overlay(alignment: .topTrailing) {
+                        runtimeControls
+                            .fixedSize(horizontal: true, vertical: false)
+                            .padding(3)
+                            .background(
+                                RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
+                                    .fill(DS.Colors.surface1.opacity(0.98))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
+                                    .stroke(DS.Colors.borderSubtle, lineWidth: 0.7)
+                            )
+                            .offset(x: -DS.Spacing.sm, y: -15)
+                            .opacity(autocompleteIsVisible ? 0 : 1)
+                            .allowsHitTesting(!autocompleteIsVisible)
+                    }
                 if autocompleteIsVisible {
                     autocompletePanel
                 }

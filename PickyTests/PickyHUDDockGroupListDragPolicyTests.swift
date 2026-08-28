@@ -276,6 +276,23 @@ struct PickyHUDDockGroupListDragPolicyTests {
 
 @MainActor
 extension PickyHUDDockGroupListDragPolicyTests {
+    @Test func monitorInstallationRequiresACompleteSetAndRemovesPartialTokens() {
+        var removed: [Any] = []
+        let complete = PickyHUDDockGroupListDragMonitorPolicy.completeSet(
+            from: [NSObject(), NSObject(), NSObject(), NSObject()],
+            remove: { removed.append($0) }
+        )
+        #expect(complete?.count == 4)
+        #expect(removed.isEmpty)
+
+        let partial = PickyHUDDockGroupListDragMonitorPolicy.completeSet(
+            from: [NSObject(), NSObject(), nil, NSObject()],
+            remove: { removed.append($0) }
+        )
+        #expect(partial == nil)
+        #expect(removed.count == 3)
+    }
+
     @Test func leaseTransfersTerminalOwnershipOnceAndMakesLateListEventsInert() {
         let token = UUID(uuidString: "00000000-0000-0000-0000-000000000010")!
         let nextToken = UUID(uuidString: "00000000-0000-0000-0000-000000000011")!

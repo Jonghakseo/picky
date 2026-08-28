@@ -314,6 +314,13 @@ struct PickyHUDDockExternalDragPolicyTests {
             dockSide: .bottom,
             geometryRevision: 8
         ))
+        #expect(base != PickyHUDDockLayoutFingerprint(
+            layout: layout,
+            activeSessionIDs: ["dragged", "loose", "member"],
+            dockSide: .bottom,
+            geometryRevision: 7,
+            fontScale: 1.3
+        ))
     }
 
     @Test func screenPointMustPassTwoDimensionalAcceptanceBeforeAxisResolutionAcrossDockSides() {

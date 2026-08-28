@@ -405,11 +405,14 @@ struct PickyHUDDockGroupListView: View {
         isLeavingGroup = false
         scrollController.resetClock()
         dragAutoScrollTicker.setDragging(true)
-        installDragMonitors(rowID: rowID, token: token)
+        guard installDragMonitors(rowID: rowID, token: token) else {
+            resetDrag(token: token)
+            return
+        }
     }
 
-    private func installDragMonitors(rowID: String, token: UUID) {
-        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }
+    private func installDragMonitors(rowID: String, token: UUID) -> Bool {
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return false }
         removeDragMonitors()
         let handleMove: (NSEvent) -> Void = { _ in
             guard dragLease.ownsList(token: token) else { return }
@@ -419,7 +422,7 @@ struct PickyHUDDockGroupListView: View {
             guard dragLease.ownsList(token: token) else { return }
             commitDrag(rowID: rowID, token: token, location: currentPanelPoint())
         }
-        dragMonitors = [
+        let installed: [Any?] = [
             NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDragged]) { event in
                 handleMove(event)
                 return event
@@ -430,7 +433,13 @@ struct PickyHUDDockGroupListView: View {
             },
             NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDragged], handler: handleMove),
             NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseUp], handler: handleUp),
-        ].compactMap { $0 }
+        ]
+        guard let completeSet = PickyHUDDockGroupListDragMonitorPolicy.completeSet(
+            from: installed,
+            remove: { NSEvent.removeMonitor($0) }
+        ) else { return false }
+        dragMonitors = completeSet
+        return true
     }
 
     private func removeDragMonitors() {

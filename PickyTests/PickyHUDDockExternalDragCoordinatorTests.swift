@@ -278,6 +278,31 @@ struct PickyHUDDockExternalDragCoordinatorTests {
         #expect(preview.terminals == [.cancel(.invalidDrop)])
     }
 
+    @Test func emittedFingerprintCancelsBeforePublishedStorageAdvances() {
+        let harness = MonitorHarness()
+        let preview = PreviewSpy()
+        let payload = promotion()
+        let coordinator = makeCoordinator(
+            harness: harness,
+            mouseLocation: { CGPoint(x: 100, y: 50) },
+            currentFingerprint: { payload.fingerprint },
+            preview: preview,
+            commits: { _, _ in Issue.record("stale drag must not commit") }
+        )
+        let emittedFingerprint = PickyHUDDockLayoutFingerprint(
+            layout: payload.frozenLayout,
+            activeSessionIDs: payload.fingerprint.activeSessionIDs,
+            dockSide: payload.fingerprint.dockSide,
+            geometryRevision: payload.fingerprint.geometryRevision,
+            fontScale: 1.3
+        )
+
+        #expect(coordinator.start(payload))
+        #expect(coordinator.cancelIfFingerprintIsStale(emittedFingerprint))
+        #expect(preview.terminals == [.cancel(.staleLayout)])
+        #expect(harness.removed.count == 2)
+    }
+
     @Test func geometryMeasuredForOlderLayoutRejectsNewPromotionBeforePreviewOrMonitorsBegin() {
         let harness = MonitorHarness()
         let preview = PreviewSpy()

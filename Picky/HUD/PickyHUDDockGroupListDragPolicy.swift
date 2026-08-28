@@ -54,6 +54,24 @@ final class PickyHUDDockGroupListDragLease {
     }
 }
 
+enum PickyHUDDockGroupListDragMonitorPolicy {
+    private static let requiredMonitorCount = 4
+
+    static func completeSet(
+        from monitors: [Any?],
+        remove: (Any) -> Void
+    ) -> [Any]? {
+        let installed = monitors.compactMap { $0 }
+        guard monitors.count == requiredMonitorCount,
+              installed.count == requiredMonitorCount
+        else {
+            installed.forEach(remove)
+            return nil
+        }
+        return installed
+    }
+}
+
 enum PickyHUDDockGroupListDragPolicy {
     /// A drop lands before the first row whose center sits below the pointer,
     /// which yields `rowCenters.count` when the pointer is past the last row.

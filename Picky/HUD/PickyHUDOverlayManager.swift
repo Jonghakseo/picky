@@ -141,11 +141,13 @@ final class PickyHUDOverlayManager {
                 .map { CGFloat($0) }
                 .eraseToAnyPublisher()
         ) { [weak self] snapshot, fontScale in
+            self?.cancelStaleExternalDockDrags(snapshot: snapshot, fontScale: fontScale)
             self?.syncDockGroupListChildrenWithSnapshot(snapshot: snapshot, fontScale: fontScale)
         }
         self.dockSnapshotCancellable = viewModel.dockState.$snapshot.sink { [weak self] snapshot in
-            self?.consumeAuthoritativeRemovalEvent(snapshot.authoritativeRemovalEvent)
-            self?.cancelStaleExternalDockDrags()
+            guard let self else { return }
+            self.consumeAuthoritativeRemovalEvent(snapshot.authoritativeRemovalEvent)
+            self.cancelStaleExternalDockDrags(snapshot: snapshot, fontScale: self.fontScaleStore.cgValue)
         }
     }
 

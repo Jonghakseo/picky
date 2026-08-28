@@ -28,7 +28,8 @@ struct PickyHUDDockExternalDragPromotion {
                 layout: frozenLayout,
                 activeSessionIDs: fingerprint.activeSessionIDs,
                 dockSide: fingerprint.dockSide,
-                geometryRevision: fingerprint.geometryRevision
+                geometryRevision: fingerprint.geometryRevision,
+                fontScale: fingerprint.fontScale
             ) == fingerprint
             && fingerprint.dockSide == geometry.dockSide
             && fingerprint.geometryRevision == geometry.geometryRevision
@@ -136,7 +137,15 @@ final class PickyHUDDockExternalDragCoordinator {
     /// commit clears state before persistence, so its own reconciliation is inert.
     @discardableResult
     func cancelIfCurrentFingerprintIsStale() -> Bool {
-        guard let promotion, currentFingerprint() != promotion.fingerprint else { return false }
+        cancelIfFingerprintIsStale(currentFingerprint())
+    }
+
+    /// Combine's `@Published` values arrive during `willSet`. Callers that
+    /// already hold the emitted fingerprint must pass it directly instead of
+    /// rereading backing storage and lagging one mutation behind.
+    @discardableResult
+    func cancelIfFingerprintIsStale(_ fingerprint: PickyHUDDockLayoutFingerprint) -> Bool {
+        guard let promotion, fingerprint != promotion.fingerprint else { return false }
         return cancel(.staleLayout)
     }
 

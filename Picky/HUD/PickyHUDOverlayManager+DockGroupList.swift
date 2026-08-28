@@ -650,9 +650,23 @@ extension PickyHUDOverlayManager {
         return externalDockDragsByDisplayID[displayID]?.coordinator?.finishFromPhysicalMouseUp() ?? false
     }
 
-    func cancelStaleExternalDockDrags() {
-        for entry in externalDockDragsByDisplayID.values {
-            _ = entry.coordinator?.cancelIfCurrentFingerprintIsStale()
+    func cancelStaleExternalDockDrags(
+        snapshot: PickyHUDDockSnapshot,
+        fontScale: CGFloat
+    ) {
+        for (displayID, entry) in externalDockDragsByDisplayID {
+            guard let geometry = externalDockGeometryByDisplayID[displayID]?.input else {
+                _ = entry.coordinator?.cancelForTeardown()
+                continue
+            }
+            let emittedFingerprint = PickyHUDDockLayoutFingerprint(
+                layout: snapshot.dockLayout,
+                activeSessionIDs: Set(snapshot.activeSessions.map(\.id)),
+                dockSide: position(for: displayID).side,
+                geometryRevision: geometry.geometryRevision,
+                fontScale: fontScale
+            )
+            _ = entry.coordinator?.cancelIfFingerprintIsStale(emittedFingerprint)
         }
     }
 
@@ -677,7 +691,8 @@ extension PickyHUDOverlayManager {
                   layout: snapshot.dockLayout,
                   activeSessionIDs: Set(snapshot.activeSessions.map(\.id)),
                   dockSide: position(for: displayID).side,
-                  geometryRevision: geometryEntry.input.geometryRevision
+                  geometryRevision: geometryEntry.input.geometryRevision,
+                  fontScale: fontScaleStore.cgValue
               ),
               snapshot.dockLayout.group(withID: request.sourceGroupID)?.memberSessionIDs.contains(request.session.id) == true,
               PickyHUDDockExternalDragPreviewPresentationPolicy.sourceFrameIsUsable(
@@ -703,15 +718,16 @@ extension PickyHUDOverlayManager {
             )
             coordinator = PickyHUDDockExternalDragCoordinator(
                 currentFingerprint: { [weak self] in
-                    guard let self,
-                          let geometry = self.externalDockGeometryByDisplayID[displayID]?.input
-                    else { return fingerprint }
+                    guard let self else { return fingerprint }
                     let live = self.viewModel.dockState.snapshot
+                    let geometryRevision = self.externalDockGeometryByDisplayID[displayID]?.input.geometryRevision
+                        ?? (fingerprint.geometryRevision &+ 1)
                     return PickyHUDDockLayoutFingerprint(
                         layout: live.dockLayout,
                         activeSessionIDs: Set(live.activeSessions.map(\.id)),
                         dockSide: self.position(for: displayID).side,
-                        geometryRevision: geometry.geometryRevision
+                        geometryRevision: geometryRevision,
+                        fontScale: self.fontScaleStore.cgValue
                     )
                 },
                 preview: preview,

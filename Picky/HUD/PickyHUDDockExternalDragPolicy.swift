@@ -82,7 +82,8 @@ struct PickyHUDDockExternalDragRailGeometryInput {
             layout: layout,
             activeSessionIDs: activeSessionIDs,
             dockSide: dockSide,
-            geometryRevision: geometryRevision
+            geometryRevision: geometryRevision,
+            fontScale: fontScale
         )
         let screenSlotCenters = slotCenters.reduce(into: [String: CGPoint]()) { result, item in
             result[item.key] = PickyHUDDockExternalDragScreenLayout.screenPoint(
@@ -226,7 +227,7 @@ enum PickyHUDDockExternalDragScreenLayout {
 
 /// The minimal persisted structure that invalidates frozen external drag
 /// geometry. Group labels and colors do not affect a target, while member
-/// order, active membership, Dock side, and measured geometry do.
+/// order, active membership, Dock side, font scale, and measured geometry do.
 enum PickyHUDDockLayoutFingerprintEntry: Equatable {
     case session(String)
     case group(id: String, memberSessionIDs: [String])
@@ -237,12 +238,14 @@ struct PickyHUDDockLayoutFingerprint: Equatable {
     let activeSessionIDs: Set<String>
     let dockSide: PickyHUDDockSide
     let geometryRevision: Int
+    let fontScale: CGFloat
 
     init(
         layout: PickyDockLayout,
         activeSessionIDs: Set<String>,
         dockSide: PickyHUDDockSide,
-        geometryRevision: Int
+        geometryRevision: Int,
+        fontScale: CGFloat = 1
     ) {
         self.entries = layout.entries.map { entry in
             switch entry {
@@ -253,6 +256,7 @@ struct PickyHUDDockLayoutFingerprint: Equatable {
         self.activeSessionIDs = activeSessionIDs
         self.dockSide = dockSide
         self.geometryRevision = geometryRevision
+        self.fontScale = fontScale
     }
 }
 

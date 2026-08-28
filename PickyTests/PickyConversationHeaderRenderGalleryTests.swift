@@ -18,6 +18,10 @@ struct PickyConversationHeaderRenderGalleryTests {
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .appendingPathComponent("build/render-gallery/.conversation-context-output-path")
+    private static let composerOutputRequestFile = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .appendingPathComponent("build/render-gallery/.conversation-composer-output-path")
     private static let renderScale: CGFloat = 2
 
     private enum Appearance: String {
@@ -62,7 +66,15 @@ struct PickyConversationHeaderRenderGalleryTests {
     }
 
     @Test func writesConversationContextGalleryWhenOutputDirectoryIsRequested() throws {
-        guard let rawOutput = try? String(contentsOf: Self.outputRequestFile, encoding: .utf8)
+        try writeGallery(requestFile: Self.outputRequestFile, scenes: makeScenes())
+    }
+
+    @Test func writesConversationComposerGalleryWhenOutputDirectoryIsRequested() throws {
+        try writeGallery(requestFile: Self.composerOutputRequestFile, scenes: makeComposerScenes())
+    }
+
+    private func writeGallery(requestFile: URL, scenes: [Scene]) throws {
+        guard let rawOutput = try? String(contentsOf: requestFile, encoding: .utf8)
             .trimmingCharacters(in: .whitespacesAndNewlines),
             !rawOutput.isEmpty
         else { return }
@@ -71,7 +83,7 @@ struct PickyConversationHeaderRenderGalleryTests {
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         try LocaleManager.shared.withTemporaryChoiceForTesting(.korean) {
             var manifestScenes: [ManifestScene] = []
-            for scene in makeScenes() {
+            for scene in scenes {
                 let rendered = try render(scene)
                 let file = output.appendingPathComponent(scene.name)
                 try rendered.png.write(to: file, options: .atomic)
@@ -157,6 +169,35 @@ struct PickyConversationHeaderRenderGalleryTests {
         ]
     }
 
+    private func makeComposerScenes() -> [Scene] {
+        [
+            Scene(
+                name: "composer-one-line-dark-ko.png",
+                appearance: .dark,
+                content: AnyView(PickyConversationComposerRenderScene(
+                    id: "composer-one-line",
+                    draft: "메시지를 입력하세요"
+                ))
+            ),
+            Scene(
+                name: "composer-four-lines-dark-ko.png",
+                appearance: .dark,
+                content: AnyView(PickyConversationComposerRenderScene(
+                    id: "composer-four-lines",
+                    draft: "첫 번째 줄\n두 번째 줄\n세 번째 줄\n네 번째 줄"
+                ))
+            ),
+            Scene(
+                name: "composer-four-lines-light-ko.png",
+                appearance: .light,
+                content: AnyView(PickyConversationComposerRenderScene(
+                    id: "composer-four-lines-light",
+                    draft: "첫 번째 줄\n두 번째 줄\n세 번째 줄\n네 번째 줄"
+                ))
+            ),
+        ]
+    }
+
     private func render(_ scene: Scene) throws -> (
         png: Data,
         bitmap: NSBitmapImageRep,
@@ -173,6 +214,10 @@ struct PickyConversationHeaderRenderGalleryTests {
         )
         let measuringHost = NSHostingView(rootView: measuredRoot)
         measuringHost.appearance = NSAppearance(named: scene.appearance.nsAppearance)
+        measuringHost.layoutSubtreeIfNeeded()
+        let initialSize = measuringHost.fittingSize
+        measuringHost.frame = NSRect(origin: .zero, size: initialSize)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         measuringHost.layoutSubtreeIfNeeded()
         let contentSize = measuringHost.fittingSize
         guard contentSize.width > 0, contentSize.height > 0 else {
@@ -233,4 +278,89 @@ struct PickyConversationHeaderRenderGalleryTests {
         case bitmapCreationFailed(String)
         case pngEncodingFailed(String)
     }
+}
+
+@MainActor
+private struct PickyConversationComposerRenderScene: View {
+    private let session: PickySessionListViewModel.SessionCard
+    @StateObject private var viewModel: PickySessionListViewModel
+
+    init(id: String, draft: String) {
+        let date = Date(timeIntervalSince1970: 1_775_000_000)
+        let session = PickySessionListViewModel.SessionCard.fromAgentSession(
+            PickyAgentSession(
+                id: id,
+                title: "Composer render",
+                status: .running,
+                cwd: "/tmp/picky",
+                createdAt: date,
+                updatedAt: date,
+                lastSummary: "Ready",
+                logs: [],
+                tools: [],
+                artifacts: [],
+                changedFiles: [],
+                messages: [
+                    PickySessionMessage(
+                        id: "assistant-run",
+                        kind: .agentText,
+                        createdAt: date,
+                        originatedBy: nil,
+                        text: "Ready",
+                        question: nil,
+                        cancelledAt: nil,
+                        activitySnapshot: nil,
+                        assistantRun: PickyAssistantRunMetadata(
+                            model: "openai-codex/gpt-5.6",
+                            thinkingLevel: .high
+                        ),
+                        errorContext: nil,
+                        errorMessage: nil
+                    ),
+                ],
+                queuedSteers: [],
+                queuedFollowUps: [],
+                steeringMode: .oneAtATime,
+                followUpMode: .oneAtATime,
+                activitySummary: .zero,
+                contextUsage: nil,
+                currentAssistantRun: PickyAssistantRunMetadata(
+                    model: "openai-codex/gpt-5.6",
+                    thinkingLevel: .high
+                ),
+                pendingExtensionUiRequest: nil,
+                notifyMainOnCompletion: false
+            )
+        )
+        let viewModel = PickySessionListViewModel(
+            client: LocalStubPickyAgentClient(),
+            notificationCenter: PickyNoopNotificationCenter(),
+            composerDraftStore: PickyConversationComposerRenderDraftStore(),
+            composerAttachmentDraftStore: PickyConversationComposerRenderAttachmentStore()
+        )
+        viewModel.updateComposerDraft(draft, sessionID: session.id)
+        self.session = session
+        _viewModel = StateObject(wrappedValue: viewModel)
+    }
+
+    var body: some View {
+        PickyConversationComposerView(session: session, viewModel: viewModel)
+            .frame(width: 560)
+    }
+}
+
+private final class PickyConversationComposerRenderDraftStore: PickyComposerDraftStoring {
+    private var drafts: [String: String] = [:]
+
+    func draft(for sessionID: String) -> String? { drafts[sessionID] }
+    func setDraft(_ draft: String?, for sessionID: String) { drafts[sessionID] = draft }
+    func prune(knownSessionIDs: Set<String>) {
+        drafts = drafts.filter { knownSessionIDs.contains($0.key) }
+    }
+}
+
+private final class PickyConversationComposerRenderAttachmentStore: PickyComposerAttachmentDraftStoring {
+    func attachmentPaths(for _: String) -> [String] { [] }
+    func setAttachmentPaths(_: [String], for _: String) { }
+    func prune(knownSessionIDs _: Set<String>) { }
 }

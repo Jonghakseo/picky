@@ -54,6 +54,29 @@ struct PickyComposerRuntimePresentation: Equatable {
     }
 }
 
+enum PickyComposerEditorHeightPolicy {
+    /// The editor starts at one readable line, grows through four lines, then
+    /// leaves additional content to the native scroll view.
+    static let minimumHeight: CGFloat = 24
+    static let maximumHeight: CGFloat = 78
+    private static let estimatedLineHeight: CGFloat = 18
+    private static let textInsetHeight: CGFloat = 2
+
+    static func height(forMeasuredContentHeight contentHeight: CGFloat) -> CGFloat {
+        min(maximumHeight, max(minimumHeight, ceil(contentHeight)))
+    }
+
+    static func height(for text: String) -> CGFloat {
+        let lineCount = text.split(separator: "\n", omittingEmptySubsequences: false).count
+        let measuredHeight = CGFloat(lineCount) * estimatedLineHeight + (textInsetHeight * 2)
+        return height(forMeasuredContentHeight: measuredHeight)
+    }
+
+    static func transientGrowth(forEditorHeight editorHeight: CGFloat) -> CGFloat {
+        max(0, height(forMeasuredContentHeight: editorHeight) - minimumHeight)
+    }
+}
+
 enum PickyQueueEvidenceTone: Equatable {
     case neutral
 }

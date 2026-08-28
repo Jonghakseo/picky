@@ -14,45 +14,51 @@ struct PickyConversationRuntimeControlsView: View {
     let onCycleModel: () -> Void
     let onCycleThinkingLevel: () -> Void
 
+    @ViewBuilder
     var body: some View {
-        Group {
-            if presentation.hasControls {
-                HStack(spacing: DS.Spacing.xs) {
-                    if let modelText = presentation.modelText {
-                        Button(action: onCycleModel) {
-                            controlLabel(icon: "cpu", text: modelText)
-                        }
-                        .buttonStyle(.plain)
-                        .help(L10n.t("hud.composer.runtime.model.help"))
-                        .accessibilityLabel(presentation.modelLabel ?? modelText)
-                        .accessibilityHint(L10n.t("hud.composer.runtime.model.accessibilityHint"))
-                        .hoverAffordance()
-                    }
-                    if let thinkingText = presentation.thinkingText {
-                        Button(action: onCycleThinkingLevel) {
-                            controlLabel(icon: "brain", text: thinkingText)
-                        }
-                        .buttonStyle(.plain)
-                        .help(L10n.t("hud.composer.runtime.thinking.help"))
-                        .accessibilityLabel(presentation.thinkingLabel ?? thinkingText)
-                        .accessibilityHint(L10n.t("hud.composer.runtime.thinking.accessibilityHint"))
-                        .hoverAffordance()
-                    }
+        if presentation.hasControls || actionError != nil {
+            controls
+        }
+    }
+
+    private var controls: some View {
+        HStack(spacing: DS.Spacing.xs) {
+            if let modelText = presentation.modelText {
+                Button(action: onCycleModel) {
+                    controlLabel(icon: "cpu", text: modelText)
                 }
-                .fixedSize(horizontal: true, vertical: false)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.horizontal, DS.Spacing.xs)
-                .accessibilityElement(children: .contain)
-                .accessibilityLabel(L10n.t("hud.composer.runtime.accessibilityLabel"))
-                if let actionError {
-                    Text(actionError)
-                        .font(PickyHUDTypography.status)
-                        .foregroundColor(DS.Colors.destructiveText)
-                        .padding(.horizontal, DS.Spacing.xs)
-                        .accessibilityLabel(L10n.t("hud.composer.runtime.failed", actionError))
+                .buttonStyle(.plain)
+                .help(L10n.t("hud.composer.runtime.model.help"))
+                .accessibilityLabel(presentation.modelLabel ?? modelText)
+                .accessibilityHint(L10n.t("hud.composer.runtime.model.accessibilityHint"))
+                .hoverAffordance()
+            }
+            if presentation.modelText != nil, presentation.thinkingText != nil {
+                Divider()
+                    .frame(height: 12)
+            }
+            if let thinkingText = presentation.thinkingText {
+                Button(action: onCycleThinkingLevel) {
+                    controlLabel(icon: "brain", text: thinkingText)
                 }
+                .buttonStyle(.plain)
+                .help(L10n.t("hud.composer.runtime.thinking.help"))
+                .accessibilityLabel(presentation.thinkingLabel ?? thinkingText)
+                .accessibilityHint(L10n.t("hud.composer.runtime.thinking.accessibilityHint"))
+                .hoverAffordance()
+            }
+            if let actionError {
+                Label(L10n.t("hud.composer.runtime.failed", actionError), systemImage: "exclamationmark.triangle.fill")
+                    .labelStyle(.iconOnly)
+                    .font(PickyHUDTypography.statusSemibold)
+                    .foregroundColor(DS.Colors.destructiveText)
+                    .help(actionError)
+                    .accessibilityLabel(L10n.t("hud.composer.runtime.failed", actionError))
             }
         }
+        .fixedSize(horizontal: true, vertical: false)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(L10n.t("hud.composer.runtime.accessibilityLabel"))
     }
 
     private func controlLabel(icon: String, text: String) -> some View {
@@ -66,6 +72,8 @@ struct PickyConversationRuntimeControlsView: View {
             }
         }
         .foregroundColor(DS.Colors.textSecondary)
+        .padding(.horizontal, DS.Spacing.xs)
+        .frame(height: 24)
         .contentShape(Rectangle())
     }
 }

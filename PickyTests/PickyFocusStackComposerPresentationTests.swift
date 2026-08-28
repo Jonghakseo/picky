@@ -35,6 +35,36 @@ struct PickyFocusStackComposerPresentationTests {
         #expect(!PickyComposerRuntimePresentation(assistantRun: nil).hasControls)
     }
 
+    @Test func editorHeightGrowsFromOneThroughFourLinesThenCaps() {
+        #expect(PickyComposerEditorHeightPolicy.height(forMeasuredContentHeight: 0) == 24)
+        #expect(PickyComposerEditorHeightPolicy.height(forMeasuredContentHeight: 23.5) == 24)
+        #expect(PickyComposerEditorHeightPolicy.height(forMeasuredContentHeight: 42.2) == 43)
+        #expect(PickyComposerEditorHeightPolicy.height(forMeasuredContentHeight: 76) == 76)
+        #expect(PickyComposerEditorHeightPolicy.height(forMeasuredContentHeight: 120) == 78)
+        #expect(PickyComposerEditorHeightPolicy.height(for: "one\ntwo\nthree\nfour") == 76)
+        #expect(PickyComposerEditorHeightPolicy.height(for: "one\ntwo\nthree\nfour\nfive") == 78)
+    }
+
+    @Test func editorGrowthExpandsTheCardTransientlyWithinTheScreenCap() {
+        #expect(PickyComposerEditorHeightPolicy.transientGrowth(forEditorHeight: 24) == 0)
+        #expect(PickyComposerEditorHeightPolicy.transientGrowth(forEditorHeight: 78) == 54)
+        #expect(PickyConversationCardHeightPolicy.resolvedHeight(
+            fixedHeight: 320,
+            maxHeight: 900,
+            transientGrowth: 54
+        ) == 374)
+        #expect(PickyConversationCardHeightPolicy.resolvedHeight(
+            fixedHeight: 320,
+            maxHeight: 350,
+            transientGrowth: 54
+        ) == 350)
+        #expect(PickyConversationCardHeightPolicy.resolvedHeight(
+            fixedHeight: 480,
+            maxHeight: 900,
+            transientGrowth: -20
+        ) == 480)
+    }
+
     @Test func queueDockShowsBothKindsWithTheirIndependentModes() {
         let presentation = PickyQueueDockPresentation(
             visibleQueue: PickyVisibleQueue(

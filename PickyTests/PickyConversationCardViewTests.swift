@@ -41,6 +41,26 @@ private final class ConversationCardFakeClient: PickyAgentClient {
     func disconnect() { continuation.yield(.disconnected) }
 }
 
+private final class ConversationCardComposerDraftStore: PickyComposerDraftStoring {
+    private var drafts: [String: String] = [:]
+
+    func draft(for sessionID: String) -> String? { drafts[sessionID] }
+
+    func setDraft(_ draft: String?, for sessionID: String) {
+        drafts[sessionID] = draft
+    }
+
+    func prune(knownSessionIDs: Set<String>) {
+        drafts = drafts.filter { knownSessionIDs.contains($0.key) }
+    }
+}
+
+private final class ConversationCardComposerAttachmentStore: PickyComposerAttachmentDraftStoring {
+    func attachmentPaths(for _: String) -> [String] { [] }
+    func setAttachmentPaths(_: [String], for _: String) { }
+    func prune(knownSessionIDs _: Set<String>) { }
+}
+
 private final class ConversationCardSelectionStore: PickySessionSelectionStoring {
     var selectedSessionID: String?
     var hoveredVoiceFollowUpSessionID: String?
@@ -1011,6 +1031,40 @@ struct PickyConversationCardViewTests {
         #expect(PickyConversationCardHeightPolicy.resolvedHeight(fixedHeight: 200, maxHeight: 900) == 320)
     }
 
+    @Test func fourLineDraftReportsTransientGrowthFromTheRenderedComposer() {
+        let session = makeConversationSession(status: .running)
+        let viewModel = makeViewModel()
+        viewModel.updateComposerDraft("one\ntwo\nthree\nfour", sessionID: session.id)
+        var reportedGrowths: [CGFloat] = []
+        let host = NSHostingView(rootView: PickyConversationComposerView(
+            session: session,
+            viewModel: viewModel,
+            onTransientHeightChange: { reportedGrowths.append($0) }
+        ).frame(width: 560))
+        host.frame = NSRect(x: 0, y: 0, width: 560, height: 200)
+
+        let deadline = Date().addingTimeInterval(1)
+        repeat {
+            host.layoutSubtreeIfNeeded()
+            RunLoop.main.run(mode: .default, before: min(deadline, Date().addingTimeInterval(0.02)))
+        } while !reportedGrowths.contains(where: { $0 > 0 }) && Date() < deadline
+
+        let nativeTextViews = descendantTextViews(in: host)
+        #expect(nativeTextViews.map(\.string).contains("one\ntwo\nthree\nfour"))
+        let nativeContentHeight = nativeTextViews.first.flatMap { textView -> CGFloat? in
+            guard let layoutManager = textView.layoutManager,
+                  let textContainer = textView.textContainer
+            else { return nil }
+            layoutManager.ensureLayout(for: textContainer)
+            return layoutManager.usedRect(for: textContainer).height
+                + textView.textContainerInset.height * 2
+        }
+        #expect(nativeContentHeight != nil)
+        #expect((nativeContentHeight ?? 0) > 24)
+        #expect(reportedGrowths.contains(where: { $0 > 0 }))
+        #expect(reportedGrowths.allSatisfy { $0 <= 54 })
+    }
+
     @Test func renderedConversationCardHeightDoesNotFollowTranscriptContentHeight() {
         let viewModel = makeViewModel()
         let shortSession = makeConversationSession(status: .completed, messages: [
@@ -1152,12 +1206,13 @@ struct PickyConversationCardViewTests {
         ) == nil)
     }
 
-    @Test func composerEditorHeightStartsRoomyAndCapsMeasuredGrowth() {
-        #expect(PickyConversationComposerView.editorHeight(forMeasuredContentHeight: 0) == 50)
+    @Test func composerEditorHeightStartsAtOneLineAndCapsAtFourLines() {
+        #expect(PickyConversationComposerView.editorHeight(forMeasuredContentHeight: 0) == 24)
         #expect(PickyConversationComposerView.editorHeight(forMeasuredContentHeight: 49.2) == 50)
         #expect(PickyConversationComposerView.editorHeight(forMeasuredContentHeight: 61.2) == 62)
-        #expect(PickyConversationComposerView.editorHeight(forMeasuredContentHeight: 120) == 72)
-        #expect(PickyConversationComposerView.editorHeight(for: "one\ntwo\nthree\nfour") == 72)
+        #expect(PickyConversationComposerView.editorHeight(forMeasuredContentHeight: 120) == 78)
+        #expect(PickyConversationComposerView.editorHeight(for: "one\ntwo\nthree\nfour") == 76)
+        #expect(PickyConversationComposerView.editorHeight(for: "one\ntwo\nthree\nfour\nfive") == 78)
     }
 
     @Test func composerDroppedFilePathsAppendAsPlainDraftText() {
@@ -2396,7 +2451,12 @@ private extension PickyEventEnvelope {
 
 @MainActor
 private func makeViewModel() -> PickySessionListViewModel {
-    PickySessionListViewModel(client: ConversationCardFakeClient(), notificationCenter: PickyNoopNotificationCenter())
+    PickySessionListViewModel(
+        client: ConversationCardFakeClient(),
+        notificationCenter: PickyNoopNotificationCenter(),
+        composerDraftStore: ConversationCardComposerDraftStore(),
+        composerAttachmentDraftStore: ConversationCardComposerAttachmentStore()
+    )
 }
 
 private func makeConversationSession(
@@ -2474,6 +2534,14 @@ private func message(
         subagentInvocation: subagentInvocation,
         attachedImagesCount: attachedImagesCount
     )
+}
+
+private func descendantTextViews(in root: NSView) -> [NSTextView] {
+    let nested = root.subviews.flatMap { descendantTextViews(in: $0) }
+    if let textView = root as? NSTextView {
+        return [textView] + nested
+    }
+    return nested
 }
 
 private func queueItem(_ text: String) -> PickyQueueItem {

@@ -13,9 +13,14 @@ enum PickyConversationCardHeightPolicy {
     static let minimumHeight: CGFloat = 320
     static let defaultHeight: CGFloat = 640
 
-    static func resolvedHeight(fixedHeight: CGFloat?, maxHeight: CGFloat) -> CGFloat {
+    static func resolvedHeight(
+        fixedHeight: CGFloat?,
+        maxHeight: CGFloat,
+        transientGrowth: CGFloat = 0
+    ) -> CGFloat {
         let effectiveMaxHeight = max(minimumHeight, maxHeight)
-        return min(max(fixedHeight ?? defaultHeight, minimumHeight), effectiveMaxHeight)
+        let baseHeight = max(fixedHeight ?? defaultHeight, minimumHeight)
+        return min(baseHeight + max(0, transientGrowth), effectiveMaxHeight)
     }
 }
 
@@ -54,6 +59,7 @@ struct PickyConversationCardView: View {
     @State private var isTodoExpanded = false
     @State private var planExpansionSessionID: String?
     @State private var composerFocusRequestID = 0
+    @State private var transientComposerHeightGrowth: CGFloat = 0
     @State private var navigationRequest = PickyConversationNavigationRequest()
     @State private var viewportState = PickyConversationViewportState.pinned
 
@@ -126,7 +132,8 @@ struct PickyConversationCardView: View {
         let effectiveMaxHeight = max(PickyConversationCardHeightPolicy.minimumHeight, maxHeight)
         let resolvedHeight = PickyConversationCardHeightPolicy.resolvedHeight(
             fixedHeight: fixedHeight,
-            maxHeight: effectiveMaxHeight
+            maxHeight: effectiveMaxHeight,
+            transientGrowth: transientComposerHeightGrowth
         )
         let focusStackHeightTier = PickyConversationFocusStackHeightTier(availableHeight: resolvedHeight)
 
@@ -281,12 +288,19 @@ struct PickyConversationCardView: View {
                 isUtilityPanelOpen: isUtilityPanelOpen,
                 isCommandShortcutHintVisible: isCommandShortcutHintVisible,
                 onToggleUtilityPanel: onToggleUtilityPanel,
-                onRequestRewind: { showingRewindPicker = true }
+                onRequestRewind: { showingRewindPicker = true },
+                onTransientHeightChange: { growth in
+                    guard abs(transientComposerHeightGrowth - growth) > 0.5 else { return }
+                    transientComposerHeightGrowth = growth
+                }
             )
         }
         .onAppear { synchronizePlanExpansion(plan) }
         .onChange(of: plan) { _, nextPlan in synchronizePlanExpansion(nextPlan) }
-        .onChange(of: plan.sessionID) { _, _ in viewportState = .pinned }
+        .onChange(of: plan.sessionID) { _, _ in
+            viewportState = .pinned
+            transientComposerHeightGrowth = 0
+        }
     }
 
     private func synchronizePlanExpansion(_ plan: PickyConversationPlanProjection) {

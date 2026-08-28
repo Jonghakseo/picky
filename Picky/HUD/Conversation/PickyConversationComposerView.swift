@@ -67,6 +67,7 @@ struct PickyConversationComposerView: View {
     let isCommandShortcutHintVisible: Bool
     var onToggleUtilityPanel: () -> Void
     var onRequestRewind: () -> Void
+    var onTransientHeightChange: (CGFloat) -> Void
     @State private var draft: String = ""
     @State private var attachments: [PickyComposerAttachment] = []
     @State private var attachmentContentWidth: CGFloat = 0
@@ -84,7 +85,7 @@ struct PickyConversationComposerView: View {
     @State private var composerSelectionOverride: NSRange?
     @State private var appliedComposerDraftRequestID: String?
     @State private var keyDownMonitor: Any?
-    @State private var measuredEditorContentHeight: CGFloat = Self.minimumEditorHeight
+    @State private var measuredEditorContentHeight: CGFloat = PickyComposerEditorHeightPolicy.minimumHeight
     @State private var isFocused: Bool = false
     @State private var queueActionInFlight: PickyQueueDockAction?
     @State private var queueActionError: String?
@@ -102,7 +103,8 @@ struct PickyConversationComposerView: View {
         isUtilityPanelOpen: Bool = false,
         isCommandShortcutHintVisible: Bool = false,
         onToggleUtilityPanel: @escaping () -> Void = { },
-        onRequestRewind: @escaping () -> Void = { }
+        onRequestRewind: @escaping () -> Void = { },
+        onTransientHeightChange: @escaping (CGFloat) -> Void = { _ in }
     ) {
         self.metaStore = metaStore
         self.conversationStore = conversationStore
@@ -116,6 +118,7 @@ struct PickyConversationComposerView: View {
         self.isCommandShortcutHintVisible = isCommandShortcutHintVisible
         self.onToggleUtilityPanel = onToggleUtilityPanel
         self.onRequestRewind = onRequestRewind
+        self.onTransientHeightChange = onTransientHeightChange
     }
 
     /// Compatibility entry point for focused policy tests and previews.
@@ -129,7 +132,8 @@ struct PickyConversationComposerView: View {
         isUtilityPanelOpen: Bool = false,
         isCommandShortcutHintVisible: Bool = false,
         onToggleUtilityPanel: @escaping () -> Void = { },
-        onRequestRewind: @escaping () -> Void = { }
+        onRequestRewind: @escaping () -> Void = { },
+        onTransientHeightChange: @escaping (CGFloat) -> Void = { _ in }
     ) {
         let metaStore = PickySessionMetaStore()
         metaStore.replace(PickySessionMetadata(card: session))
@@ -154,7 +158,8 @@ struct PickyConversationComposerView: View {
             isUtilityPanelOpen: isUtilityPanelOpen,
             isCommandShortcutHintVisible: isCommandShortcutHintVisible,
             onToggleUtilityPanel: onToggleUtilityPanel,
-            onRequestRewind: onRequestRewind
+            onRequestRewind: onRequestRewind,
+            onTransientHeightChange: onTransientHeightChange
         )
     }
 
@@ -168,23 +173,7 @@ struct PickyConversationComposerView: View {
             // suggestions never reflows the card. It measures the popup itself
             // and places its bottom edge 4pt above the composer's top edge.
             PickyComposerAutocompleteOverlayLayout {
-                composerRow
-                    .overlay(alignment: .topTrailing) {
-                        runtimeControls
-                            .fixedSize(horizontal: true, vertical: false)
-                            .padding(DS.Spacing.space1)
-                            .background(
-                                RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
-                                    .fill(DS.Colors.surface1.opacity(0.98))
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
-                                    .stroke(DS.Colors.borderSubtle, lineWidth: 0.7)
-                            )
-                            .offset(x: -DS.Spacing.sm, y: -15)
-                            .opacity(autocompleteIsVisible ? 0 : 1)
-                            .allowsHitTesting(!autocompleteIsVisible)
-                    }
+                composerSurface
                 if autocompleteIsVisible {
                     autocompletePanel
                 }
@@ -204,6 +193,7 @@ struct PickyConversationComposerView: View {
             commands.updateComposerDraft(draft, sessionID: session.id)
             persistAttachments()
             removeKeyDownMonitor()
+            onTransientHeightChange(0)
         }
         .onChange(of: commands.composerDraftRequest(for: session.id)) { _, request in
             applyComposerDraftRequestIfNeeded(request)
@@ -221,6 +211,8 @@ struct PickyConversationComposerView: View {
         .onChange(of: session.id) { _, _ in
             attachments = commands.persistedComposerAttachmentPaths(for: session.id)
                 .map { PickyComposerAttachment(path: $0) }
+            measuredEditorContentHeight = PickyComposerEditorHeightPolicy.minimumHeight
+            onTransientHeightChange(0)
             resetAutocompleteState()
             synchronizeAutocompleteInput(text: draft)
             requestAutocompleteCapabilities()
@@ -310,19 +302,34 @@ struct PickyConversationComposerView: View {
         )
     }
 
-    private var composerRow: some View {
-        HStack(alignment: .center, spacing: 8) {
-            leadingActions
-                .zIndex(2)
+    private var composerSurface: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            runtimeHeader
             composerEditor
-                .zIndex(0)
-            trailingActions
+            actionBar
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
+        .padding(.horizontal, DS.Spacing.sm)
+        .padding(.top, DS.Spacing.xs)
+        .padding(.bottom, DS.Spacing.sm)
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
         .background(composerBackground)
+    }
+
+    private var runtimeHeader: some View {
+        runtimeControls
+            .fixedSize(horizontal: true, vertical: false)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .frame(height: 30)
+    }
+
+    private var actionBar: some View {
+        HStack(alignment: .center, spacing: DS.Spacing.xs) {
+            leadingActions
+            Spacer(minLength: DS.Spacing.sm)
+            trailingActions
+        }
+        .frame(height: 30)
     }
 
     @ViewBuilder
@@ -330,29 +337,26 @@ struct PickyConversationComposerView: View {
         if effectiveBashMode != .none {
             bashModeBadge
         } else {
-            VStack(spacing: 4) {
+            HStack(spacing: DS.Spacing.xs) {
                 notifyOrDropButton
                 terminalButton
             }
-            .frame(width: 24)
         }
     }
 
-    /// Replaces the notify/terminal column when the draft is in bash-execution
-    /// mode. The notify/terminal shortcuts (⌘N / ⌘E) still work from the
-    /// keyboard — they're just out of sight while the user is composing a
-    /// shell command, which is itself a short-lived state.
+    /// Replaces the notify/terminal actions when the draft is in bash-execution
+    /// mode. Keyboard shortcuts remain active while the horizontal badge keeps
+    /// the editor's one-line minimum independent from action chrome.
     private var bashModeBadge: some View {
-        VStack(spacing: 2) {
+        HStack(spacing: DS.Spacing.xs) {
             Image(systemName: "terminal.fill")
-                .pickyFont(size: 12, weight: .bold)
-                .foregroundColor(bashAccentColor)
+                .pickyFont(size: 11, weight: .bold)
             Text(effectiveBashMode == .private ? "PRIVATE" : "BASH")
                 .font(PickyHUDTypography.badgeMonospacedBold)
-                .foregroundColor(bashAccentColor)
                 .fixedSize()
         }
-        .frame(minWidth: 24)
+        .foregroundColor(bashAccentColor)
+        .frame(height: 22)
         .help(effectiveBashMode == .private
             ? "Bash execution · output hidden from Pi context"
             : "Bash execution · output added to Pi context")
@@ -467,7 +471,7 @@ struct PickyConversationComposerView: View {
                 selectionOverride: $composerSelectionOverride,
                 temporaryHighlightRange: autocompleteHighlightRange,
                 temporaryHighlightColor: NSColor(DS.Colors.accentText),
-                onMeasuredContentHeight: { measuredEditorContentHeight = $0 },
+                onMeasuredContentHeight: handleMeasuredEditorContentHeight,
                 onInputChange: applyAutocompleteInput,
                 onReturn: handleComposerReturnKey,
                 onUpArrow: handleComposerUpArrowKey,
@@ -479,6 +483,7 @@ struct PickyConversationComposerView: View {
             .frame(height: editorHeight)
             .onChange(of: draft) { _, newValue in
                 commands.updateComposerDraft(newValue, sessionID: session.id)
+                reportTransientHeightChange(forDraft: newValue)
             }
         }
     }
@@ -896,7 +901,31 @@ struct PickyConversationComposerView: View {
     // presentation-only. The header shows the captured target with mic.fill.
 
     private var editorHeight: CGFloat {
-        Self.editorHeight(forMeasuredContentHeight: measuredEditorContentHeight)
+        max(
+            Self.editorHeight(forMeasuredContentHeight: measuredEditorContentHeight),
+            Self.editorHeight(for: draft)
+        )
+    }
+
+    private func handleMeasuredEditorContentHeight(_ contentHeight: CGFloat) {
+        measuredEditorContentHeight = contentHeight
+        let resolvedEditorHeight = max(
+            Self.editorHeight(forMeasuredContentHeight: contentHeight),
+            Self.editorHeight(for: draft)
+        )
+        onTransientHeightChange(
+            PickyComposerEditorHeightPolicy.transientGrowth(forEditorHeight: resolvedEditorHeight)
+        )
+    }
+
+    private func reportTransientHeightChange(forDraft draft: String) {
+        let resolvedEditorHeight = max(
+            Self.editorHeight(forMeasuredContentHeight: measuredEditorContentHeight),
+            Self.editorHeight(for: draft)
+        )
+        onTransientHeightChange(
+            PickyComposerEditorHeightPolicy.transientGrowth(forEditorHeight: resolvedEditorHeight)
+        )
     }
 
     private var composerNSFont: NSFont {
@@ -906,21 +935,17 @@ struct PickyConversationComposerView: View {
     }
 
     static func editorHeight(forMeasuredContentHeight contentHeight: CGFloat) -> CGFloat {
-        min(maximumEditorHeight, max(minimumEditorHeight, ceil(contentHeight)))
+        PickyComposerEditorHeightPolicy.height(forMeasuredContentHeight: contentHeight)
     }
 
     static func editorHeight(for text: String) -> CGFloat {
-        let lineCount = text.split(separator: "\n", omittingEmptySubsequences: false).count
-        return editorHeight(forMeasuredContentHeight: CGFloat(lineCount) * estimatedEditorLineHeight + 2 * editorTextInsetHeight)
+        PickyComposerEditorHeightPolicy.height(for: text)
     }
 
-    private static let minimumEditorHeight: CGFloat = 50
-    private static let maximumEditorHeight: CGFloat = 72
-    private static let estimatedEditorLineHeight: CGFloat = 18
     private static let editorTextInsetHeight: CGFloat = 2
 
     private var trailingActions: some View {
-        VStack(alignment: .trailing, spacing: 4) {
+        HStack(spacing: DS.Spacing.xs) {
             sendButton
             if isStopButtonVisible {
                 stopButton
@@ -1180,6 +1205,7 @@ struct PickyConversationComposerView: View {
         let persistedDraft = commands.persistedComposerDraft(for: session.id)
         guard !persistedDraft.isEmpty else { return }
         draft = persistedDraft
+        reportTransientHeightChange(forDraft: persistedDraft)
         synchronizeAutocompleteInput(text: persistedDraft)
     }
 

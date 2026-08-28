@@ -889,10 +889,12 @@ private struct PickyHeaderSessionMetaPill: View {
         HStack(spacing: DS.Spacing.xs) {
             PickyHeaderContextUsageBar(display: display)
                 .frame(width: 24, height: 5)
-            Text(display.localizedLabel)
+            Text(display.label)
                 .fontWeight(.semibold)
         }
         .fixedSize(horizontal: true, vertical: false)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(display.localizedLabel)
     }
 
 

@@ -140,23 +140,42 @@ private final class PickyHUDDockExternalDragPreviewModel: ObservableObject {
 private struct PickyHUDDockExternalDragPreviewView: View {
     @ObservedObject var model: PickyHUDDockExternalDragPreviewModel
 
-    private var isAccepted: Bool { model.destination != nil }
+    var body: some View {
+        PickyHUDDockExternalDragPreviewContent(
+            session: model.presentation.session,
+            dockSide: model.presentation.dockSide,
+            metrics: model.presentation.metrics,
+            destination: model.destination
+        )
+    }
+}
+
+/// The detached preview's visual projection. Kept separate from the AppKit
+/// panel owner so deterministic offscreen gallery scenes render the exact
+/// accepted and invalid states without creating a window.
+struct PickyHUDDockExternalDragPreviewContent: View {
+    let session: PickyHUDDockSession
+    let dockSide: PickyHUDDockSide
+    let metrics: PickyHUDDockMetrics
+    let destination: PickyDockContainer?
+
+    private var isAccepted: Bool { destination != nil }
 
     var body: some View {
         PickyHUDDockIconView(
-            session: model.presentation.session,
+            session: session,
             index: 0,
             isActive: false,
             isOpened: false,
             isPreviewed: false,
             isScreenContextArmed: false,
             isScreenContextSticky: false,
-            dockSide: model.presentation.dockSide,
+            dockSide: dockSide,
             shortcutNumber: nil,
             isCommandShortcutHintVisible: false,
             shouldFlashCompletion: false,
             isUnread: false,
-            metrics: model.presentation.metrics,
+            metrics: metrics,
             isDragging: true,
             dragOffset: .zero,
             onHover: {},

@@ -11145,6 +11145,38 @@
         }
       }
     },
+    "hud.context.workspace.copy.copied": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Working folder path copied"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 폴더 경로가 복사됨"
+          }
+        }
+      }
+    },
+    "hud.context.workspace.copy.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy working folder path"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 폴더 경로 복사"
+          }
+        }
+      }
+    },
     "hud.context.workspace.open.help": {
       "localizations": {
         "en": {

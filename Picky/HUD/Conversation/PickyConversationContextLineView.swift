@@ -59,6 +59,8 @@ struct PickyConversationContextLineView: View {
     @State private var pullRequestStatus: PickyGitHubPullRequestStatus?
     @State private var inFlightGitAction: GitRemoteAction?
     @State private var isDetailsPresented = false
+    @State private var didCopyWorkspacePath = false
+    @State private var workspaceCopyFeedbackGeneration = 0
     @State private var manualRefreshTick: Int = 0
 
     init(
@@ -179,27 +181,42 @@ struct PickyConversationContextLineView: View {
     }
 
     private var contextSummaryLine: some View {
-        HStack(spacing: DS.Spacing.xs) {
-            if let summaryLabel = PickyConversationContextSummaryPolicy.label(
-                branchDisplayName: gitStatus?.branchDisplayName,
-                cwd: session.cwd
-            ) {
-                Text(summaryLabel)
+        Button(action: { isDetailsPresented.toggle() }) {
+            HStack(spacing: DS.Spacing.space1) {
+                Image(systemName: contextSummaryIconName)
+                    .font(PickyHUDTypography.metaSemibold)
+                    .accessibilityHidden(true)
+                Text(contextSummaryLabel)
                     .font(PickyHUDTypography.metaMedium)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.down")
+                    .font(PickyHUDTypography.metaSemibold)
+                    .rotationEffect(.degrees(isDetailsPresented ? 180 : 0))
+                    .accessibilityHidden(true)
             }
-            Spacer(minLength: 0)
-            Button(L10n.t("hud.context.details")) { isDetailsPresented = true }
-                .buttonStyle(.plain)
-                .font(PickyHUDTypography.metaSemibold)
-                .foregroundColor(DS.Colors.accentText)
-                .fixedSize(horizontal: true, vertical: false)
-                .help(L10n.t("hud.context.details.help"))
-                .accessibilityLabel(L10n.t("hud.context.details.accessibilityLabel"))
-                .accessibilityHint(L10n.t("hud.context.details.accessibilityHint"))
-                .hoverAffordance()
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .help(L10n.t("hud.context.details.help"))
+        .accessibilityLabel(L10n.t("hud.context.details.accessibilityLabel"))
+        .accessibilityValue(contextSummaryLabel)
+        .accessibilityHint(L10n.t("hud.context.details.accessibilityHint"))
+        .hoverAffordance()
+    }
+
+    private var contextSummaryLabel: String {
+        PickyConversationContextSummaryPolicy.label(
+            branchDisplayName: gitStatus?.branchDisplayName,
+            cwd: session.cwd
+        ) ?? L10n.t("hud.context.section.links")
+    }
+
+    private var contextSummaryIconName: String {
+        if gitStatus != nil { return "point.3.connected.trianglepath.dotted" }
+        if session.compactCwdDescription != nil { return "folder" }
+        return "link"
     }
 
     private var contextDetails: some View {
@@ -264,11 +281,15 @@ struct PickyConversationContextLineView: View {
     }
 
     private var primaryContextLine: some View {
-        HStack(spacing: 6) {
-            if let compactCwd = session.compactCwdDescription {
+        HStack(spacing: DS.Spacing.space1) {
+            if let compactCwd = session.compactCwdDescription,
+               let copyValue = PickyWorkspacePathCopyPolicy.value(cwd: session.cwd) {
                 cwdButton(compactCwd)
+                Spacer(minLength: DS.Spacing.space2)
+                workspacePathCopyButton(copyValue)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var linkContextLine: some View {
@@ -312,6 +333,32 @@ struct PickyConversationContextLineView: View {
         .layoutPriority(1)
         .help(L10n.t("hud.context.workspace.open.help"))
         .hoverAffordance()
+    }
+
+    private func workspacePathCopyButton(_ copyValue: String) -> some View {
+        Button(action: { copyWorkspacePath(copyValue) }) {
+            Image(systemName: didCopyWorkspacePath ? "checkmark" : "doc.on.doc")
+                .font(PickyHUDTypography.statusSemibold)
+                .foregroundStyle(didCopyWorkspacePath ? DS.Colors.successText : DS.Colors.accentText)
+                .frame(width: DS.Spacing.space6, height: DS.Spacing.space6)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(L10n.t(didCopyWorkspacePath ? "hud.context.workspace.copy.copied" : "hud.context.workspace.copy.help"))
+        .accessibilityLabel(L10n.t(didCopyWorkspacePath ? "hud.context.workspace.copy.copied" : "hud.context.workspace.copy.help"))
+        .hoverAffordance()
+    }
+
+    private func copyWorkspacePath(_ copyValue: String) {
+        commands.copyMessageText(copyValue)
+        didCopyWorkspacePath = true
+        workspaceCopyFeedbackGeneration &+= 1
+        let feedbackGeneration = workspaceCopyFeedbackGeneration
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            guard workspaceCopyFeedbackGeneration == feedbackGeneration else { return }
+            didCopyWorkspacePath = false
+        }
     }
 
     private var visibleLinkArtifacts: [PickyArtifact] {
@@ -696,6 +743,16 @@ struct PickyConversationContextLineView: View {
         content.sound = nil
         let request = UNNotificationRequest(identifier: "picky-git-\(action.actionLabel)-\(UUID().uuidString)", content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request) { _ in }
+    }
+}
+
+enum PickyWorkspacePathCopyPolicy {
+    static func value(cwd: String?) -> String? {
+        let trimmed = cwd?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return nil }
+
+        let expanded = NSString(string: trimmed).expandingTildeInPath
+        return NSString(string: expanded).standardizingPath
     }
 }
 

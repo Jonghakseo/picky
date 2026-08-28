@@ -181,29 +181,45 @@ struct PickyConversationContextLineView: View {
     }
 
     private var contextSummaryLine: some View {
-        Button(action: { isDetailsPresented.toggle() }) {
-            HStack(spacing: DS.Spacing.space1) {
-                Image(systemName: contextSummaryIconName)
-                    .font(PickyHUDTypography.metaSemibold)
-                    .accessibilityHidden(true)
-                Text(contextSummaryLabel)
-                    .font(PickyHUDTypography.metaMedium)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Spacer(minLength: 0)
+        HStack(spacing: DS.Spacing.space1) {
+            Button(action: { isDetailsPresented.toggle() }) {
+                HStack(spacing: DS.Spacing.space1) {
+                    Image(systemName: contextSummaryIconName)
+                        .font(PickyHUDTypography.metaSemibold)
+                        .accessibilityHidden(true)
+                    Text(contextSummaryLabel)
+                        .font(PickyHUDTypography.metaMedium)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .help(L10n.t("hud.context.details.help"))
+            .accessibilityLabel(L10n.t("hud.context.details.accessibilityLabel"))
+            .accessibilityValue(contextSummaryLabel)
+            .accessibilityHint(L10n.t("hud.context.details.accessibilityHint"))
+            .hoverAffordance()
+
+            if let pullRequestStatus {
+                pullRequestLink(status: pullRequestStatus)
+                    .layoutPriority(2)
+            }
+
+            Button(action: { isDetailsPresented.toggle() }) {
                 Image(systemName: "chevron.down")
                     .font(PickyHUDTypography.metaSemibold)
                     .rotationEffect(.degrees(isDetailsPresented ? 180 : 0))
-                    .accessibilityHidden(true)
+                    .frame(width: DS.Spacing.space6, height: DS.Spacing.space6)
+                    .contentShape(Rectangle())
             }
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .help(L10n.t("hud.context.details.help"))
+            .accessibilityHidden(true)
+            .hoverAffordance()
         }
-        .buttonStyle(.plain)
-        .help(L10n.t("hud.context.details.help"))
-        .accessibilityLabel(L10n.t("hud.context.details.accessibilityLabel"))
-        .accessibilityValue(contextSummaryLabel)
-        .accessibilityHint(L10n.t("hud.context.details.accessibilityHint"))
-        .hoverAffordance()
     }
 
     private var contextSummaryLabel: String {
@@ -375,17 +391,7 @@ struct PickyConversationContextLineView: View {
         let artifacts = visibleLinkArtifacts
         return HStack(spacing: 4) {
             if let pullRequestStatus {
-                Link(destination: pullRequestStatus.url) {
-                    pullRequestBadge(status: pullRequestStatus)
-                }
-                .buttonStyle(.plain)
-                .help(L10n.t(
-                    "hud.context.pr.open.help",
-                    Int64(pullRequestStatus.number),
-                    pullRequestStatus.title,
-                    pullRequestStatus.state.rawValue
-                ))
-                .hoverAffordance()
+                pullRequestLink(status: pullRequestStatus)
             }
             ForEach(artifacts.prefix(6)) { artifact in
                 if let url = artifact.url {
@@ -403,6 +409,22 @@ struct PickyConversationContextLineView: View {
         }
     }
 
+    private func pullRequestLink(status: PickyGitHubPullRequestStatus) -> some View {
+        let help = L10n.t(
+            "hud.context.pr.open.help",
+            Int64(status.number),
+            status.title,
+            pullRequestStateLabel(for: status.state)
+        )
+        return Link(destination: status.url) {
+            pullRequestBadge(status: status)
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(help)
+        .hoverAffordance()
+    }
+
     private func pullRequestBadge(status: PickyGitHubPullRequestStatus) -> some View {
         let stateColor = Self.pullRequestStateColor(for: status.state)
 
@@ -413,7 +435,7 @@ struct PickyConversationContextLineView: View {
                 .scaledToFit()
                 .frame(width: 11, height: 11)
                 .accessibilityHidden(true)
-            Text("PR")
+            Text(verbatim: "PR \(pullRequestStateLabel(for: status.state))")
                 .font(PickyHUDTypography.metaMonospacedSemibold)
                 .lineLimit(1)
         }
@@ -425,6 +447,19 @@ struct PickyConversationContextLineView: View {
         // Dark has more headroom and keeps the 10% tint for chip legibility.
         .background(Capsule().fill(stateColor.opacity(colorScheme == .dark ? 0.10 : 0.05)))
         .overlay(Capsule().stroke(stateColor.opacity(0.32), lineWidth: 0.5))
+    }
+
+    private func pullRequestStateLabel(for state: PickyGitHubPullRequestStatus.State) -> String {
+        switch state {
+        case .draft:
+            return L10n.t("hud.context.pr.state.draft")
+        case .open:
+            return L10n.t("hud.context.pr.state.open")
+        case .merged:
+            return L10n.t("hud.context.pr.state.merged")
+        case .closed:
+            return L10n.t("hud.context.pr.state.closed")
+        }
     }
 
     static func pullRequestStateColor(for state: PickyGitHubPullRequestStatus.State) -> Color {

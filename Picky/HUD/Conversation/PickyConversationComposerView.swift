@@ -172,7 +172,7 @@ struct PickyConversationComposerView: View {
                     .overlay(alignment: .topTrailing) {
                         runtimeControls
                             .fixedSize(horizontal: true, vertical: false)
-                            .padding(3)
+                            .padding(DS.Spacing.space1)
                             .background(
                                 RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
                                     .fill(DS.Colors.surface1.opacity(0.98))

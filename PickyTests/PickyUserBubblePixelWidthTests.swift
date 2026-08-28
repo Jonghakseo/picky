@@ -14,7 +14,7 @@
 //  `NSHostingView` at a known card width, run an AppKit layout pass, and
 //  walk the view tree to read the `SelfSizingMarkdownTextView` instance's
 //  actual `frame.width`. A regression where the bubble stretches to the
-//  full 85% column reappears as a `frame.width` close to the cap; a
+//  full configured column reappears as a `frame.width` close to the cap; a
 //  healthy hug-fit reports a width near the rendered glyph run.
 //
 
@@ -25,10 +25,14 @@ import Testing
 
 @MainActor
 struct PickyUserBubblePixelWidthTests {
-    /// Mirrors the cap math the real `PickyUserBubbleView` applies:
-    /// bubble interior = card * 0.85 - 20pt horizontal padding.
+    /// Mirrors the shared width policy and removes the bubble's 20pt
+    /// horizontal padding to obtain its readable interior cap.
     private func bubbleInteriorCap(forCardWidth cardWidth: CGFloat) -> CGFloat {
-        cardWidth * 0.85 - 20
+        bubbleOuterCap(forCardWidth: cardWidth) - 20
+    }
+
+    private func bubbleOuterCap(forCardWidth cardWidth: CGFloat) -> CGFloat {
+        PickyConversationBubbleLayout.maxBubbleWidth(forDetailWidth: cardWidth)
     }
 
     /// Mounts a `PickyUserBubbleView` with the same `pickyHUDDetailWidth`
@@ -113,8 +117,8 @@ struct PickyUserBubblePixelWidthTests {
 
         // "수정해줘." renders at body size; its glyph run is comfortably
         // under 120pt at the body font. A regression that stretches the
-        // visual bubble to the full 85% column ends up near the outer cap
-        // (≈510pt here), which is well outside this allowance.
+        // visual bubble to the full configured column ends up near the outer
+        // cap, which is well outside this allowance.
         let actual = surface.lastBubbleRect.width
         #expect(
             actual < 200,
@@ -133,7 +137,7 @@ struct PickyUserBubblePixelWidthTests {
 
         // Long content should fill (and wrap at) the bubble cap — never wider.
         let actual = surface.lastBubbleRect.width
-        let outerCap = cardWidth * 0.85
+        let outerCap = bubbleOuterCap(forCardWidth: cardWidth)
         #expect(actual <= outerCap + 1, "long message must not exceed the bubble cap (cap=\(outerCap), got \(actual))")
         #expect(actual > cap * 0.7, "long message should consume most of the bubble cap (interior cap=\(cap), got \(actual))")
     }
@@ -215,7 +219,7 @@ struct PickyUserBubblePixelWidthTests {
         let cardWidth: CGFloat = 600
         let longText = String(repeating: "This is a sufficiently long assistant response line. ", count: 10)
         let surface = try layoutAgentBubble(text: longText, cardWidth: cardWidth)
-        let outerCap = cardWidth * 0.85
+        let outerCap = bubbleOuterCap(forCardWidth: cardWidth)
         let actual = surface.lastBubbleRect.width
         #expect(actual <= outerCap + 1, "long agent message must not exceed the bubble cap (cap=\(outerCap), got \(actual))")
         #expect(actual > outerCap * 0.7, "long agent message should consume most of the bubble cap (cap=\(outerCap), got \(actual))")

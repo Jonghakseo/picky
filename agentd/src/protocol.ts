@@ -255,6 +255,8 @@ export const PickyActivitySummarySchema = z.object({
   bash: z.number().int().default(0),
   edit: z.number().int().default(0),
   write: z.number().int().default(0),
+  todo: z.number().int().optional(),
+  subagent: z.number().int().optional(),
   thinking: z.number().int().default(0),
   other: z.number().int().default(0),
 });

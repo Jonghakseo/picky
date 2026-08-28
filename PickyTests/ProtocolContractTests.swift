@@ -818,6 +818,24 @@ struct ProtocolContractTests {
         #expect(seq == 7)
     }
 
+    @Test func decodesLegacyActivitySummaryWithoutTodoOrSubagentCounts() throws {
+        let legacy = try JSONDecoder().decode(
+            PickyActivitySummary.self,
+            from: Data(#"{"read":1,"bash":2,"edit":3,"write":4,"thinking":5,"other":6}"#.utf8)
+        )
+
+        #expect(legacy == PickyActivitySummary(
+            edit: 3,
+            bash: 2,
+            thinking: 5,
+            other: 6,
+            read: 1,
+            write: 4
+        ))
+        #expect(legacy.todo == 0)
+        #expect(legacy.subagent == 0)
+    }
+
     @Test func decodesAgentActivitySessionMessage() throws {
         let json = """
         {
@@ -830,7 +848,7 @@ struct ProtocolContractTests {
             "id":"message-activity-001",
             "kind":"agent_activity",
             "createdAt":"2026-05-05T00:00:00.000Z",
-            "activitySnapshot":{"edit":1,"bash":2,"thinking":3,"other":4}
+            "activitySnapshot":{"edit":1,"bash":2,"thinking":3,"other":4,"todo":5,"subagent":6}
           },
           "seq":8
         }
@@ -842,7 +860,14 @@ struct ProtocolContractTests {
             return
         }
         #expect(message.kind == .agentActivity)
-        #expect(message.activitySnapshot == PickyActivitySummary(edit: 1, bash: 2, thinking: 3, other: 4))
+        #expect(message.activitySnapshot == PickyActivitySummary(
+            edit: 1,
+            bash: 2,
+            thinking: 3,
+            other: 4,
+            todo: 5,
+            subagent: 6
+        ))
         #expect(seq == 8)
     }
 

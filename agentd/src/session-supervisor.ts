@@ -2527,7 +2527,7 @@ export class SessionSupervisor extends EventEmitter {
     // turn boundary. Per-turn snapshots are committed as agent_activity messages by
     // commitTurnActivityNow when the turn ends.
     const currentTurn = this.turnActivity.get(sessionId) ?? zeroActivitySummary();
-    const nextTurn = { ...currentTurn, [category]: currentTurn[category] + 1 };
+    const nextTurn = { ...currentTurn, [category]: (currentTurn[category] ?? 0) + 1 };
     this.turnActivity.set(sessionId, nextTurn);
     // activitySummary is broadcast via the dedicated `sessionActivityUpdated` event; suppress the
     // accompanying full `sessionUpdated` so streaming tool/thinking turns do not flood the HUD

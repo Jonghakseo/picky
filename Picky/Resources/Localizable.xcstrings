@@ -2543,6 +2543,118 @@
         }
       }
     },
+    "hud.activity.category.bash": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Command"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "명령어"
+          }
+        }
+      }
+    },
+    "hud.activity.category.edit": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "수정"
+          }
+        }
+      }
+    },
+    "hud.activity.category.other": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Other"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기타"
+          }
+        }
+      }
+    },
+    "hud.activity.category.read": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "읽기"
+          }
+        }
+      }
+    },
+    "hud.activity.category.subagent": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subagent"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "서브에이전트"
+          }
+        }
+      }
+    },
+    "hud.activity.category.todo": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todo"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "할 일"
+          }
+        }
+      }
+    },
+    "hud.activity.category.write": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Write"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "쓰기"
+          }
+        }
+      }
+    },
     "hud.archiveToast.title": {
       "localizations": {
         "en": {
@@ -12089,22 +12201,6 @@
         }
       }
     },
-    "hud.liveStep.currentTool.accessibilityLabel": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Current tool %@"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "현재 도구 %@"
-          }
-        }
-      }
-    },
     "hud.liveStep.goToQuestion": {
       "localizations": {
         "en": {
@@ -12213,22 +12309,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "최신 실행 작업으로 스크롤"
-          }
-        }
-      }
-    },
-    "hud.liveStep.toolHistory.help": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Open tool history"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "도구 기록 열기"
           }
         }
       }

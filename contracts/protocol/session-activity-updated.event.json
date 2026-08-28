@@ -4,6 +4,13 @@
   "timestamp": "2026-05-05T00:00:04.000Z",
   "type": "sessionActivityUpdated",
   "sessionId": "session-001",
-  "activitySummary": { "edit": 1, "bash": 2, "thinking": 3, "other": 4 },
+  "activitySummary": {
+    "edit": 1,
+    "bash": 2,
+    "thinking": 3,
+    "other": 4,
+    "todo": 5,
+    "subagent": 6
+  },
   "seq": 5
 }

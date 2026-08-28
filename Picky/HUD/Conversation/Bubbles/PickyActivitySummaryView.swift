@@ -127,9 +127,11 @@ struct ContextUsageBatteryDisplay {
 struct PickyActivitySummaryDisplayItem: Identifiable {
     let id: String
     let icon: String
-    let label: String
+    let labelKey: String
     let count: Int
     let color: Color
+
+    var label: String { L10n.t(labelKey) }
 }
 
 extension PickyActivitySummary {
@@ -137,15 +139,17 @@ extension PickyActivitySummary {
     /// `thinking` because thinking blocks are not tool calls — they are
     /// streamed by the model separately. Used by the turn header to display
     /// the *count* of tool calls (not the count of distinct categories).
-    var totalToolCalls: Int { read + bash + edit + write + other }
+    var totalToolCalls: Int { read + bash + edit + write + todo + subagent + other }
 
     var visibleToolCallItems: [PickyActivitySummaryDisplayItem] {
         [
-            PickyActivitySummaryDisplayItem(id: "read", icon: "📖", label: "read", count: read, color: DS.Colors.info),
-            PickyActivitySummaryDisplayItem(id: "bash", icon: "⌨", label: "bash", count: bash, color: DS.Colors.warningText),
-            PickyActivitySummaryDisplayItem(id: "edit", icon: "✏", label: "edit", count: edit, color: DS.Colors.accentText),
-            PickyActivitySummaryDisplayItem(id: "write", icon: "▣", label: "write", count: write, color: DS.Colors.floatingGradientPurple),
-            PickyActivitySummaryDisplayItem(id: "other", icon: "⋯", label: "etc", count: other, color: DS.Colors.textSecondary),
+            PickyActivitySummaryDisplayItem(id: "read", icon: "📖", labelKey: "hud.activity.category.read", count: read, color: DS.Colors.info),
+            PickyActivitySummaryDisplayItem(id: "bash", icon: "⌨", labelKey: "hud.activity.category.bash", count: bash, color: DS.Colors.warningText),
+            PickyActivitySummaryDisplayItem(id: "edit", icon: "✏", labelKey: "hud.activity.category.edit", count: edit, color: DS.Colors.accentText),
+            PickyActivitySummaryDisplayItem(id: "write", icon: "▣", labelKey: "hud.activity.category.write", count: write, color: DS.Colors.floatingGradientPurple),
+            PickyActivitySummaryDisplayItem(id: "todo", icon: "☑", labelKey: "hud.activity.category.todo", count: todo, color: DS.Colors.info),
+            PickyActivitySummaryDisplayItem(id: "subagent", icon: "◇", labelKey: "hud.activity.category.subagent", count: subagent, color: DS.Colors.floatingGradientPurple),
+            PickyActivitySummaryDisplayItem(id: "other", icon: "⋯", labelKey: "hud.activity.category.other", count: other, color: DS.Colors.textSecondary),
         ].filter { $0.count > 0 }
     }
 }

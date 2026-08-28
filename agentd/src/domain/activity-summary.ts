@@ -5,7 +5,14 @@ export function zeroActivitySummary(): PickyActivitySummary {
 }
 
 export function activityTotal(summary: PickyActivitySummary): number {
-  return summary.read + summary.bash + summary.edit + summary.write + summary.thinking + summary.other;
+  return summary.read
+    + summary.bash
+    + summary.edit
+    + summary.write
+    + (summary.todo ?? 0)
+    + (summary.subagent ?? 0)
+    + summary.thinking
+    + summary.other;
 }
 
 export function hasActivity(summary: PickyActivitySummary): boolean {

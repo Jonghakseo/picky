@@ -102,7 +102,7 @@ struct PickyConversationCardViewTests {
         #expect(snapshot.subagentInvocationBubbleCount == 1)
     }
 
-    @Test func activityStripShowsEtcWhenOnlyOtherToolsRan() {
+    @Test func activityStripShowsOtherCategoryWhenOnlyOtherToolsRan() {
         let summary = PickyActivitySummary(other: 2)
         let session = makeConversationSession(
             status: .running,
@@ -117,7 +117,6 @@ struct PickyConversationCardViewTests {
         let visibleItems = summary.visibleToolCallItems
 
         #expect(visibleItems.map(\.id) == ["other"])
-        #expect(visibleItems.first?.label == "etc")
         #expect(snapshot.activitySummaryCount == 1)
         #expect(snapshot.showsActivitySummary)
     }
@@ -820,31 +819,24 @@ struct PickyConversationCardViewTests {
         let initial = PickyConversationLiveStepProjection(
             metaStore: store.metaStore,
             todoStore: store.todoStore,
-            toolStore: store.toolStore,
-            activityStore: store.activityStore,
             extensionUiStore: store.extensionUiStore
         )
         store.conversationStore.replaceMessages([message("new-message", kind: .agentText, text: "streamed")])
         let afterJournalUpdate = PickyConversationLiveStepProjection(
             metaStore: store.metaStore,
             todoStore: store.todoStore,
-            toolStore: store.toolStore,
-            activityStore: store.activityStore,
             extensionUiStore: store.extensionUiStore
         )
 
         #expect(initial == afterJournalUpdate)
         #expect(initial.todoPresentation?.countText == "1/1")
-        #expect(initial.activeTool?.toolCallId == "running-tool")
-        #expect(initial.elapsedText(at: baseDate.addingTimeInterval(4)) == L10n.t("hud.conversation.duration.seconds", Int64(3)))
         #expect(PickyConversationLiveStepPresentation(projection: initial) == .running(
             stepText: "1/1",
-            detail: "Implement HUD",
-            toolName: "bash"
+            detail: "Implement HUD"
         ))
     }
 
-    @Test func liveStepUsesBashTitleAheadOfPartialResultPreview() {
+    @Test func liveStepHidesWhenOnlyBashIsRunning() {
         let tool = PickyToolActivity(
             toolCallId: "running-bash",
             name: "bash",
@@ -860,16 +852,10 @@ struct PickyConversationCardViewTests {
         let projection = PickyConversationLiveStepProjection(
             metaStore: store.metaStore,
             todoStore: store.todoStore,
-            toolStore: store.toolStore,
-            activityStore: store.activityStore,
             extensionUiStore: store.extensionUiStore
         )
 
-        #expect(PickyConversationLiveStepPresentation(projection: projection) == .running(
-            stepText: nil,
-            detail: "에이전트 테스트 실행",
-            toolName: "bash"
-        ))
+        #expect(PickyConversationLiveStepPresentation(projection: projection) == nil)
     }
 
     @Test func liveStepHidesWhenThereIsNoCurrentTodoOrActiveTool() {
@@ -882,16 +868,13 @@ struct PickyConversationCardViewTests {
         let projection = PickyConversationLiveStepProjection(
             metaStore: store.metaStore,
             todoStore: store.todoStore,
-            toolStore: store.toolStore,
-            activityStore: store.activityStore,
             extensionUiStore: store.extensionUiStore
         )
 
-        #expect(projection.activeTool == nil)
         #expect(PickyConversationLiveStepPresentation(projection: projection) == nil)
     }
 
-    @Test func liveStepShowsActiveToolWithoutInventingFallbackDetail() {
+    @Test func liveStepHidesWhenOnlyReadIsRunning() {
         let store = PickyConversationStoreResolver.legacyStore(for: makeConversationSession(
             status: .running,
             tools: [toolActivity("active-tool", name: "read", secondsOffset: 0, status: "running")]
@@ -899,16 +882,10 @@ struct PickyConversationCardViewTests {
         let projection = PickyConversationLiveStepProjection(
             metaStore: store.metaStore,
             todoStore: store.todoStore,
-            toolStore: store.toolStore,
-            activityStore: store.activityStore,
             extensionUiStore: store.extensionUiStore
         )
 
-        #expect(PickyConversationLiveStepPresentation(projection: projection) == .running(
-            stepText: nil,
-            detail: nil,
-            toolName: "read"
-        ))
+        #expect(PickyConversationLiveStepPresentation(projection: projection) == nil)
     }
 
     @Test func liveStepVisibilityKeepsWaitingAmberAndHidesSettledSessions() {
@@ -919,16 +896,12 @@ struct PickyConversationCardViewTests {
         let waiting = PickyConversationLiveStepProjection(
             metaStore: waitingStore.metaStore,
             todoStore: waitingStore.todoStore,
-            toolStore: waitingStore.toolStore,
-            activityStore: waitingStore.activityStore,
             extensionUiStore: waitingStore.extensionUiStore
         )
         let completedStore = PickyConversationStoreResolver.legacyStore(for: makeConversationSession(status: .completed))
         let completed = PickyConversationLiveStepProjection(
             metaStore: completedStore.metaStore,
             todoStore: completedStore.todoStore,
-            toolStore: completedStore.toolStore,
-            activityStore: completedStore.activityStore,
             extensionUiStore: completedStore.extensionUiStore
         )
 
@@ -942,8 +915,6 @@ struct PickyConversationCardViewTests {
         let projection = PickyConversationLiveStepProjection(
             metaStore: store.metaStore,
             todoStore: store.todoStore,
-            toolStore: store.toolStore,
-            activityStore: store.activityStore,
             extensionUiStore: store.extensionUiStore
         )
 
@@ -1693,12 +1664,17 @@ struct PickyConversationCardViewTests {
         #expect(!snapshot.showsActivitySummary, "zero-count snapshot should not surface in UI")
     }
 
-    @Test func activitySummaryShowsCalledReadEditAndEtcTools() {
-        let items = PickyActivitySummary(edit: 3, bash: 0, thinking: 4, other: 5, read: 2, write: 0).visibleToolCallItems
+    @Test func activitySummarySeparatesTodoAndSubagentFromOtherTools() {
+        let items = PickyActivitySummary(
+            edit: 3,
+            other: 5,
+            read: 2,
+            todo: 4,
+            subagent: 6
+        ).visibleToolCallItems
 
-        #expect(items.map(\.id) == ["read", "edit", "other"])
-        #expect(items.map(\.count) == [2, 3, 5])
-        #expect(items.map(\.label) == ["read", "edit", "etc"])
+        #expect(items.map(\.id) == ["read", "edit", "todo", "subagent", "other"])
+        #expect(items.map(\.count) == [2, 3, 4, 6, 5])
     }
 
     @Test func activitySnapshotWithOnlyThinkingIsHidden() {

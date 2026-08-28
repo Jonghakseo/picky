@@ -290,6 +290,8 @@ enum PickyTurnGrouper {
             combined.bash += snap.bash
             combined.edit += snap.edit
             combined.write += snap.write
+            combined.todo += snap.todo
+            combined.subagent += snap.subagent
             combined.thinking += snap.thinking
             combined.other += snap.other
         }

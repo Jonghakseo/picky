@@ -225,14 +225,11 @@ struct PickyConversationCardView: View {
                 PickyConversationLiveStepZone(
                     metaStore: sessionStore.metaStore,
                     todoStore: sessionStore.todoStore,
-                    toolStore: sessionStore.toolStore,
-                    activityStore: sessionStore.activityStore,
                     extensionUiStore: sessionStore.extensionUiStore,
                     isTodoExpanded: $isTodoExpanded,
                     viewport: viewportState,
                     heightTier: heightTier,
                     onToggleTodo: { toggleTodo(plan) },
-                    onOpenToolHistory: { viewModel.openToolHistoryForCurrentTurn(sessionID: plan.sessionID) },
                     onGoToQuestion: { requestNavigation(.question(requestID: $0)) },
                     onGoToLatest: { requestNavigation(.latest) }
                 )

@@ -41,11 +41,25 @@ final class LocaleManagerTests: XCTestCase {
         XCTAssertEqual(L10n.t("hud.conversation.meta.context", "43%"), "Context: 43%")
         XCTAssertEqual(L10n.t("hud.conversation.turn.latest"), "Latest")
         XCTAssertEqual(L10n.t("hud.thinking.title"), "Thinking")
+        XCTAssertEqual(activityCategoryLabels(), ["Read", "Command", "Edit", "Write", "Todo", "Subagent", "Other"])
 
         manager.apply(.korean)
         XCTAssertEqual(L10n.t("hud.conversation.meta.context", "43%"), "컨텍스트: 43%")
         XCTAssertEqual(L10n.t("hud.conversation.turn.latest"), "최신")
         XCTAssertEqual(L10n.t("hud.thinking.title"), "생각 과정")
+        XCTAssertEqual(activityCategoryLabels(), ["읽기", "명령어", "수정", "쓰기", "할 일", "서브에이전트", "기타"])
+    }
+
+    private func activityCategoryLabels() -> [String] {
+        PickyActivitySummary(
+            edit: 1,
+            bash: 1,
+            other: 1,
+            read: 1,
+            write: 1,
+            todo: 1,
+            subagent: 1
+        ).visibleToolCallItems.map(\.label)
     }
 
     /// English remains the source language regardless of the OS locale, so

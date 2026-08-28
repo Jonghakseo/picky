@@ -647,9 +647,9 @@ struct PickyTurnCardViewTests {
             msg("a-think-1", kind: .agentThinking, secondsOffset: 1, text: "plan"),
             msg("a-act-1", kind: .agentActivity, secondsOffset: 2, activitySnapshot: PickyActivitySummary(read: 1)),
             msg("a-text-1", kind: .agentText, secondsOffset: 3, text: "step one"),
-            msg("a-act-2", kind: .agentActivity, secondsOffset: 4, activitySnapshot: PickyActivitySummary(bash: 1)),
+            msg("a-act-2", kind: .agentActivity, secondsOffset: 4, activitySnapshot: PickyActivitySummary(bash: 1, todo: 1)),
             msg("a-text-2", kind: .agentText, secondsOffset: 5, text: "step two"),
-            msg("a-act-3", kind: .agentActivity, secondsOffset: 6, activitySnapshot: PickyActivitySummary(edit: 2, bash: 1))
+            msg("a-act-3", kind: .agentActivity, secondsOffset: 6, activitySnapshot: PickyActivitySummary(edit: 2, bash: 1, subagent: 2))
         ]
 
         let groups = PickyTurnGrouper.groups(from: messages, sessionStatus: .completed)
@@ -657,7 +657,13 @@ struct PickyTurnCardViewTests {
         #expect(groups.count == 1)
         let body = groups[0].bodyMessages
         #expect(body.map(\.id) == ["a-think-1", "a-text-1", "a-text-2", "a-act-3"])
-        #expect(body.last?.activitySnapshot == PickyActivitySummary(edit: 2, bash: 2, read: 1))
+        #expect(body.last?.activitySnapshot == PickyActivitySummary(
+            edit: 2,
+            bash: 2,
+            read: 1,
+            todo: 1,
+            subagent: 2
+        ))
     }
 
     @Test func mergeActivitySnapshotsLeavesSingleActivityUntouched() {

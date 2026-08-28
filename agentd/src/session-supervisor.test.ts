@@ -649,7 +649,7 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(session.id)?.activitySummary).toEqual({ read: 0, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 });
   });
 
-  it("classifies read, bash, edit, write, and unknown tools in the activity summary", async () => {
+  it("classifies todo and subagent separately from other tools in the activity summary", async () => {
     const runtime = new ManualRuntime();
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-activity-category-test-"));
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
@@ -660,10 +660,21 @@ describe("SessionSupervisor", () => {
     runtime.handle!.emit({ type: "tool", toolCallId: "tool-2", name: "bash", status: "running" });
     runtime.handle!.emit({ type: "tool", toolCallId: "tool-3", name: "edit", status: "running" });
     runtime.handle!.emit({ type: "tool", toolCallId: "tool-4", name: "write", status: "running" });
-    runtime.handle!.emit({ type: "tool", toolCallId: "tool-5", name: "mcp__notion__readPage", status: "running" });
+    runtime.handle!.emit({ type: "tool", toolCallId: "tool-5", name: "todo_write", status: "running" });
+    runtime.handle!.emit({ type: "tool", toolCallId: "tool-6", name: "subagent", status: "running" });
+    runtime.handle!.emit({ type: "tool", toolCallId: "tool-7", name: "mcp__notion__readPage", status: "running" });
     await waitUntil(() => supervisor.get(session.id)?.activitySummary?.other === 1);
 
-    expect(supervisor.get(session.id)?.activitySummary).toEqual({ read: 1, bash: 1, edit: 1, write: 1, thinking: 0, other: 1 });
+    expect(supervisor.get(session.id)?.activitySummary).toEqual({
+      read: 1,
+      bash: 1,
+      edit: 1,
+      write: 1,
+      todo: 1,
+      subagent: 1,
+      thinking: 0,
+      other: 1,
+    });
   });
 
   it("counts one thinking step per contiguous thinking run", async () => {

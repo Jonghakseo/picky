@@ -209,7 +209,7 @@ function toolActivitySnapshot(content: unknown): PickyActivitySummary | undefine
   for (const block of contentBlocks(content)) {
     if (block.type !== "toolCall" || typeof block.name !== "string") continue;
     const category = categorizeTool(block.name);
-    summary[category] += 1;
+    summary[category] = (summary[category] ?? 0) + 1;
   }
   return hasActivity(summary) ? summary : undefined;
 }

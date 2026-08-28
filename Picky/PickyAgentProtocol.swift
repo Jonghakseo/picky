@@ -1081,20 +1081,33 @@ struct PickyActivitySummary: Codable, Equatable {
     var other: Int
     var read: Int
     var write: Int
+    var todo: Int
+    var subagent: Int
 
-    static let zero = PickyActivitySummary(edit: 0, bash: 0, thinking: 0, other: 0, read: 0, write: 0)
+    static let zero = PickyActivitySummary()
 
-    init(edit: Int = 0, bash: Int = 0, thinking: Int = 0, other: Int = 0, read: Int = 0, write: Int = 0) {
+    init(
+        edit: Int = 0,
+        bash: Int = 0,
+        thinking: Int = 0,
+        other: Int = 0,
+        read: Int = 0,
+        write: Int = 0,
+        todo: Int = 0,
+        subagent: Int = 0
+    ) {
         self.edit = edit
         self.bash = bash
         self.thinking = thinking
         self.other = other
         self.read = read
         self.write = write
+        self.todo = todo
+        self.subagent = subagent
     }
 
     private enum CodingKeys: String, CodingKey {
-        case read, bash, edit, write, thinking, other
+        case read, bash, edit, write, todo, subagent, thinking, other
     }
 
     init(from decoder: Decoder) throws {
@@ -1103,6 +1116,8 @@ struct PickyActivitySummary: Codable, Equatable {
         bash = try container.decodeIfPresent(Int.self, forKey: .bash) ?? 0
         edit = try container.decodeIfPresent(Int.self, forKey: .edit) ?? 0
         write = try container.decodeIfPresent(Int.self, forKey: .write) ?? 0
+        todo = try container.decodeIfPresent(Int.self, forKey: .todo) ?? 0
+        subagent = try container.decodeIfPresent(Int.self, forKey: .subagent) ?? 0
         thinking = try container.decodeIfPresent(Int.self, forKey: .thinking) ?? 0
         other = try container.decodeIfPresent(Int.self, forKey: .other) ?? 0
     }

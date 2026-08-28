@@ -145,16 +145,11 @@ struct PickyConversationLiveStepProjection: Equatable {
     let sessionID: String
     let status: PickySessionStatus
     let todoPresentation: PickyTodoProgressPresentation?
-    let activeTool: PickyToolActivity?
-    let activityStartedAt: Date?
-    let activitySummary: PickyActivitySummary
     let pendingQuestionRequestID: String?
 
     init(
         metaStore: PickySessionMetaStore,
         todoStore: PickySessionTodoStore,
-        toolStore: PickySessionToolStore,
-        activityStore: PickySessionActivityStore,
         extensionUiStore: PickySessionExtensionUiStore
     ) {
         guard case .loaded(let metadata) = metaStore.metadataState else {
@@ -169,19 +164,6 @@ struct PickyConversationLiveStepProjection: Equatable {
             todoState = nil
         }
         todoPresentation = PickyTodoProgressPresentation(state: todoState)
-        let tools: [PickyToolActivity]
-        if case .loaded(let value) = toolStore.toolsState {
-            tools = value
-        } else {
-            tools = []
-        }
-        activeTool = tools.last(where: \.isActive)
-        activityStartedAt = activeTool?.startedAt ?? todoPresentation?.updatedAt
-        if case .loaded(let value) = activityStore.activityState {
-            activitySummary = value
-        } else {
-            activitySummary = .zero
-        }
         let request: PickyExtensionUiRequest?
         if case .loaded(let value) = extensionUiStore.requestState {
             request = value
@@ -190,21 +172,11 @@ struct PickyConversationLiveStepProjection: Equatable {
         }
         pendingQuestionRequestID = request?.id
     }
-
-    func elapsedText(at date: Date) -> String? {
-        guard status == .running, let activityStartedAt else { return nil }
-        return PickyTurnSummary(
-            stepCount: 0,
-            toolCount: 0,
-            elapsedSeconds: max(0, Int(date.timeIntervalSince(activityStartedAt))),
-            showsStepCount: false
-        ).elapsedDisplayText
-    }
 }
 
 @MainActor
 enum PickyConversationLiveStepPresentation: Equatable {
-    case running(stepText: String?, detail: String?, toolName: String?)
+    case running(stepText: String, detail: String)
     case waitingForInput(requestID: String)
     case todo(stepText: String, detail: String, status: PickyConversationStatusPresentation)
 
@@ -212,7 +184,6 @@ enum PickyConversationLiveStepPresentation: Equatable {
         self.init(
             status: projection.status,
             todoPresentation: projection.todoPresentation,
-            activeTool: projection.activeTool,
             pendingQuestionRequestID: projection.pendingQuestionRequestID
         )
     }
@@ -220,18 +191,14 @@ enum PickyConversationLiveStepPresentation: Equatable {
     init?(
         status: PickySessionStatus,
         todoPresentation: PickyTodoProgressPresentation?,
-        activeTool: PickyToolActivity? = nil,
         pendingQuestionRequestID: String? = nil
     ) {
         switch status {
         case .running:
-            guard todoPresentation != nil || activeTool != nil else { return nil }
-            let detail = todoPresentation?.activeText
-                ?? activeTool.flatMap(PickyToolActivityPresentation.compactDetail)
+            guard let todoPresentation else { return nil }
             self = .running(
-                stepText: todoPresentation?.countText,
-                detail: detail,
-                toolName: activeTool?.name
+                stepText: todoPresentation.countText,
+                detail: todoPresentation.activeText
             )
         case .waiting_for_input:
             if let pendingQuestionRequestID {
@@ -278,12 +245,10 @@ enum PickyConversationLiveStepPresentation: Equatable {
         }
     }
 
-    func accessibilityValue(projection: PickyConversationLiveStepProjection, at date: Date) -> String {
+    var accessibilityValue: String {
         switch self {
-        case let .running(stepText, detail, toolName):
-            return [L10n.t("hud.conversation.status.running"), stepText, detail, toolName, projection.elapsedText(at: date)]
-                .compactMap { $0 }
-                .joined(separator: ", ")
+        case let .running(stepText, detail):
+            return [L10n.t("hud.conversation.status.running"), stepText, detail].joined(separator: ", ")
         case .waitingForInput:
             return L10n.t("hud.liveStep.waitingForQuestion")
         case let .todo(stepText, detail, status):
@@ -298,7 +263,6 @@ struct PickyConversationLiveStepView: View {
     let isTodoExpanded: Bool
     let heightTier: PickyConversationFocusStackHeightTier
     let onToggleTodo: () -> Void
-    let onOpenToolHistory: () -> Void
     let onGoToQuestion: (String) -> Void
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
 
@@ -307,7 +271,6 @@ struct PickyConversationLiveStepView: View {
         isTodoExpanded: Bool,
         heightTier: PickyConversationFocusStackHeightTier,
         onToggleTodo: @escaping () -> Void,
-        onOpenToolHistory: @escaping () -> Void,
         onGoToQuestion: @escaping (String) -> Void
     ) {
         self.projection = projection
@@ -315,7 +278,6 @@ struct PickyConversationLiveStepView: View {
         self.isTodoExpanded = isTodoExpanded
         self.heightTier = heightTier
         self.onToggleTodo = onToggleTodo
-        self.onOpenToolHistory = onOpenToolHistory
         self.onGoToQuestion = onGoToQuestion
     }
 
@@ -323,31 +285,21 @@ struct PickyConversationLiveStepView: View {
         let widthTier = PickyConversationFocusStackWidthTier(cardWidth: pickyHUDDetailWidth)
         Group {
             switch presentation {
-            case let .running(stepText, detail, toolName):
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    runningContent(widthTier: widthTier, stepText: stepText, detail: detail, toolName: toolName, date: context.date)
-                        .accessibilityElement(children: .contain)
-                        .accessibilityLabel(presentation.label)
-                        // The aggregate changes each second but must not become a
-                        // VoiceOver live region.
-                        .accessibilityValue(presentation.accessibilityValue(projection: projection, at: context.date))
-                }
+            case let .running(stepText, detail):
+                runningContent(widthTier: widthTier, stepText: stepText, detail: detail)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel(presentation.label)
+                    .accessibilityValue(presentation.accessibilityValue)
             case let .waitingForInput(requestID):
                 waitingContent(requestID: requestID)
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel(presentation.label)
-                    .accessibilityValue(presentation.accessibilityValue(projection: projection, at: .now))
+                    .accessibilityValue(presentation.accessibilityValue)
             case let .todo(stepText, detail, _):
-                runningContent(
-                    widthTier: widthTier,
-                    stepText: stepText,
-                    detail: detail,
-                    toolName: nil,
-                    date: .now
-                )
-                .accessibilityElement(children: .contain)
-                .accessibilityLabel(presentation.label)
-                .accessibilityValue(presentation.accessibilityValue(projection: projection, at: .now))
+                runningContent(widthTier: widthTier, stepText: stepText, detail: detail)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel(presentation.label)
+                    .accessibilityValue(presentation.accessibilityValue)
             }
         }
         .padding(.horizontal, DS.Spacing.sm)
@@ -357,43 +309,23 @@ struct PickyConversationLiveStepView: View {
     }
 
     @ViewBuilder
-    private func runningContent(widthTier: PickyConversationFocusStackWidthTier, stepText: String?, detail: String?, toolName: String?, date: Date) -> some View {
+    private func runningContent(widthTier: PickyConversationFocusStackWidthTier, stepText: String, detail: String) -> some View {
         if heightTier == .constrained {
             HStack(spacing: DS.Spacing.sm) {
-                runningPrimaryLine(stepText: stepText, toolName: toolName, elapsedText: projection.elapsedText(at: date))
-                if let detail { runningDetailButton(detail) }
+                planProgressControl(stepText: stepText)
+                runningDetailButton(detail)
             }
         } else if widthTier == .compact {
             VStack(alignment: .leading, spacing: DS.Spacing.xs) {
-                runningPrimaryLine(stepText: stepText, toolName: toolName, elapsedText: projection.elapsedText(at: date))
-                if let detail { runningDetailButton(detail) }
+                planProgressControl(stepText: stepText)
+                runningDetailButton(detail)
             }
         } else {
             HStack(spacing: DS.Spacing.sm) {
-                runningPrimaryLine(stepText: stepText, toolName: toolName, elapsedText: projection.elapsedText(at: date))
-                if let detail { runningDetailButton(detail) }
+                planProgressControl(stepText: stepText)
+                runningDetailButton(detail)
             }
         }
-    }
-
-    private func runningPrimaryLine(stepText: String?, toolName: String?, elapsedText: String?) -> some View {
-        HStack(spacing: DS.Spacing.xs) {
-            planProgressControl(stepText: stepText)
-            if let toolName {
-                Button(action: onOpenToolHistory) {
-                    Text(toolName).font(PickyHUDTypography.statusMedium).foregroundStyle(DS.Colors.accentText).lineLimit(1)
-                }
-                .buttonStyle(.plain)
-                .help(L10n.t("hud.liveStep.toolHistory.help"))
-                .accessibilityLabel(L10n.t("hud.liveStep.currentTool.accessibilityLabel", toolName))
-                .accessibilityHint(L10n.t("hud.liveStep.toolHistory.help"))
-                .hoverAffordance()
-            }
-            if let elapsedText {
-                Text(elapsedText).font(PickyHUDTypography.statusMonospacedMedium).foregroundStyle(DS.Colors.textTertiary).accessibilityHidden(true)
-            }
-        }
-        .fixedSize(horizontal: false, vertical: true)
     }
 
     @ViewBuilder
@@ -496,14 +428,11 @@ struct PickyConversationLiveStepView: View {
 struct PickyConversationLiveStepZone: View {
     let metaStore: PickySessionMetaStore
     let todoStore: PickySessionTodoStore
-    let toolStore: PickySessionToolStore
-    let activityStore: PickySessionActivityStore
     let extensionUiStore: PickySessionExtensionUiStore
     @Binding var isTodoExpanded: Bool
     let viewport: PickyConversationViewportState
     let heightTier: PickyConversationFocusStackHeightTier
     let onToggleTodo: () -> Void
-    let onOpenToolHistory: () -> Void
     let onGoToQuestion: (String) -> Void
     let onGoToLatest: () -> Void
 
@@ -511,8 +440,6 @@ struct PickyConversationLiveStepZone: View {
         let projection = PickyConversationLiveStepProjection(
             metaStore: metaStore,
             todoStore: todoStore,
-            toolStore: toolStore,
-            activityStore: activityStore,
             extensionUiStore: extensionUiStore
         )
         if PickyConversationLiveStepNavigationPolicy.showsExternalLatest(status: projection.status, viewport: viewport) {
@@ -533,7 +460,6 @@ struct PickyConversationLiveStepZone: View {
                 isTodoExpanded: isTodoExpanded,
                 heightTier: heightTier,
                 onToggleTodo: onToggleTodo,
-                onOpenToolHistory: onOpenToolHistory,
                 onGoToQuestion: onGoToQuestion
             )
             .accessibilityLabel(presentation.label)

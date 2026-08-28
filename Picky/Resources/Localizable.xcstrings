@@ -2548,13 +2548,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Command"
+            "value": "bash"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "명령어"
+            "value": "실행"
           }
         }
       }

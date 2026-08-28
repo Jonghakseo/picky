@@ -798,6 +798,34 @@ struct PickyConversationCardViewTests {
         #expect(withContext.helpText.contains("high"))
     }
 
+    @Test func contextCompactionPopoverKeepsInspectionAvailableWhileGatingTheAction() {
+        for status in [PickySessionStatus.completed, .blocked, .failed, .cancelled] {
+            let presentation = PickyHeaderContextCompactionPresentation(status: status, lastSummary: "Settled")
+            #expect(presentation.actionState == .available)
+            #expect(presentation.isActionEnabled)
+            #expect(!presentation.showsProgress)
+        }
+
+        for status in [PickySessionStatus.queued, .running, .waiting_for_input] {
+            let presentation = PickyHeaderContextCompactionPresentation(status: status, lastSummary: "Working")
+            #expect(presentation.actionState == .unavailable)
+            #expect(!presentation.isActionEnabled)
+            #expect(!presentation.showsProgress)
+        }
+    }
+
+    @Test func contextCompactionPopoverShowsProgressAndBlocksDuplicateRequests() {
+        let presentation = PickyHeaderContextCompactionPresentation(
+            status: .running,
+            lastSummary: "Compacting session…"
+        )
+
+        #expect(presentation.actionState == .compacting)
+        #expect(!presentation.isActionEnabled)
+        #expect(presentation.showsProgress)
+        #expect(presentation.actionLabel == L10n.t("hud.compact.running"))
+    }
+
     @Test func focusStackWidthPolicyProjectsCompactDefaultAndExpandedCards() {
         #expect(PickyConversationFocusStackWidthTier(cardWidth: 360) == .compact)
         #expect(PickyConversationFocusStackWidthTier(cardWidth: 446) == .standard)

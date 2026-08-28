@@ -170,7 +170,16 @@ struct PickyConversationHeaderView: View {
     }
 
     private func sessionMetaControls() -> some View {
-        PickyHeaderSessionMetaPill(presentation: headerMetaPresentation)
+        PickyHeaderSessionMetaPill(
+            presentation: headerMetaPresentation,
+            compactionPresentation: PickyHeaderContextCompactionPresentation(
+                status: session.status,
+                lastSummary: session.lastSummary
+            ),
+            onCompact: {
+                Task { await commands.requestCompaction(sessionID: session.id) }
+            }
+        )
     }
 
     @ViewBuilder
@@ -828,6 +837,37 @@ struct PickleLogoGlyph: Shape {
     }
 }
 
+struct PickyHeaderContextCompactionPresentation: Equatable {
+    enum ActionState: Equatable {
+        case available
+        case unavailable
+        case compacting
+    }
+
+    let actionState: ActionState
+
+    init(status: PickySessionStatus, lastSummary: String) {
+        if status == .running,
+           lastSummary.localizedCaseInsensitiveContains("compacting") {
+            actionState = .compacting
+            return
+        }
+        switch status {
+        case .completed, .blocked, .failed, .cancelled:
+            actionState = .available
+        case .queued, .running, .waiting_for_input:
+            actionState = .unavailable
+        }
+    }
+
+    var isActionEnabled: Bool { actionState == .available }
+    var showsProgress: Bool { actionState == .compacting }
+
+    var actionLabel: String {
+        L10n.t(actionState == .compacting ? "hud.compact.running" : "hud.contextCompaction.action")
+    }
+}
+
 /// Shared session metadata projection for the conversation header. Keeping the
 /// strings here aligns visible controls, tooltips, and accessibility text when
 /// a session's model, thinking level, or context usage changes.
@@ -868,21 +908,41 @@ struct PickyConversationHeaderMetaPresentation {
     }
 }
 
-private struct PickyHeaderSessionMetaPill: View {
+struct PickyHeaderSessionMetaPill: View {
     let presentation: PickyConversationHeaderMetaPresentation
+    let compactionPresentation: PickyHeaderContextCompactionPresentation
+    let onCompact: () -> Void
+
+    @State private var isContextPopoverPresented = false
+    @State private var isContextControlHovered = false
 
     var body: some View {
         Group {
             if let contextDisplay = presentation.contextDisplay {
-                contextControl(contextDisplay)
+                Button {
+                    isContextPopoverPresented.toggle()
+                } label: {
+                    contextControl(contextDisplay)
+                }
+                .buttonStyle(.plain)
+                .background(contextControlBackground)
+                .onHover { isContextControlHovered = $0 }
+                .popover(isPresented: $isContextPopoverPresented, arrowEdge: .top) {
+                    PickyHeaderContextCompactionPopoverView(
+                        display: contextDisplay,
+                        compactionPresentation: compactionPresentation,
+                        onCompact: {
+                            isContextPopoverPresented = false
+                            onCompact()
+                        }
+                    )
+                }
+                .help(L10n.t("hud.contextCompaction.open.help"))
             }
         }
         .font(PickyHUDTypography.metaMonospacedMedium)
         .foregroundColor(textColor.opacity(0.88))
         .lineLimit(1)
-        // Keep full runtime metadata inspectable without restoring its former
-        // model/thinking controls to the constrained identity row.
-        .help(presentation.helpText)
     }
 
     private func contextControl(_ display: PickyHeaderContextUsageDisplay) -> some View {
@@ -892,18 +952,107 @@ private struct PickyHeaderSessionMetaPill: View {
             Text(display.label)
                 .fontWeight(.semibold)
         }
+        .padding(.horizontal, DS.Spacing.space1)
+        .padding(.vertical, DS.Spacing.space1)
         .fixedSize(horizontal: true, vertical: false)
+        .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(display.localizedLabel)
+        .accessibilityHint(L10n.t("hud.contextCompaction.open.help"))
     }
 
+    private var contextControlBackground: some View {
+        RoundedRectangle(cornerRadius: DS.CornerRadius.compact, style: .continuous)
+            .fill(
+                isContextPopoverPresented
+                    ? DS.Colors.accentSubtle
+                    : isContextControlHovered
+                        ? DS.Colors.surface2
+                        : Color.clear
+            )
+            .animation(.easeOut(duration: DS.Animation.fast), value: isContextPopoverPresented)
+            .animation(.easeOut(duration: DS.Animation.fast), value: isContextControlHovered)
+    }
 
     private var textColor: Color {
-        presentation.contextDisplay?.textColor ?? DS.Colors.textTertiary
+        if isContextPopoverPresented { return DS.Colors.accentText }
+        return presentation.contextDisplay?.textColor ?? DS.Colors.textTertiary
     }
 }
 
-private struct PickyHeaderContextUsageBar: View {
+struct PickyHeaderContextCompactionPopoverView: View {
+    let display: PickyHeaderContextUsageDisplay
+    let compactionPresentation: PickyHeaderContextCompactionPresentation
+    let onCompact: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.space3) {
+            HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.space2) {
+                Text("hud.contextCompaction.title")
+                    .font(PickyHUDTypography.labelSemibold)
+                    .foregroundColor(DS.Colors.textPrimary)
+                Spacer(minLength: DS.Spacing.space2)
+                Text(display.label)
+                    .font(PickyHUDTypography.metaMonospacedSemibold)
+                    .foregroundColor(display.textColor)
+            }
+
+            PickyHeaderContextUsageBar(display: display)
+                .frame(height: DS.Spacing.space1)
+
+            Text("hud.contextCompaction.description")
+                .font(PickyHUDTypography.status)
+                .foregroundColor(DS.Colors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            actionArea
+        }
+        .padding(DS.Spacing.space4)
+        .frame(width: PickyHUDDockLayout.contextCompactionPopoverWidth)
+        .background(DS.Colors.surface1)
+    }
+
+    @ViewBuilder
+    private var actionArea: some View {
+        if compactionPresentation.showsProgress {
+            HStack(spacing: DS.Spacing.space2) {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(DS.Colors.info)
+                Text(compactionPresentation.actionLabel)
+                    .font(PickyHUDTypography.statusSemibold)
+                    .foregroundColor(DS.Colors.textSecondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+        } else if compactionPresentation.isActionEnabled {
+            Button(action: onCompact) {
+                Text(compactionPresentation.actionLabel)
+                    .font(PickyHUDTypography.labelSemibold)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .tint(DS.Colors.accent)
+        } else {
+            Button(action: {}) {
+                Text(compactionPresentation.actionLabel)
+                    .font(PickyHUDTypography.labelSemibold)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(true)
+
+            Text("hud.contextCompaction.unavailable")
+                .font(PickyHUDTypography.status)
+                .foregroundColor(DS.Colors.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+struct PickyHeaderContextUsageBar: View {
     let display: PickyHeaderContextUsageDisplay
 
     var body: some View {

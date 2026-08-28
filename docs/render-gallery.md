@@ -61,6 +61,14 @@ It runs only `PickyHUDDockGroupRenderGalleryTests`. That test uses an offscreen 
 
 The test verifies PNG encoding/decoding, expected 2× canvas dimensions, non-empty alpha content, transparent canvas edges, list panel geometry from `PickyHUDDockGroupListPolicy`, and folder/header geometry from `PickyHUDDockGroupHeaderPresentation`. It intentionally does not compare byte-for-byte or commit golden images because macOS font and material rendering varies between OS versions.
 
+## Conversation context gallery
+
+```bash
+./scripts/render-ui-gallery.sh conversation-context
+```
+
+This target writes five 2× Korean scenes under `build/render-gallery/conversation-context/`: the production header context control, available popover content in dark and light appearance, the unavailable action state, and active compaction progress. `PickyConversationHeaderRenderGalleryTests` renders the production SwiftUI components without creating an app window. Inspect the PNGs directly; the gallery validates file structure and dimensions but does not prove native popover anchoring or click-outside dismissal.
+
 ## Review limits
 
 Offscreen material rendering can differ from a displayed child panel. The gallery does not prove live material/vibrancy, native menu/popover behavior, hover/press transitions, drag monitors, accessibility focus, Reduce Transparency fallback, or actual child-`NSPanel` anchoring. Inspect those behaviors separately when the relevant change requires it.

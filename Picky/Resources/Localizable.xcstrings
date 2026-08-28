@@ -3330,6 +3330,86 @@
         }
       }
     },
+    "hud.contextCompaction.action": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compact now"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지금 압축"
+          }
+        }
+      }
+    },
+    "hud.contextCompaction.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Summarize older conversation to free context space."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오래된 대화를 요약해 컨텍스트 여유 공간을 확보합니다."
+          }
+        }
+      }
+    },
+    "hud.contextCompaction.open.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show context details and compression options"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "컨텍스트 정보와 압축 옵션 보기"
+          }
+        }
+      }
+    },
+    "hud.contextCompaction.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Session context"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "세션 컨텍스트"
+          }
+        }
+      }
+    },
+    "hud.contextCompaction.unavailable": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can compact after the current turn finishes."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "현재 작업이 끝나면 압축할 수 있습니다."
+          }
+        }
+      }
+    },
     "hud.composer.steerTarget": {
       "localizations": {
         "en": {

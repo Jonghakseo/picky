@@ -263,6 +263,7 @@ enum PickyHUDDockLayout {
     static let panelWidth: CGFloat = 540
     static let detailWidth: CGFloat = 446
     static let detailHorizontalPadding: CGFloat = 12
+    static let contextCompactionPopoverWidth: CGFloat = 252
     static var detailContentWidth: CGFloat { detailContentWidth(for: detailWidth) }
     static func detailContentWidth(for detailWidth: CGFloat) -> CGFloat {
         max(0, detailWidth - (detailHorizontalPadding * 2))

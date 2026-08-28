@@ -179,7 +179,7 @@ struct PickyHUDDockMetrics: Equatable {
     var previewCardWidth: CGFloat { max(200, scaled(238)) }
     /// Dock-panel geometry scales with the dock preset. The large-preset baselines
     /// map to the design system's 4pt spacing and shape tokens.
-    var groupListPanelWidth: CGFloat { scaled(300) }
+    var groupListPanelWidth: CGFloat { scaled(360) }
     var groupListPanelPadding: CGFloat { scaled(12) } // space.3
     var groupListHeaderHeight: CGFloat { scaled(24) } // space.6
     /// SF Symbol optical size, proportioned to its preset-scaled header.

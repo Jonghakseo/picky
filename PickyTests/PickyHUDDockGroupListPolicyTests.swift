@@ -221,8 +221,8 @@ struct PickyHUDDockGroupListPolicyTests {
             metrics: mediumMetrics
         )
 
-        // Medium is 0.86 of the authored width constant, not 1.0.
-        let expectedWidth: CGFloat = 258
+        // Medium is 0.86 of the authored width constant, rounded to the nearest point.
+        let expectedWidth: CGFloat = 310
         #expect(medium.width == expectedWidth)
         #expect(medium.height > PickyHUDDockGroupListPolicy.panelChromeHeight(metrics: mediumMetrics))
     }

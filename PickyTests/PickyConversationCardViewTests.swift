@@ -872,11 +872,12 @@ struct PickyConversationCardViewTests {
         ))
     }
 
-    @Test func liveStepProjectionDoesNotShowSettledPreviousToolAsCurrent() {
+    @Test func liveStepHidesWhenThereIsNoCurrentTodoOrActiveTool() {
         let store = PickyConversationStoreResolver.legacyStore(for: makeConversationSession(
             status: .running,
             messages: [message("new-turn", kind: .userText, text: "Start the next task")],
-            tools: [toolActivity("previous-tool", name: "read", secondsOffset: -30, status: "succeeded")]
+            tools: [toolActivity("previous-tool", name: "read", secondsOffset: -30, status: "succeeded")],
+            activitySummary: PickyActivitySummary(bash: 3)
         ))
         let projection = PickyConversationLiveStepProjection(
             metaStore: store.metaStore,
@@ -887,10 +888,26 @@ struct PickyConversationCardViewTests {
         )
 
         #expect(projection.activeTool == nil)
+        #expect(PickyConversationLiveStepPresentation(projection: projection) == nil)
+    }
+
+    @Test func liveStepShowsActiveToolWithoutInventingFallbackDetail() {
+        let store = PickyConversationStoreResolver.legacyStore(for: makeConversationSession(
+            status: .running,
+            tools: [toolActivity("active-tool", name: "read", secondsOffset: 0, status: "running")]
+        ))
+        let projection = PickyConversationLiveStepProjection(
+            metaStore: store.metaStore,
+            todoStore: store.todoStore,
+            toolStore: store.toolStore,
+            activityStore: store.activityStore,
+            extensionUiStore: store.extensionUiStore
+        )
+
         #expect(PickyConversationLiveStepPresentation(projection: projection) == .running(
             stepText: nil,
-            detail: L10n.t("hud.liveStep.working"),
-            toolName: nil
+            detail: nil,
+            toolName: "read"
         ))
     }
 

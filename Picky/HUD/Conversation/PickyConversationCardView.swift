@@ -53,7 +53,6 @@ struct PickyConversationCardView: View {
     /// One mutable Plan owner for both Live Step and the Journal-bound drawer.
     @State private var isTodoExpanded = false
     @State private var planExpansionSessionID: String?
-    @State private var todoOpenerFocusRequestID = 0
     @State private var todoDrawerFocusRequestID = 0
     @State private var composerFocusRequestID = 0
     @State private var navigationRequest = PickyConversationNavigationRequest()
@@ -230,7 +229,6 @@ struct PickyConversationCardView: View {
                     activityStore: sessionStore.activityStore,
                     extensionUiStore: sessionStore.extensionUiStore,
                     isTodoExpanded: $isTodoExpanded,
-                    todoOpenerFocusRequestID: todoOpenerFocusRequestID,
                     viewport: viewportState,
                     heightTier: heightTier,
                     onToggleTodo: { toggleTodo(plan) },
@@ -333,7 +331,6 @@ struct PickyConversationCardView: View {
     private func closeTodo(_ plan: PickyConversationPlanProjection) {
         isTodoExpanded = false
         viewModel.setTodoProgressExpanded(false, sessionID: plan.sessionID)
-        todoOpenerFocusRequestID &+= 1
     }
 
     private func requestNavigation(_ target: PickyConversationNavigationTarget) {

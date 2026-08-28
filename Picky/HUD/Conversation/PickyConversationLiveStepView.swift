@@ -204,7 +204,7 @@ struct PickyConversationLiveStepProjection: Equatable {
 
 @MainActor
 enum PickyConversationLiveStepPresentation: Equatable {
-    case running(stepText: String?, detail: String, toolName: String?)
+    case running(stepText: String?, detail: String?, toolName: String?)
     case waitingForInput(requestID: String)
     case todo(stepText: String, detail: String, status: PickyConversationStatusPresentation)
 
@@ -213,7 +213,6 @@ enum PickyConversationLiveStepPresentation: Equatable {
             status: projection.status,
             todoPresentation: projection.todoPresentation,
             activeTool: projection.activeTool,
-            activitySummary: projection.activitySummary,
             pendingQuestionRequestID: projection.pendingQuestionRequestID
         )
     }
@@ -222,14 +221,13 @@ enum PickyConversationLiveStepPresentation: Equatable {
         status: PickySessionStatus,
         todoPresentation: PickyTodoProgressPresentation?,
         activeTool: PickyToolActivity? = nil,
-        activitySummary: PickyActivitySummary = .zero,
         pendingQuestionRequestID: String? = nil
     ) {
         switch status {
         case .running:
+            guard todoPresentation != nil || activeTool != nil else { return nil }
             let detail = todoPresentation?.activeText
                 ?? activeTool.flatMap(PickyToolActivityPresentation.compactDetail)
-                ?? Self.activityDetail(for: activitySummary)
             self = .running(
                 stepText: todoPresentation?.countText,
                 detail: detail,
@@ -255,16 +253,6 @@ enum PickyConversationLiveStepPresentation: Equatable {
                 status: PickyConversationStatusPresentation(status: status)
             )
         }
-    }
-
-    private static func activityDetail(for summary: PickyActivitySummary) -> String {
-        guard summary.totalToolCalls > 0 else {
-            return L10n.t("hud.liveStep.working")
-        }
-        return L10n.t(
-            summary.totalToolCalls == 1 ? "hud.conversation.turn.tool.one" : "hud.conversation.turn.tool.many",
-            Int64(summary.totalToolCalls)
-        )
     }
 
     var label: String {
@@ -308,18 +296,15 @@ struct PickyConversationLiveStepView: View {
     let projection: PickyConversationLiveStepProjection
     let presentation: PickyConversationLiveStepPresentation
     let isTodoExpanded: Bool
-    let todoOpenerFocusRequestID: Int
     let heightTier: PickyConversationFocusStackHeightTier
     let onToggleTodo: () -> Void
     let onOpenToolHistory: () -> Void
     let onGoToQuestion: (String) -> Void
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
-    @FocusState private var isTodoOpenerFocused: Bool
 
     init(
         projection: PickyConversationLiveStepProjection,
         isTodoExpanded: Bool,
-        todoOpenerFocusRequestID: Int,
         heightTier: PickyConversationFocusStackHeightTier,
         onToggleTodo: @escaping () -> Void,
         onOpenToolHistory: @escaping () -> Void,
@@ -328,7 +313,6 @@ struct PickyConversationLiveStepView: View {
         self.projection = projection
         presentation = PickyConversationLiveStepPresentation(projection: projection)!
         self.isTodoExpanded = isTodoExpanded
-        self.todoOpenerFocusRequestID = todoOpenerFocusRequestID
         self.heightTier = heightTier
         self.onToggleTodo = onToggleTodo
         self.onOpenToolHistory = onOpenToolHistory
@@ -373,21 +357,21 @@ struct PickyConversationLiveStepView: View {
     }
 
     @ViewBuilder
-    private func runningContent(widthTier: PickyConversationFocusStackWidthTier, stepText: String?, detail: String, toolName: String?, date: Date) -> some View {
+    private func runningContent(widthTier: PickyConversationFocusStackWidthTier, stepText: String?, detail: String?, toolName: String?, date: Date) -> some View {
         if heightTier == .constrained {
             HStack(spacing: DS.Spacing.sm) {
                 runningPrimaryLine(stepText: stepText, toolName: toolName, elapsedText: projection.elapsedText(at: date))
-                runningDetailButton(detail)
+                if let detail { runningDetailButton(detail) }
             }
         } else if widthTier == .compact {
             VStack(alignment: .leading, spacing: DS.Spacing.xs) {
                 runningPrimaryLine(stepText: stepText, toolName: toolName, elapsedText: projection.elapsedText(at: date))
-                runningDetailButton(detail)
+                if let detail { runningDetailButton(detail) }
             }
         } else {
             HStack(spacing: DS.Spacing.sm) {
                 runningPrimaryLine(stepText: stepText, toolName: toolName, elapsedText: projection.elapsedText(at: date))
-                runningDetailButton(detail)
+                if let detail { runningDetailButton(detail) }
             }
         }
     }
@@ -469,14 +453,11 @@ struct PickyConversationLiveStepView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .focusable()
-                .focused($isTodoOpenerFocused)
                 .help(isTodoExpanded ? L10n.t("hud.todo.collapse") : L10n.t("hud.todo.expand"))
                 .accessibilityLabel(L10n.t("hud.liveStep.currentPlan.accessibilityLabel", detail))
                 .accessibilityValue(projection.todoPresentation?.stepText ?? "")
                 .accessibilityHint(isTodoExpanded ? L10n.t("hud.todo.collapse") : L10n.t("hud.todo.expand"))
                 .hoverAffordance()
-                .onChange(of: todoOpenerFocusRequestID) { _, _ in isTodoOpenerFocused = true }
             } else {
                 detailText(detail)
             }
@@ -519,7 +500,6 @@ struct PickyConversationLiveStepZone: View {
     let activityStore: PickySessionActivityStore
     let extensionUiStore: PickySessionExtensionUiStore
     @Binding var isTodoExpanded: Bool
-    let todoOpenerFocusRequestID: Int
     let viewport: PickyConversationViewportState
     let heightTier: PickyConversationFocusStackHeightTier
     let onToggleTodo: () -> Void
@@ -551,7 +531,6 @@ struct PickyConversationLiveStepZone: View {
             PickyConversationLiveStepView(
                 projection: projection,
                 isTodoExpanded: isTodoExpanded,
-                todoOpenerFocusRequestID: todoOpenerFocusRequestID,
                 heightTier: heightTier,
                 onToggleTodo: onToggleTodo,
                 onOpenToolHistory: onOpenToolHistory,

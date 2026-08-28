@@ -112,6 +112,23 @@ enum PickyHUDDockRenderPolicy {
         )
     }
 
+    /// A grouped Pickle is absent from the normal rail universe because its
+    /// folder owns the top-level slot. External top-level preview is the one
+    /// exception: inject it once so the existing rail placeholder/reflow can
+    /// show the prospective ungrouped position without changing normal or
+    /// folder-target projection.
+    static func externalPreviewVisibleSessionIDs(
+        base: [String],
+        draggedSessionID: String?,
+        destination: PickyDockContainer?
+    ) -> [String] {
+        guard let draggedSessionID,
+              case .topLevel? = destination,
+              !base.contains(draggedSessionID)
+        else { return base }
+        return base + [draggedSessionID]
+    }
+
     /// Folder acceptance does not create a new linear slot. Keep the persisted
     /// source placeholder until release so the rail and add slot remain stable
     /// while the pointer crosses a folder. Only top-level destinations reflow

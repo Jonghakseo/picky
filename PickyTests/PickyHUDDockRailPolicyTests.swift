@@ -9,6 +9,32 @@ import Testing
 @testable import Picky
 
 struct PickyHUDDockRailPolicyTests {
+    @Test func topLevelExternalPreviewInjectsAGroupedSessionExactlyOnceWithoutChangingNormalProjection() {
+        let groupedSessionID = "grouped"
+        let base = ["top-level"]
+
+        #expect(PickyHUDDockRenderPolicy.externalPreviewVisibleSessionIDs(
+            base: base,
+            draggedSessionID: groupedSessionID,
+            destination: .topLevel(index: 1)
+        ) == ["top-level", "grouped"])
+        #expect(PickyHUDDockRenderPolicy.externalPreviewVisibleSessionIDs(
+            base: ["top-level", groupedSessionID],
+            draggedSessionID: groupedSessionID,
+            destination: .topLevel(index: 1)
+        ) == ["top-level", "grouped"])
+        #expect(PickyHUDDockRenderPolicy.externalPreviewVisibleSessionIDs(
+            base: base,
+            draggedSessionID: groupedSessionID,
+            destination: .group(id: "source", memberIndex: 0)
+        ) == base)
+        #expect(PickyHUDDockRenderPolicy.externalPreviewVisibleSessionIDs(
+            base: base,
+            draggedSessionID: nil,
+            destination: .topLevel(index: 1)
+        ) == base)
+    }
+
     @Test func folderLabelsUseTheRenderedIdentityFontForEveryPresetAndAppFontScale() {
         for preset in PickyHUDDockSizePreset.allCases {
             let metrics = PickyHUDDockMetrics(preset: preset)

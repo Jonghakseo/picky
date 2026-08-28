@@ -17,6 +17,10 @@ struct PickyHUDDockExternalDragGeometrySnapshot: Equatable {
     let groupCandidates: [PickyDockDropResolver.EmptyGroupCandidate]
     let dockSide: PickyHUDDockSide
     let geometryRevision: Int
+    /// The complete persisted layout state that was present when these screen
+    /// coordinates were measured. Geometry must never be reused for a newer
+    /// structure merely because its side and revision happen to match.
+    let layoutFingerprint: PickyHUDDockLayoutFingerprint
     let slotPitch: CGFloat
 
     func containsUsableScreenPoint(_ point: CGPoint) -> Bool {
@@ -174,5 +178,12 @@ struct PickyHUDDockExternalDragState: Equatable {
         case .idle, .dragging:
             break
         }
+    }
+
+    /// Releases a begun drag that never acquired its required AppKit monitors.
+    /// No preview or terminal effect is emitted for this failed promotion.
+    mutating func abandon(token: UUID) {
+        guard phase == .dragging(token) else { return }
+        phase = .idle
     }
 }

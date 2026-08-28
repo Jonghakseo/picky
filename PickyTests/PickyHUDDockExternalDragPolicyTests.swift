@@ -22,7 +22,13 @@ struct PickyHUDDockExternalDragPolicyTests {
             "target": CGRect(x: 50, y: 30, width: 40, height: 40),
         ]
     ) -> PickyHUDDockExternalDragGeometrySnapshot {
-        PickyHUDDockExternalDragGeometrySnapshot(
+        let layoutFingerprint = PickyHUDDockLayoutFingerprint(
+            layout: layout,
+            activeSessionIDs: ["dragged", "loose", "member"],
+            dockSide: side,
+            geometryRevision: 7
+        )
+        return PickyHUDDockExternalDragGeometrySnapshot(
             acceptanceFrame: acceptanceFrame,
             folderDropFrames: folderDropFrames,
             slotCandidates: [.init(container: .topLevel(index: 0), center: -80)],
@@ -33,6 +39,7 @@ struct PickyHUDDockExternalDragPolicyTests {
             ],
             dockSide: side,
             geometryRevision: 7,
+            layoutFingerprint: layoutFingerprint,
             slotPitch: 80
         )
     }

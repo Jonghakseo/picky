@@ -24,7 +24,14 @@ struct PickyHUDDockExternalDragPromotion {
     let geometry: PickyHUDDockExternalDragGeometrySnapshot
 
     var isConsistent: Bool {
-        fingerprint.dockSide == geometry.dockSide
+        fingerprint == geometry.layoutFingerprint
+            && PickyHUDDockLayoutFingerprint(
+                layout: frozenLayout,
+                activeSessionIDs: fingerprint.activeSessionIDs,
+                dockSide: fingerprint.dockSide,
+                geometryRevision: fingerprint.geometryRevision
+            ) == fingerprint
+            && fingerprint.dockSide == geometry.dockSide
             && fingerprint.geometryRevision == geometry.geometryRevision
             && frozenLayout.group(withID: sourceGroupID)?.memberSessionIDs.contains(sessionID) == true
     }
@@ -85,14 +92,22 @@ final class PickyHUDDockExternalDragCoordinator {
     func start(_ promotion: PickyHUDDockExternalDragPromotion) -> Bool {
         guard promotion.isConsistent, state.begin(token: promotion.token) else { return false }
         self.promotion = promotion
-        preview.begin()
 
-        localMonitor = installLocalMonitor([.leftMouseDragged, .leftMouseUp, .keyDown]) { [weak self] event in
-            self?.handle(event)
+        localMonitor = installLocalMonitor([.leftMouseDragged, .leftMouseUp]) { [weak self] event in
+            self?.handle(event, token: promotion.token)
         }
         globalMonitor = installGlobalMonitor([.leftMouseDragged, .leftMouseUp]) { [weak self] event in
-            self?.handle(event)
+            self?.handle(event, token: promotion.token)
         }
+
+        guard localMonitor != nil, globalMonitor != nil else {
+            removeEventMonitors()
+            self.promotion = nil
+            state.abandon(token: promotion.token)
+            return false
+        }
+
+        preview.begin()
         return true
     }
 
@@ -114,15 +129,16 @@ final class PickyHUDDockExternalDragCoordinator {
         cancel(.teardown)
     }
 
-    private func handle(_ event: NSEvent) {
-        guard let promotion, state.acceptsUpdate(for: promotion.token) else { return }
+    private func handle(_ event: NSEvent, token: UUID) {
+        guard let promotion,
+              promotion.token == token,
+              state.acceptsUpdate(for: token)
+        else { return }
         switch event.type {
         case .leftMouseDragged:
             update()
         case .leftMouseUp:
             finish(promotion)
-        case .keyDown where event.keyCode == 53:
-            cancel(.escape)
         default:
             break
         }

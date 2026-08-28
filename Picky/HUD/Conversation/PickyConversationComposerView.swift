@@ -308,7 +308,8 @@ struct PickyConversationComposerView: View {
             composerEditor
             actionBar
         }
-        .padding(.horizontal, DS.Spacing.sm)
+        .padding(.leading, DS.Spacing.space3)
+        .padding(.trailing, DS.Spacing.space2)
         .padding(.top, DS.Spacing.xs)
         .padding(.bottom, DS.Spacing.sm)
         .frame(maxWidth: .infinity)

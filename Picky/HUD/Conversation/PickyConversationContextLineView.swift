@@ -21,16 +21,168 @@ enum PickyConversationContextLinkCountPolicy {
     }
 }
 
-enum PickyConversationContextSummaryPolicy {
-    static func label(branchDisplayName: String?, cwd: String?) -> String? {
-        let branch = branchDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !branch.isEmpty { return branch }
+struct PickyConversationContextSummaryPresentation: Equatable {
+    let folderName: String?
+    let branchDisplayName: String?
 
+    var label: String? {
+        switch (folderName, branchDisplayName) {
+        case let (folder?, branch?): return "\(folder) - \(branch)"
+        case let (folder?, nil): return folder
+        case let (nil, branch?): return branch
+        case (nil, nil): return nil
+        }
+    }
+}
+
+enum PickyConversationContextSummaryPolicy {
+    static func presentation(
+        branchDisplayName: String?,
+        cwd: String?
+    ) -> PickyConversationContextSummaryPresentation {
+        let branch = branchDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let path = cwd?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !path.isEmpty else { return nil }
-        let folder = URL(fileURLWithPath: path).lastPathComponent
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return folder.isEmpty || folder == "/" ? nil : folder
+        let folder = path.isEmpty
+            ? ""
+            : URL(fileURLWithPath: path).lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return PickyConversationContextSummaryPresentation(
+            folderName: folder.isEmpty || folder == "/" ? nil : folder,
+            branchDisplayName: branch.isEmpty ? nil : branch
+        )
+    }
+
+    static func label(branchDisplayName: String?, cwd: String?) -> String? {
+        presentation(branchDisplayName: branchDisplayName, cwd: cwd).label
+    }
+}
+
+struct PickyConversationContextSummaryWidthAllocation: Equatable {
+    let folderWidth: CGFloat
+    let separatorWidth: CGFloat
+    let branchWidth: CGFloat
+}
+
+enum PickyConversationContextSummaryWidthPolicy {
+    static let preferredFolderShare: CGFloat = 0.35
+
+    static func resolve(
+        availableWidth: CGFloat,
+        folderIdealWidth: CGFloat,
+        separatorIdealWidth: CGFloat,
+        branchIdealWidth: CGFloat,
+        spacing: CGFloat
+    ) -> PickyConversationContextSummaryWidthAllocation {
+        let folderIdealWidth = max(0, folderIdealWidth)
+        let separatorIdealWidth = max(0, separatorIdealWidth)
+        let branchIdealWidth = max(0, branchIdealWidth)
+        let spacing = max(0, spacing)
+        let naturalWidth = folderIdealWidth + separatorIdealWidth + branchIdealWidth + (spacing * 2)
+
+        guard availableWidth.isFinite else {
+            return PickyConversationContextSummaryWidthAllocation(
+                folderWidth: folderIdealWidth,
+                separatorWidth: separatorIdealWidth,
+                branchWidth: branchIdealWidth
+            )
+        }
+
+        let availableWidth = max(0, availableWidth)
+        guard naturalWidth > availableWidth else {
+            return PickyConversationContextSummaryWidthAllocation(
+                folderWidth: folderIdealWidth,
+                separatorWidth: separatorIdealWidth,
+                branchWidth: branchIdealWidth
+            )
+        }
+
+        let visibleSpacing = min(spacing * 2, availableWidth)
+        let availableAfterSpacing = max(0, availableWidth - visibleSpacing)
+        let separatorWidth = min(separatorIdealWidth, availableAfterSpacing)
+        let contentWidth = max(0, availableAfterSpacing - separatorWidth)
+        let preferredFolderWidth = contentWidth * preferredFolderShare
+
+        let branchWidth: CGFloat
+        let folderWidth: CGFloat
+        if branchIdealWidth <= contentWidth - preferredFolderWidth {
+            branchWidth = branchIdealWidth
+            folderWidth = min(folderIdealWidth, contentWidth - branchWidth)
+        } else {
+            folderWidth = min(folderIdealWidth, preferredFolderWidth)
+            branchWidth = min(branchIdealWidth, contentWidth - folderWidth)
+        }
+
+        return PickyConversationContextSummaryWidthAllocation(
+            folderWidth: folderWidth,
+            separatorWidth: separatorWidth,
+            branchWidth: branchWidth
+        )
+    }
+}
+
+private struct PickyConversationContextSummaryLayout: Layout {
+    let spacing: CGFloat
+
+    func sizeThatFits(
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout Void
+    ) -> CGSize {
+        guard subviews.count == 3 else { return .zero }
+        let idealSizes = subviews.map { $0.sizeThatFits(.unspecified) }
+        let naturalWidth = idealSizes.reduce(0) { $0 + $1.width } + (spacing * 2)
+        let allocation = allocation(
+            availableWidth: proposal.width ?? naturalWidth,
+            idealSizes: idealSizes
+        )
+        let widths = [allocation.folderWidth, allocation.separatorWidth, allocation.branchWidth]
+        let height = zip(subviews, widths).map { subview, width in
+            subview.sizeThatFits(ProposedViewSize(width: width, height: proposal.height)).height
+        }.max() ?? 0
+
+        return CGSize(
+            width: min(naturalWidth, proposal.width ?? naturalWidth),
+            height: height
+        )
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout Void
+    ) {
+        guard subviews.count == 3 else { return }
+        let idealSizes = subviews.map { $0.sizeThatFits(.unspecified) }
+        let allocation = allocation(availableWidth: bounds.width, idealSizes: idealSizes)
+        let widths = [allocation.folderWidth, allocation.separatorWidth, allocation.branchWidth]
+        var x = bounds.minX
+
+        for (index, subview) in subviews.enumerated() {
+            let width = widths[index]
+            let size = subview.sizeThatFits(ProposedViewSize(width: width, height: bounds.height))
+            subview.place(
+                at: CGPoint(x: x, y: bounds.midY - (size.height / 2)),
+                proposal: ProposedViewSize(width: width, height: size.height)
+            )
+            x += width
+            if index < subviews.count - 1 {
+                x += spacing
+            }
+        }
+    }
+
+    private func allocation(
+        availableWidth: CGFloat,
+        idealSizes: [CGSize]
+    ) -> PickyConversationContextSummaryWidthAllocation {
+        PickyConversationContextSummaryWidthPolicy.resolve(
+            availableWidth: availableWidth,
+            folderIdealWidth: idealSizes[0].width,
+            separatorIdealWidth: idealSizes[1].width,
+            branchIdealWidth: idealSizes[2].width,
+            spacing: spacing
+        )
     }
 }
 
@@ -187,17 +339,14 @@ struct PickyConversationContextLineView: View {
                     Image(systemName: contextSummaryIconName)
                         .font(PickyHUDTypography.metaSemibold)
                         .accessibilityHidden(true)
-                    Text(contextSummaryLabel)
-                        .font(PickyHUDTypography.metaMedium)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                    contextSummaryText
                     Spacer(minLength: 0)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .help(L10n.t("hud.context.details.help"))
+            .help("\(contextSummaryLabel)\n\(L10n.t("hud.context.details.help"))")
             .accessibilityLabel(L10n.t("hud.context.details.accessibilityLabel"))
             .accessibilityValue(contextSummaryLabel)
             .accessibilityHint(L10n.t("hud.context.details.accessibilityHint"))
@@ -222,11 +371,40 @@ struct PickyConversationContextLineView: View {
         }
     }
 
-    private var contextSummaryLabel: String {
-        PickyConversationContextSummaryPolicy.label(
+    private var contextSummaryPresentation: PickyConversationContextSummaryPresentation {
+        PickyConversationContextSummaryPolicy.presentation(
             branchDisplayName: gitStatus?.branchDisplayName,
             cwd: session.cwd
-        ) ?? L10n.t("hud.context.section.links")
+        )
+    }
+
+    private var contextSummaryLabel: String {
+        contextSummaryPresentation.label ?? L10n.t("hud.context.section.links")
+    }
+
+    @ViewBuilder
+    private var contextSummaryText: some View {
+        if let folderName = contextSummaryPresentation.folderName,
+           let branchDisplayName = contextSummaryPresentation.branchDisplayName {
+            PickyConversationContextSummaryLayout(spacing: DS.Spacing.space1) {
+                Text(folderName)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text("-")
+                    .fixedSize(horizontal: true, vertical: false)
+                Text(branchDisplayName)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .font(PickyHUDTypography.metaMedium)
+            .accessibilityHidden(true)
+        } else {
+            Text(contextSummaryLabel)
+                .font(PickyHUDTypography.metaMedium)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .accessibilityHidden(true)
+        }
     }
 
     private var contextSummaryIconName: String {

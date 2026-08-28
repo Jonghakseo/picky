@@ -162,16 +162,48 @@ struct PickyConversationCardViewTests {
         #expect(PickyConversationContextLineView.hasContent(for: makeConversationSession(status: .completed)))
     }
 
-    @Test func contextSummaryShowsOnlyBranchOrFinalFolderFallback() {
+    @Test func contextSummaryCombinesFinalFolderAndBranchWithSingleValueFallbacks() {
         #expect(PickyConversationContextSummaryPolicy.label(
             branchDisplayName: "feature/focus-stack*",
             cwd: "/Users/me/worktrees/product/temp-123"
-        ) == "feature/focus-stack*")
+        ) == "temp-123 - feature/focus-stack*")
         #expect(PickyConversationContextSummaryPolicy.label(
             branchDisplayName: nil,
             cwd: "/Users/me/worktrees/product/temp-123"
         ) == "temp-123")
+        #expect(PickyConversationContextSummaryPolicy.label(
+            branchDisplayName: "main",
+            cwd: "/"
+        ) == "main")
         #expect(PickyConversationContextSummaryPolicy.label(branchDisplayName: "  ", cwd: "/") == nil)
+    }
+
+    @Test func contextSummaryWidthCapsLongFolderAtThirtyFivePercent() {
+        let allocation = PickyConversationContextSummaryWidthPolicy.resolve(
+            availableWidth: 220,
+            folderIdealWidth: 300,
+            separatorIdealWidth: 8,
+            branchIdealWidth: 300,
+            spacing: 4
+        )
+
+        #expect(abs(allocation.folderWidth - 71.4) < 0.001)
+        #expect(allocation.separatorWidth == 8)
+        #expect(abs(allocation.branchWidth - 132.6) < 0.001)
+    }
+
+    @Test func contextSummaryWidthReturnsUnusedBranchSpaceToFolder() {
+        let allocation = PickyConversationContextSummaryWidthPolicy.resolve(
+            availableWidth: 220,
+            folderIdealWidth: 300,
+            separatorIdealWidth: 8,
+            branchIdealWidth: 40,
+            spacing: 4
+        )
+
+        #expect(allocation.folderWidth == 164)
+        #expect(allocation.separatorWidth == 8)
+        #expect(allocation.branchWidth == 40)
     }
 
     @Test func agentResponsePreviewTruncatesAfterEightLinesOrFiveHundredCharacters() {

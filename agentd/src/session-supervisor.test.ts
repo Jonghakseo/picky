@@ -6016,7 +6016,7 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(pickle.id)?.messages).toMatchObject([{ kind: "user_text", text: "main instructions", originatedBy: "main_agent" }]);
   });
 
-  it("records Pi extension injected user and custom messages as extension-origin user bubbles", async () => {
+  it("keeps Pi extension custom messages out of user bubbles", async () => {
     const runtime = new ManualRuntime();
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-pi-extension-input-"));
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
@@ -6028,9 +6028,9 @@ describe("SessionSupervisor", () => {
     runtime.handle?.emit({ type: "input_message", role: "custom", text: "hidden custom note", originatedBy: "pi_extension", display: false });
     await settle();
 
-    expect(supervisor.get(session.id)?.messages?.filter((message) => message.kind === "user_text").map((message) => ({ text: message.text, originatedBy: message.originatedBy }))).toEqual([
-      { text: "subagent finished", originatedBy: "pi_extension" },
-      { text: "custom extension note", originatedBy: "pi_extension" },
+    expect(supervisor.get(session.id)?.messages?.map((message) => ({ kind: message.kind, text: message.text, originatedBy: message.originatedBy }))).toEqual([
+      { kind: "user_text", text: "subagent finished", originatedBy: "pi_extension" },
+      { kind: "system", text: "custom extension note", originatedBy: "pi_extension" },
     ]);
   });
 
@@ -6108,7 +6108,7 @@ describe("SessionSupervisor", () => {
       pinned: true,
     });
     expect(internals.pickleCompletionNotified.has(session.id)).toBe(true);
-    expect(supervisor.get(session.id)?.messages?.at(-1)).toMatchObject({ kind: "user_text", text: "subagent status update", originatedBy: "pi_extension" });
+    expect(supervisor.get(session.id)?.messages?.at(-1)).toMatchObject({ kind: "system", text: "subagent status update", originatedBy: "pi_extension" });
   });
 
   it("defers user_text for queued follow-ups until Pi dequeues them", async () => {

@@ -67,6 +67,7 @@ describe("picky agentd known bugs (failing reproductions)", () => {
         cancelExtensionQuestion: async () => {},
         recordError: async () => {},
         recordSystemMessage: async () => {},
+        recordExtensionText: async () => {},
         recordUserText: async () => {},
         appendAssistantDelta: () => {},
         flushAssistantText: async () => {},

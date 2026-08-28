@@ -59,6 +59,7 @@ describe("RuntimeEventHandler", () => {
         cancelExtensionQuestion: async () => {},
         recordError: async () => {},
         recordSystemMessage: async () => {},
+        recordExtensionText: async () => {},
         recordUserText: async () => {},
         appendAssistantDelta: (_sessionId, delta) => { assistantDraft += delta; },
         flushAssistantText,
@@ -111,7 +112,8 @@ describe("RuntimeEventHandler", () => {
       lastSummary: "Completed answer",
       pinned: true,
     });
-    expect(harness.recordUserText).toHaveBeenCalledWith("pickle-1", "subagent finished", "pi_extension");
+    expect(harness.recordExtensionText).toHaveBeenCalledWith("pickle-1", "subagent finished");
+    expect(harness.recordUserText).not.toHaveBeenCalled();
     expect(harness.onInputMessage).not.toHaveBeenCalled();
     expect(harness.patchSession).not.toHaveBeenCalled();
   });
@@ -372,6 +374,7 @@ function inputHarness(initial: Partial<PickyAgentSession> = {}) {
     current = { ...current, ...patch };
   });
   const onInputMessage = vi.fn(async () => {});
+  const recordExtensionText = vi.fn(async () => {});
   const recordUserText = vi.fn(async () => {});
   const materializeTerminalArtifacts = vi.fn(async () => {});
   const notifyPickleCompletion = vi.fn(async () => {});
@@ -382,6 +385,7 @@ function inputHarness(initial: Partial<PickyAgentSession> = {}) {
     cancelExtensionQuestion: async () => {},
     recordError: async () => {},
     recordSystemMessage: async () => {},
+    recordExtensionText,
     recordUserText,
     appendAssistantDelta: () => {},
     flushAssistantText: vi.fn(async () => {}),
@@ -413,6 +417,7 @@ function inputHarness(initial: Partial<PickyAgentSession> = {}) {
     setCurrent: (patch: Partial<PickyAgentSession>) => { current = { ...current, ...patch }; },
     patchSession,
     onInputMessage,
+    recordExtensionText,
     recordUserText,
     materializeTerminalArtifacts,
     notifyPickleCompletion,

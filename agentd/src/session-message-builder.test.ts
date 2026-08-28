@@ -53,6 +53,16 @@ describe("SessionMessageBuilder", () => {
     expect(events.map((event) => event.seq)).toEqual([1, 2]);
   });
 
+  it("records visible extension custom text as a system message", async () => {
+    const { builder, messages } = makeBuilder();
+
+    await builder.recordExtensionText("session-1", " bash_async completed ");
+
+    expect(messages).toMatchObject([
+      { kind: "system", text: "bash_async completed", originatedBy: "pi_extension" },
+    ]);
+  });
+
   it("seeds pinned sessions with deterministic intro messages", async () => {
     const { builder, messages } = makeBuilder();
 

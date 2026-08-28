@@ -77,6 +77,20 @@ export class SessionMessageBuilder {
     });
   }
 
+  async recordExtensionText(sessionId: string, text: string): Promise<void> {
+    await this.flushAssistantText(sessionId);
+    await this.flushThinking(sessionId);
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    await this.appendInternal(sessionId, {
+      id: `msg-extension-${randomUUID()}`,
+      kind: "system",
+      createdAt: this.deps.now(),
+      originatedBy: "pi_extension",
+      text: trimmed,
+    });
+  }
+
   async seedPinnedSession(sessionId: string, transcript: string | undefined, finalAnswer: string | undefined, title: string): Promise<void> {
     const goal = firstNonEmptyLine(transcript) ?? (title.trim() || "(no goal supplied)");
     await this.appendInternal(sessionId, {

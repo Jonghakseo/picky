@@ -16,12 +16,12 @@ enum PickyConversationBubbleLayout {
 
     static let bubbleRadius: CGFloat = DS.CornerRadius.extraLarge
     static let bubbleAnchorRadius: CGFloat = 4
-    static let defaultMaxWidthFraction: CGFloat = 0.85
+    static let defaultMaxWidthFraction: CGFloat = 0.96
     /// A 720pt cap keeps 13pt prose near a 90–100 character measure on wide
     /// cards. Code blocks and tables preserve overflow inside their dedicated
     /// renderers, so they do not need to widen the surrounding bubble.
     static let narrativeMaxWidth: CGFloat = 720
-    static let oppositeSideReserve: CGFloat = 48
+    static let oppositeSideReserve: CGFloat = 16
     static let horizontalStackSpacing: CGFloat = 0
 
     static func bubbleShape(side: BubbleSide) -> UnevenRoundedRectangle {

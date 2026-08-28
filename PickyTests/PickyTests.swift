@@ -70,6 +70,7 @@ struct PickyTests {
             + PickyConversationBubbleLayout.horizontalStackSpacing
 
         #expect(bubbleWidth == contentWidth * PickyConversationBubbleLayout.defaultMaxWidthFraction)
+        #expect(bubbleWidth >= contentWidth * 0.95)
         #expect(occupiedWidth <= contentWidth)
         #expect(bubbleWidth < PickyHUDDockLayout.detailWidth * PickyConversationBubbleLayout.defaultMaxWidthFraction)
     }
@@ -86,7 +87,7 @@ struct PickyTests {
     }
 
     @Test func conversationBubbleWidthKeepsRelativeWidthBelowReadingCap() throws {
-        let detailWidth: CGFloat = 800
+        let detailWidth: CGFloat = 700
         let bubbleWidth = PickyConversationBubbleLayout.maxBubbleWidth(forDetailWidth: detailWidth)
 
         #expect(bubbleWidth < PickyConversationBubbleLayout.narrativeMaxWidth)

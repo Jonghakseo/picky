@@ -1026,24 +1026,20 @@ struct PickyHeaderContextCompactionPopoverView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
         } else if compactionPresentation.isActionEnabled {
-            Button(action: onCompact) {
-                Text(compactionPresentation.actionLabel)
-                    .font(PickyHUDTypography.labelSemibold)
-                    .frame(maxWidth: .infinity)
+            HStack {
+                Spacer(minLength: 0)
+                Button(action: onCompact) {
+                    Text(compactionPresentation.actionLabel)
+                        .font(PickyHUDTypography.statusSemibold)
+                        .foregroundColor(DS.Colors.accentText)
+                        .padding(.horizontal, DS.Spacing.space2)
+                        .padding(.vertical, DS.Spacing.space1)
+                        .background(Capsule().fill(DS.Colors.accentSubtle.opacity(0.75)))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(PickyHUDCompactChipButtonStyle())
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-            .tint(DS.Colors.accent)
         } else {
-            Button(action: {}) {
-                Text(compactionPresentation.actionLabel)
-                    .font(PickyHUDTypography.labelSemibold)
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(true)
-
             Text("hud.contextCompaction.unavailable")
                 .font(PickyHUDTypography.status)
                 .foregroundColor(DS.Colors.textTertiary)

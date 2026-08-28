@@ -3335,13 +3335,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Compact now"
+            "value": "Compact"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "지금 압축"
+            "value": "압축"
           }
         }
       }

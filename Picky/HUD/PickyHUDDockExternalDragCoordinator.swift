@@ -29,7 +29,8 @@ struct PickyHUDDockExternalDragPromotion {
                 activeSessionIDs: fingerprint.activeSessionIDs,
                 dockSide: fingerprint.dockSide,
                 geometryRevision: fingerprint.geometryRevision,
-                fontScale: fingerprint.fontScale
+                fontScale: fingerprint.fontScale,
+                dockSizePreset: fingerprint.dockSizePreset
             ) == fingerprint
             && fingerprint.dockSide == geometry.dockSide
             && fingerprint.geometryRevision == geometry.geometryRevision

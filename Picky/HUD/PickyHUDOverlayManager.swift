@@ -1338,6 +1338,10 @@ final class PickyHUDOverlayManager {
         for displayID in dockGroupListChildrenByDisplayID.keys {
             hideDockGroupListChild(displayID: displayID)
         }
+        // Slot pitch, folder bounds, and rail acceptance all depend on the
+        // preset. Require a fresh SwiftUI measurement before another list drag
+        // can promote instead of reusing geometry captured at the old size.
+        externalDockGeometryByDisplayID.removeAll()
         for displayID in panelsByDisplayID.keys {
             panelsByDisplayID[displayID]?.placement.dockSizePreset = preset
             panelsByDisplayID[displayID]?.placement.panelWidth = panelWidth(for: displayID)

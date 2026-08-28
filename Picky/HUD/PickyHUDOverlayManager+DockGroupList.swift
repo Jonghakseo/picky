@@ -664,7 +664,8 @@ extension PickyHUDOverlayManager {
                 activeSessionIDs: Set(snapshot.activeSessions.map(\.id)),
                 dockSide: position(for: displayID).side,
                 geometryRevision: geometry.geometryRevision,
-                fontScale: fontScale
+                fontScale: fontScale,
+                dockSizePreset: currentDockSizePreset
             )
             _ = entry.coordinator?.cancelIfFingerprintIsStale(emittedFingerprint)
         }
@@ -692,7 +693,8 @@ extension PickyHUDOverlayManager {
                   activeSessionIDs: Set(snapshot.activeSessions.map(\.id)),
                   dockSide: position(for: displayID).side,
                   geometryRevision: geometryEntry.input.geometryRevision,
-                  fontScale: fontScaleStore.cgValue
+                  fontScale: fontScaleStore.cgValue,
+                  dockSizePreset: currentDockSizePreset
               ),
               snapshot.dockLayout.group(withID: request.sourceGroupID)?.memberSessionIDs.contains(request.session.id) == true,
               PickyHUDDockExternalDragPreviewPresentationPolicy.sourceFrameIsUsable(
@@ -727,7 +729,8 @@ extension PickyHUDOverlayManager {
                         activeSessionIDs: Set(live.activeSessions.map(\.id)),
                         dockSide: self.position(for: displayID).side,
                         geometryRevision: geometryRevision,
-                        fontScale: self.fontScaleStore.cgValue
+                        fontScale: self.fontScaleStore.cgValue,
+                        dockSizePreset: self.currentDockSizePreset
                     )
                 },
                 preview: preview,

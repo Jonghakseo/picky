@@ -388,7 +388,7 @@ The card contains:
 - Inline question forms when Pi/tools need user input.
 - A read-only task-progress indicator at the top of the conversation when Pi shares a checklist for the active task. Click it to expand or collapse the task list; once expanded, it stays open while you interact elsewhere in the conversation and closes only when you collapse it or the checklist completes. Completed tasks are marked, the current task shows its in-progress state only while the Pickle is running, and lists with six or more tasks scroll within the expanded panel.
 - Optional inline Pi terminal mode.
-- Optional utility panel below the composer with **Terminal** and **Artifacts** tabs. Artifacts lists supported document, data, and image files that Pi saved with its file-writing tool.
+- Optional local-shell utility panel below the composer. It opens directly to a terminal in the Pickle cwd and does not replace or sync the Pi session.
 - Optional private note add-on.
 
 ### 8.1 Header
@@ -400,7 +400,6 @@ Header actions:
 | Double-click title | Rename the Pickle. |
 | Click status/Pickle badge | Arm or disarm this Pickle as the next screen-context target. |
 | Open ellipsis menu | Shows terminal/session actions. |
-| Click model/thinking metadata | Cycle model or thinking level when available. |
 
 Renaming sends an internal `/name <new title>` command to the Pickle. You can also type `/name <new title>` directly in the composer.
 
@@ -428,7 +427,7 @@ Interactions:
 
 ### 8.3 Composer behavior
 
-The composer stays pinned to the bottom of a resized Pickle card. It changes behavior based on Pickle status.
+The composer stays pinned to the bottom of a resized Pickle card. It changes behavior based on Pickle status. When Pi exposes runtime controls, compact model and thinking controls appear above the composer; click them to cycle the available model or thinking level.
 
 | Session status | Default Return action |
 | --- | --- |
@@ -650,7 +649,7 @@ These work when a Pickle card/HUD panel is active.
 | Cmd + T | Toggle inline Pi terminal. |
 | Cmd + Shift + T | Open separate Pi terminal overlay. |
 | Cmd + N | Toggle Notify on completion. |
-| Cmd + E | Toggle the **utility panel** — a tabbed panel that opens below the card composer while the conversation stays visible above. The **Terminal** tab is a local shell; the **Artifacts** tab lists supported files that Pi saved during the Pickle and lets you open, reveal, or copy their paths. Distinct from `Cmd + T`, which swaps the entire card body into a Pi terminal. |
+| Cmd + E | Toggle the **local-shell utility panel** below the card composer while the conversation stays visible above. It opens directly to a terminal in the Pickle cwd. Distinct from `Cmd + T`, which swaps the entire card body into a Pi terminal. |
 | Cmd + K | Toggle screen-context target for the active Pickle. |
 | Control + T | Toggle thinking blocks. |
 
@@ -1021,7 +1020,7 @@ To continue a longer conversation through voice or Quick Input, right-click / Co
 2. Pick the surface that fits the task:
    - `Cmd + T` swaps the card body itself into the Pi terminal (chat is hidden while the terminal owns the card). Closing it syncs the HUD card from the Pi session file.
    - `Cmd + Shift + T` opens the full Pi terminal overlay as a separate Picky window. Same Pi session, same sync behavior.
-   - `Cmd + E` toggles the **utility panel** below the card composer. Its **Terminal** tab is a *local shell*, **not** the Pi session — use it for ad-hoc commands in the Pickle cwd; closing it does not affect the Pi session or trigger any sync. Its **Artifacts** tab lists supported files Pi saved with its file-writing tool and lets you open them, reveal them in Finder, or copy their paths.
+   - `Cmd + E` toggles the **local-shell utility panel** below the card composer. It opens directly to a terminal in the Pickle cwd and is **not** the Pi session; use it for ad-hoc commands. Closing it does not affect the Pi session or trigger any sync.
 3. For `Cmd + T` / `Cmd + Shift + T`, work in the Pi TUI and close the terminal to sync back into the HUD card.
 
 ### 14.6 Clean up finished Pickles

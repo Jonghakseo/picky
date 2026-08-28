@@ -52,15 +52,15 @@ struct PickyActivitySummaryView: View {
                     .font(PickyHUDTypography.statusSemibold)
                     .foregroundColor(DS.Colors.textPrimary)
                     .lineLimit(1)
-                Spacer(minLength: DS.Spacing.space1)
-                Text(L10n.t("hud.activity.summary.completed"))
-                    .font(PickyHUDTypography.meta)
-                    .foregroundColor(DS.Colors.textTertiary)
-                Image(systemName: "chevron.right")
-                    .font(PickyHUDTypography.metaSemibold)
-                    .foregroundColor(DS.Colors.textTertiary)
-                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    .accessibilityHidden(true)
+                HStack(spacing: DS.Spacing.space1) {
+                    Text(L10n.t("hud.activity.summary.completed"))
+                        .font(PickyHUDTypography.meta)
+                    Image(systemName: "chevron.right")
+                        .font(PickyHUDTypography.metaSemibold)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        .accessibilityHidden(true)
+                }
+                .foregroundColor(DS.Colors.textTertiary)
             }
             .padding(.horizontal, DS.Spacing.space1)
             .padding(.vertical, DS.Spacing.space1)
@@ -94,32 +94,40 @@ struct PickyActivitySummaryView: View {
     }
 
     private var detailGrid: some View {
-        LazyVGrid(
-            columns: Array(
-                repeating: GridItem(.flexible(), spacing: DS.Spacing.space3),
-                count: 3
-            ),
+        Grid(
             alignment: .leading,
-            spacing: DS.Spacing.space1
+            horizontalSpacing: DS.Spacing.space4,
+            verticalSpacing: DS.Spacing.space1
         ) {
-            ForEach(summary.visibleToolCallItems) { item in
-                HStack(spacing: DS.Spacing.space1) {
-                    Text(item.label)
-                        .font(PickyHUDTypography.status)
-                        .foregroundColor(DS.Colors.textSecondary)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                    Text("\(item.count)")
-                        .font(PickyHUDTypography.statusMonospacedMedium)
-                        .foregroundColor(DS.Colors.textPrimary)
-                        .lineLimit(1)
+            ForEach(Array(detailRows.enumerated()), id: \.offset) { _, row in
+                GridRow {
+                    ForEach(row) { item in
+                        HStack(spacing: DS.Spacing.space1) {
+                            Text(item.label)
+                                .font(PickyHUDTypography.status)
+                                .foregroundColor(DS.Colors.textSecondary)
+                                .lineLimit(1)
+                            Text("\(item.count)")
+                                .font(PickyHUDTypography.statusMonospacedMedium)
+                                .foregroundColor(DS.Colors.textPrimary)
+                                .lineLimit(1)
+                        }
+                    }
                 }
             }
         }
+        .fixedSize(horizontal: true, vertical: false)
         .padding(.horizontal, DS.Spacing.space3)
         .padding(.vertical, DS.Spacing.space2)
         .background(DS.Colors.surface2)
         .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous))
+    }
+
+    private var detailRows: [[PickyActivitySummaryDisplayItem]] {
+        let items = summary.visibleToolCallItems
+        return stride(from: 0, to: items.count, by: 3).map { start in
+            Array(items[start..<min(start + 3, items.count)])
+        }
     }
 }
 

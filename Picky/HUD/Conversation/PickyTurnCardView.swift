@@ -454,21 +454,20 @@ enum PickyTurnGrouper {
     }
 }
 
-/// Expansion policy for older turn cards. Pulled out of the view so the
-/// race-window latching (see `hasBeenSeenComplete`) is directly unit-testable.
-/// `PickyTurnChapterPolicy` bypasses it for the two most recent groups.
+/// Expansion and current-state policy for older turn cards. Pulled out of the
+/// view so the status-before-user_text race is directly unit-testable.
+/// `PickyTurnChapterPolicy` bypasses expansion for the two most recent groups,
+/// while `isVisuallyCurrent` still protects every chapter's live affordances.
 ///
 /// Lifecycle:
 ///   • `manualExpansion` wins when set — user toggles override the default.
 ///   • `hasBeenSeenComplete` latches to true the first time `observe(isCurrent:)`
-///     is called with `isCurrent == false`. Once latched, the default falls back
-///     to collapsed even if `group.isCurrent` flips true again. This guards the
-///     race where agentd emits `status:running` before the new user_text journal
-///     entry on a follow-up submit (see `pushPendingQueueDelivery` in
-///     `agentd/src/session-supervisor.ts`): without latching, the previously
-///     completed turn briefly becomes the "last group" of an active session and
-///     auto-expands for a single frame before the new user_text arrives and
-///     pushes it back to non-current.
+///     is called with `isCurrent == false`. Once latched, the turn stays visually
+///     settled even if `group.isCurrent` flips true again. This guards the race
+///     where agentd emits `status:running` before the new user_text journal entry
+///     on a follow-up submit (see `pushPendingQueueDelivery` in
+///     `agentd/src/session-supervisor.ts`). Without the visual latch, the previous
+///     turn briefly regains the running tint, timeline, and final live-tool row.
 struct PickyTurnExpansionPolicy: Equatable {
     var manualExpansion: Bool? = nil
     var hasBeenSeenComplete: Bool = false
@@ -477,6 +476,10 @@ struct PickyTurnExpansionPolicy: Equatable {
         if let manualExpansion { return manualExpansion }
         if hasBeenSeenComplete { return false }
         return isCurrent
+    }
+
+    func isVisuallyCurrent(isCurrent: Bool) -> Bool {
+        isCurrent && !hasBeenSeenComplete
     }
 
     mutating func observe(isCurrent: Bool) {
@@ -549,6 +552,14 @@ struct PickyTurnCardView<MessageContent: View>: View {
         )
     }
 
+    private var isVisuallyCurrent: Bool {
+        expansion.isVisuallyCurrent(isCurrent: group.isCurrent)
+    }
+
+    private var presentedActiveTool: PickyToolActivity? {
+        isVisuallyCurrent ? activeTool : nil
+    }
+
     private var priorChapterPresentation: PickyFocusStackPriorChapterPresentation {
         PickyFocusStackPriorChapterPresentation(group: group)
     }
@@ -589,13 +600,15 @@ struct PickyTurnCardView<MessageContent: View>: View {
             // Render the active tool row even when there are no body messages so a
             // tool-only running turn (no thinking, no agent_text, no committed
             // agent_activity yet) still shows live progress below the user bubble.
-            if !group.bodyMessages.isEmpty || activeTool != nil {
+            // A completed chapter that temporarily regains raw `isCurrent` during
+            // the delayed user_text boundary keeps its old tool row suppressed.
+            if !group.bodyMessages.isEmpty || presentedActiveTool != nil {
                 VStack(alignment: .leading, spacing: DS.Spacing.space2) {
                     ForEach(group.bodyMessages, id: \.id) { message in
                         messageContent(message)
                     }
-                    if let activeTool {
-                        PickyToolCallInlineRow(tool: activeTool, onTap: onOpenActiveToolHistory ?? {})
+                    if let presentedActiveTool {
+                        PickyToolCallInlineRow(tool: presentedActiveTool, onTap: onOpenActiveToolHistory ?? {})
                     }
                 }
                 // Keep the request bubble and the first reasoning/response row
@@ -608,7 +621,7 @@ struct PickyTurnCardView<MessageContent: View>: View {
 
     @ViewBuilder
     private var latestHeader: some View {
-        if group.isCurrent {
+        if isVisuallyCurrent {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 let _ = PickyPerf.event("turn_card_header_timeline_tick")
                 latestChapterHeader(summary: group.summary(now: context.date))
@@ -622,7 +635,7 @@ struct PickyTurnCardView<MessageContent: View>: View {
         HStack(spacing: DS.Spacing.space1) {
             Text(L10n.t("hud.conversation.turn.latest"))
                 .font(PickyHUDTypography.metaSemibold)
-                .foregroundColor(group.isCurrent ? DS.Colors.info : DS.Colors.textSecondary)
+                .foregroundColor(isVisuallyCurrent ? DS.Colors.info : DS.Colors.textSecondary)
             Text(summary.expandedDisplayText)
                 .font(PickyHUDTypography.metaSemibold)
                 .foregroundColor(DS.Colors.textTertiary)
@@ -632,7 +645,7 @@ struct PickyTurnCardView<MessageContent: View>: View {
         .padding(.horizontal, DS.Spacing.space1)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(PickyFocusStackChapterAccessibilityPresentation.label(
-            isCurrent: group.isCurrent,
+            isCurrent: isVisuallyCurrent,
             isLatest: true
         ))
         .accessibilityValue(PickyFocusStackChapterAccessibilityPresentation.value(
@@ -652,7 +665,7 @@ struct PickyTurnCardView<MessageContent: View>: View {
         .padding(.horizontal, DS.Spacing.space1)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(PickyFocusStackChapterAccessibilityPresentation.label(
-            isCurrent: group.isCurrent,
+            isCurrent: isVisuallyCurrent,
             isLatest: false
         ))
         .accessibilityValue(PickyFocusStackChapterAccessibilityPresentation.value(
@@ -663,7 +676,7 @@ struct PickyTurnCardView<MessageContent: View>: View {
 
     @ViewBuilder
     private var expandedHeader: some View {
-        if group.isCurrent {
+        if isVisuallyCurrent {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 let _ = PickyPerf.event("turn_card_header_timeline_tick")
                 chapterHeader(summary: group.summary(now: context.date))
@@ -681,7 +694,7 @@ struct PickyTurnCardView<MessageContent: View>: View {
                 Image(systemName: "chevron.down")
                     .pickyFont(size: 9, weight: .bold)
                     .foregroundColor(headerForegroundColor)
-                if group.isCurrent {
+                if isVisuallyCurrent {
                     Circle()
                         .fill(DS.Colors.info)
                         .frame(width: DS.Spacing.space1, height: DS.Spacing.space1)
@@ -697,7 +710,7 @@ struct PickyTurnCardView<MessageContent: View>: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(PickyFocusStackChapterAccessibilityPresentation.label(
-            isCurrent: group.isCurrent,
+            isCurrent: isVisuallyCurrent,
             isLatest: group.isLatest
         ))
         .accessibilityValue(PickyFocusStackChapterAccessibilityPresentation.value(
@@ -716,7 +729,7 @@ struct PickyTurnCardView<MessageContent: View>: View {
             VStack(alignment: .leading, spacing: DS.Spacing.space1) {
                 HStack(spacing: DS.Spacing.space1) {
                     if let visualState = PickyFocusStackChapterAccessibilityPresentation.visualState(
-                        isCurrent: group.isCurrent,
+                        isCurrent: isVisuallyCurrent,
                         isLatest: group.isLatest
                     ) {
                         Text(visualState)
@@ -750,7 +763,7 @@ struct PickyTurnCardView<MessageContent: View>: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(PickyFocusStackChapterAccessibilityPresentation.label(
-            isCurrent: group.isCurrent,
+            isCurrent: isVisuallyCurrent,
             isLatest: group.isLatest
         ))
         .accessibilityValue(PickyFocusStackChapterAccessibilityPresentation.value(
@@ -762,7 +775,7 @@ struct PickyTurnCardView<MessageContent: View>: View {
     }
 
     private var headerForegroundColor: Color {
-        group.isCurrent ? DS.Colors.info : DS.Colors.textTertiary
+        isVisuallyCurrent ? DS.Colors.info : DS.Colors.textTertiary
     }
 
     private func collapsedAccessibilityValue(for presentation: PickyFocusStackPriorChapterPresentation) -> String {

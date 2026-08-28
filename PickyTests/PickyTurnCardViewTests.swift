@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import Combine
 import Foundation
 import SwiftUI
 import Testing
@@ -206,6 +207,42 @@ struct PickyTurnCardViewTests {
         #expect(abs(measuredSpacing - DS.Spacing.space5) < 0.5)
     }
 
+    @MainActor
+    @Test func completedRenderedChapterDoesNotReviveFinalToolDuringDelayedBoundary() {
+        let user = msg("u1", kind: .userText, secondsOffset: 0, text: "first turn")
+        let response = msg("a1", kind: .agentText, secondsOffset: 1, text: "done")
+        let model = DelayedTurnBoundaryModel(group: PickyTurnGroup(
+            id: user.id,
+            userMessage: user,
+            bodyMessages: [response],
+            isCurrent: false,
+            isLatest: true
+        ))
+        let staleTool = tool("previous-tool", name: "read", secondsOffset: 1, status: "succeeded")
+        let host = NSHostingView(rootView:
+            DelayedTurnBoundaryHarness(model: model, staleTool: staleTool)
+                .frame(width: 400)
+                .fixedSize(horizontal: false, vertical: true)
+        )
+
+        host.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        host.layoutSubtreeIfNeeded()
+        let settledHeight = host.fittingSize.height
+
+        model.group = PickyTurnGroup(
+            id: user.id,
+            userMessage: user,
+            bodyMessages: [response],
+            isCurrent: true,
+            isLatest: true
+        )
+        RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        host.layoutSubtreeIfNeeded()
+
+        #expect(abs(host.fittingSize.height - settledHeight) < 0.5)
+    }
+
     // MARK: - Expansion policy (race-window latch)
 
     @Test func expansionPolicyDefaultsToIsCurrentBeforeAnyObservation() {
@@ -223,6 +260,23 @@ struct PickyTurnCardViewTests {
         policy.observe(isCurrent: false)
         #expect(policy.isExpanded(isCurrent: true) == false)
         #expect(policy.isExpanded(isCurrent: false) == false)
+    }
+
+    @Test func completedTurnStaysVisuallySettledDuringDelayedUserTextBoundary() {
+        // The same status-before-user_text race must not recolor the completed
+        // turn as current or revive its final tool call as a live inline row.
+        var policy = PickyTurnExpansionPolicy()
+        policy.observe(isCurrent: false)
+
+        #expect(!policy.isVisuallyCurrent(isCurrent: true))
+        #expect(!policy.isVisuallyCurrent(isCurrent: false))
+    }
+
+    @Test func brandNewTurnCanPresentAsCurrentBeforeAnyCompletedObservation() {
+        let policy = PickyTurnExpansionPolicy()
+
+        #expect(policy.isVisuallyCurrent(isCurrent: true))
+        #expect(!policy.isVisuallyCurrent(isCurrent: false))
     }
 
     @Test func expansionPolicyLatchesCollapsedAfterCurrentToNonCurrentTransition() {
@@ -782,6 +836,30 @@ struct PickyTurnCardViewTests {
 // Trivial placeholder for view-builder closures in pure-logic tests.
 private struct EmptyMessageContent: View {
     var body: some View { Color.clear }
+}
+
+private final class DelayedTurnBoundaryModel: ObservableObject {
+    @Published var group: PickyTurnGroup
+
+    init(group: PickyTurnGroup) {
+        self.group = group
+    }
+}
+
+private struct DelayedTurnBoundaryHarness: View {
+    @ObservedObject var model: DelayedTurnBoundaryModel
+    let staleTool: PickyToolActivity
+
+    var body: some View {
+        PickyTurnCardView(
+            group: model.group,
+            activeTool: model.group.isCurrent ? staleTool : nil,
+            onOpenActiveToolHistory: {}
+        ) { message in
+            Text(message.text ?? "message")
+                .font(PickyHUDTypography.body)
+        }
+    }
 }
 
 private let originDate = Date(timeIntervalSince1970: 1_700_000_000)

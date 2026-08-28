@@ -405,7 +405,19 @@ extension PickyHUDOverlayManager {
                         screenPoint: screenPoint,
                         panelFrame: panel.frame
                     )
-                }
+                },
+                panelScreenFrame: { [weak panel = entry.panel] in panel?.frame ?? .zero },
+                onPromoteRowDrag: { [weak self, weak panel = entry.panel] request in
+                    self?.promoteDockGroupListRowDrag(
+                        displayID: displayID,
+                        request: request,
+                        sourcePanel: panel
+                    ) ?? false
+                },
+                onFinishPromotedRowDrag: { [weak self] token in
+                    self?.finishExternalDockDragFromPhysicalMouseUp(displayID: displayID, token: token) ?? false
+                },
+                externalDragPresentationStore: self.externalDockDragPresentationStore(for: displayID)
             )
             .environmentObject(self.appearanceStore)
             .modifier(PickyPreferredColorSchemeModifier(store: self.appearanceStore))
@@ -596,11 +608,17 @@ extension PickyHUDOverlayManager {
 
     func hideDockGroupListChild(displayID: CGDirectDisplayID) {
         dockGroupListFocusStore.close(displayID: displayID)
-        guard let entry = dockGroupListChildrenByDisplayID.removeValue(forKey: displayID) else { return }
+        guard let entry = dockGroupListChildrenByDisplayID.removeValue(forKey: displayID) else {
+            _ = externalDockDragsByDisplayID[displayID]?.coordinator?.cancelForTeardown()
+            return
+        }
         if let localMouseDownMonitor = entry.localMouseDownMonitor { NSEvent.removeMonitor(localMouseDownMonitor) }
         if let globalMouseDownMonitor = entry.globalMouseDownMonitor { NSEvent.removeMonitor(globalMouseDownMonitor) }
         entry.panel.orderOut(nil)
         dockGroupListOverlayLifecycle?.tearDown(displayID: displayID)
+        // The child is no longer visible before terminal policy samples source
+        // usability, so teardown fades rather than returning to stale geometry.
+        _ = externalDockDragsByDisplayID[displayID]?.coordinator?.cancelForTeardown()
     }
 
     func syncDockGroupListChildrenWithSnapshot(
@@ -612,6 +630,132 @@ extension PickyHUDOverlayManager {
         for displayID in dockGroupListChildrenByDisplayID.keys {
             syncDockGroupListChild(displayID: displayID, snapshot: snapshot, fontScale: fontScale)
         }
+    }
+
+    func externalDockDragPresentationStore(
+        for displayID: CGDirectDisplayID
+    ) -> PickyHUDDockExternalDragRailPresentationStore {
+        if let entry = externalDockDragsByDisplayID[displayID] { return entry.presentationStore }
+        let store = PickyHUDDockExternalDragRailPresentationStore()
+        externalDockDragsByDisplayID[displayID] = .init(presentationStore: store, coordinator: nil)
+        return store
+    }
+
+    func cancelExternalDockDragForEscape(displayID: CGDirectDisplayID) -> Bool {
+        externalDockDragsByDisplayID[displayID]?.coordinator?.cancelForEscape() ?? false
+    }
+
+    func finishExternalDockDragFromPhysicalMouseUp(displayID: CGDirectDisplayID, token: UUID) -> Bool {
+        guard externalDockDragsByDisplayID[displayID]?.presentationStore.presentation?.token == token else { return false }
+        return externalDockDragsByDisplayID[displayID]?.coordinator?.finishFromPhysicalMouseUp() ?? false
+    }
+
+    func cancelStaleExternalDockDrags() {
+        for entry in externalDockDragsByDisplayID.values {
+            _ = entry.coordinator?.cancelIfCurrentFingerprintIsStale()
+        }
+    }
+
+    func promoteDockGroupListRowDrag(
+        displayID: CGDirectDisplayID,
+        request: PickyHUDDockGroupListPromotionRequest,
+        sourcePanel: PickyHUDDockGroupListPanel?
+    ) -> Bool {
+        let snapshot = viewModel.dockState.snapshot
+        guard let child = dockGroupListChildrenByDisplayID[displayID],
+              child.panel === sourcePanel,
+              child.panel.isVisible,
+              child.openGroupID == request.sourceGroupID,
+              child.model?.liveMembership.rowIDs == request.referenceRowIDs,
+              request.referenceRowIDs.contains(request.session.id),
+              let geometryEntry = externalDockGeometryByDisplayID[displayID],
+              let geometry = externalDockGeometrySnapshot(displayID: displayID, draggedSessionID: request.session.id),
+              geometryEntry.input.layout == snapshot.dockLayout,
+              geometryEntry.input.activeSessionIDs == Set(snapshot.activeSessions.map(\.id)),
+              geometryEntry.input.dockSide == position(for: displayID).side,
+              geometry.layoutFingerprint == PickyHUDDockLayoutFingerprint(
+                  layout: snapshot.dockLayout,
+                  activeSessionIDs: Set(snapshot.activeSessions.map(\.id)),
+                  dockSide: position(for: displayID).side,
+                  geometryRevision: geometryEntry.input.geometryRevision
+              ),
+              snapshot.dockLayout.group(withID: request.sourceGroupID)?.memberSessionIDs.contains(request.session.id) == true,
+              PickyHUDDockExternalDragPreviewPresentationPolicy.sourceFrameIsUsable(
+                  request.sourceRowScreenFrame
+              )
+        else { return false }
+
+        let fingerprint = geometry.layoutFingerprint
+        let store = externalDockDragPresentationStore(for: displayID)
+        let coordinator: PickyHUDDockExternalDragCoordinator
+        if let existing = externalDockDragsByDisplayID[displayID]?.coordinator {
+            coordinator = existing
+        } else {
+            let preview = PickyHUDDockExternalDragPreviewDriver(
+                presentationStore: store,
+                sourceIsUsable: { [weak self] presentation in
+                    self?.isExternalDragSourceUsable(
+                        displayID: displayID,
+                        sessionID: presentation.session.id,
+                        sourceGroupID: presentation.sourceGroupID
+                    ) ?? false
+                }
+            )
+            coordinator = PickyHUDDockExternalDragCoordinator(
+                currentFingerprint: { [weak self] in
+                    guard let self,
+                          let geometry = self.externalDockGeometryByDisplayID[displayID]?.input
+                    else { return fingerprint }
+                    let live = self.viewModel.dockState.snapshot
+                    return PickyHUDDockLayoutFingerprint(
+                        layout: live.dockLayout,
+                        activeSessionIDs: Set(live.activeSessions.map(\.id)),
+                        dockSide: self.position(for: displayID).side,
+                        geometryRevision: geometry.geometryRevision
+                    )
+                },
+                preview: preview,
+                commit: { [weak self] sessionID, destination in
+                    self?.viewModel.moveSessionInDock(sessionID: sessionID, to: destination)
+                }
+            )
+            externalDockDragsByDisplayID[displayID] = .init(
+                presentationStore: store,
+                coordinator: coordinator
+            )
+        }
+        let promotion = PickyHUDDockExternalDragPromotion(
+            token: request.token,
+            sessionID: request.session.id,
+            sourceGroupID: request.sourceGroupID,
+            previewPresentation: .init(
+                token: request.token,
+                sourceGroupID: request.sourceGroupID,
+                session: request.session,
+                sourceFrame: request.sourceRowScreenFrame,
+                pointerScreenPoint: request.pointerScreenPoint,
+                dockSide: fingerprint.dockSide,
+                metrics: PickyHUDDockMetrics(preset: currentDockSizePreset)
+            ),
+            frozenLayout: snapshot.dockLayout,
+            fingerprint: fingerprint,
+            geometry: geometry
+        )
+        return coordinator.start(promotion)
+    }
+
+    private func isExternalDragSourceUsable(
+        displayID: CGDirectDisplayID,
+        sessionID: String,
+        sourceGroupID: String
+    ) -> Bool {
+        guard let child = dockGroupListChildrenByDisplayID[displayID],
+              child.panel.isVisible,
+              child.openGroupID == sourceGroupID,
+              child.model?.liveMembership.rowIDs.contains(sessionID) == true,
+              viewModel.dockState.snapshot.dockLayout.group(withID: sourceGroupID)?.memberSessionIDs.contains(sessionID) == true
+        else { return false }
+        return true
     }
 
 }

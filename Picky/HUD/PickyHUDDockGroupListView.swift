@@ -151,6 +151,24 @@ enum PickyHUDDockGroupListScreenLayout {
             y: panelFrame.maxY - screenPoint.y
         )
     }
+
+    static func screenFrame(panelLocalFrame: CGRect, panelFrame: CGRect) -> CGRect {
+        CGRect(
+            x: panelFrame.minX + panelLocalFrame.minX,
+            y: panelFrame.maxY - panelLocalFrame.maxY,
+            width: panelLocalFrame.width,
+            height: panelLocalFrame.height
+        )
+    }
+}
+
+struct PickyHUDDockGroupListPromotionRequest {
+    let token: UUID
+    let session: PickyHUDDockSession
+    let sourceGroupID: String
+    let sourceRowScreenFrame: CGRect
+    let pointerScreenPoint: CGPoint
+    let referenceRowIDs: [String]
 }
 
 let PickyHUDDockGroupListCoordinateSpace = "PickyHUDDockGroupList"
@@ -162,16 +180,23 @@ struct PickyHUDDockGroupListRowCenterPreferenceKey: PreferenceKey {
     }
 }
 
+struct PickyHUDDockGroupListRowFramePreferenceKey: PreferenceKey {
+    static let defaultValue: [String: CGRect] = [:]
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue()) { _, new in new }
+    }
+}
+
 extension View {
     /// Rows always measure on Y: the list is vertical even when the dock is
     /// horizontal, so the rail's orientation branch does not apply here.
     func publishDockGroupListRowCenter(sessionID: String) -> some View {
         background {
             GeometryReader { proxy in
-                Color.clear.preference(
-                    key: PickyHUDDockGroupListRowCenterPreferenceKey.self,
-                    value: [sessionID: proxy.frame(in: .named(PickyHUDDockGroupListCoordinateSpace)).midY]
-                )
+                let frame = proxy.frame(in: .named(PickyHUDDockGroupListCoordinateSpace))
+                Color.clear
+                    .preference(key: PickyHUDDockGroupListRowCenterPreferenceKey.self, value: [sessionID: frame.midY])
+                    .preference(key: PickyHUDDockGroupListRowFramePreferenceKey.self, value: [sessionID: frame])
             }
         }
     }
@@ -196,6 +221,10 @@ struct PickyHUDDockGroupListPanelRoot: View {
     let onRenameGroup: (String, String) -> Void
     let onSetGroupColor: (String, PickyDockGroupColor) -> Void
     let convertScreenPointToPanel: (CGPoint) -> CGPoint
+    var panelScreenFrame: () -> CGRect = { .zero }
+    var onPromoteRowDrag: (PickyHUDDockGroupListPromotionRequest) -> Bool = { _ in false }
+    var onFinishPromotedRowDrag: (UUID) -> Bool = { _ in false }
+    @ObservedObject var externalDragPresentationStore = PickyHUDDockExternalDragRailPresentationStore()
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.pickyAppFontScale) private var fontScale
@@ -236,7 +265,11 @@ struct PickyHUDDockGroupListPanelRoot: View {
             onRenameGroup: onRenameGroup,
             onSetGroupColor: onSetGroupColor,
             liveRowIDs: { model.liveMembership.rowIDs },
-            convertScreenPointToPanel: convertScreenPointToPanel
+            convertScreenPointToPanel: convertScreenPointToPanel,
+            panelScreenFrame: panelScreenFrame,
+            onPromoteRowDrag: onPromoteRowDrag,
+            onFinishPromotedRowDrag: onFinishPromotedRowDrag,
+            externalDragPresentationStore: externalDragPresentationStore
         )
         .frame(width: panelSize.width, height: panelSize.height)
         .opacity(isPresented ? 1 : 0)
@@ -285,15 +318,21 @@ struct PickyHUDDockGroupListView: View {
     /// Screen point to panel-local point. The overlay manager owns the child
     /// panel, so it is the only place that knows the live frame.
     let convertScreenPointToPanel: (CGPoint) -> CGPoint
+    var panelScreenFrame: () -> CGRect = { .zero }
+    var onPromoteRowDrag: (PickyHUDDockGroupListPromotionRequest) -> Bool = { _ in false }
+    var onFinishPromotedRowDrag: (UUID) -> Bool = { _ in false }
+    @ObservedObject var externalDragPresentationStore = PickyHUDDockExternalDragRailPresentationStore()
 
     @State private var rowCenters: [String: CGFloat] = [:]
+    @State private var rowFrames: [String: CGRect] = [:]
     @State private var draggingRowID: String?
     /// Ordered visible membership frozen at pickup. Row centers and insertion
     /// markers are meaningful only for this exact identity/order structure.
     @State private var dragReferenceRowIDs: [String] = []
     @State private var dragInsertionMarkerIndex: Int?
     @State private var isLeavingGroup = false
-    @State private var leftPanelAt: Date?
+    @State private var dragToken: UUID?
+    @State private var dragLease = PickyHUDDockGroupListDragLease()
     @State private var scrollController = PickyHUDDockGroupListScrollController()
     @State private var dragAutoScrollTicker = PickyHUDDockGroupListDragAutoScrollTicker()
     @State private var dragMonitors: [Any] = []
@@ -330,6 +369,9 @@ struct PickyHUDDockGroupListView: View {
         .onPreferenceChange(PickyHUDDockGroupListRowCenterPreferenceKey.self) { centers in
             rowCenters = centers
         }
+        .onPreferenceChange(PickyHUDDockGroupListRowFramePreferenceKey.self) { frames in
+            rowFrames = frames
+        }
         .onChange(of: rows.map(\.id)) { _, ids in
             // A status/title/unread update leaves the identity structure alone,
             // but any member add, removal, or reorder invalidates frozen drag
@@ -353,25 +395,29 @@ struct PickyHUDDockGroupListView: View {
     /// same way rail tiles do, and this controller tracks it from app-level
     /// monitors until mouse-up.
     private func beginRowDrag(rowID: String) {
-        guard draggingRowID == nil else { return }
+        guard draggingRowID == nil, externalDragPresentationStore.presentation == nil else { return }
+        let token = UUID()
+        guard dragLease.begin(token: token) else { return }
         draggingRowID = rowID
+        dragToken = token
         dragReferenceRowIDs = rows.map(\.id)
         dragInsertionMarkerIndex = rows.firstIndex(where: { $0.id == rowID })
         isLeavingGroup = false
-        leftPanelAt = nil
         scrollController.resetClock()
         dragAutoScrollTicker.setDragging(true)
-        installDragMonitors(rowID: rowID)
+        installDragMonitors(rowID: rowID, token: token)
     }
 
-    private func installDragMonitors(rowID: String) {
+    private func installDragMonitors(rowID: String, token: UUID) {
         guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }
         removeDragMonitors()
         let handleMove: (NSEvent) -> Void = { _ in
-            updateDragState(rowID: rowID, location: currentPanelPoint())
+            guard dragLease.ownsList(token: token) else { return }
+            updateDragState(rowID: rowID, token: token, location: currentPanelPoint())
         }
         let handleUp: (NSEvent) -> Void = { _ in
-            commitDrag(rowID: rowID, location: currentPanelPoint())
+            guard dragLease.ownsList(token: token) else { return }
+            commitDrag(rowID: rowID, token: token, location: currentPanelPoint())
         }
         dragMonitors = [
             NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDragged]) { event in
@@ -400,7 +446,7 @@ struct PickyHUDDockGroupListView: View {
         CGRect(origin: .zero, size: panelSize)
     }
 
-    private func updateDragState(rowID: String, location: CGPoint) {
+    private func updateDragState(rowID: String, token: UUID, location: CGPoint) {
         // A dock snapshot can change between SwiftUI render passes. Validate
         // synchronously before consuming frozen centers so a mouse-up in that
         // gap cannot commit against an obsolete membership order.
@@ -417,13 +463,12 @@ struct PickyHUDDockGroupListView: View {
         )
         isLeavingGroup = !isWithinReorderLane
         if isWithinReorderLane {
-            leftPanelAt = nil
             // Keep the live ForEach in stored order. Reordering those views on
             // every pointer event made SwiftUI animate changing row frames;
             // the marker communicates the same drop target without layout shift.
             dragInsertionMarkerIndex = rawInsertionIndex(pointerY: location.y)
-        } else if leftPanelAt == nil {
-            leftPanelAt = Date()
+        } else {
+            promoteRowDrag(rowID: rowID, token: token)
         }
     }
 
@@ -476,7 +521,12 @@ struct PickyHUDDockGroupListView: View {
             afterVisualOffsetDelta: scrollResult.visualOffsetDelta,
             from: rowCenters
         )
-        updateDragState(rowID: rowID, location: location)
+        rowFrames = PickyHUDDockGroupListDragPolicy.rowFrames(
+            afterVisualOffsetDelta: scrollResult.visualOffsetDelta,
+            from: rowFrames
+        )
+        guard let dragToken, dragLease.ownsList(token: dragToken) else { return }
+        updateDragState(rowID: rowID, token: dragToken, location: location)
     }
 
     private func rawInsertionIndex(pointerY: CGFloat) -> Int {
@@ -495,7 +545,7 @@ struct PickyHUDDockGroupListView: View {
         )
     }
 
-    private func commitDrag(rowID: String, location: CGPoint) {
+    private func commitDrag(rowID: String, token: UUID, location: CGPoint) {
         guard PickyHUDDockGroupListDragPolicy.isCurrent(
             referenceRowIDs: dragReferenceRowIDs,
             currentRowIDs: liveRowIDs()
@@ -507,31 +557,70 @@ struct PickyHUDDockGroupListView: View {
             pointerX: location.x,
             panelWidth: panelBounds.width
         )
-        let timeOutside = leftPanelAt.map { Date().timeIntervalSince($0) } ?? 0
         let outcome = PickyHUDDockGroupListDragPolicy.outcome(
             isInsidePanel: isWithinReorderLane,
-            timeOutsidePanel: timeOutside,
             insertionIndex: insertionIndex(for: rowID, pointerY: location.y),
             isDraggedRowStillPresent: liveRowIDs().contains(rowID)
         )
-        resetDrag()
         switch outcome {
         case .reorder(let visibleIndex):
+            resetDrag(token: token)
             onReorderSession(rowID, visibleIndex)
-        case .ungroup:
-            onUngroupSession(rowID)
+        case .promote:
+            _ = promoteRowDrag(rowID: rowID, token: token, finishPhysicalMouseUp: true)
         case .cancel:
-            break
+            resetDrag(token: token)
         }
     }
 
-    private func resetDrag() {
+    @discardableResult
+    private func promoteRowDrag(
+        rowID: String,
+        token: UUID,
+        finishPhysicalMouseUp: Bool = false
+    ) -> Bool {
+        guard dragLease.transferToExternal(token: token),
+              let row = rows.first(where: { $0.id == rowID }),
+              let rowFrame = rowFrames[rowID]
+        else {
+            resetDrag(token: token)
+            return false
+        }
+        let request = PickyHUDDockGroupListPromotionRequest(
+            token: token,
+            session: row.session,
+            sourceGroupID: group.id,
+            sourceRowScreenFrame: PickyHUDDockGroupListScreenLayout.screenFrame(
+                panelLocalFrame: rowFrame,
+                panelFrame: panelScreenFrame()
+            ),
+            pointerScreenPoint: NSEvent.mouseLocation,
+            referenceRowIDs: dragReferenceRowIDs
+        )
+        guard onPromoteRowDrag(request) else {
+            resetDrag(token: token)
+            return false
+        }
+        // The coordinator owns terminal events now. Existing monitor callbacks
+        // retain this token but fail the lease check before they can commit.
+        dragLease.reset(token: token)
+        resetLocalDragState()
+        return !finishPhysicalMouseUp || onFinishPromotedRowDrag(token)
+    }
+
+    private func resetDrag(token: UUID? = nil) {
+        if let token { dragLease.reset(token: token) }
+        else if let dragToken { dragLease.reset(token: dragToken) }
+        resetLocalDragState()
+    }
+
+    private func resetLocalDragState() {
         removeDragMonitors()
         draggingRowID = nil
+        dragToken = nil
         dragReferenceRowIDs = []
         dragInsertionMarkerIndex = nil
         isLeavingGroup = false
-        leftPanelAt = nil
         scrollController.resetClock()
         dragAutoScrollTicker.setDragging(false)
     }
@@ -603,7 +692,8 @@ struct PickyHUDDockGroupListView: View {
                     onReorderHandoff: { _ in beginRowDrag(rowID: row.id) }
                 )
                 .publishDockGroupListRowCenter(sessionID: row.id)
-                .opacity(draggingRowID == row.id && !isLeavingGroup ? 0.35 : 1)
+                .opacity(((draggingRowID == row.id && !isLeavingGroup)
+                    || externalDragPresentationStore.presentation?.sessionID == row.id) ? 0.35 : 1)
                 .zIndex(draggingRowID == row.id ? 1 : 0)
             }
         }

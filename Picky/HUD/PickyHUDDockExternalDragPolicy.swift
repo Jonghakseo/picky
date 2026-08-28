@@ -133,7 +133,10 @@ struct PickyHUDDockExternalDragRailGeometryInput {
                 metrics: metrics
             )
         )
-        let groupCandidates = PickyHUDDockGroupDropCandidateBuilder.emptyCandidates(
+        // Folder drops use the same append-at-tail contract as the context
+        // menu. Keep this external-only so internal rail reorder semantics are
+        // not changed by cross-panel promotion.
+        let groupCandidates: [PickyDockDropResolver.EmptyGroupCandidate] = (PickyHUDDockGroupDropCandidateBuilder.emptyCandidates(
             slots: slots,
             layout: layout,
             activeSessionIDs: activeSessionIDs,
@@ -151,7 +154,14 @@ struct PickyHUDDockExternalDragRailGeometryInput {
             orientation: dockSide.orientation,
             metrics: metrics,
             fontScale: fontScale
-        )
+        )).map { candidate -> PickyDockDropResolver.EmptyGroupCandidate in
+            .init(
+                groupID: candidate.groupID,
+                memberIndex: layout.group(withID: candidate.groupID)?.memberSessionIDs.count ?? candidate.memberIndex,
+                center: candidate.center,
+                halfExtent: candidate.halfExtent
+            )
+        }
         return .init(
             acceptanceFrame: PickyHUDDockExternalDragScreenLayout.screenFrame(
                 hudFrame: hudRailFrame,
@@ -307,7 +317,13 @@ enum PickyHUDDockExternalDragDestinationResolver {
                   let candidate = geometry.groupCandidates.first(where: { $0.groupID == folderID }),
                   layout.group(withID: folderID) != nil
             else { return nil }
-            return .group(id: candidate.groupID, memberIndex: candidate.memberIndex)
+            // The exact frame is the acceptance decision. Member placement is
+            // always the current frozen group's stored tail, including hidden
+            // archived members.
+            return .group(
+                id: candidate.groupID,
+                memberIndex: layout.group(withID: candidate.groupID)?.memberSessionIDs.count ?? candidate.memberIndex
+            )
         }
 
         guard let destination = PickyDockDropResolver.resolveDropContainer(

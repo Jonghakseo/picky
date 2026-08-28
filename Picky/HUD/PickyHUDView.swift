@@ -47,6 +47,9 @@ struct PickyHUDView: View {
     /// are measured in this root's coordinate space before it positions it.
     var onDockGroupListToggle: (_ groupID: String) -> Void = { _ in }
     var onDockGroupListClose: () -> Void = { }
+    /// Overlay Manager owns external drag lifetime because a nonactivating
+    /// child panel cannot reliably receive Escape itself.
+    var onCancelExternalDockDrag: () -> Bool = { false }
     var onDockGroupListRowSelected: (_ sessionID: String) -> Void = { _ in }
     /// Display-local list state, owned by the overlay manager. The HUD root only
     /// reads it, so number keys and arrows resolve against whichever surface is
@@ -1022,6 +1025,12 @@ struct PickyHUDView: View {
         // intercepting here would steal that behavior.
         // Esc closes an open group list first, even from the composer, so the
         // floating panel can never outlive the key press that dismisses it.
+        if flags.isEmpty,
+           event.keyCode == Self.escKeyCode,
+           onCancelExternalDockDrag() {
+            return true
+        }
+
         if flags.isEmpty,
            event.keyCode == Self.escKeyCode,
            PickyHUDDockGroupListKeyboardPolicy.escapeOutcome(isListOpen: dockGroupListFocus.isOpen)

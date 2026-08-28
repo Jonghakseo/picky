@@ -344,7 +344,7 @@ struct PickyHUDDockExternalDragPolicyTests {
             screenPoint: CGPoint(x: 60, y: 40),
             geometry: snapshot,
             layout: layout
-        ) == .group(id: "target", memberIndex: 0))
+        ) == .group(id: "target", memberIndex: 1))
         #expect(PickyHUDDockExternalDragDestinationResolver.resolve(
             draggedSessionID: "dragged",
             sourceGroupID: "source",
@@ -387,6 +387,49 @@ struct PickyHUDDockExternalDragPolicyTests {
             geometry: snapshot,
             layout: layout
         ) == nil)
+    }
+
+    @Test func externalFolderCandidatesAppendAtStoredTailIncludingArchivedMembers() throws {
+        let appendLayout = PickyDockLayout(entries: [
+            .group(PickyDockGroup(id: "source", memberSessionIDs: ["dragged"])),
+            .group(PickyDockGroup(id: "target", memberSessionIDs: ["visible", "archived"])),
+            .group(PickyDockGroup(id: "empty")),
+        ])
+        let input = PickyHUDDockExternalDragRailGeometryInput(
+            slots: [
+                .init(target: .group(id: "source"), visibleIndex: 0),
+                .init(target: .group(id: "target"), visibleIndex: 1),
+                .init(target: .group(id: "empty"), visibleIndex: 2),
+            ],
+            slotCenters: [:],
+            topEntryIDs: ["group:source", "group:target", "group:empty"],
+            topEntryAxisCenters: ["group:source": 30, "group:target": 90, "group:empty": 150],
+            folderDropFrames: [
+                "source": CGRect(x: 10, y: 10, width: 40, height: 40),
+                "target": CGRect(x: 70, y: 10, width: 40, height: 40),
+                "empty": CGRect(x: 130, y: 10, width: 40, height: 40),
+            ],
+            layout: appendLayout,
+            activeSessionIDs: ["dragged", "visible"],
+            dockSide: .bottom,
+            geometryRevision: 1,
+            metrics: PickyHUDDockMetrics(preset: .medium),
+            fontScale: 1
+        )
+        let snapshot = try #require(input.screenSnapshot(
+            draggedSessionID: "dragged",
+            hudRailFrame: CGRect(x: 0, y: 0, width: 200, height: 60),
+            hudPanelFrame: CGRect(x: 0, y: 0, width: 200, height: 100)
+        ))
+
+        #expect(PickyHUDDockExternalDragDestinationResolver.resolve(
+            draggedSessionID: "dragged", sourceGroupID: "source",
+            screenPoint: CGPoint(x: 90, y: 70), geometry: snapshot, layout: appendLayout
+        ) == .group(id: "target", memberIndex: 2))
+        #expect(PickyHUDDockExternalDragDestinationResolver.resolve(
+            draggedSessionID: "dragged", sourceGroupID: "source",
+            screenPoint: CGPoint(x: 150, y: 70), geometry: snapshot, layout: appendLayout
+        ) == .group(id: "empty", memberIndex: 0))
     }
 
     @Test func terminalLeaseAcceptsOnlyOneTerminalEffectAndMakesLateEventsInert() {

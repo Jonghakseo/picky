@@ -89,7 +89,6 @@ struct PickyHUDDockGroupListDragPolicyTests {
     @Test func releasingInsideThePanelReorders() {
         let outcome = PickyHUDDockGroupListDragPolicy.outcome(
             isInsidePanel: true,
-            timeOutsidePanel: 0,
             insertionIndex: 2,
             isDraggedRowStillPresent: true
         )
@@ -97,33 +96,30 @@ struct PickyHUDDockGroupListDragPolicyTests {
         #expect(outcome == .reorder(visibleIndex: 2))
     }
 
-    @Test func leavingThePanelLongEnoughUngroups() {
+    @Test func leavingThePanelImmediatelyPromotesToExternalDrag() {
         let outcome = PickyHUDDockGroupListDragPolicy.outcome(
             isInsidePanel: false,
-            timeOutsidePanel: PickyHUDDockGroupListDragPolicy.pullOutDwell,
             insertionIndex: 0,
             isDraggedRowStillPresent: true
         )
 
-        #expect(outcome == .ungroup)
+        #expect(outcome == .promote)
     }
 
-    /// Clipping the panel edge mid-reorder must not be read as "leave the group".
-    @Test func brieflyClippingTheEdgeCancelsInsteadOfUngrouping() {
+    /// Cross-axis exit is one-way for this physical press.
+    @Test func brieflyClippingTheEdgePromotesInsteadOfPersistingLocally() {
         let outcome = PickyHUDDockGroupListDragPolicy.outcome(
             isInsidePanel: false,
-            timeOutsidePanel: 0.05,
             insertionIndex: 0,
             isDraggedRowStillPresent: true
         )
 
-        #expect(outcome == .cancel)
+        #expect(outcome == .promote)
     }
 
     @Test func aRowThatDisappearsMidDragCancelsEvenWhenPulledOut() {
         let outcome = PickyHUDDockGroupListDragPolicy.outcome(
             isInsidePanel: false,
-            timeOutsidePanel: 5,
             insertionIndex: 0,
             isDraggedRowStillPresent: false
         )
@@ -213,7 +209,6 @@ struct PickyHUDDockGroupListDragPolicyTests {
         )
         let outcome = PickyHUDDockGroupListDragPolicy.outcome(
             isInsidePanel: isWithinReorderLane,
-            timeOutsidePanel: 1,
             insertionIndex: 4,
             isDraggedRowStillPresent: true
         )
@@ -222,20 +217,19 @@ struct PickyHUDDockGroupListDragPolicyTests {
         #expect(outcome == .reorder(visibleIndex: 4))
     }
 
-    @Test func crossAxisExitStillAllowsDeliberatePullOut() {
+    @Test func crossAxisExitPromotesWithoutAResidenceTimer() {
         let isWithinReorderLane = PickyHUDDockGroupListDragPolicy.isWithinReorderLane(
             pointerX: 241,
             panelWidth: 240
         )
         let outcome = PickyHUDDockGroupListDragPolicy.outcome(
             isInsidePanel: isWithinReorderLane,
-            timeOutsidePanel: PickyHUDDockGroupListDragPolicy.pullOutDwell,
             insertionIndex: 0,
             isDraggedRowStillPresent: true
         )
 
         #expect(!isWithinReorderLane)
-        #expect(outcome == .ungroup)
+        #expect(outcome == .promote)
     }
 
     // MARK: - Stored index translation
@@ -282,6 +276,21 @@ struct PickyHUDDockGroupListDragPolicyTests {
 
 @MainActor
 extension PickyHUDDockGroupListDragPolicyTests {
+    @Test func leaseTransfersTerminalOwnershipOnceAndMakesLateListEventsInert() {
+        let token = UUID(uuidString: "00000000-0000-0000-0000-000000000010")!
+        let nextToken = UUID(uuidString: "00000000-0000-0000-0000-000000000011")!
+        let lease = PickyHUDDockGroupListDragLease()
+
+        #expect(lease.begin(token: token))
+        #expect(lease.ownsList(token: token))
+        #expect(lease.transferToExternal(token: token))
+        #expect(!lease.ownsList(token: token))
+        #expect(lease.ownsExternal(token: token))
+        #expect(!lease.transferToExternal(token: token))
+        lease.reset(token: token)
+        #expect(lease.begin(token: nextToken))
+    }
+
     @Test func liveMembershipRejectsImmediateCommitAfterStructureChangeBeforeRender() {
         let membership = PickyHUDDockGroupListLiveMembership(rowIDs: ["alpha", "bravo"])
         let frozenIDs = membership.rowIDs
@@ -327,7 +336,6 @@ extension PickyHUDDockGroupListDragPolicyTests {
         )
         let outcome = PickyHUDDockGroupListDragPolicy.outcome(
             isInsidePanel: true,
-            timeOutsidePanel: 0,
             insertionIndex: PickyHUDDockGroupListDragPolicy.normalizedInsertionIndex(rawIndex, draggedRowIndex: 0),
             isDraggedRowStillPresent: true
         )
@@ -339,6 +347,15 @@ extension PickyHUDDockGroupListDragPolicyTests {
         #expect(result.visualOffsetDelta == -60)
         #expect(rawIndex == 3)
         #expect(committedIndexes == [2])
+    }
+
+    @Test func nativeScrollUpdatesCachedRowFramesWithTheSameVisualDeltaAsCenters() {
+        let frames = PickyHUDDockGroupListDragPolicy.rowFrames(
+            afterVisualOffsetDelta: -60,
+            from: ["alpha": CGRect(x: 12, y: 50, width: 200, height: 38)]
+        )
+
+        #expect(frames["alpha"] == CGRect(x: 12, y: -10, width: 200, height: 38))
     }
 
     @Test func nativeScrollAtTheClampDoesNotMoveOrAlterDropGeometry() {

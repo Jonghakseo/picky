@@ -12,11 +12,31 @@ import Combine
 import SwiftUI
 
 struct PickyHUDDockExternalDragPreviewPresentation {
+    let token: UUID
+    let sourceGroupID: String
     let session: PickyHUDDockSession
     let sourceFrame: CGRect
     let pointerScreenPoint: CGPoint
     let dockSide: PickyHUDDockSide
     let metrics: PickyHUDDockMetrics
+
+    init(
+        token: UUID = UUID(),
+        sourceGroupID: String = "",
+        session: PickyHUDDockSession,
+        sourceFrame: CGRect,
+        pointerScreenPoint: CGPoint,
+        dockSide: PickyHUDDockSide,
+        metrics: PickyHUDDockMetrics
+    ) {
+        self.token = token
+        self.sourceGroupID = sourceGroupID
+        self.session = session
+        self.sourceFrame = sourceFrame
+        self.pointerScreenPoint = pointerScreenPoint
+        self.dockSide = dockSide
+        self.metrics = metrics
+    }
 }
 
 enum PickyHUDDockExternalDragPreviewTerminal: Equatable {
@@ -43,17 +63,31 @@ enum PickyHUDDockExternalDragPreviewPresentationPolicy {
     }
 
     static func terminal(
-        committed: Bool,
+        terminal: PickyHUDDockExternalDragTerminal,
         sourceFrame: CGRect,
         reduceMotion: Bool,
         sourceIsUsable: Bool
     ) -> PickyHUDDockExternalDragPreviewTerminal {
-        guard !committed else { return .dismiss }
-        // Reduce Motion suppresses every terminal animation, including the
-        // otherwise subtle fade used when a source return is unavailable.
-        guard !reduceMotion else { return .dismiss }
-        guard sourceIsUsable, sourceFrameIsUsable(sourceFrame) else { return .fadeOut }
-        return .returnToSource(CGPoint(x: sourceFrame.midX, y: sourceFrame.midY))
+        switch terminal {
+        case .commit:
+            return .dismiss
+        case .cancel(.teardown), .cancel(.staleLayout):
+            // Teardown and stale geometry must never animate toward a surface
+            // that has moved or is already hidden.
+            return reduceMotion ? .dismiss : .fadeOut
+        case .cancel(.escape), .cancel(.invalidDrop):
+            guard !reduceMotion else { return .dismiss }
+            guard sourceIsUsable, sourceFrameIsUsable(sourceFrame) else { return .fadeOut }
+            return .returnToSource(CGPoint(x: sourceFrame.midX, y: sourceFrame.midY))
+        }
+    }
+}
+
+/// Old animation completions may run after a new physical drag has opened a
+/// replacement preview. Only the current token may close the driver state.
+enum PickyHUDDockExternalDragPreviewGenerationPolicy {
+    static func mayClose(activeToken: UUID?, finishingToken: UUID) -> Bool {
+        activeToken == finishingToken
     }
 }
 
@@ -67,7 +101,7 @@ private extension CGRect {
 protocol PickyHUDDockExternalDragPreviewDriving: AnyObject {
     func begin(_ presentation: PickyHUDDockExternalDragPreviewPresentation)
     func update(pointerScreenPoint: CGPoint, destination: PickyDockContainer?)
-    func finish(committed: Bool)
+    func finish(terminal: PickyHUDDockExternalDragTerminal)
 }
 
 /// Separate panel prevents a drag image from clipping between the HUD and its
@@ -155,13 +189,16 @@ private struct PickyHUDDockExternalDragPreviewView: View {
 final class PickyHUDDockExternalDragPreviewDriver: PickyHUDDockExternalDragPreviewDriving {
     private var panel: PickyHUDDockExternalDragPreviewPanel?
     private var model: PickyHUDDockExternalDragPreviewModel?
-    private var sourceIsUsable: () -> Bool
+    private let presentationStore: PickyHUDDockExternalDragRailPresentationStore
+    private var sourceIsUsable: (PickyHUDDockExternalDragPreviewPresentation) -> Bool
     private var reduceMotion: () -> Bool
 
     init(
-        sourceIsUsable: @escaping () -> Bool = { true },
+        presentationStore: PickyHUDDockExternalDragRailPresentationStore,
+        sourceIsUsable: @escaping (PickyHUDDockExternalDragPreviewPresentation) -> Bool = { _ in true },
         reduceMotion: @escaping () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
     ) {
+        self.presentationStore = presentationStore
         self.sourceIsUsable = sourceIsUsable
         self.reduceMotion = reduceMotion
     }
@@ -183,11 +220,17 @@ final class PickyHUDDockExternalDragPreviewDriver: PickyHUDDockExternalDragPrevi
         panel.orderFrontRegardless()
         self.model = model
         self.panel = panel
+        presentationStore.show(
+            token: presentation.token,
+            sessionID: presentation.session.id,
+            destination: nil
+        )
     }
 
     func update(pointerScreenPoint: CGPoint, destination: PickyDockContainer?) {
         guard let panel, let model else { return }
         model.destination = destination
+        presentationStore.update(token: model.presentation.token, destination: destination)
         panel.setFrame(
             PickyHUDDockExternalDragPreviewPresentationPolicy.frame(
                 pointerScreenPoint: pointerScreenPoint,
@@ -197,17 +240,19 @@ final class PickyHUDDockExternalDragPreviewDriver: PickyHUDDockExternalDragPrevi
         )
     }
 
-    func finish(committed: Bool) {
+    func finish(terminal: PickyHUDDockExternalDragTerminal) {
         guard let panel, let model else { return }
-        let terminal = PickyHUDDockExternalDragPreviewPresentationPolicy.terminal(
-            committed: committed,
+        let finishingToken = model.presentation.token
+        presentationStore.clear(token: finishingToken)
+        let presentationTerminal = PickyHUDDockExternalDragPreviewPresentationPolicy.terminal(
+            terminal: terminal,
             sourceFrame: model.presentation.sourceFrame,
             reduceMotion: reduceMotion(),
-            sourceIsUsable: sourceIsUsable()
+            sourceIsUsable: sourceIsUsable(model.presentation)
         )
-        switch terminal {
+        switch presentationTerminal {
         case .dismiss:
-            closeImmediately()
+            closeImmediately(token: finishingToken)
         case .returnToSource(let center):
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = DS.Animation.fast
@@ -219,20 +264,30 @@ final class PickyHUDDockExternalDragPreviewDriver: PickyHUDDockExternalDragPrevi
                     ),
                     display: true
                 )
-            } completionHandler: { [weak self] in
-                self?.closeImmediately()
+            } completionHandler: { [weak self, finishingPanel = panel] in
+                // Manager teardown can release the driver before this closure
+                // runs. Retaining only the finishing panel keeps the AppKit
+                // surface alive long enough to order it out, without touching
+                // a newer token's preview.
+                finishingPanel.orderOut(nil)
+                self?.closeImmediately(token: finishingToken)
             }
         case .fadeOut:
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = DS.Animation.fast
                 panel.contentView?.animator().alphaValue = 0
-            } completionHandler: { [weak self] in
-                self?.closeImmediately()
+            } completionHandler: { [weak self, finishingPanel = panel] in
+                finishingPanel.orderOut(nil)
+                self?.closeImmediately(token: finishingToken)
             }
         }
     }
 
-    private func closeImmediately() {
+    private func closeImmediately(token: UUID? = nil) {
+        guard token.map({ PickyHUDDockExternalDragPreviewGenerationPolicy.mayClose(
+            activeToken: model?.presentation.token,
+            finishingToken: $0
+        ) }) ?? true else { return }
         panel?.orderOut(nil)
         panel = nil
         model = nil

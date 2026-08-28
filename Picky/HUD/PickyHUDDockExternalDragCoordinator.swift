@@ -20,7 +20,9 @@ struct PickyHUDDockExternalDragPromotion {
     let geometry: PickyHUDDockExternalDragGeometrySnapshot
 
     var isConsistent: Bool {
-        previewPresentation.session.id == sessionID
+        previewPresentation.token == token
+            && previewPresentation.sourceGroupID == sourceGroupID
+            && previewPresentation.session.id == sessionID
             && fingerprint == geometry.layoutFingerprint
             && PickyHUDDockLayoutFingerprint(
                 layout: frozenLayout,
@@ -105,6 +107,7 @@ final class PickyHUDDockExternalDragCoordinator {
         }
 
         preview.begin(promotion.previewPresentation)
+        update()
         return true
     }
 
@@ -119,12 +122,22 @@ final class PickyHUDDockExternalDragCoordinator {
 
     /// Explicitly callable by the existing local Escape owner. No global key
     /// monitor is installed, so this cannot cause an accessibility prompt.
-    func cancelForEscape() {
+    @discardableResult
+    func cancelForEscape() -> Bool {
         cancel(.escape)
     }
 
-    func cancelForTeardown() {
+    @discardableResult
+    func cancelForTeardown() -> Bool {
         cancel(.teardown)
+    }
+
+    /// Snapshot/placement observers call this synchronously. A completed
+    /// commit clears state before persistence, so its own reconciliation is inert.
+    @discardableResult
+    func cancelIfCurrentFingerprintIsStale() -> Bool {
+        guard let promotion, currentFingerprint() != promotion.fingerprint else { return false }
+        return cancel(.staleLayout)
     }
 
     private func handle(_ event: NSEvent, token: UUID) {
@@ -142,8 +155,18 @@ final class PickyHUDDockExternalDragCoordinator {
         }
     }
 
-    private func finish(_ promotion: PickyHUDDockExternalDragPromotion) {
-        guard state.acceptsUpdate(for: promotion.token) else { return }
+    /// Completes a list-owned release that crossed the boundary between drag
+    /// callbacks. The list transfers ownership before calling this, and stale
+    /// local/global mouse-up copies cannot claim another terminal effect.
+    @discardableResult
+    func finishFromPhysicalMouseUp() -> Bool {
+        guard let promotion else { return false }
+        return finish(promotion)
+    }
+
+    @discardableResult
+    private func finish(_ promotion: PickyHUDDockExternalDragPromotion) -> Bool {
+        guard state.acceptsUpdate(for: promotion.token) else { return false }
         // A terminal pointer sample is shared by hit-testing and the final
         // preview frame. Sampling twice can commit one physical location while
         // showing feedback for another when AppKit advances between reads.
@@ -158,32 +181,34 @@ final class PickyHUDDockExternalDragCoordinator {
             terminal = finalDestination.map(PickyHUDDockExternalDragTerminal.commit) ?? .cancel(.invalidDrop)
         }
         preview.update(pointerScreenPoint: finalPointer, destination: finalDestination)
-        complete(token: promotion.token, terminal: terminal)
+        return complete(token: promotion.token, terminal: terminal)
     }
 
-    private func cancel(_ reason: PickyHUDDockExternalDragCancellation) {
-        guard let promotion else { return }
-        complete(token: promotion.token, terminal: .cancel(reason))
+    @discardableResult
+    private func cancel(_ reason: PickyHUDDockExternalDragCancellation) -> Bool {
+        guard let promotion else { return false }
+        return complete(token: promotion.token, terminal: .cancel(reason))
     }
 
-    private func complete(token: UUID, terminal: PickyHUDDockExternalDragTerminal) {
+    @discardableResult
+    private func complete(token: UUID, terminal: PickyHUDDockExternalDragTerminal) -> Bool {
         guard let sessionID = promotion?.sessionID,
               let claimed = state.claimTerminal(token: token, outcome: terminal)
-        else { return }
+        else { return false }
 
         // Clear the coordinator's active payload and monitors before external
         // effects. Retained local/global callbacks therefore observe no owner.
         promotion = nil
         removeEventMonitors()
+        preview.finish(terminal: claimed)
         switch claimed {
         case .commit(let destination):
-            preview.finish(committed: true)
             state.finishTerminal()
             commit(sessionID, destination)
         case .cancel:
-            preview.finish(committed: false)
             state.finishTerminal()
         }
+        return true
     }
 
     private func destination(

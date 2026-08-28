@@ -62,6 +62,11 @@ final class PickyHUDOverlayManager {
         let railFrame: CGRect
     }
 
+    struct ExternalDockDragEntry {
+        let presentationStore: PickyHUDDockExternalDragRailPresentationStore
+        var coordinator: PickyHUDDockExternalDragCoordinator?
+    }
+
     struct DockGroupListGeometry {
         /// Tile-only frames anchor the child panel to its folder badge.
         var badgeFrames: [String: CGRect] = [:]
@@ -94,6 +99,7 @@ final class PickyHUDOverlayManager {
     var dockGroupListChildrenByDisplayID: [CGDirectDisplayID: DockGroupListChildEntry] = [:]
     var dockGroupListGeometryByDisplayID: [CGDirectDisplayID: DockGroupListGeometry] = [:]
     var externalDockGeometryByDisplayID: [CGDirectDisplayID: ExternalDockGeometryEntry] = [:]
+    var externalDockDragsByDisplayID: [CGDirectDisplayID: ExternalDockDragEntry] = [:]
     private var screenParametersObserver: NSObjectProtocol?
     private var settingsObserver: NSObjectProtocol?
     var currentDockSizePreset: PickyHUDDockSizePreset
@@ -139,6 +145,7 @@ final class PickyHUDOverlayManager {
         }
         self.dockSnapshotCancellable = viewModel.dockState.$snapshot.sink { [weak self] snapshot in
             self?.consumeAuthoritativeRemovalEvent(snapshot.authoritativeRemovalEvent)
+            self?.cancelStaleExternalDockDrags()
         }
     }
 
@@ -373,6 +380,8 @@ final class PickyHUDOverlayManager {
         archiveUndoToastsByDisplayID.removeAll()
         dockGroupListChildrenByDisplayID.removeAll()
         dockGroupListGeometryByDisplayID.removeAll()
+        for entry in externalDockDragsByDisplayID.values { _ = entry.coordinator?.cancelForTeardown() }
+        externalDockDragsByDisplayID.removeAll()
         externalDockGeometryByDisplayID.removeAll()
     }
 
@@ -396,11 +405,17 @@ final class PickyHUDOverlayManager {
             childDisplayIDs: Set(dockGroupListChildrenByDisplayID.keys),
             effects: .init(
                 removeParent: { [weak self] displayID in
-                    guard let entry = self?.panelsByDisplayID.removeValue(forKey: displayID) else { return }
-                    self?.externalDockGeometryByDisplayID.removeValue(forKey: displayID)
+                    guard let self,
+                          let entry = self.panelsByDisplayID.removeValue(forKey: displayID)
+                    else { return }
+                    self.hideDockGroupListChild(displayID: displayID)
+                    self.externalDockGeometryByDisplayID.removeValue(forKey: displayID)
+                    if let drag = self.externalDockDragsByDisplayID.removeValue(forKey: displayID) {
+                        _ = drag.coordinator?.cancelForTeardown()
+                    }
                     entry.pendingShrinkTask?.cancel()
                     entry.panel.orderOut(nil)
-                    self?.actualPanelVisibilityStore.removePanel(for: displayID)
+                    self.actualPanelVisibilityStore.removePanel(for: displayID)
                 },
                 removeToast: { [weak self] displayID in
                     guard let entry = self?.archiveUndoToastsByDisplayID.removeValue(forKey: displayID) else { return }
@@ -472,6 +487,7 @@ final class PickyHUDOverlayManager {
             )
         )
         let openPerformanceTracker = PickyHUDOpenPerformanceTracker()
+        let externalDragPresentationStore = externalDockDragPresentationStore(for: displayID)
         let hudRoot = PickyHUDView(
             viewModel: viewModel,
             dockState: viewModel.dockState,
@@ -535,6 +551,9 @@ final class PickyHUDOverlayManager {
             onDockGroupListClose: { [weak self] in
                 self?.hideDockGroupListChild(displayID: displayID)
             },
+            onCancelExternalDockDrag: { [weak self] in
+                self?.cancelExternalDockDragForEscape(displayID: displayID) ?? false
+            },
             onDockGroupListRowSelected: { [weak self] sessionID in
                 self?.selectDockGroupListRow(displayID: displayID, sessionID: sessionID)
             },
@@ -555,7 +574,8 @@ final class PickyHUDOverlayManager {
                     input: input,
                     railFrame: railFrame
                 )
-            }
+            },
+            externalDragPresentationStore: externalDragPresentationStore
         )
             .environmentObject(appearanceStore)
             .modifier(PickyPreferredColorSchemeModifier(store: appearanceStore))
@@ -1046,6 +1066,7 @@ final class PickyHUDOverlayManager {
     // MARK: - Dock handle drag / reset
 
     private func handleDockHandleDoubleClick(displayID: CGDirectDisplayID) {
+        _ = externalDockDragsByDisplayID[displayID]?.coordinator?.cancelForTeardown()
         dragStartPositionsByDisplayID = nil
         var pos = position(for: displayID)
         pos.side = pos.side.orientationToggled(anchorPercent: pos.anchorPercent)
@@ -1063,6 +1084,7 @@ final class PickyHUDOverlayManager {
     }
 
     private func handleDockDragChanged(displayID: CGDirectDisplayID, delta: CGPoint) {
+        _ = externalDockDragsByDisplayID[displayID]?.coordinator?.cancelForTeardown()
         guard let screen = screen(for: displayID) else { return }
         let visibleFrame = screen.visibleFrame
         guard visibleFrame.width > 0, visibleFrame.height > 0 else { return }
@@ -1269,7 +1291,13 @@ final class PickyHUDOverlayManager {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.syncPanelsForCurrentScreens() }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                for displayID in Array(self.dockGroupListChildrenByDisplayID.keys) {
+                    self.hideDockGroupListChild(displayID: displayID)
+                }
+                self.syncPanelsForCurrentScreens()
+            }
         }
     }
 

@@ -56,6 +56,15 @@ struct PickyHUDDockGroupListScreenLayoutTests {
         #expect(local == expected)
     }
 
+    @Test func convertsTheExactPanelLocalRowFrameToScreenSpace() {
+        let frame = PickyHUDDockGroupListScreenLayout.screenFrame(
+            panelLocalFrame: CGRect(x: 24, y: 52, width: 212, height: 38),
+            panelFrame: CGRect(x: -900, y: 200, width: 260, height: 320)
+        )
+
+        #expect(frame == CGRect(x: -876, y: 430, width: 212, height: 38))
+    }
+
     @Test func selectingARowNamesTheNewCardSessionAndClosesTheList() {
         let result = PickyHUDDockGroupListInteractionPolicy.selectionResult(
             sessionID: "pickle-2",

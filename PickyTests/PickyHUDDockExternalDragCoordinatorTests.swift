@@ -14,7 +14,7 @@ struct PickyHUDDockExternalDragCoordinatorTests {
         var presentations: [PickyHUDDockExternalDragPreviewPresentation] = []
         var updatePoints: [CGPoint] = []
         var destinations: [PickyDockContainer?] = []
-        var terminalResults: [Bool] = []
+        var terminals: [PickyHUDDockExternalDragTerminal] = []
 
         func begin(_ presentation: PickyHUDDockExternalDragPreviewPresentation) {
             began += 1
@@ -24,7 +24,7 @@ struct PickyHUDDockExternalDragCoordinatorTests {
             updatePoints.append(pointerScreenPoint)
             destinations.append(destination)
         }
-        func finish(committed: Bool) { terminalResults.append(committed) }
+        func finish(terminal: PickyHUDDockExternalDragTerminal) { terminals.append(terminal) }
     }
 
     private final class MonitorHarness {
@@ -106,6 +106,8 @@ struct PickyHUDDockExternalDragCoordinatorTests {
             sessionID: "dragged",
             sourceGroupID: "source",
             previewPresentation: .init(
+                token: token,
+                sourceGroupID: "source",
                 session: session(id: "dragged"),
                 sourceFrame: CGRect(x: -20, y: 10, width: 40, height: 40),
                 pointerScreenPoint: CGPoint(x: 100, y: 50),
@@ -175,8 +177,30 @@ struct PickyHUDDockExternalDragCoordinatorTests {
         #expect(commits.count == 1)
         #expect(commits.first?.0 == "dragged")
         #expect(commits.first?.1 == .topLevel(index: 1))
-        #expect(preview.terminalResults == [true])
+        #expect(preview.terminals == [.commit(.topLevel(index: 1))])
         #expect(harness.removed.count == 2)
+    }
+
+    @Test func physicalMouseUpHandoffFinishesOnceWithoutWaitingForANewMonitorEvent() {
+        let harness = MonitorHarness()
+        let preview = PreviewSpy()
+        let payload = promotion()
+        var commits: [(String, PickyDockContainer)] = []
+        let coordinator = makeCoordinator(
+            harness: harness,
+            mouseLocation: { CGPoint(x: 130, y: 50) },
+            currentFingerprint: { payload.fingerprint },
+            preview: preview,
+            commits: { commits.append(($0, $1)) }
+        )
+
+        #expect(coordinator.start(payload))
+        #expect(coordinator.finishFromPhysicalMouseUp())
+        #expect(!coordinator.finishFromPhysicalMouseUp())
+        #expect(commits.count == 1)
+        #expect(commits.first?.0 == "dragged")
+        #expect(commits.first?.1 == .topLevel(index: 1))
+        #expect(preview.terminals == [.commit(.topLevel(index: 1))])
     }
 
     @Test func cancellationRemovesEveryMonitorAndRetainedCallbacksStayInert() throws {
@@ -193,12 +217,13 @@ struct PickyHUDDockExternalDragCoordinatorTests {
         )
 
         #expect(coordinator.start(payload))
-        coordinator.cancelForEscape()
+        #expect(coordinator.cancelForEscape())
+        #expect(!coordinator.cancelForEscape())
         harness.local[0].handler(try event(.leftMouseUp))
         harness.global[0].handler(try event(.leftMouseDragged))
 
         #expect(commits.isEmpty)
-        #expect(preview.terminalResults == [false])
+        #expect(preview.terminals == [.cancel(.escape)])
         #expect(harness.removed.count == 2)
     }
 
@@ -223,10 +248,10 @@ struct PickyHUDDockExternalDragCoordinatorTests {
 
         // The last drag update was valid, but physical release happened below
         // the frozen acceptance frame. Reusing stale drag feedback would commit.
-        #expect(preview.destinations.count == 2)
-        #expect(preview.destinations[1] == nil)
+        #expect(preview.destinations.count == 3)
+        #expect(preview.destinations[2] == nil)
         #expect(commits.isEmpty)
-        #expect(preview.terminalResults == [false])
+        #expect(preview.terminals == [.cancel(.invalidDrop)])
     }
 
     @Test func mouseUpUsesOneFinalPointerSampleForResolutionAndPreview() throws {
@@ -246,12 +271,11 @@ struct PickyHUDDockExternalDragCoordinatorTests {
         #expect(coordinator.start(payload))
         harness.local[0].handler(try event(.leftMouseUp))
 
-        #expect(samples == [CGPoint(x: 100, y: 150)])
-        #expect(preview.updatePoints == [CGPoint(x: 130, y: 50)])
-        #expect(preview.destinations == [.topLevel(index: 1)])
-        #expect(commits.count == 1)
-        #expect(commits.first?.0 == "dragged")
-        #expect(commits.first?.1 == .topLevel(index: 1))
+        #expect(samples.isEmpty)
+        #expect(preview.updatePoints == [CGPoint(x: 130, y: 50), CGPoint(x: 100, y: 150)])
+        #expect(preview.destinations == [.topLevel(index: 1), nil])
+        #expect(commits.isEmpty)
+        #expect(preview.terminals == [.cancel(.invalidDrop)])
     }
 
     @Test func geometryMeasuredForOlderLayoutRejectsNewPromotionBeforePreviewOrMonitorsBegin() {
@@ -305,6 +329,35 @@ struct PickyHUDDockExternalDragCoordinatorTests {
         #expect(commits.isEmpty)
     }
 
+    @Test func previewTokenOrSourceGroupMismatchRejectsPromotion() {
+        let payload = promotion()
+        let tokenMismatch = PickyHUDDockExternalDragPromotion(
+            token: payload.token,
+            sessionID: payload.sessionID,
+            sourceGroupID: payload.sourceGroupID,
+            previewPresentation: .init(
+                token: UUID(), sourceGroupID: payload.sourceGroupID,
+                session: payload.previewPresentation.session, sourceFrame: payload.previewPresentation.sourceFrame,
+                pointerScreenPoint: payload.previewPresentation.pointerScreenPoint,
+                dockSide: payload.previewPresentation.dockSide, metrics: payload.previewPresentation.metrics
+            ), frozenLayout: payload.frozenLayout, fingerprint: payload.fingerprint, geometry: payload.geometry
+        )
+        let sourceMismatch = PickyHUDDockExternalDragPromotion(
+            token: payload.token,
+            sessionID: payload.sessionID,
+            sourceGroupID: payload.sourceGroupID,
+            previewPresentation: .init(
+                token: payload.token, sourceGroupID: "other",
+                session: payload.previewPresentation.session, sourceFrame: payload.previewPresentation.sourceFrame,
+                pointerScreenPoint: payload.previewPresentation.pointerScreenPoint,
+                dockSide: payload.previewPresentation.dockSide, metrics: payload.previewPresentation.metrics
+            ), frozenLayout: payload.frozenLayout, fingerprint: payload.fingerprint, geometry: payload.geometry
+        )
+
+        #expect(!tokenMismatch.isConsistent)
+        #expect(!sourceMismatch.isConsistent)
+    }
+
     @Test func unavailableLocalMonitorRejectsPromotionAndRetainedCallbacksStayInert() throws {
         let harness = MonitorHarness()
         harness.returnsNilForLocal = true
@@ -321,7 +374,7 @@ struct PickyHUDDockExternalDragCoordinatorTests {
 
         #expect(!coordinator.start(payload))
         #expect(preview.began == 0)
-        #expect(preview.terminalResults.isEmpty)
+        #expect(preview.terminals.isEmpty)
         #expect(harness.local.count == 1)
         #expect(harness.global.count == 1)
         #expect(harness.removed.count == 1)
@@ -337,7 +390,7 @@ struct PickyHUDDockExternalDragCoordinatorTests {
         #expect(commits.isEmpty)
         coordinator.cancelForTeardown()
         #expect(preview.began == 1)
-        #expect(preview.terminalResults == [false])
+        #expect(preview.terminals == [.cancel(.teardown)])
     }
 
     @Test func unavailableGlobalMonitorRejectsPromotionAndRetainedCallbacksStayInert() throws {
@@ -356,7 +409,7 @@ struct PickyHUDDockExternalDragCoordinatorTests {
 
         #expect(!coordinator.start(payload))
         #expect(preview.began == 0)
-        #expect(preview.terminalResults.isEmpty)
+        #expect(preview.terminals.isEmpty)
         #expect(harness.local.count == 1)
         #expect(harness.global.count == 1)
         #expect(harness.removed.count == 1)
@@ -372,7 +425,7 @@ struct PickyHUDDockExternalDragCoordinatorTests {
         #expect(commits.isEmpty)
         coordinator.cancelForTeardown()
         #expect(preview.began == 1)
-        #expect(preview.terminalResults == [false])
+        #expect(preview.terminals == [.cancel(.teardown)])
     }
 
     @Test func staleFullFingerprintCancelsBeforeCommit() throws {
@@ -398,6 +451,6 @@ struct PickyHUDDockExternalDragCoordinatorTests {
         harness.local[0].handler(try event(.leftMouseUp))
 
         #expect(commits.isEmpty)
-        #expect(preview.terminalResults == [false])
+        #expect(preview.terminals == [.cancel(.staleLayout)])
     }
 }

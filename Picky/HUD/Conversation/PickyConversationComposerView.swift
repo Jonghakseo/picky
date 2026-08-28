@@ -1108,16 +1108,11 @@ struct PickyConversationComposerView: View {
     private var sendButton: some View {
         let presentation = submitPresentation
         return Button(action: submitDefault) {
-            HStack(spacing: DS.Spacing.xs) {
-                Image(systemName: presentation.iconName)
-                    .pickyFont(size: 11, weight: .semibold)
-                Text(presentation.label)
-                    .font(PickyHUDTypography.statusSemibold)
-                    .lineLimit(1)
-            }
-            .foregroundColor(isSendDisabled ? DS.Colors.textTertiary : sendColor)
-            .frame(minHeight: 22)
-            .contentShape(Rectangle())
+            Image(systemName: presentation.iconName)
+                .pickyFont(size: 11, weight: .semibold)
+                .foregroundColor(isSendDisabled ? DS.Colors.textTertiary : sendColor)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(isSendDisabled)

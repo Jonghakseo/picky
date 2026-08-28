@@ -739,12 +739,6 @@ struct PickyTurnCardView<MessageContent: View>: View {
         ))
         .accessibilityHint(L10n.t("hud.conversation.turn.expand.accessibilityHint"))
         .hoverAffordance()
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(DS.Colors.borderSubtle.opacity(0.65))
-                .frame(height: 0.5) // design-token-exception: one-point separator needs a half-point hairline for pixel alignment
-                .accessibilityHidden(true)
-        }
     }
 
     private var headerForegroundColor: Color {

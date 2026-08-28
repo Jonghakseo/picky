@@ -278,7 +278,7 @@ struct PickyHUDDockGroupListView: View {
     /// fixed reference so their row metadata remains deterministic.
     var relativeTime: (Date) -> String = {
         let now = Date()
-        guard abs($0.timeIntervalSince(now)) >= 1 else {
+        guard abs($0.timeIntervalSince(now)) >= 60 else {
             return L10n.t("hud.groupList.time.justNow")
         }
         return Self.relativeDateFormatter.localizedString(for: $0, relativeTo: now)

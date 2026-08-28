@@ -3,6 +3,7 @@
 //  PickyTests
 //
 
+import AppKit
 import Foundation
 import SwiftUI
 import Testing
@@ -843,6 +844,34 @@ struct PickyConversationCardViewTests {
         ))
     }
 
+    @Test func liveStepUsesBashTitleAheadOfPartialResultPreview() {
+        let tool = PickyToolActivity(
+            toolCallId: "running-bash",
+            name: "bash",
+            status: "running",
+            preview: #"{"content":[{"type":"text","text":"partial output"}]}"#,
+            argsPreview: #"{"command":"pnpm test","title":"에이전트 테스트 실행"}"#,
+            startedAt: baseDate
+        )
+        let store = PickyConversationStoreResolver.legacyStore(for: makeConversationSession(
+            status: .running,
+            tools: [tool]
+        ))
+        let projection = PickyConversationLiveStepProjection(
+            metaStore: store.metaStore,
+            todoStore: store.todoStore,
+            toolStore: store.toolStore,
+            activityStore: store.activityStore,
+            extensionUiStore: store.extensionUiStore
+        )
+
+        #expect(PickyConversationLiveStepPresentation(projection: projection) == .running(
+            stepText: nil,
+            detail: "에이전트 테스트 실행",
+            toolName: "bash"
+        ))
+    }
+
     @Test func liveStepProjectionDoesNotShowSettledPreviousToolAsCurrent() {
         let store = PickyConversationStoreResolver.legacyStore(for: makeConversationSession(
             status: .running,
@@ -940,6 +969,42 @@ struct PickyConversationCardViewTests {
         #expect(PickyConversationFocusStackHeightTier(availableHeight: 320) == .constrained)
         #expect(PickyConversationFocusStackHeightTier(availableHeight: 360) == .constrained)
         #expect(PickyConversationFocusStackHeightTier(availableHeight: 361) == .regular)
+    }
+
+    @Test func conversationCardHeightStaysFixedAcrossContentDisclosureChanges() {
+        #expect(PickyConversationCardHeightPolicy.resolvedHeight(fixedHeight: nil, maxHeight: 900) == 640)
+        #expect(PickyConversationCardHeightPolicy.resolvedHeight(fixedHeight: 480, maxHeight: 900) == 480)
+        #expect(PickyConversationCardHeightPolicy.resolvedHeight(fixedHeight: nil, maxHeight: 520) == 520)
+        #expect(PickyConversationCardHeightPolicy.resolvedHeight(fixedHeight: 900, maxHeight: 700) == 700)
+        #expect(PickyConversationCardHeightPolicy.resolvedHeight(fixedHeight: 200, maxHeight: 900) == 320)
+    }
+
+    @Test func renderedConversationCardHeightDoesNotFollowTranscriptContentHeight() {
+        let viewModel = makeViewModel()
+        let shortSession = makeConversationSession(status: .completed, messages: [
+            message("u-short", kind: .userText, text: "Question"),
+            message("a-short", kind: .agentText, text: "Answer"),
+        ])
+        let longSession = makeConversationSession(status: .completed, messages: [
+            message("u-long", kind: .userText, text: "Question"),
+            message("a-long", kind: .agentText, text: String(repeating: "Long answer line\n", count: 200)),
+        ])
+        let shortHost = NSHostingView(rootView: PickyConversationCardView(
+            viewModel: viewModel,
+            session: shortSession,
+            maxHeight: 900
+        ))
+        let longHost = NSHostingView(rootView: PickyConversationCardView(
+            viewModel: viewModel,
+            session: longSession,
+            maxHeight: 900
+        ))
+
+        shortHost.layoutSubtreeIfNeeded()
+        longHost.layoutSubtreeIfNeeded()
+
+        #expect(abs(shortHost.fittingSize.height - 640) <= 0.5)
+        #expect(abs(longHost.fittingSize.height - 640) <= 0.5)
     }
 
     @Test func headerRenameCommandBuilderTrimsAndDedupsAndRejectsEmpty() {

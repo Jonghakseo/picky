@@ -9,6 +9,21 @@
 import Foundation
 
 enum PickyToolActivityPresentation {
+    /// Uses the same compact bash label in every activity surface. Human-authored
+    /// titles win over commands, and runtime partial-result payloads never replace
+    /// the invocation summary while the command is running.
+    static func compactDetail(for tool: PickyToolActivity) -> String? {
+        let entry = PickyToolHistoryRenderer.entry(from: tool, index: 0)
+        guard case let .bash(command, title) = entry.detail else { return tool.preview }
+        return bashDisplayText(title: title, command: command) ?? tool.preview
+    }
+
+    static func bashDisplayText(title: String?, command: String?) -> String? {
+        [title, command]
+            .compactMap(firstNonemptyLine)
+            .first
+    }
+
     /// Returns the invoked skill name when a `read` call loads a registered
     /// skill manifest. A generic `SKILL.md` read outside a `skills/<name>`
     /// directory remains an ordinary read operation.
@@ -30,4 +45,18 @@ enum PickyToolActivityPresentation {
         guard skillName.range(of: #"^[A-Za-z0-9._-]+$"#, options: .regularExpression) != nil else { return nil }
         return skillName
     }
+
+    private static func firstNonemptyLine(_ value: String?) -> String? {
+        guard let value else { return nil }
+        return value
+            .split(whereSeparator: \.isNewline)
+            .first
+            .map(String.init)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfEmpty
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }

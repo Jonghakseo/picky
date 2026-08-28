@@ -144,7 +144,7 @@ struct PickyToolCallInlineRow: View {
             if let range { return "\(base) \(range)" }
             return base
         case let .bash(command, title):
-            return (title ?? command).map(firstLine)
+            return PickyToolActivityPresentation.bashDisplayText(title: title, command: command)
         case let .edit(file, changes):
             let resolved = file ?? recoveredPath()
             guard let resolved else { return changes.isEmpty ? nil : "\(changes.count) changes" }

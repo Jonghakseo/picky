@@ -27,7 +27,7 @@ final class PickyHUDPlacement: ObservableObject {
     /// Settings without rebuilding the hosting view, preserving HUD hover/open state.
     @Published var dockSizePreset: PickyHUDDockSizePreset
     /// User-resized card size for this display. Nil means the card uses the
-    /// built-in default width and automatic content-driven height.
+    /// built-in default width and stable default height.
     @Published var cardSize: PickyHUDCardSize?
     /// Transparent panel width required for the current dock side, dock size,
     /// session count, and card width. The overlay manager keeps this in sync so

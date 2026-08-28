@@ -9,6 +9,16 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+enum PickyConversationCardHeightPolicy {
+    static let minimumHeight: CGFloat = 320
+    static let defaultHeight: CGFloat = 640
+
+    static func resolvedHeight(fixedHeight: CGFloat?, maxHeight: CGFloat) -> CGFloat {
+        let effectiveMaxHeight = max(minimumHeight, maxHeight)
+        return min(max(fixedHeight ?? defaultHeight, minimumHeight), effectiveMaxHeight)
+    }
+}
+
 struct PickyConversationCardView: View {
     /// Imperative capability only; the resolver owns projection observation.
     let viewModel: any PickySessionCommands
@@ -115,12 +125,12 @@ struct PickyConversationCardView: View {
 
     var body: some View {
         let _ = PickyPerf.event("conversation_card_body")
-        let effectiveMaxHeight = max(Self.minimumHeight, maxHeight)
-        let resolvedHeight = fixedHeight.map { min(max($0, Self.minimumHeight), effectiveMaxHeight) }
-        let resolvedTerminalHeight = terminalModeHeight(resolvedHeight: resolvedHeight, maxHeight: effectiveMaxHeight)
-        let focusStackHeightTier = PickyConversationFocusStackHeightTier(
-            availableHeight: resolvedHeight ?? effectiveMaxHeight
+        let effectiveMaxHeight = max(PickyConversationCardHeightPolicy.minimumHeight, maxHeight)
+        let resolvedHeight = PickyConversationCardHeightPolicy.resolvedHeight(
+            fixedHeight: fixedHeight,
+            maxHeight: effectiveMaxHeight
         )
+        let focusStackHeightTier = PickyConversationFocusStackHeightTier(availableHeight: resolvedHeight)
 
         Group {
             if isInlineTerminalMode {
@@ -135,7 +145,7 @@ struct PickyConversationCardView: View {
                 )
             } else {
                 chatContent(
-                    fillsAvailableHeight: resolvedHeight != nil,
+                    fillsAvailableHeight: true,
                     heightTier: focusStackHeightTier
                 )
             }
@@ -143,13 +153,16 @@ struct PickyConversationCardView: View {
         .frame(width: PickyHUDDockLayout.detailContentWidth(for: width), alignment: .topLeading)
         .padding(.horizontal, PickyHUDDockLayout.detailHorizontalPadding)
         .padding(.vertical, 12)
-        .frame(width: width, height: isInlineTerminalMode ? resolvedTerminalHeight : resolvedHeight, alignment: .top)
-        // Max height comes from PickyHUDPlacement (per-panel, reactive). When the
-        // user drags the dock anchor the conversation card grows or shrinks within
-        // whatever space remains below the dock's top edge, instead of clipping at
-        // a hardcoded 1080. PickyConversationListView's ScrollView absorbs anything
-        // taller than this cap.
-        .frame(minHeight: Self.minimumHeight, maxHeight: effectiveMaxHeight, alignment: .top)
+        .frame(width: width, height: resolvedHeight, alignment: .top)
+        // Max height comes from PickyHUDPlacement (per-panel, reactive). The card
+        // keeps one stable default height while Focus Stack chapters disclose or
+        // collapse; PickyConversationListView's ScrollView absorbs content changes.
+        // User-resized heights still override the default and remain screen-clamped.
+        .frame(
+            minHeight: PickyConversationCardHeightPolicy.minimumHeight,
+            maxHeight: effectiveMaxHeight,
+            alignment: .top
+        )
         // The maxHeight frame above is a flexible frame. In the vertical HUD the
         // card lives in an HStack(alignment: .top) next to the dock rail, which
         // proposes the (taller) rail height to the card. Without this insulation
@@ -177,9 +190,6 @@ struct PickyConversationCardView: View {
             PickyRewindPickerView(session: session, commands: viewModel)
         }
     }
-
-    private static let minimumHeight: CGFloat = 320
-    private static let defaultTerminalHeight: CGFloat = 640
 
     private var isInlineTerminalMode: Bool {
         session.piSessionFilePath != nil && viewModel.isInlineTerminalMode(sessionID: session.id)
@@ -328,11 +338,6 @@ struct PickyConversationCardView: View {
 
     private func requestNavigation(_ target: PickyConversationNavigationTarget) {
         navigationRequest.request(target)
-    }
-
-    private func terminalModeHeight(resolvedHeight: CGFloat?, maxHeight: CGFloat) -> CGFloat? {
-        guard isInlineTerminalMode else { return resolvedHeight }
-        return resolvedHeight ?? min(max(Self.defaultTerminalHeight, Self.minimumHeight), maxHeight)
     }
 
     private func handleFileDrop(_ providers: [NSItemProvider]) -> Bool {

@@ -211,7 +211,7 @@ enum PickyConversationLiveStepPresentation: Equatable {
         switch projection.status {
         case .running:
             let detail = projection.todoPresentation?.activeText
-                ?? projection.activeTool?.preview
+                ?? projection.activeTool.flatMap(PickyToolActivityPresentation.compactDetail)
                 ?? Self.activityDetail(for: projection.activitySummary)
             self = .running(
                 stepText: projection.todoPresentation?.countText,

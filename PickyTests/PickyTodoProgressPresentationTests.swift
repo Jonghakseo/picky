@@ -96,7 +96,7 @@ struct PickyTodoProgressPresentationTests {
         #expect(!PickyTodoProgressExpansionPolicy.isExpanded(savedValue: false, isComplete: false))
     }
 
-    @Test func planDrawerRequiresRunningIncompleteTodoAndTheSharedExpandedState() throws {
+    @Test func planDrawerRequiresOnlyTodoDataAndTheSharedExpandedState() throws {
         let incomplete = try #require(PickyTodoProgressPresentation(state: PickyTodoState(
             tasks: [PickyTodoTask(id: "todo", content: "Implement", status: .inProgress)],
             updatedAt: Date(timeIntervalSince1970: 1_800_000_000)
@@ -107,17 +107,18 @@ struct PickyTodoProgressPresentationTests {
         )))
 
         #expect(PickyConversationPlanDrawerPolicy.canOpen(status: .running, todo: incomplete))
-        #expect(!PickyConversationPlanDrawerPolicy.canOpen(status: .running, todo: complete))
-        #expect(!PickyConversationPlanDrawerPolicy.canOpen(status: .completed, todo: incomplete))
+        #expect(PickyConversationPlanDrawerPolicy.canOpen(status: .running, todo: complete))
+        #expect(PickyConversationPlanDrawerPolicy.canOpen(status: .completed, todo: incomplete))
         #expect(PickyConversationPlanDrawerPolicy.shouldRenderDrawer(status: .running, todo: incomplete, isExpanded: true))
         #expect(!PickyConversationPlanDrawerPolicy.shouldRenderDrawer(status: .running, todo: incomplete, isExpanded: false))
-        #expect(!PickyConversationPlanDrawerPolicy.shouldRenderDrawer(status: .waiting_for_input, todo: incomplete, isExpanded: true))
-        #expect(!PickyConversationPlanDrawerPolicy.shouldRenderDrawer(status: .running, todo: complete, isExpanded: true))
-        #expect(PickyConversationPlanDrawerPolicy.shouldCollapse(status: .completed, todo: incomplete))
-        #expect(PickyConversationPlanDrawerPolicy.shouldCollapse(status: .running, todo: complete))
+        #expect(PickyConversationPlanDrawerPolicy.shouldRenderDrawer(status: .waiting_for_input, todo: incomplete, isExpanded: true))
+        #expect(PickyConversationPlanDrawerPolicy.shouldRenderDrawer(status: .completed, todo: complete, isExpanded: true))
+        #expect(!PickyConversationPlanDrawerPolicy.shouldCollapse(status: .completed, todo: incomplete))
+        #expect(!PickyConversationPlanDrawerPolicy.shouldCollapse(status: .running, todo: complete))
+        #expect(PickyConversationPlanDrawerPolicy.shouldCollapse(status: .running, todo: nil))
     }
 
-    @Test func runningIncompletePlanExposesProgressClusterAsDisclosureControl() throws {
+    @Test func anyExistingPlanExposesProgressClusterAsDisclosureControl() throws {
         let incomplete = try #require(PickyTodoProgressPresentation(state: PickyTodoState(
             tasks: [PickyTodoTask(id: "todo", content: "Implement", status: .inProgress)],
             updatedAt: Date(timeIntervalSince1970: 1_800_000_000)
@@ -140,7 +141,28 @@ struct PickyTodoProgressPresentationTests {
             status: .completed,
             todo: incomplete,
             isExpanded: false
-        ) == nil)
+        ) != nil)
+        #expect(PickyConversationPlanProgressDisclosurePresentation(
+            status: .failed,
+            todo: incomplete,
+            isExpanded: false
+        ) != nil)
+    }
+
+    @Test func completedSessionStillPresentsItsTodoBar() throws {
+        let complete = try #require(PickyTodoProgressPresentation(state: PickyTodoState(
+            tasks: [PickyTodoTask(id: "todo", content: "Implement", status: .completed)],
+            updatedAt: Date(timeIntervalSince1970: 1_800_000_001)
+        )))
+
+        #expect(PickyConversationLiveStepPresentation(
+            status: .completed,
+            todoPresentation: complete
+        ) == .todo(
+            stepText: complete.countText,
+            detail: complete.activeText,
+            status: .completed
+        ))
     }
 
     @Test func completionCollapsesOnlyOnTheTransitionIntoDone() {

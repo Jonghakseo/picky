@@ -310,8 +310,8 @@ struct PickyConversationCardView: View {
         isTodoExpanded = false
         viewModel.setTodoProgressExpanded(false, sessionID: plan.sessionID)
         guard wasExpanded else { return }
-        // Auto-collapse means the Plan opener is no longer actionable (Todo
-        // completed or the session settled), so move focus to the stable editor.
+        // When Todo data is cleared, the Plan opener is no longer actionable,
+        // so move focus to the stable editor.
         composerFocusRequestID &+= 1
     }
 

@@ -73,10 +73,12 @@ struct PickyTurnCardViewTests {
         let runningGroups = PickyTurnGrouper.groups(from: messages, sessionStatus: .running)
         #expect(runningGroups.map(\.isCurrent) == [false, true])
         #expect(runningGroups.map(\.isLatest) == [false, true])
+        #expect(runningGroups.map(\.isRecent) == [true, true])
 
         let completedGroups = PickyTurnGrouper.groups(from: messages, sessionStatus: .completed)
         #expect(completedGroups.map(\.isCurrent) == [false, false])
         #expect(completedGroups.map(\.isLatest) == [false, true])
+        #expect(completedGroups.map(\.isRecent) == [true, true])
 
         let failedGroups = PickyTurnGrouper.groups(from: messages, sessionStatus: .failed)
         #expect(failedGroups.map(\.isCurrent) == [false, false])
@@ -94,7 +96,7 @@ struct PickyTurnCardViewTests {
 
     // MARK: - Default expansion policy
 
-    @Test func latestTurnIsAlwaysExpandedAndHasNoCollapseState() {
+    @Test func twoMostRecentTurnsStayExpandedAndHaveNoCollapseState() {
         let latestGroup = PickyTurnGroup(
             id: "u1",
             userMessage: msg("u1", kind: .userText, secondsOffset: 0),
@@ -102,20 +104,44 @@ struct PickyTurnCardViewTests {
             isCurrent: false,
             isLatest: true
         )
-        let pastGroup = PickyTurnGroup(
+        let recentGroup = PickyTurnGroup(
             id: "u0",
             userMessage: msg("u0", kind: .userText, secondsOffset: 0),
             bodyMessages: [msg("a0", kind: .agentText, secondsOffset: 1)],
+            isCurrent: false,
+            isRecent: true
+        )
+        let pastGroup = PickyTurnGroup(
+            id: "u-1",
+            userMessage: msg("u-1", kind: .userText, secondsOffset: 0),
+            bodyMessages: [msg("a-1", kind: .agentText, secondsOffset: 1)],
             isCurrent: false
         )
 
         let latestCard = PickyTurnCardView(group: latestGroup) { _ in EmptyMessageContent() }
+        let recentCard = PickyTurnCardView(group: recentGroup) { _ in EmptyMessageContent() }
         let pastCard = PickyTurnCardView(group: pastGroup) { _ in EmptyMessageContent() }
 
         #expect(latestCard.isExpanded)
-        #expect(!PickyTurnChapterPolicy.canCollapse(isLatest: latestGroup.isLatest))
+        #expect(recentCard.isExpanded)
+        #expect(!PickyTurnChapterPolicy.canCollapse(isRecent: latestGroup.isRecent))
+        #expect(!PickyTurnChapterPolicy.canCollapse(isRecent: recentGroup.isRecent))
         #expect(!pastCard.isExpanded)
-        #expect(PickyTurnChapterPolicy.canCollapse(isLatest: pastGroup.isLatest))
+        #expect(PickyTurnChapterPolicy.canCollapse(isRecent: pastGroup.isRecent))
+    }
+
+    @Test func grouperMarksOnlyTheLastTwoTurnsAsRecent() {
+        let messages: [PickySessionMessage] = (1...4).flatMap { index in
+            [
+                msg("u\(index)", kind: .userText, secondsOffset: TimeInterval(index * 2)),
+                msg("a\(index)", kind: .agentText, secondsOffset: TimeInterval(index * 2 + 1)),
+            ]
+        }
+
+        let groups = PickyTurnGrouper.groups(from: messages, sessionStatus: .completed)
+
+        #expect(groups.map(\.isRecent) == [false, false, true, true])
+        #expect(groups.map(\.isLatest) == [false, false, false, true])
     }
 
     @Test func chapterAccessibilityDistinguishesLatestCurrentAndPreviousTurns() {

@@ -65,8 +65,8 @@ struct PickyConversationPlanProjection: Equatable {
 }
 
 enum PickyConversationPlanDrawerPolicy {
-    static func canOpen(status: PickySessionStatus, todo: PickyTodoProgressPresentation?) -> Bool {
-        status == .running && todo?.isComplete == false
+    static func canOpen(status _: PickySessionStatus, todo: PickyTodoProgressPresentation?) -> Bool {
+        todo != nil
     }
 
     static func shouldCollapse(status: PickySessionStatus, todo: PickyTodoProgressPresentation?) -> Bool {
@@ -206,23 +206,54 @@ struct PickyConversationLiveStepProjection: Equatable {
 enum PickyConversationLiveStepPresentation: Equatable {
     case running(stepText: String?, detail: String, toolName: String?)
     case waitingForInput(requestID: String)
+    case todo(stepText: String, detail: String, status: PickyConversationStatusPresentation)
 
     init?(projection: PickyConversationLiveStepProjection) {
-        switch projection.status {
+        self.init(
+            status: projection.status,
+            todoPresentation: projection.todoPresentation,
+            activeTool: projection.activeTool,
+            activitySummary: projection.activitySummary,
+            pendingQuestionRequestID: projection.pendingQuestionRequestID
+        )
+    }
+
+    init?(
+        status: PickySessionStatus,
+        todoPresentation: PickyTodoProgressPresentation?,
+        activeTool: PickyToolActivity? = nil,
+        activitySummary: PickyActivitySummary = .zero,
+        pendingQuestionRequestID: String? = nil
+    ) {
+        switch status {
         case .running:
-            let detail = projection.todoPresentation?.activeText
-                ?? projection.activeTool.flatMap(PickyToolActivityPresentation.compactDetail)
-                ?? Self.activityDetail(for: projection.activitySummary)
+            let detail = todoPresentation?.activeText
+                ?? activeTool.flatMap(PickyToolActivityPresentation.compactDetail)
+                ?? Self.activityDetail(for: activitySummary)
             self = .running(
-                stepText: projection.todoPresentation?.countText,
+                stepText: todoPresentation?.countText,
                 detail: detail,
-                toolName: projection.activeTool?.name
+                toolName: activeTool?.name
             )
         case .waiting_for_input:
-            guard let requestID = projection.pendingQuestionRequestID else { return nil }
-            self = .waitingForInput(requestID: requestID)
+            if let pendingQuestionRequestID {
+                self = .waitingForInput(requestID: pendingQuestionRequestID)
+            } else if let todoPresentation {
+                self = .todo(
+                    stepText: todoPresentation.countText,
+                    detail: todoPresentation.activeText,
+                    status: PickyConversationStatusPresentation(status: status)
+                )
+            } else {
+                return nil
+            }
         case .queued, .blocked, .completed, .failed, .cancelled:
-            return nil
+            guard let todoPresentation else { return nil }
+            self = .todo(
+                stepText: todoPresentation.countText,
+                detail: todoPresentation.activeText,
+                status: PickyConversationStatusPresentation(status: status)
+            )
         }
     }
 
@@ -240,12 +271,13 @@ enum PickyConversationLiveStepPresentation: Equatable {
         switch self {
         case .running: return L10n.t("hud.liveStep.currentActivity")
         case .waitingForInput: return L10n.t("hud.liveStep.inputNeeded")
+        case .todo: return L10n.t("hud.todo.title")
         }
     }
 
     var iconName: String {
         switch self {
-        case .running: return "checklist"
+        case .running, .todo: return "checklist"
         case .waitingForInput: return "exclamationmark.bubble"
         }
     }
@@ -254,6 +286,7 @@ enum PickyConversationLiveStepPresentation: Equatable {
         switch self {
         case .running: return .info
         case .waitingForInput: return .warning
+        case let .todo(_, _, status): return status.tone
         }
     }
 
@@ -265,6 +298,8 @@ enum PickyConversationLiveStepPresentation: Equatable {
                 .joined(separator: ", ")
         case .waitingForInput:
             return L10n.t("hud.liveStep.waitingForQuestion")
+        case let .todo(stepText, detail, status):
+            return [status.label, stepText, detail].joined(separator: ", ")
         }
     }
 }
@@ -318,6 +353,17 @@ struct PickyConversationLiveStepView: View {
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel(presentation.label)
                     .accessibilityValue(presentation.accessibilityValue(projection: projection, at: .now))
+            case let .todo(stepText, detail, _):
+                runningContent(
+                    widthTier: widthTier,
+                    stepText: stepText,
+                    detail: detail,
+                    toolName: nil,
+                    date: .now
+                )
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(presentation.label)
+                .accessibilityValue(presentation.accessibilityValue(projection: projection, at: .now))
             }
         }
         .padding(.horizontal, DS.Spacing.sm)
@@ -448,6 +494,9 @@ struct PickyConversationLiveStepView: View {
 
     private func waitingContent(requestID: String) -> some View {
         HStack(spacing: DS.Spacing.xs) {
+            if let todoPresentation = projection.todoPresentation {
+                planProgressControl(stepText: todoPresentation.countText)
+            }
             Image(systemName: presentation.iconName).font(PickyHUDTypography.statusSemibold).foregroundStyle(presentation.tone.textColor).accessibilityHidden(true)
             Text(presentation.label).font(PickyHUDTypography.statusSemibold).foregroundStyle(presentation.tone.textColor)
             Button(L10n.t("hud.liveStep.goToQuestion")) { onGoToQuestion(requestID) }

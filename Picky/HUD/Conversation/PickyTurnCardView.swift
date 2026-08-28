@@ -7,8 +7,8 @@
 //  A "turn" is a slice of `session.messages` starting at a `userText`
 //  or `commandReceipt` message and continuing until the next boundary (or end of list).
 //  Each turn renders as a card whose body is the agent activity in
-//  response to that user input. The latest turn always stays expanded and
-//  has no collapse state. Older turns default to collapsed and retain their
+//  response to that user input. The two most recent turns always stay expanded
+//  and have no collapse state. Older turns default to collapsed and retain their
 //  manual expansion controls.
 //
 
@@ -38,9 +38,11 @@ struct PickyTurnGroup: Identifiable, Equatable {
     /// The current turn is the latest group while the session is still
     /// active (running / queued / waiting_for_input).
     let isCurrent: Bool
-    /// The final group in the journal, regardless of session status. Latest
-    /// content is always fully visible and deliberately has no collapse state.
+    /// The final group in the journal, regardless of session status.
     let isLatest: Bool
+    /// One of the two most recent groups. Recent content stays fully visible and
+    /// deliberately has no collapse state.
+    let isRecent: Bool
     /// Live cumulative activity counts for the in-progress turn. agentd
     /// increments this on every tool call but only emits an agentActivity
     /// *message* once the turn commits, so the active turn must read this
@@ -55,6 +57,7 @@ struct PickyTurnGroup: Identifiable, Equatable {
         trailingMessages: [PickySessionMessage] = [],
         isCurrent: Bool,
         isLatest: Bool = false,
+        isRecent: Bool = false,
         liveActivitySummary: PickyActivitySummary? = nil
     ) {
         self.id = id
@@ -63,6 +66,7 @@ struct PickyTurnGroup: Identifiable, Equatable {
         self.trailingMessages = trailingMessages
         self.isCurrent = isCurrent
         self.isLatest = isLatest
+        self.isRecent = isRecent || isLatest
         self.liveActivitySummary = liveActivitySummary
     }
 
@@ -427,26 +431,28 @@ enum PickyTurnGrouper {
 
         guard !output.isEmpty else { return [] }
 
-        let last = output.removeLast()
-        let isCurrent = activeStatuses.contains(sessionStatus)
-        output.append(
-            PickyTurnGroup(
-                id: last.id,
-                userMessage: last.userMessage,
-                bodyMessages: last.bodyMessages,
-                trailingMessages: last.trailingMessages,
-                isCurrent: isCurrent,
-                isLatest: true,
-                liveActivitySummary: isCurrent ? liveActivitySummary : nil
+        let latestIndex = output.count - 1
+        let recentStartIndex = max(0, output.count - 2)
+        let latestIsCurrent = activeStatuses.contains(sessionStatus)
+        return output.enumerated().map { index, group in
+            let isLatest = index == latestIndex
+            return PickyTurnGroup(
+                id: group.id,
+                userMessage: group.userMessage,
+                bodyMessages: group.bodyMessages,
+                trailingMessages: group.trailingMessages,
+                isCurrent: isLatest && latestIsCurrent,
+                isLatest: isLatest,
+                isRecent: index >= recentStartIndex,
+                liveActivitySummary: isLatest && latestIsCurrent ? liveActivitySummary : nil
             )
-        )
-        return output
+        }
     }
 }
 
-/// Expansion policy for non-latest turn cards. Pulled out of the view so the
+/// Expansion policy for older turn cards. Pulled out of the view so the
 /// race-window latching (see `hasBeenSeenComplete`) is directly unit-testable.
-/// `PickyTurnChapterPolicy` bypasses it while a group is latest.
+/// `PickyTurnChapterPolicy` bypasses it for the two most recent groups.
 ///
 /// Lifecycle:
 ///   • `manualExpansion` wins when set — user toggles override the default.
@@ -479,16 +485,16 @@ struct PickyTurnExpansionPolicy: Equatable {
 }
 
 enum PickyTurnChapterPolicy {
-    static func canCollapse(isLatest: Bool) -> Bool {
-        !isLatest
+    static func canCollapse(isRecent: Bool) -> Bool {
+        !isRecent
     }
 
     static func isExpanded(
-        isLatest: Bool,
+        isRecent: Bool,
         isCurrent: Bool,
         expansion: PickyTurnExpansionPolicy
     ) -> Bool {
-        isLatest || expansion.isExpanded(isCurrent: isCurrent)
+        isRecent || expansion.isExpanded(isCurrent: isCurrent)
     }
 }
 
@@ -513,9 +519,9 @@ enum PickyFocusStackChapterAccessibilityPresentation {
     }
 }
 
-/// Focus Stack chapter. Prior turns collapse into a flat summary; expanded
+/// Focus Stack chapter. Older turns collapse into a flat summary; expanded
 /// chapters render each original message exactly once through the caller's
-/// stable leaf closure. The latest turn is permanently expanded.
+/// stable leaf closure. The two most recent turns are permanently expanded.
 struct PickyTurnCardView<MessageContent: View>: View {
     let group: PickyTurnGroup
     /// The tool currently running in this turn, used to render a live
@@ -529,11 +535,11 @@ struct PickyTurnCardView<MessageContent: View>: View {
 
     @State private var expansion = PickyTurnExpansionPolicy()
 
-    /// Latest is a permanent, non-collapsible reading surface. Previous turns
-    /// retain the manual expansion and race-latch policy.
+    /// The two most recent turns are permanent, non-collapsible reading
+    /// surfaces. Older turns retain the manual expansion and race-latch policy.
     var isExpanded: Bool {
         PickyTurnChapterPolicy.isExpanded(
-            isLatest: group.isLatest,
+            isRecent: group.isRecent,
             isCurrent: group.isCurrent,
             expansion: expansion
         )
@@ -568,6 +574,8 @@ struct PickyTurnCardView<MessageContent: View>: View {
         VStack(alignment: .leading, spacing: DS.Spacing.space2) {
             if group.isLatest {
                 latestHeader
+            } else if group.isRecent {
+                recentHeader
             } else {
                 expandedHeader
             }
@@ -631,6 +639,26 @@ struct PickyTurnCardView<MessageContent: View>: View {
         .accessibilityValue(PickyFocusStackChapterAccessibilityPresentation.value(
             isExpanded: true,
             detail: summary.displayText
+        ))
+    }
+
+    private var recentHeader: some View {
+        HStack(spacing: DS.Spacing.space1) {
+            Text(group.summary.displayText)
+                .font(PickyHUDTypography.metaSemibold)
+                .foregroundColor(DS.Colors.textTertiary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, DS.Spacing.space1)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(PickyFocusStackChapterAccessibilityPresentation.label(
+            isCurrent: group.isCurrent,
+            isLatest: false
+        ))
+        .accessibilityValue(PickyFocusStackChapterAccessibilityPresentation.value(
+            isExpanded: true,
+            detail: group.summary.displayText
         ))
     }
 

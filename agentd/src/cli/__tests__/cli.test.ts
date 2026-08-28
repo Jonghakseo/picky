@@ -28,6 +28,58 @@ function sessionFixture(overrides: Partial<PickyAgentSession>): Record<string, u
     ...overrides,
   } as unknown as Record<string, unknown>;
 }
+
+const FIXTURE_CREATED_AT = "2026-08-28T00:00:00.000Z";
+const FIXTURE_UPDATED_AT = "2026-08-28T01:00:00.000Z";
+
+function sensitiveSessionFixture(): Record<string, unknown> {
+  return sessionFixture({
+    id: "visible",
+    title: "Visible Pickle",
+    status: "completed",
+    cwd: "/workspace",
+    createdAt: FIXTURE_CREATED_AT,
+    updatedAt: FIXTURE_UPDATED_AT,
+    piSessionFilePath: "/private/SENSITIVE_PI_SESSION.jsonl",
+    lastSummary: "SENSITIVE_SUMMARY",
+    thinkingPreview: "SENSITIVE_THINKING",
+    finalAnswer: "SENSITIVE_FINAL_ANSWER",
+    logs: ["SENSITIVE_LOG"],
+    tools: [{ toolCallId: "tool-1", name: "bash", status: "succeeded", resultPreview: "SENSITIVE_TOOL_RESULT" }],
+    todoState: {
+      tasks: [{ id: "todo-1", content: "SENSITIVE_TODO", status: "in_progress" }],
+      updatedAt: FIXTURE_UPDATED_AT,
+    },
+    subagentRuns: [{ runId: 1, agent: "worker", task: "SENSITIVE_SUBAGENT_TASK", status: "running" }],
+    artifacts: [
+      {
+        id: "link-github-123",
+        kind: "github",
+        title: "#5101",
+        path: "/private/SENSITIVE_ARTIFACT_PATH.md",
+        url: "https://github.com/example/repo/pull/5101",
+        updatedAt: FIXTURE_UPDATED_AT,
+      },
+      { id: "report-1", kind: "report", title: "Report", updatedAt: FIXTURE_UPDATED_AT },
+    ],
+    changedFiles: [{ path: "SENSITIVE_CHANGED_FILE.ts", status: "M" }],
+    messages: [{ id: "message-1", kind: "user_text", createdAt: FIXTURE_CREATED_AT, text: "SENSITIVE_MESSAGE" }],
+    messageJournalAvailable: true,
+    queuedSteers: [{ id: "steer-1", text: "SENSITIVE_STEER", enqueuedAt: FIXTURE_CREATED_AT }],
+    queuedFollowUps: [{ id: "followup-1", text: "SENSITIVE_FOLLOW_UP", enqueuedAt: FIXTURE_CREATED_AT }],
+    steeringMode: "all",
+    followUpMode: "all",
+    contextUsage: { tokens: 123, contextWindow: 1_000, percent: 12.3 },
+    currentAssistantRun: { model: "SENSITIVE_MODEL", thinkingLevel: "high" },
+    pendingExtensionUiRequest: {
+      id: "request-1",
+      sessionId: "visible",
+      method: "input",
+      prompt: "SENSITIVE_PENDING_INPUT",
+      createdAt: FIXTURE_CREATED_AT,
+    },
+  });
+}
 import { startMockAgentd, type MockAgentd } from "./mock-agentd.js";
 
 const execFileAsync = promisify(execFile);
@@ -219,10 +271,12 @@ describe("picky cli", () => {
     expect(result.stdout).toContain("p-2\tcompleted\tSecond");
   });
 
-  it("pickle-list --json emits the filtered snapshot with dock-group metadata", async () => {
-    server.onCommand("listPickles", (command, send) => {
-      void command;
-      send({ type: "sessionSnapshot", sessions: [sessionFixture({ id: "visible" }), sessionFixture({ id: "archived", archived: true })] });
+  it("pickle-list --json emits only the stable compact allowlist", async () => {
+    server.onCommand("listPickles", (_, send) => {
+      send({
+        type: "sessionSnapshot",
+        sessions: [sensitiveSessionFixture(), sessionFixture({ id: "archived", archived: true })],
+      });
     });
     server.onCommand("listDockGroups", (_, send) => {
       send({
@@ -230,18 +284,79 @@ describe("picky cli", () => {
         groups: [{ id: "group-json", name: "JSON group", color: 4, memberSessionIds: ["visible"], collapsed: true }],
       });
     });
+
     const result = await runCli(["pickle-list", "--json"]);
+
     expect(result.code).toBe(0);
-    const parsed = JSON.parse(result.stdout);
-    expect(parsed).toMatchObject({
-      type: "sessionSnapshot",
+    expect(JSON.parse(result.stdout)).toEqual({
+      type: "pickleList",
+      schemaVersion: 1,
       sessions: [{
         id: "visible",
+        title: "Visible Pickle",
+        status: "completed",
+        cwd: "/workspace",
+        createdAt: FIXTURE_CREATED_AT,
+        updatedAt: FIXTURE_UPDATED_AT,
+        archived: false,
+        artifacts: [
+          {
+            id: "link-github-123",
+            kind: "github",
+            title: "#5101",
+            url: "https://github.com/example/repo/pull/5101",
+            updatedAt: FIXTURE_UPDATED_AT,
+          },
+          { id: "report-1", kind: "report", title: "Report", updatedAt: FIXTURE_UPDATED_AT },
+        ],
         dockGroup: { id: "group-json", name: "JSON group", color: 4, collapsed: true },
       }],
     });
+    expect(result.stdout).not.toContain("SENSITIVE_");
+    expect(result.stdout).not.toContain("memberSessionIds");
+  });
+
+  it("pickle-list --raw-json preserves the legacy filtered snapshot", async () => {
+    server.onCommand("listPickles", (_, send) => {
+      send({
+        type: "sessionSnapshot",
+        sessions: [sensitiveSessionFixture(), sessionFixture({ id: "archived", archived: true })],
+      });
+    });
+    server.onCommand("listDockGroups", (_, send) => {
+      send({
+        type: "dockGroupsSnapshot",
+        groups: [{ id: "group-raw", name: "Raw group", color: 5, memberSessionIds: ["visible"], collapsed: false }],
+      });
+    });
+
+    const result = await runCli(["pickle-list", "--raw-json"]);
+
+    expect(result.code).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.type).toBe("sessionSnapshot");
     expect(parsed.sessions).toHaveLength(1);
+    expect(parsed.sessions[0]).toMatchObject({
+      id: "visible",
+      piSessionFilePath: "/private/SENSITIVE_PI_SESSION.jsonl",
+      finalAnswer: "SENSITIVE_FINAL_ANSWER",
+      logs: ["SENSITIVE_LOG"],
+      messages: [expect.objectContaining({ text: "SENSITIVE_MESSAGE" })],
+      artifacts: [expect.objectContaining({ path: "/private/SENSITIVE_ARTIFACT_PATH.md" }), expect.any(Object)],
+      dockGroup: { id: "group-raw", name: "Raw group", color: 5, collapsed: false },
+    });
     expect(parsed.sessions[0].dockGroup).not.toHaveProperty("memberSessionIds");
+  });
+
+  it("pickle-list --json returns an exact empty compact envelope", async () => {
+    server.onCommand("listPickles", (_, send) => {
+      send({ type: "sessionSnapshot", sessions: [] });
+    });
+
+    const result = await runCli(["pickle-list", "--json"]);
+
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({ type: "pickleList", schemaVersion: 1, sessions: [] });
   });
 
   it("pickle-list --archived prints only archived sessions with archive metadata", async () => {
@@ -278,10 +393,36 @@ describe("picky cli", () => {
     expect(result.stdout).not.toContain("p-2\tcompleted\tRelease notes");
   });
 
-  it("pickle-list rejects ambiguous archive filters", async () => {
-    const result = await runCli(["pickle-list", "--archived", "--include-archived"]);
-    expect(result.code).toBe(64);
-    expect(result.stderr).toContain("--archived cannot be combined with --include-archived");
+  it("pickle-list filters hidden summary fields before compact projection and applies limit last", async () => {
+    server.onCommand("listPickles", (_, send) => {
+      send({
+        type: "sessionSnapshot",
+        sessions: [
+          sessionFixture({ id: "unmatched", title: "No match" }),
+          sessionFixture({ id: "summary-match", title: "First match", lastSummary: "hidden needle summary" }),
+          sessionFixture({ id: "answer-match", title: "Second match", finalAnswer: "hidden needle answer" }),
+        ],
+      });
+    });
+
+    const result = await runCli(["pickle-list", "--json", "--query", "needle", "--limit", "1"]);
+
+    expect(result.code).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.sessions).toHaveLength(1);
+    expect(parsed.sessions[0].id).toBe("summary-match");
+    expect(parsed.sessions[0]).not.toHaveProperty("lastSummary");
+    expect(parsed.sessions[0]).not.toHaveProperty("finalAnswer");
+  });
+
+  it("pickle-list rejects conflicting JSON and archive modes", async () => {
+    const archiveConflict = await runCli(["pickle-list", "--archived", "--include-archived"]);
+    expect(archiveConflict.code).toBe(64);
+    expect(archiveConflict.stderr).toContain("--archived cannot be combined with --include-archived");
+
+    const jsonConflict = await runCli(["pickle-list", "--json", "--raw-json"]);
+    expect(jsonConflict.code).toBe(64);
+    expect(jsonConflict.stderr).toContain("--json cannot be combined with --raw-json");
   });
 
   it("main-agent pickle-archive sends a caller-tagged setSessionArchived(true) and waits for the authoritative event", async () => {
@@ -483,6 +624,10 @@ describe("picky cli", () => {
     const json = await runCli(["pickle-list", "--json", "--from-main"]);
     expect(json.code).toBe(64);
     expect(json.stderr).toContain("--json is not available");
+
+    const rawJson = await runCli(["pickle-list", "--raw-json", "--from-main"]);
+    expect(rawJson.code).toBe(64);
+    expect(rawJson.stderr).toContain("--raw-json is not available");
   });
 
   it("main-agent CLI rejects recursive submit, PTT, wait, and empty Pickle creation", async () => {

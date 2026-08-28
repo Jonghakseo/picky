@@ -235,7 +235,7 @@ describe("picky CLI against a real agentd server", () => {
     });
     await waitUntil(() => projectionBackedSessions.some((session) => session.id === created.id));
 
-    const result = await runCli(["pickle-list", "--json"]);
+    const result = await runCli(["pickle-list", "--raw-json"]);
 
     expect(result.code).toBe(0);
     const snapshot = JSON.parse(result.stdout) as { sessions: Array<{ id: string; messages: unknown[]; messageJournalAvailable?: boolean }> };

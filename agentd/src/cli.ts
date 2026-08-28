@@ -10,6 +10,48 @@ interface SharedOptions {
   json?: boolean;
 }
 
+interface PickleListOptions extends SharedOptions {
+  rawJson?: boolean;
+  includeArchived?: boolean;
+  archived?: boolean;
+  query?: string;
+  limit?: string;
+}
+
+interface CompactPickleListDockGroup {
+  id: string;
+  name: string;
+  color: number;
+  collapsed: boolean;
+}
+
+interface CompactPickleListArtifact {
+  id: string;
+  kind: string;
+  title: string;
+  url?: string;
+  updatedAt: string;
+}
+
+interface CompactPickleListSession {
+  id: string;
+  title: string;
+  status: PickyAgentSession["status"];
+  cwd?: string;
+  createdAt: string;
+  updatedAt: string;
+  archived: boolean;
+  archivedAt?: string;
+  artifacts: CompactPickleListArtifact[];
+  dockGroup?: CompactPickleListDockGroup;
+}
+
+interface CompactPickleListEnvelope {
+  type: "pickleList";
+  schemaVersion: 1;
+  sessions: CompactPickleListSession[];
+}
+
 interface PickleCreateOptions extends SharedOptions {
   instructions?: string;
   empty?: boolean;
@@ -197,7 +239,8 @@ async function createNamedPickle(
 program
   .command("pickle-list")
   .description("List non-archived Pickle sessions shown in the Picky dock.")
-  .option("--json", "Emit the filtered session snapshot JSON with dock-group metadata")
+  .option("--json", "Emit stable compact JSON for automation (safe allowlisted session, artifact, and dock-group fields)")
+  .option("--raw-json", "Emit the legacy filtered session snapshot; may contain sensitive session details")
   .option("--include-archived", "Include archived Pickle sessions hidden from the Picky dock")
   .option("--archived", "List only archived Pickle sessions hidden from the Picky dock")
   .option("--query <text>", "Filter the selected Pickle set by id, title, cwd, status, summary, or final answer")
@@ -205,26 +248,39 @@ program
   .addHelpText("after", `
 Examples:
   $ picky pickle-list
-  $ picky pickle-list --include-archived
-  $ picky pickle-list --archived
+  $ picky pickle-list --json
+  $ picky pickle-list --include-archived --json
   $ picky pickle-list --archived --query "sentry"
+  $ picky pickle-list --raw-json  # legacy snapshot; may expose sensitive session details
 `)
-  .action(async (options: SharedOptions & { includeArchived?: boolean; archived?: boolean; query?: string; limit?: string }) => {
+  .action(async (options: PickleListOptions) => {
     await runWithErrorHandling(async () => {
       if (options.archived && options.includeArchived) {
         fail("--archived cannot be combined with --include-archived", 64);
       }
+      if (options.json && options.rawJson) fail("--json cannot be combined with --raw-json", 64);
       if (isMainAgentCaller && options.json) fail("--json is not available from the Picky main agent; use --query and --limit", 64);
+      if (isMainAgentCaller && options.rawJson) fail("--raw-json is not available from the Picky main agent; use --query and --limit", 64);
       const connection = await loadCliConnection();
       const snapshot = await fetchSessionSnapshot(connection);
       const dockGroups = await fetchDockGroups(connection);
       const groupBySessionId = indexDockGroupsBySessionId(dockGroups);
       const sessions = filterSessionsForList(snapshot.sessions, options).slice(0, parseListLimit(options.limit));
-      const visibleSnapshot = {
-        ...snapshot,
-        sessions: sessions.map((session) => sessionWithDockGroup(session, groupBySessionId.get(session.id))),
-      };
+      const enrichedSessions = sessions.map((session) => sessionWithDockGroup(session, groupBySessionId.get(session.id)));
       if (options.json) {
+        const compactList: CompactPickleListEnvelope = {
+          type: "pickleList",
+          schemaVersion: 1,
+          sessions: enrichedSessions.map(compactSessionForList),
+        };
+        process.stdout.write(`${JSON.stringify(compactList, null, 2)}\n`);
+        return;
+      }
+      if (options.rawJson) {
+        const visibleSnapshot = {
+          ...snapshot,
+          sessions: enrichedSessions,
+        };
         process.stdout.write(`${JSON.stringify(visibleSnapshot, null, 2)}\n`);
         return;
       }
@@ -628,12 +684,48 @@ function indexDockGroupsBySessionId(groups: DockGroup[]): Map<string, DockGroup>
   return result;
 }
 
-function sessionWithDockGroup(session: PickyAgentSession, group: DockGroup | undefined): PickyAgentSession & { dockGroup?: Omit<DockGroup, "memberSessionIds"> } {
+type SessionWithDockGroup = PickyAgentSession & { dockGroup?: CompactPickleListDockGroup };
+
+function sessionWithDockGroup(session: PickyAgentSession, group: DockGroup | undefined): SessionWithDockGroup {
   if (!group) return session;
   return {
     ...session,
     dockGroup: { id: group.id, name: group.name, color: group.color, collapsed: group.collapsed },
   };
+}
+
+function compactSessionForList(session: SessionWithDockGroup): CompactPickleListSession {
+  const compactSession: CompactPickleListSession = {
+    id: session.id,
+    title: session.title,
+    status: session.status,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    archived: session.archived === true,
+    artifacts: session.artifacts.map(compactArtifactForList),
+  };
+  if (session.cwd !== undefined) compactSession.cwd = session.cwd;
+  if (session.archivedAt !== undefined) compactSession.archivedAt = session.archivedAt;
+  if (session.dockGroup !== undefined) {
+    compactSession.dockGroup = {
+      id: session.dockGroup.id,
+      name: session.dockGroup.name,
+      color: session.dockGroup.color,
+      collapsed: session.dockGroup.collapsed,
+    };
+  }
+  return compactSession;
+}
+
+function compactArtifactForList(artifact: PickyAgentSession["artifacts"][number]): CompactPickleListArtifact {
+  const compactArtifact: CompactPickleListArtifact = {
+    id: artifact.id,
+    kind: artifact.kind,
+    title: artifact.title,
+    updatedAt: artifact.updatedAt,
+  };
+  if (artifact.url !== undefined) compactArtifact.url = artifact.url;
+  return compactArtifact;
 }
 
 function filterSessionsForList(sessions: PickyAgentSession[], options: { includeArchived?: boolean; archived?: boolean; query?: string }): PickyAgentSession[] {

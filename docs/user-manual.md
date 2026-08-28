@@ -764,6 +764,7 @@ After installing the shell command, use it to drive Picky from a terminal or har
 ```bash
 picky submit "summarize the current screen"
 picky pickle-create "Research" --instructions "Compare the open tabs" --group "Research"
+picky pickle-list --json
 picky pickle-list --archived --query sentry
 picky pickle-archive <session-id>
 picky pickle-unarchive <session-id>
@@ -783,7 +784,11 @@ picky settings-set hud.dockVisible toggle --display <display-id>
 picky settings-set mainAgent.model "claude*sonnet"
 ```
 
-`picky pickle-create --group <name>` places the new Pickle in the named dock group, creating that group when needed. If multiple groups share the same name, Picky uses the first matching group in dock order. `picky pickle-list` includes each grouped Pickle's exact group ID and name; `--json` adds a compact `dockGroup` object to each grouped session. `picky pickle-list --archived` shows Pickles hidden from the dock; add `--query <text>` to search by ID, title, cwd, status, summary, or final answer. `picky pickle-archive` archives a Pickle, and `picky pickle-unarchive` restores it while it remains inside Picky's archived-session retention window. `picky pickle-group-remove` removes only the group and keeps members active, while `picky pickle-group-delete --archive-members --confirm` removes the group and archives its members. `picky pickle-group-list --json` returns group IDs, names, colors, collapsed state, and member session IDs for external scripting; main-agent CLI calls use bounded text output instead.
+`picky pickle-create --group <name>` places the new Pickle in the named dock group, creating that group when needed. If multiple groups share the same name, Picky uses the first matching group in dock order. `picky pickle-list` includes each grouped Pickle's exact group ID and name. `picky pickle-list --archived` shows Pickles hidden from the dock; add `--query <text>` to search by ID, title, cwd, status, summary, or final answer. `picky pickle-archive` archives a Pickle, and `picky pickle-unarchive` restores it while it remains inside Picky's archived-session retention window. `picky pickle-group-remove` removes only the group and keeps members active, while `picky pickle-group-delete --archive-members --confirm` removes the group and archives its members. `picky pickle-group-list --json` returns group IDs, names, colors, collapsed state, and member session IDs for external scripting; main-agent CLI calls use bounded text output instead.
+
+`picky pickle-list --json` is the safe automation format. It returns `{ type: "pickleList", schemaVersion: 1, sessions: [...] }`. Every session contains only `id`, `title`, `status`, `createdAt`, `updatedAt`, normalized `archived`, and compact `artifacts`; `cwd`, `archivedAt`, and `dockGroup` appear when available. Artifacts contain `id`, `kind`, `title`, optional `url`, and `updatedAt`. Dock groups contain `id`, `name`, `color`, and `collapsed`. Session messages, logs, tool previews, final answers, local paths, queue text, changed files, and artifact paths are deliberately excluded.
+
+Existing consumers of `.sessions[].id`, title, status, or artifact links should stay on `--json`. Legacy scripts that require session details omitted above must explicitly migrate to `picky pickle-list --raw-json`. That flag returns the former filtered session snapshot and may expose sensitive session details. It is not an authoritative message journal: the app bridge can return `messages: []` with `messageJournalAvailable: false`. Archive selection, query filtering, limit slicing, and dock-group enrichment are identical in both JSON modes. This change minimizes CLI stdout only; the local app/daemon bridge still supplies the session summary used for filtering.
 
 ### 13.1.1 CLI settings control
 

@@ -45,9 +45,10 @@ The `picky` CLI is Picky.app's local programmatic interface. It can submit text 
 
 - `picky pickle-list` lists Pickle sessions currently shown in the Picky dock.
 
-  - Prefer `--json` when you need to inspect session IDs programmatically.
+  - Prefer `--json` for automation. It returns the safe compact allowlist: session identity, state, timestamps, archive metadata, compact artifacts (without local paths), and compact dock-group metadata.
+  - Reserve `--raw-json` for explicit diagnostics or legacy migration that truly needs omitted session details. It may expose sensitive data and its `messages` array may be unavailable rather than authoritative.
   - Use `--include-archived` or `--archived` only when archived Pickles are relevant.
-  - Use `--query <text>` to filter sessions by their searchable fields.
+  - Use `--query <text>` to filter sessions by their searchable fields. Filtering still includes hidden summary and final-answer text before compact projection.
 
 - `picky pickle-archive <session-id>` hides a Pickle from the dock; `picky pickle-unarchive <session-id>` restores it within the retention window.
 

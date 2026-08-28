@@ -12361,6 +12361,23 @@
         }
       }
     },
+    "hud.groupList.time.justNow": {
+      "comment": "Relative timestamp for a group-list row when its update time is less than one second from now.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Just now"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "조금 전"
+          }
+        }
+      }
+    },
     "hud.liveStep.currentActivity": {
       "localizations": {
         "en": {

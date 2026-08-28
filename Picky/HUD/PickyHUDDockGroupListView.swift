@@ -277,7 +277,11 @@ struct PickyHUDDockGroupListView: View {
     /// Production uses the current time. Offscreen render fixtures inject a
     /// fixed reference so their row metadata remains deterministic.
     var relativeTime: (Date) -> String = {
-        Self.relativeDateFormatter.localizedString(for: $0, relativeTo: Date())
+        let now = Date()
+        guard abs($0.timeIntervalSince(now)) >= 1 else {
+            return L10n.t("hud.groupList.time.justNow")
+        }
+        return Self.relativeDateFormatter.localizedString(for: $0, relativeTo: now)
     }
     /// Reads identity from the stable panel model, not the SwiftUI value
     /// captured by app-level drag monitors.

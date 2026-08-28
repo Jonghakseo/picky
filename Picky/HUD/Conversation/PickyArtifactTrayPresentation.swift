@@ -50,12 +50,22 @@ struct PickyArtifactTrayPresentation: Equatable, Identifiable {
 
     static func subtitle(for artifact: PickyArtifact, homeURL: URL = FileManager.default.homeDirectoryForCurrentUser) -> String {
         if let url = artifact.url {
-            return url.absoluteString
+            return displayURL(url)
         }
         if let path = artifact.path {
             return abbreviatedPath(path, homeURL: homeURL)
         }
         return artifact.kind
+    }
+
+    static func displayURL(_ url: URL) -> String {
+        let absoluteString = url.absoluteString
+        guard let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              let separator = absoluteString.range(of: "://") else {
+            return absoluteString
+        }
+        return String(absoluteString[separator.upperBound...])
     }
 
     static func primaryAction(

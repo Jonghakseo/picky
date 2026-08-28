@@ -292,6 +292,8 @@ struct PickyConversationCardViewTests {
         let existingFile = reports.appendingPathComponent("final-report.md")
         try "report".write(to: existingFile, atomically: true, encoding: .utf8)
         let artifactURL = try #require(URL(string: "https://github.com/creatrip/picky/pull/42"))
+        let httpURL = try #require(URL(string: "http://example.com/path"))
+        let ftpURL = try #require(URL(string: "ftp://example.com/path"))
         let urlArtifact = PickyArtifact(
             id: "url",
             kind: "github",
@@ -331,9 +333,11 @@ struct PickyConversationCardViewTests {
         let unavailablePresentation = PickyArtifactTrayPresentation(artifact: unavailableArtifact, homeURL: root)
 
         #expect(PickyArtifactTrayPresentation.trayCount(for: [urlArtifact, existingArtifact, missingArtifact, unavailableArtifact]) == 4)
-        #expect(urlPresentation.subtitle == artifactURL.absoluteString)
+        #expect(urlPresentation.subtitle == "github.com/creatrip/picky/pull/42")
         #expect(urlPresentation.copyValue == artifactURL.absoluteString)
         #expect(urlPresentation.action == .openURL(artifactURL))
+        #expect(PickyArtifactTrayPresentation.displayURL(httpURL) == "example.com/path")
+        #expect(PickyArtifactTrayPresentation.displayURL(ftpURL) == "ftp://example.com/path")
         #expect(existingPresentation.subtitle == "~/reports/final-report.md")
         #expect(existingPresentation.action == .revealPath(existingFile.standardizedFileURL))
         #expect(missingPresentation.action == .missingPath)

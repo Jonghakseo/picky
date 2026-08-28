@@ -44,6 +44,147 @@ private extension CGRect {
     }
 }
 
+/// Rail measurements use SwiftUI's top-left HUD coordinate system. This pure
+/// boundary converts the complete base-layout observation to AppKit screen
+/// space only when Overlay Manager needs a frozen external-drag snapshot.
+struct PickyHUDDockExternalDragRailGeometryInput {
+    let slots: [PickyDockSlot]
+    let slotCenters: [String: CGPoint]
+    let topEntryIDs: [String]
+    let topEntryAxisCenters: [String: CGFloat]
+    let folderDropFrames: [String: CGRect]
+    let layout: PickyDockLayout
+    let activeSessionIDs: Set<String>
+    let dockSide: PickyHUDDockSide
+    let geometryRevision: Int
+    let metrics: PickyHUDDockMetrics
+    let fontScale: CGFloat
+
+    func screenSnapshot(
+        draggedSessionID: String,
+        hudRailFrame: CGRect,
+        hudPanelFrame: CGRect
+    ) -> PickyHUDDockExternalDragGeometrySnapshot? {
+        guard hudRailFrame.isFinite, hudRailFrame.width > 0, hudRailFrame.height > 0,
+              topEntryIDs.allSatisfy({ topEntryAxisCenters[$0]?.isFinite == true }),
+              slots.allSatisfy({ slot in
+                  guard let sessionID = slot.sessionID else { return true }
+                  guard let center = slotCenters[sessionID] else { return false }
+                  return center.x.isFinite && center.y.isFinite
+              })
+        else { return nil }
+        let fingerprint = PickyHUDDockLayoutFingerprint(
+            layout: layout,
+            activeSessionIDs: activeSessionIDs,
+            dockSide: dockSide,
+            geometryRevision: geometryRevision
+        )
+        let screenSlotCenters = slotCenters.reduce(into: [String: CGPoint]()) { result, item in
+            result[item.key] = PickyHUDDockExternalDragScreenLayout.screenPoint(
+                hudPoint: CGPoint(
+                    x: hudRailFrame.minX + item.value.x,
+                    y: hudRailFrame.minY + item.value.y
+                ),
+                hudPanelFrame: hudPanelFrame
+            )
+        }
+        let folderFrames = folderDropFrames.reduce(into: [String: CGRect]()) { result, item in
+            let hudFrame = item.value.offsetBy(dx: hudRailFrame.minX, dy: hudRailFrame.minY)
+            result[item.key] = PickyHUDDockExternalDragScreenLayout.screenFrame(
+                hudFrame: hudFrame,
+                hudPanelFrame: hudPanelFrame
+            )
+        }
+        let topEntryCenters = topEntryAxisCenters.reduce(into: [String: CGFloat]()) { result, item in
+            result[item.key] = PickyHUDDockExternalDragScreenLayout.screenAxis(
+                hudAxis: item.value + (dockSide.orientation == .horizontal ? hudRailFrame.minX : hudRailFrame.minY),
+                dockSide: dockSide,
+                hudPanelFrame: hudPanelFrame
+            )
+        }
+        let screenSlots = slots.compactMap { slot -> PickyDockDropResolver.SlotCandidate? in
+            guard let sessionID = slot.sessionID,
+                  let container = slot.container,
+                  let center = screenSlotCenters[sessionID]
+            else { return nil }
+            return .init(container: container, center: dockSide.orientation == .horizontal ? center.x : center.y)
+        }
+        let topLevelInsertionCandidates = PickyHUDDockExternalDragGeometryPolicy.topLevelInsertionCandidates(
+            visibleTopEntryIDs: topEntryIDs,
+            referenceCenters: topEntryCenters,
+            draggedSessionID: draggedSessionID,
+            layout: layout,
+            dockSide: dockSide,
+            slotPitch: PickyHUDDockDragGeometry.slotPitch(
+                orientation: dockSide.orientation,
+                metrics: metrics
+            )
+        )
+        let groupCandidates = PickyHUDDockGroupDropCandidateBuilder.emptyCandidates(
+            slots: slots,
+            layout: layout,
+            activeSessionIDs: activeSessionIDs,
+            groupDropFrames: folderFrames,
+            topEntryCenters: topEntryCenters,
+            orientation: dockSide.orientation,
+            metrics: metrics,
+            fontScale: fontScale
+        ) + PickyHUDDockGroupDropCandidateBuilder.nonEmptyCandidates(
+            slots: slots,
+            layout: layout,
+            activeSessionIDs: activeSessionIDs,
+            groupDropFrames: folderFrames,
+            topEntryCenters: topEntryCenters,
+            orientation: dockSide.orientation,
+            metrics: metrics,
+            fontScale: fontScale
+        )
+        return .init(
+            acceptanceFrame: PickyHUDDockExternalDragScreenLayout.screenFrame(
+                hudFrame: hudRailFrame,
+                hudPanelFrame: hudPanelFrame
+            ),
+            folderDropFrames: folderFrames,
+            slotCandidates: screenSlots,
+            topLevelInsertionCandidates: topLevelInsertionCandidates,
+            groupCandidates: groupCandidates,
+            dockSide: dockSide,
+            geometryRevision: geometryRevision,
+            layoutFingerprint: fingerprint,
+            slotPitch: PickyHUDDockDragGeometry.slotPitch(
+                orientation: dockSide.orientation,
+                metrics: metrics
+            )
+        )
+    }
+}
+
+enum PickyHUDDockExternalDragScreenLayout {
+    static func screenPoint(hudPoint: CGPoint, hudPanelFrame: CGRect) -> CGPoint {
+        CGPoint(x: hudPanelFrame.minX + hudPoint.x, y: hudPanelFrame.maxY - hudPoint.y)
+    }
+
+    static func screenFrame(hudFrame: CGRect, hudPanelFrame: CGRect) -> CGRect {
+        CGRect(
+            x: hudPanelFrame.minX + hudFrame.minX,
+            y: hudPanelFrame.maxY - hudFrame.maxY,
+            width: hudFrame.width,
+            height: hudFrame.height
+        )
+    }
+
+    static func screenAxis(
+        hudAxis: CGFloat,
+        dockSide: PickyHUDDockSide,
+        hudPanelFrame: CGRect
+    ) -> CGFloat {
+        switch dockSide.orientation {
+        case .horizontal: hudPanelFrame.minX + hudAxis
+        case .vertical: hudPanelFrame.maxY - hudAxis
+        }
+    }
+}
+
 /// The minimal persisted structure that invalidates frozen external drag
 /// geometry. Group labels and colors do not affect a target, while member
 /// order, active membership, Dock side, and measured geometry do.
@@ -73,6 +214,60 @@ struct PickyHUDDockLayoutFingerprint: Equatable {
         self.activeSessionIDs = activeSessionIDs
         self.dockSide = dockSide
         self.geometryRevision = geometryRevision
+    }
+}
+
+/// Candidate assembly used only by the external-drag path. Regular rail
+/// reordering retains its established candidate set. Unlike session slots,
+/// folder-only rails have no linear edge geometry, so expose two explicit
+/// top-level targets around the frozen visible top-entry range.
+enum PickyHUDDockExternalDragGeometryPolicy {
+    static func topLevelInsertionCandidates(
+        visibleTopEntryIDs: [String],
+        referenceCenters: [String: CGFloat],
+        draggedSessionID: String,
+        layout: PickyDockLayout,
+        dockSide: PickyHUDDockSide,
+        slotPitch: CGFloat
+    ) -> [PickyDockDropResolver.TopLevelInsertionCandidate] {
+        let interior = PickyHUDDockRenderPolicy.topLevelInsertionCandidates(
+            visibleTopEntryIDs: visibleTopEntryIDs,
+            referenceCenters: referenceCenters,
+            draggedSessionID: draggedSessionID,
+            layout: layout
+        )
+        guard slotPitch.isFinite, slotPitch > 0,
+              let firstID = visibleTopEntryIDs.first,
+              let lastID = visibleTopEntryIDs.last,
+              let firstCenter = referenceCenters[firstID], firstCenter.isFinite,
+              let lastCenter = referenceCenters[lastID], lastCenter.isFinite,
+              let firstIndex = PickyHUDDockRenderPolicy.layoutEntryIndex(
+                forVisibleTopEntryID: firstID,
+                in: layout
+              ),
+              let lastIndex = PickyHUDDockRenderPolicy.layoutEntryIndex(
+                forVisibleTopEntryID: lastID,
+                in: layout
+              )
+        else { return interior }
+
+        let beforeFirstCenter: CGFloat
+        let afterLastCenter: CGFloat
+        switch dockSide.orientation {
+        case .horizontal:
+            beforeFirstCenter = firstCenter - slotPitch
+            afterLastCenter = lastCenter + slotPitch
+        case .vertical:
+            // SwiftUI list order runs down, while AppKit screen Y runs up.
+            beforeFirstCenter = firstCenter + slotPitch
+            afterLastCenter = lastCenter - slotPitch
+        }
+
+        return [
+            .init(topLevelIndex: firstIndex, center: beforeFirstCenter),
+        ] + interior + [
+            .init(topLevelIndex: lastIndex + 1, center: afterLastCenter),
+        ]
     }
 }
 

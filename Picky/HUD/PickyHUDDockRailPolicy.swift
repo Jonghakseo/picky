@@ -5,7 +5,45 @@
 //  Pure layout and drag geometry used by the dock rail.
 //
 
+import Combine
 import CoreGraphics
+
+/// Display-local feedback published by the external-drag coordinator in the
+/// next wiring slice. Rail rendering observes this only as a preview input;
+/// it never uses the projected layout to measure or validate a drop.
+struct PickyHUDDockExternalDragRailPresentation: Equatable {
+    let token: UUID
+    let sessionID: String
+    let destination: PickyDockContainer?
+}
+
+@MainActor
+final class PickyHUDDockExternalDragRailPresentationStore: ObservableObject {
+    @Published private(set) var presentation: PickyHUDDockExternalDragRailPresentation?
+
+    func show(token: UUID, sessionID: String, destination: PickyDockContainer?) {
+        presentation = .init(token: token, sessionID: sessionID, destination: destination)
+    }
+
+    func update(token: UUID, destination: PickyDockContainer?) {
+        guard let presentation, presentation.token == token else { return }
+        self.presentation = .init(token: token, sessionID: presentation.sessionID, destination: destination)
+    }
+
+    func clear(token: UUID? = nil) {
+        guard token == nil || presentation?.token == token else { return }
+        presentation = nil
+    }
+}
+
+enum PickyHUDDockExternalDragRailGeometryPolicy {
+    /// Frozen base geometry belongs to Overlay Manager while an external drag
+    /// is active. Publishing the rail's preview-reflow preferences would
+    /// otherwise replace that base snapshot with its own consequence.
+    static func shouldPublishExternalGeometry(hasActivePresentation: Bool) -> Bool {
+        !hasActivePresentation
+    }
+}
 
 enum PickyHUDDockRailLayoutPolicy {
     /// The rail has one folder tile per group, plus one compact header for

@@ -53,6 +53,13 @@ struct PickyHUDView: View {
     /// frontmost without the two copies drifting.
     @ObservedObject var dockGroupListFocusStore = PickyHUDDockGroupListFocusStore()
     var onDockGroupListGeometryChange: (_ badgeFrames: [String: CGRect], _ interactionFrames: [String: CGRect], _ railFrame: CGRect, _ isCommandHintVisible: Bool, _ openedSessionID: String?) -> Void = { _, _, _, _, _ in }
+    /// The rail reports base coordinates in the HUD root. Overlay Manager owns
+    /// the final AppKit screen conversion and retains the latest valid input.
+    var onExternalDockGeometryChange: (_ input: PickyHUDDockExternalDragRailGeometryInput, _ railFrame: CGRect) -> Void = { _, _ in }
+    @State private var externalDockGeometryInput: PickyHUDDockExternalDragRailGeometryInput?
+    /// One store per HUD root/display. Task 9 will let Overlay Manager update
+    /// this from its coordinator without coupling the Rail to event monitors.
+    @ObservedObject var externalDragPresentationStore = PickyHUDDockExternalDragRailPresentationStore()
     @State private var dockGroupBadgeFrames: [String: CGRect] = [:]
     @State private var dockGroupInteractionFrames: [String: CGRect] = [:]
     @State private var dockRailFrame: CGRect = .zero
@@ -193,6 +200,7 @@ struct PickyHUDView: View {
             .onPreferenceChange(PickyHUDDockRailFramePreferenceKey.self) { frame in
                 dockRailFrame = frame
                 reportDockGroupListGeometry()
+                reportExternalDockGeometry()
             }
             .onChange(of: isCommandShortcutHintVisible) { _, _ in
                 reportDockGroupListGeometry()
@@ -625,7 +633,12 @@ struct PickyHUDView: View {
                 onDoneFlashConsumed: viewModel.markDoneFlashConsumed(sessionID:),
                 onDockHandleDragChanged: onDockHandleDragChanged,
                 onDockHandleDragEnded: onDockHandleDragEnded,
-                onDockHandleDoubleClick: onDockHandleDoubleClick
+                onDockHandleDoubleClick: onDockHandleDoubleClick,
+                onExternalDragGeometryChange: { input in
+                    externalDockGeometryInput = input
+                    reportExternalDockGeometry()
+                },
+                externalDragPresentationStore: externalDragPresentationStore
             )
             // Measured before the mini-preview slack padding so only the rail
             // itself counts as visible chrome for ink pass-through.
@@ -680,6 +693,11 @@ struct PickyHUDView: View {
         suppressedHoverSessionID = result.state.suppressedHoverSessionID
         utilityPanelOpenSessionIDs = result.state.utilityPanelOpenSessionIDs
         lastHandledAuthoritativeRemovalRevision = result.handledRevision
+    }
+
+    private func reportExternalDockGeometry() {
+        guard let externalDockGeometryInput, dockRailFrame != .zero else { return }
+        onExternalDockGeometryChange(externalDockGeometryInput, dockRailFrame)
     }
 
     private func reportDockGroupListGeometry() {

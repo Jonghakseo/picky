@@ -11,11 +11,19 @@ import Testing
 struct PickyHUDDockExternalDragCoordinatorTests {
     private final class PreviewSpy: PickyHUDDockExternalDragPreviewDriving {
         var began = 0
+        var presentations: [PickyHUDDockExternalDragPreviewPresentation] = []
+        var updatePoints: [CGPoint] = []
         var destinations: [PickyDockContainer?] = []
         var terminalResults: [Bool] = []
 
-        func begin() { began += 1 }
-        func update(destination: PickyDockContainer?) { destinations.append(destination) }
+        func begin(_ presentation: PickyHUDDockExternalDragPreviewPresentation) {
+            began += 1
+            presentations.append(presentation)
+        }
+        func update(pointerScreenPoint: CGPoint, destination: PickyDockContainer?) {
+            updatePoints.append(pointerScreenPoint)
+            destinations.append(destination)
+        }
         func finish(committed: Bool) { terminalResults.append(committed) }
     }
 
@@ -63,6 +71,23 @@ struct PickyHUDDockExternalDragCoordinatorTests {
         ))
     }
 
+    private func session(id: String) -> PickyHUDDockSession {
+        let referenceDate = Date(timeIntervalSince1970: 0)
+        return PickyHUDDockSession(session: PickySessionCard.fromAgentSession(PickyAgentSession(
+            id: id,
+            title: "Preview fixture",
+            status: .running,
+            cwd: "/tmp",
+            createdAt: referenceDate,
+            updatedAt: referenceDate,
+            lastSummary: "",
+            logs: [],
+            tools: [],
+            artifacts: [],
+            changedFiles: []
+        )))
+    }
+
     private func promotion(
         token: UUID = UUID(uuidString: "00000000-0000-0000-0000-000000000003")!
     ) -> PickyHUDDockExternalDragPromotion {
@@ -80,6 +105,13 @@ struct PickyHUDDockExternalDragCoordinatorTests {
             token: token,
             sessionID: "dragged",
             sourceGroupID: "source",
+            previewPresentation: .init(
+                session: session(id: "dragged"),
+                sourceFrame: CGRect(x: -20, y: 10, width: 40, height: 40),
+                pointerScreenPoint: CGPoint(x: 100, y: 50),
+                dockSide: .bottom,
+                metrics: PickyHUDDockMetrics(preset: .medium)
+            ),
             frozenLayout: layout,
             fingerprint: fingerprint,
             geometry: .init(
@@ -129,6 +161,9 @@ struct PickyHUDDockExternalDragCoordinatorTests {
 
         #expect(coordinator.start(payload))
         #expect(preview.began == 1)
+        #expect(preview.presentations.first?.session.id == "dragged")
+        #expect(preview.presentations.first?.sourceFrame == CGRect(x: -20, y: 10, width: 40, height: 40))
+        #expect(preview.presentations.first?.pointerScreenPoint == CGPoint(x: 100, y: 50))
         #expect(harness.local.count == 1)
         #expect(harness.global.count == 1)
         #expect(harness.local[0].mask == [.leftMouseDragged, .leftMouseUp])
@@ -194,6 +229,31 @@ struct PickyHUDDockExternalDragCoordinatorTests {
         #expect(preview.terminalResults == [false])
     }
 
+    @Test func mouseUpUsesOneFinalPointerSampleForResolutionAndPreview() throws {
+        let harness = MonitorHarness()
+        let preview = PreviewSpy()
+        let payload = promotion()
+        var samples = [CGPoint(x: 130, y: 50), CGPoint(x: 100, y: 150)]
+        var commits: [(String, PickyDockContainer)] = []
+        let coordinator = makeCoordinator(
+            harness: harness,
+            mouseLocation: { samples.removeFirst() },
+            currentFingerprint: { payload.fingerprint },
+            preview: preview,
+            commits: { commits.append(($0, $1)) }
+        )
+
+        #expect(coordinator.start(payload))
+        harness.local[0].handler(try event(.leftMouseUp))
+
+        #expect(samples == [CGPoint(x: 100, y: 150)])
+        #expect(preview.updatePoints == [CGPoint(x: 130, y: 50)])
+        #expect(preview.destinations == [.topLevel(index: 1)])
+        #expect(commits.count == 1)
+        #expect(commits.first?.0 == "dragged")
+        #expect(commits.first?.1 == .topLevel(index: 1))
+    }
+
     @Test func geometryMeasuredForOlderLayoutRejectsNewPromotionBeforePreviewOrMonitorsBegin() {
         let harness = MonitorHarness()
         let preview = PreviewSpy()
@@ -224,6 +284,7 @@ struct PickyHUDDockExternalDragCoordinatorTests {
             token: payload.token,
             sessionID: payload.sessionID,
             sourceGroupID: payload.sourceGroupID,
+            previewPresentation: payload.previewPresentation,
             frozenLayout: currentLayout,
             fingerprint: currentFingerprint,
             geometry: staleGeometry

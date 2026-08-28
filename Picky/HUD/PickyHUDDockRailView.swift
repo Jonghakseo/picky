@@ -71,6 +71,10 @@ struct PickyHUDDockRailView: View {
     let onDockHandleDragChanged: (CGPoint) -> Void
     let onDockHandleDragEnded: () -> Void
     let onDockHandleDoubleClick: () -> Void
+    /// Base rail measurements flow outward only. The HUD/Overlay boundary
+    /// converts them to screen coordinates and freezes them at promotion.
+    var onExternalDragGeometryChange: (PickyHUDDockExternalDragRailGeometryInput) -> Void = { _ in }
+    @ObservedObject var externalDragPresentationStore = PickyHUDDockExternalDragRailPresentationStore()
 
     @State var isAddSlotExpanded = false
     @State var isRecentPickleFolderPickerPresented = false
@@ -172,6 +176,10 @@ struct PickyHUDDockRailView: View {
     /// The rail survives if a structure update removes the dragged folder tile,
     /// so it owns the physical mouse-up fallback for a cancelled tile gesture.
     @State private var groupDragReleaseMonitor = PickyDockGroupDragReleaseMonitor()
+    /// Advances only for persisted/base measurements. External projected
+    /// layout is intentionally excluded so preview reflow cannot invalidate
+    /// its own frozen drop geometry.
+    @State private var externalGeometryRevision = 0
 
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @Environment(\.pickyAppFontScale) private var fontScale
@@ -196,7 +204,26 @@ struct PickyHUDDockRailView: View {
     }
 
     var projection: PickyDockProjection {
-        let visibleSessionIDs = baseProjection.slots.compactMap(\.sessionID)
+        let baseVisibleSessionIDs = baseProjection.slots.compactMap(\.sessionID)
+        if let external = externalDragPresentationStore.presentation {
+            let visibleSessionIDs = PickyHUDDockRenderPolicy.externalPreviewVisibleSessionIDs(
+                base: baseVisibleSessionIDs,
+                draggedSessionID: external.sessionID,
+                destination: external.destination
+            )
+            if let destination = external.destination {
+                let preview = PickyHUDDockRenderPolicy.sessionPreviewLayout(
+                    layout: layout,
+                    draggedSessionID: external.sessionID,
+                    destination: destination
+                )
+                if preview != layout {
+                    return PickyDockProjector.project(layout: preview, visibleSessionIDs: visibleSessionIDs)
+                }
+            }
+            return PickyDockProjector.project(layout: layout, visibleSessionIDs: visibleSessionIDs)
+        }
+        let visibleSessionIDs = baseVisibleSessionIDs
         if let draggingSessionID,
            let pendingDropContainer {
             let preview = PickyHUDDockRenderPolicy.sessionPreviewLayout(
@@ -221,18 +248,26 @@ struct PickyHUDDockRailView: View {
         return baseProjection
     }
 
+    private var effectiveDraggingSessionID: String? {
+        externalDragPresentationStore.presentation?.sessionID ?? draggingSessionID
+    }
+
+    private var effectiveDropContainer: PickyDockContainer? {
+        externalDragPresentationStore.presentation?.destination ?? pendingDropContainer
+    }
+
     private var selectedGroupID: String? {
         PickyHUDDockRenderPolicy.selectedGroupID(
             openedSessionID: openedSessionID,
-            draggingSessionID: draggingSessionID,
+            draggingSessionID: effectiveDraggingSessionID,
             layout: layout
         )
     }
 
     private var dropTargetedGroupID: String? {
         PickyHUDDockRenderPolicy.dropTargetedGroupID(
-            draggingSessionID: draggingSessionID,
-            destination: pendingDropContainer
+            draggingSessionID: effectiveDraggingSessionID,
+            destination: effectiveDropContainer
         )
     }
 
@@ -272,13 +307,19 @@ struct PickyHUDDockRailView: View {
         .background(PickyHUDDockRailFrameReporter())
         .overlay { draggedFloatingIconOverlay }
         .onPreferenceChange(PickyDockSlotCenterPreferenceKey.self) { centers in
+            guard slotCenters != centers else { return }
             slotCenters = centers
+            publishExternalDragGeometry()
         }
         .onPreferenceChange(PickyDockTopEntryCenterPreferenceKey.self) { centers in
+            guard topEntryCenters != centers else { return }
             topEntryCenters = centers
+            publishExternalDragGeometry()
         }
         .onPreferenceChange(PickyDockGroupDropFramePreferenceKey.self) { frames in
+            guard groupDropFrames != frames else { return }
             groupDropFrames = frames
+            publishExternalDragGeometry()
         }
         .onPreferenceChange(PickyHUDPickerBadgeFrameKey.self) { frames in
             groupPickerBadgeFrames = frames
@@ -288,7 +329,25 @@ struct PickyHUDDockRailView: View {
         }
         .onChange(of: persistedStructure) { _, structure in
             cancelDragsForPersistedStructureChange(structure)
+            publishExternalDragGeometry()
         }
+        .onChange(of: layout) { _, _ in
+            publishExternalDragGeometry()
+        }
+        .onChange(of: dockSide) { _, _ in
+            publishExternalDragGeometry()
+        }
+        .onChange(of: Set(allSessions.map(\.id))) { _, _ in
+            publishExternalDragGeometry()
+        }
+        .onChange(of: externalDragPresentationStore.presentation) { oldPresentation, presentation in
+            // While external feedback is active, its reflow must never replace
+            // the frozen base measurement. The presentation owner clears by
+            // token; returning to nil publishes the restored base exactly once.
+            guard oldPresentation != nil, presentation == nil else { return }
+            publishExternalDragGeometry()
+        }
+        .onAppear { publishExternalDragGeometry() }
         .onHover(perform: onDockHoverChanged)
         .onChange(of: isRecentPickleFolderPickerPresented) { _, isPresented in
             updateDockAddSlotExpansion(pickerIsPresented: isPresented)
@@ -371,7 +430,7 @@ struct PickyHUDDockRailView: View {
         PickyHUDDockReorderAnimationPolicy.sizingSlotCount(
             renderedSlotCount: projection.slots.count,
             persistedSlotCount: baseProjection.slots.count,
-            isSessionDragging: draggingSessionID != nil
+            isSessionDragging: effectiveDraggingSessionID != nil
         )
     }
 
@@ -705,7 +764,7 @@ struct PickyHUDDockRailView: View {
         for session: PickyHUDDockSession,
         slot: PickyDockSlot
     ) -> some View {
-        if draggingSessionID == session.id {
+        if effectiveDraggingSessionID == session.id {
             // The dragged Pickle is rendered as a floating overlay that never
             // reparents (see `draggedFloatingIconOverlay`). In the flow it is
             // an invisible placeholder of identical size so neighbors reflow
@@ -835,6 +894,30 @@ struct PickyHUDDockRailView: View {
             reduceMotion: accessibilityReduceMotion
         ) else { return }
         transaction.animation = slotShiftAnimation
+    }
+
+    /// Reports only the persisted rail's local geometry. This function never
+    /// reads `projection`, whose external top-level placeholder may be reflowed.
+    private func publishExternalDragGeometry() {
+        guard PickyHUDDockExternalDragRailGeometryPolicy.shouldPublishExternalGeometry(
+            hasActivePresentation: externalDragPresentationStore.presentation != nil
+        ) else { return }
+        externalGeometryRevision &+= 1
+        onExternalDragGeometryChange(
+            PickyHUDDockExternalDragRailGeometryInput(
+                slots: baseProjection.slots,
+                slotCenters: slotCenters,
+                topEntryIDs: PickyHUDDockRenderPolicy.visibleTopEntryIDs(in: baseProjection.items),
+                topEntryAxisCenters: topEntryCenters,
+                folderDropFrames: groupDropFrames,
+                layout: layout,
+                activeSessionIDs: Set(allSessions.map(\.id)),
+                dockSide: dockSide,
+                geometryRevision: externalGeometryRevision,
+                metrics: metrics,
+                fontScale: fontScale
+            )
+        )
     }
 
     // MARK: - Reorder gestures

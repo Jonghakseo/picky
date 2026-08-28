@@ -8,23 +8,20 @@
 
 import AppKit
 
-@MainActor
-protocol PickyHUDDockExternalDragPreviewDriving: AnyObject {
-    func begin()
-    func update(destination: PickyDockContainer?)
-    func finish(committed: Bool)
-}
-
 struct PickyHUDDockExternalDragPromotion {
     let token: UUID
     let sessionID: String
     let sourceGroupID: String
+    /// Captured at the list-panel boundary so the detached preview never reads
+    /// a live row model or geometry after ownership transfers.
+    let previewPresentation: PickyHUDDockExternalDragPreviewPresentation
     let frozenLayout: PickyDockLayout
     let fingerprint: PickyHUDDockLayoutFingerprint
     let geometry: PickyHUDDockExternalDragGeometrySnapshot
 
     var isConsistent: Bool {
-        fingerprint == geometry.layoutFingerprint
+        previewPresentation.session.id == sessionID
+            && fingerprint == geometry.layoutFingerprint
             && PickyHUDDockLayoutFingerprint(
                 layout: frozenLayout,
                 activeSessionIDs: fingerprint.activeSessionIDs,
@@ -107,7 +104,7 @@ final class PickyHUDDockExternalDragCoordinator {
             return false
         }
 
-        preview.begin()
+        preview.begin(promotion.previewPresentation)
         return true
     }
 
@@ -116,7 +113,8 @@ final class PickyHUDDockExternalDragCoordinator {
     /// destination rather than an input to it.
     func update() {
         guard let promotion, state.acceptsUpdate(for: promotion.token) else { return }
-        preview.update(destination: destination(for: promotion, at: mouseLocation()))
+        let pointer = mouseLocation()
+        preview.update(pointerScreenPoint: pointer, destination: destination(for: promotion, at: pointer))
     }
 
     /// Explicitly callable by the existing local Escape owner. No global key
@@ -146,16 +144,20 @@ final class PickyHUDDockExternalDragCoordinator {
 
     private func finish(_ promotion: PickyHUDDockExternalDragPromotion) {
         guard state.acceptsUpdate(for: promotion.token) else { return }
+        // A terminal pointer sample is shared by hit-testing and the final
+        // preview frame. Sampling twice can commit one physical location while
+        // showing feedback for another when AppKit advances between reads.
+        let finalPointer = mouseLocation()
         let finalDestination: PickyDockContainer?
         let terminal: PickyHUDDockExternalDragTerminal
         if currentFingerprint() != promotion.fingerprint {
             finalDestination = nil
             terminal = .cancel(.staleLayout)
         } else {
-            finalDestination = destination(for: promotion, at: mouseLocation())
+            finalDestination = destination(for: promotion, at: finalPointer)
             terminal = finalDestination.map(PickyHUDDockExternalDragTerminal.commit) ?? .cancel(.invalidDrop)
         }
-        preview.update(destination: finalDestination)
+        preview.update(pointerScreenPoint: finalPointer, destination: finalDestination)
         complete(token: promotion.token, terminal: terminal)
     }
 

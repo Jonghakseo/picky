@@ -261,45 +261,42 @@ struct PickyConversationLiveStepView: View {
     let projection: PickyConversationLiveStepProjection
     let presentation: PickyConversationLiveStepPresentation
     let isTodoExpanded: Bool
-    let heightTier: PickyConversationFocusStackHeightTier
     let onToggleTodo: () -> Void
     let onGoToQuestion: (String) -> Void
-    @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
 
     init(
         projection: PickyConversationLiveStepProjection,
         isTodoExpanded: Bool,
-        heightTier: PickyConversationFocusStackHeightTier,
         onToggleTodo: @escaping () -> Void,
         onGoToQuestion: @escaping (String) -> Void
     ) {
         self.projection = projection
         presentation = PickyConversationLiveStepPresentation(projection: projection)!
         self.isTodoExpanded = isTodoExpanded
-        self.heightTier = heightTier
         self.onToggleTodo = onToggleTodo
         self.onGoToQuestion = onGoToQuestion
     }
 
     var body: some View {
-        let widthTier = PickyConversationFocusStackWidthTier(cardWidth: pickyHUDDetailWidth)
         Group {
             switch presentation {
             case let .running(stepText, detail):
-                runningContent(widthTier: widthTier, stepText: stepText, detail: detail)
-                    .accessibilityElement(children: .contain)
-                    .accessibilityLabel(presentation.label)
-                    .accessibilityValue(presentation.accessibilityValue)
+                todoDisclosureContent(stepText: stepText, detail: detail)
             case let .waitingForInput(requestID):
-                waitingContent(requestID: requestID)
-                    .accessibilityElement(children: .contain)
-                    .accessibilityLabel(presentation.label)
-                    .accessibilityValue(presentation.accessibilityValue)
+                VStack(alignment: .leading, spacing: DS.Spacing.sm) {
+                    if let todoPresentation = projection.todoPresentation {
+                        todoDisclosureContent(
+                            stepText: todoPresentation.countText,
+                            detail: todoPresentation.activeText
+                        )
+                    }
+                    waitingContent(requestID: requestID)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityLabel(presentation.label)
+                        .accessibilityValue(presentation.accessibilityValue)
+                }
             case let .todo(stepText, detail, _):
-                runningContent(widthTier: widthTier, stepText: stepText, detail: detail)
-                    .accessibilityElement(children: .contain)
-                    .accessibilityLabel(presentation.label)
-                    .accessibilityValue(presentation.accessibilityValue)
+                todoDisclosureContent(stepText: stepText, detail: detail)
             }
         }
         .padding(.horizontal, DS.Spacing.sm)
@@ -309,90 +306,41 @@ struct PickyConversationLiveStepView: View {
     }
 
     @ViewBuilder
-    private func runningContent(widthTier: PickyConversationFocusStackWidthTier, stepText: String, detail: String) -> some View {
-        if heightTier == .constrained {
-            HStack(spacing: DS.Spacing.sm) {
-                planProgressControl(stepText: stepText)
-                runningDetailButton(detail)
-            }
-        } else if widthTier == .compact {
-            VStack(alignment: .leading, spacing: DS.Spacing.xs) {
-                planProgressControl(stepText: stepText)
-                runningDetailButton(detail)
-            }
-        } else {
-            HStack(spacing: DS.Spacing.sm) {
-                planProgressControl(stepText: stepText)
-                runningDetailButton(detail)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func planProgressControl(stepText: String?) -> some View {
-        if let disclosure = PickyConversationPlanProgressDisclosurePresentation(
-            status: projection.status,
-            todo: projection.todoPresentation,
-            isExpanded: isTodoExpanded
-        ) {
+    private func todoDisclosureContent(stepText: String, detail: String) -> some View {
+        if let todoPresentation = projection.todoPresentation,
+           let disclosure = PickyConversationPlanProgressDisclosurePresentation(
+               status: projection.status,
+               todo: todoPresentation,
+               isExpanded: isTodoExpanded
+           ) {
             Button(action: onToggleTodo) {
-                HStack(spacing: DS.Spacing.xs) {
-                    planIcon
+                HStack(spacing: DS.Spacing.sm) {
+                    PickyTodoCircularProgressView(
+                        fraction: todoPresentation.fraction,
+                        isComplete: todoPresentation.isComplete,
+                        side: 22,
+                        lineWidth: 2.8
+                    )
                     Text(disclosure.stepText)
                         .font(PickyHUDTypography.statusMonospacedMedium)
-                        .foregroundStyle(presentation.tone.textColor)
+                        .foregroundStyle(todoPresentation.isComplete ? DS.Colors.successText : DS.Colors.info)
+                    detailText(detail)
                     Image(systemName: disclosure.chevronName)
                         .pickyFont(size: 9.5, weight: .semibold)
                         .foregroundStyle(DS.Colors.textTertiary)
+                        .frame(width: 14)
                         .accessibilityHidden(true)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("picky.todo.progress.disclosure")
             .accessibilityLabel(L10n.t("hud.liveStep.currentPlan.accessibilityLabel", disclosure.stepText))
-            .accessibilityValue(projection.todoPresentation?.stepText ?? "")
+            .accessibilityValue(todoPresentation.stepText)
             .accessibilityHint(isTodoExpanded ? L10n.t("hud.todo.collapse") : L10n.t("hud.todo.expand"))
             .help(isTodoExpanded ? L10n.t("hud.todo.collapse") : L10n.t("hud.todo.expand"))
             .hoverAffordance()
-        } else {
-            HStack(spacing: DS.Spacing.xs) {
-                planIcon
-                if let stepText {
-                    Text(stepText)
-                        .font(PickyHUDTypography.statusMonospacedMedium)
-                        .foregroundStyle(presentation.tone.textColor)
-                }
-            }
-        }
-    }
-
-    private var planIcon: some View {
-        Image(systemName: presentation.iconName)
-            .font(PickyHUDTypography.statusSemibold)
-            .foregroundStyle(presentation.tone.textColor)
-            .accessibilityHidden(true)
-    }
-
-    private func runningDetailButton(_ detail: String) -> some View {
-        Group {
-            if PickyConversationPlanDrawerPolicy.canOpen(
-                status: projection.status,
-                todo: projection.todoPresentation
-            ) {
-                Button(action: onToggleTodo) {
-                    detailText(detail)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(isTodoExpanded ? L10n.t("hud.todo.collapse") : L10n.t("hud.todo.expand"))
-                .accessibilityLabel(L10n.t("hud.liveStep.currentPlan.accessibilityLabel", detail))
-                .accessibilityValue(projection.todoPresentation?.stepText ?? "")
-                .accessibilityHint(isTodoExpanded ? L10n.t("hud.todo.collapse") : L10n.t("hud.todo.expand"))
-                .hoverAffordance()
-            } else {
-                detailText(detail)
-            }
         }
     }
 
@@ -407,9 +355,6 @@ struct PickyConversationLiveStepView: View {
 
     private func waitingContent(requestID: String) -> some View {
         HStack(spacing: DS.Spacing.xs) {
-            if let todoPresentation = projection.todoPresentation {
-                planProgressControl(stepText: todoPresentation.countText)
-            }
             Image(systemName: presentation.iconName).font(PickyHUDTypography.statusSemibold).foregroundStyle(presentation.tone.textColor).accessibilityHidden(true)
             Text(presentation.label).font(PickyHUDTypography.statusSemibold).foregroundStyle(presentation.tone.textColor)
             Button(L10n.t("hud.liveStep.goToQuestion")) { onGoToQuestion(requestID) }
@@ -431,7 +376,6 @@ struct PickyConversationLiveStepZone: View {
     let extensionUiStore: PickySessionExtensionUiStore
     @Binding var isTodoExpanded: Bool
     let viewport: PickyConversationViewportState
-    let heightTier: PickyConversationFocusStackHeightTier
     let onToggleTodo: () -> Void
     let onGoToQuestion: (String) -> Void
     let onGoToLatest: () -> Void
@@ -458,7 +402,6 @@ struct PickyConversationLiveStepZone: View {
             PickyConversationLiveStepView(
                 projection: projection,
                 isTodoExpanded: isTodoExpanded,
-                heightTier: heightTier,
                 onToggleTodo: onToggleTodo,
                 onGoToQuestion: onGoToQuestion
             )
@@ -470,8 +413,6 @@ struct PickyConversationLiveStepZone: View {
 struct PickyConversationLiveStepTodoDrawer: View {
     let plan: PickyConversationPlanProjection
     @Binding var isExpanded: Bool
-    let focusRequestID: Int
-    let onClose: () -> Void
 
     var body: some View {
         if let todoPresentation = plan.todoPresentation,
@@ -479,9 +420,7 @@ struct PickyConversationLiveStepTodoDrawer: View {
             PickyTodoProgressOverlayView(
                 presentation: todoPresentation,
                 isSessionRunning: plan.status == .running,
-                isExpanded: $isExpanded,
-                focusRequestID: focusRequestID,
-                onClose: onClose
+                isExpanded: $isExpanded
             )
         }
     }

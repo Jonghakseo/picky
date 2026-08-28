@@ -8,44 +8,6 @@
 
 import SwiftUI
 
-private struct PickyTodoProgressButtonStyle: ButtonStyle {
-    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
-    @State private var isHovered = false
-    @FocusState private var isFocused: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(
-                RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
-                    .fill(interactionFill(isPressed: configuration.isPressed))
-            )
-            .focusable()
-            .focused($isFocused)
-            .focusEffectDisabled()
-            .onHover { isHovered = $0 }
-            .animation(
-                accessibilityReduceMotion ? nil : .easeOut(duration: DS.Animation.fast),
-                value: configuration.isPressed
-            )
-            .animation(
-                accessibilityReduceMotion ? nil : .easeOut(duration: DS.Animation.fast),
-                value: isHovered
-            )
-            .animation(
-                accessibilityReduceMotion ? nil : .easeOut(duration: DS.Animation.fast),
-                value: isFocused
-            )
-    }
-
-    private func interactionFill(isPressed: Bool) -> Color {
-        PickyHUDInteractionStateLayer.fill(
-            isHovered: isHovered,
-            isPressed: isPressed,
-            isFocused: isFocused
-        )
-    }
-}
-
 private struct PickyTodoProgressAdaptiveWidthLayout: Layout {
     let minimumWidth: CGFloat
     let maximumWidth: CGFloat
@@ -118,6 +80,36 @@ enum PickyTodoProgressAdaptiveWidthPolicy {
     }
 }
 
+struct PickyTodoCircularProgressView: View {
+    let fraction: Double
+    let isComplete: Bool
+    let side: CGFloat
+    let lineWidth: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(DS.Colors.borderSubtle.opacity(0.7), lineWidth: lineWidth)
+            if fraction > 0 {
+                Circle()
+                    .trim(from: 0, to: fraction)
+                    .stroke(
+                        isComplete ? DS.Colors.success : DS.Colors.info,
+                        style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+                    .animation(
+                        accessibilityReduceMotion ? nil : .easeOut(duration: DS.Animation.normal),
+                        value: fraction
+                    )
+            }
+        }
+        .frame(width: side, height: side)
+        .accessibilityHidden(true)
+    }
+}
+
 struct PickyTodoProgressOverlayView: View {
     static let minimumCardWidth: CGFloat = 280
     static let maximumCardWidth: CGFloat = 700
@@ -125,10 +117,7 @@ struct PickyTodoProgressOverlayView: View {
     let presentation: PickyTodoProgressPresentation
     let isSessionRunning: Bool
     @Binding var isExpanded: Bool
-    let focusRequestID: Int
-    let onClose: () -> Void
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
-    @FocusState private var isCollapseHeaderFocused: Bool
 
     var body: some View {
         if isExpanded {
@@ -146,23 +135,7 @@ struct PickyTodoProgressOverlayView: View {
             minimumWidth: Self.minimumCardWidth,
             maximumWidth: Self.maximumCardWidth
         ) {
-            VStack(alignment: .leading, spacing: 0) {
-                Button(action: onClose) {
-                    expandedHeader
-                }
-                .buttonStyle(PickyTodoProgressButtonStyle())
-                .focusable()
-                .focused($isCollapseHeaderFocused)
-                .onAppear { requestCollapseHeaderFocus() }
-                .onChange(of: focusRequestID) { _, _ in requestCollapseHeaderFocus() }
-                .help(L10n.t("hud.todo.collapse"))
-                .accessibilityLabel("\(presentation.stepText), \(L10n.t("hud.todo.collapse"))")
-                .accessibilityValue(L10n.t("hud.todo.state.expanded"))
-                .accessibilityHint(L10n.t("hud.todo.collapse"))
-
-                Divider()
-                    .overlay(DS.Colors.borderSubtle.opacity(0.65))
-
+            Group {
                 if presentation.usesScrollableExpandedList {
                     ScrollView(.vertical, showsIndicators: true) {
                         expandedTaskRows
@@ -185,28 +158,6 @@ struct PickyTodoProgressOverlayView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("picky.todo.drawer")
-    }
-
-    private var expandedHeader: some View {
-        HStack(alignment: .center, spacing: 8) {
-            progressRing(side: 19, lineWidth: 2.4)
-
-            Text(presentation.stepText)
-                .font(PickyHUDTypography.statusMonospacedMedium)
-                .foregroundColor(DS.Colors.textPrimary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Spacer(minLength: 8)
-
-            Image(systemName: "chevron.down")
-                .pickyFont(size: 9.5, weight: .semibold)
-                .foregroundColor(DS.Colors.textTertiary)
-                .frame(width: 12)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity)
-        .contentShape(Rectangle())
     }
 
     private var expandedTaskRows: some View {
@@ -293,38 +244,12 @@ struct PickyTodoProgressOverlayView: View {
         }
     }
 
-    private func requestCollapseHeaderFocus() {
-        DispatchQueue.main.async { isCollapseHeaderFocused = true }
-    }
-
     private var expandedTransition: AnyTransition {
         accessibilityReduceMotion
             ? .opacity
             : .scale(scale: 0.97, anchor: .top).combined(with: .opacity)
     }
 
-    private var progressColor: Color {
-        presentation.isComplete ? DS.Colors.success : DS.Colors.info
-    }
-
-    private func progressRing(side: CGFloat, lineWidth: CGFloat) -> some View {
-        ZStack {
-            Circle()
-                .stroke(DS.Colors.borderSubtle.opacity(0.7), lineWidth: lineWidth)
-            if presentation.fraction > 0 {
-                Circle()
-                    .trim(from: 0, to: presentation.fraction)
-                    .stroke(progressColor, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                    .animation(
-                        accessibilityReduceMotion ? nil : .easeOut(duration: DS.Animation.normal),
-                        value: presentation.fraction
-                    )
-            }
-        }
-        .frame(width: side, height: side)
-        .accessibilityHidden(true)
-    }
 }
 
 enum PickyTodoProgressMarkerPolicy {

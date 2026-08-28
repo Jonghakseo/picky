@@ -171,6 +171,8 @@ struct PickyTurnSummary: Equatable {
         return parts.joined(separator: " · ")
     }
 
+    var expandedDisplayText: String { elapsedDisplayText }
+
     var elapsedDisplayText: String {
         if elapsedSeconds < 60 {
             return L10n.t("hud.conversation.duration.seconds", Int64(elapsedSeconds))
@@ -626,7 +628,7 @@ struct PickyTurnCardView<MessageContent: View>: View {
             Text(L10n.t("hud.conversation.turn.latest"))
                 .font(PickyHUDTypography.metaSemibold)
                 .foregroundColor(group.isCurrent ? DS.Colors.info : DS.Colors.textSecondary)
-            Text(summary.displayText)
+            Text(summary.expandedDisplayText)
                 .font(PickyHUDTypography.metaSemibold)
                 .foregroundColor(DS.Colors.textTertiary)
                 .lineLimit(1)
@@ -640,13 +642,13 @@ struct PickyTurnCardView<MessageContent: View>: View {
         ))
         .accessibilityValue(PickyFocusStackChapterAccessibilityPresentation.value(
             isExpanded: true,
-            detail: summary.displayText
+            detail: summary.expandedDisplayText
         ))
     }
 
     private var recentHeader: some View {
         HStack(spacing: DS.Spacing.space1) {
-            Text(group.summary.displayText)
+            Text(group.summary.expandedDisplayText)
                 .font(PickyHUDTypography.metaSemibold)
                 .foregroundColor(DS.Colors.textTertiary)
                 .lineLimit(1)
@@ -660,7 +662,7 @@ struct PickyTurnCardView<MessageContent: View>: View {
         ))
         .accessibilityValue(PickyFocusStackChapterAccessibilityPresentation.value(
             isExpanded: true,
-            detail: group.summary.displayText
+            detail: group.summary.expandedDisplayText
         ))
     }
 
@@ -689,7 +691,7 @@ struct PickyTurnCardView<MessageContent: View>: View {
                         .fill(DS.Colors.info)
                         .frame(width: DS.Spacing.space1, height: DS.Spacing.space1)
                 }
-                Text(summary.displayText)
+                Text(summary.expandedDisplayText)
                     .font(PickyHUDTypography.metaSemibold)
                     .foregroundColor(DS.Colors.textSecondary)
                     .lineLimit(1)
@@ -705,7 +707,7 @@ struct PickyTurnCardView<MessageContent: View>: View {
         ))
         .accessibilityValue(PickyFocusStackChapterAccessibilityPresentation.value(
             isExpanded: true,
-            detail: summary.displayText
+            detail: summary.expandedDisplayText
         ))
         .accessibilityHint(L10n.t("hud.conversation.turn.collapse.accessibilityHint"))
         .hoverAffordance()
@@ -736,23 +738,16 @@ struct PickyTurnCardView<MessageContent: View>: View {
                         .truncationMode(.tail)
                     Spacer(minLength: 0)
                 }
-                HStack(spacing: DS.Spacing.space2) {
-                    if let responseText = presentation.responseText {
-                        Text(responseText)
-                            .font(PickyHUDTypography.supporting)
-                            .foregroundColor(
-                                presentation.responseKind == .error
-                                    ? DS.Colors.destructiveText
-                                    : DS.Colors.textSecondary
-                            )
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
-                    Spacer(minLength: 0)
-                    Text(presentation.summary.displayText)
-                        .font(PickyHUDTypography.metaMonospacedMedium)
-                        .foregroundColor(DS.Colors.textTertiary)
-                        .fixedSize(horizontal: true, vertical: false)
+                if let responseText = presentation.responseText {
+                    Text(responseText)
+                        .font(PickyHUDTypography.supporting)
+                        .foregroundColor(
+                            presentation.responseKind == .error
+                                ? DS.Colors.destructiveText
+                                : DS.Colors.textSecondary
+                        )
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
             }
             .padding(.vertical, DS.Spacing.space1)
@@ -776,7 +771,7 @@ struct PickyTurnCardView<MessageContent: View>: View {
     }
 
     private func collapsedAccessibilityValue(for presentation: PickyFocusStackPriorChapterPresentation) -> String {
-        [presentation.requestText, presentation.responseText, presentation.summary.displayText]
+        [presentation.requestText, presentation.responseText]
             .compactMap { $0 }
             .joined(separator: ". ")
     }

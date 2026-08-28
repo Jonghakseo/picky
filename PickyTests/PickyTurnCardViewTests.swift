@@ -438,6 +438,7 @@ struct PickyTurnCardViewTests {
         #expect(group.summary.toolCount == 4)
         #expect(group.summary.elapsedSeconds == 12)
         #expect(group.summary.displayText == "\(L10n.t("hud.conversation.turn.tool.many", Int64(4))) · \(L10n.t("hud.conversation.duration.seconds", Int64(12)))")
+        #expect(group.summary.expandedDisplayText == L10n.t("hud.conversation.duration.seconds", Int64(12)))
     }
 
     @Test func completedSummaryUsesSingularToolFormForCountOne() {

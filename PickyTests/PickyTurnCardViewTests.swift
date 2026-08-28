@@ -5,6 +5,7 @@
 //  Unit tests for the turn grouping logic that backs PickyTurnCardView.
 //
 
+import AppKit
 import Foundation
 import SwiftUI
 import Testing
@@ -149,6 +150,60 @@ struct PickyTurnCardViewTests {
         #expect(PickyFocusStackChapterAccessibilityPresentation.label(isCurrent: true, isLatest: true) == L10n.t("hud.conversation.turn.latest.accessibilityLabel"))
         #expect(PickyFocusStackChapterAccessibilityPresentation.label(isCurrent: true, isLatest: false) == L10n.t("hud.conversation.turn.current.accessibilityLabel"))
         #expect(PickyFocusStackChapterAccessibilityPresentation.label(isCurrent: false, isLatest: false) == L10n.t("hud.conversation.turn.previous.accessibilityLabel"))
+    }
+
+    @MainActor
+    @Test func expandedChapterKeepsRequestAndFirstResponseVisuallySeparated() {
+        let detailWidth: CGFloat = 400
+        let user = msg(
+            "u1",
+            kind: .userText,
+            secondsOffset: 0,
+            text: "나 뿐만 아니라 모든 팀원들의 데이터가 필요해서 깃헙 이력이 필요해."
+        )
+        let thinking = msg("thinking1", kind: .agentThinking, secondsOffset: 1, text: "reasoning")
+
+        func fittingHeight<Content: View>(_ content: Content) -> CGFloat {
+            let host = NSHostingView(rootView: content)
+            host.layoutSubtreeIfNeeded()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            host.layoutSubtreeIfNeeded()
+            return host.fittingSize.height
+        }
+
+        func renderedHeight(bodyMessages: [PickySessionMessage]) -> CGFloat {
+            let group = PickyTurnGroup(
+                id: user.id,
+                userMessage: user,
+                bodyMessages: bodyMessages,
+                isCurrent: true,
+                isLatest: true
+            )
+            return fittingHeight(
+                PickyTurnCardView(group: group) { message in
+                    if message.kind == .userText {
+                        PickyUserBubbleView(message: message)
+                    } else {
+                        PickyTypingBubbleView(message: message, initiallyCollapsed: true)
+                    }
+                }
+                .frame(width: detailWidth)
+                .fixedSize(horizontal: false, vertical: true)
+                .environment(\.pickyHUDDetailWidth, detailWidth)
+            )
+        }
+
+        let responseHeight = fittingHeight(
+            PickyTypingBubbleView(message: thinking, initiallyCollapsed: true)
+                .frame(width: detailWidth)
+                .fixedSize(horizontal: false, vertical: true)
+                .environment(\.pickyHUDDetailWidth, detailWidth)
+        )
+        let measuredSpacing = renderedHeight(bodyMessages: [thinking])
+            - renderedHeight(bodyMessages: [])
+            - responseHeight
+
+        #expect(abs(measuredSpacing - DS.Spacing.space5) < 0.5)
     }
 
     // MARK: - Expansion policy (race-window latch)

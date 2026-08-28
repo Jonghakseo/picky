@@ -598,6 +598,10 @@ struct PickyTurnCardView<MessageContent: View>: View {
                         PickyToolCallInlineRow(tool: activeTool, onTap: onOpenActiveToolHistory ?? {})
                     }
                 }
+                // Keep the request bubble and the first reasoning/response row
+                // as separate reading blocks. The outer stack already supplies
+                // 8pt; this adds 12pt without loosening spacing inside the response.
+                .padding(.top, group.userMessage == nil ? 0 : DS.Spacing.space3)
             }
         }
     }

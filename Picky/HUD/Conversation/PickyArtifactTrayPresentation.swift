@@ -50,7 +50,7 @@ struct PickyArtifactTrayPresentation: Equatable, Identifiable {
 
     static func subtitle(for artifact: PickyArtifact, homeURL: URL = FileManager.default.homeDirectoryForCurrentUser) -> String {
         if let url = artifact.url {
-            return url.host?.lowercased() ?? url.absoluteString
+            return url.absoluteString
         }
         if let path = artifact.path {
             return abbreviatedPath(path, homeURL: homeURL)

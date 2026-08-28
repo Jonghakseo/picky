@@ -175,7 +175,7 @@ private struct PickyArtifactTrayRow: View {
                             .font(PickyHUDTypography.status)
                             .foregroundStyle(subtitleColor)
                             .lineLimit(1)
-                            .truncationMode(.middle)
+                            .truncationMode(subtitleTruncationMode)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -217,6 +217,11 @@ private struct PickyArtifactTrayRow: View {
             return DS.Colors.destructiveText
         }
         return DS.Colors.textTertiary
+    }
+
+    private var subtitleTruncationMode: Text.TruncationMode {
+        if case .openURL = presentation.action { return .tail }
+        return .middle
     }
 
     private var primaryActionHint: String {

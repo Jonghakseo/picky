@@ -331,7 +331,8 @@ struct PickyConversationCardViewTests {
         let unavailablePresentation = PickyArtifactTrayPresentation(artifact: unavailableArtifact, homeURL: root)
 
         #expect(PickyArtifactTrayPresentation.trayCount(for: [urlArtifact, existingArtifact, missingArtifact, unavailableArtifact]) == 4)
-        #expect(urlPresentation.subtitle == "github.com")
+        #expect(urlPresentation.subtitle == artifactURL.absoluteString)
+        #expect(urlPresentation.copyValue == artifactURL.absoluteString)
         #expect(urlPresentation.action == .openURL(artifactURL))
         #expect(existingPresentation.subtitle == "~/reports/final-report.md")
         #expect(existingPresentation.action == .revealPath(existingFile.standardizedFileURL))

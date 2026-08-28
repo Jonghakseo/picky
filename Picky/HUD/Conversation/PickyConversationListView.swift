@@ -391,12 +391,18 @@ struct PickyConversationListView: View {
             isLatestAgentResponse: latestAgentResponse
         )
         let latestResponseShortcutHintVisible = shouldShowLatestResponseShortcutHint(for: message)
+        let subagentPresentation = PickySubagentInvocationPresentation(
+            invocation: message.subagentInvocation,
+            runs: session.subagentRuns,
+            createdAt: message.createdAt
+        )
         if let conversationStore {
             PickyConversationMessageLeafView(
                 messageStore: conversationStore.messageStore(id: message.id),
                 isLatestAgentResponse: latestAgentResponse,
                 rendersFullAgentResponse: rendersFullAgentResponse,
                 isLatestResponseShortcutHintVisible: latestResponseShortcutHintVisible,
+                subagentPresentation: subagentPresentation,
                 onBodyEvaluation: {
                     onMessageLeafBodyEvaluation(
                         message.id,
@@ -404,13 +410,14 @@ struct PickyConversationListView: View {
                         latestResponseShortcutHintVisible
                     )
                 }
-            ) { currentMessage, isLatestAgentResponse, rendersFullAgentResponse, isLatestResponseShortcutHintVisible in
+            ) { currentMessage, isLatestAgentResponse, rendersFullAgentResponse, isLatestResponseShortcutHintVisible, subagentPresentation in
                 messageView(
                     currentMessage,
                     in: group,
                     latestAgentResponseOverride: isLatestAgentResponse,
                     rendersFullAgentResponseOverride: rendersFullAgentResponse,
-                    latestResponseShortcutHintVisibleOverride: isLatestResponseShortcutHintVisible
+                    latestResponseShortcutHintVisibleOverride: isLatestResponseShortcutHintVisible,
+                    subagentPresentationOverride: subagentPresentation
                 )
             }
             .equatable()
@@ -425,7 +432,8 @@ struct PickyConversationListView: View {
         in group: PickyTurnGroup,
         latestAgentResponseOverride: Bool? = nil,
         rendersFullAgentResponseOverride: Bool? = nil,
-        latestResponseShortcutHintVisibleOverride: Bool? = nil
+        latestResponseShortcutHintVisibleOverride: Bool? = nil,
+        subagentPresentationOverride: PickySubagentInvocationPresentation? = nil
     ) -> some View {
         switch PickyConversationBubbleKind(message: message) {
         case .userText, .commandReceipt:
@@ -451,7 +459,7 @@ struct PickyConversationListView: View {
         case .typing:
             PickyTypingBubbleView(message: message, initiallyCollapsed: viewModel.thinkingBlocksHidden(sessionID: session.id))
         case .subagentInvocation:
-            if let presentation = PickySubagentInvocationPresentation(
+            if let presentation = subagentPresentationOverride ?? PickySubagentInvocationPresentation(
                 invocation: message.subagentInvocation,
                 runs: session.subagentRuns,
                 createdAt: message.createdAt
@@ -1148,14 +1156,19 @@ private struct PickyConversationMessageLeafView<Content: View>: View, Equatable 
     let isLatestAgentResponse: Bool
     let rendersFullAgentResponse: Bool
     let isLatestResponseShortcutHintVisible: Bool
+    /// Subagent run updates live outside the message store, so their projected
+    /// bubble value must participate in leaf equality instead of being trapped
+    /// inside an otherwise-equal content closure.
+    let subagentPresentation: PickySubagentInvocationPresentation?
     let onBodyEvaluation: () -> Void
-    @ViewBuilder let content: (PickySessionMessage, Bool, Bool, Bool) -> Content
+    @ViewBuilder let content: (PickySessionMessage, Bool, Bool, Bool, PickySubagentInvocationPresentation?) -> Content
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.messageStore.messageID == rhs.messageStore.messageID
             && lhs.isLatestAgentResponse == rhs.isLatestAgentResponse
             && lhs.rendersFullAgentResponse == rhs.rendersFullAgentResponse
             && lhs.isLatestResponseShortcutHintVisible == rhs.isLatestResponseShortcutHintVisible
+            && lhs.subagentPresentation == rhs.subagentPresentation
     }
 
     var body: some View {
@@ -1165,7 +1178,8 @@ private struct PickyConversationMessageLeafView<Content: View>: View, Equatable 
                 message,
                 isLatestAgentResponse,
                 rendersFullAgentResponse,
-                isLatestResponseShortcutHintVisible
+                isLatestResponseShortcutHintVisible,
+                subagentPresentation
             )
         }
     }

@@ -117,6 +117,32 @@ struct PickyTodoProgressPresentationTests {
         #expect(PickyConversationPlanDrawerPolicy.shouldCollapse(status: .running, todo: complete))
     }
 
+    @Test func runningIncompletePlanExposesProgressClusterAsDisclosureControl() throws {
+        let incomplete = try #require(PickyTodoProgressPresentation(state: PickyTodoState(
+            tasks: [PickyTodoTask(id: "todo", content: "Implement", status: .inProgress)],
+            updatedAt: Date(timeIntervalSince1970: 1_800_000_000)
+        )))
+        let collapsed = try #require(PickyConversationPlanProgressDisclosurePresentation(
+            status: .running,
+            todo: incomplete,
+            isExpanded: false
+        ))
+        let expanded = try #require(PickyConversationPlanProgressDisclosurePresentation(
+            status: .running,
+            todo: incomplete,
+            isExpanded: true
+        ))
+
+        #expect(collapsed.stepText == incomplete.countText)
+        #expect(collapsed.chevronName == "chevron.down")
+        #expect(expanded.chevronName == "chevron.up")
+        #expect(PickyConversationPlanProgressDisclosurePresentation(
+            status: .completed,
+            todo: incomplete,
+            isExpanded: false
+        ) == nil)
+    }
+
     @Test func completionCollapsesOnlyOnTheTransitionIntoDone() {
         #expect(PickyTodoProgressExpansionPolicy.shouldCollapse(previousIsComplete: nil, currentIsComplete: true))
         #expect(PickyTodoProgressExpansionPolicy.shouldCollapse(previousIsComplete: false, currentIsComplete: true))

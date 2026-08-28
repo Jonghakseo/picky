@@ -86,6 +86,21 @@ enum PickyConversationPlanDrawerPolicy {
     }
 }
 
+/// The checklist/count cluster is a disclosure control whenever the Plan drawer
+/// can open. Keeping this projection pure makes that interaction contract
+/// testable without a WindowServer-backed SwiftUI click test.
+struct PickyConversationPlanProgressDisclosurePresentation: Equatable {
+    let stepText: String
+    let chevronName: String
+
+    init?(status: PickySessionStatus, todo: PickyTodoProgressPresentation?, isExpanded: Bool) {
+        guard PickyConversationPlanDrawerPolicy.canOpen(status: status, todo: todo),
+              let todo else { return nil }
+        stepText = todo.countText
+        chevronName = isExpanded ? "chevron.up" : "chevron.down"
+    }
+}
+
 struct PickyConversationViewportState: Equatable {
     var isPinnedToBottom: Bool
     var hasUnreadContent: Bool
@@ -333,13 +348,7 @@ struct PickyConversationLiveStepView: View {
 
     private func runningPrimaryLine(stepText: String?, toolName: String?, elapsedText: String?) -> some View {
         HStack(spacing: DS.Spacing.xs) {
-            Image(systemName: presentation.iconName)
-                .font(PickyHUDTypography.statusSemibold)
-                .foregroundStyle(presentation.tone.textColor)
-                .accessibilityHidden(true)
-            if let stepText {
-                Text(stepText).font(PickyHUDTypography.statusMonospacedMedium).foregroundStyle(presentation.tone.textColor)
-            }
+            planProgressControl(stepText: stepText)
             if let toolName {
                 Button(action: onOpenToolHistory) {
                     Text(toolName).font(PickyHUDTypography.statusMedium).foregroundStyle(DS.Colors.accentText).lineLimit(1)
@@ -357,22 +366,71 @@ struct PickyConversationLiveStepView: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 
+    @ViewBuilder
+    private func planProgressControl(stepText: String?) -> some View {
+        if let disclosure = PickyConversationPlanProgressDisclosurePresentation(
+            status: projection.status,
+            todo: projection.todoPresentation,
+            isExpanded: isTodoExpanded
+        ) {
+            Button(action: onToggleTodo) {
+                HStack(spacing: DS.Spacing.xs) {
+                    planIcon
+                    Text(disclosure.stepText)
+                        .font(PickyHUDTypography.statusMonospacedMedium)
+                        .foregroundStyle(presentation.tone.textColor)
+                    Image(systemName: disclosure.chevronName)
+                        .pickyFont(size: 9.5, weight: .semibold)
+                        .foregroundStyle(DS.Colors.textTertiary)
+                        .accessibilityHidden(true)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("picky.todo.progress.disclosure")
+            .accessibilityLabel(L10n.t("hud.liveStep.currentPlan.accessibilityLabel", disclosure.stepText))
+            .accessibilityValue(projection.todoPresentation?.stepText ?? "")
+            .accessibilityHint(isTodoExpanded ? L10n.t("hud.todo.collapse") : L10n.t("hud.todo.expand"))
+            .help(isTodoExpanded ? L10n.t("hud.todo.collapse") : L10n.t("hud.todo.expand"))
+            .hoverAffordance()
+        } else {
+            HStack(spacing: DS.Spacing.xs) {
+                planIcon
+                if let stepText {
+                    Text(stepText)
+                        .font(PickyHUDTypography.statusMonospacedMedium)
+                        .foregroundStyle(presentation.tone.textColor)
+                }
+            }
+        }
+    }
+
+    private var planIcon: some View {
+        Image(systemName: presentation.iconName)
+            .font(PickyHUDTypography.statusSemibold)
+            .foregroundStyle(presentation.tone.textColor)
+            .accessibilityHidden(true)
+    }
+
     private func runningDetailButton(_ detail: String) -> some View {
         Group {
             if PickyConversationPlanDrawerPolicy.canOpen(
                 status: projection.status,
                 todo: projection.todoPresentation
             ) {
-                Button(action: onToggleTodo) { detailText(detail) }
-                    .buttonStyle(.plain)
-                    .focusable()
-                    .focused($isTodoOpenerFocused)
-                    .help(isTodoExpanded ? L10n.t("hud.todo.collapse") : L10n.t("hud.todo.expand"))
-                    .accessibilityLabel(L10n.t("hud.liveStep.currentPlan.accessibilityLabel", detail))
-                    .accessibilityValue(projection.todoPresentation?.stepText ?? "")
-                    .accessibilityHint(isTodoExpanded ? L10n.t("hud.todo.collapse") : L10n.t("hud.todo.expand"))
-                    .hoverAffordance()
-                    .onChange(of: todoOpenerFocusRequestID) { _, _ in isTodoOpenerFocused = true }
+                Button(action: onToggleTodo) {
+                    detailText(detail)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusable()
+                .focused($isTodoOpenerFocused)
+                .help(isTodoExpanded ? L10n.t("hud.todo.collapse") : L10n.t("hud.todo.expand"))
+                .accessibilityLabel(L10n.t("hud.liveStep.currentPlan.accessibilityLabel", detail))
+                .accessibilityValue(projection.todoPresentation?.stepText ?? "")
+                .accessibilityHint(isTodoExpanded ? L10n.t("hud.todo.collapse") : L10n.t("hud.todo.expand"))
+                .hoverAffordance()
+                .onChange(of: todoOpenerFocusRequestID) { _, _ in isTodoOpenerFocused = true }
             } else {
                 detailText(detail)
             }

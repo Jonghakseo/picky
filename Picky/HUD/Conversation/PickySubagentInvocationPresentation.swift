@@ -50,6 +50,21 @@ enum PickySubagentInvocationExpansionPolicy {
     }
 }
 
+/// Bubble-local interaction state. Persistence remains session-scoped in the
+/// ViewModel, but the press must update this value synchronously because the
+/// Conversation command boundary is intentionally unobserved.
+struct PickySubagentInvocationExpansionState: Equatable {
+    private(set) var isExpanded: Bool
+
+    init(isExpanded: Bool) {
+        self.isExpanded = isExpanded
+    }
+
+    func toggled() -> Self {
+        Self(isExpanded: !isExpanded)
+    }
+}
+
 struct PickySubagentInvocationPresentation: Equatable {
     enum Tone: Equatable { case running, success, error, pending }
 

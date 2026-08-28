@@ -310,6 +310,55 @@ struct PickyConversationProjectionTests {
         })
     }
 
+    @Test func mountedConversationListRefreshesSubagentLeafWhenRunProjectionChanges() {
+        let invocationID = "invocation-1"
+        let invocation = PickySubagentInvocation(
+            invocationId: invocationID,
+            action: .run,
+            planned: [.init(agent: "worker", task: "Implement")]
+        )
+        let invocationMessage = PickySessionMessage(
+            id: "message-subagent",
+            kind: .subagentInvocation,
+            createdAt: PickyProjectionReplayFixtures.terminalDate,
+            originatedBy: .mainAgent,
+            text: nil,
+            question: nil,
+            cancelledAt: nil,
+            activitySnapshot: nil,
+            errorContext: nil,
+            errorMessage: nil,
+            subagentInvocation: invocation
+        )
+        let running = subagentRun(invocationID: invocationID, status: .running)
+        let conversation = PickyConversationStore()
+        conversation.replaceMessages([invocationMessage])
+        let evaluations = ConversationProjectionMessageEvaluationRecorder()
+        let state = ConversationProjectionMountedListState(session: sessionCard(
+            messages: [invocationMessage],
+            subagentRuns: [running]
+        ))
+        let host = NSHostingView(rootView: AnyView(MountedConversationProjectionList(
+            state: state,
+            conversationStore: conversation,
+            viewModel: PickyProjectionReplayFixtures.makeViewModel(),
+            onMessageLeafBodyEvaluation: evaluations.record
+        )))
+        defer { dismantleMountedHost(host) }
+        host.frame = NSRect(x: 0, y: 0, width: 420, height: 640)
+        #expect(waitForMountedHost(host) { evaluations.count(for: invocationMessage.id) > 0 })
+        let initialEvaluations = evaluations.count(for: invocationMessage.id)
+
+        state.session = sessionCard(
+            messages: [invocationMessage],
+            subagentRuns: [subagentRun(invocationID: invocationID, status: .done)]
+        )
+
+        #expect(waitForMountedHost(host) {
+            evaluations.count(for: invocationMessage.id) > initialEvaluations
+        })
+    }
+
     private func turnGroups(from conversation: PickyConversationStore) -> [PickyTurnGroup] {
         let messages = conversation.orderedMessageIDs.compactMap { id -> PickySessionMessage? in
             guard case .loaded(let message) = conversation.messageStore(id: id).messageState else { return nil }
@@ -341,7 +390,8 @@ struct PickyConversationProjectionTests {
 
     private func sessionCard(
         messages: [PickySessionMessage],
-        id: String = "conversation-mounted-host"
+        id: String = "conversation-mounted-host",
+        subagentRuns: [PickySubagentRun] = []
     ) -> PickySessionListViewModel.SessionCard {
         PickySessionListViewModel.SessionCard.fromAgentSession(PickyAgentSession(
             id: id,
@@ -353,6 +403,7 @@ struct PickyConversationProjectionTests {
             lastSummary: "",
             logs: [],
             tools: [],
+            subagentRuns: subagentRuns,
             artifacts: [],
             changedFiles: [],
             messages: messages,
@@ -365,6 +416,25 @@ struct PickyConversationProjectionTests {
             pendingExtensionUiRequest: nil,
             notifyMainOnCompletion: nil
         ))
+    }
+
+    private func subagentRun(invocationID: String, status: PickySubagentRunStatus) -> PickySubagentRun {
+        PickySubagentRun(
+            runId: 1,
+            agent: "worker",
+            task: "Implement",
+            displayTask: nil,
+            status: status,
+            errorClass: nil,
+            startedAt: PickyProjectionReplayFixtures.terminalDate,
+            elapsedMs: 1_000,
+            batchId: nil,
+            pipelineId: nil,
+            pipelineStepIndex: nil,
+            resultPreview: status == .done ? "Implemented" : nil,
+            model: nil,
+            invocationId: invocationID
+        )
     }
 
     private func message(id: String, kind: PickySessionMessageKind = .agentText, text: String) -> PickySessionMessage {

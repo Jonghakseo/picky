@@ -41,6 +41,15 @@ struct PickySubagentProgressPresentationTests {
         #expect(!PickySubagentInvocationExpansionPolicy.isExpanded(savedValue: nil, isComplete: current.isComplete))
     }
 
+    @Test func bubbleLocalExpansionTogglesBeforeUnobservedPersistenceCatchesUp() {
+        let collapsed = PickySubagentInvocationExpansionState(isExpanded: false)
+        let expanded = collapsed.toggled()
+
+        #expect(!collapsed.isExpanded)
+        #expect(expanded.isExpanded)
+        #expect(!expanded.toggled().isExpanded)
+    }
+
     @Test func presentsOneCurrentActivityWithoutRepeatingStaleToolMetadata() throws {
         let usage = PickyContextUsage(tokens: 84_000, contextWindow: 200_000, percent: 42)
         let active = run(

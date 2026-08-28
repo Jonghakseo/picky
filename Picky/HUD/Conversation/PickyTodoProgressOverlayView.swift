@@ -184,6 +184,7 @@ struct PickyTodoProgressOverlayView: View {
             )
         }
         .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("picky.todo.drawer")
     }
 
     private var expandedHeader: some View {

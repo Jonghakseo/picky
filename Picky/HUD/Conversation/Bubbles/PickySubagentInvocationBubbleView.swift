@@ -9,10 +9,24 @@ import SwiftUI
 
 struct PickySubagentInvocationBubbleView: View {
     let presentation: PickySubagentInvocationPresentation
-    let isExpanded: Bool
+    private let persistedIsExpanded: Bool
     let setExpanded: (Bool) -> Void
     let onOpenRunResponse: (PickySubagentInvocationRow) -> Void
+    @State private var expansionState: PickySubagentInvocationExpansionState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(
+        presentation: PickySubagentInvocationPresentation,
+        isExpanded: Bool,
+        setExpanded: @escaping (Bool) -> Void,
+        onOpenRunResponse: @escaping (PickySubagentInvocationRow) -> Void
+    ) {
+        self.presentation = presentation
+        persistedIsExpanded = isExpanded
+        self.setExpanded = setExpanded
+        self.onOpenRunResponse = onOpenRunResponse
+        _expansionState = State(initialValue: PickySubagentInvocationExpansionState(isExpanded: isExpanded))
+    }
 
     var body: some View {
         Group {
@@ -25,16 +39,22 @@ struct PickySubagentInvocationBubbleView: View {
             }
         }
         .accessibilityElement(children: .contain)
+        .onChange(of: persistedIsExpanded) { _, nextValue in
+            expansionState = PickySubagentInvocationExpansionState(isExpanded: nextValue)
+        }
     }
+
+    private var isExpanded: Bool { expansionState.isExpanded }
 
     private func content(now: Date) -> some View {
         let _ = PickyPerf.event("subagent_invocation_bubble")
         return VStack(alignment: .leading, spacing: DS.Spacing.xs) {
-            Button { setExpanded(!isExpanded) } label: {
+            Button(action: toggleExpanded) {
                 header(now: now)
                     .contentShape(Rectangle())
             }
             .buttonStyle(PickySubagentInvocationButtonStyle())
+            .accessibilityIdentifier("picky.subagent.invocation.\(presentation.invocation.invocationId).disclosure")
             .accessibilityLabel(accessibilityHeader)
             .accessibilityValue(presentation.isComplete && !isExpanded ? presentation.collapsedText : presentation.statusText)
             .help(isExpanded ? L10n.t("hud.subagent.collapse") : L10n.t("hud.subagent.show"))
@@ -46,6 +66,7 @@ struct PickySubagentInvocationBubbleView: View {
                         rowView(row, now: now)
                     }
                 }
+                .accessibilityIdentifier("picky.subagent.invocation.\(presentation.invocation.invocationId).expanded")
                 .transition(.opacity)
             }
         }
@@ -194,6 +215,11 @@ struct PickySubagentInvocationBubbleView: View {
             }
         }
         .padding(.vertical, DS.Spacing.xs)
+    }
+
+    private func toggleExpanded() {
+        expansionState = expansionState.toggled()
+        setExpanded(expansionState.isExpanded)
     }
 
     private var accessibilityHeader: String {

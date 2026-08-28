@@ -427,7 +427,7 @@ Interactions:
 
 ### 8.3 Composer behavior
 
-The composer stays pinned to the bottom of a resized Pickle card. It changes behavior based on Pickle status. When Pi exposes runtime controls, compact model and thinking controls appear above the composer; click them to cycle the available model or thinking level.
+The composer stays pinned to the bottom of a resized Pickle card. It uses one bordered surface with model and thinking controls in the upper-right, the editor in the middle, and actions along the bottom; click the runtime controls to cycle the available model or thinking level. The editor grows from one through four lines as you type, temporarily expanding the card, then scrolls internally from the fifth line onward.
 
 | Session status | Default Return action |
 | --- | --- |
@@ -520,7 +520,7 @@ Behavior:
 
 ### 8.9 Notify on completion
 
-The composer left column includes a **Bell** button that toggles **Notify on completion** for the Pickle. When enabled, Picky surfaces a macOS banner (and the main agent picks up the completion event) the moment the Pickle finishes. The same toggle is exposed via `Cmd + N` on the HUD.
+The composer bottom action row includes a **Bell** button that toggles **Notify on completion** for the Pickle. When enabled, Picky surfaces a macOS banner (and the main agent picks up the completion event) the moment the Pickle finishes. The same toggle is exposed via `Cmd + N` on the HUD.
 
 ### 8.10 Inline questions and confirmations
 

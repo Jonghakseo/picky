@@ -2,4 +2,11 @@
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
+# Linked worktrees expose an absolute GIT_DIR to hooks. If inherited by tests
+# that create temporary repositories, every nested `git` command mutates this
+# worktree instead. Resolve the root first, then isolate all child processes.
+while IFS= read -r variable; do
+  unset "$variable"
+done < <(git rev-parse --local-env-vars)
+cd "$ROOT"
 exec "$ROOT/scripts/pre-push-checks.sh"

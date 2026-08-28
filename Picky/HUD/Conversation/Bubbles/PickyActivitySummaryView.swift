@@ -11,44 +11,116 @@ struct PickyActivitySummaryView: View {
     let summary: PickyActivitySummary
     var onTap: (() -> Void)? = nil
 
-    var body: some View {
-        if let onTap {
-            Button(action: onTap) {
-                content
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help("View tool history for this session")
-        } else {
-            content
-        }
+    @State private var isExpanded: Bool
+
+    init(
+        summary: PickyActivitySummary,
+        onTap: (() -> Void)? = nil,
+        initiallyExpanded: Bool = false
+    ) {
+        self.summary = summary
+        self.onTap = onTap
+        _isExpanded = State(initialValue: initiallyExpanded)
     }
 
-    private var content: some View {
-        PickyFlowLayout(itemSpacing: DS.Spacing.sm, rowSpacing: DS.Spacing.sm) {
-            ForEach(summary.visibleToolCallItems) { item in
-                activityChip(item.icon, label: item.label, count: item.count, color: item.color)
+    var body: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.space1) {
+            disclosureButton
+            if isExpanded {
+                historyButton
+                    .transition(.opacity)
             }
         }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 4)
+        .animation(.easeOut(duration: DS.Animation.fast), value: isExpanded)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func activityChip(_ icon: String, label: String, count: Int, color: Color) -> some View {
-        HStack(spacing: 3) {
-            Text(icon)
-                .pickyFont(size: 10.5, weight: .medium, design: .monospaced)
-            Text(label)
-                .font(PickyHUDTypography.labelMonospacedMedium)
-            Text("\(count)")
-                .font(PickyHUDTypography.labelMonospacedMedium)
-                .fontWeight(.bold)
+    private var disclosureButton: some View {
+        Button {
+            isExpanded.toggle()
+        } label: {
+            HStack(spacing: DS.Spacing.space2) {
+                Circle()
+                    .fill(DS.Colors.success)
+                    .frame(width: DS.Spacing.space1, height: DS.Spacing.space1)
+                    .accessibilityHidden(true)
+                Image(systemName: "list.bullet")
+                    .font(PickyHUDTypography.status)
+                    .foregroundColor(DS.Colors.textSecondary)
+                    .accessibilityHidden(true)
+                Text(summary.completedToolUseDisplayText)
+                    .font(PickyHUDTypography.statusSemibold)
+                    .foregroundColor(DS.Colors.textPrimary)
+                    .lineLimit(1)
+                Spacer(minLength: DS.Spacing.space1)
+                Text(L10n.t("hud.activity.summary.completed"))
+                    .font(PickyHUDTypography.meta)
+                    .foregroundColor(DS.Colors.textTertiary)
+                Image(systemName: "chevron.right")
+                    .font(PickyHUDTypography.metaSemibold)
+                    .foregroundColor(DS.Colors.textTertiary)
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    .accessibilityHidden(true)
+            }
+            .padding(.horizontal, DS.Spacing.space1)
+            .padding(.vertical, DS.Spacing.space1)
+            .contentShape(Rectangle())
         }
-        .foregroundColor(color)
-        .lineLimit(1)
+        .buttonStyle(.plain)
+        .help(L10n.t(isExpanded ? "hud.activity.summary.collapse" : "hud.activity.summary.expand"))
+        .accessibilityLabel(summary.completedToolUseDisplayText)
+        .accessibilityValue(L10n.t("hud.activity.summary.completed"))
+        .accessibilityHint(L10n.t(isExpanded ? "hud.activity.summary.collapse" : "hud.activity.summary.expand"))
+        .hoverAffordance()
     }
 
+    @ViewBuilder
+    private var historyButton: some View {
+        if let onTap {
+            Button(action: onTap) {
+                detailGrid
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(L10n.t("hud.activity.summary.openHistory"))
+            .accessibilityLabel(L10n.t("hud.activity.summary.details"))
+            .accessibilityHint(L10n.t("hud.activity.summary.openHistory"))
+            .hoverAffordance()
+        } else {
+            detailGrid
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(L10n.t("hud.activity.summary.details"))
+        }
+    }
+
+    private var detailGrid: some View {
+        LazyVGrid(
+            columns: Array(
+                repeating: GridItem(.flexible(), spacing: DS.Spacing.space3),
+                count: 3
+            ),
+            alignment: .leading,
+            spacing: DS.Spacing.space1
+        ) {
+            ForEach(summary.visibleToolCallItems) { item in
+                HStack(spacing: DS.Spacing.space1) {
+                    Text(item.label)
+                        .font(PickyHUDTypography.status)
+                        .foregroundColor(DS.Colors.textSecondary)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    Text("\(item.count)")
+                        .font(PickyHUDTypography.statusMonospacedMedium)
+                        .foregroundColor(DS.Colors.textPrimary)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .padding(.horizontal, DS.Spacing.space3)
+        .padding(.vertical, DS.Spacing.space2)
+        .background(DS.Colors.surface2)
+        .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous))
+    }
 }
 
 struct PickyContextUsageChip: View {
@@ -124,32 +196,37 @@ struct ContextUsageBatteryDisplay {
     }
 }
 
-struct PickyActivitySummaryDisplayItem: Identifiable {
+struct PickyActivitySummaryDisplayItem: Identifiable, Equatable {
     let id: String
-    let icon: String
     let labelKey: String
     let count: Int
-    let color: Color
 
     var label: String { L10n.t(labelKey) }
 }
 
 extension PickyActivitySummary {
-    /// Total number of tool invocations represented by this snapshot. Excludes
-    /// `thinking` because thinking blocks are not tool calls — they are
-    /// streamed by the model separately. Used by the turn header to display
-    /// the *count* of tool calls (not the count of distinct categories).
-    var totalToolCalls: Int { read + bash + edit + write + todo + subagent + other }
+    /// Number of concrete tool invocations shown in conversation summaries.
+    /// Thinking streams separately, while todo updates belong to the dedicated
+    /// progress surface rather than tool activity disclosure.
+    var totalToolCalls: Int { read + bash + edit + write + subagent + other }
+
+    var completedToolUseDisplayText: String {
+        L10n.t(
+            totalToolCalls == 1
+                ? "hud.activity.summary.toolsUsed.one"
+                : "hud.activity.summary.toolsUsed.many",
+            Int64(totalToolCalls)
+        )
+    }
 
     var visibleToolCallItems: [PickyActivitySummaryDisplayItem] {
         [
-            PickyActivitySummaryDisplayItem(id: "read", icon: "📖", labelKey: "hud.activity.category.read", count: read, color: DS.Colors.info),
-            PickyActivitySummaryDisplayItem(id: "bash", icon: "⌨", labelKey: "hud.activity.category.bash", count: bash, color: DS.Colors.warningText),
-            PickyActivitySummaryDisplayItem(id: "edit", icon: "✏", labelKey: "hud.activity.category.edit", count: edit, color: DS.Colors.accentText),
-            PickyActivitySummaryDisplayItem(id: "write", icon: "▣", labelKey: "hud.activity.category.write", count: write, color: DS.Colors.floatingGradientPurple),
-            PickyActivitySummaryDisplayItem(id: "todo", icon: "☑", labelKey: "hud.activity.category.todo", count: todo, color: DS.Colors.info),
-            PickyActivitySummaryDisplayItem(id: "subagent", icon: "◇", labelKey: "hud.activity.category.subagent", count: subagent, color: DS.Colors.floatingGradientPurple),
-            PickyActivitySummaryDisplayItem(id: "other", icon: "⋯", labelKey: "hud.activity.category.other", count: other, color: DS.Colors.textSecondary),
+            PickyActivitySummaryDisplayItem(id: "read", labelKey: "hud.activity.category.read", count: read),
+            PickyActivitySummaryDisplayItem(id: "bash", labelKey: "hud.activity.category.bash", count: bash),
+            PickyActivitySummaryDisplayItem(id: "edit", labelKey: "hud.activity.category.edit", count: edit),
+            PickyActivitySummaryDisplayItem(id: "write", labelKey: "hud.activity.category.write", count: write),
+            PickyActivitySummaryDisplayItem(id: "subagent", labelKey: "hud.activity.category.subagent", count: subagent),
+            PickyActivitySummaryDisplayItem(id: "other", labelKey: "hud.activity.category.other", count: other),
         ].filter { $0.count > 0 }
     }
 }

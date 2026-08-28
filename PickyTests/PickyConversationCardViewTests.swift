@@ -1703,17 +1703,51 @@ struct PickyConversationCardViewTests {
         #expect(!snapshot.showsActivitySummary, "zero-count snapshot should not surface in UI")
     }
 
-    @Test func activitySummarySeparatesTodoAndSubagentFromOtherTools() {
-        let items = PickyActivitySummary(
+    @Test func activitySummaryOmitsTodoAndKeepsConcreteToolCategories() {
+        let summary = PickyActivitySummary(
             edit: 3,
             other: 5,
             read: 2,
             todo: 4,
             subagent: 6
-        ).visibleToolCallItems
+        )
+        let items = summary.visibleToolCallItems
 
-        #expect(items.map(\.id) == ["read", "edit", "todo", "subagent", "other"])
-        #expect(items.map(\.count) == [2, 3, 4, 6, 5])
+        #expect(items.map(\.id) == ["read", "edit", "subagent", "other"])
+        #expect(items.map(\.count) == [2, 3, 6, 5])
+        #expect(summary.totalToolCalls == 16)
+    }
+
+    @Test func activitySummaryUsesCompactCompletedToolCountLabel() {
+        let summary = PickyActivitySummary(
+            edit: 1,
+            bash: 10,
+            read: 6,
+            write: 1,
+            todo: 4,
+            subagent: 2
+        )
+
+        #expect(summary.totalToolCalls == 20)
+        #expect(summary.completedToolUseDisplayText == L10n.t("hud.activity.summary.toolsUsed.many", Int64(20)))
+    }
+
+    @Test func activitySnapshotWithOnlyTodoIsHidden() {
+        let session = makeConversationSession(
+            status: .completed,
+            messages: [
+                message("u", kind: .userText, text: "hello"),
+                message("a-act", kind: .agentActivity, activitySnapshot: PickyActivitySummary(todo: 4)),
+                message("a", kind: .agentText, text: "done")
+            ]
+        )
+        let snapshot = PickyConversationListView(
+            session: session,
+            viewModel: makeViewModel()
+        ).renderSnapshot
+
+        #expect(snapshot.activitySummaryCount == 0)
+        #expect(!snapshot.showsActivitySummary)
     }
 
     @Test func activitySnapshotWithOnlyThinkingIsHidden() {

@@ -23,8 +23,6 @@ struct PickyHUDView: View {
     /// configuration changes; the conversation card binds to it so it grows or
     /// shrinks within whatever space remains below the dock's top edge.
     @ObservedObject var placement: PickyHUDPlacement = PickyHUDPlacement()
-    @ObservedObject var visibilityStore: PickyHUDVisibilityStore
-    @ObservedObject var actualPanelVisibilityStore: PickyHUDActualPanelVisibilityStore
     var voiceTargetHitTestRegistry: PickyVoiceTargetHitTestRegistry? = nil
     var openPerformanceTracker: PickyHUDOpenPerformanceTracker? = nil
     var onSizeChange: (_ size: CGSize, _ activeSessionID: String?) -> Void = { _, _ in }
@@ -72,7 +70,6 @@ struct PickyHUDView: View {
     @State private var isCommandShortcutHintVisible = false
     @State private var composerFocusRequestID = 0
     @State private var utilityPanelOpenSessionIDs: Set<String> = []
-    @StateObject private var utilityPanelStateStore = PickySessionUtilityUIStateStore.shared
     @State private var utilityPanelResizeStartHeight: CGFloat?
     @State private var utilityPanelHeightOverride: CGFloat?
     @AppStorage(
@@ -162,8 +159,6 @@ struct PickyHUDView: View {
 
     var body: some View {
         let _ = PickyPerf.event("hud_root_body")
-        // Read the published revision so persisted utility tab changes redraw this HUD.
-        let _ = utilityPanelStateStore.revision
         hudContent
             // Measure the HUD's intrinsic content height before the hosting view
             // applies the current panel height. Without this, active streaming
@@ -237,17 +232,8 @@ struct PickyHUDView: View {
                 openPendingManualPickleIfVisible()
                 openPendingRequestedSessionIfVisible()
             }
-            .onChange(of: dockSnapshot.activeSessions.map(\.id)) { _, currentSessionIDs in
-                utilityPanelStateStore.removeAll(except: Set(currentSessionIDs))
-            }
             .onChange(of: dockSnapshot.authoritativeRemovalEvent) { _, event in
                 consumeAuthoritativeRemovalEvent(event)
-            }
-            .onChange(of: visibilityStore.snapshot) { _, _ in
-                markActiveArtifactsSeenIfNeeded()
-            }
-            .onChange(of: actualPanelVisibilityStore.snapshot) { _, _ in
-                markActiveArtifactsSeenIfNeeded()
             }
             .onChange(of: dockSnapshot.openSessionRequest) { _, request in
                 handleOpenSessionRequest(request)
@@ -473,14 +459,8 @@ struct PickyHUDView: View {
                     PickySessionUtilityPanelView(
                         sessionStore: store,
                         commands: viewModel,
-                        selectedTab: utilityPanelTabBinding(for: activeSession.id),
-                        height: utilityPanelHeight,
-                        artifactsBadge: artifactBadge(for: activeSession)
+                        height: utilityPanelHeight
                     )
-                    .onAppear { markArtifactsSeenIfNeeded(for: activeSession) }
-                    .onChange(of: activeSession.artifacts) { _, _ in
-                        markArtifactsSeenIfNeeded(for: activeSession)
-                    }
                     // The panel's GeometryReader is greedy; without an explicit width it
                     // stretches past the conversation card when the host proposal is wider.
                     .frame(width: placement.cardWidth)
@@ -563,42 +543,6 @@ struct PickyHUDView: View {
         return PickyHUDUtilityPanelPolicy.conversationCardMaxHeight(
             availableCardHeight: placement.availableCardMaxHeight,
             utilityPanelHeight: utilityPanelHeight
-        )
-    }
-
-    private func utilityPanelTabBinding(for sessionID: String) -> Binding<PickyHUDUtilityPanelTab> {
-        Binding(
-            get: { utilityPanelStateStore.selectedTab(for: sessionID) },
-            set: { selectedTab in
-                utilityPanelStateStore.select(selectedTab, for: sessionID)
-                if let session = viewModel.sessionCard(sessionID: sessionID) {
-                    markArtifactsSeenIfNeeded(for: session)
-                }
-            }
-        )
-    }
-
-    private func artifactBadge(for session: PickyConversationSessionCard) -> PickyHUDUtilityPanelTabBadge? {
-        let count = PickySessionArtifactsPresentation.unseenCount(
-            artifacts: session.artifacts,
-            lastSeenArtifactsAt: utilityPanelStateStore.lastSeenArtifactsAt(for: session.id)
-        )
-        return count > 0 ? .count(count) : nil
-    }
-
-    private func markActiveArtifactsSeenIfNeeded() {
-        guard let activeSession,
-              let session = viewModel.sessionCard(sessionID: activeSession.id)
-        else { return }
-        markArtifactsSeenIfNeeded(for: session)
-    }
-
-    private func markArtifactsSeenIfNeeded(for session: PickyConversationSessionCard) {
-        utilityPanelStateStore.markArtifactsSeen(
-            for: session.id,
-            at: PickySessionArtifactsPresentation.latestUpdatedAt(artifacts: session.artifacts),
-            isArtifactsTabSelected: utilityPanelStateStore.selectedTab(for: session.id) == .artifacts,
-            isHUDPanelVisible: actualPanelVisibilityStore.isVisible(for: displayID) && isUtilityPanelOpen(sessionID: session.id)
         )
     }
 
@@ -735,9 +679,6 @@ struct PickyHUDView: View {
         hoverPreviewSessionID = result.state.hoverPreviewSessionID
         suppressedHoverSessionID = result.state.suppressedHoverSessionID
         utilityPanelOpenSessionIDs = result.state.utilityPanelOpenSessionIDs
-        for sessionID in event?.sessionIDs ?? [] {
-            utilityPanelStateStore.remove(sessionID: sessionID)
-        }
         lastHandledAuthoritativeRemovalRevision = result.handledRevision
     }
 
@@ -942,7 +883,6 @@ struct PickyHUDView: View {
             ?? "Pickle"
         viewModel.archive(sessionID: sessionID)
         utilityPanelOpenSessionIDs.remove(sessionID)
-        utilityPanelStateStore.remove(sessionID: sessionID)
         if heldSession?.sessionID == sessionID { heldSession = nil }
         if hoverPreviewSessionID == sessionID { hoverPreviewSessionID = nil }
         if suppressedHoverSessionID == sessionID { suppressedHoverSessionID = nil }

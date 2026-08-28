@@ -438,8 +438,6 @@ final class PickyHUDOverlayManager {
             panelIdentifier: panelIdentifier,
             displayID: displayID,
             placement: placement,
-            visibilityStore: visibilityStore,
-            actualPanelVisibilityStore: actualPanelVisibilityStore,
             voiceTargetHitTestRegistry: voiceTargetHitTestRegistry,
             openPerformanceTracker: openPerformanceTracker,
             onSizeChange: { [weak self] size, activeSessionID in

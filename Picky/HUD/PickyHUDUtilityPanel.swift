@@ -2,30 +2,10 @@
 //  PickyHUDUtilityPanel.swift
 //  Picky
 //
-//  Tabbed utility panel attached below a Pickle conversation card.
+//  Terminal utility panel attached below a Pickle conversation card.
 //
 
 import SwiftUI
-
-/// The available utility slots below a Pickle conversation. New slots belong
-/// here so their selection, accessibility, and tab treatment stay consistent.
-enum PickyHUDUtilityPanelTab: String, CaseIterable, Hashable, Identifiable {
-    case terminal
-    case artifacts
-
-    var id: Self { self }
-
-    var title: String {
-        switch self {
-        case .terminal: L10n.t("hud.utilityPanel.tab.terminal")
-        case .artifacts: L10n.t("hud.utilityPanel.tab.artifacts")
-        }
-    }
-}
-
-enum PickyHUDUtilityPanelTabBadge: Equatable {
-    case count(Int)
-}
 
 /// Pure state and layout policy for the Pickle utility panel.
 enum PickyHUDUtilityPanelPolicy {
@@ -65,122 +45,24 @@ enum PickyHUDUtilityPanelPolicy {
     }
 }
 
-/// A compact two-tab shell. The terminal stays mounted behind the artifacts tab
-/// so its process and scroll state survive utility-panel navigation.
+/// Terminal surface attached below a Pickle conversation card.
 struct PickySessionUtilityPanelView: View {
-    /// The mounted panel observes only this session's artifact store. Commands
-    /// are an unobserved capability for terminal attachment lifecycle.
     let sessionStore: PickySessionStore
     let commands: any PickySessionCommands
-    @Binding var selectedTab: PickyHUDUtilityPanelTab
     let height: CGFloat
-    let artifactsBadge: PickyHUDUtilityPanelTabBadge?
-
-    init(
-        sessionStore: PickySessionStore,
-        commands: any PickySessionCommands,
-        selectedTab: Binding<PickyHUDUtilityPanelTab>,
-        height: CGFloat,
-        artifactsBadge: PickyHUDUtilityPanelTabBadge? = nil
-    ) {
-        self.sessionStore = sessionStore
-        self.commands = commands
-        self._selectedTab = selectedTab
-        self.height = height
-        self.artifactsBadge = artifactsBadge
-    }
-
-    private var artifacts: [PickyArtifact] {
-        guard case .loaded(let artifacts) = sessionStore.artifactStore.artifactsState else { return [] }
-        return artifacts
-    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            tabBar
-            Divider()
-                .overlay(DS.Colors.borderSubtle)
-            GeometryReader { proxy in
-                ZStack {
-                    PickySessionExtendedTerminalView(
-                        sessionStore: sessionStore,
-                        commands: commands,
-                        height: proxy.size.height,
-                        showsPanelChrome: false,
-                        isFocusEligible: selectedTab == .terminal
-                    )
-                    .opacity(selectedTab == .terminal ? 1 : 0)
-                    .allowsHitTesting(selectedTab == .terminal)
-                    .accessibilityHidden(selectedTab != .terminal)
-
-                    PickySessionArtifactsView(artifacts: artifacts)
-                        .opacity(selectedTab == .artifacts ? 1 : 0)
-                        .allowsHitTesting(selectedTab == .artifacts)
-                        .accessibilityHidden(selectedTab != .artifacts)
-                }
-            }
-        }
+        PickySessionExtendedTerminalView(
+            sessionStore: sessionStore,
+            commands: commands,
+            height: height,
+            showsPanelChrome: false,
+            isFocusEligible: true
+        )
         .frame(height: height, alignment: .top)
         .background(panelBackground)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L10n.t("hud.utilityPanel.accessibilityLabel"))
-    }
-
-    private var tabBar: some View {
-        HStack(spacing: DS.Spacing.xs) {
-            ForEach(PickyHUDUtilityPanelTab.allCases) { tab in
-                utilityTab(tab)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, DS.Spacing.sm)
-        .padding(.vertical, DS.Spacing.xs)
-    }
-
-    private func utilityTab(_ tab: PickyHUDUtilityPanelTab) -> some View {
-        let isSelected = selectedTab == tab
-        return Button {
-            selectedTab = tab
-        } label: {
-            HStack(spacing: DS.Spacing.xs) {
-                Text(tab.title)
-                    .font(PickyHUDTypography.supportingMedium)
-                if let badge = badge(for: tab) {
-                    badgeView(badge)
-                }
-            }
-            .foregroundColor(isSelected ? DS.Colors.textPrimary : DS.Colors.textSecondary)
-            .padding(.horizontal, DS.Spacing.sm)
-            .padding(.vertical, DS.Spacing.xs)
-            .background(
-                RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
-                    .fill(isSelected ? DS.Colors.accentSubtle : Color.clear)
-            )
-        }
-        .buttonStyle(.plain)
-        .help(tab.title)
-        .accessibilityLabel(tab.title)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .hoverAffordance()
-    }
-
-    private func badge(for tab: PickyHUDUtilityPanelTab) -> PickyHUDUtilityPanelTabBadge? {
-        switch tab {
-        case .terminal: nil
-        case .artifacts: artifactsBadge
-        }
-    }
-
-    @ViewBuilder
-    private func badgeView(_ badge: PickyHUDUtilityPanelTabBadge) -> some View {
-        switch badge {
-        case let .count(count):
-            if count > 0 {
-                Text("\(count)")
-                    .font(PickyHUDTypography.metaSemibold)
-                    .foregroundColor(DS.Colors.accentText)
-            }
-        }
     }
 
     private var panelBackground: some View {

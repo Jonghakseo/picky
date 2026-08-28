@@ -9,15 +9,7 @@ import Testing
 @testable import Picky
 
 struct PickyHUDUtilityPanelPolicyTests {
-    @Test func utilityPanelTabsExposeTerminalAndArtifacts() {
-        #expect(PickyHUDUtilityPanelTab.allCases == [.terminal, .artifacts])
-        #expect(PickyHUDUtilityPanelTab(rawValue: "activity") == nil)
-        #expect(PickyHUDUtilityPanelTab(rawValue: "progress") == nil)
-        #expect(PickyHUDUtilityPanelTab(rawValue: "changes") == nil)
-        #expect(PickyHUDUtilityPanelTab(rawValue: "unknown") == nil)
-    }
-
-    @Test func hiddenTerminalRequestsFocusOnlyForTheTerminalTab() {
+    @Test func hiddenTerminalRequestsFocusOnlyWhenEligible() {
         #expect(PickySessionExtendedTerminalFocusPolicy.shouldRequestFocus(isFocusEligible: true))
         #expect(!PickySessionExtendedTerminalFocusPolicy.shouldRequestFocus(isFocusEligible: false))
     }

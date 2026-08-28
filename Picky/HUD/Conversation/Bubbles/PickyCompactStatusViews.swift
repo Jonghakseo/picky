@@ -36,43 +36,46 @@ struct PickyCompactingOverlayView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .allowsHitTesting(true)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Compacting")
+        .accessibilityLabel(L10n.t("hud.compact.running"))
     }
 }
 
 struct PickyCompactCompletionBubbleView: View {
-    @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
+    @State private var isExpanded = false
 
     var body: some View {
-        HStack(spacing: PickyConversationBubbleLayout.horizontalStackSpacing) {
-            HStack(alignment: .top, spacing: 8) {
-                ZStack {
-                    Circle()
-                        .stroke(DS.Colors.info.opacity(0.34), lineWidth: 0.8)
-                    Image(systemName: "checkmark")
-                        .pickyFont(size: 8.5, weight: .bold)
-                        .foregroundColor(DS.Colors.info)
-                }
-                .frame(width: 18, height: 18)
-                .padding(.top, 1)
-
-                VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: DS.Spacing.space1) {
+            Button { isExpanded.toggle() } label: {
+                HStack(spacing: DS.Spacing.space1) {
+                    Image(systemName: "checkmark.circle")
+                        .font(PickyHUDTypography.statusSemibold)
                     Text("hud.compact.done.title")
-                        .font(PickyHUDTypography.labelSemibold)
-                        .foregroundColor(DS.Colors.info)
-                    Text("hud.compact.done.body")
-                        .font(PickyHUDTypography.status)
-                        .foregroundColor(DS.Colors.info.opacity(0.82))
-                        .fixedSize(horizontal: false, vertical: true)
+                        .font(PickyHUDTypography.statusSemibold)
+                    Spacer(minLength: 0)
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .pickyFont(size: 9, weight: .semibold)
                 }
+                .foregroundColor(DS.Colors.textTertiary)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 9)
-            .frame(maxWidth: PickyConversationBubbleLayout.maxBubbleWidth(forDetailWidth: pickyHUDDetailWidth, fraction: 0.86), alignment: .leading)
-            .background(compactBubbleShape.fill(DS.Colors.accentSubtle.opacity(0.28)))
-            .overlay(compactBubbleShape.stroke(DS.Colors.info.opacity(0.25), lineWidth: 0.7))
-            Spacer(minLength: PickyConversationBubbleLayout.oppositeSideReserve)
+            .buttonStyle(.plain)
+            .help(L10n.t(isExpanded ? "hud.compact.done.collapse" : "hud.compact.done.expand"))
+            .accessibilityLabel(L10n.t("hud.compact.done.title"))
+            .accessibilityValue(L10n.t(
+                isExpanded ? "hud.conversation.turn.expanded" : "hud.conversation.turn.collapsed"
+            ))
+            .accessibilityHint(L10n.t(isExpanded ? "hud.compact.done.collapse" : "hud.compact.done.expand"))
+            .hoverAffordance()
+
+            if isExpanded {
+                Text("hud.compact.done.body")
+                    .font(PickyHUDTypography.status)
+                    .foregroundColor(DS.Colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, DS.Spacing.space4)
+            }
         }
+        .padding(.vertical, DS.Spacing.space1)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

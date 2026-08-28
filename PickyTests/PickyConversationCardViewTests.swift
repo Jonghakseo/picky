@@ -121,6 +121,12 @@ struct PickyConversationCardViewTests {
         #expect(snapshot.showsActivitySummary)
     }
 
+    @Test func thinkingBlockUsesLocalizedSupportingDisclosureLabels() {
+        #expect(PickyThinkingBlockPresentation.title == L10n.t("hud.thinking.title"))
+        #expect(PickyThinkingBlockPresentation.help(isCollapsed: true) == L10n.t("hud.thinking.expand"))
+        #expect(PickyThinkingBlockPresentation.help(isCollapsed: false) == L10n.t("hud.thinking.collapse"))
+    }
+
     @Test func assistantRunMetadataUsesCompactDimFooterText() {
         #expect(PickyAssistantRunMetadata(model: "openai-codex/gpt-5.5", thinkingLevel: .high).displayText == "gpt-5.5 high")
         #expect(PickyAssistantRunMetadata(model: "anthropic/claude-opus-4-7", thinkingLevel: .xhigh).displayText == "opus-4-7 xhigh")
@@ -154,6 +160,18 @@ struct PickyConversationCardViewTests {
 
         #expect(!PickyConversationContextLineView.hasContent(for: sessionWithoutContext))
         #expect(PickyConversationContextLineView.hasContent(for: makeConversationSession(status: .completed)))
+    }
+
+    @Test func contextSummaryShowsOnlyBranchOrFinalFolderFallback() {
+        #expect(PickyConversationContextSummaryPolicy.label(
+            branchDisplayName: "feature/focus-stack*",
+            cwd: "/Users/me/worktrees/product/temp-123"
+        ) == "feature/focus-stack*")
+        #expect(PickyConversationContextSummaryPolicy.label(
+            branchDisplayName: nil,
+            cwd: "/Users/me/worktrees/product/temp-123"
+        ) == "temp-123")
+        #expect(PickyConversationContextSummaryPolicy.label(branchDisplayName: "  ", cwd: "/") == nil)
     }
 
     @Test func agentResponsePreviewTruncatesAfterEightLinesOrFiveHundredCharacters() {
@@ -563,8 +581,8 @@ struct PickyConversationCardViewTests {
         #expect(!composer.isComposerInputDisabled)
         #expect(composer.defaultSubmitKind == .steer)
         #expect(composer.optionReturnSubmitKind == .followUp)
-        #expect(composer.placeholderText == "Queue a message for after compaction…")
-        #expect(composer.sendHelpText == "Queue message until compaction completes")
+        #expect(composer.placeholderText == L10n.t("hud.composer.placeholder.compacting"))
+        #expect(composer.sendHelpText == L10n.t("hud.composer.send.compacting"))
     }
 
     @Test func compactCompletionSystemMessageRendersDedicatedBubble() {
@@ -647,8 +665,7 @@ struct PickyConversationCardViewTests {
 
         #expect(snapshot.questionBubbleCount == 1)
         #expect(header.statusTone == .warning)
-        #expect(composer.placeholderText.contains("Steer this agent"))
-        #expect(composer.placeholderText.contains("esc Stop"))
+        #expect(composer.placeholderText == L10n.t("hud.composer.placeholder.steer"))
     }
 
     @Test func composerShowsNotifyOnCompletionState() {
@@ -663,9 +680,9 @@ struct PickyConversationCardViewTests {
         )
 
         #expect(enabledComposer.notifyOnCompletionIconName == "bell.fill")
-        #expect(enabledComposer.notifyOnCompletionHelpText == "Notify Picky on completion (⌘N)")
+        #expect(enabledComposer.notifyOnCompletionHelpText == L10n.t("hud.composer.notify.on.help"))
         #expect(disabledComposer.notifyOnCompletionIconName == "bell.slash")
-        #expect(disabledComposer.notifyOnCompletionHelpText == "Do not notify Picky on completion (⌘N)")
+        #expect(disabledComposer.notifyOnCompletionHelpText == L10n.t("hud.composer.notify.off.help"))
     }
 
     @Test func composerStopButtonOnlyShowsForActiveTurns() {
@@ -705,7 +722,7 @@ struct PickyConversationCardViewTests {
         )
 
         #expect(header.titleHelpText.contains("/name"))
-        #expect(header.titleHelpText.contains("rename"))
+        #expect(header.titleHelpText.contains(L10n.t("hud.header.title.rename.help")))
     }
 
     @Test func headerCloseActionClosesOnlyThePresentedCard() {
@@ -752,6 +769,7 @@ struct PickyConversationCardViewTests {
 
         #expect(presentation.hasContent)
         #expect(presentation.contextDisplay?.label == "42%")
+        #expect(presentation.contextDisplay?.localizedLabel == L10n.t("hud.conversation.meta.context", "42%"))
         #expect(presentation.modelText == "anthropic/claude-opus-4-7")
         #expect(presentation.thinkingLevelText == "xhigh")
         #expect(presentation.helpText.contains("anthropic/claude-opus-4-7"))
@@ -812,7 +830,7 @@ struct PickyConversationCardViewTests {
         #expect(initial == afterJournalUpdate)
         #expect(initial.todoPresentation?.countText == "1/1")
         #expect(initial.activeTool?.toolCallId == "running-tool")
-        #expect(initial.elapsedText(at: baseDate.addingTimeInterval(4)) == "3s")
+        #expect(initial.elapsedText(at: baseDate.addingTimeInterval(4)) == L10n.t("hud.conversation.duration.seconds", Int64(3)))
         #expect(PickyConversationLiveStepPresentation(projection: initial) == .running(
             stepText: "1/1",
             detail: "Implement HUD",
@@ -837,7 +855,7 @@ struct PickyConversationCardViewTests {
         #expect(projection.activeTool == nil)
         #expect(PickyConversationLiveStepPresentation(projection: projection) == .running(
             stepText: nil,
-            detail: "Working",
+            detail: L10n.t("hud.liveStep.working"),
             toolName: nil
         ))
     }
@@ -1134,9 +1152,7 @@ struct PickyConversationCardViewTests {
             isFileDropTargeted: true
         )
 
-        #expect(composer.placeholderText.contains("screenshots"))
-        #expect(composer.placeholderText.contains("anywhere"))
-        #expect(composer.placeholderText.contains("insert paths"))
+        #expect(composer.placeholderText == L10n.t("hud.composer.placeholder.drop"))
     }
 
     @Test func fileDropAcceptsImageProviders() {
@@ -1181,30 +1197,25 @@ struct PickyConversationCardViewTests {
             let composer = PickyConversationComposerView(session: makeConversationSession(status: status), viewModel: viewModel)
             #expect(composer.defaultSubmitKind == .steer)
             #expect(composer.optionReturnSubmitKind == .followUp)
-            #expect(composer.placeholderText.contains("Steer this agent"))
-            #expect(composer.placeholderText.contains("⌥↵ Follow-up"))
+            #expect(composer.placeholderText == L10n.t("hud.composer.placeholder.steer"))
         }
 
         for status in [PickySessionStatus.completed, .blocked] {
             let composer = PickyConversationComposerView(session: makeConversationSession(status: status), viewModel: viewModel)
             #expect(composer.defaultSubmitKind == .followUp)
             #expect(composer.optionReturnSubmitKind == .followUp)
-            #expect(composer.placeholderText.contains("Send a follow-up"))
+            #expect(composer.placeholderText == L10n.t("hud.composer.placeholder.followUp"))
         }
 
         let cancelledComposer = PickyConversationComposerView(session: makeConversationSession(status: .cancelled), viewModel: viewModel)
         #expect(cancelledComposer.defaultSubmitKind == .steer)
         #expect(cancelledComposer.optionReturnSubmitKind == nil)
-        #expect(cancelledComposer.placeholderText.contains("Resume this agent with a steer"))
-        #expect(!cancelledComposer.placeholderText.contains("follow-up"))
+        #expect(cancelledComposer.placeholderText == L10n.t("hud.composer.placeholder.resume"))
 
         let failedComposer = PickyConversationComposerView(session: makeConversationSession(status: .failed), viewModel: viewModel)
         #expect(failedComposer.defaultSubmitKind == .steer)
         #expect(failedComposer.optionReturnSubmitKind == nil)
-        #expect(failedComposer.placeholderText.contains("recovery steer"))
-        #expect(failedComposer.placeholderText.contains("open terminal"))
-        #expect(!failedComposer.placeholderText.contains("logs"))
-        #expect(!failedComposer.placeholderText.contains("Follow-up"))
+        #expect(failedComposer.placeholderText == L10n.t("hud.composer.placeholder.recovery"))
     }
 
     @Test func composerSubmitFailureUpdatesLastError() async throws {
@@ -1504,23 +1515,55 @@ struct PickyConversationCardViewTests {
         #expect(longBubble.displayedMarkdownPreview == exactCharacters + "...")
     }
 
-    @Test func latestAgentBubbleShowsFullMarkdownAndStillOffersReport() {
+    @Test func latestTurnAgentSegmentsShowFullMarkdownWhileOnlyNewestOwnsShortcutState() {
         let eightLines = (1...8).map { "line \($0)" }.joined(separator: "\n")
         let nineLines = eightLines + "\nline 9"
         let agentMessage = message("m-agent", kind: .agentText, text: nineLines)
 
         let olderBubble = PickyAgentBubbleView(message: agentMessage, onOpenAsReport: {})
+        let latestTurnSegment = PickyAgentBubbleView(
+            message: agentMessage,
+            onOpenAsReport: {},
+            rendersFullResponse: true
+        )
         let latestBubble = PickyAgentBubbleView(
             message: agentMessage,
             onOpenAsReport: {},
-            isLatestAgentResponse: true
+            isLatestAgentResponse: true,
+            isLatestResponseShortcutHintVisible: true
         )
 
         #expect(olderBubble.displayedMarkdown == eightLines + "...")
         #expect(olderBubble.displayedCodeBlockMaxLines == PickyAgentResponsePreview.codeBlockMaxLines)
+        #expect(latestTurnSegment.displayedMarkdown == nineLines)
+        #expect(latestTurnSegment.displayedCodeBlockMaxLines == 0)
+        #expect(!latestTurnSegment.isLatestResponseShortcutHintVisible)
+        #expect(!latestTurnSegment.shouldOfferReport)
         #expect(latestBubble.displayedMarkdown == nineLines)
         #expect(latestBubble.displayedCodeBlockMaxLines == 0)
+        #expect(latestBubble.isLatestResponseShortcutHintVisible)
         #expect(latestBubble.shouldOfferReport)
+    }
+
+    @Test func latestTurnVisibilityPolicyExpandsEveryAgentSegmentOnlyInLatestTurn() {
+        let agentMessage = message("m-agent", kind: .agentText, text: "answer")
+        let thinkingMessage = message("m-thinking", kind: .agentThinking, text: "reasoning")
+
+        #expect(PickyAgentResponseVisibilityPolicy.rendersFullResponse(
+            message: agentMessage,
+            isLatestTurn: true,
+            isLatestAgentResponse: false
+        ))
+        #expect(!PickyAgentResponseVisibilityPolicy.rendersFullResponse(
+            message: agentMessage,
+            isLatestTurn: false,
+            isLatestAgentResponse: false
+        ))
+        #expect(!PickyAgentResponseVisibilityPolicy.rendersFullResponse(
+            message: thinkingMessage,
+            isLatestTurn: true,
+            isLatestAgentResponse: false
+        ))
     }
 
     // MARK: - PR11 regression: per-turn agent_activity snapshot

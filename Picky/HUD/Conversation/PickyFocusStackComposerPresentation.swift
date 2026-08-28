@@ -15,11 +15,11 @@ struct PickyComposerSubmitPresentation: Equatable {
     init(kind: PickyConversationComposerSubmitKind?, bashMode: PickyComposerBashMode) {
         switch kind {
         case .steer:
-            label = "Steer"
+            label = L10n.t("hud.composer.submit.steer")
         case .followUp:
-            label = "Follow-up"
+            label = L10n.t("hud.composer.submit.followUp")
         case nil:
-            label = "Send"
+            label = L10n.t("hud.composer.submit.send")
         }
         iconName = bashMode == .none ? "paperplane.fill" : "play.fill"
         accessibilityLabel = label
@@ -40,11 +40,11 @@ struct PickyComposerRuntimePresentation: Equatable {
     }
 
     var modelLabel: String? {
-        modelText.map { "Model: \($0)" }
+        modelText.map { L10n.t("hud.conversation.meta.model", $0) }
     }
 
     var thinkingLabel: String? {
-        thinkingText.map { "Thinking: \($0)" }
+        thinkingText.map { L10n.t("hud.conversation.meta.thinking", $0) }
     }
 
     private static func normalized(_ value: String?) -> String? {
@@ -86,8 +86,8 @@ enum PickyQueueDockAction: Equatable {
 
     var inFlightLabel: String {
         switch self {
-        case .restore: return "Restoring…"
-        case .clear: return "Clearing…"
+        case .restore: return L10n.t("hud.queue.restoring")
+        case .clear: return L10n.t("hud.queue.clearing")
         }
     }
 
@@ -106,8 +106,8 @@ struct PickyQueueDockKindPresentation: Equatable, Identifiable {
 
         var label: String {
             switch self {
-            case .steer: return "Steer"
-            case .followUp: return "Follow-up"
+            case .steer: return L10n.t("hud.composer.submit.steer")
+            case .followUp: return L10n.t("hud.composer.submit.followUp")
             }
         }
     }
@@ -119,11 +119,16 @@ struct PickyQueueDockKindPresentation: Equatable, Identifiable {
     var id: Kind { kind }
 
     var modeLabel: String {
-        mode == .all ? "all together" : "individually"
+        L10n.t(mode == .all ? "hud.queue.mode.all" : "hud.queue.mode.individual")
     }
 
     var accessibilityValue: String {
-        "\(count) \(kind.label) \(count == 1 ? "item" : "items"), \(modeLabel)"
+        L10n.t(
+            count == 1 ? "hud.queue.item.one.accessibilityValue" : "hud.queue.item.many.accessibilityValue",
+            Int64(count),
+            kind.label,
+            modeLabel
+        )
     }
 }
 

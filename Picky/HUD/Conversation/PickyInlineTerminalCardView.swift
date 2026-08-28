@@ -112,7 +112,7 @@ struct PickyInlineTerminalCardView: View {
             Text("hud.inlineTerminal.unavailable.body")
                 .pickyFont(size: 11)
                 .foregroundColor(DS.Colors.textSecondary)
-            Button("Back to Chat") {
+            Button(L10n.t("hud.inlineTerminal.backToChat")) {
                 commands.disableInlineTerminalMode(sessionID: session.id)
             }
             .buttonStyle(.borderless)
@@ -191,7 +191,7 @@ private struct PickyInlineTerminalSessionView: View {
             }
             .pickyFont(size: 11, weight: .semibold)
             .buttonStyle(.borderless)
-            .help("Return to the SwiftUI chat and composer (⌘T)")
+            .help(L10n.t("hud.inlineTerminal.backToChat.help"))
 
             Menu {
                 PickyConversationMenu(
@@ -210,7 +210,7 @@ private struct PickyInlineTerminalSessionView: View {
             .frame(width: 18, height: 18)
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
-            .accessibilityLabel("Terminal mode menu")
+            .accessibilityLabel(L10n.t("hud.inlineTerminal.menu.accessibilityLabel"))
 
             PickyConversationCloseButton(onClose: onClose)
         }
@@ -230,7 +230,7 @@ private struct PickyInlineTerminalSessionView: View {
                     .pickyFont(size: 11, design: .monospaced)
                     .foregroundColor(DS.Colors.textSecondary)
                     .textSelection(.enabled)
-                Button("Back to Chat") {
+                Button(L10n.t("hud.inlineTerminal.backToChat")) {
                     commands.disableInlineTerminalMode(sessionID: session.id)
                 }
                 .buttonStyle(.borderless)
@@ -262,7 +262,7 @@ private struct PickyInlineTerminalSessionView: View {
                 .pickyFont(size: 11)
                 .foregroundColor(DS.Colors.textSecondary)
                 .multilineTextAlignment(.center)
-            Button("Show This TUI") {
+            Button(L10n.t("hud.inlineTerminal.showThisTUI")) {
                 commands.activateInlineTerminalAttachment(sessionID: session.id, attachmentID: attachmentID)
             }
             .pickyFont(size: 11, weight: .semibold)
@@ -307,7 +307,7 @@ private struct PickyInlineTerminalContinuitySummary: View {
             .foregroundColor(DS.Colors.textTertiary)
             .lineLimit(1)
             .truncationMode(.tail)
-            .accessibilityLabel("Session continuity")
+            .accessibilityLabel(L10n.t("hud.inlineTerminal.continuity.accessibilityLabel"))
             .accessibilityValue(presentation.accessibilityValue)
     }
 }

@@ -63,7 +63,7 @@ struct PickyTurnCardViewTests {
         #expect(groups[1].id == "u1")
     }
 
-    @Test func currentTurnFlagSetOnlyForActiveSessions() {
+    @Test func currentTurnFlagTracksActivityWhileLatestAlwaysTracksTheLastTurn() {
         let messages: [PickySessionMessage] = [
             msg("u1", kind: .userText, secondsOffset: 0),
             msg("a1", kind: .agentText, secondsOffset: 1),
@@ -72,15 +72,19 @@ struct PickyTurnCardViewTests {
 
         let runningGroups = PickyTurnGrouper.groups(from: messages, sessionStatus: .running)
         #expect(runningGroups.map(\.isCurrent) == [false, true])
+        #expect(runningGroups.map(\.isLatest) == [false, true])
 
         let completedGroups = PickyTurnGrouper.groups(from: messages, sessionStatus: .completed)
         #expect(completedGroups.map(\.isCurrent) == [false, false])
+        #expect(completedGroups.map(\.isLatest) == [false, true])
 
         let failedGroups = PickyTurnGrouper.groups(from: messages, sessionStatus: .failed)
         #expect(failedGroups.map(\.isCurrent) == [false, false])
+        #expect(failedGroups.map(\.isLatest) == [false, true])
 
         let waitingGroups = PickyTurnGrouper.groups(from: messages, sessionStatus: .waiting_for_input)
         #expect(waitingGroups.map(\.isCurrent) == [false, true])
+        #expect(waitingGroups.map(\.isLatest) == [false, true])
     }
 
     @Test func emptyInputProducesNoGroups() {
@@ -90,12 +94,13 @@ struct PickyTurnCardViewTests {
 
     // MARK: - Default expansion policy
 
-    @Test func turnCardDefaultExpansionFollowsIsCurrent() {
-        let currentGroup = PickyTurnGroup(
+    @Test func latestTurnIsAlwaysExpandedAndHasNoCollapseState() {
+        let latestGroup = PickyTurnGroup(
             id: "u1",
             userMessage: msg("u1", kind: .userText, secondsOffset: 0),
             bodyMessages: [msg("a1", kind: .agentText, secondsOffset: 1)],
-            isCurrent: true
+            isCurrent: false,
+            isLatest: true
         )
         let pastGroup = PickyTurnGroup(
             id: "u0",
@@ -104,18 +109,20 @@ struct PickyTurnCardViewTests {
             isCurrent: false
         )
 
-        let currentCard = PickyTurnCardView(group: currentGroup) { _ in EmptyMessageContent() }
+        let latestCard = PickyTurnCardView(group: latestGroup) { _ in EmptyMessageContent() }
         let pastCard = PickyTurnCardView(group: pastGroup) { _ in EmptyMessageContent() }
 
-        #expect(currentCard.isExpanded == true)
-        #expect(pastCard.isExpanded == false)
+        #expect(latestCard.isExpanded)
+        #expect(!PickyTurnChapterPolicy.canCollapse(isLatest: latestGroup.isLatest))
+        #expect(!pastCard.isExpanded)
+        #expect(PickyTurnChapterPolicy.canCollapse(isLatest: pastGroup.isLatest))
     }
 
-    @Test func collapsedCurrentTurnRetainsCurrentVisualAndAccessibilityState() {
-        #expect(PickyFocusStackChapterAccessibilityPresentation.visualState(isCurrent: true) == "Current")
-        #expect(PickyFocusStackChapterAccessibilityPresentation.label(isCurrent: true) == "Current turn")
-        #expect(PickyFocusStackChapterAccessibilityPresentation.value(isExpanded: false, detail: "0 steps · 2s") == "Collapsed. 0 steps · 2s")
-        #expect(PickyFocusStackChapterAccessibilityPresentation.label(isCurrent: false) == "Previous turn")
+    @Test func chapterAccessibilityDistinguishesLatestCurrentAndPreviousTurns() {
+        #expect(PickyFocusStackChapterAccessibilityPresentation.visualState(isCurrent: true, isLatest: true) == L10n.t("hud.conversation.turn.latest"))
+        #expect(PickyFocusStackChapterAccessibilityPresentation.label(isCurrent: true, isLatest: true) == L10n.t("hud.conversation.turn.latest.accessibilityLabel"))
+        #expect(PickyFocusStackChapterAccessibilityPresentation.label(isCurrent: true, isLatest: false) == L10n.t("hud.conversation.turn.current.accessibilityLabel"))
+        #expect(PickyFocusStackChapterAccessibilityPresentation.label(isCurrent: false, isLatest: false) == L10n.t("hud.conversation.turn.previous.accessibilityLabel"))
     }
 
     // MARK: - Expansion policy (race-window latch)
@@ -171,6 +178,14 @@ struct PickyTurnCardViewTests {
     }
 
     // MARK: - Collapsed representative selection
+
+    @Test func collapsedSummaryRemovesMarkdownPresentationSyntax() {
+        let summary = PickyFocusStackPriorChapterPresentation.oneLinePlainText(
+            "## 찬성 — **중요** `code` [링크](https://example.com)"
+        )
+
+        #expect(summary == "찬성 — 중요 code 링크")
+    }
 
     @Test func collapsedRepresentativeFavorsLastAgentText() {
         let group = PickyTurnGroup(
@@ -233,7 +248,7 @@ struct PickyTurnCardViewTests {
         #expect(presentation.responseText == "Updated the summary.")
         #expect(presentation.responseKind == .response)
         #expect(presentation.summary == group.summary)
-        #expect(presentation.summary.displayText == "2 tools · 3s")
+        #expect(presentation.summary.displayText == "\(L10n.t("hud.conversation.turn.tool.many", Int64(2))) · \(L10n.t("hud.conversation.duration.seconds", Int64(3)))")
     }
 
     @Test func priorChapterPresentationUsesCommandReceiptWhenRequestTextIsAbsent() {
@@ -291,7 +306,7 @@ struct PickyTurnCardViewTests {
 
         #expect(presentation.responseText == nil)
         #expect(presentation.responseKind == .unavailable)
-        #expect(presentation.summary.displayText == "1 tool · 1s")
+        #expect(presentation.summary.displayText == "\(L10n.t("hud.conversation.turn.tool.one", Int64(1))) · \(L10n.t("hud.conversation.duration.seconds", Int64(1)))")
     }
 
     @Test func grouperPullsCompactSystemMessagesOutOfBodyIntoTrailing() {
@@ -396,7 +411,7 @@ struct PickyTurnCardViewTests {
         #expect(!group.summary.showsStepCount)
         #expect(group.summary.toolCount == 4)
         #expect(group.summary.elapsedSeconds == 12)
-        #expect(group.summary.displayText == "4 tools · 12s")
+        #expect(group.summary.displayText == "\(L10n.t("hud.conversation.turn.tool.many", Int64(4))) · \(L10n.t("hud.conversation.duration.seconds", Int64(12)))")
     }
 
     @Test func completedSummaryUsesSingularToolFormForCountOne() {
@@ -409,18 +424,18 @@ struct PickyTurnCardViewTests {
             isCurrent: false
         )
 
-        #expect(group.summary.displayText == "1 tool · 30s")
+        #expect(group.summary.displayText == "\(L10n.t("hud.conversation.turn.tool.one", Int64(1))) · \(L10n.t("hud.conversation.duration.seconds", Int64(30)))")
     }
 
     @Test func summaryFormatsElapsedInMinutesAndHours() {
         let oneMinute = PickyTurnSummary(stepCount: 1, toolCount: 0, elapsedSeconds: 90)
-        #expect(oneMinute.elapsedDisplayText == "1m")
+        #expect(oneMinute.elapsedDisplayText == L10n.t("hud.conversation.duration.minutes", Int64(1)))
 
         let twoHours = PickyTurnSummary(stepCount: 1, toolCount: 0, elapsedSeconds: 7200)
-        #expect(twoHours.elapsedDisplayText == "2h")
+        #expect(twoHours.elapsedDisplayText == L10n.t("hud.conversation.duration.hours", Int64(2)))
 
         let twoHoursFifteen = PickyTurnSummary(stepCount: 1, toolCount: 0, elapsedSeconds: 8100)
-        #expect(twoHoursFifteen.elapsedDisplayText == "2h 15m")
+        #expect(twoHoursFifteen.elapsedDisplayText == L10n.t("hud.conversation.duration.hoursMinutes", Int64(2), Int64(15)))
     }
 
     @Test func currentSummaryUsesInjectedNowForLiveElapsedTime() {
@@ -432,7 +447,7 @@ struct PickyTurnCardViewTests {
         )
 
         #expect(group.summary(now: originDate.addingTimeInterval(22)).elapsedSeconds == 22)
-        #expect(group.summary(now: originDate.addingTimeInterval(22)).displayText == "1 step · 22s")
+        #expect(group.summary(now: originDate.addingTimeInterval(22)).displayText == "\(L10n.t("hud.conversation.turn.step.one", Int64(1))) · \(L10n.t("hud.conversation.duration.seconds", Int64(22)))")
     }
 
     @Test func completedSummaryIgnoresInjectedNowAndStaysFixed() {
@@ -444,7 +459,7 @@ struct PickyTurnCardViewTests {
         )
 
         #expect(group.summary(now: originDate.addingTimeInterval(22)).elapsedSeconds == 5)
-        #expect(group.summary(now: originDate.addingTimeInterval(22)).displayText == "5s")
+        #expect(group.summary(now: originDate.addingTimeInterval(22)).displayText == L10n.t("hud.conversation.duration.seconds", Int64(5)))
     }
 
     @Test func summaryWithNoBodyMessagesReportsZeroEverything() {
@@ -460,7 +475,7 @@ struct PickyTurnCardViewTests {
         #expect(group.summary.elapsedSeconds == 0)
         // `0 tools` is dropped so thinking-only turns and pre-tool moments
         // don't carry a meaningless zero count in the header.
-        #expect(group.summary.displayText == "0 steps · 0s")
+        #expect(group.summary.displayText == "\(L10n.t("hud.conversation.turn.step.many", Int64(0))) · \(L10n.t("hud.conversation.duration.seconds", Int64(0)))")
     }
 
     @Test func summaryOmitsToolSegmentWhenNoToolsHaveRun() {
@@ -474,7 +489,7 @@ struct PickyTurnCardViewTests {
 
         // thinking is not counted as a tool invocation, so the segment drops.
         #expect(group.summary.toolCount == 0)
-        #expect(group.summary.displayText == "1 step · 5s")
+        #expect(group.summary.displayText == "\(L10n.t("hud.conversation.turn.step.one", Int64(1))) · \(L10n.t("hud.conversation.duration.seconds", Int64(5)))")
         #expect(!group.summary.displayText.contains("tool"))
     }
 
@@ -495,7 +510,7 @@ struct PickyTurnCardViewTests {
 
         // thinking is excluded from the tool count by design.
         #expect(group.summary.toolCount == 18)
-        #expect(group.summary.displayText.contains("18 tools"))
+        #expect(group.summary.displayText.contains(L10n.t("hud.conversation.turn.tool.many", Int64(18))))
     }
 
     @Test func completedTurnIgnoresLiveActivitySummary() {

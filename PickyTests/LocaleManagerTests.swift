@@ -32,6 +32,22 @@ final class LocaleManagerTests: XCTestCase {
         XCTAssertTrue(["en", "ko"].contains(resolved), "system resolved to unsupported language: \(resolved)")
     }
 
+    func testFocusStackLabelsResolveInEnglishAndKorean() {
+        let manager = LocaleManager.shared
+        let previousChoice = manager.choice
+        defer { manager.apply(previousChoice) }
+
+        manager.apply(.english)
+        XCTAssertEqual(L10n.t("hud.conversation.meta.context", "43%"), "Context: 43%")
+        XCTAssertEqual(L10n.t("hud.conversation.turn.latest"), "Latest")
+        XCTAssertEqual(L10n.t("hud.thinking.title"), "Thinking")
+
+        manager.apply(.korean)
+        XCTAssertEqual(L10n.t("hud.conversation.meta.context", "43%"), "컨텍스트: 43%")
+        XCTAssertEqual(L10n.t("hud.conversation.turn.latest"), "최신")
+        XCTAssertEqual(L10n.t("hud.thinking.title"), "생각 과정")
+    }
+
     /// English remains the source language regardless of the OS locale, so
     /// catalog lookups for an English-only key still return a usable string.
     func testEnglishChoicePinsRegardlessOfOS() {

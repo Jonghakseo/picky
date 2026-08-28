@@ -21,6 +21,19 @@ enum PickyConversationContextLinkCountPolicy {
     }
 }
 
+enum PickyConversationContextSummaryPolicy {
+    static func label(branchDisplayName: String?, cwd: String?) -> String? {
+        let branch = branchDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !branch.isEmpty { return branch }
+
+        let path = cwd?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !path.isEmpty else { return nil }
+        let folder = URL(fileURLWithPath: path).lastPathComponent
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return folder.isEmpty || folder == "/" ? nil : folder
+    }
+}
+
 enum PickyGitContextRefreshPolicy {
     static let completedSessionRefreshIntervalNanoseconds: UInt64 = 60_000_000_000
     static let updatedAtRefreshBucketSeconds: TimeInterval = 5
@@ -167,35 +180,24 @@ struct PickyConversationContextLineView: View {
 
     private var contextSummaryLine: some View {
         HStack(spacing: DS.Spacing.xs) {
-            if let compactCwd = session.compactCwdDescription {
-                cwdButton(compactCwd)
-            }
-            if let gitStatus {
-                Text("\(gitStatus.repositoryDisplayName) · \(gitStatus.branchDisplayName)")
+            if let summaryLabel = PickyConversationContextSummaryPolicy.label(
+                branchDisplayName: gitStatus?.branchDisplayName,
+                cwd: session.cwd
+            ) {
+                Text(summaryLabel)
                     .font(PickyHUDTypography.metaMedium)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                HStack(spacing: DS.Spacing.xs) {
-                    gitChangeMetrics(status: gitStatus)
-                }
-                .fixedSize(horizontal: true, vertical: false)
-                .layoutPriority(2)
-            }
-            if contextLinkCount > 0 {
-                Text("Links \(contextLinkCount)")
-                    .font(PickyHUDTypography.metaMonospacedMedium)
-                    .foregroundColor(DS.Colors.textSecondary)
-                    .fixedSize(horizontal: true, vertical: false)
             }
             Spacer(minLength: 0)
-            Button("Details") { isDetailsPresented = true }
+            Button(L10n.t("hud.context.details")) { isDetailsPresented = true }
                 .buttonStyle(.plain)
                 .font(PickyHUDTypography.metaSemibold)
                 .foregroundColor(DS.Colors.accentText)
                 .fixedSize(horizontal: true, vertical: false)
-                .help("Show workspace, Git, and links")
-                .accessibilityLabel("Context details")
-                .accessibilityHint("Shows workspace, Git, and links")
+                .help(L10n.t("hud.context.details.help"))
+                .accessibilityLabel(L10n.t("hud.context.details.accessibilityLabel"))
+                .accessibilityHint(L10n.t("hud.context.details.accessibilityHint"))
                 .hoverAffordance()
         }
     }
@@ -203,15 +205,15 @@ struct PickyConversationContextLineView: View {
     private var contextDetails: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.xs) {
             if hasPrimaryContext {
-                contextDetailsHeading("Workspace")
+                contextDetailsHeading(L10n.t("hud.context.section.workspace"))
                 primaryContextLine
             }
             if let gitStatus {
-                contextDetailsHeading("Git")
+                contextDetailsHeading(L10n.t("hud.context.section.git"))
                 gitContextLine(status: gitStatus)
             }
             if hasLinkContext {
-                contextDetailsHeading("Links")
+                contextDetailsHeading(L10n.t("hud.context.section.links"))
                 linkContextLine
             }
         }
@@ -219,7 +221,7 @@ struct PickyConversationContextLineView: View {
         .foregroundColor(DS.Colors.textTertiary)
         .padding(DS.Spacing.md)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Context details")
+        .accessibilityLabel(L10n.t("hud.context.details.accessibilityLabel"))
     }
 
     private func contextDetailsHeading(_ title: String) -> some View {
@@ -308,7 +310,7 @@ struct PickyConversationContextLineView: View {
         }
         .buttonStyle(.plain)
         .layoutPriority(1)
-        .help("Open working folder in Finder")
+        .help(L10n.t("hud.context.workspace.open.help"))
         .hoverAffordance()
     }
 
@@ -330,7 +332,12 @@ struct PickyConversationContextLineView: View {
                     pullRequestBadge(status: pullRequestStatus)
                 }
                 .buttonStyle(.plain)
-                .help("Open PR #\(pullRequestStatus.number) — \(pullRequestStatus.title) [\(pullRequestStatus.state.rawValue)]")
+                .help(L10n.t(
+                    "hud.context.pr.open.help",
+                    Int64(pullRequestStatus.number),
+                    pullRequestStatus.title,
+                    pullRequestStatus.state.rawValue
+                ))
                 .hoverAffordance()
             }
             ForEach(artifacts.prefix(6)) { artifact in
@@ -402,7 +409,7 @@ struct PickyConversationContextLineView: View {
                 content
             }
             .buttonStyle(.plain)
-            .help("Open \(url.absoluteString)")
+            .help(L10n.t("hud.context.link.open.help", url.absoluteString))
             .hoverAffordance()
         } else {
             content
@@ -499,9 +506,9 @@ struct PickyConversationContextLineView: View {
 
     private func linkBadgeHelp(for artifact: PickyArtifact) -> String {
         if artifact.linkBadgeKind == .generic, let url = artifact.url {
-            return "Open \(url.absoluteString)"
+            return L10n.t("hud.context.link.open.help", url.absoluteString)
         }
-        return "Open \(artifact.title)"
+        return L10n.t("hud.context.link.open.help", artifact.title)
     }
 
     @ViewBuilder
@@ -649,18 +656,18 @@ struct PickyConversationContextLineView: View {
         let configured = PickySettingsStore().load().gitChipActions.diffAction?.command
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if configured.isEmpty {
-            return "Click to configure the diff chip action in Settings → Pickle (\(lines) lines)."
+            return L10n.t("hud.context.diff.configure.help", Int64(lines))
         }
-        return "\(configured)  —  (\(lines) lines)"
+        return L10n.t("hud.context.diff.action.help", configured, Int64(lines))
     }
 
     private func branchChipHelp(branch: String) -> String {
         let configured = PickySettingsStore().load().gitChipActions.branchAction?.command
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if configured.isEmpty {
-            return "Click to configure the branch chip action in Settings → Pickle (branch \(branch))."
+            return L10n.t("hud.context.branch.configure.help", branch)
         }
-        return "\(configured)  —  (branch \(branch))"
+        return L10n.t("hud.context.branch.action.help", configured, branch)
     }
 
     private func runRemoteAction(_ action: GitRemoteAction) {

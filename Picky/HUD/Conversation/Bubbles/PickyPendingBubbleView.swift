@@ -26,15 +26,15 @@ enum PickyPendingQueueKind {
 
     var label: String {
         switch self {
-        case .steer: return "Steer pending"
-        case .followUp: return "Follow-up pending"
+        case .steer: return L10n.t("hud.queue.pending.steer")
+        case .followUp: return L10n.t("hud.queue.pending.followUp")
         }
     }
 
     var batchLabel: String {
         switch self {
-        case .steer: return "Steering batch · all next turn"
-        case .followUp: return "Follow-up batch · all when idle"
+        case .steer: return L10n.t("hud.queue.batch.steer")
+        case .followUp: return L10n.t("hud.queue.batch.followUp")
         }
     }
 }

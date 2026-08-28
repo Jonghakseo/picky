@@ -385,11 +385,17 @@ struct PickyConversationListView: View {
     @ViewBuilder
     private func messageLeafView(_ message: PickySessionMessage, in group: PickyTurnGroup) -> some View {
         let latestAgentResponse = isLatestAgentResponse(message)
+        let rendersFullAgentResponse = PickyAgentResponseVisibilityPolicy.rendersFullResponse(
+            message: message,
+            isLatestTurn: group.isLatest,
+            isLatestAgentResponse: latestAgentResponse
+        )
         let latestResponseShortcutHintVisible = shouldShowLatestResponseShortcutHint(for: message)
         if let conversationStore {
             PickyConversationMessageLeafView(
                 messageStore: conversationStore.messageStore(id: message.id),
                 isLatestAgentResponse: latestAgentResponse,
+                rendersFullAgentResponse: rendersFullAgentResponse,
                 isLatestResponseShortcutHintVisible: latestResponseShortcutHintVisible,
                 onBodyEvaluation: {
                     onMessageLeafBodyEvaluation(
@@ -398,11 +404,12 @@ struct PickyConversationListView: View {
                         latestResponseShortcutHintVisible
                     )
                 }
-            ) { currentMessage, isLatestAgentResponse, isLatestResponseShortcutHintVisible in
+            ) { currentMessage, isLatestAgentResponse, rendersFullAgentResponse, isLatestResponseShortcutHintVisible in
                 messageView(
                     currentMessage,
                     in: group,
                     latestAgentResponseOverride: isLatestAgentResponse,
+                    rendersFullAgentResponseOverride: rendersFullAgentResponse,
                     latestResponseShortcutHintVisibleOverride: isLatestResponseShortcutHintVisible
                 )
             }
@@ -417,6 +424,7 @@ struct PickyConversationListView: View {
         _ message: PickySessionMessage,
         in group: PickyTurnGroup,
         latestAgentResponseOverride: Bool? = nil,
+        rendersFullAgentResponseOverride: Bool? = nil,
         latestResponseShortcutHintVisibleOverride: Bool? = nil
     ) -> some View {
         switch PickyConversationBubbleKind(message: message) {
@@ -433,6 +441,11 @@ struct PickyConversationListView: View {
                 onOpenAsReport: openMessageReportAction(for: message),
                 onCopyText: { viewModel.copyMessageText($0) },
                 isLatestAgentResponse: latestAgentResponseOverride ?? isLatestAgentResponse(message),
+                rendersFullResponse: rendersFullAgentResponseOverride ?? PickyAgentResponseVisibilityPolicy.rendersFullResponse(
+                    message: message,
+                    isLatestTurn: group.isLatest,
+                    isLatestAgentResponse: isLatestAgentResponse(message)
+                ),
                 isLatestResponseShortcutHintVisible: latestResponseShortcutHintVisibleOverride ?? shouldShowLatestResponseShortcutHint(for: message)
             )
         case .typing:
@@ -612,8 +625,8 @@ struct PickyConversationListView: View {
         .padding(.horizontal, DS.Spacing.space1)
         .padding(.top, DS.Spacing.space1)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Queued \(kind.label)")
-        .accessibilityValue("\(items.count) pending")
+        .accessibilityLabel(L10n.t("hud.queue.queued.accessibilityLabel", kind.label))
+        .accessibilityValue(L10n.t("hud.queue.pendingCount.accessibilityValue", Int64(items.count)))
     }
 
     private var hasQueueOrActivity: Bool {
@@ -734,7 +747,7 @@ struct PickyConversationListView: View {
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity, alignment: .center)
         .padding(.bottom, 4)
-        .help("Show earlier turns")
+        .help(L10n.t("hud.conversation.loadMoreTurns.help"))
     }
 
     /// Time separator between two adjacent turn cards. Inside a turn card,
@@ -752,20 +765,27 @@ struct PickyConversationListView: View {
     }
 
     private func turnSeparatorText(before index: Int, groups: [PickyTurnGroup]) -> String {
-        guard index > 0 else { return "now" }
+        guard index > 0 else { return L10n.t("hud.conversation.time.now") }
         guard let previous = groups[index - 1].bodyMessages.last?.createdAt
             ?? groups[index - 1].userMessage?.createdAt,
             let current = groups[index].userMessage?.createdAt
-                ?? groups[index].bodyMessages.first?.createdAt else { return "now" }
+                ?? groups[index].bodyMessages.first?.createdAt else {
+            return L10n.t("hud.conversation.time.now")
+        }
         return elapsedText(seconds: max(0, Int(current.timeIntervalSince(previous))))
     }
 
     private func elapsedText(seconds: Int) -> String {
-        if seconds < 60 { return "now" }
+        if seconds < 60 { return L10n.t("hud.conversation.time.now") }
         let minutes = seconds / 60
-        if minutes < 60 { return "\(minutes)m later" }
-        let hours = minutes / 60
-        return "\(hours)h \(minutes % 60)m later"
+        if minutes < 60 {
+            return L10n.t("hud.conversation.time.minutesLater", Int64(minutes))
+        }
+        return L10n.t(
+            "hud.conversation.time.hoursMinutesLater",
+            Int64(minutes / 60),
+            Int64(minutes % 60)
+        )
     }
 
     private func jumpToLatestButton(proxy: ScrollViewProxy) -> some View {
@@ -1086,6 +1106,16 @@ enum PickyConversationBubbleKind: Equatable {
     }
 }
 
+enum PickyAgentResponseVisibilityPolicy {
+    static func rendersFullResponse(
+        message: PickySessionMessage,
+        isLatestTurn: Bool,
+        isLatestAgentResponse: Bool
+    ) -> Bool {
+        message.kind == .agentText && (isLatestTurn || isLatestAgentResponse)
+    }
+}
+
 struct PickyConversationListRenderSnapshot: Equatable {
     var typingBubbleCount = 0
     var batchGroupCount = 0
@@ -1116,20 +1146,27 @@ private struct PickyConversationMessageLeafView<Content: View>: View, Equatable 
     /// preceding reply compact, and holding Command toggles the latest reply's
     /// shortcut badge even when neither stable message value changes.
     let isLatestAgentResponse: Bool
+    let rendersFullAgentResponse: Bool
     let isLatestResponseShortcutHintVisible: Bool
     let onBodyEvaluation: () -> Void
-    @ViewBuilder let content: (PickySessionMessage, Bool, Bool) -> Content
+    @ViewBuilder let content: (PickySessionMessage, Bool, Bool, Bool) -> Content
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.messageStore.messageID == rhs.messageStore.messageID
             && lhs.isLatestAgentResponse == rhs.isLatestAgentResponse
+            && lhs.rendersFullAgentResponse == rhs.rendersFullAgentResponse
             && lhs.isLatestResponseShortcutHintVisible == rhs.isLatestResponseShortcutHintVisible
     }
 
     var body: some View {
         let _ = onBodyEvaluation()
         if case .loaded(let message) = messageStore.messageState {
-            content(message, isLatestAgentResponse, isLatestResponseShortcutHintVisible)
+            content(
+                message,
+                isLatestAgentResponse,
+                rendersFullAgentResponse,
+                isLatestResponseShortcutHintVisible
+            )
         }
     }
 }
@@ -1138,14 +1175,11 @@ private struct PickyConversationTimeSeparatorView: View {
     let text: String
 
     var body: some View {
-        HStack(spacing: 8) {
-            Rectangle().fill(DS.Colors.borderSubtle.opacity(0.55)).frame(height: 0.5)
-            Text(text)
-                .font(PickyHUDTypography.metaMedium)
-                .foregroundColor(DS.Colors.textTertiary)
-                .lineLimit(1)
-            Rectangle().fill(DS.Colors.borderSubtle.opacity(0.55)).frame(height: 0.5)
-        }
-        .padding(.vertical, 2)
+        Text(text)
+            .font(PickyHUDTypography.metaMedium)
+            .foregroundColor(DS.Colors.textTertiary)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.vertical, DS.Spacing.space2)
     }
 }

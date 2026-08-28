@@ -7,6 +7,18 @@
 
 import SwiftUI
 
+enum PickyThinkingBlockPresentation {
+    static var title: String { L10n.t("hud.thinking.title") }
+
+    static func state(isCollapsed: Bool) -> String {
+        L10n.t(isCollapsed ? "hud.conversation.turn.collapsed" : "hud.conversation.turn.expanded")
+    }
+
+    static func help(isCollapsed: Bool) -> String {
+        L10n.t(isCollapsed ? "hud.thinking.expand" : "hud.thinking.collapse")
+    }
+}
+
 struct PickyTypingBubbleView: View {
     let message: PickySessionMessage
     let externallyCollapsed: Bool
@@ -25,35 +37,27 @@ struct PickyTypingBubbleView: View {
             Button {
                 isCollapsed.toggle()
             } label: {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 5) {
+                VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+                    HStack(spacing: DS.Spacing.space1) {
                         Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                            .pickyFont(size: 8.5, weight: .bold)
-                        Text("⌁ thinking")
-                            .font(PickyHUDTypography.metaSemibold)
+                            .pickyFont(size: 8.5, weight: .semibold)
+                        Text(PickyThinkingBlockPresentation.title)
+                            .font(PickyHUDTypography.metaMedium)
                     }
-                    .foregroundColor(DS.Colors.info)
+                    .foregroundColor(DS.Colors.textTertiary)
                     if !isCollapsed, let text = message.text, !text.isEmpty {
                         PickyConversationMarkdownText(markdown: text)
                     }
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
+                .padding(.horizontal, DS.Spacing.space2)
+                .padding(.vertical, DS.Spacing.space1)
                 .frame(maxWidth: PickyConversationBubbleLayout.maxBubbleWidth(forDetailWidth: pickyHUDDetailWidth), alignment: .leading)
                 .contentShape(Rectangle())
-                .background(
-                    PickyConversationBubbleLayout.bubbleShape(side: .agent)
-                        .fill(DS.Colors.info.opacity(0.10))
-                )
-                .overlay(
-                    PickyConversationBubbleLayout.bubbleShape(side: .agent)
-                        .stroke(DS.Colors.info.opacity(0.30), lineWidth: 1)
-                )
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Thinking")
-            .accessibilityValue(isCollapsed ? "Collapsed" : "Expanded")
-            .help(isCollapsed ? "Expand thinking" : "Collapse thinking")
+            .accessibilityLabel(PickyThinkingBlockPresentation.title)
+            .accessibilityValue(PickyThinkingBlockPresentation.state(isCollapsed: isCollapsed))
+            .help(PickyThinkingBlockPresentation.help(isCollapsed: isCollapsed))
             .hoverAffordance()
             Spacer(minLength: PickyConversationBubbleLayout.oppositeSideReserve)
         }

@@ -212,13 +212,19 @@ enum PickyConversationLiveStepPresentation: Equatable {
     }
 
     private static func activityDetail(for summary: PickyActivitySummary) -> String {
-        summary.totalToolCalls > 0 ? "\(summary.totalToolCalls) tools" : "Working"
+        guard summary.totalToolCalls > 0 else {
+            return L10n.t("hud.liveStep.working")
+        }
+        return L10n.t(
+            summary.totalToolCalls == 1 ? "hud.conversation.turn.tool.one" : "hud.conversation.turn.tool.many",
+            Int64(summary.totalToolCalls)
+        )
     }
 
     var label: String {
         switch self {
-        case .running: return "Current activity"
-        case .waitingForInput: return "Input needed"
+        case .running: return L10n.t("hud.liveStep.currentActivity")
+        case .waitingForInput: return L10n.t("hud.liveStep.inputNeeded")
         }
     }
 
@@ -239,11 +245,11 @@ enum PickyConversationLiveStepPresentation: Equatable {
     func accessibilityValue(projection: PickyConversationLiveStepProjection, at date: Date) -> String {
         switch self {
         case let .running(stepText, detail, toolName):
-            return ["Running", stepText, detail, toolName, projection.elapsedText(at: date)]
+            return [L10n.t("hud.conversation.status.running"), stepText, detail, toolName, projection.elapsedText(at: date)]
                 .compactMap { $0 }
                 .joined(separator: ", ")
         case .waitingForInput:
-            return "Waiting for a question response"
+            return L10n.t("hud.liveStep.waitingForQuestion")
         }
     }
 }
@@ -339,9 +345,9 @@ struct PickyConversationLiveStepView: View {
                     Text(toolName).font(PickyHUDTypography.statusMedium).foregroundStyle(DS.Colors.accentText).lineLimit(1)
                 }
                 .buttonStyle(.plain)
-                .help("Open tool history")
-                .accessibilityLabel("Current tool \(toolName)")
-                .accessibilityHint("Open tool history")
+                .help(L10n.t("hud.liveStep.toolHistory.help"))
+                .accessibilityLabel(L10n.t("hud.liveStep.currentTool.accessibilityLabel", toolName))
+                .accessibilityHint(L10n.t("hud.liveStep.toolHistory.help"))
                 .hoverAffordance()
             }
             if let elapsedText {
@@ -362,7 +368,7 @@ struct PickyConversationLiveStepView: View {
                     .focusable()
                     .focused($isTodoOpenerFocused)
                     .help(isTodoExpanded ? L10n.t("hud.todo.collapse") : L10n.t("hud.todo.expand"))
-                    .accessibilityLabel("Current plan, \(detail)")
+                    .accessibilityLabel(L10n.t("hud.liveStep.currentPlan.accessibilityLabel", detail))
                     .accessibilityValue(projection.todoPresentation?.stepText ?? "")
                     .accessibilityHint(isTodoExpanded ? L10n.t("hud.todo.collapse") : L10n.t("hud.todo.expand"))
                     .hoverAffordance()
@@ -386,12 +392,12 @@ struct PickyConversationLiveStepView: View {
         HStack(spacing: DS.Spacing.xs) {
             Image(systemName: presentation.iconName).font(PickyHUDTypography.statusSemibold).foregroundStyle(presentation.tone.textColor).accessibilityHidden(true)
             Text(presentation.label).font(PickyHUDTypography.statusSemibold).foregroundStyle(presentation.tone.textColor)
-            Button("Go to question") { onGoToQuestion(requestID) }
+            Button(L10n.t("hud.liveStep.goToQuestion")) { onGoToQuestion(requestID) }
                 .buttonStyle(.plain)
                 .font(PickyHUDTypography.statusMedium)
                 .foregroundStyle(DS.Colors.accentText)
-                .help("Scroll to the pending question")
-                .accessibilityHint("Moves keyboard focus to the question")
+                .help(L10n.t("hud.liveStep.goToQuestion.help"))
+                .accessibilityHint(L10n.t("hud.liveStep.goToQuestion.accessibilityHint"))
                 .hoverAffordance()
         }
     }
@@ -423,7 +429,7 @@ struct PickyConversationLiveStepZone: View {
             extensionUiStore: extensionUiStore
         )
         if PickyConversationLiveStepNavigationPolicy.showsExternalLatest(status: projection.status, viewport: viewport) {
-            Button("Running below · Latest", action: onGoToLatest)
+            Button(L10n.t("hud.liveStep.runningBelowLatest"), action: onGoToLatest)
                 .buttonStyle(.plain)
                 .font(PickyHUDTypography.statusSemibold)
                 .foregroundStyle(DS.Colors.accentText)
@@ -431,8 +437,8 @@ struct PickyConversationLiveStepZone: View {
                 .padding(.horizontal, DS.Spacing.sm)
                 .padding(.vertical, DS.Spacing.sm)
                 .background(RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous).fill(DS.Colors.surface2))
-                .help("Scroll to the latest running work")
-                .accessibilityLabel("Running below, latest")
+                .help(L10n.t("hud.liveStep.runningBelowLatest.help"))
+                .accessibilityLabel(L10n.t("hud.liveStep.runningBelowLatest.accessibilityLabel"))
                 .hoverAffordance()
         } else if let presentation = PickyConversationLiveStepPresentation(projection: projection) {
             PickyConversationLiveStepView(

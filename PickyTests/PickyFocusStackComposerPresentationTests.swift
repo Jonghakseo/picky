@@ -13,11 +13,11 @@ struct PickyFocusStackComposerPresentationTests {
         let followUp = PickyComposerSubmitPresentation(kind: .followUp, bashMode: .none)
         let bashSteer = PickyComposerSubmitPresentation(kind: .steer, bashMode: .visible)
 
-        #expect(steer.label == "Steer")
+        #expect(steer.label == L10n.t("hud.composer.submit.steer"))
         #expect(steer.iconName == "paperplane.fill")
-        #expect(followUp.label == "Follow-up")
-        #expect(followUp.accessibilityLabel == "Follow-up")
-        #expect(bashSteer.label == "Steer")
+        #expect(followUp.label == L10n.t("hud.composer.submit.followUp"))
+        #expect(followUp.accessibilityLabel == L10n.t("hud.composer.submit.followUp"))
+        #expect(bashSteer.label == L10n.t("hud.composer.submit.steer"))
         #expect(bashSteer.iconName == "play.fill")
     }
 
@@ -30,8 +30,8 @@ struct PickyFocusStackComposerPresentationTests {
         )
 
         #expect(presentation.hasControls)
-        #expect(presentation.modelLabel == "Model: anthropic/claude-opus-4-7")
-        #expect(presentation.thinkingLabel == "Thinking: xhigh")
+        #expect(presentation.modelLabel == L10n.t("hud.conversation.meta.model", "anthropic/claude-opus-4-7"))
+        #expect(presentation.thinkingLabel == L10n.t("hud.conversation.meta.thinking", "xhigh"))
         #expect(!PickyComposerRuntimePresentation(assistantRun: nil).hasControls)
     }
 
@@ -50,8 +50,8 @@ struct PickyFocusStackComposerPresentationTests {
         #expect(presentation.kinds.map(\.kind) == [.steer, .followUp])
         #expect(presentation.kinds.map(\.count) == [1, 2])
         #expect(presentation.kinds.map(\.mode) == [.oneAtATime, .all])
-        #expect(presentation.accessibilityValue.contains("individually"))
-        #expect(presentation.accessibilityValue.contains("all together"))
+        #expect(presentation.accessibilityValue.contains(L10n.t("hud.queue.mode.individual")))
+        #expect(presentation.accessibilityValue.contains(L10n.t("hud.queue.mode.all")))
         #expect(!PickyQueueDockPresentation(
             visibleQueue: PickyVisibleQueue(
                 queuedSteers: [],
@@ -66,8 +66,8 @@ struct PickyFocusStackComposerPresentationTests {
     @Test func queueDockRoutesRestoreAndClearAsDistinctCommands() {
         #expect(PickyQueueDockAction.restore.command == .restoreThenClear(.all))
         #expect(PickyQueueDockAction.clear.command == .clearOnly(.all))
-        #expect(PickyQueueDockAction.restore.inFlightLabel == "Restoring…")
-        #expect(PickyQueueDockAction.clear.inFlightLabel == "Clearing…")
+        #expect(PickyQueueDockAction.restore.inFlightLabel == L10n.t("hud.queue.restoring"))
+        #expect(PickyQueueDockAction.clear.inFlightLabel == L10n.t("hud.queue.clearing"))
     }
 
     @Test func visibleQueueExcludesCommittedItemsFromBothDockAndDraftRestore() {
@@ -175,7 +175,7 @@ struct PickyFocusStackComposerPresentationTests {
         #expect(presentation.statusText == PickyConversationStatusPresentation(status: .running).label)
         #expect(presentation.toolText == "bash")
         #expect(presentation.todoText == "2/2")
-        #expect(presentation.elapsedText == "1m")
+        #expect(presentation.elapsedText == L10n.t("hud.conversation.duration.minutes", Int64(1)))
         #expect(presentation.accessibilityValue.contains("bash"))
     }
 

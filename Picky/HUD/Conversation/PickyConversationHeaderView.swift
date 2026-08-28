@@ -192,8 +192,8 @@ struct PickyConversationHeaderView: View {
                     // commitTitleEdit clears isEditingTitle first to make this re-entry safe.
                     if !focused && isEditingTitle { commitTitleEdit() }
                 }
-                .accessibilityLabel("Pickle title")
-                .accessibilityHint("Enter to rename, Escape to cancel")
+                .accessibilityLabel(L10n.t("hud.header.title.accessibilityLabel"))
+                .accessibilityHint(L10n.t("hud.header.title.edit.accessibilityHint"))
         } else {
             Text(session.title)
                 .font(PickyHUDTypography.title)
@@ -310,7 +310,7 @@ struct PickyConversationHeaderView: View {
     }
 
     var titleHelpText: String {
-        let renameHelp = "Double-click to rename · or use /name <new title>"
+        let renameHelp = L10n.t("hud.header.title.rename.help")
         guard headerMetaPresentation.hasContent else { return renameHelp }
         // Runtime controls belong beside the composer, but their full values
         // remain discoverable from the stable header title tooltip.
@@ -343,7 +343,7 @@ struct PickyConversationHeaderView: View {
         .frame(width: 18, height: 18)
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
-        .accessibilityLabel("Conversation menu")
+        .accessibilityLabel(L10n.t("hud.header.menu.accessibilityLabel"))
     }
 
     private var piBadgeSlot: some View {
@@ -384,8 +384,8 @@ struct PickyConversationHeaderView: View {
             }
             .help(piBadgeHelpText)
             .accessibilityLabel(piBadgeAccessibilityLabel)
-            .accessibilityAction(named: Text("Toggle Pickle target")) { handleBadgeTap() }
-            .accessibilityAction(named: Text("Lock Pickle as sticky target")) {
+            .accessibilityAction(named: Text(L10n.t("hud.header.target.toggle.accessibilityAction"))) { handleBadgeTap() }
+            .accessibilityAction(named: Text(L10n.t("hud.header.target.lock.accessibilityAction"))) {
                 commands.armScreenContextTarget(sessionID: session.id, sticky: true)
             }
             .hoverAffordance()
@@ -569,19 +569,30 @@ struct PickyConversationHeaderView: View {
 
     private var piBadgeHelpText: String {
         if isScreenContextStickyArmed {
-            return "Pickle cursor is locked. Every Picky voice or quick text input keeps going to this Pickle until you click again or arm another. Long-press another Pickle to switch."
+            return L10n.t("hud.header.target.locked.help")
         }
         if isScreenContextArmed {
-            return "Pickle cursor is armed. The next Picky voice or quick text input goes directly to this Pickle. Click or press ⌘K to cancel, or long-press to lock."
+            return L10n.t("hud.header.target.armed.help")
         }
-        if isVoiceFollowUpTarget { return "\(statusDescription). Voice steering target" }
-        return "\(statusDescription). Click or press ⌘K to route the next Picky screen-context input to this Pickle. Long-press to lock it as the sticky target."
+        if isVoiceFollowUpTarget {
+            return L10n.t("hud.header.target.voice.help", statusDescription)
+        }
+        return L10n.t("hud.header.target.route.help", statusDescription)
     }
 
     private var piBadgeAccessibilityLabel: String {
-        if isScreenContextStickyArmed { return "Session status: \(statusDescription), Pickle cursor locked" }
-        if isScreenContextArmed { return "Session status: \(statusDescription), Pickle cursor armed" }
-        return isVoiceFollowUpTarget ? "Session status: \(statusDescription), voice steering target" : "Session status: \(statusDescription)"
+        if isScreenContextStickyArmed {
+            return L10n.t("hud.header.target.locked.accessibilityLabel", statusDescription)
+        }
+        if isScreenContextArmed {
+            return L10n.t("hud.header.target.armed.accessibilityLabel", statusDescription)
+        }
+        return L10n.t(
+            isVoiceFollowUpTarget
+                ? "hud.header.target.voice.accessibilityLabel"
+                : "hud.header.target.accessibilityLabel",
+            statusDescription
+        )
     }
 
     private var statusDescription: String {
@@ -605,7 +616,7 @@ struct PickyConversationHeaderView: View {
 /// Quiet, neutral utility action shared by chat and inline-terminal headers.
 /// Closing the HUD never stops or archives the underlying Pickle.
 struct PickyConversationCloseButton: View {
-    static let helpText = "Close Pickle HUD (Esc or ⌘W)"
+    static var helpText: String { L10n.t("hud.header.close.help") }
 
     let onClose: () -> Void
 
@@ -618,8 +629,8 @@ struct PickyConversationCloseButton: View {
         }
         .buttonStyle(PickyConversationCloseButtonStyle())
         .help(Self.helpText)
-        .accessibilityLabel("Close Pickle HUD")
-        .accessibilityHint("Closes this card without stopping the Pickle")
+        .accessibilityLabel(L10n.t("hud.header.close.accessibilityLabel"))
+        .accessibilityHint(L10n.t("hud.header.close.accessibilityHint"))
     }
 }
 
@@ -878,8 +889,8 @@ private struct PickyHeaderSessionMetaPill: View {
         HStack(spacing: DS.Spacing.xs) {
             PickyHeaderContextUsageBar(display: display)
                 .frame(width: 24, height: 5)
-            Text(display.label)
-                .fontWeight(.bold)
+            Text(display.localizedLabel)
+                .fontWeight(.semibold)
         }
         .fixedSize(horizontal: true, vertical: false)
     }
@@ -915,6 +926,7 @@ private struct PickyHeaderContextUsageBar: View {
 struct PickyHeaderContextUsageDisplay {
     let fraction: Double
     let label: String
+    var localizedLabel: String { L10n.t("hud.conversation.meta.context", label) }
     let barColor: Color
     let textColor: Color
     let tooltip: String
@@ -926,7 +938,7 @@ struct PickyHeaderContextUsageDisplay {
             self.label = "?%"
             self.barColor = DS.Colors.textTertiary
             self.textColor = DS.Colors.textTertiary
-            self.tooltip = "Context usage unknown after compaction until the next model response"
+            self.tooltip = L10n.t("hud.conversation.meta.context.unknown")
             self.isKnown = false
             return
         }
@@ -942,13 +954,22 @@ struct PickyHeaderContextUsageDisplay {
             self.barColor = DS.Colors.warning
             self.textColor = DS.Colors.warningText
         default:
-            self.barColor = DS.Colors.success
-            self.textColor = DS.Colors.successText
+            self.barColor = DS.Colors.textTertiary
+            self.textColor = DS.Colors.textSecondary
         }
         if let tokens = usage.tokens {
-            self.tooltip = "Context usage: \(tokens.formatted())/\(usage.contextWindow.formatted()) tokens (\(Int(clamped.rounded()))%)"
+            self.tooltip = L10n.t(
+                "hud.conversation.meta.context.tooltip.tokens",
+                tokens.formatted(),
+                usage.contextWindow.formatted(),
+                Int64(clamped.rounded())
+            )
         } else {
-            self.tooltip = "Context usage: \(Int(clamped.rounded()))% of \(usage.contextWindow.formatted()) tokens"
+            self.tooltip = L10n.t(
+                "hud.conversation.meta.context.tooltip.percent",
+                Int64(clamped.rounded()),
+                usage.contextWindow.formatted()
+            )
         }
         self.isKnown = true
     }

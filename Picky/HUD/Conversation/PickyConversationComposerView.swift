@@ -346,7 +346,7 @@ struct PickyConversationComposerView: View {
                     Text(queueActionError)
                         .font(PickyHUDTypography.status)
                         .foregroundColor(DS.Colors.destructiveText)
-                        .accessibilityLabel("Queue action failed: \(queueActionError)")
+                        .accessibilityLabel(L10n.t("hud.queue.actionFailed", queueActionError))
                 }
             }
             .padding(DS.Spacing.sm)
@@ -360,7 +360,7 @@ struct PickyConversationComposerView: View {
                     .stroke(DS.Colors.borderSubtle, lineWidth: 0.5)
             )
             .accessibilityElement(children: .contain)
-            .accessibilityLabel("Pending work")
+            .accessibilityLabel(L10n.t("hud.queue.title"))
             .accessibilityValue(presentation.accessibilityValue)
         }
     }
@@ -390,7 +390,7 @@ struct PickyConversationComposerView: View {
     }
 
     private var queueDockTitle: some View {
-        Label("Pending work", systemImage: "tray.full")
+        Label(L10n.t("hud.queue.title"), systemImage: "tray.full")
             .font(PickyHUDTypography.statusSemibold)
             .foregroundColor(DS.Colors.textSecondary)
     }
@@ -398,7 +398,7 @@ struct PickyConversationComposerView: View {
     @ViewBuilder
     private func queueDockKindLabels(_ kinds: [PickyQueueDockKindPresentation]) -> some View {
         ForEach(kinds) { item in
-            Text("\(item.kind.label) \(item.count) · \(item.modeLabel)")
+            Text(L10n.t("hud.queue.kindSummary", item.kind.label, Int64(item.count), item.modeLabel))
                 .font(PickyHUDTypography.metaMonospacedMedium)
                 .foregroundColor(DS.Colors.textTertiary)
                 .lineLimit(1)
@@ -407,8 +407,8 @@ struct PickyConversationComposerView: View {
 
     private var queueDockActions: some View {
         HStack(spacing: DS.Spacing.sm) {
-            queueDockActionButton(.restore, title: "Restore", color: DS.Colors.accentText)
-            queueDockActionButton(.clear, title: "Clear", color: DS.Colors.textSecondary)
+            queueDockActionButton(.restore, title: L10n.t("hud.queue.restore"), color: DS.Colors.accentText)
+            queueDockActionButton(.clear, title: L10n.t("hud.queue.clear"), color: DS.Colors.textSecondary)
         }
     }
 
@@ -424,10 +424,10 @@ struct PickyConversationComposerView: View {
         .font(PickyHUDTypography.statusSemibold)
         .foregroundColor(color)
         .disabled(queueActionInFlight != nil)
-        .help(action == .restore
-            ? "Restore queued messages to the composer and clear pending work"
-            : "Clear pending work without restoring it to the composer")
-        .accessibilityLabel(action == .restore ? "Restore queued messages" : "Clear pending work")
+        .help(L10n.t(action == .restore ? "hud.queue.restore.help" : "hud.queue.clear.help"))
+        .accessibilityLabel(L10n.t(
+            action == .restore ? "hud.queue.restore.accessibilityLabel" : "hud.queue.clear.accessibilityLabel"
+        ))
         .hoverAffordance()
     }
 
@@ -441,9 +441,9 @@ struct PickyConversationComposerView: View {
                             runtimeFooterLabel(icon: "cpu", text: modelLabel)
                         }
                         .buttonStyle(.plain)
-                        .help("Cycle scoped model (⌃P)")
+                        .help(L10n.t("hud.composer.runtime.model.help"))
                         .accessibilityLabel(modelLabel)
-                        .accessibilityHint("Cycle scoped model with Control-P")
+                        .accessibilityHint(L10n.t("hud.composer.runtime.model.accessibilityHint"))
                         .hoverAffordance()
                     }
                     if let thinkingLabel = presentation.thinkingLabel {
@@ -451,22 +451,22 @@ struct PickyConversationComposerView: View {
                             runtimeFooterLabel(icon: "brain", text: thinkingLabel)
                         }
                         .buttonStyle(.plain)
-                        .help("Cycle thinking level (⇧Tab)")
+                        .help(L10n.t("hud.composer.runtime.thinking.help"))
                         .accessibilityLabel(thinkingLabel)
-                        .accessibilityHint("Cycle thinking level with Shift-Tab")
+                        .accessibilityHint(L10n.t("hud.composer.runtime.thinking.accessibilityHint"))
                         .hoverAffordance()
                     }
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, DS.Spacing.xs)
                 .accessibilityElement(children: .contain)
-                .accessibilityLabel("Composer runtime controls")
+                .accessibilityLabel(L10n.t("hud.composer.runtime.accessibilityLabel"))
                 if let runtimeActionError {
                     Text(runtimeActionError)
                         .font(PickyHUDTypography.status)
                         .foregroundColor(DS.Colors.destructiveText)
                         .padding(.horizontal, DS.Spacing.xs)
-                        .accessibilityLabel("Runtime control failed: \(runtimeActionError)")
+                        .accessibilityLabel(L10n.t("hud.composer.runtime.failed", runtimeActionError))
                 }
             }
         }
@@ -482,7 +482,7 @@ struct PickyConversationComposerView: View {
                     .lineLimit(1)
             }
         }
-        .foregroundColor(DS.Colors.accentText)
+        .foregroundColor(DS.Colors.textSecondary)
         .contentShape(Rectangle())
     }
 
@@ -542,8 +542,8 @@ struct PickyConversationComposerView: View {
                 .pickyFont(size: 10.5, weight: .medium)
                 .foregroundColor(DS.Colors.accentText)
                 .frame(width: 22, height: 22)
-                .help("Drop files or screenshots anywhere to insert paths")
-                .accessibilityLabel("File drop target")
+                .help(L10n.t("hud.composer.drop.help"))
+                .accessibilityLabel(L10n.t("hud.composer.drop.accessibilityLabel"))
         } else {
             Button {
                 toggleNotifyOnCompletion()
@@ -565,7 +565,7 @@ struct PickyConversationComposerView: View {
                     .allowsHitTesting(false)
             }
             .help(notifyOnCompletionHelpText)
-            .accessibilityLabel("Notify on completion")
+            .accessibilityLabel(L10n.t("hud.composer.notify.accessibilityLabel"))
             .accessibilityValue(session.notifyMainOnCompletion == true ? "On" : "Off")
             .hoverAffordance()
         }
@@ -610,7 +610,9 @@ struct PickyConversationComposerView: View {
     }
 
     var notifyOnCompletionHelpText: String {
-        session.notifyMainOnCompletion == true ? "Notify Picky on completion (⌘N)" : "Do not notify Picky on completion (⌘N)"
+        L10n.t(session.notifyMainOnCompletion == true
+            ? "hud.composer.notify.on.help"
+            : "hud.composer.notify.off.help")
     }
 
     private var notifyOnCompletionColor: Color {
@@ -675,7 +677,7 @@ struct PickyConversationComposerView: View {
                         .frame(width: 14, height: 14)
                 }
                 .buttonStyle(.plain)
-                .help("Cancel screen context")
+                .help(L10n.t("hud.composer.screenContext.cancel"))
             }
             .foregroundColor(DS.Colors.accentText)
             .padding(.horizontal, 8)
@@ -1134,8 +1136,8 @@ struct PickyConversationComposerView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("Stop this Pickle")
-        .accessibilityLabel("Stop Pickle")
+        .help(L10n.t("hud.composer.stop.help"))
+        .accessibilityLabel(L10n.t("hud.composer.stop.accessibilityLabel"))
         .hoverAffordance()
     }
 
@@ -1433,44 +1435,44 @@ struct PickyConversationComposerView: View {
     }
 
     private var placeholder: String {
-        if session.isCompacting { return "Queue a message for after compaction…" }
-        if isFileDropTargeted { return "Drop files or screenshots anywhere to insert paths" }
+        if session.isCompacting { return L10n.t("hud.composer.placeholder.compacting") }
+        if isFileDropTargeted { return L10n.t("hud.composer.placeholder.drop") }
         switch session.status {
         case .running, .queued, .waiting_for_input:
-            return "Steer this agent · ⌥↵ Follow-up · esc Stop"
+            return L10n.t("hud.composer.placeholder.steer")
         case .completed, .blocked:
-            return "Send a follow-up…"
+            return L10n.t("hud.composer.placeholder.followUp")
         case .cancelled:
-            return "Resume this agent with a steer…"
+            return L10n.t("hud.composer.placeholder.resume")
         case .failed:
-            return "Send a recovery steer or open terminal"
+            return L10n.t("hud.composer.placeholder.recovery")
         }
     }
 
     var sendHelpText: String {
         if session.isCompacting {
-            return "Queue message until compaction completes"
+            return L10n.t("hud.composer.send.compacting")
         }
         guard defaultSubmitKind != nil else {
-            return "This session cannot accept composer input"
+            return L10n.t("hud.composer.send.unavailable")
         }
         guard hasDraftText else {
-            return "Enter a message to send"
+            return L10n.t("hud.composer.send.empty")
         }
 
         switch effectiveBashMode {
         case .visible:
-            return "Run bash · output added to Pi context"
+            return L10n.t("hud.composer.send.bashVisible")
         case .private:
-            return "Run bash · output hidden from Pi context"
+            return L10n.t("hud.composer.send.bashPrivate")
         case .none:
             switch defaultSubmitKind {
             case .steer:
-                return "Send steering message"
+                return L10n.t("hud.composer.send.steer")
             case .followUp:
-                return "Send follow-up message"
+                return L10n.t("hud.composer.send.followUp")
             case nil:
-                return "This session cannot accept composer input"
+                return L10n.t("hud.composer.send.unavailable")
             }
         }
     }

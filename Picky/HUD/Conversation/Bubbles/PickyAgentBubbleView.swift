@@ -11,9 +11,11 @@ struct PickyAgentBubbleView: View {
     let message: PickySessionMessage
     var onOpenAsReport: (() -> Void)? = nil
     var onCopyText: ((String) -> Void)? = nil
-    /// The newest LLM response stays fully visible in the HUD. Older agent
-    /// bubbles still use the compact preview so history remains scannable.
+    /// The globally newest response owns latest-response shortcuts and report
+    /// behavior. `rendersFullResponse` additionally keeps every agent segment
+    /// in the latest turn untruncated without granting those shortcuts.
     var isLatestAgentResponse = false
+    var rendersFullResponse = false
     var isLatestResponseShortcutHintVisible = false
 
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
@@ -41,12 +43,16 @@ struct PickyAgentBubbleView: View {
 
     var displayedMarkdown: String {
         let text = displayText
-        guard message.kind == .agentText, !isLatestAgentResponse else { return text }
+        guard message.kind == .agentText, !displaysFullResponse else { return text }
         return PickyAgentResponsePreview.truncatedMarkdown(text)
     }
 
     var displayedCodeBlockMaxLines: Int {
-        isLatestAgentResponse ? 0 : PickyAgentResponsePreview.codeBlockMaxLines
+        displaysFullResponse ? 0 : PickyAgentResponsePreview.codeBlockMaxLines
+    }
+
+    private var displaysFullResponse: Bool {
+        isLatestAgentResponse || rendersFullResponse
     }
 
     private var copyTextAction: (() -> Void)? {
@@ -62,6 +68,9 @@ struct PickyAgentBubbleView: View {
         if isLatestAgentResponse {
             return message.openAsReportMarkdown != nil
         }
+        // Intermediate segments in the latest turn are already fully visible;
+        // keep the report affordance owned by the globally newest response.
+        if rendersFullResponse { return false }
         return PickyAgentResponsePreview.isTruncated(displayText)
     }
 

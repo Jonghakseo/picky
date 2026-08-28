@@ -7,6 +7,42 @@
 
 import Foundation
 
+enum PickyConversationComposerSubmitKind: Equatable {
+    case steer
+    case followUp
+}
+
+enum PickyConversationComposerReturnKeyAction: Equatable {
+    case insertNewline
+    case submitDefault
+    case submitOptionReturn
+}
+
+enum PickyConversationComposerUpArrowKeyAction: Equatable {
+    case clearQueue
+    case navigateAutocomplete
+    case recallPreviousMessage
+}
+
+/// Mirrors agentd's `parseUserBashInput` (session-supervisor.ts): `!` invokes
+/// bash with the command's output added to Pi's context on the next turn,
+/// `!!` invokes bash with the output excluded. The composer uses this state
+/// to recolor its border, swap the send icon, and surface a corner badge so
+/// the user can see at a glance that pressing return will execute, not chat.
+enum PickyComposerBashMode: Equatable {
+    case none
+    case visible
+    case `private`
+}
+
+enum PickyComposerBorderState: Equatable {
+    case fileDrop
+    case bash
+    case running
+    case focused
+    case rest
+}
+
 struct PickyComposerSubmitPresentation: Equatable {
     let label: String
     let iconName: String

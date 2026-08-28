@@ -435,29 +435,30 @@ struct PickyConversationComposerView: View {
         let presentation = PickyComposerRuntimePresentation(assistantRun: session.currentAssistantRun)
         return Group {
             if presentation.hasControls {
-                HStack(spacing: DS.Spacing.sm) {
-                    if let modelLabel = presentation.modelLabel {
+                HStack(spacing: DS.Spacing.xs) {
+                    if let modelText = presentation.modelText {
                         Button(action: { cycleModel(direction: .forward) }) {
-                            runtimeControlLabel(icon: "cpu", text: modelLabel)
+                            runtimeControlLabel(icon: "cpu", text: modelText)
                         }
                         .buttonStyle(.plain)
                         .help(L10n.t("hud.composer.runtime.model.help"))
-                        .accessibilityLabel(modelLabel)
+                        .accessibilityLabel(presentation.modelLabel ?? modelText)
                         .accessibilityHint(L10n.t("hud.composer.runtime.model.accessibilityHint"))
                         .hoverAffordance()
                     }
-                    if let thinkingLabel = presentation.thinkingLabel {
+                    if let thinkingText = presentation.thinkingText {
                         Button(action: cycleThinkingLevel) {
-                            runtimeControlLabel(icon: "brain", text: thinkingLabel)
+                            runtimeControlLabel(icon: "brain", text: thinkingText)
                         }
                         .buttonStyle(.plain)
                         .help(L10n.t("hud.composer.runtime.thinking.help"))
-                        .accessibilityLabel(thinkingLabel)
+                        .accessibilityLabel(presentation.thinkingLabel ?? thinkingText)
                         .accessibilityHint(L10n.t("hud.composer.runtime.thinking.accessibilityHint"))
                         .hoverAffordance()
                     }
-                    Spacer(minLength: 0)
                 }
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.horizontal, DS.Spacing.xs)
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel(L10n.t("hud.composer.runtime.accessibilityLabel"))

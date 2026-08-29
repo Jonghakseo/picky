@@ -86,6 +86,7 @@ struct PickyQuestionBubbleView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .focusable()
         .focused($isQuestionFocused)
+        .focusEffectDisabled()
         .accessibilityFocused($isQuestionAccessibilityFocused)
         .onChange(of: focusRequestID) { _, _ in
             requestQuestionFocusIfNeeded()

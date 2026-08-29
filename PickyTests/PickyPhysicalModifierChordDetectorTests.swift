@@ -6,6 +6,52 @@ import Testing
 struct PickyPhysicalModifierChordDetectorTests {
     private let base = Date(timeIntervalSince1970: 1_000)
 
+    @Test func physicalStateTrackerDerivesDownAndUpFromEventTransitions() {
+        var tracker = PickyPhysicalModifierStateTracker()
+
+        let leftDown = tracker.handleFlagsChanged(
+            keyCode: PickyPhysicalModifierKey.leftCommand.keyCode,
+            modifierFlagsRawValue: UInt64(CGEventFlags.maskCommand.rawValue)
+        )
+        let rightDown = tracker.handleFlagsChanged(
+            keyCode: PickyPhysicalModifierKey.rightCommand.keyCode,
+            modifierFlagsRawValue: UInt64(CGEventFlags.maskCommand.rawValue)
+        )
+        let leftUp = tracker.handleFlagsChanged(
+            keyCode: PickyPhysicalModifierKey.leftCommand.keyCode,
+            modifierFlagsRawValue: UInt64(CGEventFlags.maskCommand.rawValue)
+        )
+        let rightUp = tracker.handleFlagsChanged(
+            keyCode: PickyPhysicalModifierKey.rightCommand.keyCode,
+            modifierFlagsRawValue: 0
+        )
+
+        #expect(leftDown?.isDown == true)
+        #expect(rightDown?.isDown == true)
+        #expect(leftUp?.isDown == false)
+        #expect(rightUp?.isDown == false)
+    }
+
+    @Test func physicalStateTrackerIgnoresNonPhysicalKeysAndResets() {
+        var tracker = PickyPhysicalModifierStateTracker()
+
+        let nonPhysicalTransition = tracker.handleFlagsChanged(
+            keyCode: 49,
+            modifierFlagsRawValue: UInt64(CGEventFlags.maskCommand.rawValue)
+        )
+        #expect(nonPhysicalTransition == nil)
+        _ = tracker.handleFlagsChanged(
+            keyCode: PickyPhysicalModifierKey.leftCommand.keyCode,
+            modifierFlagsRawValue: UInt64(CGEventFlags.maskCommand.rawValue)
+        )
+        tracker.reset()
+        let leftDownAfterReset = tracker.handleFlagsChanged(
+            keyCode: PickyPhysicalModifierKey.leftCommand.keyCode,
+            modifierFlagsRawValue: UInt64(CGEventFlags.maskCommand.rawValue)
+        )
+        #expect(leftDownAfterReset?.isDown == true)
+    }
+
     @Test func triggersOnceWhenLeftThenRightCommandOverlapWithinWindow() {
         var detector = makeDetector()
 

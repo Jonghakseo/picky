@@ -5,6 +5,21 @@ import Testing
 
 @MainActor
 struct PickyHUDUnreadFocusRoutingTests {
+    @Test func focusesOnlyTheTargetDisplayPanel() {
+        let target = FakeHUDSessionFocusPanel()
+        let other = FakeHUDSessionFocusPanel()
+
+        PickyHUDSessionFocusPresenter.present(
+            targetDisplayID: 777,
+            panelsByDisplayID: [777: target, 888: other]
+        )
+
+        #expect(target.orderFrontCallCount == 1)
+        #expect(target.makeKeyCallCount == 1)
+        #expect(other.orderFrontCallCount == 0)
+        #expect(other.makeKeyCallCount == 0)
+    }
+
     @Test func restoresHiddenTargetDisplayAndKeepsDisplayOnOpenRequest() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("PickyHUDUnreadFocusRoutingTests-\(UUID().uuidString)", isDirectory: true)
@@ -65,5 +80,19 @@ struct PickyHUDUnreadFocusRoutingTests {
             artifacts: [],
             changedFiles: []
         )
+    }
+}
+
+@MainActor
+private final class FakeHUDSessionFocusPanel: PickyHUDSessionFocusPanelPresenting {
+    private(set) var orderFrontCallCount = 0
+    private(set) var makeKeyCallCount = 0
+
+    func orderFrontRegardless() {
+        orderFrontCallCount += 1
+    }
+
+    func makeKey() {
+        makeKeyCallCount += 1
     }
 }

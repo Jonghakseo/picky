@@ -159,6 +159,25 @@ struct ShortcutCaptureRecorderTests {
         #expect(recorder.draftSpec == .defaultFocusPickle)
     }
 
+    @Test func focusPickleDerivesPhysicalTransitionsFromFlagsChangedEvents() {
+        let recorder = ShortcutCaptureRecorder(allowance: .focusPickle)
+        recorder.start()
+
+        recorder.handleEvent(
+            type: .flagsChanged,
+            keyCode: leftCommand,
+            modifierFlags: [.command]
+        )
+        #expect(recorder.draftSpec == nil)
+
+        recorder.handleEvent(
+            type: .flagsChanged,
+            keyCode: rightCommand,
+            modifierFlags: [.command]
+        )
+        #expect(recorder.draftSpec == .defaultFocusPickle)
+    }
+
     @Test func focusPickleCapturesAlternativeModifierKeyCombo() {
         let recorder = ShortcutCaptureRecorder(allowance: .focusPickle)
         recorder.start()

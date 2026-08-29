@@ -90,6 +90,7 @@ final class ShortcutCaptureRecorder: ObservableObject {
     private var lastModifierPressKey: NSEvent.ModifierFlags = []
     private var lastModifierPressAt: Date?
     private var physicalKeysCurrentlyDown: Set<PickyPhysicalModifierKey> = []
+    private var physicalModifierStateTracker = PickyPhysicalModifierStateTracker()
 
     init(allowance: Allowance) {
         self.allowance = allowance
@@ -113,6 +114,7 @@ final class ShortcutCaptureRecorder: ObservableObject {
         lastModifierPressKey = []
         lastModifierPressAt = nil
         physicalKeysCurrentlyDown = []
+        physicalModifierStateTracker.reset()
         installLocalMonitorIfNeeded()
     }
 
@@ -141,10 +143,15 @@ final class ShortcutCaptureRecorder: ObservableObject {
 
         switch type {
         case .flagsChanged:
+            let resolvedPhysicalModifierIsDown = physicalModifierIsDown
+                ?? physicalModifierStateTracker.handleFlagsChanged(
+                    keyCode: keyCode,
+                    modifierFlagsRawValue: UInt64(cleanedFlags.rawValue)
+                )?.isDown
             handleFlagsChanged(
                 modifierFlags: cleanedFlags,
                 keyCode: keyCode,
-                physicalModifierIsDown: physicalModifierIsDown,
+                physicalModifierIsDown: resolvedPhysicalModifierIsDown,
                 now: now
             )
         case .keyDown:
@@ -182,10 +189,7 @@ final class ShortcutCaptureRecorder: ObservableObject {
             self.handleEvent(
                 type: event.type,
                 keyCode: event.keyCode,
-                modifierFlags: event.modifierFlags,
-                physicalModifierIsDown: event.type == .flagsChanged
-                    ? CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(event.keyCode))
-                    : nil
+                modifierFlags: event.modifierFlags
             )
             // Swallow the event only inside the settings panel currently
             // recording a shortcut so other Picky inputs keep receiving keys.

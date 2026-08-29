@@ -26,6 +26,7 @@ final class GlobalPushToTalkShortcutMonitor: ObservableObject {
     var currentShortcutSpec: PickyShortcutSpec = .defaultPushToTalk {
         didSet {
             isShortcutCurrentlyPressed = false
+            physicalModifierStateTracker.reset()
             eventTapDidReset?()
         }
     }
@@ -39,6 +40,7 @@ final class GlobalPushToTalkShortcutMonitor: ObservableObject {
         didSet {
             if isCapturePaused {
                 isShortcutCurrentlyPressed = false
+                physicalModifierStateTracker.reset()
                 eventTapDidReset?()
             }
         }
@@ -46,6 +48,7 @@ final class GlobalPushToTalkShortcutMonitor: ObservableObject {
 
     private var globalEventTap: CFMachPort?
     private var globalEventTapRunLoopSource: CFRunLoopSource?
+    private var physicalModifierStateTracker = PickyPhysicalModifierStateTracker()
     /// Mutated exclusively from the CGEvent tap callback, which runs on
     /// `CFRunLoopGetMain()` and therefore always executes on the main thread.
     /// Published so the overlay can hide immediately on key release without
@@ -115,6 +118,7 @@ final class GlobalPushToTalkShortcutMonitor: ObservableObject {
 
     func stop() {
         isShortcutCurrentlyPressed = false
+        physicalModifierStateTracker.reset()
 
         if let globalEventTapRunLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), globalEventTapRunLoopSource, .commonModes)
@@ -171,6 +175,7 @@ final class GlobalPushToTalkShortcutMonitor: ObservableObject {
             if let globalEventTap {
                 CGEvent.tapEnable(tap: globalEventTap, enable: true)
             }
+            physicalModifierStateTracker.reset()
             eventTapDidReset?()
             let reasonLabel = eventType == .tapDisabledByTimeout ? "timeout" : "user-input"
             let shouldSynthesizeRelease = Self.reconcileStuckPressedState(
@@ -194,11 +199,11 @@ final class GlobalPushToTalkShortcutMonitor: ObservableObject {
         let modifierFlagsRawValue = event.flags.rawValue
         let isAutorepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
         let isPhysicalModifierDown: Bool?
-        if eventType == .flagsChanged, PickyPhysicalModifierKey(keyCode: eventKeyCode) != nil {
-            isPhysicalModifierDown = CGEventSource.keyState(
-                .combinedSessionState,
-                key: CGKeyCode(eventKeyCode)
-            )
+        if eventType == .flagsChanged {
+            isPhysicalModifierDown = physicalModifierStateTracker.handleFlagsChanged(
+                keyCode: eventKeyCode,
+                modifierFlagsRawValue: modifierFlagsRawValue
+            )?.isDown
         } else {
             isPhysicalModifierDown = nil
         }

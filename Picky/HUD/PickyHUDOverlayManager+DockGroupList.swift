@@ -608,18 +608,25 @@ extension PickyHUDOverlayManager {
         hideDockGroupListChild(displayID: displayID)
     }
 
+    /// Closes the child list only. A promoted drag owns its own event monitors,
+    /// frozen screen geometry, and preview panel precisely so it can outlive the
+    /// panel it started from, so this must not end one. Use
+    /// `tearDownDockSurface` when the rail the drag drops onto is going away.
     func hideDockGroupListChild(displayID: CGDirectDisplayID) {
         dockGroupListFocusStore.close(displayID: displayID)
-        guard let entry = dockGroupListChildrenByDisplayID.removeValue(forKey: displayID) else {
-            _ = externalDockDragsByDisplayID[displayID]?.coordinator?.cancelForTeardown()
-            return
-        }
+        guard let entry = dockGroupListChildrenByDisplayID.removeValue(forKey: displayID) else { return }
         if let localMouseDownMonitor = entry.localMouseDownMonitor { NSEvent.removeMonitor(localMouseDownMonitor) }
         if let globalMouseDownMonitor = entry.globalMouseDownMonitor { NSEvent.removeMonitor(globalMouseDownMonitor) }
         entry.panel.orderOut(nil)
         dockGroupListOverlayLifecycle?.tearDown(displayID: displayID)
-        // The child is no longer visible before terminal policy samples source
-        // usability, so teardown fades rather than returning to stale geometry.
+    }
+
+    /// The display's HUD surface itself is disappearing or being remeasured, so
+    /// the frozen rail geometry a promoted drag resolves against is no longer
+    /// reachable. The child is hidden before the terminal policy samples source
+    /// usability, so this fades rather than returning to stale geometry.
+    func tearDownDockSurface(displayID: CGDirectDisplayID) {
+        hideDockGroupListChild(displayID: displayID)
         _ = externalDockDragsByDisplayID[displayID]?.coordinator?.cancelForTeardown()
     }
 

@@ -425,7 +425,7 @@ final class PickyHUDOverlayManager {
                     entry.panel.orderOut(nil)
                 },
                 removeChild: { [weak self] displayID in
-                    self?.hideDockGroupListChild(displayID: displayID)
+                    self?.tearDownDockSurface(displayID: displayID)
                 },
                 synchronizeParent: { [weak self] displayID in
                     guard let self, let screen = screensByDisplayID[displayID] else { return }
@@ -437,7 +437,7 @@ final class PickyHUDOverlayManager {
                         self.panelsByDisplayID[displayID]?.panel.orderFrontRegardless()
                     } else {
                         self.panelsByDisplayID[displayID]?.panel.orderOut(nil)
-                        self.hideDockGroupListChild(displayID: displayID)
+                        self.tearDownDockSurface(displayID: displayID)
                     }
                 },
                 synchronizeChild: { [weak self] displayID in
@@ -473,7 +473,7 @@ final class PickyHUDOverlayManager {
         actualPanelVisibilityStore.track(hudPanel, for: displayID)
         hudPanel.onActualVisibilityChanged = { [weak self] isVisible in
             guard !isVisible else { return }
-            Task { @MainActor in self?.hideDockGroupListChild(displayID: displayID) }
+            Task { @MainActor in self?.tearDownDockSurface(displayID: displayID) }
         }
 
         let initialPosition = position(for: displayID)
@@ -624,7 +624,7 @@ final class PickyHUDOverlayManager {
         if entry.placement.dockSide != pos.side {
             PickyPerf.event("placement_publish_dock_side")
             if PickyHUDDockGroupListInteractionPolicy.openGroupIDAfterDockSideChanged() == nil {
-                hideDockGroupListChild(displayID: displayID)
+                tearDownDockSurface(displayID: displayID)
             }
             entry.placement.dockSide = pos.side
         }
@@ -1300,7 +1300,7 @@ final class PickyHUDOverlayManager {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 for displayID in Array(self.dockGroupListChildrenByDisplayID.keys) {
-                    self.hideDockGroupListChild(displayID: displayID)
+                    self.tearDownDockSurface(displayID: displayID)
                 }
                 self.syncPanelsForCurrentScreens()
             }
@@ -1340,12 +1340,16 @@ final class PickyHUDOverlayManager {
         guard preset != currentDockSizePreset else { return }
         currentDockSizePreset = preset
         for displayID in dockGroupListChildrenByDisplayID.keys {
-            hideDockGroupListChild(displayID: displayID)
+            tearDownDockSurface(displayID: displayID)
         }
         // Slot pitch, folder bounds, and rail acceptance all depend on the
         // preset. Require a fresh SwiftUI measurement before another list drag
         // can promote instead of reusing geometry captured at the old size.
         externalDockGeometryByDisplayID.removeAll()
+        // A drag whose list already closed is not reached by the loop above,
+        // and its frozen geometry was just invalidated along with everything
+        // else measured at the previous preset.
+        for entry in externalDockDragsByDisplayID.values { _ = entry.coordinator?.cancelForTeardown() }
         for displayID in panelsByDisplayID.keys {
             panelsByDisplayID[displayID]?.placement.dockSizePreset = preset
             panelsByDisplayID[displayID]?.placement.panelWidth = panelWidth(for: displayID)

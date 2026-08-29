@@ -265,6 +265,92 @@ struct PickyUserBubblePixelWidthTests {
         #expect(!strings.contains { $0.contains(" · ") })
     }
 
+    /// Renders a real 200-line assistant reply inside the conversation card and
+    /// drives the in-bubble toggle the way a user would: the collapsed bubble
+    /// must be far shorter than the full text, the toggle must be visible, and
+    /// clicking it must expand the bubble back to full height.
+    @Test func longAgentResponseCollapsesInTheCardAndExpandsOnClick() throws {
+        let cardWidth: CGFloat = 600
+        let longText = (1...200).map { "line \($0)" }.joined(separator: "\n")
+        let agentMessage = PickySessionMessage(
+            id: "a-collapse",
+            kind: .agentText,
+            createdAt: Date(timeIntervalSince1970: 1_777_777_778),
+            originatedBy: nil,
+            text: longText,
+            question: nil,
+            cancelledAt: nil,
+            activitySnapshot: nil,
+            assistantRun: nil,
+            errorContext: nil,
+            errorMessage: nil,
+            notifyType: nil,
+            attachedImagesCount: nil
+        )
+        let session = PickySessionListViewModel.SessionCard.fromAgentSession(
+            PickyAgentSession(
+                id: "session-agent-collapse",
+                title: "Agent collapse test",
+                status: .running,
+                cwd: "/tmp/picky",
+                createdAt: Date(timeIntervalSince1970: 1_777_777_777),
+                updatedAt: Date(timeIntervalSince1970: 1_777_777_778),
+                lastSummary: "",
+                logs: [],
+                tools: [],
+                artifacts: [],
+                changedFiles: [],
+                messages: [agentMessage],
+                queuedSteers: [],
+                queuedFollowUps: [],
+                steeringMode: .oneAtATime,
+                followUpMode: .oneAtATime,
+                activitySummary: .zero,
+                contextUsage: nil,
+                pendingExtensionUiRequest: nil,
+                notifyMainOnCompletion: nil
+            )
+        )
+        let host = NSHostingView(rootView: AnyView(PickyConversationCardView(
+            viewModel: PickyProjectionReplayFixtures.makeViewModel(),
+            session: session,
+            width: cardWidth
+        )))
+        defer {
+            host.rootView = AnyView(EmptyView())
+            host.frame = .zero
+            host.layoutSubtreeIfNeeded()
+        }
+        host.frame = NSRect(x: 0, y: 0, width: cardWidth, height: 4000)
+        host.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        host.layoutSubtreeIfNeeded()
+
+        let surface = try #require(collectAgentBubbleSurfaces(host).first)
+        let fullHeight = configuredAgentSurface(markdown: longText, codeBlockMaxLines: 0)
+            .measuredSize(forRootWidth: 600).height
+        let collapsedHeight = surface.lastBubbleRect.height
+        #expect(
+            collapsedHeight < fullHeight * 0.4,
+            "200-line reply should collapse near the 50-line cap (collapsed=\(collapsedHeight), full=\(fullHeight))"
+        )
+
+        let toggle = try #require(collectButtons(surface).first { !$0.isHidden && !$0.title.isEmpty })
+        #expect(toggle.title == L10n.t("hud.bubble.showMore"))
+
+        toggle.performClick(nil)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        host.layoutSubtreeIfNeeded()
+
+        let expandedSurface = try #require(collectAgentBubbleSurfaces(host).first)
+        let expandedToggle = try #require(collectButtons(expandedSurface).first { !$0.isHidden && !$0.title.isEmpty })
+        #expect(expandedToggle.title == L10n.t("hud.bubble.collapse"))
+        #expect(
+            expandedSurface.lastBubbleRect.height > collapsedHeight * 2,
+            "expanding should restore the full reply height (collapsed=\(collapsedHeight), expanded=\(expandedSurface.lastBubbleRect.height))"
+        )
+    }
+
     @Test func agentSurfaceCanDisableCodeBlockTruncationForLatestResponse() {
         let code = "```\n" + (1...6).map { "line \($0)" }.joined(separator: "\n") + "\n```"
         let defaultSurface = configuredAgentSurface(markdown: code, codeBlockMaxLines: PickyAgentResponsePreview.codeBlockMaxLines)
@@ -293,6 +379,17 @@ private func collectAgentBubbleSurfaces(_ root: NSView) -> [PickyAgentBubbleSurf
     }
     for sub in root.subviews {
         out.append(contentsOf: collectAgentBubbleSurfaces(sub))
+    }
+    return out
+}
+
+private func collectButtons(_ root: NSView) -> [NSButton] {
+    var out: [NSButton] = []
+    if let match = root as? NSButton {
+        out.append(match)
+    }
+    for sub in root.subviews {
+        out.append(contentsOf: collectButtons(sub))
     }
     return out
 }

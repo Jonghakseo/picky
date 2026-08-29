@@ -1726,6 +1726,12 @@ struct PickyConversationCardViewTests {
         #expect(overCapBubble.displayedMarkdown == atCap + "...")
         #expect(!previewBubble.isCollapsible)
         #expect(previewBubble.displayedMarkdown == (1...8).map { "line \($0)" }.joined(separator: "\n") + "...")
+
+        // System text (seeded handoff context, bootstrap notes) renders through
+        // the same bubble in full, so it must collapse on the same cap.
+        let systemBubble = PickyAgentBubbleView(message: message("m-system", kind: .system, text: overCap))
+        #expect(systemBubble.isCollapsible)
+        #expect(systemBubble.displayedMarkdown == atCap + "...")
     }
 
     @Test func latestTurnVisibilityPolicyExpandsEveryAgentSegmentOnlyInLatestTurn() {

@@ -48,11 +48,15 @@ struct PickyAgentBubbleView: View {
 
     var displayedMarkdown: String {
         let text = displayText
-        guard message.kind == .agentText else { return text }
-        guard !displaysFullResponse else {
-            return isCollapsed ? PickyAgentResponsePreview.collapsedFullResponseMarkdown(text) : text
-        }
-        return PickyAgentResponsePreview.truncatedMarkdown(text)
+        guard !usesPreviewTruncation else { return PickyAgentResponsePreview.truncatedMarkdown(text) }
+        return isCollapsed ? PickyAgentResponsePreview.collapsedFullResponseMarkdown(text) : text
+    }
+
+    /// Older agent replies keep the short 8-line preview. Everything else this
+    /// bubble renders (the latest response, latest-turn segments, and system or
+    /// question-fallback text) is shown in full.
+    private var usesPreviewTruncation: Bool {
+        message.kind == .agentText && !displaysFullResponse
     }
 
     var displayedCodeBlockMaxLines: Int {
@@ -63,13 +67,11 @@ struct PickyAgentBubbleView: View {
         isLatestAgentResponse || rendersFullResponse
     }
 
-    /// A full response is shown untruncated, but a very long reply would push
-    /// the rest of the transcript out of view, so it collapses past a line cap
-    /// until the reader expands it.
+    /// Full-text bubbles would otherwise push the rest of the transcript out of
+    /// view (and make every HUD resize re-measure a huge markdown tree), so they
+    /// collapse past a line cap until the reader expands them.
     var isCollapsible: Bool {
-        message.kind == .agentText
-            && displaysFullResponse
-            && PickyAgentResponsePreview.exceedsFullResponseLineLimit(displayText)
+        !usesPreviewTruncation && PickyAgentResponsePreview.exceedsFullResponseLineLimit(displayText)
     }
 
     var isCollapsed: Bool { isCollapsible && !isExpanded }

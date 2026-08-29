@@ -71,9 +71,9 @@ fi
 
 removed=0
 for dir in "${candidates[@]}"; do
-  while IFS= read -r app; do
-    "${LSREGISTER}" -u "${app}" || true
-  done < <(find "${dir}/Build/Products" -maxdepth 2 -type d -name '*.app' 2>/dev/null)
+  # -R descends into packages, which is required because Picky.app embeds
+  # Sparkle's Updater.app and LaunchServices registers that separately.
+  "${LSREGISTER}" -u -R "${dir}" >/dev/null 2>&1 || true
   rm -rf "${dir}"
   removed=$((removed + 1))
 done

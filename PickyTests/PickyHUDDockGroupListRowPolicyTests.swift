@@ -195,7 +195,7 @@ struct PickyHUDDockGroupListRowProjectionTests {
         #expect(memberSessionIDs.count == 3)
     }
 
-    @Test func archivingDownToOneVisibleMemberTearsDownTheListBeforePromotingItsDockTile() {
+    @Test func archivingDownToOneVisibleMemberKeepsTheHoverListOpen() {
         let before = project(
             memberSessionIDs: ["remaining", "archived"],
             activeSessionIDs: ["remaining", "archived"]
@@ -217,7 +217,7 @@ struct PickyHUDDockGroupListRowProjectionTests {
             PickyHUDDockGroupListOpenPolicy.reconciliation(
                 openGroupID: "group",
                 visibleRowIDs: after.map(\.id)
-            ) == .tearDown
+            ) == .keepOpen(groupID: "group")
         )
     }
 

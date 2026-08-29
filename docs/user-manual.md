@@ -383,7 +383,7 @@ The card contains:
 
 - Header with title, status badge, and menu.
 - Context line with working folder, Git/PR/link badges.
-- Conversation history with Markdown-rendered replies. The latest Picky reply is shown in full in the HUD, including Markdown tables rendered as cell grids; older replies may stay compact and can still be opened as reports. The card keeps a window of the most recent turns; when older turns are hidden, a **Show earlier turns** pill at the top of the history reveals more per click (full history stays reachable through the Pi terminal overlay).
+- Conversation history with Markdown-rendered replies. The latest Picky reply is shown in full in the HUD, including Markdown tables rendered as cell grids; replies longer than 50 lines collapse behind a **Show more** toggle inside the bubble, and older replies may stay compact and can still be opened as reports. The card keeps a window of the most recent turns; when older turns are hidden, a **Show earlier turns** pill at the top of the history reveals more per click (full history stays reachable through the Pi terminal overlay).
 - Subagent activity bubbles when the Pickle delegates work to Pi subagents (see 8.11).
 - Composer for steer/follow-up input.
 - Inline question forms when Pi/tools need user input.

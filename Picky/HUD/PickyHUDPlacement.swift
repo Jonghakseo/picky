@@ -40,6 +40,9 @@ final class PickyHUDPlacement: ObservableObject {
     /// One-shot request from a display's child list panel to the HUD root,
     /// which owns the existing group-targeted folder creation flow.
     @Published var dockGroupListCreateRequestGroupID: String?
+    /// Folder whose list is pinned open on this display. A hover peek stays
+    /// `nil` here, so the rail marks only the deliberate, persistent state.
+    @Published var pinnedDockGroupListGroupID: String?
 
     var cardWidth: CGFloat { cardSize?.width ?? PickyHUDCardSize.defaultWidth }
     var fixedCardHeight: CGFloat? { cardSize?.height }
@@ -57,7 +60,8 @@ final class PickyHUDPlacement: ObservableObject {
         cardSize: PickyHUDCardSize? = nil,
         panelWidth: CGFloat = PickyHUDDockLayout.panelWidth,
         availableDockRailLength: CGFloat = PickyHUDPlacement.defaultAvailableCardMaxHeight,
-        dockGroupListCreateRequestGroupID: String? = nil
+        dockGroupListCreateRequestGroupID: String? = nil,
+        pinnedDockGroupListGroupID: String? = nil
     ) {
         self.availableCardMaxHeight = availableCardMaxHeight
         self.dockSide = dockSide
@@ -66,5 +70,6 @@ final class PickyHUDPlacement: ObservableObject {
         self.panelWidth = panelWidth
         self.availableDockRailLength = availableDockRailLength
         self.dockGroupListCreateRequestGroupID = dockGroupListCreateRequestGroupID
+        self.pinnedDockGroupListGroupID = pinnedDockGroupListGroupID
     }
 }

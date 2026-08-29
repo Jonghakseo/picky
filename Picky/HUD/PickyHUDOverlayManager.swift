@@ -91,13 +91,22 @@ final class PickyHUDOverlayManager {
         var openedSessionID: String?
         var localMouseDownMonitor: Any?
         var globalMouseDownMonitor: Any?
-
+        /// Whether this list is pointer-owned or was deliberately pinned. Only
+        /// a pinned list registers with `dockGroupListFocusStore`.
+        var presentation: PickyHUDDockGroupListPresentation = .pinned
     }
 
     var panelsByDisplayID: [CGDirectDisplayID: PanelEntry] = [:]
     private var archiveUndoToastsByDisplayID: [CGDirectDisplayID: ArchiveUndoToastEntry] = [:]
     var dockGroupListChildrenByDisplayID: [CGDirectDisplayID: DockGroupListChildEntry] = [:]
     var dockGroupListGeometryByDisplayID: [CGDirectDisplayID: DockGroupListGeometry] = [:]
+    /// Pending folder-hover dwell before a peek opens.
+    var dockGroupPeekDwellByDisplayID: [CGDirectDisplayID: DispatchWorkItem] = [:]
+    /// Corridor sampling while a peek is open. Pointer containment cannot be
+    /// derived from hover events alone because the folder and panel are
+    /// separate windows with a gap between them.
+    var dockGroupPeekPollByDisplayID: [CGDirectDisplayID: Timer] = [:]
+    var dockGroupPeekOutsideSinceByDisplayID: [CGDirectDisplayID: Date] = [:]
     var externalDockGeometryByDisplayID: [CGDirectDisplayID: ExternalDockGeometryEntry] = [:]
     var externalDockDragsByDisplayID: [CGDirectDisplayID: ExternalDockDragEntry] = [:]
     private var screenParametersObserver: NSObjectProtocol?
@@ -552,6 +561,13 @@ final class PickyHUDOverlayManager {
             },
             onDockGroupListToggle: { [weak self] groupID in
                 self?.toggleDockGroupListChild(displayID: displayID, groupID: groupID)
+            },
+            onDockGroupTileHover: { [weak self] groupID, isHovering in
+                self?.handleDockGroupTileHover(
+                    displayID: displayID,
+                    groupID: groupID,
+                    isHovering: isHovering
+                )
             },
             onDockGroupListClose: { [weak self] in
                 self?.hideDockGroupListChild(displayID: displayID)

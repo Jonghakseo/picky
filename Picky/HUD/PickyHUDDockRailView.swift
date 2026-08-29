@@ -56,6 +56,12 @@ struct PickyHUDDockRailView: View {
     /// Routes a rail primary click through the HUD's shared group activation
     /// coordinator, which resolves current visible membership.
     let onActivateDockGroup: (_ id: String) -> Void
+    /// Folder hover drives the peek disclosure. The overlay manager owns the
+    /// dwell and the corridor, so the rail only reports the raw transition.
+    var onDockGroupTileHover: (_ id: String, _ isHovering: Bool) -> Void = { _, _ in }
+    /// Folder whose list is pinned open, marked so the tile keeps its lift
+    /// after the pointer leaves. A peek deliberately has no persistent mark.
+    var pinnedDockGroupListGroupID: String?
     let onRemoveDockGroup: (_ id: String, _ keepMembers: Bool) -> Void
     /// Persist a session move into a specific dock container/position.
     let onMoveSessionInDock: (_ sessionID: String, _ destination: PickyDockContainer) -> Void
@@ -723,7 +729,9 @@ struct PickyHUDDockRailView: View {
                     isCommandShortcutHintVisible: isCommandShortcutHintVisible,
                     isSelected: isSelected,
                     isDropTargeted: isDropTargeted,
+                    isListPinned: pinnedDockGroupListGroupID == group.id,
                     onTap: { activateGroupTile(group.id) },
+                    onHoverChanged: { onDockGroupTileHover(group.id, $0) },
                     onReorderBegan: { handleGroupTileDragBegin(groupID: group.id) },
                     onReorderChanged: { translation in
                         handleGroupTileDragChanged(groupID: group.id, translation: translation)

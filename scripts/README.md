@@ -157,6 +157,22 @@ Build a styled DMG locally:
   --volname Picky
 ```
 
+## `prune-build-artifacts.sh` — reclaim abandoned DerivedData
+
+Parallel and subagent-driven `xcodebuild` runs each create a throwaway
+`-derivedDataPath` (see AGENTS.md). Runs that skip their teardown leave behind
+roughly 1 GB of disk plus a permanent LaunchServices bundle record, and enough
+of those records push `launchservicesd` into sustained high CPU. This script
+unregisters the built bundle and then removes the directory:
+
+```bash
+./scripts/prune-build-artifacts.sh              # dry run
+./scripts/prune-build-artifacts.sh --apply
+```
+
+Directories modified within `--keep-hours` (default 24) are left alone, which
+is what protects a build that is currently running.
+
 ## `release-version-policy.py` — canonical release tag validation
 
 Validates the release tag, channel, GitHub Pre-release state, and bundle

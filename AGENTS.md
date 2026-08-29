@@ -135,6 +135,17 @@ WindowServer-dependent tests are disabled during ordinary Xcode test runs. They 
 
 Parallel or subagent-driven `xcodebuild test` runs must use a unique `-derivedDataPath` (for example `/tmp/Picky<purpose>DD`); the shared default DerivedData causes build-DB lock collisions (exit 65) when another build is running concurrently.
 
+A temporary `-derivedDataPath` is owned by the run that created it and must be torn down when that run finishes. Unregister the built bundle **before** deleting the directory, because LaunchServices cannot resolve a bundle whose path is already gone and the stale record then survives forever:
+
+```bash
+DD=/tmp/Picky<purpose>DD
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
+  -u "$DD/Build/Products/Debug/Picky.app"
+rm -rf "$DD"
+```
+
+Skipping this is not cosmetic. Each abandoned DerivedData directory keeps roughly 1 GB on disk and leaves a permanent LaunchServices bundle record; accumulated records drive `launchservicesd` into sustained high CPU and starve the Picky main thread, which surfaces as HUD lag with no matching hot path in the app itself. Use `./scripts/prune-build-artifacts.sh` to reclaim directories that earlier runs abandoned.
+
 When the full agentd vitest suite fails intermittently, classify before touching code: (1) rerun the failing file alone, (2) rerun the suite with `--no-file-parallelism`, (3) reproduce on a clean HEAD temp worktree (`git worktree add /tmp/picky-verify-<n> HEAD`) three times. Only a failure that survives all three steps implicates the changeset. Remove temp worktrees afterwards.
 
 Daemon protocol changes (event ordering, bootstrap sequences) can be smoke-tested without touching the running Picky.app: launch a throwaway agentd on a non-default port with `PICKY_AGENTD_PORT=<port> PICKY_AGENTD_RUNTIME=mock PICKY_APP_SUPPORT_DIR=<tmp-dir>`, connect a scripted WebSocket client (register capabilities, assert frame order), then tear it down. Never attach to or restart the user's live daemon for this.

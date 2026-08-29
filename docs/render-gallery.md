@@ -57,7 +57,7 @@ The command cleans and regenerates `build/render-gallery/dock-group/` with:
 - `index.html` for direct artifact inspection;
 - `manifest.json` with separate content-logical and padded-canvas dimensions, pixel dimensions, appearance, preset, and font scale. The canvas keeps a `space.4` (16pt) review margin, exceeding the folder unread badge's documented 7pt visual top overflow (4pt offset + rounded 2.5pt shadow bleed), so intentional overlap is never mistaken for clipping.
 
-It runs only `PickyHUDDockGroupRenderGalleryTests`. That test uses an offscreen `NSHostingView` bitmap cache and the actual `PickyHUDDockGroupFolderTileView`, `PickyHUDDockCollapsedGroupBadge`, `PickyHUDDockGroupEmptySlot`, `PickyHUDDockGroupHeader`, and `PickyHUDDockGroupListView` production components. Fixtures have fixed identities, text, session states, paths, timestamps, and English locale.
+It runs only `PickyHUDDockGroupRenderGalleryTests`. That test uses `PickyRenderGalleryRasterizer` (offscreen `NSHostingView` bitmap cache) and the actual `PickyHUDDockGroupFolderTileView`, `PickyHUDDockCollapsedGroupBadge`, `PickyHUDDockGroupEmptySlot`, `PickyHUDDockGroupHeader`, and `PickyHUDDockGroupListView` production components. Fixtures have fixed identities, text, session states, paths, timestamps, and English locale.
 
 The test verifies PNG encoding/decoding, expected 2× canvas dimensions, non-empty alpha content, transparent canvas edges, list panel geometry from `PickyHUDDockGroupListPolicy`, and folder/header geometry from `PickyHUDDockGroupHeaderPresentation`. External-drag scenes use the production list, rail presentation store, rail projection, folder tile, and detached-preview content. It intentionally does not compare byte-for-byte or commit golden images because macOS font and material rendering varies between OS versions.
 
@@ -78,5 +78,7 @@ This target writes five 2× Korean scenes under `build/render-gallery/conversati
 This target writes four 2× Korean scenes under `build/render-gallery/conversation-activity/`: collapsed and expanded tool activity summaries in dark and light appearance. `PickyActivitySummaryRenderGalleryTests` renders the production `PickyActivitySummaryView` with deterministic counts and verifies that todo activity stays out of both the compact total and expanded detail grid. Inspect the PNGs directly; the gallery validates file structure and dimensions but does not prove hover, disclosure animation, or tool-history navigation.
 
 ## Review limits
+
+Artifacts have a 2× pixel grid tagged 144 dpi, so a viewer shows them at their intended point size. Their detail is still 1 pixel per point: an offscreen `NSHostingView` composites layer contents at `contentsScale == 1`, and the alternatives that do rasterize at 2× lose fidelity (`ImageRenderer` ignores the host appearance and placeholder-fills AppKit-backed views, `dataWithPDF(inside:)` drops layer-drawn surfaces and symbols). Judge geometry, state, and contrast from these artifacts, not glyph antialiasing.
 
 Offscreen material rendering can differ from a displayed child panel. The gallery does not prove live material/vibrancy, native menu/popover behavior, hover/press transitions, drag monitors, accessibility focus, Reduce Transparency fallback, or actual child-`NSPanel` anchoring. Inspect those behaviors separately when the relevant change requires it.

@@ -599,6 +599,11 @@ struct PickyHUDDockGroupRenderGalleryTests {
         let canvasSize = scene.canvasLogicalSize
         let pixelWidth = Int((canvasSize.width * Self.renderScale).rounded(.up))
         let pixelHeight = Int((canvasSize.height * Self.renderScale).rounded(.up))
+        // Pixel-aligned canvas so the renderer emits exactly the expected pixel grid.
+        let renderSize = CGSize(
+            width: CGFloat(pixelWidth) / Self.renderScale,
+            height: CGFloat(pixelHeight) / Self.renderScale
+        )
         let fontStore = PickyAppFontScaleStore()
         fontStore.setScale(Double(scene.fontScale))
         let root = AnyView(
@@ -612,32 +617,17 @@ struct PickyHUDDockGroupRenderGalleryTests {
                         alignment: .topLeading
                     )
                     .padding(scene.canvasInsets)
-                    .frame(width: canvasSize.width, height: canvasSize.height, alignment: .topLeading)
-                    .scaleEffect(Self.renderScale, anchor: .topLeading)
-                    .frame(width: CGFloat(pixelWidth), height: CGFloat(pixelHeight), alignment: .topLeading)
+                    .frame(width: renderSize.width, height: renderSize.height, alignment: .topLeading)
             }
         )
-        let host = NSHostingView(rootView: root)
-        host.appearance = NSAppearance(named: scene.appearance.nsAppearance)
-        host.frame = NSRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight)
-        host.layoutSubtreeIfNeeded()
-
-        guard let bitmap = NSBitmapImageRep(
-            bitmapDataPlanes: nil,
-            pixelsWide: pixelWidth,
-            pixelsHigh: pixelHeight,
-            bitsPerSample: 8,
-            samplesPerPixel: 4,
-            hasAlpha: true,
-            isPlanar: false,
-            colorSpaceName: .calibratedRGB,
-            bytesPerRow: 0,
-            bitsPerPixel: 0
+        guard let bitmap = PickyRenderGalleryRasterizer.rasterize(
+            root,
+            logicalSize: renderSize,
+            scale: Self.renderScale,
+            appearance: scene.appearance.nsAppearance
         ) else {
             throw GalleryError.bitmapCreationFailed(scene.name)
         }
-        host.cacheDisplay(in: host.bounds, to: bitmap)
-        host.rootView = AnyView(EmptyView())
         guard let png = bitmap.representation(using: NSBitmapImageRep.FileType.png, properties: [:]) else {
             throw GalleryError.pngEncodingFailed(scene.name)
         }

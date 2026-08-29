@@ -318,11 +318,12 @@ Manage membership:
 - Ask the Picky main agent to organize existing Pickles. It uses the local `picky` CLI to list groups, create a named group, add/remove exact Pickle session IDs, or ungroup while keeping members. These operations update the same persisted dock layout used by the UI.
 - Drag a Pickle onto a group to move it in; drag it above the first slot or below the last slot to pull it back out to the top level. The dock previews where it will land and commits the move only when you release.
 - Drag a group’s folder tile to reorder the whole group within the dock. Hold it clearly **outside** the dock and a **Remove** label appears; release there to remove the group (macOS Dock style). A group that still contains Pickles asks for confirmation before archiving them; an empty group is removed immediately.
-- Click a folder with visible Pickles to toggle its member list. An empty folder opens the targeted recent-folder picker instead. Opening a folder never changes the open conversation card; selecting a member opens its card and closes the list.
+- Hover a folder with visible Pickles to show its member list immediately. The hover list stays open while the pointer crosses the gap into the panel, then closes after the pointer leaves the folder-panel corridor. Clicking a populated folder does not pin it open; an empty folder still opens the targeted recent-folder picker.
+- `Cmd + 1`…`9` or accessibility activation pins that folder's member list for keyboard navigation. Opening a folder never changes the open conversation card; selecting a member opens its card and closes the list.
 
 The member list:
 
-- Opens as a small panel next to the folder tile. It never changes the dock's own size, and it stays on screen if the folder sits near a screen edge.
+- Opens as a small panel next to the folder tile. It never changes the dock's own size, and it stays on screen if the folder sits near a screen edge. Hover-opened lists are transient; keyboard-opened lists remain pinned until dismissed.
 - Each row shows the Pickle's status glyph, its title, and a second line with the last activity followed by the working folder. A trailing relative timestamp labels updates from the last minute as **Just now**. An unread Pickle shows a dot; the folder tile itself shows how many of its Pickles are unread.
 - Drag a row out of the panel and onto the dock rail to move that Pickle straight to the top level or into another group. The dock previews the landing slot while you drag and commits only when you release; releasing anywhere else leaves the Pickle where it was.
 - Only one folder's list is open at a time, and each display keeps its own.
@@ -383,11 +384,11 @@ The card contains:
 
 - Header with title, status badge, and menu.
 - Context line with working folder, Git/PR/link badges.
-- Conversation history with Markdown-rendered replies. The latest Picky reply is shown in full in the HUD, including Markdown tables rendered as cell grids; replies longer than 50 lines collapse behind a **Show more** toggle inside the bubble, and older replies may stay compact and can still be opened as reports. The card keeps a window of the most recent turns; when older turns are hidden, a **Show earlier turns** pill at the top of the history reveals more per click (full history stays reachable through the Pi terminal overlay).
+- Conversation history with Markdown-rendered replies. The latest Picky reply is shown in full in the HUD, including Markdown tables rendered as cell grids; full-text reply and system bubbles longer than 50 lines collapse behind a **Show more** toggle, while older replies may stay compact and can still be opened as reports. The card keeps a window of the most recent turns; when older turns are hidden, a **Show earlier turns** pill at the top of the history reveals more per click (full history stays reachable through the Pi terminal overlay).
 - Subagent activity bubbles when the Pickle delegates work to Pi subagents (see 8.11).
 - Composer for steer/follow-up input.
 - Inline question forms when Pi/tools need user input.
-- A read-only task-progress indicator at the top of the conversation when Pi shares a checklist for the active task. Click it to expand or collapse the task list; once expanded, it stays open while you interact elsewhere in the conversation and closes only when you collapse it or the checklist completes. Completed tasks are marked, the current task shows its in-progress state only while the Pickle is running, and lists with six or more tasks scroll within the expanded panel.
+- A read-only task-progress indicator at the top of the conversation when Pi shares a checklist for the active task. Click it to expand or collapse the task list; once expanded, it stays open while you interact elsewhere in the conversation and closes only when you collapse it or the checklist completes. Completed tasks are marked, the current task shows its in-progress state only while the Pickle is running, and lists with six or more tasks scroll within the expanded panel. As progress advances, the drawer scrolls the current task into view.
 - Optional inline Pi terminal mode.
 - Optional local-shell utility panel below the composer. It opens directly to a terminal in the Pickle cwd and does not replace or sync the Pi session.
 - Optional private note add-on.
@@ -413,7 +414,7 @@ The context line can show:
 - Working folder.
 - Repository name.
 - Branch name.
-- Git insertion/deletion counts.
+- Uncommitted Git insertion/deletion counts beside the branch name. The details popover shows the whole branch diff from its default-branch fork point, with the uncommitted subset in parentheses when they differ.
 - Ahead/behind counts.
 - Pull request status.
 - Link badges from artifacts, such as GitHub, Slack, Notion, Jira, Linear, or generic links. Generic web links display the site's favicon when it is available; otherwise they use the standard link icon.

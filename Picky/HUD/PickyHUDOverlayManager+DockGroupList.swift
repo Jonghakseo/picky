@@ -26,10 +26,11 @@ extension PickyHUDOverlayManager {
         )
         dockGroupListGeometryByDisplayID[displayID] = geometry
         guard var entry = dockGroupListChildrenByDisplayID[displayID] else { return }
+        let previousOpenedSessionID = entry.openedSessionID
         let needsContentSync = entry.badgeFrames != geometry.badgeFrames
             || entry.interactionFrames != geometry.interactionFrames
             || entry.railFrame != geometry.railFrame
-            || entry.openedSessionID != geometry.openedSessionID
+            || previousOpenedSessionID != geometry.openedSessionID
         entry.badgeFrames = geometry.badgeFrames
         entry.interactionFrames = geometry.interactionFrames
         entry.railFrame = geometry.railFrame
@@ -42,6 +43,7 @@ extension PickyHUDOverlayManager {
            ),
            PickyHUDDockGroupListOpenPolicy.afterOpeningSession(
                openGroupID: openGroupID,
+               previousOpenedSessionID: previousOpenedSessionID,
                openedSessionID: geometry.openedSessionID,
                memberSessionIDs: group.memberSessionIDs
            ) == nil {

@@ -39,6 +39,25 @@ enum PickyHUDDockGroupListOpenPolicy {
         return memberSessionIDs.contains(openedSessionID) ? openGroupID : nil
     }
 
+    /// The geometry update that carries the open card also fires for rail
+    /// reflow that has nothing to do with the card, so the rule must key off
+    /// the transition rather than the standing value. Re-running it on every
+    /// report closed a list the user had deliberately opened over an unrelated
+    /// card, which also tore down an in-flight member drag.
+    static func afterOpeningSession(
+        openGroupID: String?,
+        previousOpenedSessionID: String?,
+        openedSessionID: String?,
+        memberSessionIDs: [String]
+    ) -> String? {
+        guard previousOpenedSessionID != openedSessionID else { return openGroupID }
+        return afterOpeningSession(
+            openGroupID: openGroupID,
+            openedSessionID: openedSessionID,
+            memberSessionIDs: memberSessionIDs
+        )
+    }
+
     /// The list cannot outlive its group.
     static func afterGroupRemoved(openGroupID: String?, removedGroupID: String) -> String? {
         openGroupID == removedGroupID ? nil : openGroupID

@@ -48,6 +48,36 @@ struct PickyHUDDockGroupListOpenPolicyTests {
         )
     }
 
+    @Test func railReflowKeepsAListTheUserOpenedOverAnUnrelatedCard() {
+        // Opening group B while a group A member holds the card is legitimate.
+        // Only a genuine card-open transition may close it, otherwise a member
+        // drag's own rail reflow tears the list down mid-gesture.
+        #expect(
+            PickyHUDDockGroupListOpenPolicy.afterOpeningSession(
+                openGroupID: "b",
+                previousOpenedSessionID: "a-member",
+                openedSessionID: "a-member",
+                memberSessionIDs: ["b-member"]
+            ) == "b"
+        )
+        #expect(
+            PickyHUDDockGroupListOpenPolicy.afterOpeningSession(
+                openGroupID: "b",
+                previousOpenedSessionID: "b-member",
+                openedSessionID: "a-member",
+                memberSessionIDs: ["b-member"]
+            ) == nil
+        )
+        #expect(
+            PickyHUDDockGroupListOpenPolicy.afterOpeningSession(
+                openGroupID: "b",
+                previousOpenedSessionID: "a-member",
+                openedSessionID: nil,
+                memberSessionIDs: ["b-member"]
+            ) == "b"
+        )
+    }
+
     @Test func removingTheOwningGroupClosesTheListAndOtherRemovalsDoNot() {
         #expect(
             PickyHUDDockGroupListOpenPolicy.afterGroupRemoved(

@@ -104,9 +104,8 @@ final class PickySessionListViewModel: ObservableObject {
     @Published private(set) var lastOpenedSessionToken: UUID = UUID()
     private(set) var lastOpenedSessionID: String?
     private(set) var lastActualConversationCardOpenedID: String?
-    /// Symmetric counterpart of `lastOpenedSessionToken`: fires every time the
-    /// user toggles an open card back closed. Lets the onboarding flow split
-    /// 'click to close' and 'long-press to archive' into separate beats.
+    /// Symmetric counterpart of `lastOpenedSessionToken`, used by onboarding to
+    /// split the close and long-press-to-archive beats.
     @Published private(set) var lastClosedSessionToken: UUID = UUID()
     private(set) var lastClosedSessionID: String?
 
@@ -445,15 +444,6 @@ final class PickySessionListViewModel: ObservableObject {
             select(sessionID: sessionID)
         }
         openSessionRequest = PickyHUDOpenSessionRequest(sessionID: sessionID, targetDisplayID: targetDisplayID)
-    }
-
-    func unreadFocusShortcutTargetSessionID() -> String? {
-        PickyUnreadFocusTargetPolicy.targetSessionID(
-            layout: dockLayout,
-            activeSessionIDs: Array(sessions.reversed().map(\.id)),
-            unreadSessionIDs: unreadSessionIDs,
-            lastActualConversationCardOpenedID: lastActualConversationCardOpenedID
-        )
     }
 
     func submit(transcript: String, context: PickyContextPacket) async throws {

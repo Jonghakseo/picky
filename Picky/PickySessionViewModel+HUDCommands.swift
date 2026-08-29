@@ -6,6 +6,15 @@
 import Foundation
 
 extension PickySessionListViewModel: PickyGitChipActionViewModelDispatch, PickySessionCommands, PickyHUDSessionLifecycle {
+    func unreadFocusShortcutTargetSessionID() -> String? {
+        PickyUnreadFocusTargetPolicy.targetSessionID(
+            layout: dockLayout,
+            activeSessionIDs: Array(sessions.reversed().map(\.id)),
+            unreadSessionIDs: unreadSessionIDs,
+            lastActualConversationCardOpenedID: lastActualConversationCardOpenedID
+        )
+    }
+
     func sessionCard(sessionID: String) -> PickyConversationSessionCard? {
         activeSessionCard(sessionID: sessionID)
     }

@@ -366,7 +366,7 @@ final class CompanionManager: ObservableObject {
 
     private var shortcutTransitionCancellable: AnyCancellable?
     private var quickInputDoubleTapCancellable: AnyCancellable?
-    private var focusPickleShortcutCancellable: AnyCancellable?
+    var focusPickleShortcutCancellable: AnyCancellable?
     private var mainQuestionPanelCancellable: AnyCancellable?
     private var mainCancelPillKeyWindowObservers: [NSObjectProtocol] = []
     /// Command ids currently awaiting an answer rejection from agentd. Their
@@ -965,16 +965,6 @@ final class CompanionManager: ObservableObject {
             }
     }
 
-    /// Pushes all persisted global shortcuts into the shared arbiter. Called
-    /// on launch and whenever Settings saves.
-    private func applyShortcutSpecsFromSettings(_ settings: PickySettings = PickySettingsStore().load()) {
-        globalShortcutArbiter.pushToTalkSpec = settings.pushToTalkShortcut
-        globalShortcutArbiter.quickInputSpec = settings.quickInputShortcut
-        globalShortcutArbiter.focusPickleSpec = settings.focusPickleShortcut
-        globalPushToTalkShortcutMonitor.currentShortcutSpec = settings.pushToTalkShortcut
-        print("⌨️  Shortcuts applied — PTT: \(settings.pushToTalkShortcut), QuickInput: \(settings.quickInputShortcut), Focus: \(settings.focusPickleShortcut)")
-    }
-
     func reloadVoiceProvidersFromSettings(_ settings: PickySettings = PickySettingsStore().load()) {
         let updatedVoiceProviderSettings = PickyVoiceProviderSettings(settings)
         guard updatedVoiceProviderSettings != appliedVoiceProviderSettings else { return }
@@ -1347,13 +1337,6 @@ final class CompanionManager: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] event in
                 self?.handleQuickInputDoubleTap(event)
-            }
-    }
-
-    private func bindFocusPickleShortcut() {
-        focusPickleShortcutCancellable = globalShortcutArbiter.focusPicklePublisher
-            .sink { [weak self] event in
-                self?.onFocusPickleShortcut(event.mouseLocation)
             }
     }
 

@@ -113,6 +113,9 @@ final class PickyHUDOverlayManager {
     /// original anchor rather than the previous frame's clamped value.
     private var dragStartPositionsByDisplayID: [String: PickyHUDDockPosition]?
     private var resizeStartCardSizesByDisplayID: [String: PickyHUDCardSize]?
+    private var pendingCardResize: (displayID: CGDirectDisplayID, delta: CGPoint)?
+    private var pendingCardResizeTask: Task<Void, Never>?
+    private var lastCardResizeAppliedAt: Date?
 
     init(
         viewModel: any PickyHUDSessionLifecycle,
@@ -1207,6 +1210,29 @@ final class PickyHUDOverlayManager {
     }
 
     private func handleCardResizeChanged(displayID: CGDirectDisplayID, delta: CGPoint) {
+        pendingCardResize = (displayID, delta)
+        switch PickyHUDCardResizeApplyThrottle.decide(lastAppliedAt: lastCardResizeAppliedAt, now: Date()) {
+        case .applyNow:
+            flushPendingCardResize()
+        case .scheduleAfter(let delay):
+            guard pendingCardResizeTask == nil else { return }
+            pendingCardResizeTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                guard !Task.isCancelled, let self else { return }
+                self.pendingCardResizeTask = nil
+                self.flushPendingCardResize()
+            }
+        }
+    }
+
+    private func flushPendingCardResize() {
+        guard let pending = pendingCardResize else { return }
+        pendingCardResize = nil
+        lastCardResizeAppliedAt = Date()
+        applyCardResize(displayID: pending.displayID, delta: pending.delta)
+    }
+
+    private func applyCardResize(displayID: CGDirectDisplayID, delta: CGPoint) {
         guard let screen = screen(for: displayID), let entry = panelsByDisplayID[displayID] else { return }
         let displayKey = String(displayID)
         if resizeStartCardSizesByDisplayID == nil {
@@ -1238,12 +1264,22 @@ final class PickyHUDOverlayManager {
     }
 
     private func handleCardResizeEnded() {
+        pendingCardResizeTask?.cancel()
+        pendingCardResizeTask = nil
+        // The drag's last pointer position may still be waiting behind the rate
+        // limit; the released size must be the one that gets applied and saved.
+        flushPendingCardResize()
+        lastCardResizeAppliedAt = nil
         resizeStartCardSizesByDisplayID = nil
         let cardSizesByDisplayID = currentCardSizesByDisplayID
         settingsPersistence.enqueue { $0.hudCardSizes = cardSizesByDisplayID }
     }
 
     private func handleCardResizeReset(displayID: CGDirectDisplayID) {
+        pendingCardResizeTask?.cancel()
+        pendingCardResizeTask = nil
+        pendingCardResize = nil
+        lastCardResizeAppliedAt = nil
         resizeStartCardSizesByDisplayID = nil
         currentCardSizesByDisplayID.removeValue(forKey: String(displayID))
         if let entry = panelsByDisplayID[displayID] {

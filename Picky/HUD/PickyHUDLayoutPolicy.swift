@@ -517,6 +517,7 @@ enum PickyHUDDockLayout {
         return (value / step).rounded() * step
     }
 
+
     // Compatibility forwarding shim: the HUD view still imports dock layout,
     // interaction, and geometry decisions through this single policy namespace.
     // Keep these pass-throughs until call sites are split in a focused HUD
@@ -1015,5 +1016,29 @@ enum PickyHUDCurrentWorkPolicy {
         }
 
         return lines.isEmpty ? nil : lines.joined(separator: "\n")
+    }
+}
+
+/// Rate limit for applying live card-resize sizes. Grid snapping alone scales
+/// with drag distance, so a fast flick still applies dozens of sizes per second
+/// at ~40ms of card layout each. This caps the applied rate regardless of
+/// pointer speed, and the trailing schedule keeps the final pointer position.
+enum PickyHUDCardResizeApplyThrottle {
+    static let minimumInterval: TimeInterval = 1.0 / 30
+
+    enum Decision: Equatable {
+        case applyNow
+        case scheduleAfter(TimeInterval)
+    }
+
+    static func decide(
+        lastAppliedAt: Date?,
+        now: Date,
+        minimumInterval: TimeInterval = minimumInterval
+    ) -> Decision {
+        guard let lastAppliedAt else { return .applyNow }
+        let elapsed = now.timeIntervalSince(lastAppliedAt)
+        guard elapsed < minimumInterval else { return .applyNow }
+        return .scheduleAfter(minimumInterval - elapsed)
     }
 }

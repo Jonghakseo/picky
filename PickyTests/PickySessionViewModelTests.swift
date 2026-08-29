@@ -2434,6 +2434,27 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDDockLayout.resizedCardSize(from: start, delta: CGPoint(x: 40, y: 30), dockSide: .bottom) == PickyHUDCardSize(width: 488, height: 448))
     }
 
+    @Test func hudCardResizeApplyThrottleCapsAppliedRateAndKeepsTrailingApply() {
+        let interval = PickyHUDCardResizeApplyThrottle.minimumInterval
+        let start = Date(timeIntervalSince1970: 1_777_777_777)
+
+        #expect(PickyHUDCardResizeApplyThrottle.decide(lastAppliedAt: nil, now: start) == .applyNow)
+        #expect(
+            PickyHUDCardResizeApplyThrottle.decide(lastAppliedAt: start, now: start.addingTimeInterval(interval * 2))
+                == .applyNow
+        )
+
+        let tooSoon = PickyHUDCardResizeApplyThrottle.decide(
+            lastAppliedAt: start,
+            now: start.addingTimeInterval(interval / 4)
+        )
+        guard case .scheduleAfter(let delay) = tooSoon else {
+            Issue.record("expected a trailing schedule, got \(tooSoon)")
+            return
+        }
+        #expect(abs(delay - interval * 0.75) < 0.0001)
+    }
+
     @Test func hudCardResizeClampsToAllowedBounds() throws {
         let start = PickyHUDCardSize(width: 446, height: 420)
 

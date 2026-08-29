@@ -185,7 +185,7 @@ struct PickyHUDDockGroupTileClickHostTests {
         #expect(activations == 0)
     }
 
-    @Test func singleMemberGroupProductionRailUsesTheSessionHoverAndOpenPath() throws {
+    @Test func singleMemberGroupProductionRailUsesGroupHoverAndSessionOpenPaths() throws {
         let metrics = PickyHUDDockMetrics(preset: .large)
         let agentSession = PickyAgentSession(
             id: "only",
@@ -278,9 +278,9 @@ struct PickyHUDDockGroupTileClickHostTests {
         iconHost.mouseDown(with: try mouseEvent(.leftMouseDown, at: .zero))
         iconHost.mouseUp(with: try mouseEvent(.leftMouseUp, at: .zero))
 
-        #expect(hoveredSessions == [session.id])
+        #expect(hoveredSessions.isEmpty)
+        #expect(hoveredGroups == [group.id])
         #expect(openedSessions == [session.id])
         #expect(activatedGroups.isEmpty)
-        #expect(hoveredGroups.isEmpty)
     }
 }

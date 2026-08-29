@@ -143,7 +143,7 @@ struct PickyHUDDockGroupListOpenPolicyTests {
         )
     }
 
-    @Test func reconciliationKeepsAListOpenOnlyWhileAtLeastTwoRowsNeedDisclosure() {
+    @Test func reconciliationKeepsAListOpenWhileAtLeastOneVisibleRowRemains() {
         #expect(
             PickyHUDDockGroupListOpenPolicy.reconciliation(
                 openGroupID: "group",
@@ -154,7 +154,7 @@ struct PickyHUDDockGroupListOpenPolicyTests {
             PickyHUDDockGroupListOpenPolicy.reconciliation(
                 openGroupID: "group",
                 visibleRowIDs: ["only"]
-            ) == .tearDown
+            ) == .keepOpen(groupID: "group")
         )
         #expect(
             PickyHUDDockGroupListOpenPolicy.reconciliation(

@@ -700,7 +700,8 @@ struct PickyHUDDockRailView: View {
                                     container: .group(id: group.id, memberIndex: memberIndex)
                                 ),
                                 visibleIndex: slot.visibleIndex
-                            )
+                            ),
+                            hoverAction: { onDockGroupTileHover(group.id, true) }
                         ),
                         anchorGroupID: group.id
                     )
@@ -852,7 +853,8 @@ struct PickyHUDDockRailView: View {
     @ViewBuilder
     private func iconView(
         for session: PickyHUDDockSession,
-        slot: PickyDockSlot
+        slot: PickyDockSlot,
+        hoverAction: (() -> Void)? = nil
     ) -> some View {
         if effectiveDraggingSessionID == session.id {
             // The dragged Pickle is rendered as a floating overlay that never
@@ -881,7 +883,13 @@ struct PickyHUDDockRailView: View {
                 metrics: metrics,
                 isDragging: false,
                 dragOffset: .zero,
-                onHover: { onHoverSession(session.id) },
+                onHover: {
+                    if let hoverAction {
+                        hoverAction()
+                    } else {
+                        onHoverSession(session.id)
+                    }
+                },
                 onOpen: { onOpenSession(session.id) },
                 onToggleScreenContextTarget: { onToggleScreenContextTarget(session.id) },
                 onToggleStickyScreenContextTarget: { onToggleStickyScreenContextTarget(session.id) },

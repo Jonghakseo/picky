@@ -325,8 +325,8 @@ Manage membership:
 - Ask the Picky main agent to organize existing Pickles. It uses the local `picky` CLI to list groups, create a named group, add/remove exact Pickle session IDs, or ungroup while keeping members. These operations update the same persisted dock layout used by the UI.
 - Drag a Pickle onto a group to move it in; drag it above the first slot or below the last slot to pull it back out to the top level. The dock previews where it will land and commits the move only when you release.
 - Drag a group’s folder tile to reorder the whole group within the dock. Hold it clearly **outside** the dock and a **Remove** label appears; release there to remove the group (macOS Dock style). A group that still contains Pickles asks for confirmation before archiving them; an empty group is removed immediately.
-- A group with one visible Pickle behaves like a normal Pickle tile: clicking it opens or closes that conversation card, and no member list appears.
-- Hover a folder with two or more visible Pickles to show its member list immediately. The hover list stays open while the pointer crosses the gap into the panel, then closes after the pointer leaves the folder-panel corridor. Clicking the folder does not pin it open; an empty folder still opens the targeted recent-folder picker.
+- A group with one visible Pickle behaves like a normal Pickle tile when clicked: clicking it opens or closes that conversation card directly. Hovering it still shows the group's member list, including the group actions used to add another Pickle.
+- Hover any group with visible Pickles to show its member list immediately. The hover list stays open while the pointer crosses the gap into the panel, then closes after the pointer leaves the group-panel corridor. Clicking a multi-Pickle folder does not pin it open; an empty folder still opens the targeted recent-folder picker.
 - For a group with two or more visible Pickles, `Cmd + 1`…`9` or accessibility activation pins its member list for keyboard navigation. Opening a member list never changes the open conversation card; selecting a member opens its card and closes the list.
 
 The member list:

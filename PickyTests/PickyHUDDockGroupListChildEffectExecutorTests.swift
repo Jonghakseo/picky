@@ -40,6 +40,15 @@ private final class DockGroupListChildEffectProbe {
 
 @MainActor
 struct PickyDockGroupListEffectExecutorTests {
+    @Test func initialOpenWithOneVisibleRowUpdatesAndPresentsTheList() {
+        let executor = PickyHUDDockGroupListChildEffectExecutor()
+        let probe = DockGroupListChildEffectProbe()
+
+        executor.open(groupID: "group", visibleRowIDs: ["pickle"], effects: probe.openingEffects())
+
+        #expect(probe.events == ["updateModel", "synchronizeHost", "position", "present"])
+    }
+
     @Test func initialOpenWithNoVisibleRowsTearsDownBeforeModelHostPositionOrPresentation() {
         let executor = PickyHUDDockGroupListChildEffectExecutor()
         let probe = DockGroupListChildEffectProbe()

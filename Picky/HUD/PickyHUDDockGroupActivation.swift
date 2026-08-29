@@ -20,8 +20,8 @@ enum PickyHUDDockGroupActivationRoute: Equatable {
 }
 
 /// Shared entry coordinator for pointer and keyboard activation. A one-Pickle
-/// group opens that Pickle directly; larger groups retain hover disclosure and
-/// keyboard-pinned member-list behavior.
+/// group opens that Pickle directly on activation while every populated group
+/// retains hover disclosure. Larger groups also support keyboard-pinned lists.
 @MainActor
 final class PickyHUDDockGroupActivationCoordinator {
     typealias VisibleMemberResolver = (String) -> [String]

@@ -1765,6 +1765,24 @@ describe("PiSdkRuntime", () => {
     expect(statusEvents(events).some((event) => event.status === "completed")).toBe(false);
   });
 
+  it("keeps an active turn running across non-retry threshold compaction", async () => {
+    const fakeSession = new FakeSession();
+    fakeSession.isStreaming = true;
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-active-threshold-compaction" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    fakeSession.isCompacting = true;
+    fakeSession.emit("event", { type: "compaction_start", reason: "threshold" });
+    fakeSession.isCompacting = false;
+    fakeSession.emit("event", { type: "compaction_end", reason: "threshold", willRetry: false, aborted: false, result: { summary: "요약" } });
+
+    expect(statusEvents(events)).toContainEqual({ type: "status", status: "running", summary: "Compacting session…", compactionStarted: true, compactionReason: "threshold" });
+    expect(statusEvents(events)).toContainEqual({ type: "status", status: "running", summary: "Session compacted; continuing…", compactionCompleted: true, compactionReason: "threshold" });
+    expect(statusEvents(events).some((event) => event.status === "completed")).toBe(false);
+  });
+
   it("completes manual compaction despite a stale expected input delivery", async () => {
     const fakeSession = new BlockingPromptSession();
     const runtime = makeRuntime(fakeSession);

@@ -1114,11 +1114,15 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
         this.cancelDeferredTerminalError();
         return { type: "status", status: "running", summary: "Compaction completed; retrying…", compactionCompleted: true, ...(reason ? { compactionReason: reason } : {}) };
       }
-      // Pi can compact before accepting a newly submitted prompt. In that preflight path the
-      // compaction_end event arrives before preflightResult(true) and agent_start. Expected input
-      // deliveries can outlive their turn when Pi omits the matching role=user echo, so only the
-      // prompt-specific preflight ledger proves that a new turn is actually waiting to continue.
-      if (!errorMessage && event.aborted !== true && (this.pendingPromptPreflightDeliveryIds.size > 0 || hasQueuedCompactionPrompts)) {
+      // Pi can compact before accepting a newly submitted prompt or midway through an active
+      // ReAct turn after a tool result. The latter continues emitting assistant deltas without a
+      // second agent_start, so a terminal noTurnRan marker here would make the supervisor drop the
+      // final answer. Expected input deliveries can outlive their turn when Pi omits the matching
+      // role=user echo, so use the prompt-specific preflight ledger rather than that stale queue.
+      const activeTurnContinues = this.runtime.session.isStreaming
+        || this.pendingPromptPreflightDeliveryIds.size > 0
+        || hasQueuedCompactionPrompts;
+      if (!errorMessage && event.aborted !== true && activeTurnContinues) {
         return { type: "status", status: "running", summary: "Session compacted; continuing…", compactionCompleted: true, ...(reason ? { compactionReason: reason } : {}) };
       }
       if (reason === "overflow" && errorMessage) {

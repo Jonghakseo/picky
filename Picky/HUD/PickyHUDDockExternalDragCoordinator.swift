@@ -62,16 +62,30 @@ final class PickyHUDDockExternalDragCoordinator {
     private var localMonitor: Any?
     private var globalMonitor: Any?
 
+    /// Fail-closed defaults: under unit tests no real monitor is installed, and
+    /// `start` already abandons the drag when an installer returns nil.
+    private static func installDefaultLocalMonitor(
+        _ mask: NSEvent.EventTypeMask,
+        _ handler: @escaping (NSEvent) -> Void
+    ) -> Any? {
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return nil }
+        return NSEvent.addLocalMonitorForEvents(matching: mask) { event in
+            handler(event)
+            return event
+        }
+    }
+
+    private static func installDefaultGlobalMonitor(
+        _ mask: NSEvent.EventTypeMask,
+        _ handler: @escaping (NSEvent) -> Void
+    ) -> Any? {
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return nil }
+        return NSEvent.addGlobalMonitorForEvents(matching: mask, handler: handler)
+    }
+
     init(
-        installLocalMonitor: @escaping EventMonitorInstaller = { mask, handler in
-            NSEvent.addLocalMonitorForEvents(matching: mask) { event in
-                handler(event)
-                return event
-            }
-        },
-        installGlobalMonitor: @escaping EventMonitorInstaller = { mask, handler in
-            NSEvent.addGlobalMonitorForEvents(matching: mask, handler: handler)
-        },
+        installLocalMonitor: @escaping EventMonitorInstaller = PickyHUDDockExternalDragCoordinator.installDefaultLocalMonitor,
+        installGlobalMonitor: @escaping EventMonitorInstaller = PickyHUDDockExternalDragCoordinator.installDefaultGlobalMonitor,
         removeMonitor: @escaping EventMonitorRemover = { NSEvent.removeMonitor($0) },
         mouseLocation: @escaping MouseLocationProvider = { NSEvent.mouseLocation },
         currentFingerprint: @escaping FingerprintProvider,

@@ -83,6 +83,7 @@ protocol PickySessionCommands: AnyObject, PickyGitChipActionViewModelDispatch {
     func sessionCard(sessionID: String) -> PickyConversationSessionCard?
     func markDoneFlashConsumed(sessionID: String)
     func markSessionRead(sessionID: String)
+    func markConversationCardOpened(sessionID: String)
     func markSessionClosed(sessionID: String)
     func sessionStore(sessionID: String) -> PickySessionStore?
     func toggleStickyScreenContextTarget(sessionID: String)
@@ -118,6 +119,7 @@ protocol PickySessionCommands: AnyObject, PickyGitChipActionViewModelDispatch {
 @MainActor
 protocol PickyHUDSessionLifecycle: PickySessionCommands {
     var dockState: PickyHUDDockState { get }
+    func unreadFocusShortcutTargetSessionID() -> String?
     func start()
     func stop()
 }

@@ -33,7 +33,7 @@ enum BuddyPushToTalkShortcut {
             let parts = modifierLabels + (keyLabel.map { [$0] } ?? [])
             guard !parts.isEmpty else { return nil }
             return parts.joined(separator: " + ")
-        case .doubleTapModifier:
+        case .doubleTapModifier, .physicalModifierChord:
             return nil
         }
     }
@@ -121,9 +121,9 @@ enum BuddyPushToTalkShortcut {
                 wasShortcutPreviouslyPressed: wasShortcutPreviouslyPressed,
                 requiredModifiers: requiredModifiers
             )
-        case .doubleTapModifier:
-            // Double-tap shortcuts are not delivered through this path; the
-            // QuickInputDoubleTapDetector owns them.
+        case .doubleTapModifier, .physicalModifierChord:
+            // Double-tap and physical-chord shortcuts are owned by the shared
+            // global shortcut arbiter, not the PTT decoder.
             return .none
         }
     }

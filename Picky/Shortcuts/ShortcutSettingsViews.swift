@@ -36,6 +36,8 @@ struct ShortcutKeyCapView: View {
                         .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
                 )
         )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(cap.accessibilityLabel)
     }
 }
 

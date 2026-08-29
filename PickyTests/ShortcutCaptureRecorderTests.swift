@@ -18,6 +18,8 @@ struct ShortcutCaptureRecorderTests {
     private let leftControl: UInt16 = 59
     private let leftOption: UInt16 = 58
     private let leftShift: UInt16 = 56
+    private let leftCommand: UInt16 = 55
+    private let rightCommand: UInt16 = 54
 
     @Test func captureRoutingConsumesOnlyTheOriginatingSettingsWindow() {
         #expect(PickyShortcutCaptureEventRoutingPolicy.shouldConsume(
@@ -119,6 +121,64 @@ struct ShortcutCaptureRecorderTests {
         } else {
             #expect(Bool(false), "expected combo, got \(String(describing: recorder.draftSpec))")
         }
+    }
+
+    @Test
+    func focusPickleCapturesDistinctLeftAndRightCommandKeys() {
+        let recorder = ShortcutCaptureRecorder(allowance: .focusPickle)
+        recorder.start()
+
+        recorder.handleEvent(
+            type: .flagsChanged,
+            keyCode: leftCommand,
+            modifierFlags: [.command],
+            physicalModifierIsDown: true
+        )
+        #expect(recorder.draftSpec == nil)
+
+        recorder.handleEvent(
+            type: .flagsChanged,
+            keyCode: rightCommand,
+            modifierFlags: [.command],
+            physicalModifierIsDown: true
+        )
+        #expect(recorder.draftSpec == .defaultFocusPickle)
+
+        recorder.handleEvent(
+            type: .flagsChanged,
+            keyCode: leftCommand,
+            modifierFlags: [.command],
+            physicalModifierIsDown: false
+        )
+        recorder.handleEvent(
+            type: .flagsChanged,
+            keyCode: rightCommand,
+            modifierFlags: [],
+            physicalModifierIsDown: false
+        )
+        #expect(recorder.draftSpec == .defaultFocusPickle)
+    }
+
+    @Test func focusPickleCapturesAlternativeModifierKeyCombo() {
+        let recorder = ShortcutCaptureRecorder(allowance: .focusPickle)
+        recorder.start()
+
+        recorder.handleEvent(type: .flagsChanged, keyCode: leftOption, modifierFlags: [.option])
+        recorder.handleEvent(type: .keyDown, keyCode: 3 /* F */, modifierFlags: [.option])
+
+        #expect(recorder.draftSpec == .modifierCombo(modifiers: .option, keyCode: 3))
+    }
+
+    @Test func focusPickleCapturesAlternativeModifierDoubleTap() {
+        let recorder = ShortcutCaptureRecorder(allowance: .focusPickle)
+        recorder.start()
+        let base = Date(timeIntervalSince1970: 2_000)
+
+        recorder.handleEvent(type: .flagsChanged, keyCode: leftOption, modifierFlags: [.option], now: base)
+        recorder.handleEvent(type: .flagsChanged, keyCode: leftOption, modifierFlags: [], now: base.addingTimeInterval(0.05))
+        recorder.handleEvent(type: .flagsChanged, keyCode: leftOption, modifierFlags: [.option], now: base.addingTimeInterval(0.20))
+
+        #expect(recorder.draftSpec == .doubleTapModifier(.option))
     }
 
     @Test

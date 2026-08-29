@@ -98,6 +98,8 @@ final class QuickInputDoubleTapDetector {
                 requiredModifiers: requiredModifiers,
                 requiredKeyCode: requiredKeyCode
             )
+        case .physicalModifierChord:
+            reset()
         }
     }
 
@@ -137,6 +139,9 @@ final class QuickInputDoubleTapDetector {
 
     var hasPendingPressForTesting: Bool { pendingPressAt != nil }
     var firstPressAtForTesting: Date? { firstPressAt }
+    var isGestureActiveForArbitration: Bool {
+        comboCurrentlyHeld || !modifiersCurrentlyDown.isEmpty
+    }
 
     // MARK: - Double-tap path
 

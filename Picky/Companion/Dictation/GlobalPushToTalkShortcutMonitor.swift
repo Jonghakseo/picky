@@ -15,16 +15,19 @@ import Foundation
 final class GlobalPushToTalkShortcutMonitor: ObservableObject {
     let shortcutTransitionPublisher = PassthroughSubject<PickyGlobalPushToTalkEvent, Never>()
 
-    /// Optional sink for raw flagsChanged/keyDown/keyUp events. Used by
-    /// QuickInputDoubleTapDetector so we don't install a second CGEvent tap.
-    /// The final argument identifies hardware key-repeat events. Always invoked
-    /// on the main thread (the event tap runs on `CFRunLoopGetMain()`).
-    var rawEventForwarder: ((CGEventType, UInt16, UInt64, Bool) -> Void)?
+    /// Production installs one deterministic arbiter for PTT, Quick Input,
+    /// and Focus Pickle. The callback remains synchronous because the event tap
+    /// and all three recognizers run on the main run loop.
+    var eventArbiter: ((PickyGlobalShortcutRawEvent, Bool) -> BuddyPushToTalkShortcut.ShortcutTransition)?
+    var eventTapDidReset: (() -> Void)?
 
     /// Currently-active push-to-talk shortcut. Mutated by CompanionManager
     /// whenever the user saves a new spec in Settings.
     var currentShortcutSpec: PickyShortcutSpec = .defaultPushToTalk {
-        didSet { isShortcutCurrentlyPressed = false }
+        didSet {
+            isShortcutCurrentlyPressed = false
+            eventTapDidReset?()
+        }
     }
 
     /// Set to true while the user is recording a new shortcut in Settings.
@@ -33,7 +36,12 @@ final class GlobalPushToTalkShortcutMonitor: ObservableObject {
     /// forwarded — otherwise pressing the existing shortcut during capture
     /// would close the Settings panel and start a voice session.
     var isCapturePaused: Bool = false {
-        didSet { if isCapturePaused { isShortcutCurrentlyPressed = false } }
+        didSet {
+            if isCapturePaused {
+                isShortcutCurrentlyPressed = false
+                eventTapDidReset?()
+            }
+        }
     }
 
     private var globalEventTap: CFMachPort?
@@ -144,6 +152,10 @@ final class GlobalPushToTalkShortcutMonitor: ObservableObject {
             requiredModifiers = modifiers
         case .doubleTapModifier(let modifier):
             requiredModifiers = modifier
+        case .physicalModifierChord(let keys):
+            requiredModifiers = keys.reduce(into: NSEvent.ModifierFlags()) { flags, key in
+                flags.insert(key.modifierFlag)
+            }
         }
         guard !requiredModifiers.isEmpty else { return true }
         let cleanedFlags = currentModifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -159,6 +171,7 @@ final class GlobalPushToTalkShortcutMonitor: ObservableObject {
             if let globalEventTap {
                 CGEvent.tapEnable(tap: globalEventTap, enable: true)
             }
+            eventTapDidReset?()
             let reasonLabel = eventType == .tapDisabledByTimeout ? "timeout" : "user-input"
             let shouldSynthesizeRelease = Self.reconcileStuckPressedState(
                 spec: currentShortcutSpec,
@@ -180,8 +193,28 @@ final class GlobalPushToTalkShortcutMonitor: ObservableObject {
         let eventKeyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         let modifierFlagsRawValue = event.flags.rawValue
         let isAutorepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
-        rawEventForwarder?(eventType, eventKeyCode, modifierFlagsRawValue, isAutorepeat)
-        let shortcutTransition = BuddyPushToTalkShortcut.shortcutTransition(
+        let isPhysicalModifierDown: Bool?
+        if eventType == .flagsChanged, PickyPhysicalModifierKey(keyCode: eventKeyCode) != nil {
+            isPhysicalModifierDown = CGEventSource.keyState(
+                .combinedSessionState,
+                key: CGKeyCode(eventKeyCode)
+            )
+        } else {
+            isPhysicalModifierDown = nil
+        }
+        let rawEvent = PickyGlobalShortcutRawEvent(
+            eventType: eventType,
+            keyCode: eventKeyCode,
+            modifierFlagsRawValue: modifierFlagsRawValue,
+            isAutorepeat: isAutorepeat,
+            isPhysicalModifierDown: isPhysicalModifierDown,
+            mouseLocation: NSEvent.mouseLocation,
+            observedAt: Date()
+        )
+        let shortcutTransition = eventArbiter?(
+            rawEvent,
+            isShortcutCurrentlyPressed
+        ) ?? BuddyPushToTalkShortcut.shortcutTransition(
             for: eventType,
             keyCode: eventKeyCode,
             modifierFlagsRawValue: modifierFlagsRawValue,

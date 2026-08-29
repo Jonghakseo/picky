@@ -8470,6 +8470,38 @@
         }
       }
     },
+    "settings.shortcuts.focusPickle.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open the first unread Pickle, or return to the last opened Pickle."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "첫 번째 읽지 않은 Pickle을 열거나 마지막으로 연 Pickle로 돌아가요."
+          }
+        }
+      }
+    },
+    "settings.shortcuts.focusPickle.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Focus Pickle"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle 열기"
+          }
+        }
+      }
+    },
     "settings.shortcuts.pushToTalk.subtitle": {
       "localizations": {
         "en": {
@@ -8675,17 +8707,17 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "PTT %@ · Quick Input %@"
+            "value": "PTT %@ · Quick Input %@ · Focus %@"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "PTT %@ · 퀵 입력 %@"
+            "value": "PTT %@ · 퀵 입력 %@ · 열기 %@"
           }
         }
       },
-      "comment": "Settings index subtitle for Shortcuts. Args: 1=push-to-talk glyph, 2=quick input glyph."
+      "comment": "Settings index subtitle for Shortcuts. Args: 1=push-to-talk glyph, 2=quick input glyph, 3=focus Pickle glyph."
     },
     "settings.summary.tools": {
       "localizations": {

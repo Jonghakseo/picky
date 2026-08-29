@@ -179,8 +179,11 @@ final class CompanionManager: ObservableObject {
 
     let buddyDictationManager: BuddyDictationManager
     let globalPushToTalkShortcutMonitor = GlobalPushToTalkShortcutMonitor()
+    let globalShortcutArbiter = PickyGlobalShortcutArbiter()
+    var quickInputDoubleTapDetector: QuickInputDoubleTapDetector {
+        globalShortcutArbiter.quickInputDetector
+    }
     let overlayWindowManager = OverlayWindowManager()
-    let quickInputDoubleTapDetector = QuickInputDoubleTapDetector()
     let quickInputPanelManager: QuickInputPanelManager
     let mainQuestionPanelManager: PickyMainQuestionPanelManager
     let mainCancelPillPanelManager = PickyMainCancelPillPanelManager()
@@ -332,6 +335,7 @@ final class CompanionManager: ObservableObject {
     /// True when the point sits over visibly rendered HUD chrome (dock rail,
     /// conversation card, toast). Wired by the app to the HUD overlay manager.
     var hudInkPassThroughHitTest: (CGPoint) -> Bool = { _ in false }
+    var onFocusPickleShortcut: (CGPoint) -> Void = { _ in }
     /// Monotonic marker for observing when queued interaction events have published.
     private(set) var interactionProjectionSequence: UInt64 = 0
     lazy var interactionCoordinator: PickyInteractionCoordinator = {
@@ -362,6 +366,7 @@ final class CompanionManager: ObservableObject {
 
     private var shortcutTransitionCancellable: AnyCancellable?
     private var quickInputDoubleTapCancellable: AnyCancellable?
+    private var focusPickleShortcutCancellable: AnyCancellable?
     private var mainQuestionPanelCancellable: AnyCancellable?
     private var mainCancelPillKeyWindowObservers: [NSObjectProtocol] = []
     /// Command ids currently awaiting an answer rejection from agentd. Their
@@ -571,6 +576,7 @@ final class CompanionManager: ObservableObject {
         bindDictationErrors()
         bindShortcutTransitions()
         bindQuickInputDoubleTap()
+        bindFocusPickleShortcut()
         bindScreenContextTarget()
         bindSettingsChanges()
         // Show the cursor as soon as all permissions are available and the
@@ -582,8 +588,9 @@ final class CompanionManager: ObservableObject {
 
     func stop() {
         globalPushToTalkShortcutMonitor.stop()
-        globalPushToTalkShortcutMonitor.rawEventForwarder = nil
-        quickInputDoubleTapDetector.reset()
+        globalPushToTalkShortcutMonitor.eventArbiter = nil
+        globalPushToTalkShortcutMonitor.eventTapDidReset = nil
+        globalShortcutArbiter.reset()
         quickInputPanelManager.dismiss()
         mainQuestionPanelManager.dismiss()
         mainCancelPillPanelManager.dismiss()
@@ -624,6 +631,7 @@ final class CompanionManager: ObservableObject {
         }
         shortcutTransitionCancellable?.cancel()
         quickInputDoubleTapCancellable?.cancel()
+        focusPickleShortcutCancellable?.cancel()
         mainQuestionPanelCancellable?.cancel()
         mainQuestionPanelCancellable = nil
         screenContextTargetCancellable?.cancel()
@@ -957,12 +965,14 @@ final class CompanionManager: ObservableObject {
             }
     }
 
-    /// Pushes the persisted PTT/Quick Input shortcut specs into the live
-    /// monitor and detector. Called on launch and whenever Settings saves.
+    /// Pushes all persisted global shortcuts into the shared arbiter. Called
+    /// on launch and whenever Settings saves.
     private func applyShortcutSpecsFromSettings(_ settings: PickySettings = PickySettingsStore().load()) {
+        globalShortcutArbiter.pushToTalkSpec = settings.pushToTalkShortcut
+        globalShortcutArbiter.quickInputSpec = settings.quickInputShortcut
+        globalShortcutArbiter.focusPickleSpec = settings.focusPickleShortcut
         globalPushToTalkShortcutMonitor.currentShortcutSpec = settings.pushToTalkShortcut
-        quickInputDoubleTapDetector.currentShortcutSpec = settings.quickInputShortcut
-        print("⌨️  Shortcuts applied — PTT: \(settings.pushToTalkShortcut), QuickInput: \(settings.quickInputShortcut)")
+        print("⌨️  Shortcuts applied — PTT: \(settings.pushToTalkShortcut), QuickInput: \(settings.quickInputShortcut), Focus: \(settings.focusPickleShortcut)")
     }
 
     func reloadVoiceProvidersFromSettings(_ settings: PickySettings = PickySettingsStore().load()) {
@@ -1176,22 +1186,31 @@ final class CompanionManager: ObservableObject {
             }
     }
 
-    /// Routes raw flags/key events from the PTT event tap into the Quick
-    /// Input detector so we don't need a second CGEvent tap.
+    /// Routes the shared listen-only tap through one deterministic shortcut
+    /// arbiter. Escape remains a separate utility action, but observes the same
+    /// raw event without installing another tap.
     private func wireQuickInputPanel() {
-        globalPushToTalkShortcutMonitor.rawEventForwarder = { [weak self] eventType, keyCode, flagsRawValue, isAutorepeat in
-            guard let self else { return }
-            self.quickInputDoubleTapDetector.handleGlobalEvent(
-                eventType: eventType,
-                keyCode: keyCode,
-                modifierFlagsRawValue: flagsRawValue
-            )
-            guard PickyMainCancelPillPolicy.shouldHandleEscape(
-                eventType: eventType,
-                keyCode: keyCode,
-                isAutorepeat: isAutorepeat
-            ) else { return }
-            self.mainCancelPillPanelManager.handleEscape()
+        globalPushToTalkShortcutMonitor.eventArbiter = { [weak self] event, wasPushToTalkPressed in
+            MainActor.assumeIsolated {
+                guard let self else { return .none }
+                let transition = self.globalShortcutArbiter.handle(
+                    event,
+                    wasPushToTalkPreviouslyPressed: wasPushToTalkPressed
+                )
+                if PickyMainCancelPillPolicy.shouldHandleEscape(
+                    eventType: event.eventType,
+                    keyCode: event.keyCode,
+                    isAutorepeat: event.isAutorepeat
+                ) {
+                    self.mainCancelPillPanelManager.handleEscape()
+                }
+                return transition
+            }
+        }
+        globalPushToTalkShortcutMonitor.eventTapDidReset = { [weak self] in
+            MainActor.assumeIsolated {
+                self?.globalShortcutArbiter.reset()
+            }
         }
         quickInputPanelManager.onSubmit = { [weak self] text, recipient in
             self?.handleQuickInputSubmit(text: text, recipient: recipient)
@@ -1331,6 +1350,13 @@ final class CompanionManager: ObservableObject {
             }
     }
 
+    private func bindFocusPickleShortcut() {
+        focusPickleShortcutCancellable = globalShortcutArbiter.focusPicklePublisher
+            .sink { [weak self] event in
+                self?.onFocusPickleShortcut(event.mouseLocation)
+            }
+    }
+
     private func bindScreenContextTarget() {
         applyScreenContextTarget(selectionStore.screenContextTargetSessionID)
         screenContextTargetCancellable = NotificationCenter.default.publisher(for: .pickyScreenContextTargetChanged)
@@ -1400,9 +1426,7 @@ final class CompanionManager: ObservableObject {
         }
         let shouldPause = activeShortcutCaptureCount > 0
         globalPushToTalkShortcutMonitor.isCapturePaused = shouldPause
-        if shouldPause {
-            quickInputDoubleTapDetector.reset()
-        }
+        globalShortcutArbiter.reset()
     }
 
     private func handleQuickInputSubmit(

@@ -103,6 +103,7 @@ final class PickySessionListViewModel: ObservableObject {
     /// detect when the user inspects the demo Pickle's contents.
     @Published private(set) var lastOpenedSessionToken: UUID = UUID()
     private(set) var lastOpenedSessionID: String?
+    private(set) var lastActualConversationCardOpenedID: String?
     /// Symmetric counterpart of `lastOpenedSessionToken`: fires every time the
     /// user toggles an open card back closed. Lets the onboarding flow split
     /// 'click to close' and 'long-press to archive' into separate beats.
@@ -444,6 +445,15 @@ final class PickySessionListViewModel: ObservableObject {
             select(sessionID: sessionID)
         }
         openSessionRequest = PickyHUDOpenSessionRequest(sessionID: sessionID, targetDisplayID: targetDisplayID)
+    }
+
+    func unreadFocusShortcutTargetSessionID() -> String? {
+        PickyUnreadFocusTargetPolicy.targetSessionID(
+            layout: dockLayout,
+            activeSessionIDs: Array(sessions.reversed().map(\.id)),
+            unreadSessionIDs: unreadSessionIDs,
+            lastActualConversationCardOpenedID: lastActualConversationCardOpenedID
+        )
     }
 
     func submit(transcript: String, context: PickyContextPacket) async throws {
@@ -928,18 +938,23 @@ final class PickySessionListViewModel: ObservableObject {
         pendingDoneFlashSessionIDs.remove(sessionID)
     }
 
-    /// Called when the user opens a Pickle in any dock. Clears the unread badge
-    /// across every HUD instance via the shared `@Published` set, and bumps
-    /// `lastOpenedSessionToken` so non-HUD subscribers (e.g. onboarding) can
-    /// react to the open gesture regardless of unread state.
+    /// Clears unread state without implying that the user opened the actual
+    /// conversation card. Passive panel focus and utility surfaces use this.
     func markSessionRead(sessionID: String) {
-        lastOpenedSessionID = sessionID
-        lastOpenedSessionToken = UUID()
         guard unreadSessionIDs.contains(sessionID) else { return }
         unreadSessionIDs.remove(sessionID)
     }
 
-    /// Mirror of `markSessionRead` for the close gesture: HUDView calls this
+    /// Records only a confirmed held conversation card open. This drives both
+    /// onboarding and the no-unread fallback for the global Focus Pickle shortcut.
+    func markConversationCardOpened(sessionID: String) {
+        lastActualConversationCardOpenedID = sessionID
+        lastOpenedSessionID = sessionID
+        lastOpenedSessionToken = UUID()
+        markSessionRead(sessionID: sessionID)
+    }
+
+    /// Mirror of `markConversationCardOpened` for the close gesture: HUDView calls this
     /// when a previously-open dock card is toggled back closed. Onboarding
     /// uses it to split the open / close / archive CTAs into separate beats.
     func markSessionClosed(sessionID: String) {

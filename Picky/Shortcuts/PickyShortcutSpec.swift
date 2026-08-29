@@ -2,7 +2,7 @@
 //  PickyShortcutSpec.swift
 //  Picky
 //
-//  Persisted, user-configurable description of a global shortcut. Two flavors:
+//  Persisted, user-configurable description of a global shortcut. Three flavors:
 //
 //  - `.modifierCombo(modifiers, keyCode?)`
 //      Fires when the modifier set is held (and, if `keyCode` is set, while
@@ -14,6 +14,10 @@
 //      QuickInputDoubleTapDetector's window. Used for "double-tap Control"
 //      style triggers.
 //
+//  - `.physicalModifierChord(keys)`
+//      Distinguishes left/right hardware modifier keys that AppKit's logical
+//      modifier flags merge together. Used by the Focus Pickle shortcut.
+//
 //  The display layer renders the spec as a row of key caps so the settings
 //  UI matches the screenshot (chevrons for shift/ctrl/option/cmd, a magic
 //  hat-style glyph for fn, raw text for letters/digits/space).
@@ -22,9 +26,38 @@
 import AppKit
 import Foundation
 
+enum PickyPhysicalModifierKey: String, Codable, CaseIterable, Hashable {
+    case leftCommand
+    case rightCommand
+
+    var keyCode: UInt16 {
+        switch self {
+        case .leftCommand: 55
+        case .rightCommand: 54
+        }
+    }
+
+    var modifierFlag: NSEvent.ModifierFlags { .command }
+
+    var sideLabel: String {
+        switch self {
+        case .leftCommand: "left"
+        case .rightCommand: "right"
+        }
+    }
+
+    var accessibilityLabel: String { "\(sideLabel) Command" }
+
+    init?(keyCode: UInt16) {
+        guard let key = Self.allCases.first(where: { $0.keyCode == keyCode }) else { return nil }
+        self = key
+    }
+}
+
 enum PickyShortcutSpec: Codable, Equatable {
     case modifierCombo(modifiers: NSEvent.ModifierFlags, keyCode: UInt16?)
     case doubleTapModifier(NSEvent.ModifierFlags)
+    case physicalModifierChord(keys: [PickyPhysicalModifierKey])
 
     // MARK: - Defaults
 
@@ -34,6 +67,10 @@ enum PickyShortcutSpec: Codable, Equatable {
     )
 
     static let defaultQuickInput: PickyShortcutSpec = .doubleTapModifier(.control)
+
+    static let defaultFocusPickle: PickyShortcutSpec = .physicalModifierChord(
+        keys: [.leftCommand, .rightCommand]
+    )
 
     // MARK: - Public helpers
 
@@ -46,6 +83,8 @@ enum PickyShortcutSpec: Codable, Equatable {
             return !modifiers.isEmpty || keyCode != nil
         case .doubleTapModifier(let modifier):
             return PickyShortcutKeyCap.singleModifierFlag(modifier) != nil
+        case .physicalModifierChord(let keys):
+            return Set(keys) == Set(PickyPhysicalModifierKey.allCases)
         }
     }
 
@@ -67,6 +106,13 @@ enum PickyShortcutSpec: Codable, Equatable {
         case .doubleTapModifier(let modifier):
             guard let glyph = PickyShortcutKeyCap.modifierGlyph(for: modifier) else { return "" }
             return glyph + glyph
+        case .physicalModifierChord(let keys):
+            return keys.map { key in
+                switch key {
+                case .leftCommand: "L⌘"
+                case .rightCommand: "R⌘"
+                }
+            }.joined()
         }
     }
 
@@ -86,6 +132,16 @@ enum PickyShortcutSpec: Codable, Equatable {
                 return []
             }
             return [cap, cap]
+        case .physicalModifierChord(let keys):
+            return keys.map { key in
+                PickyShortcutKeyCap(
+                    id: "physical-\(key.rawValue)",
+                    glyph: "command",
+                    label: key.sideLabel,
+                    style: .modifier,
+                    accessibilityLabel: key.accessibilityLabel
+                )
+            }
         }
     }
 
@@ -103,6 +159,22 @@ enum PickyShortcutSpec: Codable, Equatable {
             // *is* exactly <X>, because pressing <X> would arm the double-tap
             // counter every time the modifier-only spec fires.
             return keyCode == nil && mods == tapMod
+        case let (.physicalModifierChord(lhs), .physicalModifierChord(rhs)):
+            return Set(lhs) == Set(rhs)
+        case let (.physicalModifierChord(keys), .modifierCombo(modifiers, keyCode)),
+             let (.modifierCombo(modifiers, keyCode), .physicalModifierChord(keys)):
+            return keyCode == nil && Self.physicalChordModifierFlags(keys) == modifiers
+        case let (.physicalModifierChord(keys), .doubleTapModifier(modifier)),
+             let (.doubleTapModifier(modifier), .physicalModifierChord(keys)):
+            return Self.physicalChordModifierFlags(keys) == modifier
+        }
+    }
+
+    private static func physicalChordModifierFlags(
+        _ keys: [PickyPhysicalModifierKey]
+    ) -> NSEvent.ModifierFlags {
+        keys.reduce(into: NSEvent.ModifierFlags()) { flags, key in
+            flags.insert(key.modifierFlag)
         }
     }
 
@@ -112,25 +184,33 @@ enum PickyShortcutSpec: Codable, Equatable {
         case kind
         case modifiers
         case keyCode
+        case physicalKeys
     }
 
     private enum Kind: String, Codable {
         case modifierCombo
         case doubleTapModifier
+        case physicalModifierChord
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let kind = try container.decode(Kind.self, forKey: .kind)
-        let modifiersRaw = try container.decode(UInt.self, forKey: .modifiers)
-        let modifiers = NSEvent.ModifierFlags(rawValue: modifiersRaw)
-            .intersection(.deviceIndependentFlagsMask)
         switch kind {
-        case .modifierCombo:
-            let keyCode = try container.decodeIfPresent(UInt16.self, forKey: .keyCode)
-            self = .modifierCombo(modifiers: modifiers, keyCode: keyCode)
-        case .doubleTapModifier:
-            self = .doubleTapModifier(modifiers)
+        case .modifierCombo, .doubleTapModifier:
+            let modifiersRaw = try container.decode(UInt.self, forKey: .modifiers)
+            let modifiers = NSEvent.ModifierFlags(rawValue: modifiersRaw)
+                .intersection(.deviceIndependentFlagsMask)
+            if kind == .modifierCombo {
+                let keyCode = try container.decodeIfPresent(UInt16.self, forKey: .keyCode)
+                self = .modifierCombo(modifiers: modifiers, keyCode: keyCode)
+            } else {
+                self = .doubleTapModifier(modifiers)
+            }
+        case .physicalModifierChord:
+            self = .physicalModifierChord(
+                keys: try container.decode([PickyPhysicalModifierKey].self, forKey: .physicalKeys)
+            )
         }
     }
 
@@ -144,6 +224,9 @@ enum PickyShortcutSpec: Codable, Equatable {
         case .doubleTapModifier(let modifier):
             try container.encode(Kind.doubleTapModifier, forKey: .kind)
             try container.encode(modifier.rawValue, forKey: .modifiers)
+        case .physicalModifierChord(let keys):
+            try container.encode(Kind.physicalModifierChord, forKey: .kind)
+            try container.encode(keys, forKey: .physicalKeys)
         }
     }
 }
@@ -163,6 +246,21 @@ struct PickyShortcutKeyCap: Equatable, Identifiable {
     let glyph: String?
     let label: String
     let style: Style
+    let accessibilityLabel: String
+
+    init(
+        id: String,
+        glyph: String?,
+        label: String,
+        style: Style,
+        accessibilityLabel: String? = nil
+    ) {
+        self.id = id
+        self.glyph = glyph
+        self.label = label
+        self.style = style
+        self.accessibilityLabel = accessibilityLabel ?? label
+    }
 
     // MARK: - Modifier helpers
 

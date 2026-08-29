@@ -886,8 +886,8 @@ struct PickyHUDView: View {
         } else {
             hoverPreviewSessionID = nil
             suppressedHoverSessionID = nil
-            // Opening any Pickle clears its unread state across every dock.
-            viewModel.markSessionRead(sessionID: sessionID)
+            // Record only after the held conversation card state is open.
+            viewModel.markConversationCardOpened(sessionID: sessionID)
         }
     }
 
@@ -1218,7 +1218,7 @@ struct PickyHUDView: View {
         heldSession = next
         hoverPreviewSessionID = nil
         suppressedHoverSessionID = nil
-        viewModel.markSessionRead(sessionID: next.sessionID)
+        viewModel.markConversationCardOpened(sessionID: next.sessionID)
     }
 
     private func focusActiveComposer() {

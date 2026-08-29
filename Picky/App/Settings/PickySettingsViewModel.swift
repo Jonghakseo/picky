@@ -116,25 +116,40 @@ final class PickySettingsViewModel: ObservableObject {
     /// `saveDurably`) to persist it; the return value is not durable success.
     func updateShortcut(
         _ newSpec: PickyShortcutSpec,
-        keyPath: WritableKeyPath<PickySettings, PickyShortcutSpec>,
-        conflictsWith other: PickyShortcutSpec
+        role: PickyShortcutRole
     ) -> Bool {
         guard newSpec.isValid else {
             validationError = "That shortcut combination isn’t valid."
             return false
         }
-        if newSpec.conflicts(with: other) {
-            validationError = "That shortcut conflicts with the other one."
+        let shortcuts: [PickyShortcutRole: PickyShortcutSpec] = [
+            .pushToTalk: settings.pushToTalkShortcut,
+            .quickInput: settings.quickInputShortcut,
+            .focusPickle: settings.focusPickleShortcut,
+        ]
+        if PickyShortcutConflictPolicy.conflictingRole(
+            for: newSpec,
+            role: role,
+            shortcuts: shortcuts
+        ) != nil {
+            validationError = "That shortcut conflicts with another action."
             return false
         }
         validationError = nil
         var updated = settings
-        updated[keyPath: keyPath] = newSpec
+        switch role {
+        case .pushToTalk:
+            updated.pushToTalkShortcut = newSpec
+        case .quickInput:
+            updated.quickInputShortcut = newSpec
+        case .focusPickle:
+            updated.focusPickleShortcut = newSpec
+        }
         settings = updated
         return true
     }
 
-    /// Restores both shortcut specs in the draft. Call `save` (or
+    /// Restores all shortcut specs in the draft. Call `save` (or
     /// `saveDurably`) to persist them.
     @discardableResult
     func resetShortcutsToDefaults() -> Bool {
@@ -142,6 +157,7 @@ final class PickySettingsViewModel: ObservableObject {
         var updated = settings
         updated.pushToTalkShortcut = .defaultPushToTalk
         updated.quickInputShortcut = .defaultQuickInput
+        updated.focusPickleShortcut = .defaultFocusPickle
         settings = updated
         return true
     }

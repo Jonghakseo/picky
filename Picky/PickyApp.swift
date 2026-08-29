@@ -267,6 +267,9 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             companionManager.hudInkPassThroughHitTest = { [weak self] point in
                 self?.hudOverlayManager.containsInkPassThroughPoint(point) ?? false
             }
+            companionManager.onFocusPickleShortcut = { [weak self] mouseLocation in
+                self?.hudOverlayManager.focusUnreadOrRecentSession(mouseLocation: mouseLocation)
+            }
             hudOverlayManager.start()
             // Best-effort install of /usr/local/bin/picky when we can do it
             // without prompting for credentials. Anything that would require

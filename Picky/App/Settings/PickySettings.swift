@@ -631,6 +631,7 @@ struct PickySettings: Codable, Equatable {
     var useConversationCard: Bool
     var pushToTalkShortcut: PickyShortcutSpec
     var quickInputShortcut: PickyShortcutSpec
+    var focusPickleShortcut: PickyShortcutSpec
     /// Vertical anchor for the HUD dock's top edge, expressed as a percentage of the
     /// current screen's `visibleFrame` height measured from the top. Synced across all
     /// Per-display dock position state keyed by display ID. Each monitor remembers
@@ -779,6 +780,7 @@ struct PickySettings: Codable, Equatable {
         useConversationCard: Bool = true,
         pushToTalkShortcut: PickyShortcutSpec = .defaultPushToTalk,
         quickInputShortcut: PickyShortcutSpec = .defaultQuickInput,
+        focusPickleShortcut: PickyShortcutSpec = .defaultFocusPickle,
         hudDockPositions: [String: PickyHUDDockPosition] = [:],
         hudDockGroupCollapse: [String: [String: Bool]] = [:],
         hudDockVisible: Bool = true,
@@ -850,6 +852,7 @@ struct PickySettings: Codable, Equatable {
         self.useConversationCard = useConversationCard
         self.pushToTalkShortcut = pushToTalkShortcut
         self.quickInputShortcut = quickInputShortcut
+        self.focusPickleShortcut = focusPickleShortcut
         self.hudDockPositions = hudDockPositions
         self.hudDockGroupCollapse = hudDockGroupCollapse
         self.hudDockVisible = hudDockVisible
@@ -947,6 +950,7 @@ struct PickySettings: Codable, Equatable {
             useConversationCard: true,
             pushToTalkShortcut: .defaultPushToTalk,
             quickInputShortcut: .defaultQuickInput,
+            focusPickleShortcut: .defaultFocusPickle,
             hudDockPositions: [:],
             hudDockGroupCollapse: [:],
             hudDockVisible: true,
@@ -1070,6 +1074,7 @@ struct PickySettings: Codable, Equatable {
         case useConversationCard
         case pushToTalkShortcut
         case quickInputShortcut
+        case focusPickleShortcut
         case hudDockPositions
         case hudDockGroupCollapse
         case hudDockVisible
@@ -1194,10 +1199,12 @@ struct PickySettings: Codable, Equatable {
         } else {
             fontScales = defaults.fontScales
         }
-        let storedPTT = try container.decodeIfPresent(PickyShortcutSpec.self, forKey: .pushToTalkShortcut)
+        let storedPTT = try? container.decode(PickyShortcutSpec.self, forKey: .pushToTalkShortcut)
         pushToTalkShortcut = (storedPTT?.isValid == true) ? storedPTT! : defaults.pushToTalkShortcut
-        let storedQuickInput = try container.decodeIfPresent(PickyShortcutSpec.self, forKey: .quickInputShortcut)
+        let storedQuickInput = try? container.decode(PickyShortcutSpec.self, forKey: .quickInputShortcut)
         quickInputShortcut = (storedQuickInput?.isValid == true) ? storedQuickInput! : defaults.quickInputShortcut
+        let storedFocusPickle = try? container.decode(PickyShortcutSpec.self, forKey: .focusPickleShortcut)
+        focusPickleShortcut = (storedFocusPickle?.isValid == true) ? storedFocusPickle! : defaults.focusPickleShortcut
 
         // Migrate from legacy flat fields (single global position) to the per-display
         // dictionary on first read. Old settings used hudDockTopAnchorPercent, hudDockSide,

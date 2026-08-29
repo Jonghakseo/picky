@@ -4239,8 +4239,21 @@ struct PickySessionViewModelTests {
 
         viewModel.markSessionRead(sessionID: "pickle-1")
         #expect(viewModel.unreadSessionIDs.isEmpty)
+        #expect(viewModel.lastActualConversationCardOpenedID == nil)
 
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "running", updatedAt: "2026-05-01T00:00:10.000Z"))))
+        #expect(viewModel.unreadSessionIDs.isEmpty)
+    }
+
+    @MainActor @Test func actualConversationCardOpenRecordsTargetAndClearsUnread() {
+        let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed", updatedAt: "2026-05-01T00:00:05.000Z"))))
+
+        viewModel.markConversationCardOpened(sessionID: "pickle-1")
+
+        #expect(viewModel.lastActualConversationCardOpenedID == "pickle-1")
+        #expect(viewModel.lastOpenedSessionID == "pickle-1")
         #expect(viewModel.unreadSessionIDs.isEmpty)
     }
 

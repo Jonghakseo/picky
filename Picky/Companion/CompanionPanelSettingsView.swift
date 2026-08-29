@@ -246,7 +246,8 @@ struct CompanionPanelSettingsView: View {
         case .shortcuts:
             let ptt = settings.pushToTalkShortcut.summaryString
             let qi = settings.quickInputShortcut.summaryString
-            return L10n.t("settings.summary.shortcuts", ptt, qi)
+            let focus = settings.focusPickleShortcut.summaryString
+            return L10n.t("settings.summary.shortcuts", ptt, qi, focus)
         case .mainAgent:
             return indexModelLabel(settings.mainAgentModelPattern)
         case .pickle:
@@ -789,7 +790,7 @@ struct CompanionPanelSettingsView: View {
                     allowance: .pushToTalk,
                     currentSpec: viewModel.settings.pushToTalkShortcut
                 ) { newSpec in
-                    saveShortcut(newSpec, keyPath: \.pushToTalkShortcut, conflictsWith: viewModel.settings.quickInputShortcut)
+                    saveShortcut(newSpec, role: .pushToTalk)
                 }
 
                 ShortcutSettingsRow(
@@ -798,7 +799,16 @@ struct CompanionPanelSettingsView: View {
                     allowance: .quickInput,
                     currentSpec: viewModel.settings.quickInputShortcut
                 ) { newSpec in
-                    saveShortcut(newSpec, keyPath: \.quickInputShortcut, conflictsWith: viewModel.settings.pushToTalkShortcut)
+                    saveShortcut(newSpec, role: .quickInput)
+                }
+
+                ShortcutSettingsRow(
+                    title: L10n.t("settings.shortcuts.focusPickle.title"),
+                    subtitle: L10n.t("settings.shortcuts.focusPickle.subtitle"),
+                    allowance: .focusPickle,
+                    currentSpec: viewModel.settings.focusPickleShortcut
+                ) { newSpec in
+                    saveShortcut(newSpec, role: .focusPickle)
                 }
 
                 Button(action: resetShortcutsToDefaults) {
@@ -1812,10 +1822,9 @@ struct CompanionPanelSettingsView: View {
     /// the runtime never has two paths fighting over the same keypress.
     private func saveShortcut(
         _ newSpec: PickyShortcutSpec,
-        keyPath: WritableKeyPath<PickySettings, PickyShortcutSpec>,
-        conflictsWith other: PickyShortcutSpec
+        role: PickyShortcutRole
     ) {
-        guard viewModel.updateShortcut(newSpec, keyPath: keyPath, conflictsWith: other) else {
+        guard viewModel.updateShortcut(newSpec, role: role) else {
             saveStatuses.markDirty(.shortcuts)
             return
         }

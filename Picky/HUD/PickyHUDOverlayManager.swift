@@ -323,16 +323,41 @@ final class PickyHUDOverlayManager {
     /// notification banner; selection alone is not enough because each HUD view keeps
     /// its open card in local `heldSession` state.
     func focusSession(id: String) {
-        // Clicking a session notification is an explicit request to reveal its
-        // conversation, so restore the dock on the target display before routing
-        // the open without unexpectedly revealing other user-hidden displays.
-        // macOS notifications don't tell us which display they were shown on,
-        // so use the screen under the cursor at click time as the target.
-        let targetDisplayID = displayIDUnderCursor()
+        // macOS notifications don't expose their display. Snapshot the cursor
+        // display before routing so visibility restoration and card open agree.
+        focusSession(id: id, targetDisplayID: displayID(at: NSEvent.mouseLocation))
+    }
+
+    func focusUnreadOrRecentSession(mouseLocation: CGPoint) {
+        let targetDisplayID = displayID(at: mouseLocation)
+        focusUnreadOrRecentSession(targetDisplayID: targetDisplayID)
+    }
+
+    @discardableResult
+    func focusUnreadOrRecentSession(
+        targetDisplayID: CGDirectDisplayID?,
+        persistVisibility: Bool = true
+    ) -> String? {
+        guard let sessionID = viewModel.unreadFocusShortcutTargetSessionID() else { return nil }
+        focusSession(
+            id: sessionID,
+            targetDisplayID: targetDisplayID,
+            persistVisibility: persistVisibility
+        )
+        return sessionID
+    }
+
+    private func focusSession(
+        id: String,
+        targetDisplayID: CGDirectDisplayID?,
+        persistVisibility: Bool = true
+    ) {
+        // Explicit focus restores only the snapshotted target display. Falling
+        // back to all displays is reserved for systems where no display resolves.
         if let targetDisplayID {
-            visibilityStore.setVisible(true, for: targetDisplayID)
+            visibilityStore.setVisible(true, for: targetDisplayID, persist: persistVisibility)
         } else {
-            visibilityStore.setAllVisible(true)
+            visibilityStore.setAllVisible(true, persist: persistVisibility)
         }
         viewModel.requestOpenSession(sessionID: id, targetDisplayID: targetDisplayID)
         if let targetDisplayID, let entry = panelsByDisplayID[targetDisplayID] {
@@ -344,8 +369,7 @@ final class PickyHUDOverlayManager {
         }
     }
 
-    private func displayIDUnderCursor() -> CGDirectDisplayID? {
-        let location = NSEvent.mouseLocation
+    private func displayID(at location: CGPoint) -> CGDirectDisplayID? {
         let screen = NSScreen.screens.first { $0.frame.contains(location) } ?? NSScreen.main
         return screen?.pickyDisplayID
     }

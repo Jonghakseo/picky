@@ -15,6 +15,7 @@ struct PickyShortcutSpecTests {
     @Test func defaultsAreValid() {
         #expect(PickyShortcutSpec.defaultPushToTalk.isValid)
         #expect(PickyShortcutSpec.defaultQuickInput.isValid)
+        #expect(PickyShortcutSpec.defaultFocusPickle.isValid)
     }
 
     @Test func emptyModifierComboIsInvalid() {
@@ -42,6 +43,13 @@ struct PickyShortcutSpecTests {
         #expect(spec.keyCaps.map(\.label) == ["shift", "Z"])
     }
 
+    @Test func physicalCommandChordRendersDistinctLeftAndRightKeyCaps() {
+        let spec = PickyShortcutSpec.defaultFocusPickle
+        #expect(spec.summaryString == "L⌘R⌘")
+        #expect(spec.keyCaps.map(\.label) == ["left", "right"])
+        #expect(spec.keyCaps.map(\.accessibilityLabel) == ["left Command", "right Command"])
+    }
+
     @Test func conflictsBetweenDoubleTapAndModifierOnly() {
         let modifierOnly = PickyShortcutSpec.modifierCombo(modifiers: .control, keyCode: nil)
         let doubleTap = PickyShortcutSpec.doubleTapModifier(.control)
@@ -55,6 +63,20 @@ struct PickyShortcutSpecTests {
         #expect(combo.conflicts(with: doubleTap) == false)
     }
 
+    @Test func physicalCommandChordConflictMatrixIsSymmetric() {
+        let chord = PickyShortcutSpec.defaultFocusPickle
+        let commandOnly = PickyShortcutSpec.modifierCombo(modifiers: .command, keyCode: nil)
+        let commandDoubleTap = PickyShortcutSpec.doubleTapModifier(.command)
+        let commandKey = PickyShortcutSpec.modifierCombo(modifiers: .command, keyCode: 49)
+
+        #expect(chord.conflicts(with: commandOnly))
+        #expect(commandOnly.conflicts(with: chord))
+        #expect(chord.conflicts(with: commandDoubleTap))
+        #expect(commandDoubleTap.conflicts(with: chord))
+        #expect(chord.conflicts(with: commandKey) == false)
+        #expect(commandKey.conflicts(with: chord) == false)
+    }
+
     @Test func roundTripModifierCombo() throws {
         let original = PickyShortcutSpec.modifierCombo(modifiers: [.control, .option], keyCode: 49)
         let encoded = try JSONEncoder().encode(original)
@@ -64,6 +86,13 @@ struct PickyShortcutSpecTests {
 
     @Test func roundTripDoubleTap() throws {
         let original = PickyShortcutSpec.doubleTapModifier(.control)
+        let encoded = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(PickyShortcutSpec.self, from: encoded)
+        #expect(decoded == original)
+    }
+
+    @Test func roundTripPhysicalModifierChord() throws {
+        let original = PickyShortcutSpec.defaultFocusPickle
         let encoded = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(PickyShortcutSpec.self, from: encoded)
         #expect(decoded == original)

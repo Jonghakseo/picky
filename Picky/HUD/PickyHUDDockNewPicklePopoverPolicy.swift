@@ -5,19 +5,21 @@
 //  Selects the one anchor that owns the shared new-Pickle popover.
 //
 
-enum PickyHUDDockGroupTileAction: Equatable {
-    case showFolderPicker
-    case toggleMemberList
+enum PickyHUDDockGroupTilePresentation: Equatable {
+    case empty
+    case singleSession(sessionID: String)
+    case folder
+
+    static func resolve(visibleMemberIDs: [String]) -> Self {
+        switch visibleMemberIDs.count {
+        case 0: .empty
+        case 1: .singleSession(sessionID: visibleMemberIDs[0])
+        default: .folder
+        }
+    }
 }
 
 enum PickyHUDDockNewPicklePopoverPolicy {
-    /// A group without a visible member has no list to disclose. Its one rail
-    /// slot is instead the targeted create affordance while remaining a drag
-    /// destination in the projection.
-    static func groupTileAction(hasVisibleMembers: Bool) -> PickyHUDDockGroupTileAction {
-        hasVisibleMembers ? .toggleMemberList : .showFolderPicker
-    }
-
     static func isPresented(
         pickerIsPresented: Bool,
         activeAnchorGroupID: String?,

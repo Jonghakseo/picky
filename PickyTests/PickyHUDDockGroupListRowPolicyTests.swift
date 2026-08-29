@@ -195,12 +195,18 @@ struct PickyHUDDockGroupListRowProjectionTests {
         #expect(memberSessionIDs.count == 3)
     }
 
-    @Test func archivingTheLastVisibleMemberTearsDownTheListBeforeAnEmptyModelUpdate() {
-        let before = project(memberSessionIDs: ["only"], activeSessionIDs: ["only"])
-        let after = project(memberSessionIDs: ["only"], activeSessionIDs: [])
+    @Test func archivingDownToOneVisibleMemberTearsDownTheListBeforePromotingItsDockTile() {
+        let before = project(
+            memberSessionIDs: ["remaining", "archived"],
+            activeSessionIDs: ["remaining", "archived"]
+        )
+        let after = project(
+            memberSessionIDs: ["remaining", "archived"],
+            activeSessionIDs: ["remaining"]
+        )
 
-        #expect(before.count == 1)
-        #expect(after.isEmpty)
+        #expect(before.count == 2)
+        #expect(after.map(\.id) == ["remaining"])
         #expect(
             PickyHUDDockGroupListOpenPolicy.reconciliation(
                 openGroupID: "group",

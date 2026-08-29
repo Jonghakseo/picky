@@ -54,9 +54,10 @@ struct PickyHUDDockNewPicklePopoverPolicyTests {
         #expect(activeTargetGroupID == nil)
     }
 
-    @Test func emptyGroupTileCreatesAPickleWhileMemberGroupTileTogglesItsList() {
-        #expect(PickyHUDDockNewPicklePopoverPolicy.groupTileAction(hasVisibleMembers: false) == .showFolderPicker)
-        #expect(PickyHUDDockNewPicklePopoverPolicy.groupTileAction(hasVisibleMembers: true) == .toggleMemberList)
+    @Test func groupTilePromotesExactlyOneVisibleMemberToAFullSession() {
+        #expect(PickyHUDDockGroupTilePresentation.resolve(visibleMemberIDs: []) == .empty)
+        #expect(PickyHUDDockGroupTilePresentation.resolve(visibleMemberIDs: ["only"]) == .singleSession(sessionID: "only"))
+        #expect(PickyHUDDockGroupTilePresentation.resolve(visibleMemberIDs: ["first", "second"]) == .folder)
     }
 
     @Test func emptyGroupSlotRemainsADropDestination() {

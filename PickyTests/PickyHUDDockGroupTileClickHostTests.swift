@@ -101,6 +101,11 @@ struct PickyHUDDockGroupTileClickHostTests {
         return view.subviews.lazy.compactMap(findTileHost(in:)).first
     }
 
+    private func findSessionIconHost(in view: NSView) -> PickyHUDDockIconClickNSView? {
+        if let host = view as? PickyHUDDockIconClickNSView { return host }
+        return view.subviews.lazy.compactMap(findSessionIconHost(in:)).first
+    }
+
     @Test func renderedBadgeProductionPathActivatesExactlyOnceOnMouseUpBelowReorderThreshold() throws {
         var activations = 0
         let rendered = try renderedBadgeHost(onTap: { activations += 1 })
@@ -178,5 +183,104 @@ struct PickyHUDDockGroupTileClickHostTests {
 
         #expect(forwardingSpy.forwardedEvents.count == 2)
         #expect(activations == 0)
+    }
+
+    @Test func singleMemberGroupProductionRailUsesTheSessionHoverAndOpenPath() throws {
+        let metrics = PickyHUDDockMetrics(preset: .large)
+        let agentSession = PickyAgentSession(
+            id: "only",
+            title: "Only Pickle",
+            status: .running,
+            cwd: "/tmp/picky",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            updatedAt: Date(timeIntervalSince1970: 1_700_000_100),
+            lastSummary: "Single member group",
+            logs: [],
+            tools: [],
+            artifacts: [],
+            changedFiles: []
+        )
+        let session = PickyHUDDockSession(session: PickySessionCard.fromAgentSession(agentSession))
+        let group = PickyDockGroup(id: "group", name: "Solo", color: .teal, memberSessionIDs: [session.id])
+        let layout = PickyDockLayout(entries: [.group(group)])
+        let projection = PickyDockProjector.project(layout: layout, visibleSessionIDs: [session.id])
+        let railHeight = PickyHUDDockRailLayoutPolicy.contentLength(
+            sessionCount: 1,
+            groupCount: 1,
+            isAddSlotExpanded: false,
+            dockSide: .right,
+            metrics: metrics
+        )
+        var hoveredSessions: [String] = []
+        var openedSessions: [String] = []
+        var activatedGroups: [String] = []
+        var hoveredGroups: [String] = []
+        let rail = PickyHUDDockRailView(
+            sessions: [session],
+            allSessions: [session],
+            baseProjection: projection,
+            layout: layout,
+            activeSessionID: nil,
+            openedSessionID: nil,
+            previewSessionID: nil,
+            screenContextTargetSessionID: nil,
+            screenContextTargetSticky: false,
+            dockSide: .right,
+            isCommandShortcutHintVisible: false,
+            pendingDoneFlashSessionIDs: [],
+            unreadSessionIDs: [],
+            metrics: metrics,
+            availableRailLength: railHeight,
+            onHoverSession: { hoveredSessions.append($0) },
+            onOpenSession: { openedSessions.append($0) },
+            onToggleScreenContextTarget: { _ in },
+            onToggleStickyScreenContextTarget: { _ in },
+            onCompactSession: { _ in },
+            onArchiveSession: { _ in },
+            onStopSession: { _ in },
+            onCreatePickle: { _ in },
+            pinnedPickleCwds: [],
+            recentPickleCwds: [],
+            onCreatePickleInRecentFolder: { _, _ in },
+            onRemoveRecentPickleFolder: { _ in },
+            onPinPickleFolder: { _ in },
+            onUnpinPickleFolder: { _ in },
+            onReorderPinnedPickleFolders: { _ in },
+            onCreateDockGroup: { _, _ in "new-group" },
+            onRenameDockGroup: { _, _ in },
+            onSetDockGroupColor: { _, _ in },
+            onActivateDockGroup: { activatedGroups.append($0) },
+            onActivateDockGroupFromKeyboard: { _ in },
+            onDockGroupTileHover: { groupID, _ in hoveredGroups.append(groupID) },
+            onRemoveDockGroup: { _, _ in },
+            onMoveSessionInDock: { _, _ in },
+            onMoveDockGroup: { _, _ in },
+            pendingPickleFolderPickerRequest: nil,
+            onPickleFolderPickerPresentationAcknowledged: { _ in },
+            onDockHoverChanged: { _ in },
+            onAddSlotExpandedChanged: { _ in },
+            onDoneFlashConsumed: { _ in },
+            onDockHandleDragChanged: { _ in },
+            onDockHandleDragEnded: {},
+            onDockHandleDoubleClick: {}
+        )
+        let hosting = NSHostingView(rootView: rail)
+        hosting.frame = NSRect(
+            x: 0,
+            y: 0,
+            width: PickyHUDDockRailLayoutPolicy.verticalCrossSize(groupCount: 1, metrics: metrics),
+            height: railHeight
+        )
+        hosting.layoutSubtreeIfNeeded()
+        let iconHost = try #require(findSessionIconHost(in: hosting))
+
+        iconHost.mouseEntered(with: try mouseEvent(.mouseMoved, at: .zero))
+        iconHost.mouseDown(with: try mouseEvent(.leftMouseDown, at: .zero))
+        iconHost.mouseUp(with: try mouseEvent(.leftMouseUp, at: .zero))
+
+        #expect(hoveredSessions == [session.id])
+        #expect(openedSessions == [session.id])
+        #expect(activatedGroups.isEmpty)
+        #expect(hoveredGroups.isEmpty)
     }
 }

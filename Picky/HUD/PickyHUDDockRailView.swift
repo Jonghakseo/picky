@@ -270,9 +270,14 @@ struct PickyHUDDockRailView: View {
             }
             return PickyDockProjector.project(layout: layout, visibleSessionIDs: visibleSessionIDs)
         }
-        let visibleSessionIDs = baseVisibleSessionIDs
+        var visibleSessionIDs = baseVisibleSessionIDs
         if let draggingSessionID,
            let pendingDropContainer {
+            visibleSessionIDs = PickyHUDDockRenderPolicy.externalPreviewVisibleSessionIDs(
+                base: visibleSessionIDs,
+                draggedSessionID: draggingSessionID,
+                destination: pendingDropContainer
+            )
             let preview = PickyHUDDockRenderPolicy.sessionPreviewLayout(
                 layout: layout,
                 draggedSessionID: draggingSessionID,
@@ -293,6 +298,14 @@ struct PickyHUDDockRailView: View {
             return PickyDockProjector.project(layout: preview, visibleSessionIDs: visibleSessionIDs)
         }
         return baseProjection
+    }
+
+    private var reorderInteractionSlots: [PickyDockSlot] {
+        PickyHUDDockRenderPolicy.interactionSlots(
+            persistedProjection: baseProjection,
+            layout: layout,
+            visibleSessionIDs: Set(allSessions.map(\.id))
+        )
     }
 
     private var effectiveDraggingSessionID: String? {
@@ -652,7 +665,10 @@ struct PickyHUDDockRailView: View {
             metrics: metrics,
             fontScale: fontScale
         ) {
-            if memberCards.isEmpty {
+            switch PickyHUDDockGroupTilePresentation.resolve(
+                visibleMemberIDs: memberCards.map(\.id)
+            ) {
+            case .empty:
                 groupTileButton(
                     for: group,
                     memberCards: memberCards,
@@ -672,7 +688,32 @@ struct PickyHUDDockRailView: View {
                     onDeleteWithArchive: { onRemoveDockGroup(group.id, false) }
                 )
                 .highPriorityGesture(groupReorderGesture(for: group.id))
-            } else {
+            case .singleSession(let sessionID):
+                if let member = memberCards.first(where: { $0.id == sessionID }),
+                   let memberIndex = group.memberSessionIDs.firstIndex(of: sessionID) {
+                    newPicklePicker(
+                        anchoredTo: iconView(
+                            for: member,
+                            slot: PickyDockSlot(
+                                target: .session(
+                                    id: sessionID,
+                                    container: .group(id: group.id, memberIndex: memberIndex)
+                                ),
+                                visibleIndex: slot.visibleIndex
+                            )
+                        ),
+                        anchorGroupID: group.id
+                    )
+                    .pickyDockGroupEmphasis(
+                        isSelected: false,
+                        isDropTargeted: isDropTargeted,
+                        cornerRadius: metrics.iconCornerRadius
+                    )
+                    .publishDockGroupBadgeFrame(groupID: group.id)
+                    .publishDockGroupPickerBadgeFrame(groupID: group.id)
+                    .publishDockGroupDropFrame(groupID: group.id)
+                }
+            case .folder:
                 groupTileButton(
                     for: group,
                     memberCards: memberCards,
@@ -992,7 +1033,8 @@ struct PickyHUDDockRailView: View {
 
     @discardableResult
     private func handleReorderBegin(sessionID: String) -> Bool {
-        guard projection.slots.contains(where: { $0.sessionID == sessionID }),
+        let interactionSlots = reorderInteractionSlots
+        guard interactionSlots.contains(where: { $0.sessionID == sessionID }),
               let sourceCenter = PickyHUDDockDragGeometry.validSourceCenter(slotCenters[sessionID])
         else { return false }
         draggingSessionID = sessionID
@@ -1007,7 +1049,7 @@ struct PickyHUDDockRailView: View {
         // base (un-previewed) layout. Every subsequent drop decision is made
         // against this fixed snapshot, so the preview reflow is a pure visual
         // consequence and can never feed back into the decision.
-        dragReferenceSlots = baseProjection.slots
+        dragReferenceSlots = interactionSlots
         dragReferenceTopEntryIDs = PickyHUDDockRenderPolicy.visibleTopEntryIDs(in: baseProjection.items)
         dragReferenceCenters = slotCenters
         dragReferenceGroupTopEntryCenters = topEntryCenters

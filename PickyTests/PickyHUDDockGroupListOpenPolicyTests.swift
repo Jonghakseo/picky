@@ -119,7 +119,7 @@ struct PickyHUDDockGroupListOpenPolicyTests {
         )
     }
 
-    @Test func pendingOpenRequiresAnExistingGroupWithAVisibleMember() {
+    @Test func pendingOpenRequiresAnExistingGroupEligibleForMemberDisclosure() {
         #expect(
             PickyHUDDockGroupListOpenPolicy.reconciledPendingGroupID(
                 "a",
@@ -143,22 +143,7 @@ struct PickyHUDDockGroupListOpenPolicyTests {
         )
     }
 
-    @Test func reconciliationKeepsAListOpenOnlyWhenItsRenderedRowsRemainNonEmpty() {
-        #expect(
-            PickyHUDDockGroupListOpenPolicy.reconciliation(
-                openGroupID: "group",
-                visibleRowIDs: ["only"]
-            ) == .keepOpen(groupID: "group")
-        )
-        #expect(
-            PickyHUDDockGroupListOpenPolicy.reconciliation(
-                openGroupID: "group",
-                visibleRowIDs: []
-            ) == .tearDown
-        )
-    }
-
-    @Test func reconciliationKeepsOneOfTwoRowsButTearsDownAfterTheFinalRowDisappears() {
+    @Test func reconciliationKeepsAListOpenOnlyWhileAtLeastTwoRowsNeedDisclosure() {
         #expect(
             PickyHUDDockGroupListOpenPolicy.reconciliation(
                 openGroupID: "group",
@@ -168,13 +153,22 @@ struct PickyHUDDockGroupListOpenPolicyTests {
         #expect(
             PickyHUDDockGroupListOpenPolicy.reconciliation(
                 openGroupID: "group",
-                visibleRowIDs: ["second"]
-            ) == .keepOpen(groupID: "group")
+                visibleRowIDs: ["only"]
+            ) == .tearDown
         )
         #expect(
             PickyHUDDockGroupListOpenPolicy.reconciliation(
                 openGroupID: "group",
                 visibleRowIDs: []
+            ) == .tearDown
+        )
+    }
+
+    @Test func reconciliationRequiresAnOpenGroupEvenWhenSeveralRowsRemain() {
+        #expect(
+            PickyHUDDockGroupListOpenPolicy.reconciliation(
+                openGroupID: nil,
+                visibleRowIDs: ["first", "second", "third"]
             ) == .tearDown
         )
     }

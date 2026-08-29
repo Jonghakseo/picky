@@ -34,6 +34,37 @@ struct PickyHUDDockRailPolicyTests {
         ))
     }
 
+    @Test func singleVisibleGroupMemberGetsASessionInteractionSlotWithoutRemovingTheFolderTarget() throws {
+        let group = PickyDockGroup(
+            id: "group",
+            memberSessionIDs: ["archived", "only"]
+        )
+        let layout = PickyDockLayout(entries: [
+            .session(id: "top"),
+            .group(group),
+        ])
+        let projection = PickyDockProjector.project(
+            layout: layout,
+            visibleSessionIDs: ["top", "only"]
+        )
+
+        let slots = PickyHUDDockRenderPolicy.interactionSlots(
+            persistedProjection: projection,
+            layout: layout,
+            visibleSessionIDs: ["top", "only"]
+        )
+        let memberSlot = try #require(slots.first(where: { $0.sessionID == "only" }))
+
+        #expect(slots.compactMap(\.groupID) == ["group"])
+        #expect(memberSlot.visibleIndex == 1)
+        #expect(memberSlot.container == .group(id: "group", memberIndex: 1))
+        #expect(PickyHUDDockRenderPolicy.interactionSlots(
+            persistedProjection: projection,
+            layout: layout,
+            visibleSessionIDs: ["top", "archived", "only"]
+        ).compactMap(\.sessionID) == ["top"])
+    }
+
     @Test func topLevelExternalPreviewInjectsAGroupedSessionExactlyOnceWithoutChangingNormalProjection() {
         let groupedSessionID = "grouped"
         let base = ["top-level"]

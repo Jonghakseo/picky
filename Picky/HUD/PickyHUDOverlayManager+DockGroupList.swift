@@ -372,7 +372,10 @@ extension PickyHUDOverlayManager {
         let existingGroupIDs = Set(snapshot.dockLayout.groups.map(\.id))
         let activeSessionIDs = Set(snapshot.activeSessions.map(\.id))
         let visibleMemberGroupIDs = Set(snapshot.dockLayout.groups.compactMap { group in
-            group.memberSessionIDs.contains { activeSessionIDs.contains($0) } ? group.id : nil
+            let visibleMemberCount = group.memberSessionIDs.reduce(into: 0) { count, sessionID in
+                if activeSessionIDs.contains(sessionID) { count += 1 }
+            }
+            return visibleMemberCount > 1 ? group.id : nil
         })
         if dockGroupListChildEffectExecutor.reconcilePending(
             pendingGroupID: entry.pendingGroupID,

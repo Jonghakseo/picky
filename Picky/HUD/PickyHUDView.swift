@@ -1191,16 +1191,17 @@ struct PickyHUDView: View {
 
     private var dockGroupActivationCoordinator: PickyHUDDockGroupActivationCoordinator {
         PickyHUDDockGroupActivationCoordinator(
-            hasVisibleMembers: hasVisibleMembers(inDockGroup:),
+            visibleMemberIDs: visibleMemberIDs(inDockGroup:),
             showFolderPicker: { dockGroupPickerRelay.request(groupID: $0) },
+            openSession: toggleOpenSession,
             toggleMemberList: onDockGroupListToggle
         )
     }
 
-    private func hasVisibleMembers(inDockGroup groupID: String) -> Bool {
+    private func visibleMemberIDs(inDockGroup groupID: String) -> [String] {
         let activeSessionIDs = Set(dockSnapshot.activeSessions.map(\.id))
         return dockSnapshot.dockLayout.group(withID: groupID)?.memberSessionIDs
-            .contains(where: activeSessionIDs.contains) == true
+            .filter(activeSessionIDs.contains) ?? []
     }
 
     private func activateDockGroupTileFromPointer(_ groupID: String) {

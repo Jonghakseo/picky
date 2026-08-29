@@ -387,10 +387,12 @@ private struct PickyHUDDockGroupEmphasisModifier: ViewModifier {
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         let isEmphasized = isSelected || isDropTargeted
+        let animation = reduceMotion ? nil : Animation.easeOut(duration: DS.Animation.fast)
         content
             .overlay {
                 shape
                     .fill(isEmphasized ? DS.Colors.accentSubtle : Color.clear)
+                    .animation(animation, value: isEmphasized)
                     .allowsHitTesting(false)
             }
             .overlay {
@@ -399,16 +401,13 @@ private struct PickyHUDDockGroupEmphasisModifier: ViewModifier {
                         isEmphasized ? DS.Colors.accentText : Color.clear,
                         lineWidth: 1.5
                     )
+                    .animation(animation, value: isEmphasized)
                     .allowsHitTesting(false)
             }
-            .animation(
-                reduceMotion ? nil : .easeOut(duration: DS.Animation.fast),
-                value: isEmphasized
-            )
     }
 }
 
-private extension View {
+extension View {
     func pickyDockGroupEmphasis(
         isSelected: Bool,
         isDropTargeted: Bool,

@@ -150,6 +150,37 @@ enum PickyHUDDockRenderPolicy {
         )
     }
 
+    /// A one-Pickle group renders its member as a full session tile while the
+    /// persisted projection still owns one folder slot. Add a synthetic session
+    /// slot beside that folder slot so native session drag can start from the
+    /// visible tile without removing the group's drop target.
+    static func interactionSlots(
+        persistedProjection: PickyDockProjection,
+        layout: PickyDockLayout,
+        visibleSessionIDs: Set<String>
+    ) -> [PickyDockSlot] {
+        var result: [PickyDockSlot] = []
+        for slot in persistedProjection.slots {
+            result.append(slot)
+            guard let groupID = slot.groupID,
+                  let group = layout.group(withID: groupID)
+            else { continue }
+            let visibleMemberIDs = group.memberSessionIDs.filter(visibleSessionIDs.contains)
+            guard case .singleSession(let sessionID) = PickyHUDDockGroupTilePresentation.resolve(
+                visibleMemberIDs: visibleMemberIDs
+            ), let memberIndex = group.memberSessionIDs.firstIndex(of: sessionID)
+            else { continue }
+            result.append(PickyDockSlot(
+                target: .session(
+                    id: sessionID,
+                    container: .group(id: groupID, memberIndex: memberIndex)
+                ),
+                visibleIndex: slot.visibleIndex
+            ))
+        }
+        return result
+    }
+
     /// A grouped Pickle is absent from the normal rail universe because its
     /// folder owns the top-level slot. External top-level preview is the one
     /// exception: inject it once so the existing rail placeholder/reflow can

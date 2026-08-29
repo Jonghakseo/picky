@@ -14,30 +14,35 @@ enum PickyHUDDockGroupActivationSource: Equatable {
 
 enum PickyHUDDockGroupActivationRoute: Equatable {
     case showFolderPicker(groupID: String)
+    case openSession(sessionID: String)
     case toggleMemberList(groupID: String)
     case noAction
 }
 
-/// Shared entry coordinator for pointer and keyboard activation. Pointer clicks
-/// leave populated groups to hover disclosure, while keyboard activation pins
-/// the member list so it remains available for keyboard navigation.
+/// Shared entry coordinator for pointer and keyboard activation. A one-Pickle
+/// group opens that Pickle directly; larger groups retain hover disclosure and
+/// keyboard-pinned member-list behavior.
 @MainActor
 final class PickyHUDDockGroupActivationCoordinator {
-    typealias VisibleMemberResolver = (String) -> Bool
+    typealias VisibleMemberResolver = (String) -> [String]
     typealias PickerPresenter = (String) -> Void
+    typealias SessionOpener = (String) -> Void
     typealias ListToggler = (String) -> Void
 
-    private let hasVisibleMembers: VisibleMemberResolver
+    private let visibleMemberIDs: VisibleMemberResolver
     private let showFolderPicker: PickerPresenter
+    private let openSession: SessionOpener
     private let toggleMemberList: ListToggler
 
     init(
-        hasVisibleMembers: @escaping VisibleMemberResolver,
+        visibleMemberIDs: @escaping VisibleMemberResolver,
         showFolderPicker: @escaping PickerPresenter,
+        openSession: @escaping SessionOpener,
         toggleMemberList: @escaping ListToggler
     ) {
-        self.hasVisibleMembers = hasVisibleMembers
+        self.visibleMemberIDs = visibleMemberIDs
         self.showFolderPicker = showFolderPicker
+        self.openSession = openSession
         self.toggleMemberList = toggleMemberList
     }
 
@@ -52,10 +57,11 @@ final class PickyHUDDockGroupActivationCoordinator {
     func activate(groupID: String, source: PickyHUDDockGroupActivationSource) {
         switch Self.route(
             groupID: groupID,
-            hasVisibleMembers: hasVisibleMembers(groupID),
+            visibleMemberIDs: visibleMemberIDs(groupID),
             source: source
         ) {
         case .showFolderPicker(let groupID): showFolderPicker(groupID)
+        case .openSession(let sessionID): openSession(sessionID)
         case .toggleMemberList(let groupID): toggleMemberList(groupID)
         case .noAction: break
         }
@@ -63,15 +69,15 @@ final class PickyHUDDockGroupActivationCoordinator {
 
     static func route(
         groupID: String,
-        hasVisibleMembers: Bool,
+        visibleMemberIDs: [String],
         source: PickyHUDDockGroupActivationSource
     ) -> PickyHUDDockGroupActivationRoute {
-        switch PickyHUDDockNewPicklePopoverPolicy.groupTileAction(
-            hasVisibleMembers: hasVisibleMembers
-        ) {
-        case .showFolderPicker:
+        switch PickyHUDDockGroupTilePresentation.resolve(visibleMemberIDs: visibleMemberIDs) {
+        case .empty:
             return .showFolderPicker(groupID: groupID)
-        case .toggleMemberList:
+        case .singleSession(let sessionID):
+            return .openSession(sessionID: sessionID)
+        case .folder:
             switch source {
             case .pointer: return .noAction
             case .commandShortcut: return .toggleMemberList(groupID: groupID)

@@ -8,23 +8,29 @@ import Testing
 
 @MainActor
 struct PickyHUDDockGroupActivationTests {
-    @Test func pointerUsesHoverForMemberListsWhileCommandPinsThem() {
-        var hasVisibleMembers = false
+    @Test func emptyGroupsCreatePicklesSingleGroupsOpenDirectlyAndLargerGroupsDiscloseMembers() {
+        var visibleMemberIDs: [String] = []
         var pickerGroups: [String] = []
+        var openedSessions: [String] = []
         var listGroups: [String] = []
         let coordinator = PickyHUDDockGroupActivationCoordinator(
-            hasVisibleMembers: { _ in hasVisibleMembers },
+            visibleMemberIDs: { _ in visibleMemberIDs },
             showFolderPicker: { pickerGroups.append($0) },
+            openSession: { openedSessions.append($0) },
             toggleMemberList: { listGroups.append($0) }
         )
 
         coordinator.activateFromPointer(groupID: "group")
         coordinator.activateFromCommandShortcut(groupID: "group")
-        hasVisibleMembers = true
+        visibleMemberIDs = ["only"]
+        coordinator.activateFromPointer(groupID: "group")
+        coordinator.activateFromCommandShortcut(groupID: "group")
+        visibleMemberIDs = ["first", "second"]
         coordinator.activateFromPointer(groupID: "group")
         coordinator.activateFromCommandShortcut(groupID: "group")
 
         #expect(pickerGroups == ["group", "group"])
+        #expect(openedSessions == ["only", "only"])
         #expect(listGroups == ["group"])
     }
 

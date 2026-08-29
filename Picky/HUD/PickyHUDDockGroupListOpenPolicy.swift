@@ -86,13 +86,14 @@ enum PickyHUDDockGroupListOpenPolicy {
         return pendingGroupID
     }
 
-    /// A group-list child only exists while its rendered row projection is
-    /// non-empty. Callers must perform `.tearDown` before updating the model.
+    /// A group-list child only exists while at least two rows need disclosure.
+    /// One remaining Pickle is promoted to the full dock tile instead. Callers
+    /// must perform `.tearDown` before updating the model.
     static func reconciliation(
         openGroupID: String?,
         visibleRowIDs: [String]
     ) -> PickyHUDDockGroupListOpenReconciliation {
-        guard let openGroupID, !visibleRowIDs.isEmpty else { return .tearDown }
+        guard let openGroupID, visibleRowIDs.count > 1 else { return .tearDown }
         return .keepOpen(groupID: openGroupID)
     }
 

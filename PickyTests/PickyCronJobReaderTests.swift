@@ -33,6 +33,31 @@ struct PickyCronJobReaderTests {
         #expect(job.scheduleText == "0 9 * * *")
     }
 
+    @Test func readsV2ActiveJobsAndHistory() throws {
+        let scratch = try ScratchCronStore()
+        try scratch.write(
+            """
+            {
+              "version": 2,
+              "jobs": [
+                {"id":"active","name":"Active","enabled":true,"kind":"cron","once":false,"schedule":"0 9 * * *","timezone":"UTC","cwd":"/tmp","promptFile":"/tmp/active.md","createdAt":"2026-08-20T00:00:00Z","updatedAt":"2026-08-20T00:00:00Z","nextRunAt":"2026-08-26T00:00:00Z"}
+              ],
+              "history": [
+                {"id":"completed","name":"Completed","enabled":false,"kind":"at","once":true,"runAt":"2026-08-21T00:00:00Z","timezone":"UTC","cwd":"/tmp","promptFile":"/tmp/completed.md","createdAt":"2026-08-20T00:00:00Z","updatedAt":"2026-08-23T00:00:00Z","disabledReason":"completed_once","completedAt":"2026-08-23T00:00:00Z"}
+              ]
+            }
+            """
+        )
+
+        guard case .jobs(let jobs) = scratch.reader().read() else {
+            Issue.record("Expected decoded Cron v2 jobs and history")
+            return
+        }
+
+        #expect(jobs.map(\.id) == ["active", "completed"])
+        #expect(jobs.map(\.status) == [.active, .completed])
+    }
+
     @Test func usesEnvironmentAgentDirectoryWhenNoPreferenceIsConfigured() throws {
         let scratch = try ScratchCronStore()
         let environmentAgentDir = scratch.root.appendingPathComponent("environment-agent", isDirectory: true)
@@ -59,7 +84,10 @@ struct PickyCronJobReaderTests {
         #expect(reader.read() == .malformed)
 
         try scratch.write(#"{"version":2,"jobs":[]}"#)
-        #expect(reader.read() == .unsupportedVersion(2))
+        #expect(reader.read() == .malformed)
+
+        try scratch.write(#"{"version":3,"jobs":[]}"#)
+        #expect(reader.read() == .unsupportedVersion(3))
     }
 
     @Test func mapsFilesystemFailuresToAnOpaqueUnreadableState() throws {

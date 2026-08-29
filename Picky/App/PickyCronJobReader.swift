@@ -2,7 +2,7 @@
 //  PickyCronJobReader.swift
 //  Picky
 //
-//  Reads Cron's local v1 job index without opening prompt files or run logs.
+//  Reads Cron's local v1/v2 job index without opening prompt files or run logs.
 //
 
 import Foundation
@@ -46,6 +46,7 @@ struct PickyCronJobReader {
     private struct Store: Decodable {
         let version: Int
         let jobs: [Job]
+        let history: [Job]?
     }
 
     private struct Job: Decodable {
@@ -116,9 +117,18 @@ struct PickyCronJobReader {
         } catch {
             return .malformed
         }
-        guard store.version == 1 else { return .unsupportedVersion(store.version) }
+        let storedJobs: [Job]
+        switch store.version {
+        case 1:
+            storedJobs = store.jobs
+        case 2:
+            guard let history = store.history else { return .malformed }
+            storedJobs = store.jobs + history
+        default:
+            return .unsupportedVersion(store.version)
+        }
 
-        let jobs = store.jobs.map(Self.project).sorted(by: Self.isOrderedBefore)
+        let jobs = storedJobs.map(Self.project).sorted(by: Self.isOrderedBefore)
         return jobs.isEmpty ? .empty : .jobs(jobs)
     }
 

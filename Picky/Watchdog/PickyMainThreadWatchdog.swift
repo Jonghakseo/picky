@@ -76,8 +76,8 @@ final class PickyMainThreadWatchdog {
         self.grace = grace
         self.sleepCooldown = sleepCooldown
         self.onSpinDetected = onSpinDetected
-        self.onSoftStallDetected = Self.defaultSoftStallDetected(age:threshold:)
-        self.onSoftStallRecovered = Self.defaultSoftStallRecovered(age:)
+        self.onSoftStallDetected = { _, _ in }
+        self.onSoftStallRecovered = { _ in }
         self.startedAt = clock()
     }
 
@@ -186,6 +186,14 @@ final class PickyMainThreadWatchdog {
 
     // MARK: - Internal seams (called by run loop / poll timer / tests)
 
+    /// Current staleness of the main-thread heartbeat. The responder reads
+    /// this after a capture finishes to record whether the stall was still in
+    /// progress while `sample` was running.
+    func heartbeatAge(at date: Date) -> TimeInterval {
+        lock.lock(); defer { lock.unlock() }
+        return date.timeIntervalSince(_heartbeatAt ?? startedAt)
+    }
+
     func heartbeat(at date: Date) {
         var recoveredAge: TimeInterval?
 
@@ -201,6 +209,7 @@ final class PickyMainThreadWatchdog {
         lock.unlock()
 
         if let recoveredAge {
+            Self.logSoftStallRecovered(age: recoveredAge)
             onSoftStallRecovered(recoveredAge)
         }
     }
@@ -230,12 +239,19 @@ final class PickyMainThreadWatchdog {
         lock.unlock()
 
         if let softStallAge {
+            Self.logSoftStallDetected(age: softStallAge, threshold: softStallThreshold)
             onSoftStallDetected(softStallAge, softStallThreshold)
         }
-        if shouldFire { onSpinDetected() }
+        if shouldFire {
+            Self.logSpinDetected(age: age, threshold: threshold)
+            onSpinDetected()
+        }
     }
 
-    private static func defaultSoftStallDetected(age: TimeInterval, threshold: TimeInterval) {
+    // Logging lives at the call sites rather than in default closure values so
+    // wiring a real handler cannot silently drop watchdog diagnostics.
+
+    private static func logSoftStallDetected(age: TimeInterval, threshold: TimeInterval) {
         PickyLog.notice(
             .watchdog,
             prefix: "🎯 Picky watchdog:",
@@ -243,11 +259,19 @@ final class PickyMainThreadWatchdog {
         )
     }
 
-    private static func defaultSoftStallRecovered(age: TimeInterval) {
+    private static func logSoftStallRecovered(age: TimeInterval) {
         PickyLog.notice(
             .watchdog,
             prefix: "🎯 Picky watchdog:",
             message: "main thread soft stall recovered ageMs=\(milliseconds(age))"
+        )
+    }
+
+    private static func logSpinDetected(age: TimeInterval, threshold: TimeInterval) {
+        PickyLog.notice(
+            .watchdog,
+            prefix: "🎯 Picky watchdog:",
+            message: "main thread spin detected ageMs=\(milliseconds(age)) thresholdMs=\(milliseconds(threshold))"
         )
     }
 

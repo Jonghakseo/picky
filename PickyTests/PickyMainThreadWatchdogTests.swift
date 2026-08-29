@@ -249,4 +249,19 @@ struct PickyMainThreadWatchdogTests {
         h.check()
         #expect(h.spinCount == 1)
     }
+
+    @Test("heartbeatAge는 현재 heartbeat 노후도를 그대로 보고")
+    func heartbeatAgeReportsStaleness() {
+        let h = TestHarness()
+        h.advance(by: 60)
+        h.heartbeat()
+
+        #expect(h.watchdog.heartbeatAge(at: h.currentTime) == 0)
+
+        h.advance(by: 7)
+        #expect(h.watchdog.heartbeatAge(at: h.currentTime) == 7)
+
+        h.heartbeat()
+        #expect(h.watchdog.heartbeatAge(at: h.currentTime) == 0)
+    }
 }

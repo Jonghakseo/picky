@@ -499,6 +499,17 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         let watchdog = PickyMainThreadWatchdog { [weak responder] in
             responder?.handleSpinDetected()
         }
+        // Capture on the soft-stall edge: the spin edge fires as the main
+        // thread is already recovering, so a sample started there records the
+        // aftermath instead of the hang.
+        watchdog.onSoftStallDetected = { [weak responder] age, _ in
+            responder?.handleSoftStallDetected(age: age)
+        }
+        watchdog.onSoftStallRecovered = { [weak responder] _ in
+            responder?.handleStallRecovered()
+        }
+        responder.heartbeatAge = { [weak watchdog] in watchdog?.heartbeatAge(at: Date()) }
+        store.heartbeatAgeProvider = { [weak watchdog] in watchdog?.heartbeatAge(at: Date()) }
         watchdog.start()
         mainThreadWatchdog = watchdog
         mainThreadWatchdogResponder = responder

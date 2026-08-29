@@ -69,8 +69,11 @@ struct PickyTests {
             + PickyConversationBubbleLayout.oppositeSideReserve
             + PickyConversationBubbleLayout.horizontalStackSpacing
 
-        #expect(bubbleWidth == contentWidth * PickyConversationBubbleLayout.defaultMaxWidthFraction)
-        #expect(bubbleWidth >= contentWidth * 0.95)
+        // The cap snaps down to `widthQuantum`, so it lands within one grid step
+        // below the fractional width rather than exactly on it.
+        let fractionalWidth = contentWidth * PickyConversationBubbleLayout.defaultMaxWidthFraction
+        #expect(bubbleWidth == PickyConversationBubbleLayout.quantized(fractionalWidth))
+        #expect(bubbleWidth > fractionalWidth - PickyConversationBubbleLayout.widthQuantum)
         #expect(occupiedWidth <= contentWidth)
         #expect(bubbleWidth < PickyHUDDockLayout.detailWidth * PickyConversationBubbleLayout.defaultMaxWidthFraction)
     }

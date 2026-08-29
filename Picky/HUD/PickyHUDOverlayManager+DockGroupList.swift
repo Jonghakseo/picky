@@ -251,6 +251,7 @@ extension PickyHUDOverlayManager {
                         entry.openedSessionID = geometry.openedSessionID
                     }
                     if let openGroupID = entry.openGroupID, openGroupID != groupID {
+                        entry.panel.parent?.removeChildWindow(entry.panel)
                         entry.panel.orderOut(nil)
                         entry.model = nil
                         self.dockGroupListOverlayLifecycle?.tearDown(displayID: displayID)
@@ -330,7 +331,10 @@ extension PickyHUDOverlayManager {
                           let panel = self.dockGroupListChildrenByDisplayID[displayID]?.panel
                     else { return }
                     panel.alphaValue = 0
-                    panel.orderFrontRegardless()
+                    // The list and the HUD share one window level, so a click that
+                    // raises the HUD would otherwise bury the panel behind an open
+                    // conversation card. Child ordering keeps it above its owner.
+                    hudEntry.panel.addChildWindow(panel, ordered: .above)
                     NSAnimationContext.runAnimationGroup { context in
                         context.duration = 0.12
                         panel.animator().alphaValue = 1
@@ -776,6 +780,9 @@ extension PickyHUDOverlayManager {
         guard let entry = dockGroupListChildrenByDisplayID.removeValue(forKey: displayID) else { return }
         if let localMouseDownMonitor = entry.localMouseDownMonitor { NSEvent.removeMonitor(localMouseDownMonitor) }
         if let globalMouseDownMonitor = entry.globalMouseDownMonitor { NSEvent.removeMonitor(globalMouseDownMonitor) }
+        // A hidden window that is still attached returns to the screen with the
+        // next parent ordering, so detach before ordering out.
+        entry.panel.parent?.removeChildWindow(entry.panel)
         entry.panel.orderOut(nil)
         dockGroupListOverlayLifecycle?.tearDown(displayID: displayID)
     }

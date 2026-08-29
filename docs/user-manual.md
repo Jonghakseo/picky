@@ -297,7 +297,7 @@ The dock icon color, glyph, unread dot, and completion flash reflect these state
 | Drag the dock handle | Move the dock along or across screen edges. The dock may tuck partly off-screen, but its handle slot stays visible so it remains grabbable. |
 | Double-click the dock handle | Toggle the dock between vertical and horizontal layouts. |
 
-Number shortcuts (`Cmd + 1`…`9`) apply to the first 9 top-level dock slots, top to bottom. A group always counts as one folder slot: pressing its number opens that folder's member list instead of opening a Pickle. While `Cmd` is held, every numbered slot shows its badge.
+Number shortcuts (`Cmd + 1`…`9`) apply to the first 9 top-level dock slots, top to bottom. A group always counts as one slot. If it has one visible Pickle, pressing its number opens that Pickle directly; larger groups open their member list, and empty groups open the recent-folder picker. While `Cmd` is held, every numbered slot shows its badge.
 
 ### 7.3 Creating an empty Pickle
 
@@ -313,7 +313,7 @@ When you start a Pickle this way, Picky creates an empty Pickle for that folder 
 
 ### 7.4 Pickle groups
 
-Group related Pickles into a single folder tile in the dock rail. Each folder has a quiet color-marked group-name header, so its identity stays visible without expanding the rail by member count.
+Group related Pickles into one dock slot. Empty and multi-Pickle groups use a folder tile; a group with one visible Pickle renders that Pickle as a full session tile while preserving the group slot and its drop target. Each group has a quiet color-marked name header, so its identity stays visible without expanding the rail by member count.
 
 Create a group:
 
@@ -325,8 +325,9 @@ Manage membership:
 - Ask the Picky main agent to organize existing Pickles. It uses the local `picky` CLI to list groups, create a named group, add/remove exact Pickle session IDs, or ungroup while keeping members. These operations update the same persisted dock layout used by the UI.
 - Drag a Pickle onto a group to move it in; drag it above the first slot or below the last slot to pull it back out to the top level. The dock previews where it will land and commits the move only when you release.
 - Drag a group’s folder tile to reorder the whole group within the dock. Hold it clearly **outside** the dock and a **Remove** label appears; release there to remove the group (macOS Dock style). A group that still contains Pickles asks for confirmation before archiving them; an empty group is removed immediately.
-- Hover a folder with visible Pickles to show its member list immediately. The hover list stays open while the pointer crosses the gap into the panel, then closes after the pointer leaves the folder-panel corridor. Clicking a populated folder does not pin it open; an empty folder still opens the targeted recent-folder picker.
-- `Cmd + 1`…`9` or accessibility activation pins that folder's member list for keyboard navigation. Opening a folder never changes the open conversation card; selecting a member opens its card and closes the list.
+- A group with one visible Pickle behaves like a normal Pickle tile: clicking it opens or closes that conversation card, and no member list appears.
+- Hover a folder with two or more visible Pickles to show its member list immediately. The hover list stays open while the pointer crosses the gap into the panel, then closes after the pointer leaves the folder-panel corridor. Clicking the folder does not pin it open; an empty folder still opens the targeted recent-folder picker.
+- For a group with two or more visible Pickles, `Cmd + 1`…`9` or accessibility activation pins its member list for keyboard navigation. Opening a member list never changes the open conversation card; selecting a member opens its card and closes the list.
 
 The member list:
 
@@ -651,7 +652,7 @@ These work when a Pickle card/HUD panel is active.
 | Escape | Close an open folder member list first, otherwise close the card when no text input is focused. |
 | Return | Open the highlighted row while a folder member list is open, otherwise focus the active composer when no text input is focused. |
 | Up / Down | Move the highlight in an open folder member list, when no text input is focused. |
-| Cmd + 1…9 | Open/close the Pickle in that top-level dock slot, or open a folder’s member list. While a member list is open, these select its rows instead. |
+| Cmd + 1…9 | Activate that top-level dock slot: open/close a Pickle (including a one-Pickle group), open a larger group’s member list, or open the picker for an empty group. While a member list is open, these select its rows instead. |
 | Cmd + Shift + `[` | Cycle to previous Pickle. |
 | Cmd + Shift + `]` | Cycle to next Pickle. |
 | Cmd + R | Open latest agent response as a report. |

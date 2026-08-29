@@ -14,7 +14,7 @@ import type { SessionSupervisor } from "./session-supervisor.js";
 import { logAgentd } from "./local-log.js";
 import { EdgeTTSServiceError } from "./edge-tts-service.js";
 import type { EdgeTTSService } from "./edge-tts-service.js";
-import { PackageOperations, type CronPackageLifecycleLike, type PackageManager, type PackageManagerFactoryOptions } from "./application/package-operations.js";
+import { packageOperationHandlers, PackageOperations, type CronPackageLifecycleLike, type PackageManager, type PackageManagerFactoryOptions } from "./application/package-operations.js";
 export { createDefaultPackageManager, type DefaultPackageManagerDependencies } from "./application/package-operations.js";
 import type { PiOAuthHandling } from "./application/pi-oauth-service.js";
 import { SettingsControlBroker, SettingsControlError } from "./application/settings-control-broker.js";
@@ -645,11 +645,7 @@ export class AgentdServer {
       },
       answerExtensionUi: (cmd) => this.options.supervisor.answerExtensionUi(cmd.sessionId, cmd.requestId, cmd.value),
       answerMainExtensionUi: (cmd) => this.options.supervisor.answerMainExtensionUi(cmd.requestId, cmd.value),
-      installPackage: (cmd) => this.packageOperations.runOperation(ws, cmd.id, "install", cmd.source),
-      setupPackage: (cmd) => this.packageOperations.runSetup(ws, cmd.id, cmd.source),
-      removePackage: (cmd) => this.packageOperations.runOperation(ws, cmd.id, "remove", cmd.source),
-      checkPackageUpdates: (cmd) => this.packageOperations.runUpdateCheck(ws, cmd.id),
-      updatePackage: (cmd) => this.packageOperations.runOperation(ws, cmd.id, "update", cmd.source),
+      ...packageOperationHandlers(this.packageOperations, ws),
       reloadPlugins: async (cmd) => {
         const summary = await this.options.supervisor.reloadPlugins();
         this.broadcast({

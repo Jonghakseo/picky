@@ -398,6 +398,16 @@ export class PackageOperations {
   }
 }
 
+export function packageOperationHandlers(operations: PackageOperations, ws: WebSocket) {
+  return {
+    installPackage: (command: { id: string; source: string }) => operations.runOperation(ws, command.id, "install", command.source),
+    setupPackage: (command: { id: string; source: string }) => operations.runSetup(ws, command.id, command.source),
+    removePackage: (command: { id: string; source: string }) => operations.runOperation(ws, command.id, "remove", command.source),
+    checkPackageUpdates: (command: { id: string }) => operations.runUpdateCheck(ws, command.id),
+    updatePackage: (command: { id: string; source: string }) => operations.runOperation(ws, command.id, "update", command.source),
+  };
+}
+
 async function resolveInstalledExtensionPath(
   packageManager: Pick<DefaultPackageManager, "listConfiguredPackages">,
   source: string,

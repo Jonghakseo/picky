@@ -221,6 +221,12 @@ enum PickyHUDDockGroupHeaderPresentation {
     }
 }
 
+enum PickyHUDDockGroupSurfacePresentation {
+    static let tintOpacity = 0.12
+    static let borderOpacity = 0.78
+    static let hoverLayerOpacity = 0.72
+}
+
 /// Quiet, centered identity label above a folder tile. The rail supplies
 /// the tap and group-reorder gesture.
 struct PickyHUDDockGroupHeader: View {
@@ -231,7 +237,9 @@ struct PickyHUDDockGroupHeader: View {
     var body: some View {
         Text(group.displayName)
             .font(PickyHUDDockGroupHeaderPresentation.font)
-            .foregroundStyle(DS.Colors.textSecondary)
+            // A group name is identity, not metadata. Primary text remains
+            // readable after the rail adapts its material to the appearance.
+            .foregroundStyle(DS.Colors.textPrimary)
             .lineLimit(1)
             .truncationMode(.tail)
             .frame(
@@ -286,15 +294,20 @@ struct PickyDockGroupDrawerBackground: ViewModifier {
         content
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(Color.white.opacity(0.05))
+                    .fill(DS.Colors.surface2)
                     .overlay(
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(tint.opacity(0.16))
+                            .fill(tint.opacity(PickyHUDDockGroupSurfacePresentation.tintOpacity))
                     )
             )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(tint.opacity(0.32), lineWidth: 0.5)
+                    .strokeBorder(
+                        DS.Colors.borderStrong.opacity(
+                            PickyHUDDockGroupSurfacePresentation.borderOpacity
+                        ),
+                        lineWidth: 0.5
+                    )
             )
     }
 }
@@ -493,7 +506,13 @@ struct PickyHUDDockCollapsedGroupBadge: View {
             .pickyDockGroupDrawer(tint: tint, cornerRadius: metrics.iconCornerRadius)
             .overlay(
                 RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
-                    .fill(Color.white.opacity(isLifted ? 0.06 : 0))
+                    .fill(
+                        isLifted
+                            ? DS.Colors.surface3.opacity(
+                                PickyHUDDockGroupSurfacePresentation.hoverLayerOpacity
+                            )
+                            : Color.clear
+                    )
             )
 
             if unreadCount > 0 {
@@ -533,7 +552,6 @@ struct PickyHUDDockCollapsedGroupBadge: View {
                     .transition(.scale(scale: 0.88, anchor: .topTrailing).combined(with: .opacity))
             }
         }
-        .brightness(isLifted ? 0.04 : 0)
         .pickyDockGroupEmphasis(
             isSelected: isSelected,
             isDropTargeted: isDropTargeted,
@@ -570,12 +588,12 @@ struct PickyHUDDockCollapsedGroupBadge: View {
                 .frame(width: side, height: side)
         case .overflow(let n):
             RoundedRectangle(cornerRadius: max(3, side * 0.28), style: .continuous)
-                .fill(Color.white.opacity(0.08))
+                .fill(DS.Colors.surface3)
                 .frame(width: side, height: side)
                 .overlay(
                     Text("+\(n)")
                         .pickyFont(size: max(8, side * 0.42), weight: .medium)
-                        .foregroundColor(DS.Colors.textSecondary)
+                        .foregroundColor(DS.Colors.textPrimary)
                 )
         case .empty:
             Color.clear

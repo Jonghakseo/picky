@@ -1,6 +1,52 @@
 import AppKit
 import SwiftUI
 
+enum PickyHUDDockSurfaceMaterialKind: Equatable {
+    case ultraThin
+    case regular
+
+    var material: Material {
+        switch self {
+        case .ultraThin: .ultraThinMaterial
+        case .regular: .regularMaterial
+        }
+    }
+}
+
+struct PickyHUDDockSurfaceStyle: Equatable {
+    let materialKind: PickyHUDDockSurfaceMaterialKind
+    let surfaceOverlayOpacity: Double
+    let borderOpacity: Double
+}
+
+enum PickyHUDDockSurfacePresentation {
+    static func style(for colorScheme: ColorScheme) -> PickyHUDDockSurfaceStyle {
+        switch colorScheme {
+        case .light:
+            // Ultra-thin material can inherit a dark desktop almost unchanged,
+            // leaving light-appearance text with no contrast. A regular material
+            // and stronger semantic surface layer make the rail reliably light.
+            PickyHUDDockSurfaceStyle(
+                materialKind: .regular,
+                surfaceOverlayOpacity: 0.52,
+                borderOpacity: 0.78
+            )
+        case .dark:
+            PickyHUDDockSurfaceStyle(
+                materialKind: .ultraThin,
+                surfaceOverlayOpacity: 0.18,
+                borderOpacity: 0.55
+            )
+        @unknown default:
+            PickyHUDDockSurfaceStyle(
+                materialKind: .regular,
+                surfaceOverlayOpacity: 0.52,
+                borderOpacity: 0.78
+            )
+        }
+    }
+}
+
 struct PickyHUDDockRailView: View {
     let sessions: [PickyHUDDockSession]
     /// Every live session card, including those hidden inside collapsed
@@ -63,6 +109,8 @@ struct PickyHUDDockRailView: View {
     /// Folder hover drives immediate peek disclosure. The overlay manager owns
     /// the corridor, so the rail only reports the raw transition.
     var onDockGroupTileHover: (_ id: String, _ isHovering: Bool) -> Void = { _, _ in }
+    /// Direct manipulation supersedes pointer-owned hover disclosure.
+    var onDockGroupTileDragBegin: (_ id: String) -> Void = { _ in }
     /// Folder whose list is pinned open, marked so the tile keeps its lift
     /// after the pointer leaves. A peek deliberately has no persistent mark.
     var pinnedDockGroupListGroupID: String?
@@ -86,6 +134,7 @@ struct PickyHUDDockRailView: View {
     var onExternalDragGeometryChange: (PickyHUDDockExternalDragRailGeometryInput) -> Void = { _ in }
     @ObservedObject var externalDragPresentationStore = PickyHUDDockExternalDragRailPresentationStore()
 
+    @Environment(\.colorScheme) private var colorScheme
     @State var isAddSlotExpanded = false
     @State var isRecentPickleFolderPickerPresented = false
     /// Group whose tile anchors the shared new-Pickle picker. This can be nil
@@ -1140,6 +1189,7 @@ struct PickyHUDDockRailView: View {
         if draggingSessionID != nil {
             handleReorderCanceled()
         }
+        onDockGroupTileDragBegin(groupID)
         draggingGroupID = groupID
         groupDragStartLayoutIndex = layoutIdx
         pendingGroupTopLevelIndex = layoutIdx
@@ -1312,14 +1362,22 @@ struct PickyHUDDockRailView: View {
     /// scales with the preset) for a more polished panel feel than a full pill.
     private var dockGlassBackground: some View {
         let shape = RoundedRectangle(cornerRadius: metrics.outerCornerRadius, style: .continuous)
-        return PickyHUDMaterialFill(shape: shape, fallback: DS.Colors.surface1)
+        let style = PickyHUDDockSurfacePresentation.style(for: colorScheme)
+        return PickyHUDMaterialFill(
+            shape: shape,
+            fallback: DS.Colors.surface1,
+            material: style.materialKind.material
+        )
             .overlay(
                 shape
-                    .fill(DS.Colors.surface1.opacity(0.18))
+                    .fill(DS.Colors.surface1.opacity(style.surfaceOverlayOpacity))
             )
             .overlay(
                 shape
-                    .strokeBorder(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8)
+                    .strokeBorder(
+                        DS.Colors.borderSubtle.opacity(style.borderOpacity),
+                        lineWidth: 0.8
+                    )
             )
             .compositingGroup()
             .shadow(

@@ -166,6 +166,16 @@ struct PickyHUDDockGroupRenderGalleryTests {
         }
     }
 
+    @Test func lightDockSurfaceUsesAStableSemanticLayerOverDesktopMaterial() {
+        let light = PickyHUDDockSurfacePresentation.style(for: .light)
+        let dark = PickyHUDDockSurfacePresentation.style(for: .dark)
+
+        #expect(light.materialKind == .regular)
+        #expect(light.surfaceOverlayOpacity > dark.surfaceOverlayOpacity)
+        #expect(light.borderOpacity > dark.borderOpacity)
+        #expect(dark.materialKind == .ultraThin)
+    }
+
     @Test func folderGeometryContainsTheProductionHeaderAtAllGalleryScales() {
         for preset in PickyHUDDockSizePreset.allCases {
             let metrics = PickyHUDDockMetrics(preset: preset)
@@ -234,6 +244,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
             listScene("list-two-selected-medium-dark-100.png", group: research, rows: twoRows, selectedID: twoRows[1].id, metrics: medium, fontScale: 1, appearance: .dark),
             listScene("list-one-selected-medium-dark-100.png", group: group(id: "group-one", name: "Solo", color: .blue, memberIDs: [fiveRows[0].id]), rows: [fiveRows[0]], selectedID: fiveRows[0].id, metrics: medium, fontScale: 1, appearance: .dark),
             combinedScene(group: picky, metrics: medium),
+            lightRailOnDarkBackdropScene(metrics: large),
             externalDragFeedbackScene(metrics: medium),
             externalTopLevelProjectionScene(metrics: large),
         ]
@@ -338,6 +349,92 @@ struct PickyHUDDockGroupRenderGalleryTests {
                             x: folderFrame.width + PickyHUDDockLayout.panelGap,
                             y: badgeTopInset
                         )
+                }
+            )
+        )
+    }
+
+    /// Light appearance must remain legible when the desktop below the
+    /// translucent rail is dark. Setting an opened session also exercises the
+    /// selected group state from the reported regression.
+    private func lightRailOnDarkBackdropScene(metrics: PickyHUDDockMetrics) -> Scene {
+        let working = group(
+            id: "light-working",
+            name: "Working",
+            color: .teal,
+            memberIDs: [fiveSessions[0].id, fiveSessions[1].id]
+        )
+        let review = group(
+            id: "light-review",
+            name: "Review",
+            color: .blue,
+            memberIDs: [fiveSessions[2].id]
+        )
+        let research = group(
+            id: "light-research",
+            name: "Research",
+            color: .amber,
+            memberIDs: [fiveSessions[3].id]
+        )
+        let picky = group(
+            id: "light-picky",
+            name: "Picky",
+            color: .purple,
+            memberIDs: [fiveSessions[4].id]
+        )
+        let layout = PickyDockLayout(entries: [
+            .group(working),
+            .group(review),
+            .group(research),
+            .group(picky),
+        ])
+        let projection = PickyDockProjector.project(
+            layout: layout,
+            visibleSessionIDs: fiveSessions.map(\.id)
+        )
+        let railSize = CGSize(
+            width: PickyHUDDockRailLayoutPolicy.verticalCrossSize(
+                groupCount: 4,
+                metrics: metrics,
+                fontScale: 1
+            ),
+            height: PickyHUDDockRailLayoutPolicy.contentLength(
+                sessionCount: projection.slots.count,
+                groupCount: 4,
+                isAddSlotExpanded: false,
+                dockSide: .right,
+                metrics: metrics,
+                fontScale: 1
+            )
+        )
+        let contentSize = CGSize(
+            width: railSize.width + (DS.Spacing.space4 * 2),
+            height: railSize.height + (DS.Spacing.space4 * 2)
+        )
+        let presentationStore = PickyHUDDockExternalDragRailPresentationStore()
+        return Scene(
+            name: "rail-four-groups-open-session-large-light-dark-backdrop-100.png",
+            contentLogicalSize: contentSize,
+            canvasInsets: galleryCanvasInsets,
+            appearance: .light,
+            preset: metrics.preset,
+            fontScale: 1,
+            content: AnyView(
+                ZStack(alignment: .topTrailing) {
+                    Color.black
+                    dockRail(
+                        sessions: fiveSessions,
+                        allSessions: fiveSessions,
+                        layout: layout,
+                        projection: projection,
+                        dockSide: .right,
+                        metrics: metrics,
+                        availableRailLength: railSize.height,
+                        externalDragPresentationStore: presentationStore,
+                        openedSessionID: fiveSessions[0].id
+                    )
+                    .frame(width: railSize.width, height: railSize.height, alignment: .topLeading)
+                    .padding(DS.Spacing.space4)
                 }
             )
         )
@@ -543,7 +640,8 @@ struct PickyHUDDockGroupRenderGalleryTests {
         dockSide: PickyHUDDockSide,
         metrics: PickyHUDDockMetrics,
         availableRailLength: CGFloat,
-        externalDragPresentationStore: PickyHUDDockExternalDragRailPresentationStore
+        externalDragPresentationStore: PickyHUDDockExternalDragRailPresentationStore,
+        openedSessionID: String? = nil
     ) -> some View {
         PickyHUDDockRailView(
             sessions: sessions,
@@ -551,7 +649,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
             baseProjection: projection,
             layout: layout,
             activeSessionID: nil,
-            openedSessionID: nil,
+            openedSessionID: openedSessionID,
             previewSessionID: nil,
             screenContextTargetSessionID: nil,
             screenContextTargetSticky: false,

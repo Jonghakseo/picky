@@ -9,6 +9,33 @@
 import Combine
 import SwiftUI
 
+struct PickyHUDDockGroupListSurfaceStyle: Equatable {
+    let materialKind: PickyHUDMaterialKind
+    let surfaceOverlayOpacity: Double
+}
+
+enum PickyHUDDockGroupListSurfacePresentation {
+    static func style(for colorScheme: ColorScheme) -> PickyHUDDockGroupListSurfaceStyle {
+        switch colorScheme {
+        case .light:
+            PickyHUDDockGroupListSurfaceStyle(
+                materialKind: .regular,
+                surfaceOverlayOpacity: 0.72
+            )
+        case .dark:
+            PickyHUDDockGroupListSurfaceStyle(
+                materialKind: .ultraThin,
+                surfaceOverlayOpacity: 0
+            )
+        @unknown default:
+            PickyHUDDockGroupListSurfaceStyle(
+                materialKind: .regular,
+                surfaceOverlayOpacity: 0.72
+            )
+        }
+    }
+}
+
 @MainActor
 struct PickyHUDDockGroupListRowModel: Identifiable {
     let session: PickyHUDDockSession
@@ -342,6 +369,7 @@ struct PickyHUDDockGroupListView: View {
     @State private var dragMonitors: [Any] = []
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.pickyAppFontScale) private var fontScale
 
     private var panelSize: CGSize {
@@ -639,9 +667,18 @@ struct PickyHUDDockGroupListView: View {
     }
 
     private var panelBackground: some View {
-        PickyHUDMaterialFill(
-            shape: RoundedRectangle(cornerRadius: metrics.groupListPanelCornerRadius, style: .continuous),
-            fallback: DS.Colors.surface1
+        let shape = RoundedRectangle(
+            cornerRadius: metrics.groupListPanelCornerRadius,
+            style: .continuous
+        )
+        let style = PickyHUDDockGroupListSurfacePresentation.style(for: colorScheme)
+        return PickyHUDMaterialFill(
+            shape: shape,
+            fallback: DS.Colors.surface1,
+            material: style.materialKind.material
+        )
+        .overlay(
+            shape.fill(DS.Colors.surface1.opacity(style.surfaceOverlayOpacity))
         )
     }
 
@@ -784,7 +821,7 @@ private struct PickyHUDDockGroupListHeader: View {
             nameControl
             Text("\(memberCount)")
                 .font(PickyHUDTypography.meta)
-                .foregroundStyle(DS.Colors.textTertiary)
+                .foregroundStyle(DS.Colors.textSecondary)
                 // The containing group-list element already announces the
                 // group name and count, so this visual count stays singular.
                 .accessibilityHidden(true)
@@ -1241,7 +1278,7 @@ private struct PickyHUDDockGroupListRow: View {
                     .truncationMode(.tail)
                 Text(presentation.subtitle)
                     .font(PickyHUDTypography.meta)
-                    .foregroundStyle(DS.Colors.textTertiary)
+                    .foregroundStyle(DS.Colors.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -1327,7 +1364,7 @@ private struct PickyHUDDockGroupListRow: View {
         case .shortcut(let number):
             Text("⌘\(number)")
                 .font(PickyHUDTypography.badgeSemibold)
-                .foregroundStyle(DS.Colors.textTertiary)
+                .foregroundStyle(DS.Colors.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .accessibilityHidden(true)
         case .quickActions:

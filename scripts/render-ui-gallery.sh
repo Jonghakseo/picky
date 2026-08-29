@@ -188,6 +188,7 @@ EXPECTED=(
   folder-large-light-100.png
   folder-selected-medium-dark-100.png
   folder-selected-large-light-100.png
+  folder-pinned-large-light-100.png
   folder-targeted-medium-dark-100.png
   folder-small-dark-130-cjk.png
   folder-empty-small-dark-100.png
@@ -202,6 +203,7 @@ EXPECTED=(
   list-one-selected-medium-dark-100.png
   combined-folder-panel-medium-dark-100.png
   rail-four-groups-open-session-large-light-dark-backdrop-100.png
+  list-five-idle-large-light-dark-backdrop-100.png
   external-drag-feedback-medium-dark-100.png
   external-drag-top-level-large-light-130.png
 )

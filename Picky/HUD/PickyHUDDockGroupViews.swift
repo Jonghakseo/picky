@@ -224,7 +224,6 @@ enum PickyHUDDockGroupHeaderPresentation {
 enum PickyHUDDockGroupSurfacePresentation {
     static let tintOpacity = 0.12
     static let borderOpacity = 0.78
-    static let hoverLayerOpacity = 0.72
 }
 
 /// Quiet, centered identity label above a folder tile. The rail supplies
@@ -289,12 +288,13 @@ enum PickyDockPickleStatusVisual {
 struct PickyDockGroupDrawerBackground: ViewModifier {
     let tint: Color
     let cornerRadius: CGFloat
+    let isLifted: Bool
 
     func body(content: Content) -> some View {
         content
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(DS.Colors.surface2)
+                    .fill(isLifted ? DS.Colors.surface3 : DS.Colors.surface2)
                     .overlay(
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                             .fill(tint.opacity(PickyHUDDockGroupSurfacePresentation.tintOpacity))
@@ -313,8 +313,16 @@ struct PickyDockGroupDrawerBackground: ViewModifier {
 }
 
 extension View {
-    func pickyDockGroupDrawer(tint: Color, cornerRadius: CGFloat) -> some View {
-        modifier(PickyDockGroupDrawerBackground(tint: tint, cornerRadius: cornerRadius))
+    func pickyDockGroupDrawer(
+        tint: Color,
+        cornerRadius: CGFloat,
+        isLifted: Bool = false
+    ) -> some View {
+        modifier(PickyDockGroupDrawerBackground(
+            tint: tint,
+            cornerRadius: cornerRadius,
+            isLifted: isLifted
+        ))
     }
 }
 
@@ -503,16 +511,10 @@ struct PickyHUDDockCollapsedGroupBadge: View {
                 }
             }
             .frame(width: containerSide, height: containerSide)
-            .pickyDockGroupDrawer(tint: tint, cornerRadius: metrics.iconCornerRadius)
-            .overlay(
-                RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
-                    .fill(
-                        isLifted
-                            ? DS.Colors.surface3.opacity(
-                                PickyHUDDockGroupSurfacePresentation.hoverLayerOpacity
-                            )
-                            : Color.clear
-                    )
+            .pickyDockGroupDrawer(
+                tint: tint,
+                cornerRadius: metrics.iconCornerRadius,
+                isLifted: isLifted
             )
 
             if unreadCount > 0 {

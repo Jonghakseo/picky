@@ -881,6 +881,18 @@ extension View {
 
 // MARK: - Accessibility-adaptive material
 
+enum PickyHUDMaterialKind: Equatable {
+    case ultraThin
+    case regular
+
+    var material: Material {
+        switch self {
+        case .ultraThin: .ultraThinMaterial
+        case .regular: .regularMaterial
+        }
+    }
+}
+
 /// Replaces translucent HUD materials with a semantic solid surface when the
 /// user enables Reduce Transparency, preserving the surface's shape and role.
 struct PickyHUDMaterialFill<FillShape: Shape>: View {

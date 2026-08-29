@@ -1,20 +1,8 @@
 import AppKit
 import SwiftUI
 
-enum PickyHUDDockSurfaceMaterialKind: Equatable {
-    case ultraThin
-    case regular
-
-    var material: Material {
-        switch self {
-        case .ultraThin: .ultraThinMaterial
-        case .regular: .regularMaterial
-        }
-    }
-}
-
 struct PickyHUDDockSurfaceStyle: Equatable {
-    let materialKind: PickyHUDDockSurfaceMaterialKind
+    let materialKind: PickyHUDMaterialKind
     let surfaceOverlayOpacity: Double
     let borderOpacity: Double
 }

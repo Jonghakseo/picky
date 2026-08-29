@@ -176,6 +176,15 @@ struct PickyHUDDockGroupRenderGalleryTests {
         #expect(dark.materialKind == .ultraThin)
     }
 
+    @Test func lightGroupListUsesAnOpaqueSemanticLayerForMetadataContrast() {
+        let light = PickyHUDDockGroupListSurfacePresentation.style(for: .light)
+        let dark = PickyHUDDockGroupListSurfacePresentation.style(for: .dark)
+
+        #expect(light.materialKind == .regular)
+        #expect(light.surfaceOverlayOpacity > dark.surfaceOverlayOpacity)
+        #expect(dark.materialKind == .ultraThin)
+    }
+
     @Test func folderGeometryContainsTheProductionHeaderAtAllGalleryScales() {
         for preset in PickyHUDDockSizePreset.allCases {
             let metrics = PickyHUDDockMetrics(preset: preset)
@@ -222,6 +231,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
             folderScene("folder-large-light-100.png", group: picky, members: fiveSessions, metrics: large, fontScale: 1, appearance: .light),
             folderScene("folder-selected-medium-dark-100.png", group: picky, members: fiveSessions, metrics: medium, fontScale: 1, appearance: .dark, isSelected: true),
             folderScene("folder-selected-large-light-100.png", group: picky, members: fiveSessions, metrics: large, fontScale: 1, appearance: .light, isSelected: true),
+            folderScene("folder-pinned-large-light-100.png", group: picky, members: fiveSessions, metrics: large, fontScale: 1, appearance: .light, isListPinned: true),
             folderScene("folder-targeted-medium-dark-100.png", group: picky, members: fiveSessions, metrics: medium, fontScale: 1, appearance: .dark, isDropTargeted: true),
             folderScene("folder-small-dark-130-cjk.png", group: cjk, members: fiveSessions, metrics: small, fontScale: 1.3, appearance: .dark),
             folderScene("folder-empty-small-dark-100.png", group: empty, members: [], metrics: small, fontScale: 1, appearance: .dark),
@@ -245,6 +255,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
             listScene("list-one-selected-medium-dark-100.png", group: group(id: "group-one", name: "Solo", color: .blue, memberIDs: [fiveRows[0].id]), rows: [fiveRows[0]], selectedID: fiveRows[0].id, metrics: medium, fontScale: 1, appearance: .dark),
             combinedScene(group: picky, metrics: medium),
             lightRailOnDarkBackdropScene(metrics: large),
+            lightListOnDarkBackdropScene(group: picky, metrics: large),
             externalDragFeedbackScene(metrics: medium),
             externalTopLevelProjectionScene(metrics: large),
         ]
@@ -258,7 +269,8 @@ struct PickyHUDDockGroupRenderGalleryTests {
         fontScale: CGFloat,
         appearance: Appearance,
         isSelected: Bool = false,
-        isDropTargeted: Bool = false
+        isDropTargeted: Bool = false,
+        isListPinned: Bool = false
     ) -> Scene {
         Scene(
             name: name,
@@ -277,7 +289,8 @@ struct PickyHUDDockGroupRenderGalleryTests {
                 metrics: metrics,
                 fontScale: fontScale,
                 isSelected: isSelected,
-                isDropTargeted: isDropTargeted
+                isDropTargeted: isDropTargeted,
+                isListPinned: isListPinned
             ))
         )
     }
@@ -440,6 +453,33 @@ struct PickyHUDDockGroupRenderGalleryTests {
         )
     }
 
+    private func lightListOnDarkBackdropScene(
+        group: PickyDockGroup,
+        metrics: PickyHUDDockMetrics
+    ) -> Scene {
+        let panelSize = listSize(memberCount: fiveRows.count, metrics: metrics, fontScale: 1)
+        let contentSize = CGSize(
+            width: panelSize.width + (DS.Spacing.space4 * 2),
+            height: panelSize.height + (DS.Spacing.space4 * 2)
+        )
+        return Scene(
+            name: "list-five-idle-large-light-dark-backdrop-100.png",
+            contentLogicalSize: contentSize,
+            canvasInsets: galleryCanvasInsets,
+            appearance: .light,
+            preset: metrics.preset,
+            fontScale: 1,
+            content: AnyView(
+                ZStack {
+                    Color.black
+                    list(group: group, rows: fiveRows, selectedID: nil, metrics: metrics)
+                        .frame(width: panelSize.width, height: panelSize.height)
+                        .padding(DS.Spacing.space4)
+                }
+            )
+        )
+    }
+
     /// One scene captures the external-drag handoff as users see it: the
     /// source list retains a 35% ghost, the target folder alone advertises
     /// acceptance, and a separate invalid detached preview has no destination.
@@ -561,7 +601,8 @@ struct PickyHUDDockGroupRenderGalleryTests {
         metrics: PickyHUDDockMetrics,
         fontScale: CGFloat,
         isSelected: Bool = false,
-        isDropTargeted: Bool = false
+        isDropTargeted: Bool = false,
+        isListPinned: Bool = false
     ) -> some View {
         PickyHUDDockGroupFolderTileView(
             group: group,
@@ -585,6 +626,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
                     isCommandShortcutHintVisible: false,
                     isSelected: isSelected,
                     isDropTargeted: isDropTargeted,
+                    isListPinned: isListPinned,
                     onTap: {},
                     onReorderBegan: {},
                     onReorderChanged: { _ in },

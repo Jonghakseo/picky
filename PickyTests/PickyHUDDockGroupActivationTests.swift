@@ -8,7 +8,7 @@ import Testing
 
 @MainActor
 struct PickyHUDDockGroupActivationTests {
-    @Test func pointerAndCommandUseDistinctProductionEntriesWithSharedRouting() {
+    @Test func pointerUsesHoverForMemberListsWhileCommandPinsThem() {
         var hasVisibleMembers = false
         var pickerGroups: [String] = []
         var listGroups: [String] = []
@@ -22,6 +22,7 @@ struct PickyHUDDockGroupActivationTests {
         coordinator.activateFromCommandShortcut(groupID: "group")
         hasVisibleMembers = true
         coordinator.activateFromPointer(groupID: "group")
+        coordinator.activateFromCommandShortcut(groupID: "group")
 
         #expect(pickerGroups == ["group", "group"])
         #expect(listGroups == ["group"])

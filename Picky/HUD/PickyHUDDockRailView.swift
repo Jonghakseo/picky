@@ -53,11 +53,15 @@ struct PickyHUDDockRailView: View {
     let onCreateDockGroup: (_ name: String, _ memberIDs: [String]) -> String
     let onRenameDockGroup: (_ id: String, _ name: String) -> Void
     let onSetDockGroupColor: (_ id: String, _ color: PickyDockGroupColor) -> Void
-    /// Routes a rail primary click through the HUD's shared group activation
-    /// coordinator, which resolves current visible membership.
+    /// Routes a rail primary click through the pointer activation path. A
+    /// populated group relies on hover disclosure, while an empty group still
+    /// opens its new-Pickle picker.
     let onActivateDockGroup: (_ id: String) -> Void
-    /// Folder hover drives the peek disclosure. The overlay manager owns the
-    /// dwell and the corridor, so the rail only reports the raw transition.
+    /// Accessibility activation follows keyboard semantics and pins a populated
+    /// group's list so it remains available after focus moves away.
+    let onActivateDockGroupFromKeyboard: (_ id: String) -> Void
+    /// Folder hover drives immediate peek disclosure. The overlay manager owns
+    /// the corridor, so the rail only reports the raw transition.
     var onDockGroupTileHover: (_ id: String, _ isHovering: Bool) -> Void = { _, _ in }
     /// Folder whose list is pinned open, marked so the tile keeps its lift
     /// after the pointer leaves. A peek deliberately has no persistent mark.
@@ -686,7 +690,7 @@ struct PickyHUDDockRailView: View {
         .accessibilityAction(named: Text(
             hasVisibleMembers ? L10n.t("group.folder.action.open") : L10n.t("dock.startPickle")
         )) {
-            activateGroupTile(group.id)
+            onActivateDockGroupFromKeyboard(group.id)
         }
         .accessibilityAction(named: Text(L10n.t("group.folder.action.rename"))) {
             presentRenameDialog(for: group)

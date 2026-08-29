@@ -100,8 +100,6 @@ final class PickyHUDOverlayManager {
     private var archiveUndoToastsByDisplayID: [CGDirectDisplayID: ArchiveUndoToastEntry] = [:]
     var dockGroupListChildrenByDisplayID: [CGDirectDisplayID: DockGroupListChildEntry] = [:]
     var dockGroupListGeometryByDisplayID: [CGDirectDisplayID: DockGroupListGeometry] = [:]
-    /// Pending folder-hover dwell before a peek opens.
-    var dockGroupPeekDwellByDisplayID: [CGDirectDisplayID: DispatchWorkItem] = [:]
     /// Corridor sampling while a peek is open. Pointer containment cannot be
     /// derived from hover events alone because the folder and panel are
     /// separate windows with a gap between them.
@@ -561,6 +559,9 @@ final class PickyHUDOverlayManager {
             },
             onDockGroupListToggle: { [weak self] groupID in
                 self?.toggleDockGroupListChild(displayID: displayID, groupID: groupID)
+            },
+            onDockSessionTileHover: { [weak self] in
+                self?.handleDockSessionTileHover(displayID: displayID)
             },
             onDockGroupTileHover: { [weak self] groupID, isHovering in
                 self?.handleDockGroupTileHover(

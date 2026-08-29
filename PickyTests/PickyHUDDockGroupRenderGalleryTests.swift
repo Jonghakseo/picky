@@ -580,6 +580,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
             onRenameDockGroup: { _, _ in },
             onSetDockGroupColor: { _, _ in },
             onActivateDockGroup: { _ in },
+            onActivateDockGroupFromKeyboard: { _ in },
             onRemoveDockGroup: { _, _ in },
             onMoveSessionInDock: { _, _ in },
             onMoveDockGroup: { _, _ in },

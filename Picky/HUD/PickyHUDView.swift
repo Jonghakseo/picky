@@ -46,8 +46,11 @@ struct PickyHUDView: View {
     /// The overlay manager owns the display-local child panel. Folder frames
     /// are measured in this root's coordinate space before it positions it.
     var onDockGroupListToggle: (_ groupID: String) -> Void = { _ in }
-    /// Raw folder hover transition. The overlay manager owns the peek dwell and
-    /// the folder-to-panel corridor, because only it knows the panel's frame.
+    /// A regular Pickle hover has explicit pointer priority over any transient
+    /// group list whose broad folder-panel corridor also covers the tile.
+    var onDockSessionTileHover: () -> Void = { }
+    /// Raw folder hover transition. The overlay manager owns the folder-to-panel
+    /// corridor because only it knows the child panel's screen frame.
     var onDockGroupTileHover: (_ groupID: String, _ isHovering: Bool) -> Void = { _, _ in }
     var onDockGroupListClose: () -> Void = { }
     /// Overlay Manager owns external drag lifetime because a nonactivating
@@ -629,6 +632,7 @@ struct PickyHUDView: View {
                 onRenameDockGroup: { id, name in viewModel.renameDockGroup(id: id, to: name) },
                 onSetDockGroupColor: { id, color in viewModel.setDockGroupColor(id: id, color: color) },
                 onActivateDockGroup: activateDockGroupTileFromPointer,
+                onActivateDockGroupFromKeyboard: activateDockGroupTileFromCommandShortcut,
                 onDockGroupTileHover: onDockGroupTileHover,
                 pinnedDockGroupListGroupID: placement.pinnedDockGroupListGroupID,
                 onRemoveDockGroup: { id, keepMembers in viewModel.removeDockGroup(id: id, keepMembers: keepMembers) },
@@ -837,6 +841,7 @@ struct PickyHUDView: View {
     }
 
     private func previewDockSession(_ sessionID: String) {
+        onDockSessionTileHover()
         isDockHovered = true
         cancelPendingClose()
         if heldSession?.sessionID == sessionID {

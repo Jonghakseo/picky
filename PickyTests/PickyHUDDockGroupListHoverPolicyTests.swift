@@ -72,17 +72,29 @@ struct PickyHUDDockGroupListHoverPolicyTests {
         )
     }
 
-    @Test func aPressInsideThePanelPromotesAPeekAndLeavesAClosedListAlone() {
+    @Test func anExplicitKeyboardPinPromotesAPeekAndLeavesAClosedListAlone() {
         #expect(
-            PickyHUDDockGroupListHoverPolicy.presentationAfterPressInsidePanel(current: .peek)
+            PickyHUDDockGroupListHoverPolicy.presentationAfterExplicitPin(current: .peek)
                 == .pinned
         )
         #expect(
-            PickyHUDDockGroupListHoverPolicy.presentationAfterPressInsidePanel(current: .pinned)
+            PickyHUDDockGroupListHoverPolicy.presentationAfterExplicitPin(current: .pinned)
                 == .pinned
         )
         #expect(
-            PickyHUDDockGroupListHoverPolicy.presentationAfterPressInsidePanel(current: nil) == nil
+            PickyHUDDockGroupListHoverPolicy.presentationAfterExplicitPin(current: nil) == nil
+        )
+    }
+
+    @Test func hoveringARegularPickleImmediatelyClosesOnlyAPeek() {
+        #expect(
+            PickyHUDDockGroupListHoverPolicy.shouldCloseForDockSessionHover(presentation: .peek)
+        )
+        #expect(
+            !PickyHUDDockGroupListHoverPolicy.shouldCloseForDockSessionHover(presentation: .pinned)
+        )
+        #expect(
+            !PickyHUDDockGroupListHoverPolicy.shouldCloseForDockSessionHover(presentation: nil)
         )
     }
 

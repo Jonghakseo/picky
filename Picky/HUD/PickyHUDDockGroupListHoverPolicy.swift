@@ -14,15 +14,12 @@ enum PickyHUDDockGroupListPresentation: Equatable {
     /// Opened by hovering the folder. Closes on its own once the pointer
     /// leaves, and never registers with the keyboard focus store.
     case peek
-    /// Opened or confirmed by a press. Survives pointer movement and owns the
-    /// list keyboard context exactly as a clicked list always has.
+    /// Opened or confirmed by keyboard activation. Survives pointer movement
+    /// and owns the list keyboard context until explicitly dismissed.
     case pinned
 }
 
 enum PickyHUDDockGroupListHoverPolicy {
-    /// Long enough that sweeping the rail to reach a Pickle below does not
-    /// flash panels, short enough to feel like disclosure rather than a wait.
-    static let peekDwell: TimeInterval = 0.3
     /// How long the pointer may sit outside the corridor before a peek closes.
     static let peekGrace: TimeInterval = 0.25
     /// Corridor sampling interval while a peek is open.
@@ -43,14 +40,22 @@ enum PickyHUDDockGroupListHoverPolicy {
         return openGroupID != hoveredGroupID || presentation == nil
     }
 
-    /// A press anywhere inside the panel is a commitment, so it promotes.
-    /// Rows, the group name field, colour menu, and quick actions all converge
-    /// on the same mouse-down monitor, so none of them need their own rule.
-    static func presentationAfterPressInsidePanel(
+    /// An explicit keyboard activation promotes a hover peek to a pinned list.
+    /// Pointer interaction remains transient so leaving the folder corridor
+    /// always closes a mouse-opened list.
+    static func presentationAfterExplicitPin(
         current: PickyHUDDockGroupListPresentation?
     ) -> PickyHUDDockGroupListPresentation? {
         guard current != nil else { return nil }
         return .pinned
+    }
+
+    /// A regular Pickle tile is a more specific pointer target than the broad
+    /// folder-panel corridor. Entering one ends only pointer-owned disclosure.
+    static func shouldCloseForDockSessionHover(
+        presentation: PickyHUDDockGroupListPresentation?
+    ) -> Bool {
+        presentation == .peek
     }
 
     /// The folder and its panel are separated by `panelGap`, so pointer

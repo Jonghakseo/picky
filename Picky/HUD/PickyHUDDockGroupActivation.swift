@@ -15,11 +15,12 @@ enum PickyHUDDockGroupActivationSource: Equatable {
 enum PickyHUDDockGroupActivationRoute: Equatable {
     case showFolderPicker(groupID: String)
     case toggleMemberList(groupID: String)
+    case noAction
 }
 
-/// Shared entry coordinator for the rail's primary click and the Command
-/// shortcut. The source remains explicit so both production callers can be
-/// independently regression tested while sharing membership routing.
+/// Shared entry coordinator for pointer and keyboard activation. Pointer clicks
+/// leave populated groups to hover disclosure, while keyboard activation pins
+/// the member list so it remains available for keyboard navigation.
 @MainActor
 final class PickyHUDDockGroupActivationCoordinator {
     typealias VisibleMemberResolver = (String) -> Bool
@@ -49,17 +50,32 @@ final class PickyHUDDockGroupActivationCoordinator {
     }
 
     func activate(groupID: String, source: PickyHUDDockGroupActivationSource) {
-        _ = source
-        switch Self.route(groupID: groupID, hasVisibleMembers: hasVisibleMembers(groupID)) {
+        switch Self.route(
+            groupID: groupID,
+            hasVisibleMembers: hasVisibleMembers(groupID),
+            source: source
+        ) {
         case .showFolderPicker(let groupID): showFolderPicker(groupID)
         case .toggleMemberList(let groupID): toggleMemberList(groupID)
+        case .noAction: break
         }
     }
 
-    static func route(groupID: String, hasVisibleMembers: Bool) -> PickyHUDDockGroupActivationRoute {
-        switch PickyHUDDockNewPicklePopoverPolicy.groupTileAction(hasVisibleMembers: hasVisibleMembers) {
-        case .showFolderPicker: .showFolderPicker(groupID: groupID)
-        case .toggleMemberList: .toggleMemberList(groupID: groupID)
+    static func route(
+        groupID: String,
+        hasVisibleMembers: Bool,
+        source: PickyHUDDockGroupActivationSource
+    ) -> PickyHUDDockGroupActivationRoute {
+        switch PickyHUDDockNewPicklePopoverPolicy.groupTileAction(
+            hasVisibleMembers: hasVisibleMembers
+        ) {
+        case .showFolderPicker:
+            return .showFolderPicker(groupID: groupID)
+        case .toggleMemberList:
+            switch source {
+            case .pointer: return .noAction
+            case .commandShortcut: return .toggleMemberList(groupID: groupID)
+            }
         }
     }
 }

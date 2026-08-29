@@ -214,6 +214,17 @@ Follow-up: `PickyInteractionEvent`/`PickyInteractionReducer` complexity is
 dispatch-switch shaped, so it should shrink through 2.1 (reducers decide) rather
 than mechanical extraction. Tighten each pin to the new worst case when it does.
 
+#### 2026-08-29 test length exception
+
+Test suites accumulate independent regression cases, so file and suite body length
+do not measure production ownership or facade complexity. `PickyTests` therefore
+inherits the app lint configuration through `.swiftlint-tests.yml` but disables
+only `file_length` and `type_body_length`. All other SwiftLint rules still apply.
+
+Removing tests from the production length ratchets lowered both app-only error pins
+to 2450. The measured app maxima are 2360 lines for `file_length` and 2351 lines
+for `type_body_length`, both in `PickySessionViewModel`.
+
 ## 4. Review checklist
 
 For each structural PR, reviewers should ask:

@@ -1,0 +1,14 @@
+# Test suites grow through independent regression cases, so file and suite body
+# length do not represent production ownership or facade complexity. Keep every
+# other rule inherited from the app configuration.
+parent_config: .swiftlint.yml
+
+included:
+  - PickyTests
+
+excluded:
+  - Picky
+
+disabled_rules:
+  - file_length
+  - type_body_length

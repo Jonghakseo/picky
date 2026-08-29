@@ -12,7 +12,6 @@
 
 included:
   - Picky
-  - PickyTests
 
 excluded:
   - build
@@ -42,12 +41,12 @@ line_length:
 
 file_length:
   warning: 1500
-  error: 5000 # ratchet: current max 4883 (PickySessionViewModelTests); re-pinned 2026-08-25
+  error: 2450 # ratchet: current app max 2360 (PickySessionViewModel); re-pinned 2026-08-29
   ignore_comment_only_lines: true
 
 type_body_length:
   warning: 700
-  error: 4350 # ratchet: current max 4251 (PickySessionViewModelTests); re-pinned 2026-08-25
+  error: 2450 # ratchet: current app max 2351 (PickySessionViewModel); re-pinned 2026-08-29
 
 function_body_length:
   warning: 120

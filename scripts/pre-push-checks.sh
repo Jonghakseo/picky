@@ -38,13 +38,25 @@ SWIFTLINT_ERROR_VIOLATION_BASELINE=0
 run_swiftlint_warning_first() {
   echo
   echo "▶ SwiftLint warning-first rules"
+  local app_output
+  local app_status
+  local test_output
+  local test_status
   local output
   local status
   local errors
   set +e
-  output="$(swiftlint lint --config .swiftlint.yml --quiet 2>&1)"
-  status=$?
+  app_output="$(swiftlint lint --config .swiftlint.yml --quiet 2>&1)"
+  app_status=$?
+  test_output="$(swiftlint lint --config .swiftlint-tests.yml --quiet 2>&1)"
+  test_status=$?
   set -e
+  output="$(printf '%s\n%s\n' "$app_output" "$test_output")"
+  if [ "$app_status" -ne 0 ] || [ "$test_status" -ne 0 ]; then
+    status=1
+  else
+    status=0
+  fi
   if [ -n "$output" ]; then
     printf '%s\n' "$output"
   fi

@@ -90,11 +90,24 @@ struct PickyGitRepositoryStatus: Equatable {
         }
     }
 
+    /// Line counts for one diff range. `insertions`/`deletions` on the status
+    /// itself stay the uncommitted pair every existing caller already reads.
+    struct DiffStat: Equatable {
+        let insertions: Int
+        let deletions: Int
+
+        var isEmpty: Bool { insertions == 0 && deletions == 0 }
+    }
+
     let repositoryName: String
     let branchName: String
     let hasUncommittedChanges: Bool
     let insertions: Int
     let deletions: Int
+    /// Everything this branch changed since it forked off the default branch,
+    /// working tree included. `nil` when no origin remote or base ref resolves,
+    /// which is the only honest answer for a detached or remote-less checkout.
+    let branchDiff: DiffStat?
     let aheadCount: Int
     let behindCount: Int
     let remoteWebURL: URL?
@@ -135,7 +148,10 @@ struct PickyGitRepositoryStatus: Equatable {
             return nil
         }
 
-        let remoteWebURL = remoteWebURLForOrigin(cwd: trimmedCwd)
+        // Kept as the raw value so a non-web origin (local path, unusual host)
+        // still counts as "has a remote" even when it cannot become a link.
+        let originRemoteURL = originRemoteURL(cwd: trimmedCwd)
+        let remoteWebURL = originRemoteURL.flatMap(convertRemoteURLToWeb)
         let repositoryName = remoteWebURL.flatMap(remoteRepositoryName(from:)) ?? URL(fileURLWithPath: topLevel).lastPathComponent
         let branchName = currentBranchName(cwd: trimmedCwd)
         let branchWebURL = remoteWebURL.flatMap { makeBranchWebURL(remoteWebURL: $0, branchName: branchName) }
@@ -143,6 +159,11 @@ struct PickyGitRepositoryStatus: Equatable {
         let diffStats = parseNumstat(git(["diff", "--numstat", "HEAD", "--"], cwd: trimmedCwd, allowsFailure: true) ?? "")
         let untrackedInsertions = countUntrackedTextLines(cwd: trimmedCwd, topLevel: topLevel)
         let position = parseAheadBehind(git(["rev-list", "--left-right", "--count", "@{upstream}...HEAD"], cwd: trimmedCwd, allowsFailure: true) ?? "")
+        let branchDiff = loadBranchDiff(
+            cwd: trimmedCwd,
+            hasOrigin: originRemoteURL != nil,
+            untrackedInsertions: untrackedInsertions
+        )
 
         return PickyGitRepositoryStatus(
             repositoryName: repositoryName,
@@ -150,11 +171,35 @@ struct PickyGitRepositoryStatus: Equatable {
             hasUncommittedChanges: !statusOutput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
             insertions: diffStats.insertions + untrackedInsertions,
             deletions: diffStats.deletions,
+            branchDiff: branchDiff,
             aheadCount: position.ahead,
             behindCount: position.behind,
             remoteWebURL: remoteWebURL,
             branchWebURL: branchWebURL
         )
+    }
+
+    /// Refs tried, in order, to find where this branch forked from the default
+    /// branch. `origin/HEAD` is what `git clone` sets up; the named fallbacks
+    /// cover repos where nobody ever ran `git remote set-head`.
+    static let branchBaseRefCandidates = ["origin/HEAD", "origin/main", "origin/master"]
+
+    /// Two extra subprocesses per refresh in the common case, so it is skipped
+    /// entirely when the repo has no origin rather than burning three failing
+    /// `merge-base` calls on every HUD probe.
+    private static func loadBranchDiff(cwd: String, hasOrigin: Bool, untrackedInsertions: Int) -> DiffStat? {
+        guard hasOrigin, let base = branchBaseCommit(cwd: cwd) else { return nil }
+        let stats = parseNumstat(git(["diff", "--numstat", base, "--"], cwd: cwd, allowsFailure: true) ?? "")
+        return DiffStat(insertions: stats.insertions + untrackedInsertions, deletions: stats.deletions)
+    }
+
+    private static func branchBaseCommit(cwd: String) -> String? {
+        for ref in branchBaseRefCandidates {
+            let base = git(["merge-base", ref, "HEAD"], cwd: cwd, allowsFailure: true)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !base.isEmpty { return base }
+        }
+        return nil
     }
 
     /// Maximum number of untracked files to scan per `loadSynchronously` call. Above this we
@@ -222,11 +267,10 @@ struct PickyGitRepositoryStatus: Equatable {
             .appendingPathComponent(trimmedBranchName, isDirectory: false)
     }
 
-    private static func remoteWebURLForOrigin(cwd: String) -> URL? {
+    private static func originRemoteURL(cwd: String) -> String? {
         let raw = git(["remote", "get-url", "origin"], cwd: cwd, allowsFailure: true)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !raw.isEmpty else { return nil }
-        return convertRemoteURLToWeb(raw)
+        return raw.isEmpty ? nil : raw
     }
 
     static func remoteRepositoryName(from url: URL) -> String? {

@@ -11385,6 +11385,38 @@
         }
       }
     },
+    "hud.context.diff.branch.accessibilityLabel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Branch diff, %lld changed lines"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "브랜치 diff, 변경된 줄 %lld개"
+          }
+        }
+      }
+    },
+    "hud.context.diff.branch.uncommitted.accessibilityLabel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Branch diff %1$lld changed lines, %2$lld uncommitted"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "브랜치 diff 변경된 줄 %1$lld개, 커밋되지 않음 %2$lld개"
+          }
+        }
+      }
+    },
     "hud.context.diff.configure.help": {
       "localizations": {
         "en": {
@@ -11397,6 +11429,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "설정 → Pickle에서 diff 칩 동작 설정 (변경된 줄 %lld개)"
+          }
+        }
+      }
+    },
+    "hud.context.diff.uncommitted.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Parentheses: %lld uncommitted lines"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "괄호: 커밋되지 않은 줄 %lld개"
           }
         }
       }
@@ -11541,6 +11589,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "작업 폴더"
+          }
+        }
+      }
+    },
+    "hud.context.summary.uncommitted.accessibilityValue": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@, uncommitted %2$@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@, 커밋되지 않음 %2$@"
           }
         }
       }

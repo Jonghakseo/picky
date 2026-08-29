@@ -68,6 +68,71 @@ enum PickyConversationContextSummaryPolicy {
     }
 }
 
+/// Uncommitted line counts as the summary row renders them. The row shows the
+/// working-tree diff only; the branch total lives in the details popover.
+struct PickyConversationUncommittedDiffPresentation: Equatable {
+    let insertionsText: String?
+    let deletionsText: String?
+}
+
+/// Details-popover projection of the git line counts. The leading pair is the
+/// whole branch measured from where it forked off the default branch; the
+/// parenthesized pair is the uncommitted subset, shown only when it differs.
+struct PickyGitChangeMetricsPresentation: Equatable {
+    struct Pair: Equatable {
+        let insertionsText: String?
+        let deletionsText: String?
+
+        init(stat: PickyGitRepositoryStatus.DiffStat) {
+            insertionsText = stat.insertions > 0 ? "+\(stat.insertions)" : nil
+            deletionsText = stat.deletions > 0 ? "-\(stat.deletions)" : nil
+        }
+
+        var hasContent: Bool { insertionsText != nil || deletionsText != nil }
+    }
+
+    let total: Pair
+    let uncommitted: Pair?
+    let totalLines: Int
+    let uncommittedLines: Int
+
+    init(status: PickyGitRepositoryStatus) {
+        let uncommittedStat = PickyGitRepositoryStatus.DiffStat(
+            insertions: status.insertions,
+            deletions: status.deletions
+        )
+        // Without an origin remote there is no base to measure the branch
+        // against, so the uncommitted pair is the only truthful total.
+        let totalStat = status.branchDiff ?? uncommittedStat
+        total = Pair(stat: totalStat)
+        uncommitted = uncommittedStat.isEmpty || uncommittedStat == totalStat ? nil : Pair(stat: uncommittedStat)
+        totalLines = totalStat.insertions + totalStat.deletions
+        uncommittedLines = uncommittedStat.insertions + uncommittedStat.deletions
+    }
+
+    var hasContent: Bool { total.hasContent }
+}
+
+enum PickyConversationUncommittedDiffPolicy {
+    static func presentation(status: PickyGitRepositoryStatus?) -> PickyConversationUncommittedDiffPresentation? {
+        guard let status, status.hasUncommittedChanges else { return nil }
+        let insertions = status.insertions > 0 ? "+\(status.insertions)" : nil
+        let deletions = status.deletions > 0 ? "-\(status.deletions)" : nil
+        guard insertions != nil || deletions != nil else { return nil }
+        return PickyConversationUncommittedDiffPresentation(
+            insertionsText: insertions,
+            deletionsText: deletions
+        )
+    }
+
+    /// The counts replace the dirty asterisk, so the summary keeps `*` only when
+    /// the tree is dirty in a way that produces no countable line change (a bare
+    /// rename or mode bit). Otherwise the marker would just be noise beside a number.
+    static func summaryBranchLabel(status: PickyGitRepositoryStatus) -> String {
+        presentation(status: status) == nil ? status.branchDisplayName : status.branchName
+    }
+}
+
 struct PickyConversationContextSummaryWidthAllocation: Equatable {
     let folderWidth: CGFloat
     let separatorWidth: CGFloat
@@ -351,6 +416,7 @@ struct PickyConversationContextLineView: View {
                         .font(PickyHUDTypography.metaSemibold)
                         .accessibilityHidden(true)
                     contextSummaryText
+                    uncommittedDiffText
                     Spacer(minLength: 0)
                 }
                 .contentShape(Rectangle())
@@ -385,13 +451,42 @@ struct PickyConversationContextLineView: View {
     private var contextSummaryPresentation: PickyConversationContextSummaryPresentation {
         PickyConversationContextSummaryPolicy.presentation(
             repositoryDisplayName: gitStatus?.repositoryDisplayName,
-            branchDisplayName: gitStatus?.branchDisplayName,
+            branchDisplayName: gitStatus.map(PickyConversationUncommittedDiffPolicy.summaryBranchLabel(status:)),
             cwd: session.cwd
         )
     }
 
+    private var uncommittedDiffPresentation: PickyConversationUncommittedDiffPresentation? {
+        PickyConversationUncommittedDiffPolicy.presentation(status: gitStatus)
+    }
+
     private var contextSummaryLabel: String {
-        contextSummaryPresentation.label ?? L10n.t("hud.context.section.links")
+        let base = contextSummaryPresentation.label ?? L10n.t("hud.context.section.links")
+        guard let uncommittedDiffPresentation else { return base }
+        let counts = [uncommittedDiffPresentation.insertionsText, uncommittedDiffPresentation.deletionsText]
+            .compactMap { $0 }
+            .joined(separator: " ")
+        return L10n.t("hud.context.summary.uncommitted.accessibilityValue", base, counts)
+    }
+
+    /// Sized to its content so a long branch name truncates before the counts do.
+    @ViewBuilder
+    private var uncommittedDiffText: some View {
+        if let uncommittedDiffPresentation {
+            HStack(spacing: DS.Spacing.space1) {
+                if let insertionsText = uncommittedDiffPresentation.insertionsText {
+                    Text(insertionsText)
+                        .foregroundColor(DS.Colors.successText)
+                }
+                if let deletionsText = uncommittedDiffPresentation.deletionsText {
+                    Text(deletionsText)
+                        .foregroundColor(DS.Colors.destructiveText)
+                }
+            }
+            .font(PickyHUDTypography.metaMonospacedSemibold)
+            .fixedSize(horizontal: true, vertical: false)
+            .accessibilityHidden(true)
+        }
     }
 
     @ViewBuilder
@@ -715,23 +810,39 @@ struct PickyConversationContextLineView: View {
 
     @ViewBuilder
     private func gitChangeMetrics(status: PickyGitRepositoryStatus) -> some View {
-        if status.insertions > 0 {
+        let presentation = PickyGitChangeMetricsPresentation(status: status)
+        if presentation.hasContent {
             Button(action: { runDiffChipAction() }) {
-                gitMetricPill("+\(status.insertions)", color: DS.Colors.successText)
-                    .contentShape(Rectangle())
+                HStack(spacing: 4) {
+                    diffPair(presentation.total, opacity: 1)
+                    if let uncommitted = presentation.uncommitted {
+                        HStack(spacing: 4) {
+                            gitMetricPill("(", color: DS.Colors.textTertiary)
+                            diffPair(uncommitted, opacity: 0.55)
+                            gitMetricPill(")", color: DS.Colors.textTertiary)
+                        }
+                    }
+                }
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(diffChipHelp(lines: status.insertions + status.deletions))
+            .help(diffChipHelp(presentation))
+            .accessibilityLabel(diffChipAccessibilityLabel(presentation))
             .hoverAffordance()
         }
-        if status.deletions > 0 {
-            Button(action: { runDiffChipAction() }) {
-                gitMetricPill("-\(status.deletions)", color: DS.Colors.destructiveText)
-                    .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private func diffPair(_ pair: PickyGitChangeMetricsPresentation.Pair, opacity: Double) -> some View {
+        HStack(spacing: 4) {
+            if let insertionsText = pair.insertionsText {
+                gitMetricPill(insertionsText, color: DS.Colors.successText)
+                    .opacity(opacity)
             }
-            .buttonStyle(.plain)
-            .help(diffChipHelp(lines: status.insertions + status.deletions))
-            .hoverAffordance()
+            if let deletionsText = pair.deletionsText {
+                gitMetricPill(deletionsText, color: DS.Colors.destructiveText)
+                    .opacity(opacity)
+            }
         }
     }
 
@@ -924,13 +1035,25 @@ struct PickyConversationContextLineView: View {
         }
     }
 
-    private func diffChipHelp(lines: Int) -> String {
+    private func diffChipHelp(_ presentation: PickyGitChangeMetricsPresentation) -> String {
         let configured = PickySettingsStore().load().gitChipActions.diffAction?.command
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if configured.isEmpty {
-            return L10n.t("hud.context.diff.configure.help", Int64(lines))
+        let action = configured.isEmpty
+            ? L10n.t("hud.context.diff.configure.help", Int64(presentation.totalLines))
+            : L10n.t("hud.context.diff.action.help", configured, Int64(presentation.totalLines))
+        guard presentation.uncommitted != nil else { return action }
+        return "\(action)\n\(L10n.t("hud.context.diff.uncommitted.help", Int64(presentation.uncommittedLines)))"
+    }
+
+    private func diffChipAccessibilityLabel(_ presentation: PickyGitChangeMetricsPresentation) -> String {
+        guard presentation.uncommitted != nil else {
+            return L10n.t("hud.context.diff.branch.accessibilityLabel", Int64(presentation.totalLines))
         }
-        return L10n.t("hud.context.diff.action.help", configured, Int64(lines))
+        return L10n.t(
+            "hud.context.diff.branch.uncommitted.accessibilityLabel",
+            Int64(presentation.totalLines),
+            Int64(presentation.uncommittedLines)
+        )
     }
 
     private func branchChipHelp(branch: String) -> String {

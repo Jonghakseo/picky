@@ -203,6 +203,92 @@ struct PickyConversationCardViewTests {
         #expect(PickyConversationContextSummaryPolicy.label(branchDisplayName: "  ", cwd: "/") == nil)
     }
 
+    @Test func summaryShowsUncommittedCountsAndDropsTheDirtyAsterisk() {
+        let dirty = Self.gitStatus(insertions: 118, deletions: 40, hasUncommittedChanges: true)
+        let presentation = PickyConversationUncommittedDiffPolicy.presentation(status: dirty)
+
+        #expect(presentation?.insertionsText == "+118")
+        #expect(presentation?.deletionsText == "-40")
+        #expect(PickyConversationUncommittedDiffPolicy.summaryBranchLabel(status: dirty) == "feature/focus-stack")
+    }
+
+    @Test func summaryHidesCountsWhenCleanAndKeepsAsteriskForUncountableDirt() {
+        let clean = Self.gitStatus(insertions: 0, deletions: 0, hasUncommittedChanges: false)
+        #expect(PickyConversationUncommittedDiffPolicy.presentation(status: clean) == nil)
+        #expect(PickyConversationUncommittedDiffPolicy.summaryBranchLabel(status: clean) == "feature/focus-stack")
+
+        // A bare rename or mode change dirties the tree without changing a line.
+        let renameOnly = Self.gitStatus(insertions: 0, deletions: 0, hasUncommittedChanges: true)
+        #expect(PickyConversationUncommittedDiffPolicy.presentation(status: renameOnly) == nil)
+        #expect(PickyConversationUncommittedDiffPolicy.summaryBranchLabel(status: renameOnly) == "feature/focus-stack*")
+
+        #expect(PickyConversationUncommittedDiffPolicy.presentation(status: nil) == nil)
+    }
+
+    @Test func detailMetricsLeadWithBranchTotalAndParenthesizeTheUncommittedSubset() {
+        let presentation = PickyGitChangeMetricsPresentation(status: Self.gitStatus(
+            insertions: 3232,
+            deletions: 2504,
+            hasUncommittedChanges: true,
+            branchDiff: .init(insertions: 8104, deletions: 5920)
+        ))
+
+        #expect(presentation.total.insertionsText == "+8104")
+        #expect(presentation.total.deletionsText == "-5920")
+        #expect(presentation.uncommitted?.insertionsText == "+3232")
+        #expect(presentation.uncommitted?.deletionsText == "-2504")
+        #expect(presentation.totalLines == 14024)
+        #expect(presentation.uncommittedLines == 5736)
+    }
+
+    @Test func detailMetricsSkipRedundantParenthesesAndFallBackWithoutABranchBase() {
+        // Every branch change is still uncommitted, so repeating it adds nothing.
+        let allDirty = PickyGitChangeMetricsPresentation(status: Self.gitStatus(
+            insertions: 118,
+            deletions: 40,
+            hasUncommittedChanges: true,
+            branchDiff: .init(insertions: 118, deletions: 40)
+        ))
+        #expect(allDirty.uncommitted == nil)
+        #expect(allDirty.total.insertionsText == "+118")
+
+        // No origin remote means no fork point, so uncommitted is the only truthful total.
+        let noBase = PickyGitChangeMetricsPresentation(status: Self.gitStatus(
+            insertions: 118,
+            deletions: 40,
+            hasUncommittedChanges: true
+        ))
+        #expect(noBase.uncommitted == nil)
+        #expect(noBase.totalLines == 158)
+
+        let clean = PickyGitChangeMetricsPresentation(status: Self.gitStatus(
+            insertions: 0,
+            deletions: 0,
+            hasUncommittedChanges: false
+        ))
+        #expect(clean.hasContent == false)
+    }
+
+    private static func gitStatus(
+        insertions: Int,
+        deletions: Int,
+        hasUncommittedChanges: Bool,
+        branchDiff: PickyGitRepositoryStatus.DiffStat? = nil
+    ) -> PickyGitRepositoryStatus {
+        PickyGitRepositoryStatus(
+            repositoryName: "product",
+            branchName: "feature/focus-stack",
+            hasUncommittedChanges: hasUncommittedChanges,
+            insertions: insertions,
+            deletions: deletions,
+            branchDiff: branchDiff,
+            aheadCount: 0,
+            behindCount: 0,
+            remoteWebURL: nil,
+            branchWebURL: nil
+        )
+    }
+
     @Test func contextSummaryWidthCapsLongFolderAtThirtyFivePercent() {
         let allocation = PickyConversationContextSummaryWidthPolicy.resolve(
             availableWidth: 220,

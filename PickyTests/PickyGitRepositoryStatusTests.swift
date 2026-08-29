@@ -287,6 +287,57 @@ struct PickyGitRepositoryStatusTests {
         #expect(PickyGitRepositoryStatus.cached(cwd: directory.path) == dirtyStatus)
     }
 
+    @Test func branchDiffMeasuresWorkFromTheDefaultBranchForkPoint() async throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let remote = root.appendingPathComponent("origin.git", isDirectory: true)
+        try FileManager.default.createDirectory(at: remote, withIntermediateDirectories: true)
+        try runGit(["init", "--bare", "-b", "main"], cwd: remote)
+
+        let directory = root.appendingPathComponent("work", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try runGit(["init", "-b", "main"], cwd: directory)
+        try runGit(["config", "user.email", "picky@example.com"], cwd: directory)
+        try runGit(["config", "user.name", "Picky Tests"], cwd: directory)
+        try runGit(["config", "commit.gpgsign", "false"], cwd: directory)
+        try runGit(["remote", "add", "origin", remote.path], cwd: directory)
+
+        let fileURL = directory.appendingPathComponent("notes.txt")
+        try "base\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        try runGit(["add", "notes.txt"], cwd: directory)
+        try runGit(["commit", "-m", "base"], cwd: directory)
+        try runGit(["push", "origin", "main"], cwd: directory)
+
+        try runGit(["checkout", "-b", "feature"], cwd: directory)
+        try "base\ncommitted\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        try runGit(["commit", "-am", "committed work"], cwd: directory)
+        try "base\ncommitted\ndirty\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let status = await PickyGitRepositoryStatus.load(cwd: directory.path)
+
+        // Uncommitted stays working-tree-only; the branch total also covers the commit.
+        #expect(status?.insertions == 1)
+        #expect(status?.deletions == 0)
+        #expect(status?.branchDiff == PickyGitRepositoryStatus.DiffStat(insertions: 2, deletions: 0))
+    }
+
+    @Test func branchDiffIsUnknownWithoutAnOriginRemote() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try runGit(["init", "-b", "main"], cwd: directory)
+        try runGit(["config", "user.email", "picky@example.com"], cwd: directory)
+        try runGit(["config", "user.name", "Picky Tests"], cwd: directory)
+        try runGit(["config", "commit.gpgsign", "false"], cwd: directory)
+        let fileURL = directory.appendingPathComponent("notes.txt")
+        try "one\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        try runGit(["add", "notes.txt"], cwd: directory)
+        try runGit(["commit", "-m", "initial"], cwd: directory)
+
+        #expect(await PickyGitRepositoryStatus.load(cwd: directory.path)?.branchDiff == nil)
+    }
+
     private static func status(repositoryName: String) -> PickyGitRepositoryStatus {
         PickyGitRepositoryStatus(
             repositoryName: repositoryName,
@@ -294,6 +345,7 @@ struct PickyGitRepositoryStatusTests {
             hasUncommittedChanges: false,
             insertions: 0,
             deletions: 0,
+            branchDiff: nil,
             aheadCount: 0,
             behindCount: 0,
             remoteWebURL: nil,

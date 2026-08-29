@@ -273,6 +273,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case removePackage
     case checkPackageUpdates
     case updatePackage
+    case setupPackage
     case reloadPlugins
 
 }
@@ -697,6 +698,7 @@ enum PickyPackageOperation: String, Decodable, Equatable {
     case install
     case remove
     case update
+    case setup
 }
 
 struct PickyPackageUpdatesAvailableEvent: Decodable, Equatable {
@@ -719,6 +721,23 @@ struct PickyPackageOperationCompletedEvent: Decodable, Equatable {
     let source: String
     let ok: Bool
     let errorMessage: String?
+    let packageChanged: Bool?
+
+    init(
+        requestId: String,
+        operation: PickyPackageOperation,
+        source: String,
+        ok: Bool,
+        errorMessage: String?,
+        packageChanged: Bool? = nil
+    ) {
+        self.requestId = requestId
+        self.operation = operation
+        self.source = source
+        self.ok = ok
+        self.errorMessage = errorMessage
+        self.packageChanged = packageChanged
+    }
 }
 private struct PickySessionLogAppendedPayload: Decodable { let sessionId: String; let line: String }
 private struct PickyToolActivityUpdatedPayload: Decodable { let sessionId: String; let tool: PickyToolActivity }

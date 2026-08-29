@@ -324,11 +324,17 @@ struct PickyAgentDaemonConfiguration: Equatable {
         env["PICKY_AGENTD_TOKEN"] = token
         env["PICKY_AGENTD_PARENT_PID"] = String(ProcessInfo.processInfo.processIdentifier)
         env["PICKY_APP_SUPPORT_DIR"] = appSupportRoot.path
-        let piAgentDir = PickyPiInstallation.resolve(
+        let resolvedPi = PickyPiInstallation.resolve(
             preferences: PickyPiInstallationPreferences(binaryPath: piBinaryPath, codingAgentDir: piCodingAgentDir),
             environment: env
-        ).codingAgentDirURL
+        )
+        let piAgentDir = resolvedPi.codingAgentDirURL
         env[PickyPiInstallation.environmentAgentDirKey] = piAgentDir.path
+        env.removeValue(forKey: "PICKY_PI_BINARY_PATH")
+        if let binaryURL = resolvedPi.binaryURL,
+           Self.isExecutableRegularFile(atPath: binaryURL.path) {
+            env["PICKY_PI_BINARY_PATH"] = binaryURL.path
+        }
         let piBinPath = piAgentDir.appendingPathComponent("bin", isDirectory: true).path
         if !(env["PATH"] ?? "").split(separator: ":").contains(Substring(piBinPath)) {
             env["PATH"] = "\(piBinPath):\(env["PATH"] ?? "")"

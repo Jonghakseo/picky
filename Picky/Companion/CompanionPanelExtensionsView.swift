@@ -13,11 +13,33 @@ import Combine
 import SwiftUI
 
 struct PickyCuratedPlugin: Identifiable {
+    enum Kind: Equatable {
+        case standard
+        case cron
+    }
+
     let id: String
     let titleKey: String
     let descriptionKey: String
     let commandName: String
     let source: String
+    let kind: Kind
+
+    init(
+        id: String,
+        titleKey: String,
+        descriptionKey: String,
+        commandName: String,
+        source: String,
+        kind: Kind = .standard
+    ) {
+        self.id = id
+        self.titleKey = titleKey
+        self.descriptionKey = descriptionKey
+        self.commandName = commandName
+        self.source = source
+        self.kind = kind
+    }
 
     static let diffReview = PickyCuratedPlugin(
         id: "diff-review",
@@ -57,6 +79,23 @@ struct PickyCuratedPlugin: Identifiable {
         descriptionKey: "extensions.curated.delayedAction.description",
         commandName: "/delay",
         source: "npm:@ryan_nookpi/pi-extension-delayed-action"
+    )
+
+    static let cron = PickyCuratedPlugin(
+        id: "cron",
+        titleKey: "extensions.curated.cron.title",
+        descriptionKey: "extensions.curated.cron.description",
+        commandName: "cron",
+        source: "npm:@ryan_nookpi/pi-extension-cron",
+        kind: .cron
+    )
+
+    static let memoryLayer = PickyCuratedPlugin(
+        id: "memory-layer",
+        titleKey: "extensions.curated.memoryLayer.title",
+        descriptionKey: "extensions.curated.memoryLayer.description",
+        commandName: "remember",
+        source: "npm:@ryan_nookpi/pi-extension-memory-layer"
     )
 
     static let todoWriteOverlay = PickyCuratedPlugin(
@@ -113,6 +152,8 @@ struct PickyCuratedPlugin: Identifiable {
         .generativeUI,
         .autoName,
         .delayedAction,
+        .cron,
+        .memoryLayer,
         .todoWriteOverlay,
         .subagent,
         .clipboard,
@@ -176,6 +217,10 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
         mutate(plugin, operation: .update, pluginReloadController: pluginReloadController)
     }
 
+    func setup(_ plugin: PickyCuratedPlugin, pluginReloadController: PickyPluginReloadController) {
+        mutate(plugin, operation: .setup, pluginReloadController: pluginReloadController)
+    }
+
     func checkUpdatesIfNeeded(pluginReloadController: PickyPluginReloadController) {
         guard !hasCheckedForUpdates, !isCheckingForUpdates else { return }
         isCheckingForUpdates = true
@@ -198,6 +243,14 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
         case install
         case remove
         case update
+        case setup
+
+        var changesPackage: Bool {
+            switch self {
+            case .install, .remove, .update: true
+            case .setup: false
+            }
+        }
     }
 
     private func mutate(
@@ -220,19 +273,32 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
                 result = await pluginReloadController.removeCuratedPackage(source: source)
             case .update:
                 result = await pluginReloadController.updateCuratedPackage(source: source)
+            case .setup:
+                result = await pluginReloadController.setupCuratedPackage(source: source)
             }
             guard !Task.isCancelled else { return }
-            self?.applyMutationResult(pluginID: pluginID, source: source, result: result)
+            self?.applyMutationResult(pluginID: pluginID, source: source, operation: operation, result: result)
         }
     }
 
-    private func applyMutationResult(pluginID: String, source: String, result: Result<Void, PickyCuratedPluginInstaller.CommandError>) {
+    private func applyMutationResult(
+        pluginID: String,
+        source: String,
+        operation: Operation,
+        result: Result<Void, PickyCuratedPluginInstaller.CommandError>
+    ) {
         switch result {
         case .success:
-            availableUpdateSources.remove(source)
+            if operation.changesPackage {
+                availableUpdateSources.remove(source)
+                onPluginStateChanged?()
+            }
             lastError = nil
-            onPluginStateChanged?()
         case .failure(let error):
+            if error.packageChanged {
+                availableUpdateSources.remove(source)
+                onPluginStateChanged?()
+            }
             lastError = error.localizedDescription
         }
         if let index = rows.firstIndex(where: { $0.plugin.id == pluginID }) {
@@ -251,6 +317,11 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
 }
 
 struct CompanionPanelExtensionsView: View {
+    private enum Route {
+        case catalog
+        case cronJobs
+    }
+
     @ObservedObject var companionManager: CompanionManager
     /// Reload safety observes only the registry's running aggregate; streamed
     /// messages and other non-status changes cannot redraw this surface.
@@ -260,8 +331,22 @@ struct CompanionPanelExtensionsView: View {
     @State private var curatedInfoPopoverPluginID: String?
     @State private var confirmPresented = false
     @State private var pendingBusySnapshot: BusySnapshot = .empty
+    @State private var pendingCronRemoval: PickyCuratedPlugin?
+    @State private var route: Route = .catalog
 
     var body: some View {
+        Group {
+            switch route {
+            case .catalog:
+                catalogContent
+            case .cronJobs:
+                PickyCronJobsView(onBack: { route = .catalog })
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var catalogContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             reloadBanner
                 .padding(.bottom, pluginReloadController.hasPendingChanges || pluginReloadController.lastResult != nil ? 12 : 0)
@@ -274,7 +359,6 @@ struct CompanionPanelExtensionsView: View {
 
             curatedSection
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .alert(
             L10n.t("status.extensions.reload.confirm.title"),
             isPresented: $confirmPresented,
@@ -466,6 +550,27 @@ struct CompanionPanelExtensionsView: View {
             }
             curatedViewModel.checkUpdatesIfNeeded(pluginReloadController: pluginReloadController)
         }
+        .alert(
+            L10n.t("extensions.cron.remove.confirm.title"),
+            isPresented: Binding(
+                get: { pendingCronRemoval != nil },
+                set: { if !$0 { pendingCronRemoval = nil } }
+            ),
+            actions: {
+                Button(L10n.t("extensions.cron.remove.confirm.cancel"), role: .cancel) {
+                    pendingCronRemoval = nil
+                }
+                Button(L10n.t("extensions.cron.remove.confirm.proceed"), role: .destructive) {
+                    if let plugin = pendingCronRemoval {
+                        curatedViewModel.remove(plugin, pluginReloadController: pluginReloadController)
+                    }
+                    pendingCronRemoval = nil
+                }
+            },
+            message: {
+                Text("extensions.cron.remove.confirm.message")
+            }
+        )
     }
 
     private func curatedPluginRow(_ row: PickyCuratedPluginsViewModel.Row) -> some View {
@@ -546,22 +651,60 @@ struct CompanionPanelExtensionsView: View {
     @ViewBuilder
     private func curatedActionButton(for row: PickyCuratedPluginsViewModel.Row) -> some View {
         if row.status.isInstalled {
-            HStack(spacing: 6) {
-                if row.hasUpdate {
-                    Button(action: { curatedViewModel.update(row.plugin, pluginReloadController: pluginReloadController) }) {
-                        curatedButtonLabel(text: "status.extensions.action.update", isBusy: row.isBusy)
+            if row.plugin.kind == .cron {
+                HStack(spacing: DS.Spacing.space1) {
+                    Button(L10n.t("extensions.cron.action.viewJobs")) {
+                        route = .cronJobs
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(row.isBusy)
+
+                    Menu {
+                        Button(L10n.t("extensions.cron.action.setupDaemon")) {
+                            curatedViewModel.setup(row.plugin, pluginReloadController: pluginReloadController)
+                        }
+                        if row.hasUpdate {
+                            Button(L10n.t("status.extensions.action.update")) {
+                                curatedViewModel.update(row.plugin, pluginReloadController: pluginReloadController)
+                            }
+                        }
+                        Divider()
+                        Button(L10n.t("status.extensions.action.remove"), role: .destructive) {
+                            pendingCronRemoval = row.plugin
+                        }
+                    } label: {
+                        if row.isBusy {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: "ellipsis.circle")
+                                .accessibilityLabel(L10n.t("extensions.cron.action.more"))
+                        }
+                    }
+                    .menuStyle(.borderlessButton)
+                    .controlSize(.small)
+                    .disabled(row.isBusy)
+                    .help(L10n.t("extensions.cron.action.more"))
+                }
+            } else {
+                HStack(spacing: 6) {
+                    if row.hasUpdate {
+                        Button(action: { curatedViewModel.update(row.plugin, pluginReloadController: pluginReloadController) }) {
+                            curatedButtonLabel(text: "status.extensions.action.update", isBusy: row.isBusy)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(row.isBusy)
+                    }
+
+                    Button(action: { curatedViewModel.remove(row.plugin, pluginReloadController: pluginReloadController) }) {
+                        curatedButtonLabel(text: "status.extensions.action.remove", isBusy: row.isBusy)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .disabled(row.isBusy)
                 }
-
-                Button(action: { curatedViewModel.remove(row.plugin, pluginReloadController: pluginReloadController) }) {
-                    curatedButtonLabel(text: "status.extensions.action.remove", isBusy: row.isBusy)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(row.isBusy)
             }
         } else {
             Button(action: { curatedViewModel.install(row.plugin, pluginReloadController: pluginReloadController) }) {

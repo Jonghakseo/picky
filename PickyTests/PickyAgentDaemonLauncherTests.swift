@@ -831,6 +831,47 @@ struct PickyAgentDaemonLauncherTests {
         #expect(paths.filter { $0 == "/usr/bin" }.count == 1)
     }
 
+    @Test func daemonEnvironmentPassesResolvedExecutablePiPathToAgentd() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-pi-\(UUID().uuidString)", isDirectory: true)
+        let pi = temp.appendingPathComponent("custom-pi")
+        try makeExecutableFile(at: pi)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        var configuration = PickyAgentDaemonConfiguration(
+            port: 19040,
+            token: "token-123",
+            appSupportRoot: temp,
+            defaultCwd: "/tmp",
+            piBinaryPath: pi.path,
+            runtime: nil,
+            workingDirectory: temp,
+            executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+            arguments: ["node", "dist/index.js"]
+        )
+        configuration.baseEnvironment = ["PATH": "/usr/bin"]
+
+        #expect(configuration.environment["PICKY_PI_BINARY_PATH"] == pi.path)
+    }
+
+    @Test func daemonEnvironmentOmitsNonExecutablePiPath() {
+        var configuration = PickyAgentDaemonConfiguration(
+            port: 19041,
+            token: "token-123",
+            appSupportRoot: URL(fileURLWithPath: "/tmp/picky-support"),
+            defaultCwd: "/tmp",
+            piBinaryPath: "/tmp/missing-pi",
+            runtime: nil,
+            workingDirectory: URL(fileURLWithPath: "/tmp/agentd"),
+            executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+            arguments: ["node", "dist/index.js"]
+        )
+        configuration.baseEnvironment = [
+            "PATH": "/usr/bin",
+            "PICKY_PI_BINARY_PATH": "/tmp/stale-pi"
+        ]
+
+        #expect(configuration.environment["PICKY_PI_BINARY_PATH"] == nil)
+    }
+
     @Test func primaryEnvironmentTrimsMainAgentModelAndKeepsPickleOverrides() throws {
         var configuration = PickyAgentDaemonConfiguration(
             port: 19017,

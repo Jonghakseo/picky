@@ -1,0 +1,6 @@
+{
+  "id": "cmd-package-setup-001",
+  "protocolVersion": "2026-08-25",
+  "type": "setupPackage",
+  "source": "npm:@ryan_nookpi/pi-extension-cron"
+}

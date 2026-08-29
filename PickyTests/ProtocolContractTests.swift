@@ -241,6 +241,40 @@ struct ProtocolContractTests {
         #expect(decoded.context?.id == "context-test-001")
     }
 
+    @Test func encodesSetupPackageCommand() throws {
+        let command = PickyCommandEnvelope(
+            id: "cmd-package-setup",
+            type: .setupPackage,
+            source: "npm:@ryan_nookpi/pi-extension-cron"
+        )
+
+        let decoded = try JSONDecoder.pickyAgentProtocolDecoder().decode(
+            PickyCommandEnvelope.self,
+            from: JSONEncoder.pickyAgentProtocolEncoder().encode(command)
+        )
+
+        #expect(decoded.type == .setupPackage)
+        #expect(decoded.source == "npm:@ryan_nookpi/pi-extension-cron")
+    }
+
+    @Test func decodesSetupCompletionAndLegacyPackageCompletion() throws {
+        let decoder = JSONDecoder.pickyAgentProtocolDecoder()
+        let setupJSON = Data(#"{"id":"event-package-setup","protocolVersion":"2026-08-25","timestamp":"2026-08-25T00:00:00.000Z","type":"packageOperationCompleted","requestId":"cmd-package-setup","operation":"setup","source":"npm:@ryan_nookpi/pi-extension-cron","ok":false,"errorMessage":"LaunchAgent did not load","packageChanged":false}"#.utf8)
+        let legacyJSON = Data(#"{"id":"event-package-install","protocolVersion":"2026-08-25","timestamp":"2026-08-25T00:00:00.000Z","type":"packageOperationCompleted","requestId":"cmd-package-install","operation":"install","source":"npm:@example/plugin","ok":true}"#.utf8)
+
+        let setup = try decoder.decode(PickyEventEnvelope.self, from: setupJSON)
+        let legacy = try decoder.decode(PickyEventEnvelope.self, from: legacyJSON)
+
+        guard case .packageOperationCompleted(let setupResult) = setup.event,
+              case .packageOperationCompleted(let legacyResult) = legacy.event else {
+            Issue.record("Expected package completion events")
+            return
+        }
+        #expect(setupResult.operation == .setup)
+        #expect(setupResult.packageChanged == false)
+        #expect(legacyResult.packageChanged == nil)
+    }
+
     @Test func encodesArmedPickleVisualDslCapability() throws {
         let context = PickyContextPacket(
             id: "context-armed-pickle",

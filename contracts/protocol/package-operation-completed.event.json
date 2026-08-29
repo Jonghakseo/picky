@@ -6,5 +6,6 @@
   "requestId": "cmd-package-install-001",
   "operation": "install",
   "source": "npm:@example/pi-extension",
-  "ok": true
+  "ok": true,
+  "packageChanged": true
 }

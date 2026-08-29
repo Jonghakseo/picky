@@ -16,6 +16,15 @@ struct PickyCuratedPluginInstallerTests {
         #expect(subagent?.source == "npm:@ryan_nookpi/pi-extension-subagent")
     }
 
+    @Test func curatedDefaultsIncludeCronAndMemoryLayer() {
+        let cron = PickyCuratedPlugin.curatedDefaults.first { $0.id == "cron" }
+        let memory = PickyCuratedPlugin.curatedDefaults.first { $0.id == "memory-layer" }
+
+        #expect(cron?.source == "npm:@ryan_nookpi/pi-extension-cron")
+        #expect(cron?.kind == .cron)
+        #expect(memory?.source == "npm:@ryan_nookpi/pi-extension-memory-layer")
+    }
+
     @Test func statusReportsNotInstalledWhenSettingsAreMissing() throws {
         let scratch = try ScratchCuratedPlugin()
 
@@ -98,6 +107,64 @@ struct PickyCuratedPluginInstallerTests {
         #expect(throws: Never.self) { try result.get() }
     }
 
+    @Test func setupSendsSetupOnlyCommandAndWaitsForDaemonCompletion() async throws {
+        let client = FakeCuratedPluginAgentClient()
+        var sentCommand: PickyCommandEnvelope?
+        client.sendHandler = { command in
+            sentCommand = command
+            client.complete(requestId: command.id, operation: .setup, source: command.source ?? "", ok: true, packageChanged: false)
+        }
+
+        let result = await PickyCuratedPluginInstaller.setup(source: source, client: client)
+
+        #expect(sentCommand?.type == .setupPackage)
+        #expect(sentCommand?.source == source)
+        #expect(throws: Never.self) { try result.get() }
+    }
+
+    @Test func installReportsStructuredPartialFailureWhenPackageChangedBeforeSetupFailed() async {
+        let client = FakeCuratedPluginAgentClient()
+        client.sendHandler = { command in
+            client.complete(
+                requestId: command.id,
+                operation: .install,
+                source: command.source ?? "",
+                ok: false,
+                errorMessage: "LaunchAgent did not load",
+                packageChanged: true
+            )
+        }
+
+        let result = await PickyCuratedPluginInstaller.install(source: source, client: client)
+
+        if case .failure(.partialFailure(let message)) = result {
+            #expect(message == "LaunchAgent did not load")
+        } else {
+            Issue.record("Expected structured partial failure")
+        }
+    }
+
+    @Test func legacyFailureWithoutPackageChangedRemainsGeneric() async {
+        let client = FakeCuratedPluginAgentClient()
+        client.sendHandler = { command in
+            client.complete(
+                requestId: command.id,
+                operation: .install,
+                source: command.source ?? "",
+                ok: false,
+                errorMessage: "Package operation failed"
+            )
+        }
+
+        let result = await PickyCuratedPluginInstaller.install(source: source, client: client)
+
+        if case .failure(.failed(let message)) = result {
+            #expect(message == "Package operation failed")
+        } else {
+            Issue.record("Expected generic legacy failure")
+        }
+    }
+
     @Test func checkUpdatesReturnsSourcesFromMatchingDaemonResponse() async {
         let client = FakeCuratedPluginAgentClient()
         var sentCommand: PickyCommandEnvelope?
@@ -177,6 +244,64 @@ struct PickyCuratedPluginInstallerTests {
         #expect(viewModel.rows.first?.hasUpdate == false)
     }
 
+    @Test @MainActor func partialInstallRefreshesInstalledStatusAndNotesReload() async throws {
+        let plugin = PickyCuratedPlugin.cron
+        let client = FakeCuratedPluginAgentClient()
+        let controller = PickyPluginReloadController(client: client)
+        var installed = false
+        var changeCount = 0
+        let viewModel = PickyCuratedPluginsViewModel(
+            plugins: [plugin],
+            statusForSource: { _ in installed ? .installed(isPinned: false) : .notInstalled }
+        )
+        viewModel.onPluginStateChanged = { changeCount += 1 }
+        client.sendHandler = { command in
+            installed = true
+            client.complete(
+                requestId: command.id,
+                operation: .install,
+                source: command.source ?? "",
+                ok: false,
+                errorMessage: "LaunchAgent did not load",
+                packageChanged: true
+            )
+        }
+
+        viewModel.install(plugin, pluginReloadController: controller)
+        try await waitUntil { viewModel.rows.first?.isBusy == false }
+
+        #expect(viewModel.rows.first?.status == .installed(isPinned: false))
+        #expect(viewModel.lastError == "LaunchAgent did not load")
+        #expect(changeCount == 1)
+    }
+
+    @Test @MainActor func setupSuccessDoesNotMarkPluginReloadPending() async throws {
+        let plugin = PickyCuratedPlugin.cron
+        let client = FakeCuratedPluginAgentClient()
+        let controller = PickyPluginReloadController(client: client)
+        var changeCount = 0
+        let viewModel = PickyCuratedPluginsViewModel(
+            plugins: [plugin],
+            statusForSource: { _ in .installed(isPinned: false) }
+        )
+        viewModel.onPluginStateChanged = { changeCount += 1 }
+        client.sendHandler = { command in
+            client.complete(
+                requestId: command.id,
+                operation: .setup,
+                source: command.source ?? "",
+                ok: true,
+                packageChanged: false
+            )
+        }
+
+        viewModel.setup(plugin, pluginReloadController: controller)
+        try await waitUntil { viewModel.rows.first?.isBusy == false }
+
+        #expect(viewModel.lastError == nil)
+        #expect(changeCount == 0)
+    }
+
     @Test func updateSendsPackageCommandAndWaitsForDaemonCompletion() async throws {
         let client = FakeCuratedPluginAgentClient()
         var sentCommand: PickyCommandEnvelope?
@@ -249,18 +374,33 @@ struct PickyCuratedPluginInstallerTests {
         }
         Issue.record("Expected package operation timeout")
     }
+    @MainActor
+    private func waitUntil(
+        timeout: TimeInterval = 2,
+        _ condition: @escaping @MainActor () -> Bool
+    ) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() {
+            if Date() >= deadline {
+                Issue.record("Timed out waiting for curated plugin operation")
+                return
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+    }
 }
 
 private final class FakeCuratedPluginAgentClient: PickyAgentClient {
-    private let continuation: AsyncStream<PickyClientEvent>.Continuation
-    let events: AsyncStream<PickyClientEvent>
-    var sendHandler: ((PickyCommandEnvelope) -> Void)?
-
-    init() {
-        var continuation: AsyncStream<PickyClientEvent>.Continuation!
-        events = AsyncStream { continuation = $0 }
-        self.continuation = continuation
+    private let subscriberLock = NSLock()
+    private var subscriberContinuations: [UUID: AsyncStream<PickyClientEvent>.Continuation] = [:]
+    var events: AsyncStream<PickyClientEvent> {
+        AsyncStream { continuation in
+            subscriberLock.lock()
+            subscriberContinuations[UUID()] = continuation
+            subscriberLock.unlock()
+        }
     }
+    var sendHandler: ((PickyCommandEnvelope) -> Void)?
 
     func connect() async {}
     func submit(_ submission: PickyAgentSubmission) async throws -> PickyAgentSubmissionReceipt {
@@ -272,11 +412,11 @@ private final class FakeCuratedPluginAgentClient: PickyAgentClient {
     func disconnect() {}
 
     func emitDisconnected() {
-        continuation.yield(.disconnected)
+        emit(.disconnected)
     }
 
     func availableUpdates(commandId: String, sources: [String], failed: Bool? = nil) {
-        continuation.yield(.protocolEvent(PickyEventEnvelope(
+        emit(.protocolEvent(PickyEventEnvelope(
             id: "event-package-updates-\(commandId)",
             protocolVersion: pickyAgentProtocolVersion,
             timestamp: Date(),
@@ -293,9 +433,10 @@ private final class FakeCuratedPluginAgentClient: PickyAgentClient {
         operation: PickyPackageOperation,
         source: String,
         ok: Bool,
-        errorMessage: String? = nil
+        errorMessage: String? = nil,
+        packageChanged: Bool? = nil
     ) {
-        continuation.yield(.protocolEvent(PickyEventEnvelope(
+        emit(.protocolEvent(PickyEventEnvelope(
             id: "event-package-\(requestId)",
             protocolVersion: pickyAgentProtocolVersion,
             timestamp: Date(),
@@ -304,9 +445,17 @@ private final class FakeCuratedPluginAgentClient: PickyAgentClient {
                 operation: operation,
                 source: source,
                 ok: ok,
-                errorMessage: errorMessage
+                errorMessage: errorMessage,
+                packageChanged: packageChanged
             ))
         )))
+    }
+
+    private func emit(_ event: PickyClientEvent) {
+        subscriberLock.lock()
+        let continuations = Array(subscriberContinuations.values)
+        subscriberLock.unlock()
+        continuations.forEach { $0.yield(event) }
     }
 }
 

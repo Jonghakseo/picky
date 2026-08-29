@@ -14,7 +14,7 @@ import type { SessionSupervisor } from "./session-supervisor.js";
 import { logAgentd } from "./local-log.js";
 import { EdgeTTSServiceError } from "./edge-tts-service.js";
 import type { EdgeTTSService } from "./edge-tts-service.js";
-import { PackageOperations, type PackageManager, type PackageManagerFactoryOptions } from "./application/package-operations.js";
+import { PackageOperations, type CronPackageLifecycleLike, type PackageManager, type PackageManagerFactoryOptions } from "./application/package-operations.js";
 export { createDefaultPackageManager, type DefaultPackageManagerDependencies } from "./application/package-operations.js";
 import type { PiOAuthHandling } from "./application/pi-oauth-service.js";
 import { SettingsControlBroker, SettingsControlError } from "./application/settings-control-broker.js";
@@ -27,6 +27,8 @@ export interface AgentdServerOptions {
   createPackageManager?: (options: PackageManagerFactoryOptions) => PackageManager;
   /** Overrides Pi's agent directory for package-manager isolation in tests. */
   getAgentDir?: () => string;
+  /** Provides a hermetic Cron lifecycle seam for package-operation tests. */
+  createCronLifecycle?: (packageManager: PackageManager) => CronPackageLifecycleLike;
   /** Bounds client-visible package operations; the queue remains held until underlying mutation exits. */
   packageOperationTimeoutMs?: number;
   setDefaultCwd?: (cwd: string) => void;
@@ -112,6 +114,7 @@ export class AgentdServer {
   constructor(private readonly options: AgentdServerOptions) {
     this.packageOperations = new PackageOperations({
       createPackageManager: options.createPackageManager,
+      createCronLifecycle: options.createCronLifecycle,
       getAgentDir: options.getAgentDir,
       packageOperationTimeoutMs: options.packageOperationTimeoutMs,
       send: (ws, event) => { this.send(ws, event); },
@@ -643,6 +646,7 @@ export class AgentdServer {
       answerExtensionUi: (cmd) => this.options.supervisor.answerExtensionUi(cmd.sessionId, cmd.requestId, cmd.value),
       answerMainExtensionUi: (cmd) => this.options.supervisor.answerMainExtensionUi(cmd.requestId, cmd.value),
       installPackage: (cmd) => this.packageOperations.runOperation(ws, cmd.id, "install", cmd.source),
+      setupPackage: (cmd) => this.packageOperations.runSetup(ws, cmd.id, cmd.source),
       removePackage: (cmd) => this.packageOperations.runOperation(ws, cmd.id, "remove", cmd.source),
       checkPackageUpdates: (cmd) => this.packageOperations.runUpdateCheck(ws, cmd.id),
       updatePackage: (cmd) => this.packageOperations.runOperation(ws, cmd.id, "update", cmd.source),
@@ -1234,7 +1238,7 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, requestId: command.requestId, promptId: command.promptId, cancelled: command.cancelled ? 1 : 0, valueChars: command.value?.length };
     case "cancelPiOAuth":
       return { commandId: command.id, type: command.type, requestId: command.requestId };
-    case "installPackage":
+    case "installPackage": case "setupPackage":
     case "removePackage":
     case "updatePackage":
       return { commandId: command.id, type: command.type, sourceChars: command.source.length };

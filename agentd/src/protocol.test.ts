@@ -384,6 +384,13 @@ describe("protocol contract fixtures", () => {
     })).toMatchObject({ type: "installPackage", source: "npm:@example/plugin" });
 
     expect(CommandEnvelopeSchema.parse({
+      id: "cmd-package-setup",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "setupPackage",
+      source: "npm:@ryan_nookpi/pi-extension-cron",
+    })).toMatchObject({ type: "setupPackage", source: "npm:@ryan_nookpi/pi-extension-cron" });
+
+    expect(CommandEnvelopeSchema.parse({
       id: "cmd-package-remove",
       protocolVersion: PROTOCOL_VERSION,
       type: "removePackage",
@@ -444,6 +451,18 @@ describe("protocol contract fixtures", () => {
       ok: false,
       errorMessage: "npm was not found",
     })).toMatchObject({ type: "packageOperationCompleted", operation: "update", ok: false });
+
+    expect(EventEnvelopeSchema.parse({
+      id: "event-package-setup-completed",
+      protocolVersion: PROTOCOL_VERSION,
+      timestamp: "2026-07-19T00:00:00.000Z",
+      type: "packageOperationCompleted",
+      requestId: "cmd-package-setup",
+      operation: "setup",
+      source: "npm:@ryan_nookpi/pi-extension-cron",
+      ok: true,
+      packageChanged: false,
+    })).toMatchObject({ type: "packageOperationCompleted", operation: "setup", packageChanged: false });
   });
 
   it("parses slim todo state updates including authoritative clears", () => {

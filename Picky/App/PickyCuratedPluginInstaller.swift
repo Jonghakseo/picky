@@ -27,18 +27,24 @@ enum PickyCuratedPluginInstaller {
 
     enum CommandError: LocalizedError, Equatable {
         case failed(String)
+        case partialFailure(String)
         case timedOut
         case disconnected
 
         var errorDescription: String? {
             switch self {
-            case .failed(let message):
+            case .failed(let message), .partialFailure(let message):
                 return message
             case .timedOut:
                 return "Timed out waiting for package operation to finish."
             case .disconnected:
                 return "picky-agentd disconnected while performing the package operation."
             }
+        }
+
+        var packageChanged: Bool {
+            if case .partialFailure = self { return true }
+            return false
         }
     }
 
@@ -64,7 +70,7 @@ enum PickyCuratedPluginInstaller {
     static func install(
         source: String,
         client: any PickyAgentClient,
-        timeoutNanoseconds: UInt64 = 120_000_000_000
+        timeoutNanoseconds: UInt64 = 180_000_000_000
     ) async -> Result<Void, CommandError> {
         await run(operation: .install, source: source, client: client, timeoutNanoseconds: timeoutNanoseconds)
     }
@@ -73,7 +79,7 @@ enum PickyCuratedPluginInstaller {
     static func remove(
         source: String,
         client: any PickyAgentClient,
-        timeoutNanoseconds: UInt64 = 120_000_000_000,
+        timeoutNanoseconds: UInt64 = 180_000_000_000,
         homeURL: URL = FileManager.default.homeDirectoryForCurrentUser,
         fileManager: FileManager = .default,
         preferences: PickyPiInstallationPreferences? = nil
@@ -95,9 +101,18 @@ enum PickyCuratedPluginInstaller {
     static func update(
         source: String,
         client: any PickyAgentClient,
-        timeoutNanoseconds: UInt64 = 120_000_000_000
+        timeoutNanoseconds: UInt64 = 180_000_000_000
     ) async -> Result<Void, CommandError> {
         await run(operation: .update, source: source, client: client, timeoutNanoseconds: timeoutNanoseconds)
+    }
+
+    @discardableResult
+    static func setup(
+        source: String,
+        client: any PickyAgentClient,
+        timeoutNanoseconds: UInt64 = 180_000_000_000
+    ) async -> Result<Void, CommandError> {
+        await run(operation: .setup, source: source, client: client, timeoutNanoseconds: timeoutNanoseconds)
     }
 
     /// A best-effort background lookup. Callers keep failures silent but retain
@@ -162,6 +177,8 @@ enum PickyCuratedPluginInstaller {
             commandType = .removePackage
         case .update:
             commandType = .updatePackage
+        case .setup:
+            commandType = .setupPackage
         }
         let command = PickyCommandEnvelope(type: commandType, source: source)
         // Subscribe before sending so a fast daemon completion cannot be missed.
@@ -182,7 +199,11 @@ enum PickyCuratedPluginInstaller {
                                 continue
                             }
                             guard result.ok else {
-                                throw CommandError.failed(result.errorMessage ?? "Package operation failed.")
+                                let message = result.errorMessage ?? "Package operation failed."
+                                if result.packageChanged == true {
+                                    throw CommandError.partialFailure(message)
+                                }
+                                throw CommandError.failed(message)
                             }
                             return
                         case .disconnected:

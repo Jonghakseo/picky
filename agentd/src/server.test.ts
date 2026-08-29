@@ -1258,6 +1258,49 @@ describe("AgentdServer", () => {
     expect(configuredSettings.getNpmCommand()).toBeUndefined();
   });
 
+  it("routes setupPackage to Cron lifecycle reconciliation without mutating package settings", async () => {
+    const installAndPersist = vi.fn();
+    const reconcile = vi.fn(async () => ({ ok: true }));
+    await server.stop();
+    server = new AgentdServer({
+      port: 0,
+      token: "test-token",
+      supervisor,
+      getAgentDir: () => "/tmp/picky-agent",
+      createPackageManager: () => ({
+        installAndPersist,
+        removeAndPersist: vi.fn(),
+        checkAvailableUpdates: vi.fn(async () => []),
+        update: vi.fn(),
+        setProgressCallback: vi.fn(),
+      }),
+      createCronLifecycle: () => ({ reconcile }),
+    });
+    port = await server.start();
+
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({
+      id: "cmd-package-setup",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "setupPackage",
+      source: "npm:@ryan_nookpi/pi-extension-cron",
+    }));
+
+    await expect(waitForEvent(ws, "packageOperationCompleted")).resolves.toMatchObject({
+      requestId: "cmd-package-setup",
+      operation: "setup",
+      ok: true,
+      packageChanged: false,
+    });
+    expect(installAndPersist).not.toHaveBeenCalled();
+    expect(reconcile).toHaveBeenCalledWith({
+      source: "npm:@ryan_nookpi/pi-extension-cron",
+      agentDir: "/tmp/picky-agent",
+      desiredState: "installed",
+    });
+    ws.close();
+  });
+
   it("runs package installs through an injected manager and relays progress to the requester", async () => {
     let progressCallback: ((event: { type: "start"; action: "install"; source: string; message: string }) => void) | undefined;
     let resolveInstall: (() => void) | undefined;

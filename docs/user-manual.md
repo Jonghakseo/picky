@@ -143,6 +143,7 @@ Default shortcuts:
 | --- | --- | --- |
 | Push-to-Talk | Control + Option | Hold to speak; release to send. |
 | Quick Input | Double-tap Control | Opens a text composer near the cursor. |
+| Focus Pickle | Left Command + Right Command | Opens the first unread Pickle on the cursor's display and gives its HUD keyboard focus. If none is unread, opens the most recently opened Pickle, then the first active Pickle. |
 
 Shortcuts are configurable in **Settings → Shortcuts**.
 
@@ -151,11 +152,12 @@ Supported shortcut shapes:
 - Push-to-Talk:
   - Modifier-only combo, such as `Control + Option`.
   - Modifier + key combo, such as `Control + Option + Space`.
-- Quick Input:
+- Quick Input and Focus Pickle:
   - Double-tap a single modifier, such as Control twice.
   - Modifier + key combo.
+- Focus Pickle also supports the side-specific physical Left Command + Right Command chord used by default.
 
-The shortcut editor prevents invalid or conflicting shortcuts. Use **Reset to defaults** to restore the defaults.
+The shortcut editor prevents invalid or conflicting shortcuts. Use **Reset to defaults** to restore all three defaults.
 
 ## 4. Push-to-Talk voice input
 
@@ -816,8 +818,9 @@ The Picky main agent can also run these commands itself: asking Picky to "hide t
 | --- | --- | --- |
 | Push to Talk | Control + Option | Hold to start voice; release to send. |
 | Quick Input | Double-tap Control | Opens quick text composer near cursor. |
+| Focus Pickle | Left Command + Right Command | Opens the unread-first Pickle on the cursor's display and gives its HUD keyboard focus. |
 
-Use **Change**, then **Save** or **Cancel**. Conflicts are rejected. **Reset to defaults** restores both defaults.
+Use **Change**, then **Save** or **Cancel**. Conflicts are rejected. **Reset to defaults** restores all three defaults.
 
 ### 13.3 Picky
 

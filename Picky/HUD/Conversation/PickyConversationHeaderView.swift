@@ -1100,6 +1100,9 @@ struct PickyHeaderContextUsageDisplay {
         case 70..<90:
             self.barColor = DS.Colors.warning
             self.textColor = DS.Colors.warningText
+        case 50..<70:
+            self.barColor = DS.Colors.caution
+            self.textColor = DS.Colors.cautionText
         default:
             self.barColor = DS.Colors.textTertiary
             self.textColor = DS.Colors.textSecondary

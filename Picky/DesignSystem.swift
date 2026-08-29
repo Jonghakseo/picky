@@ -145,6 +145,15 @@ enum DS {
         /// Warning text — darker on light surfaces, brighter on dark for contrast.
         static let warningText = Color(light: Color(hex: "#B45309"), dark: Color(hex: "#F1A10D"))        // Radix Amber 11
 
+        /// Caution — one step below `warning` on the ramp neutral → caution →
+        /// warning → destructive. Used by the context-usage meter's 50-69% band.
+        /// Dark keeps a dimmer yellow than `warning` so the ramp escalates in
+        /// brightness instead of peaking at the caution band.
+        static let caution = Color(light: Color(hex: "#F5D90A"), dark: Color(hex: "#D9C20A"))   // Radix Yellow 9 / dimmed
+
+        /// Caution text — darker on light surfaces, brighter on dark.
+        static let cautionText = Color(light: Color(hex: "#9E6C00"), dark: Color(hex: "#CBB43C"))   // Radix Yellow 11 / dimmed
+
         /// Info/feature highlight — used for prompt card headers, code highlights.
         /// Lighter than accentText so informational elements are visually distinct
         /// from interactive accent-colored elements.

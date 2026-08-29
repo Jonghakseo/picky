@@ -72,6 +72,8 @@ if [ "$TARGET" = "conversation-context" ]; then
     context-popover-ready-light-ko.png
     context-popover-unavailable-dark-ko.png
     context-popover-compacting-dark-ko.png
+    context-band-ramp-dark-ko.png
+    context-band-ramp-light-ko.png
   )
 
   rm -rf "$OUTPUT"

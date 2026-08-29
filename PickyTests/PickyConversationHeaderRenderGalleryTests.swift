@@ -166,7 +166,38 @@ struct PickyConversationHeaderRenderGalleryTests {
                     onCompact: {}
                 ))
             ),
+            Scene(
+                name: "context-band-ramp-dark-ko.png",
+                appearance: .dark,
+                content: AnyView(contextBandRamp)
+            ),
+            Scene(
+                name: "context-band-ramp-light-ko.png",
+                appearance: .light,
+                content: AnyView(contextBandRamp)
+            ),
         ]
+    }
+
+    /// One pill per usage band so the neutral / caution / warning / destructive
+    /// ramp can be compared in a single artifact.
+    private var contextBandRamp: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.sm) {
+            ForEach([42, 68, 84, 96], id: \.self) { percent in
+                PickyHeaderSessionMetaPill(
+                    presentation: PickyConversationHeaderMetaPresentation(
+                        assistantRun: nil,
+                        contextUsage: PickyContextUsage(
+                            tokens: 2_000 * percent,
+                            contextWindow: 200_000,
+                            percent: Double(percent)
+                        )
+                    ),
+                    compactionPresentation: .init(status: .completed, lastSummary: "Completed"),
+                    onCompact: {}
+                )
+            }
+        }
     }
 
     private func makeComposerScenes() -> [Scene] {

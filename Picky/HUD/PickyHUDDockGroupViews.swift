@@ -419,12 +419,23 @@ struct PickyHUDDockCollapsedGroupBadge: View {
     var isCommandShortcutHintVisible: Bool = false
     var isSelected: Bool = false
     var isDropTargeted: Bool = false
+    /// This folder's member list is pinned open. The tile keeps its hover lift
+    /// so the persistent state stays readable once the pointer moves away.
+    var isListPinned: Bool = false
     var onTap: () -> Void = {}
+    var onHoverChanged: (Bool) -> Void = { _ in }
     var onReorderBegan: () -> Void = {}
     var onReorderChanged: (CGSize) -> Void = { _ in }
     var onReorderEnded: (CGSize) -> Void = { _ in }
 
     @State private var isHovered = false
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Hover and pinned share one visual so a peek needs no vocabulary of its
+    /// own: while the pointer is on the folder the two are indistinguishable,
+    /// and the difference the user cares about is that a pinned tile stays lit.
+    private var isLifted: Bool { isHovered || isListPinned }
 
     private enum GridCell: Identifiable {
         case member(PickyHUDDockSession)
@@ -482,7 +493,7 @@ struct PickyHUDDockCollapsedGroupBadge: View {
             .pickyDockGroupDrawer(tint: tint, cornerRadius: metrics.iconCornerRadius)
             .overlay(
                 RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
-                    .fill(Color.white.opacity(isHovered ? 0.06 : 0))
+                    .fill(Color.white.opacity(isLifted ? 0.06 : 0))
             )
 
             if unreadCount > 0 {
@@ -522,22 +533,27 @@ struct PickyHUDDockCollapsedGroupBadge: View {
                     .transition(.scale(scale: 0.88, anchor: .topTrailing).combined(with: .opacity))
             }
         }
-        .brightness(isHovered ? 0.04 : 0)
+        .brightness(isLifted ? 0.04 : 0)
         .pickyDockGroupEmphasis(
             isSelected: isSelected,
             isDropTargeted: isDropTargeted,
             cornerRadius: metrics.iconCornerRadius
         )
         .contentShape(RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous))
+        .animation(reduceMotion ? nil : .easeOut(duration: DS.Animation.fast), value: isListPinned)
         .onHover { hovering in
             withAnimation(.easeOut(duration: 0.12)) { isHovered = hovering }
+            onHoverChanged(hovering)
         }
         .overlay {
             // One AppKit owner arbitrates click versus reorder. Keeping this
             // above the badge content avoids the old child Button competing
             // with a parent high-priority SwiftUI drag recognizer.
             PickyHUDDockGroupTileClickHost(
-                onHover: { isHovered = true },
+                onHover: {
+                    isHovered = true
+                    onHoverChanged(true)
+                },
                 onActivate: onTap,
                 onReorderBegan: onReorderBegan,
                 onReorderChanged: onReorderChanged,

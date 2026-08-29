@@ -64,6 +64,13 @@ extension PickyHUDOverlayManager {
     func toggleDockGroupListChild(displayID: CGDirectDisplayID, groupID: String) {
         let entry = dockGroupListChildrenByDisplayID[displayID]
         let openGroupID = entry?.openGroupID ?? entry?.pendingGroupID
+        // A peek of this folder is the pointer's, not the user's, so a click on
+        // it means "keep this open" rather than the pinned toggle's "close".
+        if openGroupID == groupID, entry?.presentation == .peek {
+            pinDockGroupListChild(displayID: displayID)
+            return
+        }
+        endDockGroupPeek(displayID: displayID)
         let nextGroupID = PickyHUDDockGroupListOpenPolicy.toggled(
             openGroupID: openGroupID,
             tappedGroupID: groupID
@@ -72,12 +79,162 @@ extension PickyHUDOverlayManager {
             hideDockGroupListChild(displayID: displayID)
             return
         }
-        showDockGroupListChild(displayID: displayID, groupID: nextGroupID)
+        showDockGroupListChild(displayID: displayID, groupID: nextGroupID, presentation: .pinned)
     }
 
+    // MARK: - Hover peek
+
+    /// Folder hover entry and exit. Entry arms the dwell; exit only disarms it,
+    /// because an open peek is closed by the corridor poll rather than by this
+    /// event, which cannot see the pointer crossing into the panel.
+    func handleDockGroupTileHover(
+        displayID: CGDirectDisplayID,
+        groupID: String,
+        isHovering: Bool
+    ) {
+        guard isHovering else {
+            cancelDockGroupPeekDwell(displayID: displayID)
+            return
+        }
+        let entry = dockGroupListChildrenByDisplayID[displayID]
+        guard PickyHUDDockGroupListHoverPolicy.shouldBeginPeek(
+            hoveredGroupID: groupID,
+            openGroupID: entry?.openGroupID,
+            presentation: entry?.openGroupID == nil ? nil : entry?.presentation,
+            hasVisibleMembers: dockGroupHasVisibleMembers(groupID: groupID)
+        ) else { return }
+        cancelDockGroupPeekDwell(displayID: displayID)
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.dockGroupPeekDwellByDisplayID[displayID] = nil
+            self.showDockGroupListChild(displayID: displayID, groupID: groupID, presentation: .peek)
+        }
+        dockGroupPeekDwellByDisplayID[displayID] = work
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + PickyHUDDockGroupListHoverPolicy.peekDwell,
+            execute: work
+        )
+    }
+
+    /// Promotes the display's peek to a pinned list. Idempotent so the panel's
+    /// mouse-down monitor can call it for every press without extra state.
+    func pinDockGroupListChild(displayID: CGDirectDisplayID) {
+        guard var entry = dockGroupListChildrenByDisplayID[displayID],
+              let groupID = entry.openGroupID,
+              PickyHUDDockGroupListHoverPolicy.presentationAfterPressInsidePanel(
+                  current: entry.presentation
+              ) == .pinned,
+              entry.presentation != .pinned
+        else { return }
+        entry.presentation = .pinned
+        dockGroupListChildrenByDisplayID[displayID] = entry
+        endDockGroupPeek(displayID: displayID)
+        publishDockGroupListPresentation(displayID: displayID)
+        // Keyboard ownership is deliberately deferred to this moment: a peek
+        // must never move Command-numbers, arrows, or Escape off the rail.
+        dockGroupListFocusStore.open(
+            displayID: displayID,
+            groupID: groupID,
+            rowIDs: dockGroupListRowIDs(groupID: groupID)
+        )
+    }
+
+    func cancelDockGroupPeekDwell(displayID: CGDirectDisplayID) {
+        dockGroupPeekDwellByDisplayID.removeValue(forKey: displayID)?.cancel()
+    }
+
+    /// Stops corridor tracking for the list that is open right now. A pending
+    /// dwell is deliberately left alone: sweeping from one folder to the next
+    /// arms the second dwell while the first peek is still closing, and the
+    /// grace window is shorter than the dwell, so cancelling here would drop
+    /// every hover that crosses a neighbouring folder.
+    func stopDockGroupPeekTracking(displayID: CGDirectDisplayID) {
+        dockGroupPeekPollByDisplayID.removeValue(forKey: displayID)?.invalidate()
+        dockGroupPeekOutsideSinceByDisplayID.removeValue(forKey: displayID)
+    }
+
+    /// Ends hover disclosure outright, including any dwell that has not fired.
+    func endDockGroupPeek(displayID: CGDirectDisplayID) {
+        cancelDockGroupPeekDwell(displayID: displayID)
+        stopDockGroupPeekTracking(displayID: displayID)
+    }
+
+    private func startDockGroupPeekPoll(displayID: CGDirectDisplayID) {
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }
+        dockGroupPeekPollByDisplayID.removeValue(forKey: displayID)?.invalidate()
+        dockGroupPeekOutsideSinceByDisplayID[displayID] = nil
+        let timer = Timer.scheduledTimer(
+            withTimeInterval: PickyHUDDockGroupListHoverPolicy.peekPollInterval,
+            repeats: true
+        ) { [weak self] _ in
+            Task { @MainActor in self?.sampleDockGroupPeekCorridor(displayID: displayID) }
+        }
+        dockGroupPeekPollByDisplayID[displayID] = timer
+    }
+
+    private func sampleDockGroupPeekCorridor(displayID: CGDirectDisplayID) {
+        guard let entry = dockGroupListChildrenByDisplayID[displayID],
+              entry.presentation == .peek,
+              let groupID = entry.openGroupID
+        else {
+            endDockGroupPeek(displayID: displayID)
+            return
+        }
+        let folderScreenFrame = panelsByDisplayID[displayID].flatMap { hudEntry in
+            PickyHUDDockGroupListOutsideDismissFramePolicy.owningInteractionScreenFrame(
+                openGroupID: groupID,
+                interactionFrames: entry.interactionFrames,
+                hudPanelFrame: hudEntry.panel.frame
+            )
+        }
+        let now = Date()
+        let isInside = PickyHUDDockGroupListHoverPolicy.isPointerInPeekCorridor(
+            pointer: NSEvent.mouseLocation,
+            folderScreenFrame: folderScreenFrame,
+            panelScreenFrame: entry.panel.frame
+        )
+        let outsideSince = PickyHUDDockGroupListHoverPolicy.outsideSince(
+            current: dockGroupPeekOutsideSinceByDisplayID[displayID],
+            isPointerInCorridor: isInside,
+            now: now
+        )
+        dockGroupPeekOutsideSinceByDisplayID[displayID] = outsideSince
+        guard PickyHUDDockGroupListHoverPolicy.shouldClosePeek(
+            presentation: entry.presentation,
+            isPointerInCorridor: isInside,
+            outsideSince: outsideSince,
+            now: now
+        ) else { return }
+        hideDockGroupListChild(displayID: displayID)
+    }
+
+    private func dockGroupHasVisibleMembers(groupID: String) -> Bool {
+        let snapshot = viewModel.dockState.snapshot
+        let activeSessionIDs = Set(snapshot.activeSessions.map(\.id))
+        return snapshot.dockLayout.group(withID: groupID)?.memberSessionIDs
+            .contains(where: activeSessionIDs.contains) == true
+    }
+
+    private func dockGroupListRowIDs(groupID: String) -> [String] {
+        let snapshot = viewModel.dockState.snapshot
+        guard let group = PickyHUDDockGroupListSnapshotPolicy.group(groupID: groupID, in: snapshot)
+        else { return [] }
+        return dockGroupListRowIDs(group: group, snapshot: snapshot)
+    }
+
+    private func publishDockGroupListPresentation(displayID: CGDirectDisplayID) {
+        let entry = dockGroupListChildrenByDisplayID[displayID]
+        panelsByDisplayID[displayID]?.placement.pinnedDockGroupListGroupID =
+            entry?.presentation == .pinned ? entry?.openGroupID : nil
+    }
+
+    /// `presentation` defaults to `nil`, which preserves whatever the display
+    /// already had. Reconciliation paths re-enter this function for a list that
+    /// is already open and must not silently promote a peek.
     private func showDockGroupListChild(
         displayID: CGDirectDisplayID,
         groupID: String,
+        presentation: PickyHUDDockGroupListPresentation? = nil,
         snapshot: PickyHUDDockSnapshot? = nil,
         fontScale: CGFloat? = nil
     ) {
@@ -112,6 +269,7 @@ extension PickyHUDOverlayManager {
                         entry.model = nil
                         self.dockGroupListOverlayLifecycle?.tearDown(displayID: displayID)
                     }
+                    if let presentation { entry.presentation = presentation }
                     entry.pendingGroupID = PickyHUDDockGroupListOpenPolicy.pendingGroupID(afterRequestFor: groupID)
                     entry.openGroupID = nil
                     self.dockGroupListChildrenByDisplayID[displayID] = entry
@@ -134,11 +292,15 @@ extension PickyHUDOverlayManager {
                     let model = entry.model ?? PickyHUDDockGroupListPanelModel(content: content)
                     model.update(content: content)
                     entry.model = model
-                    self.dockGroupListFocusStore.open(
-                        displayID: displayID,
-                        groupID: groupID,
-                        rowIDs: rowIDs
-                    )
+                    // A peek leaves the rail owning Command-numbers, arrows,
+                    // and Escape. `pinDockGroupListChild` registers focus later.
+                    if entry.presentation == .pinned {
+                        self.dockGroupListFocusStore.open(
+                            displayID: displayID,
+                            groupID: groupID,
+                            rowIDs: rowIDs
+                        )
+                    }
                     self.dockGroupListChildrenByDisplayID[displayID] = entry
                     didOpen = true
                 },
@@ -188,6 +350,12 @@ extension PickyHUDOverlayManager {
                         panel.animator().alphaValue = 1
                     }
                     self.installDockGroupListMouseMonitors(displayID: displayID)
+                    self.publishDockGroupListPresentation(displayID: displayID)
+                    if self.dockGroupListChildrenByDisplayID[displayID]?.presentation == .peek {
+                        self.startDockGroupPeekPoll(displayID: displayID)
+                    } else {
+                        self.endDockGroupPeek(displayID: displayID)
+                    }
                 }
             )
         )
@@ -576,22 +744,28 @@ extension PickyHUDOverlayManager {
         guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }
         guard var entry = dockGroupListChildrenByDisplayID[displayID], entry.localMouseDownMonitor == nil else { return }
         entry.localMouseDownMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
-            Task { @MainActor in self?.dismissDockGroupListForOutsideMouseDown(displayID: displayID, event: event) }
+            Task { @MainActor in self?.handleDockGroupListMouseDown(displayID: displayID, event: event) }
             return event
         }
         entry.globalMouseDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
-            Task { @MainActor in self?.dismissDockGroupListForOutsideMouseDown(displayID: displayID, event: event) }
+            Task { @MainActor in self?.handleDockGroupListMouseDown(displayID: displayID, event: event) }
         }
         dockGroupListChildrenByDisplayID[displayID] = entry
     }
 
-    private func dismissDockGroupListForOutsideMouseDown(displayID: CGDirectDisplayID, event: NSEvent) {
+    private func handleDockGroupListMouseDown(displayID: CGDirectDisplayID, event: NSEvent) {
         guard let entry = dockGroupListChildrenByDisplayID[displayID], entry.openGroupID != nil else { return }
         let screenPoint: CGPoint
         if let window = event.window {
             screenPoint = window.convertToScreen(NSRect(origin: event.locationInWindow, size: .zero)).origin
         } else {
             screenPoint = NSEvent.mouseLocation
+        }
+        // Any press inside the panel is a commitment, so one hook covers rows,
+        // the name field, the colour menu, and the quick actions alike.
+        if entry.panel.frame.contains(screenPoint) {
+            pinDockGroupListChild(displayID: displayID)
+            return
         }
         let owningInteractionFrame = panelsByDisplayID[displayID].flatMap { hudEntry in
             PickyHUDDockGroupListOutsideDismissFramePolicy.owningInteractionScreenFrame(
@@ -614,6 +788,8 @@ extension PickyHUDOverlayManager {
     /// `tearDownDockSurface` when the rail the drag drops onto is going away.
     func hideDockGroupListChild(displayID: CGDirectDisplayID) {
         dockGroupListFocusStore.close(displayID: displayID)
+        stopDockGroupPeekTracking(displayID: displayID)
+        panelsByDisplayID[displayID]?.placement.pinnedDockGroupListGroupID = nil
         guard let entry = dockGroupListChildrenByDisplayID.removeValue(forKey: displayID) else { return }
         if let localMouseDownMonitor = entry.localMouseDownMonitor { NSEvent.removeMonitor(localMouseDownMonitor) }
         if let globalMouseDownMonitor = entry.globalMouseDownMonitor { NSEvent.removeMonitor(globalMouseDownMonitor) }
@@ -626,6 +802,7 @@ extension PickyHUDOverlayManager {
     /// reachable. The child is hidden before the terminal policy samples source
     /// usability, so this fades rather than returning to stale geometry.
     func tearDownDockSurface(displayID: CGDirectDisplayID) {
+        cancelDockGroupPeekDwell(displayID: displayID)
         hideDockGroupListChild(displayID: displayID)
         _ = externalDockDragsByDisplayID[displayID]?.coordinator?.cancelForTeardown()
     }

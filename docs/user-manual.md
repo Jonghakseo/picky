@@ -112,6 +112,11 @@ Currently bundled:
 
 A **Curated extensions** section under the bundled list lists a small set of useful third-party Pi extensions. Each row shows the extension name, the command or tool it adds, a short description, and an install/remove control that installs the extension from npm into the local Pi setup. Examples include `/diff-review` for native diff review, `ask_user_question` for structured clarification forms, `show_widget` for native generative UI windows, `/delay` for scheduling a one-shot follow-up prompt after a chosen delay, and `subagent` for delegating work to parallel Pi subagents.
 
+The curated list also includes:
+
+- **Cron** — schedules local Pi jobs and configures a persistent macOS LaunchAgent during install and update. An installed row provides **View jobs**, a read-only list of schedule and run status that never opens prompt contents, working directories, or run logs. If daemon setup fails after the npm package installs, use **Set up** to retry without reinstalling. Removal asks for confirmation, runs Cron's uninstall command, verifies that the LaunchAgent is unloaded, and only then removes the npm package.
+- **Memory Layer** — adds local `remember`, `recall`, `memory_list`, and `forget` tools so Pi can reuse durable memories across sessions.
+
 Picky also checks npm for newer versions of installed curated extensions: when an installed, non-pinned extension has an update available, an **Update** button appears next to its Remove button.
 
 ### 2.3 Settings tab

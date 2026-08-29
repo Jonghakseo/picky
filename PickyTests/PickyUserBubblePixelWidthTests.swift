@@ -316,6 +316,9 @@ private func configuredAgentSurface(markdown: String, codeBlockMaxLines: Int) ->
         maxBubbleWidth: 600,
         codeBlockMaxLines: codeBlockMaxLines,
         showsShortcutBadge: false,
+        expansionTitle: nil,
+        expansionSystemImageName: nil,
+        onToggleExpansion: nil,
         onOpenAsReport: {},
         onCopyText: nil
     )

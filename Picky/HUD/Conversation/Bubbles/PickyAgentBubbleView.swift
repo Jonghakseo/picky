@@ -18,6 +18,7 @@ struct PickyAgentBubbleView: View {
     var rendersFullResponse = false
     var isLatestResponseShortcutHintVisible = false
 
+    @State private var isExpanded = false
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
 
     var body: some View {
@@ -28,6 +29,9 @@ struct PickyAgentBubbleView: View {
                 maxBubbleWidth: bubbleMaxWidth,
                 codeBlockMaxLines: displayedCodeBlockMaxLines,
                 showsShortcutBadge: isLatestResponseShortcutHintVisible,
+                expansionTitle: expansionTitle,
+                expansionSystemImageName: expansionSystemImageName,
+                onToggleExpansion: expansionAction,
                 onOpenAsReport: hoverIconAction,
                 onCopyText: copyTextAction
             )
@@ -35,6 +39,7 @@ struct PickyAgentBubbleView: View {
             Spacer(minLength: PickyConversationBubbleLayout.oppositeSideReserve)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onChange(of: message.id) { _, _ in isExpanded = false }
     }
 
     private var bubbleMaxWidth: CGFloat {
@@ -43,7 +48,10 @@ struct PickyAgentBubbleView: View {
 
     var displayedMarkdown: String {
         let text = displayText
-        guard message.kind == .agentText, !displaysFullResponse else { return text }
+        guard message.kind == .agentText else { return text }
+        guard !displaysFullResponse else {
+            return isCollapsed ? PickyAgentResponsePreview.collapsedFullResponseMarkdown(text) : text
+        }
         return PickyAgentResponsePreview.truncatedMarkdown(text)
     }
 
@@ -53,6 +61,36 @@ struct PickyAgentBubbleView: View {
 
     private var displaysFullResponse: Bool {
         isLatestAgentResponse || rendersFullResponse
+    }
+
+    /// A full response is shown untruncated, but a very long reply would push
+    /// the rest of the transcript out of view, so it collapses past a line cap
+    /// until the reader expands it.
+    var isCollapsible: Bool {
+        message.kind == .agentText
+            && displaysFullResponse
+            && PickyAgentResponsePreview.exceedsFullResponseLineLimit(displayText)
+    }
+
+    var isCollapsed: Bool { isCollapsible && !isExpanded }
+
+    private var expansionTitle: String? {
+        guard isCollapsible else { return nil }
+        return isExpanded ? L10n.t("hud.bubble.collapse") : L10n.t("hud.bubble.showMore")
+    }
+
+    private var expansionSystemImageName: String? {
+        guard isCollapsible else { return nil }
+        return isExpanded ? "chevron.up" : "chevron.down"
+    }
+
+    private var expansionAction: (() -> Void)? {
+        guard isCollapsible else { return nil }
+        return {
+            withAnimation(.easeInOut(duration: 0.16)) {
+                isExpanded.toggle()
+            }
+        }
     }
 
     private var copyTextAction: (() -> Void)? {
@@ -202,6 +240,19 @@ enum PickyAgentResponsePreview {
     /// truncation so the hover "open as report" gate matches what the user
     /// actually sees on screen.
     static let codeBlockMaxLines = 4
+    /// Line cap for bubbles that would otherwise render a full response. Past
+    /// this many source lines the bubble collapses behind a "show more" toggle
+    /// so one long reply cannot swallow the transcript.
+    static let fullResponseMaxLines = 50
+
+    static func collapsedFullResponseMarkdown(_ text: String, maxLines: Int = fullResponseMaxLines) -> String {
+        truncatedMarkdown(text, maxLines: maxLines, maxCharacters: .max)
+    }
+
+    static func exceedsFullResponseLineLimit(_ text: String, maxLines: Int = fullResponseMaxLines) -> Bool {
+        guard maxLines > 0 else { return false }
+        return text.split(separator: "\n", omittingEmptySubsequences: false).count > maxLines
+    }
 
     static func truncatedMarkdown(_ text: String, maxLines: Int = maxLines, maxCharacters: Int = maxCharacters) -> String {
         guard maxLines > 0, maxCharacters > 0 else { return "..." }

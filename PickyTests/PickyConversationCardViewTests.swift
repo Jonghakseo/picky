@@ -1702,6 +1702,32 @@ struct PickyConversationCardViewTests {
         #expect(latestBubble.shouldOfferReport)
     }
 
+    @Test func fullResponseBubbleCollapsesPastFiftyLinesUntilExpanded() {
+        let cap = PickyAgentResponsePreview.fullResponseMaxLines
+        let atCap = (1...cap).map { "line \($0)" }.joined(separator: "\n")
+        let overCap = atCap + "\nline \(cap + 1)"
+
+        let atCapBubble = PickyAgentBubbleView(
+            message: message("m-at-cap", kind: .agentText, text: atCap),
+            isLatestAgentResponse: true
+        )
+        let overCapBubble = PickyAgentBubbleView(
+            message: message("m-over-cap", kind: .agentText, text: overCap),
+            rendersFullResponse: true
+        )
+        let previewBubble = PickyAgentBubbleView(
+            message: message("m-preview", kind: .agentText, text: overCap)
+        )
+
+        #expect(!atCapBubble.isCollapsible)
+        #expect(atCapBubble.displayedMarkdown == atCap)
+        #expect(overCapBubble.isCollapsible)
+        #expect(overCapBubble.isCollapsed)
+        #expect(overCapBubble.displayedMarkdown == atCap + "...")
+        #expect(!previewBubble.isCollapsible)
+        #expect(previewBubble.displayedMarkdown == (1...8).map { "line \($0)" }.joined(separator: "\n") + "...")
+    }
+
     @Test func latestTurnVisibilityPolicyExpandsEveryAgentSegmentOnlyInLatestTurn() {
         let agentMessage = message("m-agent", kind: .agentText, text: "answer")
         let thinkingMessage = message("m-thinking", kind: .agentThinking, text: "reasoning")

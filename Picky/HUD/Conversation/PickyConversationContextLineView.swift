@@ -262,6 +262,10 @@ private struct PickyConversationContextSummaryLayout: Layout {
     }
 }
 
+enum PickyConversationContextDetailsPresentation {
+    static let uncommittedMetricOpacity = 0.72
+}
+
 enum PickyGitContextRefreshPolicy {
     static let completedSessionRefreshIntervalNanoseconds: UInt64 = 60_000_000_000
     static let updatedAtRefreshBucketSeconds: TimeInterval = 5
@@ -352,7 +356,7 @@ struct PickyConversationContextLineView: View {
         let _ = PickyPerf.event("context_line_body")
         contextSummaryLine
         .pickyFont(size: 10.5, weight: .medium)
-        .foregroundColor(DS.Colors.textTertiary)
+        .foregroundColor(DS.Colors.textSecondary)
         .frame(maxWidth: .infinity, alignment: .leading)
         .popover(isPresented: $isDetailsPresented, arrowEdge: .bottom) {
             contextDetails
@@ -536,7 +540,7 @@ struct PickyConversationContextLineView: View {
             }
         }
         .pickyFont(size: 10.5, weight: .medium)
-        .foregroundColor(DS.Colors.textTertiary)
+        .foregroundColor(DS.Colors.textPrimary)
         .padding(DS.Spacing.md)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L10n.t("hud.context.details.accessibilityLabel"))
@@ -622,10 +626,12 @@ struct PickyConversationContextLineView: View {
             Label {
                 Text(compactCwd)
                     .font(PickyHUDTypography.labelMedium)
+                    .foregroundStyle(DS.Colors.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.middle)
             } icon: {
                 Image(systemName: "folder")
+                    .foregroundStyle(DS.Colors.textSecondary)
             }
             .labelStyle(.titleAndIcon)
             .contentShape(Rectangle())
@@ -764,8 +770,10 @@ struct PickyConversationContextLineView: View {
     private func repositoryLabel(status: PickyGitRepositoryStatus) -> some View {
         let content = HStack(spacing: 4) {
             Image(systemName: "chevron.left.forwardslash.chevron.right")
+                .foregroundStyle(DS.Colors.textSecondary)
             Text(status.repositoryDisplayName)
                 .font(PickyHUDTypography.labelSemibold)
+                .foregroundStyle(DS.Colors.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
@@ -818,7 +826,10 @@ struct PickyConversationContextLineView: View {
                     if let uncommitted = presentation.uncommitted {
                         HStack(spacing: 4) {
                             gitMetricPill("(", color: DS.Colors.textTertiary)
-                            diffPair(uncommitted, opacity: 0.55)
+                            diffPair(
+                                uncommitted,
+                                opacity: PickyConversationContextDetailsPresentation.uncommittedMetricOpacity
+                            )
                             gitMetricPill(")", color: DS.Colors.textTertiary)
                         }
                     }
@@ -861,6 +872,7 @@ struct PickyConversationContextLineView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
+            .foregroundStyle(DS.Colors.textSecondary)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

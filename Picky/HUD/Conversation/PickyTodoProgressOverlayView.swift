@@ -137,10 +137,16 @@ struct PickyTodoProgressOverlayView: View {
         ) {
             Group {
                 if presentation.usesScrollableExpandedList {
-                    ScrollView(.vertical, showsIndicators: true) {
-                        expandedTaskRows
+                    ScrollViewReader { proxy in
+                        ScrollView(.vertical, showsIndicators: true) {
+                            expandedTaskRows
+                        }
+                        .frame(height: PickyFocusStackTodoDrawerLayoutPolicy.viewportHeight)
+                        .onAppear { scrollToFocusTask(proxy, animated: false) }
+                        .onChange(of: presentation.focusTaskID) { _, _ in
+                            scrollToFocusTask(proxy, animated: true)
+                        }
                     }
-                    .frame(height: PickyFocusStackTodoDrawerLayoutPolicy.viewportHeight)
                 } else {
                     expandedTaskRows
                 }
@@ -164,6 +170,7 @@ struct PickyTodoProgressOverlayView: View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(presentation.tasks.enumerated()), id: \.element.id) { index, task in
                 taskRow(task)
+                    .id(task.id)
                 if index < presentation.tasks.count - 1 {
                     Divider()
                         .overlay(DS.Colors.borderSubtle.opacity(0.45))
@@ -226,6 +233,16 @@ struct PickyTodoProgressOverlayView: View {
             .stroke(DS.Colors.info, style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
             .rotationEffect(.degrees(-90))
             .frame(width: 12, height: 12)
+    }
+
+    private func scrollToFocusTask(_ proxy: ScrollViewProxy, animated: Bool) {
+        guard animated, !accessibilityReduceMotion else {
+            proxy.scrollTo(presentation.focusTaskID, anchor: .center)
+            return
+        }
+        withAnimation(.easeOut(duration: DS.Animation.normal)) {
+            proxy.scrollTo(presentation.focusTaskID, anchor: .center)
+        }
     }
 
     private func taskTextColor(_ task: PickyTodoTask) -> Color {

@@ -39,7 +39,30 @@ struct PickyTodoProgressPresentationTests {
         #expect(presentation.totalCount == 3)
         #expect(presentation.fraction == 1.0 / 3.0)
         #expect(presentation.activeText == "Implementing HUD")
+        #expect(presentation.focusTaskID == "todo-2")
         #expect(presentation.isComplete == false)
+    }
+
+    @Test func focusTaskFollowsNextPendingTaskAndFinalTaskWhenPlanCompletes() throws {
+        let pendingState = PickyTodoState(
+            tasks: [
+                PickyTodoTask(id: "todo-1", content: "Inspect protocol", status: .completed),
+                PickyTodoTask(id: "todo-2", content: "Implement HUD", status: .completed),
+                PickyTodoTask(id: "todo-3", content: "Run tests", status: .pending),
+            ],
+            updatedAt: Date(timeIntervalSince1970: 1_800_000_003)
+        )
+        let completeState = PickyTodoState(
+            tasks: [
+                PickyTodoTask(id: "todo-1", content: "Inspect protocol", status: .completed),
+                PickyTodoTask(id: "todo-2", content: "Implement HUD", status: .completed),
+                PickyTodoTask(id: "todo-3", content: "Run tests", status: .completed),
+            ],
+            updatedAt: Date(timeIntervalSince1970: 1_800_000_004)
+        )
+
+        #expect(try #require(PickyTodoProgressPresentation(state: pendingState)).focusTaskID == "todo-3")
+        #expect(try #require(PickyTodoProgressPresentation(state: completeState)).focusTaskID == "todo-3")
     }
 
     @Test func contentIsUsedWhenActiveFormIsMissing() throws {

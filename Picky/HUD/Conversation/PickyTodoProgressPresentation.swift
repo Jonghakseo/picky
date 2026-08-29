@@ -26,6 +26,9 @@ struct PickyTodoProgressPresentation: Equatable {
     let totalCount: Int
     let fraction: Double
     let activeText: String
+    /// Row the expanded drawer scrolls to: the running task, else the next
+    /// pending one, else the final task for a completed plan.
+    let focusTaskID: String
     let isComplete: Bool
     let updatedAt: Date
 
@@ -43,6 +46,7 @@ struct PickyTodoProgressPresentation: Equatable {
         self.totalCount = state.tasks.count
         self.fraction = Double(completedCount) / Double(state.tasks.count)
         self.activeText = activeTask.displayText
+        self.focusTaskID = activeTask.id
         self.isComplete = isComplete
         self.updatedAt = state.updatedAt
     }

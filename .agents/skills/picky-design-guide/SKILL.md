@@ -44,8 +44,9 @@ Near miss에는 이 스킬의 시각 규칙을 억지로 적용하지 않는다.
 1. `git status --short`로 사용자 변경을 확인한다.
 2. 코드 네비게이션은 `AGENTS.md`의 UI 인덱스에서 시작한다.
 3. View뿐 아니라 backing view model/store와 interaction state를 함께 확인한다.
-4. 기존 `DS`, `PickyHUDTypography`, appearance, layout policy로 해결 가능한지 찾는다.
-5. 동일한 컴포넌트가 SwiftUI/AppKit 또는 cursor/response overlay에 중복돼 있는지 확인한다.
+4. 스크린샷에서 동작을 추론하기 전에 보이는 레이블과 계층을 production View와 대조해 렌더된 컴포넌트를 식별한다. 식별이 불확실하거나 스크린샷과 현재 소스가 어긋날 때만 accessibility identifier와 실행 빌드 provenance를 추가 확인한다.
+5. 기존 `DS`, `PickyHUDTypography`, appearance, layout policy로 해결 가능한지 찾는다.
+6. 동일한 컴포넌트가 SwiftUI/AppKit 또는 cursor/response overlay에 중복돼 있는지 확인한다.
 
 실행 중인 Picky 앱은 사용자가 명시적으로 요청하지 않는 한 재시작하지 않는다.
 
@@ -208,6 +209,7 @@ raw 값이 발견되면 제거하거나 component-level 예외 이유를 기록�
 완료 전에 확인한다.
 
 - [ ] 필요한 canonical 디자인 문서를 읽었다.
+- [ ] 스크린샷 기반 판단이면 렌더된 production component를 먼저 식별했다.
 - [ ] 사용자 목표, 정보 위계, action/status가 명확하다.
 - [ ] 적용 가능한 interaction/session 상태를 검토했다.
 - [ ] 기존 semantic token과 component를 우선 사용했다.
@@ -219,5 +221,5 @@ raw 값이 발견되면 제거하거나 component-level 예외 이유를 기록�
 스킬이나 canonical 디자인 문서를 수정한 경우 다음 검증을 실행한다.
 
 ```bash
-python3 scripts/validate_design_guide.py
+python3 .agents/skills/picky-design-guide/scripts/validate_design_guide.py
 ```

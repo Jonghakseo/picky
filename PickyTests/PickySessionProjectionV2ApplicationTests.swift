@@ -32,7 +32,20 @@ struct PickySessionProjectionV2ApplicationTests {
     @Test func acceptedPrimaryBootstrapCompletionPrunesOnlyExplicitlyRemovedMembershipAndUnblocksLoading() throws {
         let storage = PickyRegistrySessionProjectionStorage()
         let archiveStore = V2ArchiveStore()
-        let viewModel = makeViewModel(client: FakePickyAgentClient(), storage: storage, archiveStore: archiveStore)
+        let dockLayoutStore = V2DockLayoutStore(layout: PickyDockLayout(entries: [
+            .group(PickyDockGroup(
+                id: "existing-group",
+                name: "Existing",
+                color: .blue,
+                memberSessionIDs: ["keep", "stale"]
+            ))
+        ]))
+        let viewModel = makeViewModel(
+            client: FakePickyAgentClient(),
+            storage: storage,
+            archiveStore: archiveStore,
+            dockLayoutStore: dockLayoutStore
+        )
         apply(snapshot(sessionID: "keep", title: "Keep", status: .running, revision: 1), to: viewModel)
         apply(snapshot(sessionID: "stale", title: "Stale", status: .completed, revision: 1), to: viewModel)
         viewModel.archive(sessionID: "stale")
@@ -44,6 +57,11 @@ struct PickySessionProjectionV2ApplicationTests {
         #expect(storage.session(id: "stale") == nil)
         #expect(!archiveStore.manuallyArchivedSessionIDs.contains("stale"))
         #expect(!viewModel.isLoadingInitialSessionSnapshot)
+        let survivingGroup = try #require(viewModel.dockLayout.group(withID: "existing-group"))
+        #expect(survivingGroup.name == "Existing")
+        #expect(survivingGroup.color == .blue)
+        #expect(survivingGroup.memberSessionIDs == ["keep"])
+        #expect(dockLayoutStore.savedLayouts.last?.group(withID: "existing-group") == survivingGroup)
     }
 
     @Test func authoritativeBootstrapRemovalPublishesMonotonicHUDRemovalEvent() throws {
@@ -100,7 +118,10 @@ struct PickySessionProjectionV2ApplicationTests {
         )
 
         apply(snapshot(sessionID: "session-a", title: "A", status: .running, revision: 1), to: viewModel)
+        #expect(dockLayoutStore.savedLayouts.isEmpty)
+
         apply(snapshot(sessionID: "session-b", title: "B", status: .running, revision: 1), to: viewModel)
+        #expect(dockLayoutStore.savedLayouts.isEmpty)
 
         #expect(viewModel.dockLayout.group(withID: "existing-group")?.memberSessionIDs == ["session-a", "session-b"])
         #expect(viewModel.dockLayout.container(forSessionID: "session-a") == .group(id: "existing-group", memberIndex: 0))

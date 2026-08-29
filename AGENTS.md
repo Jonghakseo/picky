@@ -131,16 +131,18 @@ Use targeted tests while iterating, for example:
 xcodebuild -project Picky.xcodeproj -scheme Picky -destination "platform=macOS,arch=$(uname -m)" test -only-testing:PickyTests/PickyCompanionManagerTests
 ```
 
+For a targeted `xcodebuild test` run, treat exit 0 or `** TEST SUCCEEDED **` as validation only when the output or `.xcresult` confirms that the intended test or tests executed. If a method-level selector is uncertain or selects no tests, enumerate the containing suite and copy the exact returned identifier, including `()` when present, or rerun the containing suite.
+
 WindowServer-dependent tests are disabled during ordinary Xcode test runs. They may run exactly once through `scripts/pre-push-checks.sh`, which owns the `PICKY_PRE_PUSH_UI_EFFECT_TESTS=1` opt-in. Do not set that variable for ad-hoc or repeated test commands.
 
-Parallel or subagent-driven `xcodebuild test` runs must use a unique `-derivedDataPath` (for example `/tmp/Picky<purpose>DD`); the shared default DerivedData causes build-DB lock collisions (exit 65) when another build is running concurrently.
+Parallel or subagent-driven `xcodebuild test` runs must use a unique `-derivedDataPath` under `/private/tmp` (for example `/private/tmp/Picky<purpose>DD`); the shared default DerivedData causes build-DB lock collisions (exit 65) when another build is running concurrently. Keeping the `Picky` prefix and `/private/tmp` root lets `scripts/prune-build-artifacts.sh` recover an abandoned path after an interrupted run.
 
-A temporary `-derivedDataPath` is owned by the run that created it and must be torn down when that run finishes. Unregister the built bundle **before** deleting the directory, because LaunchServices cannot resolve a bundle whose path is already gone and the stale record then survives forever:
+A temporary `-derivedDataPath` is owned by the run that created it and must be torn down when that run finishes. Recursively unregister the directory **before** deleting it, because Picky.app embeds Sparkle's separately registered Updater.app and LaunchServices cannot unregister bundles after their paths disappear:
 
 ```bash
-DD=/tmp/Picky<purpose>DD
+DD="$(mktemp -d /private/tmp/PickyVerifyDD.XXXXXX)"
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
-  -u "$DD/Build/Products/Debug/Picky.app"
+  -u -R "$DD"
 rm -rf "$DD"
 ```
 

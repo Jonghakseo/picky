@@ -351,6 +351,44 @@ Official source: [Pi coding-agent CHANGELOG 0.84.2](https://github.com/earendil-
   HUD or the SDK surfaces in the T1-T4 coupling map.
 - `pi-ai`, `pi-coding-agent`, and `pi-tui` are pinned together on `0.84.2`.
 
+### 0.84.2 -> 0.84.3
+
+Official source: [Pi coding-agent CHANGELOG 0.84.3](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/CHANGELOG.md#0843---2026-08-24).
+
+- Pi renames the inherited `GoogleThinkingLevel` type to
+  `GoogleApiThinkingLevel` and adds `ResolvedGoogleThinkingLevel`. Picky imports
+  neither type, so no provider adapter migration is required.
+- Pi adds `session_compact_failed` extension events. Picky consumes SDK
+  `compaction_start` / `compaction_end` events and already maps `willRetry`,
+  `aborted`, and `errorMessage` into its compaction lifecycle, so the new
+  extension-only notification does not require another normalizer branch.
+- Failed extension factories now clean up subscriptions and provider/default
+  registrations. User-installed extensions loaded through Picky inherit the fix
+  without a host-side change.
+- JSON/RPC `toolcall_start` correlation fixes, installer changes, and the bundled
+  CLI runtime split do not affect Picky's direct SDK event path or packaged Node
+  launcher.
+
+### 0.84.3 -> 0.84.4
+
+Official source: [Pi coding-agent CHANGELOG 0.84.4](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/CHANGELOG.md#0844---2026-08-28).
+
+- Pi adds `ui_prompt_start` and `ui_prompt_end` extension events. Picky's strict
+  `ExtensionUIContext` bridge already emits native `extension_ui_request` state
+  and marks blocking prompts through `waitsForInput`, so no SDK event adapter
+  change is required.
+- RPC adds `clear_queue`, while Picky calls the public SDK
+  `AgentSession.clearQueue()` and queue snapshot methods directly. The existing
+  hard contract test continues to guard those methods.
+- Deferred `triggerTurn: false` extension messages now wait for active tool
+  results before entering history. Picky does not call `pi.sendMessage()` and
+  therefore needs no routing change; user extensions inherit the safer ordering.
+- Mid-run large-result compaction now occurs before the next assistant response.
+  Picky already keeps queued input isolated across `compaction_start` /
+  `compaction_end`, with retry, failure, and queue-drain coverage in
+  `pi-sdk-runtime.test.ts`.
+- `pi-ai`, `pi-coding-agent`, and `pi-tui` are pinned together on `0.84.4`.
+
 ## Backward-compatibility policy
 
 - **Capability sniffs (T2) MUST stay non-fatal.** A pi version that drops

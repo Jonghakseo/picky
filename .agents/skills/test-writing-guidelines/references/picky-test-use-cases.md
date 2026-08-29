@@ -59,6 +59,8 @@
 추천:
 
 - WebSocket은 fake task/factory를 사용한다.
+- `PickyAgentClient.events` fake는 SUT의 동시 consumer 수를 먼저 확인한다. `PickyAgentClientRouter`를 대체한다면 `events` 접근마다 독립 `AsyncStream` continuation을 등록하고 test `emit`은 모든 active continuation으로 fan-out한다. 하나의 shared stream은 installer와 reload controller 같은 consumer가 event를 경쟁 소비해 허위 timeout을 만들 수 있다.
+- multi-subscriber fake의 최소 회귀 테스트는 두 consumer가 구독한 뒤 correlated event 하나를 emit하고 둘 다 수신하는지 검증한다.
 - ViewModel 전체보다 pure projection/policy가 owner인 규칙은 해당 policy에서 검증한다.
 - process-global 상태나 system framework를 공유하면 serialized 이유를 명시한다.
 

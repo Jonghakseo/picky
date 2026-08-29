@@ -234,6 +234,8 @@ struct PickyHUDDockGroupRenderGalleryTests {
             listScene("list-two-selected-medium-dark-100.png", group: research, rows: twoRows, selectedID: twoRows[1].id, metrics: medium, fontScale: 1, appearance: .dark),
             listScene("list-one-selected-medium-dark-100.png", group: group(id: "group-one", name: "Solo", color: .blue, memberIDs: [fiveRows[0].id]), rows: [fiveRows[0]], selectedID: fiveRows[0].id, metrics: medium, fontScale: 1, appearance: .dark),
             combinedScene(group: picky, metrics: medium),
+            externalDragFeedbackScene(metrics: medium),
+            externalTopLevelProjectionScene(metrics: large),
         ]
     }
 
@@ -341,6 +343,121 @@ struct PickyHUDDockGroupRenderGalleryTests {
         )
     }
 
+    /// One scene captures the external-drag handoff as users see it: the
+    /// source list retains a 35% ghost, the target folder alone advertises
+    /// acceptance, and a separate invalid detached preview has no destination.
+    private func externalDragFeedbackScene(metrics: PickyHUDDockMetrics) -> Scene {
+        let source = group(id: "external-source", name: "Source", color: .blue, memberIDs: fiveRows.map(\.id))
+        let target = group(id: "external-target", name: "Target", color: .teal, memberIDs: [])
+        let layout = PickyDockLayout(entries: [.group(source), .group(target)])
+        let projection = PickyDockProjector.project(layout: layout, visibleSessionIDs: fiveSessions.map(\.id))
+        let presentationStore = PickyHUDDockExternalDragRailPresentationStore()
+        presentationStore.show(
+            token: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+            sessionID: fiveRows[0].id,
+            destination: .group(id: target.id, memberIndex: 0)
+        )
+        let panelSize = listSize(memberCount: fiveRows.count, metrics: metrics, fontScale: 1)
+        let railSize = CGSize(
+            width: PickyHUDDockRailLayoutPolicy.verticalCrossSize(groupCount: 2, metrics: metrics, fontScale: 1),
+            height: PickyHUDDockRailLayoutPolicy.contentLength(
+                sessionCount: projection.slots.count,
+                groupCount: 2,
+                isAddSlotExpanded: false,
+                dockSide: .right,
+                metrics: metrics,
+                fontScale: 1
+            )
+        )
+        // The production preview scales and shadows its icon beyond the tile
+        // frame. Reserve a neutral gallery cell so that intentional elevation
+        // cannot be mistaken for clipping at the transparent canvas edge.
+        let previewSize = CGSize(
+            width: metrics.sessionTileWidth + (DS.Spacing.space4 * 2),
+            height: metrics.sessionTileHeight + (DS.Spacing.space4 * 2)
+        )
+        return Scene(
+            name: "external-drag-feedback-medium-dark-100.png",
+            contentLogicalSize: CGSize(
+                width: panelSize.width + DS.Spacing.space4 + railSize.width + DS.Spacing.space4 + previewSize.width,
+                height: max(panelSize.height, max(railSize.height, previewSize.height))
+            ),
+            canvasInsets: externalDragGalleryCanvasInsets,
+            appearance: .dark,
+            preset: metrics.preset,
+            fontScale: 1,
+            content: AnyView(
+                HStack(alignment: .top, spacing: DS.Spacing.space4) {
+                    list(
+                        group: source,
+                        rows: fiveRows,
+                        selectedID: fiveRows[0].id,
+                        metrics: metrics,
+                        externalDragPresentationStore: presentationStore
+                    )
+                    .frame(width: panelSize.width, height: panelSize.height, alignment: .topLeading)
+                    dockRail(
+                        sessions: fiveSessions,
+                        allSessions: fiveSessions,
+                        layout: layout,
+                        projection: projection,
+                        dockSide: .right,
+                        metrics: metrics,
+                        availableRailLength: railSize.height,
+                        externalDragPresentationStore: presentationStore
+                    )
+                    .frame(width: railSize.width, height: railSize.height, alignment: .topLeading)
+                    PickyHUDDockExternalDragPreviewContent(
+                        session: fiveRows[0].session,
+                        dockSide: .right,
+                        metrics: metrics,
+                        destination: nil
+                    )
+                    .frame(width: previewSize.width, height: previewSize.height, alignment: .topLeading)
+                }
+            )
+        )
+    }
+
+    /// The rail store drives the real external projection path, which injects
+    /// a formerly grouped Pickle into the top-level rail and leaves a visible
+    /// insertion position before persistence occurs.
+    private func externalTopLevelProjectionScene(metrics: PickyHUDDockMetrics) -> Scene {
+        let source = group(id: "projection-source", name: "Source", color: .purple, memberIDs: [fiveRows[0].id])
+        let target = group(id: "projection-target", name: "Review", color: .amber, memberIDs: twoRows.map(\.id))
+        let looseSession = fiveSessions[4]
+        let layout = PickyDockLayout(entries: [.group(source), .group(target), .session(id: looseSession.id)])
+        let projection = PickyDockProjector.project(layout: layout, visibleSessionIDs: fiveSessions.map(\.id))
+        let presentationStore = PickyHUDDockExternalDragRailPresentationStore()
+        presentationStore.show(
+            token: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
+            sessionID: fiveRows[0].id,
+            destination: .topLevel(index: 1)
+        )
+        let contentSize = CGSize(width: 460, height: 130)
+        return Scene(
+            name: "external-drag-top-level-large-light-130.png",
+            contentLogicalSize: contentSize,
+            canvasInsets: externalDragGalleryCanvasInsets,
+            appearance: .light,
+            preset: metrics.preset,
+            fontScale: 1.3,
+            content: AnyView(
+                dockRail(
+                    sessions: fiveSessions,
+                    allSessions: fiveSessions,
+                    layout: layout,
+                    projection: projection,
+                    dockSide: .bottom,
+                    metrics: metrics,
+                    availableRailLength: contentSize.width,
+                    externalDragPresentationStore: presentationStore
+                )
+                .frame(width: contentSize.width, height: contentSize.height, alignment: .topLeading)
+            )
+        )
+    }
+
     private func folder(
         group: PickyDockGroup,
         members: [PickyHUDDockSession],
@@ -387,9 +504,11 @@ struct PickyHUDDockGroupRenderGalleryTests {
         rows: [PickyHUDDockGroupListRowModel],
         selectedID: String?,
         highlightedID: String? = nil,
-        metrics: PickyHUDDockMetrics
+        metrics: PickyHUDDockMetrics,
+        externalDragPresentationStore: PickyHUDDockExternalDragRailPresentationStore? = nil
     ) -> some View {
-        PickyHUDDockGroupListView(
+        let presentationStore = externalDragPresentationStore ?? PickyHUDDockExternalDragRailPresentationStore()
+        return PickyHUDDockGroupListView(
             group: group,
             rows: rows,
             unreadSessionIDs: Set(rows.prefix(1).map(\.id)),
@@ -411,7 +530,68 @@ struct PickyHUDDockGroupRenderGalleryTests {
             onReorderSession: { _, _ in },
             relativeTime: { _ in "5 min ago" },
             liveRowIDs: { rows.map(\.id) },
-            convertScreenPointToPanel: { $0 }
+            convertScreenPointToPanel: { $0 },
+            externalDragPresentationStore: presentationStore
+        )
+    }
+
+    private func dockRail(
+        sessions: [PickyHUDDockSession],
+        allSessions: [PickyHUDDockSession],
+        layout: PickyDockLayout,
+        projection: PickyDockProjection,
+        dockSide: PickyHUDDockSide,
+        metrics: PickyHUDDockMetrics,
+        availableRailLength: CGFloat,
+        externalDragPresentationStore: PickyHUDDockExternalDragRailPresentationStore
+    ) -> some View {
+        PickyHUDDockRailView(
+            sessions: sessions,
+            allSessions: allSessions,
+            baseProjection: projection,
+            layout: layout,
+            activeSessionID: nil,
+            openedSessionID: nil,
+            previewSessionID: nil,
+            screenContextTargetSessionID: nil,
+            screenContextTargetSticky: false,
+            dockSide: dockSide,
+            isCommandShortcutHintVisible: false,
+            pendingDoneFlashSessionIDs: [],
+            unreadSessionIDs: [],
+            metrics: metrics,
+            availableRailLength: availableRailLength,
+            onHoverSession: { _ in },
+            onOpenSession: { _ in },
+            onToggleScreenContextTarget: { _ in },
+            onToggleStickyScreenContextTarget: { _ in },
+            onCompactSession: { _ in },
+            onArchiveSession: { _ in },
+            onStopSession: { _ in },
+            onCreatePickle: { _ in },
+            pinnedPickleCwds: [],
+            recentPickleCwds: [],
+            onCreatePickleInRecentFolder: { _, _ in },
+            onRemoveRecentPickleFolder: { _ in },
+            onPinPickleFolder: { _ in },
+            onUnpinPickleFolder: { _ in },
+            onReorderPinnedPickleFolders: { _ in },
+            onCreateDockGroup: { _, _ in "render-gallery-group" },
+            onRenameDockGroup: { _, _ in },
+            onSetDockGroupColor: { _, _ in },
+            onActivateDockGroup: { _ in },
+            onRemoveDockGroup: { _, _ in },
+            onMoveSessionInDock: { _, _ in },
+            onMoveDockGroup: { _, _ in },
+            pendingPickleFolderPickerRequest: nil,
+            onPickleFolderPickerPresentationAcknowledged: { _ in },
+            onDockHoverChanged: { _ in },
+            onAddSlotExpandedChanged: { _ in },
+            onDoneFlashConsumed: { _ in },
+            onDockHandleDragChanged: { _ in },
+            onDockHandleDragEnded: {},
+            onDockHandleDoubleClick: {},
+            externalDragPresentationStore: externalDragPresentationStore
         )
     }
 
@@ -526,6 +706,18 @@ struct PickyHUDDockGroupRenderGalleryTests {
             leading: edgeInset,
             bottom: edgeInset,
             trailing: edgeInset
+        )
+    }
+
+    /// The production rail and detached preview use dragging elevation. Give
+    /// those two scenes one extra `space.4` above the content so their real
+    /// shadow remains inspectable instead of touching the transparent edge.
+    private var externalDragGalleryCanvasInsets: EdgeInsets {
+        EdgeInsets(
+            top: galleryCanvasInsets.top + DS.Spacing.space4,
+            leading: galleryCanvasInsets.leading,
+            bottom: galleryCanvasInsets.bottom,
+            trailing: galleryCanvasInsets.trailing
         )
     }
 

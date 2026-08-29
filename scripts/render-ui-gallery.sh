@@ -199,6 +199,8 @@ EXPECTED=(
   list-two-selected-medium-dark-100.png
   list-one-selected-medium-dark-100.png
   combined-folder-panel-medium-dark-100.png
+  external-drag-feedback-medium-dark-100.png
+  external-drag-top-level-large-light-130.png
 )
 
 rm -rf "$OUTPUT"

@@ -9,6 +9,57 @@ import Testing
 @testable import Picky
 
 struct PickyHUDDockRailPolicyTests {
+    @MainActor @Test func externalPresentationStoreScopesUpdatesAndClearsToItsToken() {
+        let store = PickyHUDDockExternalDragRailPresentationStore()
+        let token = UUID(uuidString: "00000000-0000-0000-0000-000000000007")!
+        let otherToken = UUID(uuidString: "00000000-0000-0000-0000-000000000008")!
+
+        store.update(token: token, destination: .topLevel(index: 0))
+        #expect(store.presentation == nil)
+        store.show(token: token, sessionID: "grouped", destination: .topLevel(index: 1))
+        store.update(token: otherToken, destination: .group(id: "other", memberIndex: 0))
+        #expect(store.presentation == .init(token: token, sessionID: "grouped", destination: .topLevel(index: 1)))
+        store.clear(token: otherToken)
+        #expect(store.presentation != nil)
+        store.clear(token: token)
+        #expect(store.presentation == nil)
+    }
+
+    @Test func externalGeometryPublishesOnlyForRestoredBasePresentation() {
+        #expect(PickyHUDDockExternalDragRailGeometryPolicy.shouldPublishExternalGeometry(
+            hasActivePresentation: false
+        ))
+        #expect(!PickyHUDDockExternalDragRailGeometryPolicy.shouldPublishExternalGeometry(
+            hasActivePresentation: true
+        ))
+    }
+
+    @Test func topLevelExternalPreviewInjectsAGroupedSessionExactlyOnceWithoutChangingNormalProjection() {
+        let groupedSessionID = "grouped"
+        let base = ["top-level"]
+
+        #expect(PickyHUDDockRenderPolicy.externalPreviewVisibleSessionIDs(
+            base: base,
+            draggedSessionID: groupedSessionID,
+            destination: .topLevel(index: 1)
+        ) == ["top-level", "grouped"])
+        #expect(PickyHUDDockRenderPolicy.externalPreviewVisibleSessionIDs(
+            base: ["top-level", groupedSessionID],
+            draggedSessionID: groupedSessionID,
+            destination: .topLevel(index: 1)
+        ) == ["top-level", "grouped"])
+        #expect(PickyHUDDockRenderPolicy.externalPreviewVisibleSessionIDs(
+            base: base,
+            draggedSessionID: groupedSessionID,
+            destination: .group(id: "source", memberIndex: 0)
+        ) == base)
+        #expect(PickyHUDDockRenderPolicy.externalPreviewVisibleSessionIDs(
+            base: base,
+            draggedSessionID: nil,
+            destination: .topLevel(index: 1)
+        ) == base)
+    }
+
     @Test func folderLabelsUseTheRenderedIdentityFontForEveryPresetAndAppFontScale() {
         for preset in PickyHUDDockSizePreset.allCases {
             let metrics = PickyHUDDockMetrics(preset: preset)

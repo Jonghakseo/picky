@@ -14,10 +14,62 @@ import Foundation
 enum PickyHUDDockGroupListDragOutcome: Equatable {
     /// Reorder within the group, expressed as a position among visible rows.
     case reorder(visibleIndex: Int)
-    /// Pulled clear of the panel long enough to mean "leave this group".
-    case ungroup
-    /// Released too early, or on nothing meaningful. Restore the original order.
+    /// Cross-axis panel exit transfers this physical press to Overlay Manager.
+    case promote
+    /// Released on nothing meaningful. Restore the original order.
     case cancel
+}
+
+/// Token-scoped terminal-event ownership for one physical group-list drag.
+/// A list monitor must synchronously transfer before Overlay Manager can own
+/// mouse-up, so late local/global monitor callbacks cannot persist a second move.
+@MainActor
+final class PickyHUDDockGroupListDragLease {
+    enum Owner: Equatable {
+        case idle
+        case list(UUID)
+        case external(UUID)
+    }
+
+    private(set) var owner: Owner = .idle
+
+    func begin(token: UUID) -> Bool {
+        guard owner == .idle else { return false }
+        owner = .list(token)
+        return true
+    }
+
+    func transferToExternal(token: UUID) -> Bool {
+        guard owner == .list(token) else { return false }
+        owner = .external(token)
+        return true
+    }
+
+    func ownsList(token: UUID) -> Bool { owner == .list(token) }
+    func ownsExternal(token: UUID) -> Bool { owner == .external(token) }
+
+    func reset(token: UUID) {
+        guard owner == .list(token) || owner == .external(token) else { return }
+        owner = .idle
+    }
+}
+
+enum PickyHUDDockGroupListDragMonitorPolicy {
+    private static let requiredMonitorCount = 4
+
+    static func completeSet(
+        from monitors: [Any?],
+        remove: (Any) -> Void
+    ) -> [Any]? {
+        let installed = monitors.compactMap { $0 }
+        guard monitors.count == requiredMonitorCount,
+              installed.count == requiredMonitorCount
+        else {
+            installed.forEach(remove)
+            return nil
+        }
+        return installed
+    }
 }
 
 enum PickyHUDDockGroupListDragPolicy {
@@ -59,19 +111,13 @@ enum PickyHUDDockGroupListDragPolicy {
         referenceRowIDs == currentRowIDs
     }
 
-    /// Pull-out is deliberately slower than a flick: a pointer that merely
-    /// clips the panel edge mid-reorder must not silently ungroup the Pickle.
-    static let pullOutDwell: TimeInterval = 0.25
-
     static func outcome(
         isInsidePanel: Bool,
-        timeOutsidePanel: TimeInterval,
         insertionIndex: Int,
         isDraggedRowStillPresent: Bool
     ) -> PickyHUDDockGroupListDragOutcome {
         guard isDraggedRowStillPresent else { return .cancel }
-        if isInsidePanel { return .reorder(visibleIndex: insertionIndex) }
-        return timeOutsidePanel >= pullOutDwell ? .ungroup : .cancel
+        return isInsidePanel ? .reorder(visibleIndex: insertionIndex) : .promote
     }
 
     static let autoScrollEdgeInset: CGFloat = 24
@@ -104,6 +150,15 @@ enum PickyHUDDockGroupListDragPolicy {
         from rowCenters: [String: CGFloat]
     ) -> [String: CGFloat] {
         rowCenters.mapValues { $0 + visualOffsetDelta }
+    }
+
+    /// Keep full row geometry in the same visual coordinate space as centers
+    /// until the next SwiftUI preference pass replaces both measurements.
+    static func rowFrames(
+        afterVisualOffsetDelta visualOffsetDelta: CGFloat,
+        from rowFrames: [String: CGRect]
+    ) -> [String: CGRect] {
+        rowFrames.mapValues { $0.offsetBy(dx: 0, dy: visualOffsetDelta) }
     }
 
     /// Resolves edge velocity against the actual visible viewport, not the

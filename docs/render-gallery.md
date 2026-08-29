@@ -53,13 +53,13 @@ The gallery is not a substitute for live interaction checks when a change concer
 
 The command cleans and regenerates `build/render-gallery/dock-group/` with:
 
-- eighteen 2× PNG scenes covering Small/Medium/Large, light/dark, 100%/130% app font scale, empty/non-empty folders, two selected folder scenes, two targeted folder scenes, one-, two-, and five-member selected lists, a five-member keyboard-highlighted quick-action list at Small/130%, a four-member idle list with no selected or keyboard-highlighted row, a four-character Korean folder label, and the folder-to-panel gap relationship. Empty member lists are intentionally excluded because an open group list requires at least one visible Pickle;
+- twenty 2× PNG scenes covering Small/Medium/Large, light/dark, 100%/130% app font scale, empty/non-empty folders, two selected folder scenes, two targeted folder scenes, one-, two-, and five-member selected lists, a five-member keyboard-highlighted quick-action list at Small/130%, a four-member idle list with no selected or keyboard-highlighted row, a four-character Korean folder label, and the folder-to-panel gap relationship. Two external-drag scenes add a 35% source row ghost, invalid detached preview, exact target-folder acceptance, and a top-level insertion projection. Empty member lists are intentionally excluded because an open group list requires at least one visible Pickle;
 - `index.html` for direct artifact inspection;
 - `manifest.json` with separate content-logical and padded-canvas dimensions, pixel dimensions, appearance, preset, and font scale. The canvas keeps a `space.4` (16pt) review margin, exceeding the folder unread badge's documented 7pt visual top overflow (4pt offset + rounded 2.5pt shadow bleed), so intentional overlap is never mistaken for clipping.
 
 It runs only `PickyHUDDockGroupRenderGalleryTests`. That test uses an offscreen `NSHostingView` bitmap cache and the actual `PickyHUDDockGroupFolderTileView`, `PickyHUDDockCollapsedGroupBadge`, `PickyHUDDockGroupEmptySlot`, `PickyHUDDockGroupHeader`, and `PickyHUDDockGroupListView` production components. Fixtures have fixed identities, text, session states, paths, timestamps, and English locale.
 
-The test verifies PNG encoding/decoding, expected 2× canvas dimensions, non-empty alpha content, transparent canvas edges, list panel geometry from `PickyHUDDockGroupListPolicy`, and folder/header geometry from `PickyHUDDockGroupHeaderPresentation`. It intentionally does not compare byte-for-byte or commit golden images because macOS font and material rendering varies between OS versions.
+The test verifies PNG encoding/decoding, expected 2× canvas dimensions, non-empty alpha content, transparent canvas edges, list panel geometry from `PickyHUDDockGroupListPolicy`, and folder/header geometry from `PickyHUDDockGroupHeaderPresentation`. External-drag scenes use the production list, rail presentation store, rail projection, folder tile, and detached-preview content. It intentionally does not compare byte-for-byte or commit golden images because macOS font and material rendering varies between OS versions.
 
 ## Conversation context gallery
 

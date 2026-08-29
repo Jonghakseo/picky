@@ -1227,6 +1227,10 @@ final class PickyHUDOverlayManager {
             maxWidth: computeAvailableCardMaxWidth(for: screen, dockSide: pos.side),
             maxHeight: computeAvailableCardMaxHeight(for: screen, dockSide: pos.side, anchorPercent: pos.anchorPercent)
         )
+        // Snapped sizes repeat while the pointer moves inside one grid step;
+        // re-applying an identical size would re-run the whole card layout for
+        // nothing.
+        guard currentCardSizesByDisplayID[String(displayID)] != next else { return }
         currentCardSizesByDisplayID[String(displayID)] = next
         entry.placement.cardSize = next
         entry.placement.panelWidth = panelWidth(for: displayID, dockSide: pos.side)

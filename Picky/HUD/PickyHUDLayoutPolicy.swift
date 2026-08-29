@@ -474,12 +474,22 @@ enum PickyHUDDockLayout {
         return startSizes
     }
 
+    /// Live resize applies the card size on this grid. Every applied size change
+    /// re-runs the whole conversation card layout (~40ms with two dozen
+    /// messages), and that cost scales with the number of applied updates, not
+    /// with drag distance: the same 100pt drag measured 4080ms across 100 1pt
+    /// updates versus 505ms across 12 8pt updates. The grid matches
+    /// `PickyConversationBubbleLayout.widthQuantum` so bubble caps and card
+    /// width step together instead of thrashing the measurement cache.
+    static let resizeStep: CGFloat = 8
+
     static func resizedCardSize(
         from startSize: PickyHUDCardSize,
         delta: CGPoint,
         dockSide: PickyHUDDockSide,
         maxWidth: CGFloat = PickyHUDCardSize.widthRange.upperBound,
-        maxHeight: CGFloat = PickyHUDCardSize.heightRange.upperBound
+        maxHeight: CGFloat = PickyHUDCardSize.heightRange.upperBound,
+        step: CGFloat = resizeStep
     ) -> PickyHUDCardSize {
         let rawWidth: CGFloat
         let rawHeight: CGFloat
@@ -495,11 +505,16 @@ enum PickyHUDDockLayout {
             rawHeight = startSize.height + delta.y
         }
         return PickyHUDCardSize.clamped(
-            width: rawWidth,
-            height: rawHeight,
+            width: snapped(rawWidth, step: step),
+            height: snapped(rawHeight, step: step),
             maxWidth: maxWidth,
             maxHeight: maxHeight
         )
+    }
+
+    private static func snapped(_ value: CGFloat, step: CGFloat) -> CGFloat {
+        guard step > 0 else { return value }
+        return (value / step).rounded() * step
     }
 
     // Compatibility forwarding shim: the HUD view still imports dock layout,

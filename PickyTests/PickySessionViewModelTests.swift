@@ -2388,8 +2388,27 @@ struct PickySessionViewModelTests {
         let start = try #require(snapshot[displayKey])
 
         #expect(start == PickyHUDCardSize(width: 446, height: 344))
-        #expect(PickyHUDDockLayout.resizedCardSize(from: start, delta: CGPoint(x: -20, y: 0), dockSide: .right) == PickyHUDCardSize(width: 466, height: 344))
-        #expect(PickyHUDDockLayout.resizedCardSize(from: start, delta: CGPoint(x: -40, y: 0), dockSide: .right) == PickyHUDCardSize(width: 486, height: 344))
+        // Applied sizes land on the live-resize grid (see `resizeStep`).
+        #expect(PickyHUDDockLayout.resizedCardSize(from: start, delta: CGPoint(x: -20, y: 0), dockSide: .right) == PickyHUDCardSize(width: 464, height: 344))
+        #expect(PickyHUDDockLayout.resizedCardSize(from: start, delta: CGPoint(x: -40, y: 0), dockSide: .right) == PickyHUDCardSize(width: 488, height: 344))
+    }
+
+    @Test func hudCardResizeAppliesSizesOnTheResizeGrid() {
+        let start = PickyHUDCardSize(width: 448, height: 448)
+        let step = PickyHUDDockLayout.resizeStep
+
+        // Pointer movement inside one grid step keeps producing the same size,
+        // so the card layout is not re-run for sub-step drags.
+        let sizes = (0...Int(step)).map { offset in
+            PickyHUDDockLayout.resizedCardSize(
+                from: start,
+                delta: CGPoint(x: -CGFloat(offset), y: 0),
+                dockSide: .right
+            )
+        }
+        #expect(Set(sizes.map(\.width)).count == 2)
+        #expect(sizes.allSatisfy { $0.width.truncatingRemainder(dividingBy: step) == 0 })
+        #expect(sizes.last == PickyHUDCardSize(width: 448 + step, height: 448))
     }
 
     @Test func hudCardResizeStartSnapshotKeepsStoredSizeOverUpdatedMeasurements() throws {
@@ -2409,10 +2428,10 @@ struct PickySessionViewModelTests {
     @Test func hudCardResizeDeltaMapsToDockOrientation() throws {
         let start = PickyHUDCardSize(width: 446, height: 420)
 
-        #expect(PickyHUDDockLayout.resizedCardSize(from: start, delta: CGPoint(x: -40, y: -30), dockSide: .right) == PickyHUDCardSize(width: 486, height: 450))
-        #expect(PickyHUDDockLayout.resizedCardSize(from: start, delta: CGPoint(x: 40, y: -30), dockSide: .left) == PickyHUDCardSize(width: 486, height: 450))
-        #expect(PickyHUDDockLayout.resizedCardSize(from: start, delta: CGPoint(x: 40, y: -30), dockSide: .top) == PickyHUDCardSize(width: 486, height: 450))
-        #expect(PickyHUDDockLayout.resizedCardSize(from: start, delta: CGPoint(x: 40, y: 30), dockSide: .bottom) == PickyHUDCardSize(width: 486, height: 450))
+        #expect(PickyHUDDockLayout.resizedCardSize(from: start, delta: CGPoint(x: -40, y: -30), dockSide: .right) == PickyHUDCardSize(width: 488, height: 448))
+        #expect(PickyHUDDockLayout.resizedCardSize(from: start, delta: CGPoint(x: 40, y: -30), dockSide: .left) == PickyHUDCardSize(width: 488, height: 448))
+        #expect(PickyHUDDockLayout.resizedCardSize(from: start, delta: CGPoint(x: 40, y: -30), dockSide: .top) == PickyHUDCardSize(width: 488, height: 448))
+        #expect(PickyHUDDockLayout.resizedCardSize(from: start, delta: CGPoint(x: 40, y: 30), dockSide: .bottom) == PickyHUDCardSize(width: 488, height: 448))
     }
 
     @Test func hudCardResizeClampsToAllowedBounds() throws {

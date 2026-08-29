@@ -23,6 +23,12 @@ enum PickyConversationBubbleLayout {
     static let narrativeMaxWidth: CGFloat = 720
     static let oppositeSideReserve: CGFloat = 16
     static let horizontalStackSpacing: CGFloat = 0
+    /// Bubble caps snap down to this grid. Markdown measurement is cached per
+    /// exact width, so an unquantized cap makes every pixel of a card-resize
+    /// drag re-measure every bubble in the card. Snapping keeps the cache warm
+    /// for a whole grid step; the bubble still hugs its content, so the only
+    /// visible effect is that re-wrapping happens in 8pt increments.
+    static let widthQuantum: CGFloat = 8
 
     static func bubbleShape(side: BubbleSide) -> UnevenRoundedRectangle {
         switch side {
@@ -59,6 +65,12 @@ enum PickyConversationBubbleLayout {
         let reserveWidth = max(0, oppositeSideReserve + horizontalStackSpacing)
         let widthAfterReserve = max(0, contentWidth - reserveWidth)
         let relativeWidth = max(0, min(fractionalWidth, widthAfterReserve))
-        return min(relativeWidth, narrativeMaxWidth)
+        return quantized(min(relativeWidth, narrativeMaxWidth))
+    }
+
+    /// Snaps down so a quantized cap never exceeds the width the caller offered.
+    static func quantized(_ width: CGFloat, quantum: CGFloat = widthQuantum) -> CGFloat {
+        guard quantum > 0, width > quantum else { return width }
+        return (width / quantum).rounded(.down) * quantum
     }
 }

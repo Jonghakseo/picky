@@ -114,6 +114,16 @@ extension PickyHUDOverlayManager {
         hideDockGroupListChild(displayID: displayID)
     }
 
+    /// Folder direct manipulation replaces its hover state. Close the detached
+    /// peek before drag geometry can reposition it alongside the folder.
+    func handleDockGroupTileDragBegin(displayID: CGDirectDisplayID) {
+        let presentation = dockGroupListChildrenByDisplayID[displayID]?.presentation
+        guard PickyHUDDockGroupListHoverPolicy.shouldCloseForDockGroupDrag(
+            presentation: presentation
+        ) else { return }
+        hideDockGroupListChild(displayID: displayID)
+    }
+
     /// Promotes the display's peek only after explicit keyboard activation.
     func pinDockGroupListChild(displayID: CGDirectDisplayID) {
         guard var entry = dockGroupListChildrenByDisplayID[displayID],

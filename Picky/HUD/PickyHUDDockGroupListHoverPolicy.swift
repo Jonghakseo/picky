@@ -58,6 +58,15 @@ enum PickyHUDDockGroupListHoverPolicy {
         presentation == .peek
     }
 
+    /// Dragging a folder transfers pointer ownership from hover disclosure to
+    /// direct manipulation. Its transient list must disappear before moving
+    /// folder geometry can re-anchor the detached panel; a keyboard pin stays.
+    static func shouldCloseForDockGroupDrag(
+        presentation: PickyHUDDockGroupListPresentation?
+    ) -> Bool {
+        presentation == .peek
+    }
+
     /// The folder and its panel are separated by `panelGap`, so pointer
     /// containment alone would drop the peek mid-travel. Their bounding union
     /// spans that gap and stays generous on the diagonal, which is the path a

@@ -570,6 +570,9 @@ final class PickyHUDOverlayManager {
                     isHovering: isHovering
                 )
             },
+            onDockGroupTileDragBegin: { [weak self] _ in
+                self?.handleDockGroupTileDragBegin(displayID: displayID)
+            },
             onDockGroupListClose: { [weak self] in
                 self?.hideDockGroupListChild(displayID: displayID)
             },

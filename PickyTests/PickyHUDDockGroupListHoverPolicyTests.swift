@@ -6,6 +6,7 @@
 //  the two from trading places behind the user's back.
 //
 
+import AppKit
 import CoreGraphics
 import Foundation
 import Testing
@@ -96,6 +97,62 @@ struct PickyHUDDockGroupListHoverPolicyTests {
         #expect(
             !PickyHUDDockGroupListHoverPolicy.shouldCloseForDockSessionHover(presentation: nil)
         )
+    }
+
+    @Test func draggingAFolderImmediatelyClosesOnlyItsPointerOwnedPeek() {
+        #expect(
+            PickyHUDDockGroupListHoverPolicy.shouldCloseForDockGroupDrag(presentation: .peek)
+        )
+        #expect(
+            !PickyHUDDockGroupListHoverPolicy.shouldCloseForDockGroupDrag(presentation: .pinned)
+        )
+        #expect(
+            !PickyHUDDockGroupListHoverPolicy.shouldCloseForDockGroupDrag(presentation: nil)
+        )
+    }
+
+    @Test @MainActor func groupDragBeginDismissesThePeekButPreservesAPinnedList() {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PickyHUDDockGroupDragPeekTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let settingsStore = PickySettingsStore(appSupportRoot: root)
+        let manager = PickyHUDOverlayManager(
+            viewModel: PickySessionListViewModel(
+                client: FakePickyAgentClient(),
+                notificationCenter: PickyNoopNotificationCenter()
+            ),
+            appearanceStore: PickyAppearanceStore(settingsStore: settingsStore),
+            fontScaleStore: PickyAppFontScaleStore(settingsStore: settingsStore),
+            visibilityStore: PickyHUDVisibilityStore(settingsStore: settingsStore),
+            settingsStore: settingsStore,
+            voiceTargetHitTestRegistry: PickyVoiceTargetHitTestRegistry()
+        )
+        let displayID: CGDirectDisplayID = 71
+        let panel = PickyHUDDockGroupListPanel(
+            contentRect: .zero,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        manager.dockGroupListChildrenByDisplayID[displayID] = .init(
+            panel: panel,
+            openGroupID: "peek",
+            presentation: .peek
+        )
+
+        manager.handleDockGroupTileDragBegin(displayID: displayID)
+
+        #expect(manager.dockGroupListChildrenByDisplayID[displayID] == nil)
+
+        manager.dockGroupListChildrenByDisplayID[displayID] = .init(
+            panel: panel,
+            openGroupID: "pinned",
+            presentation: .pinned
+        )
+
+        manager.handleDockGroupTileDragBegin(displayID: displayID)
+
+        #expect(manager.dockGroupListChildrenByDisplayID[displayID]?.openGroupID == "pinned")
     }
 
     @Test func theCorridorSpansTheGapBetweenTheFolderAndItsPanel() {

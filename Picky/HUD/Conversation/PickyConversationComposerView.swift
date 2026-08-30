@@ -292,7 +292,7 @@ struct PickyConversationComposerView: View {
         }
         .padding(.leading, DS.Spacing.space3)
         .padding(.trailing, DS.Spacing.space2)
-        .padding(.top, DS.Spacing.xs)
+        .padding(.top, DS.Spacing.space3)
         .padding(.bottom, DS.Spacing.sm)
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())

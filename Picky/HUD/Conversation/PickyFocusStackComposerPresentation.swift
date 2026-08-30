@@ -70,9 +70,12 @@ struct PickyComposerSubmitPresentation: Equatable {
 struct PickyComposerRuntimePresentation: Equatable {
     let modelText: String?
     let thinkingText: String?
+    private let modelIdentifier: String?
 
     init(assistantRun: PickyAssistantRunMetadata?) {
-        modelText = Self.normalized(assistantRun?.model)
+        let modelIdentifier = Self.normalized(assistantRun?.model)
+        self.modelIdentifier = modelIdentifier
+        modelText = modelIdentifier.map(Self.visibleModelName)
         thinkingText = assistantRun?.thinkingLevel.map { Self.normalized($0.rawValue) } ?? nil
     }
 
@@ -81,7 +84,7 @@ struct PickyComposerRuntimePresentation: Equatable {
     }
 
     var modelLabel: String? {
-        modelText.map { L10n.t("hud.conversation.meta.model", $0) }
+        modelIdentifier.map { L10n.t("hud.conversation.meta.model", $0) }
     }
 
     var thinkingLabel: String? {
@@ -92,6 +95,10 @@ struct PickyComposerRuntimePresentation: Equatable {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func visibleModelName(_ identifier: String) -> String {
+        identifier.split(separator: "/", omittingEmptySubsequences: true).last.map(String.init) ?? identifier
     }
 }
 

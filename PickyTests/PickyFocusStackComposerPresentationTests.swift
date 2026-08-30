@@ -22,7 +22,7 @@ struct PickyFocusStackComposerPresentationTests {
         #expect(bashSteer.iconName == "play.fill")
     }
 
-    @Test func runtimePresentationUsesFullModelAndThinkingValues() {
+    @Test func runtimePresentationOmitsProviderFromVisibleModelButKeepsFullAccessibilityLabel() {
         let presentation = PickyComposerRuntimePresentation(
             assistantRun: PickyAssistantRunMetadata(
                 model: "anthropic/claude-opus-4-7",
@@ -31,6 +31,7 @@ struct PickyFocusStackComposerPresentationTests {
         )
 
         #expect(presentation.hasControls)
+        #expect(presentation.modelText == "claude-opus-4-7")
         #expect(presentation.modelLabel == L10n.t("hud.conversation.meta.model", "anthropic/claude-opus-4-7"))
         #expect(presentation.thinkingLabel == L10n.t("hud.conversation.meta.thinking", "xhigh"))
         #expect(!PickyComposerRuntimePresentation(assistantRun: nil).hasControls)

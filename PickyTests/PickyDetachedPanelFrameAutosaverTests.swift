@@ -177,6 +177,7 @@ struct PickyDetachedPanelFrameAutosaverTests {
             backing: .buffered,
             defer: false
         )
+        panel.isReleasedWhenClosed = false
         defer { panel.close() }
 
         let autosaver = PickyDetachedPanelFrameAutosaver(panel: panel, persister: persister)
@@ -197,6 +198,7 @@ struct PickyDetachedPanelFrameAutosaverTests {
             backing: .buffered,
             defer: false
         )
+        panel.isReleasedWhenClosed = false
         defer { panel.close() }
 
         // .titled adds a titlebar height to the frame, so capture the resolved
@@ -221,6 +223,7 @@ struct PickyDetachedPanelFrameAutosaverTests {
             backing: .buffered,
             defer: false
         )
+        panel.isReleasedWhenClosed = false
         defer { panel.close() }
 
         let autosaver = PickyDetachedPanelFrameAutosaver(panel: panel, persister: persister)
@@ -253,6 +256,7 @@ struct PickyDetachedPanelFrameAutosaverTests {
             backing: .buffered,
             defer: false
         )
+        panel.isReleasedWhenClosed = false
         defer { panel.close() }
 
         let autosaver = PickyDetachedPanelFrameAutosaver(panel: panel, persister: persister)
@@ -279,6 +283,7 @@ struct PickyDetachedPanelFrameAutosaverTests {
             backing: .buffered,
             defer: false
         )
+        panel.isReleasedWhenClosed = false
         defer { panel.close() }
 
         autoreleasepool {

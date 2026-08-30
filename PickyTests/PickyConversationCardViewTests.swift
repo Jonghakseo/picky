@@ -1160,6 +1160,10 @@ struct PickyConversationCardViewTests {
                 backing: .buffered,
                 defer: false
             )
+            // NSWindow defaults to isReleasedWhenClosed = true, so closing it here
+            // would over-release it under ARC and crash the test host later, during
+            // an unrelated autorelease pool drain.
+            window.isReleasedWhenClosed = false
             window.contentView = host
             defer { window.close() }
 

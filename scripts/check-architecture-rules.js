@@ -594,6 +594,23 @@ function checkSessionProjectionGuardFixtures() {
   }
 }
 
+function checkTestWindowReleasePolicy() {
+  // NSWindow/NSPanel default to isReleasedWhenClosed = true. A test that closes
+  // one under ARC over-releases it, and the crash surfaces much later inside an
+  // unrelated autorelease pool drain, blaming whichever test happens to be
+  // running. Production window controllers already opt out; tests must too.
+  for (const file of walk("PickyTests", (candidate) => candidate.endsWith(".swift"))) {
+    const text = fs.readFileSync(file, "utf8");
+    if (!/NS(Window|Panel)\s*\(/.test(text)) continue;
+    if (!/\.close\(\)/.test(text)) continue;
+    if (/isReleasedWhenClosed\s*=\s*false/.test(text)) continue;
+    addError(
+      `${rel(file)} closes an NSWindow/NSPanel without setting isReleasedWhenClosed = false. ` +
+        "ARC then double-releases the window and crashes the test host during a later autorelease drain."
+    );
+  }
+}
+
 function checkFileSizeRatchet() {
   // Hard ratchet: existing oversized files may only shrink. Growing past the
   // pinned ratchet, or adding a new file above the threshold, is an error.
@@ -665,6 +682,7 @@ function main() {
     checkInteractionReducerMutationBoundary();
     checkSecretCodingKeys();
     checkSessionProjectionRules();
+    checkTestWindowReleasePolicy();
     checkFileSizeRatchet();
   }
 

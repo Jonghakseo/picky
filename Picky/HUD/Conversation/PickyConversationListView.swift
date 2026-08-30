@@ -33,6 +33,7 @@ struct PickyConversationListView: View {
         navigationRequest: PickyConversationNavigationRequest = .init(),
         suppressesInternalLatestAction: Bool = false,
         onViewportStateChanged: @escaping (PickyConversationViewportState) -> Void = { _ in },
+        onViewportHeightChanged: ((CGFloat) -> Void)? = nil,
         onInitialBottomPinReady: @escaping () -> Void = { },
         onBodyEvaluation: @escaping () -> Void = { },
         onMessageLeafBodyEvaluation: @escaping (String, Bool, Bool) -> Void = { _, _, _ in }
@@ -46,6 +47,7 @@ struct PickyConversationListView: View {
         self.navigationRequest = navigationRequest
         self.suppressesInternalLatestAction = suppressesInternalLatestAction
         self.onViewportStateChanged = onViewportStateChanged
+        self.onViewportHeightChanged = onViewportHeightChanged
         self.onInitialBottomPinReady = onInitialBottomPinReady
         self.onBodyEvaluation = onBodyEvaluation
         self.onMessageLeafBodyEvaluation = onMessageLeafBodyEvaluation
@@ -61,6 +63,9 @@ struct PickyConversationListView: View {
     var navigationRequest = PickyConversationNavigationRequest()
     var suppressesInternalLatestAction = false
     var onViewportStateChanged: (PickyConversationViewportState) -> Void = { _ in }
+    /// Test-only observation hook. Production leaves it nil, avoiding another
+    /// GeometryReader in the hot Journal render path.
+    var onViewportHeightChanged: ((CGFloat) -> Void)?
     /// Fires once the initial bottom anchor is confirmed inside the viewport.
     /// This is a geometry-ready milestone, not a generic next-runloop guess.
     var onInitialBottomPinReady: () -> Void = { }
@@ -194,6 +199,17 @@ struct PickyConversationListView: View {
                 }
             }
             .frame(minHeight: 80, maxHeight: fillsAvailableHeight ? .infinity : 640)
+            .background {
+                if let onViewportHeightChanged {
+                    GeometryReader { proxy in
+                        Color.clear
+                            .onAppear { onViewportHeightChanged(proxy.size.height) }
+                            .onChange(of: proxy.size.height) { _, height in
+                                onViewportHeightChanged(height)
+                            }
+                    }
+                }
+            }
             .onPreferenceChange(PickyConversationScrollViewportPreferenceKey.self) { height in
                 scrollViewportHeight = height
                 updatePinnedStateFromViewportGeometry()

@@ -53,6 +53,8 @@ struct PickyConversationCardView: View {
     var isUtilityPanelOpen = false
     var onToggleUtilityPanel: () -> Void = { }
     var onInitialContentReady: () -> Void = { }
+    /// Test-only observation hook. Production leaves it nil.
+    var onConversationViewportHeightChange: ((CGFloat) -> Void)?
     @State private var droppedFilePaths: [String] = []
     @State private var isFileDropTargeted = false
     @State private var showingRewindPicker = false
@@ -78,7 +80,8 @@ struct PickyConversationCardView: View {
         isOptionModifierPressed: Bool = false,
         isUtilityPanelOpen: Bool = false,
         onToggleUtilityPanel: @escaping () -> Void = { },
-        onInitialContentReady: @escaping () -> Void = { }
+        onInitialContentReady: @escaping () -> Void = { },
+        onConversationViewportHeightChange: ((CGFloat) -> Void)? = nil
     ) {
         self.viewModel = viewModel
         self.sessionStore = sessionStore
@@ -94,6 +97,7 @@ struct PickyConversationCardView: View {
         self.isUtilityPanelOpen = isUtilityPanelOpen
         self.onToggleUtilityPanel = onToggleUtilityPanel
         self.onInitialContentReady = onInitialContentReady
+        self.onConversationViewportHeightChange = onConversationViewportHeightChange
     }
 
     /// Compatibility entry point for existing unit tests and previews. Runtime
@@ -112,7 +116,8 @@ struct PickyConversationCardView: View {
         isOptionModifierPressed: Bool = false,
         isUtilityPanelOpen: Bool = false,
         onToggleUtilityPanel: @escaping () -> Void = { },
-        onInitialContentReady: @escaping () -> Void = { }
+        onInitialContentReady: @escaping () -> Void = { },
+        onConversationViewportHeightChange: ((CGFloat) -> Void)? = nil
     ) {
         self.init(
             viewModel: viewModel,
@@ -128,7 +133,8 @@ struct PickyConversationCardView: View {
             isOptionModifierPressed: isOptionModifierPressed,
             isUtilityPanelOpen: isUtilityPanelOpen,
             onToggleUtilityPanel: onToggleUtilityPanel,
-            onInitialContentReady: onInitialContentReady
+            onInitialContentReady: onInitialContentReady,
+            onConversationViewportHeightChange: onConversationViewportHeightChange
         )
     }
 
@@ -263,8 +269,27 @@ struct PickyConversationCardView: View {
                     viewport: viewportState
                 ),
                 onViewportStateChanged: { viewportState = $0 },
+                onViewportHeightChanged: onConversationViewportHeightChange,
                 onInitialBottomPinReady: onInitialContentReady
             )
+            // Keep the Journal's proposed height identical across disclosure.
+            // The overlay reaches upward through the fixed 12pt chrome gap so
+            // the full-width list joins Live Step without entering layout.
+            .overlay(alignment: .topLeading) {
+                GeometryReader { journalProxy in
+                    PickyConversationLiveStepTodoDrawer(
+                        plan: plan,
+                        isExpanded: $isTodoExpanded
+                    )
+                    .frame(width: journalProxy.size.width, alignment: .top)
+                    .frame(
+                        maxHeight: journalProxy.size.height + DS.Spacing.md,
+                        alignment: .top
+                    )
+                    .clipped()
+                    .offset(y: -DS.Spacing.md)
+                }
+            }
             .padding(.bottom, DS.Spacing.sm)
 
             PickyConversationComposerView(

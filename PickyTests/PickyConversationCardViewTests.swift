@@ -1117,6 +1117,69 @@ struct PickyConversationCardViewTests {
         #expect(PickyConversationCardHeightPolicy.resolvedHeight(fixedHeight: 200, maxHeight: 900) == 320)
     }
 
+    @Test func expandingTodoDoesNotChangeConversationViewportHeight() throws {
+        let todoState = PickyTodoState(
+            tasks: (1...5).map { index in
+                PickyTodoTask(
+                    id: "todo-\(index)",
+                    content: "Task \(index)",
+                    status: index == 1 ? .inProgress : .pending
+                )
+            },
+            updatedAt: baseDate
+        )
+        let session = makeConversationSession(
+            status: .running,
+            messages: [
+                message("u1", kind: .userText, text: "Question"),
+                message("a1", kind: .agentText, text: "Answer"),
+            ],
+            todoState: todoState
+        )
+
+        func measuredViewportHeight(isExpanded: Bool) -> CGFloat? {
+            let viewModel = makeViewModel()
+            viewModel.setTodoProgressExpanded(isExpanded, sessionID: session.id)
+            var observedHeights: [CGFloat] = []
+            var lastChangeAt = Date()
+            let host = NSHostingView(rootView: PickyConversationCardView(
+                viewModel: viewModel,
+                session: session,
+                maxHeight: 900,
+                fixedHeight: 640,
+                onConversationViewportHeightChange: { height in
+                    if abs((observedHeights.last ?? 0) - height) > 0.5 {
+                        lastChangeAt = Date()
+                    }
+                    observedHeights.append(height)
+                }
+            ))
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: PickyHUDDockLayout.detailWidth, height: 640),
+                styleMask: [.borderless],
+                backing: .buffered,
+                defer: false
+            )
+            window.contentView = host
+            defer { window.close() }
+
+            let deadline = Date().addingTimeInterval(1)
+            repeat {
+                host.layoutSubtreeIfNeeded()
+                RunLoop.main.run(mode: .default, before: min(deadline, Date().addingTimeInterval(0.01)))
+            } while Date() < deadline && (
+                observedHeights.isEmpty || Date().timeIntervalSince(lastChangeAt) < 0.05
+            )
+            return observedHeights.last
+        }
+
+        let collapsedHeight = try #require(measuredViewportHeight(isExpanded: false))
+        let expandedHeight = try #require(measuredViewportHeight(isExpanded: true))
+
+        #expect(collapsedHeight > 80)
+        #expect(abs(collapsedHeight - expandedHeight) <= 0.5)
+    }
+
     @Test func fourLineDraftReportsTransientGrowthFromTheRenderedComposer() {
         let session = makeConversationSession(status: .running)
         let viewModel = makeViewModel()
@@ -2599,6 +2662,7 @@ private func makeConversationSession(
     steeringMode: PickyQueueMode = .oneAtATime,
     followUpMode: PickyQueueMode = .oneAtATime,
     tools: [PickyToolActivity] = [],
+    todoState: PickyTodoState? = nil,
     activitySummary: PickyActivitySummary = .zero,
     contextUsage: PickyContextUsage? = nil,
     pendingExtensionUiRequest: PickyExtensionUiRequest? = nil,
@@ -2618,6 +2682,7 @@ private func makeConversationSession(
             lastSummary: lastSummary,
             logs: logs,
             tools: tools,
+            todoState: todoState,
             artifacts: artifacts,
             changedFiles: [],
             messages: messages,

@@ -418,27 +418,31 @@ struct PickyConversationLiveStepZone: View {
                 .accessibilityLabel(L10n.t("hud.liveStep.runningBelowLatest.accessibilityLabel"))
                 .hoverAffordance()
         } else if let presentation = PickyConversationLiveStepPresentation(projection: projection) {
-            VStack(alignment: .leading, spacing: 0) {
-                PickyConversationLiveStepView(
-                    projection: projection,
-                    isTodoExpanded: isTodoExpanded,
-                    onToggleTodo: onToggleTodo,
-                    onGoToQuestion: onGoToQuestion
-                )
-                .accessibilityLabel(presentation.label)
+            PickyConversationLiveStepView(
+                projection: projection,
+                isTodoExpanded: isTodoExpanded,
+                onToggleTodo: onToggleTodo,
+                onGoToQuestion: onGoToQuestion
+            )
+            .accessibilityLabel(presentation.label)
+        }
+    }
+}
 
-                if let todoPresentation = projection.todoPresentation,
-                   PickyConversationPlanDrawerPolicy.canOpen(
-                       status: projection.status,
-                       todo: todoPresentation
-                   ) {
-                    PickyTodoProgressListView(
-                        presentation: todoPresentation,
-                        isSessionRunning: projection.status == .running,
-                        isExpanded: $isTodoExpanded
-                    )
-                }
-            }
+/// Renders the Plan list over the Journal so disclosure never changes the
+/// Journal viewport or Composer geometry.
+struct PickyConversationLiveStepTodoDrawer: View {
+    let plan: PickyConversationPlanProjection
+    @Binding var isExpanded: Bool
+
+    var body: some View {
+        if let todoPresentation = plan.todoPresentation,
+           PickyConversationPlanDrawerPolicy.shouldRenderDrawer(plan: plan, isExpanded: isExpanded) {
+            PickyTodoProgressListView(
+                presentation: todoPresentation,
+                isSessionRunning: plan.status == .running,
+                isExpanded: $isExpanded
+            )
         }
     }
 }

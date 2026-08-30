@@ -285,7 +285,7 @@ struct PickyConversationComposerView: View {
     }
 
     private var composerSurface: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: DS.Spacing.space1) {
             composerEditor
             attachmentChipsRow
             actionBar

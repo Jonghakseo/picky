@@ -203,6 +203,14 @@ struct PickyConversationHeaderRenderGalleryTests {
     private func makeComposerScenes() -> [Scene] {
         [
             Scene(
+                name: "composer-empty-running-dark-ko.png",
+                appearance: .dark,
+                content: AnyView(PickyConversationComposerRenderScene(
+                    id: "composer-empty-running",
+                    draft: ""
+                ))
+            ),
+            Scene(
                 name: "composer-one-line-dark-ko.png",
                 appearance: .dark,
                 content: AnyView(PickyConversationComposerRenderScene(

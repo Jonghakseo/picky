@@ -96,9 +96,9 @@ struct PickyComposerRuntimePresentation: Equatable {
 }
 
 enum PickyComposerEditorHeightPolicy {
-    /// The editor starts at one readable line, grows through four lines, then
-    /// leaves additional content to the native scroll view.
-    static let minimumHeight: CGFloat = 24
+    /// The editor reserves a two-line writing canvas, grows through four lines,
+    /// then leaves additional content to the native scroll view.
+    static let minimumHeight = DS.Spacing.space6 * 2
     static let maximumHeight: CGFloat = 78
     private static let estimatedLineHeight: CGFloat = 18
     private static let textInsetHeight: CGFloat = 2

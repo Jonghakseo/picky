@@ -1305,8 +1305,8 @@ struct PickyConversationCardViewTests {
         ) == nil)
     }
 
-    @Test func composerEditorHeightStartsAtOneLineAndCapsAtFourLines() {
-        #expect(PickyConversationComposerView.editorHeight(forMeasuredContentHeight: 0) == 24)
+    @Test func composerEditorHeightReservesTwoLinesAndCapsAtFourLines() {
+        #expect(PickyConversationComposerView.editorHeight(forMeasuredContentHeight: 0) == 48)
         #expect(PickyConversationComposerView.editorHeight(forMeasuredContentHeight: 49.2) == 50)
         #expect(PickyConversationComposerView.editorHeight(forMeasuredContentHeight: 61.2) == 62)
         #expect(PickyConversationComposerView.editorHeight(forMeasuredContentHeight: 120) == 78)

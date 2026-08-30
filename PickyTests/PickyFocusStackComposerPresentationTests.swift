@@ -36,28 +36,30 @@ struct PickyFocusStackComposerPresentationTests {
         #expect(!PickyComposerRuntimePresentation(assistantRun: nil).hasControls)
     }
 
-    @Test func editorHeightGrowsFromOneThroughFourLinesThenCaps() {
-        #expect(PickyComposerEditorHeightPolicy.height(forMeasuredContentHeight: 0) == 24)
-        #expect(PickyComposerEditorHeightPolicy.height(forMeasuredContentHeight: 23.5) == 24)
-        #expect(PickyComposerEditorHeightPolicy.height(forMeasuredContentHeight: 42.2) == 43)
+    @Test func editorHeightReservesTwoLinesThenGrowsThroughFourLinesAndCaps() {
+        #expect(PickyComposerEditorHeightPolicy.height(forMeasuredContentHeight: 0) == 48)
+        #expect(PickyComposerEditorHeightPolicy.height(forMeasuredContentHeight: 23.5) == 48)
+        #expect(PickyComposerEditorHeightPolicy.height(forMeasuredContentHeight: 42.2) == 48)
         #expect(PickyComposerEditorHeightPolicy.height(forMeasuredContentHeight: 76) == 76)
         #expect(PickyComposerEditorHeightPolicy.height(forMeasuredContentHeight: 120) == 78)
+        #expect(PickyComposerEditorHeightPolicy.height(for: "one") == 48)
+        #expect(PickyComposerEditorHeightPolicy.height(for: "one\ntwo") == 48)
         #expect(PickyComposerEditorHeightPolicy.height(for: "one\ntwo\nthree\nfour") == 76)
         #expect(PickyComposerEditorHeightPolicy.height(for: "one\ntwo\nthree\nfour\nfive") == 78)
     }
 
     @Test func editorGrowthExpandsTheCardTransientlyWithinTheScreenCap() {
-        #expect(PickyComposerEditorHeightPolicy.transientGrowth(forEditorHeight: 24) == 0)
-        #expect(PickyComposerEditorHeightPolicy.transientGrowth(forEditorHeight: 78) == 54)
+        #expect(PickyComposerEditorHeightPolicy.transientGrowth(forEditorHeight: 48) == 0)
+        #expect(PickyComposerEditorHeightPolicy.transientGrowth(forEditorHeight: 78) == 30)
         #expect(PickyConversationCardHeightPolicy.resolvedHeight(
             fixedHeight: 320,
             maxHeight: 900,
-            transientGrowth: 54
-        ) == 374)
+            transientGrowth: 30
+        ) == 350)
         #expect(PickyConversationCardHeightPolicy.resolvedHeight(
             fixedHeight: 320,
             maxHeight: 350,
-            transientGrowth: 54
+            transientGrowth: 30
         ) == 350)
         #expect(PickyConversationCardHeightPolicy.resolvedHeight(
             fixedHeight: 480,

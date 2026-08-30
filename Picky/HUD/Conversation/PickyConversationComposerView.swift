@@ -439,13 +439,11 @@ struct PickyConversationComposerView: View {
     }
 
     var notifyOnCompletionIconName: String {
-        session.notifyMainOnCompletion == true ? "bell.fill" : "bell.slash"
+        PickyComposerLabelPolicy.notifyOnCompletionIconName(enabled: session.notifyMainOnCompletion == true)
     }
 
     var notifyOnCompletionHelpText: String {
-        L10n.t(session.notifyMainOnCompletion == true
-            ? "hud.composer.notify.on.help"
-            : "hud.composer.notify.off.help")
+        PickyComposerLabelPolicy.notifyOnCompletionHelpText(enabled: session.notifyMainOnCompletion == true)
     }
 
     private var notifyOnCompletionColor: Color {
@@ -1091,11 +1089,7 @@ struct PickyConversationComposerView: View {
     }
 
     private var bashAccentColor: Color {
-        switch effectiveBashMode {
-        case .visible: return DS.Colors.successText
-        case .private: return DS.Colors.warningText
-        case .none: return DS.Colors.borderSubtle
-        }
+        PickyComposerLabelPolicy.bashAccentColor(for: effectiveBashMode)
     }
 
     /// Mirror of `parseUserBashInput` in agentd's session supervisor. Kept in
@@ -1294,46 +1288,21 @@ struct PickyConversationComposerView: View {
     }
 
     private var placeholder: String {
-        if session.isCompacting { return L10n.t("hud.composer.placeholder.compacting") }
-        if isFileDropTargeted { return L10n.t("hud.composer.placeholder.drop") }
-        switch session.status {
-        case .running, .queued, .waiting_for_input:
-            return L10n.t("hud.composer.placeholder.steer")
-        case .completed, .blocked:
-            return L10n.t("hud.composer.placeholder.followUp")
-        case .cancelled:
-            return L10n.t("hud.composer.placeholder.resume")
-        case .failed:
-            return L10n.t("hud.composer.placeholder.recovery")
-        }
+        PickyComposerLabelPolicy.placeholder(
+            isCompacting: session.isCompacting,
+            isFileDropTargeted: isFileDropTargeted,
+            status: session.status
+        )
     }
 
     var sendHelpText: String {
-        if session.isCompacting {
-            return L10n.t("hud.composer.send.compacting")
-        }
-        guard defaultSubmitKind != nil else {
-            return L10n.t("hud.composer.send.unavailable")
-        }
-        guard hasDraftText else {
-            return L10n.t("hud.composer.send.empty")
-        }
-
-        switch effectiveBashMode {
-        case .visible:
-            return L10n.t("hud.composer.send.bashVisible")
-        case .private:
-            return L10n.t("hud.composer.send.bashPrivate")
-        case .none:
-            switch activeSubmitKind {
-            case .steer:
-                return L10n.t("hud.composer.send.steer")
-            case .followUp:
-                return L10n.t("hud.composer.send.followUp")
-            case nil:
-                return L10n.t("hud.composer.send.unavailable")
-            }
-        }
+        PickyComposerLabelPolicy.sendHelpText(
+            isCompacting: session.isCompacting,
+            hasDefaultSubmitKind: defaultSubmitKind != nil,
+            hasDraftText: hasDraftText,
+            bashMode: effectiveBashMode,
+            activeSubmitKind: activeSubmitKind
+        )
     }
 
     private var sendColor: Color {
@@ -1525,18 +1494,5 @@ struct PickyConversationComposerView: View {
     private func stopIfPossible() {
         guard [.running, .queued, .waiting_for_input].contains(session.status) else { return }
         Task { try? await commands.abortRestoringQueuedInputs(sessionID: session.id) }
-    }
-}
-
-/// Static tinted border used as the "this Pickle is live" signal on the
-/// composer of a running Pickle. The running state is already conveyed by the
-/// header status dot and the card status border; this is a steady peripheral
-/// cue exactly where the user next acts, without decorative motion.
-private struct PickyRunningComposerBorder: View {
-    var body: some View {
-        let _ = PickyPerf.event("running_composer_border_body")
-        RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
-            .strokeBorder(DS.Colors.info.opacity(0.7), lineWidth: 1.0)
-            .accessibilityHidden(true)
     }
 }

@@ -193,6 +193,21 @@ extension PickySessionListViewModel {
     typealias SessionCard = PickySessionCard
 }
 
+extension PickySessionNotificationPolicy.Input {
+    init(card: PickySessionCard) {
+        self.init(
+            sessionID: card.id,
+            title: card.title,
+            status: card.status,
+            lastSummary: card.lastSummary,
+            pendingRequest: card.pendingExtensionUiRequest.map {
+                PendingRequest(id: $0.id, title: $0.title, prompt: $0.prompt)
+            },
+            pinned: card.pinned
+        )
+    }
+}
+
 extension PickySessionCard {
     static func fromAgentSession(_ session: PickyAgentSession) -> Self {
         Self(session: session)

@@ -2852,26 +2852,8 @@ final class PickySessionListViewModel: ObservableObject {
 
     private func notification(for session: SessionCard) -> PickySessionNotificationPolicy.Notification? {
         PickySessionNotificationPolicy.notification(
-            for: notificationInput(for: session),
+            for: PickySessionNotificationPolicy.Input(card: session),
             preferences: notificationPreferencesProvider.notificationPreferences
-        )
-    }
-
-    private func notificationInput(for session: SessionCard) -> PickySessionNotificationPolicy.Input {
-        let pendingRequest = session.pendingExtensionUiRequest.map {
-            PickySessionNotificationPolicy.Input.PendingRequest(
-                id: $0.id,
-                title: $0.title,
-                prompt: $0.prompt
-            )
-        }
-        return PickySessionNotificationPolicy.Input(
-            sessionID: session.id,
-            title: session.title,
-            status: session.status,
-            lastSummary: session.lastSummary,
-            pendingRequest: pendingRequest,
-            pinned: session.pinned
         )
     }
 

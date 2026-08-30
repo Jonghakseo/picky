@@ -968,24 +968,19 @@ struct PickyConversationComposerView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.82)))
             }
             .pickyFont(size: 11, weight: .semibold)
-            .foregroundColor(isSendDisabled ? DS.Colors.textTertiary : .white)
+            .foregroundColor(isSendDisabled ? DS.Colors.textTertiary : sendColor)
             .frame(
                 width: PickyComposerToolbarMetrics.controlSize,
                 height: PickyComposerToolbarMetrics.controlSize
             )
-            .background(
-                RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
-                    .fill(isSendDisabled ? DS.Colors.surface3 : sendColor)
-            )
             .contentShape(Rectangle())
             .animation(.easeOut(duration: DS.Animation.fast), value: presentation.iconName)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PickyComposerToolbarGhostButtonStyle(isActive: !isSendDisabled))
         .disabled(isSendDisabled)
         .help(sendHelpText)
         .accessibilityLabel(presentation.accessibilityLabel)
         .accessibilityHint(sendHelpText)
-        .hoverAffordance()
     }
 
     private var stopButton: some View {

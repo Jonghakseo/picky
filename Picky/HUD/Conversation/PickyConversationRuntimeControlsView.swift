@@ -85,6 +85,7 @@ struct PickyConversationRuntimeControlsView: View {
 struct PickyComposerToolbarGhostButtonStyle: ButtonStyle {
     var isActive = false
 
+    @Environment(\.isEnabled) private var isEnabled
     @State private var isHovered = false
 
     func makeBody(configuration: Configuration) -> some View {
@@ -95,10 +96,13 @@ struct PickyComposerToolbarGhostButtonStyle: ButtonStyle {
             )
             .animation(.easeOut(duration: DS.Animation.fast), value: configuration.isPressed)
             .animation(.easeOut(duration: DS.Animation.fast), value: isHovered)
-            .onHover { isHovered = $0 }
+            .onHover { isHovered = isEnabled && $0 }
     }
 
     private func backgroundColor(isPressed: Bool) -> Color {
+        if !isEnabled {
+            return .clear
+        }
         if isPressed {
             return DS.Colors.surface4
         }

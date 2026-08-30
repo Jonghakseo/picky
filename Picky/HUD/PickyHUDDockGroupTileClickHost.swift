@@ -10,21 +10,21 @@ import AppKit
 import SwiftUI
 
 struct PickyHUDDockGroupTileClickHost: NSViewRepresentable {
-    var onHover: () -> Void
+    var onHoverChanged: (Bool) -> Void
     var onActivate: () -> Void
     var onReorderBegan: () -> Void
     var onReorderChanged: (CGSize) -> Void
     var onReorderEnded: (CGSize) -> Void
 
     final class Coordinator: NSObject {
-        var onHover: (() -> Void)?
+        var onHoverChanged: ((Bool) -> Void)?
         var onActivate: (() -> Void)?
         var onReorderBegan: (() -> Void)?
         var onReorderChanged: ((CGSize) -> Void)?
         var onReorderEnded: ((CGSize) -> Void)?
 
         func clearCallbacks() {
-            onHover = nil
+            onHoverChanged = nil
             onActivate = nil
             onReorderBegan = nil
             onReorderChanged = nil
@@ -46,7 +46,7 @@ struct PickyHUDDockGroupTileClickHost: NSViewRepresentable {
     }
 
     private func applyCallbacks(to coordinator: Coordinator) {
-        coordinator.onHover = onHover
+        coordinator.onHoverChanged = onHoverChanged
         coordinator.onActivate = onActivate
         coordinator.onReorderBegan = onReorderBegan
         coordinator.onReorderChanged = onReorderChanged
@@ -86,7 +86,11 @@ final class PickyHUDDockGroupTileClickNSView: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        coordinator?.onHover?()
+        coordinator?.onHoverChanged?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        coordinator?.onHoverChanged?(false)
     }
 
     override func mouseDown(with event: NSEvent) {

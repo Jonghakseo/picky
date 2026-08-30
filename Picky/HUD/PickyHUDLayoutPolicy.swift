@@ -273,8 +273,8 @@ enum PickyHUDDockLayout {
     /// Backward-compatible name for callers/tests that describe the default right edge.
     static let dockRightEdgeMargin: CGFloat = dockEdgeMargin
     static let dockLeftEdgeMargin: CGFloat = dockEdgeMargin
-    static let closeDelay: TimeInterval = 0.4
-    static let closeDelayNanoseconds: UInt64 = 400_000_000
+    static let closeDelay = PickyHUDDockHoverDisclosurePolicy.closeGrace
+    static let closeDelayNanoseconds = PickyHUDDockHoverDisclosurePolicy.closeGraceNanoseconds
     static let defaultGitSectionExpanded = true
     static let addSlotButtonSide: CGFloat = 36
     static let collapsedAddSlotVisualHeight: CGFloat = 14

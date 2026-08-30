@@ -84,16 +84,22 @@ extension PickyHUDOverlayManager {
 
     // MARK: - Hover peek
 
-    /// Folder hover opens a transient list immediately. Exit is handled by the
-    /// corridor poll because this event cannot distinguish leaving the folder
-    /// from crossing the window gap toward the list panel.
+    /// Folder hover opens a transient list immediately. Exit starts the shared
+    /// close grace, while the corridor poll cancels that pending exit when the
+    /// pointer is actually crossing the window gap toward the list panel.
     func handleDockGroupTileHover(
         displayID: CGDirectDisplayID,
         groupID: String,
         isHovering: Bool
     ) {
-        guard isHovering else { return }
         let entry = dockGroupListChildrenByDisplayID[displayID]
+        guard isHovering else {
+            if entry?.presentation == .peek {
+                dockGroupPeekOutsideSinceByDisplayID[displayID] =
+                    dockGroupPeekOutsideSinceByDisplayID[displayID] ?? Date()
+            }
+            return
+        }
         guard PickyHUDDockGroupListHoverPolicy.shouldBeginPeek(
             hoveredGroupID: groupID,
             openGroupID: entry?.openGroupID,
@@ -339,15 +345,11 @@ extension PickyHUDOverlayManager {
                           didOpen,
                           let panel = self.dockGroupListChildrenByDisplayID[displayID]?.panel
                     else { return }
-                    panel.alphaValue = 0
+                    panel.alphaValue = 1
                     // The list and the HUD share one window level, so a click that
                     // raises the HUD would otherwise bury the panel behind an open
                     // conversation card. Child ordering keeps it above its owner.
                     hudEntry.panel.addChildWindow(panel, ordered: .above)
-                    NSAnimationContext.runAnimationGroup { context in
-                        context.duration = 0.12
-                        panel.animator().alphaValue = 1
-                    }
                     self.installDockGroupListMouseMonitors(displayID: displayID)
                     self.publishDockGroupListPresentation(displayID: displayID)
                     if self.dockGroupListChildrenByDisplayID[displayID]?.presentation == .peek {

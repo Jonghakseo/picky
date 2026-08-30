@@ -178,7 +178,7 @@ struct PickyHUDDockExternalDragPreviewContent: View {
             metrics: metrics,
             isDragging: true,
             dragOffset: .zero,
-            onHover: {},
+            onHoverChanged: { _ in },
             onOpen: {},
             onToggleScreenContextTarget: {},
             onToggleStickyScreenContextTarget: {},

@@ -19,7 +19,7 @@ struct PickyHUDDockIconView: View {
     /// scale/shadow/zIndex transforms via this flag and feeds the offset.
     var isDragging: Bool = false
     var dragOffset: CGSize = .zero
-    let onHover: () -> Void
+    let onHoverChanged: (Bool) -> Void
     let onOpen: () -> Void
     let onToggleScreenContextTarget: () -> Void
     let onToggleStickyScreenContextTarget: () -> Void
@@ -58,7 +58,6 @@ struct PickyHUDDockIconView: View {
             .offset(x: dragOffset.width, y: dragOffset.height)
             .zIndex(isDragging ? 200 : 0)
             .animation(.spring(response: 0.28, dampingFraction: 0.72), value: isDragging)
-            .onHover { isHovered = $0 }
             // Do not attach implicit hover/shortcut animations to the whole tile.
             // Session switches resize the outer HUD panel in the same update cycle;
             // a whole-tile animation can then animate the dock slot's placement and
@@ -107,7 +106,6 @@ struct PickyHUDDockIconView: View {
                     metrics: metrics
                 )
                     .offset(x: miniPreviewOffset.width, y: miniPreviewOffset.height)
-                    .transition(.opacity)
                     .allowsHitTesting(false)
             }
         }
@@ -115,7 +113,10 @@ struct PickyHUDDockIconView: View {
         .contentShape(RoundedRectangle(cornerRadius: metrics.sessionTileCornerRadius, style: .continuous))
         .overlay {
             PickyHUDDockIconClickHost(
-                onHover: onHover,
+                onHoverChanged: { hovering in
+                    isHovered = hovering
+                    onHoverChanged(hovering)
+                },
                 onOpen: onOpen,
                 isScreenContextArmed: isScreenContextArmed,
                 isScreenContextSticky: isScreenContextSticky,
@@ -480,7 +481,7 @@ struct PickyHUDDockIconView: View {
 // MARK: - Dock icon clicks (AppKit-backed for immediate single-click open)
 
 struct PickyHUDDockIconClickHost: NSViewRepresentable {
-    var onHover: () -> Void
+    var onHoverChanged: (Bool) -> Void
     var onOpen: () -> Void
     var isScreenContextArmed: Bool
     var isScreenContextSticky: Bool
@@ -506,7 +507,7 @@ struct PickyHUDDockIconClickHost: NSViewRepresentable {
     var onReorderHandoff: (NSPoint) -> Void = { _ in }
 
     final class Coordinator: NSObject {
-        var onHover: (() -> Void)?
+        var onHoverChanged: ((Bool) -> Void)?
         var onOpen: (() -> Void)?
         var isScreenContextArmed = false
         var isScreenContextSticky = false
@@ -524,7 +525,7 @@ struct PickyHUDDockIconClickHost: NSViewRepresentable {
         var onReorderHandoff: ((NSPoint) -> Void)?
 
         func clearCallbacks() {
-            onHover = nil
+            onHoverChanged = nil
             onOpen = nil
             onToggleScreenContextTarget = nil
             onToggleStickyScreenContextTarget = nil
@@ -584,7 +585,7 @@ struct PickyHUDDockIconClickHost: NSViewRepresentable {
     }
 
     private func applyCallbacks(to coordinator: Coordinator) {
-        coordinator.onHover = onHover
+        coordinator.onHoverChanged = onHoverChanged
         coordinator.onOpen = onOpen
         coordinator.isScreenContextArmed = isScreenContextArmed
         coordinator.isScreenContextSticky = isScreenContextSticky
@@ -652,7 +653,11 @@ final class PickyHUDDockIconClickNSView: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        coordinator?.onHover?()
+        coordinator?.onHoverChanged?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        coordinator?.onHoverChanged?(false)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -683,7 +688,7 @@ final class PickyHUDDockIconClickNSView: NSView {
         mouseDownScreenPoint = nil
         didCompleteArchiveHold = false
         handedOffReorder = false
-        coordinator?.onHover?()
+        coordinator?.onHoverChanged?(true)
         guard let coordinator else { return }
 
         let menu = NSMenu()
@@ -1157,7 +1162,6 @@ struct PickyHUDMiniPreviewCardView: View {
     let metrics: PickyHUDDockMetrics
     var relativeTime: String?
 
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.pickyAppFontScale) private var fontScale
 
     init(
@@ -1225,15 +1229,7 @@ struct PickyHUDMiniPreviewCardView: View {
 
     private var previewBackground: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        let style = PickyHUDDockGroupListSurfacePresentation.style(for: colorScheme)
-        return PickyHUDMaterialFill(
-            shape: shape,
-            fallback: DS.Colors.surface1,
-            material: style.materialKind.material
-        )
-        .overlay(
-            shape.fill(DS.Colors.surface1.opacity(style.surfaceOverlayOpacity))
-        )
+        return PickyHUDDockGroupListSurface(shape: shape)
     }
 
 }

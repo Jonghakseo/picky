@@ -13,6 +13,10 @@ import Testing
 @testable import Picky
 
 struct PickyHUDDockGroupListHoverPolicyTests {
+    @Test func groupAndSessionHoverDisclosuresUseTheSameCloseGrace() {
+        #expect(PickyHUDDockGroupListHoverPolicy.peekGrace == PickyHUDDockLayout.closeDelay)
+    }
+
     @Test func hoveringAFolderWithMembersOpensAPeekWhenNothingIsOpen() {
         #expect(
             PickyHUDDockGroupListHoverPolicy.shouldBeginPeek(

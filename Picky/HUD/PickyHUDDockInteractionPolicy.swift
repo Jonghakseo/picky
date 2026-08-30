@@ -8,6 +8,11 @@
 
 import Foundation
 
+enum PickyHUDDockHoverDisclosurePolicy {
+    static let closeGrace: TimeInterval = 0.4
+    static let closeGraceNanoseconds: UInt64 = 400_000_000
+}
+
 /// Timing and geometry constants for the dock's hold-to-archive interaction.
 enum PickyHUDArchiveHoldPolicy {
     static let duration: TimeInterval = 1.2
@@ -50,6 +55,14 @@ enum PickyHUDDockInteractionPolicy {
 
     static func previewSessionIDAfterDockHover(current: String?, sessionID: String) -> String? {
         sessionID
+    }
+
+    static func previewSessionIDAfterTileExitTimeout(current: String?, exitedSessionID: String) -> String? {
+        current == exitedSessionID ? nil : current
+    }
+
+    static func previewSessionIDAfterGroupHover(current: String?, isHovering: Bool) -> String? {
+        isHovering ? nil : current
     }
 
     static func previewSessionIDAfterCloseTimeout(current: String?, isDockHovered: Bool) -> String? {

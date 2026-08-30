@@ -222,7 +222,7 @@ struct PickySessionRegistryProjectionTests {
             shouldFlashCompletion: false,
             isUnread: false,
             metrics: .medium,
-            onHover: {},
+            onHoverChanged: { _ in },
             onOpen: {},
             onToggleScreenContextTarget: {},
             onToggleStickyScreenContextTarget: {},

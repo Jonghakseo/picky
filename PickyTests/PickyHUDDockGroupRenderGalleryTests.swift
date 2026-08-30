@@ -176,15 +176,6 @@ struct PickyHUDDockGroupRenderGalleryTests {
         #expect(dark.materialKind == .ultraThin)
     }
 
-    @Test func lightGroupListUsesAnOpaqueSemanticLayerForMetadataContrast() {
-        let light = PickyHUDDockGroupListSurfacePresentation.style(for: .light)
-        let dark = PickyHUDDockGroupListSurfacePresentation.style(for: .dark)
-
-        #expect(light.materialKind == .regular)
-        #expect(light.surfaceOverlayOpacity > dark.surfaceOverlayOpacity)
-        #expect(dark.materialKind == .ultraThin)
-    }
-
     @Test func folderGeometryContainsTheProductionHeaderAtAllGalleryScales() {
         for preset in PickyHUDDockSizePreset.allCases {
             let metrics = PickyHUDDockMetrics(preset: preset)
@@ -739,7 +730,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
             unreadSessionIDs: [],
             metrics: metrics,
             availableRailLength: availableRailLength,
-            onHoverSession: { _ in },
+            onHoverSession: { _, _ in },
             onOpenSession: { _ in },
             onToggleScreenContextTarget: { _ in },
             onToggleStickyScreenContextTarget: { _ in },

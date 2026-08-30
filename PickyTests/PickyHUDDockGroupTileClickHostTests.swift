@@ -38,6 +38,7 @@ struct PickyHUDDockGroupTileClickHostTests {
 
     private func renderedBadgeHost(
         onTap: @escaping () -> Void,
+        onHoverChanged: @escaping (Bool) -> Void = { _ in },
         onReorderBegan: @escaping () -> Void = {},
         onReorderChanged: @escaping (CGSize) -> Void = { _ in },
         onReorderEnded: @escaping (CGSize) -> Void = { _ in }
@@ -48,6 +49,7 @@ struct PickyHUDDockGroupTileClickHostTests {
             tint: .blue,
             metrics: PickyHUDDockMetrics(preset: .large),
             onTap: onTap,
+            onHoverChanged: onHoverChanged,
             onReorderBegan: onReorderBegan,
             onReorderChanged: onReorderChanged,
             onReorderEnded: onReorderEnded
@@ -104,6 +106,28 @@ struct PickyHUDDockGroupTileClickHostTests {
     private func findSessionIconHost(in view: NSView) -> PickyHUDDockIconClickNSView? {
         if let host = view as? PickyHUDDockIconClickNSView { return host }
         return view.subviews.lazy.compactMap(findSessionIconHost(in:)).first
+    }
+
+    @Test func groupAndSessionNativeHostsReportOneEnterAndOneExitTransition() throws {
+        var groupTransitions: [Bool] = []
+        let rendered = try renderedBadgeHost(
+            onTap: {},
+            onHoverChanged: { groupTransitions.append($0) }
+        )
+        let sessionCoordinator = PickyHUDDockIconClickHost.Coordinator()
+        var sessionTransitions: [Bool] = []
+        sessionCoordinator.onHoverChanged = { sessionTransitions.append($0) }
+        let sessionHost = PickyHUDDockIconClickNSView()
+        sessionHost.coordinator = sessionCoordinator
+        let event = try mouseEvent(.mouseMoved, at: .zero)
+
+        rendered.host.mouseEntered(with: event)
+        rendered.host.mouseExited(with: event)
+        sessionHost.mouseEntered(with: event)
+        sessionHost.mouseExited(with: event)
+
+        #expect(groupTransitions == [true, false])
+        #expect(sessionTransitions == [true, false])
     }
 
     @Test func renderedBadgeProductionPathActivatesExactlyOnceOnMouseUpBelowReorderThreshold() throws {
@@ -231,7 +255,9 @@ struct PickyHUDDockGroupTileClickHostTests {
             unreadSessionIDs: [],
             metrics: metrics,
             availableRailLength: railHeight,
-            onHoverSession: { hoveredSessions.append($0) },
+            onHoverSession: { sessionID, isHovering in
+                if isHovering { hoveredSessions.append(sessionID) }
+            },
             onOpenSession: { openedSessions.append($0) },
             onToggleScreenContextTarget: { _ in },
             onToggleStickyScreenContextTarget: { _ in },

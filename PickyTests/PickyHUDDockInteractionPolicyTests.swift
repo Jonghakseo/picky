@@ -20,9 +20,13 @@ struct PickyHUDDockInteractionPolicyTests {
         #expect(PickyHUDDockInteractionPolicy.activeSessionID(visibleIDs: visibleIDs, held: .open("missing"), previewID: nil) == nil)
     }
 
-    @Test func hoverPreviewOpensImmediatelyAndClosesOnlyAfterDockLeave() {
+    @Test func hoverPreviewOpensImmediatelyAndTheMatchingTileExitOwnsItsClose() {
         #expect(PickyHUDDockInteractionPolicy.previewSessionIDAfterDockHover(current: nil, sessionID: "a") == "a")
         #expect(PickyHUDDockInteractionPolicy.previewSessionIDAfterDockHover(current: "a", sessionID: "b") == "b")
+        #expect(PickyHUDDockInteractionPolicy.previewSessionIDAfterTileExitTimeout(current: "a", exitedSessionID: "a") == nil)
+        #expect(PickyHUDDockInteractionPolicy.previewSessionIDAfterTileExitTimeout(current: "b", exitedSessionID: "a") == "b")
+        #expect(PickyHUDDockInteractionPolicy.previewSessionIDAfterGroupHover(current: "a", isHovering: true) == nil)
+        #expect(PickyHUDDockInteractionPolicy.previewSessionIDAfterGroupHover(current: "a", isHovering: false) == "a")
         #expect(PickyHUDDockInteractionPolicy.previewSessionIDAfterCloseTimeout(current: "a", isDockHovered: false) == nil)
         #expect(PickyHUDDockInteractionPolicy.previewSessionIDAfterCloseTimeout(current: "a", isDockHovered: true) == "a")
         #expect(PickyHUDDockInteractionPolicy.heldSessionAfterCloseTimeout(current: .open("opened"), isHUDHovered: true) == .open("opened"))

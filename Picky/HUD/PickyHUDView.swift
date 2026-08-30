@@ -83,6 +83,7 @@ struct PickyHUDView: View {
     @State private var isHUDHovered = false
     @State private var isDockHovered = false
     @State private var closeExpansionTask: Task<Void, Never>?
+    @State private var hoverPreviewCloseTask: Task<Void, Never>?
     @State private var keyDownMonitor: Any?
     @State private var modifierFlagsMonitor: Any?
     @State private var isCommandShortcutHintVisible = false
@@ -273,6 +274,8 @@ struct PickyHUDView: View {
             .onDisappear {
                 closeExpansionTask?.cancel()
                 closeExpansionTask = nil
+                hoverPreviewCloseTask?.cancel()
+                hoverPreviewCloseTask = nil
                 uninstallCloseShortcutMonitor()
                 sizeReporter.cancelPendingReport()
                 resetCardResizeInteraction()
@@ -615,7 +618,7 @@ struct PickyHUDView: View {
                 unreadSessionIDs: dockSnapshot.unreadSessionIDs,
                 metrics: dockMetrics,
                 availableRailLength: placement.availableDockRailLength,
-                onHoverSession: previewDockSession,
+                onHoverSession: handleDockSessionTileHoverTransition,
                 onOpenSession: toggleOpenSession,
                 onToggleScreenContextTarget: toggleScreenContextTarget,
                 onToggleStickyScreenContextTarget: toggleStickyScreenContextTarget,
@@ -641,7 +644,7 @@ struct PickyHUDView: View {
                 onSetDockGroupColor: { id, color in viewModel.setDockGroupColor(id: id, color: color) },
                 onActivateDockGroup: activateDockGroupTileFromPointer,
                 onActivateDockGroupFromKeyboard: activateDockGroupTileFromCommandShortcut,
-                onDockGroupTileHover: onDockGroupTileHover,
+                onDockGroupTileHover: handleDockGroupTileHoverTransition,
                 onDockGroupTileDragBegin: onDockGroupTileDragBegin,
                 pinnedDockGroupListGroupID: placement.pinnedDockGroupListGroupID,
                 onRemoveDockGroup: { id, keepMembers in viewModel.removeDockGroup(id: id, keepMembers: keepMembers) },
@@ -855,7 +858,27 @@ struct PickyHUDView: View {
         openHeldSession(next)
     }
 
+    private func handleDockSessionTileHoverTransition(_ sessionID: String, _ isHovering: Bool) {
+        guard isHovering else {
+            scheduleHoverPreviewClose(for: sessionID)
+            return
+        }
+        previewDockSession(sessionID)
+    }
+
+    private func handleDockGroupTileHoverTransition(_ groupID: String, _ isHovering: Bool) {
+        if isHovering {
+            cancelHoverPreviewClose()
+            hoverPreviewSessionID = PickyHUDDockInteractionPolicy.previewSessionIDAfterGroupHover(
+                current: hoverPreviewSessionID,
+                isHovering: true
+            )
+        }
+        onDockGroupTileHover(groupID, isHovering)
+    }
+
     private func previewDockSession(_ sessionID: String) {
+        cancelHoverPreviewClose()
         onDockSessionTileHover()
         isDockHovered = true
         cancelPendingClose()
@@ -869,6 +892,32 @@ struct PickyHUDView: View {
             current: hoverPreviewSessionID,
             sessionID: sessionID
         )
+    }
+
+    private func scheduleHoverPreviewClose(for sessionID: String) {
+        hoverPreviewCloseTask?.cancel()
+        hoverPreviewCloseTask = Task {
+            do {
+                try await Task.sleep(
+                    nanoseconds: PickyHUDDockHoverDisclosurePolicy.closeGraceNanoseconds
+                )
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                hoverPreviewSessionID = PickyHUDDockInteractionPolicy.previewSessionIDAfterTileExitTimeout(
+                    current: hoverPreviewSessionID,
+                    exitedSessionID: sessionID
+                )
+                hoverPreviewCloseTask = nil
+            }
+        }
+    }
+
+    private func cancelHoverPreviewClose() {
+        hoverPreviewCloseTask?.cancel()
+        hoverPreviewCloseTask = nil
     }
 
     private func toggleOpenSession(_ sessionID: String) {

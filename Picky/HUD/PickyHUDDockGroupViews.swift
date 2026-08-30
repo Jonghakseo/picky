@@ -560,18 +560,16 @@ struct PickyHUDDockCollapsedGroupBadge: View {
         )
         .contentShape(RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous))
         .animation(reduceMotion ? nil : .easeOut(duration: DS.Animation.fast), value: isListPinned)
-        .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.12)) { isHovered = hovering }
-            onHoverChanged(hovering)
-        }
         .overlay {
             // One AppKit owner arbitrates click versus reorder. Keeping this
             // above the badge content avoids the old child Button competing
             // with a parent high-priority SwiftUI drag recognizer.
             PickyHUDDockGroupTileClickHost(
-                onHover: {
-                    isHovered = true
-                    onHoverChanged(true)
+                onHoverChanged: { hovering in
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: DS.Animation.fast)) {
+                        isHovered = hovering
+                    }
+                    onHoverChanged(hovering)
                 },
                 onActivate: onTap,
                 onReorderBegan: onReorderBegan,

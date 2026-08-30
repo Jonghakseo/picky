@@ -9,30 +9,16 @@
 import Combine
 import SwiftUI
 
-struct PickyHUDDockGroupListSurfaceStyle: Equatable {
-    let materialKind: PickyHUDMaterialKind
-    let surfaceOverlayOpacity: Double
-}
+struct PickyHUDDockGroupListSurface<FillShape: Shape>: View {
+    let shape: FillShape
 
-enum PickyHUDDockGroupListSurfacePresentation {
-    static func style(for colorScheme: ColorScheme) -> PickyHUDDockGroupListSurfaceStyle {
-        switch colorScheme {
-        case .light:
-            PickyHUDDockGroupListSurfaceStyle(
-                materialKind: .regular,
-                surfaceOverlayOpacity: 0.72
-            )
-        case .dark:
-            PickyHUDDockGroupListSurfaceStyle(
-                materialKind: .ultraThin,
-                surfaceOverlayOpacity: 0
-            )
-        @unknown default:
-            PickyHUDDockGroupListSurfaceStyle(
-                materialKind: .regular,
-                surfaceOverlayOpacity: 0.72
-            )
-        }
+    var body: some View {
+        // Mini previews live inside the HUD panel while group lists live in a
+        // detached child panel. A translucent material samples a different
+        // backdrop in those two windows, so the same token can render as two
+        // visibly different colors. This shared semantic fill is intentionally
+        // opaque to keep both surfaces identical across hosting boundaries.
+        shape.fill(DS.Colors.surface1)
     }
 }
 
@@ -280,9 +266,7 @@ struct PickyHUDDockGroupListPanelRoot: View {
     var onFinishPromotedRowDrag: (UUID) -> Bool = { _ in false }
     @ObservedObject var externalDragPresentationStore = PickyHUDDockExternalDragRailPresentationStore()
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.pickyAppFontScale) private var fontScale
-    @State private var isPresented = false
 
     private var panelSize: CGSize {
         PickyHUDDockGroupListPolicy.panelSize(
@@ -329,10 +313,6 @@ struct PickyHUDDockGroupListPanelRoot: View {
             externalDragPresentationStore: externalDragPresentationStore
         )
         .frame(width: panelSize.width, height: panelSize.height)
-        .opacity(isPresented ? 1 : 0)
-        .scaleEffect(reduceMotion ? 1 : (isPresented ? 1 : 0.98), anchor: .topLeading)
-        .animation(.easeOut(duration: 0.12), value: isPresented)
-        .onAppear { isPresented = true }
     }
 }
 
@@ -393,7 +373,6 @@ struct PickyHUDDockGroupListView: View {
     @State private var dragMonitors: [Any] = []
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.pickyAppFontScale) private var fontScale
 
     private var panelSize: CGSize {
@@ -698,15 +677,7 @@ struct PickyHUDDockGroupListView: View {
             cornerRadius: metrics.groupListPanelCornerRadius,
             style: .continuous
         )
-        let style = PickyHUDDockGroupListSurfacePresentation.style(for: colorScheme)
-        return PickyHUDMaterialFill(
-            shape: shape,
-            fallback: DS.Colors.surface1,
-            material: style.materialKind.material
-        )
-        .overlay(
-            shape.fill(DS.Colors.surface1.opacity(style.surfaceOverlayOpacity))
-        )
+        return PickyHUDDockGroupListSurface(shape: shape)
     }
 
     private var header: some View {
@@ -1267,7 +1238,7 @@ struct PickyHUDDockGroupListRow: View {
 
     private var rowInteractionHost: some View {
         PickyHUDDockIconClickHost(
-            onHover: { isHovered = true },
+            onHoverChanged: { isHovered = $0 },
             onOpen: onSelect,
             isScreenContextArmed: isScreenContextArmed,
             isScreenContextSticky: isScreenContextSticky,

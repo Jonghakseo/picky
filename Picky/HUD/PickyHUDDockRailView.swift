@@ -62,7 +62,7 @@ struct PickyHUDDockRailView: View {
     let metrics: PickyHUDDockMetrics
     /// Screen-aware primary-axis budget from the per-display placement.
     let availableRailLength: CGFloat
-    let onHoverSession: (String) -> Void
+    let onHoverSession: (String, Bool) -> Void
     let onOpenSession: (String) -> Void
     let onToggleScreenContextTarget: (String) -> Void
     let onToggleStickyScreenContextTarget: (String) -> Void
@@ -701,7 +701,7 @@ struct PickyHUDDockRailView: View {
                                 ),
                                 visibleIndex: slot.visibleIndex
                             ),
-                            hoverAction: { onDockGroupTileHover(group.id, true) }
+                            hoverAction: { onDockGroupTileHover(group.id, $0) }
                         )
                         // A group keeps its visual boundary even after it shrinks
                         // to one visible Pickle, while preserving the full tile.
@@ -860,7 +860,7 @@ struct PickyHUDDockRailView: View {
     private func iconView(
         for session: PickyHUDDockSession,
         slot: PickyDockSlot,
-        hoverAction: (() -> Void)? = nil
+        hoverAction: ((Bool) -> Void)? = nil
     ) -> some View {
         if effectiveDraggingSessionID == session.id {
             // The dragged Pickle is rendered as a floating overlay that never
@@ -889,11 +889,11 @@ struct PickyHUDDockRailView: View {
                 metrics: metrics,
                 isDragging: false,
                 dragOffset: .zero,
-                onHover: {
+                onHoverChanged: { hovering in
                     if let hoverAction {
-                        hoverAction()
+                        hoverAction(hovering)
                     } else {
-                        onHoverSession(session.id)
+                        onHoverSession(session.id, hovering)
                     }
                 },
                 onOpen: { onOpenSession(session.id) },
@@ -937,7 +937,7 @@ struct PickyHUDDockRailView: View {
                     metrics: metrics,
                     isDragging: true,
                     dragOffset: .zero,
-                    onHover: {},
+                    onHoverChanged: { _ in },
                     onOpen: {},
                     onToggleScreenContextTarget: {},
                     onToggleStickyScreenContextTarget: {},

@@ -21,7 +21,7 @@ enum PickyHUDDockGroupListPresentation: Equatable {
 
 enum PickyHUDDockGroupListHoverPolicy {
     /// How long the pointer may sit outside the corridor before a peek closes.
-    static let peekGrace: TimeInterval = 0.25
+    static let peekGrace = PickyHUDDockHoverDisclosurePolicy.closeGrace
     /// Corridor sampling interval while a peek is open.
     static let peekPollInterval: TimeInterval = 0.1
 

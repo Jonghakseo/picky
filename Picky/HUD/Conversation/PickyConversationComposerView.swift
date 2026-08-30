@@ -334,10 +334,9 @@ struct PickyConversationComposerView: View {
         } label: {
             toolbarIcon(systemName: "paperclip", color: DS.Colors.textSecondary)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PickyComposerToolbarGhostButtonStyle())
         .help(L10n.t("hud.composer.attachment.help"))
         .accessibilityLabel(L10n.t("hud.composer.attachment.accessibilityLabel"))
-        .hoverAffordance()
     }
 
     /// Replaces the notify/terminal actions when the draft is in bash-execution
@@ -373,9 +372,12 @@ struct PickyConversationComposerView: View {
         if isFileDropTargeted {
             toolbarIcon(
                 systemName: "doc.badge.plus",
-                color: DS.Colors.accentText,
-                isActive: true
+                color: DS.Colors.accentText
             )
+                .background(
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
+                        .fill(DS.Colors.accentSubtle)
+                )
                 .help(L10n.t("hud.composer.drop.help"))
                 .accessibilityLabel(L10n.t("hud.composer.drop.accessibilityLabel"))
         } else {
@@ -384,11 +386,10 @@ struct PickyConversationComposerView: View {
             } label: {
                 toolbarIcon(
                     systemName: notifyOnCompletionIconName,
-                    color: notifyOnCompletionColor,
-                    isActive: session.notifyMainOnCompletion == true
+                    color: notifyOnCompletionColor
                 )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PickyComposerToolbarGhostButtonStyle(isActive: session.notifyMainOnCompletion == true))
             .overlay(alignment: .topTrailing) {
                 PickyShortcutKeyBadge(label: "N")
                     .fixedSize()
@@ -401,7 +402,6 @@ struct PickyConversationComposerView: View {
             .help(notifyOnCompletionHelpText)
             .accessibilityLabel(L10n.t("hud.composer.notify.accessibilityLabel"))
             .accessibilityValue(session.notifyMainOnCompletion == true ? "On" : "Off")
-            .hoverAffordance()
         }
     }
 
@@ -409,11 +409,10 @@ struct PickyConversationComposerView: View {
         Button(action: onToggleUtilityPanel) {
             toolbarIcon(
                 systemName: "terminal.fill",
-                color: isUtilityPanelOpen ? DS.Colors.accentText : DS.Colors.textSecondary,
-                isActive: isUtilityPanelOpen
+                color: isUtilityPanelOpen ? DS.Colors.accentText : DS.Colors.textSecondary
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PickyComposerToolbarGhostButtonStyle(isActive: isUtilityPanelOpen))
         .overlay(alignment: .topTrailing) {
             PickyShortcutKeyBadge(label: "E")
                 .fixedSize()
@@ -426,24 +425,15 @@ struct PickyConversationComposerView: View {
         .help(L10n.t("hud.utilityPanel.toggle.help"))
         .accessibilityLabel(L10n.t("hud.utilityPanel.accessibilityLabel"))
         .accessibilityValue(L10n.t(isUtilityPanelOpen ? "hud.utilityPanel.state.open" : "hud.utilityPanel.state.closed"))
-        .hoverAffordance()
     }
 
-    private func toolbarIcon(systemName: String, color: Color, isActive: Bool = false) -> some View {
+    private func toolbarIcon(systemName: String, color: Color) -> some View {
         Image(systemName: systemName)
             .pickyFont(size: 10.5, weight: .semibold)
             .foregroundColor(color)
             .frame(
                 width: PickyComposerToolbarMetrics.controlSize,
                 height: PickyComposerToolbarMetrics.controlSize
-            )
-            .background(
-                RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
-                    .fill(isActive ? DS.Colors.accentSubtle : DS.Colors.surface2)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
-                    .stroke(DS.Colors.borderSubtle, lineWidth: 0.5)
             )
             .contentShape(Rectangle())
     }
@@ -1002,10 +992,9 @@ struct PickyConversationComposerView: View {
         Button(action: stopIfPossible) {
             toolbarIcon(systemName: "stop.fill", color: DS.Colors.destructiveText)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PickyComposerToolbarGhostButtonStyle())
         .help(L10n.t("hud.composer.stop.help"))
         .accessibilityLabel(L10n.t("hud.composer.stop.accessibilityLabel"))
-        .hoverAffordance()
     }
 
     var isStopButtonVisible: Bool {

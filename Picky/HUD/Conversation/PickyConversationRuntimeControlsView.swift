@@ -31,21 +31,19 @@ struct PickyConversationRuntimeControlsView: View {
                         maximumTextWidth: PickyComposerToolbarMetrics.modelLabelMaximumWidth
                     )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PickyComposerToolbarGhostButtonStyle())
                 .help(L10n.t("hud.composer.runtime.model.help"))
                 .accessibilityLabel(presentation.modelLabel ?? modelText)
                 .accessibilityHint(L10n.t("hud.composer.runtime.model.accessibilityHint"))
-                .hoverAffordance()
             }
             if let thinkingText = presentation.thinkingText {
                 Button(action: onCycleThinkingLevel) {
                     controlLabel(icon: "brain", text: thinkingText)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PickyComposerToolbarGhostButtonStyle())
                 .help(L10n.t("hud.composer.runtime.thinking.help"))
                 .accessibilityLabel(presentation.thinkingLabel ?? thinkingText)
                 .accessibilityHint(L10n.t("hud.composer.runtime.thinking.accessibilityHint"))
-                .hoverAffordance()
             }
             if let actionError {
                 Label(L10n.t("hud.composer.runtime.failed", actionError), systemImage: "exclamationmark.triangle.fill")
@@ -80,15 +78,34 @@ struct PickyConversationRuntimeControlsView: View {
         .foregroundColor(DS.Colors.textSecondary)
         .padding(.horizontal, DS.Spacing.space2)
         .frame(height: PickyComposerToolbarMetrics.controlSize)
-        .background(
-            RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
-                .fill(DS.Colors.surface2)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
-                .stroke(DS.Colors.borderSubtle, lineWidth: 0.5)
-        )
         .contentShape(Rectangle())
+    }
+}
+
+struct PickyComposerToolbarGhostButtonStyle: ButtonStyle {
+    var isActive = false
+
+    @State private var isHovered = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
+                    .fill(backgroundColor(isPressed: configuration.isPressed))
+            )
+            .animation(.easeOut(duration: DS.Animation.fast), value: configuration.isPressed)
+            .animation(.easeOut(duration: DS.Animation.fast), value: isHovered)
+            .onHover { isHovered = $0 }
+    }
+
+    private func backgroundColor(isPressed: Bool) -> Color {
+        if isPressed {
+            return DS.Colors.surface4
+        }
+        if isHovered {
+            return DS.Colors.surface3
+        }
+        return isActive ? DS.Colors.accentSubtle : .clear
     }
 }
 

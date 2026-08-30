@@ -260,20 +260,6 @@ struct PickyConversationCardView: View {
                 onViewportStateChanged: { viewportState = $0 },
                 onInitialBottomPinReady: onInitialContentReady
             )
-            // The Plan drawer intentionally overlays only the Journal top. This
-            // preserves the mounted Journal and Composer geometry while keeping
-            // the disclosure physically anchored to Live Step above it.
-            .overlay(alignment: .topLeading) {
-                PickyConversationLiveStepTodoDrawer(
-                    plan: plan,
-                    isExpanded: $isTodoExpanded
-                )
-                .padding(.top, DS.Spacing.xs)
-            }
-            // The drawer is an overlay of Journal, never Composer. Clipping at
-            // this boundary also prevents its hit-testing area crossing into the
-            // composer on a constrained 320pt card.
-            .clipped()
             .padding(.bottom, DS.Spacing.sm)
 
             PickyConversationComposerView(

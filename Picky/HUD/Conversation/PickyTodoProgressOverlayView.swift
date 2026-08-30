@@ -8,78 +8,6 @@
 
 import SwiftUI
 
-private struct PickyTodoProgressAdaptiveWidthLayout: Layout {
-    let minimumWidth: CGFloat
-    let maximumWidth: CGFloat
-
-    func sizeThatFits(
-        proposal: ProposedViewSize,
-        subviews: Subviews,
-        cache: inout Void
-    ) -> CGSize {
-        guard let first = subviews.first else { return .zero }
-
-        let availableWidth = proposal.width ?? CGFloat.greatestFiniteMagnitude
-        let naturalWidth = first.sizeThatFits(ProposedViewSize(width: nil, height: nil)).width
-        let resolvedWidth = PickyTodoProgressAdaptiveWidthPolicy.resolveWidth(
-            idealWidth: naturalWidth,
-            availableWidth: availableWidth,
-            minimumWidth: minimumWidth,
-            maximumWidth: maximumWidth
-        )
-        let size = first.sizeThatFits(ProposedViewSize(width: resolvedWidth, height: proposal.height))
-
-        return CGSize(width: resolvedWidth, height: size.height)
-    }
-
-    func placeSubviews(
-        in bounds: CGRect,
-        proposal: ProposedViewSize,
-        subviews: Subviews,
-        cache: inout Void
-    ) {
-        guard let first = subviews.first else { return }
-
-        let availableWidth = bounds.width
-        let naturalWidth = first.sizeThatFits(ProposedViewSize(width: nil, height: nil)).width
-        let resolvedWidth = PickyTodoProgressAdaptiveWidthPolicy.resolveWidth(
-            idealWidth: naturalWidth,
-            availableWidth: availableWidth,
-            minimumWidth: minimumWidth,
-            maximumWidth: maximumWidth
-        )
-        let size = first.sizeThatFits(ProposedViewSize(width: resolvedWidth, height: nil))
-        let x = bounds.maxX - resolvedWidth
-        first.place(
-            at: CGPoint(x: x, y: bounds.minY),
-            anchor: .topLeading,
-            proposal: ProposedViewSize(width: resolvedWidth, height: size.height)
-        )
-    }
-}
-
-enum PickyTodoProgressAdaptiveWidthPolicy {
-    static func resolveWidth(
-        idealWidth: CGFloat,
-        availableWidth: CGFloat,
-        minimumWidth: CGFloat,
-        maximumWidth: CGFloat
-    ) -> CGFloat {
-        guard availableWidth.isFinite else {
-            return min(max(idealWidth, minimumWidth), maximumWidth)
-        }
-
-        let boundedMaxWidth = min(availableWidth, maximumWidth)
-        guard boundedMaxWidth > 0 else { return 0 }
-
-        if boundedMaxWidth <= minimumWidth {
-            return boundedMaxWidth
-        }
-
-        return max(minimumWidth, min(idealWidth, boundedMaxWidth))
-    }
-}
-
 struct PickyTodoCircularProgressView: View {
     let fraction: Double
     let isComplete: Bool
@@ -110,10 +38,7 @@ struct PickyTodoCircularProgressView: View {
     }
 }
 
-struct PickyTodoProgressOverlayView: View {
-    static let minimumCardWidth: CGFloat = 280
-    static let maximumCardWidth: CGFloat = 700
-
+struct PickyTodoProgressListView: View {
     let presentation: PickyTodoProgressPresentation
     let isSessionRunning: Bool
     @Binding var isExpanded: Bool
@@ -131,36 +56,34 @@ struct PickyTodoProgressOverlayView: View {
     }
 
     private var expandedCard: some View {
-        PickyTodoProgressAdaptiveWidthLayout(
-            minimumWidth: Self.minimumCardWidth,
-            maximumWidth: Self.maximumCardWidth
-        ) {
-            Group {
-                if presentation.usesScrollableExpandedList {
-                    ScrollViewReader { proxy in
-                        ScrollView(.vertical, showsIndicators: true) {
-                            expandedTaskRows
-                        }
-                        .frame(height: PickyFocusStackTodoDrawerLayoutPolicy.viewportHeight)
-                        .onAppear { scrollToFocusTask(proxy, animated: false) }
-                        .onChange(of: presentation.focusTaskID) { _, _ in
-                            scrollToFocusTask(proxy, animated: true)
-                        }
+        Group {
+            if presentation.usesScrollableExpandedList {
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical, showsIndicators: true) {
+                        expandedTaskRows
                     }
-                } else {
-                    expandedTaskRows
+                    .frame(height: PickyFocusStackTodoDrawerLayoutPolicy.viewportHeight)
+                    .onAppear { scrollToFocusTask(proxy, animated: false) }
+                    .onChange(of: presentation.focusTaskID) { _, _ in
+                        scrollToFocusTask(proxy, animated: true)
+                    }
                 }
+            } else {
+                expandedTaskRows
             }
-            .background(
-                RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous)
-                    .fill(DS.Colors.surface1.opacity(0.98))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous)
-                            .stroke(DS.Colors.borderSubtle.opacity(0.75), lineWidth: 0.8)
-                    )
-                    // `elevation.transient`: the expanded card floats above transcript content.
-                    .shadow(color: .black.opacity(0.18), radius: 12, y: 8)
+        }
+        .frame(maxWidth: .infinity)
+        .background(
+            UnevenRoundedRectangle(
+                bottomLeadingRadius: DS.CornerRadius.control,
+                bottomTrailingRadius: DS.CornerRadius.control,
+                style: .continuous
             )
+            .fill(DS.Colors.surface2)
+        )
+        .overlay(alignment: .top) {
+            Divider()
+                .overlay(DS.Colors.borderSubtle.opacity(0.65))
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("picky.todo.drawer")
@@ -264,7 +187,7 @@ struct PickyTodoProgressOverlayView: View {
     private var expandedTransition: AnyTransition {
         accessibilityReduceMotion
             ? .opacity
-            : .scale(scale: 0.97, anchor: .top).combined(with: .opacity)
+            : .move(edge: .top).combined(with: .opacity)
     }
 
 }

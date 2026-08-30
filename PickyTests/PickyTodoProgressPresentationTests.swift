@@ -195,74 +195,23 @@ struct PickyTodoProgressPresentationTests {
         #expect(!PickyTodoProgressExpansionPolicy.shouldCollapse(previousIsComplete: false, currentIsComplete: false))
     }
 
-    @Test func adaptiveWidthResolvesShortWidthToMinimum() {
-        let resolved = PickyTodoProgressAdaptiveWidthPolicy.resolveWidth(
-            idealWidth: 120,
-            availableWidth: 1024,
-            minimumWidth: PickyTodoProgressOverlayView.minimumCardWidth,
-            maximumWidth: PickyTodoProgressOverlayView.maximumCardWidth
+    @Test func focusStackDrawerScrollsAfterFiveFullTaskRows() throws {
+        let fiveTasks = PickyTodoState(
+            tasks: (1...5).map { PickyTodoTask(id: "todo-\($0)", content: "Task \($0)", status: .pending) },
+            updatedAt: Date(timeIntervalSince1970: 1_800_000_005)
+        )
+        let sixTasks = PickyTodoState(
+            tasks: (1...6).map { PickyTodoTask(id: "todo-\($0)", content: "Task \($0)", status: .pending) },
+            updatedAt: Date(timeIntervalSince1970: 1_800_000_006)
         )
 
-        #expect(resolved == PickyTodoProgressOverlayView.minimumCardWidth)
-    }
-
-    @Test func adaptiveWidthResolvesMediumWidthToIdeal() {
-        let resolved = PickyTodoProgressAdaptiveWidthPolicy.resolveWidth(
-            idealWidth: 480,
-            availableWidth: 1024,
-            minimumWidth: PickyTodoProgressOverlayView.minimumCardWidth,
-            maximumWidth: PickyTodoProgressOverlayView.maximumCardWidth
+        #expect(try #require(PickyTodoProgressPresentation(state: fiveTasks)).usesScrollableExpandedList == false)
+        #expect(try #require(PickyTodoProgressPresentation(state: sixTasks)).usesScrollableExpandedList)
+        #expect(PickyFocusStackTodoDrawerLayoutPolicy.maximumFullyVisibleTaskCount == 5)
+        #expect(
+            PickyFocusStackTodoDrawerLayoutPolicy.viewportHeight
+                == PickyFocusStackTodoDrawerLayoutPolicy.taskRowMinimumHeight * 5.5
         )
-
-        #expect(resolved == 480)
-    }
-
-    @Test func adaptiveWidthResolvesOverwideToClampedMaximum() {
-        let resolved = PickyTodoProgressAdaptiveWidthPolicy.resolveWidth(
-            idealWidth: 1200,
-            availableWidth: 1024,
-            minimumWidth: PickyTodoProgressOverlayView.minimumCardWidth,
-            maximumWidth: PickyTodoProgressOverlayView.maximumCardWidth
-        )
-
-        #expect(resolved == PickyTodoProgressOverlayView.maximumCardWidth)
-    }
-
-    @Test func adaptiveWidthUsesAvailableWidthWhenBelowMaximum() {
-        let resolved = PickyTodoProgressAdaptiveWidthPolicy.resolveWidth(
-            idealWidth: 1200,
-            availableWidth: 520,
-            minimumWidth: PickyTodoProgressOverlayView.minimumCardWidth,
-            maximumWidth: PickyTodoProgressOverlayView.maximumCardWidth
-        )
-
-        #expect(resolved == 520)
-    }
-
-    @Test func adaptiveWidthUsesAvailableWidthWhenNarrowerThanMinimum() {
-        let resolved = PickyTodoProgressAdaptiveWidthPolicy.resolveWidth(
-            idealWidth: 1200,
-            availableWidth: 250,
-            minimumWidth: PickyTodoProgressOverlayView.minimumCardWidth,
-            maximumWidth: PickyTodoProgressOverlayView.maximumCardWidth
-        )
-
-        #expect(resolved == 250)
-    }
-
-    @Test func focusStackDrawerScrollsAfterThreeFullTaskRows() throws {
-        let threeTasks = PickyTodoState(
-            tasks: (1...3).map { PickyTodoTask(id: "todo-\($0)", content: "Task \($0)", status: .pending) },
-            updatedAt: Date(timeIntervalSince1970: 1_800_000_003)
-        )
-        let fourTasks = PickyTodoState(
-            tasks: (1...4).map { PickyTodoTask(id: "todo-\($0)", content: "Task \($0)", status: .pending) },
-            updatedAt: Date(timeIntervalSince1970: 1_800_000_004)
-        )
-
-        #expect(try #require(PickyTodoProgressPresentation(state: threeTasks)).usesScrollableExpandedList == false)
-        #expect(try #require(PickyTodoProgressPresentation(state: fourTasks)).usesScrollableExpandedList)
-        #expect(PickyFocusStackTodoDrawerLayoutPolicy.viewportHeight == PickyFocusStackTodoDrawerLayoutPolicy.taskRowMinimumHeight * 3.5)
     }
 
     @Test func inProgressTodoMarkerAnimatesOnlyWhenSessionIsRunning() {

@@ -31,13 +31,19 @@ enum PickyConversationFocusStackHeightTier: Equatable {
 }
 
 enum PickyFocusStackTodoDrawerLayoutPolicy {
+    static let maximumFullyVisibleTaskCount = 5
+
     static var taskRowMinimumHeight: CGFloat {
         PickyHUDTypography.Size.supporting + (DS.Spacing.sm * 2)
     }
 
-    static var viewportHeight: CGFloat { taskRowMinimumHeight * 3.5 }
+    static var viewportHeight: CGFloat {
+        taskRowMinimumHeight * (CGFloat(maximumFullyVisibleTaskCount) + 0.5)
+    }
 
-    static func usesScrollableViewport(taskCount: Int) -> Bool { taskCount > 3 }
+    static func usesScrollableViewport(taskCount: Int) -> Bool {
+        taskCount > maximumFullyVisibleTaskCount
+    }
 }
 
 /// Card-owned Plan input. It intentionally observes only metadata and Todo
@@ -302,7 +308,20 @@ struct PickyConversationLiveStepView: View {
         .padding(.horizontal, DS.Spacing.sm)
         .padding(.vertical, DS.Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous).fill(DS.Colors.surface2))
+        .background(
+            UnevenRoundedRectangle(
+                topLeadingRadius: DS.CornerRadius.control,
+                bottomLeadingRadius: attachesExpandedTodoList ? 0 : DS.CornerRadius.control,
+                bottomTrailingRadius: attachesExpandedTodoList ? 0 : DS.CornerRadius.control,
+                topTrailingRadius: DS.CornerRadius.control,
+                style: .continuous
+            )
+            .fill(DS.Colors.surface2)
+        )
+    }
+
+    private var attachesExpandedTodoList: Bool {
+        isTodoExpanded && projection.todoPresentation != nil
     }
 
     @ViewBuilder
@@ -399,29 +418,27 @@ struct PickyConversationLiveStepZone: View {
                 .accessibilityLabel(L10n.t("hud.liveStep.runningBelowLatest.accessibilityLabel"))
                 .hoverAffordance()
         } else if let presentation = PickyConversationLiveStepPresentation(projection: projection) {
-            PickyConversationLiveStepView(
-                projection: projection,
-                isTodoExpanded: isTodoExpanded,
-                onToggleTodo: onToggleTodo,
-                onGoToQuestion: onGoToQuestion
-            )
-            .accessibilityLabel(presentation.label)
-        }
-    }
-}
+            VStack(alignment: .leading, spacing: 0) {
+                PickyConversationLiveStepView(
+                    projection: projection,
+                    isTodoExpanded: isTodoExpanded,
+                    onToggleTodo: onToggleTodo,
+                    onGoToQuestion: onGoToQuestion
+                )
+                .accessibilityLabel(presentation.label)
 
-struct PickyConversationLiveStepTodoDrawer: View {
-    let plan: PickyConversationPlanProjection
-    @Binding var isExpanded: Bool
-
-    var body: some View {
-        if let todoPresentation = plan.todoPresentation,
-           PickyConversationPlanDrawerPolicy.shouldRenderDrawer(plan: plan, isExpanded: isExpanded) {
-            PickyTodoProgressOverlayView(
-                presentation: todoPresentation,
-                isSessionRunning: plan.status == .running,
-                isExpanded: $isExpanded
-            )
+                if let todoPresentation = projection.todoPresentation,
+                   PickyConversationPlanDrawerPolicy.canOpen(
+                       status: projection.status,
+                       todo: todoPresentation
+                   ) {
+                    PickyTodoProgressListView(
+                        presentation: todoPresentation,
+                        isSessionRunning: projection.status == .running,
+                        isExpanded: $isTodoExpanded
+                    )
+                }
+            }
         }
     }
 }

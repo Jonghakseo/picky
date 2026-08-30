@@ -333,6 +333,13 @@ struct PickyConversationContextLineView: View {
             }
         }
 
+        var symbol: String {
+            switch self {
+            case .push: return "↑"
+            case .pull: return "↓"
+            }
+        }
+
         var arguments: [String] {
             switch self {
             case .push: return ["push"]
@@ -420,7 +427,6 @@ struct PickyConversationContextLineView: View {
                         .font(PickyHUDTypography.metaSemibold)
                         .accessibilityHidden(true)
                     contextSummaryText
-                    uncommittedDiffText
                     Spacer(minLength: 0)
                 }
                 .contentShape(Rectangle())
@@ -432,6 +438,23 @@ struct PickyConversationContextLineView: View {
             .accessibilityValue(contextSummaryLabel)
             .accessibilityHint(L10n.t("hud.context.details.accessibilityHint"))
             .hoverAffordance()
+
+            if let gitStatus {
+                if let uncommittedDiffPresentation {
+                    uncommittedDiffButton(
+                        uncommittedDiffPresentation,
+                        lineCount: gitStatus.insertions + gitStatus.deletions
+                    )
+                    .layoutPriority(3)
+                }
+
+                if uncommittedDiffPresentation != nil, hasRemoteActions(status: gitStatus) {
+                    Divider()
+                        .frame(height: DS.Spacing.space3)
+                }
+
+                remoteActionButtons(status: gitStatus)
+            }
 
             if let pullRequestStatus {
                 pullRequestLink(status: pullRequestStatus)
@@ -465,32 +488,42 @@ struct PickyConversationContextLineView: View {
     }
 
     private var contextSummaryLabel: String {
-        let base = contextSummaryPresentation.label ?? L10n.t("hud.context.section.links")
-        guard let uncommittedDiffPresentation else { return base }
-        let counts = [uncommittedDiffPresentation.insertionsText, uncommittedDiffPresentation.deletionsText]
-            .compactMap { $0 }
-            .joined(separator: " ")
-        return L10n.t("hud.context.summary.uncommitted.accessibilityValue", base, counts)
+        contextSummaryPresentation.label ?? L10n.t("hud.context.section.links")
     }
 
-    /// Sized to its content so a long branch name truncates before the counts do.
-    @ViewBuilder
-    private var uncommittedDiffText: some View {
-        if let uncommittedDiffPresentation {
+    private func uncommittedDiffButton(
+        _ presentation: PickyConversationUncommittedDiffPresentation,
+        lineCount: Int
+    ) -> some View {
+        let counts = [presentation.insertionsText, presentation.deletionsText]
+            .compactMap { $0 }
+            .joined(separator: " ")
+        let accessibilityLabel = L10n.t(
+            "hud.context.summary.uncommitted.accessibilityValue",
+            L10n.t("hud.context.section.git"),
+            counts
+        )
+
+        return Button(action: runDiffChipAction) {
             HStack(spacing: DS.Spacing.space1) {
-                if let insertionsText = uncommittedDiffPresentation.insertionsText {
+                if let insertionsText = presentation.insertionsText {
                     Text(insertionsText)
                         .foregroundColor(DS.Colors.successText)
                 }
-                if let deletionsText = uncommittedDiffPresentation.deletionsText {
+                if let deletionsText = presentation.deletionsText {
                     Text(deletionsText)
                         .foregroundColor(DS.Colors.destructiveText)
                 }
             }
             .font(PickyHUDTypography.metaMonospacedSemibold)
+            .padding(.horizontal, DS.Spacing.space1)
             .fixedSize(horizontal: true, vertical: false)
-            .accessibilityHidden(true)
+            .contentShape(Capsule())
         }
+        .buttonStyle(PickyHUDCompactChipButtonStyle())
+        .help(uncommittedDiffActionHelp(lineCount: lineCount))
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityHint(uncommittedDiffActionHelp(lineCount: lineCount))
     }
 
     @ViewBuilder
@@ -794,53 +827,77 @@ struct PickyConversationContextLineView: View {
     @ViewBuilder
     private func gitMetrics(status: PickyGitRepositoryStatus) -> some View {
         gitChangeMetrics(status: status)
-        if status.aheadCount > 0 {
-            Button(action: { runRemoteAction(.push) }) {
-                gitMetricPill("↑\(status.aheadCount)", color: DS.Colors.accentText)
-            }
-            .buttonStyle(.plain)
-            .disabled(inFlightGitAction != nil)
-            .opacity(inFlightGitAction == .push ? 0.45 : 1)
-            .help(inFlightGitAction == .push ? "Pushing…" : "git push (\(status.aheadCount) ahead of upstream)")
-            .hoverAffordance()
-        }
-        if status.behindCount > 0 {
-            Button(action: { runRemoteAction(.pull) }) {
-                gitMetricPill("↓\(status.behindCount)", color: DS.Colors.warningText)
-            }
-            .buttonStyle(.plain)
-            .disabled(inFlightGitAction != nil)
-            .opacity(inFlightGitAction == .pull ? 0.45 : 1)
-            .help(inFlightGitAction == .pull ? "Pulling…" : "git pull (\(status.behindCount) behind upstream)")
-            .hoverAffordance()
-        }
     }
 
     @ViewBuilder
     private func gitChangeMetrics(status: PickyGitRepositoryStatus) -> some View {
         let presentation = PickyGitChangeMetricsPresentation(status: status)
         if presentation.hasContent {
-            Button(action: { runDiffChipAction() }) {
-                HStack(spacing: 4) {
-                    diffPair(presentation.total, opacity: 1)
-                    if let uncommitted = presentation.uncommitted {
-                        HStack(spacing: 4) {
-                            gitMetricPill("(", color: DS.Colors.textTertiary)
-                            diffPair(
-                                uncommitted,
-                                opacity: PickyConversationContextDetailsPresentation.uncommittedMetricOpacity
-                            )
-                            gitMetricPill(")", color: DS.Colors.textTertiary)
-                        }
+            HStack(spacing: DS.Spacing.space1) {
+                diffPair(presentation.total, opacity: 1)
+                if let uncommitted = presentation.uncommitted {
+                    HStack(spacing: DS.Spacing.space1) {
+                        gitMetricPill("(", color: DS.Colors.textTertiary)
+                        diffPair(
+                            uncommitted,
+                            opacity: PickyConversationContextDetailsPresentation.uncommittedMetricOpacity
+                        )
+                        gitMetricPill(")", color: DS.Colors.textTertiary)
                     }
                 }
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .help(diffChipHelp(presentation))
-            .accessibilityLabel(diffChipAccessibilityLabel(presentation))
-            .hoverAffordance()
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(diffMetricsAccessibilityLabel(presentation))
         }
+    }
+
+    private func hasRemoteActions(status: PickyGitRepositoryStatus) -> Bool {
+        status.aheadCount > 0 || status.behindCount > 0
+    }
+
+    @ViewBuilder
+    private func remoteActionButtons(status: PickyGitRepositoryStatus) -> some View {
+        if status.aheadCount > 0 {
+            remoteActionButton(.push, count: status.aheadCount, color: DS.Colors.accentText)
+        }
+        if status.behindCount > 0 {
+            remoteActionButton(.pull, count: status.behindCount, color: DS.Colors.warningText)
+        }
+    }
+
+    private func remoteActionButton(
+        _ action: GitRemoteAction,
+        count: Int,
+        color: Color
+    ) -> some View {
+        let isLoading = inFlightGitAction == action
+        let isBlocked = inFlightGitAction != nil && !isLoading
+        let label = remoteActionLabel(action, count: count, isLoading: isLoading)
+
+        return Button(action: { runRemoteAction(action) }) {
+            ZStack {
+                gitMetricPill("\(action.symbol)\(count)", color: color)
+                    .opacity(isLoading ? 0 : 1)
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .tint(color)
+                        .accessibilityHidden(true)
+                }
+            }
+            .frame(minWidth: DS.Spacing.space4)
+            .padding(.horizontal, DS.Spacing.space1)
+            .background(
+                Capsule()
+                    .fill(isLoading ? DS.Colors.surface3.opacity(0.62) : .clear)
+            )
+            .contentShape(Capsule())
+        }
+        .buttonStyle(PickyHUDCompactChipButtonStyle())
+        .disabled(inFlightGitAction != nil)
+        .opacity(isBlocked ? 0.38 : 1)
+        .help(label)
+        .accessibilityLabel(label)
     }
 
     @ViewBuilder
@@ -1047,17 +1104,16 @@ struct PickyConversationContextLineView: View {
         }
     }
 
-    private func diffChipHelp(_ presentation: PickyGitChangeMetricsPresentation) -> String {
+    private func uncommittedDiffActionHelp(lineCount: Int) -> String {
         let configured = PickySettingsStore().load().gitChipActions.diffAction?.command
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let action = configured.isEmpty
-            ? L10n.t("hud.context.diff.configure.help", Int64(presentation.totalLines))
-            : L10n.t("hud.context.diff.action.help", configured, Int64(presentation.totalLines))
-        guard presentation.uncommitted != nil else { return action }
-        return "\(action)\n\(L10n.t("hud.context.diff.uncommitted.help", Int64(presentation.uncommittedLines)))"
+        if configured.isEmpty {
+            return L10n.t("hud.context.diff.configure.help", Int64(lineCount))
+        }
+        return L10n.t("hud.context.diff.action.help", configured, Int64(lineCount))
     }
 
-    private func diffChipAccessibilityLabel(_ presentation: PickyGitChangeMetricsPresentation) -> String {
+    private func diffMetricsAccessibilityLabel(_ presentation: PickyGitChangeMetricsPresentation) -> String {
         guard presentation.uncommitted != nil else {
             return L10n.t("hud.context.diff.branch.accessibilityLabel", Int64(presentation.totalLines))
         }
@@ -1066,6 +1122,18 @@ struct PickyConversationContextLineView: View {
             Int64(presentation.totalLines),
             Int64(presentation.uncommittedLines)
         )
+    }
+
+    private func remoteActionLabel(_ action: GitRemoteAction, count: Int, isLoading: Bool) -> String {
+        if isLoading {
+            return action == .push ? "Pushing…" : "Pulling…"
+        }
+        switch action {
+        case .push:
+            return "git push (\(count) ahead of upstream)"
+        case .pull:
+            return "git pull (\(count) behind upstream)"
+        }
     }
 
     private func branchChipHelp(branch: String) -> String {

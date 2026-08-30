@@ -171,7 +171,10 @@ unregisters the built bundle and then removes the directory:
 ```
 
 Directories modified within `--keep-hours` (default 24) are left alone, which
-is what protects a build that is currently running.
+is what protects a build that is currently running. During `--apply`, an
+`lsregister` command failure is treated as advisory because Spotlight can return
+an error after the record is already gone. The script checks the LaunchServices
+dump before deletion and retains any directory whose path is still registered.
 
 ## `release-version-policy.py` — canonical release tag validation
 

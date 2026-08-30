@@ -1,6 +1,6 @@
 ---
 name: picky-design-guide
-description: Picky 저장소에서 SwiftUI/AppKit UI를 새로 만들거나 수정하고, HUD·Conversation·Dock·Quick Input·Companion·Settings·overlay의 색상, 타이포그래피, 간격, radius, material, shadow, motion, 상태 표현, 접근성, 디자인 일관성을 검수할 때 사용한다. Picky 디자인 문서를 source of truth로 적용하고 Action Blue와 semantic status, macOS HIG, light/dark, keyboard interaction, HUD 성능을 확인한다.
+description: Picky 저장소에서 SwiftUI/AppKit UI를 새로 만들거나 수정하고, 변경 화면 스크린샷이나 offscreen render gallery 증거를 만들며, HUD·Conversation·Dock·Quick Input·Companion·Settings·overlay의 색상, 타이포그래피, 간격, radius, material, shadow, motion, 상태 표현, 접근성, 디자인 일관성을 검수할 때 사용한다. Picky 디자인 문서를 source of truth로 적용하고 Action Blue와 semantic status, macOS HIG, light/dark, keyboard interaction, HUD 성능을 확인한다.
 ---
 
 # Picky Design Guide
@@ -147,7 +147,19 @@ Near miss에는 이 스킬의 시각 규칙을 억지로 적용하지 않는다.
 - 유지할 것과 변경할 것을 함께 기록한다.
 - 사용자가 리뷰만 요청했다면 파일을 수정하지 않는다.
 
-### 7. 좁은 범위부터 검증한다
+### 7. 정적 UI 증거는 production offscreen render로 만든다
+
+사용자가 변경 화면의 스크린샷이나 시각 검증을 요청하면 실행 중인 Picky.app의 빌드를 먼저 바꾸려 하지 않는다.
+
+1. `<repo-root>/docs/render-gallery.md`에서 대상 surface의 기존 gallery target과 제한을 확인한다.
+2. 기존 scene이 있으면 `./scripts/render-ui-gallery.sh <target>`을 실행한다.
+3. 필요한 상태가 없으면 gallery 전용 모사 UI를 만들지 말고 production component를 사용한 deterministic scene을 추가한다.
+4. 생성 성공만으로 끝내지 않고 PNG를 직접 읽어 geometry, clipping, 상태와 appearance를 확인한다.
+5. 사용자가 이미지 파일을 열어 달라고 명시했을 때만 `open`을 실행한다.
+
+정적 geometry, appearance, 상태 표현을 캡처하기 위해 Picky.app 재실행 승인을 요청하지 않는다. hover, keyboard focus, native panel anchoring, material/vibrancy처럼 offscreen render가 증명하지 못하는 interaction만 별도 live validation으로 분리하고, 이 경우에도 재실행은 매번 명시적 승인을 받아야 한다.
+
+### 8. 좁은 범위부터 검증한다
 
 변경 파일을 대상으로 먼저 확인한다.
 
@@ -171,6 +183,7 @@ raw 값이 발견되면 제거하거나 component-level 예외 이유를 기록�
 
 - `read`: canonical 디자인 문서와 관련 View/ViewModel을 읽는다.
 - `rg`: 기존 token, component, raw style, 중복 구현을 찾는다.
+- `bash`: `docs/render-gallery.md`의 project script로 production component PNG를 만들고 검증한다.
 - `todo_write`: 화면 여러 개나 foundation까지 걸치는 감사에 사용한다.
 - `ask_user_question`: 시각 목표나 상태 우선순위가 결과를 크게 바꿀 때 사용한다.
 - `web_search`/`fetch_content`: Apple API/HIG 가정이 필요하면 공식 `developer.apple.com`을 우선한다.
@@ -215,6 +228,8 @@ raw 값이 발견되면 제거하거나 component-level 예외 이유를 기록�
 - [ ] 기존 semantic token과 component를 우선 사용했다.
 - [ ] appearance와 접근성 영향을 확인했다.
 - [ ] raw 스타일 예외를 기록했다.
+- [ ] 정적 UI 증거 요청이면 앱 재실행보다 production offscreen render를 먼저 사용했다.
+- [ ] 생성한 gallery PNG를 직접 확인했다.
 - [ ] HUD 변경이면 layout/performance 리스크를 확인했다.
 - [ ] 요청이 리뷰 전용이면 파일을 수정하지 않았다.
 

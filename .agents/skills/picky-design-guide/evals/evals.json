@@ -42,6 +42,26 @@
       ]
     },
     {
+      "id": "offscreen-change-screenshot",
+      "prompt": "방금 수정한 Todo 펼침 UI가 어떻게 바뀌었는지 스크린샷 찍어서 열어줘. 실행 중인 Picky는 건드리지 마.",
+      "expected_output": "docs/render-gallery.md를 확인하고 현재 소스의 production component를 deterministic offscreen scene으로 렌더링한다. 기존 scene이 없으면 모사 UI가 아니라 production component scene을 추가한다. 생성된 PNG를 직접 검사한 뒤 사용자가 요청했으므로 파일을 열며, 정적 캡처만을 위해 Picky.app 재실행 승인을 요청하거나 앱을 재시작하지 않는다.",
+      "files": [],
+      "assertions": [
+        {
+          "text": "The response uses a production-component offscreen render path before considering any live app relaunch.",
+          "type": "qualitative"
+        },
+        {
+          "text": "The response directly inspects the generated PNG and opens it because the user explicitly requested that action.",
+          "type": "qualitative"
+        },
+        {
+          "text": "The response does not restart Picky or ask for relaunch permission merely to capture static UI geometry.",
+          "type": "qualitative"
+        }
+      ]
+    },
+    {
       "id": "backend-near-miss",
       "prompt": "agentd WebSocket reconnect 시 session epoch이 꼬이는 버그를 고치고 테스트해줘. UI 변경은 없어.",
       "expected_output": "UI projection 변경이 없는 backend-only near miss로 분류해 Picky 디자인 규칙을 억지로 적용하지 않는다. 관련 daemon debugging/testing workflow를 사용하고 디자인 문서나 시각 토큰 변경을 제안하지 않는다.",

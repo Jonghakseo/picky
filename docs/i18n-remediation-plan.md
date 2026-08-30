@@ -7,8 +7,8 @@ covers Picky-owned text that reaches users in the app, HUD, notifications,
 AppKit surfaces, speech, and `agentd` events rendered by the HUD.
 
 The catalog is **not** the current problem: `Picky/Resources/Localizable.xcstrings`
-has 568 keys, complete `en` and `ko` translations, no empty values, and no
-format-placeholder mismatches. The gaps are code paths that bypass the catalog
+has 850 keys as of 2026-08-30, complete `en` and `ko` translations, no empty
+values, and no format-placeholder mismatches. The gaps are code paths that bypass the catalog
 or use the system locale instead of Picky's selected locale.
 
 This plan does not translate user/agent-authored content, paths, model names,

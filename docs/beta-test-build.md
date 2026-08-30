@@ -338,7 +338,7 @@ If the app launches but the daemon does not start, ask the tester to check bundl
 
 ```bash
 ls -la ~/Library/Application\ Support/Picky/Logs/
-cat ~/Library/Application\ Support/Picky/agentd.node-preflight.json 2>/dev/null || true
+cat ~/Library/Application\ Support/Picky/Logs/agentd.node-preflight.json 2>/dev/null || true
 tail -200 ~/Library/Application\ Support/Picky/Logs/agentd.stderr.log
 ```
 

@@ -1,8 +1,10 @@
 # V2 authoritative bootstrap membership / deletion design
 
+Status: implemented end to end (2026-08-30). The design-time “current behavior” and future-tense implementation sections below are retained as historical rationale; the shipped contract lives in `agentd/src/protocol.ts`, `agentd/src/application/session-projection-v2-broadcaster.ts`, `Picky/PickyAgentClientRouter.swift`, and their tests.
+
 ## Decision
 
-Add a v2-only, unicast `sessionProjectionBootstrapComplete` event. It marks the
+Projection v2 uses a unicast `sessionProjectionBootstrapComplete` event. It marks the
 complete membership for one **successful bootstrap of one socket owner**, not
 for the app globally. It contains the daemon epoch, the registering
 `registerAppCapabilities` command ID as `bootstrapId`, and the complete
@@ -19,12 +21,12 @@ archived sessions before a v2 socket registers. Normal HUD/CLI deletion
 already performs local cleanup. A tombstone is a follow-up only if a supported
 producer can delete a session while a v2 client remains connected.
 
-This is a high-blast-radius protocol/state change: it changes a shared wire
-contract, the daemon bootstrap barrier, router ownership propagation, and
-registry-backed Swift cleanup. Require a protocol-focused review before
-implementation.
+This was a high-blast-radius protocol/state change because it changed a shared
+wire contract, the daemon bootstrap barrier, router ownership propagation, and
+registry-backed Swift cleanup. The shipped implementation includes protocol,
+broadcaster, router, and registry cleanup coverage.
 
-## 1. Problem and verified current behavior
+## 1. Historical problem and verified pre-implementation behavior
 
 1. A v2 registration sends one `sessionProjectionSnapshot` per entry returned
    by `supervisor.list()` under a per-session barrier, buffers live frames,

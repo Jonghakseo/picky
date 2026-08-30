@@ -28,7 +28,7 @@ Expected adaptive cadence:
 - two hard mismatches during initial validation transition to `suspended` instead of polling invisibly forever
 - first 5 seconds visible: 500 ms
 - 5–30 seconds visible: 1 second
-- long-lived visible annotation: 5 seconds
+- long-lived visible annotation: 1.5 seconds
 - first visual mismatch or restoration match: 300 ms minimum confirmation interval, preserved even when more wake-up events arrive
 - application/window mismatch: notification-driven wake-up plus a 5-second semantic-only liveness retry; no pixel capture while still mismatched
 - display change: immediate suspend, capture-cache invalidation, then suspended adaptive pixel validation
@@ -54,7 +54,7 @@ Open Instruments with the Logging template, attach to Picky, then filter by thos
 4. After TTS ends on the matching scene, confirm an `xmark + Close` control appears at the top-right of every annotated display. Click any one and expect all annotations plus the monitor to clear.
 5. Repeat without clicking, then change the app/window or scroll away after TTS; expect a permanent clear and a monitor stop rather than a later resume.
 6. Repeat while suspended and let TTS finish before returning; expect the annotation to clear immediately without showing the close control.
-7. Keep a settled annotation on its original static screen for over 30 seconds and confirm `delayMs=5000` until it is dismissed, cleared, or replaced.
+7. Keep a settled annotation on its original static screen for over 30 seconds and confirm `delayMs=1500` until it is dismissed, cleared, or replaced.
 8. Generate two visual narration segments with at least two sentences in the first segment. Confirm the first sentence activates its annotation and response bubble together, then the second sentence appends to that same bubble.
 9. With an incremental provider, let the second visual segment arrive while the first sentence is still speaking. Confirm it stays prepared and does not replace the first annotation/bubble until its own speech starts.
 10. Suspend the scene between visual sentences. Confirm TTS continues while annotation and visual narration bubble both hide, then only the currently active segment returns after scene restoration.

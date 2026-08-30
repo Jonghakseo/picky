@@ -1,15 +1,17 @@
 # Pickle Multi-Terminal Control Plan
 
-_Status: Gate 0 approved; Task 1 in progress (automated characterization complete; manual performance/security gates pending); Tasks 2–12 blocked_
+_Status: paused for baseline re-approval; Task 1 characterization is historical and Tasks 2–12 remain blocked_
 
-_Last updated: 2026-08-20_
+_Last updated: 2026-08-30_
+
+> Rebase note: the utility panel became terminal-only after Gate 0. This revision updates the executable UI tasks, tests, manual scenarios, and Definition of Done to preserve that terminal-only outer panel. Protocol, PTY ownership, privacy, and concurrency requirements still require their original gates.
 
 ## Summary
 
-The Pickle utility panel already contains only `Terminal | Artifacts`; the former Activity/Progress tab has been removed. This plan preserves that two-tab structure and turns the Terminal tab into a per-Pickle terminal workspace that can:
+The Pickle utility panel now contains only the terminal surface. A rebased plan would turn that surface into a per-Pickle terminal workspace that can:
 
 - create, select, rename, and close multiple local shell terminals;
-- keep terminal processes alive while the utility panel is hidden or the Artifacts tab is selected;
+- keep terminal processes alive while the utility panel is hidden;
 - allow the owning Pickle agent to create, inspect, write to, and close explicitly shared terminals;
 - prevent user and agent input from being merged into the same shell line;
 - degrade safely across archive, child-daemon exit, WebSocket disconnect, duplicate requests, and mixed app/daemon capability versions.
@@ -22,13 +24,13 @@ The core invariant is:
 
 ## Confirmed decisions
 
-- Keep the utility panel at two top-level tabs: `Terminal | Artifacts`.
-- Do not reintroduce Activity, Progress, Changes, or raw tool-history tabs.
+- Keep the utility panel terminal-only; do not add a top-level utility tab switcher as part of multi-terminal work.
+- Do not reintroduce Activity, Progress, Changes, Artifacts, or raw tool-history tabs into this panel.
 - Keep PTYs in Picky.app using SwiftTerm for v1; pin the package requirement to the currently verified revision before implementation begins.
 - Support multiple terminals within one Pickle; do not add split panes in v1.
 - A terminal created by the Pickle is shared with that Pickle by default.
-- If that Pickle is currently active in the HUD when its terminal is inserted, expand its utility panel, select `Terminal`, and select the new terminal without moving keyboard focus or activating another Pickle.
-- If the creating Pickle is not currently active, create the terminal without changing session selection, panel visibility, selected utility tab, or keyboard focus; do not queue a deferred reveal.
+- If that Pickle is currently active in the HUD when its terminal is inserted, expand its utility panel and select the new terminal without moving keyboard focus or activating another Pickle.
+- If the creating Pickle is not currently active, create the terminal without changing session selection, panel visibility, or keyboard focus; do not queue a deferred reveal.
 - A terminal created by the user is private by default.
 - A user-created terminal becomes agent-readable and agent-controllable only after explicit per-terminal opt-in.
 - Mutating control is exclusive: user and Pickle writes must never be accepted concurrently.
@@ -39,12 +41,12 @@ The core invariant is:
 ## Design Decision Card
 
 - **User goal:** manage several local shells inside one Pickle and let that Pickle operate the shells when explicitly allowed.
-- **Target surface:** the existing Terminal utility tab below a Pickle conversation card.
+- **Target surface:** the existing terminal-only utility panel below a Pickle conversation card.
 - **First-glance information:** selected terminal, process status, terminal count, control permission, and active controller.
 - **Primary actions:** select terminal, create terminal, type into terminal; an active Pickle's agent-created terminal reveals itself without stealing focus.
 - **Secondary actions:** rename, grant/revoke Pickle control, hand mutation control to the Pickle, close terminal.
 - **Required states:** empty, starting, running, exited, failed, private, shared, user-controlled, Pickle-controlled, disconnected, closing, limit reached.
-- **Token plan:** reuse utility-panel tabs, `DS` colors/spacing/radii, `PickyHUDTypography`, SF Symbols, and existing terminal surface styling. Add no new foundation token unless implementation proves a missing semantic role.
+- **Token plan:** reuse `DS` colors/spacing/radii, `PickyHUDTypography`, SF Symbols, and existing terminal surface styling. Add no new foundation token unless implementation proves a missing semantic role.
 - **Native behavior:** preserve macOS keyboard focus, terminal selection/copy/paste, drag-and-drop paths, IME handling, contextual menus, tooltips, and VoiceOver labels.
 - **Performance constraint:** inactive terminals keep their PTY and buffer but must not add SwiftUI row tasks or repeatedly remount their `NSView`.
 - **Security boundary:** private user terminals expose neither output nor mutation capability to the Pickle.
@@ -54,16 +56,7 @@ The core invariant is:
 
 ### Utility panel
 
-`Picky/HUD/PickyHUDUtilityPanel.swift` currently declares only:
-
-```swift
-enum PickyHUDUtilityPanelTab {
-    case terminal
-    case artifacts
-}
-```
-
-`PickyTests/PickyHUDUtilityPanelPolicyTests.swift` asserts that `activity`, `progress`, and `changes` are invalid persisted tab values. No Activity-tab removal work remains; implementation must preserve this contract.
+`Picky/HUD/PickyHUDUtilityPanel.swift` currently mounts `PickySessionExtendedTerminalView` directly. There is no top-level utility-tab enum, persisted tab selection, or Artifacts switcher. Multi-terminal work must preserve the terminal-only outer panel and place terminal selection inside that surface.
 
 ### Single local shell per Pickle
 
@@ -266,12 +259,12 @@ User creation:
 
 Pickle creation:
 
-- create even if the utility panel is closed or Artifacts is selected;
+- create even if the utility panel is closed;
 - set `origin = pickle`, `permission = sharedWithPickle`, `controller = pickle`;
 - start the PTY before returning success to the tool;
 - at workspace insertion on `@MainActor`, check whether the owning Pickle is still the active HUD session;
-- if active, expand that Pickle's utility panel, select `Terminal`, and select the new terminal while preserving the current first responder and without activating another app/window;
-- if inactive, perform no UI reveal, Pickle activation, tab switch, focus change, or deferred reveal; the process continues and appears normally when the user later opens that Pickle.
+- if active, expand that Pickle's utility panel and select the new terminal while preserving the current first responder and without activating another app/window;
+- if inactive, perform no UI reveal, Pickle activation, panel mutation, focus change, or deferred reveal; the process continues and appears normally when the user later opens that Pickle.
 
 ### Decouple start from mount
 
@@ -357,15 +350,11 @@ Permission answers whether the Pickle may observe or operate the terminal. Contr
 
 ## Terminal UI
 
-### Top-level utility tabs
+### Terminal-only utility panel
 
-Keep the current top-level tab bar unchanged:
+Keep the current outer utility panel terminal-only. Do not add a top-level tab bar for this feature.
 
-```text
-Terminal | Artifacts
-```
-
-The Terminal tab may show a count badge when more than one terminal exists. When the currently active Pickle creates a terminal, the app expands its utility panel, selects `Terminal`, and selects the new terminal without changing keyboard focus. Creation by an inactive Pickle does not activate that Pickle or change any visible panel/tab state and does not schedule a deferred reveal.
+The inner terminal strip may show a count badge when more than one terminal exists. When the currently active Pickle creates a terminal, the app expands its utility panel and selects the new terminal without changing keyboard focus. Creation by an inactive Pickle does not activate that Pickle or change any visible panel state and does not schedule a deferred reveal.
 
 ### Inner terminal strip
 
@@ -756,7 +745,7 @@ In `PickySessionViewModel.swift`:
 ### Swift app
 
 - `Picky/HUD/PickyHUDUtilityPanel.swift`
-  - preserve two top-level tabs
+  - preserve the terminal-only outer panel
   - project terminal count badge
   - host multi-terminal workspace view
 - `Picky/HUD/Conversation/PickySessionExtendedTerminalView.swift`
@@ -853,16 +842,16 @@ Suggested focused suites:
 
 ### Required automated scenarios
 
-1. Existing utility top-level tabs remain exactly Terminal and Artifacts.
+1. The utility panel remains terminal-only with no top-level tab switcher.
 2. Opening an empty workspace creates one private user terminal.
 3. Creating multiple terminals preserves deterministic order and selection.
 4. Closing selected/middle/last terminals chooses the documented fallback.
 5. Terminal IDs are monotonic and never reused.
 6. Archive/unarchive allocates a generation newer than the retained tombstone.
 7. Per-Pickle and global limits reject creation without evicting terminals.
-8. A terminal created by the active Pickle starts independently of view mounting, opens the utility panel on `Terminal`, selects the new terminal, and preserves the current first responder.
+8. A terminal created by the active Pickle starts independently of view mounting, opens the utility panel, selects the new terminal, and preserves the current first responder.
 9. Switching selected terminals does not restart processes.
-10. Hiding the panel and switching to Artifacts preserve every process.
+10. Hiding, reopening, or remounting the utility panel preserves every process.
 11. User-created terminal is absent from shared list metadata and rejects read/write/close.
 12. Explicit permission grant allows read but leaves user controller until hand-back.
 13. User takeover increments lease and invalidates queued Pickle writes.
@@ -898,7 +887,7 @@ Suggested focused suites:
 43. Closing/unresponsive terminals retain capacity until confirmed exit and cannot release a replacement incarnation's slot.
 44. Legacy capability registration survives rejection of additive terminal-control commands, and explicit removal stops new terminal events on the same socket.
 45. Agent control remains unavailable while the local feature gate is off, even when protocol schemas and UI are present.
-46. A terminal created by an inactive Pickle starts normally but causes no Pickle activation, panel/tab change, focus change, or deferred reveal.
+46. A terminal created by an inactive Pickle starts normally but causes no Pickle activation, panel change, focus change, or deferred reveal.
 
 ## Gate 0 design approval gate
 
@@ -955,8 +944,8 @@ Suggested focused suites:
 11. **Agent-created terminal reveal policy**
     - "Active Pickle" means the current HUD session selection, not merely a live child runtime or unarchived session.
     - Evaluate that selection at terminal workspace insertion on `@MainActor`.
-    - For the active Pickle, expand the utility panel, select `Terminal`, and select the new terminal without changing first responder or activating another app/window.
-    - For an inactive Pickle, create the terminal with no session activation, panel/tab/focus mutation, or deferred reveal.
+    - For the active Pickle, expand the utility panel and select the new terminal without changing first responder or activating another app/window.
+    - For an inactive Pickle, create the terminal with no session activation, panel/focus mutation, or deferred reveal.
 
 ### Gate 0 approval checklist
 
@@ -1031,13 +1020,13 @@ Never parallel-edit `PickySessionExtendedTerminalView.swift`, either protocol sc
 - pin the verified SwiftTerm revision and record the required override points;
 - characterize whether SwiftTerm distinguishes user input from internally generated terminal-protocol replies at the final send path;
 - introduce only the minimal fakeable characterization seam needed before structural refactoring;
-- prove the current terminal survives utility-tab switching and view remount;
+- prove the current terminal survives panel hide/reopen and view remount;
 - prove one process starts once per shell session;
-- preserve the two-tab utility policy;
+- preserve the terminal-only outer panel;
 - document current archive closure behavior;
 - capture the pre-change terminal mount/switch signpost baseline.
 
-**Task 1 status:** automated pin, lifecycle/archive, attachment, two-tab, and final-send-path characterization are complete. Task 1 remains in progress because the signed TCC/security spike and pre-change HUD signpost/mount baseline are unchecked and require explicit approval; no structural workspace, protocol, UI, or control-gate work is authorized.
+**Task 1 status:** automated pin, lifecycle/archive, attachment, terminal-only panel, and final-send-path characterization are complete. Task 1 remains in progress because the signed TCC/security spike and pre-change HUD signpost/mount baseline are unchecked and require explicit approval; no structural workspace, protocol, UI, or control-gate work is authorized.
 
 **Validation:** targeted terminal/utility suites and package resolution must pass before structural changes.
 
@@ -1131,7 +1120,7 @@ Never parallel-edit `PickySessionExtendedTerminalView.swift`, either protocol sc
 - permission/controller actions and status projection;
 - empty, failure, disconnected, and limit states;
 - keyboard/accessibility behavior;
-- reveal a newly created terminal only for the currently active Pickle by expanding the panel and selecting `Terminal`/the new tab;
+- reveal a newly created terminal only for the currently active Pickle by expanding the panel and selecting the new inner terminal;
 - preserve first responder during active-Pickle reveal and make inactive-Pickle creation produce no visible UI change or deferred reveal.
 
 **Validation:** policy/projection tests, macOS build, HUD signpost comparison.
@@ -1241,7 +1230,7 @@ Never parallel-edit `PickySessionExtendedTerminalView.swift`, either protocol sc
 
 - with explicit approval, run the signed security spike comparing protected-resource behavior of child agentd and an app-owned PTY;
 - manually verify multiple terminals, IME, copy/paste, drag/drop, hidden process continuity, permission/controller transitions, archive, and child restart;
-- profile Terminal/Artifacts switching and terminal tab selection against the Gate 0 baseline/threshold;
+- profile utility-panel hide/reopen, view remount, and inner terminal selection against the rebased Gate 0 baseline/threshold;
 - record resource usage and responsiveness at maximum configured terminal count under sustained/graphical output;
 - enable terminal control by default only after automated, security, manual, and performance evidence is approved.
 
@@ -1292,24 +1281,24 @@ No packaged Node/native-addon smoke is required for this design because it delib
 
 ### Multiple user terminals
 
-1. Open the Terminal utility tab and create four terminals.
+1. Open the terminal-only utility panel and create four terminals.
 2. Run distinct long-lived commands in each.
-3. Switch terminals and then switch to Artifacts and back.
+3. Switch terminals, hide the utility panel, and reopen it.
 4. Confirm every process and scroll state remains intact.
 5. Close a middle terminal, selected terminal, and final terminal; confirm deterministic selection and empty state.
 
 ### Active Pickle creates a terminal
 
-1. Keep the active Pickle's utility panel closed or leave it on Artifacts, with keyboard focus in another eligible control.
+1. Keep the active Pickle's utility panel closed, with keyboard focus in another eligible control.
 2. Ask that Pickle to create a terminal and start a long-running process.
-3. Confirm the utility panel expands, `Terminal` becomes selected, and the new terminal tab is selected while the prior first responder remains unchanged.
+3. Confirm the utility panel expands and the new terminal is selected while the prior first responder remains unchanged.
 4. Confirm the process started independently of the terminal view mount and retained its output.
 
 ### Inactive Pickle creates a terminal
 
-1. Keep another Pickle active and record its panel, selected tab, and first responder.
+1. Keep another Pickle active and record its panel visibility and first responder.
 2. Let an inactive Pickle create a terminal.
-3. Confirm the inactive Pickle is not activated and the visible panel/tab/focus state does not change.
+3. Confirm the inactive Pickle is not activated and the visible panel/focus state does not change.
 4. Later open that Pickle manually and confirm the terminal was already running; no deferred reveal action should fire.
 
 ### Permission and takeover
@@ -1331,7 +1320,7 @@ No packaged Node/native-addon smoke is required for this design because it delib
 
 ### Input compatibility
 
-Verify Korean IME input, command-arrow/delete line editing, copy/paste, bracketed paste, file drag/drop, Ctrl-C, alternate screen TUIs, and terminal focus routing across terminal-tab switches. Exercise takeover/hand-back while each input source is queued or marked and confirm the final PTY gate sends no stale bytes.
+Verify Korean IME input, command-arrow/delete line editing, copy/paste, bracketed paste, file drag/drop, Ctrl-C, alternate screen TUIs, and terminal focus routing across inner terminal switches. Exercise takeover/hand-back while each input source is queued or marked and confirm the final PTY gate sends no stale bytes.
 
 ### Signed privilege-boundary spike
 
@@ -1393,7 +1382,7 @@ Do not roll back by granting the Pickle unrestricted access to all user terminal
 
 ## Definition of done
 
-- Utility panel remains exactly Terminal and Artifacts.
+- Utility panel remains terminal-only with no top-level tab switcher.
 - A Pickle can own multiple independent local shell processes.
 - User and Pickle can create terminals without unintended focus changes; active-Pickle agent creation reveals the new terminal, while inactive-Pickle creation makes no visible UI change.
 - User-created terminals are private by default.
@@ -1450,7 +1439,7 @@ Residual risk:
 ## Reference map
 
 - Product and architecture constraints: `AGENTS.md`, `ARCHITECTURE.md`
-- Utility-panel decision: `docs/utility-panel-activity-artifacts-plan.md`
+- Superseded utility-panel history: `docs/utility-panel-activity-artifacts-plan.md`
 - Design direction: `design/DESIGN.md`, `design/PRINCIPLES.md`, `design/COMPONENTS.md`
 - Refactoring ownership and protocol rules: `docs/refactoring-principles.md`
 - Swift async ownership: `docs/swift-concurrency.md`

@@ -92,7 +92,7 @@ The quarantine workaround is only for trusted internal builds. It bypasses the d
 ## Tester prerequisites
 
 - Apple Silicon Mac
-- Pi installed (no system-wide `node` required — the app ships a pinned Node 22.x arm64 binary under `Contents/Resources/agentd-runtime/bin/node`)
+- Pi installed (no system-wide `node` required; the app ships the arm64 Node version pinned by `agentd/package.json#engines.node` under `Contents/Resources/agentd-runtime/bin/node`)
 - macOS permissions granted when prompted:
   - Accessibility
   - Screen Recording
@@ -119,8 +119,8 @@ The packaged app resolves `picky-agentd` in this order:
 
 For the Node executable the launcher uses (in priority order):
 
-1. `PICKY_NODE_PATH` env var, when set to an executable Node 22.x binary (dev/debug override).
-2. Bundled `Picky.app/Contents/Resources/agentd-runtime/bin/node` (Node 22.x arm64, pinned via `agentd/package.json#engines.node`).
+1. `PICKY_NODE_PATH` env var, when set to an executable Node 22.19.0-or-newer binary (dev/debug override).
+2. Bundled `Picky.app/Contents/Resources/agentd-runtime/bin/node` (arm64, exact version pinned via `agentd/package.json#engines.node`; currently `24.18.1`).
 3. `/usr/bin/env node` from the inherited PATH (dev builds or `PICKY_SKIP_NODE_BUNDLE=1` packages).
 
 The bundled Node is signed separately with `Picky/NodeRuntime.entitlements` so V8 JIT works under hardened runtime; the main app entitlements are unchanged.

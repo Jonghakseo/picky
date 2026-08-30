@@ -2,7 +2,7 @@
 
 Design plan for tightening the annotation scene **restoration** gate (`suspended → visible`) so that annotations survive banner rotation and video playback, but are *not* falsely restored when the user switches to a different layout that merely shares a similar color tone.
 
-Status: proposed. Runtime tuning of grid size / periphery weight will be iterated against real captures after the first implementation lands.
+Status: implemented. Edge masks, grid scoring, structural floors, and `stableFraction` restoration coverage live in `Picky/Interaction/PickyAnnotationScenePolicy.swift` and `PickyTests/PickyAnnotationScenePolicyTests.swift`. Runtime tuning of grid size and periphery weight remains ongoing against real captures.
 
 ## Problem
 
@@ -151,9 +151,9 @@ Per `docs/refactoring-principles.md`, add fixtures before touching policy:
 
 - Banner/carousel: stable periphery + changed central band → **restore**.
 - Video playback: same shape as banner → **restore**.
-- Different layout, similar tone (low global mean difference but shifted edges) → **break**. This is the regression the current policy fails.
+- Different layout, similar tone (low global mean difference but shifted edges) → **break**. This is the regression the pre-implementation policy failed.
 - Annotation anchor on the changing region → **break** even when periphery is stable.
 - Flat identical region (no edges) → **stable** (does not spuriously break).
 - Single noisy frame between two stable frames → no state flip (2-consecutive guard).
 
-Add these to `PickyTests/PickyAnnotationScenePolicyTests.swift` and keep the existing initial-validation / narration / semantic tests green (the restore-direction change must not regress fail-open initial reveal).
+These cases are covered in `PickyTests/PickyAnnotationScenePolicyTests.swift` alongside the existing initial-validation, narration, and semantic tests so restoration does not regress fail-open initial reveal.

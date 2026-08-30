@@ -78,6 +78,8 @@ const SOFT_SESSION_MEMBERS = [
   "recordBashResult",
   "isBashRunning",
   "isCompacting",
+  "getActiveToolNames",
+  "setActiveToolsByName",
 ] as const;
 
 describe("pi-coding-agent contract", () => {

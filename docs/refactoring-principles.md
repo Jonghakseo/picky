@@ -1,6 +1,6 @@
 # Refactoring Principles
 
-_Last updated: 2026-06-03_
+_Last updated: 2026-08-30_
 
 Use this document before structural refactors in Picky. It complements `ARCHITECTURE.md`, `docs/swift-concurrency.md`, and `docs/perf-profiling.md`.
 
@@ -222,8 +222,8 @@ inherits the app lint configuration through `.swiftlint-tests.yml` but disables
 only `file_length` and `type_body_length`. All other SwiftLint rules still apply.
 
 Removing tests from the production length ratchets lowered both app-only error pins
-to 2450. The measured app maxima are 2360 lines for `file_length` and 2351 lines
-for `type_body_length`, both in `PickySessionViewModel`.
+to 2450. A 2026-08-30 SwiftLint run measured app maxima of 2376 lines for
+`file_length` and 2367 lines for `type_body_length`, both in `PickySessionViewModel`.
 
 ## 4. Review checklist
 

@@ -26,7 +26,7 @@ local ~/.pi/agent skills/extensions/MCP/tools
 
 Default daemon port is `127.0.0.1:17631`. Mock runtime is available via `PICKY_AGENTD_RUNTIME=mock`.
 
-Packaged Picky.app bundles a pinned Node 22.x arm64 runtime under `Contents/Resources/agentd-runtime/bin/node` and its npm CLI under `Contents/Resources/agentd-runtime/lib/node_modules/npm`; only Node is signed separately with `Picky/NodeRuntime.entitlements` for V8 JIT. The launcher (`Picky/PickyAgentDaemonLauncher.swift`) resolves Node in this order:
+Packaged Picky.app bundles an arm64 Node runtime under `Contents/Resources/agentd-runtime/bin/node` and its npm CLI under `Contents/Resources/agentd-runtime/lib/node_modules/npm`; only Node is signed separately with `Picky/NodeRuntime.entitlements` for V8 JIT. The exact bundled version is pinned by `agentd/package.json#engines.node`. The launcher (`Picky/PickyAgentDaemonLauncher.swift`) resolves Node in this order:
 
 1. `PICKY_NODE_PATH` env override (dev/debug).
 2. Bundled `Resources/agentd-runtime/bin/node`.
@@ -80,7 +80,7 @@ When the user asks about a feature, start here before broad searching:
 - Session selection/archive state: `Picky/Sessions/PickySessionSelectionStore.swift`, `Picky/Sessions/`
 - Pi terminal overlay / resume command: `Picky/Sessions/PickyTerminalOverlay.swift`, `Picky/PickySessionViewModel.swift`, search `openTerminalOverlay` or `copyTerminalResumeCommand`
 - Interaction state/effects: `Picky/Interaction/`
-- Pointer overlay validation/resolution: `Picky/PointerOverlay/`, `agentd/src/application/pointer-tool.ts`
+- Pointer overlay validation/resolution: `Picky/PointerOverlay/`, `agentd/src/application/pointer-overlay-request.ts`, `agentd/src/application/overlay-context-resolver.ts`, `agentd/src/domain/pointer-validation.ts`
 - App-daemon protocol/client: `Picky/PickyAgentProtocol.swift`, `Picky/PickyAgentClient.swift`, `Picky/PickyAgentClientRouter.swift`, `Picky/PickyAgentDaemonLauncher.swift`, `Picky/PickyAgentDaemonPool.swift`
 - agentd entry/composition: `agentd/src/index.ts`
 - agentd WebSocket protocol handling: `agentd/src/server.ts`, `agentd/src/protocol.ts`

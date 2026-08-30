@@ -1,10 +1,10 @@
 # Utility panel: Terminal + Artifacts
 
-Status: implemented (2026-08-17).
+Status: superseded (2026-08-30). This file records the two-tab implementation that shipped on 2026-08-17, but the current Pickle utility panel is terminal-only (`Picky/HUD/PickyHUDUtilityPanel.swift`). The Artifacts tab and persisted tab selection were later removed. `PickySessionArtifactsView` remains in source but is not mounted by the current utility panel; link/report artifacts remain available from conversation surfaces.
 
-The Pickle utility panel contains `터미널 | 작업물`. The previously implemented Activity/Progress tab was removed after product review because it duplicated tool history without providing enough recurring value. Detailed tool activity remains available through the existing detached tool-history viewer and conversation entry points.
+The sections below preserve the historical Terminal + Artifacts contract and must not be used as the current HUD specification.
 
-## Confirmed product decisions
+## Historical product decisions
 
 - Keep the utility panel focused on two concrete jobs: interacting with the local terminal and reopening files produced by the Pickle.
 - Do not auto-switch tabs on completion; use the Artifacts badge only.
@@ -22,7 +22,7 @@ A file artifact is an allowed non-source file Pi saved successfully with its fil
 - Rewriting the same path updates its existing artifact with a strictly monotonic `updatedAt`, so the unseen badge re-arms even when the clock repeats or moves backward.
 - Link materialization behavior is unchanged.
 
-## Utility UI state
+## Historical utility UI state
 
 - Persisted `activity`, `progress`, and `changes` selections fall back to `terminal`.
 - The terminal remains mounted across tab changes, requests focus only while selected, and resigns hidden terminal focus when the Artifacts tab becomes active.

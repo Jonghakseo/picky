@@ -1,9 +1,9 @@
 # Picky Messaging & Projection v2 — Dynamic Implementation Workflow (Revised)
 
-Status: approved implementation workflow
+Status: implemented; retained as the completed implementation workflow (2026-08-30)
 Prerequisite merged: `964ba658 fix: bound app session snapshot frames`
 
-This document is the source of truth for implementation scope, sequencing, validation gates, and dynamic subagent orchestration.
+This document records the approved implementation scope, sequencing, validation gates, and dynamic subagent orchestration used to ship Projection v2. It is no longer the source of truth for current runtime behavior; use `ARCHITECTURE.md`, the projection v2 application modules, protocol schemas, and current tests.
 
 ## 1. Locked objective and boundaries
 
@@ -26,7 +26,7 @@ Hard invariants:
 - persisted state + in-memory journal/drafts + projection publication are commit-ordered; a failed durable save changes none of them.
 - completion notification is a post-commit best-effort/idempotent side effect. Durable exactly-once notification/outbox is explicitly outside this performance refactor.
 
-## 2. Current verified baseline
+## 2. Historical verified baseline before Projection v2
 
 - P0 commit changes only `agentd/src/server.ts`, `agentd/src/server.test.ts`.
 - P0 app path: one lightweight `sessionSnapshot`, then N bounded `sessionUpdated` frames.

@@ -67,7 +67,7 @@ The test verifies PNG encoding/decoding, expected 2× canvas dimensions, non-emp
 ./scripts/render-ui-gallery.sh conversation-context
 ```
 
-This target writes five 2× Korean scenes under `build/render-gallery/conversation-context/`: the production header context control, available popover content in dark and light appearance, the unavailable action state, and active compaction progress. `PickyConversationHeaderRenderGalleryTests` renders the production SwiftUI components without creating an app window. Inspect the PNGs directly; the gallery validates file structure and dimensions but does not prove native popover anchoring or click-outside dismissal.
+This target writes seven 2× Korean scenes under `build/render-gallery/conversation-context/`: the production header context control, available popover content in dark and light appearance, the unavailable action state, active compaction progress, and context-band ramp states in dark and light appearance. `PickyConversationHeaderRenderGalleryTests` renders the production SwiftUI components without creating an app window. Inspect the PNGs directly; the gallery validates file structure and dimensions but does not prove native popover anchoring or click-outside dismissal.
 
 ## Conversation activity gallery
 

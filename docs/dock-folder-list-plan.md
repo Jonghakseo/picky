@@ -1,16 +1,18 @@
 # Dock Folder List Plan
 
-_Status: design confirmed from mockup; implementation not started_
+_Status: core floating folder-list model implemented; follow-on drag/drop phases remain tracked below_
 
-_Last updated: 2026-08-25_
+_Last updated: 2026-08-30_
+
+> This document is the accepted design and implementation record. Future-tense statements in the body preserve the original acceptance criteria; current shipped behavior is defined by `PickyHUDDockGroupList*`, `PickyHUDOverlayManager+DockGroupList.swift`, and their tests. The “Shipped so far” subsection remains the live record for unfinished drag/drop phases.
 
 ## Summary
 
-The dock rail currently renders every member of an expanded group as its own tile, so rail length grows linearly with Pickle count. With 14 Pickles across three groups the rail measures about 870pt at the Medium preset and 1002pt at Large, which overflows the screen budget on a laptop display.
+Before this work, the dock rail rendered every member of an expanded group as its own tile, so rail length grew linearly with Pickle count. With 14 Pickles across three groups the rail measured about 870pt at the Medium preset and 1002pt at Large, which overflowed the screen budget on a laptop display. The current implementation uses one rail slot per group plus a floating `PickyHUDDockGroupListPanel`; its views, policies, hosting lifecycle, keyboard behavior, render scenes, and tests are shipped.
 
 A note on presets, because an earlier draft of this document got it wrong: the base constants in `PickyHUDDockLayout` and `PickyHUDDockMetrics` are authored at `scale = 1.0`, which is the **Large** preset. `PickyHUDDockSizePreset.medium` is `0.86` and `.small` is `0.72` (`PickySettings.swift:328-334`). Every point value below is a base constant at scale 1.0 unless stated otherwise.
 
-This plan replaces in-rail group expansion with a two-layer model:
+The implementation replaced in-rail group expansion with a two-layer model:
 
 1. **The rail only ever shows one slot per group.** Rail length scales with top-level entry count, not Pickle count.
 2. **A group's members open as a floating list panel** anchored to the folder tile, layered above the conversation card.

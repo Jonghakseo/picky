@@ -149,14 +149,15 @@ agentd/src/
   session-store.ts                      persisted session metadata
   session-message-builder.ts            app-facing message journal/source mapping
   artifact-store.ts                     artifact persistence/opening
-  log-store.ts                          daemon log storage
+  session-log-append.ts                 bounded session-log appends
   prompt-builder.ts                     neutral task/follow-up/Picky/Pickle prompts
   task-router.ts                        mock conservative router for mock runtime
   local-log.ts                          daemon logging
 
   application/
     internal-picky-cli.ts               Primary-only local CLI wrapper/PATH installation
-    pointer-tool.ts                     Picky pointer overlay request tool
+    pointer-overlay-request.ts          validated Picky pointer overlay requests
+    overlay-context-resolver.ts         overlay app/window context resolution
     ask-user-question-tool.ts           Pickle ask_user_question bridge
     pi-session-syncer.ts                Pi session JSONL/history sync helpers
     runtime-event-handler.ts            normalized runtime event state transitions
@@ -278,7 +279,7 @@ These are intentionally deferred until they clearly reduce complexity:
 
 ## 13. Pi integration references
 
-Before changing Pi SDK/runtime/extension behavior, resolve the installed `@mariozechner/pi-coding-agent` package location and read the relevant official docs:
+Before changing Pi SDK/runtime/extension behavior, resolve the installed `@earendil-works/pi-coding-agent` package location and read the relevant official docs:
 
 - `README.md`
 - `docs/sdk.md`

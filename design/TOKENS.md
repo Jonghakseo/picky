@@ -97,10 +97,10 @@ Picky는 macOS HUD이므로 Apple 웹 레퍼런스의 17–56px 마케팅 스케
 
 | 토큰 | 기준 크기 | 기본 weight | 용도 | 현재 구현 후보 |
 |---|---:|---|---|---|
-| `type.heading.primary` | 15pt | Semibold | section heading, markdown H1 | `heading1` |
+| `type.heading.primary` | 17pt | Semibold | section heading, markdown H1 | `heading1` |
 | `type.title` | 14pt | Semibold | card title, panel title | `title` |
-| `type.heading.secondary` | 14pt | Semibold | markdown H2 | `heading2` |
-| `type.heading.tertiary` | 13.5pt | Semibold | markdown H3 | `heading3` |
+| `type.heading.secondary` | 15.5pt | Semibold | markdown H2 | `heading2` |
+| `type.heading.tertiary` | 14pt | Semibold | markdown H3 | `heading3` |
 | `type.body` | 13pt | Regular | 기본 대화와 설명 | `body` |
 | `type.body.compact` | 12.5pt | Regular | 밀도 높은 보조 본문 | `bodyCompact` |
 | `type.supporting` | 12pt | Regular | secondary content | `supporting` |

@@ -11,7 +11,7 @@ the **pre-upgrade checklist for every pi version bump**.
 
 | Tier | Examples | What breaking means | Where it's enforced |
 |------|----------|---------------------|---------------------|
-| **T1 — Public API** | `defineTool`, `loadSkills`, `createAgentSessionServices`, `ModelRuntime` provider auth/status/login, `SettingsManager`, `DefaultPackageManager`, `AgentSession.prompt`, `AgentSession.subscribe`, `AgentSession.bindExtensions`, `AgentSession.messages`, `AgentSession.setScopedModels` | Daemon cannot boot or pi cannot answer at all | `src/__tests__/pi-contract.test.ts` (hard fail), TypeScript types |
+| **T1 — Public API** | `defineTool`, `createAgentSessionServices`, `ModelRuntime` provider auth/status/login, `SettingsManager`, `DefaultPackageManager`, `AgentSession.prompt`, `AgentSession.subscribe`, `AgentSession.bindExtensions`, `AgentSession.messages`, `AgentSession.setScopedModels` | Daemon cannot boot or pi cannot answer at all | `src/__tests__/pi-contract.test.ts` (hard fail), TypeScript types |
 | **T2 — Capability sniffs** | `setThinkingLevel`, `cycleThinkingLevel`, `cycleModel`, `getContextUsage`, `compact`, `reload`, `executeBash`, `recordBashResult`, `isCompacting`, `extensionRunner.emitUserBash` | One pi runtime feature silently no-ops (e.g. `/compact` becomes "not supported", thinking level cycling does nothing) | `src/runtime/pi-capabilities.ts` wraps each sniff, logs `pi capability absent` per session; `pi-contract.test.ts` warns (not fails) on absence so back-compat builds keep passing |
 | **T3 — Internal shapes** | `session.state.messages` array layout, `ModelRuntime.credentials.store.reload` compatibility bridge, `assistantMessage.content[]` blocks (`{type:"text"}` / `{type:"toolCall"}` / `{type:"toolResult"}`), `session.model.{api,provider,id}` with `state.model` fallback, pi `subscribe()` event types (`agent_start`, `message_update`, `turn_end`, `agent_end`, ...) and field names (`stopReason`, `toolCallId`, `toolName`) | Subtle, hard-to-detect regressions (lost session file path, stale live credentials, dropped status events, malformed bootstrap, stale tool-call repair) | Centralised in `pi-event-normalizer.ts` + `pi-capabilities.ts`; credential reload and state shape are hard-gated in `pi-contract.test.ts` |
 | **T4 — Lifecycle assumptions** | `runtime.session.sessionFile` exposed synchronously after `createHandle()`, `reportDiagnostics()` scheduled via `setTimeout(0)`, `setRebindSession` invoked when pi swaps the inner session | Race conditions that drop events between handle creation and subscription | Documented inline in `pi-sdk-runtime.ts` (`bindCurrentSession` race guard, `createPrewarmedMainHandle` early-attach comment); fragile, no automated guard |
@@ -54,6 +54,7 @@ Wrappers (T2):
 `trySetThinkingLevel`, `tryCycleThinkingLevel`, `tryCycleModel`,
 `tryGetContextUsage`, `tryCompact`, `tryReload`, `isCompacting`,
 `tryGetBashSurface` (executeBash + recordBashResult + emitUserBash),
+`tryRefreshSystemPromptFromActiveTools` (getActiveToolNames + setActiveToolsByName),
 `readModelMetadata`, `readThinkingLevel`.
 
 Adding a new sniff? Add it here AND in `pi-contract.test.ts`'s
@@ -116,15 +117,17 @@ publishes a first-class credential reload API.
 
 ### Tool definitions: `agentd/src/application/*-tool.ts`
 
-`handoff-tool.ts`, `ask-user-question-tool.ts`, `user-guide-tool.ts`,
-`open-pickle-response-tool.ts`. All use `defineTool` + `ToolDefinition`
-from pi (T1). Low risk; pi rarely changes tool schema. Track here so the
-audit-on-bump checklist covers them.
+`ask-user-question-tool.ts` and `user-guide-tool.ts` use `defineTool` +
+`ToolDefinition` from Pi (T1). Low risk; Pi rarely changes tool schema. The
+Picky handoff command is a Pi extension under `pi-extensions/picky-handoff/`,
+not an agentd tool definition.
 
-### Skill catalog: `agentd/src/application/skill-catalog.ts`
+### Package operations: `agentd/src/application/package-operations.ts`
 
-Uses `loadSkills`, `SettingsManager`, `DefaultPackageManager`,
-`getAgentDir` (T1). Stable since pi 0.7x.
+Uses `SettingsManager`, `DefaultPackageManager`, and `getAgentDir` (T1) for
+package listing, install/update/remove operations, and installed-extension
+resolution. Track these imports and constructor calls in the audit-on-bump
+checklist.
 
 ## Per-bump upgrade checklist
 

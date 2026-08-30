@@ -57,7 +57,12 @@ struct PickyComposerSubmitPresentation: Equatable {
         case nil:
             label = L10n.t("hud.composer.submit.send")
         }
-        iconName = bashMode == .none ? "paperplane.fill" : "play.fill"
+        switch bashMode {
+        case .none:
+            iconName = kind == .followUp ? "arrow.turn.down.right" : "arrow.up"
+        case .visible, .private:
+            iconName = "play.fill"
+        }
         accessibilityLabel = label
     }
 }

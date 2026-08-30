@@ -211,6 +211,15 @@ struct PickyConversationHeaderRenderGalleryTests {
                 ))
             ),
             Scene(
+                name: "composer-option-follow-up-dark-ko.png",
+                appearance: .dark,
+                content: AnyView(PickyConversationComposerRenderScene(
+                    id: "composer-option-follow-up",
+                    draft: "현재 작업이 끝나면 결과를 요약해 주세요",
+                    isOptionModifierPressed: true
+                ))
+            ),
+            Scene(
                 name: "composer-four-lines-dark-ko.png",
                 appearance: .dark,
                 content: AnyView(PickyConversationComposerRenderScene(
@@ -307,7 +316,9 @@ private struct PickyConversationComposerRenderScene: View {
     private let session: PickySessionListViewModel.SessionCard
     @StateObject private var viewModel: PickySessionListViewModel
 
-    init(id: String, draft: String) {
+    private let isOptionModifierPressed: Bool
+
+    init(id: String, draft: String, isOptionModifierPressed: Bool = false) {
         let date = Date(timeIntervalSince1970: 1_775_000_000)
         let session = PickySessionListViewModel.SessionCard.fromAgentSession(
             PickyAgentSession(
@@ -362,12 +373,17 @@ private struct PickyConversationComposerRenderScene: View {
         )
         viewModel.updateComposerDraft(draft, sessionID: session.id)
         self.session = session
+        self.isOptionModifierPressed = isOptionModifierPressed
         _viewModel = StateObject(wrappedValue: viewModel)
     }
 
     var body: some View {
-        PickyConversationComposerView(session: session, viewModel: viewModel)
-            .frame(width: 560)
+        PickyConversationComposerView(
+            session: session,
+            viewModel: viewModel,
+            isOptionModifierPressed: isOptionModifierPressed
+        )
+        .frame(width: 560)
     }
 }
 

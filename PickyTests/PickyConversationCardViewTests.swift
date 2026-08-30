@@ -1270,6 +1270,19 @@ struct PickyConversationCardViewTests {
         #expect(PickyConversationComposerView.returnKeyAction(for: [.shift, .option]) == .insertNewline)
     }
 
+    @Test func optionModifierMakesTheSendButtonTargetFollowUpWhileRunning() {
+        let session = makeConversationSession(status: .running)
+        let defaultComposer = PickyConversationComposerView(session: session, viewModel: makeViewModel())
+        let optionComposer = PickyConversationComposerView(
+            session: session,
+            viewModel: makeViewModel(),
+            isOptionModifierPressed: true
+        )
+
+        #expect(defaultComposer.activeSubmitKind == .steer)
+        #expect(optionComposer.activeSubmitKind == .followUp)
+    }
+
     @Test func composerUpArrowMappingRecallsPreviousMessageUnlessModified() {
         #expect(PickyConversationComposerView.upArrowKeyAction(for: []) == .recallPreviousMessage)
         #expect(PickyConversationComposerView.upArrowKeyAction(for: [.shift]) == .navigateAutocomplete)

@@ -14,8 +14,9 @@ struct PickyFocusStackComposerPresentationTests {
         let bashSteer = PickyComposerSubmitPresentation(kind: .steer, bashMode: .visible)
 
         #expect(steer.label == L10n.t("hud.composer.submit.steer"))
-        #expect(steer.iconName == "paperplane.fill")
+        #expect(steer.iconName == "arrow.up")
         #expect(followUp.label == L10n.t("hud.composer.submit.followUp"))
+        #expect(followUp.iconName == "arrow.turn.down.right")
         #expect(followUp.accessibilityLabel == L10n.t("hud.composer.submit.followUp"))
         #expect(bashSteer.label == L10n.t("hud.composer.submit.steer"))
         #expect(bashSteer.iconName == "play.fill")

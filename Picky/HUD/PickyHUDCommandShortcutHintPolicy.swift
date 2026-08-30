@@ -25,3 +25,12 @@ enum PickyHUDCommandShortcutHintPolicy {
         }
     }
 }
+
+enum PickyHUDOptionModifierPolicy {
+    static func isPressed(
+        modifierFlags: NSEvent.ModifierFlags,
+        isCurrentHUDPanelKey: Bool
+    ) -> Bool {
+        isCurrentHUDPanelKey && modifierFlags.contains(.option)
+    }
+}

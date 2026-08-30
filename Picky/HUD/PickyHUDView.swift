@@ -86,6 +86,7 @@ struct PickyHUDView: View {
     @State private var keyDownMonitor: Any?
     @State private var modifierFlagsMonitor: Any?
     @State private var isCommandShortcutHintVisible = false
+    @State private var isOptionModifierPressed = false
     @State private var composerFocusRequestID = 0
     @State private var utilityPanelOpenSessionIDs: Set<String> = []
     @State private var utilityPanelResizeStartHeight: CGFloat?
@@ -235,10 +236,14 @@ struct PickyHUDView: View {
                 markFocusedActiveSessionReadIfNeeded()
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { notification in
+                let currentHUDPanelResigned = isCurrentHUDPanel(notification.object)
                 isCommandShortcutHintVisible = PickyHUDCommandShortcutHintPolicy.visibility(
                     current: isCommandShortcutHintVisible,
-                    after: .hudPanelDidResignKey(isCurrentHUDPanel: isCurrentHUDPanel(notification.object))
+                    after: .hudPanelDidResignKey(isCurrentHUDPanel: currentHUDPanelResigned)
                 )
+                if currentHUDPanelResigned {
+                    isOptionModifierPressed = false
+                }
             }
             .onChange(of: activeSessionID) { _, _ in
                 resetCardResizeInteraction()
@@ -429,6 +434,7 @@ struct PickyHUDView: View {
                     isPreviewMode: false,
                     focusRequestID: composerFocusRequestID,
                     isCommandShortcutHintVisible: isCommandShortcutHintVisible,
+                    isOptionModifierPressed: isOptionModifierPressed,
                     isUtilityPanelOpen: utilityPanelIsOpen,
                     onToggleUtilityPanel: { toggleUtilityPanel(sessionID: activeSession.id) },
                     onInitialContentReady: {
@@ -979,14 +985,14 @@ struct PickyHUDView: View {
 
         if modifierFlagsMonitor == nil {
             modifierFlagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
-                updateCommandShortcutHintVisibility(modifierFlags: event.modifierFlags)
+                updateModifierKeyState(modifierFlags: event.modifierFlags)
                 return event
             }
         }
     }
 
     private func handleKeyboardShortcut(_ event: NSEvent) -> Bool {
-        updateCommandShortcutHintVisibility(modifierFlags: event.modifierFlags)
+        updateModifierKeyState(modifierFlags: event.modifierFlags)
         guard let keyWindow = NSApp.keyWindow as? PickyHUDPanel else { return false }
         if let panelIdentifier, keyWindow.identifier != panelIdentifier { return false }
         keyWindow.restoreRememberedNativeInputResponderIfNeeded()
@@ -1285,15 +1291,21 @@ struct PickyHUDView: View {
             self.modifierFlagsMonitor = nil
         }
         isCommandShortcutHintVisible = false
+        isOptionModifierPressed = false
     }
 
-    private func updateCommandShortcutHintVisibility(modifierFlags: NSEvent.ModifierFlags) {
+    private func updateModifierKeyState(modifierFlags: NSEvent.ModifierFlags) {
+        let isCurrentPanelKey = isCurrentHUDPanel(NSApp.keyWindow)
         isCommandShortcutHintVisible = PickyHUDCommandShortcutHintPolicy.visibility(
             current: isCommandShortcutHintVisible,
             after: .modifierFlagsChanged(
                 modifierFlags: modifierFlags,
-                isCurrentHUDPanelKey: isCurrentHUDPanel(NSApp.keyWindow)
+                isCurrentHUDPanelKey: isCurrentPanelKey
             )
+        )
+        isOptionModifierPressed = PickyHUDOptionModifierPolicy.isPressed(
+            modifierFlags: modifierFlags,
+            isCurrentHUDPanelKey: isCurrentPanelKey
         )
     }
 

@@ -49,6 +49,7 @@ struct PickyConversationCardView: View {
     var isPreviewMode = false
     var focusRequestID = 0
     var isCommandShortcutHintVisible = false
+    var isOptionModifierPressed = false
     var isUtilityPanelOpen = false
     var onToggleUtilityPanel: () -> Void = { }
     var onInitialContentReady: () -> Void = { }
@@ -74,6 +75,7 @@ struct PickyConversationCardView: View {
         isPreviewMode: Bool = false,
         focusRequestID: Int = 0,
         isCommandShortcutHintVisible: Bool = false,
+        isOptionModifierPressed: Bool = false,
         isUtilityPanelOpen: Bool = false,
         onToggleUtilityPanel: @escaping () -> Void = { },
         onInitialContentReady: @escaping () -> Void = { }
@@ -88,6 +90,7 @@ struct PickyConversationCardView: View {
         self.isPreviewMode = isPreviewMode
         self.focusRequestID = focusRequestID
         self.isCommandShortcutHintVisible = isCommandShortcutHintVisible
+        self.isOptionModifierPressed = isOptionModifierPressed
         self.isUtilityPanelOpen = isUtilityPanelOpen
         self.onToggleUtilityPanel = onToggleUtilityPanel
         self.onInitialContentReady = onInitialContentReady
@@ -106,6 +109,7 @@ struct PickyConversationCardView: View {
         isPreviewMode: Bool = false,
         focusRequestID: Int = 0,
         isCommandShortcutHintVisible: Bool = false,
+        isOptionModifierPressed: Bool = false,
         isUtilityPanelOpen: Bool = false,
         onToggleUtilityPanel: @escaping () -> Void = { },
         onInitialContentReady: @escaping () -> Void = { }
@@ -121,6 +125,7 @@ struct PickyConversationCardView: View {
             isPreviewMode: isPreviewMode,
             focusRequestID: focusRequestID,
             isCommandShortcutHintVisible: isCommandShortcutHintVisible,
+            isOptionModifierPressed: isOptionModifierPressed,
             isUtilityPanelOpen: isUtilityPanelOpen,
             onToggleUtilityPanel: onToggleUtilityPanel,
             onInitialContentReady: onInitialContentReady
@@ -273,6 +278,7 @@ struct PickyConversationCardView: View {
                 focusStackHeightTier: heightTier,
                 isUtilityPanelOpen: isUtilityPanelOpen,
                 isCommandShortcutHintVisible: isCommandShortcutHintVisible,
+                isOptionModifierPressed: isOptionModifierPressed,
                 onToggleUtilityPanel: onToggleUtilityPanel,
                 onRequestRewind: { showingRewindPicker = true },
                 onTransientHeightChange: { growth in

@@ -42,4 +42,19 @@ struct PickyHUDCommandShortcutHintPolicyTests {
 
         #expect(visible)
     }
+
+    @Test func optionModifierActivatesFollowUpOnlyForTheCurrentHUDPanel() {
+        #expect(PickyHUDOptionModifierPolicy.isPressed(
+            modifierFlags: .option,
+            isCurrentHUDPanelKey: true
+        ))
+        #expect(!PickyHUDOptionModifierPolicy.isPressed(
+            modifierFlags: .option,
+            isCurrentHUDPanelKey: false
+        ))
+        #expect(!PickyHUDOptionModifierPolicy.isPressed(
+            modifierFlags: [],
+            isCurrentHUDPanelKey: true
+        ))
+    }
 }

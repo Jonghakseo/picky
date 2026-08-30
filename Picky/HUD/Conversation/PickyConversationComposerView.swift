@@ -7,6 +7,7 @@
 
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct PickyConversationComposerView: View {
     /// Composer reads only metadata, message journal, and queue state needed
@@ -29,6 +30,7 @@ struct PickyConversationComposerView: View {
     let focusStackHeightTier: PickyConversationFocusStackHeightTier
     let isUtilityPanelOpen: Bool
     let isCommandShortcutHintVisible: Bool
+    let isOptionModifierPressed: Bool
     var onToggleUtilityPanel: () -> Void
     var onRequestRewind: () -> Void
     var onTransientHeightChange: (CGFloat) -> Void
@@ -54,6 +56,7 @@ struct PickyConversationComposerView: View {
     @State private var queueActionInFlight: PickyQueueDockAction?
     @State private var queueActionError: String?
     @State private var runtimeActionError: String?
+    @State private var isAttachmentPickerPresented = false
 
     init(
         metaStore: PickySessionMetaStore,
@@ -66,6 +69,7 @@ struct PickyConversationComposerView: View {
         focusStackHeightTier: PickyConversationFocusStackHeightTier = .regular,
         isUtilityPanelOpen: Bool = false,
         isCommandShortcutHintVisible: Bool = false,
+        isOptionModifierPressed: Bool = false,
         onToggleUtilityPanel: @escaping () -> Void = { },
         onRequestRewind: @escaping () -> Void = { },
         onTransientHeightChange: @escaping (CGFloat) -> Void = { _ in }
@@ -80,6 +84,7 @@ struct PickyConversationComposerView: View {
         self.focusStackHeightTier = focusStackHeightTier
         self.isUtilityPanelOpen = isUtilityPanelOpen
         self.isCommandShortcutHintVisible = isCommandShortcutHintVisible
+        self.isOptionModifierPressed = isOptionModifierPressed
         self.onToggleUtilityPanel = onToggleUtilityPanel
         self.onRequestRewind = onRequestRewind
         self.onTransientHeightChange = onTransientHeightChange
@@ -95,6 +100,7 @@ struct PickyConversationComposerView: View {
         focusStackHeightTier: PickyConversationFocusStackHeightTier = .regular,
         isUtilityPanelOpen: Bool = false,
         isCommandShortcutHintVisible: Bool = false,
+        isOptionModifierPressed: Bool = false,
         onToggleUtilityPanel: @escaping () -> Void = { },
         onRequestRewind: @escaping () -> Void = { },
         onTransientHeightChange: @escaping (CGFloat) -> Void = { _ in }
@@ -121,6 +127,7 @@ struct PickyConversationComposerView: View {
             focusStackHeightTier: focusStackHeightTier,
             isUtilityPanelOpen: isUtilityPanelOpen,
             isCommandShortcutHintVisible: isCommandShortcutHintVisible,
+            isOptionModifierPressed: isOptionModifierPressed,
             onToggleUtilityPanel: onToggleUtilityPanel,
             onRequestRewind: onRequestRewind,
             onTransientHeightChange: onTransientHeightChange
@@ -132,7 +139,6 @@ struct PickyConversationComposerView: View {
         VStack(alignment: .leading, spacing: DS.Spacing.xs) {
             queueDock
             screenContextAttachmentChip
-            attachmentChipsRow
             // The custom layout reports only the composer's size, so opening
             // suggestions never reflows the card. It measures the popup itself
             // and places its bottom edge 4pt above the composer's top edge.
@@ -168,7 +174,7 @@ struct PickyConversationComposerView: View {
         .onChange(of: droppedFilePaths) { _, paths in
             guard !paths.isEmpty else { return }
             if !isComposerInputDisabled {
-                appendDroppedFilePaths(paths)
+                appendAttachmentPaths(paths)
             }
             droppedFilePaths = []
         }
@@ -186,6 +192,14 @@ struct PickyConversationComposerView: View {
         }
         .onReceive(commands.autocompleteEvents) { event in
             applyAutocompleteEvent(event)
+        }
+        .fileImporter(
+            isPresented: $isAttachmentPickerPresented,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: true
+        ) { result in
+            guard case let .success(urls) = result else { return }
+            appendAttachmentPaths(urls.map(\.path))
         }
         .task(id: AutocompleteQueryKey(
             sessionID: session.id,
@@ -256,9 +270,13 @@ struct PickyConversationComposerView: View {
         )
     }
 
+    private var runtimePresentation: PickyComposerRuntimePresentation {
+        PickyComposerRuntimePresentation(assistantRun: session.currentAssistantRun)
+    }
+
     private var runtimeControls: some View {
         PickyConversationRuntimeControlsView(
-            presentation: PickyComposerRuntimePresentation(assistantRun: session.currentAssistantRun),
+            presentation: runtimePresentation,
             heightTier: focusStackHeightTier,
             actionError: runtimeActionError,
             onCycleModel: { cycleModel(direction: .forward) },
@@ -268,8 +286,8 @@ struct PickyConversationComposerView: View {
 
     private var composerSurface: some View {
         VStack(alignment: .leading, spacing: 0) {
-            runtimeHeader
             composerEditor
+            attachmentChipsRow
             actionBar
         }
         .padding(.leading, DS.Spacing.space3)
@@ -281,13 +299,6 @@ struct PickyConversationComposerView: View {
         .background(composerBackground)
     }
 
-    private var runtimeHeader: some View {
-        runtimeControls
-            .fixedSize(horizontal: true, vertical: false)
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            .frame(height: 30)
-    }
-
     private var actionBar: some View {
         HStack(alignment: .center, spacing: DS.Spacing.xs) {
             leadingActions
@@ -297,16 +308,38 @@ struct PickyConversationComposerView: View {
         .frame(height: 30)
     }
 
-    @ViewBuilder
     private var leadingActions: some View {
-        if effectiveBashMode != .none {
-            bashModeBadge
-        } else {
-            HStack(spacing: DS.Spacing.xs) {
+        HStack(spacing: DS.Spacing.xs) {
+            attachmentButton
+            if effectiveBashMode != .none {
+                bashModeBadge
+            } else {
                 notifyOrDropButton
                 terminalButton
             }
+            if runtimePresentation.hasControls || runtimeActionError != nil {
+                Divider()
+                    .frame(height: 18) // design-token-exception: optical divider height inside the 30pt composer action row
+                runtimeControls
+            }
         }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var attachmentButton: some View {
+        Button {
+            isAttachmentPickerPresented = true
+        } label: {
+            Image(systemName: "paperclip")
+                .pickyFont(size: 10.5, weight: .semibold)
+                .foregroundColor(DS.Colors.textTertiary)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(L10n.t("hud.composer.attachment.help"))
+        .accessibilityLabel(L10n.t("hud.composer.attachment.accessibilityLabel"))
+        .hoverAffordance()
     }
 
     /// Replaces the notify/terminal actions when the draft is in bash-execution
@@ -908,6 +941,7 @@ struct PickyConversationComposerView: View {
     }
 
     private static let editorTextInsetHeight: CGFloat = 2
+    private static let actionButtonSize = DS.Spacing.space6 + DS.Spacing.space1
 
     private var trailingActions: some View {
         HStack(spacing: DS.Spacing.xs) {
@@ -921,12 +955,21 @@ struct PickyConversationComposerView: View {
 
     private var sendButton: some View {
         let presentation = submitPresentation
-        return Button(action: submitDefault) {
-            Image(systemName: presentation.iconName)
-                .pickyFont(size: 11, weight: .semibold)
-                .foregroundColor(isSendDisabled ? DS.Colors.textTertiary : sendColor)
-                .frame(width: 22, height: 22)
-                .contentShape(Rectangle())
+        return Button(action: submitActiveKind) {
+            ZStack {
+                Image(systemName: presentation.iconName)
+                    .id(presentation.iconName)
+                    .transition(.opacity.combined(with: .scale(scale: 0.82)))
+            }
+            .pickyFont(size: 11, weight: .semibold)
+            .foregroundColor(isSendDisabled ? DS.Colors.textTertiary : .white)
+            .frame(width: Self.actionButtonSize, height: Self.actionButtonSize)
+            .background(
+                RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
+                    .fill(isSendDisabled ? DS.Colors.surface3 : sendColor)
+            )
+            .contentShape(Rectangle())
+            .animation(.easeOut(duration: DS.Animation.fast), value: presentation.iconName)
         }
         .buttonStyle(.plain)
         .disabled(isSendDisabled)
@@ -941,7 +984,7 @@ struct PickyConversationComposerView: View {
             Image(systemName: "stop.fill")
                 .pickyFont(size: 10.5, weight: .semibold)
                 .foregroundColor(DS.Colors.destructiveText)
-                .frame(width: 22, height: 22)
+                .frame(width: Self.actionButtonSize, height: Self.actionButtonSize)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -963,8 +1006,15 @@ struct PickyConversationComposerView: View {
         }
     }
 
+    var activeSubmitKind: PickyConversationComposerSubmitKind? {
+        if isOptionModifierPressed, let optionReturnSubmitKind {
+            return optionReturnSubmitKind
+        }
+        return defaultSubmitKind
+    }
+
     private var submitPresentation: PickyComposerSubmitPresentation {
-        PickyComposerSubmitPresentation(kind: defaultSubmitKind, bashMode: effectiveBashMode)
+        PickyComposerSubmitPresentation(kind: activeSubmitKind, bashMode: effectiveBashMode)
     }
 
     var isComposerInputDisabled: Bool {
@@ -974,7 +1024,7 @@ struct PickyConversationComposerView: View {
     }
 
     private var isSendDisabled: Bool {
-        defaultSubmitKind == nil || (!hasDraftText && attachments.isEmpty)
+        activeSubmitKind == nil || (!hasDraftText && attachments.isEmpty)
     }
 
     private var hasDraftText: Bool {
@@ -1099,7 +1149,7 @@ struct PickyConversationComposerView: View {
         return merged
     }
 
-    private func appendDroppedFilePaths(_ paths: [String]) {
+    private func appendAttachmentPaths(_ paths: [String]) {
         let cleaned = paths
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
@@ -1276,7 +1326,7 @@ struct PickyConversationComposerView: View {
         case .private:
             return L10n.t("hud.composer.send.bashPrivate")
         case .none:
-            switch defaultSubmitKind {
+            switch activeSubmitKind {
             case .steer:
                 return L10n.t("hud.composer.send.steer")
             case .followUp:
@@ -1294,6 +1344,10 @@ struct PickyConversationComposerView: View {
         // header status dot / running border) and the tooltip, so the button color
         // does not need to re-encode it with a status color.
         return DS.Colors.accentText
+    }
+
+    private func submitActiveKind() {
+        submit(activeSubmitKind)
     }
 
     private func submitDefault() {

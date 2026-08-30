@@ -11433,6 +11433,38 @@
         }
       }
     },
+    "hud.composer.attachment.accessibilityLabel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Attach files"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일 첨부"
+          }
+        }
+      }
+    },
+    "hud.composer.attachment.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Attach files or screenshots"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일이나 스크린샷 첨부"
+          }
+        }
+      }
+    },
     "hud.composer.drop.accessibilityLabel": {
       "localizations": {
         "en": {

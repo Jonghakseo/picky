@@ -126,6 +126,7 @@ if [ "$TARGET" = "conversation-composer" ]; then
   REQUEST_FILE="$ROOT/build/render-gallery/.conversation-composer-output-path"
   EXPECTED=(
     composer-one-line-dark-ko.png
+    composer-option-follow-up-dark-ko.png
     composer-four-lines-dark-ko.png
     composer-four-lines-light-ko.png
   )

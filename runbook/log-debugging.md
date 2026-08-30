@@ -32,6 +32,7 @@ Picky 세션 hang/crash를 조사할 때 로그를 어떻게 읽을지에 대한
 - **stderr의 크래시 stack trace가 현재 사용자가 보는 인스턴스 것이 아닐 수 있음.** Picky 여러 빌드가 같은 `~/Library/Application Support/Picky/Logs/`에 동시에 쓴다. stack의 파일 경로(`Picky.app` prefix)로 어느 빌드인지 확인한다.
 - **같은 이벤트가 정확히 두 번 찍히는 건 dup 로깅이 아니라 fanout**(`clients=2`, HUD 본 윈도우 + companion 패널 등). 정상.
 - **"멈춤"으로 보이는 게 실제 hung이 아닐 수 있음**: 긴 turn 동안 다수 tool call을 병렬로 돌리느라 답이 안 나오는 상태도 사용자에겐 멈춤으로 느껴진다. jsonl의 tool result timestamp가 계속 진행 중이면 hung이 아니라 plan 비효율.
+- **알림 클릭/세션 열기 라우팅 "실패"는 코드보다 먼저 중복 인스턴스를 의심한다.** DerivedData 빌드와 dev-signed 빌드가 같은 번들 ID로 동시에 떠 있으면 알림을 만든 인스턴스와 클릭 콜백을 받는 인스턴스가 다를 수 있다. `pgrep -fl '/Picky.app/Contents/MacOS/Picky'`로 인스턴스 수·경로를 확인하고, 시간 범위를 제한한 `log show`로 알림 생성 주체와 `open session requested` 수신 주체 PID를 대조한다. PID가 다르면 원인은 코드가 아니라 중복 인스턴스다. 참고: `LSMultipleInstancesProhibited=true`는 순차 실행만 막고 동시 launch는 못 막는다(fixture 검증됨).
 - **journal상 `running`으로 박혀 있으나 daemon이 이미 죽은 orphan 케이스**도 존재. agentd가 startup 시 orphan running을 reconcile하지 않으면 영원히 running 표시. abort 명령 0건 + 마지막 이벤트 후 침묵 + ps에서 데몬 pid 확인 안 됨/etime 짧음으로 식별.
 
 ## 시간순 가설 검증 절차

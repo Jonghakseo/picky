@@ -131,7 +131,9 @@ Use targeted tests while iterating, for example:
 xcodebuild -project Picky.xcodeproj -scheme Picky -destination "platform=macOS,arch=$(uname -m)" test -only-testing:PickyTests/PickyCompanionManagerTests
 ```
 
-For a targeted `xcodebuild test` run, treat exit 0 or `** TEST SUCCEEDED **` as validation only when the output or `.xcresult` confirms that the intended test or tests executed. If a method-level selector is uncertain or selects no tests, enumerate the containing suite and copy the exact returned identifier, including `()` when present, or rerun the containing suite.
+For a targeted `xcodebuild test` run, treat exit 0 or `** TEST SUCCEEDED **` as validation only when the output or `.xcresult` confirms that the intended test or tests executed. If a method-level selector is uncertain or selects no tests, enumerate the containing suite and copy the exact returned identifier, including `()` when present, or rerun the containing suite. When chaining `test` and `build` in one shell, capture the `xcodebuild test` exit status immediately and propagate it as the final status; a later successful build must not mask `** TEST FAILED **`.
+
+If `xcodebuild test` fails with `IDELaunchErrorDomain` Code 20 (`Could not launch “PickyTests”`), the selected tests did not execute. Report that failure as-is; do not retry with changed signing settings, and never present supplementary checks as a test pass. Verified fallbacks, each labeled explicitly as partial validation only: (a) `xcodebuild ... build` with the same `-derivedDataPath` proves compilation only; (b) `build-for-testing` plus a temporary `@testable import Picky` Swift harness linked against the built `Picky.debug.dylib`, with rpaths for the app executable directory and `Picky.app/Contents/Frameworks`, validates pure policy/model contracts only.
 
 When piping `xcodebuild` through `tee`, preserve the primary command status before running log extraction. `set -o pipefail` alone is insufficient when a later `rg` or `tail` becomes the shell's final command. Use this shape so a failed build/test remains a failed tool call while bounded evidence is still printed:
 
@@ -161,6 +163,15 @@ rm -rf "$DD"
 Skipping this is not cosmetic. Each abandoned DerivedData directory keeps roughly 1 GB on disk and leaves a permanent LaunchServices bundle record; accumulated records drive `launchservicesd` into sustained high CPU and starve the Picky main thread, which surfaces as HUD lag with no matching hot path in the app itself. Use `./scripts/prune-build-artifacts.sh` to reclaim directories that earlier runs abandoned.
 
 When the full agentd vitest suite fails intermittently, classify before touching code: (1) rerun the failing file alone, (2) rerun the suite with `--no-file-parallelism`, (3) reproduce on a clean HEAD temp worktree (`git worktree add /tmp/picky-verify-<n> HEAD`) three times. Only a failure that survives all three steps implicates the changeset. Remove temp worktrees afterwards.
+
+Committing from a temp worktree runs this repo's commit hooks, which need both the root and `agentd` dependency trees. If the worktree has no installed dependencies, symlink both from the primary worktree before committing and remove the links afterwards (linking only `agentd/node_modules` is not enough; root `commitlint` is also required). Skip this when the worktree has its own installed dependencies or their versions may diverge from the hooks' expectations:
+
+```bash
+ln -sfn "$MAIN/node_modules" node_modules
+ln -sfn "$MAIN/agentd/node_modules" agentd/node_modules
+git commit ...
+rm node_modules agentd/node_modules
+```
 
 Daemon protocol changes (event ordering, bootstrap sequences) can be smoke-tested without touching the running Picky.app: launch a throwaway agentd on a non-default port with `PICKY_AGENTD_PORT=<port> PICKY_AGENTD_RUNTIME=mock PICKY_APP_SUPPORT_DIR=<tmp-dir>`, connect a scripted WebSocket client (register capabilities, assert frame order), then tear it down. Never attach to or restart the user's live daemon for this.
 

@@ -18,6 +18,9 @@ struct PickySessionDockProjection: Equatable {
     /// Changes only at the legacy hover-preview Git refresh cadence, avoiding
     /// a dock publication for every metadata timestamp update.
     let gitRefreshBucket: Int
+    var previewUpdatedAt: Date {
+        Date(timeIntervalSince1970: TimeInterval(gitRefreshBucket) * Self.gitRefreshBucketSeconds)
+    }
     let canRequestDockCompaction: Bool
 
     init(metadata: PickySessionMetadata, todoState: PickyTodoState?) {

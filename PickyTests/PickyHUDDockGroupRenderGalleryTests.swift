@@ -207,8 +207,9 @@ struct PickyHUDDockGroupRenderGalleryTests {
     @Test func combinedSceneKeepsThePanelAnchoredToTheBadgeBelowTheTitle() {
         let metrics = PickyHUDDockMetrics(preset: .medium)
         let folderFrame = folderSize(metrics: metrics, fontScale: 1)
-        let panelSize = listSize(memberCount: fiveRows.count, metrics: metrics, fontScale: 1)
-        let scene = combinedScene(group: group(id: "group", name: "Picky", color: .blue, memberIDs: fiveRows.map(\.id)), metrics: metrics)
+        let group = group(id: "group", name: "Picky", color: .blue, memberIDs: fiveRows.map(\.id))
+        let panelSize = listSize(group: group, rows: fiveRows, metrics: metrics, fontScale: 1)
+        let scene = combinedScene(group: group, metrics: metrics)
 
         #expect(scene.contentLogicalSize.width == folderFrame.width + PickyHUDDockLayout.panelGap + panelSize.width)
         #expect(scene.contentLogicalSize.height == max(folderFrame.height, folderBadgeTopInset(metrics: metrics, fontScale: 1) + panelSize.height))
@@ -253,6 +254,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
             ),
             listScene("list-two-selected-medium-dark-100.png", group: research, rows: twoRows, selectedID: twoRows[1].id, metrics: medium, fontScale: 1, appearance: .dark),
             listScene("list-one-selected-medium-dark-100.png", group: group(id: "group-one", name: "Solo", color: .blue, memberIDs: [fiveRows[0].id]), rows: [fiveRows[0]], selectedID: fiveRows[0].id, metrics: medium, fontScale: 1, appearance: .dark),
+            miniPreviewScene(metrics: medium),
             combinedScene(group: picky, metrics: medium),
             lightRailOnDarkBackdropScene(metrics: large),
             lightListOnDarkBackdropScene(group: picky, metrics: large),
@@ -307,7 +309,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
     ) -> Scene {
         Scene(
             name: name,
-            contentLogicalSize: listSize(memberCount: rows.count, metrics: metrics, fontScale: fontScale),
+            contentLogicalSize: listSize(group: group, rows: rows, metrics: metrics, fontScale: fontScale),
             canvasInsets: galleryCanvasInsets,
             appearance: appearance,
             preset: metrics.preset,
@@ -324,8 +326,44 @@ struct PickyHUDDockGroupRenderGalleryTests {
         )
     }
 
+    private func miniPreviewScene(metrics: PickyHUDDockMetrics) -> Scene {
+        let previewSession = session(
+            id: "pickle-mini-preview",
+            title: "슬랙 메시지 내용 파악",
+            status: .completed,
+            cwd: "/work/product"
+        )
+        let relativeTime = "29 min ago"
+        let contentSize = CGSize(
+            width: PickyHUDDockGroupListPolicy.previewWidth(
+                session: previewSession,
+                relativeTime: relativeTime,
+                metrics: metrics,
+                fontScale: 1
+            ),
+            height: PickyHUDDockGroupListPolicy.rowHeight(metrics: metrics, fontScale: 1)
+                + (metrics.groupListPanelPadding * 2)
+        )
+        return Scene(
+            name: "mini-preview-completed-medium-dark-100.png",
+            contentLogicalSize: contentSize,
+            canvasInsets: galleryCanvasInsets,
+            appearance: .dark,
+            preset: metrics.preset,
+            fontScale: 1,
+            content: AnyView(
+                PickyHUDMiniPreviewCardView(
+                    session: previewSession,
+                    metrics: metrics,
+                    relativeTime: relativeTime
+                )
+                .frame(width: contentSize.width, height: contentSize.height)
+            )
+        )
+    }
+
     private func combinedScene(group: PickyDockGroup, metrics: PickyHUDDockMetrics) -> Scene {
-        let panelSize = listSize(memberCount: fiveRows.count, metrics: metrics, fontScale: 1)
+        let panelSize = listSize(group: group, rows: fiveRows, metrics: metrics, fontScale: 1)
         let folderFrame = folderSize(metrics: metrics, fontScale: 1)
         let badgeTopInset = folderBadgeTopInset(metrics: metrics, fontScale: 1)
         return Scene(
@@ -457,7 +495,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
         group: PickyDockGroup,
         metrics: PickyHUDDockMetrics
     ) -> Scene {
-        let panelSize = listSize(memberCount: fiveRows.count, metrics: metrics, fontScale: 1)
+        let panelSize = listSize(group: group, rows: fiveRows, metrics: metrics, fontScale: 1)
         let contentSize = CGSize(
             width: panelSize.width + (DS.Spacing.space4 * 2),
             height: panelSize.height + (DS.Spacing.space4 * 2)
@@ -494,7 +532,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
             sessionID: fiveRows[0].id,
             destination: .group(id: target.id, memberIndex: 0)
         )
-        let panelSize = listSize(memberCount: fiveRows.count, metrics: metrics, fontScale: 1)
+        let panelSize = listSize(group: source, rows: fiveRows, metrics: metrics, fontScale: 1)
         let railSize = CGSize(
             width: PickyHUDDockRailLayoutPolicy.verticalCrossSize(groupCount: 2, metrics: metrics, fontScale: 1),
             height: PickyHUDDockRailLayoutPolicy.contentLength(
@@ -902,6 +940,22 @@ struct PickyHUDDockGroupRenderGalleryTests {
             memberCount: memberCount,
             metrics: metrics,
             fontScale: fontScale
+        )
+    }
+
+    private func listSize(
+        group: PickyDockGroup,
+        rows: [PickyHUDDockGroupListRowModel],
+        metrics: PickyHUDDockMetrics,
+        fontScale: CGFloat
+    ) -> CGSize {
+        PickyHUDDockGroupListPolicy.panelSize(
+            group: group,
+            rows: rows,
+            unreadSessionIDs: Set(rows.prefix(1).map(\.id)),
+            metrics: metrics,
+            fontScale: fontScale,
+            relativeTime: { _ in "5 min ago" }
         )
     }
 

@@ -204,6 +204,7 @@ EXPECTED=(
   list-five-highlighted-small-dark-130.png
   list-two-selected-medium-dark-100.png
   list-one-selected-medium-dark-100.png
+  mini-preview-completed-medium-dark-100.png
   combined-folder-panel-medium-dark-100.png
   rail-four-groups-open-session-large-light-dark-backdrop-100.png
   list-five-idle-large-light-dark-backdrop-100.png

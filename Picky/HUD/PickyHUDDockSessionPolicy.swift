@@ -45,6 +45,7 @@ struct PickyHUDDockSession: Equatable, Identifiable {
     var cwd: String? { projection.cwd }
     var todoState: PickyTodoState? { projection.todoState }
     var gitRefreshBucket: Int { projection.gitRefreshBucket }
+    var previewUpdatedAt: Date { projection.previewUpdatedAt }
     var canRequestDockCompaction: Bool { projection.canRequestDockCompaction }
 
     static func == (lhs: Self, rhs: Self) -> Bool {

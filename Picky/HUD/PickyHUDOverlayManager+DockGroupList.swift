@@ -331,7 +331,6 @@ extension PickyHUDOverlayManager {
                         screen: screen,
                         hudPanelFrame: hudEntry.panel.frame,
                         folderFrame: folderFrame,
-                        snapshot: snapshot,
                         fontScale: fontScale
                     )
                 },
@@ -368,7 +367,7 @@ extension PickyHUDOverlayManager {
     ) {
         let snapshot = snapshot ?? viewModel.dockState.snapshot
         let fontScale = fontScale ?? fontScaleStore.cgValue
-        guard var entry = dockGroupListChildrenByDisplayID[displayID] else { return }
+        guard let entry = dockGroupListChildrenByDisplayID[displayID] else { return }
         let existingGroupIDs = Set(snapshot.dockLayout.groups.map(\.id))
         let activeSessionIDs = Set(snapshot.activeSessions.map(\.id))
         let visibleMemberGroupIDs = Set(snapshot.dockLayout.groups.compactMap { group in
@@ -445,7 +444,6 @@ extension PickyHUDOverlayManager {
                         screen: screen,
                         hudPanelFrame: hudEntry.panel.frame,
                         folderFrame: folderFrame,
-                        snapshot: snapshot,
                         fontScale: fontScale
                     )
                 }
@@ -594,9 +592,12 @@ extension PickyHUDOverlayManager {
         }
         let hostingView = NSHostingView(rootView: LocalizedHostingRoot { root })
         let panelSize = PickyHUDDockGroupListPolicy.panelSize(
-            memberCount: max(1, model.content.rows.count),
+            group: model.content.group,
+            rows: model.content.rows,
+            unreadSessionIDs: model.content.unreadSessionIDs,
             metrics: model.content.metrics,
-            fontScale: fontScaleStore.cgValue
+            fontScale: fontScaleStore.cgValue,
+            relativeTime: { PickyHUDDockGroupListRelativeTimePresentation.text(for: $0) }
         )
         hostingView.frame = NSRect(origin: .zero, size: panelSize)
         hostingView.autoresizingMask = [.width, .height]
@@ -641,23 +642,20 @@ extension PickyHUDOverlayManager {
         screen: NSScreen,
         hudPanelFrame: CGRect,
         folderFrame: CGRect,
-        snapshot: PickyHUDDockSnapshot? = nil,
         fontScale: CGFloat? = nil
     ) {
-        let snapshot = snapshot ?? viewModel.dockState.snapshot
         let fontScale = fontScale ?? fontScaleStore.cgValue
         guard let entry = dockGroupListChildrenByDisplayID[displayID],
-              let groupID = entry.openGroupID,
-              let group = PickyHUDDockGroupListSnapshotPolicy.group(groupID: groupID, in: snapshot)
+              entry.openGroupID != nil,
+              let content = entry.model?.content
         else { return }
-        let memberCount = max(1, group.memberSessionIDs.filter { sessionID in
-            snapshot.activeSessions.contains(where: { $0.id == sessionID })
-        }.count)
-        let metrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
         let panelSize = PickyHUDDockGroupListPolicy.panelSize(
-            memberCount: memberCount,
-            metrics: metrics,
-            fontScale: fontScale
+            group: content.group,
+            rows: content.rows,
+            unreadSessionIDs: content.unreadSessionIDs,
+            metrics: content.metrics,
+            fontScale: fontScale,
+            relativeTime: { PickyHUDDockGroupListRelativeTimePresentation.text(for: $0) }
         )
         let side = position(for: displayID).side
         let anchoredOrigin = PickyHUDDockGroupListPolicy.anchoredOrigin(

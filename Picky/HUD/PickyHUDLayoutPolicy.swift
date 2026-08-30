@@ -172,11 +172,7 @@ struct PickyHUDDockMetrics: Equatable {
     /// `space.1`, so the full group block follows the 4pt spacing scale.
     var groupHeaderVerticalInset: CGFloat { scaled(4) } // space.1
     var groupHeaderContentSpacing: CGFloat { scaled(4) } // space.1
-    /// Width of the dock-icon hover preview card. Scales together with the dock
-    /// rail itself so the preview never looks oversized next to a Small dock or
-    /// undersized next to a Large dock. Lower bound keeps the title/status row
-    /// readable when the preset is shrunk to Small.
-    var previewCardWidth: CGFloat { max(200, scaled(238)) }
+    /// Maximum width for both the content-fitting group list and mini preview.
     /// Dock-panel geometry scales with the dock preset. The large-preset baselines
     /// map to the design system's 4pt spacing and shape tokens.
     var groupListPanelWidth: CGFloat { scaled(360) }
@@ -385,12 +381,12 @@ enum PickyHUDDockLayout {
     /// Worst-case horizontal overflow of the hover-preview card past an edge
     /// dock icon in horizontal mode. The mini preview is centered on the icon
     /// (`PickyHUDView.miniPreviewOffset` x = 0 for horizontal docks), so each
-    /// side may bleed up to `previewCardWidth/2 - sessionTileWidth/2` beyond
+    /// side may bleed up to `groupListPanelWidth/2 - sessionTileWidth/2` beyond
     /// the rail's leading/trailing edge. The HUD reserves this much horizontal
     /// slack around the rail so the NSPanel content view encloses the preview
     /// instead of clipping it.
     static func miniPreviewHorizontalReserve(metrics: PickyHUDDockMetrics) -> CGFloat {
-        max(0, (metrics.previewCardWidth - metrics.sessionTileWidth) / 2)
+        max(0, (metrics.groupListPanelWidth - metrics.sessionTileWidth) / 2)
     }
 
 

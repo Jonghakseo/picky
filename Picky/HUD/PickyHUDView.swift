@@ -666,7 +666,7 @@ struct PickyHUDView: View {
             .background(PickyHUDVisibleChromeFrameReporter())
             // In horizontal mode the mini hover preview is centered on each dock
             // icon (`miniPreviewOffset` x = 0), so previewing an edge icon makes
-            // the card extend up to `previewCardWidth/2 - sessionTileWidth/2`
+            // the card extend up to `groupListPanelWidth/2 - sessionTileWidth/2`
             // beyond the rail's leading/trailing edge. Without explicit slack on
             // both sides, the NSPanel content view ends at the rail edge and the
             // preview gets clipped — visible in long horizontal docks where the

@@ -37,6 +37,18 @@ enum PickyHUDDockGroupListSurfacePresentation {
 }
 
 @MainActor
+enum PickyHUDDockGroupListRelativeTimePresentation {
+    private static let formatter = RelativeDateTimeFormatter()
+
+    static func text(for updatedAt: Date, relativeTo now: Date = .now) -> String {
+        guard abs(updatedAt.timeIntervalSince(now)) >= 60 else {
+            return L10n.t("hud.groupList.time.justNow")
+        }
+        return formatter.localizedString(for: updatedAt, relativeTo: now)
+    }
+}
+
+@MainActor
 struct PickyHUDDockGroupListRowModel: Identifiable {
     let session: PickyHUDDockSession
     let updatedAt: Date
@@ -274,9 +286,12 @@ struct PickyHUDDockGroupListPanelRoot: View {
 
     private var panelSize: CGSize {
         PickyHUDDockGroupListPolicy.panelSize(
-            memberCount: max(1, model.content.rows.count),
+            group: model.content.group,
+            rows: model.content.rows,
+            unreadSessionIDs: model.content.unreadSessionIDs,
             metrics: model.content.metrics,
-            fontScale: fontScale
+            fontScale: fontScale,
+            relativeTime: { PickyHUDDockGroupListRelativeTimePresentation.text(for: $0) }
         )
     }
 
@@ -322,8 +337,6 @@ struct PickyHUDDockGroupListPanelRoot: View {
 }
 
 struct PickyHUDDockGroupListView: View {
-    private static let relativeDateFormatter = RelativeDateTimeFormatter()
-
     let group: PickyDockGroup
     let rows: [PickyHUDDockGroupListRowModel]
     let unreadSessionIDs: Set<String>
@@ -352,11 +365,7 @@ struct PickyHUDDockGroupListView: View {
     /// Production uses the current time. Offscreen render fixtures inject a
     /// fixed reference so their row metadata remains deterministic.
     var relativeTime: (Date) -> String = {
-        let now = Date()
-        guard abs($0.timeIntervalSince(now)) >= 60 else {
-            return L10n.t("hud.groupList.time.justNow")
-        }
-        return Self.relativeDateFormatter.localizedString(for: $0, relativeTo: now)
+        PickyHUDDockGroupListRelativeTimePresentation.text(for: $0)
     }
     /// Reads identity from the stable panel model, not the SwiftUI value
     /// captured by app-level drag monitors.
@@ -389,9 +398,12 @@ struct PickyHUDDockGroupListView: View {
 
     private var panelSize: CGSize {
         PickyHUDDockGroupListPolicy.panelSize(
-            memberCount: max(1, rows.count),
+            group: group,
+            rows: rows,
+            unreadSessionIDs: unreadSessionIDs,
             metrics: metrics,
-            fontScale: fontScale
+            fontScale: fontScale,
+            relativeTime: relativeTime
         )
     }
 
@@ -754,7 +766,8 @@ struct PickyHUDDockGroupListView: View {
                     onStop: { onStopSession(row.id) },
                     onMoveToGroup: { onMoveSessionToGroup(row.id, $0) },
                     onUngroup: { onUngroupSession(row.id) },
-                    onReorderHandoff: { _ in beginRowDrag(rowID: row.id) }
+                    onReorderHandoff: { _ in beginRowDrag(rowID: row.id) },
+                    panelWidth: panelSize.width
                 )
                 .publishDockGroupListRowCenter(sessionID: row.id)
                 .opacity(((draggingRowID == row.id && !isLeavingGroup)
@@ -1203,7 +1216,7 @@ private struct PickyHUDDockGroupListQuickActionButtonStyle: ButtonStyle {
     }
 }
 
-private struct PickyHUDDockGroupListRow: View {
+struct PickyHUDDockGroupListRow: View {
     let row: PickyHUDDockGroupListRowModel
     let isUnread: Bool
     let isSelected: Bool
@@ -1225,6 +1238,8 @@ private struct PickyHUDDockGroupListRow: View {
     let onMoveToGroup: (String) -> Void
     let onUngroup: () -> Void
     let onReorderHandoff: (NSPoint) -> Void
+    var isPreview = false
+    var panelWidth: CGFloat? = nil
 
     @StateObject private var archiveFeedback = PickyHUDArchiveHoldFeedback()
     @State private var isHovered = false
@@ -1279,11 +1294,13 @@ private struct PickyHUDDockGroupListRow: View {
             statusGlyph
                 .frame(width: metrics.groupListRowGlyphSide, height: metrics.groupListRowGlyphSide)
                 .overlay {
-                    PickyHUDArchiveHoldProgressRing(
-                        isPressing: archiveFeedback.isPressing,
-                        progress: archiveFeedback.progress,
-                        side: metrics.groupListRowGlyphSide
-                    )
+                    if !isPreview {
+                        PickyHUDArchiveHoldProgressRing(
+                            isPressing: archiveFeedback.isPressing,
+                            progress: archiveFeedback.progress,
+                            side: metrics.groupListRowGlyphSide
+                        )
+                    }
                 }
             VStack(alignment: .leading, spacing: metrics.groupListRowVerticalPadding) {
                 Text(row.title)
@@ -1298,24 +1315,28 @@ private struct PickyHUDDockGroupListRow: View {
                     .truncationMode(.tail)
             }
             .frame(
-                width: PickyHUDDockGroupListPolicy.titleColumnWidth(
+                width: isPreview ? nil : PickyHUDDockGroupListPolicy.titleColumnWidth(
                     metrics: metrics,
                     isUnread: isUnread,
-                    fontScale: fontScale
+                    fontScale: fontScale,
+                    panelWidth: panelWidth
                 ),
                 alignment: .leading
             )
+            .frame(maxWidth: isPreview ? .infinity : nil, alignment: .leading)
             if isUnread {
                 Circle()
                     .fill(DS.Colors.notification)
                     .frame(width: 7, height: 7)
                     .accessibilityHidden(true)
             }
-            trailingRail
-                .frame(
-                    width: PickyHUDDockGroupListPolicy.trailingRailWidth(metrics: metrics),
-                    alignment: .trailing
-                )
+            if !isPreview {
+                trailingRail
+                    .frame(
+                        width: PickyHUDDockGroupListPolicy.trailingRailWidth(metrics: metrics),
+                        alignment: .trailing
+                    )
+            }
         }
         .padding(.horizontal, metrics.groupListRowHorizontalPadding)
         .padding(.vertical, metrics.groupListRowVerticalPadding)
@@ -1323,29 +1344,32 @@ private struct PickyHUDDockGroupListRow: View {
         .contentShape(RoundedRectangle(cornerRadius: metrics.groupListRowCornerRadius, style: .continuous))
         .background(rowBackground)
         .overlay {
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    rowInteractionHost
-                        .frame(
-                            width: PickyHUDDockGroupListPolicy.clickHostWidth(
-                                metrics: metrics,
-                                isUnread: isUnread,
-                                fontScale: fontScale
-                            ),
-                            height: proxy.size.height,
-                            alignment: .leading
-                        )
-                    rowInteractionHost
-                        .frame(
-                            width: PickyHUDDockGroupListPolicy.trailingPaddingClickHostWidth(metrics: metrics),
-                            height: proxy.size.height
-                        )
-                        .frame(maxWidth: .infinity, alignment: .trailing)
+            if !isPreview {
+                GeometryReader { proxy in
+                    ZStack(alignment: .leading) {
+                        rowInteractionHost
+                            .frame(
+                                width: PickyHUDDockGroupListPolicy.clickHostWidth(
+                                    metrics: metrics,
+                                    isUnread: isUnread,
+                                    fontScale: fontScale,
+                                    panelWidth: panelWidth
+                                ),
+                                height: proxy.size.height,
+                                alignment: .leading
+                            )
+                        rowInteractionHost
+                            .frame(
+                                width: PickyHUDDockGroupListPolicy.trailingPaddingClickHostWidth(metrics: metrics),
+                                height: proxy.size.height
+                            )
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
                 }
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if isLeavingGroup {
+            if !isPreview, isLeavingGroup {
                 Text(L10n.t("group.list.drag.leaveGroup"))
                     .font(PickyHUDTypography.labelSemibold)
                     .foregroundStyle(DS.Colors.accentText)
@@ -1356,9 +1380,10 @@ private struct PickyHUDDockGroupListRow: View {
                     .accessibilityHidden(true)
             }
         }
-        .onHover { isHovered = $0 }
+        .onHover { if !isPreview { isHovered = $0 } }
         .onDisappear { archiveFeedback.cancel() }
         .help(row.title)
+        .accessibilityHidden(isPreview)
         .accessibilityLabel(presentation.accessibilityLabel)
         .accessibilityValue(presentation.accessibilityValue)
         .accessibilityAddTraits(isSelected ? .isSelected : [])

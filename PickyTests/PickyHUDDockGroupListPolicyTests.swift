@@ -37,6 +37,84 @@ struct PickyHUDDockGroupListPolicyTests {
         #expect(eight.width == metrics.groupListPanelWidth)
     }
 
+    @Test func contentFitWidthsGrowWithTextAndCapAtTheExistingGroupPanelWidth() {
+        let shortRows = [
+            PickyHUDDockGroupListPolicy.RowWidthContent(
+                title: "A",
+                subtitle: "now · src",
+                isUnread: false
+            ),
+        ]
+        let longRows = [
+            PickyHUDDockGroupListPolicy.RowWidthContent(
+                title: String(repeating: "Long pickle title ", count: 12),
+                subtitle: "29 minutes ago · exceptionally-long-repository-folder-name",
+                isUnread: true
+            ),
+        ]
+
+        let shortListWidth = PickyHUDDockGroupListPolicy.panelWidth(
+            groupName: "G",
+            memberCount: 1,
+            rows: shortRows,
+            metrics: metrics,
+            fontScale: 1
+        )
+        let longListWidth = PickyHUDDockGroupListPolicy.panelWidth(
+            groupName: String(repeating: "Long group ", count: 12),
+            memberCount: 1,
+            rows: longRows,
+            metrics: metrics,
+            fontScale: 1
+        )
+        let shortPreviewWidth = PickyHUDDockGroupListPolicy.previewWidth(
+            title: shortRows[0].title,
+            subtitle: shortRows[0].subtitle,
+            metrics: metrics,
+            fontScale: 1
+        )
+        let longPreviewWidth = PickyHUDDockGroupListPolicy.previewWidth(
+            title: longRows[0].title,
+            subtitle: longRows[0].subtitle,
+            metrics: metrics,
+            fontScale: 1
+        )
+
+        #expect(shortListWidth < metrics.groupListPanelWidth)
+        #expect(shortPreviewWidth < metrics.groupListPanelWidth)
+        #expect(longListWidth == metrics.groupListPanelWidth)
+        #expect(longPreviewWidth == metrics.groupListPanelWidth)
+    }
+
+    @Test func dynamicPanelWidthFlowsIntoTheTitleAndClickGeometry() {
+        let fittedWidth = metrics.groupListPanelWidth - 80
+        let panel = PickyHUDDockGroupListPolicy.panelSize(
+            memberCount: 2,
+            metrics: metrics,
+            width: fittedWidth
+        )
+        let titleWidth = PickyHUDDockGroupListPolicy.titleColumnWidth(
+            metrics: metrics,
+            isUnread: false,
+            fontScale: 1,
+            panelWidth: panel.width
+        )
+        let clickWidth = PickyHUDDockGroupListPolicy.clickHostWidth(
+            metrics: metrics,
+            isUnread: false,
+            fontScale: 1,
+            panelWidth: panel.width
+        )
+
+        #expect(panel.width == fittedWidth)
+        #expect(titleWidth < PickyHUDDockGroupListPolicy.titleColumnWidth(
+            metrics: metrics,
+            isUnread: false,
+            fontScale: 1
+        ))
+        #expect(clickWidth < panel.width)
+    }
+
     @Test func panelHeightContainsTokenizedRowContentAtEveryPresetAndAppFontScale() {
         for preset in PickyHUDDockSizePreset.allCases {
             let metrics = PickyHUDDockMetrics(preset: preset)

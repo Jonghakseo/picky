@@ -81,9 +81,7 @@ struct PickyHUDDockGroupListRowPresentation: Equatable {
     ) -> Self {
         let normalizedCwdLeaf = cwdLeaf?.trimmingCharacters(in: .whitespacesAndNewlines)
         let location = (normalizedCwdLeaf?.isEmpty == false) ? normalizedCwdLeaf : nil
-        let subtitle = [relativeTime, location]
-            .compactMap { $0 }
-            .joined(separator: " · ")
+        let subtitle = subtitle(cwdLeaf: cwdLeaf, relativeTime: relativeTime)
         let metadata = [relativeTime, location]
             .compactMap { $0 }
             .joined(separator: ", ")
@@ -103,5 +101,13 @@ struct PickyHUDDockGroupListRowPresentation: Equatable {
                 ? [.open, .ungroup, .archive, .stop]
                 : [.open, .ungroup, .archive]
         )
+    }
+
+    static func subtitle(cwdLeaf: String?, relativeTime: String) -> String {
+        let normalizedCwdLeaf = cwdLeaf?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let location = (normalizedCwdLeaf?.isEmpty == false) ? normalizedCwdLeaf : nil
+        return [relativeTime, location]
+            .compactMap { $0 }
+            .joined(separator: " · ")
     }
 }

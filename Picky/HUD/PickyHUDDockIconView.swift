@@ -39,6 +39,7 @@ struct PickyHUDDockIconView: View {
     @State private var completionFlashTask: Task<Void, Never>?
     @StateObject private var archiveFeedback = PickyHUDArchiveHoldFeedback()
     @State private var isHovered = false
+    @Environment(\.pickyAppFontScale) private var fontScale
 
     private enum DockPickleAsset: String {
         case help = "PickleDockHelp"
@@ -444,11 +445,15 @@ struct PickyHUDDockIconView: View {
     private var miniPreviewOffset: CGSize {
         let iconHalfWidth = metrics.sessionTileWidth / 2
         let iconHalfHeight = metrics.sessionTileHeight / 2
-        let xDistance = (metrics.previewCardWidth / 2) + iconHalfWidth + PickyHUDDockLayout.panelGap
-        // Preview is a single-line title+status card, so its height is dominated
-        // by `titleFontSize + secondaryFontSize + verticalPadding * 2` from
-        // `PickyHUDMiniPreviewCardView`. ~50pt at medium scale matches what the
-        // card actually renders to within a few points across S/M/L presets.
+        let previewWidth = PickyHUDDockGroupListPolicy.previewWidth(
+            session: session,
+            relativeTime: PickyHUDDockGroupListRelativeTimePresentation.text(for: session.previewUpdatedAt),
+            metrics: metrics,
+            fontScale: fontScale
+        )
+        let xDistance = (previewWidth / 2) + iconHalfWidth + PickyHUDDockLayout.panelGap
+        // Preview reuses one group-list session row plus the group's panel
+        // padding. ~50pt at medium scale keeps placement stable across S/M/L.
         let estimatedPreviewHalfHeight = max(20, 25 * metrics.scale)
         let yDistance = estimatedPreviewHalfHeight + iconHalfHeight + PickyHUDDockLayout.panelGap
         switch dockSide {
@@ -1147,184 +1152,88 @@ private struct PickyHUDMiniPreviewResolver: View {
     }
 }
 
-private struct PickyHUDMiniPreviewCardView: View {
+struct PickyHUDMiniPreviewCardView: View {
     let session: PickyHUDDockSession
     let metrics: PickyHUDDockMetrics
-    @State private var gitStatus: PickyGitRepositoryStatus?
+    var relativeTime: String?
 
-    init(session: PickyHUDDockSession, metrics: PickyHUDDockMetrics) {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.pickyAppFontScale) private var fontScale
+
+    init(
+        session: PickyHUDDockSession,
+        metrics: PickyHUDDockMetrics,
+        relativeTime: String? = nil
+    ) {
         self.session = session
         self.metrics = metrics
-        _gitStatus = State(initialValue: PickyGitRepositoryStatus.cached(cwd: session.cwd))
+        self.relativeTime = relativeTime
     }
 
-    private var scale: CGFloat { metrics.scale }
-    private var cornerRadius: CGFloat { max(12, 16 * scale) }
-    private var titleFontSize: CGFloat { max(12, 14 * scale) }
-    private var secondaryFontSize: CGFloat { max(10, 11 * scale) }
-    // Dock-preset-scaled fonts (S/M/L). These intentionally scale with the dock
-    // size preset rather than the app font scale, so they are component-level
-    // geometry exceptions to `PickyHUDTypography`'s fixed roles.
-    private var titleFont: Font { .system(size: titleFontSize, weight: .semibold) }
-    private var secondaryFont: Font { .system(size: secondaryFontSize, weight: .medium) }
-    private var secondaryMonoFont: Font { .system(size: secondaryFontSize, weight: .medium, design: .monospaced) }
-    private var statusDotSide: CGFloat { max(6, 7 * scale) }
-    private var horizontalPadding: CGFloat { max(8, 10 * scale) }
-    private var verticalPadding: CGFloat { max(7, 9 * scale) }
-
-    private var gitRefreshKey: String {
-        let todoKey = session.todoState.map { String($0.updatedAt.timeIntervalSince1970) } ?? "none"
-        return "\(session.cwd ?? "")|\(session.gitRefreshBucket)|todo:\(todoKey)"
+    private var cornerRadius: CGFloat { metrics.groupListPanelCornerRadius }
+    private var resolvedRelativeTime: String {
+        relativeTime ?? PickyHUDDockGroupListRelativeTimePresentation.text(for: session.previewUpdatedAt)
+    }
+    private var previewWidth: CGFloat {
+        PickyHUDDockGroupListPolicy.previewWidth(
+            session: session,
+            relativeTime: resolvedRelativeTime,
+            metrics: metrics,
+            fontScale: fontScale
+        )
     }
 
     var body: some View {
         let _ = PickyPerf.event("mini_preview_body")
-        HStack(spacing: max(6, 8 * scale)) {
-            Circle()
-                .fill(statusColor)
-                .frame(width: statusDotSide, height: statusDotSide)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: max(2, 3 * scale)) {
-                HStack(spacing: max(5, 7 * scale)) {
-                    Text(session.title)
-                        .font(titleFont)
-                        .foregroundColor(DS.Colors.textPrimary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .layoutPriority(1)
-                    Text(statusLabel)
-                        .font(secondaryFont)
-                        .foregroundColor(DS.Colors.textSecondary)
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-                }
-
-                contextLine
-            }
-            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.horizontal, horizontalPadding)
-        .padding(.vertical, verticalPadding)
-        .frame(width: metrics.previewCardWidth)
-        .background {
-            PickyHUDMaterialFill(
-                shape: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous),
-                fallback: DS.Colors.surface1
-            )
-                .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(DS.Colors.surface3.opacity(0.62))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8)
-                )
-        }
-        .task(id: gitRefreshKey) {
-            guard todoProgressPresentation == nil else { return }
-            PickyPerf.event("mini_preview_git_task_start")
-            if gitStatus == nil, let cached = PickyGitRepositoryStatus.cached(cwd: session.cwd) {
-                gitStatus = cached
-            }
-            let freshGit = await PickyPerf.interval("mini_preview_git_load") {
-                await PickyGitRepositoryStatus.load(
-                    cwd: session.cwd,
-                    maximumAge: PickyGitContextRefreshPolicy.statusFreshnessDuration
-                )
-            }
-            guard !Task.isCancelled else { return }
-            gitStatus = freshGit
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Preview \(session.title), \(statusLabel), \(contextAccessibilityLabel)")
+        PickyHUDDockGroupListRow(
+            row: PickyHUDDockGroupListRowModel(
+                session: session,
+                updatedAt: session.previewUpdatedAt
+            ),
+            isUnread: false,
+            isSelected: false,
+            isHighlighted: false,
+            shortcutNumber: nil,
+            isLeavingGroup: false,
+            minimumHeight: PickyHUDDockGroupListPolicy.rowHeight(metrics: metrics, fontScale: fontScale),
+            metrics: metrics,
+            relativeTime: resolvedRelativeTime,
+            isScreenContextArmed: false,
+            isScreenContextSticky: false,
+            moveTargetGroups: [],
+            onSelect: {},
+            onToggleScreenContextTarget: {},
+            onToggleStickyScreenContextTarget: {},
+            onCompact: {},
+            onArchive: {},
+            onStop: {},
+            onMoveToGroup: { _ in },
+            onUngroup: {},
+            onReorderHandoff: { _ in },
+            isPreview: true
+        )
+        .padding(metrics.groupListPanelPadding)
+        .frame(width: previewWidth)
+        .background(previewBackground)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .strokeBorder(DS.Colors.borderSubtle, lineWidth: 0.5)
+        )
+        .accessibilityHidden(true)
     }
 
-    @ViewBuilder
-    private var contextLine: some View {
-        if let todoProgressPresentation {
-            HStack(spacing: max(3, 4 * scale)) {
-                Text(todoProgressPresentation.countText)
-                    .font(secondaryMonoFont)
-                    .foregroundColor(todoProgressPresentation.isComplete ? DS.Colors.successText : DS.Colors.info)
-                    .fixedSize(horizontal: true, vertical: false)
-                Text("·")
-                    .font(secondaryMonoFont)
-                    .foregroundColor(DS.Colors.textTertiary)
-                Text(todoProgressPresentation.isComplete ? L10n.t("hud.todo.complete") : todoProgressPresentation.activeText)
-                    .font(secondaryFont)
-                    .foregroundColor(DS.Colors.textSecondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-        } else if let gitStatus {
-            HStack(spacing: max(3, 4 * scale)) {
-                Text(gitStatus.repositoryDisplayName)
-                    .font(secondaryMonoFont)
-                    .foregroundColor(DS.Colors.textSecondary)
-                    .lineLimit(1)
-                    .layoutPriority(2)
-                Text("·")
-                    .font(secondaryMonoFont)
-                    .foregroundColor(DS.Colors.textTertiary)
-                    .fixedSize(horizontal: true, vertical: false)
-                Text(gitStatus.branchDisplayName)
-                    .font(secondaryMonoFont)
-                    .foregroundColor(DS.Colors.textSecondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .layoutPriority(0)
-            }
-        } else if let cwd = session.compactCwdDescription {
-            Text(cwd)
-                .font(secondaryMonoFont)
-                .foregroundColor(DS.Colors.textSecondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-        }
+    private var previewBackground: some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        let style = PickyHUDDockGroupListSurfacePresentation.style(for: colorScheme)
+        return PickyHUDMaterialFill(
+            shape: shape,
+            fallback: DS.Colors.surface1,
+            material: style.materialKind.material
+        )
+        .overlay(
+            shape.fill(DS.Colors.surface1.opacity(style.surfaceOverlayOpacity))
+        )
     }
 
-    private var todoProgressPresentation: PickyTodoProgressPresentation? {
-        PickyTodoProgressPresentation(state: session.todoState)
-    }
-
-    private var contextAccessibilityLabel: String {
-        if let todoProgressPresentation {
-            let summary = todoProgressPresentation.isComplete ? L10n.t("hud.todo.complete") : todoProgressPresentation.activeText
-            return "\(todoProgressPresentation.countText), \(summary)"
-        }
-        if let gitStatus {
-            return "\(gitStatus.repositoryDisplayName), \(gitStatus.branchDisplayName)"
-        }
-        return session.compactCwdDescription ?? "No folder"
-    }
-
-    private var statusLabel: String {
-        switch session.status {
-        case .queued: return "queued"
-        case .running: return "running"
-        case .waiting_for_input: return "waiting"
-        case .blocked: return "blocked"
-        case .completed: return "done"
-        case .failed: return "failed"
-        case .cancelled: return "cancelled"
-        }
-    }
-
-    private var statusColor: Color {
-        switch session.status {
-        case .queued:
-            return DS.Colors.accentText
-        case .running:
-            return DS.Colors.overlayCursorBlue
-        case .waiting_for_input, .blocked:
-            return DS.Colors.warning
-        case .completed:
-            return DS.Colors.success
-        case .failed:
-            return DS.Colors.destructiveText
-        case .cancelled:
-            return DS.Colors.textTertiary
-        }
-    }
 }

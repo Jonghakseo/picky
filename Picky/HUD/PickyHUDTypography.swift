@@ -24,6 +24,7 @@ enum PickyHUDTypography {
 
     private enum BaseSize {
         static let body: CGFloat = 13
+        static let bodyCompact: CGFloat = 12.5
         static let label: CGFloat = 11.5
         static let meta: CGFloat = 10.5
         static let minimum: CGFloat = 10
@@ -40,7 +41,7 @@ enum PickyHUDTypography {
         static var heading2: CGFloat { 15.5 * scale }
         static var heading3: CGFloat { 14 * scale }
         static var body: CGFloat { BaseSize.body * scale }
-        static var bodyCompact: CGFloat { 12.5 * scale }
+        static var bodyCompact: CGFloat { BaseSize.bodyCompact * scale }
         static var supporting: CGFloat { 12 * scale }
         static var label: CGFloat { BaseSize.label * scale }
         static var status: CGFloat { 11 * scale }
@@ -71,6 +72,9 @@ enum PickyHUDTypography {
     }
 
     static var bodyCompact: Font { .system(size: Size.bodyCompact, weight: .regular) }
+    static func bodyCompactNSFont(fontScale: CGFloat) -> NSFont {
+        .systemFont(ofSize: BaseSize.bodyCompact * max(0, fontScale), weight: .regular)
+    }
     static var bodyCompactMedium: Font { .system(size: Size.bodyCompact, weight: .medium) }
     static var bodyCompactSemibold: Font { .system(size: Size.bodyCompact, weight: .semibold) }
     static var bodyCompactMonospaced: Font { .system(size: Size.bodyCompact, weight: .regular, design: .monospaced) }

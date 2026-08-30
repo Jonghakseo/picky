@@ -9,19 +9,167 @@
 import AppKit
 
 enum PickyHUDDockGroupListPolicy {
+    struct RowWidthContent: Equatable {
+        let title: String
+        let subtitle: String
+        let isUnread: Bool
+    }
+
     /// Panel size for a group, saturating at `groupListMaxVisibleRows` rows so
-    /// a large group never produces a taller panel than a medium one.
+    /// a large group never produces a taller panel than a medium one. Callers
+    /// without render content receive the maximum width geometry.
     static func panelSize(
         memberCount: Int,
         metrics: PickyHUDDockMetrics,
-        fontScale: CGFloat = 1
+        fontScale: CGFloat = 1,
+        width: CGFloat? = nil
     ) -> CGSize {
         let rows = min(max(memberCount, 0), PickyHUDDockLayout.groupListMaxVisibleRows)
         return CGSize(
-            width: metrics.groupListPanelWidth,
+            width: min(max(0, width ?? metrics.groupListPanelWidth), metrics.groupListPanelWidth),
             height: panelChromeHeight(metrics: metrics)
                 + rowStackHeight(rowCount: rows, metrics: metrics, fontScale: fontScale)
         )
+    }
+
+    /// Natural group-list width. The header and every row reserve their exact
+    /// text and control chrome, while the authored group-list width remains the
+    /// hard upper bound.
+    static func panelWidth(
+        groupName: String,
+        memberCount: Int,
+        rows: [RowWidthContent],
+        metrics: PickyHUDDockMetrics,
+        fontScale: CGFloat
+    ) -> CGFloat {
+        let widestContent = max(
+            headerWidth(
+                groupName: groupName,
+                memberCount: memberCount,
+                metrics: metrics,
+                fontScale: fontScale
+            ),
+            rows.map {
+                groupRowWidth(content: $0, metrics: metrics, fontScale: fontScale)
+            }.max() ?? 0
+        )
+        return min(metrics.groupListPanelWidth, ceil(widestContent))
+    }
+
+    /// Natural mini-preview width. It is the same row geometry without the
+    /// unread marker and trailing group-list action rail.
+    static func previewWidth(
+        title: String,
+        subtitle: String,
+        metrics: PickyHUDDockMetrics,
+        fontScale: CGFloat
+    ) -> CGFloat {
+        let textWidth = rowTextWidth(title: title, subtitle: subtitle, fontScale: fontScale)
+        let naturalWidth = (metrics.groupListPanelPadding * 2)
+            + (metrics.groupListRowHorizontalPadding * 2)
+            + metrics.groupListRowGlyphSide
+            + metrics.groupListRowContentSpacing
+            + textWidth
+        return min(metrics.groupListPanelWidth, ceil(naturalWidth))
+    }
+
+    @MainActor
+    static func panelSize(
+        group: PickyDockGroup,
+        rows: [PickyHUDDockGroupListRowModel],
+        unreadSessionIDs: Set<String>,
+        metrics: PickyHUDDockMetrics,
+        fontScale: CGFloat,
+        relativeTime: (Date) -> String
+    ) -> CGSize {
+        let widthRows = rows.map { row in
+            RowWidthContent(
+                title: row.title,
+                subtitle: PickyHUDDockGroupListRowPresentation.subtitle(
+                    cwdLeaf: row.cwdLeaf,
+                    relativeTime: relativeTime(row.updatedAt)
+                ),
+                isUnread: unreadSessionIDs.contains(row.id)
+            )
+        }
+        return panelSize(
+            memberCount: max(1, rows.count),
+            metrics: metrics,
+            fontScale: fontScale,
+            width: panelWidth(
+                groupName: group.displayName,
+                memberCount: rows.count,
+                rows: widthRows,
+                metrics: metrics,
+                fontScale: fontScale
+            )
+        )
+    }
+
+    @MainActor
+    static func previewWidth(
+        session: PickyHUDDockSession,
+        relativeTime: String,
+        metrics: PickyHUDDockMetrics,
+        fontScale: CGFloat
+    ) -> CGFloat {
+        let row = PickyHUDDockGroupListRowModel(session: session, updatedAt: session.previewUpdatedAt)
+        return previewWidth(
+            title: row.title,
+            subtitle: PickyHUDDockGroupListRowPresentation.subtitle(
+                cwdLeaf: row.cwdLeaf,
+                relativeTime: relativeTime
+            ),
+            metrics: metrics,
+            fontScale: fontScale
+        )
+    }
+
+    private static func headerWidth(
+        groupName: String,
+        memberCount: Int,
+        metrics: PickyHUDDockMetrics,
+        fontScale: CGFloat
+    ) -> CGFloat {
+        let nameWidth = textWidth(
+            groupName,
+            font: PickyHUDTypography.labelSemiboldNSFont(fontScale: fontScale)
+        ) + (DS.Spacing.space1 * 2)
+        let countWidth = textWidth(
+            String(memberCount),
+            font: PickyHUDTypography.metaNSFont(fontScale: fontScale)
+        )
+        return (metrics.groupListPanelPadding * 2)
+            + (metrics.groupListHeaderHeight * 2)
+            + nameWidth
+            + countWidth
+            + (DS.Spacing.space1 * 3)
+    }
+
+    private static func groupRowWidth(
+        content: RowWidthContent,
+        metrics: PickyHUDDockMetrics,
+        fontScale: CGFloat
+    ) -> CGFloat {
+        let elementCount = content.isUnread ? 4 : 3
+        return (metrics.groupListPanelPadding * 2)
+            + (metrics.groupListRowHorizontalPadding * 2)
+            + metrics.groupListRowGlyphSide
+            + rowTextWidth(title: content.title, subtitle: content.subtitle, fontScale: fontScale)
+            + (content.isUnread ? 7 : 0)
+            + trailingRailWidth(metrics: metrics)
+            + (CGFloat(elementCount - 1) * metrics.groupListRowContentSpacing)
+    }
+
+    private static func rowTextWidth(title: String, subtitle: String, fontScale: CGFloat) -> CGFloat {
+        max(
+            textWidth(title, font: PickyHUDTypography.bodyCompactNSFont(fontScale: fontScale)),
+            textWidth(subtitle, font: PickyHUDTypography.metaNSFont(fontScale: fontScale))
+        )
+    }
+
+    private static func textWidth(_ text: String, font: NSFont) -> CGFloat {
+        ceil((text as NSString).size(withAttributes: [.font: font]).width)
     }
 
     /// The content stack uses body and meta type roles. At compact dock
@@ -72,9 +220,10 @@ enum PickyHUDDockGroupListPolicy {
     static func titleColumnWidth(
         metrics: PickyHUDDockMetrics,
         isUnread: Bool,
-        fontScale: CGFloat
+        fontScale: CGFloat,
+        panelWidth: CGFloat? = nil
     ) -> CGFloat {
-        let contentWidth = metrics.groupListPanelWidth - (metrics.groupListPanelPadding * 2)
+        let contentWidth = (panelWidth ?? metrics.groupListPanelWidth) - (metrics.groupListPanelPadding * 2)
         let fixedWidths = (metrics.groupListRowHorizontalPadding * 2)
             + metrics.groupListRowGlyphSide
             + trailingRailWidth(metrics: metrics)
@@ -91,12 +240,18 @@ enum PickyHUDDockGroupListPolicy {
     static func clickHostWidth(
         metrics: PickyHUDDockMetrics,
         isUnread: Bool,
-        fontScale: CGFloat
+        fontScale: CGFloat,
+        panelWidth: CGFloat? = nil
     ) -> CGFloat {
         let elementCount = isUnread ? 4 : 3
         return metrics.groupListRowHorizontalPadding
             + metrics.groupListRowGlyphSide
-            + titleColumnWidth(metrics: metrics, isUnread: isUnread, fontScale: fontScale)
+            + titleColumnWidth(
+                metrics: metrics,
+                isUnread: isUnread,
+                fontScale: fontScale,
+                panelWidth: panelWidth
+            )
             + (isUnread ? 7 : 0)
             + (CGFloat(elementCount - 1) * metrics.groupListRowContentSpacing)
     }

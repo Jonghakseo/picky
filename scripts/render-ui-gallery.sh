@@ -127,6 +127,7 @@ if [ "$TARGET" = "conversation-composer" ]; then
   EXPECTED=(
     composer-one-line-dark-ko.png
     composer-option-follow-up-dark-ko.png
+    composer-long-model-dark-ko.png
     composer-four-lines-dark-ko.png
     composer-four-lines-light-ko.png
   )

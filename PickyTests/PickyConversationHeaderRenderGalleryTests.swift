@@ -220,6 +220,15 @@ struct PickyConversationHeaderRenderGalleryTests {
                 ))
             ),
             Scene(
+                name: "composer-long-model-dark-ko.png",
+                appearance: .dark,
+                content: AnyView(PickyConversationComposerRenderScene(
+                    id: "composer-long-model",
+                    draft: "긴 모델명에서도 전송 버튼을 유지해 주세요",
+                    model: "google/gemini-3-pro-preview-long-model-name"
+                ))
+            ),
+            Scene(
                 name: "composer-four-lines-dark-ko.png",
                 appearance: .dark,
                 content: AnyView(PickyConversationComposerRenderScene(
@@ -318,7 +327,12 @@ private struct PickyConversationComposerRenderScene: View {
 
     private let isOptionModifierPressed: Bool
 
-    init(id: String, draft: String, isOptionModifierPressed: Bool = false) {
+    init(
+        id: String,
+        draft: String,
+        isOptionModifierPressed: Bool = false,
+        model: String = "openai-codex/gpt-5.6"
+    ) {
         let date = Date(timeIntervalSince1970: 1_775_000_000)
         let session = PickySessionListViewModel.SessionCard.fromAgentSession(
             PickyAgentSession(
@@ -344,7 +358,7 @@ private struct PickyConversationComposerRenderScene: View {
                         cancelledAt: nil,
                         activitySnapshot: nil,
                         assistantRun: PickyAssistantRunMetadata(
-                            model: "openai-codex/gpt-5.6",
+                            model: model,
                             thinkingLevel: .high
                         ),
                         errorContext: nil,
@@ -358,7 +372,7 @@ private struct PickyConversationComposerRenderScene: View {
                 activitySummary: .zero,
                 contextUsage: nil,
                 currentAssistantRun: PickyAssistantRunMetadata(
-                    model: "openai-codex/gpt-5.6",
+                    model: model,
                     thinkingLevel: .high
                 ),
                 pendingExtensionUiRequest: nil,
@@ -383,7 +397,7 @@ private struct PickyConversationComposerRenderScene: View {
             viewModel: viewModel,
             isOptionModifierPressed: isOptionModifierPressed
         )
-        .frame(width: 560)
+        .frame(width: PickyHUDDockLayout.detailWidth)
     }
 }
 

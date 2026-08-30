@@ -22,20 +22,20 @@ struct PickyConversationRuntimeControlsView: View {
     }
 
     private var controls: some View {
-        HStack(spacing: DS.Spacing.xs) {
+        HStack(spacing: DS.Spacing.space1) {
             if let modelText = presentation.modelText {
                 Button(action: onCycleModel) {
-                    controlLabel(icon: "cpu", text: modelText)
+                    controlLabel(
+                        icon: "cpu",
+                        text: modelText,
+                        maximumTextWidth: PickyComposerToolbarMetrics.modelLabelMaximumWidth
+                    )
                 }
                 .buttonStyle(.plain)
                 .help(L10n.t("hud.composer.runtime.model.help"))
                 .accessibilityLabel(presentation.modelLabel ?? modelText)
                 .accessibilityHint(L10n.t("hud.composer.runtime.model.accessibilityHint"))
                 .hoverAffordance()
-            }
-            if presentation.modelText != nil, presentation.thinkingText != nil {
-                Divider()
-                    .frame(height: 12)
             }
             if let thinkingText = presentation.thinkingText {
                 Button(action: onCycleThinkingLevel) {
@@ -61,19 +61,38 @@ struct PickyConversationRuntimeControlsView: View {
         .accessibilityLabel(L10n.t("hud.composer.runtime.accessibilityLabel"))
     }
 
-    private func controlLabel(icon: String, text: String) -> some View {
+    private func controlLabel(
+        icon: String,
+        text: String,
+        maximumTextWidth: CGFloat? = nil
+    ) -> some View {
         HStack(spacing: DS.Spacing.xs) {
             Image(systemName: icon)
                 .font(PickyHUDTypography.statusSemibold)
             if heightTier == .regular {
                 Text(text)
-                    .font(PickyHUDTypography.metaMedium)
+                    .font(PickyHUDTypography.meta)
                     .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: maximumTextWidth)
             }
         }
         .foregroundColor(DS.Colors.textSecondary)
-        .padding(.horizontal, DS.Spacing.xs)
-        .frame(height: 24)
+        .padding(.horizontal, DS.Spacing.space2)
+        .frame(height: PickyComposerToolbarMetrics.controlSize)
+        .background(
+            RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
+                .fill(DS.Colors.surface2)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
+                .stroke(DS.Colors.borderSubtle, lineWidth: 0.5)
+        )
         .contentShape(Rectangle())
     }
+}
+
+enum PickyComposerToolbarMetrics {
+    static let controlSize = DS.Spacing.space6 + DS.Spacing.space1
+    static let modelLabelMaximumWidth: CGFloat = 126 // design-token-exception: keeps long runtime model IDs inside the fixed 446pt Composer row
 }

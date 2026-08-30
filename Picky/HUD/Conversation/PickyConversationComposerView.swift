@@ -305,21 +305,23 @@ struct PickyConversationComposerView: View {
             Spacer(minLength: DS.Spacing.sm)
             trailingActions
         }
-        .frame(height: 30)
+        .frame(height: PickyComposerToolbarMetrics.controlSize)
     }
 
     private var leadingActions: some View {
-        HStack(spacing: DS.Spacing.xs) {
-            attachmentButton
-            if effectiveBashMode != .none {
-                bashModeBadge
-            } else {
-                notifyOrDropButton
-                terminalButton
+        HStack(spacing: DS.Spacing.space2) {
+            HStack(spacing: DS.Spacing.space1) {
+                attachmentButton
+                if effectiveBashMode != .none {
+                    bashModeBadge
+                } else {
+                    notifyOrDropButton
+                    terminalButton
+                }
             }
             if runtimePresentation.hasControls || runtimeActionError != nil {
                 Divider()
-                    .frame(height: 18) // design-token-exception: optical divider height inside the 30pt composer action row
+                    .frame(height: 18) // design-token-exception: optical divider height inside the composer action row
                 runtimeControls
             }
         }
@@ -330,11 +332,7 @@ struct PickyConversationComposerView: View {
         Button {
             isAttachmentPickerPresented = true
         } label: {
-            Image(systemName: "paperclip")
-                .pickyFont(size: 10.5, weight: .semibold)
-                .foregroundColor(DS.Colors.textTertiary)
-                .frame(width: 22, height: 22)
-                .contentShape(Rectangle())
+            toolbarIcon(systemName: "paperclip", color: DS.Colors.textSecondary)
         }
         .buttonStyle(.plain)
         .help(L10n.t("hud.composer.attachment.help"))
@@ -354,7 +352,16 @@ struct PickyConversationComposerView: View {
                 .fixedSize()
         }
         .foregroundColor(bashAccentColor)
-        .frame(height: 22)
+        .padding(.horizontal, DS.Spacing.space2)
+        .frame(height: PickyComposerToolbarMetrics.controlSize)
+        .background(
+            RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
+                .fill(DS.Colors.surface2)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
+                .stroke(DS.Colors.borderSubtle, lineWidth: 0.5)
+        )
         .help(effectiveBashMode == .private
             ? "Bash execution · output hidden from Pi context"
             : "Bash execution · output added to Pi context")
@@ -364,21 +371,22 @@ struct PickyConversationComposerView: View {
     @ViewBuilder
     private var notifyOrDropButton: some View {
         if isFileDropTargeted {
-            Image(systemName: "doc.badge.plus")
-                .pickyFont(size: 10.5, weight: .medium)
-                .foregroundColor(DS.Colors.accentText)
-                .frame(width: 22, height: 22)
+            toolbarIcon(
+                systemName: "doc.badge.plus",
+                color: DS.Colors.accentText,
+                isActive: true
+            )
                 .help(L10n.t("hud.composer.drop.help"))
                 .accessibilityLabel(L10n.t("hud.composer.drop.accessibilityLabel"))
         } else {
             Button {
                 toggleNotifyOnCompletion()
             } label: {
-                Image(systemName: notifyOnCompletionIconName)
-                    .pickyFont(size: 10.5, weight: .semibold)
-                    .foregroundColor(notifyOnCompletionColor)
-                    .frame(width: 22, height: 22)
-                    .contentShape(Rectangle())
+                toolbarIcon(
+                    systemName: notifyOnCompletionIconName,
+                    color: notifyOnCompletionColor,
+                    isActive: session.notifyMainOnCompletion == true
+                )
             }
             .buttonStyle(.plain)
             .overlay(alignment: .topTrailing) {
@@ -399,12 +407,11 @@ struct PickyConversationComposerView: View {
 
     private var terminalButton: some View {
         Button(action: onToggleUtilityPanel) {
-            Image(systemName: "terminal.fill")
-                .pickyFont(size: 10.5, weight: .semibold)
-                .foregroundColor(isUtilityPanelOpen ? DS.Colors.accentText : DS.Colors.textTertiary)
-                .frame(width: 22, height: 22)
-                .contentShape(Rectangle())
-                .background(terminalButtonBackground)
+            toolbarIcon(
+                systemName: "terminal.fill",
+                color: isUtilityPanelOpen ? DS.Colors.accentText : DS.Colors.textSecondary,
+                isActive: isUtilityPanelOpen
+            )
         }
         .buttonStyle(.plain)
         .overlay(alignment: .topTrailing) {
@@ -422,13 +429,23 @@ struct PickyConversationComposerView: View {
         .hoverAffordance()
     }
 
-    private var terminalButtonBackground: some View {
-        RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
-            .fill(isUtilityPanelOpen ? DS.Colors.accentSubtle.opacity(0.24) : Color.clear)
-            .overlay(
-                RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
-                    .stroke(isUtilityPanelOpen ? DS.Colors.accentText.opacity(0.28) : Color.clear, lineWidth: 0.5)
+    private func toolbarIcon(systemName: String, color: Color, isActive: Bool = false) -> some View {
+        Image(systemName: systemName)
+            .pickyFont(size: 10.5, weight: .semibold)
+            .foregroundColor(color)
+            .frame(
+                width: PickyComposerToolbarMetrics.controlSize,
+                height: PickyComposerToolbarMetrics.controlSize
             )
+            .background(
+                RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
+                    .fill(isActive ? DS.Colors.accentSubtle : DS.Colors.surface2)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
+                    .stroke(DS.Colors.borderSubtle, lineWidth: 0.5)
+            )
+            .contentShape(Rectangle())
     }
 
     var notifyOnCompletionIconName: String {
@@ -941,10 +958,9 @@ struct PickyConversationComposerView: View {
     }
 
     private static let editorTextInsetHeight: CGFloat = 2
-    private static let actionButtonSize = DS.Spacing.space6 + DS.Spacing.space1
 
     private var trailingActions: some View {
-        HStack(spacing: DS.Spacing.xs) {
+        HStack(spacing: DS.Spacing.space2) {
             sendButton
             if isStopButtonVisible {
                 stopButton
@@ -963,7 +979,10 @@ struct PickyConversationComposerView: View {
             }
             .pickyFont(size: 11, weight: .semibold)
             .foregroundColor(isSendDisabled ? DS.Colors.textTertiary : .white)
-            .frame(width: Self.actionButtonSize, height: Self.actionButtonSize)
+            .frame(
+                width: PickyComposerToolbarMetrics.controlSize,
+                height: PickyComposerToolbarMetrics.controlSize
+            )
             .background(
                 RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
                     .fill(isSendDisabled ? DS.Colors.surface3 : sendColor)
@@ -981,11 +1000,7 @@ struct PickyConversationComposerView: View {
 
     private var stopButton: some View {
         Button(action: stopIfPossible) {
-            Image(systemName: "stop.fill")
-                .pickyFont(size: 10.5, weight: .semibold)
-                .foregroundColor(DS.Colors.destructiveText)
-                .frame(width: Self.actionButtonSize, height: Self.actionButtonSize)
-                .contentShape(Rectangle())
+            toolbarIcon(systemName: "stop.fill", color: DS.Colors.destructiveText)
         }
         .buttonStyle(.plain)
         .help(L10n.t("hud.composer.stop.help"))

@@ -443,7 +443,19 @@ final class PickySessionListViewModel: ObservableObject {
         if sessions.contains(where: { $0.id == sessionID }) {
             select(sessionID: sessionID)
         }
-        openSessionRequest = PickyHUDOpenSessionRequest(sessionID: sessionID, targetDisplayID: targetDisplayID)
+        openSessionRequest = PickyHUDOpenSessionRequest(
+            sessionID: sessionID,
+            targetDisplayID: targetDisplayID
+        )
+    }
+
+    func requestCloseSession(sessionID: String, targetDisplayID: CGDirectDisplayID? = nil) {
+        pickySessionLog("close session requested session=\(sessionID) display=\(targetDisplayID.map(String.init) ?? "all")")
+        openSessionRequest = PickyHUDOpenSessionRequest(
+            sessionID: sessionID,
+            targetDisplayID: targetDisplayID,
+            action: .close
+        )
     }
 
     func submit(transcript: String, context: PickyContextPacket) async throws {

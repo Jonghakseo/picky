@@ -107,9 +107,24 @@ final class PickyHUDDockGroupListPanelModel: ObservableObject {
     }
 }
 
+enum PickyHUDDockGroupListSelectionAction: Equatable {
+    case open(sessionID: String)
+    case close(sessionID: String)
+}
+
 enum PickyHUDDockGroupListInteractionPolicy {
-    static func selectionResult(sessionID: String, openGroupID: String?) -> (openedSessionID: String, openGroupID: String?) {
-        (sessionID, PickyHUDDockGroupListOpenPolicy.afterSelectingRow(openGroupID: openGroupID))
+    static func selectionResult(
+        sessionID: String,
+        openedSessionID: String?,
+        openGroupID: String?
+    ) -> (sessionAction: PickyHUDDockGroupListSelectionAction, openGroupID: String?) {
+        let sessionAction: PickyHUDDockGroupListSelectionAction = openedSessionID == sessionID
+            ? .close(sessionID: sessionID)
+            : .open(sessionID: sessionID)
+        return (
+            sessionAction,
+            PickyHUDDockGroupListOpenPolicy.afterSelectingRow(openGroupID: openGroupID)
+        )
     }
 
     static func openGroupIDAfterDockSideChanged() -> String? {

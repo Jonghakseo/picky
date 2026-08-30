@@ -2780,12 +2780,35 @@ struct PickySessionViewModelTests {
         viewModel.requestOpenSession(sessionID: "notified")
         let firstRequest = try #require(viewModel.openSessionRequest)
         #expect(firstRequest.sessionID == "notified")
+        #expect(firstRequest.action == .open)
         #expect(selection.selectedSessionID == "notified")
 
         viewModel.requestOpenSession(sessionID: "notified")
         let secondRequest = try #require(viewModel.openSessionRequest)
         #expect(secondRequest.sessionID == "notified")
+        #expect(secondRequest.action == .open)
         #expect(secondRequest.id != firstRequest.id)
+    }
+
+    @MainActor @Test func requestCloseSessionPublishesTargetedCloseWithoutChangingSelection() throws {
+        let selection = FakeSelectionStore()
+        let viewModel = PickySessionListViewModel(
+            client: FakePickyAgentClient(),
+            notificationCenter: PickyNoopNotificationCenter(),
+            selectionStore: selection
+        )
+        viewModel.apply(.protocolEvent(.fixture(
+            eventJSON: EventJSON.sessionUpdated(id: "existing-selection", status: "running")
+        )))
+        viewModel.select(sessionID: "existing-selection")
+
+        viewModel.requestCloseSession(sessionID: "notified", targetDisplayID: 42)
+
+        let request = try #require(viewModel.openSessionRequest)
+        #expect(request.sessionID == "notified")
+        #expect(request.targetDisplayID == 42)
+        #expect(request.action == .close)
+        #expect(selection.selectedSessionID == "existing-selection")
     }
 
     @Test func requestOpenSessionStillPublishesWhenSessionArrivesLater() throws {

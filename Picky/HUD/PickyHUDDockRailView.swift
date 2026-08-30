@@ -702,6 +702,12 @@ struct PickyHUDDockRailView: View {
                                 visibleIndex: slot.visibleIndex
                             ),
                             hoverAction: { onDockGroupTileHover(group.id, true) }
+                        )
+                        // A group keeps its visual boundary even after it shrinks
+                        // to one visible Pickle, while preserving the full tile.
+                        .pickyDockGroupDrawer(
+                            tint: group.color.accent,
+                            cornerRadius: metrics.iconCornerRadius
                         ),
                         anchorGroupID: group.id
                     )

@@ -828,10 +828,16 @@ struct PickyHUDView: View {
     private func handleOpenSessionRequest(_ request: PickyHUDOpenSessionRequest?) {
         guard let request else { return }
         // Honor the requested target display so a notification only opens the
-        // card on the screen the user clicked. `nil` target opens everywhere.
+        // card on the screen the user clicked. `nil` target updates everywhere.
         if let target = request.targetDisplayID, target != displayID { return }
-        pendingRequestedOpenSessionID = request.sessionID
-        openPendingRequestedSessionIfVisible()
+        switch request.action {
+        case .open:
+            pendingRequestedOpenSessionID = request.sessionID
+            openPendingRequestedSessionIfVisible()
+        case .close:
+            guard openedSessionID == request.sessionID else { return }
+            toggleOpenSession(request.sessionID)
+        }
     }
 
     private func openPendingRequestedSessionIfVisible() {

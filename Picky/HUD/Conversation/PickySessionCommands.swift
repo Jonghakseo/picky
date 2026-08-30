@@ -103,6 +103,7 @@ protocol PickySessionCommands: AnyObject, PickyGitChipActionViewModelDispatch {
     func openLatestAgentResponseReport(sessionID: String) async throws
     func unarchive(sessionID: String)
     func requestOpenSession(sessionID: String, targetDisplayID: CGDirectDisplayID?)
+    func requestCloseSession(sessionID: String, targetDisplayID: CGDirectDisplayID?)
     var shellTerminalAttachmentStore: PickyTerminalAttachmentStore { get }
     func shellTerminalSession(sessionID: String) -> PickyShellTerminalSession
     func isShellTerminalAttachmentActive(sessionID: String, attachmentID: String) -> Bool

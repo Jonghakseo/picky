@@ -65,13 +65,25 @@ struct PickyHUDDockGroupListScreenLayoutTests {
         #expect(frame == CGRect(x: -876, y: 430, width: 212, height: 38))
     }
 
-    @Test func selectingARowNamesTheNewCardSessionAndClosesTheList() {
+    @Test func selectingAClosedRowRequestsOpeningTheSessionAndClosesTheList() {
         let result = PickyHUDDockGroupListInteractionPolicy.selectionResult(
             sessionID: "pickle-2",
+            openedSessionID: "pickle-1",
             openGroupID: "group-a"
         )
 
-        #expect(result.openedSessionID == "pickle-2")
+        #expect(result.sessionAction == .open(sessionID: "pickle-2"))
+        #expect(result.openGroupID == nil)
+    }
+
+    @Test func selectingTheOpenedRowRequestsClosingTheSessionAndClosesTheList() {
+        let result = PickyHUDDockGroupListInteractionPolicy.selectionResult(
+            sessionID: "pickle-2",
+            openedSessionID: "pickle-2",
+            openGroupID: "group-a"
+        )
+
+        #expect(result.sessionAction == .close(sessionID: "pickle-2"))
         #expect(result.openGroupID == nil)
     }
 

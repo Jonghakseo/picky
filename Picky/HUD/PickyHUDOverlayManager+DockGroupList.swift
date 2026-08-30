@@ -688,11 +688,18 @@ extension PickyHUDOverlayManager {
     }
 
     func selectDockGroupListRow(displayID: CGDirectDisplayID, sessionID: String) {
+        let child = dockGroupListChildrenByDisplayID[displayID]
         let result = PickyHUDDockGroupListInteractionPolicy.selectionResult(
             sessionID: sessionID,
-            openGroupID: dockGroupListChildrenByDisplayID[displayID]?.openGroupID
+            openedSessionID: child?.openedSessionID,
+            openGroupID: child?.openGroupID
         )
-        viewModel.requestOpenSession(sessionID: result.openedSessionID, targetDisplayID: displayID)
+        switch result.sessionAction {
+        case .open(let sessionID):
+            viewModel.requestOpenSession(sessionID: sessionID, targetDisplayID: displayID)
+        case .close(let sessionID):
+            viewModel.requestCloseSession(sessionID: sessionID, targetDisplayID: displayID)
+        }
         hideDockGroupListChild(displayID: displayID)
     }
 

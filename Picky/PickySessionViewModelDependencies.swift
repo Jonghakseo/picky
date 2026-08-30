@@ -14,12 +14,30 @@ protocol PickyNotificationDelivering: AnyObject {
     func deliver(title: String, body: String, identifier: String)
 }
 
+enum PickyHUDSessionCardRequestAction: Equatable {
+    case open
+    case close
+}
+
 struct PickyHUDOpenSessionRequest: Equatable {
-    let id = UUID()
+    let id: UUID
     let sessionID: String
-    /// When set, only the HUD panel on this display should open the card.
-    /// `nil` keeps the legacy behavior of opening on every display.
-    var targetDisplayID: CGDirectDisplayID?
+    /// When set, only the HUD panel on this display should update the card.
+    /// `nil` keeps the legacy behavior of updating every display.
+    let targetDisplayID: CGDirectDisplayID?
+    let action: PickyHUDSessionCardRequestAction
+
+    init(
+        id: UUID = UUID(),
+        sessionID: String,
+        targetDisplayID: CGDirectDisplayID?,
+        action: PickyHUDSessionCardRequestAction = .open
+    ) {
+        self.id = id
+        self.sessionID = sessionID
+        self.targetDisplayID = targetDisplayID
+        self.action = action
+    }
 }
 
 enum PickyAutocompleteClientEvent: Equatable {

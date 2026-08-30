@@ -91,6 +91,9 @@ struct PickyCommandEnvelope: Codable, Equatable {
     /// Enables turn-scoped visual annotation DSL parsing for an explicitly armed Pickle input.
     /// Agentd still requires at least one screenshot before activating the capability.
     var visualDslEnabled: Bool?
+    var provider: String?
+    var modelId: String?
+    var thinkingLevel: PickyMainAgentThinkingLevel?
 
     init(
         id: String = "cmd-\(UUID().uuidString)",
@@ -144,7 +147,10 @@ struct PickyCommandEnvelope: Codable, Equatable {
         draftFingerprint: String? = nil,
         item: PickyAutocompleteItem? = nil,
         prefix: String? = nil,
-        visualDslEnabled: Bool? = nil
+        visualDslEnabled: Bool? = nil,
+        provider: String? = nil,
+        modelId: String? = nil,
+        thinkingLevel: PickyMainAgentThinkingLevel? = nil
     ) {
         self.id = id
         self.protocolVersion = pickyAgentProtocolVersion
@@ -199,6 +205,9 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.item = item
         self.prefix = prefix
         self.visualDslEnabled = visualDslEnabled
+        self.provider = provider
+        self.modelId = modelId
+        self.thinkingLevel = thinkingLevel
     }
 }
 
@@ -252,6 +261,9 @@ enum PickyCommandType: String, Codable, Equatable {
     case abortMainAgent
     case setMainAgentThinkingLevel
     case cycleSessionThinkingLevel
+    case listSessionRuntimeOptions
+    case setSessionModel
+    case setSessionThinkingLevel
     case cycleSessionModel
     case listSlashCommands
     case getAutocompleteCapabilities
@@ -319,6 +331,7 @@ enum PickyEvent: Equatable {
     case mainExtensionUiCancelled(requestId: String)
     case mainAgentSessionInfoUpdated(sessionFilePath: String?, cwd: String?)
     case mainAgentModelsSnapshot([PickyMainAgentModelOption])
+    case sessionRuntimeOptionsSnapshot(sessionId: String, requestId: String, models: [PickySessionRuntimeModelOption], thinkingLevels: [PickyMainAgentThinkingLevel], currentModel: PickySessionRuntimeModelIdentity?)
     case piOAuthStatus(PickyPiOAuthStatusEvent)
     case piOAuthUrlRequested(PickyPiOAuthUrlRequestEvent)
     case piOAuthPromptRequested(PickyPiOAuthPromptRequestEvent)
@@ -425,6 +438,9 @@ enum PickyEvent: Equatable {
         case "mainAgentModelsSnapshot":
             let payload = try PickyMainAgentModelsSnapshotPayload(from: decoder)
             return .mainAgentModelsSnapshot(payload.models)
+        case "sessionRuntimeOptionsSnapshot":
+            let payload = try PickySessionRuntimeOptionsSnapshotPayload(from: decoder)
+            return .sessionRuntimeOptionsSnapshot(sessionId: payload.sessionId, requestId: payload.requestId, models: payload.models, thinkingLevels: payload.thinkingLevels, currentModel: payload.currentModel)
         case "piOAuthStatus": return .piOAuthStatus(try PickyPiOAuthStatusEvent(from: decoder))
         case "piOAuthUrlRequested": return .piOAuthUrlRequested(try PickyPiOAuthUrlRequestEvent(from: decoder))
         case "piOAuthPromptRequested": return .piOAuthPromptRequested(try PickyPiOAuthPromptRequestEvent(from: decoder))
@@ -562,6 +578,7 @@ private struct PickyMainExtensionUiRequestedPayload: Decodable { let request: Pi
 private struct PickyMainExtensionUiCancelledPayload: Decodable { let requestId: String }
 private struct PickyMainAgentSessionInfoUpdatedPayload: Decodable { let sessionFilePath: String?; let cwd: String? }
 private struct PickyMainAgentModelsSnapshotPayload: Decodable { let models: [PickyMainAgentModelOption] }
+private struct PickySessionRuntimeOptionsSnapshotPayload: Decodable { let sessionId: String; let requestId: String; let models: [PickySessionRuntimeModelOption]; let thinkingLevels: [PickyMainAgentThinkingLevel]; let currentModel: PickySessionRuntimeModelIdentity? }
 
 struct PickyPiOAuthStatusEvent: Decodable, Equatable {
     let requestId: String
@@ -1001,6 +1018,19 @@ struct PickyMainAgentMessage: Codable, Equatable, Identifiable {
     let role: Role
     let text: String
     let createdAt: Date
+}
+
+struct PickySessionRuntimeModelOption: Codable, Equatable, Identifiable {
+    var id: String { "\(provider)/\(modelId)" }
+    let provider: String
+    let modelId: String
+    let displayName: String
+    let pattern: String
+}
+
+struct PickySessionRuntimeModelIdentity: Codable, Equatable {
+    let provider: String
+    let modelId: String
 }
 
 struct PickyMainAgentModelOption: Codable, Equatable, Identifiable {

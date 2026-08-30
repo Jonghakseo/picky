@@ -279,6 +279,13 @@ export const PickyMainAgentModelOptionSchema = z.object({
   pattern: z.string().min(1),
 });
 export type PickyMainAgentModelOption = z.infer<typeof PickyMainAgentModelOptionSchema>;
+export const PickySessionRuntimeModelOptionSchema = PickyMainAgentModelOptionSchema;
+export type PickySessionRuntimeModelOption = z.infer<typeof PickySessionRuntimeModelOptionSchema>;
+export const PickySessionRuntimeModelIdentitySchema = z.object({
+  provider: z.string().min(1),
+  modelId: z.string().min(1),
+});
+export type PickySessionRuntimeModelIdentity = z.infer<typeof PickySessionRuntimeModelIdentitySchema>;
 export const PiOAuthProviderIdSchema = z.enum(["openai-codex", "anthropic"]);
 export type PiOAuthProviderId = z.infer<typeof PiOAuthProviderIdSchema>;
 export const PiOAuthPromptTypeSchema = z.enum(["text", "secret", "select", "manual_code"]);
@@ -581,6 +588,9 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("setSessionArchived"), sessionId: z.string(), archived: z.boolean() }),
   CommandBaseSchema.extend({ type: z.literal("deleteSession"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("cycleSessionThinkingLevel"), sessionId: z.string() }),
+  CommandBaseSchema.extend({ type: z.literal("listSessionRuntimeOptions"), sessionId: z.string() }),
+  CommandBaseSchema.extend({ type: z.literal("setSessionModel"), sessionId: z.string(), provider: z.string().min(1), modelId: z.string().min(1) }),
+  CommandBaseSchema.extend({ type: z.literal("setSessionThinkingLevel"), sessionId: z.string(), thinkingLevel: ThinkingLevelSchema }),
   CommandBaseSchema.extend({ type: z.literal("cycleSessionModel"), sessionId: z.string(), direction: ModelCycleDirectionSchema.default("forward") }),
   CommandBaseSchema.extend({ type: z.literal("clearQueue"), sessionId: z.string(), kind: z.enum(["steering", "followUp", "all"]) }),
   CommandBaseSchema.extend({ type: z.literal("syncTerminalSession"), sessionId: z.string(), baselinePiMessageId: z.string().min(1).optional() }),
@@ -762,6 +772,7 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
     cwd: z.string().optional(),
   }),
   EventBaseSchema.extend({ type: z.literal("mainAgentModelsSnapshot"), models: z.array(PickyMainAgentModelOptionSchema) }),
+  EventBaseSchema.extend({ type: z.literal("sessionRuntimeOptionsSnapshot"), sessionId: z.string(), requestId: z.string().min(1), models: z.array(PickySessionRuntimeModelOptionSchema), thinkingLevels: z.array(ThinkingLevelSchema), currentModel: PickySessionRuntimeModelIdentitySchema.optional() }),
   EventBaseSchema.extend({ type: z.literal("mainActivityUpdated"), activity: PickyMainActivitySchema.optional() }),
   EventBaseSchema.extend({ type: z.literal("mainExtensionUiRequested"), request: PickyExtensionUiRequestSchema }),
   EventBaseSchema.extend({ type: z.literal("mainExtensionUiCancelled"), requestId: z.string() }),

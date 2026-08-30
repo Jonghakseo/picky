@@ -22,6 +22,8 @@ class FakeSession extends EventEmitter {
   compactCalls: Array<string | undefined> = [];
   thinkingLevels: string[] = [];
   scopedModelUpdates: unknown[][] = [];
+  scopedModels: Array<{ model: { provider: string; id: string; name?: string } }> = [];
+  availableThinkingLevels: string[] = ["off", "low", "high"];
   modelUpdates: unknown[] = [];
   isStreaming = false;
   isCompacting = false;
@@ -147,6 +149,11 @@ class FakeSession extends EventEmitter {
 
   setScopedModels(scopedModels: unknown[]): void {
     this.scopedModelUpdates.push(scopedModels);
+    this.scopedModels = scopedModels as Array<{ model: { provider: string; id: string; name?: string } }>;
+  }
+
+  getAvailableThinkingLevels(): string[] {
+    return this.availableThinkingLevels;
   }
 
   async setModel(model: { provider?: string; id?: string; model?: string; api?: string }): Promise<void> {
@@ -2430,6 +2437,48 @@ describe("PiSdkRuntime", () => {
       scopedModels: [{ model: codexModel, thinkingLevel: "high" }],
     }));
     expect(fakeSession.scopedModelUpdates).toEqual([]);
+  });
+
+  it("lists scoped models in order and supported thinking levels", async () => {
+    const fakeSession = new FakeSession();
+    const first = { provider: "anthropic", id: "claude-haiku", name: "Claude Haiku" };
+    const second = { provider: "openai-codex", id: "gpt-5.5", name: "GPT-5.5" };
+    fakeSession.scopedModels = [{ model: first }, { model: second }];
+    fakeSession.state.model = { api: "openai-responses", provider: "openai-codex", id: "gpt-5.5" };
+    fakeSession.availableThinkingLevels = ["low", "high"];
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky" });
+
+    await expect(handle.listRuntimeOptions?.()).resolves.toEqual({
+      models: [
+        { provider: "anthropic", modelId: "claude-haiku", displayName: "Claude Haiku (anthropic/claude-haiku)", pattern: "anthropic/claude-haiku" },
+        { provider: "openai-codex", modelId: "gpt-5.5", displayName: "GPT-5.5 (openai-codex/gpt-5.5)", pattern: "openai-codex/gpt-5.5" },
+      ],
+      thinkingLevels: ["low", "high"],
+      currentModel: { provider: "openai-codex", modelId: "gpt-5.5" },
+    });
+  });
+
+  it("directly selects an exact scoped model without changing cycle scope", async () => {
+    const fakeSession = new FakeSession();
+    const codex = { provider: "openai-codex", id: "gpt-5.5", name: "GPT-5.5" };
+    const opus = { provider: "anthropic", id: "claude-opus", name: "Claude Opus" };
+    fakeSession.scopedModels = [{ model: codex }, { model: opus }];
+    const runtime = new PiSdkRuntime({
+      getAgentDir: () => "/tmp/.pi/agent",
+      createServices: vi.fn(async () => ({ diagnostics: [], settingsManager: { getEnabledModels: () => [] }, modelRuntime: { getAvailable: async () => [codex, opus], hasConfiguredAuth: () => true } })) as never,
+      createSessionFromServices: vi.fn(async () => ({ session: fakeSession, extensionsResult: { extensions: [], errors: [], runtime: {} } })) as never,
+      createRuntime: vi.fn(async (factory, options) => {
+        const result = await factory({ cwd: options.cwd, agentDir: options.agentDir, sessionManager: options.sessionManager });
+        return { session: result.session, services: result.services, diagnostics: result.diagnostics, setRebindSession: vi.fn() };
+      }) as never,
+    });
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky" });
+
+    await handle.setExactModel?.("anthropic", "claude-opus");
+    expect(fakeSession.modelUpdates).toEqual([opus]);
+    expect(fakeSession.scopedModelUpdates).toEqual([]);
+    await expect(handle.setExactModel?.("anthropic", "not-in-scope")).rejects.toThrow("not available in this session");
   });
 
   it("sets an explicit model on the active Pi session without recreating it", async () => {

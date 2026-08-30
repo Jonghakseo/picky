@@ -44,6 +44,9 @@ protocol PickySessionCommands: AnyObject, PickyGitChipActionViewModelDispatch {
     func abortRestoringQueuedInputs(sessionID: String) async throws
     func steer(text: String, sessionID: String?) async throws
     func followUp(text: String, sessionID: String?) async throws
+    func listSessionRuntimeOptions(sessionID: String) async throws -> PickySessionRuntimeOptions
+    func setSessionModel(sessionID: String, provider: String, modelID: String) async throws
+    func setSessionThinkingLevel(sessionID: String, thinkingLevel: PickyMainAgentThinkingLevel) async throws
     func cycleThinkingLevel(sessionID: String) async throws
     func cycleModel(sessionID: String, direction: PickyModelCycleDirection) async throws
     func setNotifyMainOnCompletion(sessionID: String, enabled: Bool) async throws

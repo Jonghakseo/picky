@@ -157,6 +157,63 @@ struct PickyAgentClientTests {
         }
     }
 
+    @Test func encodesAndDecodesSessionRuntimePickerProtocol() throws {
+        let encoder = JSONEncoder.pickyAgentProtocolEncoder()
+        let command = try encoder.encode(PickyCommandEnvelope(id: "cmd-runtime-model", type: .setSessionModel, sessionId: "session-1", provider: "openai-codex", modelId: "gpt-5.5"))
+        let commandJSON = try #require(String(data: command, encoding: .utf8))
+        #expect(commandJSON.contains("\"type\":\"setSessionModel\"") || commandJSON.contains("\"type\" : \"setSessionModel\""))
+        #expect(commandJSON.contains("\"provider\":\"openai-codex\"") || commandJSON.contains("\"provider\" : \"openai-codex\""))
+
+        let decoder = JSONDecoder.pickyAgentProtocolDecoder()
+        let event = try decoder.decode(PickyEventEnvelope.self, from: Data("""
+        {"id":"event-runtime-options","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:02.000Z","type":"sessionRuntimeOptionsSnapshot","sessionId":"session-1","requestId":"cmd-runtime-options","models":[{"provider":"openai-codex","modelId":"gpt-5.5","displayName":"GPT-5.5","pattern":"openai-codex/gpt-5.5"}],"thinkingLevels":["low","high"],"currentModel":{"provider":"openai-codex","modelId":"gpt-5.5"}}
+        """.utf8))
+        if case .sessionRuntimeOptionsSnapshot(let sessionID, let requestID, let models, let thinkingLevels, let currentModel) = event.event {
+            #expect(sessionID == "session-1")
+            #expect(requestID == "cmd-runtime-options")
+            #expect(models.map(\.pattern) == ["openai-codex/gpt-5.5"])
+            #expect(thinkingLevels == [.low, .high])
+            #expect(currentModel == PickySessionRuntimeModelIdentity(provider: "openai-codex", modelId: "gpt-5.5"))
+        } else { Issue.record("Expected sessionRuntimeOptionsSnapshot") }
+    }
+
+    @Test func runtimeOptionsRequestIgnoresStaleSessionAndRequestResponses() async throws {
+        let task = FakeWebSocketTask()
+        task.enqueue(.success(.string(EventJSON.hello())))
+        let client = WebSocketPickyAgentClient(
+            configuration: .init(port: 19001, token: "secret", reconnectDelay: 0.01),
+            factory: FakeWebSocketFactory(task: task)
+        )
+        await client.connect()
+        _ = try await nextPickyAgentClientEvent(from: client.events)
+
+        let request = Task { try await client.listSessionRuntimeOptions(sessionId: "session-1") }
+        try await withPickyTestTimeout("runtime options command") {
+            while task.sentMessages.isEmpty { await Task.yield() }
+        }
+        guard case .string(let commandJSON) = try #require(task.sentMessages.last),
+              let commandData = commandJSON.data(using: .utf8),
+              let command = try? JSONDecoder.pickyAgentProtocolDecoder().decode(PickyCommandEnvelope.self, from: commandData)
+        else {
+            Issue.record("Expected runtime options command")
+            return
+        }
+
+        task.enqueue(.success(.string("""
+        {"id":"event-runtime-stale-session","protocolVersion":"\(pickyAgentProtocolVersion)","timestamp":"2026-05-01T00:00:02.000Z","type":"sessionRuntimeOptionsSnapshot","sessionId":"session-other","requestId":"\(command.id)","models":[{"provider":"stale","modelId":"model","displayName":"Stale","pattern":"stale/model"}],"thinkingLevels":["low"]}
+        """)))
+        task.enqueue(.success(.string("""
+        {"id":"event-runtime-stale-request","protocolVersion":"\(pickyAgentProtocolVersion)","timestamp":"2026-05-01T00:00:02.000Z","type":"sessionRuntimeOptionsSnapshot","sessionId":"session-1","requestId":"other-request","models":[{"provider":"stale","modelId":"model","displayName":"Stale","pattern":"stale/model"}],"thinkingLevels":["low"]}
+        """)))
+        task.enqueue(.success(.string("""
+        {"id":"event-runtime-current","protocolVersion":"\(pickyAgentProtocolVersion)","timestamp":"2026-05-01T00:00:02.000Z","type":"sessionRuntimeOptionsSnapshot","sessionId":"session-1","requestId":"\(command.id)","models":[{"provider":"openai-codex","modelId":"gpt-5.5","displayName":"GPT-5.5","pattern":"openai-codex/gpt-5.5"}],"thinkingLevels":["low","high"],"currentModel":{"provider":"openai-codex","modelId":"gpt-5.5"}}
+        """)))
+
+        let options = try await request.value
+        #expect(options.models.map(\.provider) == ["openai-codex"])
+        #expect(options.currentModel == PickySessionRuntimeModelIdentity(provider: "openai-codex", modelId: "gpt-5.5"))
+    }
+
     @Test func decodesRewindAndDiffEvents() throws {
         let decoder = JSONDecoder.pickyAgentProtocolDecoder()
         let targets = try decoder.decode(PickyEventEnvelope.self, from: Data("""

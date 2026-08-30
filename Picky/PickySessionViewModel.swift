@@ -1078,21 +1078,46 @@ final class PickySessionListViewModel: ObservableObject {
         try await client.send(PickyCommandEnvelope(type: .clearQueue, sessionId: sessionID, kind: kind))
     }
 
+    func listSessionRuntimeOptions(sessionID: String) async throws -> PickySessionRuntimeOptions {
+        try await client.listSessionRuntimeOptions(sessionId: sessionID)
+    }
+
+    func setSessionModel(sessionID: String, provider: String, modelID: String) async throws {
+        try await sendRuntimeControlCommand(PickyCommandEnvelope(
+            type: .setSessionModel,
+            sessionId: sessionID,
+            provider: provider,
+            modelId: modelID
+        ))
+    }
+
+    func setSessionThinkingLevel(sessionID: String, thinkingLevel: PickyMainAgentThinkingLevel) async throws {
+        try await sendRuntimeControlCommand(PickyCommandEnvelope(
+            type: .setSessionThinkingLevel,
+            sessionId: sessionID,
+            thinkingLevel: thinkingLevel
+        ))
+    }
+
     func cycleThinkingLevel(sessionID: String) async throws {
         pickySessionLog("cycle thinking level session=\(sessionID)")
-        do {
-            try await client.send(PickyCommandEnvelope(type: .cycleSessionThinkingLevel, sessionId: sessionID))
-            lastError = nil
-        } catch {
-            lastError = error.localizedDescription
-            throw error
-        }
+        try await sendRuntimeControlCommand(PickyCommandEnvelope(type: .cycleSessionThinkingLevel, sessionId: sessionID))
     }
 
     func cycleModel(sessionID: String, direction: PickyModelCycleDirection = .forward) async throws {
         pickySessionLog("cycle model session=\(sessionID) direction=\(direction.rawValue)")
+        try await sendRuntimeControlCommand(PickyCommandEnvelope(
+            type: .cycleSessionModel,
+            sessionId: sessionID,
+            direction: direction
+        ))
+    }
+
+    private func sendRuntimeControlCommand(_ command: PickyCommandEnvelope) async throws {
         do {
-            try await client.send(PickyCommandEnvelope(type: .cycleSessionModel, sessionId: sessionID, direction: direction))
+            if let error = try await client.sendAwaitingError(command, timeout: 5.0, requireAcknowledgement: true) {
+                throw PickyRewindTargetRequestError.daemonError(error.message)
+            }
             lastError = nil
         } catch {
             lastError = error.localizedDescription
@@ -1980,7 +2005,7 @@ final class PickySessionListViewModel: ObservableObject {
             autocompleteEvents.send(.suggestions(snapshot))
         case .autocompleteCompletionApplied(let completion):
             autocompleteEvents.send(.completion(completion))
-        case .rewindTargetsSnapshot: break
+        case .rewindTargetsSnapshot, .sessionRuntimeOptionsSnapshot: break
         case .sessionDiffResult(let result):
             applySessionDiffResult(result)
         case .sessionRewound(let sessionId, let editorText, _): applySessionRewound(sessionID: sessionId, editorText: editorText)
@@ -2007,6 +2032,8 @@ final class PickySessionListViewModel: ObservableObject {
             if let sessionID = accepted.sessionId, let groupName = accepted.group {
                 assignSessionToDockGroup(sessionID: sessionID, groupName: groupName)
             }
+        case .sessionRuntimeOptionsSnapshot:
+            break
         case .quickReply, .mainTurnSettled, .mainNarrationChunk,
              .mainVisualNarrationSegmentPrepared, .mainVisualNarrationSegmentSentence, .mainVisualNarrationSegmentCommitted,
              .mainMessagesSnapshot, .mainMessageAppended, .mainActivityUpdated, .mainExtensionUiRequested, .mainExtensionUiCancelled,

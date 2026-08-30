@@ -24,7 +24,7 @@ import { PickleVisualDslCoordinator, type PickleVisualDslLease } from "./applica
 import { PickleSessionTitleRefresher } from "./application/pickle-session-title-refresher.js";
 import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY, type SessionStore } from "./session-store.js";
 import { sessionWithAppendedLog } from "./session-log-append.js";
-import type { AgentRuntime, RewindTarget, RuntimeAutocompleteApplyRequest, RuntimeAutocompleteCapabilities, RuntimeAutocompleteCompletion, RuntimeAutocompleteQuery, RuntimeAutocompleteSuggestions, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./runtime/types.js";
+import type { AgentRuntime, RewindTarget, RuntimeAutocompleteApplyRequest, RuntimeAutocompleteCapabilities, RuntimeAutocompleteCompletion, RuntimeAutocompleteQuery, RuntimeAutocompleteSuggestions, RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./runtime/types.js";
 import { readSessionDiff, type SessionDiffResult } from "./application/session-diff.js";
 import { listRewindTargets as rewindListTargets, rewindToEntry as runRewindToEntry, type RewindDeps } from "./application/session-rewind.js";
 import type { SessionDiffView } from "./domain/git-diff.js";
@@ -143,6 +143,7 @@ export class SessionSupervisor extends EventEmitter {
   private readonly sessionProjectionEpoch = randomUUID();
   private queueUpdateChains = new Map<string, Promise<void>>();
   private activityUpdateChains = new Map<string, Promise<void>>();
+  private runtimeControlChains = new Map<string, Promise<void>>();
   private turnActivity = new Map<string, PickyActivitySummary>();
   private runtimeEventChains = new Map<string, Promise<void>>();
   private emitChains = new Map<string, Promise<void>>();
@@ -1956,20 +1957,87 @@ export class SessionSupervisor extends EventEmitter {
     return this.mustGet(sessionId);
   }
 
+  async listSessionRuntimeOptions(sessionId: string) {
+    const handle = await this.runtimeHandleForSessionCommand(sessionId, "list runtime options");
+    if (!handle.listRuntimeOptions) throw new Error("Runtime session does not support runtime options");
+    return await handle.listRuntimeOptions();
+  }
+
+  async setSessionModel(sessionId: string, provider: string, modelId: string): Promise<PickyAgentSession> {
+    return this.applyRuntimeControlMutation(sessionId, "set model", async (handle) => {
+      if (!handle.setExactModel) throw new Error("Runtime session does not support direct model selection");
+      return await handle.setExactModel(provider, modelId);
+    });
+  }
+
+  async setSessionThinkingLevel(sessionId: string, thinkingLevel: ThinkingLevel): Promise<PickyAgentSession> {
+    return this.applyRuntimeControlMutation(sessionId, "set thinking level", async (handle) => {
+      if (!handle.setThinkingLevel) throw new Error("Runtime session does not support setting thinking level");
+      handle.setThinkingLevel(thinkingLevel);
+      return handle.getAssistantRunMetadata?.();
+    });
+  }
+
+  private async applyRuntimeControlMutation(
+    sessionId: string,
+    action: string,
+    mutate: (handle: RuntimeSessionHandle) => Promise<RuntimeAssistantRunMetadata | undefined>,
+  ): Promise<PickyAgentSession> {
+    return this.runRuntimeControlMutation(sessionId, async () => {
+      // Runtime reattachment persists through runSessionWrite. Resolve it inside the separate
+      // runtime-control admission chain, then serialize only the mutation's session commit.
+      const handle = await this.runtimeHandleForSessionCommand(sessionId, action);
+      let result: PickyAgentSession | undefined;
+      await this.runSessionWrite(sessionId, async () => {
+        const currentAssistantRun = await mutate(handle);
+        const before = this.mustGet(sessionId);
+        const after = currentAssistantRun
+          ? { ...before, currentAssistantRun, updatedAt: new Date().toISOString(), revision: nextRevision(before.revision ?? 0, true) }
+          : before;
+        if (after !== before) {
+          await this.store.save(after);
+          this.sessions.set(sessionId, after);
+          publishSessionProjectionCommit(this, before, after, {}, this.sessionProjectionEpoch);
+          this.emit("sessionMeta", after);
+        }
+        result = after;
+      });
+      return result!;
+    });
+  }
+
   async cycleSessionThinkingLevel(sessionId: string): Promise<PickyAgentSession> {
-    const handle = await this.runtimeHandleForSessionCommand(sessionId, "cycle thinking level");
-    if (!handle.cycleThinkingLevel) throw new Error("Runtime session does not support cycling thinking level");
-    const currentAssistantRun = handle.cycleThinkingLevel();
-    if (currentAssistantRun) await this.patch(sessionId, { currentAssistantRun });
-    return this.mustGet(sessionId);
+    return this.runRuntimeControlMutation(sessionId, async () => {
+      const handle = await this.runtimeHandleForSessionCommand(sessionId, "cycle thinking level");
+      if (!handle.cycleThinkingLevel) throw new Error("Runtime session does not support cycling thinking level");
+      const currentAssistantRun = handle.cycleThinkingLevel();
+      if (currentAssistantRun) await this.patch(sessionId, { currentAssistantRun });
+      return this.mustGet(sessionId);
+    });
   }
 
   async cycleSessionModel(sessionId: string, direction: ModelCycleDirection): Promise<PickyAgentSession> {
-    const handle = await this.runtimeHandleForSessionCommand(sessionId, "cycle model");
-    if (!handle.cycleModel) throw new Error("Runtime session does not support cycling models");
-    const currentAssistantRun = await handle.cycleModel(direction);
-    if (currentAssistantRun) await this.patch(sessionId, { currentAssistantRun });
-    return this.mustGet(sessionId);
+    return this.runRuntimeControlMutation(sessionId, async () => {
+      const handle = await this.runtimeHandleForSessionCommand(sessionId, "cycle model");
+      if (!handle.cycleModel) throw new Error("Runtime session does not support cycling models");
+      const currentAssistantRun = await handle.cycleModel(direction);
+      if (currentAssistantRun) await this.patch(sessionId, { currentAssistantRun });
+      return this.mustGet(sessionId);
+    });
+  }
+
+  private async runRuntimeControlMutation<T>(sessionId: string, work: () => Promise<T>): Promise<T> {
+    const previous = this.runtimeControlChains.get(sessionId) ?? Promise.resolve();
+    let result: T | undefined;
+    const next = previous.catch(() => undefined).then(async () => { result = await work(); });
+    const tracked = next.catch(() => undefined);
+    this.runtimeControlChains.set(sessionId, tracked);
+    try {
+      await next;
+    } finally {
+      if (this.runtimeControlChains.get(sessionId) === tracked) this.runtimeControlChains.delete(sessionId);
+    }
+    return result!;
   }
 
   async listRewindTargets(sessionId: string): Promise<RewindTarget[]> {

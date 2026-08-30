@@ -11678,13 +11678,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cycle scoped model with Control-P"
+            "value": "Choose model. Control-P cycles forward and Shift-Control-P cycles backward."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Control-P로 이 세션의 모델 변경"
+            "value": "모델을 선택합니다. Control-P는 다음 모델로, Shift-Control-P는 이전 모델로 변경합니다."
           }
         }
       }
@@ -11694,13 +11694,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cycle scoped model (⌃P)"
+            "value": "Choose model (⌃P / ⇧⌃P cycles)"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "이 세션의 모델 변경 (⌃P)"
+            "value": "모델 선택 (⌃P / ⇧⌃P 변경)"
           }
         }
       }
@@ -11710,13 +11710,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cycle thinking level with Shift-Tab"
+            "value": "Choose a supported thinking level. Shift-Tab cycles levels."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Shift-Tab으로 추론 수준 변경"
+            "value": "지원되는 추론 수준을 선택합니다. Shift-Tab으로 수준을 변경합니다."
           }
         }
       }
@@ -11726,13 +11726,109 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cycle thinking level (⇧Tab)"
+            "value": "Choose thinking level (⇧Tab cycles)"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "추론 수준 변경 (⇧Tab)"
+            "value": "추론 수준 선택 (⇧Tab 변경)"
+          }
+        }
+      }
+    },
+    "hud.composer.runtime.picker.empty": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No models available"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사용 가능한 모델이 없습니다"
+          }
+        }
+      }
+    },
+    "hud.composer.runtime.picker.failed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not load models: %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모델을 불러올 수 없습니다: %@"
+          }
+        }
+      }
+    },
+    "hud.composer.runtime.picker.loading": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading models"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모델을 불러오는 중"
+          }
+        }
+      }
+    },
+    "hud.composer.runtime.picker.retry": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retry"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 시도"
+          }
+        }
+      }
+    },
+    "hud.composer.runtime.picker.search": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search models"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모델 검색"
+          }
+        }
+      }
+    },
+    "hud.composer.runtime.picker.selected": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Selected"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택됨"
           }
         }
       }

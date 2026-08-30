@@ -1,7 +1,7 @@
 import type { BuiltPrompt } from "../prompt-builder.js";
 import { STEER_PREFIX } from "../domain/log-prefixes.js";
 import type { ModelCycleDirection, PickyQueueMode } from "../protocol.js";
-import type { AgentRuntime, RewindBranchMessage, RewindResult, RewindTarget, RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
+import type { AgentRuntime, RewindBranchMessage, RewindResult, RewindTarget, RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeModelOption, RuntimeSessionHandle, RuntimeSessionOptions, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
 
 export class MockRuntime implements AgentRuntime {
   private sequence = 0;
@@ -41,7 +41,10 @@ export class MockRuntimeSession implements RuntimeSessionHandle {
   private followUpQueue: string[] = [];
   private modelIndex = 0;
   private thinkingIndex = 3;
-  private readonly models = ["mock/gpt-5.5", "mock/opus-4-7"];
+  private readonly models: RuntimeModelOption[] = [
+    { provider: "mock", modelId: "gpt-5.5", displayName: "Mock GPT-5.5 (mock/gpt-5.5)", pattern: "mock/gpt-5.5" },
+    { provider: "mock", modelId: "opus-4-7", displayName: "Mock Opus 4.7 (mock/opus-4-7)", pattern: "mock/opus-4-7" },
+  ];
   private readonly thinkingLevels: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
   steeringMode: PickyQueueMode = "one-at-a-time";
   followUpMode: PickyQueueMode = "one-at-a-time";
@@ -82,9 +85,29 @@ export class MockRuntimeSession implements RuntimeSessionHandle {
     return this.currentAssistantRunMetadata();
   }
 
+  setThinkingLevel(level: ThinkingLevel): void {
+    this.thinkingIndex = this.thinkingLevels.indexOf(level);
+  }
+
   cycleThinkingLevel(): RuntimeAssistantRunMetadata {
     this.thinkingIndex = (this.thinkingIndex + 1) % this.thinkingLevels.length;
     return this.currentAssistantRunMetadata();
+  }
+
+  async setExactModel(provider: string, modelId: string): Promise<RuntimeAssistantRunMetadata> {
+    const index = this.models.findIndex((model) => model.provider === provider && model.modelId === modelId);
+    if (index < 0) throw new Error(`Model is not available in this session: ${provider}/${modelId}`);
+    this.modelIndex = index;
+    return this.currentAssistantRunMetadata();
+  }
+
+  async listRuntimeOptions(): Promise<RuntimeSessionOptions> {
+    const current = this.models[this.modelIndex]!;
+    return {
+      models: this.models.map((model) => ({ ...model })),
+      thinkingLevels: [...this.thinkingLevels],
+      currentModel: { provider: current.provider, modelId: current.modelId },
+    };
   }
 
   async cycleModel(direction: ModelCycleDirection): Promise<RuntimeAssistantRunMetadata | undefined> {
@@ -94,7 +117,7 @@ export class MockRuntimeSession implements RuntimeSessionHandle {
   }
 
   private currentAssistantRunMetadata(): RuntimeAssistantRunMetadata {
-    return { model: this.models[this.modelIndex], thinkingLevel: this.thinkingLevels[this.thinkingIndex] };
+    return { model: this.models[this.modelIndex]!.pattern, thinkingLevel: this.thinkingLevels[this.thinkingIndex] };
   }
 
   clearQueue(): { steering: string[]; followUp: string[] } {

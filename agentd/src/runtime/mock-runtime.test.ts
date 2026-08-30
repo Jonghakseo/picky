@@ -22,6 +22,27 @@ describe("MockRuntimeSession queue foundation", () => {
     expect(session.getActiveBranchTranscript()).toEqual([]);
   });
 
+  it("supports exact runtime picker selections and reports effective options", async () => {
+    const session = new MockRuntimeSession("mock-runtime-picker");
+
+    await expect(session.listRuntimeOptions()).resolves.toMatchObject({
+      models: [
+        { provider: "mock", modelId: "gpt-5.5", pattern: "mock/gpt-5.5" },
+        { provider: "mock", modelId: "opus-4-7", pattern: "mock/opus-4-7" },
+      ],
+      thinkingLevels: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+      currentModel: { provider: "mock", modelId: "gpt-5.5" },
+    });
+
+    await expect(session.setExactModel("mock", "opus-4-7")).resolves.toEqual({
+      model: "mock/opus-4-7",
+      thinkingLevel: "medium",
+    });
+    session.setThinkingLevel("max");
+    expect(session.getAssistantRunMetadata()).toEqual({ model: "mock/opus-4-7", thinkingLevel: "max" });
+    await expect(session.setExactModel("other", "opus-4-7")).rejects.toThrow("Model is not available in this session");
+  });
+
   it("mirrors queue state and drains it via clearQueue", async () => {
     const session = new MockRuntimeSession("mock-test");
 

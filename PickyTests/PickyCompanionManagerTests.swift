@@ -151,7 +151,11 @@ private final class FakeVoiceClient: PickyAgentClient, @unchecked Sendable {
             _commands.append(command)
         }
     }
-    func sendAwaitingError(_ command: PickyCommandEnvelope, timeout: TimeInterval) async throws -> PickyErrorEvent? {
+    func sendAwaitingError(
+        _ command: PickyCommandEnvelope,
+        timeout: TimeInterval,
+        requireAcknowledgement: Bool
+    ) async throws -> PickyErrorEvent? {
         try await send(command)
         if command.type == .abortMainAgent {
             await abortMainAgentGate?.wait()

@@ -5940,6 +5940,104 @@ describe("SessionSupervisor", () => {
     expect(runtime.resumeCalls).toEqual([{ sessionFilePath: "/tmp/product-pi-session.jsonl", cwd: "/tmp/product", sessionId: "restored-product-session" }]);
   });
 
+  it("direct runtime selections publish the actual assistant run without changing the cycle scope", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-runtime-control-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("runtime controls"));
+    runtime.handle!.assistantRunMetadata = { model: "openai-codex/gpt-5.5", thinkingLevel: "low" };
+
+    await expect(supervisor.listSessionRuntimeOptions(session.id)).resolves.toEqual(runtime.handle!.runtimeOptions);
+    await expect(supervisor.setSessionModel(session.id, "openai-codex", "gpt-5.5")).resolves.toMatchObject({ currentAssistantRun: { model: "openai-codex/gpt-5.5" } });
+    await expect(supervisor.setSessionThinkingLevel(session.id, "high")).resolves.toMatchObject({ currentAssistantRun: { thinkingLevel: "low" } });
+    expect(runtime.handle!.exactModels).toEqual([{ provider: "openai-codex", modelId: "gpt-5.5" }]);
+    expect(runtime.handle!.modelPatterns).toEqual([]);
+  });
+
+  it("resolves a detached runtime before serializing direct model mutations", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-runtime-control-resume-"));
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "restored-runtime-control-session",
+      title: "Restored runtime control session",
+      status: "completed",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      logs: ["pi session: /tmp/restored-runtime-control.jsonl"],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+    });
+    const runtime = new DeferredResumeRuntime();
+    const supervisor = new SessionSupervisor(runtime, store);
+    await supervisor.load();
+
+    const selection = supervisor.setSessionModel("restored-runtime-control-session", "openai-codex", "gpt-5.5");
+    await waitUntil(() => runtime.resumeCalls.length === 1);
+    runtime.resolvePendingResume();
+
+    await expect(selection).resolves.toMatchObject({ currentAssistantRun: { model: "openai-codex/gpt-5.5" } });
+    expect(runtime.handle?.exactModels).toEqual([{ provider: "openai-codex", modelId: "gpt-5.5" }]);
+  });
+
+  it("preserves direct model mutation admission order while a detached runtime resumes", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-runtime-control-resume-fifo-"));
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "restored-runtime-control-fifo-session",
+      title: "Restored runtime control FIFO session",
+      status: "completed",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      logs: ["pi session: /tmp/restored-runtime-control-fifo.jsonl"],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+    });
+    const runtime = new DeferredResumeRuntime();
+    const supervisor = new SessionSupervisor(runtime, store);
+    await supervisor.load();
+
+    const first = supervisor.setSessionModel("restored-runtime-control-fifo-session", "provider", "first");
+    await waitUntil(() => runtime.resumeCalls.length === 1);
+    const second = supervisor.setSessionModel("restored-runtime-control-fifo-session", "provider", "second");
+    runtime.resolvePendingResume();
+
+    await Promise.all([first, second]);
+    expect(runtime.handle?.exactModels).toEqual([
+      { provider: "provider", modelId: "first" },
+      { provider: "provider", modelId: "second" },
+    ]);
+  });
+
+  it("serializes concurrent direct model mutations in FIFO order", async () => {
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(await mkdtemp(join(tmpdir(), "picky-agentd-runtime-control-fifo-"))));
+    await supervisor.load();
+    const session = await supervisor.create(context("runtime controls fifo"));
+    let releaseFirst!: () => void;
+    const firstMutation = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    runtime.handle!.onSetExactModel = async (_handle, model) => {
+      if (model.modelId === "first") await firstMutation;
+    };
+
+    const first = supervisor.setSessionModel(session.id, "provider", "first");
+    await waitUntil(() => runtime.handle!.exactModels.length === 1);
+    const second = supervisor.setSessionModel(session.id, "provider", "second");
+    await settle();
+    expect(runtime.handle!.exactModels).toEqual([{ provider: "provider", modelId: "first" }]);
+
+    releaseFirst();
+    await Promise.all([first, second]);
+    expect(runtime.handle!.exactModels).toEqual([
+      { provider: "provider", modelId: "first" },
+      { provider: "provider", modelId: "second" },
+    ]);
+  });
+
   it("shares a pending resumed Pickle runtime between slash command listing and model cycling", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-resume-single-flight-"));
     const store = new SessionStore(dir);
@@ -8556,6 +8654,9 @@ class ManualHandle implements RuntimeSessionHandle {
   modelPatterns: Array<string | undefined> = [];
   modelCycleDirections: ModelCycleDirection[] = [];
   modelCycleResults: RuntimeAssistantRunMetadata[] = [];
+  runtimeOptions = { models: [{ provider: "openai-codex", modelId: "gpt-5.5", displayName: "GPT-5.5", pattern: "openai-codex/gpt-5.5" }], thinkingLevels: ["low", "high"] as ThinkingLevel[] };
+  exactModels: Array<{ provider: string; modelId: string }> = [];
+  onSetExactModel?: (handle: ManualHandle, model: { provider: string; modelId: string }) => void | Promise<void>;
   userBashExecutions: Array<{ command: string; excludeFromContext?: boolean }> = [];
   newSessionCalls = 0;
   sessionFilePath?: string;
@@ -8655,6 +8756,16 @@ class ManualHandle implements RuntimeSessionHandle {
   }
   setThinkingLevel(level: ThinkingLevel): void {
     this.thinkingLevels.push(level);
+  }
+  async listRuntimeOptions() {
+    return this.runtimeOptions;
+  }
+  async setExactModel(provider: string, modelId: string): Promise<RuntimeAssistantRunMetadata | undefined> {
+    const model = { provider, modelId };
+    this.exactModels.push(model);
+    await this.onSetExactModel?.(this, model);
+    this.assistantRunMetadata = { model: `${provider}/${modelId}`, thinkingLevel: this.assistantRunMetadata?.thinkingLevel };
+    return this.assistantRunMetadata;
   }
   async setModel(pattern?: string): Promise<RuntimeAssistantRunMetadata | undefined> {
     const normalized = pattern?.trim() || undefined;

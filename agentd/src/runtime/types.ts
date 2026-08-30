@@ -75,6 +75,18 @@ export interface RuntimeModelOption {
   pattern: string;
 }
 
+export interface RuntimeModelIdentity {
+  provider: string;
+  modelId: string;
+}
+
+export interface RuntimeSessionOptions {
+  models: RuntimeModelOption[];
+  thinkingLevels: ThinkingLevel[];
+  /** Exact active identity for selection UI. Labels and model IDs are not unique. */
+  currentModel?: RuntimeModelIdentity;
+}
+
 export type RuntimeEvent =
   | { type: "log"; line: string }
   | { type: "assistant_delta"; delta: string; inputId?: string }
@@ -151,6 +163,9 @@ export interface RuntimeSessionHandle {
   getAssistantRunMetadata?(): RuntimeAssistantRunMetadata | undefined;
   cycleThinkingLevel?(): RuntimeAssistantRunMetadata | undefined;
   setModel?(pattern?: string): Promise<RuntimeAssistantRunMetadata | undefined>;
+  /** Direct selection keeps Pi's existing scopedModels unchanged. */
+  setExactModel?(provider: string, modelId: string): Promise<RuntimeAssistantRunMetadata | undefined>;
+  listRuntimeOptions?(): Promise<RuntimeSessionOptions>;
   cycleModel?(direction: ModelCycleDirection): Promise<RuntimeAssistantRunMetadata | undefined>;
   listSlashCommands?(): RuntimeSlashCommand[] | Promise<RuntimeSlashCommand[]>;
   getAutocompleteCapabilities?(): RuntimeAutocompleteCapabilities;

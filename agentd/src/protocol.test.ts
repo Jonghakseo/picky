@@ -486,6 +486,28 @@ describe("protocol contract fixtures", () => {
     })).toMatchObject({ type: "listRewindTargets", sessionId: "session-001" });
 
     expect(CommandEnvelopeSchema.parse({
+      id: "cmd-runtime-options",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "listSessionRuntimeOptions",
+      sessionId: "session-001",
+    })).toMatchObject({ type: "listSessionRuntimeOptions", sessionId: "session-001" });
+    expect(CommandEnvelopeSchema.parse({
+      id: "cmd-runtime-model",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "setSessionModel",
+      sessionId: "session-001",
+      provider: "openai-codex",
+      modelId: "gpt-5.5",
+    })).toMatchObject({ type: "setSessionModel", provider: "openai-codex", modelId: "gpt-5.5" });
+    expect(CommandEnvelopeSchema.parse({
+      id: "cmd-runtime-thinking",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "setSessionThinkingLevel",
+      sessionId: "session-001",
+      thinkingLevel: "high",
+    })).toMatchObject({ type: "setSessionThinkingLevel", thinkingLevel: "high" });
+
+    expect(CommandEnvelopeSchema.parse({
       id: "cmd-session-diff",
       protocolVersion: PROTOCOL_VERSION,
       type: "getSessionDiff",
@@ -521,6 +543,18 @@ describe("protocol contract fixtures", () => {
       filesTruncated: false,
       requestId: "request-session-diff",
     })).toMatchObject({ type: "sessionDiffResult", files: [{ path: "source.ts", additions: 3 }], requestId: "request-session-diff" });
+
+    expect(EventEnvelopeSchema.parse({
+      id: "event-runtime-options",
+      protocolVersion: PROTOCOL_VERSION,
+      timestamp: "2026-07-19T00:00:00.000Z",
+      type: "sessionRuntimeOptionsSnapshot",
+      sessionId: "session-001",
+      requestId: "cmd-runtime-options",
+      models: [{ provider: "openai-codex", modelId: "gpt-5.5", displayName: "GPT-5.5", pattern: "openai-codex/gpt-5.5" }],
+      thinkingLevels: ["low", "high"],
+      currentModel: { provider: "openai-codex", modelId: "gpt-5.5" },
+    })).toMatchObject({ type: "sessionRuntimeOptionsSnapshot", sessionId: "session-001", requestId: "cmd-runtime-options", thinkingLevels: ["low", "high"], currentModel: { provider: "openai-codex", modelId: "gpt-5.5" } });
 
     expect(EventEnvelopeSchema.parse({
       id: "event-rewind-targets",

@@ -3,7 +3,7 @@ export type SocketDialect = "negotiating" | "v1" | "v2";
 const LEGACY_SESSION_PROJECTION_COMMANDS = new Set([
   "routeTask", "createTask", "createEmptyPickleSession", "createPickleFromHandoff", "submitMainFromExternal", "createPickleFromExternal", "createPickleFromMain",
   "duplicatePickleSession", "pinPickleSession", "setNotifyMainOnCompletion", "setSessionArchived", "deleteSession",
-  "cycleSessionThinkingLevel", "cycleSessionModel", "clearQueue", "syncTerminalSession", "setTerminalSessionTailEnabled",
+  "cycleSessionThinkingLevel", "cycleSessionModel", "listSessionRuntimeOptions", "setSessionModel", "setSessionThinkingLevel", "clearQueue", "syncTerminalSession", "setTerminalSessionTailEnabled",
   "followUp", "steer", "abort", "answerExtensionUi", "rewindSession", "getSession", "listSessions",
   "listPickles", "getPickle", "controlPickle", "setPickleArchived", "deletePickle",
 ]);

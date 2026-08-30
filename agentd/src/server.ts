@@ -630,6 +630,12 @@ export class AgentdServer {
         this.broadcastSessionSnapshot(sessions);
       },
       cycleSessionThinkingLevel: (cmd) => this.options.supervisor.cycleSessionThinkingLevel(cmd.sessionId),
+      listSessionRuntimeOptions: async (cmd) => {
+        const options = await this.options.supervisor.listSessionRuntimeOptions(cmd.sessionId);
+        this.send(ws, { type: "sessionRuntimeOptionsSnapshot", sessionId: cmd.sessionId, requestId: cmd.id, ...options });
+      },
+      setSessionModel: (cmd) => this.options.supervisor.setSessionModel(cmd.sessionId, cmd.provider, cmd.modelId),
+      setSessionThinkingLevel: (cmd) => this.options.supervisor.setSessionThinkingLevel(cmd.sessionId, cmd.thinkingLevel),
       cycleSessionModel: (cmd) => this.options.supervisor.cycleSessionModel(cmd.sessionId, cmd.direction),
       clearQueue: (cmd) => this.options.supervisor.clearQueue(cmd.sessionId, cmd.kind),
       syncTerminalSession: (cmd) => this.options.supervisor.syncTerminalSession(cmd.sessionId, cmd.baselinePiMessageId),
@@ -1141,6 +1147,24 @@ function repairLoneSurrogates(value: string): string {
   return result;
 }
 
+type RuntimeControlCommand = Extract<ReturnType<typeof parseCommand>, {
+  type: "cycleSessionThinkingLevel" | "listSessionRuntimeOptions" | "setSessionModel" | "setSessionThinkingLevel" | "cycleSessionModel";
+}>;
+
+function runtimeControlCommandLogFields(command: RuntimeControlCommand): Record<string, string | number | undefined> {
+  switch (command.type) {
+    case "cycleSessionThinkingLevel":
+    case "listSessionRuntimeOptions":
+      return { commandId: command.id, type: command.type, sessionId: command.sessionId };
+    case "setSessionModel":
+      return { commandId: command.id, type: command.type, sessionId: command.sessionId, provider: command.provider, modelId: command.modelId };
+    case "setSessionThinkingLevel":
+      return { commandId: command.id, type: command.type, sessionId: command.sessionId, thinkingLevel: command.thinkingLevel };
+    case "cycleSessionModel":
+      return { commandId: command.id, type: command.type, sessionId: command.sessionId, direction: command.direction };
+  }
+}
+
 // eslint-disable-next-line complexity -- This exhaustive protocol projection intentionally mirrors every command variant without executing behavior.
 export function commandLogFields(command: ReturnType<typeof parseCommand>): Record<string, string | number | undefined> {
   switch (command.type) {
@@ -1198,10 +1222,8 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, action: command.pickleAction, textChars: command.text?.length, caller: command.caller };
     case "setPickleArchived":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, archived: command.archived ? 1 : 0, caller: command.caller };
-    case "cycleSessionThinkingLevel":
-      return { commandId: command.id, type: command.type, sessionId: command.sessionId };
-    case "cycleSessionModel":
-      return { commandId: command.id, type: command.type, sessionId: command.sessionId, direction: command.direction };
+    case "cycleSessionThinkingLevel": case "listSessionRuntimeOptions": case "setSessionModel": case "setSessionThinkingLevel": case "cycleSessionModel":
+      return runtimeControlCommandLogFields(command);
     case "clearQueue":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, kind: command.kind };
     case "syncTerminalSession":
@@ -1281,8 +1303,8 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
     case "mainMessagesSnapshot": return { eventId: event.id, type: event.type, messages: event.messages.length };
     case "mainMessageAppended":
       return { eventId: event.id, type: event.type, role: event.message.role, textChars: event.message.text.length };
-    case "mainAgentModelsSnapshot":
-      return { eventId: event.id, type: event.type, models: event.models.length };
+    case "mainAgentModelsSnapshot": return { eventId: event.id, type: event.type, models: event.models.length };
+    case "sessionRuntimeOptionsSnapshot": return { eventId: event.id, type: event.type, sessionId: event.sessionId, requestId: event.requestId, models: event.models.length, thinkingLevels: event.thinkingLevels.length };
     case "mainActivityUpdated":
       return { eventId: event.id, type: event.type, kind: event.activity?.kind, tool: event.activity?.toolName, status: event.activity?.status };
     case "mainExtensionUiRequested":

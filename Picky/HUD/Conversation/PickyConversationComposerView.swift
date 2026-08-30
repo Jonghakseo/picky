@@ -56,6 +56,14 @@ struct PickyConversationComposerView: View {
     @State private var queueActionInFlight: PickyQueueDockAction?
     @State private var queueActionError: String?
     @State private var runtimeActionError: String?
+    @State private var runtimeOptions: PickySessionRuntimeOptions?
+    @State private var modelPickerLoadState: PickyComposerRuntimeOptionsLoadState = .idle
+    @State private var runtimeSessionGeneration = 0
+    @State private var runtimeOptionsLoadGeneration = 0
+    @State private var runtimeOptionsLoadTask: Task<Void, Never>?
+    @State private var isModelPickerPresented = false
+    @State private var isModelActionInFlight = false
+    @State private var isThinkingActionInFlight = false
     @State private var isAttachmentPickerPresented = false
 
     init(
@@ -158,11 +166,13 @@ struct PickyConversationComposerView: View {
             restorePersistedAttachmentsIfNeeded()
             applyComposerDraftRequestIfNeeded(commands.composerDraftRequest(for: session.id))
             synchronizeAutocompleteInput(text: draft)
+            loadRuntimeOptions(for: session.id)
         }
         .onDisappear {
             commands.updateComposerDraft(draft, sessionID: session.id)
             persistAttachments()
             removeKeyDownMonitor()
+            runtimeOptionsLoadTask?.cancel()
             onTransientHeightChange(0)
         }
         .onChange(of: commands.composerDraftRequest(for: session.id)) { _, request in
@@ -186,6 +196,8 @@ struct PickyConversationComposerView: View {
             resetAutocompleteState()
             synchronizeAutocompleteInput(text: draft)
             requestAutocompleteCapabilities()
+            resetRuntimeControls()
+            loadRuntimeOptions(for: session.id)
         }
         .onChange(of: attachments) { _, _ in
             persistAttachments()
@@ -279,8 +291,16 @@ struct PickyConversationComposerView: View {
             presentation: runtimePresentation,
             heightTier: focusStackHeightTier,
             actionError: runtimeActionError,
-            onCycleModel: { cycleModel(direction: .forward) },
-            onCycleThinkingLevel: cycleThinkingLevel
+            sessionID: session.id,
+            isModelPickerPresented: $isModelPickerPresented,
+            runtimeOptions: runtimeOptions,
+            modelPickerLoadState: modelPickerLoadState,
+            isModelActionInFlight: isModelActionInFlight,
+            isThinkingActionInFlight: isThinkingActionInFlight,
+            onOpenModelPicker: openModelPicker,
+            onRetryRuntimeOptions: { loadRuntimeOptions(for: session.id) },
+            onSelectModel: selectModel,
+            onSelectThinkingLevel: selectThinkingLevel
         )
     }
 
@@ -1429,6 +1449,107 @@ struct PickyConversationComposerView: View {
         )
     }
 
+    private func openModelPicker() {
+        isModelPickerPresented = true
+        loadRuntimeOptions(for: session.id)
+    }
+
+    private func resetRuntimeControls() {
+        runtimeSessionGeneration += 1
+        runtimeOptionsLoadGeneration += 1
+        runtimeOptionsLoadTask?.cancel()
+        runtimeOptionsLoadTask = nil
+        runtimeOptions = nil
+        modelPickerLoadState = .idle
+        runtimeActionError = nil
+        isModelPickerPresented = false
+        isModelActionInFlight = false
+        isThinkingActionInFlight = false
+    }
+
+    private func loadRuntimeOptions(for sessionID: String) {
+        runtimeOptionsLoadGeneration += 1
+        let token = RuntimeControlToken(sessionID: sessionID, sessionGeneration: runtimeSessionGeneration, requestGeneration: runtimeOptionsLoadGeneration)
+        runtimeOptionsLoadTask?.cancel()
+        runtimeOptions = nil
+        modelPickerLoadState = .loading
+        runtimeActionError = nil
+        runtimeOptionsLoadTask = Task {
+            do {
+                let options = try await commands.listSessionRuntimeOptions(sessionID: sessionID)
+                guard isCurrentRuntimeControlToken(token), !Task.isCancelled else { return }
+                runtimeOptions = options
+                modelPickerLoadState = options.models.isEmpty ? .empty : .loaded
+            } catch {
+                guard isCurrentRuntimeControlToken(token), !Task.isCancelled else { return }
+                modelPickerLoadState = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    private func selectModel(_ model: PickySessionRuntimeModelOption) {
+        let token = RuntimeSessionToken(sessionID: session.id, generation: runtimeSessionGeneration)
+        isModelActionInFlight = true
+        Task {
+            defer {
+                if isCurrentRuntimeSessionToken(token) {
+                    isModelActionInFlight = false
+                }
+            }
+            do {
+                try await commands.setSessionModel(sessionID: token.sessionID, provider: model.provider, modelID: model.modelId)
+                guard isCurrentRuntimeSessionToken(token) else { return }
+                isModelPickerPresented = false
+                runtimeActionError = nil
+                loadRuntimeOptions(for: token.sessionID)
+            } catch {
+                guard isCurrentRuntimeSessionToken(token) else { return }
+                runtimeActionError = error.localizedDescription
+            }
+        }
+    }
+
+    private func selectThinkingLevel(_ thinkingLevel: PickyMainAgentThinkingLevel) {
+        let token = RuntimeSessionToken(sessionID: session.id, generation: runtimeSessionGeneration)
+        isThinkingActionInFlight = true
+        Task {
+            defer {
+                if isCurrentRuntimeSessionToken(token) {
+                    isThinkingActionInFlight = false
+                }
+            }
+            do {
+                try await commands.setSessionThinkingLevel(sessionID: token.sessionID, thinkingLevel: thinkingLevel)
+                guard isCurrentRuntimeSessionToken(token) else { return }
+                runtimeActionError = nil
+                loadRuntimeOptions(for: token.sessionID)
+            } catch {
+                guard isCurrentRuntimeSessionToken(token) else { return }
+                runtimeActionError = error.localizedDescription
+            }
+        }
+    }
+
+    private func isCurrentRuntimeControlToken(_ token: RuntimeControlToken) -> Bool {
+        isCurrentRuntimeSessionToken(RuntimeSessionToken(sessionID: token.sessionID, generation: token.sessionGeneration))
+            && runtimeOptionsLoadGeneration == token.requestGeneration
+    }
+
+    private func isCurrentRuntimeSessionToken(_ token: RuntimeSessionToken) -> Bool {
+        session.id == token.sessionID && runtimeSessionGeneration == token.generation
+    }
+
+    private struct RuntimeControlToken: Equatable {
+        let sessionID: String
+        let sessionGeneration: Int
+        let requestGeneration: Int
+    }
+
+    private struct RuntimeSessionToken: Equatable {
+        let sessionID: String
+        let generation: Int
+    }
+
     private func cycleThinkingLevel() {
         Task {
             do {
@@ -1441,11 +1562,15 @@ struct PickyConversationComposerView: View {
     }
 
     private func cycleModel(direction: PickyModelCycleDirection) {
+        let token = RuntimeSessionToken(sessionID: session.id, generation: runtimeSessionGeneration)
         Task {
             do {
-                try await commands.cycleModel(sessionID: session.id, direction: direction)
+                try await commands.cycleModel(sessionID: token.sessionID, direction: direction)
+                guard isCurrentRuntimeSessionToken(token) else { return }
                 runtimeActionError = nil
+                loadRuntimeOptions(for: token.sessionID)
             } catch {
+                guard isCurrentRuntimeSessionToken(token) else { return }
                 runtimeActionError = error.localizedDescription
             }
         }

@@ -913,6 +913,34 @@ describe("AgentdServer", () => {
     observer.ws.close();
   });
 
+  it("returns correlated session runtime options only to the requesting client", async () => {
+    const requester = await connectWithHello();
+    const observer = await connectWithHello();
+    const options = vi.spyOn(supervisor, "listSessionRuntimeOptions").mockResolvedValue({
+      models: [{ provider: "openai-codex", modelId: "gpt-5.5", displayName: "GPT-5.5", pattern: "openai-codex/gpt-5.5" }],
+      thinkingLevels: ["low", "high"],
+      currentModel: { provider: "openai-codex", modelId: "gpt-5.5" },
+    });
+
+    requester.ws.send(JSON.stringify({
+      id: "cmd-runtime-options",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "listSessionRuntimeOptions",
+      sessionId: "pickle-runtime-options",
+    }));
+
+    await expect(waitForEvent(requester.ws, "sessionRuntimeOptionsSnapshot")).resolves.toMatchObject({
+      sessionId: "pickle-runtime-options",
+      requestId: "cmd-runtime-options",
+      currentModel: { provider: "openai-codex", modelId: "gpt-5.5" },
+      thinkingLevels: ["low", "high"],
+    });
+    expect(options).toHaveBeenCalledWith("pickle-runtime-options");
+    await expect(nextEventWithin(observer.ws, 50)).resolves.toBeUndefined();
+    requester.ws.close();
+    observer.ws.close();
+  });
+
   it("routes autocomplete capabilities, query, and apply responses only to the requesting client", async () => {
     const requester = await connectWithHello();
     const observer = await connectWithHello();

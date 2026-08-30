@@ -850,6 +850,39 @@ struct PickySessionViewModelTests {
         #expect(tools.first?.riskLevel == .elevated)
     }
 
+    @Test func runtimeModelSelectionSurfacesCorrelatedDaemonRejection() async throws {
+        let client = FakePickyAgentClient()
+        client.sendAwaitingErrorResult = PickyErrorEvent(
+            code: "runtime_rejected",
+            message: "Model is not available in this session",
+            commandId: "cmd-runtime-model"
+        )
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+
+        await #expect(throws: PickyRewindTargetRequestError.daemonError("Model is not available in this session")) {
+            try await viewModel.setSessionModel(sessionID: "session-1", provider: "openai-codex", modelID: "gpt-5.5")
+        }
+        #expect(client.sentCommands.last?.type == .setSessionModel)
+    }
+
+    @MainActor @Test func runtimeControlCommandsRequirePositiveDaemonAcknowledgements() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+
+        try await viewModel.setSessionModel(sessionID: "session-1", provider: "openai-codex", modelID: "gpt-5.5")
+        try await viewModel.setSessionThinkingLevel(sessionID: "session-1", thinkingLevel: .high)
+        try await viewModel.cycleThinkingLevel(sessionID: "session-1")
+        try await viewModel.cycleModel(sessionID: "session-1", direction: .backward)
+
+        #expect(client.sentCommands.suffix(4).map(\.type) == [
+            .setSessionModel,
+            .setSessionThinkingLevel,
+            .cycleSessionThinkingLevel,
+            .cycleSessionModel,
+        ])
+        #expect(client.acknowledgementRequirements.suffix(4) == [true, true, true, true])
+    }
+
     @MainActor @Test func stopButtonDispatchesAbortCommandAndUpdatesState() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())

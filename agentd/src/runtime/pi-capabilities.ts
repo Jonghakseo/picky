@@ -99,6 +99,21 @@ export function trySetThinkingLevel(session: AgentSession, sessionId: string, le
   return true;
 }
 
+export function availableThinkingLevels(session: AgentSession, sessionId: string): ThinkingLevel[] {
+  const method = (session as unknown as { getAvailableThinkingLevels?: () => unknown }).getAvailableThinkingLevels;
+  if (typeof method !== "function") {
+    warnOnceForAbsence(sessionId, "getAvailableThinkingLevels");
+    return [];
+  }
+  recordPresence(sessionId, "getAvailableThinkingLevels");
+  const levels = method.call(session);
+  return Array.isArray(levels) ? levels.filter(isThinkingLevel) : [];
+}
+
+function isThinkingLevel(value: unknown): value is ThinkingLevel {
+  return value === "off" || value === "minimal" || value === "low" || value === "medium" || value === "high" || value === "xhigh" || value === "max";
+}
+
 export function tryCycleThinkingLevel(session: AgentSession, sessionId: string): ThinkingLevel | undefined {
   const method = session.cycleThinkingLevel;
   if (typeof method !== "function") {

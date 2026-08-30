@@ -18,6 +18,7 @@ protocol PickyAgentClient: AnyObject {
     func submit(_ submission: PickyAgentSubmission) async throws -> PickyAgentSubmissionReceipt
     func send(_ command: PickyCommandEnvelope) async throws
     func listRewindTargets(sessionId: String) async throws -> [PickyRewindTarget]
+    func listSessionRuntimeOptions(sessionId: String) async throws -> PickySessionRuntimeOptions
     func rewindSession(sessionId: String, entryId: String) async throws
     /// Number of daemons `broadcast(_:)` will attempt to deliver to. Read
     /// synchronously before calling `broadcast` so the caller can set up
@@ -34,10 +35,10 @@ protocol PickyAgentClient: AnyObject {
     /// `type="error"` event matching `command.id`. Returns that event when the
     /// daemon rejects the command (e.g. `Unknown session: …`) so the caller
     /// can surface a real failure instead of treating fire-and-forget `send`
-    /// as a successful submission. Returns `nil` if no error arrives in time
-    /// — agentd does not currently emit positive acks, so absence of error
-    /// within the timeout is treated as success. Throws the underlying
-    /// transport error on connection failure.
+    /// as a successful submission. When `requireAcknowledgement` is true,
+    /// the call succeeds only after agentd emits the matching positive ack;
+    /// otherwise timeout without an error remains a compatibility success.
+    /// Throws the underlying transport error on connection failure.
     ///
     /// The default implementation simply forwards to `send` and returns nil,
     /// because intercepting error events requires owning a (single-subscriber)
@@ -45,8 +46,28 @@ protocol PickyAgentClient: AnyObject {
     /// overrides this; the raw `WebSocketPickyAgentClient` doesn't, because
     /// its events stream is consumed exclusively by either the router or a
     /// dedicated consumer like `CompanionManager`.
-    func sendAwaitingError(_ command: PickyCommandEnvelope, timeout: TimeInterval) async throws -> PickyErrorEvent?
+    func sendAwaitingError(
+        _ command: PickyCommandEnvelope,
+        timeout: TimeInterval,
+        requireAcknowledgement: Bool
+    ) async throws -> PickyErrorEvent?
     func disconnect()
+}
+
+struct PickySessionRuntimeOptions: Equatable {
+    let models: [PickySessionRuntimeModelOption]
+    let thinkingLevels: [PickyMainAgentThinkingLevel]
+    let currentModel: PickySessionRuntimeModelIdentity?
+
+    init(
+        models: [PickySessionRuntimeModelOption],
+        thinkingLevels: [PickyMainAgentThinkingLevel],
+        currentModel: PickySessionRuntimeModelIdentity? = nil
+    ) {
+        self.models = models
+        self.thinkingLevels = thinkingLevels
+        self.currentModel = currentModel
+    }
 }
 
 enum PickyRewindTargetRequestError: LocalizedError, Equatable {
@@ -100,11 +121,53 @@ extension PickyAgentClient {
         }
     }
 
+    func listSessionRuntimeOptions(sessionId: String) async throws -> PickySessionRuntimeOptions {
+        let command = PickyCommandEnvelope(type: .listSessionRuntimeOptions, sessionId: sessionId)
+        let stream = events
+        let eventTask = Task { () throws -> PickySessionRuntimeOptions in
+            for await clientEvent in stream {
+                guard case .protocolEvent(let envelope) = clientEvent else { continue }
+                switch envelope.event {
+                case .sessionRuntimeOptionsSnapshot(let responseSessionID, let requestID, let models, let thinkingLevels, let currentModel)
+                    where responseSessionID == sessionId && requestID == command.id:
+                    return PickySessionRuntimeOptions(models: models, thinkingLevels: thinkingLevels, currentModel: currentModel)
+                case .error(let error) where error.commandId == command.id:
+                    throw PickyRewindTargetRequestError.daemonError(error.message)
+                default: continue
+                }
+            }
+            throw PickyRewindTargetRequestError.disconnected
+        }
+        defer { eventTask.cancel() }
+        try await send(command)
+        return try await withThrowingTaskGroup(of: PickySessionRuntimeOptions.self) { group in
+            group.addTask { try await eventTask.value }
+            group.addTask {
+                try await Task.sleep(nanoseconds: 5_000_000_000)
+                throw PickyRewindTargetRequestError.timedOut
+            }
+            let options = try await group.next() ?? PickySessionRuntimeOptions(models: [], thinkingLevels: [], currentModel: nil)
+            group.cancelAll()
+            return options
+        }
+    }
+
     func rewindSession(sessionId: String, entryId: String) async throws {
         try await send(PickyCommandEnvelope(type: .rewindSession, sessionId: sessionId, entryId: entryId))
     }
 
-    func sendAwaitingError(_ command: PickyCommandEnvelope, timeout: TimeInterval = 1.0) async throws -> PickyErrorEvent? {
+    func sendAwaitingError(
+        _ command: PickyCommandEnvelope,
+        timeout: TimeInterval = 1.0
+    ) async throws -> PickyErrorEvent? {
+        try await sendAwaitingError(command, timeout: timeout, requireAcknowledgement: false)
+    }
+
+    func sendAwaitingError(
+        _ command: PickyCommandEnvelope,
+        timeout: TimeInterval,
+        requireAcknowledgement: Bool
+    ) async throws -> PickyErrorEvent? {
         try await send(command)
         return nil
     }
@@ -452,6 +515,8 @@ private extension PickyEventEnvelope {
             return "type=mainExtensionUiCancelled id=\(id) request=\(requestId)"
         case .mainAgentModelsSnapshot(let models):
             return "type=mainAgentModelsSnapshot id=\(id) models=\(models.count)"
+        case .sessionRuntimeOptionsSnapshot(let sessionId, let requestId, let models, let thinkingLevels, let currentModel):
+            return "type=sessionRuntimeOptionsSnapshot id=\(id) session=\(sessionId) request=\(requestId) models=\(models.count) thinkingLevels=\(thinkingLevels.count) currentModel=\(currentModel?.provider ?? "none")/\(currentModel?.modelId ?? "none")"
         case .piOAuthStatus(let status):
             return "type=piOAuthStatus id=\(id) request=\(status.requestId) provider=\(status.providerId.rawValue) configured=\(status.configured ? 1 : 0)"
         case .piOAuthUrlRequested(let request):

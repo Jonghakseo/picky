@@ -19,7 +19,7 @@ import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
 import { resolveTodoStateFromPiSessionEntries } from "../domain/todo-state.js";
 import { subagentGroupRunUpdatesFromCustomMessage, subagentRunUpdateFromCustomMessage } from "../domain/subagent-run-state.js";
 import { isTransientAgentBusyError } from "../domain/transient-runtime-error.js";
-import type { AgentRuntime, AnswerExtensionUiOptions, RewindBranchMessage, RewindResult, RewindTarget, RuntimeAssistantRunMetadata, RuntimeAutocompleteApplyRequest, RuntimeAutocompleteCapabilities, RuntimeAutocompleteCompletion, RuntimeAutocompleteQuery, RuntimeAutocompleteSuggestions, RuntimeBashExecutionResult, RuntimeEvent, RuntimeModelOption, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
+import type { AgentRuntime, AnswerExtensionUiOptions, RewindBranchMessage, RewindResult, RewindTarget, RuntimeAssistantRunMetadata, RuntimeAutocompleteApplyRequest, RuntimeAutocompleteCapabilities, RuntimeAutocompleteCompletion, RuntimeAutocompleteQuery, RuntimeAutocompleteSuggestions, RuntimeBashExecutionResult, RuntimeEvent, RuntimeModelOption, RuntimeSessionHandle, RuntimeSessionOptions, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
 import type { ModelCycleDirection, PickyQueueMode } from "../protocol.js";
 import { expectedInputDeliveryIndex, PiInputRewriteObserver } from "./pi-input-rewrite-observer.js";
 import { SubagentInvocationTracker } from "./subagent-invocation-tracker.js";
@@ -43,6 +43,7 @@ import {
   tryCompact as piTryCompact,
   tryCycleModel as piTryCycleModel,
   tryCycleThinkingLevel as piTryCycleThinkingLevel,
+  availableThinkingLevels as piAvailableThinkingLevels,
   tryGetBashSurface as piTryGetBashSurface,
   tryGetContextUsage as piTryGetContextUsage,
   tryRefreshSystemPromptFromActiveTools as piTryRefreshSystemPromptFromActiveTools,
@@ -495,6 +496,32 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     }
     const metadata = this.currentAssistantRunMetadata();
     logAgentd("pi model set", { sessionId: this.id, modelPattern: normalized, model: metadata?.model, thinkingLevel: metadata?.thinkingLevel });
+    return metadata;
+  }
+
+  async listRuntimeOptions(): Promise<RuntimeSessionOptions> {
+    const scopedModels = (this.runtime.session as unknown as { scopedModels?: ScopedModelOption[] }).scopedModels ?? [];
+    const models = scopedModels.length > 0
+      ? scopedModels.map((entry) => runtimeModelOptionFromModel(entry.model))
+      : (await availableModelsFromServices(this.runtime.services)).map(runtimeModelOptionFromModel);
+    const current = piReadModelMetadata(this.runtime.session);
+    return {
+      models,
+      thinkingLevels: piAvailableThinkingLevels(this.runtime.session, this.id),
+      ...(current?.provider && current.modelId ? { currentModel: { provider: current.provider, modelId: current.modelId } } : {}),
+    };
+  }
+
+  async setExactModel(provider: string, modelId: string): Promise<RuntimeAssistantRunMetadata | undefined> {
+    const options = await this.listRuntimeOptions();
+    const selected = options.models.find((model) => model.provider === provider && model.modelId === modelId);
+    if (!selected) throw new Error(`Model is not available in this session: ${provider}/${modelId}`);
+    const available = await availableModelsFromServices(this.runtime.services);
+    const model = available.find((candidate) => candidate.provider === provider && candidate.id === modelId);
+    if (!model) throw new Error(`Model is no longer available: ${provider}/${modelId}`);
+    await this.runtime.session.setModel(model);
+    const metadata = this.currentAssistantRunMetadata();
+    logAgentd("pi model directly selected", { sessionId: this.id, provider, modelId, model: metadata?.model, thinkingLevel: metadata?.thinkingLevel });
     return metadata;
   }
 

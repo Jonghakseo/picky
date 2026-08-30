@@ -24,6 +24,8 @@ final class FakePickyAgentClient: PickyAgentClient {
     @MainActor private(set) var submitted: [PickyAgentSubmission] = []
     @MainActor private(set) var sentCommands: [PickyCommandEnvelope] = []
     @MainActor var shouldThrowOnSend = false
+    @MainActor var sendAwaitingErrorResult: PickyErrorEvent?
+    @MainActor private(set) var acknowledgementRequirements: [Bool] = []
     var beforeSend: ((PickyCommandEnvelope) async -> Void)?
 
     init() {
@@ -45,6 +47,17 @@ final class FakePickyAgentClient: PickyAgentClient {
             await beforeSend(command)
         }
         await MainActor.run { sentCommands.append(command) }
+    }
+    func sendAwaitingError(
+        _ command: PickyCommandEnvelope,
+        timeout: TimeInterval,
+        requireAcknowledgement: Bool
+    ) async throws -> PickyErrorEvent? {
+        try await send(command)
+        return await MainActor.run {
+            acknowledgementRequirements.append(requireAcknowledgement)
+            return sendAwaitingErrorResult
+        }
     }
     func disconnect() { continuation.yield(.disconnected) }
     func emit(_ event: PickyClientEvent) { continuation.yield(event) }

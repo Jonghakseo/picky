@@ -132,9 +132,13 @@ if [ "$TARGET" = "conversation-composer" ]; then
     composer-four-lines-dark-ko.png
     composer-four-lines-light-ko.png
     composer-model-scope-exact-dark-ko.png
+    composer-model-scope-exact-light-ko.png
     composer-model-scope-project-override-dark-ko.png
     composer-model-scope-advanced-dark-ko.png
     composer-model-scope-current-outside-dark-ko.png
+    composer-model-picker-loading-dark-ko.png
+    composer-thinking-picker-dark-ko.png
+    composer-thinking-picker-light-ko.png
   )
 
   rm -rf "$OUTPUT"

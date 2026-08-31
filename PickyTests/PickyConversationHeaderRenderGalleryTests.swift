@@ -73,6 +73,43 @@ struct PickyConversationHeaderRenderGalleryTests {
         try writeGallery(requestFile: Self.composerOutputRequestFile, scenes: makeComposerScenes())
     }
 
+    @Test func quickRuntimePickerKeepsStableSizeAcrossLoadingAndLoadedContent() throws {
+        let model = PickySessionRuntimeModelOption(
+            provider: "anthropic",
+            modelId: "claude-sonnet",
+            displayName: "anthropic/claude-sonnet",
+            pattern: "anthropic/claude-sonnet"
+        )
+        let options = PickySessionRuntimeOptions(
+            models: [model],
+            allModels: [model],
+            globalScope: .init(
+                mode: .all,
+                patterns: [],
+                editable: true,
+                revision: "gallery-all",
+                resolvedModelIds: [],
+                reason: nil
+            ),
+            thinkingLevels: [.low],
+            currentModel: .init(provider: model.provider, modelId: model.modelId)
+        )
+        let loadingSize = try render(runtimePickerScene(
+            name: "runtime-picker-loading",
+            options: options,
+            initialScreen: .quick,
+            loadState: .loading
+        )).logicalSize
+        let loadedSize = try render(runtimePickerScene(
+            name: "runtime-picker-loaded",
+            options: options,
+            initialScreen: .quick,
+            loadState: .loaded
+        )).logicalSize
+
+        #expect(loadingSize == loadedSize)
+    }
+
     private func writeGallery(requestFile: URL, scenes: [Scene]) throws {
         guard let rawOutput = try? String(contentsOf: requestFile, encoding: .utf8)
             .trimmingCharacters(in: .whitespacesAndNewlines),
@@ -265,6 +302,12 @@ struct PickyConversationHeaderRenderGalleryTests {
                 initialScreen: .allModels
             ),
             runtimePickerScene(
+                name: "composer-model-scope-exact-light-ko.png",
+                appearance: .light,
+                options: PickySessionRuntimeOptions(models: [catalog[0]], allModels: catalog, globalScope: exactScope, thinkingLevels: [.low], currentModel: .init(provider: "anthropic", modelId: "claude-sonnet")),
+                initialScreen: .allModels
+            ),
+            runtimePickerScene(
                 name: "composer-model-scope-project-override-dark-ko.png",
                 options: PickySessionRuntimeOptions(models: [catalog[1]], allModels: catalog, globalScope: allScope, projectScope: exactScope, effectiveScope: exactScope, thinkingLevels: [.low], currentModel: .init(provider: "openai-codex", modelId: "gpt-5.5")),
                 initialScreen: .allModels
@@ -279,17 +322,34 @@ struct PickyConversationHeaderRenderGalleryTests {
                 options: PickySessionRuntimeOptions(models: [catalog[0]], allModels: catalog, globalScope: exactScope, effectiveScope: exactScope, thinkingLevels: [.low], currentModel: .init(provider: "openai-codex", modelId: "gpt-5.5")),
                 initialScreen: .quick
             ),
+            runtimePickerScene(
+                name: "composer-model-picker-loading-dark-ko.png",
+                options: PickySessionRuntimeOptions(models: catalog, allModels: catalog, globalScope: allScope, thinkingLevels: [.low], currentModel: .init(provider: "anthropic", modelId: "claude-sonnet")),
+                initialScreen: .quick,
+                loadState: .loading
+            ),
+            runtimeThinkingPickerScene(
+                name: "composer-thinking-picker-dark-ko.png",
+                options: PickySessionRuntimeOptions(models: catalog, allModels: catalog, globalScope: allScope, thinkingLevels: [.off, .low, .medium, .high], currentModel: .init(provider: "anthropic", modelId: "claude-sonnet"))
+            ),
+            runtimeThinkingPickerScene(
+                name: "composer-thinking-picker-light-ko.png",
+                appearance: .light,
+                options: PickySessionRuntimeOptions(models: catalog, allModels: catalog, globalScope: allScope, thinkingLevels: [.off, .low, .medium, .high], currentModel: .init(provider: "anthropic", modelId: "claude-sonnet"))
+            ),
         ]
     }
 
     private func runtimePickerScene(
         name: String,
+        appearance: Appearance = .dark,
         options: PickySessionRuntimeOptions,
-        initialScreen: PickyComposerRuntimePickerScreen
+        initialScreen: PickyComposerRuntimePickerScreen,
+        loadState: PickyComposerRuntimeOptionsLoadState = .loaded
     ) -> Scene {
         Scene(
             name: name,
-            appearance: .dark,
+            appearance: appearance,
             content: AnyView(
                 PickyConversationRuntimeControlsView(
                     presentation: PickyComposerRuntimePresentation(assistantRun: .init(model: "openai-codex/gpt-5.5", thinkingLevel: .low)),
@@ -297,7 +357,7 @@ struct PickyConversationHeaderRenderGalleryTests {
                     sessionID: "gallery-runtime-scope",
                     isModelPickerPresented: .constant(true),
                     runtimeOptions: options,
-                    modelPickerLoadState: .loaded,
+                    modelPickerLoadState: loadState,
                     isModelActionInFlight: false,
                     isThinkingActionInFlight: false,
                     isGlobalScopeActionInFlight: false,
@@ -317,6 +377,44 @@ struct PickyConversationHeaderRenderGalleryTests {
                     onApplyGlobalScope: {}
                 )
                 .modelPicker
+            )
+        )
+    }
+
+    private func runtimeThinkingPickerScene(
+        name: String,
+        appearance: Appearance = .dark,
+        options: PickySessionRuntimeOptions
+    ) -> Scene {
+        Scene(
+            name: name,
+            appearance: appearance,
+            content: AnyView(
+                PickyConversationRuntimeControlsView(
+                    presentation: PickyComposerRuntimePresentation(assistantRun: .init(model: "anthropic/claude-sonnet", thinkingLevel: .high)),
+                    actionError: nil,
+                    sessionID: "gallery-runtime-thinking",
+                    isModelPickerPresented: .constant(false),
+                    runtimeOptions: options,
+                    modelPickerLoadState: .loaded,
+                    isModelActionInFlight: false,
+                    isThinkingActionInFlight: false,
+                    isGlobalScopeActionInFlight: false,
+                    pickleRuntimeDefaults: ("", .high),
+                    scopeStaging: .init(scope: options.globalScope),
+                    onOpenModelPicker: {},
+                    onRetryRuntimeOptions: {},
+                    onSelectModel: { _ in },
+                    onSelectThinkingLevel: { _ in },
+                    onSetNewPickleDefaultModel: { _ in },
+                    onSetNewPickleDefaultThinking: { _ in },
+                    onBeginGlobalScopeEditing: {},
+                    onSetAllModelsEnabled: { _, _ in },
+                    onSetStagedScopePattern: { _, _ in },
+                    onReloadGlobalScope: {},
+                    onApplyGlobalScope: {}
+                )
+                .thinkingPicker
             )
         )
     }

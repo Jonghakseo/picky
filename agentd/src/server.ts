@@ -11,6 +11,8 @@ import { SessionProjectionV2Broadcaster } from "./application/session-projection
 import { assertProtocolVersion } from "./application/protocol-version-guard.js";
 import { isLegacySessionProjectionEvent, isV2SessionProjectionEventType, SocketDialectRegistry } from "./application/socket-dialect.js";
 import type { SessionSupervisor } from "./session-supervisor.js";
+import { runtimeControlCommandLogFields } from "./domain/runtime-control-log-fields.js";
+import { sanitizeForJson } from "./domain/sanitize-for-json.js";
 import { logAgentd } from "./local-log.js";
 import { EdgeTTSServiceError } from "./edge-tts-service.js";
 import type { EdgeTTSService } from "./edge-tts-service.js";
@@ -1111,58 +1113,6 @@ function buildNeutralCliContext(payload: { cwd?: string; transcript?: string }):
     ...(payload.transcript !== undefined ? { transcript: payload.transcript } : {}),
     ...(payload.cwd !== undefined ? { cwd: payload.cwd } : {}),
   };
-}
-
-export function sanitizeForJson<T>(value: T): T {
-  if (typeof value === "string") return repairLoneSurrogates(value) as T;
-  if (Array.isArray(value)) return value.map((item) => sanitizeForJson(item)) as T;
-  if (value && typeof value === "object") {
-    const sanitized: Record<string, unknown> = {};
-    for (const [key, child] of Object.entries(value)) sanitized[key] = sanitizeForJson(child);
-    return sanitized as T;
-  }
-  return value;
-}
-
-function repairLoneSurrogates(value: string): string {
-  let result = "";
-  for (let index = 0; index < value.length; index += 1) {
-    const code = value.charCodeAt(index);
-    if (code >= 0xd800 && code <= 0xdbff) {
-      const next = value.charCodeAt(index + 1);
-      if (next >= 0xdc00 && next <= 0xdfff) {
-        result += value[index] + value[index + 1];
-        index += 1;
-      } else {
-        result += "\uFFFD";
-      }
-      continue;
-    }
-    if (code >= 0xdc00 && code <= 0xdfff) {
-      result += "\uFFFD";
-      continue;
-    }
-    result += value[index];
-  }
-  return result;
-}
-
-type RuntimeControlCommand = Extract<ReturnType<typeof parseCommand>, {
-  type: "cycleSessionThinkingLevel" | "listSessionRuntimeOptions" | "setSessionModel" | "setSessionThinkingLevel" | "cycleSessionModel";
-}>;
-
-function runtimeControlCommandLogFields(command: RuntimeControlCommand): Record<string, string | number | undefined> {
-  switch (command.type) {
-    case "cycleSessionThinkingLevel":
-    case "listSessionRuntimeOptions":
-      return { commandId: command.id, type: command.type, sessionId: command.sessionId };
-    case "setSessionModel":
-      return { commandId: command.id, type: command.type, sessionId: command.sessionId, provider: command.provider, modelId: command.modelId };
-    case "setSessionThinkingLevel":
-      return { commandId: command.id, type: command.type, sessionId: command.sessionId, thinkingLevel: command.thinkingLevel };
-    case "cycleSessionModel":
-      return { commandId: command.id, type: command.type, sessionId: command.sessionId, direction: command.direction };
-  }
 }
 
 // eslint-disable-next-line complexity -- This exhaustive protocol projection intentionally mirrors every command variant without executing behavior.

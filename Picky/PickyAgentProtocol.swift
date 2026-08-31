@@ -1020,19 +1020,6 @@ struct PickyMainAgentMessage: Codable, Equatable, Identifiable {
     let createdAt: Date
 }
 
-struct PickySessionRuntimeModelOption: Codable, Equatable, Identifiable {
-    var id: String { "\(provider)/\(modelId)" }
-    let provider: String
-    let modelId: String
-    let displayName: String
-    let pattern: String
-}
-
-struct PickySessionRuntimeModelIdentity: Codable, Equatable {
-    let provider: String
-    let modelId: String
-}
-
 struct PickyMainAgentModelOption: Codable, Equatable, Identifiable {
     var id: String { pattern }
     let provider: String

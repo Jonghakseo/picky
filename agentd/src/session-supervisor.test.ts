@@ -6020,18 +6020,24 @@ describe("SessionSupervisor", () => {
     const session = await supervisor.create(context("runtime controls fifo"));
     let releaseFirst!: () => void;
     const firstMutation = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    let firstCompleted = false;
+    let secondStartedBeforeFirstCompleted = false;
     runtime.handle!.onSetExactModel = async (_handle, model) => {
-      if (model.modelId === "first") await firstMutation;
+      if (model.modelId === "first") {
+        await firstMutation;
+        firstCompleted = true;
+        return;
+      }
+      if (!firstCompleted) secondStartedBeforeFirstCompleted = true;
     };
 
     const first = supervisor.setSessionModel(session.id, "provider", "first");
     await waitUntil(() => runtime.handle!.exactModels.length === 1);
     const second = supervisor.setSessionModel(session.id, "provider", "second");
-    await settle();
-    expect(runtime.handle!.exactModels).toEqual([{ provider: "provider", modelId: "first" }]);
 
     releaseFirst();
     await Promise.all([first, second]);
+    expect(secondStartedBeforeFirstCompleted).toBe(false);
     expect(runtime.handle!.exactModels).toEqual([
       { provider: "provider", modelId: "first" },
       { provider: "provider", modelId: "second" },

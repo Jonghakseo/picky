@@ -26,7 +26,17 @@ import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SU
 import { sessionWithAppendedLog } from "./session-log-append.js";
 import type { AgentRuntime, RewindTarget, RuntimeAutocompleteApplyRequest, RuntimeAutocompleteCapabilities, RuntimeAutocompleteCompletion, RuntimeAutocompleteQuery, RuntimeAutocompleteSuggestions, RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./runtime/types.js";
 import { readSessionDiff, type SessionDiffResult } from "./application/session-diff.js";
+import { KeyedSerialQueue } from "./domain/keyed-serial-queue.js";
+import { executeUserBash as runUserBash, type UserBashDeps } from "./application/user-bash-execution.js";
 import { listRewindTargets as rewindListTargets, rewindToEntry as runRewindToEntry, type RewindDeps } from "./application/session-rewind.js";
+import {
+  cycleModel as cycleRuntimeModel,
+  cycleThinkingLevel as cycleRuntimeThinkingLevel,
+  listRuntimeOptions as listRuntimeControlOptions,
+  setModel as setRuntimeModel,
+  setThinkingLevel as setRuntimeThinkingLevel,
+  type RuntimeControlDeps,
+} from "./application/session-runtime-controls.js";
 import type { SessionDiffView } from "./domain/git-diff.js";
 import { hasActivity, zeroActivitySummary } from "./domain/activity-summary.js";
 import { diffQueueRemovedItems, dropAlreadyMaterializedQueueEntries, extractPickyPromptUserInstruction, queueItems, queueSubmissionSummary, queueTextMatchesUserText, sameQueueItems, type PendingQueueDelivery } from "./domain/queue-policy.js";
@@ -143,7 +153,7 @@ export class SessionSupervisor extends EventEmitter {
   private readonly sessionProjectionEpoch = randomUUID();
   private queueUpdateChains = new Map<string, Promise<void>>();
   private activityUpdateChains = new Map<string, Promise<void>>();
-  private runtimeControlChains = new Map<string, Promise<void>>();
+  private runtimeControlQueue = new KeyedSerialQueue();
   private turnActivity = new Map<string, PickyActivitySummary>();
   private runtimeEventChains = new Map<string, Promise<void>>();
   private emitChains = new Map<string, Promise<void>>();
@@ -172,7 +182,7 @@ export class SessionSupervisor extends EventEmitter {
   // other's in-memory cache + persisted state. The status:running patch and the synthetic
   // status:completed (from /name interception) racing against session_info/log patches was
   // observed to revert the session back to 'running' after a /name slash command.
-  private patchChains = new Map<string, Promise<void>>();
+  private patchChains = new KeyedSerialQueue();
   private mainStateWriteChain = Promise.resolve();
   private readonly terminalSessionCoordinator: TerminalSessionCoordinator;
   private readonly terminalManualCompactionCoordinator: TerminalManualCompactionCoordinator;
@@ -1958,86 +1968,44 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   async listSessionRuntimeOptions(sessionId: string) {
-    const handle = await this.runtimeHandleForSessionCommand(sessionId, "list runtime options");
-    if (!handle.listRuntimeOptions) throw new Error("Runtime session does not support runtime options");
-    return await handle.listRuntimeOptions();
+    return listRuntimeControlOptions(this.runtimeControlDeps(), sessionId);
   }
 
   async setSessionModel(sessionId: string, provider: string, modelId: string): Promise<PickyAgentSession> {
-    return this.applyRuntimeControlMutation(sessionId, "set model", async (handle) => {
-      if (!handle.setExactModel) throw new Error("Runtime session does not support direct model selection");
-      return await handle.setExactModel(provider, modelId);
-    });
+    return this.runRuntimeControlMutation(sessionId, () => setRuntimeModel(this.runtimeControlDeps(), sessionId, provider, modelId));
   }
 
   async setSessionThinkingLevel(sessionId: string, thinkingLevel: ThinkingLevel): Promise<PickyAgentSession> {
-    return this.applyRuntimeControlMutation(sessionId, "set thinking level", async (handle) => {
-      if (!handle.setThinkingLevel) throw new Error("Runtime session does not support setting thinking level");
-      handle.setThinkingLevel(thinkingLevel);
-      return handle.getAssistantRunMetadata?.();
-    });
-  }
-
-  private async applyRuntimeControlMutation(
-    sessionId: string,
-    action: string,
-    mutate: (handle: RuntimeSessionHandle) => Promise<RuntimeAssistantRunMetadata | undefined>,
-  ): Promise<PickyAgentSession> {
-    return this.runRuntimeControlMutation(sessionId, async () => {
-      // Runtime reattachment persists through runSessionWrite. Resolve it inside the separate
-      // runtime-control admission chain, then serialize only the mutation's session commit.
-      const handle = await this.runtimeHandleForSessionCommand(sessionId, action);
-      let result: PickyAgentSession | undefined;
-      await this.runSessionWrite(sessionId, async () => {
-        const currentAssistantRun = await mutate(handle);
-        const before = this.mustGet(sessionId);
-        const after = currentAssistantRun
-          ? { ...before, currentAssistantRun, updatedAt: new Date().toISOString(), revision: nextRevision(before.revision ?? 0, true) }
-          : before;
-        if (after !== before) {
-          await this.store.save(after);
-          this.sessions.set(sessionId, after);
-          publishSessionProjectionCommit(this, before, after, {}, this.sessionProjectionEpoch);
-          this.emit("sessionMeta", after);
-        }
-        result = after;
-      });
-      return result!;
-    });
+    return this.runRuntimeControlMutation(sessionId, () => setRuntimeThinkingLevel(this.runtimeControlDeps(), sessionId, thinkingLevel));
   }
 
   async cycleSessionThinkingLevel(sessionId: string): Promise<PickyAgentSession> {
-    return this.runRuntimeControlMutation(sessionId, async () => {
-      const handle = await this.runtimeHandleForSessionCommand(sessionId, "cycle thinking level");
-      if (!handle.cycleThinkingLevel) throw new Error("Runtime session does not support cycling thinking level");
-      const currentAssistantRun = handle.cycleThinkingLevel();
-      if (currentAssistantRun) await this.patch(sessionId, { currentAssistantRun });
-      return this.mustGet(sessionId);
-    });
+    return this.runRuntimeControlMutation(sessionId, () => cycleRuntimeThinkingLevel(this.runtimeControlDeps(), sessionId));
   }
 
   async cycleSessionModel(sessionId: string, direction: ModelCycleDirection): Promise<PickyAgentSession> {
-    return this.runRuntimeControlMutation(sessionId, async () => {
-      const handle = await this.runtimeHandleForSessionCommand(sessionId, "cycle model");
-      if (!handle.cycleModel) throw new Error("Runtime session does not support cycling models");
-      const currentAssistantRun = await handle.cycleModel(direction);
-      if (currentAssistantRun) await this.patch(sessionId, { currentAssistantRun });
-      return this.mustGet(sessionId);
-    });
+    return this.runRuntimeControlMutation(sessionId, () => cycleRuntimeModel(this.runtimeControlDeps(), sessionId, direction));
   }
 
-  private async runRuntimeControlMutation<T>(sessionId: string, work: () => Promise<T>): Promise<T> {
-    const previous = this.runtimeControlChains.get(sessionId) ?? Promise.resolve();
-    let result: T | undefined;
-    const next = previous.catch(() => undefined).then(async () => { result = await work(); });
-    const tracked = next.catch(() => undefined);
-    this.runtimeControlChains.set(sessionId, tracked);
-    try {
-      await next;
-    } finally {
-      if (this.runtimeControlChains.get(sessionId) === tracked) this.runtimeControlChains.delete(sessionId);
-    }
-    return result!;
+  private runtimeControlDeps(): RuntimeControlDeps {
+    return {
+      handle: (id, action) => this.runtimeHandleForSessionCommand(id, action),
+      session: (id) => this.mustGet(id),
+      patch: (id, patch) => this.patch(id, patch),
+      commit: (id, work) => this.runSessionWrite(id, work),
+      applyAssistantRun: async (id, currentAssistantRun) => {
+        const before = this.mustGet(id);
+        const after = { ...before, currentAssistantRun, updatedAt: new Date().toISOString(), revision: nextRevision(before.revision ?? 0, true) };
+        await this.store.save(after);
+        this.sessions.set(id, after);
+        publishSessionProjectionCommit(this, before, after, {}, this.sessionProjectionEpoch);
+        this.emit("sessionMeta", after);
+      },
+    };
+  }
+
+  private runRuntimeControlMutation<T>(sessionId: string, work: () => Promise<T>): Promise<T> {
+    return this.runtimeControlQueue.run(sessionId, work);
   }
 
   async listRewindTargets(sessionId: string): Promise<RewindTarget[]> {
@@ -2188,76 +2156,23 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   private async executeUserBash(sessionId: string, input: UserBashInput, context?: PickyContextPacket): Promise<PickyAgentSession> {
-    const session = this.mustGet(sessionId);
-    await this.preparePickleSessionForUserInput(sessionId);
-    const awaitedPendingHandle = this.pendingRuntimeHandles.has(sessionId);
-    const handle = await this.runtimeHandleForUserInput(session, "user bash");
-    const terminalAfterHandle = awaitedPendingHandle ? await this.assertNotTerminalForUserInput(sessionId, "bash") : undefined;
-    if (terminalAfterHandle) return terminalAfterHandle;
-    const terminalAfterMissingHandle = !handle ? await this.assertNotTerminalForUserInput(sessionId, "bash") : undefined;
-    if (terminalAfterMissingHandle) return terminalAfterMissingHandle;
-    if (!handle?.executeUserBash) {
-      const reason = handle ? "Runtime does not support direct bash execution" : "Runtime session is not attached";
-      await this.appendLog(sessionId, `bash rejected: ${reason}`);
-      throw new Error(reason);
-    }
+    return runUserBash(this.userBashDeps(), sessionId, input, context);
+  }
 
-    const previous = this.mustGet(sessionId);
-    const wasRunning = previous.status === "running";
-    const prefix = input.excludeFromContext ? "!!" : "!";
-    logAgentd("user bash requested", { sessionId, commandChars: input.command.length, excludeFromContext: input.excludeFromContext, contextId: context?.id });
-    await this.appendLog(sessionId, `${prefix}${input.command}`);
-    await this.messageBuilder.flushAssistantText(sessionId);
-    await this.messageBuilder.flushThinking(sessionId);
-    await this.patch(sessionId, { status: "running", lastSummary: `Running bash: ${input.command}`, finalAnswer: undefined, thinkingPreview: undefined });
-
-    const liveMessageId = `msg-user-bash-${randomUUID()}`;
-    const liveStartedAt = Date.now();
-    const liveUpdateIntervalMs = Math.max(1, this.options.userBashLiveUpdateIntervalMs ?? 1000);
-    let liveOutput = "";
-    let lastLiveMessageText = "";
-    let livePublishChain = Promise.resolve();
-    const publishLiveMessage = (text: string): Promise<void> => {
-      if (text === lastLiveMessageText) return livePublishChain;
-      lastLiveMessageText = text;
-      livePublishChain = livePublishChain.then(() => this.messageBuilder.upsertSystemMessage(sessionId, liveMessageId, text));
-      return livePublishChain;
+  private userBashDeps(): UserBashDeps {
+    return {
+      session: (id) => this.mustGet(id),
+      prepareForUserInput: (id) => this.preparePickleSessionForUserInput(id),
+      hasPendingRuntimeHandle: (id) => this.pendingRuntimeHandles.has(id),
+      handleForUserInput: (session, action) => this.runtimeHandleForUserInput(session, action),
+      terminalSessionForUserInput: (id, kind) => this.assertNotTerminalForUserInput(id, kind),
+      appendLog: (id, line) => this.appendLog(id, line),
+      flushPendingAssistantOutput: async (id) => { await this.messageBuilder.flushAssistantText(id); await this.messageBuilder.flushThinking(id); },
+      upsertSystemMessage: (id, messageId, text) => this.messageBuilder.upsertSystemMessage(id, messageId, text),
+      recordError: (id, message) => this.messageBuilder.recordError(id, message),
+      patch: (id, patch) => this.patch(id, patch),
+      liveUpdateIntervalMs: this.options.userBashLiveUpdateIntervalMs ?? 1000,
     };
-    const publishRunningMessage = (): Promise<void> => publishLiveMessage(formatUserBashRunningSystemMessage(input, liveOutput, Date.now() - liveStartedAt));
-    const liveTimer = setInterval(() => { void publishRunningMessage(); }, liveUpdateIntervalMs);
-
-    try {
-      await publishRunningMessage();
-      const result = await handle.executeUserBash(input.command, {
-        excludeFromContext: input.excludeFromContext,
-        onOutputChunk: (chunk) => { liveOutput = appendLiveBashOutput(liveOutput, chunk); },
-      });
-      clearInterval(liveTimer);
-      const afterExecution = this.mustGet(sessionId);
-      if (["cancelled", "failed"].includes(afterExecution.status)) {
-        await livePublishChain;
-        return afterExecution;
-      }
-      await publishLiveMessage(formatUserBashSystemMessage(input, result));
-      await livePublishChain;
-      const summary = userBashSummary(input.command, result);
-      await this.patch(sessionId, wasRunning ? { lastSummary: summary, thinkingPreview: undefined } : { status: "completed", lastSummary: summary, thinkingPreview: undefined });
-      return this.mustGet(sessionId);
-    } catch (error) {
-      clearInterval(liveTimer);
-      const afterFailure = this.mustGet(sessionId);
-      if (["cancelled", "failed"].includes(afterFailure.status)) {
-        await livePublishChain;
-        return afterFailure;
-      }
-      const message = error instanceof Error ? error.message : String(error);
-      await publishLiveMessage(formatUserBashFailureSystemMessage(input, message, liveOutput));
-      await livePublishChain;
-      await this.appendLog(sessionId, `bash failed: ${message}`);
-      await this.messageBuilder.recordError(sessionId, `Bash failed: ${message}`);
-      await this.patch(sessionId, wasRunning ? { lastSummary: `Bash failed: ${message}`, thinkingPreview: undefined } : { status: "failed", lastSummary: `Bash failed: ${message}`, thinkingPreview: undefined });
-      throw error;
-    }
   }
 
   private async executeCompactCommandIfSupported(sessionId: string, text: string, handle: RuntimeSessionHandle): Promise<boolean> {
@@ -3040,15 +2955,7 @@ export class SessionSupervisor extends EventEmitter {
     return result!;
   }
   private async runSessionWrite(sessionId: string, work: () => Promise<void>): Promise<void> {
-    const previous = this.patchChains.get(sessionId) ?? Promise.resolve();
-    const next = previous.catch(() => undefined).then(work);
-    const tracked = next.catch(() => undefined);
-    this.patchChains.set(sessionId, tracked);
-    try {
-      await next;
-    } finally {
-      if (this.patchChains.get(sessionId) === tracked) this.patchChains.delete(sessionId);
-    }
+    await this.patchChains.run(sessionId, work);
   }
   private nextSeq(sessionId: string): number {
     const next = (this.sessionSeq.get(sessionId) ?? 0) + 1;

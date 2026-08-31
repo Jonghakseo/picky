@@ -39,7 +39,7 @@ type SupervisorInternals = {
     manualTerminalCompactionStatuses: Map<string, string>;
   };
   turnActivity: Map<string, unknown>;
-  patchChains: Map<string, Promise<void>>;
+  patchChains: { has(key: string): boolean };
   emitChains: Map<string, Promise<void>>;
   sessionSeq: Map<string, number>;
   pickleCompletionNotified: Set<string>;

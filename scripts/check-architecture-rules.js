@@ -627,7 +627,9 @@ function checkFileSizeRatchet() {
     ["Picky/Companion/CompanionPanelSettingsView.swift", 2150],
     ["Picky/Overlay/BlueCursorView.swift", 1830],
     ["Picky/App/Settings/PickySettings.swift", 1550],
+    ["Picky/PickyAgentProtocol.swift", 1509],
     ["agentd/src/session-supervisor.ts", 3000],
+    ["agentd/src/runtime/pi-sdk-runtime.ts", 1539],
   ]);
 
   const swiftFiles = walk("Picky", (file) => file.endsWith(".swift"));

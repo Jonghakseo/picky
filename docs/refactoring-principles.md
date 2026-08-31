@@ -225,6 +225,21 @@ Removing tests from the production length ratchets lowered both app-only error p
 to 2450. A 2026-08-30 SwiftLint run measured app maxima of 2376 lines for
 `file_length` and 2367 lines for `type_body_length`, both in `PickySessionViewModel`.
 
+#### 2026-08-31 runtime model-scope exceptions
+
+Global model-scope support added wire-contract fields to `PickyAgentProtocol.swift`
+and Pi settings/session orchestration to `pi-sdk-runtime.ts`. The architecture guard
+measured 1509 and 1539 lines respectively, just above its 1500-line production-file
+threshold.
+
+Decision: pin both files to those exact measured counts. The protocol file remains
+the single app-daemon contract decoder, and `PiSdkRuntime` remains the adapter that
+owns Pi session creation and runtime mutations. Splitting either only to cross the
+line-count threshold would not create a clearer invariant owner. Protocol contract,
+Pi runtime, model-resolution, and global settings CAS tests characterize the added
+behavior. These pins may only stay level or shrink; a future extraction must move a
+coherent contract or runtime responsibility with its tests.
+
 ## 4. Review checklist
 
 For each structural PR, reviewers should ask:

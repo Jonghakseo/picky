@@ -195,7 +195,30 @@ struct PickyAgentClientTests {
         #expect(commandJSON.contains("\"expectedRevision\":\"opaque-revision\"") || commandJSON.contains("\"expectedRevision\" : \"opaque-revision\""))
 
         let event = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: Data("""
-        {"id":"event-runtime-scope","protocolVersion":"2026-08-25","timestamp":"2026-05-01T00:00:02.000Z","type":"sessionRuntimeOptionsSnapshot","sessionId":"session-1","requestId":"cmd-runtime-options","models":[{"provider":"openai-codex","modelId":"gpt-5.5","displayName":"openai-codex/gpt-5.5","pattern":"openai-codex/gpt-5.5"}],"allModels":[{"provider":"openai-codex","modelId":"gpt-5.5","displayName":"openai-codex/gpt-5.5","pattern":"openai-codex/gpt-5.5"}],"globalScope":{"mode":"exact","patterns":["openai-codex/gpt-5.5"],"editable":true,"revision":"opaque-revision","resolvedModelIds":["openai-codex/gpt-5.5"]},"projectScope":{"mode":"all","patterns":[],"editable":true},"effectiveScope":{"mode":"all","patterns":[],"editable":true},"thinkingLevels":["low"]}
+        {
+          "id": "event-runtime-scope",
+          "protocolVersion": "2026-08-25",
+          "timestamp": "2026-05-01T00:00:02.000Z",
+          "type": "sessionRuntimeOptionsSnapshot",
+          "sessionId": "session-1",
+          "requestId": "cmd-runtime-options",
+          "models": [
+            {"provider":"openai-codex","modelId":"gpt-5.5","displayName":"openai-codex/gpt-5.5","pattern":"openai-codex/gpt-5.5"}
+          ],
+          "allModels": [
+            {"provider":"openai-codex","modelId":"gpt-5.5","displayName":"openai-codex/gpt-5.5","pattern":"openai-codex/gpt-5.5"}
+          ],
+          "globalScope": {
+            "mode": "exact",
+            "patterns": ["openai-codex/gpt-5.5"],
+            "editable": true,
+            "revision": "opaque-revision",
+            "resolvedModelIds": ["openai-codex/gpt-5.5"]
+          },
+          "projectScope": {"mode":"all","patterns":[],"editable":true},
+          "effectiveScope": {"mode":"all","patterns":[],"editable":true},
+          "thinkingLevels": ["low"]
+        }
         """.utf8))
         guard case .sessionRuntimeOptionsSnapshot(_, _, _, let allModels, let globalScope, let projectScope, let effectiveScope, _, _) = event.event else {
             Issue.record("Expected sessionRuntimeOptionsSnapshot")

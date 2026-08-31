@@ -56,15 +56,27 @@ protocol PickyAgentClient: AnyObject {
 
 struct PickySessionRuntimeOptions: Equatable {
     let models: [PickySessionRuntimeModelOption]
+    let allModels: [PickySessionRuntimeModelOption]
+    let globalScope: PickyRuntimeModelScope?
+    let projectScope: PickyRuntimeModelScope?
+    let effectiveScope: PickyRuntimeModelScope?
     let thinkingLevels: [PickyMainAgentThinkingLevel]
     let currentModel: PickySessionRuntimeModelIdentity?
 
     init(
         models: [PickySessionRuntimeModelOption],
+        allModels: [PickySessionRuntimeModelOption]? = nil,
+        globalScope: PickyRuntimeModelScope? = nil,
+        projectScope: PickyRuntimeModelScope? = nil,
+        effectiveScope: PickyRuntimeModelScope? = nil,
         thinkingLevels: [PickyMainAgentThinkingLevel],
         currentModel: PickySessionRuntimeModelIdentity? = nil
     ) {
         self.models = models
+        self.allModels = allModels ?? models
+        self.globalScope = globalScope
+        self.projectScope = projectScope
+        self.effectiveScope = effectiveScope
         self.thinkingLevels = thinkingLevels
         self.currentModel = currentModel
     }
@@ -128,9 +140,9 @@ extension PickyAgentClient {
             for await clientEvent in stream {
                 guard case .protocolEvent(let envelope) = clientEvent else { continue }
                 switch envelope.event {
-                case .sessionRuntimeOptionsSnapshot(let responseSessionID, let requestID, let models, let thinkingLevels, let currentModel)
+                case .sessionRuntimeOptionsSnapshot(let responseSessionID, let requestID, let models, let allModels, let globalScope, let projectScope, let effectiveScope, let thinkingLevels, let currentModel)
                     where responseSessionID == sessionId && requestID == command.id:
-                    return PickySessionRuntimeOptions(models: models, thinkingLevels: thinkingLevels, currentModel: currentModel)
+                    return PickySessionRuntimeOptions(models: models, allModels: allModels, globalScope: globalScope, projectScope: projectScope, effectiveScope: effectiveScope, thinkingLevels: thinkingLevels, currentModel: currentModel)
                 case .error(let error) where error.commandId == command.id:
                     throw PickyRewindTargetRequestError.daemonError(error.message)
                 default: continue
@@ -515,8 +527,8 @@ private extension PickyEventEnvelope {
             return "type=mainExtensionUiCancelled id=\(id) request=\(requestId)"
         case .mainAgentModelsSnapshot(let models):
             return "type=mainAgentModelsSnapshot id=\(id) models=\(models.count)"
-        case .sessionRuntimeOptionsSnapshot(let sessionId, let requestId, let models, let thinkingLevels, let currentModel):
-            return "type=sessionRuntimeOptionsSnapshot id=\(id) session=\(sessionId) request=\(requestId) models=\(models.count) thinkingLevels=\(thinkingLevels.count) currentModel=\(currentModel?.provider ?? "none")/\(currentModel?.modelId ?? "none")"
+        case .sessionRuntimeOptionsSnapshot(let sessionId, let requestId, let models, let allModels, let globalScope, let projectScope, let effectiveScope, let thinkingLevels, let currentModel):
+            return "type=sessionRuntimeOptionsSnapshot id=\(id) session=\(sessionId) request=\(requestId) models=\(models.count) allModels=\(allModels?.count ?? models.count) global=\(globalScope?.mode.rawValue ?? "unknown") project=\(projectScope?.mode.rawValue ?? "none") effective=\(effectiveScope?.mode.rawValue ?? "unknown") thinkingLevels=\(thinkingLevels.count) currentModel=\(currentModel?.provider ?? "none")/\(currentModel?.modelId ?? "none")"
         case .piOAuthStatus(let status):
             return "type=piOAuthStatus id=\(id) request=\(status.requestId) provider=\(status.providerId.rawValue) configured=\(status.configured ? 1 : 0)"
         case .piOAuthUrlRequested(let request):

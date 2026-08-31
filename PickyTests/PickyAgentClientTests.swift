@@ -168,13 +168,44 @@ struct PickyAgentClientTests {
         let event = try decoder.decode(PickyEventEnvelope.self, from: Data("""
         {"id":"event-runtime-options","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:02.000Z","type":"sessionRuntimeOptionsSnapshot","sessionId":"session-1","requestId":"cmd-runtime-options","models":[{"provider":"openai-codex","modelId":"gpt-5.5","displayName":"GPT-5.5","pattern":"openai-codex/gpt-5.5"}],"thinkingLevels":["low","high"],"currentModel":{"provider":"openai-codex","modelId":"gpt-5.5"}}
         """.utf8))
-        if case .sessionRuntimeOptionsSnapshot(let sessionID, let requestID, let models, let thinkingLevels, let currentModel) = event.event {
+        if case .sessionRuntimeOptionsSnapshot(let sessionID, let requestID, let models, let allModels, let globalScope, let projectScope, let effectiveScope, let thinkingLevels, let currentModel) = event.event {
             #expect(sessionID == "session-1")
             #expect(requestID == "cmd-runtime-options")
             #expect(models.map(\.pattern) == ["openai-codex/gpt-5.5"])
+            #expect(allModels == nil)
+            #expect(globalScope == nil)
+            #expect(projectScope == nil)
+            #expect(effectiveScope == nil)
             #expect(thinkingLevels == [.low, .high])
             #expect(currentModel == PickySessionRuntimeModelIdentity(provider: "openai-codex", modelId: "gpt-5.5"))
         } else { Issue.record("Expected sessionRuntimeOptionsSnapshot") }
+    }
+
+    @Test func decodesRuntimeScopeMetadataAndEncodesGlobalScopeCommand() throws {
+        let encoder = JSONEncoder.pickyAgentProtocolEncoder()
+        let command = try encoder.encode(PickyCommandEnvelope(
+            id: "cmd-global-model-scope",
+            type: .setGlobalModelScope,
+            mode: .exact,
+            patterns: ["openai-codex/gpt-5.5"],
+            expectedRevision: "opaque-revision"
+        ))
+        let commandJSON = try #require(String(data: command, encoding: .utf8))
+        #expect(commandJSON.contains("\"mode\":\"exact\"") || commandJSON.contains("\"mode\" : \"exact\""))
+        #expect(commandJSON.contains("\"expectedRevision\":\"opaque-revision\"") || commandJSON.contains("\"expectedRevision\" : \"opaque-revision\""))
+
+        let event = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: Data("""
+        {"id":"event-runtime-scope","protocolVersion":"2026-08-25","timestamp":"2026-05-01T00:00:02.000Z","type":"sessionRuntimeOptionsSnapshot","sessionId":"session-1","requestId":"cmd-runtime-options","models":[{"provider":"openai-codex","modelId":"gpt-5.5","displayName":"openai-codex/gpt-5.5","pattern":"openai-codex/gpt-5.5"}],"allModels":[{"provider":"openai-codex","modelId":"gpt-5.5","displayName":"openai-codex/gpt-5.5","pattern":"openai-codex/gpt-5.5"}],"globalScope":{"mode":"exact","patterns":["openai-codex/gpt-5.5"],"editable":true,"revision":"opaque-revision","resolvedModelIds":["openai-codex/gpt-5.5"]},"projectScope":{"mode":"all","patterns":[],"editable":true},"effectiveScope":{"mode":"all","patterns":[],"editable":true},"thinkingLevels":["low"]}
+        """.utf8))
+        guard case .sessionRuntimeOptionsSnapshot(_, _, _, let allModels, let globalScope, let projectScope, let effectiveScope, _, _) = event.event else {
+            Issue.record("Expected sessionRuntimeOptionsSnapshot")
+            return
+        }
+        #expect(allModels?.count == 1)
+        #expect(globalScope?.revision == "opaque-revision")
+        #expect(globalScope?.resolvedModelIds == ["openai-codex/gpt-5.5"])
+        #expect(projectScope?.mode == .all)
+        #expect(effectiveScope?.mode == .all)
     }
 
     @Test func runtimeOptionsRequestIgnoresStaleSessionAndRequestResponses() async throws {

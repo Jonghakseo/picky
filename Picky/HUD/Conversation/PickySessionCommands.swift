@@ -45,6 +45,9 @@ protocol PickySessionCommands: AnyObject, PickyGitChipActionViewModelDispatch {
     func steer(text: String, sessionID: String?) async throws
     func followUp(text: String, sessionID: String?) async throws
     func listSessionRuntimeOptions(sessionID: String) async throws -> PickySessionRuntimeOptions
+    func setGlobalModelScope(mode: PickyRuntimeModelScopeMode, patterns: [String]?, expectedRevision: String) async throws
+    func pickleRuntimeDefaults() -> (modelPattern: String, thinkingLevel: PickyPickleAgentThinkingLevel)
+    func setPickleRuntimeDefaults(modelPattern: String?, thinkingLevel: PickyPickleAgentThinkingLevel?) async throws
     func setSessionModel(sessionID: String, provider: String, modelID: String) async throws
     func setSessionThinkingLevel(sessionID: String, thinkingLevel: PickyMainAgentThinkingLevel) async throws
     func cycleThinkingLevel(sessionID: String) async throws

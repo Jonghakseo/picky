@@ -1975,6 +1975,11 @@ export class SessionSupervisor extends EventEmitter {
     return this.runRuntimeControlMutation(sessionId, () => setRuntimeModel(this.runtimeControlDeps(), sessionId, provider, modelId));
   }
 
+  async setGlobalModelScope(mode: "all" | "exact", patterns: string[] | undefined, expectedRevision: string): Promise<void> {
+    if (!this.runtime.setGlobalModelScope) throw new Error("Runtime does not support global model scope changes");
+    await this.runtime.setGlobalModelScope({ mode, patterns, expectedRevision });
+  }
+
   async setSessionThinkingLevel(sessionId: string, thinkingLevel: ThinkingLevel): Promise<PickyAgentSession> {
     return this.runRuntimeControlMutation(sessionId, () => setRuntimeThinkingLevel(this.runtimeControlDeps(), sessionId, thinkingLevel));
   }

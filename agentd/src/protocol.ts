@@ -286,6 +286,18 @@ export const PickySessionRuntimeModelIdentitySchema = z.object({
   modelId: z.string().min(1),
 });
 export type PickySessionRuntimeModelIdentity = z.infer<typeof PickySessionRuntimeModelIdentitySchema>;
+export const PickyRuntimeModelScopeModeSchema = z.enum(["all", "exact"]);
+export type PickyRuntimeModelScopeMode = z.infer<typeof PickyRuntimeModelScopeModeSchema>;
+export const PickyRuntimeModelScopeSchema = z.object({
+  mode: PickyRuntimeModelScopeModeSchema,
+  patterns: z.array(z.string()),
+  editable: z.boolean(),
+  revision: z.string().min(1).optional(),
+  /** Optional for older Picky app/daemon pairs. */
+  resolvedModelIds: z.array(z.string().min(1)).optional(),
+  reason: z.enum(["advancedPatterns"]).optional(),
+});
+export type PickyRuntimeModelScope = z.infer<typeof PickyRuntimeModelScopeSchema>;
 export const PiOAuthProviderIdSchema = z.enum(["openai-codex", "anthropic"]);
 export type PiOAuthProviderId = z.infer<typeof PiOAuthProviderIdSchema>;
 export const PiOAuthPromptTypeSchema = z.enum(["text", "secret", "select", "manual_code"]);
@@ -589,6 +601,12 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("deleteSession"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("cycleSessionThinkingLevel"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("listSessionRuntimeOptions"), sessionId: z.string() }),
+  CommandBaseSchema.extend({
+    type: z.literal("setGlobalModelScope"),
+    mode: PickyRuntimeModelScopeModeSchema,
+    patterns: z.array(z.string().min(1)).optional(),
+    expectedRevision: z.string().min(1),
+  }),
   CommandBaseSchema.extend({ type: z.literal("setSessionModel"), sessionId: z.string(), provider: z.string().min(1), modelId: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("setSessionThinkingLevel"), sessionId: z.string(), thinkingLevel: ThinkingLevelSchema }),
   CommandBaseSchema.extend({ type: z.literal("cycleSessionModel"), sessionId: z.string(), direction: ModelCycleDirectionSchema.default("forward") }),
@@ -666,6 +684,13 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
       code: z.ZodIssueCode.custom,
       path: ["requestId"],
       message: "getSessionProjectionSnapshot requestId must equal command id",
+    });
+  }
+  if (command.type === "setGlobalModelScope" && command.mode === "exact" && (command.patterns?.length ?? 0) === 0) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["patterns"],
+      message: "exact model scope requires at least one model",
     });
   }
 });
@@ -772,7 +797,19 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
     cwd: z.string().optional(),
   }),
   EventBaseSchema.extend({ type: z.literal("mainAgentModelsSnapshot"), models: z.array(PickyMainAgentModelOptionSchema) }),
-  EventBaseSchema.extend({ type: z.literal("sessionRuntimeOptionsSnapshot"), sessionId: z.string(), requestId: z.string().min(1), models: z.array(PickySessionRuntimeModelOptionSchema), thinkingLevels: z.array(ThinkingLevelSchema), currentModel: PickySessionRuntimeModelIdentitySchema.optional() }),
+  EventBaseSchema.extend({
+    type: z.literal("sessionRuntimeOptionsSnapshot"),
+    sessionId: z.string(),
+    requestId: z.string().min(1),
+    models: z.array(PickySessionRuntimeModelOptionSchema),
+    /** Optional fields keep older app/daemon pairings compatible. */
+    allModels: z.array(PickySessionRuntimeModelOptionSchema).optional(),
+    globalScope: PickyRuntimeModelScopeSchema.optional(),
+    projectScope: PickyRuntimeModelScopeSchema.optional(),
+    effectiveScope: PickyRuntimeModelScopeSchema.optional(),
+    thinkingLevels: z.array(ThinkingLevelSchema),
+    currentModel: PickySessionRuntimeModelIdentitySchema.optional(),
+  }),
   EventBaseSchema.extend({ type: z.literal("mainActivityUpdated"), activity: PickyMainActivitySchema.optional() }),
   EventBaseSchema.extend({ type: z.literal("mainExtensionUiRequested"), request: PickyExtensionUiRequestSchema }),
   EventBaseSchema.extend({ type: z.literal("mainExtensionUiCancelled"), requestId: z.string() }),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MockRuntimeSession } from "./mock-runtime.js";
+import { MockRuntime, MockRuntimeSession } from "./mock-runtime.js";
 
 describe("MockRuntimeSession queue foundation", () => {
   it("rewinds its in-memory branch and returns editor text", async () => {
@@ -41,6 +41,27 @@ describe("MockRuntimeSession queue foundation", () => {
     session.setThinkingLevel("max");
     expect(session.getAssistantRunMetadata()).toEqual({ model: "mock/opus-4-7", thinkingLevel: "max" });
     await expect(session.setExactModel("other", "opus-4-7")).rejects.toThrow("Model is not available in this session");
+  });
+
+  it("reflects a global exact scope in existing sessions and cycles into it", async () => {
+    const runtime = new MockRuntime();
+    const handle = await runtime.prewarm!();
+    const initial = await handle.listRuntimeOptions!();
+
+    await runtime.setGlobalModelScope!({
+      mode: "exact",
+      patterns: ["mock/opus-4-7"],
+      expectedRevision: initial.globalScope!.revision!,
+    });
+
+    await expect(handle.listRuntimeOptions!()).resolves.toMatchObject({
+      models: [{ pattern: "mock/opus-4-7" }],
+      globalScope: { mode: "exact", patterns: ["mock/opus-4-7"] },
+    });
+    await expect(handle.cycleModel!("forward")).resolves.toEqual({
+      model: "mock/opus-4-7",
+      thinkingLevel: "medium",
+    });
   });
 
   it("mirrors queue state and drains it via clearQueue", async () => {

@@ -119,6 +119,10 @@ final class PickySessionListViewModel: ObservableObject {
     func isSessionArchived(_ sessionID: String) -> Bool { archivedSessions.contains { $0.id == sessionID } }
 
     let client: any PickyAgentClient
+    /// App-owned defaults only apply when a new Pickle runtime is created.
+    /// They intentionally do not mutate a resumed session's Pi configuration.
+    let pickleRuntimeDefaultsStore: PickySettingsStore
+    let pickleRuntimeDefaultsPersistence: PickySettingsPersistenceCoordinator
     private let notificationCenter: PickyNotificationDelivering
     private let notificationPreferencesProvider: PickyNotificationPreferencesProviding
     private let selectionStore: PickySessionSelectionStoring
@@ -235,9 +239,14 @@ final class PickySessionListViewModel: ObservableObject {
         childSessionReleaser: (any PickyChildSessionReleasing)? = nil,
         archiveCommitDelayNanoseconds: UInt64 = PickyHUDArchiveUndoToastPolicy.durationNanoseconds,
         manualPickleSessionIdFactory: @escaping () -> String = { "session-\(UUID().uuidString)" },
-        shellTerminalSessionFactory: ((SessionCard) -> PickyShellTerminalSession)? = nil, sessionProjectionStorage: (any PickySessionProjectionStorage)? = nil
+        shellTerminalSessionFactory: ((SessionCard) -> PickyShellTerminalSession)? = nil,
+        sessionProjectionStorage: (any PickySessionProjectionStorage)? = nil,
+        pickleRuntimeDefaultsStore: PickySettingsStore = PickySettingsStore(),
+        pickleRuntimeDefaultsPersistence: PickySettingsPersistenceCoordinator? = nil
     ) {
         self.client = client
+        self.pickleRuntimeDefaultsStore = pickleRuntimeDefaultsStore
+        self.pickleRuntimeDefaultsPersistence = pickleRuntimeDefaultsPersistence ?? .shared(for: pickleRuntimeDefaultsStore)
         // A ViewModel owns exactly one registry backend for its lifetime.
         self.sessionProjectionStorage = sessionProjectionStorage ?? PickyRegistrySessionProjectionStorage()
         self.notificationCenter = notificationCenter

@@ -20,6 +20,7 @@ import { packageOperationHandlers, PackageOperations, type CronPackageLifecycleL
 export { createDefaultPackageManager, type DefaultPackageManagerDependencies } from "./application/package-operations.js";
 import type { PiOAuthHandling } from "./application/pi-oauth-service.js";
 import { SettingsControlBroker, SettingsControlError } from "./application/settings-control-broker.js";
+import { PiModelScopeConflictError } from "./runtime/model-scope-errors.js";
 export { APP_SETTINGS_CONTROL_UNAVAILABLE } from "./application/settings-control-broker.js";
 export interface AgentdServerOptions {
   port: number;
@@ -380,7 +381,7 @@ export class AgentdServer {
       logAgentd("command failed", { commandId, error: error instanceof Error ? error.message : String(error) });
       this.send(ws, {
         type: "error",
-        code: error instanceof SettingsControlError ? error.code : "bad_message",
+        code: error instanceof SettingsControlError || error instanceof PiModelScopeConflictError ? error.code : "bad_message",
         message: error instanceof Error ? error.message : String(error),
         commandId,
       });
@@ -636,6 +637,7 @@ export class AgentdServer {
         const options = await this.options.supervisor.listSessionRuntimeOptions(cmd.sessionId);
         this.send(ws, { type: "sessionRuntimeOptionsSnapshot", sessionId: cmd.sessionId, requestId: cmd.id, ...options });
       },
+      setGlobalModelScope: (cmd) => this.options.supervisor.setGlobalModelScope(cmd.mode, cmd.patterns, cmd.expectedRevision),
       setSessionModel: (cmd) => this.options.supervisor.setSessionModel(cmd.sessionId, cmd.provider, cmd.modelId),
       setSessionThinkingLevel: (cmd) => this.options.supervisor.setSessionThinkingLevel(cmd.sessionId, cmd.thinkingLevel),
       cycleSessionModel: (cmd) => this.options.supervisor.cycleSessionModel(cmd.sessionId, cmd.direction),
@@ -1164,6 +1166,8 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, enabled: command.enabled ? 1 : 0 };
     case "setSessionArchived":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, archived: command.archived ? 1 : 0 };
+    case "setGlobalModelScope":
+      return { commandId: command.id, type: command.type, mode: command.mode, patterns: command.patterns?.length, expectedRevision: command.expectedRevision };
     case "deleteSession":
     case "deletePickle":
     case "getPickle":

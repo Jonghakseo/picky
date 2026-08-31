@@ -1,12 +1,22 @@
 import type { BuiltPrompt } from "../prompt-builder.js";
 import { STEER_PREFIX } from "../domain/log-prefixes.js";
 import type { ModelCycleDirection, PickyQueueMode } from "../protocol.js";
-import type { AgentRuntime, RewindBranchMessage, RewindResult, RewindTarget, RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeModelOption, RuntimeSessionHandle, RuntimeSessionOptions, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
+import type { AgentRuntime, RewindBranchMessage, RewindResult, RewindTarget, RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeGlobalModelScopeChange, RuntimeModelOption, RuntimeSessionHandle, RuntimeSessionOptions, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
+import { modelScopeRevision, validateExactModelScope } from "./pi-model-resolution.js";
+import { PiModelScopeConflictError } from "./model-scope-errors.js";
 
 export class MockRuntime implements AgentRuntime {
   private sequence = 0;
+  private globalModelPatterns: string[] | undefined;
+
+  async setGlobalModelScope(change: RuntimeGlobalModelScopeChange): Promise<void> {
+    if (modelScopeRevision(this.globalModelPatterns) !== change.expectedRevision) {
+      throw new PiModelScopeConflictError();
+    }
+    this.globalModelPatterns = change.mode === "all" ? undefined : validateExactModelScope(change.patterns ?? []);
+  }
   async create(prompt: BuiltPrompt): Promise<RuntimeSessionHandle> {
-    const handle = new MockRuntimeSession(`mock-${++this.sequence}`);
+    const handle = new MockRuntimeSession(`mock-${++this.sequence}`, () => this.globalModelPatterns);
     handle.appendMockTurn(prompt.text, `Mock response to: ${prompt.text}`);
     queueMicrotask(() => {
       handle.emit({ type: "log", line: `mock runtime accepted prompt (${prompt.text.length} chars)` });
@@ -16,7 +26,7 @@ export class MockRuntime implements AgentRuntime {
   }
 
   async prewarm(): Promise<RuntimeSessionHandle> {
-    const handle = new MockRuntimeSession(`mock-${++this.sequence}`);
+    const handle = new MockRuntimeSession(`mock-${++this.sequence}`, () => this.globalModelPatterns);
     queueMicrotask(() => {
       handle.emit({ type: "log", line: "mock runtime prewarmed" });
     });
@@ -51,7 +61,10 @@ export class MockRuntimeSession implements RuntimeSessionHandle {
   isStreaming = false;
   isCompacting = false;
 
-  constructor(readonly id: string) {}
+  constructor(
+    readonly id: string,
+    private readonly globalModelPatterns: () => string[] | undefined = () => undefined,
+  ) {}
 
   async followUp(prompt: BuiltPrompt): Promise<void> {
     this.followUpQueue.push(prompt.text);
@@ -95,25 +108,47 @@ export class MockRuntimeSession implements RuntimeSessionHandle {
   }
 
   async setExactModel(provider: string, modelId: string): Promise<RuntimeAssistantRunMetadata> {
-    const index = this.models.findIndex((model) => model.provider === provider && model.modelId === modelId);
-    if (index < 0) throw new Error(`Model is not available in this session: ${provider}/${modelId}`);
-    this.modelIndex = index;
+    const selected = this.availableInGlobalScope().find((model) => model.provider === provider && model.modelId === modelId);
+    if (!selected) throw new Error(`Model is not available in this session: ${provider}/${modelId}`);
+    this.modelIndex = this.models.findIndex((model) => model.provider === selected.provider && model.modelId === selected.modelId);
     return this.currentAssistantRunMetadata();
   }
 
   async listRuntimeOptions(): Promise<RuntimeSessionOptions> {
+    const patterns = this.globalModelPatterns();
     const current = this.models[this.modelIndex]!;
+    const scopedModels = this.availableInGlobalScope();
+    const scope = patterns?.length
+      ? { mode: "exact" as const, patterns: [...patterns], editable: true, revision: modelScopeRevision(patterns), resolvedModelIds: scopedModels.map((model) => model.pattern) }
+      : { mode: "all" as const, patterns: [], editable: true, revision: modelScopeRevision(undefined), resolvedModelIds: [] };
     return {
-      models: this.models.map((model) => ({ ...model })),
+      models: scopedModels.map((model) => ({ ...model })),
+      allModels: this.models.map((model) => ({ ...model })),
+      globalScope: scope,
+      effectiveScope: { ...scope, revision: undefined },
       thinkingLevels: [...this.thinkingLevels],
       currentModel: { provider: current.provider, modelId: current.modelId },
     };
   }
 
   async cycleModel(direction: ModelCycleDirection): Promise<RuntimeAssistantRunMetadata | undefined> {
-    const step = direction === "backward" ? -1 : 1;
-    this.modelIndex = (this.modelIndex + step + this.models.length) % this.models.length;
+    const scopedModels = this.availableInGlobalScope();
+    if (scopedModels.length === 0) return this.currentAssistantRunMetadata();
+    const current = this.models[this.modelIndex]!;
+    const currentInScopeIndex = scopedModels.findIndex((model) => model.provider === current.provider && model.modelId === current.modelId);
+    const nextIndex = currentInScopeIndex < 0
+      ? direction === "backward" ? scopedModels.length - 1 : 0
+      : (currentInScopeIndex + (direction === "backward" ? -1 : 1) + scopedModels.length) % scopedModels.length;
+    const target = scopedModels[nextIndex]!;
+    this.modelIndex = this.models.findIndex((model) => model.provider === target.provider && model.modelId === target.modelId);
     return this.currentAssistantRunMetadata();
+  }
+
+  private availableInGlobalScope(): RuntimeModelOption[] {
+    const patterns = this.globalModelPatterns();
+    if (!patterns?.length) return this.models;
+    const allowed = new Set(patterns.map((pattern) => pattern.toLowerCase()));
+    return this.models.filter((model) => allowed.has(model.pattern.toLowerCase()));
   }
 
   private currentAssistantRunMetadata(): RuntimeAssistantRunMetadata {

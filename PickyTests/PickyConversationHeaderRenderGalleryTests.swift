@@ -201,7 +201,14 @@ struct PickyConversationHeaderRenderGalleryTests {
     }
 
     private func makeComposerScenes() -> [Scene] {
-        [
+        let catalog = [
+            PickySessionRuntimeModelOption(provider: "anthropic", modelId: "claude-sonnet", displayName: "anthropic/claude-sonnet", pattern: "anthropic/claude-sonnet"),
+            PickySessionRuntimeModelOption(provider: "openai-codex", modelId: "gpt-5.5", displayName: "openai-codex/gpt-5.5", pattern: "openai-codex/gpt-5.5"),
+        ]
+        let exactScope = PickyRuntimeModelScope(mode: .exact, patterns: [catalog[0].pattern], editable: true, revision: "gallery-exact", resolvedModelIds: [catalog[0].id], reason: nil)
+        let allScope = PickyRuntimeModelScope(mode: .all, patterns: [], editable: true, revision: "gallery-all", resolvedModelIds: [], reason: nil)
+        let advancedScope = PickyRuntimeModelScope(mode: .exact, patterns: ["anthropic/*"], editable: false, revision: "gallery-advanced", resolvedModelIds: [catalog[0].id], reason: .advancedPatterns)
+        return [
             Scene(
                 name: "composer-empty-running-dark-ko.png",
                 appearance: .dark,
@@ -252,7 +259,66 @@ struct PickyConversationHeaderRenderGalleryTests {
                     draft: "첫 번째 줄\n두 번째 줄\n세 번째 줄\n네 번째 줄"
                 ))
             ),
+            runtimePickerScene(
+                name: "composer-model-scope-exact-dark-ko.png",
+                options: PickySessionRuntimeOptions(models: [catalog[0]], allModels: catalog, globalScope: exactScope, thinkingLevels: [.low], currentModel: .init(provider: "anthropic", modelId: "claude-sonnet")),
+                initialScreen: .allModels
+            ),
+            runtimePickerScene(
+                name: "composer-model-scope-project-override-dark-ko.png",
+                options: PickySessionRuntimeOptions(models: [catalog[1]], allModels: catalog, globalScope: allScope, projectScope: exactScope, effectiveScope: exactScope, thinkingLevels: [.low], currentModel: .init(provider: "openai-codex", modelId: "gpt-5.5")),
+                initialScreen: .allModels
+            ),
+            runtimePickerScene(
+                name: "composer-model-scope-advanced-dark-ko.png",
+                options: PickySessionRuntimeOptions(models: [catalog[1]], allModels: catalog, globalScope: advancedScope, thinkingLevels: [.low], currentModel: .init(provider: "openai-codex", modelId: "gpt-5.5")),
+                initialScreen: .allModels
+            ),
+            runtimePickerScene(
+                name: "composer-model-scope-current-outside-dark-ko.png",
+                options: PickySessionRuntimeOptions(models: [catalog[0]], allModels: catalog, globalScope: exactScope, effectiveScope: exactScope, thinkingLevels: [.low], currentModel: .init(provider: "openai-codex", modelId: "gpt-5.5")),
+                initialScreen: .quick
+            ),
         ]
+    }
+
+    private func runtimePickerScene(
+        name: String,
+        options: PickySessionRuntimeOptions,
+        initialScreen: PickyComposerRuntimePickerScreen
+    ) -> Scene {
+        Scene(
+            name: name,
+            appearance: .dark,
+            content: AnyView(
+                PickyConversationRuntimeControlsView(
+                    presentation: PickyComposerRuntimePresentation(assistantRun: .init(model: "openai-codex/gpt-5.5", thinkingLevel: .low)),
+                    actionError: nil,
+                    sessionID: "gallery-runtime-scope",
+                    isModelPickerPresented: .constant(true),
+                    runtimeOptions: options,
+                    modelPickerLoadState: .loaded,
+                    isModelActionInFlight: false,
+                    isThinkingActionInFlight: false,
+                    isGlobalScopeActionInFlight: false,
+                    pickleRuntimeDefaults: ("", .automatic),
+                    scopeStaging: .init(scope: options.globalScope),
+                    initialPickerScreen: initialScreen,
+                    onOpenModelPicker: {},
+                    onRetryRuntimeOptions: {},
+                    onSelectModel: { _ in },
+                    onSelectThinkingLevel: { _ in },
+                    onSetNewPickleDefaultModel: { _ in },
+                    onSetNewPickleDefaultThinking: { _ in },
+                    onBeginGlobalScopeEditing: {},
+                    onSetAllModelsEnabled: { _, _ in },
+                    onSetStagedScopePattern: { _, _ in },
+                    onReloadGlobalScope: {},
+                    onApplyGlobalScope: {}
+                )
+                .modelPicker
+            )
+        )
     }
 
     private func render(_ scene: Scene) throws -> (

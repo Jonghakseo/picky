@@ -94,6 +94,9 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var provider: String?
     var modelId: String?
     var thinkingLevel: PickyMainAgentThinkingLevel?
+    var mode: PickyRuntimeModelScopeMode?
+    var patterns: [String]?
+    var expectedRevision: String?
 
     init(
         id: String = "cmd-\(UUID().uuidString)",
@@ -150,7 +153,10 @@ struct PickyCommandEnvelope: Codable, Equatable {
         visualDslEnabled: Bool? = nil,
         provider: String? = nil,
         modelId: String? = nil,
-        thinkingLevel: PickyMainAgentThinkingLevel? = nil
+        thinkingLevel: PickyMainAgentThinkingLevel? = nil,
+        mode: PickyRuntimeModelScopeMode? = nil,
+        patterns: [String]? = nil,
+        expectedRevision: String? = nil
     ) {
         self.id = id
         self.protocolVersion = pickyAgentProtocolVersion
@@ -208,6 +214,9 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.provider = provider
         self.modelId = modelId
         self.thinkingLevel = thinkingLevel
+        self.mode = mode
+        self.patterns = patterns
+        self.expectedRevision = expectedRevision
     }
 }
 
@@ -262,6 +271,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case setMainAgentThinkingLevel
     case cycleSessionThinkingLevel
     case listSessionRuntimeOptions
+    case setGlobalModelScope
     case setSessionModel
     case setSessionThinkingLevel
     case cycleSessionModel
@@ -331,7 +341,7 @@ enum PickyEvent: Equatable {
     case mainExtensionUiCancelled(requestId: String)
     case mainAgentSessionInfoUpdated(sessionFilePath: String?, cwd: String?)
     case mainAgentModelsSnapshot([PickyMainAgentModelOption])
-    case sessionRuntimeOptionsSnapshot(sessionId: String, requestId: String, models: [PickySessionRuntimeModelOption], thinkingLevels: [PickyMainAgentThinkingLevel], currentModel: PickySessionRuntimeModelIdentity?)
+    case sessionRuntimeOptionsSnapshot(sessionId: String, requestId: String, models: [PickySessionRuntimeModelOption], allModels: [PickySessionRuntimeModelOption]?, globalScope: PickyRuntimeModelScope?, projectScope: PickyRuntimeModelScope?, effectiveScope: PickyRuntimeModelScope?, thinkingLevels: [PickyMainAgentThinkingLevel], currentModel: PickySessionRuntimeModelIdentity?)
     case piOAuthStatus(PickyPiOAuthStatusEvent)
     case piOAuthUrlRequested(PickyPiOAuthUrlRequestEvent)
     case piOAuthPromptRequested(PickyPiOAuthPromptRequestEvent)
@@ -440,7 +450,7 @@ enum PickyEvent: Equatable {
             return .mainAgentModelsSnapshot(payload.models)
         case "sessionRuntimeOptionsSnapshot":
             let payload = try PickySessionRuntimeOptionsSnapshotPayload(from: decoder)
-            return .sessionRuntimeOptionsSnapshot(sessionId: payload.sessionId, requestId: payload.requestId, models: payload.models, thinkingLevels: payload.thinkingLevels, currentModel: payload.currentModel)
+            return .sessionRuntimeOptionsSnapshot(sessionId: payload.sessionId, requestId: payload.requestId, models: payload.models, allModels: payload.allModels, globalScope: payload.globalScope, projectScope: payload.projectScope, effectiveScope: payload.effectiveScope, thinkingLevels: payload.thinkingLevels, currentModel: payload.currentModel)
         case "piOAuthStatus": return .piOAuthStatus(try PickyPiOAuthStatusEvent(from: decoder))
         case "piOAuthUrlRequested": return .piOAuthUrlRequested(try PickyPiOAuthUrlRequestEvent(from: decoder))
         case "piOAuthPromptRequested": return .piOAuthPromptRequested(try PickyPiOAuthPromptRequestEvent(from: decoder))
@@ -578,7 +588,17 @@ private struct PickyMainExtensionUiRequestedPayload: Decodable { let request: Pi
 private struct PickyMainExtensionUiCancelledPayload: Decodable { let requestId: String }
 private struct PickyMainAgentSessionInfoUpdatedPayload: Decodable { let sessionFilePath: String?; let cwd: String? }
 private struct PickyMainAgentModelsSnapshotPayload: Decodable { let models: [PickyMainAgentModelOption] }
-private struct PickySessionRuntimeOptionsSnapshotPayload: Decodable { let sessionId: String; let requestId: String; let models: [PickySessionRuntimeModelOption]; let thinkingLevels: [PickyMainAgentThinkingLevel]; let currentModel: PickySessionRuntimeModelIdentity? }
+private struct PickySessionRuntimeOptionsSnapshotPayload: Decodable {
+    let sessionId: String
+    let requestId: String
+    let models: [PickySessionRuntimeModelOption]
+    let allModels: [PickySessionRuntimeModelOption]?
+    let globalScope: PickyRuntimeModelScope?
+    let projectScope: PickyRuntimeModelScope?
+    let effectiveScope: PickyRuntimeModelScope?
+    let thinkingLevels: [PickyMainAgentThinkingLevel]
+    let currentModel: PickySessionRuntimeModelIdentity?
+}
 
 struct PickyPiOAuthStatusEvent: Decodable, Equatable {
     let requestId: String

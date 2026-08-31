@@ -288,10 +288,20 @@ struct PickyConversationComposerView: View {
             modelPickerLoadState: runtimeControls.loadState,
             isModelActionInFlight: runtimeControls.isModelActionInFlight,
             isThinkingActionInFlight: runtimeControls.isThinkingActionInFlight,
+            isGlobalScopeActionInFlight: runtimeControls.isGlobalScopeActionInFlight,
+            pickleRuntimeDefaults: runtimeControls.pickleRuntimeDefaults,
+            scopeStaging: runtimeControls.scopeStaging,
             onOpenModelPicker: { runtimeControls.openModelPicker(commands: commands, sessionID: session.id) },
             onRetryRuntimeOptions: { runtimeControls.loadOptions(commands: commands, sessionID: session.id) },
             onSelectModel: { runtimeControls.selectModel($0, commands: commands, sessionID: session.id) },
-            onSelectThinkingLevel: { runtimeControls.selectThinkingLevel($0, commands: commands, sessionID: session.id) }
+            onSelectThinkingLevel: { runtimeControls.selectThinkingLevel($0, commands: commands, sessionID: session.id) },
+            onSetNewPickleDefaultModel: { runtimeControls.setNewPickleDefaultModel($0, commands: commands, sessionID: session.id) },
+            onSetNewPickleDefaultThinking: { runtimeControls.setNewPickleDefaultThinking($0, commands: commands, sessionID: session.id) },
+            onBeginGlobalScopeEditing: { runtimeControls.beginGlobalScopeEditing() },
+            onSetAllModelsEnabled: { runtimeControls.setAllModelsEnabled($0, firstAvailablePattern: $1) },
+            onSetStagedScopePattern: { runtimeControls.setStagedScopePattern($0, selected: $1) },
+            onReloadGlobalScope: { runtimeControls.reloadGlobalScope(commands: commands, sessionID: session.id) },
+            onApplyGlobalScope: { runtimeControls.applyStagedGlobalScope(commands: commands, sessionID: session.id) }
         )
     }
 

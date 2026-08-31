@@ -11833,6 +11833,84 @@
         }
       }
     },
+    "hud.composer.runtime.defaultModel": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Use current model for new Pickles" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "현재 모델을 새 Pickle 기본값으로 설정" } }
+      }
+    },
+    "hud.composer.runtime.defaultThinking": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Use current thinking level for new Pickles" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "현재 추론 레벨을 새 Pickle 기본값으로 설정" } }
+      }
+    },
+    "hud.composer.runtime.picker.advancedReadOnly": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "This Pi model scope is read-only here because it uses advanced patterns." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 Pi 모델 범위는 고급 패턴을 사용하므로 여기서는 읽기 전용입니다." } }
+      }
+    },
+    "hud.composer.runtime.picker.allEnabled": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Enable all models" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "모든 모델 사용" } }
+      }
+    },
+    "hud.composer.runtime.picker.allModels": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "All models…" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "모든 모델 보기…" } }
+      }
+    },
+    "hud.composer.runtime.picker.allModelsTitle": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "All models" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "모든 모델" } }
+      }
+    },
+    "hud.composer.runtime.picker.apply": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Apply" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "적용" } }
+      }
+    },
+    "hud.composer.runtime.picker.back": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Back" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "뒤로" } }
+      }
+    },
+    "hud.composer.runtime.picker.currentOutsideScope": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Current model (%@) is outside this scope." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "현재 모델(%@)은 이 범위 밖에 있습니다." } }
+      }
+    },
+    "hud.composer.runtime.picker.projectOverride": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "This project overrides the global model scope. Global edits will not replace it." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 프로젝트는 전역 모델 범위를 재정의합니다. 전역 편집으로 바뀌지 않습니다." } }
+      }
+    },
+    "hud.composer.runtime.picker.conflict": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The model scope changed elsewhere. Reload the latest scope before applying changes." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "다른 곳에서 모델 범위가 변경되었습니다. 적용하기 전에 최신 상태를 불러오세요." } }
+      }
+    },
+    "hud.composer.runtime.picker.unavailableScope": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The model scope is unavailable. Reload and try again." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "모델 범위를 사용할 수 없습니다. 최신 상태를 불러온 후 다시 시도하세요." } }
+      }
+    },
+    "hud.composer.runtime.picker.reload": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Reload" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "최신 상태 불러오기" } }
+      }
+    },
     "hud.composer.screenContext.cancel": {
       "localizations": {
         "en": {

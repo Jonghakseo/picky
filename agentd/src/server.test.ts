@@ -8,6 +8,7 @@ import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PROTOCOL_VERSION, PickyAgentSessionSchema, parseCommand, type EventEnvelope, type PickyAgentSession, type PickyContextPacket, type PickyExtensionUiRequest } from "./protocol.js";
 import { MockRuntime, type MockRuntimeSession } from "./runtime/mock-runtime.js";
+import { PI_MODEL_SCOPE_CONFLICT_CODE, PiModelScopeConflictError } from "./runtime/model-scope-errors.js";
 import { AgentdServer, commandLogFields, compactSessionsForSnapshot, createDefaultPackageManager } from "./server.js";
 import { sanitizeForJson } from "./domain/sanitize-for-json.js";
 import { boundedSessionForAppHydration } from "./application/app-session-snapshot-policy.js";
@@ -940,6 +941,26 @@ describe("AgentdServer", () => {
     await expect(nextEventWithin(observer.ws, 50)).resolves.toBeUndefined();
     requester.ws.close();
     observer.ws.close();
+  });
+
+  it("returns a stable error code for a stale global model scope revision", async () => {
+    const requester = await connectWithHello();
+    vi.spyOn(supervisor, "setGlobalModelScope").mockRejectedValue(new PiModelScopeConflictError());
+
+    requester.ws.send(JSON.stringify({
+      id: "cmd-global-model-scope-stale",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "setGlobalModelScope",
+      mode: "exact",
+      patterns: ["openai-codex/gpt-5.5"],
+      expectedRevision: "stale-revision",
+    }));
+
+    await expect(waitForEvent(requester.ws, "error")).resolves.toMatchObject({
+      commandId: "cmd-global-model-scope-stale",
+      code: PI_MODEL_SCOPE_CONFLICT_CODE,
+    });
+    requester.ws.close();
   });
 
   it("routes autocomplete capabilities, query, and apply responses only to the requesting client", async () => {

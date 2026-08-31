@@ -80,11 +80,44 @@ export interface RuntimeModelIdentity {
   modelId: string;
 }
 
+export type RuntimeModelScopeMode = "all" | "exact";
+export type RuntimeModelScopeReason = "advancedPatterns";
+
+/**
+ * Explicit scope metadata lets the UI distinguish Pi's global source from a
+ * project override and the effective quick-picker set. `revision` is opaque
+ * compare-and-swap data, never a user-visible version number.
+ */
+export interface RuntimeModelScope {
+  mode: RuntimeModelScopeMode;
+  patterns: string[];
+  editable: boolean;
+  revision?: string;
+  /** Canonical IDs resolved from global raw patterns by Pi's own resolver. */
+  resolvedModelIds?: string[];
+  /** Stable presentation reason. Swift maps it to the active locale. */
+  reason?: RuntimeModelScopeReason;
+}
+
 export interface RuntimeSessionOptions {
+  /** Effective models available to this session's quick picker. */
   models: RuntimeModelOption[];
+  /** Full Pi catalogue, before global or project enabledModels filtering. */
+  allModels?: RuntimeModelOption[];
+  globalScope?: RuntimeModelScope;
+  projectScope?: RuntimeModelScope;
+  effectiveScope?: RuntimeModelScope;
   thinkingLevels: ThinkingLevel[];
   /** Exact active identity for selection UI. Labels and model IDs are not unique. */
   currentModel?: RuntimeModelIdentity;
+}
+
+export interface RuntimeGlobalModelScopeChange {
+  mode: RuntimeModelScopeMode;
+  /** Required when mode is exact. Values are canonical provider/modelId IDs. */
+  patterns?: string[];
+  expectedRevision: string;
+  cwd?: string;
 }
 
 export type RuntimeEvent =
@@ -225,6 +258,8 @@ export interface AgentRuntime {
   setModelPattern?(pattern?: string): boolean;
   setCustomTools?(tools: ToolDefinition[]): void;
   listAvailableModels?(options?: { cwd?: string }): Promise<RuntimeModelOption[]>;
+  /** Writes Pi global enabledModels with an opaque compare-and-swap revision. */
+  setGlobalModelScope?(change: RuntimeGlobalModelScopeChange): Promise<void>;
   /**
    * When the host disables TTS, runtimes that produce audio output should
    * switch their output modality to text-only.

@@ -368,6 +368,26 @@ struct PickySessionViewModelTests {
         #expect(viewModel.isLoadingInitialSessionSnapshot == false)
     }
 
+    @Test func persistsNewPickleRuntimeDefaultsWithoutSendingRuntimeCommands() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("PickyRuntimeDefaults-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let settingsStore = PickySettingsStore(appSupportRoot: root)
+        let persistence = PickySettingsPersistenceCoordinator(store: settingsStore)
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            pickleRuntimeDefaultsStore: settingsStore,
+            pickleRuntimeDefaultsPersistence: persistence
+        )
+
+        try await viewModel.setPickleRuntimeDefaults(modelPattern: " openai-codex/gpt-5.5 ", thinkingLevel: .high)
+
+        #expect(viewModel.pickleRuntimeDefaults().modelPattern == "openai-codex/gpt-5.5")
+        #expect(viewModel.pickleRuntimeDefaults().thinkingLevel == .high)
+        #expect(client.sentCommands.isEmpty)
+    }
+
     @Test func createEmptyPickleSessionSendsSystemContextWithSelectedCwd() async throws {
         let client = FakePickyAgentClient()
         let childSpawner = FakeManualPickleChildSpawner()

@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import {
   type AgentSession,
   type AgentSessionRuntime,
+  type AgentSessionServices,
   type CreateAgentSessionRuntimeFactory,
   type CreateAgentSessionServicesOptions,
   type ToolDefinition,
@@ -19,7 +20,7 @@ import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
 import { resolveTodoStateFromPiSessionEntries } from "../domain/todo-state.js";
 import { subagentGroupRunUpdatesFromCustomMessage, subagentRunUpdateFromCustomMessage } from "../domain/subagent-run-state.js";
 import { isTransientAgentBusyError } from "../domain/transient-runtime-error.js";
-import type { AgentRuntime, AnswerExtensionUiOptions, RewindBranchMessage, RewindResult, RewindTarget, RuntimeAssistantRunMetadata, RuntimeAutocompleteApplyRequest, RuntimeAutocompleteCapabilities, RuntimeAutocompleteCompletion, RuntimeAutocompleteQuery, RuntimeAutocompleteSuggestions, RuntimeBashExecutionResult, RuntimeEvent, RuntimeModelOption, RuntimeSessionHandle, RuntimeSessionOptions, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
+import type { AgentRuntime, AnswerExtensionUiOptions, RewindBranchMessage, RewindResult, RewindTarget, RuntimeAssistantRunMetadata, RuntimeAutocompleteApplyRequest, RuntimeAutocompleteCapabilities, RuntimeAutocompleteCompletion, RuntimeAutocompleteQuery, RuntimeAutocompleteSuggestions, RuntimeBashExecutionResult, RuntimeEvent, RuntimeGlobalModelScopeChange, RuntimeModelOption, RuntimeSessionHandle, RuntimeSessionOptions, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
 import type { ModelCycleDirection, PickyQueueMode } from "../protocol.js";
 import { expectedInputDeliveryIndex, PiInputRewriteObserver } from "./pi-input-rewrite-observer.js";
 import { SubagentInvocationTracker } from "./subagent-invocation-tracker.js";
@@ -34,8 +35,12 @@ import {
   modelFromServices,
   normalizeModelPattern,
   runtimeModelOptionFromModel,
+  runtimeModelScopesFromServices,
   scopedModelsFromServices,
+  synchronizeScopedModelsForCycling,
+  validateExactModelScope,
 } from "./pi-model-resolution.js";
+import { PiGlobalSettingsCASStorage } from "./pi-global-settings-cas-storage.js";
 import {
   isCompacting as piIsCompacting,
   readModelMetadata as piReadModelMetadata,
@@ -103,6 +108,10 @@ export class PiSdkRuntime implements AgentRuntime {
   private thinkingLevel?: ThinkingLevel;
   private modelPattern?: string;
   private customTools: ToolDefinition[];
+  // One PiSdkRuntime owns the primary Pi settings manager. Queue the complete
+  // reload/CAS/write/flush transaction so two popovers cannot both accept the
+  // same revision between their independent reloads.
+  private globalModelScopeWriteChain: Promise<void> = Promise.resolve();
 
   constructor(private readonly options: PiSdkRuntimeOptions = {}) {
     this.thinkingLevel = options.thinkingLevel;
@@ -129,11 +138,28 @@ export class PiSdkRuntime implements AgentRuntime {
   }
 
   async listAvailableModels(options: { cwd?: string } = {}): Promise<RuntimeModelOption[]> {
-    const createServices = this.options.createServices ?? createAgentSessionServices;
-    const agentDir = this.options.agentDir ?? (this.options.getAgentDir ?? getAgentDir)();
-    const services = await createServices({ cwd: options.cwd ?? process.cwd(), agentDir, resourceLoaderOptions: this.options.resourceLoaderOptions });
+    const services = await this.createServices(options.cwd);
     const available = await availableModelsFromServices(services);
     return available.map(runtimeModelOptionFromModel);
+  }
+
+  async setGlobalModelScope(change: RuntimeGlobalModelScopeChange): Promise<void> {
+    const write = this.globalModelScopeWriteChain.then(() => this.persistGlobalModelScope(change));
+    // A rejected mutation must not poison the queue for the next user action.
+    this.globalModelScopeWriteChain = write.catch(() => {});
+    return await write;
+  }
+
+  private async persistGlobalModelScope(change: RuntimeGlobalModelScopeChange): Promise<void> {
+    const agentDir = this.options.agentDir ?? (this.options.getAgentDir ?? getAgentDir)();
+    const patterns = change.mode === "all" ? undefined : validateExactModelScope(change.patterns ?? []);
+    await new PiGlobalSettingsCASStorage(agentDir).setEnabledModels(change.expectedRevision, patterns);
+  }
+
+  private async createServices(cwd?: string): Promise<AgentSessionServices> {
+    const createServices = this.options.createServices ?? createAgentSessionServices;
+    const agentDir = this.options.agentDir ?? (this.options.getAgentDir ?? getAgentDir)();
+    return await createServices({ cwd: cwd ?? process.cwd(), agentDir, resourceLoaderOptions: this.options.resourceLoaderOptions });
   }
 
   async create(prompt: BuiltPrompt, options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> {
@@ -183,19 +209,27 @@ export class PiSdkRuntime implements AgentRuntime {
           ],
         },
       });
-      const fixedModel = await modelFromServices(services, this.modelPattern);
-      const scopedModels = fixedModel
-        ? [{ model: fixedModel, ...(this.thinkingLevel ? { thinkingLevel: this.thinkingLevel } : {}) }]
-        : await scopedModelsFromServices(services);
+      // Picky defaults establish only a brand-new Pickle. Pi transcript restoration
+      // is authoritative when resuming, including its model and thinking level.
+      const appliesNewPickleDefaults = options.sessionFilePath === undefined;
+      const fixedModel = appliesNewPickleDefaults
+        ? await modelFromServices(services, this.modelPattern)
+        : undefined;
+      // Resolve Pi's effective scope independently of Picky's fresh-session
+      // default. A fixed initial model must not shrink later model cycling.
+      const scopedModels = await scopedModelsFromServices(services);
       const sessionResult = await createSessionFromServices({
         services,
         sessionManager,
         sessionStartEvent,
         customTools,
-        thinkingLevel: this.thinkingLevel,
-        ...(fixedModel ? { model: fixedModel, scopedModels } : {}),
+        ...(appliesNewPickleDefaults && this.thinkingLevel ? { thinkingLevel: this.thinkingLevel } : {}),
+        // Explicitly pass [] for Pi's all-model semantics. This prevents a
+        // fresh Picky default from becoming an accidental one-model scope.
+        ...(appliesNewPickleDefaults ? { scopedModels } : {}),
+        ...(fixedModel ? { model: fixedModel } : {}),
       });
-      if (!fixedModel) applyScopedModelsForCycling(sessionResult.session, scopedModels);
+      synchronizeScopedModelsForCycling(sessionResult.session, scopedModels);
       return {
         ...sessionResult,
         services,
@@ -212,7 +246,7 @@ export class PiSdkRuntime implements AgentRuntime {
     const handle = new PiSdkRuntimeSession(
       sessionId,
       runtime,
-      this.thinkingLevel,
+      options.sessionFilePath === undefined ? this.thinkingLevel : undefined,
       {
         disableBlockingDialogs: this.options.disableBlockingDialogs ?? false,
         allowedBlockingDialogMethods: this.options.allowedBlockingDialogMethods,
@@ -500,23 +534,36 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   }
 
   async listRuntimeOptions(): Promise<RuntimeSessionOptions> {
-    const scopedModels = (this.runtime.session as unknown as { scopedModels?: ScopedModelOption[] }).scopedModels ?? [];
-    const models = scopedModels.length > 0
-      ? scopedModels.map((entry) => runtimeModelOptionFromModel(entry.model))
-      : (await availableModelsFromServices(this.runtime.services)).map(runtimeModelOptionFromModel);
+    const services = this.runtime.services;
+    // Test and compatibility runtimes may predate the services bridge. Preserve
+    // their scoped-model picker behavior while production Pi sessions always
+    // take the authoritative settings-manager path below.
+    if (!services?.modelRuntime) {
+      const scopedModels = (this.runtime.session as unknown as { scopedModels?: ScopedModelOption[] }).scopedModels ?? [];
+      const current = piReadModelMetadata(this.runtime.session);
+      return {
+        models: scopedModels.map((entry) => runtimeModelOptionFromModel(entry.model)),
+        thinkingLevels: piAvailableThinkingLevels(this.runtime.session, this.id),
+        ...(current?.provider && current.modelId ? { currentModel: { provider: current.provider, modelId: current.modelId } } : {}),
+      };
+    }
+    const scopes = await runtimeModelScopesFromServices(services, this.runtime.session);
     const current = piReadModelMetadata(this.runtime.session);
     return {
-      models,
+      ...scopes,
       thinkingLevels: piAvailableThinkingLevels(this.runtime.session, this.id),
       ...(current?.provider && current.modelId ? { currentModel: { provider: current.provider, modelId: current.modelId } } : {}),
     };
   }
 
   async setExactModel(provider: string, modelId: string): Promise<RuntimeAssistantRunMetadata | undefined> {
-    const options = await this.listRuntimeOptions();
-    const selected = options.models.find((model) => model.provider === provider && model.modelId === modelId);
-    if (!selected) throw new Error(`Model is not available in this session: ${provider}/${modelId}`);
+    // A direct selection must not rewrite the current cycle scope. The picker
+    // refresh has already synchronized it before the user can select a row.
+    const scopedModels = (this.runtime.session as unknown as { scopedModels?: ScopedModelOption[] }).scopedModels ?? [];
     const available = await availableModelsFromServices(this.runtime.services);
+    const candidates = scopedModels.length > 0 ? scopedModels.map((entry) => entry.model) : available;
+    const selected = candidates.find((model) => model.provider === provider && model.id === modelId);
+    if (!selected) throw new Error(`Model is not available in this session: ${provider}/${modelId}`);
     const model = available.find((candidate) => candidate.provider === provider && candidate.id === modelId);
     if (!model) throw new Error(`Model is no longer available: ${provider}/${modelId}`);
     await this.runtime.session.setModel(model);
@@ -526,6 +573,13 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   }
 
   async cycleModel(direction: ModelCycleDirection): Promise<RuntimeAssistantRunMetadata | undefined> {
+    const options = await this.listRuntimeOptions();
+    const current = options.currentModel;
+    const currentIsInScope = current && options.models.some((model) => model.provider === current.provider && model.modelId === current.modelId);
+    if (options.effectiveScope?.mode === "exact" && !currentIsInScope && options.models.length > 0) {
+      const target = direction === "backward" ? options.models[options.models.length - 1]! : options.models[0]!;
+      return await this.setExactModel(target.provider, target.modelId);
+    }
     const result = await piTryCycleModel(this.runtime.session, this.id, direction);
     if (!result) {
       this.emit({ type: "log", line: "pi model cycle skipped: capability unavailable or only one model available" });

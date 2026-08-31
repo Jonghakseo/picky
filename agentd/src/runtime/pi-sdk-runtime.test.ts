@@ -1,11 +1,13 @@
 import { EventEmitter } from "node:events";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AutocompleteItem, AutocompleteProvider } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 import * as localLog from "../local-log.js";
 import { PiSdkRuntime, writeFilePathFromRawArgs } from "./pi-sdk-runtime.js";
+import { modelScopeRevision } from "./pi-model-resolution.js";
+import { PI_MODEL_SCOPE_CONFLICT_CODE, PI_MODEL_SCOPE_CONFLICT_PREFIX, PiModelScopeConflictError } from "./model-scope-errors.js";
 import type { RuntimeEvent } from "./types.js";
 
 class FakeSession extends EventEmitter {
@@ -2377,36 +2379,120 @@ describe("PiSdkRuntime", () => {
     expect(events).toContainEqual({ type: "status", status: "completed", summary: "/reload is unavailable while the agent is running", noTurnRan: true, preserveSessionState: true });
   });
 
-  it("does not pass settings enabledModels as scopedModels during Pi-default session creation", async () => {
+  it("passes Pi's full effective scope for fresh defaults inside or outside that scope", async () => {
+    const scopedFirst = { provider: "anthropic", id: "claude-sonnet", name: "Claude Sonnet" };
+    const scopedSecond = { provider: "openai-codex", id: "gpt-5.5", name: "GPT-5.5" };
+    const outsideScope = { provider: "google", id: "gemini-pro", name: "Gemini Pro" };
+    const expectedScope = [{ model: scopedFirst }, { model: scopedSecond }];
+
+    for (const defaultModel of [scopedFirst, outsideScope]) {
+      const fakeSession = new FakeSession();
+      const createSessionFromServices = vi.fn(async () => ({ session: fakeSession, extensionsResult: { extensions: [], errors: [], runtime: {} } }));
+      const runtime = new PiSdkRuntime({
+        getAgentDir: () => "/tmp/.pi/agent",
+        modelPattern: `${defaultModel.provider}/${defaultModel.id}`,
+        createServices: vi.fn(async () => ({
+          diagnostics: [],
+          settingsManager: { getEnabledModels: () => ["anthropic/claude-sonnet", "openai-codex/gpt-5.5"] },
+          modelRuntime: { getAvailable: async () => [scopedFirst, scopedSecond, outsideScope], hasConfiguredAuth: () => true },
+        })) as never,
+        createSessionFromServices: createSessionFromServices as never,
+        createRuntime: vi.fn(async (factory, options) => {
+          const result = await factory({ cwd: options.cwd, agentDir: options.agentDir, sessionManager: options.sessionManager });
+          return { session: result.session, services: result.services, diagnostics: result.diagnostics, setRebindSession: vi.fn() };
+        }) as never,
+      });
+
+      await runtime.prewarm({ cwd: "/tmp/project", sessionId: `fresh-${defaultModel.id}` });
+
+      expect(createSessionFromServices).toHaveBeenCalledWith(expect.objectContaining({
+        model: defaultModel,
+        scopedModels: expectedScope,
+      }));
+      expect(fakeSession.scopedModelUpdates).toEqual([expectedScope]);
+    }
+  });
+
+  it("passes an explicit empty scope when fresh defaults have no Pi model scope", async () => {
     const fakeSession = new FakeSession();
     const codexModel = { provider: "openai-codex", id: "gpt-5.5", name: "GPT-5.5" };
     const createSessionFromServices = vi.fn(async () => ({ session: fakeSession, extensionsResult: { extensions: [], errors: [], runtime: {} } }));
     const runtime = new PiSdkRuntime({
       getAgentDir: () => "/tmp/.pi/agent",
+      modelPattern: "openai-codex/gpt-5.5",
       createServices: vi.fn(async () => ({
         diagnostics: [],
-        settingsManager: { getEnabledModels: () => ["openai-codex/gpt-5.5"] },
+        settingsManager: { getEnabledModels: () => [] },
         modelRuntime: { getAvailable: async () => [codexModel], hasConfiguredAuth: () => true },
       })) as never,
       createSessionFromServices: createSessionFromServices as never,
       createRuntime: vi.fn(async (factory, options) => {
         const result = await factory({ cwd: options.cwd, agentDir: options.agentDir, sessionManager: options.sessionManager });
-        return {
-          session: result.session,
-          diagnostics: result.diagnostics,
-          setRebindSession: vi.fn(),
-        };
+        return { session: result.session, services: result.services, diagnostics: result.diagnostics, setRebindSession: vi.fn() };
       }) as never,
     });
 
-    await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky" });
+    await runtime.prewarm({ cwd: "/tmp/project", sessionId: "fresh-all-models" });
 
-    expect(createSessionFromServices).toHaveBeenCalledWith(expect.not.objectContaining({ scopedModels: expect.anything() }));
-    expect(createSessionFromServices).toHaveBeenCalledWith(expect.not.objectContaining({ model: expect.anything() }));
-    expect(fakeSession.scopedModelUpdates).toEqual([[{ model: codexModel }]]);
+    expect(createSessionFromServices).toHaveBeenCalledWith(expect.objectContaining({
+      model: codexModel,
+      scopedModels: [],
+    }));
+    expect(fakeSession.scopedModelUpdates).toEqual([[]]);
   });
 
-  it("passes scopedModels only when Picky has an explicit fixed model override", async () => {
+  it("persists global exact scope through Pi SettingsManager storage and rejects stale revisions", async () => {
+    const agentDir = await mkdtemp(join(tmpdir(), "picky-runtime-settings-"));
+    try {
+      const runtime = new PiSdkRuntime({ agentDir });
+      await runtime.setGlobalModelScope!({
+        mode: "exact",
+        patterns: [" openai-codex/gpt-5.5 ", "openai-codex/gpt-5.5"],
+        expectedRevision: modelScopeRevision(undefined),
+      });
+
+      const persisted = JSON.parse(await readFile(join(agentDir, "settings.json"), "utf8")) as { enabledModels?: string[] };
+      expect(persisted.enabledModels).toEqual(["openai-codex/gpt-5.5"]);
+      try {
+        await runtime.setGlobalModelScope!({
+          mode: "all",
+          expectedRevision: modelScopeRevision(undefined),
+        });
+        expect.unreachable("Expected stale global scope revision to conflict");
+      } catch (error) {
+        expect(error).toBeInstanceOf(PiModelScopeConflictError);
+        expect((error as PiModelScopeConflictError).code).toBe(PI_MODEL_SCOPE_CONFLICT_CODE);
+        expect((error as Error).message).toContain(PI_MODEL_SCOPE_CONFLICT_PREFIX);
+      }
+    } finally {
+      await rm(agentDir, { recursive: true, force: true });
+    }
+  });
+
+  it("serializes concurrent global scope writes sharing one revision", async () => {
+    const agentDir = await mkdtemp(join(tmpdir(), "picky-runtime-settings-"));
+    try {
+      const runtime = new PiSdkRuntime({ agentDir });
+      const change = {
+        mode: "exact" as const,
+        patterns: ["openai-codex/gpt-5.5"],
+        expectedRevision: modelScopeRevision(undefined),
+      };
+
+      const results = await Promise.allSettled([
+        runtime.setGlobalModelScope!(change),
+        runtime.setGlobalModelScope!(change),
+      ]);
+
+      expect(results.map((result) => result.status)).toEqual(["fulfilled", "rejected"]);
+      const persisted = JSON.parse(await readFile(join(agentDir, "settings.json"), "utf8")) as { enabledModels?: string[] };
+      expect(persisted.enabledModels).toEqual(["openai-codex/gpt-5.5"]);
+    } finally {
+      await rm(agentDir, { recursive: true, force: true });
+    }
+  });
+
+  it("applies Picky defaults to fresh sessions but not resumed transcripts", async () => {
     const fakeSession = new FakeSession();
     const codexModel = { provider: "openai-codex", id: "gpt-5.5", name: "GPT-5.5" };
     const createSessionFromServices = vi.fn(async () => ({ session: fakeSession, extensionsResult: { extensions: [], errors: [], runtime: {} } }));
@@ -2422,21 +2508,22 @@ describe("PiSdkRuntime", () => {
       createSessionFromServices: createSessionFromServices as never,
       createRuntime: vi.fn(async (factory, options) => {
         const result = await factory({ cwd: options.cwd, agentDir: options.agentDir, sessionManager: options.sessionManager });
-        return {
-          session: result.session,
-          diagnostics: result.diagnostics,
-          setRebindSession: vi.fn(),
-        };
+        return { session: result.session, services: result.services, diagnostics: result.diagnostics, setRebindSession: vi.fn() };
       }) as never,
     });
 
-    await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky" });
+    await runtime.prewarm({ cwd: "/tmp/project", sessionId: "fresh" });
+    await runtime.resume!("/tmp/resumed.jsonl", { cwd: "/tmp/project", sessionId: "resumed" });
 
-    expect(createSessionFromServices).toHaveBeenCalledWith(expect.objectContaining({
+    const sessionCreationOptions = createSessionFromServices.mock.calls as unknown as Array<[Record<string, unknown>]>;
+    expect(sessionCreationOptions[0]![0]).toEqual(expect.objectContaining({
       model: codexModel,
-      scopedModels: [{ model: codexModel, thinkingLevel: "high" }],
+      scopedModels: [],
+      thinkingLevel: "high",
     }));
-    expect(fakeSession.scopedModelUpdates).toEqual([]);
+    expect(sessionCreationOptions[1]![0]).not.toHaveProperty("model");
+    expect(sessionCreationOptions[1]![0]).not.toHaveProperty("scopedModels");
+    expect(sessionCreationOptions[1]![0]).not.toHaveProperty("thinkingLevel");
   });
 
   it("lists scoped models in order and supported thinking levels", async () => {
@@ -2448,6 +2535,7 @@ describe("PiSdkRuntime", () => {
     fakeSession.availableThinkingLevels = ["low", "high"];
     const runtime = makeRuntime(fakeSession);
     const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky" });
+    fakeSession.scopedModels = [{ model: first }, { model: second }];
 
     await expect(handle.listRuntimeOptions?.()).resolves.toEqual({
       models: [
@@ -2474,10 +2562,11 @@ describe("PiSdkRuntime", () => {
       }) as never,
     });
     const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky" });
+    fakeSession.scopedModels = [{ model: codex }, { model: opus }];
 
     await handle.setExactModel?.("anthropic", "claude-opus");
     expect(fakeSession.modelUpdates).toEqual([opus]);
-    expect(fakeSession.scopedModelUpdates).toEqual([]);
+    expect(fakeSession.scopedModelUpdates).toEqual([[]]);
     await expect(handle.setExactModel?.("anthropic", "not-in-scope")).rejects.toThrow("not available in this session");
   });
 
@@ -2506,7 +2595,7 @@ describe("PiSdkRuntime", () => {
 
     const metadata = await handle.setModel?.("openai-codex/gpt-5.5");
 
-    expect(fakeSession.scopedModelUpdates).toEqual([[{ model: codexModel }]]);
+    expect(fakeSession.scopedModelUpdates).toEqual([[], [{ model: codexModel }]]);
     expect(fakeSession.modelUpdates).toEqual([codexModel]);
     expect(metadata).toEqual({ model: "gpt-5.5" });
   });

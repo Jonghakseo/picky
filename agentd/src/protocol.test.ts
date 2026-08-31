@@ -552,9 +552,10 @@ describe("protocol contract fixtures", () => {
       sessionId: "session-001",
       requestId: "cmd-runtime-options",
       models: [{ provider: "openai-codex", modelId: "gpt-5.5", displayName: "GPT-5.5", pattern: "openai-codex/gpt-5.5" }],
+      globalScope: { mode: "exact", patterns: ["openai-codex/gpt-5.5"], editable: true, resolvedModelIds: ["openai-codex/gpt-5.5"] },
       thinkingLevels: ["low", "high"],
       currentModel: { provider: "openai-codex", modelId: "gpt-5.5" },
-    })).toMatchObject({ type: "sessionRuntimeOptionsSnapshot", sessionId: "session-001", requestId: "cmd-runtime-options", thinkingLevels: ["low", "high"], currentModel: { provider: "openai-codex", modelId: "gpt-5.5" } });
+    })).toMatchObject({ type: "sessionRuntimeOptionsSnapshot", sessionId: "session-001", requestId: "cmd-runtime-options", globalScope: { resolvedModelIds: ["openai-codex/gpt-5.5"] }, thinkingLevels: ["low", "high"], currentModel: { provider: "openai-codex", modelId: "gpt-5.5" } });
 
     expect(EventEnvelopeSchema.parse({
       id: "event-rewind-targets",

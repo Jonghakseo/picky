@@ -17,7 +17,6 @@ enum PickyComposerRuntimeOptionsLoadState: Equatable {
 
 struct PickyConversationRuntimeControlsView: View {
     let presentation: PickyComposerRuntimePresentation
-    let heightTier: PickyConversationFocusStackHeightTier
     let actionError: String?
     let sessionID: String
     @Binding var isModelPickerPresented: Bool
@@ -53,7 +52,7 @@ struct PickyConversationRuntimeControlsView: View {
     private var modelControl: some View {
         if let modelText = presentation.modelText {
             Button(action: onOpenModelPicker) {
-                controlLabel(icon: "cpu", text: modelText, maximumTextWidth: PickyComposerToolbarMetrics.modelLabelMaximumWidth)
+                controlLabel(text: modelText, maximumTextWidth: PickyComposerToolbarMetrics.modelLabelMaximumWidth)
             }
             .buttonStyle(PickyComposerToolbarGhostButtonStyle())
             .help(L10n.t("hud.composer.runtime.model.help"))
@@ -78,7 +77,7 @@ struct PickyConversationRuntimeControlsView: View {
                     }
                 }
             } label: {
-                controlLabel(icon: "brain", text: thinkingText)
+                controlLabel(text: thinkingText)
             }
             .menuStyle(.borderlessButton)
             .tint(DS.Colors.textSecondary)
@@ -178,25 +177,20 @@ struct PickyConversationRuntimeControlsView: View {
     }
 
     private func controlLabel(
-        icon: String,
         text: String,
         maximumTextWidth: CGFloat? = nil
     ) -> some View {
-        HStack(spacing: DS.Spacing.xs) {
-            Image(systemName: icon)
-                .font(PickyHUDTypography.statusSemibold)
-            if heightTier == .regular {
-                Text(text)
-                    .font(PickyHUDTypography.meta)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .frame(maxWidth: maximumTextWidth)
-            }
-        }
-        .foregroundColor(DS.Colors.textSecondary)
-        .padding(.horizontal, DS.Spacing.space2)
-        .frame(height: PickyComposerToolbarMetrics.controlSize)
-        .contentShape(Rectangle())
+        // The label carries the value on its own. A leading glyph only repeated what the
+        // text already says, so the constrained tier keeps the text instead of an icon.
+        Text(text)
+            .font(PickyHUDTypography.meta)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .frame(maxWidth: maximumTextWidth)
+            .foregroundColor(DS.Colors.textSecondary)
+            .padding(.horizontal, DS.Spacing.space2)
+            .frame(height: PickyComposerToolbarMetrics.controlSize)
+            .contentShape(Rectangle())
     }
 }
 

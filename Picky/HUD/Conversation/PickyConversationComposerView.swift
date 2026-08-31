@@ -289,7 +289,6 @@ struct PickyConversationComposerView: View {
     private var runtimeControls: some View {
         PickyConversationRuntimeControlsView(
             presentation: runtimePresentation,
-            heightTier: focusStackHeightTier,
             actionError: runtimeActionError,
             sessionID: session.id,
             isModelPickerPresented: $isModelPickerPresented,

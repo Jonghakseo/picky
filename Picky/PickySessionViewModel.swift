@@ -1985,8 +1985,6 @@ final class PickySessionListViewModel: ObservableObject {
             if let sessionID = accepted.sessionId, let groupName = accepted.group {
                 assignSessionToDockGroup(sessionID: sessionID, groupName: groupName)
             }
-        case .sessionRuntimeOptionsSnapshot:
-            break
         case .quickReply, .mainTurnSettled, .mainNarrationChunk,
              .mainVisualNarrationSegmentPrepared, .mainVisualNarrationSegmentSentence, .mainVisualNarrationSegmentCommitted,
              .mainMessagesSnapshot, .mainMessageAppended, .mainActivityUpdated, .mainExtensionUiRequested, .mainExtensionUiCancelled,

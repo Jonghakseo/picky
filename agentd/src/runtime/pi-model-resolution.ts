@@ -54,11 +54,12 @@ export async function automaticModelFromServices(
 }
 
 export function runtimeModelOptionFromModel(model: RuntimeModel): RuntimeModelOption {
+  const pattern = `${model.provider}/${model.id}`;
   return {
     provider: model.provider,
     modelId: model.id,
-    displayName: model.name && model.name !== model.id ? `${model.name} (${model.provider}/${model.id})` : `${model.provider}/${model.id}`,
-    pattern: `${model.provider}/${model.id}`,
+    displayName: pattern,
+    pattern,
   };
 }
 

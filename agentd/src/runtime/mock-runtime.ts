@@ -42,8 +42,8 @@ export class MockRuntimeSession implements RuntimeSessionHandle {
   private modelIndex = 0;
   private thinkingIndex = 3;
   private readonly models: RuntimeModelOption[] = [
-    { provider: "mock", modelId: "gpt-5.5", displayName: "Mock GPT-5.5 (mock/gpt-5.5)", pattern: "mock/gpt-5.5" },
-    { provider: "mock", modelId: "opus-4-7", displayName: "Mock Opus 4.7 (mock/opus-4-7)", pattern: "mock/opus-4-7" },
+    { provider: "mock", modelId: "gpt-5.5", displayName: "mock/gpt-5.5", pattern: "mock/gpt-5.5" },
+    { provider: "mock", modelId: "opus-4-7", displayName: "mock/opus-4-7", pattern: "mock/opus-4-7" },
   ];
   private readonly thinkingLevels: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
   steeringMode: PickyQueueMode = "one-at-a-time";

@@ -81,6 +81,7 @@ struct PickyConversationRuntimeControlsView: View {
                 controlLabel(icon: "brain", text: thinkingText)
             }
             .menuStyle(.borderlessButton)
+            .tint(DS.Colors.textSecondary)
             .help(L10n.t("hud.composer.runtime.thinking.help"))
             .accessibilityLabel(presentation.thinkingLabel ?? thinkingText)
             .accessibilityHint(L10n.t("hud.composer.runtime.thinking.accessibilityHint"))

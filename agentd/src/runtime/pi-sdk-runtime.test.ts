@@ -2451,8 +2451,8 @@ describe("PiSdkRuntime", () => {
 
     await expect(handle.listRuntimeOptions?.()).resolves.toEqual({
       models: [
-        { provider: "anthropic", modelId: "claude-haiku", displayName: "Claude Haiku (anthropic/claude-haiku)", pattern: "anthropic/claude-haiku" },
-        { provider: "openai-codex", modelId: "gpt-5.5", displayName: "GPT-5.5 (openai-codex/gpt-5.5)", pattern: "openai-codex/gpt-5.5" },
+        { provider: "anthropic", modelId: "claude-haiku", displayName: "anthropic/claude-haiku", pattern: "anthropic/claude-haiku" },
+        { provider: "openai-codex", modelId: "gpt-5.5", displayName: "openai-codex/gpt-5.5", pattern: "openai-codex/gpt-5.5" },
       ],
       thinkingLevels: ["low", "high"],
       currentModel: { provider: "openai-codex", modelId: "gpt-5.5" },

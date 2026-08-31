@@ -437,7 +437,7 @@ Interactions:
 
 ### 8.3 Composer behavior
 
-The composer stays pinned to the bottom of a resized Pickle card. It uses one bordered surface with model and thinking controls in the upper-right, the editor in the middle, and actions along the bottom; click the runtime controls to cycle the available model or thinking level. The editor grows from one through four lines as you type, temporarily expanding the card, then scrolls internally from the fifth line onward.
+The composer stays pinned to the bottom of a resized Pickle card. It uses one bordered surface with the editor in the middle and actions along the bottom, where the model and thinking controls sit beside the other actions. Click the model name to pick from the runtime's available models, and click the thinking level to choose one from its menu; `Control + P` and `Shift + Tab` still cycle them without opening either list. A control stays disabled while its change is in flight, and a failed change shows a warning icon next to the pair. The editor grows from one through four lines as you type, temporarily expanding the card, then scrolls internally from the fifth line onward.
 
 | Session status | Default Return action |
 | --- | --- |

@@ -291,6 +291,7 @@ struct PickyConversationComposerView: View {
             isGlobalScopeActionInFlight: runtimeControls.isGlobalScopeActionInFlight,
             pickleRuntimeDefaults: runtimeControls.pickleRuntimeDefaults,
             scopeStaging: runtimeControls.scopeStaging,
+            globalScopeApplySuccess: runtimeControls.globalScopeApplySuccess,
             onOpenModelPicker: { runtimeControls.openModelPicker(commands: commands, sessionID: session.id) },
             onRetryRuntimeOptions: { runtimeControls.loadOptions(commands: commands, sessionID: session.id) },
             onSelectModel: { runtimeControls.selectModel($0, commands: commands, sessionID: session.id) },

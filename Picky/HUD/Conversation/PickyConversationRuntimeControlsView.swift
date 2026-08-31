@@ -33,6 +33,7 @@ struct PickyConversationRuntimeControlsView: View {
     let isGlobalScopeActionInFlight: Bool
     let pickleRuntimeDefaults: (modelPattern: String, thinkingLevel: PickyPickleAgentThinkingLevel)
     let scopeStaging: PickyComposerRuntimeScopeStaging
+    let globalScopeApplySuccess: PickyComposerRuntimeScopeApplySuccess?
     /// Allows the same production picker component to start on a detail page.
     /// Composer uses `.quick`; deterministic gallery scenes also use this seam.
     let initialPickerScreen: PickyComposerRuntimePickerScreen
@@ -50,6 +51,7 @@ struct PickyConversationRuntimeControlsView: View {
 
     @State private var modelQuery = ""
     @State private var pickerScreen: PickyComposerRuntimePickerScreen = .quick
+    @State private var lastHandledScopeApplyGeneration = 0
     @FocusState private var focusedModelRowID: String?
 
     init(
@@ -64,6 +66,7 @@ struct PickyConversationRuntimeControlsView: View {
         isGlobalScopeActionInFlight: Bool,
         pickleRuntimeDefaults: (modelPattern: String, thinkingLevel: PickyPickleAgentThinkingLevel),
         scopeStaging: PickyComposerRuntimeScopeStaging,
+        globalScopeApplySuccess: PickyComposerRuntimeScopeApplySuccess? = nil,
         initialPickerScreen: PickyComposerRuntimePickerScreen = .quick,
         onOpenModelPicker: @escaping () -> Void,
         onRetryRuntimeOptions: @escaping () -> Void,
@@ -88,6 +91,7 @@ struct PickyConversationRuntimeControlsView: View {
         self.isGlobalScopeActionInFlight = isGlobalScopeActionInFlight
         self.pickleRuntimeDefaults = pickleRuntimeDefaults
         self.scopeStaging = scopeStaging
+        self.globalScopeApplySuccess = globalScopeApplySuccess
         self.initialPickerScreen = initialPickerScreen
         _pickerScreen = State(initialValue: initialPickerScreen)
         self.onOpenModelPicker = onOpenModelPicker
@@ -205,7 +209,17 @@ struct PickyConversationRuntimeControlsView: View {
         }
         .onChange(of: sessionID) { _, _ in
             pickerScreen = .quick
+            lastHandledScopeApplyGeneration = 0
             resetPicker()
+        }
+        .onChange(of: globalScopeApplySuccess) { _, success in
+            guard PickyComposerRuntimePickerScreenPolicy.shouldReturnToQuick(
+                after: success,
+                sessionID: sessionID,
+                lastHandledGeneration: lastHandledScopeApplyGeneration
+            ) else { return }
+            lastHandledScopeApplyGeneration = success?.generation ?? lastHandledScopeApplyGeneration
+            pickerScreen = .quick
         }
         .onChange(of: modelQuery) { _, _ in
             reconcileFocusedRow()
@@ -220,6 +234,7 @@ struct PickyConversationRuntimeControlsView: View {
             TextField(L10n.t("hud.composer.runtime.picker.search"), text: $modelQuery)
                 .textFieldStyle(.roundedBorder)
                 .accessibilityLabel(L10n.t("hud.composer.runtime.picker.search"))
+                .onMoveCommand { moveFocusedRow($0, rows: filteredModels) }
             pickerContent
         }
     }
@@ -292,6 +307,7 @@ struct PickyConversationRuntimeControlsView: View {
             }
             TextField(L10n.t("hud.composer.runtime.picker.search"), text: $modelQuery)
                 .textFieldStyle(.roundedBorder)
+                .onMoveCommand { moveFocusedRow($0, rows: filteredAllModels) }
 
             if runtimeOptions?.projectScope != nil {
                 Label(L10n.t("hud.composer.runtime.picker.projectOverride"), systemImage: "folder")

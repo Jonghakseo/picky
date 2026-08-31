@@ -12,9 +12,9 @@ import Foundation
 
 struct PickyComposerRuntimeScopeStaging: Equatable {
     var mode: PickyRuntimeModelScopeMode
-    /// Raw Pi patterns are preserved verbatim until the user changes their membership.
-    /// Membership itself is canonical provider/modelId matching, not case-sensitive text matching.
-    var patterns: Set<String>
+    /// Raw Pi patterns retain their persisted spelling and cycle order until their
+    /// membership changes. Comparison remains canonical and case-insensitive.
+    var patterns: [String]
 
     init(scope: PickyRuntimeModelScope? = nil) {
         mode = scope?.mode ?? .all
@@ -28,7 +28,7 @@ struct PickyComposerRuntimeScopeStaging: Equatable {
     mutating func setAllModelsEnabled(_ enabled: Bool, firstAvailablePattern: String?) {
         mode = enabled ? .all : .exact
         if !enabled, patterns.isEmpty, let firstAvailablePattern {
-            patterns.insert(firstAvailablePattern)
+            patterns.append(firstAvailablePattern)
         }
     }
 
@@ -36,25 +36,41 @@ struct PickyComposerRuntimeScopeStaging: Equatable {
         let canonical = Self.canonicalPattern(pattern)
         if selected {
             guard !patterns.contains(where: { Self.canonicalPattern($0) == canonical }) else { return }
-            patterns.insert(pattern)
+            patterns.append(pattern)
         } else {
-            patterns = patterns.filter { Self.canonicalPattern($0) != canonical }
+            patterns.removeAll { Self.canonicalPattern($0) == canonical }
         }
     }
 
-    private static func canonicalizedRawPatterns(_ rawPatterns: [String]) -> Set<String> {
+    private static func canonicalizedRawPatterns(_ rawPatterns: [String]) -> [String] {
         var canonical = Set<String>()
-        var preserved = Set<String>()
+        var preserved: [String] = []
         for pattern in rawPatterns {
             let key = canonicalPattern(pattern)
             guard !key.isEmpty, canonical.insert(key).inserted else { continue }
-            preserved.insert(pattern)
+            preserved.append(pattern)
         }
         return preserved
     }
 
     private static func canonicalPattern(_ pattern: String) -> String {
         pattern.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+}
+
+struct PickyComposerRuntimeScopeApplySuccess: Equatable {
+    let sessionID: String
+    let generation: Int
+}
+
+enum PickyComposerRuntimePickerScreenPolicy {
+    static func shouldReturnToQuick(
+        after success: PickyComposerRuntimeScopeApplySuccess?,
+        sessionID: String,
+        lastHandledGeneration: Int
+    ) -> Bool {
+        guard let success else { return false }
+        return success.sessionID == sessionID && success.generation > lastHandledGeneration
     }
 }
 
@@ -74,8 +90,8 @@ enum PickyComposerRuntimePickerRowNavigation {
     }
 
     static func focusAfterFiltering(currentID: String?, rowIDs: [String]) -> String? {
-        guard let currentID, rowIDs.contains(currentID) else { return first(in: rowIDs) }
-        return currentID
+        guard let currentID else { return nil }
+        return rowIDs.contains(currentID) ? currentID : first(in: rowIDs)
     }
 }
 
@@ -90,9 +106,12 @@ final class PickyComposerRuntimeControlsModel: ObservableObject {
     @Published var isGlobalScopeActionInFlight = false
     @Published private(set) var pickleRuntimeDefaults: (modelPattern: String, thinkingLevel: PickyPickleAgentThinkingLevel) = ("", .automatic)
     @Published private(set) var scopeStaging = PickyComposerRuntimeScopeStaging()
+    /// Emitted only after Apply's own authoritative reload has completed.
+    @Published private(set) var globalScopeApplySuccess: PickyComposerRuntimeScopeApplySuccess?
 
     private var sessionGeneration = 0
     private var loadGeneration = 0
+    private var globalScopeApplyGeneration = 0
     private var loadTask: Task<Void, Never>?
 
     func cancelLoad() {
@@ -113,6 +132,7 @@ final class PickyComposerRuntimeControlsModel: ObservableObject {
         isGlobalScopeActionInFlight = false
         pickleRuntimeDefaults = ("", .automatic)
         scopeStaging = PickyComposerRuntimeScopeStaging()
+        globalScopeApplySuccess = nil
     }
 
     func openModelPicker(commands: PickySessionCommands, sessionID: String) {
@@ -121,7 +141,12 @@ final class PickyComposerRuntimeControlsModel: ObservableObject {
         loadOptions(commands: commands, sessionID: sessionID)
     }
 
-    func loadOptions(commands: PickySessionCommands, sessionID: String, replaceScopeStagingOnSuccess: Bool = false) {
+    func loadOptions(
+        commands: PickySessionCommands,
+        sessionID: String,
+        replaceScopeStagingOnSuccess: Bool = false,
+        globalScopeApplySuccess: PickyComposerRuntimeScopeApplySuccess? = nil
+    ) {
         loadGeneration += 1
         let token = ControlToken(sessionID: sessionID, sessionGeneration: sessionGeneration, requestGeneration: loadGeneration)
         loadTask?.cancel()
@@ -137,6 +162,9 @@ final class PickyComposerRuntimeControlsModel: ObservableObject {
                     self.replaceScopeStaging(with: options)
                 }
                 self.loadState = options.models.isEmpty ? .empty : .loaded
+                if let globalScopeApplySuccess {
+                    self.globalScopeApplySuccess = globalScopeApplySuccess
+                }
             } catch {
                 guard let self, self.isCurrent(token), !Task.isCancelled else { return }
                 self.loadState = .failed(error.localizedDescription)
@@ -227,7 +255,7 @@ final class PickyComposerRuntimeControlsModel: ObservableObject {
         }
         applyGlobalScope(
             mode: scopeStaging.mode,
-            patterns: scopeStaging.mode == .exact ? scopeStaging.patterns.sorted() : nil,
+            patterns: scopeStaging.mode == .exact ? scopeStaging.patterns : nil,
             expectedRevision: revision,
             commands: commands,
             sessionID: sessionID
@@ -236,16 +264,23 @@ final class PickyComposerRuntimeControlsModel: ObservableObject {
 
     private func applyGlobalScope(mode: PickyRuntimeModelScopeMode, patterns: [String]?, expectedRevision: String, commands: PickySessionCommands, sessionID: String) {
         let token = SessionToken(sessionID: sessionID, generation: sessionGeneration)
+        globalScopeApplyGeneration += 1
+        let applyGeneration = globalScopeApplyGeneration
         isGlobalScopeActionInFlight = true
         Task { [weak self] in
             defer { if let self, self.isCurrent(token) { self.isGlobalScopeActionInFlight = false } }
             do {
                 try await commands.setGlobalModelScope(mode: mode, patterns: patterns, expectedRevision: expectedRevision)
-                guard let self, self.isCurrent(token) else { return }
+                guard let self, self.isCurrent(token), self.globalScopeApplyGeneration == applyGeneration else { return }
                 self.actionError = nil
-                self.loadOptions(commands: commands, sessionID: sessionID, replaceScopeStagingOnSuccess: true)
+                self.loadOptions(
+                    commands: commands,
+                    sessionID: sessionID,
+                    replaceScopeStagingOnSuccess: true,
+                    globalScopeApplySuccess: PickyComposerRuntimeScopeApplySuccess(sessionID: sessionID, generation: applyGeneration)
+                )
             } catch {
-                guard let self, self.isCurrent(token) else { return }
+                guard let self, self.isCurrent(token), self.globalScopeApplyGeneration == applyGeneration else { return }
                 self.actionError = Self.localizedScopeActionError(error)
             }
         }

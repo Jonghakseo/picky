@@ -437,7 +437,11 @@ Interactions:
 
 ### 8.3 Composer behavior
 
-The composer stays pinned to the bottom of a resized Pickle card. It uses one bordered surface with the editor in the middle and actions along the bottom, where the model and thinking controls sit beside the other actions. Click the model name to pick from the runtime's available models, and click the thinking level to choose one from its menu; `Control + P` and `Shift + Tab` still cycle them without opening either list. A control stays disabled while its change is in flight, and a failed change shows a warning icon next to the pair. The editor grows from one through four lines as you type, temporarily expanding the card, then scrolls internally from the fifth line onward.
+The composer stays pinned to the bottom of a resized Pickle card. It uses one bordered surface with the editor in the middle and actions along the bottom, where the model and thinking controls sit beside the other actions. Click either value to open its picker; `Control + P` and `Shift + Tab` still cycle them without opening a picker. Each picker can save the current value as the default for new Pickles. Resumed Pickles keep the model and thinking level stored in their Pi transcript instead.
+
+The model picker follows Pi's effective `enabledModels` scope. **All models…** edits the global scope in `~/.pi/agent/settings.json` with an explicit Apply action. A project override is identified but left unchanged, and scopes containing globs, thinking suffixes, or unresolved model IDs remain read-only to avoid destructive rewrites. A configured default model may start outside the scope; Picky marks it as outside while still allowing it as the initial model.
+
+A control stays disabled while its change is in flight, and a failed change shows a warning icon next to the pair. The editor grows from one through four lines as you type, temporarily expanding the card, then scrolls internally from the fifth line onward.
 
 | Session status | Default Return action |
 | --- | --- |

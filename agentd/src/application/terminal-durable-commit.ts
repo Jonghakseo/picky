@@ -57,10 +57,17 @@ export async function finalizeTerminalOperation(
       const runtimeSnapshot = dependencies.runtimeSnapshot(sessionId);
       const now = new Date().toISOString();
       const activitySnapshot = dependencies.turnActivity(sessionId);
+      // SessionMessageBuilder owns uncommitted journal text. A non-empty runtime draft with an
+      // empty builder draft means that text already crossed a boundary such as tool start and was
+      // persisted. Reusing it here would append the same bubble again on cancellation. Only use
+      // the terminal payload fallback when the runtime delivered the whole response without deltas.
+      const assistantDraft = messageSnapshot.assistantDraft
+        || (runtimeSnapshot.assistantDraft ? "" : cleanFinalAnswer(event.finalAnswer))
+        || "";
       const messages = stageTerminalMessages(
         before,
         messageSnapshot.journal,
-        messageSnapshot.assistantDraft || runtimeSnapshot.assistantDraft || cleanFinalAnswer(event.finalAnswer) || "",
+        assistantDraft,
         activitySnapshot,
         event,
         now,

@@ -136,6 +136,55 @@ describe("terminal durability", () => {
     }
   });
 
+  it("does not duplicate assistant text already committed at a tool boundary when the session is cancelled", async () => {
+    const root = await mkdtemp(join(tmpdir(), "picky-terminal-cancelled-draft-"));
+    try {
+      const store = new SessionStore(root);
+      const supervisor = new SessionSupervisor(new ManualRuntime(), store, { sessionIdFactory: () => "cancelled-draft-session" });
+      await supervisor.load();
+      const session = await supervisor.create(context);
+      const internals = supervisor as unknown as SupervisorInternals;
+      const text = "I will check for duplicates before creating the issue.";
+
+      await internals.applyRuntimeEvent(session.id, { type: "assistant_delta", delta: text });
+      await internals.applyRuntimeEvent(session.id, {
+        type: "tool",
+        toolCallId: "duplicate-check",
+        name: "bash",
+        status: "running",
+        preview: "gh api search/issues",
+      });
+      expect(supervisor.get(session.id)?.messages?.filter((message) => message.kind === "agent_text" && message.text === text)).toHaveLength(1);
+
+      await internals.applyRuntimeEvent(session.id, { type: "status", status: "cancelled", summary: "Cancelled" });
+
+      expect(supervisor.get(session.id)?.messages?.filter((message) => message.kind === "agent_text" && message.text === text)).toHaveLength(1);
+      expect((await store.loadAll()).find((candidate) => candidate.id === session.id)?.messages?.filter((message) => message.kind === "agent_text" && message.text === text)).toHaveLength(1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("persists a final answer when the runtime completes without assistant deltas", async () => {
+    const root = await mkdtemp(join(tmpdir(), "picky-terminal-final-answer-only-"));
+    try {
+      const store = new SessionStore(root);
+      const supervisor = new SessionSupervisor(new ManualRuntime(), store, { sessionIdFactory: () => "final-answer-only-session" });
+      await supervisor.load();
+      const session = await supervisor.create(context);
+      const internals = supervisor as unknown as SupervisorInternals;
+      const finalAnswer = "Whole response delivered only with the terminal event.";
+
+      await internals.applyRuntimeEvent(session.id, { type: "status", status: "completed", summary: "Completed", finalAnswer });
+
+      expect(supervisor.get(session.id)).toMatchObject({ status: "completed", finalAnswer });
+      expect(supervisor.get(session.id)?.messages?.filter((message) => message.kind === "agent_text" && message.text === finalAnswer)).toHaveLength(1);
+      expect((await store.loadAll()).find((candidate) => candidate.id === session.id)?.messages?.filter((message) => message.kind === "agent_text" && message.text === finalAnswer)).toHaveLength(1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("queues a thinking journal operation behind a terminal save so it cannot restore a stale journal", async () => {
     const root = await mkdtemp(join(tmpdir(), "picky-terminal-message-race-"));
     try {

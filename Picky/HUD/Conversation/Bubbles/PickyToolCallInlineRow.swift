@@ -201,7 +201,7 @@ struct PickyToolCallInlineRow: View {
 /// tool row. Mirrors the easing of the typing-bubble dots so the two
 /// in-flight signals (thinking + tool running) read as the same kind of
 /// live feedback.
-struct PickyToolCallPulsingDot: View {
+private struct PickyToolCallPulsingDot: View {
     let color: Color
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
 
@@ -216,22 +216,33 @@ struct PickyToolCallPulsingDot: View {
             Circle()
                 .fill(color)
                 .frame(width: 6, height: 6)
-                .opacity(opacity(at: context.date))
+                .opacity(
+                    PickyToolCallPulseAnimationPolicy.opacity(
+                        at: context.date,
+                        reduceMotion: accessibilityReduceMotion
+                    )
+                )
                 // Keep parent layout changes out of the repeating pulse.
-                .transaction { transaction in
-                    transaction.animation = nil
-                }
+                .transaction(PickyToolCallPulseAnimationPolicy.isolate)
         }
         .onAppear {
             guard !accessibilityReduceMotion else { return }
             PickyPerf.event("tool_call_pulsing_dot_animation_start")
         }
     }
+}
 
-    private func opacity(at date: Date) -> Double {
-        guard !accessibilityReduceMotion else { return 1 }
+enum PickyToolCallPulseAnimationPolicy {
+    static let period: TimeInterval = 1.5
 
-        let phase = date.timeIntervalSinceReferenceDate * (2 * Double.pi / 1.5)
+    static func opacity(at date: Date, reduceMotion: Bool) -> Double {
+        guard !reduceMotion else { return 1 }
+
+        let phase = date.timeIntervalSinceReferenceDate * (2 * Double.pi / period)
         return 0.675 + (0.325 * cos(phase))
+    }
+
+    static func isolate(_ transaction: inout Transaction) {
+        transaction.animation = nil
     }
 }

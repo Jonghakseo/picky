@@ -201,28 +201,37 @@ struct PickyToolCallInlineRow: View {
 /// tool row. Mirrors the easing of the typing-bubble dots so the two
 /// in-flight signals (thinking + tool running) read as the same kind of
 /// live feedback.
-private struct PickyToolCallPulsingDot: View {
+struct PickyToolCallPulsingDot: View {
     let color: Color
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
-    @State private var animating = false
 
     var body: some View {
         let _ = PickyPerf.event("tool_call_pulsing_dot_body")
-        Circle()
-            .fill(color)
-            .frame(width: 6, height: 6)
-            .opacity(accessibilityReduceMotion ? 1 : (animating ? 0.35 : 1.0))
+        TimelineView(
             .animation(
-                accessibilityReduceMotion ? nil : .easeInOut(duration: 0.75).repeatForever(autoreverses: true),
-                value: animating
+                minimumInterval: 1.0 / 30.0,
+                paused: accessibilityReduceMotion
             )
-            .onAppear {
-                guard !accessibilityReduceMotion else { return }
-                PickyPerf.event("tool_call_pulsing_dot_animation_start")
-                animating = true
-            }
-            .onChange(of: accessibilityReduceMotion) { _, reduceMotion in
-                animating = !reduceMotion
-            }
+        ) { context in
+            Circle()
+                .fill(color)
+                .frame(width: 6, height: 6)
+                .opacity(opacity(at: context.date))
+                // Keep parent layout changes out of the repeating pulse.
+                .transaction { transaction in
+                    transaction.animation = nil
+                }
+        }
+        .onAppear {
+            guard !accessibilityReduceMotion else { return }
+            PickyPerf.event("tool_call_pulsing_dot_animation_start")
+        }
+    }
+
+    private func opacity(at date: Date) -> Double {
+        guard !accessibilityReduceMotion else { return 1 }
+
+        let phase = date.timeIntervalSinceReferenceDate * (2 * Double.pi / 1.5)
+        return 0.675 + (0.325 * cos(phase))
     }
 }

@@ -2,7 +2,91 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { readPiTerminalSessionMessages } from "./pi-session-syncer.js";
+import { piSessionEntriesToPickyMessages, readPiTerminalSessionMessages } from "./pi-session-syncer.js";
+
+describe("pi session image attachment evidence", () => {
+  it("restores the user image block count without importing image data", () => {
+    const messages = piSessionEntriesToPickyMessages([
+      {
+        type: "message",
+        id: "u1",
+        timestamp: "2026-07-14T00:59:01.000Z",
+        message: {
+          role: "user",
+          content: [
+            { type: "text", text: "이거 보여?" },
+            { type: "image", source: { type: "base64", media_type: "image/png", data: "AAAABBBBCCCC" } },
+            { type: "image", source: { type: "base64", media_type: "image/png", data: "DDDDEEEEFFFF" } },
+          ],
+        },
+      },
+      {
+        type: "message",
+        id: "u2",
+        timestamp: "2026-07-14T00:59:02.000Z",
+        message: { role: "user", content: [{ type: "text", text: "이것도 보여?" }] },
+      },
+    ] as never);
+
+    expect(messages.map((message) => [message.text, message.attachedImagesCount])).toEqual([
+      ["이거 보여?", 2],
+      ["이것도 보여?", undefined],
+    ]);
+    expect(JSON.stringify(messages)).not.toContain("AAAABBBBCCCC");
+  });
+
+  it("keeps assistant text, thinking, and activity untouched by image counting", () => {
+    const messages = piSessionEntriesToPickyMessages([
+      {
+        type: "message",
+        id: "a1",
+        timestamp: "2026-07-14T00:59:03.000Z",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "weighing options" },
+            { type: "text", text: "answer" },
+            { type: "toolCall", name: "read" },
+            { type: "image", source: { type: "base64", media_type: "image/png", data: "GGGGHHHH" } },
+          ],
+        },
+      },
+    ] as never);
+
+    expect(messages.map((message) => message.kind)).toEqual(["agent_thinking", "agent_text", "agent_activity"]);
+    expect(messages.every((message) => message.attachedImagesCount === undefined)).toBe(true);
+  });
+
+  it("restores image counts through the terminal session import path", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-pi-image-count-sync-"));
+    const sessionFile = join(dir, "session.jsonl");
+    await writeFile(sessionFile, [
+      JSON.stringify({ type: "session", version: 3, id: "pi-session", timestamp: "2026-07-14T00:59:00.000Z", cwd: "/tmp/project" }),
+      JSON.stringify({
+        type: "message",
+        id: "u1",
+        parentId: null,
+        timestamp: "2026-07-14T00:59:01.000Z",
+        message: {
+          role: "user",
+          content: [
+            { type: "text", text: "화면" },
+            { type: "image", source: { type: "base64", media_type: "image/png", data: "IIIIJJJJ" } },
+          ],
+        },
+      }),
+      JSON.stringify({ type: "message", id: "a1", parentId: "u1", timestamp: "2026-07-14T00:59:02.000Z", message: { role: "assistant", content: [{ type: "text", text: "보입니다" }] } }),
+    ].join("\n"));
+
+    const result = await readPiTerminalSessionMessages(sessionFile);
+
+    expect(result.messages.map((message) => [message.kind, message.attachedImagesCount])).toEqual([
+      ["user_text", 1],
+      ["agent_text", undefined],
+    ]);
+    expect(JSON.stringify(result.messages)).not.toContain("IIIIJJJJ");
+  });
+});
 
 describe("readPiTerminalSessionMessages todo state", () => {
   it("restores the latest trailing todo overlay state on the active Pi branch", async () => {

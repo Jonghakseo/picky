@@ -193,6 +193,11 @@ private struct PickyInlineTerminalSessionView: View {
             .buttonStyle(.borderless)
             .help(L10n.t("hud.inlineTerminal.backToChat.help"))
 
+            PickyConversationArchiveButton(
+                onArchive: { onArchiveSession(session.id) },
+                isCommandShortcutHintVisible: isCommandShortcutHintVisible
+            )
+
             Menu {
                 PickyConversationMenu(
                     session: session,

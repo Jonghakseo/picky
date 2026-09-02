@@ -96,6 +96,13 @@ struct PickyHUDKeyboardShortcutPolicyTests {
         #expect(PickyHUDKeyboardShortcutPolicy.isScreenContextTargetShortcut(keyCode: 0, charactersIgnoringModifiers: "K", modifiers: .command) == true)
     }
 
+    @Test func archiveSessionUsesCommandDeleteOnly() {
+        #expect(PickyHUDKeyboardShortcutPolicy.isArchiveSessionShortcut(keyCode: 51, modifiers: .command) == true)
+        #expect(PickyHUDKeyboardShortcutPolicy.isArchiveSessionShortcut(keyCode: 51, modifiers: []) == false)
+        #expect(PickyHUDKeyboardShortcutPolicy.isArchiveSessionShortcut(keyCode: 51, modifiers: [.command, .shift]) == false)
+        #expect(PickyHUDKeyboardShortcutPolicy.isArchiveSessionShortcut(keyCode: 117, modifiers: .command) == false)
+    }
+
     @Test func thinkingToggleUsesControlTOnly() {
         #expect(PickyHUDKeyboardShortcutPolicy.isThinkingToggleShortcut(keyCode: 17, charactersIgnoringModifiers: "t", modifiers: .control) == true)
         #expect(PickyHUDKeyboardShortcutPolicy.isThinkingToggleShortcut(keyCode: 17, charactersIgnoringModifiers: "t", modifiers: .command) == false)

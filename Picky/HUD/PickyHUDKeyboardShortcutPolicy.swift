@@ -19,6 +19,7 @@ enum PickyHUDKeyboardShortcutPolicy {
     private static let wKeyCode: UInt16 = 13
     private static let returnKeyCode: UInt16 = 36
     private static let keypadEnterKeyCode: UInt16 = 76
+    private static let deleteKeyCode: UInt16 = 51
 
     static func isComposerFocusShortcut(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> Bool {
         modifiers.intersection([.command, .shift, .option, .control]).isEmpty
@@ -146,6 +147,15 @@ enum PickyHUDKeyboardShortcutPolicy {
         guard modifiers == .command else { return false }
         if keyCode == kKeyCode { return true }
         return charactersIgnoringModifiers?.lowercased() == "k"
+    }
+
+    /// Matched on the key code alone because the delete key reports the
+    /// non-printing U+007F, which no character fallback can widen.
+    static func isArchiveSessionShortcut(
+        keyCode: UInt16,
+        modifiers: NSEvent.ModifierFlags
+    ) -> Bool {
+        modifiers == .command && keyCode == deleteKeyCode
     }
 
     static func cycleDirection(keyCode: UInt16, charactersIgnoringModifiers: String?) -> Int? {

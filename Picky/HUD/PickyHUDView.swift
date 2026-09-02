@@ -1209,6 +1209,17 @@ struct PickyHUDView: View {
             return true
         }
 
+        // Text input owns Cmd+Delete as delete-to-line-start, and a focused
+        // terminal already consumed it above as a readline control byte.
+        if PickyHUDKeyboardShortcutPolicy.isArchiveSessionShortcut(
+            keyCode: event.keyCode,
+            modifiers: flags
+        ), let activeCard,
+           !isEditableTextInputFocused(in: keyWindow) {
+            archiveSession(activeCard.id)
+            return true
+        }
+
         if flags == .command, let number = Self.numberShortcutValue(for: event) {
             // An open list owns the number keys; the rail only gets them back
             // once the list closes.

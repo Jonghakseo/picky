@@ -12951,6 +12951,54 @@
         }
       }
     },
+    "hud.header.archive.accessibilityHint": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hides the Pickle from the Dock without stopping it. Undo is available for six seconds."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle을 중지하지 않고 Dock에서 숨깁니다. 6초 안에 되돌릴 수 있습니다."
+          }
+        }
+      }
+    },
+    "hud.header.archive.accessibilityLabel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archive Pickle"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle 아카이브"
+          }
+        }
+      }
+    },
+    "hud.header.archive.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archive Pickle (⌘⌫)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle 아카이브 (⌘⌫)"
+          }
+        }
+      }
+    },
     "hud.header.close.accessibilityHint": {
       "localizations": {
         "en": {

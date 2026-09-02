@@ -153,6 +153,10 @@ struct PickyConversationHeaderView: View {
                 sessionMetaControls()
                     .fixedSize(horizontal: true, vertical: false)
             }
+            PickyConversationArchiveButton(
+                onArchive: { onArchiveSession(session.id) },
+                isCommandShortcutHintVisible: isCommandShortcutHintVisible
+            )
             conversationMenuButton
             PickyConversationCloseButton(onClose: requestClose)
         }
@@ -620,6 +624,63 @@ struct PickyConversationHeaderView: View {
         statusTone.color
     }
 
+}
+
+/// Header archive action shared by chat and inline-terminal headers. It sits
+/// left of the overflow menu so the menu button separates it from close, and it
+/// relies on the screen-level undo toast instead of a confirmation step.
+/// Archiving hides the Pickle from the Dock without stopping its session.
+struct PickyConversationArchiveButton: View {
+    static var helpText: String { L10n.t("hud.header.archive.help") }
+
+    let onArchive: () -> Void
+    var isCommandShortcutHintVisible = false
+
+    var body: some View {
+        Button(action: onArchive) {
+            Image(systemName: "archivebox")
+                .pickyFont(size: 11, weight: .semibold)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PickyConversationArchiveButtonStyle())
+        .overlay(alignment: .topTrailing) {
+            PickyShortcutKeyBadge(label: "\u{232B}")
+                .offset(x: 9, y: -7)
+                .opacity(isCommandShortcutHintVisible ? 1 : 0)
+                .scaleEffect(isCommandShortcutHintVisible ? 1 : 0.88, anchor: .center)
+                .animation(.easeOut(duration: 0.12), value: isCommandShortcutHintVisible)
+                .allowsHitTesting(false)
+        }
+        .help(Self.helpText)
+        .accessibilityLabel(L10n.t("hud.header.archive.accessibilityLabel"))
+        .accessibilityHint(L10n.t("hud.header.archive.accessibilityHint"))
+    }
+}
+
+/// Quiet at rest like the close button, warning-toned on hover so the pointer
+/// reveals that this action changes Dock membership.
+private struct PickyConversationArchiveButtonStyle: ButtonStyle {
+    @State private var isHovered = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(isHovered || configuration.isPressed ? DS.Colors.warningText : DS.Colors.textTertiary)
+            .background {
+                RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
+                    .fill(backgroundColor(isPressed: configuration.isPressed))
+            }
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.easeOut(duration: DS.Animation.fast), value: configuration.isPressed)
+            .animation(.easeOut(duration: DS.Animation.fast), value: isHovered)
+            .onHover { isHovered = $0 }
+    }
+
+    private func backgroundColor(isPressed: Bool) -> Color {
+        if isPressed { return DS.Colors.surface4 }
+        if isHovered { return DS.Colors.surface3 }
+        return .clear
+    }
 }
 
 /// Quiet, neutral utility action shared by chat and inline-terminal headers.
